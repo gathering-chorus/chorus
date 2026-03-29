@@ -24,3 +24,4 @@ pub mod input_classifier;
 pub mod csc_guard;
 pub mod icd_pre_read;
 pub mod nifi_discipline;
+pub mod memory_gate;

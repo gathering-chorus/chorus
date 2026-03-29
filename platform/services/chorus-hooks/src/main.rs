@@ -155,6 +155,12 @@ async fn pre_tool_use(
             if r.stderr.is_some() || r.exit_code != 0 {
                 return Json(r);
             }
+            // Memory-and-research gate (#1811) — block code writes without prior checks
+            let r = hooks::memory_gate::check(&input);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return Json(r);
+            }
+
             // ICD pre-read gate (#1684) — warn on data domain writes without context read
             hooks::icd_pre_read::check(&input, &state).await;
         }
