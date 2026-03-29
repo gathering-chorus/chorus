@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node</string>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/messaging/dist/service.js</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/pulse/dist/service.js</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

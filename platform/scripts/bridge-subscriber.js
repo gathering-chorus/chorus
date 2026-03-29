@@ -9,7 +9,7 @@
  */
 
 // Resolve socket.io-client from Bridge's node_modules
-const BRIDGE_NODE_MODULES = '/Users/jeffbridwell/CascadeProjects/chorus/bridge/node_modules';
+const BRIDGE_NODE_MODULES = '/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/node_modules';
 const io = require(`${BRIDGE_NODE_MODULES}/socket.io-client`);
 const fs = require('fs');
 const path = require('path');
