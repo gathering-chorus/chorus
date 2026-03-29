@@ -1,14 +1,15 @@
-# Kade — Next Session
+# Next Session — Kade
 
-## This Session (2026-03-29 17:09-18:10)
-- Reviewed Silas #1808 demo (context cache events) — all 3 AC pass
-- Reviewed Silas #1841 demo (stop-on-error gate) — all 5 AC pass
-- Both awaiting Jeff's accept call
+## Accomplished
+- #1814 Verification gate hook shipped — paired with Wren. Three Rust PreToolUse gates (tdd_gate, pair_gate, demo_gate) all deny-blocking with 18 tests total.
 
-## Stale Briefs (triage needed)
-- 6 pending, oldest 7 days — person detail page, era table corrections, TDD test suites, Fuseki load, reassignments
+## WIP
+None.
 
-## Pick up
-- Triage stale briefs first
-- #1631 (face clusters), #1630 (semantic embeddings), #1619 (provenance stamps) in Next
-- #1811, #1814 reassigned to Kade — check if still relevant after Silas's gate work
+## Pending Briefs
+- 6 stale handoffs from Wren (March 22-24): person-detail-page, era-table-corrections, load-source-graphs, tdd-test-suites. Triage or discard.
+
+## Pick Up
+- Queue: #1631 (face clusters), #1630 (embeddings), #1619 (provenance stamps)
+- Silas just shipped #1841 (stop-on-error gate) and #1842 — may have new work flowing
+- Wren on #1839 (experience-driven card format) — watch for new cards from that
