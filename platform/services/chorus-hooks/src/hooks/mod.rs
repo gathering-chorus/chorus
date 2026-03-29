@@ -29,3 +29,4 @@ pub mod tdd_gate;
 pub mod pair_gate;
 pub mod demo_gate;
 pub mod context_inject;
+pub mod stop_on_error;

@@ -236,6 +236,12 @@ async fn post_tool_use(
 ) -> Json<HookResponse> {
     let tool = input.tool_name_str().to_string();
 
+    // Stop-on-error gate (#1841) — block next action when previous errored
+    let r = hooks::stop_on_error::check(&input, &state).await;
+    if r.exit_code != 0 {
+        return Json(r);
+    }
+
     match tool.as_str() {
         "Bash" => {
             hooks::tool_telemetry::post_tool_use_bash(&input, &state).await;
