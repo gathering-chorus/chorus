@@ -1,0 +1,122 @@
+use crate::state::chorus_log;
+use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookResponse};
+use regex::Regex;
+use std::path::Path;
+
+const REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects";
+
+const MANIFEST_PATHS: &[&str] = &[
+    "/Users/jeffbridwell/CascadeProjects/product-manager/.sensitive-paths",
+    "/Users/jeffbridwell/CascadeProjects/architect/.sensitive-paths",
+    "/Users/jeffbridwell/CascadeProjects/engineer/.sensitive-paths",
+];
+
+pub async fn check(input: &HookInput) -> HookResponse {
+    if input.tool_name_str() != "Read" {
+        return HookResponse::allow();
+    }
+
+    let file_path = input.get_tool_input_str("file_path");
+    if file_path.is_empty() {
+        return HookResponse::allow();
+    }
+
+    // Common patterns — always Private
+    if file_path.ends_with("/.env")
+        || file_path.contains("/.env.")
+        || file_path.contains("/terraform.tfstate")
+        || file_path.contains("/.ssh/")
+    {
+        log_access("deny", "private", &file_path).await;
+        let reason = if file_path.contains("/.env") {
+            "BLOCKED: .env files contain credentials and must never be sent to external APIs."
+        } else if file_path.contains("terraform.tfstate") {
+            "BLOCKED: Terraform state files contain infrastructure secrets."
+        } else {
+            "BLOCKED: SSH key files must never be sent to external APIs."
+        };
+        return HookResponse::deny(&permission_deny_json(reason));
+    }
+
+    // Check manifests
+    for manifest_path in MANIFEST_PATHS {
+        if !Path::new(manifest_path).exists() {
+            continue;
+        }
+
+        let content = match std::fs::read_to_string(manifest_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let mut current_tier = "";
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+
+            if trimmed.starts_with("private:") {
+                current_tier = "private";
+                continue;
+            } else if trimmed.starts_with("internal:") {
+                current_tier = "internal";
+                continue;
+            }
+
+            // Parse entry (strip "  - " prefix and quotes)
+            let entry = trimmed
+                .trim_start_matches("- ")
+                .trim_start_matches("  - ")
+                .trim_matches('"');
+
+            if entry.is_empty() || entry == "[]" {
+                continue;
+            }
+
+            if path_matches(&file_path, entry) {
+                if current_tier == "private" {
+                    log_access("deny", "private", &file_path).await;
+                    return HookResponse::deny(&permission_deny_json(
+                        "BLOCKED: File classified as PRIVATE. This file contains personal/sensitive data that must never be sent to external APIs. See data-classification-policy.md."
+                    ));
+                } else if current_tier == "internal" {
+                    log_access("ask", "internal", &file_path).await;
+                    return HookResponse::deny(&permission_ask_json(
+                        "File classified as INTERNAL (infrastructure/operational data). Reading this file will send its contents to Anthropic's API. Confirm this is intentional. See data-classification-policy.md."
+                    ));
+                }
+            }
+        }
+    }
+
+    HookResponse::allow()
+}
+
+fn path_matches(path: &str, pattern: &str) -> bool {
+    let full_pattern = if pattern.starts_with('/') {
+        pattern.to_string()
+    } else {
+        format!("{}/{}", REPO_ROOT, pattern)
+    };
+
+    // Convert glob to regex
+    let regex_str = full_pattern
+        .replace("**", "\x00DOUBLESTAR\x00")
+        .replace('*', "[^/]+")
+        .replace("\x00DOUBLESTAR\x00", ".+");
+
+    let regex_str = format!("^{}$", regex_str);
+    Regex::new(&regex_str)
+        .map(|re| re.is_match(path))
+        .unwrap_or(false)
+}
+
+async fn log_access(decision: &str, tier: &str, path: &str) {
+    chorus_log(
+        "guard.classify.decided",
+        "system",
+        &[("decision", decision), ("tier", tier), ("path", path)],
+    )
+    .await;
+}

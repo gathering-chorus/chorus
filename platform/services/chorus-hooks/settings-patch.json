@@ -1,0 +1,69 @@
+{
+  "_description": "Drop-in replacement for existing hooks — uses chorus-hook.sh thin wrapper",
+  "_note": "Apply to settings.json and settings.local.json files to switch from 12 bash hooks to single Rust service",
+  "_activation": "NOT YET ACTIVE — requires Jeff approval + gradual rollout",
+
+  "global_settings_hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-hook.sh pre-tool-use",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-hook.sh post-tool-use",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-hook.sh user-prompt-submit",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-hook.sh stop",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+
+  "role_local_hooks": {
+    "_note": "Replaces session-init-gate, write-scrubber, sensitive-paths — all handled by pre-tool-use endpoint",
+    "PreToolUse": [],
+    "PostToolUse": [],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/session-end-hook.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

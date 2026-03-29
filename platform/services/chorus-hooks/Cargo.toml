@@ -1,0 +1,32 @@
+[package]
+name = "chorus-hooks"
+version = "0.1.0"
+edition = "2021"
+description = "Long-running hook service for Claude Code — replaces 12 bash/python hooks with zero-fork overhead"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = [] }
+hyper = { version = "1" }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower = { version = "0.5" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+rusqlite = { version = "0.33", features = ["bundled"] }
+chrono = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[bin]]
+name = "chorus-hooks"
+path = "src/main.rs"
+
+[[bin]]
+name = "chorus-hook-shim"
+path = "src/shim.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
