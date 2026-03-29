@@ -12,7 +12,7 @@ Last updated: 2026-03-24
 
 **SWAT lane** (DEC-055). Crisis cards bypass WIP limit. Must close within one session.
 
-**Source of truth: Vikunja board** (`board-ts list`). This file is the narrative companion — context, specs, rationale. The board is where you look for status.
+**Source of truth: Vikunja board** (`cards list`). This file is the narrative companion — context, specs, rationale. The board is where you look for status.
 
 ---
 
@@ -70,7 +70,7 @@ Last updated: 2026-03-24
 
 ## Later (parked)
 
-See board (`board-ts list --status later`). Key items:
+See board (`cards list --status later`). Key items:
 
 - **#1674 remaining AC** — Bridge + nudge test suites (Kade), demo-preflight extension (Silas)
 - **#1667 Borg self-assessment** — 7 dimensions, first Borg use case (Wren P1)

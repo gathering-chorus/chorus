@@ -32,7 +32,7 @@ Last updated: 2026-03-22 (session 6 — 31+ cards shipped)
 - **Key decisions this session**: DEC-101 (Jeff Constitution), DEC-102 (Attention Contract — roles monitor each other), #1594 (chorus-hooks test backfill), #1595 (persistent role observation). Rust hooks service (#1587) shipped — 12 shell scripts → compiled binary. PostToolUse nudge drain working with exit-code-2 stderr.
 - **Semantic search**: 97K messages indexed. Chorus API supports mode=fts|semantic|hybrid. Inverted search hierarchy (#1302) — Chorus enrichment injected transparently on context searches.
 - **Three surfaces (DEC-043)**: `/werk` = protocol, `/loom` = team, `/chorus/*` = memory. Plus `/flow` = product board.
-- **Board tooling**: `board-ts` CLI with quality gates, blast radius checks (#1266, #1318), chunk+sequence enforcement (#1272). Workflow manifests auto-created.
+- **Board tooling**: `cards` CLI with quality gates, blast radius checks (#1266, #1318), chunk+sequence enforcement (#1272). Workflow manifests auto-created.
 - **Process model**: Werk value stream — Directing → Designing → Building → Proving. Proving gate (DEC-048): deploy → demo → accept. WSJF tiebreaker (DEC-049). WIP limit 3 (DEC-051).
 - **Hardening sequence (shipped)**: 20+ cards since 3/6 — gate audit, hook consolidation (scripts 50→32, fragments 63→~25), Docker CLI guard, lint ratchet, smoke-check gate, fitness scorecard, search inversion, blast radius WIP overlap, doc drift audit (97% health).
 - **Revenue path (DEC-067)**: Akasha → Consulting → Light Life → Mobile. Next: sell the method.
