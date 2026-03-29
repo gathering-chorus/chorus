@@ -181,6 +181,35 @@ export function warnEmptyDescription(index: number, title: string, description: 
 }
 
 /**
+ * Experience gate (#1839) — cards require an Experience section before entering WIP.
+ * Returns true if the card may proceed, false if blocked.
+ * Exempt: [swat] cards, parent/umbrella cards.
+ */
+export function enforceExperienceGate(index: number, title: string, description: string | undefined, board: string): boolean {
+  // SWAT cards are exempt (DEC-055)
+  if (/\[swat\]/i.test(title)) return true;
+
+  const desc = (description || '').trim();
+
+  // Parent/umbrella cards exempt
+  if (desc.length > 0 && /^(children:|parent card)/i.test(desc)) return true;
+
+  const hasExperience = /##\s*experience/i.test(desc);
+
+  if (!hasExperience) {
+    console.error(`ERROR: Card #${index} needs an Experience section before entering WIP.`);
+    console.error(`  Add "## Experience" with 2-5 sentences in Jeff's voice describing what he sees/feels/gets.`);
+    console.error(`  Route to Wren to draft the Experience section.`);
+    emitSpineEvent('card.quality.blocked', detectRole(), {
+      card_id: String(index), title, gate: 'experience_missing', stage: 'building', board,
+    });
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Capture gate (#1085) — cards require AC before entering WIP.
  * Returns true if the card may proceed, false if blocked.
  * Exempt: [swat] cards, parent/umbrella cards (children-only descriptions).
@@ -228,7 +257,7 @@ export function enforceTaxonomyGate(
 
   if (!hasChunk) {
     const validChunks = Object.keys(LABELS.chunk).join(', ');
-    console.error(`ERROR: Card #${index} missing chunk label. Use: board-ts tag ${index} <chunk>  (or: board-ts tag ${index} domain <domain>)`);
+    console.error(`ERROR: Card #${index} missing chunk label. Use: cards tag ${index} <chunk>  (or: cards tag ${index} domain <domain>)`);
     console.error(`  Valid chunks: ${validChunks}`);
     emitSpineEvent('card.quality.blocked', detectRole(), {
       card_id: String(index), title, gate: 'taxonomy_chunk_missing', board,
@@ -238,7 +267,7 @@ export function enforceTaxonomyGate(
 
   if (!hasSequence) {
     const validSeqs = Object.keys(LABELS.sequence).join(', ');
-    console.log(`  WARN: No sequence label on #${index}. Use: board-ts tag ${index} sequence <seq>`);
+    console.log(`  WARN: No sequence label on #${index}. Use: cards tag ${index} sequence <seq>`);
     console.log(`  Valid sequences: ${validSeqs}`);
     emitSpineEvent('card.quality.warned', detectRole(), {
       card_id: String(index), title, gate: 'taxonomy_sequence_missing', board,
@@ -479,6 +508,14 @@ export async function addCard(
       console.error(`  Use --quick (-q) for unplanned issues and quick fixes only.`);
       process.exit(1);
     }
+    // Experience section check (#1839): warn if missing, Wren adds before WIP
+    const hasExperience = /##\s*experience/i.test(desc);
+    if (!hasExperience) {
+      console.log(`  WARN: No Experience section. Wren should add "## Experience" before this card enters WIP.`);
+      emitSpineEvent('card.quality.warned', detectRole(), {
+        title, gate: 'experience_missing_at_creation', board: client.boardName,
+      });
+    }
   } else {
     emitSpineEvent('card.quick.created', detectRole(), {
       title, board: client.boardName,
@@ -523,6 +560,10 @@ export async function moveCard(
     }
     // Capture gate (#1085): block WIP entry if AC is missing
     if (/^wip$/i.test(status) && !enforceACGate(index, title, card.description, client.boardName)) {
+      process.exit(1);
+    }
+    // Experience gate (#1839): block WIP entry if Experience section is missing
+    if (/^wip$/i.test(status) && !enforceExperienceGate(index, title, card.description, client.boardName)) {
       process.exit(1);
     }
     // Taxonomy gate (#1272): check chunk + sequence labels on Now/WIP entry
