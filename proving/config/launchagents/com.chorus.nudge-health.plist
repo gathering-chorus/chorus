@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.nudge-health</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim</string>
+        <string>nudge</string>
+        <string>health</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/nudge-health.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/nudge-health.log</string>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>

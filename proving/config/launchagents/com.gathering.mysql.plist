@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gathering.mysql</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/opt/mysql/bin/mysqld_safe</string>
+        <string>--datadir=/opt/homebrew/var/mysql</string>
+        <string>--port=3306</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/mysql.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/mysql.log</string>
+</dict>
+</plist>

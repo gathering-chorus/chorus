@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gathering.cruft-scan</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+# Log rotation first
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/log-rotate.sh >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md 2>&amp;1
+
+# Cruft scan: disk, stale briefs, board audit
+echo "=== Cruft scan $(date '+%Y-%m-%d %H:%M') ===" >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md
+diskutil info / | grep 'Available Space' >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md 2>&amp;1
+echo "Board snapshot sizes:" >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md
+ls -lh /Users/jeffbridwell/CascadeProjects/chorus/proving/logs/board-snapshot-*.json 2>/dev/null | awk '{print "  "$5" "$9}' >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md
+echo "=== Done ===" >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md
+        </string>
+    </array>
+    <key>StartInterval</key>
+    <integer>259200</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-stderr.log</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

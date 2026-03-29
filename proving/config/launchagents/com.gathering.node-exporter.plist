@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.gathering.node-exporter</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/jeffbridwell/bin/node_exporter</string>
+		<string>--web.listen-address=:9101</string>
+		<string>--no-collector.thermal</string>
+		<string>--collector.textfile.directory=/Users/jeffbridwell/Library/Logs/Gathering/node-exporter-textfile</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Gathering/node-exporter.err</string>
+	<key>StandardOutPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Gathering/node-exporter.log</string>
+</dict>
+</plist>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.fuseki-perf</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/scripts/fuseki-perf.sh</string>
+  </array>
+
+  <!-- Run every 4 hours -->
+  <key>StartInterval</key>
+  <integer>14400</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/fuseki-perf.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/fuseki-perf.log</string>
+</dict>
+</plist>

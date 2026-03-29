@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gathering.context-cache-hourly</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+SCRIPT=/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-hourly.sh
+for role in wren silas kade; do "$SCRIPT" "$role" 2>/dev/null; done
+        </string>
+    </array>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/context-cache-hourly.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/context-cache-hourly-err.log</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

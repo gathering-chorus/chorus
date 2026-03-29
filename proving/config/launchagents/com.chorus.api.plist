@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.api</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/api/dist/server.js</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/jeffbridwell/CascadeProjects/chorus/api</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/chorus-api.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/chorus-api.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>OLLAMA_URL</key>
+    <string>http://192.168.86.242:11434</string>
+  </dict>
+</dict>
+</plist>

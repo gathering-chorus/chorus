@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.perf-baseline</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/scripts/perf-baseline.sh</string>
+    <string>safe</string>
+  </array>
+
+  <!-- Run daily at midnight -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>0</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/perf-baseline-nightly.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/perf-baseline-nightly.log</string>
+</dict>
+</plist>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gathering.prometheus</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/prometheus</string>
+        <string>--config.file=/Users/jeffbridwell/CascadeProjects/shared-observability/config/prometheus/prometheus-native.yml</string>
+        <string>--storage.tsdb.path=/Users/jeffbridwell/CascadeProjects/shared-observability/data/prometheus</string>
+        <string>--storage.tsdb.retention.time=15d</string>
+        <string>--web.enable-lifecycle</string>
+        <string>--web.enable-admin-api</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/prometheus.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/prometheus.log</string>
+</dict>
+</plist>

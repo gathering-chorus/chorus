@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gathering.mysqld-exporter</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/bin/mysqld_exporter</string>
+        <string>--mysqld.address=localhost:3306</string>
+        <string>--mysqld.username=wordpress</string>
+        <string>--web.listen-address=:9104</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MYSQLD_EXPORTER_PASSWORD</key>
+        <string>wordpress_password</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/mysqld-exporter.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/mysqld-exporter.log</string>
+</dict>
+</plist>

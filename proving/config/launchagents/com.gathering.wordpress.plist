@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gathering.wordpress</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/php</string>
+        <string>-S</string>
+        <string>0.0.0.0:8081</string>
+        <string>-t</string>
+        <string>/Users/jeffbridwell/CascadeProjects/wordpress-blog/site</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/jeffbridwell/CascadeProjects/wordpress-blog/site</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/wordpress.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/wordpress.log</string>
+</dict>
+</plist>

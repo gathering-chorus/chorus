@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.chorus.harvest-exporter</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/jeffbridwell/CascadeProjects/shared-observability/scripts/harvest-exporter.sh</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>900</integer>
+	<key>StandardErrorPath</key>
+	<string>/tmp/harvest-exporter.err</string>
+	<key>RunAtLoad</key>
+	<true/>
+</dict>
+</plist>
