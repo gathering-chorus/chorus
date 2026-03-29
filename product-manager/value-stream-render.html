@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gathering Value Stream & Domain Map</title>
+<style>
+  :root {
+    --bg: #1a1b2e;
+    --surface: #232440;
+    --text: #e2e4f0;
+    --muted: #9a9cc0;
+    --accent: #7C3AED;
+    --accent-light: #C4B5FD;
+    --blue: #2563EB;
+    --blue-light: #93C5FD;
+    --green: #059669;
+    --green-light: #D1FAE5;
+    --amber: #D97706;
+    --amber-light: #FEF3C7;
+    --pink: #DB2777;
+    --pink-light: #FCE7F3;
+    --indigo: #4338CA;
+    --indigo-light: #C7D2FE;
+    --gray: #6B7280;
+    --gray-light: #E5E7EB;
+    --border: rgba(124, 58, 237, 0.2);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.8rem; margin-bottom: 0.3rem; color: var(--accent-light); }
+  h2 { font-size: 1.3rem; margin: 2.5rem 0 1rem; color: var(--accent-light); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; color: var(--blue-light); }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 2rem; }
+  p { margin-bottom: 1rem; }
+  strong { color: #fff; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+  /* Value Stream Flow */
+  .stream-flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    overflow-x: auto;
+    padding: 1.5rem 0;
+    margin: 1rem 0 2rem;
+  }
+  .stream-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 100px;
+    padding: 0.8rem 0.5rem;
+    border-radius: 12px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .stream-node .emoji { font-size: 1.5rem; margin-bottom: 0.3rem; }
+  .stream-node .name { font-weight: 600; font-size: 0.85rem; }
+  .stream-node .act { font-size: 0.7rem; font-style: italic; color: var(--muted); }
+  .stream-arrow { font-size: 1.2rem; color: var(--muted); flex-shrink: 0; margin: 0 -2px; }
+  .stream-node.s1 { background: rgba(254,243,199,0.15); }
+  .stream-node.s2 { background: rgba(219,234,254,0.15); }
+  .stream-node.s3 { background: rgba(224,231,255,0.15); }
+  .stream-node.s4 { background: rgba(209,250,229,0.15); }
+  .stream-node.s5 { background: rgba(252,231,243,0.15); }
+  .stream-node.s6 { background: rgba(253,230,138,0.15); }
+  .stream-node.s7 { background: rgba(199,210,254,0.15); }
+  .stream-node.s8 { background: rgba(243,232,255,0.15); }
+
+  /* Cycle arrow */
+  .cycle-note {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-style: italic;
+    margin: -0.5rem 0 1.5rem;
+  }
+
+  /* Mind Map ↔ Value Stream Table */
+  .mapping-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+  }
+  .mapping-table th {
+    text-align: left;
+    padding: 0.6rem 0.8rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--accent-light);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .mapping-table td {
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.9rem;
+  }
+  .mapping-table tr:hover { background: rgba(124,58,237,0.05); }
+  .node-badge {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .node-badge.sowing { background: rgba(254,243,199,0.2); color: #fbbf24; }
+  .node-badge.cultivating { background: rgba(209,250,229,0.2); color: #34d399; }
+  .node-badge.harvesting { background: rgba(219,234,254,0.2); color: #60a5fa; }
+  .node-badge.gathering { background: rgba(199,210,254,0.2); color: #818cf8; }
+  .node-badge.reflecting { background: rgba(243,232,255,0.2); color: #a78bfa; }
+  .node-badge.about { background: rgba(255,255,255,0.08); color: var(--muted); }
+  .node-badge.admin { background: rgba(255,255,255,0.08); color: var(--muted); }
+
+  /* Domain Map */
+  .domain-stack { margin: 1rem 0; }
+  .domain-layer {
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+  }
+  .domain-layer.core { background: rgba(196,181,253,0.12); border: 1px solid rgba(124,58,237,0.3); }
+  .domain-layer.supporting { background: rgba(147,197,253,0.08); border: 1px solid rgba(37,99,235,0.2); }
+  .domain-layer.generic { background: rgba(229,231,235,0.06); border: 1px solid rgba(107,114,128,0.2); }
+  .domain-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.5rem; }
+  .domain-boxes { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .domain-box {
+    flex: 1;
+    min-width: 140px;
+    padding: 0.6rem 0.8rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+  .domain-box.core-box { background: rgba(196,181,253,0.15); }
+  .domain-box.support-box { background: rgba(147,197,253,0.1); }
+  .domain-box.generic-box { background: rgba(229,231,235,0.08); }
+  .domain-box .box-title { font-weight: 600; margin-bottom: 0.2rem; }
+
+  /* Maturity */
+  .maturity-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 0.4rem;
+    margin: 1rem 0;
+  }
+  .maturity-col { text-align: center; }
+  .maturity-col .label { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.3rem; }
+  .maturity-bar-wrapper {
+    height: 120px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .maturity-bar {
+    width: 28px;
+    border-radius: 4px 4px 0 0;
+    transition: height 0.3s;
+  }
+  .maturity-score { font-size: 0.75rem; margin-top: 0.3rem; font-weight: 600; }
+  .maturity-legend {
+    display: flex;
+    gap: 1.5rem;
+    justify-content: center;
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  /* Nav comparison */
+  .nav-compare {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 1.5rem;
+    align-items: center;
+    margin: 1rem 0;
+  }
+  .nav-col { display: flex; flex-direction: column; gap: 0.3rem; }
+  .nav-item {
+    padding: 0.5rem 0.8rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .nav-item.active { border-color: var(--accent); }
+  .nav-item small { display: block; font-size: 0.7rem; color: var(--muted); }
+  .nav-arrow { font-size: 1.5rem; color: var(--muted); }
+  .nav-item.sowing-nav { background: rgba(254,243,199,0.1); border-color: rgba(217,119,6,0.3); }
+  .nav-item.cultivating-nav { background: rgba(209,250,229,0.1); border-color: rgba(5,150,105,0.3); }
+  .nav-item.harvesting-nav { background: rgba(219,234,254,0.1); border-color: rgba(37,99,235,0.3); }
+  .nav-item.gathering-nav { background: rgba(199,210,254,0.1); border-color: rgba(67,56,202,0.3); }
+  .nav-item.reflecting-nav { background: rgba(243,232,255,0.1); border-color: rgba(124,58,237,0.3); }
+
+  .callout {
+    background: rgba(124,58,237,0.08);
+    border-left: 3px solid var(--accent);
+    padding: 0.8rem 1rem;
+    border-radius: 0 8px 8px 0;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+  .callout strong { color: var(--accent-light); }
+
+  .stage-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+  }
+  .stage-table th {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--accent-light);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+  }
+  .stage-table td {
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    vertical-align: top;
+  }
+
+  @media (max-width: 700px) {
+    body { padding: 1rem; }
+    .nav-compare { grid-template-columns: 1fr; }
+    .nav-arrow { transform: rotate(90deg); text-align: center; }
+    .maturity-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+  /* ===== PRINT STYLES ===== */
+  @media print {
+    :root {
+      --bg: #fff;
+      --surface: #f9fafb;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: rgba(124, 58, 237, 0.3);
+    }
+    body { background: #fff; color: #111827; padding: 0.5in; font-size: 10pt; }
+    h1 { color: #5b21b6; }
+    h2 { color: #5b21b6; border-bottom-color: #ddd6fe; }
+    h3 { color: #1d4ed8; }
+    strong { color: #111827; }
+    .subtitle { color: #6b7280; }
+    .stream-node { border: 1px solid #d1d5db; }
+    .stream-node .name { color: #111827; }
+    .stream-node .act { color: #6b7280; }
+    .stream-arrow { color: #9ca3af; }
+    .stream-node.s1 { background: #fef3c7; }
+    .stream-node.s2 { background: #dbeafe; }
+    .stream-node.s3 { background: #e0e7ff; }
+    .stream-node.s4 { background: #d1fae5; }
+    .stream-node.s5 { background: #fce7f3; }
+    .stream-node.s6 { background: #fde68a; }
+    .stream-node.s7 { background: #c7d2fe; }
+    .stream-node.s8 { background: #f3e8ff; }
+    .cycle-note { color: #6b7280; }
+    .mapping-table th { color: #5b21b6; border-bottom-color: #ddd6fe; }
+    .mapping-table td { border-bottom-color: #e5e7eb; color: #111827; }
+    .node-badge { border: 1px solid #d1d5db; }
+    .node-badge.sowing { background: #fef3c7; color: #92400e; }
+    .node-badge.cultivating { background: #d1fae5; color: #065f46; }
+    .node-badge.harvesting { background: #dbeafe; color: #1e40af; }
+    .node-badge.gathering { background: #e0e7ff; color: #3730a3; }
+    .node-badge.reflecting { background: #f3e8ff; color: #6b21a8; }
+    .node-badge.about, .node-badge.admin { background: #f3f4f6; color: #374151; }
+    .callout { background: #f5f3ff; border-left-color: #7c3aed; color: #111827; }
+    .callout strong { color: #5b21b6; }
+    .domain-layer.core { background: #f5f3ff; border-color: #ddd6fe; }
+    .domain-layer.supporting { background: #eff6ff; border-color: #bfdbfe; }
+    .domain-layer.generic { background: #f9fafb; border-color: #e5e7eb; }
+    .domain-box.core-box { background: #ede9fe; }
+    .domain-box.support-box { background: #dbeafe; }
+    .domain-box.generic-box { background: #f3f4f6; }
+    .domain-box .box-title { color: #111827; }
+    .domain-label { color: #6b7280; }
+    .maturity-col .label { color: #6b7280; }
+    .maturity-legend { color: #6b7280; }
+    .nav-item { background: #f9fafb; border-color: #d1d5db; color: #111827; }
+    .nav-item small { color: #6b7280; }
+    .nav-item.sowing-nav { background: #fef3c7; border-color: #d97706; }
+    .nav-item.cultivating-nav { background: #d1fae5; border-color: #059669; }
+    .nav-item.harvesting-nav { background: #dbeafe; border-color: #2563eb; }
+    .nav-item.gathering-nav { background: #e0e7ff; border-color: #4338ca; }
+    .nav-item.reflecting-nav { background: #f3e8ff; border-color: #7c3aed; }
+    .nav-arrow { color: #9ca3af; }
+    .stage-table th { color: #5b21b6; border-bottom-color: #ddd6fe; }
+    .stage-table td { border-bottom-color: #e5e7eb; color: #111827; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Gathering Value Stream & Domain Map</h1>
+<div class="subtitle">From Wren (PM) &mdash; Updated 2026-02-26 &mdash; Foundational product doc</div>
+
+<p>Gathering's value isn't in storing data. It's in the movement from <strong>spark to self-understanding</strong>. The stream is a cycle &mdash; reflection generates new sparks.</p>
+
+<h2>The Value Stream</h2>
+
+<div class="stream-flow">
+  <div class="stream-node s1">
+    <span class="emoji">&#127793;</span>
+    <span class="name">Spark</span>
+    <span class="act">noticing</span>
+  </div>
+  <span class="stream-arrow">&rarr;</span>
+  <div class="stream-node s2">
+    <span class="emoji">&#128229;</span>
+    <span class="name">Capture</span>
+    <span class="act">preserving</span>
+  </div>
+  <span class="stream-arrow">&rarr;</span>
+  <div class="stream-node s3">
+    <span class="emoji">&#128256;</span>
+    <span class="name">Triage</span>
+    <span class="act">sorting</span>
+  </div>
+  <span class="stream-arrow">&rarr;</span>
+  <div class="stream-node s4">
+    <span class="emoji">&#127968;</span>
+    <span class="name">Settle</span>
+    <span class="act">placing</span>
+  </div>
+  <span class="stream-arrow">&rarr;</span>
+  <div class="stream-node s5">
+    <span class="emoji">&#128065;</span>
+    <span class="name">Revisit</span>
+    <span class="act">returning</span>
+  </div>
+  <span class="stream-arrow">&rarr;</span>
+  <div class="stream-node s6">
+    <span class="emoji">&#128260;</span>
+    <span class="name">Transform</span>
+    <span class="act">growing</span>
+  </div>
+  <span class="stream-arrow">&rarr;</span>
+  <div class="stream-node s7">
+    <span class="emoji">&#128279;</span>
+    <span class="name">Connect</span>
+    <span class="act">relating</span>
+  </div>
+  <span class="stream-arrow">&rarr;</span>
+  <div class="stream-node s8">
+    <span class="emoji">&#129694;</span>
+    <span class="name">Reflect</span>
+    <span class="act">understanding</span>
+  </div>
+</div>
+<div class="cycle-note">&#8634; Reflect feeds Spark &mdash; new understanding generates new questions</div>
+
+<h2>Mind Map Nodes &harr; Value Stream</h2>
+
+<p>The home page mind map is the primary navigation surface. Node names mirror the agricultural cycle.</p>
+
+<table class="mapping-table">
+  <thead>
+    <tr>
+      <th>Mind Map Node</th>
+      <th>Subtitle</th>
+      <th>Value Stream Stages</th>
+      <th>The Act</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="node-badge sowing">Sowing</span></td>
+      <td>capture &amp; seeds</td>
+      <td>Spark, Capture</td>
+      <td>Planting &mdash; raw material enters the system</td>
+    </tr>
+    <tr>
+      <td><span class="node-badge cultivating">Cultivating</span></td>
+      <td>ideas &amp; growth</td>
+      <td>Triage, Settle</td>
+      <td>Tending &mdash; sorting, placing, giving things a home</td>
+    </tr>
+    <tr>
+      <td><span class="node-badge harvesting">Harvesting</span></td>
+      <td>collections</td>
+      <td>Revisit, Transform</td>
+      <td>Collecting &mdash; returning to what's matured</td>
+    </tr>
+    <tr>
+      <td><span class="node-badge gathering">Gathering</span></td>
+      <td>find &amp; discover</td>
+      <td>Connect</td>
+      <td>Pulling together &mdash; cross-collection search</td>
+    </tr>
+    <tr>
+      <td><span class="node-badge reflecting">Reflecting</span></td>
+      <td>inner world</td>
+      <td>Reflect</td>
+      <td>Understanding &mdash; patterns, meaning, self-knowledge</td>
+    </tr>
+    <tr>
+      <td><span class="node-badge about">About</span></td>
+      <td>who &amp; what</td>
+      <td>&mdash;</td>
+      <td>Identity &mdash; Jeff's profile and product context</td>
+    </tr>
+    <tr>
+      <td><span class="node-badge admin">Admin</span></td>
+      <td>tools &amp; settings</td>
+      <td>&mdash;</td>
+      <td>Operations &mdash; system management</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <strong>Why this naming:</strong> "Gathering" as a node was confusing &mdash; same word as the app. Renaming capture to <strong>Sowing</strong> and search to <strong>Gathering</strong> makes the metaphor coherent: Sow &rarr; Cultivate &rarr; Harvest &rarr; Gather &rarr; Reflect. The app name covers the whole cycle; no single node claims it.
+</div>
+
+<h2>The Domain Map</h2>
+
+<div class="domain-stack">
+  <div class="domain-layer core">
+    <div class="domain-label">Core Domain</div>
+    <div class="domain-boxes">
+      <div class="domain-box core-box">
+        <div class="box-title">Meaning-Making</div>
+        Glimmer &harr; Idea &rarr; Project<br>
+        Connections &middot; Lifecycles &middot; Transitions<br>
+        <em style="color: var(--muted); font-size: 0.75rem;">This is where Gathering is Gathering.</em>
+      </div>
+    </div>
+  </div>
+  <div class="domain-layer supporting">
+    <div class="domain-label">Supporting Domains</div>
+    <div class="domain-boxes">
+      <div class="domain-box support-box">
+        <div class="box-title">Capture</div>
+        Channels &middot; CaptureItem<br>Provenance &middot; Media types
+      </div>
+      <div class="domain-box support-box">
+        <div class="box-title">Organization</div>
+        Collections &middot; Pods<br>Locations &middot; Tags
+      </div>
+      <div class="domain-box support-box">
+        <div class="box-title">Reflection</div>
+        Provenance queries<br>Pattern surfacing &middot; Browse
+      </div>
+    </div>
+  </div>
+  <div class="domain-layer generic">
+    <div class="domain-label">Generic Domains</div>
+    <div class="domain-boxes">
+      <div class="domain-box generic-box">
+        <div class="box-title">Identity</div>
+        SOLID / WebID
+      </div>
+      <div class="domain-box generic-box">
+        <div class="box-title">Storage</div>
+        Pods / Fuseki
+      </div>
+      <div class="domain-box generic-box">
+        <div class="box-title">Comms</div>
+        Slack / SMS
+      </div>
+      <div class="domain-box generic-box">
+        <div class="box-title">Observability</div>
+        Prom / Grafana
+      </div>
+      <div class="domain-box generic-box">
+        <div class="box-title">Content</div>
+        WordPress / Harvest
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="callout">
+  <strong>Key insight:</strong> Meaning-Making touches five of eight value stream stages. It <em>is</em> the value stream. Capture and Organization are necessary plumbing. Reflection is the payoff.
+</div>
+
+<h2>Value Stream Maturity</h2>
+
+<div class="maturity-grid">
+  <div class="maturity-col">
+    <div class="label">Spark</div>
+    <div class="maturity-bar-wrapper">
+      <div class="maturity-bar" style="height: 100%; background: linear-gradient(to top, rgba(217,119,6,0.3), rgba(217,119,6,0.7));"></div>
+    </div>
+    <div class="maturity-score" style="color: #34d399;">3</div>
+  </div>
+  <div class="maturity-col">
+    <div class="label">Capture</div>
+    <div class="maturity-bar-wrapper">
+      <div class="maturity-bar" style="height: 66%; background: linear-gradient(to top, rgba(37,99,235,0.3), rgba(37,99,235,0.7));"></div>
+    </div>
+    <div class="maturity-score" style="color: #fbbf24;">2</div>
+  </div>
+  <div class="maturity-col">
+    <div class="label">Triage</div>
+    <div class="maturity-bar-wrapper">
+      <div class="maturity-bar" style="height: 66%; background: linear-gradient(to top, rgba(79,70,229,0.3), rgba(79,70,229,0.7));"></div>
+    </div>
+    <div class="maturity-score" style="color: #fbbf24;">2</div>
+  </div>
+  <div class="maturity-col">
+    <div class="label">Settle</div>
+    <div class="maturity-bar-wrapper">
+      <div class="maturity-bar" style="height: 66%; background: linear-gradient(to top, rgba(5,150,105,0.3), rgba(5,150,105,0.7));"></div>
+    </div>
+    <div class="maturity-score" style="color: #fbbf24;">2</div>
+  </div>
+  <div class="maturity-col">
+    <div class="label">Revisit</div>
+    <div class="maturity-bar-wrapper">
+      <div class="maturity-bar" style="height: 33%; background: linear-gradient(to top, rgba(219,39,119,0.3), rgba(219,39,119,0.7));"></div>
+    </div>
+    <div class="maturity-score" style="color: #f87171;">1</div>
+  </div>
+  <div class="maturity-col">
+    <div class="label">Transform</div>
+    <div class="maturity-bar-wrapper">
+      <div class="maturity-bar" style="height: 33%; background: linear-gradient(to top, rgba(217,119,6,0.3), rgba(217,119,6,0.7));"></div>
+    </div>
+    <div class="maturity-score" style="color: #f87171;">1</div>
+  </div>
+  <div class="maturity-col">
+    <div class="label">Connect</div>
+    <div class="maturity-bar-wrapper">
+      <div class="maturity-bar" style="height: 3%; background: rgba(67,56,202,0.4);"></div>
+    </div>
+    <div class="maturity-score" style="color: #ef4444;">0</div>
+  </div>
+  <div class="maturity-col">
+    <div class="label">Reflect</div>
+    <div class="maturity-bar-wrapper">
+      <div class="maturity-bar" style="height: 3%; background: rgba(124,58,237,0.4);"></div>
+    </div>
+    <div class="maturity-score" style="color: #ef4444;">0</div>
+  </div>
+</div>
+<div class="maturity-legend">
+  <span><strong style="color: #34d399;">3</strong> Healthy</span>
+  <span><strong style="color: #fbbf24;">2</strong> Partially built</span>
+  <span><strong style="color: #f87171;">1</strong> Minimal</span>
+  <span><strong style="color: #ef4444;">0</strong> Not built</span>
+</div>
+
+<div class="callout">
+  Strong on the left side (getting things in), weak on the right side (getting understanding out). The right side is where the unique value lives.
+</div>
+
+<h2>Navigation: Current &rarr; Proposed</h2>
+
+<div class="nav-compare">
+  <div class="nav-col">
+    <div style="text-align: center; color: var(--muted); font-size: 0.8rem; margin-bottom: 0.5rem;">CURRENT</div>
+    <div class="nav-item">Home</div>
+    <div class="nav-item">Projects</div>
+    <div class="nav-item">Collections <small>Blog, Books, Property...</small></div>
+    <div class="nav-item">Admin <small>Capture Triage, Users, API Docs</small></div>
+  </div>
+  <div class="nav-arrow">&rarr;</div>
+  <div class="nav-col">
+    <div style="text-align: center; color: var(--muted); font-size: 0.8rem; margin-bottom: 0.5rem;">PROPOSED (VALUE-STREAM)</div>
+    <div class="nav-item">Home</div>
+    <div class="nav-item sowing-nav">Sowing <small>SMS Triage &middot; Catalog</small></div>
+    <div class="nav-item cultivating-nav">Cultivating <small>Glimmers &middot; Ideas &middot; Projects</small></div>
+    <div class="nav-item harvesting-nav">Harvesting <small>Collections</small></div>
+    <div class="nav-item gathering-nav">Gathering <small>Search &middot; Discovery</small></div>
+    <div class="nav-item reflecting-nav">Reflecting <small>Dashboard &middot; Patterns</small></div>
+    <div class="nav-item">Admin <small>Users &middot; Model & Data</small></div>
+  </div>
+</div>
+
+<p style="text-align: center; color: var(--muted); font-size: 0.85rem; margin-top: 1rem;">
+  Sow &rarr; Cultivate &rarr; Harvest &rarr; Gather &rarr; Reflect<br>
+  The nav follows the agricultural cycle.
+</p>
+
+<hr>
+
+<h2>Open Questions</h2>
+<table class="stage-table">
+  <tbody>
+    <tr>
+      <td><strong>For Jeff</strong></td>
+      <td>Does this stream match your experience of how you actually use (or want to use) the system? Is there a stage missing?</td>
+    </tr>
+    <tr>
+      <td><strong>For Silas</strong></td>
+      <td>Does the domain map align with the ontology's current shape? Is Meaning-Making the right framing for the core domain?</td>
+    </tr>
+    <tr>
+      <td><strong>For the team</strong></td>
+      <td>Should Reflection become an explicit part of the ontology (saved queries, reflection entries), or stay as a UI/query concern?</td>
+    </tr>
+  </tbody>
+</table>
+
+<div style="text-align: right; color: var(--muted); margin-top: 2rem; font-size: 0.85rem;">&mdash; Wren, 2026-02-26</div>
+
+</body>
+</html>

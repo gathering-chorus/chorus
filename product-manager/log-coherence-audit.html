@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Log Coherence Audit — 2026-03-01</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --orange: #d18616;
+    --cyan: #39d2c0;
+    --wren: #58a6ff;
+    --silas: #bc8cff;
+    --kade: #3fb950;
+    --jeff: #d29922;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; color: var(--accent); margin-bottom: 0.25rem; }
+  h2 { font-size: 1.2rem; color: var(--text); margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1rem; color: var(--accent); margin: 1.5rem 0 0.75rem; }
+  .subtitle { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 2rem; }
+  .grid { display: grid; gap: 1rem; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+  .card-title { font-size: 0.95rem; font-weight: 600; }
+  .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; font-weight: 600; }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-yellow { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge-blue { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); }
+  .stat { text-align: center; padding: 1rem; }
+  .stat-value { font-size: 2rem; font-weight: 700; }
+  .stat-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; padding: 0.5rem 0.75rem; color: var(--text-muted); font-weight: 600; border-bottom: 2px solid var(--border); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  .bar-container { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .bar { height: 100%; border-radius: 4px; transition: width 0.3s; }
+  .bar-green { background: var(--green); }
+  .bar-yellow { background: var(--yellow); }
+  .bar-red { background: var(--red); }
+  .bar-blue { background: var(--accent); }
+  .bar-purple { background: var(--purple); }
+  .coherence-score { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .score-ring { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.1rem; }
+  .score-good { border: 3px solid var(--green); color: var(--green); }
+  .score-warn { border: 3px solid var(--yellow); color: var(--yellow); }
+  .score-bad { border: 3px solid var(--red); color: var(--red); }
+  .flow-diagram { display: flex; align-items: center; gap: 0; margin: 1.5rem 0; flex-wrap: wrap; }
+  .flow-stage { background: var(--surface); border: 2px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; text-align: center; min-width: 140px; position: relative; }
+  .flow-stage.active { border-color: var(--accent); }
+  .flow-arrow { color: var(--text-muted); font-size: 1.5rem; padding: 0 0.5rem; }
+  .flow-stage-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 0.25rem; }
+  .flow-stage-count { font-size: 1.5rem; font-weight: 700; }
+  .flow-stage-sources { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem; }
+  .gap { border-left: 3px solid var(--red); padding-left: 1rem; margin: 0.75rem 0; }
+  .strength { border-left: 3px solid var(--green); padding-left: 1rem; margin: 0.75rem 0; }
+  .warning { border-left: 3px solid var(--yellow); padding-left: 1rem; margin: 0.75rem 0; }
+  .tag { font-size: 0.7rem; padding: 1px 6px; border-radius: 3px; margin-right: 4px; display: inline-block; }
+  .tag-wren { background: rgba(88,166,255,0.15); color: var(--wren); }
+  .tag-silas { background: rgba(188,140,255,0.15); color: var(--silas); }
+  .tag-kade { background: rgba(63,185,80,0.15); color: var(--kade); }
+  .tag-jeff { background: rgba(210,153,34,0.15); color: var(--jeff); }
+  .entity-map { display: grid; grid-template-columns: 120px 1fr; gap: 0.5rem; align-items: start; font-size: 0.85rem; margin: 0.5rem 0; }
+  .entity-label { color: var(--text-muted); font-weight: 600; text-align: right; padding-right: 0.75rem; border-right: 2px solid var(--border); }
+  .entity-values { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 0.75rem; }
+  .section-intro { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; max-width: 80ch; }
+  .footnote { font-size: 0.75rem; color: var(--text-muted); margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+  @media (max-width: 900px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } .flow-diagram { flex-direction: column; } .flow-arrow { transform: rotate(90deg); } }
+</style>
+</head>
+<body>
+
+<h1>Chorus Log Coherence Audit</h1>
+<div class="subtitle">2026-03-01 — 7 log sources, 4 value stream stages, 3 roles, 42,843 events analyzed</div>
+
+<!-- ============================================ -->
+<!-- OVERALL COHERENCE SCORE -->
+<!-- ============================================ -->
+<h2>Overall Coherence</h2>
+<div class="grid grid-4">
+  <div class="card stat">
+    <div class="coherence-score"><div class="score-ring score-warn">B-</div></div>
+    <div class="stat-label" style="margin-top:0.75rem">Overall Score</div>
+  </div>
+  <div class="card stat">
+    <div class="stat-value" style="color:var(--green)">A</div>
+    <div class="stat-label">Schema Consistency</div>
+  </div>
+  <div class="card stat">
+    <div class="stat-value" style="color:var(--yellow)">C+</div>
+    <div class="stat-label">Coverage Balance</div>
+  </div>
+  <div class="card stat">
+    <div class="stat-value" style="color:var(--yellow)">C</div>
+    <div class="stat-label">Lifecycle Completeness</div>
+  </div>
+</div>
+
+<p class="section-intro" style="margin-top:1rem">
+  <strong>Schema consistency is strong</strong> — all 4 JSONL files share an envelope pattern (timestamp, level, appName, role).
+  <strong>Coverage is imbalanced</strong> — 67% of all events are tool telemetry (permission-prompts), while handoff tracking (the connective tissue between roles) is the thinnest log at 317 events and isn't even in Loki.
+  <strong>Lifecycle tracking has gaps</strong> — Building and Proving vertebrae are well-instrumented; Directing and Capturing are nearly invisible in the log stream.
+</p>
+
+<!-- ============================================ -->
+<!-- VALUE STREAM FLOW -->
+<!-- ============================================ -->
+<h2>Value Stream Coverage</h2>
+<p class="section-intro">Events mapped to Werk vertebrae. The stream should show balanced instrumentation across all stages. Gaps mean we're blind to that part of the work.</p>
+
+<div class="flow-diagram">
+  <div class="flow-stage">
+    <div class="flow-stage-title" style="color:var(--yellow)">Capturing</div>
+    <div class="flow-stage-count" style="color:var(--red)">~50</div>
+    <div class="flow-stage-sources">harvest.*, card.created<br>brief.handoff.written</div>
+    <div style="margin-top:0.5rem"><span class="badge badge-red">UNDERSERVED</span></div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-stage">
+    <div class="flow-stage-title" style="color:var(--wren)">Directing</div>
+    <div class="flow-stage-count" style="color:var(--red)">~120</div>
+    <div class="flow-stage-sources">card.moved, card.priority<br>session.docscan, brief.*</div>
+    <div style="margin-top:0.5rem"><span class="badge badge-red">UNDERSERVED</span></div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-stage active">
+    <div class="flow-stage-title" style="color:var(--kade)">Building</div>
+    <div class="flow-stage-count" style="color:var(--green)">~8,400</div>
+    <div class="flow-stage-sources">build.*, session.tool.*<br>deploy.*, test.*, guard.*</div>
+    <div style="margin-top:0.5rem"><span class="badge badge-green">STRONG</span></div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-stage">
+    <div class="flow-stage-title" style="color:var(--silas)">Proving</div>
+    <div class="flow-stage-count" style="color:var(--yellow)">~620</div>
+    <div class="flow-stage-sources">deploy.completed<br>card.done, ops.defect.*</div>
+    <div style="margin-top:0.5rem"><span class="badge badge-yellow">THIN</span></div>
+  </div>
+</div>
+
+<div class="flow-diagram">
+  <div class="flow-stage" style="width:100%; border-color:var(--purple);">
+    <div class="flow-stage-title" style="color:var(--purple)">System / Operations (cross-cutting)</div>
+    <div class="flow-stage-count">~33,650</div>
+    <div class="flow-stage-sources">permission-prompts (28,888) + ops.* + protocol.* + session.* lifecycle + command-errors (382) + app container logs</div>
+    <div style="margin-top:0.5rem"><span class="badge badge-yellow">OVERWEIGHT — 78% of all events</span></div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- LOG SOURCE INVENTORY -->
+<!-- ============================================ -->
+<h2>Log Source Inventory</h2>
+
+<div class="card" style="overflow-x:auto">
+<table>
+  <tr>
+    <th>Source</th>
+    <th>Format</th>
+    <th>Events</th>
+    <th>In Loki?</th>
+    <th>Rotation?</th>
+    <th>Value Stream</th>
+    <th>Coherence</th>
+  </tr>
+  <tr>
+    <td><strong>chorus.log</strong></td>
+    <td>JSONL</td>
+    <td>13,256</td>
+    <td><span class="badge badge-green">Yes</span></td>
+    <td><span class="badge badge-red">None</span></td>
+    <td>All stages</td>
+    <td><span class="badge badge-green">A</span></td>
+  </tr>
+  <tr>
+    <td><strong>permission-prompts.log</strong></td>
+    <td>JSONL</td>
+    <td>28,888</td>
+    <td><span class="badge badge-green">Yes</span></td>
+    <td><span class="badge badge-red">None</span></td>
+    <td>System (telemetry)</td>
+    <td><span class="badge badge-green">A</span></td>
+  </tr>
+  <tr>
+    <td><strong>command-errors.log</strong></td>
+    <td>JSONL</td>
+    <td>382</td>
+    <td><span class="badge badge-green">Yes</span></td>
+    <td><span class="badge badge-green">10K→7.5K</span></td>
+    <td>Building + Ops</td>
+    <td><span class="badge badge-green">A</span></td>
+  </tr>
+  <tr>
+    <td><strong>handoffs.log</strong></td>
+    <td>JSONL</td>
+    <td>317</td>
+    <td><span class="badge badge-red">No</span></td>
+    <td><span class="badge badge-red">None</span></td>
+    <td>Directing</td>
+    <td><span class="badge badge-red">D</span></td>
+  </tr>
+  <tr>
+    <td><strong>App container logs</strong></td>
+    <td>JSONL (Docker)</td>
+    <td>~continuous</td>
+    <td><span class="badge badge-green">Yes</span></td>
+    <td><span class="badge badge-yellow">Ephemeral</span></td>
+    <td>Building + Proving</td>
+    <td><span class="badge badge-green">A-</span></td>
+  </tr>
+  <tr>
+    <td><strong>Audit logs</strong></td>
+    <td>JSONL (daily)</td>
+    <td>~22,172</td>
+    <td><span class="badge badge-red">No</span></td>
+    <td><span class="badge badge-red">None</span></td>
+    <td>Proving (compliance)</td>
+    <td><span class="badge badge-red">D</span></td>
+  </tr>
+  <tr>
+    <td><strong>LaunchAgent logs</strong></td>
+    <td>Plain text</td>
+    <td>varies</td>
+    <td><span class="badge badge-red">No</span></td>
+    <td><span class="badge badge-red">/tmp only</span></td>
+    <td>System (infra)</td>
+    <td><span class="badge badge-red">F</span></td>
+  </tr>
+  <tr>
+    <td><strong>Textfile collector</strong></td>
+    <td>.prom files</td>
+    <td>7 metrics files</td>
+    <td>N/A (Prometheus)</td>
+    <td><span class="badge badge-green">Overwrite</span></td>
+    <td>Building + Proving</td>
+    <td><span class="badge badge-green">A</span></td>
+  </tr>
+  <tr>
+    <td><strong>Spine events (direct push)</strong></td>
+    <td>JSONL→Loki HTTP</td>
+    <td>subset of chorus</td>
+    <td><span class="badge badge-green">Yes</span></td>
+    <td>N/A (push)</td>
+    <td>Building + Ops</td>
+    <td><span class="badge badge-yellow">B-</span></td>
+  </tr>
+</table>
+</div>
+
+<!-- ============================================ -->
+<!-- ENTITY MAPPING -->
+<!-- ============================================ -->
+<h2>Entity Coverage</h2>
+<p class="section-intro">Which entities are tracked across the log ecosystem, and where the blind spots are.</p>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Roles (Who)</span>
+      <span class="badge badge-green">Well-tracked</span>
+    </div>
+    <div class="entity-map">
+      <div class="entity-label">chorus.log</div>
+      <div class="entity-values"><span class="tag tag-wren">wren</span><span class="tag tag-silas">silas</span><span class="tag tag-kade">kade</span></div>
+      <div class="entity-label">errors.log</div>
+      <div class="entity-values"><span class="tag tag-wren">wren</span><span class="tag tag-silas">silas</span><span class="tag tag-kade">kade</span></div>
+      <div class="entity-label">permissions.log</div>
+      <div class="entity-values"><span class="tag tag-wren">wren</span><span class="tag tag-silas">silas</span><span class="tag tag-kade">kade</span></div>
+      <div class="entity-label">handoffs.log</div>
+      <div class="entity-values"><span class="tag tag-wren">from</span><span class="tag tag-silas">to</span> (bi-directional)</div>
+      <div class="entity-label">app logs</div>
+      <div class="entity-values" style="color:var(--red)">No role attribution</div>
+      <div class="entity-label">audit logs</div>
+      <div class="entity-values" style="color:var(--red)">actor = WebID only</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Cards (What)</span>
+      <span class="badge badge-yellow">Partial</span>
+    </div>
+    <div class="entity-map">
+      <div class="entity-label">chorus.log</div>
+      <div class="entity-values">card.* events carry card ID</div>
+      <div class="entity-label">errors.log</div>
+      <div class="entity-values" style="color:var(--red)">No card reference</div>
+      <div class="entity-label">permissions.log</div>
+      <div class="entity-values" style="color:var(--red)">No card reference</div>
+      <div class="entity-label">handoffs.log</div>
+      <div class="entity-values" style="color:var(--yellow)">Implicit via brief filename</div>
+      <div class="entity-label">git commits</div>
+      <div class="entity-values">Convention: (#N) or (C#N)</div>
+      <div class="entity-label">app logs</div>
+      <div class="entity-values" style="color:var(--red)">No card reference</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Services (Where)</span>
+      <span class="badge badge-green">Strong</span>
+    </div>
+    <div class="entity-map">
+      <div class="entity-label">Docker logs</div>
+      <div class="entity-values">container_name, service labels</div>
+      <div class="entity-label">Prometheus</div>
+      <div class="entity-values">job label on all scrapes</div>
+      <div class="entity-label">app logs</div>
+      <div class="entity-values">appName, component fields</div>
+      <div class="entity-label">chorus.log</div>
+      <div class="entity-values">appName + component</div>
+      <div class="entity-label">blackbox</div>
+      <div class="entity-values">12 probe targets tracked</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Domains (Which data)</span>
+      <span class="badge badge-yellow">Mixed</span>
+    </div>
+    <div class="entity-map">
+      <div class="entity-label">chorus.log</div>
+      <div class="entity-values">harvest.* events carry domain</div>
+      <div class="entity-label">Fuseki perf</div>
+      <div class="entity-values">query names (triple_count, etc)</div>
+      <div class="entity-label">app routes</div>
+      <div class="entity-values">path: /music, /photos, /self, etc</div>
+      <div class="entity-label">audit logs</div>
+      <div class="entity-values">resource path carries domain</div>
+      <div class="entity-label">errors.log</div>
+      <div class="entity-values" style="color:var(--red)">No domain label</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- VOLUME ANALYSIS -->
+<!-- ============================================ -->
+<h2>Volume Analysis</h2>
+<p class="section-intro">Event volume should reflect work distribution. When one log dominates, the others lose signal.</p>
+
+<div class="card">
+  <table>
+    <tr>
+      <th>Source</th>
+      <th>Events</th>
+      <th>% of Total</th>
+      <th>Distribution</th>
+      <th>Assessment</th>
+    </tr>
+    <tr>
+      <td>permission-prompts.log</td>
+      <td>28,888</td>
+      <td>67.4%</td>
+      <td><div class="bar-container" style="width:200px"><div class="bar bar-yellow" style="width:100%"></div></div></td>
+      <td><span class="badge badge-yellow">Overweight</span> — telemetry drowns signal</td>
+    </tr>
+    <tr>
+      <td>chorus.log</td>
+      <td>13,256</td>
+      <td>30.9%</td>
+      <td><div class="bar-container" style="width:200px"><div class="bar bar-green" style="width:45.9%"></div></div></td>
+      <td><span class="badge badge-green">Healthy</span> — spine of the system</td>
+    </tr>
+    <tr>
+      <td>command-errors.log</td>
+      <td>382</td>
+      <td>0.9%</td>
+      <td><div class="bar-container" style="width:200px"><div class="bar bar-green" style="width:1.3%"></div></div></td>
+      <td><span class="badge badge-green">Appropriate</span> — errors should be rare</td>
+    </tr>
+    <tr>
+      <td>handoffs.log</td>
+      <td>317</td>
+      <td>0.7%</td>
+      <td><div class="bar-container" style="width:200px"><div class="bar bar-red" style="width:1.1%"></div></div></td>
+      <td><span class="badge badge-red">Underweight</span> — connective tissue is thin</td>
+    </tr>
+  </table>
+</div>
+
+<div class="grid grid-3" style="margin-top:1rem">
+  <div class="card">
+    <div class="card-header"><span class="card-title">Role Distribution (Tool Calls)</span></div>
+    <table>
+      <tr><td><span class="tag tag-kade">Kade</span></td><td>12,847</td><td>44.5%</td><td><div class="bar-container"><div class="bar bar-green" style="width:100%"></div></div></td></tr>
+      <tr><td><span class="tag tag-wren">Wren</span></td><td>9,221</td><td>31.9%</td><td><div class="bar-container"><div class="bar bar-blue" style="width:71.8%"></div></div></td></tr>
+      <tr><td><span class="tag tag-silas">Silas</span></td><td>6,820</td><td>23.6%</td><td><div class="bar-container"><div class="bar bar-purple" style="width:53.1%"></div></div></td></tr>
+    </table>
+    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem">Tracks with DEC-022 intent: 60/25/15 → actual 32/24/44 (Kade over-indexed from pipeline work)</div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Top Tools (All Roles)</span></div>
+    <table>
+      <tr><td>Read</td><td>10,201</td><td><div class="bar-container"><div class="bar bar-blue" style="width:100%"></div></div></td></tr>
+      <tr><td>Bash</td><td>7,544</td><td><div class="bar-container"><div class="bar bar-blue" style="width:74%"></div></div></td></tr>
+      <tr><td>Write</td><td>3,012</td><td><div class="bar-container"><div class="bar bar-blue" style="width:29.5%"></div></div></td></tr>
+      <tr><td>Edit</td><td>2,880</td><td><div class="bar-container"><div class="bar bar-blue" style="width:28.2%"></div></div></td></tr>
+      <tr><td>Grep</td><td>2,341</td><td><div class="bar-container"><div class="bar bar-blue" style="width:22.9%"></div></div></td></tr>
+      <tr><td>Glob</td><td>1,577</td><td><div class="bar-container"><div class="bar bar-blue" style="width:15.5%"></div></div></td></tr>
+      <tr><td>Agent</td><td>844</td><td><div class="bar-container"><div class="bar bar-blue" style="width:8.3%"></div></div></td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Error Fingerprints (Top 5)</span></div>
+    <table>
+      <tr><td style="color:var(--red)">ENOENT</td><td>38</td><td>10%</td><td><div class="bar-container"><div class="bar bar-red" style="width:100%"></div></div></td></tr>
+      <tr><td style="color:var(--red)">CMD_NOT_FOUND</td><td>29</td><td>7.6%</td><td><div class="bar-container"><div class="bar bar-red" style="width:76%"></div></div></td></tr>
+      <tr><td style="color:var(--yellow)">GIT_FATAL</td><td>24</td><td>6.3%</td><td><div class="bar-container"><div class="bar bar-yellow" style="width:63%"></div></div></td></tr>
+      <tr><td style="color:var(--yellow)">TIMEOUT</td><td>18</td><td>4.7%</td><td><div class="bar-container"><div class="bar bar-yellow" style="width:47%"></div></div></td></tr>
+      <tr><td style="color:var(--yellow)">SYNTAX_ERR</td><td>15</td><td>3.9%</td><td><div class="bar-container"><div class="bar bar-yellow" style="width:39%"></div></div></td></tr>
+    </table>
+    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem">382 total errors across 10 named + SHA fingerprints. Auto-carding now active for 3+ session recurrences.</div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- CHORUS.LOG EVENT TAXONOMY -->
+<!-- ============================================ -->
+<h2>Chorus Spine Event Taxonomy</h2>
+<p class="section-intro">The spine (chorus.log) is the central nervous system. 60 canonical event types across 5 vertebrae, with ~50 legacy aliases. Here's what's actually being emitted.</p>
+
+<div class="card" style="overflow-x:auto">
+<table>
+  <tr>
+    <th>Vertebra</th>
+    <th>Event Prefix</th>
+    <th>Examples</th>
+    <th>Emitters</th>
+    <th>Volume</th>
+    <th>Health</th>
+  </tr>
+  <tr>
+    <td style="color:var(--yellow)"><strong>Capturing</strong></td>
+    <td>harvest.*, card.created</td>
+    <td>harvest.pipeline.started, card.created</td>
+    <td>harvest scripts, board-ts</td>
+    <td>~50</td>
+    <td><span class="badge badge-red">Low</span></td>
+  </tr>
+  <tr>
+    <td style="color:var(--wren)"><strong>Directing</strong></td>
+    <td>card.*, brief.*, session.docscan.*</td>
+    <td>card.moved, brief.handoff.written, session.docscan.completed</td>
+    <td>board-ts, handoff-logger, werk-init</td>
+    <td>~120</td>
+    <td><span class="badge badge-red">Low</span></td>
+  </tr>
+  <tr>
+    <td style="color:var(--kade)"><strong>Building</strong></td>
+    <td>build.*, deploy.phase.*, guard.*</td>
+    <td>build.tsc.completed, deploy.phase.started, guard.write_scrub.*</td>
+    <td>git hooks, app-state.sh, write-scrubber</td>
+    <td>~8,400</td>
+    <td><span class="badge badge-green">Strong</span></td>
+  </tr>
+  <tr>
+    <td style="color:var(--silas)"><strong>Proving</strong></td>
+    <td>deploy.completed, card.done, ops.defect.*</td>
+    <td>deploy.completed, ops.defect.detected, card.completed</td>
+    <td>app-state.sh, defect-poller, board-ts</td>
+    <td>~620</td>
+    <td><span class="badge badge-yellow">Thin</span></td>
+  </tr>
+  <tr>
+    <td style="color:var(--purple)"><strong>Operations</strong></td>
+    <td>ops.*, protocol.*, session.*</td>
+    <td>ops.container.health, protocol.boot.*, session.role.started</td>
+    <td>ops-agent, werk-init, app-state</td>
+    <td>~4,066</td>
+    <td><span class="badge badge-green">Strong</span></td>
+  </tr>
+</table>
+</div>
+
+<!-- ============================================ -->
+<!-- GAPS AND FINDINGS -->
+<!-- ============================================ -->
+<h2>Coherence Findings</h2>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h3 style="color:var(--red)">Gaps (Not in Loki = Invisible)</h3>
+
+    <div class="gap">
+      <strong>handoffs.log — not scraped by Promtail</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">317 handoff events exist on disk but can't be queried in Grafana. This is the connective tissue between roles — the log of who handed what to whom. You can't see brief flow or workflow transitions in Loki.</span><br>
+      <span class="badge badge-red">Fix: add Promtail scrape job</span>
+    </div>
+
+    <div class="gap">
+      <strong>audit-YYYY-MM-DD.jsonl — not scraped</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">~22K SOLID compliance events (pod reads/writes) accumulate on disk with no rotation and no Loki ingestion. This is the only log that tracks what Jeff actually does in the app. Lost on disk cleanup.</span><br>
+      <span class="badge badge-red">Fix: add Promtail scrape + rotation policy</span>
+    </div>
+
+    <div class="gap">
+      <strong>LaunchAgent logs — /tmp, no scraping, no structure</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">5 services (images-api-server, video-server, andon-light, andon-enrich, media-server) log to /tmp as plain text. Lost on reboot. No role attribution, no structured fields, no Loki. The Bedroom Mac's services are completely invisible.</span><br>
+      <span class="badge badge-red">Fix: structured logging + Promtail on both machines</span>
+    </div>
+
+    <div class="gap">
+      <strong>TrafficTrackerMiddleware — in-memory only</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">7-day traffic analytics (external vs internal, paths, countries) live entirely in process memory. Container restart = data gone. Not persisted, not in Loki, not in Prometheus.</span><br>
+      <span class="badge badge-yellow">Fix: persist to Prometheus or periodic snapshots</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="color:var(--green)">Strengths</h3>
+
+    <div class="strength">
+      <strong>JSONL envelope consistency</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">All 4 team logs share a common envelope: timestamp, level, appName, component/event/role. Promtail pipeline configurations correctly parse and promote labels. This means cross-log correlation in Grafana works when data is there.</span>
+    </div>
+
+    <div class="strength">
+      <strong>Spine event schema contract</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">spine-events.json v2.0.0 defines ~60 canonical events with legacy alias mapping. chorus-log.sh validates against it. This is a real schema contract — unusual for shell-based systems and a genuine strength.</span>
+    </div>
+
+    <div class="strength">
+      <strong>correlationId propagation</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">App logs carry correlationId + requestId through the entire Express middleware chain, including Cloudflare headers. Grafana derived field links correlationId to Prometheus. This enables cross-datasource tracing.</span>
+    </div>
+
+    <div class="strength">
+      <strong>Textfile collector bridge</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">7 .prom files bridge shell events (git hooks, deploys, Fuseki perf, costs) into Prometheus via node-exporter. Clean, well-understood pattern. Pre-commit and pre-push hooks emit both spine events AND metrics simultaneously.</span>
+    </div>
+
+    <div class="strength">
+      <strong>Error fingerprinting with auto-carding</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">command-errors.log has tiered fingerprinting (10 named categories + SHA fallback) plus the andon .struggling marker. As of today, werk-init.sh auto-cards patterns recurring in 3+ sessions.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- OVERUSE / UNDERUSE -->
+<!-- ============================================ -->
+<h2>Over-use / Under-use Analysis</h2>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h3 style="color:var(--yellow)">Over-instrumented</h3>
+
+    <div class="warning">
+      <strong>permission-prompts.log: 28,888 events (67% of all)</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">Every tool call by every role is logged. Useful for time-allocation analysis but at massive volume cost. This single log is 2.2x larger than all other logs combined. Consider: sample at 10% or aggregate per-session rather than per-call. The same data exists in Claude's session JSONLs.</span>
+    </div>
+
+    <div class="warning">
+      <strong>Fuseki PUT defect cards: 30+ in Won't Do</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">defect-poller.sh created 30+ cards for normal Fuseki PUT operations that were misclassified as errors. These are INFO-level log lines (pod writes), not defects. The poller's pattern matching treats any Fuseki log line with a status code as an error. This is noise, not signal.</span>
+    </div>
+
+    <div class="warning">
+      <strong>ops-agent duplicate cards</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">Multiple cards for the same condition (e.g., 5 separate "C3 memory above 85%" cards, 3 separate "Cloudflare tunnel unreachable" cards). Dedup is in place but seems threshold-based rather than state-based.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="color:var(--red)">Under-instrumented</h3>
+
+    <div class="gap">
+      <strong>Capturing vertebra: ~50 events total</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">Jeff's ideas, SMS captures, photo captures, hashtag routing — the start of the value stream — generate almost no spine events. We know when a card is created but not when an idea enters the system. The capture-to-card journey is invisible.</span>
+    </div>
+
+    <div class="gap">
+      <strong>Directing vertebra: ~120 events total</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">Card prioritization, AC writing, brief exchanges, and Wren's product decisions generate minimal events. We can see briefs written (handoffs.log) but not read, prioritized, or acted on. The directing intelligence is a black box.</span>
+    </div>
+
+    <div class="gap">
+      <strong>Demo/acceptance: zero dedicated events</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">DEC-048 (Proving gate) defines deploy→demo→accept. Deploys emit events. Acceptance is a board move. But the demo itself — Jeff seeing the work, reacting, accepting or rejecting — has no event. This is the highest-value moment in the stream and it's invisible.</span>
+    </div>
+
+    <div class="gap">
+      <strong>Bedroom Mac: completely dark</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">No Promtail on 192.168.86.242. LaunchAgent logs go to /tmp. images-api-server and video-server health is known only through blackbox probes (external) and SSH commands (manual). 178TB of media served from an unobserved machine.</span>
+    </div>
+
+    <div class="gap">
+      <strong>Reflect/Self AI interactions: unlogged</strong><br>
+      <span style="color:var(--text-muted);font-size:0.85rem">The Mistral model on Bedroom Mac handles Reflect queries (SPARQL generation, response synthesis) but no query or latency data reaches any log. #602 (latency card) exists but the measurement infrastructure doesn't.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- CROSS-CUTTING CONCERNS -->
+<!-- ============================================ -->
+<h2>Cross-Cutting Concerns</h2>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h3>Rotation & Retention</h3>
+    <table>
+      <tr><th>Source</th><th>On-Disk</th><th>In Loki</th><th>Risk</th></tr>
+      <tr><td>chorus.log</td><td style="color:var(--red)">Unbounded</td><td>168h</td><td>13K lines, growing ~500/day</td></tr>
+      <tr><td>permissions.log</td><td style="color:var(--red)">Unbounded</td><td>168h</td><td>28K lines, growing ~2K/day</td></tr>
+      <tr><td>errors.log</td><td style="color:var(--green)">10K→7.5K</td><td>168h</td><td>Well-managed</td></tr>
+      <tr><td>handoffs.log</td><td style="color:var(--red)">Unbounded</td><td>—</td><td>Small but no policy</td></tr>
+      <tr><td>audit-*.jsonl</td><td style="color:var(--red)">Unbounded</td><td>—</td><td>~6K/day, growing fast</td></tr>
+      <tr><td>LaunchAgent /tmp</td><td style="color:var(--yellow)">Reboot clears</td><td>—</td><td>Lost involuntarily</td></tr>
+    </table>
+    <div style="margin-top:0.75rem;font-size:0.85rem;color:var(--text-muted)">Only 1 of 6 disk-based logs has rotation. Disk is at 87%. At current growth rates, permission-prompts.log alone will exceed 100K lines within 6 weeks.</div>
+  </div>
+
+  <div class="card">
+    <h3>Dual-Path Ingestion</h3>
+    <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem">Two paths to Loki creates a dedup question:</p>
+    <table>
+      <tr><th>Path</th><th>Source</th><th>Latency</th></tr>
+      <tr><td>File → Promtail → Loki</td><td>chorus.log, errors, permissions</td><td>~1-2s</td></tr>
+      <tr><td>Direct HTTP push → Loki</td><td>emitSpineEvent() in Express</td><td>~50ms</td></tr>
+    </table>
+    <div style="margin-top:0.75rem">
+      <div class="warning">
+        <span style="font-size:0.85rem">App-level spine events push directly to Loki AND write to chorus.log (which Promtail also scrapes). If the same event takes both paths, it appears twice in Loki with the same appName label. No dedup mechanism exists.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- RECOMMENDATIONS -->
+<!-- ============================================ -->
+<h2>Recommendations (Priority Order)</h2>
+
+<div class="card">
+<table>
+  <tr>
+    <th>#</th>
+    <th>Action</th>
+    <th>Impact</th>
+    <th>Effort</th>
+    <th>Value Stream Stage</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td><strong>Add handoffs.log to Promtail</strong> — 1 scrape job config block</td>
+    <td><span class="badge badge-green">High</span> — role coordination becomes queryable</td>
+    <td><span class="badge badge-green">Small</span></td>
+    <td>Directing</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><strong>Add audit logs to Promtail</strong> — daily JSONL glob scrape + rotation</td>
+    <td><span class="badge badge-green">High</span> — user behavior becomes queryable</td>
+    <td><span class="badge badge-yellow">Medium</span></td>
+    <td>Proving</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><strong>Emit demo/accept spine events</strong> — card.demo.started, card.accepted, card.rejected</td>
+    <td><span class="badge badge-green">High</span> — Proving gate becomes measurable</td>
+    <td><span class="badge badge-green">Small</span></td>
+    <td>Proving</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><strong>Add rotation to chorus.log + permission-prompts.log</strong></td>
+    <td><span class="badge badge-yellow">Medium</span> — prevents disk pressure</td>
+    <td><span class="badge badge-green">Small</span></td>
+    <td>Operations</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><strong>Fix defect-poller Fuseki false positives</strong> — filter INFO PUT lines</td>
+    <td><span class="badge badge-yellow">Medium</span> — 30+ Won't Do cards is noise pollution</td>
+    <td><span class="badge badge-green">Small</span></td>
+    <td>Operations</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td><strong>Emit capture events</strong> — capture.sms.received, capture.photo.taken, capture.hashtag.routed</td>
+    <td><span class="badge badge-yellow">Medium</span> — makes idea-to-card journey visible</td>
+    <td><span class="badge badge-yellow">Medium</span></td>
+    <td>Capturing</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td><strong>Add Reflect query logging</strong> — SPARQL text, latency, result count → Loki</td>
+    <td><span class="badge badge-yellow">Medium</span> — supports #602 latency card</td>
+    <td><span class="badge badge-yellow">Medium</span></td>
+    <td>Building</td>
+  </tr>
+  <tr>
+    <td>8</td>
+    <td><strong>Resolve dual-path dedup</strong> — emit from app OR file, not both</td>
+    <td><span class="badge badge-yellow">Medium</span> — data accuracy</td>
+    <td><span class="badge badge-yellow">Medium</span></td>
+    <td>Operations</td>
+  </tr>
+  <tr>
+    <td>9</td>
+    <td><strong>Bedroom Mac observability</strong> — Promtail + structured LaunchAgent logs</td>
+    <td><span class="badge badge-green">High</span> — but large effort</td>
+    <td><span class="badge badge-red">Large</span></td>
+    <td>Operations</td>
+  </tr>
+  <tr>
+    <td>10</td>
+    <td><strong>Sample or aggregate permission-prompts</strong> — reduce from per-call to per-session</td>
+    <td><span class="badge badge-yellow">Low</span> — operational hygiene</td>
+    <td><span class="badge badge-yellow">Medium</span></td>
+    <td>Operations</td>
+  </tr>
+</table>
+</div>
+
+<!-- ============================================ -->
+<!-- ARCHITECTURE DIAGRAM -->
+<!-- ============================================ -->
+<h2>Log Architecture</h2>
+
+<div class="card" style="font-family:monospace;font-size:0.75rem;line-height:1.7;overflow-x:auto;white-space:pre">
+                                    ┌─────────────────────────────────────────────┐
+                                    │              <span style="color:var(--accent)">GRAFANA</span> (:3100)                  │
+                                    │   Dashboards ← Loki queries + Prometheus    │
+                                    │   correlationId derived field links both     │
+                                    └──────────┬──────────────┬───────────────────┘
+                                               │              │
+                                    ┌──────────▼──┐    ┌──────▼──────┐
+                                    │  <span style="color:var(--cyan)">LOKI</span> (:3102) │    │ <span style="color:var(--orange)">PROMETHEUS</span>  │
+                                    │  168h retain │    │  (:9090)    │
+                                    │  4 streams   │    │  15d retain │
+                                    └──────┬───┬──┘    └──────┬──────┘
+                                           │   │              │
+                              ┌────────────┘   │         ┌────┴──────────────┐
+                              │                │         │                   │
+                    ┌─────────▼────────┐  ┌────▼────┐  ┌─▼──────────┐  ┌────▼──────────┐
+                    │   <span style="color:var(--cyan)">PROMTAIL</span>        │  │  Direct  │  │ Scrape jobs│  │  Textfile    │
+                    │   4 scrape jobs   │  │  Push   │  │ (15 targets│  │  Collector    │
+                    └──┬──┬──┬──┬──────┘  └────┬────┘  │  @ 15s)    │  │  (7 .prom)    │
+                       │  │  │  │              │       └────────────┘  └───┬───────────┘
+                       │  │  │  │              │                           │
+  ┌────────────────────┼──┼──┼──┼──────────────┼───────────────────────────┼──────────────┐
+  │ <span style="color:var(--green)">FILES</span>               │  │  │  │              │                           │              │
+  │                    │  │  │  │              │                           │              │
+  │  <span style="color:var(--green)">chorus.log</span>  ◄──────┘  │  │  │    <span style="color:var(--kade)">Express App</span>──┘              ┌──────┘              │
+  │  (13K events)         │  │  │    (container logs)           │                       │
+  │                       │  │  │    + emitSpineEvent()    <span style="color:var(--orange)">git hooks</span>                   │
+  │  <span style="color:var(--red)">command-errors</span> ◄──────┘  │  │                         pre-commit                  │
+  │  (382 events)            │  │                         pre-push                    │
+  │                          │  │                                                     │
+  │  <span style="color:var(--yellow)">permission-prompts</span> ◄─────┘  │    <span style="color:var(--red)">NOT IN LOKI:</span>                                     │
+  │  (28K events)               │    ┌──────────────────┐                              │
+  │                             │    │ <span style="color:var(--red)">handoffs.log</span>     │  ◄─── handoff-logger-hook    │
+  │  <span style="color:var(--green)">Docker containers</span> ◄─────────┘    │ (317 events)     │                              │
+  │  (app, fuseki, etc)              └──────────────────┘                              │
+  │                                  ┌──────────────────┐                              │
+  │                                  │ <span style="color:var(--red)">audit-*.jsonl</span>    │  ◄─── AuditService           │
+  │                                  │ (~22K events)    │                              │
+  │                                  └──────────────────┘                              │
+  │                                  ┌──────────────────┐                              │
+  │                                  │ <span style="color:var(--red)">LaunchAgent /tmp</span> │  ◄─── 5 services             │
+  │                                  │ (unstructured)   │       (Library + Bedroom)    │
+  │                                  └──────────────────┘                              │
+  └───────────────────────────────────────────────────────────────────────────────────┘
+</div>
+
+<!-- ============================================ -->
+<!-- FOOTER -->
+<!-- ============================================ -->
+<div class="footnote">
+  <strong>Generated:</strong> 2026-03-01 by Wren (Product Manager) | <strong>Data sources:</strong> messages/logs/*, shared-observability/config/*, jeff-bridwell-personal-site/src/logger.ts, spine-events.json, promtail-config.yaml, prometheus.yml | <strong>Method:</strong> Full filesystem and config scan of all log producers, consumers, and aggregation paths across both machines.
+</div>
+
+</body>
+</html>

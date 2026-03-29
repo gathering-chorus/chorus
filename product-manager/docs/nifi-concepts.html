@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Apache NiFi — Core Concepts & Capabilities</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; padding: 40px 20px; line-height: 1.6; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 800; margin-bottom: 4px; }
+  .subtitle { font-size: 14px; color: #666; margin-bottom: 32px; }
+  h2 { font-size: 17px; font-weight: 700; margin: 28px 0 10px; color: #1a1a1a; border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+  h3 { font-size: 14px; font-weight: 700; margin: 16px 0 6px; color: #4361ee; }
+  p { font-size: 14px; margin-bottom: 12px; color: #333; }
+  .origin { font-size: 13px; color: #555; border-left: 3px solid #4361ee; padding: 10px 16px; margin: 16px 0; background: #f0f4ff; border-radius: 0 8px 8px 0; }
+
+  .concept-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .concept { background: #f8f9fa; border-radius: 10px; padding: 16px; border: 1px solid #e5e7eb; }
+  .concept .icon { font-size: 24px; margin-bottom: 6px; }
+  .concept .name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .concept .desc { font-size: 13px; color: #555; }
+  .concept .analogy { font-size: 12px; color: #4361ee; margin-top: 6px; font-style: italic; }
+
+  .flow-visual { display: flex; align-items: center; gap: 0; margin: 24px 0; flex-wrap: wrap; justify-content: center; }
+  .fv-box { background: #f8f9fa; border: 2px solid #e5e7eb; border-radius: 10px; padding: 12px 16px; text-align: center; min-width: 100px; }
+  .fv-box.proc { border-color: #2ec4b6; background: #f0fdfa; }
+  .fv-box.conn { border-color: #f7b731; background: #fffbeb; }
+  .fv-box .fv-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; color: #666; }
+  .fv-box .fv-name { font-size: 13px; font-weight: 700; }
+  .fv-arrow { font-size: 18px; color: #ccc; padding: 0 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
+  th { text-align: left; padding: 8px 12px; background: #f8f9fa; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; color: #666; border-bottom: 2px solid #e5e7eb; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+
+  .cap-list { list-style: none; padding: 0; }
+  .cap-list li { font-size: 13px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; display: grid; grid-template-columns: 180px 1fr; gap: 12px; }
+  .cap-list li:last-child { border-bottom: none; }
+  .cap-label { font-weight: 700; color: #1a1a1a; }
+  .cap-desc { color: #555; }
+
+  .highlight { font-size: 14px; color: #444; border-left: 3px solid #2ec4b6; padding: 10px 16px; margin: 16px 0; background: #f0fdfa; border-radius: 0 8px 8px 0; }
+
+  .section-note { font-size: 12px; color: #888; margin-top: 4px; }
+
+  @media print { body { padding: 20px 0; } }
+  @media (max-width: 600px) {
+    .concept-grid { grid-template-columns: 1fr; }
+    .cap-list li { grid-template-columns: 1fr; }
+    .flow-visual { flex-direction: column; }
+    .fv-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Apache NiFi</h1>
+<p class="subtitle">Core concepts and capabilities &middot; Reference for Gathering/Chorus evaluation</p>
+
+<div class="origin">
+  <strong>Origin:</strong> Built by the NSA for intelligence data routing. Open-sourced in 2014. Now an Apache top-level project. Designed for the problem of "data comes from many places in many formats and needs to get somewhere reliably." The name stands for <strong>NiagaraFiles</strong> — the internal NSA project name.
+</div>
+
+<h2>The Mental Model</h2>
+
+<p>NiFi is a <strong>flow-based programming</strong> system. You don't write code — you place processors on a canvas and connect them with queues. Data flows through the processors like water through pipes. Each processor does one thing: read a file, parse JSON, filter records, write to a database. The connections between them are queued, buffered, and monitored.</p>
+
+<p>Think of it as a visual circuit board for data. Each component has inputs and outputs. You wire them together. Data flows. If something breaks, the queue backs up visibly — you see it, not infer it from silence.</p>
+
+<h2>Core Concepts</h2>
+
+<div class="concept-grid">
+  <div class="concept">
+    <div class="name">FlowFile</div>
+    <div class="desc">The unit of data moving through the system. Every FlowFile has <strong>content</strong> (the actual data — a photo record, a JSON document) and <strong>attributes</strong> (metadata — filename, source, timestamp, any key-value pair you add).</div>
+    <div class="analogy">Like: a record in a pipeline, but it carries its own metadata everywhere it goes.</div>
+  </div>
+  <div class="concept">
+    <div class="name">Processor</div>
+    <div class="desc">A unit of work. Reads files, parses JSON, transforms records, queries databases, writes output. NiFi ships with <strong>300+ built-in processors</strong>. You configure them — you don't code them.</div>
+    <div class="analogy">Like: a step in a pipeline, but visual, configurable, and reusable across flows.</div>
+  </div>
+  <div class="concept">
+    <div class="name">Connection</div>
+    <div class="desc">A queue between two processors. Has backpressure thresholds (max queue size, max age). When a queue fills up, the upstream processor pauses. <strong>No data lost, no silent overflow.</strong></div>
+    <div class="analogy">Like: a conveyor belt with a limit switch — if the next station is full, the belt stops.</div>
+  </div>
+  <div class="concept">
+    <div name="name" class="name">Process Group</div>
+    <div class="desc">A container for related processors and connections. Encapsulates a sub-flow. Can be nested, reused, versioned. Each domain (photos, music, documents) would be its own process group.</div>
+    <div class="analogy">Like: a module or namespace — keeps the canvas organized.</div>
+  </div>
+  <div class="concept">
+    <div class="name">Controller Service</div>
+    <div class="desc">Shared infrastructure — database connections, SSL contexts, lookup tables. Configured once, used by many processors. Fuseki's SPARQL endpoint would be a controller service.</div>
+    <div class="analogy">Like: a connection pool or shared config that processors reference.</div>
+  </div>
+  <div class="concept">
+    <div class="name">Provenance</div>
+    <div class="desc">NiFi records <strong>every event</strong> for every FlowFile: created, modified, routed, dropped, sent. Queryable by time range, processor, FlowFile ID. Full lineage from source to destination.</div>
+    <div class="analogy">Like: git blame for every record — where it came from, every step it went through, when.</div>
+  </div>
+</div>
+
+<h2>What a Flow Looks Like</h2>
+
+<div class="flow-visual">
+  <div class="fv-box">
+    <div class="fv-label">Source</div>
+    <div class="fv-name">GetFile</div>
+  </div>
+  <div class="fv-arrow">→</div>
+  <div class="fv-box proc">
+    <div class="fv-label">Parse</div>
+    <div class="fv-name">ConvertRecord</div>
+  </div>
+  <div class="fv-arrow">→</div>
+  <div class="fv-box proc">
+    <div class="fv-label">Validate</div>
+    <div class="fv-name">ValidateRecord</div>
+  </div>
+  <div class="fv-arrow">→</div>
+  <div class="fv-box proc">
+    <div class="fv-label">Transform</div>
+    <div class="fv-name">JoltTransform</div>
+  </div>
+  <div class="fv-arrow">→</div>
+  <div class="fv-box proc">
+    <div class="fv-label">Route</div>
+    <div class="fv-name">RouteOnAttribute</div>
+  </div>
+  <div class="fv-arrow">→</div>
+  <div class="fv-box">
+    <div class="fv-label">Load</div>
+    <div class="fv-name">InvokeHTTP</div>
+  </div>
+</div>
+<p class="section-note">Example: read JSON files → parse to records → validate against schema → transform to TTL → route by domain → POST to Fuseki. Each box is configurable, not coded.</p>
+
+<h2>Key Capabilities</h2>
+
+<ul class="cap-list">
+  <li>
+    <span class="cap-label">Visual canvas</span>
+    <span class="cap-desc">Browser-based UI. Drag processors, draw connections, see live throughput (records/sec), queue depth, and errors. The flow IS the documentation.</span>
+  </li>
+  <li>
+    <span class="cap-label">300+ processors</span>
+    <span class="cap-desc">File (local, SFTP, S3), HTTP (REST, SOAP), database (JDBC, MongoDB), message (Kafka, JMS), format (JSON, CSV, XML, Avro), scripting (Python, Groovy, JavaScript). Custom processors via Java API.</span>
+  </li>
+  <li>
+    <span class="cap-label">Record-level provenance</span>
+    <span class="cap-desc">Every FlowFile event stored and queryable. "Where did this photo record come from? What processors touched it? When?" Answerable in the UI or via API.</span>
+  </li>
+  <li>
+    <span class="cap-label">Backpressure</span>
+    <span class="cap-desc">Queues between processors have configurable thresholds. When full, upstream pauses. No lost data, no silent overflow. Visible in the UI as queue counters.</span>
+  </li>
+  <li>
+    <span class="cap-label">Error routing</span>
+    <span class="cap-desc">Every processor has a "failure" relationship. Failed records route to a separate path — log them, retry them, dead-letter them. Not lost, not silently dropped.</span>
+  </li>
+  <li>
+    <span class="cap-label">Scheduling</span>
+    <span class="cap-desc">Each processor has its own schedule: timer-driven (every N seconds), cron-driven, or event-driven (run when data arrives). Mix batch and streaming in one flow.</span>
+  </li>
+  <li>
+    <span class="cap-label">Flow versioning</span>
+    <span class="cap-desc">NiFi Registry stores flow versions. Roll back a flow to yesterday's version if a change breaks it. Like git for data pipelines.</span>
+  </li>
+  <li>
+    <span class="cap-label">REST API</span>
+    <span class="cap-desc">Full API for everything: create/update flows, start/stop processors, query provenance, check status. <strong>This is how Chorus would drive it</strong> — AI roles assemble flows via API.</span>
+  </li>
+  <li>
+    <span class="cap-label">Clustering</span>
+    <span class="cap-desc">Multiple NiFi nodes share the workload. Not needed for personal scale, but means the same architecture scales if the use case grows.</span>
+  </li>
+  <li>
+    <span class="cap-label">Expression Language</span>
+    <span class="cap-desc">Built-in expression language for attribute manipulation: <code>${filename:substringBefore('.')}</code>, <code>${dateTaken:toDate('yyyy-MM-dd')}</code>. Transforms without code.</span>
+  </li>
+</ul>
+
+<h2>Processors That Matter For Us</h2>
+
+<table>
+  <tr><th>Processor</th><th>What It Does</th><th>Our Use</th></tr>
+  <tr>
+    <td><strong>GetFile / ListFile</strong></td>
+    <td>Watch a directory, pick up new files</td>
+    <td>Watch Apple Photos SQLite exports, Takeout JSON sidecars, music XML</td>
+  </tr>
+  <tr>
+    <td><strong>ConvertRecord</strong></td>
+    <td>Convert between formats (JSON→Avro→CSV→XML)</td>
+    <td>JSON source → intermediate format for validation</td>
+  </tr>
+  <tr>
+    <td><strong>ValidateRecord</strong></td>
+    <td>Validate records against a schema</td>
+    <td>ICD validation — does this record have the required fields?</td>
+  </tr>
+  <tr>
+    <td><strong>JoltTransformJSON</strong></td>
+    <td>Transform JSON structure using Jolt spec</td>
+    <td>Source schema → canonical schema (the ICD field mappings)</td>
+  </tr>
+  <tr>
+    <td><strong>RouteOnAttribute</strong></td>
+    <td>Route records based on attribute values</td>
+    <td>Route by era (pre-2006 → Apple path, 2020+ → iPhone path)</td>
+  </tr>
+  <tr>
+    <td><strong>InvokeHTTP</strong></td>
+    <td>Make HTTP requests</td>
+    <td>POST TTL to Fuseki SPARQL endpoint</td>
+  </tr>
+  <tr>
+    <td><strong>ExecuteScript</strong></td>
+    <td>Run Python/Groovy/JavaScript inline</td>
+    <td>Custom transforms we can't do with built-in processors (TTL generation)</td>
+  </tr>
+  <tr>
+    <td><strong>MergeContent</strong></td>
+    <td>Combine multiple FlowFiles into one</td>
+    <td>Batch records before Fuseki load (efficiency)</td>
+  </tr>
+  <tr>
+    <td><strong>DetectDuplicate</strong></td>
+    <td>Flag or drop duplicate FlowFiles</td>
+    <td>Cross-source dedup by filename + date</td>
+  </tr>
+  <tr>
+    <td><strong>PutEmail</strong></td>
+    <td>Send email on event</td>
+    <td>Alert Jeff when a pipeline completes or fails</td>
+  </tr>
+</table>
+
+<h2>How Chorus Would Drive NiFi</h2>
+
+<div class="highlight">
+  <strong>The key insight:</strong> NiFi has a complete REST API. Every operation you can do in the UI, you can do via HTTP. That means Chorus roles can create flows, configure processors, start/stop pipelines, and query provenance — all programmatically. The AI doesn't replace NiFi; it <em>drives</em> it.
+</div>
+
+<table>
+  <tr><th>Chorus Role</th><th>NiFi Action</th><th>How</th></tr>
+  <tr>
+    <td><strong>Wren (PM)</strong></td>
+    <td>Define which flow to run and when</td>
+    <td>Card → pipeline → NiFi flow ID. Board state drives pipeline state.</td>
+  </tr>
+  <tr>
+    <td><strong>Silas (Architect)</strong></td>
+    <td>Design flow templates, ICD→processor mappings</td>
+    <td>ICD field mappings → Jolt transform specs. Era rules → RouteOnAttribute configs.</td>
+  </tr>
+  <tr>
+    <td><strong>Kade (Engineer)</strong></td>
+    <td>Build custom processors, wire ExecuteScript</td>
+    <td>TTL generation, EXIF extraction, anything NiFi doesn't have built-in.</td>
+  </tr>
+  <tr>
+    <td><strong>Jeff</strong></td>
+    <td>See the flow, check provenance, accept results</td>
+    <td>NiFi UI in the browser — visual, auditable, no terminal required.</td>
+  </tr>
+</table>
+
+<h2>Resource Requirements</h2>
+
+<table>
+  <tr><th>Resource</th><th>Minimum</th><th>Our Setup</th></tr>
+  <tr><td>Java</td><td>JDK 11+</td><td>Already have JVM for Fuseki</td></tr>
+  <tr><td>RAM</td><td>512MB heap (default 1GB)</td><td>Tight on Library (16GB). Better on Bedroom (32GB).</td></tr>
+  <tr><td>Disk</td><td>Content repo + provenance repo</td><td>Provenance grows with volume — configure retention</td></tr>
+  <tr><td>Network</td><td>Web UI on port 8443 (HTTPS)</td><td>Accessible from any device on home wifi</td></tr>
+</table>
+
+<p><strong>Recommendation:</strong> Run NiFi on Bedroom Mac (32GB, M2 Pro). Data sources are mostly there. Processing on the storage machine, results load to Library Fuseki over the network. Separates compute from serving — the same split we use for Claude sessions.</p>
+
+<div style="margin-top: 40px; padding: 16px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e5e7eb; font-size: 12px; color: #666; text-align: center;">
+  Wren &middot; NiFi Reference &middot; Card #1661 &middot; 2026-03-23
+</div>
+
+</div>
+</body>
+</html>

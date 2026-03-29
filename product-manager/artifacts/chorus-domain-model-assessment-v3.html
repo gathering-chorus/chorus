@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chorus Domain Model Assessment v3 — Ontology × Structural Audit</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1200px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 30px; }
+  h2 { font-size: 1.15rem; color: #2d4a7a; margin-top: 32px; margin-bottom: 12px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+  h3 { font-size: 0.95rem; color: #6b21a8; margin-top: 18px; margin-bottom: 8px; }
+  p { margin-bottom: 10px; font-size: 0.88rem; }
+  .quote { font-style: italic; color: #92400e; padding-left: 16px; border-left: 3px solid #f59e0b; margin: 16px 0; font-size: 0.88rem; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 8px 12px; background: #e0e7ff; color: #2d4a7a; font-size: 0.78rem; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  tr:nth-child(even) td { background: #f3f4f6; }
+  ul { margin: 8px 0 12px 20px; font-size: 0.85rem; }
+  li { margin-bottom: 4px; }
+
+  .stats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin: 20px 0; }
+  .stat { background: #eef2ff; border-radius: 8px; padding: 14px; text-align: center; }
+  .stat-n { font-size: 1.8rem; font-weight: 700; color: #1e40af; }
+  .stat-l { font-size: 0.65rem; color: #888; margin-top: 2px; text-transform: uppercase; }
+  .stat.warn .stat-n { color: #92400e; }
+  .stat.crit .stat-n { color: #dc2626; }
+
+  .finding { background: #fef2f2; border-left: 3px solid #dc2626; border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 12px 0; }
+  .finding.yellow { background: #fefce8; border-left-color: #ca8a04; }
+  .finding.green { background: #f0fdf4; border-left-color: #16a34a; }
+  .finding-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; }
+  .finding-title.red { color: #dc2626; }
+  .finding-title.yellow { color: #92400e; }
+  .finding-title.green { color: #16a34a; }
+
+  .tag { font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+  .t-active { background: #dcfce7; color: #166534; }
+  .t-partial { background: #fef3c7; color: #92400e; }
+  .t-stub { background: #fed7aa; color: #9a3412; }
+  .t-tobe { background: #dbeafe; color: #1e40af; }
+  .t-aspirational { background: #f3e8ff; color: #6b21a8; }
+  .t-refactor { background: #fef3c7; color: #92400e; }
+  .t-rewrite { background: #fee2e2; color: #991b1b; }
+  .t-tolerate { background: #f3f4f6; color: #6b7280; }
+  .t-gated { background: #f3e8ff; color: #6b21a8; }
+  .t-ungated { background: #fee2e2; color: #991b1b; }
+  .t-shipped { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+  .t-need { background: #dbeafe; color: #1e40af; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .compare-col { background: #f8fafc; border-radius: 8px; padding: 16px; }
+  .compare-col h4 { font-size: 0.85rem; color: #2d4a7a; margin-bottom: 8px; }
+
+  .linter-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; margin: 8px 0 16px; }
+  .linter-bar div { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: white; }
+  .bar-clean { background: #16a34a; }
+  .bar-high { background: #dc2626; }
+  .bar-medium { background: #ca8a04; }
+  .bar-low { background: #999; }
+
+  .blast { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 12px 0; font-family: 'SF Mono', monospace; font-size: 0.82rem; line-height: 1.8; }
+
+  .meta { font-size: 0.72rem; color: #555; margin-top: 40px; text-align: center; padding-top: 20px; border-top: 1px solid #ddd; }
+
+  @media print { body { padding: 20px; } .stats { grid-template-columns: repeat(4, 1fr); } }
+</style>
+</head>
+<body>
+
+<h1>Chorus Domain Model Assessment v3</h1>
+<p class="subtitle">Ontology (Wren #1783) × Structural Audit (Silas #1773) &bull; 191 nodes, 640 edges &bull; 2026-03-28</p>
+
+<p class="quote">"The ontology describes what should be true. The audit checks what is true. The gap between them is the backlog." — Silas</p>
+
+<!-- Stats -->
+<div class="stats">
+  <div class="stat"><div class="stat-n">7</div><div class="stat-l">Products</div></div>
+  <div class="stat"><div class="stat-n">41</div><div class="stat-l">Domains</div></div>
+  <div class="stat"><div class="stat-n">23</div><div class="stat-l">Services</div></div>
+  <div class="stat"><div class="stat-n">34</div><div class="stat-l">Practices</div></div>
+  <div class="stat"><div class="stat-n">50</div><div class="stat-l">LaunchAgents</div></div>
+  <div class="stat"><div class="stat-n">3</div><div class="stat-l">Service Designs</div></div>
+  <div class="stat warn"><div class="stat-n">36</div><div class="stat-l">Linter Findings</div></div>
+</div>
+
+<!-- Linter quality bar -->
+<div style="margin-bottom: 24px;">
+  <div style="color: #666; font-size: 0.75rem; margin-bottom: 4px;">ONTOLOGY HEALTH — 87 initial + 5 new from design session → 36 remaining (61% resolved)</div>
+  <div class="linter-bar">
+    <div class="bar-clean" style="width: 61%;">56 fixed</div>
+    <div class="bar-high" style="width: 15%;">14 H</div>
+    <div class="bar-medium" style="width: 10%;">2 M</div>
+    <div class="bar-low" style="width: 14%;">20 L</div>
+  </div>
+</div>
+
+<!-- Version evolution -->
+<h2>Evolution: v1 → v2 → v3</h2>
+<div class="compare">
+  <div class="compare-col">
+    <h4>v1 (2026-03-26) — Observed</h4>
+    <ul>
+      <li>6 Chorus domains (taxonomy)</li>
+      <li>15 board domain tags (drifted)</li>
+      <li>5 value stream stages</li>
+      <li>No product hierarchy</li>
+      <li>No service model</li>
+      <li>No gate coverage</li>
+    </ul>
+  </div>
+  <div class="compare-col">
+    <h4>v2 (2026-03-28am) — From ontology</h4>
+    <ul>
+      <li><strong>41</strong> domains (25 Gathering + 16 Chorus)</li>
+      <li><strong>23</strong> services with disposition</li>
+      <li><strong>34</strong> practices with gate analysis</li>
+      <li>OWL-validated, riot-clean</li>
+      <li>No infrastructure inventory</li>
+      <li>No data lineage</li>
+    </ul>
+  </div>
+  <div class="compare-col">
+    <h4>v3 (2026-03-28pm) — Ontology × Audit</h4>
+    <ul>
+      <li>Ontology model + structural audit merged</li>
+      <li><strong>50</strong> LaunchAgents inventoried</li>
+      <li><strong>68</strong> scripts mapped (status + DEC-100)</li>
+      <li>Blast radius + data lineage</li>
+      <li>3 service designs shipped</li>
+      <li>4 cards completed today</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Product Hierarchy -->
+<h2>1. Product Hierarchy</h2>
+<table>
+  <tr><th>Product</th><th>Value Streams</th><th>Sub-Products</th><th>Phase</th></tr>
+  <tr><td><strong>Gathering</strong></td><td>Personal, Life</td><td>Chorus</td><td>Building</td></tr>
+  <tr><td><strong>Chorus</strong></td><td>Chorus</td><td>Bridge, Clearing, Board, Loom, Convergence</td><td>Building</td></tr>
+  <tr><td>Bridge</td><td>Chorus</td><td>—</td><td>Building — Jeff's primary UI</td></tr>
+  <tr><td>Clearing</td><td>Chorus</td><td>—</td><td>Directing — consolidated today (WF-160)</td></tr>
+  <tr><td>Board</td><td>Chorus</td><td>—</td><td>Directing</td></tr>
+  <tr><td>Loom</td><td>Chorus</td><td>—</td><td>Designing — the method as product</td></tr>
+  <tr><td>Convergence</td><td>Chorus, Life</td><td>—</td><td>Planned — consulting deliverable</td></tr>
+</table>
+
+<p class="quote">"Convergence = Practice = Service = Product. In a consulting context, it's the deliverable: integration analysis + proposal + tooling." — Jeff</p>
+
+<!-- Domain Status -->
+<h2>2. Domain Status (41 total)</h2>
+
+<h3>Gathering Domains (25)</h3>
+<table>
+  <tr><th>Status</th><th>Count</th><th>Domains</th></tr>
+  <tr><td><span class="tag t-active">Active</span></td><td>11</td><td>seeds, stories, music, photos, people, property, ideas, projects, books, sexuality, blog</td></tr>
+  <tr><td><span class="tag t-partial">Partial</span></td><td>4</td><td>glimmers, garden, todo, notes</td></tr>
+  <tr><td><span class="tag t-stub">Stub</span></td><td>3</td><td>cooking, reading, watching <em>(disposition: tolerate)</em></td></tr>
+  <tr><td><span class="tag t-tobe">To-Be</span></td><td>6</td><td>intentions, social, documents, video, values, practices</td></tr>
+  <tr><td><span class="tag t-aspirational">Aspirational</span></td><td>1</td><td>self</td></tr>
+</table>
+
+<h3>Chorus Domains (16)</h3>
+<table>
+  <tr><th>Status</th><th>Count</th><th>Domains</th></tr>
+  <tr><td><span class="tag t-active">Active</span></td><td>13</td><td>coordination, convergence, infrastructure, org, practices, policy, roles, skills, tool chain, messages, logs, gates, observability</td></tr>
+  <tr><td><span class="tag t-partial">Partial</span></td><td>3</td><td>search, knowledge-graph, codebase</td></tr>
+</table>
+
+<div class="finding yellow">
+  <div class="finding-title yellow">Finding: Gathering right side is hollow</div>
+  7 of 25 Gathering domains are To-Be or Aspirational — all in the Reflecting stage. The system captures but doesn't synthesize. values, practices, self = zero implementation.
+</div>
+
+<!-- Service Analysis -->
+<h2>3. Service Analysis (23 services)</h2>
+
+<h3>Disposition Summary</h3>
+<table>
+  <tr><th>Disposition</th><th>Count</th><th>Services</th></tr>
+  <tr>
+    <td><span class="tag t-tolerate">Keep</span></td><td>15</td>
+    <td>Gathering App, Chorus API, Messaging Tier, Session Tailer, Fuseki, Daily Review, Navidrome, SOLID Pod, Search Index, Sexuality Player, Twilio SMS, Git Queue, Context Cache, Pre-Commit Pipeline, Nudge Delivery <span class="tag t-shipped">rewrite done</span></td>
+  </tr>
+  <tr>
+    <td><span class="tag t-refactor">Refactor</span></td><td>2</td>
+    <td>Chorus Hooks (wire remaining gates), Seed Pipeline (Fuseki migration done, hardening in progress)</td>
+  </tr>
+  <tr>
+    <td><span class="tag t-rewrite">Rewrite</span></td><td>1</td>
+    <td>Clearing / Bridge (WF-160 shims thinner but still layered)</td>
+  </tr>
+  <tr>
+    <td><span class="tag t-need">Need</span></td><td>4</td>
+    <td>OWL Linter Service, Ontology Crawler, ICD Pipeline (WF-152), Convergence Engine</td>
+  </tr>
+  <tr>
+    <td>Planned</td><td>1</td>
+    <td>NiFi (ETL direction set, not yet deployed)</td>
+  </tr>
+</table>
+
+<h3>What Shipped Today</h3>
+<table>
+  <tr><th>Service</th><th>Card</th><th>What Changed</th><th>Verified</th></tr>
+  <tr style="background: #f0fdf4;">
+    <td>Nudge Delivery</td><td>#1793</td>
+    <td>Full rewrite: Rust-only, single path, DELIVERED/FAILED states, health check LaunchAgent. DEC-107 implemented. 6 old mechanisms deleted.</td>
+    <td>✓ Jeff tested</td>
+  </tr>
+  <tr style="background: #f0fdf4;">
+    <td>Clearing / Bridge</td><td>#1795-1797</td>
+    <td>Chat panel merged into Bridge, Go binary retired, LaunchAgent renamed. Port 3460 gone. One UI, one port.</td>
+    <td>✓ Jeff tested</td>
+  </tr>
+  <tr style="background: #f0fdf4;">
+    <td>Seed Pipeline</td><td>#1794</td>
+    <td>343 seeds migrated to Fuseki. SOLID pod fallback removed. Single write path. Service design doc written.</td>
+    <td>✓ Jeff's live test seed</td>
+  </tr>
+</table>
+
+<h3>Dependency Depth & Blast Radius</h3>
+<div class="blast">
+<strong style="color:#dc2626;">Clearing / Bridge</strong> (disposition: rewrite, 2 dependsOn)<br>
+&nbsp;&nbsp;↓ Messaging Tier (tolerate) — <strong style="color:#dc2626;">SPOF</strong><br>
+&nbsp;&nbsp;↓ Chorus API (tolerate)<br>
+&nbsp;&nbsp;<span style="color:#dc2626;">← depended on by:</span> Session Tailer, Daily Review<br>
+&nbsp;&nbsp;<span style="color:#888;">WF-160 complete: Go binary retired. Shim layer thinner. Full rewrite still needed.</span><br>
+<br>
+<strong style="color:#16a34a;">✓ Nudge Delivery</strong> (disposition: <s>rewrite</s> → keep)<br>
+&nbsp;&nbsp;<span style="color:#16a34a;">#1793 shipped: Rust-only, single path, health check. Moved to KEEP.</span><br>
+<br>
+<strong style="color:#dc2626;">Gathering App</strong> (finding: God Service)<br>
+&nbsp;&nbsp;<span style="color:#888;">17 domains in one Express service. No blast radius isolation. Every domain change risks all others.</span>
+</div>
+
+<h3>Data Lineage</h3>
+<table>
+  <tr><th>DataSource</th><th>Readers</th><th>Writers</th></tr>
+  <tr>
+    <td><strong>Fuseki TDB2</strong> <span style="color:#888; font-size:0.75rem;">SPARQL, port 3030</span></td>
+    <td>Chorus API, Gathering App</td>
+    <td>NiFi, Seed Pipeline, Fuseki</td>
+  </tr>
+  <tr>
+    <td><strong>SQLite WAL</strong> <span style="color:#888; font-size:0.75rem;">messaging, chorus.log</span></td>
+    <td>Nudge, Clearing/Bridge, Chorus API, Messaging Tier</td>
+    <td>Nudge, Clearing/Bridge, Chorus API, Messaging Tier</td>
+  </tr>
+  <tr>
+    <td><strong>SOLID Pods</strong></td>
+    <td colspan="2" style="color:#888;">SOLID Pod Service (read/write) — tolerate</td>
+  </tr>
+  <tr>
+    <td><strong>Filesystem</strong> <span style="color:#888; font-size:0.75rem;">NFS, local paths</span></td>
+    <td colspan="2" style="color:#888;">Gathering App, harvesters (read/write)</td>
+  </tr>
+</table>
+
+<!-- Practice & Gate Coverage -->
+<h2>4. Practice & Gate Coverage</h2>
+
+<h3>Gated Practices (6 of 34)</h3>
+<table>
+  <tr><th>Practice</th><th>Gate (Rust hook)</th><th>Enforcement</th></tr>
+  <tr><td>ICD Gate</td><td>icd_write_gate + icd_pre_read</td><td><span class="tag t-gated">Block</span></td></tr>
+  <tr><td>TDD</td><td>demo_preflight</td><td><span class="tag t-gated">Block</span></td></tr>
+  <tr><td>Write Scrubber</td><td>write_scrubber</td><td><span class="tag t-gated">Block</span></td></tr>
+  <tr><td>App State Guard</td><td>app_state_guard</td><td><span class="tag t-gated">Block</span></td></tr>
+  <tr><td>Search Hierarchy</td><td>search_hierarchy</td><td><span class="tag t-gated">Block</span></td></tr>
+  <tr><td>Accept Gate</td><td>accept_gate</td><td><span class="tag t-gated">Block</span></td></tr>
+</table>
+
+<h3>Ungated High-Fanout Practices (7)</h3>
+<table>
+  <tr><th>Practice</th><th>Domains Touched</th><th>Risk</th></tr>
+  <tr><td>Convergence</td><td>3 domains</td><td style="color:#dc2626; font-weight:600;">HIGH — ICD gate covers writes but not the practice</td></tr>
+  <tr><td>/demo</td><td>2 domains</td><td style="color:#dc2626;">HIGH</td></tr>
+  <tr><td>/acp</td><td>2 domains</td><td style="color:#dc2626;">HIGH</td></tr>
+  <tr><td>/clearing</td><td>2 domains</td><td style="color:#dc2626;">HIGH</td></tr>
+  <tr><td>/nudge</td><td>2 domains</td><td style="color:#ca8a04;">MEDIUM — just rewritten, stable</td></tr>
+  <tr><td>/chorus</td><td>2 domains</td><td style="color:#ca8a04;">MEDIUM</td></tr>
+  <tr><td>Infra Alert</td><td>2 domains</td><td style="color:#ca8a04;">MEDIUM</td></tr>
+</table>
+
+<div class="finding">
+  <div class="finding-title red">Finding: 82% of practices are ungated</div>
+  28 of 34 practices have no automated enforcement. The 6 gated practices work reliably. The 28 ungated ones are where chronic integration failures live — seeds breaking, nudges cycling, acceptance without verification. Every repeat failure traces to an ungated practice.
+</div>
+
+<p style="color:#888; font-size:0.82rem;">20 discipline-only practices (1 domain, no gate needed): Gemba, /pull, /pair, /pipeline, /flow, /look, /listen, /reboot, Design Meeting, Code Review, Bind Mount Deploy, Convention Matching, Live Verification, Brief Exchange, Service Design, Daily Review, Perf Baseline, Incident Response, Context Cache, /gemba.</p>
+
+<!-- Infrastructure Inventory -->
+<h2>5. Infrastructure Inventory (from audit #1773)</h2>
+
+<h3>LaunchAgents (50)</h3>
+<table>
+  <tr><th>Category</th><th>Count</th><th>Health</th><th>Notes</th></tr>
+  <tr><td>Chorus services</td><td>7</td><td style="color:#16a34a;">●</td><td>API, Bridge, Clearing, Hooks, Messaging, Session Watcher, Input Monitor</td></tr>
+  <tr><td>Gathering infra</td><td>14</td><td style="color:#16a34a;">●</td><td>App, Fuseki, SOLID, Vikunja, observability stack</td></tr>
+  <tr><td>Scheduled jobs</td><td>19</td><td style="color:#16a34a;">●</td><td>Context cache, daily review, ops, perf baseline, heartbeat</td></tr>
+  <tr><td>Idle/on-demand</td><td>6</td><td style="color:#ca8a04;">●</td><td>Harvest exporter, Fuseki compact/perf, posture, metrics</td></tr>
+  <tr><td>Duplicates</td><td>5</td><td style="color:#dc2626;">●</td><td>com.chorus.* and com.gathering.* with identical configs (double-firing) → #1774</td></tr>
+</table>
+
+<h3>Scripts (68 in messages/scripts/)</h3>
+<table>
+  <tr><th>Status</th><th>Count</th><th>Notes</th></tr>
+  <tr><td><span class="tag t-gated">Rust shim</span></td><td>~20</td><td>Delegate to chorus-hook-shim binary. Thin wrappers.</td></tr>
+  <tr><td><span class="tag t-active">Clean</span></td><td>~30</td><td>Board ops, daily reviews, git queue, infra, tests, config</td></tr>
+  <tr><td><span class="tag t-refactor">DEC-100 migrate</span></td><td>4</td><td>chorus-query.sh (P1), chat.sh, smoke-check.sh, chorus-ops.sh (37K largest)</td></tr>
+  <tr><td><span class="tag t-rewrite">Orphan</span></td><td>3</td><td>andon-enrich.sh, andon-light.swift, bridge-subscriber.js → #1776</td></tr>
+  <tr><td><span class="tag t-rewrite">Duplicate</span></td><td>4</td><td>workflow.py + workflow-ts (two engines → #1775), 3 board entry points</td></tr>
+</table>
+
+<h3>Structural Findings (carded)</h3>
+<table>
+  <tr><th>#</th><th>Finding</th><th>Card</th><th>Severity</th></tr>
+  <tr><td>F1</td><td>5 duplicate LaunchAgents (double-firing)</td><td>#1774</td><td><span class="tag t-rewrite">Critical</span></td></tr>
+  <tr><td>F2</td><td>Two workflow engines (Python + TypeScript)</td><td>#1775</td><td><span class="tag t-rewrite">Critical</span></td></tr>
+  <tr><td>F3</td><td>Orphaned andon scripts (65K, no callers)</td><td>#1776</td><td><span class="tag t-refactor">Medium</span></td></tr>
+  <tr><td>F4</td><td>chorus-ops.sh 37K bash giant</td><td>#1777</td><td><span class="tag t-tolerate">DEC-100</span></td></tr>
+  <tr><td>F5</td><td>Namespace split (com.chorus vs com.gathering)</td><td>#1778</td><td><span class="tag t-tolerate">Convention</span></td></tr>
+</table>
+
+<!-- Role Ownership -->
+<h2>6. Role Ownership</h2>
+<table>
+  <tr><th>Role</th><th>Domains Owned</th><th>Phase Ownership</th><th>Services</th></tr>
+  <tr>
+    <td><strong>Wren</strong> (PM)</td>
+    <td>coordination, messages, org, policy, roles, skills, practices</td>
+    <td>Capturing, Directing, Proving</td>
+    <td>Messaging Tier, Daily Review</td>
+  </tr>
+  <tr>
+    <td><strong>Silas</strong> (Architect)</td>
+    <td>infrastructure, gates, observability, convergence, logs, tool chain, search, knowledge-graph, codebase</td>
+    <td>Designing (shared)</td>
+    <td>Chorus API, Chorus Hooks, Nudge, Session Tailer, NiFi, Git Queue, Context Cache, Pre-Commit, observability stack</td>
+  </tr>
+  <tr>
+    <td><strong>Kade</strong> (Engineer)</td>
+    <td>seeds + all 25 Gathering domains (app code)</td>
+    <td>Building</td>
+    <td>Gathering App, Seed Pipeline, Navidrome, SOLID Pod, Search Index, Sexuality Player, Twilio SMS</td>
+  </tr>
+</table>
+
+<!-- Constraint Analysis -->
+<h2>7. Constraints (from incidents)</h2>
+<table>
+  <tr><th>Constraint</th><th>Applies To</th><th>Source</th></tr>
+  <tr><td>Trust Jeff over instruments</td><td>All roles</td><td>Multiple — roles argued data was fine while Jeff saw it broken</td></tr>
+  <tr><td>Find root cause — never call it intermittent</td><td>Silas</td><td>Nudge failure dismissed as "glitch"</td></tr>
+  <tr><td>Delete old path when replacing</td><td>Silas, Wren</td><td>Nudge 4 rewrites, Bridge/Clearing dual naming</td></tr>
+  <tr><td>System detects failures before Jeff does</td><td>Kade</td><td>Seed pipeline — Jeff discovered every break</td></tr>
+  <tr><td>Experience statement before building</td><td>Wren</td><td>#1770 — no experience statement, 3 fix cycles</td></tr>
+  <tr><td>SMS content and hashtag always separate</td><td>Kade</td><td>Seed adapter assumed one message, broke 3 times</td></tr>
+  <tr><td>Symptom not cause in nudges</td><td>Wren</td><td>Wrong framing sent Kade chasing tunnel instead of handler</td></tr>
+  <tr><td>Only Jeff decides when to stop</td><td>Wren</td><td>Offered to checkpoint during productive design meeting</td></tr>
+  <tr><td>Seek understanding before speculating</td><td>Silas</td><td>Rationalized before investigating</td></tr>
+</table>
+
+<div class="finding green">
+  <div class="finding-title green">Finding: Constraints are encoded institutional memory</div>
+  9 constraints, each from a real incident. These are the 20x-repeated lessons hardened into the ontology. When loaded into Fuseki, hooks can query them before allowing actions. The feedback→lesson→rule lifecycle makes them living governance.
+</div>
+
+<!-- Story → Decision Chain -->
+<h2>8. Story → Decision Chain</h2>
+<table>
+  <tr><th>Story</th><th>Decisions</th><th>Domains</th></tr>
+  <tr><td>Never Say Oops (The Pitt)</td><td>DEC-048 (proving gate)</td><td>gates, observability, seeds</td></tr>
+  <tr><td>Dad's Landscape Blueprint</td><td>DEC-086, DEC-095</td><td>convergence, practices</td></tr>
+  <tr><td>Staples KM (3-year program)</td><td>DEC-058, DEC-086</td><td>org, practices, policy</td></tr>
+  <tr><td>Few Not Many</td><td>DEC-022</td><td>roles</td></tr>
+  <tr><td>Vendor Lock-in Arc</td><td>DEC-100</td><td>infrastructure, tool chain</td></tr>
+  <tr><td>Data Trust Arc</td><td>DEC-095, DEC-094</td><td>convergence, knowledge-graph</td></tr>
+  <tr><td>Ferrari on Potholed Street</td><td>DEC-094</td><td>infrastructure</td></tr>
+  <tr><td>Block Universe (Susskind)</td><td>Ontology design</td><td>All — OWL as block universe view</td></tr>
+</table>
+
+<p>Jeff's stories aren't anecdotes — they're the reasoning behind governance. The ontology makes this chain queryable: "Why does DEC-095 exist?" → Data Trust Arc + Landscape Blueprint. Decisions have provenance.</p>
+
+<!-- Service Design Docs -->
+<h2>9. Service Design Documents</h2>
+<table>
+  <tr><th>Service</th><th>Author</th><th>Builder</th><th>Status</th><th>Artifact</th></tr>
+  <tr style="background:#f0fdf4;"><td>Nudge Delivery</td><td>Wren</td><td>Silas</td><td><span class="tag t-shipped">Shipped + Accepted</span></td><td>service-design-nudge.html</td></tr>
+  <tr><td>Seed Pipeline</td><td>Kade</td><td>Kade</td><td><span class="tag t-active">Active — hardening</span></td><td>service-design-seed-pipeline.html</td></tr>
+  <tr><td>Clearing / Pulse</td><td>Silas</td><td>—</td><td><span class="tag t-refactor">Needs rewrite — one-UI model</span></td><td>service-design-clearing-pulse.html</td></tr>
+  <tr><td><em>20+ services</em></td><td>—</td><td>—</td><td style="color:#888;">No design doc</td><td>service-design-page.html (template)</td></tr>
+</table>
+
+<p class="quote">"If we get this right, your ability to reason about the system changes dramatically." — Jeff</p>
+
+<!-- Key Gaps -->
+<h2>10. Key Gaps (Ontology × Audit)</h2>
+
+<div class="finding">
+  <div class="finding-title red">1. God Service — Gathering App spans 17 domains</div>
+  Single Express app serves stories, music, photos, people, property, garden, and 11 more. No blast radius isolation. Any route change risks all domains. The ontology models these as separate domains but the territory has them in one process.
+</div>
+
+<div class="finding">
+  <div class="finding-title red">2. Messaging Tier is single point of failure</div>
+  4 services depend on it (Nudge, Clearing/Bridge, Chorus API, Session Tailer). If it goes down, all role coordination stops. No redundancy. Ontology has no redundancy or failover modeling.
+</div>
+
+<div class="finding">
+  <div class="finding-title red">3. Integration class missing from ontology</div>
+  Jeff's Staples ICD pattern (US9552400B2) isn't formalized. Integration has: sourceService, targetService, fieldMappings, schemaHash, validationRules. The icd-instance-*.ttl files exist in Fuseki but the ontology doesn't model the concept.
+</div>
+
+<div class="finding">
+  <div class="finding-title red">4. Tool ≠ Service ≠ Deployment (grain error)</div>
+  Jeff's correction: the ontology conflates these three. Fuseki is a tool AND a service AND a deployment. Three distinct concepts that need separate modeling. Impacts service design accuracy.
+</div>
+
+<div class="finding">
+  <div class="finding-title red">5. Domain → Phase, not Domain → Stream</div>
+  Current ontology maps domains to value streams. Jeff's correction: domains have phase affinity (e.g., seeds lives in Capturing, not "the Chorus stream"). Impacts workflow automation.
+</div>
+
+<div class="finding yellow">
+  <div class="finding-title yellow">6. Card/Brief/Experience individuals = 0</div>
+  Card class defined, 1800+ cards on board, zero in ontology. Schema exists, data not harvested. Largest volume gap.
+</div>
+
+<div class="finding yellow">
+  <div class="finding-title yellow">7. hasGate is string, should be ObjectProperty</div>
+  Can't query "which practices are ungated?" because the gate link is unstructured text. Needs relationship to Gate individual with enforcement level.
+</div>
+
+<div class="finding yellow">
+  <div class="finding-title yellow">8. Ontology not in Fuseki</div>
+  OWL exists as file. Not queryable by SPARQL, not accessible to hooks, not connected to live system. Loading into Fuseki converts it from artifact to infrastructure.
+</div>
+
+<div class="finding yellow">
+  <div class="finding-title yellow">9. 5 duplicate LaunchAgents double-firing</div>
+  com.chorus.* and com.gathering.* with identical configs. Structural audit F1, carded #1774.
+</div>
+
+<div class="finding yellow">
+  <div class="finding-title yellow">10. Two workflow engines running in parallel</div>
+  Python + TypeScript both active. DEC-100 says no Python. Carded #1775.
+</div>
+
+<!-- Recommendations -->
+<h2>11. Recommendations (Priority Order)</h2>
+
+<table>
+  <tr><th>#</th><th>Action</th><th>Impact</th><th>Owner</th><th>Card</th></tr>
+  <tr>
+    <td>1</td>
+    <td><strong>Load OWL into Fuseki</strong></td>
+    <td>Enables hook-based enforcement from ontology. Makes everything queryable.</td>
+    <td>Silas</td>
+    <td>#1783</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><strong>Fix grain: separate Tool, Service, Deployment</strong></td>
+    <td>Accurate service design, correct card routing</td>
+    <td>Wren</td>
+    <td>#1783</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><strong>Fix domain→phase mapping</strong></td>
+    <td>Correct workflow automation</td>
+    <td>Wren</td>
+    <td>#1783</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><strong>Wire hasGate as ObjectProperty</strong></td>
+    <td>"Which practices are ungated?" becomes SPARQL query</td>
+    <td>Wren</td>
+    <td>#1783</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><strong>Kill duplicate LaunchAgents</strong></td>
+    <td>Stop double-firing, reduce noise</td>
+    <td>Silas</td>
+    <td>#1774</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td><strong>Consolidate workflow engines</strong></td>
+    <td>One engine, DEC-100 compliance</td>
+    <td>Silas</td>
+    <td>#1775</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td><strong>Add Integration class to OWL</strong></td>
+    <td>Formalize ICD pattern from Jeff's patent</td>
+    <td>Silas</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td>8</td>
+    <td><strong>Build ontology crawler</strong></td>
+    <td>Auto-harvest codebasePath, testCount, port status into OWL</td>
+    <td>Silas</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td>9</td>
+    <td><strong>Service design pages for 20+ services</strong></td>
+    <td>Every service gets Experience → Identity → Paths → Failures</td>
+    <td>Wren</td>
+    <td>#1781</td>
+  </tr>
+  <tr>
+    <td>10</td>
+    <td><strong>Gate 3 highest-risk ungated practices</strong></td>
+    <td>Stops the chronic integration failure pattern</td>
+    <td>Silas</td>
+    <td>#1791</td>
+  </tr>
+</table>
+
+<!-- Emergent Concepts -->
+<h2>12. Emergent Concepts (from today's design meeting)</h2>
+
+<table>
+  <tr><th>Concept</th><th>Definition</th><th>Status</th></tr>
+  <tr><td><strong>Pulse</strong></td><td>The circulatory system: hooks + gates + skills + spine events. Named today.</td><td>Not in ontology yet</td></tr>
+  <tr><td><strong>Memory</strong> (domain)</td><td>Feedback memories, stories, constraints — curated persistent context. Not transient.</td><td>Not in ontology yet</td></tr>
+  <tr><td><strong>Block Universe</strong></td><td>All entities exist simultaneously in the OWL. Status and disposition are the thermodynamic arrow. From Susskind seed.</td><td>Design metaphor</td></tr>
+  <tr><td><strong>Experience Statement</strong></td><td>Design constraint that bridges builder and user perspectives. Goes in service design template.</td><td>In template, not in OWL class</td></tr>
+</table>
+
+<p class="meta">
+  Wren &bull; Chorus Domain Model Assessment v3 &bull; Ontology (OWL v0.1, 2,024 lines, riot-validated) × Structural Audit (#1773, Silas) &bull;
+  Design meeting + service design session + 4 cards shipped &bull; 2026-03-28<br>
+  <em>Supersedes v2. Cross-references: chorus-structural-audit.html (Silas), chorus-product-ontology.owl, service-design-*.html</em>
+</p>
+
+</body>
+</html>

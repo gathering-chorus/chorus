@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Service Design — Chorus</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1100px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 30px; }
+  h2 { font-size: 1.15rem; color: #2d4a7a; margin-top: 32px; margin-bottom: 12px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+  h3 { font-size: 1rem; color: #6b21a8; margin-top: 20px; margin-bottom: 8px; }
+  p { margin-bottom: 10px; font-size: 0.88rem; }
+  .quote { font-style: italic; color: #92400e; padding-left: 16px; border-left: 3px solid #f59e0b; margin: 16px 0; font-size: 0.88rem; }
+
+  /* Service selector */
+  .service-tabs { display: flex; gap: 8px; margin: 20px 0; flex-wrap: wrap; }
+  .service-tab { padding: 8px 16px; border-radius: 6px; font-size: 0.82rem; font-weight: 500; cursor: pointer; border: 1px solid #d1d5db; background: #fff; color: #555; transition: all 0.2s; }
+  .service-tab:hover { border-color: #6366f1; color: #6366f1; }
+  .service-tab.active { background: #312e81; color: #e0e7ff; border-color: #312e81; }
+
+  /* Design form sections */
+  .design-section { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px; margin: 16px 0; }
+  .design-section h3 { margin-top: 0; display: flex; align-items: center; gap: 8px; }
+  .section-number { background: #312e81; color: #e0e7ff; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; }
+
+  /* Form elements */
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 0.78rem; font-weight: 600; color: #374151; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field input, .field textarea, .field select { width: 100%; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; font-family: inherit; background: #fafafa; }
+  .field textarea { min-height: 80px; resize: vertical; }
+  .field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
+  .field .hint { font-size: 0.72rem; color: #888; margin-top: 3px; }
+
+  /* Two column */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+  /* Checklist */
+  .checklist { list-style: none; margin: 8px 0; padding: 0; }
+  .checklist li { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; }
+  .checklist li:last-child { border-bottom: none; }
+  .check { width: 18px; height: 18px; border: 2px solid #d1d5db; border-radius: 4px; flex-shrink: 0; }
+  .check.done { background: #4ade80; border-color: #16a34a; position: relative; }
+  .check.done::after { content: "✓"; position: absolute; top: -2px; left: 2px; color: #fff; font-size: 0.75rem; font-weight: 700; }
+
+  /* Integration path */
+  .path { display: flex; align-items: center; gap: 0; margin: 16px 0; flex-wrap: wrap; }
+  .path-node { background: #eef2ff; border: 1px solid #c7d2fe; padding: 8px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
+  .path-arrow { color: #6366f1; font-size: 1.2rem; padding: 0 6px; }
+  .path-event { font-size: 0.7rem; color: #6b21a8; display: block; text-align: center; margin-top: 2px; }
+
+  /* Status badges */
+  .badge { font-size: 0.7rem; padding: 2px 10px; border-radius: 12px; font-weight: 600; }
+  .badge-defined { background: #dcfce7; color: #166534; }
+  .badge-mapped { background: #dbeafe; color: #1e40af; }
+  .badge-built { background: #fce7f3; color: #9d174d; }
+  .badge-missing { background: #fee2e2; color: #991b1b; }
+
+  /* Reference service: convergence */
+  .ref-header { background: linear-gradient(135deg, #312e81 0%, #4f46e5 100%); color: #e0e7ff; padding: 20px 24px; border-radius: 10px 10px 0 0; margin-top: 20px; }
+  .ref-header h2 { color: #e0e7ff; border: none; margin: 0; padding: 0; }
+  .ref-header p { color: #a5b4fc; margin: 4px 0 0 0; }
+  .ref-body { border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px; padding: 24px; background: #fff; }
+
+  .meta { font-size: 0.72rem; color: #555; margin-top: 40px; text-align: center; padding-top: 20px; border-top: 1px solid #ddd; }
+</style>
+</head>
+<body>
+
+<h1>Service Design</h1>
+<p class="subtitle">Define → Map → Build &bull; Every service starts here before code</p>
+
+<p class="quote">"Jeff texts a link, then texts #wren. Two messages. The seed arrives in Wren's inbox." — That's the experience statement. Everything else derives from it.</p>
+
+<!-- Service selector -->
+<h2>Services</h2>
+<div class="service-tabs">
+  <div class="service-tab active">Seed Pipeline</div>
+  <div class="service-tab">Nudge Delivery</div>
+  <div class="service-tab">Clearing / Bridge</div>
+  <div class="service-tab">Acceptance Events</div>
+  <div class="service-tab">Chorus API</div>
+  <div class="service-tab">Messaging Tier</div>
+  <div class="service-tab">Chorus Hooks</div>
+  <div class="service-tab">Session Tailer</div>
+  <div class="service-tab" style="border-style: dashed; color: #888;">+ New Service</div>
+</div>
+
+<!-- ============================================ -->
+<!-- REFERENCE: Seed Pipeline filled in -->
+
+<div class="ref-header">
+  <h2>Seed Pipeline</h2>
+  <p>SMS → webhook → adapter → handler → brief &bull; The first service fully designed</p>
+</div>
+<div class="ref-body">
+
+<!-- 1. Experience -->
+<div class="design-section" style="border: none; padding: 0;">
+  <h3><span class="section-number">1</span> Experience</h3>
+  <p style="font-size: 0.78rem; color: #888; margin-bottom: 8px;">Jeff's voice. One sentence. This is the test that matters.</p>
+  <div class="field">
+    <textarea style="font-size: 1rem; font-style: italic; color: #92400e; background: #fffbeb; border-color: #f59e0b; min-height: 60px;">I text a link from my phone, then text #wren. Two separate messages. The seed arrives in Wren's inbox with the link extracted and the photo attached.</textarea>
+  </div>
+</div>
+
+<!-- 2. Identity -->
+<div class="design-section" style="border: none; padding: 0; margin-top: 24px;">
+  <h3><span class="section-number">2</span> Identity</h3>
+  <div class="two-col">
+    <div class="field">
+      <label>Service Name</label>
+      <input type="text" value="Seed Pipeline" />
+    </div>
+    <div class="field">
+      <label>Owner</label>
+      <input type="text" value="Kade (build) / Silas (infra)" />
+    </div>
+    <div class="field">
+      <label>Language</label>
+      <select>
+        <option selected>TypeScript</option>
+        <option>Rust</option>
+        <option>Bash (deprecated)</option>
+      </select>
+      <div class="hint">DEC-100: No bash APIs. TypeScript or Rust for new services.</div>
+    </div>
+    <div class="field">
+      <label>Data Store</label>
+      <input type="text" value="SOLID Pod (TTL) + filesystem (briefs)" />
+    </div>
+    <div class="field">
+      <label>Loom Tier</label>
+      <select>
+        <option selected>Services</option>
+        <option>Practices</option>
+        <option>Knowledge</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Phase Affinity</label>
+      <select>
+        <option selected>Capturing</option>
+        <option>Directing</option>
+        <option>Designing</option>
+        <option>Building</option>
+        <option>Proving</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Integration Path -->
+<div class="design-section" style="border: none; padding: 0; margin-top: 24px;">
+  <h3><span class="section-number">3</span> Integration Path</h3>
+  <p style="font-size: 0.78rem; color: #888; margin-bottom: 12px;">Every step emits a spine event. Every step is traceable in logs.</p>
+
+  <div class="path">
+    <div class="path-node">
+      Jeff's Phone
+      <span class="path-event">&nbsp;</span>
+    </div>
+    <span class="path-arrow">→</span>
+    <div class="path-node">
+      Twilio
+      <span class="path-event">&nbsp;</span>
+    </div>
+    <span class="path-arrow">→</span>
+    <div class="path-node">
+      Cloudflare Tunnel
+      <span class="path-event">&nbsp;</span>
+    </div>
+    <span class="path-arrow">→</span>
+    <div class="path-node">
+      Webhook Endpoint
+      <span class="path-event">seed.webhook.received</span>
+    </div>
+    <span class="path-arrow">→</span>
+    <div class="path-node">
+      SMS Adapter
+      <span class="path-event">seed.adapter.parsed</span>
+    </div>
+    <span class="path-arrow">→</span>
+    <div class="path-node">
+      Seed Handler
+      <span class="path-event">seed.hashtag.correlated</span>
+    </div>
+    <span class="path-arrow">→</span>
+    <div class="path-node">
+      Route to Role
+      <span class="path-event">seed.routed</span>
+    </div>
+    <span class="path-arrow">→</span>
+    <div class="path-node">
+      Brief File
+      <span class="path-event">seed.brief.written</span>
+    </div>
+  </div>
+
+  <div class="field" style="margin-top: 16px;">
+    <label>Key Design Constraint</label>
+    <textarea>Content and hashtag ALWAYS arrive as separate SMS messages (two webhook calls). Apple Music sends the link as one message. Jeff sends #wren as a second message. The handler must correlate across calls, not assume single-message delivery.</textarea>
+  </div>
+</div>
+
+<!-- 4. Non-Functionals -->
+<div class="design-section" style="border: none; padding: 0; margin-top: 24px;">
+  <h3><span class="section-number">4</span> Non-Functionals</h3>
+  <div class="two-col">
+    <div class="field">
+      <label>Idempotency</label>
+      <textarea style="min-height: 50px;">Dedup by content hash + sender + 5-minute window. Same message arriving twice produces one seed.</textarea>
+    </div>
+    <div class="field">
+      <label>Observability</label>
+      <textarea style="min-height: 50px;">Spine event at every step. Dropped seeds emit seed.dropped with reason. All events queryable via chorus log.</textarea>
+    </div>
+    <div class="field">
+      <label>Error Visibility</label>
+      <textarea style="min-height: 50px;">Failed webhook → log + Bridge alert. Jeff never discovers a failure by sending a text into the void.</textarea>
+    </div>
+    <div class="field">
+      <label>Monitoring</label>
+      <textarea style="min-height: 50px;">Synthetic SMS test every hour. Verifies full path. Posts red to Bridge if brief doesn't arrive within 60 seconds. (#1784)</textarea>
+    </div>
+  </div>
+</div>
+
+<!-- 5. Test Contract -->
+<div class="design-section" style="border: none; padding: 0; margin-top: 24px;">
+  <h3><span class="section-number">5</span> Test Contract</h3>
+  <p style="font-size: 0.78rem; color: #888; margin-bottom: 12px;">Derived from the experience statement. If the test doesn't match the experience, the test is wrong.</p>
+
+  <ul class="checklist">
+    <li><span class="check done"></span> <strong>Unit:</strong> SMS adapter parses plain URL, rich link (Apple Music), photo, hashtag-only</li>
+    <li><span class="check done"></span> <strong>Unit:</strong> Seed handler correlates hashtag across separate webhook calls (both orderings)</li>
+    <li><span class="check"></span> <strong>Integration:</strong> POST webhook with Apple Music payload → POST webhook with #wren → assert brief file exists in destination</li>
+    <li><span class="check"></span> <strong>Integration:</strong> POST webhook with photo payload → POST webhook with #wren → assert brief file exists with media attached</li>
+    <li><span class="check"></span> <strong>Integration:</strong> Reverse order (hashtag first, content second) → assert brief still arrives</li>
+    <li><span class="check"></span> <strong>Synthetic:</strong> Hourly cron sends test payload through full pipeline, verifies brief arrival</li>
+  </ul>
+</div>
+
+<!-- 6. Dependencies -->
+<div class="design-section" style="border: none; padding: 0; margin-top: 24px;">
+  <h3><span class="section-number">6</span> Dependencies</h3>
+  <div class="three-col">
+    <div class="field">
+      <label>Upstream (receives from)</label>
+      <textarea style="min-height: 50px;">Twilio SMS webhook via Cloudflare tunnel. Signed requests only.</textarea>
+    </div>
+    <div class="field">
+      <label>Downstream (delivers to)</label>
+      <textarea style="min-height: 50px;">Brief files → role briefs/ directory. SOLID pod capture store.</textarea>
+    </div>
+    <div class="field">
+      <label>Shared State</label>
+      <textarea style="min-height: 50px;">Pending captures (in-memory, TTL-bounded). SOLID pod for persistence.</textarea>
+    </div>
+  </div>
+</div>
+
+<!-- 7. Design Checklist -->
+<div class="design-section" style="border: none; padding: 0; margin-top: 24px;">
+  <h3><span class="section-number">7</span> Design Gate</h3>
+  <p style="font-size: 0.78rem; color: #888; margin-bottom: 12px;">All items checked before any card moves to Building.</p>
+
+  <ul class="checklist">
+    <li><span class="check done"></span> Experience statement written</li>
+    <li><span class="check done"></span> Integration path mapped with spine events</li>
+    <li><span class="check done"></span> Key design constraints documented</li>
+    <li><span class="check done"></span> Non-functionals specified (idempotency, observability, error visibility, monitoring)</li>
+    <li><span class="check"></span> Test contract derived from experience statement</li>
+    <li><span class="check"></span> Dependencies documented (upstream, downstream, shared state)</li>
+    <li><span class="check"></span> Language and data store chosen per DEC-100</li>
+  </ul>
+</div>
+
+</div>
+
+<!-- ============================================ -->
+<h2>The Pattern: Define → Map → Build</h2>
+
+<p>Same discipline as ICD governance (DEC-095), convergence practice, and Jeff's Staples integration architecture. No code without a contract. No building without a design artifact.</p>
+
+<table style="font-size: 0.85rem;">
+  <tr><th>Stage</th><th>Stance</th><th>Artifact</th><th>Gate</th></tr>
+  <tr><td><strong>Define</strong></td><td>Designing</td><td>This page — experience, identity, non-functionals</td><td>Experience statement exists</td></tr>
+  <tr><td><strong>Map</strong></td><td>Designing</td><td>Integration path with spine events, test contract, dependencies</td><td>All design checklist items checked</td></tr>
+  <tr><td><strong>Build</strong></td><td>Building</td><td>Code, tests, deployment</td><td>Integration tests pass, not just unit tests</td></tr>
+  <tr><td><strong>Verify</strong></td><td>Proving</td><td>Live-path test, synthetic monitoring</td><td>Jeff uses it and it works — first time</td></tr>
+</table>
+
+<p class="quote">"You don't pour concrete before the drawing is done." — Jeff's dad's landscape blueprint</p>
+
+<p class="meta">Wren &bull; Card #1783 &bull; Service Design Page Wireframe &bull; 2026-03-28</p>
+
+</body>
+</html>

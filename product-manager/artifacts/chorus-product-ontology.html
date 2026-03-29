@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chorus Product Ontology — Value Streams, Domains, Services</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1200px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 30px; }
+  h2 { font-size: 1.2rem; color: #2d4a7a; margin-top: 36px; margin-bottom: 14px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+  h3 { font-size: 1rem; color: #6b21a8; margin-top: 20px; margin-bottom: 8px; }
+  p { margin-bottom: 12px; font-size: 0.88rem; }
+  .quote { font-style: italic; color: #92400e; padding-left: 16px; border-left: 3px solid #f59e0b; margin: 16px 0; font-size: 0.88rem; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 10px 14px; background: #e0e7ff; color: #2d4a7a; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 10px 14px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  tr:nth-child(even) td { background: #f3f4f6; }
+  ul { margin: 8px 0 12px 20px; font-size: 0.85rem; }
+  li { margin-bottom: 4px; }
+  code { background: #eef2ff; padding: 2px 6px; border-radius: 3px; font-size: 0.82rem; }
+
+  /* Ontology class cards */
+  .class-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 20px; margin: 16px 0; }
+  .class-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .class-name { font-weight: 700; font-size: 1.05rem; color: #312e81; }
+  .class-type { font-size: 0.72rem; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
+  .type-vs { background: #dbeafe; color: #1e40af; }
+  .type-domain { background: #dcfce7; color: #166534; }
+  .type-service { background: #fef3c7; color: #92400e; }
+  .type-meta { background: #f3e8ff; color: #6b21a8; }
+  .prop-table { width: 100%; font-size: 0.8rem; }
+  .prop-table th { background: #f8fafc; font-size: 0.72rem; padding: 6px 10px; }
+  .prop-table td { padding: 6px 10px; font-size: 0.8rem; }
+
+  /* Relationship diagram */
+  .rel-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; margin: 20px 0; }
+  .rel-col { padding: 16px; }
+  .rel-col h4 { font-size: 0.85rem; text-align: center; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 2px solid; }
+  .rel-item { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 12px; margin: 6px 0; font-size: 0.8rem; font-weight: 500; position: relative; }
+  .rel-connector { font-size: 0.7rem; color: #888; text-align: center; padding: 2px 0; }
+
+  /* Matrix */
+  .matrix { overflow-x: auto; }
+  .matrix table { min-width: 900px; }
+  .matrix th { white-space: nowrap; font-size: 0.72rem; }
+  .matrix td { text-align: center; font-size: 0.78rem; min-width: 70px; }
+  .matrix td:first-child { text-align: left; font-weight: 600; min-width: 160px; }
+  .cell-primary { background: #312e81 !important; color: #e0e7ff; font-weight: 600; }
+  .cell-secondary { background: #eef2ff !important; color: #312e81; }
+  .cell-empty { color: #ccc; }
+
+  .rule { background: #fefce8; border-left: 4px solid #ca8a04; padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: 0.85rem; }
+  .rule strong { color: #92400e; }
+
+  .meta { font-size: 0.72rem; color: #555; margin-top: 40px; text-align: center; padding-top: 20px; border-top: 1px solid #ddd; }
+</style>
+</head>
+<body>
+
+<h1>Chorus Product Ontology</h1>
+<p class="subtitle">Value Streams &times; Domains &times; Services &bull; v0.1 &bull; Card #1783 &bull; 2026-03-28</p>
+
+<!-- ============================================ -->
+<h2>1. Ontology Rules</h2>
+
+<div class="rule">
+  <strong>Rule 1:</strong> Every Domain maps to at least one Value Stream.
+</div>
+<div class="rule">
+  <strong>Rule 2:</strong> Every Service maps to 1..n Domains and 1..n Value Streams.
+</div>
+<div class="rule">
+  <strong>Rule 3:</strong> Value Streams are stable (change = product pivot). Domains are bounded contexts (change = product expansion). Services are implementations (change = engineering decision).
+</div>
+
+<!-- ============================================ -->
+<h2>2. Classes</h2>
+
+<!-- VALUE STREAM -->
+<div class="class-card">
+  <div class="class-header">
+    <span class="class-name">ValueStream</span>
+    <span class="class-type type-vs">Core Class</span>
+  </div>
+  <p>A named flow of value from signal to outcome. Stable — when a value stream changes, the product has fundamentally changed.</p>
+  <table class="prop-table">
+    <tr><th>Property</th><th>Range</th><th>Description</th></tr>
+    <tr><td><code>name</code></td><td>string</td><td>Human name: "Personal", "Life", "Chorus"</td></tr>
+    <tr><td><code>stages</code></td><td>Stage[]</td><td>Ordered sequence of stages within this stream</td></tr>
+    <tr><td><code>rhythm</code></td><td>string</td><td>Temporal cadence: "minutes-hours", "weeks-years", "hours-sessions"</td></tr>
+    <tr><td><code>product</code></td><td>string</td><td>Which product this stream serves: "Gathering", "Chorus", "Both"</td></tr>
+  </table>
+</div>
+
+<!-- STAGE -->
+<div class="class-card">
+  <div class="class-header">
+    <span class="class-name">Stage</span>
+    <span class="class-type type-vs">Core Class</span>
+  </div>
+  <p>A phase within a value stream. Each stage is a <strong>stance</strong> — a posture that determines what you see, value, and produce.</p>
+  <table class="prop-table">
+    <tr><th>Property</th><th>Range</th><th>Description</th></tr>
+    <tr><td><code>name</code></td><td>string</td><td>"Capturing", "Directing", "Designing", "Building", "Proving"</td></tr>
+    <tr><td><code>stance</code></td><td>string</td><td>The posture: "Receiving", "Prioritizing", "Architecting", "Shipping", "Verifying"</td></tr>
+    <tr><td><code>owner</code></td><td>Role[]</td><td>Primary role(s) in this stance</td></tr>
+    <tr><td><code>produces</code></td><td>string[]</td><td>Artifacts this stage must emit</td></tr>
+    <tr><td><code>belongsTo</code></td><td>ValueStream</td><td>Parent value stream</td></tr>
+    <tr><td><code>order</code></td><td>integer</td><td>Position in the stream sequence</td></tr>
+  </table>
+</div>
+
+<!-- DOMAIN -->
+<div class="class-card">
+  <div class="class-header">
+    <span class="class-name">Domain</span>
+    <span class="class-type type-domain">Core Class</span>
+  </div>
+  <p>A bounded context with its own data, handlers, ontology, and routes. Domains rarely change — when they do, the product has expanded or contracted.</p>
+  <table class="prop-table">
+    <tr><th>Property</th><th>Range</th><th>Description</th></tr>
+    <tr><td><code>name</code></td><td>string</td><td>"seeds", "music", "photos", "coordination", "convergence"</td></tr>
+    <tr><td><code>valueStreams</code></td><td>ValueStream[] (1..n)</td><td><strong>Required.</strong> Which streams this domain serves</td></tr>
+    <tr><td><code>primaryStage</code></td><td>Stage</td><td>The stage where this domain has strongest affinity</td></tr>
+    <tr><td><code>product</code></td><td>string</td><td>"Gathering" or "Chorus"</td></tr>
+    <tr><td><code>layer</code></td><td>string</td><td>"core", "supporting", "generic"</td></tr>
+    <tr><td><code>status</code></td><td>string</td><td>"active", "partial", "aspirational"</td></tr>
+    <tr><td><code>ontologyClass</code></td><td>URI</td><td>Root class in jb-ontology for this domain</td></tr>
+  </table>
+</div>
+
+<!-- SERVICE -->
+<div class="class-card">
+  <div class="class-header">
+    <span class="class-name">Service</span>
+    <span class="class-type type-service">Core Class</span>
+  </div>
+  <p>A running piece of infrastructure with a language, data model, integration contract, and non-functionals. Services implement domain capabilities.</p>
+  <table class="prop-table">
+    <tr><th>Property</th><th>Range</th><th>Description</th></tr>
+    <tr><td><code>name</code></td><td>string</td><td>"Seed Pipeline", "Nudge Delivery", "Chorus API"</td></tr>
+    <tr><td><code>domains</code></td><td>Domain[] (1..n)</td><td><strong>Required.</strong> Which domains this service operates in</td></tr>
+    <tr><td><code>valueStreams</code></td><td>ValueStream[] (1..n)</td><td><strong>Required.</strong> Which streams this service supports</td></tr>
+    <tr><td><code>language</code></td><td>string</td><td>"TypeScript", "Rust", "Bash (deprecated)"</td></tr>
+    <tr><td><code>dataStore</code></td><td>string</td><td>"SQLite", "SOLID Pod", "Fuseki", "filesystem"</td></tr>
+    <tr><td><code>experience</code></td><td>string</td><td>Jeff's voice — one sentence describing the desired experience</td></tr>
+    <tr><td><code>tier</code></td><td>string</td><td>"Knowledge", "Practices", "Services" (Loom tier)</td></tr>
+    <tr><td><code>owner</code></td><td>Role</td><td>Build owner</td></tr>
+    <tr><td><code>designArtifact</code></td><td>URI</td><td>Link to service design page</td></tr>
+    <tr><td><code>nonFunctionals</code></td><td>NonFunctionals</td><td>Idempotency, observability, error visibility, monitoring</td></tr>
+  </table>
+</div>
+
+<!-- PRACTICE -->
+<div class="class-card">
+  <div class="class-header">
+    <span class="class-name">Practice</span>
+    <span class="class-type type-meta">Method Class</span>
+  </div>
+  <p>A repeatable discipline that applies across domains. Convergence is a practice, not a domain.</p>
+  <table class="prop-table">
+    <tr><th>Property</th><th>Range</th><th>Description</th></tr>
+    <tr><td><code>name</code></td><td>string</td><td>"TDD", "Demo", "Convergence", "Gemba", "Pair", "Service Design"</td></tr>
+    <tr><td><code>appliesTo</code></td><td>Domain[]</td><td>Which domains this practice can be applied to</td></tr>
+    <tr><td><code>skill</code></td><td>string</td><td>Corresponding /skill if any: "/demo", "/pair", "/gemba"</td></tr>
+    <tr><td><code>stageAffinity</code></td><td>Stage[]</td><td>Which stages this practice is most relevant in</td></tr>
+  </table>
+</div>
+
+<!-- ============================================ -->
+<h2>3. Value Streams</h2>
+
+<table>
+  <tr><th>Value Stream</th><th>Rhythm</th><th>Stages</th><th>Product</th></tr>
+  <tr>
+    <td><strong>Personal</strong></td>
+    <td>Minutes → Hours</td>
+    <td>Spark → Capture → Triage → Settle → Revisit → Transform → Connect → Reflect</td>
+    <td>Gathering</td>
+  </tr>
+  <tr>
+    <td><strong>Life</strong></td>
+    <td>Weeks → Years</td>
+    <td>Sowing → Growing → Practicing → Harvesting → Reflecting</td>
+    <td>Gathering</td>
+  </tr>
+  <tr>
+    <td><strong>Chorus</strong></td>
+    <td>Hours → Sessions</td>
+    <td>Capturing → Directing → Designing → Building → Proving</td>
+    <td>Chorus</td>
+  </tr>
+</table>
+
+<!-- ============================================ -->
+<h2>4. Domains → Value Streams</h2>
+
+<h3>Gathering Domains</h3>
+<table>
+  <tr><th>Domain</th><th>Layer</th><th>Value Stream(s)</th><th>Primary Stage</th><th>Status</th></tr>
+  <tr><td><strong>seeds</strong></td><td>Supporting</td><td>Personal</td><td>Capture</td><td>Active</td></tr>
+  <tr><td><strong>glimmers</strong></td><td>Core</td><td>Personal</td><td>Triage / Transform</td><td>Designed</td></tr>
+  <tr><td><strong>ideas</strong></td><td>Core</td><td>Personal</td><td>Settle / Transform</td><td>Active</td></tr>
+  <tr><td><strong>projects</strong></td><td>Core</td><td>Personal, Chorus</td><td>Transform</td><td>Active</td></tr>
+  <tr><td><strong>cooking</strong></td><td>Supporting</td><td>Personal, Life</td><td>Practicing</td><td>Active</td></tr>
+  <tr><td><strong>reading</strong></td><td>Supporting</td><td>Personal, Life</td><td>Practicing</td><td>Active</td></tr>
+  <tr><td><strong>watching</strong></td><td>Supporting</td><td>Personal, Life</td><td>Practicing</td><td>Active</td></tr>
+  <tr><td><strong>music</strong></td><td>Supporting</td><td>Life</td><td>Harvesting</td><td>Active</td></tr>
+  <tr><td><strong>photos</strong></td><td>Supporting</td><td>Life</td><td>Harvesting</td><td>Active</td></tr>
+  <tr><td><strong>books</strong></td><td>Supporting</td><td>Life</td><td>Harvesting</td><td>Active</td></tr>
+  <tr><td><strong>stories</strong></td><td>Core</td><td>Personal, Life</td><td>Reflecting</td><td>Active</td></tr>
+  <tr><td><strong>people</strong></td><td>Supporting</td><td>Life</td><td>Harvesting</td><td>Active</td></tr>
+  <tr><td><strong>property</strong></td><td>Supporting</td><td>Life</td><td>Practicing</td><td>Active</td></tr>
+  <tr><td><strong>sexuality</strong></td><td>Supporting</td><td>Life</td><td>Harvesting</td><td>Active</td></tr>
+  <tr><td><strong>social</strong></td><td>Supporting</td><td>Life</td><td>Harvesting</td><td>Partial</td></tr>
+  <tr><td><strong>blog</strong></td><td>Supporting</td><td>Life</td><td>Harvesting</td><td>Active</td></tr>
+  <tr><td><strong>notes</strong></td><td>Supporting</td><td>Personal, Life</td><td>Harvesting</td><td>Partial</td></tr>
+  <tr><td><strong>values</strong></td><td>Core</td><td>Life</td><td>Reflecting</td><td>Minimal</td></tr>
+  <tr><td><strong>practices</strong></td><td>Core</td><td>Life</td><td>Reflecting</td><td>Minimal</td></tr>
+  <tr><td><strong>self</strong></td><td>Core</td><td>Personal, Life</td><td>Reflecting</td><td>Aspirational</td></tr>
+</table>
+
+<h3>Chorus Domains</h3>
+<table>
+  <tr><th>Domain</th><th>Layer</th><th>Value Stream(s)</th><th>Primary Stage</th><th>Status</th></tr>
+  <tr><td><strong>coordination</strong></td><td>Core</td><td>Chorus</td><td>Directing</td><td>Active</td></tr>
+  <tr><td><strong>codebase</strong></td><td>Supporting</td><td>Chorus</td><td>Building</td><td>Partial</td></tr>
+  <tr><td><strong>knowledge-graph</strong></td><td>Supporting</td><td>Chorus, Life</td><td>Harvesting</td><td>Partial</td></tr>
+  <tr><td><strong>search</strong></td><td>Supporting</td><td>Chorus, Personal</td><td>Revisit / Connect</td><td>Partial</td></tr>
+  <tr><td><strong>infrastructure</strong></td><td>Generic</td><td>Chorus</td><td>Building</td><td>Active</td></tr>
+  <tr><td><strong>convergence</strong></td><td>Supporting</td><td>Chorus, Life</td><td>Designing</td><td>Active</td></tr>
+</table>
+
+<div class="rule">
+  <strong>Note:</strong> Convergence is now a <em>practice</em> in the Loom model, but it still has domain-level concerns (ICDs, source-to-canonical mappings, SHACL validation). It lives in both: a practice that applies to many domains, and a domain with its own bounded context.
+</div>
+
+<!-- ============================================ -->
+<h2>5. Services → Domains → Value Streams</h2>
+
+<table>
+  <tr><th>Service</th><th>Domains</th><th>Value Streams</th><th>Language</th><th>Tier</th><th>Experience</th></tr>
+  <tr>
+    <td><strong>Seed Pipeline</strong></td>
+    <td>seeds, coordination</td>
+    <td>Personal, Chorus</td>
+    <td>TypeScript</td>
+    <td>Services</td>
+    <td>"I text a link, then #wren. Two messages. Seed arrives in Wren's inbox."</td>
+  </tr>
+  <tr>
+    <td><strong>Nudge Delivery</strong></td>
+    <td>coordination</td>
+    <td>Chorus</td>
+    <td>Bash → TS</td>
+    <td>Services</td>
+    <td>"I nudge a role and it arrives instantly. I never wonder if it landed."</td>
+  </tr>
+  <tr>
+    <td><strong>Clearing / Bridge</strong></td>
+    <td>coordination, search</td>
+    <td>Chorus</td>
+    <td>TypeScript</td>
+    <td>Services</td>
+    <td>"I open the Clearing and see what all roles are doing. I type and they respond."</td>
+  </tr>
+  <tr>
+    <td><strong>Chorus API</strong></td>
+    <td>coordination, search, knowledge-graph</td>
+    <td>Chorus</td>
+    <td>TypeScript</td>
+    <td>Services</td>
+    <td>"Any team tool can query cards, messages, sessions, and search from one endpoint."</td>
+  </tr>
+  <tr>
+    <td><strong>Messaging Tier</strong></td>
+    <td>coordination</td>
+    <td>Chorus</td>
+    <td>TypeScript</td>
+    <td>Services</td>
+    <td>"Every nudge, brief, and event is persisted and queryable. Nothing lost."</td>
+  </tr>
+  <tr>
+    <td><strong>Chorus Hooks</strong></td>
+    <td>coordination, codebase</td>
+    <td>Chorus</td>
+    <td>Rust</td>
+    <td>Services</td>
+    <td>"Every tool call is governed. Roles can't bypass gates."</td>
+  </tr>
+  <tr>
+    <td><strong>Session Tailer</strong></td>
+    <td>coordination</td>
+    <td>Chorus</td>
+    <td>TypeScript</td>
+    <td>Services</td>
+    <td>"Role activity streams to the Clearing in real time."</td>
+  </tr>
+  <tr>
+    <td><strong>Board CLI (board-ts)</strong></td>
+    <td>coordination</td>
+    <td>Chorus</td>
+    <td>TypeScript</td>
+    <td>Tool Chain</td>
+    <td>"One command to create, move, view, and manage cards."</td>
+  </tr>
+  <tr>
+    <td><strong>Fuseki</strong></td>
+    <td>knowledge-graph</td>
+    <td>Life, Personal, Chorus</td>
+    <td>Java (vendor)</td>
+    <td>Services</td>
+    <td>"All domain knowledge queryable via SPARQL."</td>
+  </tr>
+  <tr>
+    <td><strong>NiFi</strong></td>
+    <td>convergence, photos, music</td>
+    <td>Life</td>
+    <td>Java (vendor)</td>
+    <td>Services</td>
+    <td>"Data flows from source to canonical without custom scripts."</td>
+  </tr>
+  <tr>
+    <td><strong>Gathering App</strong></td>
+    <td>ALL Gathering domains</td>
+    <td>Personal, Life</td>
+    <td>TypeScript</td>
+    <td>Services</td>
+    <td>"One app to browse, search, and interact with everything Jeff has collected."</td>
+  </tr>
+  <tr>
+    <td><strong>Daily Review Agents</strong></td>
+    <td>infrastructure, coordination</td>
+    <td>Chorus</td>
+    <td>Bash</td>
+    <td>Services</td>
+    <td>"Every morning, ops/quality/summary appears on the Bridge before Jeff wakes up."</td>
+  </tr>
+</table>
+
+<!-- ============================================ -->
+<h2>6. Domain × Value Stream Matrix</h2>
+
+<div class="matrix">
+<table>
+  <tr>
+    <th></th>
+    <th colspan="8" style="text-align: center; background: #fef3c7; color: #92400e;">Personal</th>
+    <th colspan="5" style="text-align: center; background: #dcfce7; color: #166534;">Life</th>
+    <th colspan="5" style="text-align: center; background: #dbeafe; color: #1e40af;">Chorus</th>
+  </tr>
+  <tr>
+    <th>Domain</th>
+    <th>Spark</th><th>Capture</th><th>Triage</th><th>Settle</th><th>Revisit</th><th>Transform</th><th>Connect</th><th>Reflect</th>
+    <th>Sowing</th><th>Growing</th><th>Practicing</th><th>Harvesting</th><th>Reflecting</th>
+    <th>Capturing</th><th>Directing</th><th>Designing</th><th>Building</th><th>Proving</th>
+  </tr>
+  <!-- Gathering domains -->
+  <tr>
+    <td>seeds</td>
+    <td class="cell-secondary">●</td><td class="cell-primary">■</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-primary">■</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>stories</td>
+    <td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-primary">■</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-primary">■</td>
+    <td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>music</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-primary">■</td><td class="cell-secondary">●</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>photos</td>
+    <td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-primary">■</td><td class="cell-secondary">●</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>people</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-primary">■</td><td class="cell-secondary">●</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>property</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-primary">■</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+  </tr>
+  <!-- Chorus domains -->
+  <tr>
+    <td>coordination</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-secondary">●</td><td class="cell-primary">■</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td>
+  </tr>
+  <tr>
+    <td>convergence</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-primary">■</td><td class="cell-secondary">●</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>infrastructure</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-primary">■</td><td class="cell-secondary">●</td>
+  </tr>
+  <tr>
+    <td>search</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td>
+  </tr>
+</table>
+</div>
+
+<p style="font-size: 0.78rem; color: #888; margin-top: 8px;">
+  <strong>■</strong> = primary affinity &nbsp;&nbsp; <strong>●</strong> = secondary participation &nbsp;&nbsp; <strong>·</strong> = no relationship
+</p>
+
+<!-- ============================================ -->
+<h2>7. Service × Domain × Value Stream Cross-Reference</h2>
+
+<div class="matrix">
+<table>
+  <tr>
+    <th>Service</th>
+    <th>seeds</th><th>stories</th><th>music</th><th>photos</th><th>people</th>
+    <th>coordination</th><th>convergence</th><th>infrastructure</th><th>search</th><th>knowledge-graph</th>
+  </tr>
+  <tr>
+    <td>Seed Pipeline</td>
+    <td class="cell-primary">■</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>Nudge Delivery</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-primary">■</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>Clearing / Bridge</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-primary">■</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>Chorus API</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-primary">■</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td>
+  </tr>
+  <tr>
+    <td>Chorus Hooks</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+    <td class="cell-primary">■</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-empty">·</td>
+  </tr>
+  <tr>
+    <td>NiFi</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-empty">·</td>
+    <td class="cell-empty">·</td><td class="cell-primary">■</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td>
+  </tr>
+  <tr>
+    <td>Fuseki</td>
+    <td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td>
+    <td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-primary">■</td>
+  </tr>
+  <tr>
+    <td>Gathering App</td>
+    <td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td>
+    <td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-empty">·</td><td class="cell-secondary">●</td><td class="cell-secondary">●</td>
+  </tr>
+</table>
+</div>
+
+<p style="font-size: 0.78rem; color: #888; margin-top: 8px;">
+  <strong>■</strong> = primary domain &nbsp;&nbsp; <strong>●</strong> = secondary domain &nbsp;&nbsp; <strong>·</strong> = no relationship
+</p>
+
+<!-- ============================================ -->
+<h2>8. What This Ontology Enables</h2>
+
+<ul>
+  <li><strong>Impact analysis:</strong> "Which services are affected if I change the seeds domain?" → Seed Pipeline, Gathering App</li>
+  <li><strong>Gap detection:</strong> "Which domains have no service design artifact?" → Most of them. That's the #1781 work.</li>
+  <li><strong>Coverage queries:</strong> "Which value stream stages have no services?" → Reflecting has zero services. Connect has zero.</li>
+  <li><strong>Blast radius:</strong> "What breaks if the Chorus API goes down?" → coordination, search, knowledge-graph domains affected</li>
+  <li><strong>Design enforcement:</strong> "Does this new service declare its domains and value streams?" → Gate check before Building</li>
+</ul>
+
+<p class="quote">"The phases aren't just workflow stages — they're stances. And the monolith needs to be more like a set of services." — Jeff, voice memo, 2026-03-28</p>
+
+<p class="meta">Wren &bull; Card #1783 &bull; Chorus Product Ontology v0.1 &bull; 2026-03-28</p>
+
+</body>
+</html>

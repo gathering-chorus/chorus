@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ETL Pipeline Comparison — NiFi vs Camel vs Singer vs Scripts</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.8rem; border-bottom: 3px solid #059669; padding-bottom: 0.5rem; }
+  h2 { font-size: 1.3rem; color: #059669; margin-top: 2rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+  th { background: #1e293b; color: white; padding: 0.6rem; text-align: left; }
+  td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) { background: #f8fafc; }
+  .yes { color: #059669; font-weight: 600; }
+  .partial { color: #d97706; font-weight: 600; }
+  .no { color: #dc2626; font-weight: 600; }
+  .rec { background: #ecfdf5; border-left: 4px solid #059669; padding: 1rem; margin: 1rem 0; }
+  .warn { background: #fef3c7; border-left: 4px solid #d97706; padding: 1rem; margin: 1rem 0; }
+  .cost { background: #fef2f2; border-left: 4px solid #dc2626; padding: 1rem; margin: 1rem 0; }
+  .card { background: #f1f5f9; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+  code { background: #f1f5f9; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.85em; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; color: #6b7280; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<h1>ETL Pipeline Comparison</h1>
+<p><strong>Card:</strong> #1661 | <strong>Date:</strong> 2026-03-24 | <strong>Author:</strong> Wren</p>
+<p>Which integration tool replaces ad-hoc bash/Python harvest scripts? Evaluated against: ICD governance, provenance, Mac native, 2-machine homelab constraints.</p>
+
+<h2>Comparison Matrix</h2>
+
+<table>
+<tr>
+  <th>Criterion</th>
+  <th>Apache NiFi</th>
+  <th>Apache Camel</th>
+  <th>Singer/Meltano</th>
+  <th>Custom Scripts</th>
+</tr>
+<tr>
+  <td><strong>Memory</strong></td>
+  <td class="partial">Heavy (1-2GB)</td>
+  <td class="partial">Medium (200-500MB)</td>
+  <td class="yes">Light (100-300MB)</td>
+  <td class="yes">Minimal</td>
+</tr>
+<tr>
+  <td><strong>Provenance</strong></td>
+  <td class="yes">Built-in, best-in-class</td>
+  <td class="no">Manual — build it yourself</td>
+  <td class="no">Minimal — job-level only</td>
+  <td class="no">None</td>
+</tr>
+<tr>
+  <td><strong>Visual flow</strong></td>
+  <td class="yes">Browser canvas</td>
+  <td class="partial">Karavan (VS Code)</td>
+  <td class="no">CLI only</td>
+  <td class="no">None</td>
+</tr>
+<tr>
+  <td><strong>Custom transforms</strong></td>
+  <td class="yes">Shell/Python via processors</td>
+  <td class="yes">Native (code-first)</td>
+  <td class="partial">Limited (mappers)</td>
+  <td class="yes">Unlimited</td>
+</tr>
+<tr>
+  <td><strong>Fuseki integration</strong></td>
+  <td class="partial">InvokeHTTP → REST API</td>
+  <td class="partial">HTTP component → REST API</td>
+  <td class="no">Custom target needed</td>
+  <td class="yes">Direct</td>
+</tr>
+<tr>
+  <td><strong>Mac native</strong></td>
+  <td class="yes">Java — no Docker</td>
+  <td class="yes">Java/JBang — no Docker</td>
+  <td class="yes">Python — no Docker</td>
+  <td class="yes">Bash/Python</td>
+</tr>
+<tr>
+  <td><strong>ICD governance</strong></td>
+  <td class="yes">Structural enforcement</td>
+  <td class="partial">Code convention</td>
+  <td class="partial">Code convention</td>
+  <td class="no">Hope</td>
+</tr>
+<tr>
+  <td><strong>Already working</strong></td>
+  <td class="yes">Prototype on Bedroom</td>
+  <td class="no">Not installed</td>
+  <td class="no">Not installed</td>
+  <td class="partial">Yes (fragile)</td>
+</tr>
+</table>
+
+<h2>Recommendation: NiFi</h2>
+
+<div class="rec">
+<strong>NiFi wins on the three things that matter most:</strong>
+<ol>
+<li><strong>Provenance is architectural.</strong> Every FlowFile carries its full history — creation, transformation, routing, delivery. This IS the ICD verification layer. Jeff's Staples pattern: the ARB approved architecture, the CIA team made it trustworthy. NiFi's provenance is that trust layer.</li>
+<li><strong>It already works.</strong> Installed on the 32GB Bedroom Mac. Prototype flow succeeded (#1662). The REST API means Chorus can orchestrate flows programmatically.</li>
+<li><strong>ICD validation fits structurally.</strong> Source → ExecuteScript (ICD validation) → Transform → InvokeHTTP (Fuseki). Failed validation routes to a failure queue with full provenance. You can see it, query it, prove it.</li>
+</ol>
+</div>
+
+<h2>What NiFi Costs</h2>
+
+<div class="cost">
+<ul>
+<li><strong>Memory:</strong> 1-2GB on the 32GB machine — acceptable, but don't run it on Library (16GB, 88% disk)</li>
+<li><strong>Learning curve:</strong> Processor model is medium complexity, but visual. Jeff's EIP background (Hohpe) maps directly to NiFi concepts.</li>
+<li><strong>Java ecosystem:</strong> JVM maintenance, version management. Homebrew handles this on Mac.</li>
+</ul>
+</div>
+
+<h2>Why Not the Others</h2>
+
+<div class="warn">
+<strong>Camel</strong> — reference EIP implementation, Jeff would recognize every pattern from the Hohpe book. But it's code-first with no built-in provenance. You'd build governance tracking yourself. Right choice if this were a Java shop building reusable integration libraries. It's not.
+</div>
+
+<div class="warn">
+<strong>Singer/Meltano</strong> — lightest footprint, Python native. But no community taps for Apple Photos, Google Takeout, or iPhone backups, so you're writing custom Python anyway. At that point the framework constrains your transform model without giving provenance or visualization. No win.
+</div>
+
+<div class="warn">
+<strong>Custom scripts</strong> — total flexibility, zero structure. Every pipeline is bespoke. When it works, it works. When it fails, you're reading bash at 10pm with no provenance trail. This is what we have and why we're here.
+</div>
+
+<h2>Architecture: NiFi in the Stack</h2>
+
+<div class="card">
+<pre>
+┌─────────────────────────────────────────────┐
+│  Bedroom Mac (M2 Pro, 32GB)                 │
+│                                             │
+│  ┌─────────┐    ┌──────────────┐            │
+│  │ Sources  │───▶│  Apache NiFi │            │
+│  │ (Photos, │    │              │            │
+│  │  Takeout,│    │ ICD Validate │            │
+│  │  iPhone) │    │ Transform    │            │
+│  └─────────┘    │ Provenance   │            │
+│                 └──────┬───────┘            │
+│                        │ HTTP               │
+└────────────────────────┼────────────────────┘
+                         │ Network
+┌────────────────────────┼────────────────────┐
+│  Library Mac (M1, 16GB)│                    │
+│                 ┌──────▼───────┐            │
+│                 │   Fuseki     │            │
+│                 │  (RDF/SPARQL)│            │
+│                 └──────────────┘            │
+│                 ┌──────────────┐            │
+│                 │ Gathering App│            │
+│                 └──────────────┘            │
+└─────────────────────────────────────────────┘
+</pre>
+</div>
+
+<h2>ICD Pipeline Pattern in NiFi</h2>
+
+<div class="card">
+For any data source, the NiFi flow follows:
+<ol>
+<li><strong>Source Processor</strong> — GetFile, ExecuteSQL, or ListFile depending on source type</li>
+<li><strong>ExecuteScript (ICD validation)</strong> — calls ICD validator, routes pass/fail</li>
+<li><strong>TransformJSON/ExecuteScript</strong> — map source fields to canonical RDF</li>
+<li><strong>InvokeHTTP</strong> — POST to Fuseki Graph Store Protocol</li>
+<li><strong>Failure queue</strong> — failed records with full provenance for debugging</li>
+</ol>
+Every record that reaches Fuseki has a provenance chain proving it passed ICD validation. No record skips the gate.
+</div>
+
+<footer>
+Generated by Wren | #1661 ETL Research Spike | 2026-03-24
+</footer>
+</body>
+</html>

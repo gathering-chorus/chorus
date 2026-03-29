@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Garden Setup Flow — Gathering</title>
+<style>
+:root {
+  --bg: #fafaf8;
+  --text: #1a1a1a;
+  --text-mid: #555;
+  --text-light: #888;
+  --border: #e0ddd8;
+  --warm-1: #c0392b;
+  --warm-2: #e67e22;
+  --warm-3: #d4a574;
+  --warm-4: #e8c8a0;
+  --cool-1: #2471a3;
+  --cool-2: #2e86c1;
+  --cool-3: #7fb3d8;
+  --cool-4: #aed6f1;
+  --gold: #d4a017;
+  --gold-light: #f4e9c8;
+  /* Garden palette */
+  --earth-1: #2d5016;
+  --earth-2: #4a7c23;
+  --earth-3: #6b9b37;
+  --earth-4: #8fbc5a;
+  --earth-bg: #f0f5e8;
+  --earth-bg-dark: #dde8cc;
+  --soil: #6b4226;
+  --soil-light: #a67c52;
+  --soil-bg: #f5ede4;
+  /* Status colors */
+  --built: #27ae60;
+  --built-bg: #eafaf1;
+  --carded: #d4a017;
+  --carded-bg: #fdf8e8;
+  --notyet: #c0392b;
+  --notyet-bg: #fdedec;
+  /* Season colors */
+  --spring: #27ae60;
+  --summer: #d4a017;
+  --fall: #e67e22;
+  --winter: #7fb3d8;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+header {
+  text-align: center;
+  padding: 3rem 2rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+header h1 {
+  font-size: 2rem;
+  font-weight: 300;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+header p {
+  margin-top: 0.5rem;
+  color: var(--text-mid);
+  font-size: 0.95rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.stats-bar {
+  display: flex;
+  justify-content: center;
+  gap: 2.5rem;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+  flex-wrap: wrap;
+}
+.stat { text-align: center; }
+.stat-num {
+  font-size: 1.4rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stat-num.green { color: var(--built); }
+.stat-num.amber { color: var(--carded); }
+.stat-num.earth { color: var(--earth-2); }
+.stat-label { font-size: 0.75rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* ---- Season Timeline ---- */
+.timeline-section {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 2rem 1rem;
+}
+.timeline-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+.timeline-header h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--earth-1);
+}
+.timeline-header p { color: var(--text-mid); font-size: 0.85rem; margin-top: 0.25rem; }
+
+.timeline {
+  display: flex;
+  align-items: stretch;
+  position: relative;
+  min-height: 90px;
+}
+.season {
+  flex: 1;
+  text-align: center;
+  padding: 0.75rem 0.5rem;
+  border-radius: 8px;
+  position: relative;
+}
+.season-spring { background: rgba(39,174,96,0.08); border: 1px solid rgba(39,174,96,0.25); }
+.season-summer { background: rgba(212,160,23,0.08); border: 1px solid rgba(212,160,23,0.25); }
+.season-fall { background: rgba(230,126,34,0.08); border: 1px solid rgba(230,126,34,0.25); }
+.season-winter { background: rgba(127,179,216,0.08); border: 1px solid rgba(127,179,216,0.25); }
+
+.season-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.season-spring .season-name { color: var(--spring); }
+.season-summer .season-name { color: var(--summer); }
+.season-fall .season-name { color: var(--fall); }
+.season-winter .season-name { color: var(--winter); }
+
+.season-steps {
+  font-size: 0.72rem;
+  color: var(--text-mid);
+  margin-top: 0.5rem;
+  line-height: 1.6;
+}
+.season-arrow {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--text-light);
+  font-size: 0.9rem;
+}
+
+.setup-badge {
+  text-align: center;
+  margin-top: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--text-light);
+}
+.setup-badge span {
+  display: inline-block;
+  padding: 2px 10px;
+  background: var(--earth-bg);
+  border: 1px solid var(--earth-bg-dark);
+  border-radius: 12px;
+  color: var(--earth-2);
+  font-weight: 500;
+}
+
+/* ---- Main Flow ---- */
+.flow-section {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem 2rem 2rem;
+}
+
+.section-title {
+  text-align: center;
+  padding: 1.5rem 2rem 0.5rem;
+}
+.section-title h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--earth-1);
+}
+.section-title p { color: var(--text-mid); font-size: 0.85rem; margin-top: 0.25rem; }
+
+/* ---- Step Cards ---- */
+.step-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+.step-card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.step-number {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  color: #fff;
+  background: var(--earth-2);
+}
+.step-card.setup .step-number { background: var(--earth-1); }
+.step-card.seasonal .step-number { background: var(--earth-3); }
+
+.step-title-block { flex: 1; }
+.step-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.step-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-mid);
+  margin-top: 1px;
+}
+
+.step-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.status-built { background: var(--built-bg); color: var(--built); border: 1px solid var(--built); }
+.status-carded { background: var(--carded-bg); color: var(--carded); border: 1px solid var(--carded); }
+.status-notyet { background: var(--notyet-bg); color: var(--notyet); border: 1px dashed var(--notyet); }
+.status-partial { background: var(--carded-bg); color: var(--earth-2); border: 1px solid var(--earth-3); }
+
+.step-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0;
+}
+@media (max-width: 768px) {
+  .step-body { grid-template-columns: 1fr; }
+}
+
+.step-col {
+  padding: 1rem 1.25rem;
+  border-right: 1px solid var(--border);
+}
+.step-col:last-child { border-right: none; }
+@media (max-width: 768px) {
+  .step-col { border-right: none; border-bottom: 1px solid var(--border); }
+  .step-col:last-child { border-bottom: none; }
+}
+
+.col-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
+}
+.col-user .col-label { color: var(--warm-2); }
+.col-data .col-label { color: var(--cool-1); }
+.col-ux .col-label { color: var(--text-mid); }
+
+.col-text {
+  font-size: 0.82rem;
+  color: var(--text-mid);
+  line-height: 1.6;
+}
+
+.step-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1.25rem;
+  background: var(--earth-bg);
+  border-top: 1px solid var(--earth-bg-dark);
+}
+.permaculture-badge {
+  font-size: 0.72rem;
+  color: var(--earth-1);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.permaculture-badge::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--earth-3);
+}
+.status-detail {
+  font-size: 0.72rem;
+  color: var(--text-light);
+  font-style: italic;
+}
+
+/* ---- Step Connector ---- */
+.step-connector {
+  display: flex;
+  justify-content: center;
+  padding: 0;
+  margin: -0.5rem 0;
+  position: relative;
+  z-index: 1;
+}
+.connector-line {
+  width: 2px;
+  height: 24px;
+  background: var(--earth-bg-dark);
+}
+.connector-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--earth-3);
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Cycle break */
+.cycle-divider {
+  text-align: center;
+  padding: 1rem 0;
+  position: relative;
+}
+.cycle-divider::before {
+  content: '';
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  top: 50%;
+  height: 1px;
+  background: var(--earth-bg-dark);
+}
+.cycle-label {
+  display: inline-block;
+  background: var(--bg);
+  padding: 0 1rem;
+  position: relative;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--earth-3);
+}
+
+/* ---- Data Sources Panel ---- */
+.sources-section {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 2rem 2rem;
+}
+.sources-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+@media (max-width: 768px) { .sources-grid { grid-template-columns: 1fr; } }
+
+.source-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  transition: box-shadow 0.2s ease;
+}
+.source-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+
+.source-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+.source-desc {
+  font-size: 0.78rem;
+  color: var(--text-mid);
+  line-height: 1.5;
+}
+.source-status {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.source-working { background: var(--built-bg); color: var(--built); }
+.source-notyet { background: var(--notyet-bg); color: var(--notyet); }
+
+/* ---- Permaculture Section ---- */
+.perma-section {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 2rem 3rem;
+}
+.perma-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+.perma-card {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--earth-bg);
+  border: 1px solid var(--earth-bg-dark);
+  border-radius: 8px;
+  align-items: start;
+}
+.perma-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--earth-2);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.perma-step {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--earth-1);
+}
+.perma-principle {
+  font-size: 0.75rem;
+  color: var(--text-mid);
+  margin-top: 2px;
+  font-style: italic;
+}
+
+/* ---- Footer ---- */
+footer {
+  text-align: center;
+  padding: 2rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-light);
+  font-size: 0.78rem;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Garden Setup Flow</h1>
+  <p>Step-by-step UX architecture for the garden domain in Gathering. From property definition to seasonal cycles.</p>
+</header>
+
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-num earth">11</div>
+    <div class="stat-label">Zones Defined</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num amber">0</div>
+    <div class="stat-label">Beds Added</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num amber">0</div>
+    <div class="stat-label">Plantings</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num green">3<span style="font-size:0.85rem;font-weight:400;color:var(--text-light)">/7</span></div>
+    <div class="stat-label">Steps w/ Infra</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num earth">7</div>
+    <div class="stat-label">Total Steps</div>
+  </div>
+</div>
+
+<!-- Season Timeline -->
+<div class="timeline-section">
+  <div class="timeline-header">
+    <h2>Annual Cycle</h2>
+    <p>Steps 1-3 are one-time setup. Steps 4-7 repeat each season.</p>
+  </div>
+  <div class="timeline">
+    <div class="season season-spring">
+      <div class="season-name">Spring</div>
+      <div class="season-steps">4. Plant<br>5. Track</div>
+    </div>
+    <div class="season-arrow">&rarr;</div>
+    <div class="season season-summer">
+      <div class="season-name">Summer</div>
+      <div class="season-steps">5. Track<br>(ongoing)</div>
+    </div>
+    <div class="season-arrow">&rarr;</div>
+    <div class="season season-fall">
+      <div class="season-name">Fall</div>
+      <div class="season-steps">6. Harvest<br>& Reflect</div>
+    </div>
+    <div class="season-arrow">&rarr;</div>
+    <div class="season season-winter">
+      <div class="season-name">Winter</div>
+      <div class="season-steps">7. Plan<br>Next Season</div>
+    </div>
+    <div class="season-arrow">&circlearrowleft;</div>
+  </div>
+  <div class="setup-badge"><span>Steps 1-3: One-time setup (anytime)</span></div>
+</div>
+
+<!-- Setup Steps -->
+<div class="section-title">
+  <h2>Setup Phase</h2>
+  <p>One-time property and garden structure definition</p>
+</div>
+
+<div class="flow-section">
+
+  <!-- Step 1 -->
+  <div class="step-card setup">
+    <div class="step-header">
+      <div class="step-number">1</div>
+      <div class="step-title-block">
+        <div class="step-title">Define Your Property</div>
+        <div class="step-subtitle">Establish the land — orientation, sun, soil</div>
+      </div>
+      <div class="step-status status-partial">Ontology Only</div>
+    </div>
+    <div class="step-body">
+      <div class="step-col col-user">
+        <div class="col-label">What Jeff Does</div>
+        <div class="col-text">Answers basic questions: address, lot orientation (Jeff's faces east/south), sun exposure patterns across the day.</div>
+      </div>
+      <div class="step-col col-data">
+        <div class="col-label">Data Produced</div>
+        <div class="col-text"><strong>jb:Property</strong> instance, <strong>jb:Land</strong> with aspects (sun, soil, drainage). RDF triples in Fuseki.</div>
+      </div>
+      <div class="step-col col-ux">
+        <div class="col-label">UX Sketch</div>
+        <div class="col-text">Simple form: address, compass orientation picker, lot size estimate. Could be a one-time wizard.</div>
+      </div>
+    </div>
+    <div class="step-footer">
+      <div class="permaculture-badge">Observe and Interact</div>
+      <div class="status-detail">Ontology exists (#1406). No UI yet.</div>
+    </div>
+  </div>
+
+  <div class="step-connector"><div class="connector-line"></div></div>
+
+  <!-- Step 2 -->
+  <div class="step-card setup">
+    <div class="step-header">
+      <div class="step-number">2</div>
+      <div class="step-title-block">
+        <div class="step-title">Draw Your Zones</div>
+        <div class="step-subtitle">Map the spatial layout around the house</div>
+      </div>
+      <div class="step-status status-built">Built</div>
+    </div>
+    <div class="step-body">
+      <div class="step-col col-user">
+        <div class="col-label">What Jeff Does</div>
+        <div class="col-text">Hand-draws the zone map on paper, photographs it, or draws directly on screen. Jeff drew zones on a printed screenshot and sent as SMS seed.</div>
+      </div>
+      <div class="step-col col-data">
+        <div class="col-label">Data Produced</div>
+        <div class="col-text"><strong>jb:Zone</strong> instances with direction, sun exposure, relative position. 11 zones from Jeff's hand-drawn spec.</div>
+      </div>
+      <div class="step-col col-ux">
+        <div class="col-label">UX Sketch</div>
+        <div class="col-text">SVG canvas with house at center, click to add/name zones. OR upload photo of hand-drawn map and trace zones over it.</div>
+      </div>
+    </div>
+    <div class="step-footer">
+      <div class="permaculture-badge">Connect (Relative Location)</div>
+      <div class="status-detail">Zone map built (#1341). Interactive editing not yet built.</div>
+    </div>
+  </div>
+
+  <div class="step-connector"><div class="connector-line"></div></div>
+
+  <!-- Step 3 -->
+  <div class="step-card setup">
+    <div class="step-header">
+      <div class="step-number">3</div>
+      <div class="step-title-block">
+        <div class="step-title">Add Beds to Zones</div>
+        <div class="step-subtitle">Define individual planting areas within each zone</div>
+      </div>
+      <div class="step-status status-partial">Ontology Only</div>
+    </div>
+    <div class="step-body">
+      <div class="step-col col-user">
+        <div class="col-label">What Jeff Does</div>
+        <div class="col-text">Within each zone, defines individual garden beds: raised bed, ground plot, container, etc. Names them, sets dimensions.</div>
+      </div>
+      <div class="step-col col-data">
+        <div class="col-label">Data Produced</div>
+        <div class="col-text"><strong>jb:GardenBed</strong> instances linked to zones via <strong>jb:hasBed</strong>. Type (raised/ground/container), dimensions.</div>
+      </div>
+      <div class="step-col col-ux">
+        <div class="col-label">UX Sketch</div>
+        <div class="col-text">Click a zone on the map, add beds within it. Name, type picker, optional size. Visual placement on zone canvas.</div>
+      </div>
+    </div>
+    <div class="step-footer">
+      <div class="permaculture-badge">Use Small-Scale, Intensive Systems</div>
+      <div class="status-detail">GardenBed class exists. No UI for adding beds.</div>
+    </div>
+  </div>
+
+  <!-- Cycle Divider -->
+  <div class="cycle-divider">
+    <span class="cycle-label">Seasonal Cycle Begins</span>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="step-card seasonal">
+    <div class="step-header">
+      <div class="step-number">4</div>
+      <div class="step-title-block">
+        <div class="step-title">Plant Your Garden</div>
+        <div class="step-subtitle">Record what goes where and when</div>
+      </div>
+      <div class="step-status status-notyet">Not Built</div>
+    </div>
+    <div class="step-body">
+      <div class="step-col col-user">
+        <div class="col-label">What Jeff Does</div>
+        <div class="col-text">Records what's planted where and when. Selects from known plants or adds new ones. Companion planting notes.</div>
+      </div>
+      <div class="step-col col-data">
+        <div class="col-label">Data Produced</div>
+        <div class="col-text"><strong>jb:Planting</strong> instances: which <strong>jb:Plant</strong> in which <strong>jb:GardenBed</strong> during which <strong>jb:Season</strong> + year.</div>
+      </div>
+      <div class="step-col col-ux">
+        <div class="col-label">UX Sketch</div>
+        <div class="col-text">Select a bed, add plantings. Auto-suggest from PictureThis inventory. Season auto-detected from date.</div>
+      </div>
+    </div>
+    <div class="step-footer">
+      <div class="permaculture-badge">Each Element Performs Multiple Functions</div>
+      <div class="status-detail">Planting/Plant/Season classes exist. No planting UI.</div>
+    </div>
+  </div>
+
+  <div class="step-connector"><div class="connector-line"></div></div>
+
+  <!-- Step 5 -->
+  <div class="step-card seasonal">
+    <div class="step-header">
+      <div class="step-number">5</div>
+      <div class="step-title-block">
+        <div class="step-title">Track Through the Season</div>
+        <div class="step-subtitle">Observe, photograph, note what's growing</div>
+      </div>
+      <div class="step-status status-notyet">Not Built</div>
+    </div>
+    <div class="step-body">
+      <div class="step-col col-user">
+        <div class="col-label">What Jeff Does</div>
+        <div class="col-text">Observes, photographs, takes notes. What's growing, what's struggling, what to change. Daily or weekly check-ins.</div>
+      </div>
+      <div class="step-col col-data">
+        <div class="col-label">Data Produced</div>
+        <div class="col-text">Observations linked to plantings: photos, notes, health status (thriving / struggling / dead).</div>
+      </div>
+      <div class="step-col col-ux">
+        <div class="col-label">UX Sketch</div>
+        <div class="col-text">Tap a bed, see current plantings, add observation (photo, note, health). This is where the map becomes alive.</div>
+      </div>
+    </div>
+    <div class="step-footer">
+      <div class="permaculture-badge">Catch and Store Energy</div>
+      <div class="status-detail">Not built. The daily/weekly use case.</div>
+    </div>
+  </div>
+
+  <div class="step-connector"><div class="connector-line"></div></div>
+
+  <!-- Step 6 -->
+  <div class="step-card seasonal">
+    <div class="step-header">
+      <div class="step-number">6</div>
+      <div class="step-title-block">
+        <div class="step-title">Harvest and Reflect</div>
+        <div class="step-subtitle">End of season review — what worked, what didn't</div>
+      </div>
+      <div class="step-status status-carded">Carded</div>
+    </div>
+    <div class="step-body">
+      <div class="step-col col-user">
+        <div class="col-label">What Jeff Does</div>
+        <div class="col-text">End of season: reviews each zone. What worked, what didn't, what to change next year. Captures lessons.</div>
+      </div>
+      <div class="step-col col-data">
+        <div class="col-label">Data Produced</div>
+        <div class="col-text">Seasonal summary per zone/bed. Year-over-year comparison data. Linked to the Reflecting spoke.</div>
+      </div>
+      <div class="step-col col-ux">
+        <div class="col-label">UX Sketch</div>
+        <div class="col-text">Season ends: prompted to review each zone. Visual diff: this year vs last year. Cards generated for changes.</div>
+      </div>
+    </div>
+    <div class="step-footer">
+      <div class="permaculture-badge">Mistakes are Tools for Learning</div>
+      <div class="status-detail">#1343 (seasonal toggle) carded but not built.</div>
+    </div>
+  </div>
+
+  <div class="step-connector"><div class="connector-line"></div></div>
+
+  <!-- Step 7 -->
+  <div class="step-card seasonal">
+    <div class="step-header">
+      <div class="step-number">7</div>
+      <div class="step-title-block">
+        <div class="step-title">Plan Next Season</div>
+        <div class="step-subtitle">Adjust, move, try new things based on reflection</div>
+      </div>
+      <div class="step-status status-notyet">Not Built</div>
+    </div>
+    <div class="step-body">
+      <div class="step-col col-user">
+        <div class="col-label">What Jeff Does</div>
+        <div class="col-text">Based on reflections, adjusts the plan. Moves plants between beds, tries new varieties, changes bed layouts.</div>
+      </div>
+      <div class="step-col col-data">
+        <div class="col-label">Data Produced</div>
+        <div class="col-text">New <strong>jb:Planting</strong> instances for upcoming season, linked to previous season's reflections.</div>
+      </div>
+      <div class="step-col col-ux">
+        <div class="col-label">UX Sketch</div>
+        <div class="col-text">Copy last season's layout as starting point, modify. Drag plants between beds. The full cycle: Sowing &rarr; Growing &rarr; Harvesting &rarr; Reflecting &rarr; Sowing.</div>
+      </div>
+    </div>
+    <div class="step-footer">
+      <div class="permaculture-badge">Collaborate with Succession</div>
+      <div class="status-detail">Not built. Full cycle completion.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Data Sources -->
+<div class="section-title">
+  <h2>Data Sources</h2>
+  <p>External inputs that feed into the garden flow</p>
+</div>
+
+<div class="sources-section">
+  <div class="sources-grid">
+    <div class="source-card">
+      <div class="source-name">Hand-drawn Maps</div>
+      <div class="source-desc">Zone layout, spatial relationships. SMS seed pipeline: photograph &rarr; transcribe &rarr; ontology.</div>
+      <div class="source-status source-working">Working</div>
+    </div>
+    <div class="source-card">
+      <div class="source-name">PictureThis</div>
+      <div class="source-desc">Plant identification, species data. Jeff uses it actively; API integration unknown.</div>
+      <div class="source-status source-notyet">Not Integrated</div>
+    </div>
+    <div class="source-card">
+      <div class="source-name">Photos</div>
+      <div class="source-desc">Visual record of beds, plantings, growth over time. Photo domain exists in Gathering.</div>
+      <div class="source-status source-notyet">Not Linked</div>
+    </div>
+    <div class="source-card">
+      <div class="source-name">Seeds (SMS/Voice)</div>
+      <div class="source-desc">Ideas, observations, quick captures. Seed pipeline working; garden routing is new.</div>
+      <div class="source-status source-working">Working</div>
+    </div>
+    <div class="source-card">
+      <div class="source-name">Weather API</div>
+      <div class="source-desc">Temperature, rainfall, frost dates. Would enable planting date guidance and seasonal prompts.</div>
+      <div class="source-status source-notyet">Not Integrated</div>
+    </div>
+    <div class="source-card">
+      <div class="source-name">Fuseki</div>
+      <div class="source-desc">Knowledge graph storage for all garden ontology data. SPARQL queries for cross-domain relationships.</div>
+      <div class="source-status source-working">Working</div>
+    </div>
+  </div>
+</div>
+
+<!-- Permaculture Principles -->
+<div class="section-title">
+  <h2>Permaculture Principles</h2>
+  <p>Each step maps to a principle from Gaia's Garden</p>
+</div>
+
+<div class="perma-section">
+  <div class="perma-grid">
+    <div class="perma-card">
+      <div class="perma-num">1</div>
+      <div>
+        <div class="perma-step">Define Property</div>
+        <div class="perma-principle">Observe and Interact &mdash; understand before changing</div>
+      </div>
+    </div>
+    <div class="perma-card">
+      <div class="perma-num">2</div>
+      <div>
+        <div class="perma-step">Draw Zones</div>
+        <div class="perma-principle">Connect (Relative Location) &mdash; relationships between areas</div>
+      </div>
+    </div>
+    <div class="perma-card">
+      <div class="perma-num">3</div>
+      <div>
+        <div class="perma-step">Add Beds</div>
+        <div class="perma-principle">Use Small-Scale, Intensive Systems &mdash; start at your doorstep</div>
+      </div>
+    </div>
+    <div class="perma-card">
+      <div class="perma-num">4</div>
+      <div>
+        <div class="perma-step">Plant</div>
+        <div class="perma-principle">Each Element Performs Multiple Functions &mdash; companion planting</div>
+      </div>
+    </div>
+    <div class="perma-card">
+      <div class="perma-num">5</div>
+      <div>
+        <div class="perma-step">Track</div>
+        <div class="perma-principle">Catch and Store Energy &mdash; capture observations</div>
+      </div>
+    </div>
+    <div class="perma-card">
+      <div class="perma-num">6</div>
+      <div>
+        <div class="perma-step">Harvest & Reflect</div>
+        <div class="perma-principle">Mistakes are Tools for Learning</div>
+      </div>
+    </div>
+    <div class="perma-card">
+      <div class="perma-num">7</div>
+      <div>
+        <div class="perma-step">Plan Next Season</div>
+        <div class="perma-principle">Collaborate with Succession &mdash; work with natural patterns</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Garden Setup Flow &mdash; Gathering Product Architecture &mdash; 7 steps, 11 zones, one growing season at a time
+</footer>
+
+</body>
+</html>

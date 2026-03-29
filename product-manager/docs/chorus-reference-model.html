@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chorus — A Reference Model for Human-AI Teams</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; padding: 48px 20px; line-height: 1.7; }
+  .container { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 30px; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.5px; }
+  .subtitle { font-size: 15px; color: #666; margin-bottom: 12px; }
+  .epigraph { font-size: 15px; color: #555; font-style: italic; border-left: 3px solid #ccc; padding: 12px 20px; margin: 24px 0 36px 0; }
+  .epigraph .attr { font-style: normal; font-size: 12px; color: #999; margin-top: 8px; }
+
+  h2 { font-size: 20px; font-weight: 800; margin: 40px 0 8px; color: #1a1a1a; }
+  h2 .num { color: #4361ee; margin-right: 6px; }
+  h3 { font-size: 15px; font-weight: 700; margin: 24px 0 8px; color: #333; }
+  p { font-size: 14px; margin-bottom: 14px; color: #333; }
+  .section-intro { font-size: 15px; color: #444; margin-bottom: 20px; }
+
+  .principle { border-left: 3px solid #4361ee; padding: 12px 16px; margin: 16px 0; background: #f0f4ff; border-radius: 0 8px 8px 0; }
+  .principle .name { font-size: 14px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+  .principle .body { font-size: 13px; color: #444; }
+  .principle .test { font-size: 12px; color: #4361ee; margin-top: 6px; font-style: italic; }
+
+  .anti { border-left-color: #e94560; background: #fef2f2; margin-bottom: 24px; border: 1px solid #fca5a5; border-left: 4px solid #e94560; border-radius: 8px; padding: 18px 20px; }
+  .anti .name { color: #c41e3a; font-size: 15px; margin-bottom: 8px; }
+  .anti .test { color: #c41e3a; }
+
+  .insight { border-left: 3px solid #2ec4b6; padding: 12px 16px; margin: 16px 0; background: #f0fdfa; border-radius: 0 8px 8px 0; font-size: 14px; color: #444; }
+
+  .layer { display: grid; grid-template-columns: 200px 1fr; gap: 0; margin: 16px 0; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+  .layer-label { background: #f8f9fa; padding: 16px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #666; border-right: 1px solid #e5e7eb; }
+  .layer-content { padding: 16px; }
+  .layer-content p { margin-bottom: 6px; font-size: 13px; }
+  .layer.human .layer-label { background: #fdf8f3; color: #b8860b; border-right-color: #e8c4a0; }
+  .layer.roles .layer-label { background: #f0f4ff; color: #4361ee; border-right-color: #c7d2fe; }
+  .layer.protocol .layer-label { background: #f0fdfa; color: #0d7377; border-right-color: #99f6e4; }
+  .layer.engine .layer-label { background: #f8f9fa; color: #666; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
+  th { text-align: left; padding: 8px 12px; background: #f8f9fa; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; color: #666; border-bottom: 2px solid #e5e7eb; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  td strong { font-weight: 700; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+  .col-card { background: #f8f9fa; border-radius: 10px; padding: 18px; border: 1px solid #e5e7eb; }
+  .col-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .col-card p { font-size: 13px; margin-bottom: 8px; }
+  .col-card.ref { border-top: 3px solid #4361ee; }
+  .col-card.impl { border-top: 3px solid #2ec4b6; }
+
+  .timeline-micro { display: flex; gap: 0; margin: 20px 0; }
+  .tm-phase { flex: 1; text-align: center; padding: 12px 8px; border: 1px solid #e5e7eb; font-size: 12px; }
+  .tm-phase:first-child { border-radius: 8px 0 0 8px; }
+  .tm-phase:last-child { border-radius: 0 8px 8px 0; }
+  .tm-phase .tm-name { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .tm-phase.active { background: #f0f4ff; border-color: #4361ee; }
+
+  .quote { font-size: 15px; color: #555; font-style: italic; margin: 24px 0; padding: 0 20px; }
+
+  @media print {
+    body { padding: 24px 0; font-size: 12px; }
+    h1 { font-size: 24px; }
+    .layer { page-break-inside: avoid; }
+  }
+  @media (max-width: 600px) {
+    .two-col { grid-template-columns: 1fr; }
+    .layer { grid-template-columns: 1fr; }
+    .layer-label { border-right: none; border-bottom: 1px solid #e5e7eb; }
+    .timeline-micro { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Chorus</h1>
+<p class="subtitle">A Reference Model for Human-AI Teams &middot; v1 &middot; March 2026</p>
+
+<div class="epigraph">
+  "Look how few you need when they actually pay attention."
+  <div class="attr">— Jeff Bridwell, on why three roles is enough</div>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">I.</span> What This Is</h2>
+
+<p class="section-intro">Chorus is a model for how one human and multiple AI roles build things together. Not a framework. Not a product spec. A <em>reference model</em> — a set of patterns that describe what works, what fails, and why, when a human directs persistent AI teammates through sustained creative and technical work.</p>
+
+<p>It emerged from 37 days of daily practice: three AI roles, one human, two products, 106 decisions, 3,855 tests, and every failure documented. The patterns were not designed up front — they were discovered under pressure, extracted from what broke, and validated by what held.</p>
+
+<p>The model has two layers:</p>
+
+<div class="two-col">
+  <div class="col-card ref">
+    <h4>Reference Model</h4>
+    <p>The abstract patterns. Portable across tooling. Describes the <em>structure</em> of human-AI collaboration: roles, attention, authority, feedback, governance. Valid whether you use Claude, GPT, Gemini, or whatever comes next.</p>
+  </div>
+  <div class="col-card impl">
+    <h4>Implementation</h4>
+    <p>Jeff's instance. Three Claude Code sessions, Vikunja for kanban, Fuseki for knowledge graph, NiFi for data integration, Rust hooks for enforcement. The proof that the reference model works — and the source of every pattern in it.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">II.</span> The Architecture</h2>
+
+<p class="section-intro">Four layers, from human at the top to engines at the bottom. Each layer has a distinct responsibility. The boundaries between them are the most important thing in the model.</p>
+
+<div class="layer human">
+  <div class="layer-label">Human<br>Layer</div>
+  <div class="layer-content">
+    <p><strong>One human. The irreplaceable center.</strong></p>
+    <p>The human provides: direction, domain knowledge, quality judgment, emotional energy, and the decision to stop or continue. The human does NOT provide: typing speed, code execution, file manipulation, or monitoring. Those are role work.</p>
+    <p>The human's scarcest resource is <strong>attention</strong>. Every system design decision in Chorus optimizes for protecting it. When the human has to check "is the role still working?" or "did the data load correctly?" — that is a system failure, not a human task.</p>
+  </div>
+</div>
+
+<div class="layer roles">
+  <div class="layer-label">Role<br>Layer</div>
+  <div class="layer-content">
+    <p><strong>Persistent AI roles with vertical domains.</strong></p>
+    <p>Each role has: a name, a domain (what files it owns), a persona (how it communicates), and persistent context across sessions. Roles are not interchangeable — they accumulate expertise in their domain. A PM role that has reviewed 50 ICDs makes different decisions than a fresh session.</p>
+    <p>Roles talk to each other via briefs, not through the human. The human is a director, not a message relay. If the human is carrying information between roles, the system is broken.</p>
+    <p><strong>Reference model says:</strong> minimum 2 roles (builder + reviewer). Sweet spot is 3 (PM + Architect + Engineer). More than 4 creates coordination overhead that exceeds the value.</p>
+  </div>
+</div>
+
+<div class="layer protocol">
+  <div class="layer-label">Protocol<br>Layer</div>
+  <div class="layer-content">
+    <p><strong>The rules that make collaboration reliable.</strong></p>
+    <p>Skills (repeatable behaviors), hooks (enforced gates), cards (work units), pipelines (sequenced work), attention contracts (who watches whom). This layer is the product — the coordination-as-code that makes the human+role relationship productive rather than chaotic.</p>
+    <p>The critical insight: <strong>anything the protocol layer leaves to memory will be forgotten.</strong> If a behavior matters, it must be enforced mechanically — a hook that fires, not a note that reminds.</p>
+  </div>
+</div>
+
+<div class="layer engine">
+  <div class="layer-label">Engine<br>Layer</div>
+  <div class="layer-content">
+    <p><strong>Interchangeable tools that do the actual work.</strong></p>
+    <p>Kanban engine (Vikunja, Jira, Linear). Knowledge graph (Fuseki, Neo4j). Data integration (NiFi, Airflow). AI execution (Claude Code, Cursor, Copilot Workspace). Monitoring (Grafana, Datadog). The protocol layer drives them — they don't drive the protocol.</p>
+    <p>Engine choices are buy decisions, not build decisions. The reference model is agnostic to engines.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">III.</span> The Nine Principles</h2>
+
+<p class="section-intro">Discovered through failure, not designed by committee. Each principle has a test — a way to know if you're violating it. The tests matter more than the names.</p>
+
+<div class="principle">
+  <div class="name">1. Attention is the constraint, not compute</div>
+  <div class="body">The human has finite attention. The AI has infinite patience. Every design decision optimizes for the human's attention budget. When the human checks on a role, monitors a background job, or re-explains a decision — that's attention diverted from creative work. The roles are the monitoring system, not the human.</div>
+  <div class="test">Test: How many times did the human check on a role today? Target: 2 per card (start + accept). More = system failure.</div>
+</div>
+
+<div class="principle">
+  <div class="name">2. Roles are persistent, not disposable</div>
+  <div class="body">A role that remembers yesterday's decisions makes better decisions today. Persistence means: named identity, domain ownership, accumulated context, stored feedback. Disposable sessions (spin up, use, discard) lose the compounding value of experience. The role's value grows over time — like a team member, not a tool.</div>
+  <div class="test">Test: Can a role reference a decision from two weeks ago without being told about it? If not, persistence isn't working.</div>
+</div>
+
+<div class="principle">
+  <div class="name">3. No work without a card</div>
+  <div class="body">Cards are the unit of work, attention, and accountability. A card has: title, owner, acceptance criteria, domain tags. Work that isn't carded is invisible — it can't be tracked, sequenced, or reviewed. Cards hold the pipeline together when context gets lost. The board is the single source of truth for "what are we doing."</div>
+  <div class="test">Test: Can a new session reconstruct the current work state from the board alone? If not, critical context is in someone's head.</div>
+</div>
+
+<div class="principle">
+  <div class="name">4. The human directs, the system executes</div>
+  <div class="body">The human's job is: decide what matters, set direction, review output, accept or reject. The human should never be a keyboard proxy, a message relay between roles, or a process monitor. "Can you check if that's still running?" is a system failure. "I want to see the result" is the human's job.</div>
+  <div class="test">Test: Did the human type a command this session, or only give direction and review output? Direction + review = healthy. Typing commands = role failure.</div>
+</div>
+
+<div class="principle">
+  <div class="name">5. Define before building</div>
+  <div class="body">The ICD pattern: define the contract (what fields, what sources, what authority), map the sources (where data comes from), then build the pipeline. Building before defining produces data you can't trust — you discover the problems at the end instead of preventing them at the start. This applies to code, data, and process equally.</div>
+  <div class="test">Test: Before a role writes harvester code, does an ICD exist for that domain? If not, the define step was skipped.</div>
+</div>
+
+<div class="principle">
+  <div class="name">6. Memory is suggestions, hooks are enforcement</div>
+  <div class="body">Anything a role has to remember is something it may forget. Feedback stored as memory works once — the role reads it at boot, applies it for an hour, then drifts. Feedback encoded as a hook works every time — the gate fires on the action, not on the role's memory. The path from feedback to reliability is: observe pattern → write feedback → encode as hook → delete the feedback.</div>
+  <div class="test">Test: Has the same feedback been given three times? If so, it's not a memory problem — it's a missing hook.</div>
+</div>
+
+<div class="principle">
+  <div class="name">7. Prove, then trust</div>
+  <div class="body">The proving gate: a builder cannot self-accept. Every shipped artifact goes through demo → review → accept. The reviewer is a different role or the human. This prevents "it works on my machine" and "the tests pass" from substituting for "the user can see it working." Trust is earned through visible proof, not claimed through passing checks.</div>
+  <div class="test">Test: Did the human see the artifact working before it was marked Done? If Done was marked without a demo, the gate was bypassed.</div>
+</div>
+
+<div class="principle">
+  <div class="name">8. Vertical ownership, horizontal coordination</div>
+  <div class="body">Each role owns a domain — files, decisions, and quality within that scope. Within your domain, just go. Across domains, brief first. This prevents: roles editing each other's files (merge conflicts), roles making decisions outside their expertise (scope creep), and the human arbitrating every action (bottleneck). The test is simple: "Can I do this without breaking someone else's work?"</div>
+  <div class="test">Test: Did a role change a file outside its domain without briefing the owner? If so, the boundary was violated.</div>
+</div>
+
+<div class="principle">
+  <div class="name">9. The process is the product</div>
+  <div class="body">In a human-AI team, the coordination patterns ARE the valuable output — not just the code or data they produce. Every decision, every protocol, every failure mode documented is a product artifact. The team's evolution over time — from ad-hoc to governed — is itself a deliverable. Treat it that way: version it, review it, improve it.</div>
+  <div class="test">Test: If someone asked "what did you build?", would you show them the app or the team model? Both are products.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">IV.</span> The Failure Modes</h2>
+
+<p class="section-intro">Every principle was discovered by violating it. The failure modes are more instructive than the principles themselves.</p>
+
+<div class="anti">
+  <div class="name">Human as monitor</div>
+  <div class="body">The human checks "is the role still working?" every few minutes. The roles go silent during long operations. Background jobs produce no progress signal. The human's attention drains into monitoring instead of directing. <strong>Root cause:</strong> no progress emission, no liveness signal, no alerting on silence.</div>
+  <div class="test">Symptom: "I feel chained to my desk." The human can't walk away because the system doesn't report its own state.</div>
+</div>
+
+<div class="anti">
+  <div class="name">Human as message relay</div>
+  <div class="body">Role A needs information from Role B. Instead of briefing directly, Role A tells the human, who tells Role B, who responds to the human, who relays back. Every hop costs the human attention and introduces delay. <strong>Root cause:</strong> roles don't have direct communication channels, or they defer to the human out of politeness.</div>
+  <div class="test">Symptom: The human says "tell Silas what you just told me." If the human is repeating information between roles, the relay is active.</div>
+</div>
+
+<div class="anti">
+  <div class="name">Statement treated as command</div>
+  <div class="body">The human thinks out loud: "I don't know where my music is." The role immediately searches both machines. The human interrupts: "I didn't ask you to do anything." AI roles have a bias toward action — every input is treated as a request. <strong>Root cause:</strong> no distinction between the human processing and the human commanding. The role optimizes for responsiveness over listening.</div>
+  <div class="test">Symptom: The human says "stop" or "I didn't ask for that" more than once per session.</div>
+</div>
+
+<div class="anti">
+  <div class="name">Scope drift mid-card</div>
+  <div class="body">A role discovers a better approach while building and pivots without checking. The new approach may be objectively better, but it changes the agreed plan — invalidating the acceptance criteria, the validation gate, and the human's mental model. <strong>Root cause:</strong> the role optimizes locally (better approach) without considering the system cost (broken pipeline, wasted validation).</div>
+  <div class="test">Symptom: "We spent hours reaching a consensus that you're asking to overturn." The human's investment in the plan is invisible to the role.</div>
+</div>
+
+<div class="anti">
+  <div class="name">Context switch as handoff</div>
+  <div class="body">Role A built a system. Role A briefs Role B to extend it. Role B spends 10 minutes loading context that Role A already has. The work gets done but the context switch cost is invisible — it looks like "delegation" but it's actually "wasted loading time." <strong>Root cause:</strong> roles treat each other as interchangeable. They're not — context is expensive.</div>
+  <div class="test">Symptom: The person who built the system briefs someone else to extend it, when they could do it faster themselves.</div>
+</div>
+
+<div class="anti">
+  <div class="name">Silent degradation</div>
+  <div class="body">A page stops showing data. A service starts a Docker container that should be retired. Memory fills to 58MB free. Nobody notices — the system doesn't alert on its own degradation. The human discovers it by feeling slowness or seeing broken UI. <strong>Root cause:</strong> monitoring is pointed at coordination events (nudges, spine logs) instead of system health (RAM, service status, data freshness).</div>
+  <div class="test">Symptom: "I get a lot of unwanted alerts and the things I want to count on don't work." Signal-to-noise inversion.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">V.</span> The Value Stream</h2>
+
+<p class="section-intro">Work flows through four states. The human's involvement is concentrated at the boundaries — directing and proving. The middle is role work.</p>
+
+<div class="timeline-micro">
+  <div class="tm-phase">
+    <div class="tm-name">Directing</div>
+    Jeff decides what matters.<br>Cards created. Priority set.
+  </div>
+  <div class="tm-phase">
+    <div class="tm-name">Designing</div>
+    Roles define the approach.<br>ICD, architecture, AC.
+  </div>
+  <div class="tm-phase active">
+    <div class="tm-name">Building</div>
+    Roles execute.<br>Code, data, artifacts.
+  </div>
+  <div class="tm-phase">
+    <div class="tm-name">Proving</div>
+    Demo to Jeff. Review.<br>Accept or reject.
+  </div>
+</div>
+
+<p>The ideal: Jeff touches each card <strong>twice</strong> — once to direct, once to prove. Everything in between is autonomous role work. The system's maturity is measured by how close it gets to this ideal. Today's reality: 4–6 touches per card. The gap is the improvement target.</p>
+
+<!-- ============================================================ -->
+<h2><span class="num">VI.</span> The Feedback Engine</h2>
+
+<p class="section-intro">How the system learns. Four stages, from observation to enforcement. The goal is to move every important behavior to stage 4 as fast as possible.</p>
+
+<table>
+  <tr><th>Stage</th><th>Mechanism</th><th>Reliability</th><th>Example</th></tr>
+  <tr>
+    <td><strong>1. Observation</strong></td>
+    <td>Human notices a pattern</td>
+    <td>Depends on human attention</td>
+    <td>"Roles keep going silent during long jobs"</td>
+  </tr>
+  <tr>
+    <td><strong>2. Feedback</strong></td>
+    <td>Written to memory file</td>
+    <td>Read at boot, forgotten by hour 2</td>
+    <td>feedback_batch_progress.md</td>
+  </tr>
+  <tr>
+    <td><strong>3. Skill</strong></td>
+    <td>Encoded in skill protocol</td>
+    <td>Followed when invoked, variant each time</td>
+    <td>gemba-tick TTL check</td>
+  </tr>
+  <tr>
+    <td><strong>4. Hook</strong></td>
+    <td>Enforced by compiled gate</td>
+    <td>Fires every time, no variance</td>
+    <td>ICD write → auto-validate + reload + lint</td>
+  </tr>
+</table>
+
+<div class="insight">
+  <strong>The Athena Pattern:</strong> In Jeff's prior system (Athena at Staples), saving an ICD triggered validation automatically. You couldn't save an incomplete contract. The same principle applies here: the action triggers the check. Not a separate step, not a memory, not a checklist — the write IS the validation. Moving behaviors from Stage 2 to Stage 4 is the most leveraged work in the system.
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">VII.</span> The Attention Economy</h2>
+
+<p class="section-intro">The human's attention is the single most constrained resource. Every design choice either protects it or wastes it. This section names the costs.</p>
+
+<table>
+  <tr><th>Attention Cost</th><th>What Happens</th><th>System Fix</th></tr>
+  <tr>
+    <td><strong>Re-prompt</strong></td>
+    <td>Human repeats direction because the role forgot or drifted</td>
+    <td>Persistent context + card AC as reference</td>
+  </tr>
+  <tr>
+    <td><strong>Monitor</strong></td>
+    <td>Human checks if a job is still running or a role is still working</td>
+    <td>Progress emission + liveness signals</td>
+  </tr>
+  <tr>
+    <td><strong>Relay</strong></td>
+    <td>Human carries information between roles</td>
+    <td>Direct role-to-role briefs and nudges</td>
+  </tr>
+  <tr>
+    <td><strong>Correct</strong></td>
+    <td>Human stops a role from doing the wrong thing</td>
+    <td>Scope enforcement + blast radius checks</td>
+  </tr>
+  <tr>
+    <td><strong>Interpret</strong></td>
+    <td>Human decodes what the role is doing from tool call output</td>
+    <td>Gemba commentary + Bridge visibility</td>
+  </tr>
+  <tr>
+    <td><strong>Recover</strong></td>
+    <td>Human fixes damage from a role's unsanctioned action</td>
+    <td>Proving gate + rollback capability</td>
+  </tr>
+</table>
+
+<p>The target metric: <strong>2 touches per card</strong> (direct + prove). Every additional touch is a cost. Track it. Reduce it. The system improves when the human's attention goes toward creative decisions, not coordination overhead.</p>
+
+<!-- ============================================================ -->
+<h2><span class="num">VIII.</span> Prior Art and Lineage</h2>
+
+<p>Chorus didn't emerge from nothing. It stands on specific foundations:</p>
+
+<table>
+  <tr><th>Source</th><th>What It Contributes</th></tr>
+  <tr>
+    <td><strong>Toyota Production System</strong></td>
+    <td>Andon (signal problems immediately), jidoka (stop on error), piece flow (one card at a time), WIP limits. The team name "Loom" comes from Toyota's origin — the automatic loom that stopped when a thread broke.</td>
+  </tr>
+  <tr>
+    <td><strong>Poppendieck (Lean Software Development)</strong></td>
+    <td>Flow over estimation — Chorus doesn't estimate card duration, it flows cards through states. Quality into process, not inspection — the Athena pattern (save triggers validation) is Poppendieck's "build quality in" applied to AI coordination. The Empire State Building didn't have a Gantt chart — it had piece flow and clear handoff contracts. That's cards + proving gates. Plank roads are infrastructure debt that looks like progress — every custom harvest script we wrote was a plank road. NiFi replaces them with an engineered surface.</td>
+  </tr>
+  <tr>
+    <td><strong>Kent Beck (Extreme Programming)</strong></td>
+    <td>Pair programming → Chorus's human-AI pairing (navigator/driver with rotation). Small releases → cards, not projects. Continuous integration → proving gate as continuous validation. Courage → push back on flawed premises (DEC-069). XP's deepest insight: the practices ARE the product. Chorus inherits this directly — the coordination protocol is the deliverable, not just the code it produces. Beck also showed that process discipline and agility are not opposites — they reinforce each other when the practices are right.</td>
+  </tr>
+  <tr>
+    <td><strong>Value Stream Mapping (Lean)</strong></td>
+    <td>Chorus's four-state value stream (Directing → Designing → Building → Proving) is a direct application. WIP limits prevent overloading. Pull systems mean roles pull cards when ready, not pushed by a manager. The critical lean insight for AI teams: flow efficiency over resource efficiency. One role hot, others observe — don't parallelize across roles when context switching costs more than idle time. Taiichi Ohno's "the more inventory, the less likely you will have what you need" applies to WIP cards exactly.</td>
+  </tr>
+  <tr>
+    <td><strong>Domain-Driven Design (Evans)</strong></td>
+    <td>Bounded contexts → vertical role domains. Wren owns coordination, Silas owns infrastructure, Kade owns the app. The boundary IS the design decision. Ubiquitous language → ICD field naming discipline, URN conventions, consistent vocabulary across roles. Context mapping → briefs as the mechanism for cross-domain work. When a PM briefs an engineer, that's a context map in action — translating product intent into technical specification across a boundary. Aggregates → cards as the consistency unit. A card holds its own truth: title, AC, owner, domain. The board is the repository of aggregates.</td>
+  </tr>
+  <tr>
+    <td><strong>Hohpe (Enterprise Integration Patterns)</strong></td>
+    <td>Message routing, content-based routing, dead letter channels. The ICD pattern. The recognition that integration is a solved problem — use an engine, don't build one. Chorus applies EIP at two levels: (1) data pipelines via NiFi (the literal patterns), and (2) role coordination via nudges, briefs, and the attention contract (the metaphorical patterns — roles as services, briefs as messages, the proving gate as a guaranteed delivery endpoint).</td>
+  </tr>
+  <tr>
+    <td><strong>Bridwell Patent (US9552400B2)</strong></td>
+    <td>RDF/OWL + SPARQL + workflow gates. Time-scoped source authority. The ICD-governed pipeline is a direct descendant. Filed 2014, granted 2017. Prior art for everything Chorus does with data governance.</td>
+  </tr>
+  <tr>
+    <td><strong>Chiron (Kolb & Armesto)</strong></td>
+    <td>Human-AI delivery research. Hybrid execution model. V4 breakthrough = AC validation + human-in-the-loop proving. The closest published work to what Chorus implements daily.</td>
+  </tr>
+  <tr>
+    <td><strong>Jeff's CIA Team (Staples 2010–2015)</strong></td>
+    <td>ICD review discipline. The ARB approved architecture; the CIA made it trustworthy. Source-level review: "Is this source real? Is it a duplicate? Where's the ICD?" The human review that catches what automation misses. In one session, Jeff applied this discipline to cut the Photos ICD from 6 sources to 4, catch a near-deprecation of scene label data, and enforce that authority data belongs inside provider folds, not floating at the top level.</td>
+  </tr>
+  <tr>
+    <td><strong>Vendor Lock-in Arc (Jeff's Career)</strong></td>
+    <td>Quattro Pro macros → Informix 4GL → CASE tools → IBM WebSphere → Software AG at Staples. Every step was a vendor's DSL that was powerful until you needed to leave. Deep lock-in with Software AG drove interest in open-source alternatives (NiFi, Mule, Talend). This directly shapes Chorus architecture: the protocol layer (roles, cards, ICD, proving gate) is portable across engine choices. Claude Code is today's AI engine, but the patterns move. The reference model doesn't lock into the implementation. Same lesson, applied forward.</td>
+  </tr>
+</table>
+
+<!-- ============================================================ -->
+<h2><span class="num">IX.</span> What Makes This Different</h2>
+
+<p>Other approaches to AI-assisted development exist. Here's how Chorus differs:</p>
+
+<table>
+  <tr><th>Approach</th><th>Model</th><th>Chorus Difference</th></tr>
+  <tr>
+    <td><strong>Copilot / autocomplete</strong></td>
+    <td>AI suggests, human accepts/rejects inline</td>
+    <td>Chorus roles have agency — they plan, execute, and coordinate, not just suggest</td>
+  </tr>
+  <tr>
+    <td><strong>Chat-based coding</strong></td>
+    <td>Human describes, AI generates, human pastes</td>
+    <td>Chorus roles execute directly — they own files, run tests, deploy. No copy-paste loop.</td>
+  </tr>
+  <tr>
+    <td><strong>Agent swarms</strong></td>
+    <td>Many disposable agents, no persistence, no roles</td>
+    <td>Chorus roles are persistent and specialized. Three roles > thirty disposable agents. Depth over breadth.</td>
+  </tr>
+  <tr>
+    <td><strong>Single super-agent</strong></td>
+    <td>One AI does everything</td>
+    <td>Chorus separates concerns: PM doesn't write code, Engineer doesn't make product decisions. Separation produces better output than omniscience.</td>
+  </tr>
+</table>
+
+<div class="insight">
+  The fundamental bet: <strong>a small team of persistent, specialized AI roles — directed by a human who provides judgment and energy — produces better outcomes than either human-alone or AI-alone.</strong> The coordination cost is real. The compounding value of shared context, accumulated feedback, and enforced discipline is higher.
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">X.</span> The Implementation (Jeff's Instance)</h2>
+
+<p class="section-intro">Everything above is the reference model — portable, tool-agnostic. Below is the proof: one human, two Macs, three AI roles, 37 days.</p>
+
+<table>
+  <tr><th>Layer</th><th>Reference</th><th>Jeff's Implementation</th></tr>
+  <tr>
+    <td><strong>Human</strong></td>
+    <td>Director, reviewer, energy source</td>
+    <td>Jeff Bridwell. 15 years integration architecture. HBDI: relational under pressure.</td>
+  </tr>
+  <tr>
+    <td><strong>Roles</strong></td>
+    <td>PM + Architect + Engineer</td>
+    <td>Wren (PM), Silas (Architect), Kade (Engineer). Claude Opus. Persistent via CLAUDE.md + memory files.</td>
+  </tr>
+  <tr>
+    <td><strong>Coordination</strong></td>
+    <td>Cards, skills, hooks, briefs</td>
+    <td>Vikunja board, board-ts CLI, 30+ skills, Rust hooks service, Bridge UI</td>
+  </tr>
+  <tr>
+    <td><strong>Knowledge</strong></td>
+    <td>Semantic graph + search</td>
+    <td>Apache Fuseki (23M+ triples), LanceDB embeddings, Chorus memory index</td>
+  </tr>
+  <tr>
+    <td><strong>Integration</strong></td>
+    <td>Flow-based ETL engine</td>
+    <td>Apache NiFi (evaluating). Currently: custom scripts (being retired).</td>
+  </tr>
+  <tr>
+    <td><strong>Monitoring</strong></td>
+    <td>Health + attention metrics</td>
+    <td>Grafana + Prometheus + Loki. Chorus spine events. Bridge activity stream.</td>
+  </tr>
+  <tr>
+    <td><strong>Infrastructure</strong></td>
+    <td>Compute + storage</td>
+    <td>Library Mac (M1, 16GB) + Bedroom Mac (M2 Pro, 32GB). LaunchAgents. No cloud dependency.</td>
+  </tr>
+</table>
+
+<h3>What It Produced (37 Days)</h3>
+
+<table>
+  <tr><td><strong>Decisions</strong></td><td>106 documented, searchable, traceable</td></tr>
+  <tr><td><strong>Cards</strong></td><td>1,660+ created, tracked through Directing → Proving</td></tr>
+  <tr><td><strong>Tests</strong></td><td>3,855+ passing</td></tr>
+  <tr><td><strong>RDF Triples</strong></td><td>23M+ across 22 domains</td></tr>
+  <tr><td><strong>Domains</strong></td><td>22 (photos, music, documents, people, stories, social, ...)</td></tr>
+  <tr><td><strong>CLAUDE.md Versions</strong></td><td>73 (the protocol evolves daily)</td></tr>
+  <tr><td><strong>Products</strong></td><td>2 (Gathering = personal app, Chorus = team coordination)</td></tr>
+</table>
+
+<!-- ============================================================ -->
+
+<div class="epigraph" style="margin-top: 48px;">
+  "The best work happens in relationship — when people actually pay attention to each other, push back honestly, and show up consistently. My friendship with the people who matter to me is part of why I believe that. The attention, the honesty, the showing up — that's what I'm trying to build into the system."
+  <div class="attr">— Jeff Bridwell, March 2026</div>
+</div>
+
+<div style="margin-top: 40px; padding: 16px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e5e7eb; font-size: 12px; color: #666; text-align: center;">
+  Chorus Reference Model v1 &middot; Wren &middot; Product Manager &middot; Loom Team &middot; 2026-03-23
+</div>
+
+</div>
+</body>
+</html>

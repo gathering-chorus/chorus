@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Engine vs Driver — NiFi + Chorus Integration Design</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; padding: 40px 20px; line-height: 1.6; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+  .subtitle { font-size: 14px; color: #666; margin-bottom: 32px; }
+  h2 { font-size: 18px; font-weight: 700; margin: 32px 0 12px; color: #1a1a1a; border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+  h3 { font-size: 15px; font-weight: 700; margin: 20px 0 8px; color: #4361ee; }
+  p { font-size: 14px; margin-bottom: 12px; color: #333; }
+  .principle { font-size: 14px; color: #444; border-left: 3px solid #4361ee; padding: 12px 16px; margin: 16px 0; background: #f0f4ff; border-radius: 0 8px 8px 0; }
+  .principle strong { color: #1a1a1a; }
+  .anti { border-left-color: #e94560; background: #fef2f2; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
+  th { text-align: left; padding: 8px 12px; background: #f8f9fa; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; color: #666; border-bottom: 2px solid #e5e7eb; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+
+  .flow { display: flex; align-items: center; gap: 0; margin: 24px 0; flex-wrap: wrap; }
+  .flow-box { background: #f8f9fa; border: 2px solid #e5e7eb; border-radius: 10px; padding: 14px 18px; text-align: center; min-width: 120px; }
+  .flow-box.engine { border-color: #2ec4b6; background: #f0fdfa; }
+  .flow-box.driver { border-color: #4361ee; background: #f0f4ff; }
+  .flow-box.data { border-color: #f7b731; background: #fffbeb; }
+  .flow-box .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 4px; }
+  .flow-box .label.eng { color: #0d7377; }
+  .flow-box .label.drv { color: #4361ee; }
+  .flow-box .label.dat { color: #b8860b; }
+  .flow-box .name { font-size: 14px; font-weight: 700; }
+  .flow-box .detail { font-size: 11px; color: #666; margin-top: 4px; }
+  .flow-arrow { font-size: 20px; color: #ccc; padding: 0 8px; }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
+  .split-card { background: #f8f9fa; border-radius: 10px; padding: 20px; border: 1px solid #e5e7eb; }
+  .split-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .split-card ul { padding-left: 18px; font-size: 13px; }
+  .split-card ul li { margin-bottom: 6px; }
+  .split-card.buy { border-left: 4px solid #2ec4b6; }
+  .split-card.build { border-left: 4px solid #4361ee; }
+
+  .quote { font-size: 15px; font-style: italic; color: #555; border-left: 3px solid #ccc; padding: 12px 16px; margin: 24px 0; }
+  .quote .attr { font-style: normal; font-size: 12px; color: #999; margin-top: 6px; }
+
+  .constraint { display: inline-block; font-size: 11px; padding: 3px 10px; border-radius: 12px; margin: 2px 4px; font-weight: 600; }
+  .constraint.hard { background: #fef2f2; color: #c41e3a; border: 1px solid #fca5a5; }
+  .constraint.soft { background: #f0f4ff; color: #4361ee; border: 1px solid #c7d2fe; }
+
+  @media print {
+    body { padding: 20px 0; }
+    .flow-box { border-width: 1px; }
+  }
+  @media (max-width: 600px) {
+    .split { grid-template-columns: 1fr; }
+    .flow { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Engine vs Driver</h1>
+<p class="subtitle">NiFi handles the data plumbing. Chorus handles the intelligence. &middot; 2026-03-23</p>
+
+<div class="quote">
+  "I don't want to solve a DSL problem for integration. I do want to for AI."
+  <div class="attr">— Jeff, 2026-03-23</div>
+</div>
+
+<h2>The Problem</h2>
+<p>Today we build custom harvest scripts for every domain — bash, Python, TypeScript, JXA. Each script is a one-off integration with no provenance, no retry, no flow visualization, no progress emission. When they break, Jeff finds out by noticing the system is slow or the data is wrong. 15+ custom scripts solving a problem that was solved 20 years ago.</p>
+
+<div class="principle anti">
+  <strong>Anti-pattern:</strong> Building custom integration when the engine already exists. Every hour spent writing harvest scripts is an hour not spent on Chorus — where the real IP is.
+</div>
+
+<h2>The Split</h2>
+
+<div class="split">
+  <div class="split-card buy">
+    <h4>Buy: Data Integration (Engine)</h4>
+    <ul>
+      <li>Source connectors (file, HTTP, JDBC, SFTP)</li>
+      <li>Transform processors (JSON→TTL, EXIF, dedup)</li>
+      <li>Record-level provenance tracking</li>
+      <li>Visual flow design and monitoring</li>
+      <li>Retry, backpressure, error routing</li>
+      <li>Progress emission — built in, not bolted on</li>
+      <li>Batch and streaming modes</li>
+    </ul>
+    <p style="font-size:12px;color:#666;margin-top:12px;">Solved problem. Use NiFi, Camel, or equivalent.</p>
+  </div>
+  <div class="split-card build">
+    <h4>Build: AI Coordination (Driver)</h4>
+    <ul>
+      <li>Role-based task orchestration</li>
+      <li>ICD-governed pipeline design</li>
+      <li>Human-AI steering (Jeff → roles)</li>
+      <li>Quality validation against ICD</li>
+      <li>Demo/accept/prove workflow</li>
+      <li>Feedback → gates (memory → hooks)</li>
+      <li>Cross-role attention and observation</li>
+    </ul>
+    <p style="font-size:12px;color:#666;margin-top:12px;">Unsolved problem. This IS Chorus.</p>
+  </div>
+</div>
+
+<h2>How They Connect</h2>
+
+<div class="flow">
+  <div class="flow-box driver">
+    <div class="label drv">Driver (Chorus)</div>
+    <div class="name">ICD Definition</div>
+    <div class="detail">Source authority, era rules,<br>field mappings, validation gates</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box driver">
+    <div class="label drv">Driver (Chorus)</div>
+    <div class="name">Flow Assembly</div>
+    <div class="detail">AI role selects processors,<br>configures from ICD spec</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box engine">
+    <div class="label eng">Engine (NiFi)</div>
+    <div class="name">Flow Execution</div>
+    <div class="detail">Source → transform → validate<br>→ load → provenance</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box data">
+    <div class="label dat">Target</div>
+    <div class="name">Fuseki</div>
+    <div class="detail">RDF knowledge graph<br>governed, traceable</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box driver">
+    <div class="label drv">Driver (Chorus)</div>
+    <div class="name">Validation</div>
+    <div class="detail">Compare output vs ICD<br>expectations. Accept or reject.</div>
+  </div>
+</div>
+
+<p>The AI doesn't write integration code. It assembles flows from existing processors, validates results against the ICD, and reports to Jeff. The engine does the work. The driver makes the decisions.</p>
+
+<h2>What NiFi Gives Us</h2>
+
+<table>
+  <tr><th>Capability</th><th>Current (Scripts)</th><th>NiFi</th></tr>
+  <tr>
+    <td><strong>Provenance</strong></td>
+    <td>None — records appear in Fuseki with no trace of how they got there</td>
+    <td>Every record tracked: source file, timestamp, processors applied, lineage queryable</td>
+  </tr>
+  <tr>
+    <td><strong>Progress</strong></td>
+    <td>Silent — Jeff finds out when he asks or notices slowness</td>
+    <td>Built-in: records in, records out, queue depth, backpressure, all visible in UI</td>
+  </tr>
+  <tr>
+    <td><strong>Error handling</strong></td>
+    <td>Script crashes, partial data, no retry</td>
+    <td>Failed records route to error queue, retry policies, dead letter handling</td>
+  </tr>
+  <tr>
+    <td><strong>Visualization</strong></td>
+    <td>Read the script source code</td>
+    <td>Visual canvas: boxes and arrows, live throughput, color-coded status</td>
+  </tr>
+  <tr>
+    <td><strong>Reuse</strong></td>
+    <td>Each domain is a custom script</td>
+    <td>Processor library: configure, don't code. Same JSON→TTL processor for every domain</td>
+  </tr>
+  <tr>
+    <td><strong>Monitoring</strong></td>
+    <td>None — "is it running?" requires checking processes</td>
+    <td>Bulletin board, Prometheus metrics, alerts on queue backup or processor failure</td>
+  </tr>
+</table>
+
+<h2>Constraints</h2>
+
+<p>
+  <span class="constraint hard">16GB RAM on Library Mac</span>
+  <span class="constraint hard">LaunchAgent-native, no Docker</span>
+  <span class="constraint soft">Fuseki as primary target</span>
+  <span class="constraint soft">ICD governs all flows</span>
+  <span class="constraint soft">Must run alongside 3 Claude sessions</span>
+</p>
+
+<p>NiFi's JVM footprint is the main risk. Default heap is 512MB–1GB. On a 16GB machine already running Fuseki (1.4GB JVM), Grafana, Loki, Prometheus, and three Claude sessions, NiFi needs to fit in ~1GB. Possible with tuning, but tight.</p>
+
+<p><strong>Alternative:</strong> Run NiFi on Bedroom Mac (32GB, M2 Pro). Data sources are mostly there anyway (Gathering NFS mount, music, photos). Processing happens on the storage machine, results load to Library Fuseki over the network. Separates compute from serving.</p>
+
+<h2>Migration Path</h2>
+
+<table>
+  <tr><th>Phase</th><th>What</th><th>Outcome</th></tr>
+  <tr>
+    <td><strong>1. Spike</strong></td>
+    <td>Install NiFi on Bedroom. Prototype Apple Photos source → ICD validation → Fuseki load.</td>
+    <td>Prove it works. Measure memory, throughput, provenance quality.</td>
+  </tr>
+  <tr>
+    <td><strong>2. One domain</strong></td>
+    <td>Migrate Photos harvest pipeline to NiFi. Three sources, era-scoped merge, canonical rebuild.</td>
+    <td>Replace 5+ scripts with one visual flow. Validate against 3-way comparison.</td>
+  </tr>
+  <tr>
+    <td><strong>3. All domains</strong></td>
+    <td>Music, Documents, People, Social, Stories — each domain becomes a NiFi flow.</td>
+    <td>Zero custom harvest scripts. Every pipeline visible, traceable, governed.</td>
+  </tr>
+  <tr>
+    <td><strong>4. Chorus integration</strong></td>
+    <td>AI roles assemble and validate NiFi flows via NiFi REST API. ICD→flow generation.</td>
+    <td>The driver steers the engine. Jeff sees the pipeline, roles manage it, NiFi executes it.</td>
+  </tr>
+</table>
+
+<h2>Prior Art</h2>
+
+<div class="principle">
+  <strong>Staples ICD Pattern (2010–2015):</strong> Jeff's team used ICDs + ARB mapping tool + Anzo as semantic hub. The pattern was: define the contract, map the sources, validate before loading. NiFi replaces the custom middleware that executed those mappings. The ICD and the validation are Chorus artifacts.
+</div>
+
+<div class="principle">
+  <strong>Enterprise Integration Patterns (Hohpe/Woolf):</strong> Message routing, content-based routing, dead letter channels, wire tap. MuleSoft implemented these as a product. NiFi implements them as a flow engine. The patterns are the same — the question is which implementation fits a Mac mini.
+</div>
+
+<div class="quote">
+  "I don't want to solve a DSL problem for integration. I do want to for AI. If we can assemble flows using the NiFi DSL then that gives us tremendous flexibility without needing to invent the engine."
+  <div class="attr">— Jeff, 2026-03-23</div>
+</div>
+
+<div style="margin-top: 40px; padding: 16px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e5e7eb; font-size: 12px; color: #666; text-align: center;">
+  Wren &middot; Product Manager &middot; Loom Team &middot; Card #1661 &middot; 2026-03-23
+</div>
+
+</div>
+</body>
+</html>
