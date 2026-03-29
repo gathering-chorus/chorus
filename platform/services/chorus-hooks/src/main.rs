@@ -173,6 +173,12 @@ async fn pre_tool_use(
                 return Json(r);
             }
 
+            // Pair gate (#1814) — block code edits without active pair
+            let r = hooks::pair_gate::check(&input);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return Json(r);
+            }
+
             // ICD pre-read gate (#1684) — warn on data domain writes without context read
             hooks::icd_pre_read::check(&input, &state).await;
         }

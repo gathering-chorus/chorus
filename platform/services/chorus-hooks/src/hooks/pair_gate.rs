@@ -39,7 +39,7 @@ fn has_active_pair() -> bool {
 fn has_pair_evidence_in_session(input: &HookInput) -> bool {
     let session_id = match &input.session_id {
         Some(id) => id.clone(),
-        None => return true,
+        None => return false, // No session = can't verify pair, deny
     };
 
     let cwd = input.cwd.as_deref().unwrap_or("");
@@ -58,7 +58,7 @@ fn has_pair_evidence_in_session(input: &HookInput) -> bool {
 
     let file = match std::fs::File::open(&jsonl_path) {
         Ok(f) => f,
-        Err(_) => return true,
+        Err(_) => return false, // Can't read session = can't verify pair, deny
     };
 
     use std::io::{BufRead, BufReader};
@@ -100,9 +100,11 @@ pub fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
 
-    HookResponse::warn_stderr(
-        "Pair gate: no active pair session detected. Consider /pair for code changes."
-    )
+    HookResponse::deny(&permission_deny_json(
+        "Pair gate: no active pair session detected. \
+         Start /pair before editing code files. \
+         #1814: code cards require a pair."
+    ))
 }
 
 #[cfg(test)]
