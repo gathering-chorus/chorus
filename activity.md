@@ -4,6 +4,12 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-03-29 — Kade (reboot)
+
+- [12:12] [Kade] → Toolkit verification after chorus repo unification — wall-clock, role-state, board-ts, app-state, Loki, Docker all working. → Jeff
+- [12:16] [Kade] → Chat with Wren on post-migration issues — aligned: board mutations (Silas #1829), Chorus API (Kade), CLAUDE.md paths (deferred). → Wren, Jeff
+- [12:20] [Kade] → Investigated Chorus API 3340 — healthy, health endpoint is /health not /api/health. Doc fix only. Nudged Wren. → Wren
+
 ## 2026-03-26 — Kade (reboot)
 
 - [09:52] [Kade] → Fixed #1704 board unreachable root cause: shim.rs bash→zsh for all 6 board-ts calls (nvm only in .zshrc). Built, verified. → All roles
@@ -519,3 +525,7 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Kade] 2026-03-28: #1770 seed capture fix (3 bugs + tunnel 502), design meeting (OWL ontology contributions, gate inventory, domain validation, practices list, codebasePath bindings), gemba observation (Wren 90min, Silas 36min), Susskind transcript, seed service design page, #1794 Fuseki-only persistence (343 seeds migrated), #1798 default routing + 120s + voice memo, #1799 MessageSid dedup, sexuality player LaunchAgent on Bedroom, chats with Silas + Wren on service design review
 
 - [Wren] 2026-03-28/29 17:34–03:30 — v3 domain model assessment, doc-catalog update (92→106), seed triage (36 seeds), logging strategy carded (#1803-1810 pipeline), gemba on Kade, Clearing injection debugging with Silas (#1802). Accepted: none (demos ready for #1800, #1803, #1773). Clearing injection broke at 03:25 — nudges steal Jeff's browser focus. Session ended on Jeff's request.
+
+- [Wren] 2026-03-29 06:29-12:06 — Development framework session. Designed 4 gate hooks (#1811-1815, parent #1816). Paired with Silas on #1818 (52 Clearing UI tests). Navigated Chorus repo unification (#1827) — Silas+Kade pair, value stream L1 structure live. Chatted with both roles on logging standard, gate refinement, repo structure. Captured 4 stories. Kade shipped 8+ cards including normalized log metadata (#1817). Clearing flow section broken post-migration — next session stabilize.
+
+- [Wren] 2026-03-29 12:11-12:28 — Post-migration stabilization. Tooling audit: board writes broken (Vikunja 500), messaging tier healthy (false alarm on 3340). Chatted with Kade — routed to 3340, cleared as wrong health endpoint. Gemba on Silas 394s — watched him diagnose Vikunja DB, rewrite paths with sed, restore board writes, ship #1829. Jeff flagged: symlinks are scaffolding not destination, session start protocol not fully executed.
