@@ -1,18 +1,16 @@
 # Kade — Next Session
 
-## What happened
-- Toolkit verification after chorus repo unification — all tools working
-- Chat with Wren: aligned on post-migration issues (board = Silas, API = Kade, CLAUDE.md paths = deferred)
-- Investigated Chorus API 3340: healthy, /health not /api/health. Doc fix only.
-
-## WIP cards
-None — all 66 Kade cards are Done.
+## Shipped (4 cards)
+- #1764 — Nudge osascript fix: activate Terminal before keystroke, restore Jeff's app after
+- #1811 — Memory-and-research gate hook: PreToolUse blocks code writes without prior checks
+- #1814 — Definition of Done gates: TDD gate, demo gate (both block), pair gate (warn only)
+- #1828 — Renamed board-ts to cards: full codebase sweep, alias deleted, CLAUDE.md v79
 
 ## Pending
-- CLAUDE.md still references `../messages/scripts/` — symlinks cover it but should be updated
-- Brief from Wren: `2026-03-24-doc-catalog-html.md` — add HTML file support to doc-catalog handler. Not started.
-- Board mutations blocked until Silas finishes #1829 (Vikunja DB fix)
+- chorus-log.sh writes fail (stale path from restructure) — 7 Rust test failures
+- Voice recording seed found on disk but missing TTL record — seed pipeline gap
+- Silas's nudge integration tests fire live osascript — needs mocking
 
 ## Pick up
-- Pull a card once board is stable
-- The doc-catalog HTML brief from Wren is ready to work
+- #1631 (face clusters), #1630 (semantic embeddings), #1619 (provenance stamps) in Next
+- #1815 (root cause gate), #1812 (prove-it gate) — same architecture as #1811
