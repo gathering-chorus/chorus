@@ -79,7 +79,7 @@ Scripts are the implementation layer — bash, TypeScript, and Python executing 
 #### Board & Card Operations
 | Script | Location | Purpose |
 |--------|----------|---------|
-| board-ts | messages/scripts/ | TypeScript board CLI — all card CRUD, gates, spine events |
+| cards | messages/scripts/ | TypeScript board CLI — all card CRUD, gates, spine events |
 | git-queue.sh | messages/scripts/ | FIFO commit lock for multi-role team repo via `lockf` |
 
 #### Session Lifecycle
@@ -159,7 +159,7 @@ Ideas → Later → Next → Now → WIP → Done
 2. Demo to Jeff — builder shows working system, `/look` for evidence
 3. Accept — Jeff or Wren confirms AC met
 - No self-service Done for code changes
-- `board-ts demo <id>` → `board-ts done <id>`
+- `cards demo <id>` → `cards done <id>`
 
 #### Spine Events (Card Lifecycle)
 - `card.item.created`, `card.item.moved`, `card.item.completed`
@@ -215,7 +215,7 @@ Every role session follows a three-phase pattern.
 5. **Session-init gate** blocks all work until context file is read
 
 ### Operate
-- Card-first: work starts with `board-ts move <id> WIP` + `role-state.sh <role> building card=<id>`
+- Card-first: work starts with `cards move <id> WIP` + `role-state.sh <role> building card=<id>`
 - Briefs route to recipient's `briefs/` directory
 - Activity logged to `messages/activity.md`
 - Spine events emitted on every card mutation
@@ -223,7 +223,7 @@ Every role session follows a three-phase pattern.
 
 ### Close (werk-init.sh --close)
 1. Journal (3-8 sentence reflection)
-2. Board audit (`board-ts audit-close`)
+2. Board audit (`cards audit-close`)
 3. Activity log append
 4. next-session.md (handoff context)
 5. Commit (`git-queue.sh`) + `role-state.sh <role> idle`
@@ -233,18 +233,18 @@ Every role session follows a three-phase pattern.
 ## 3. Orchestration Wiring (How Layers Connect)
 
 ### Jeff types `/pull 1292`
-1. **Skill** `/pull` invokes `board-ts move 1292 WIP`
-2. **board-ts** runs capture gate (AC check), taxonomy gate (chunk check), blast radius gate (code analysis)
-3. **board-ts** emits `card.item.moved` spine event via `chorus-log.sh`
+1. **Skill** `/pull` invokes `cards move 1292 WIP`
+2. **cards** runs capture gate (AC check), taxonomy gate (chunk check), blast radius gate (code analysis)
+3. **cards** emits `card.item.moved` spine event via `chorus-log.sh`
 4. **Skill** calls `role-state.sh wren building card=1292`
 5. **Andon daemon** picks up state change within 30s → menubar light updates
 
 ### Kade finishes building, runs `/demo 1297`
 1. **Skill** `/demo` runs smoke check (hit the page, verify data loads)
-2. **board-ts** emits `card.demo.started`
+2. **cards** emits `card.demo.started`
 3. `/demo` nudges Wren: "ready for review"
 4. Jeff sees the page via `/look` or `/lc`
-5. Wren or Jeff calls `board-ts done 1297` → `card.accepted` + `card.item.completed`
+5. Wren or Jeff calls `cards done 1297` → `card.accepted` + `card.item.completed`
 6. Linked workflow (if any) auto-archives
 
 ### A commit happens
@@ -278,13 +278,13 @@ Every role session follows a three-phase pattern.
 ### Gap 3: Proving Gate Has No Queue
 - **As-Is:** Demos happen when the builder says "ready" and Jeff is available. No FIFO, no scheduling, no visibility into what's waiting for demo.
 - **To-Be:** Board query surfaces "cards in WIP with demo requested but not accepted" as a queue. `/sb` shows demo backlog.
-- **Effort:** Low. Add a `board-ts demo-queue` command.
+- **Effort:** Low. Add a `cards demo-queue` command.
 - **Cards:** None yet.
 
 ### Gap 4: Blast Radius False Negatives on Abstract Specs
 - **As-Is:** Auto-analysis relies on file paths in card descriptions. Abstract cards ("refactor SPARQL") slip through with zero blast radius. DEC-084 made it blocking, but the upstream problem (specs without file scopes) persists.
 - **To-Be:** Blast radius gate falls back to codebase graph query when description has no explicit file paths. "What files touch SPARQL?" is a graph question, not a grep question.
-- **Effort:** Medium. Requires codebase graph integration in board-ts blast radius.
+- **Effort:** Medium. Requires codebase graph integration in cards blast radius.
 - **Cards:** Related to Jeff's observation about graph integration gaps.
 
 ### Gap 5: Metrics Show Different Numbers on Different Pages

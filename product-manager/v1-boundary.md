@@ -15,7 +15,7 @@ Everything outside waits until v1.0 is solid.
 
 | Surface | Status | Notes |
 |---------|--------|-------|
-| Board + card flow | Solid | board-ts CLI, Vikunja, card lifecycle |
+| Board + card flow | Solid | cards CLI, Vikunja, card lifecycle |
 | Briefs + handoffs | Solid | Write to recipient dir, activity.md logging |
 | Search (FTS + semantic) | Solid | BM25 + LanceDB hybrid, just refreshed (#883) |
 | Chorus index | Solid | 50K messages, Slack + Claude + briefs + decisions |

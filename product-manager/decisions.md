@@ -372,7 +372,7 @@
 - **Date**: 2026-02-20
 - **Context**: Jeff observed board.sh needed fixes almost every time it was used. Anti-patterns: cards created retroactively at session close, "Next" items discovered done sessions later, work happening without cards. Jeff: "it is a gate we don't follow now — we should not create cards at the end or realize that next items are done." Also questioned whether bash scripts wrapping curl was the right foundation — proposed TypeScript board client.
 - **Decision**: (1) Replace board.sh + chorus-board.sh with TypeScript board client (`messages/board-client/`). Single typed codebase, both boards, importable by bridge/audit, proper error handling. (2) Card-first is a mandatory gate enforced in all 3 CLAUDE.md files: no work without a card, no retroactive card creation, move to Done immediately when complete. (3) Session start/close audit commands snapshot board state and diff for compliance.
-- **Implementation**: `board-ts` CLI replaces both bash scripts. `audit-start` takes board snapshot + surfaces stale items. `audit-close` diffs snapshot, flags retroactive cards. All 3 CLAUDE.md files updated with card-first gate section. Chorus card C#24.
+- **Implementation**: `cards` CLI replaces both bash scripts. `audit-start` takes board snapshot + surfaces stale items. `audit-close` diffs snapshot, flags retroactive cards. All 3 CLAUDE.md files updated with card-first gate section. Chorus card C#24.
 - **Jeff's words**: "it is a gate we don't follow now — we should not create cards at the end or realize that next items are done"
 - **Status**: Accepted
 
@@ -496,7 +496,7 @@
 - **Decision**: Code changes require a three-step Proving gate before Done:
   1. **Deploy** — code is running, not just committed.
   2. **Demo** — builder shows it working to Jeff or Wren. `/look` as evidence.
-  3. **Accept** — Jeff or Wren confirms AC met. Then `board-ts done <id>`.
+  3. **Accept** — Jeff or Wren confirms AC met. Then `cards done <id>`.
   No self-service Done for code changes. The builder does not accept their own work.
 - **Rationale**: "Done" must mean "Jeff can use it." Commit ≠ deploy ≠ verified. The gate matches how real teams operate — the demo is the acceptance moment. Lightweight by design: in a multi-role session it's a 30-second interrupt, not a meeting. Wired into `shared/team-kanban-board.md` fragment, propagated to all roles via claudemd-gen (v1.3.12).
 - **Jeff's words**: "He says it's done — tester says, did you test any of your work?"
@@ -565,7 +565,7 @@
 ## DEC-055: SWAT lane — crisis cards outside WIP limit
 - **Date**: 2026-02-25
 - **Context**: During a recovery session, Kade hit stale sexuality data and started fixing it before cards existed. Three cards ended up in Blocked from one pipeline hiccup. The card-first gate and WIP limit assume clean starts — but crises invert the flow. Work starts, then cards catch up. The WIP limit blocked response instead of protecting flow.
-- **Decision**: SWAT cards live outside the WIP limit. `board-ts swat "description"` creates a [swat]-tagged card, auto-moves to WIP, doesn't count against the 3-card limit. SWAT cards must close within one session — if still open at next session start, they convert to regular WIP and take a slot.
+- **Decision**: SWAT cards live outside the WIP limit. `cards swat "description"` creates a [swat]-tagged card, auto-moves to WIP, doesn't count against the 3-card limit. SWAT cards must close within one session — if still open at next session start, they convert to regular WIP and take a slot.
 - **Rationale**: The WIP limit protects planned flow. Crisis work isn't planned — you're already in the fire. Restricting response time to protect a planning instrument is backwards. The one-session expiry prevents SWAT from becoming a backdoor to hoard WIP.
 - **Status**: Accepted
 
@@ -675,7 +675,7 @@
 ## DEC-070: Metrics foundation — structured events, not log grep
 - **Date**: 2026-03-04
 - **Context**: Three surfaces (Werk Flow Metrics, Werk Instruments, Loom Team Pulse) pull overlapping metrics from 5 data sources at 3 quality tiers. Same metric shows different numbers on different pages. 562 "ops" cards computed as a remainder. Weekly throughput inferred from git commit keywords. Builds/deploys counted twice from different sources. The log topology (localhost:3000/gathering-docs/log-topology.html) and relatedness graph (log-relatedness.html) map what exists and how it flows — but no layer defines what metrics each log produces or at what quality.
-- **Decision**: Every metric traces to a structured spine event. Every spine event emitted by a hook (automatic), not role convention (best effort). Every surface reads from Loki, not file grep. One metrics endpoint, both surfaces consume it. Three data tiers: T1 (system of record: Vikunja, git, filesystem), T2 (reliable bounded: Loki, board-ts), T3 (kill: chorus.log grep, git keywords, label scan, remainder math). Card #1040.
+- **Decision**: Every metric traces to a structured spine event. Every spine event emitted by a hook (automatic), not role convention (best effort). Every surface reads from Loki, not file grep. One metrics endpoint, both surfaces consume it. Three data tiers: T1 (system of record: Vikunja, git, filesystem), T2 (reliable bounded: Loki, cards), T3 (kill: chorus.log grep, git keywords, label scan, remainder math). Card #1040.
 - **Rationale**: Jeff: "We dont want an undifferentiated data log of logs — we want structured consistent logs that have the data we need to generate metrics." The cement has to dry before we build more surfaces on it.
 - **References**: DEC-043 (three surfaces), log-topology.html, log-relatedness.html, #1040
 - **Status**: Accepted
@@ -869,6 +869,6 @@
 
 ## DEC-100: No bash APIs — team infrastructure defaults to TypeScript or Rust
 **Date:** 2026-03-21
-**Context:** 115 bash scripts, 6,500 lines functioning as APIs (board-ts, nudge, workflow, werk-init). Debugging tax: sed regex bugs, prefix stripping, silent failures, 12 early exits to trace. #1551 (Rust hook service) proved the alternative — 4.3x faster, typed, testable.
-**Decision:** New team infrastructure defaults to TypeScript (app stack) or Rust (hooks/daemons). Bash only for true one-shot glue. Existing bash APIs migrate to typed services. board-ts is first target.
+**Context:** 115 bash scripts, 6,500 lines functioning as APIs (cards, nudge, workflow, werk-init). Debugging tax: sed regex bugs, prefix stripping, silent failures, 12 early exits to trace. #1551 (Rust hook service) proved the alternative — 4.3x faster, typed, testable.
+**Decision:** New team infrastructure defaults to TypeScript (app stack) or Rust (hooks/daemons). Bash only for true one-shot glue. Existing bash APIs migrate to typed services. cards is first target.
 **Consequences:** Higher upfront cost per script, lower ongoing debugging tax. Scripts become testable. Errors become typed. The team stops spending creative energy on bash string parsing.
