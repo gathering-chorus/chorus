@@ -1,0 +1,54 @@
+{
+  "id": "WF-150",
+  "decision": "Wire Photos validation gate using shared validateFromICD — domain #2",
+  "source": "board:card-moved:#1515",
+  "card": 1515,
+  "created": "2026-03-18T21:43:27Z",
+  "updated": "2026-03-18T21:56:51.870Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Wire Photos validation gate using shared validateFromICD — domain #2",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-18T21:56:51.870Z",
+      "notes": "Skipped — card #1515 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1515",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-18T21:56:51.870Z",
+      "notes": "Skipped — card #1515 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-18T21:43:27Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Wire Photos validation gate using shared validateFromICD — domain #2"
+    },
+    {
+      "timestamp": "2026-03-18T21:56:51.870Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1515 marked Done by wren"
+    }
+  ]
+}

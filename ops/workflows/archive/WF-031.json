@@ -1,0 +1,84 @@
+{
+  "id": "WF-031",
+  "decision": "Photos: Search",
+  "source": "verbal",
+  "card": 73,
+  "created": "2026-02-23T04:39:51Z",
+  "updated": "2026-02-23T04:56:09Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Photos: Search",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "src/handlers/photo.handler.ts",
+        "views/collection-photos.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T04:53:35Z",
+      "notes": "Photos search enhanced: now searches across name, filename, description, and album slugs (was name/filename only in API, name/filename/description in collection). Updated search placeholder."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #73",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "src/handlers/photo.handler.ts",
+        "views/collection-photos.ejs"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-031-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T04:56:09Z",
+      "notes": "Review pass: search covers name/filename/description/album slugs, case-insensitive, XSS-safe (escaped EJS + encodeURIComponent), pagination capped. No blockers."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T04:39:51Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Photos: Search"
+    },
+    {
+      "timestamp": "2026-02-23T04:39:51Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 1 ready: Photos: Search"
+    },
+    {
+      "timestamp": "2026-02-23T04:53:35Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Photos: Search \u2014 Photos search enhanced: now searches across name, filename, description, and album slugs (was name/filename only in API, name/filename/description in collection). Updated search placeholder."
+    },
+    {
+      "timestamp": "2026-02-23T04:53:35Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #73"
+    },
+    {
+      "timestamp": "2026-02-23T04:56:09Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #73 \u2014 Review pass: search covers name/filename/description/album slugs, case-insensitive, XSS-safe (escaped EJS + encodeURIComponent), pagination capped. No blockers."
+    },
+    {
+      "timestamp": "2026-02-23T04:56:09Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

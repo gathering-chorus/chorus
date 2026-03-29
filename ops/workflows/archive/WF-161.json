@@ -1,0 +1,81 @@
+{
+  "id": "WF-161",
+  "decision": "Chunk B — Govern the foundation. Clean namespaces, code from graph, test automation, end-to-end harvest.",
+  "source": "session:wren:2026-03-19",
+  "name": "Foundation Governance Pipeline",
+  "created": "2026-03-19T21:57:00Z",
+  "status": "completed",
+  "steps": [
+    {
+      "step": 1,
+      "card": 1540,
+      "title": "Namespace migration jb:/gathering:/chorus:/borg: + enforcement",
+      "owner": "silas",
+      "blocked_by": [],
+      "status": "completed",
+      "started_at": "2026-03-19T22:00:00Z",
+      "completed_at": "2026-03-19T23:00:00Z"
+    },
+    {
+      "step": 2,
+      "card": 1555,
+      "title": "Rewire code generation to read from RDF graph, not HTML",
+      "owner": "silas",
+      "blocked_by": [1540],
+      "status": "completed",
+      "started_at": "2026-03-19T23:00:00Z",
+      "completed_at": "2026-03-19T23:30:00Z"
+    },
+    {
+      "step": 3,
+      "card": 1554,
+      "title": "Page + API test automation",
+      "owner": "kade",
+      "blocked_by": [1540],
+      "status": "completed",
+      "started_at": "2026-03-19T23:30:00Z",
+      "completed_at": "2026-03-20T12:15:00Z"
+    },
+    {
+      "step": 4,
+      "card": 1556,
+      "title": "End-to-end harvest: Notes + Stories through ICD pipeline",
+      "owner": "kade",
+      "blocked_by": [1555, 1554],
+      "status": "completed",
+      "started_at": "2026-03-20T15:50:00Z",
+      "completed_at": "2026-03-20T16:32:00Z"
+    }
+  ],
+  "demo": {
+    "method": "Run Notes harvest end-to-end: ICD defines fields → code generated from RDF → harvester runs → validation gate checks → data lands in graph → page renders with compliance numbers",
+    "gate": "Notes and Stories both pass the full pipeline. Tests green. Namespaces clean.",
+    "acceptance": "The system governs itself — no manual steps between ICD definition and rendered page."
+  },
+  "history": [
+    {
+      "timestamp": "2026-03-19T21:57:00Z",
+      "event": "Pipeline created. Step 1 unblocked. Steps 2+3 parallel after 1. Step 4 after 2+3. Demo: end-to-end harvest run."
+    },
+    {
+      "timestamp": "2026-03-19T23:00:00Z",
+      "event": "Step 1 (#1540) completed — namespace migration done by Silas. Steps 2+3 unblocked."
+    },
+    {
+      "timestamp": "2026-03-19T23:30:00Z",
+      "event": "Step 2 (#1555) completed — code gen rewired to RDF by Silas. Step 3 (#1554) pulled to WIP by Kade."
+    },
+    {
+      "timestamp": "2026-03-19T23:48:00Z",
+      "event": "Manifest sync — steps 1+2 marked completed (were stale). Kade idle on step 3 (#1554). Step 4 blocked on #1554."
+    },
+    {
+      "timestamp": "2026-03-20T12:15:00Z",
+      "event": "Step 3 (#1554) completed — 22 integration tests, all 9 AC items met. Step 4 (#1556) unblocked. Nudging Kade."
+    },
+    {
+      "timestamp": "2026-03-20T16:32:00Z",
+      "event": "Step 4 (#1556) completed — E2E harvest: Notes 823→1645 records, Stories 28→194 records. 3938 tests passing. Pipeline COMPLETE. All 4 steps shipped."
+    }
+  ]
+}

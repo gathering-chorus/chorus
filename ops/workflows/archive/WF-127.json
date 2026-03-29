@@ -1,0 +1,48 @@
+{
+  "id": "WF-127",
+  "decision": "Add progress emission to all long-running pipeline operations — no more black boxes",
+  "source": "board:card-moved:#1450",
+  "card": 1450,
+  "created": "2026-03-15T19:31:07Z",
+  "updated": "2026-03-15T19:31:07Z",
+  "status": "in_progress",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Add progress emission to all long-running pipeline operations — no more black boxes",
+      "status": "ready",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1450",
+      "status": "pending",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T19:31:07Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Add progress emission to all long-running pipeline operations — no more black boxes"
+    }
+  ]
+}

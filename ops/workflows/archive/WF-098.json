@@ -1,0 +1,54 @@
+{
+  "id": "WF-098",
+  "decision": "Posture timelapse spike \u2014 webcam capture every 5min, LLaVA scoring on Bedroom Mac, daily posture/breath pattern log",
+  "source": "board:card-moved:#899",
+  "card": 899,
+  "created": "2026-03-03T23:58:17Z",
+  "updated": "2026-03-04T02:06:56.617Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Posture timelapse spike \u2014 webcam capture every 5min LLaVA scoring on Bedroom Mac daily posture/breath pattern log",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #899 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #899",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #899 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-03T23:58:17Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Posture timelapse spike \u2014 webcam capture every 5min, LLaVA scoring on Bedroom Mac, daily posture/breath pattern log"
+    },
+    {
+      "timestamp": "2026-03-04T02:06:56.617Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #899 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "id": "WF-152",
+  "decision": "ICD RDF migration \u2014 ontology, API, rendering, live counts, tests, deprecation",
+  "source": "chat:silas-wren-kade:2026-03-19",
+  "name": "ICD to RDF Pipeline",
+  "created": "2026-03-19T12:51:00Z",
+  "status": "completed",
+  "steps": [
+    {
+      "step": 1,
+      "card": 1533,
+      "title": "Bulk migrate 6 remaining domains to RDF",
+      "owner": "silas",
+      "blocked_by": [],
+      "status": "completed",
+      "started_at": "2026-03-19T12:52:00Z",
+      "completed_at": "2026-03-19T13:24:00Z"
+    },
+    {
+      "step": 2,
+      "card": 1534,
+      "title": "ICD API endpoints",
+      "owner": "kade",
+      "blocked_by": [
+        1533
+      ],
+      "status": "completed",
+      "started_at": "2026-03-19T13:24:00Z",
+      "completed_at": "2026-03-19T13:25:00Z"
+    },
+    {
+      "step": 3,
+      "card": 1535,
+      "title": "Wire SEMANTIC_MAPPER page to render from API",
+      "owner": "kade",
+      "blocked_by": [
+        1534
+      ],
+      "status": "in_progress",
+      "started_at": "2026-03-19T13:41:00Z",
+      "completed_at": null
+    },
+    {
+      "step": 4,
+      "card": 1536,
+      "title": "Live instance counts via SPARQL",
+      "owner": "silas",
+      "blocked_by": [
+        1533
+      ],
+      "status": "completed",
+      "started_at": "2026-03-19T13:25:00Z",
+      "completed_at": "2026-03-19T13:51:00Z"
+    },
+    {
+      "step": 5,
+      "card": 1532,
+      "title": "Test automation strategy + implementation",
+      "owner": "wren",
+      "blocked_by": [],
+      "status": "completed",
+      "started_at": "2026-03-19T12:48:00Z",
+      "completed_at": "2026-03-19T13:25:00Z"
+    },
+    {
+      "step": 6,
+      "card": 1537,
+      "title": "Deprecate HTML as source of truth",
+      "owner": "wren",
+      "blocked_by": [
+        1535
+      ],
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null
+    }
+  ],
+  "history": [
+    {
+      "timestamp": "2026-03-19T12:51:00Z",
+      "event": "Pipeline created."
+    },
+    {
+      "timestamp": "2026-03-19T13:24:00Z",
+      "event": "Step 1 (#1533) completed. 7 domains, 2,247 triples."
+    },
+    {
+      "timestamp": "2026-03-19T13:25:00Z",
+      "event": "Step 2 (#1534) completed. 6 ICD API endpoints live."
+    },
+    {
+      "timestamp": "2026-03-19T13:51:00Z",
+      "event": "Step 4 (#1536) completed. Live counts, Photos parser fixed (5 providers), consistency test 7/7 PASS 0 drift. Step 5 (#1532) test strategy complete \u2014 Layer 1 built and green. Waiting on step 3 (#1535) for pipeline completion."
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "id": "WF-035",
+  "decision": "Spike: cross-collection search in Gathering",
+  "source": "board:card-moved:#115",
+  "card": 115,
+  "created": "2026-02-23T12:06:40Z",
+  "updated": "2026-02-23T14:01:58Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Spike: cross-collection search in Gathering",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "src/services/search-index.service.ts",
+        "src/handlers/search.handler.ts",
+        "views/search.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T12:25:21Z",
+      "notes": "Cross-collection search spike complete. SearchIndexService.rebuildAll() indexes 8 collections (notes, books, music, cookinglist, readinglist, watchlist, todolist, socialposts) into SQLite FTS5. 5,672 items indexed at startup. Collection filter dropdown added to /search. POST /api/search/rebuild endpoint for manual re-index."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #115",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "architect/briefs/2026-02-23-wf-035-review.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-035-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T14:01:58Z",
+      "notes": "Architecture review: SQLite FTS5 approach is sound. 8 collections mapped correctly to ontology. Three minor items for follow-up: (1) async rebuild path for >50K items, (2) soft-delete sync gap between pods and search index, (3) FTS5 operator sanitization. None are blockers. Advance."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T12:06:40Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Spike: cross-collection search in Gathering"
+    },
+    {
+      "timestamp": "2026-02-23T12:25:21Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Spike: cross-collection search in Gathering \u2014 Cross-collection search spike complete. SearchIndexService.rebuildAll() indexes 8 collections (notes, books, music, cookinglist, readinglist, watchlist, todolist, socialposts) into SQLite FTS5. 5,672 items indexed at startup. Collection filter dropdown added to /search. POST /api/search/rebuild endpoint for manual re-index."
+    },
+    {
+      "timestamp": "2026-02-23T12:25:21Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #115"
+    },
+    {
+      "timestamp": "2026-02-23T14:01:58Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #115 \u2014 Architecture review: SQLite FTS5 approach is sound. 8 collections mapped correctly to ontology. Three minor items for follow-up: (1) async rebuild path for >50K items, (2) soft-delete sync gap between pods and search index, (3) FTS5 operator sanitization. None are blockers. Advance."
+    },
+    {
+      "timestamp": "2026-02-23T14:01:58Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

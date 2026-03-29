@@ -1,0 +1,1 @@
+/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/scripts/app-state.sh

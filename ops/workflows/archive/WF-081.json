@@ -1,0 +1,78 @@
+{
+  "id": "WF-081",
+  "decision": "Role-native context injection at boot \u2014 chorus query per role in native token format",
+  "source": "board:card-moved:#358",
+  "card": 358,
+  "created": "2026-02-27T01:37:27Z",
+  "updated": "2026-02-27T15:43:20Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Role-native context injection at boot \u2014 chorus query per role in native token format",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "chorus-query.sh",
+        "werk-init.sh"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-27T13:54:32Z",
+      "notes": "Implemented context mode in chorus-query.sh + wired into werk-init.sh. All 3 roles produce dense boot signals."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #358",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "chorus/scripts/chorus-query.sh",
+        "messages/scripts/werk-init.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-27-wf-081-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-27T15:43:20Z",
+      "notes": "Reviewed and verified. chorus-query.sh context mode produces role-native dense signals from chorus.log. werk-init.sh wires it into parallel boot data gathering. All 3 roles get domain-appropriate context at session start. Clean integration, proper fallbacks."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-27T01:37:27Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Role-native context injection at boot \u2014 chorus query per role in native token format"
+    },
+    {
+      "timestamp": "2026-02-27T13:54:32Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Role-native context injection at boot \u2014 chorus query per role in native token format \u2014 Implemented context mode in chorus-query.sh + wired into werk-init.sh. All 3 roles produce dense boot signals."
+    },
+    {
+      "timestamp": "2026-02-27T13:54:32Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #358"
+    },
+    {
+      "timestamp": "2026-02-27T15:43:20Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #358 \u2014 Reviewed and verified. chorus-query.sh context mode produces role-native dense signals from chorus.log. werk-init.sh wires it into parallel boot data gathering. All 3 roles get domain-appropriate context at session start. Clean integration, proper fallbacks."
+    },
+    {
+      "timestamp": "2026-02-27T15:43:20Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

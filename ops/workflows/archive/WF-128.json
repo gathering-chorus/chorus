@@ -1,0 +1,54 @@
+{
+  "id": "WF-128",
+  "decision": "Perceptual hash for cross-source dedup \u2014 content-based matching on Bedroom",
+  "source": "board:card-moved:#1448",
+  "card": 1448,
+  "created": "2026-03-15T20:33:35Z",
+  "updated": "2026-03-16T20:51:00.864Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Perceptual hash for cross-source dedup \u2014 content-based matching on Bedroom",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1448 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1448",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1448 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T20:33:35Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Perceptual hash for cross-source dedup \u2014 content-based matching on Bedroom"
+    },
+    {
+      "timestamp": "2026-03-16T20:51:00.864Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1448 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "WF-118",
+  "decision": "Add Good Borg page to /borg/about \u2014 origin doc for the Borg surface",
+  "source": "board:card-moved:#1429",
+  "card": 1429,
+  "created": "2026-03-15T16:35:59Z",
+  "updated": "2026-03-15T16:40:13.372Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Add Good Borg page to /borg/about \u2014 origin doc for the Borg surface",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1429 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1429",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1429 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T16:35:59Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Add Good Borg page to /borg/about \u2014 origin doc for the Borg surface"
+    },
+    {
+      "timestamp": "2026-03-15T16:40:13.372Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1429 marked Done by wren"
+    }
+  ]
+}

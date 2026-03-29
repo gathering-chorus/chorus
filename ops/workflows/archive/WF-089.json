@@ -1,0 +1,54 @@
+{
+  "id": "WF-089",
+  "decision": "Design Self AI use cases \u2014 what the local model does for Jeff",
+  "source": "board:card-moved:#532",
+  "card": 532,
+  "created": "2026-02-28T02:26:50Z",
+  "updated": "2026-02-28T18:04:23.187Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Design Self AI use cases \u2014 what the local model does for Jeff",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #532 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #532",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #532 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-28T02:26:50Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Design Self AI use cases \u2014 what the local model does for Jeff"
+    },
+    {
+      "timestamp": "2026-02-28T18:04:23.187Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #532 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "id": "WF-010",
+  "decision": "Smoke test manifest handoffs",
+  "source": "manual",
+  "card": null,
+  "created": "2026-02-22T19:20:37Z",
+  "updated": "2026-02-22T19:20:57Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "wren",
+      "action": "Write test brief",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "test.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-22T19:20:43Z",
+      "notes": "Test brief written"
+    },
+    {
+      "seq": 2,
+      "role": "kade",
+      "action": "Receive and confirm",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-22-wf-010-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-22T19:20:57Z",
+      "notes": "Confirmed receipt"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-22T19:20:37Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Smoke test manifest handoffs"
+    },
+    {
+      "timestamp": "2026-02-22T19:20:43Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 1 completed: wren — Write test brief"
+    },
+    {
+      "timestamp": "2026-02-22T19:20:43Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 2 ready: kade — Receive and confirm"
+    },
+    {
+      "timestamp": "2026-02-22T19:20:57Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 2 completed: kade — Receive and confirm"
+    },
+    {
+      "timestamp": "2026-02-22T19:20:57Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Workflow completed: Smoke test manifest handoffs"
+    }
+  ]
+}

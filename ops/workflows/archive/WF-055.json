@@ -1,0 +1,72 @@
+{
+  "id": "WF-055",
+  "decision": "Define spine interface contract \u2014 verbs, inputs, guarantees for role interaction",
+  "source": "board:card-moved:C#313",
+  "card": 313,
+  "created": "2026-02-24T02:20:58Z",
+  "updated": "2026-02-24T02:21:19Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Define spine interface contract \u2014 verbs inputs guarantees for role interaction",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T02:21:19Z",
+      "notes": "Superseded by WF-056 \u2014 wrong role assignments"
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify C#313",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-24-wf-055-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T02:21:19Z",
+      "notes": "Superseded by WF-056"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T02:20:58Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Define spine interface contract \u2014 verbs, inputs, guarantees for role interaction"
+    },
+    {
+      "timestamp": "2026-02-24T02:21:19Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Define spine interface contract \u2014 verbs inputs guarantees for role interaction \u2014 Superseded by WF-056 \u2014 wrong role assignments"
+    },
+    {
+      "timestamp": "2026-02-24T02:21:19Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify C#313"
+    },
+    {
+      "timestamp": "2026-02-24T02:21:19Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify C#313 \u2014 Superseded by WF-056"
+    },
+    {
+      "timestamp": "2026-02-24T02:21:19Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

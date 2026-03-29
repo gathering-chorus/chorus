@@ -1,0 +1,54 @@
+{
+  "id": "WF-104",
+  "decision": "Style manifest \u2014 derive page inventory from navbar, enforce visual consistency across all pages",
+  "source": "board:card-moved:#1193",
+  "card": 1193,
+  "created": "2026-03-09T14:21:46Z",
+  "updated": "2026-03-09T14:47:46.701Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Style manifest \u2014 derive page inventory from navbar enforce visual consistency across all pages",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1193 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1193",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1193 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-09T14:21:46Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Style manifest \u2014 derive page inventory from navbar, enforce visual consistency across all pages"
+    },
+    {
+      "timestamp": "2026-03-09T14:47:46.701Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1193 marked Done by wren"
+    }
+  ]
+}

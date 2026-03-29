@@ -1,0 +1,78 @@
+{
+  "id": "WF-061",
+  "decision": "Annotation pattern \u2014 extend rating/notes across all collections",
+  "source": "board:card-moved:#8",
+  "card": 8,
+  "created": "2026-02-24T18:29:32Z",
+  "updated": "2026-02-24T21:13:11Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Annotation pattern \u2014 extend rating/notes across all collections",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "src/validation/stories.schemas.ts",
+        "views/partials/annotation.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T21:07:37Z",
+      "notes": "Rating (1-5) + notes annotation shipped for Stories and Music albums. Reusable partial, Zod validation, pod service read/merge/write, 24 new tests (2372 total). Commit f9a4f30, deployed."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #8",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "views/partials/annotation.ejs",
+        "src/validation/stories.schemas.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-24-wf-061-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T21:13:11Z",
+      "notes": "Jeff accepted #8 annotation pattern. Rating + notes working across Stories and Music. Proving gate met: deployed, demoed, accepted."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T18:29:32Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Annotation pattern \u2014 extend rating/notes across all collections"
+    },
+    {
+      "timestamp": "2026-02-24T21:07:37Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Annotation pattern \u2014 extend rating/notes across all collections \u2014 Rating (1-5) + notes annotation shipped for Stories and Music albums. Reusable partial, Zod validation, pod service read/merge/write, 24 new tests (2372 total). Commit f9a4f30, deployed."
+    },
+    {
+      "timestamp": "2026-02-24T21:07:37Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #8"
+    },
+    {
+      "timestamp": "2026-02-24T21:13:11Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #8 \u2014 Jeff accepted #8 annotation pattern. Rating + notes working across Stories and Music. Proving gate met: deployed, demoed, accepted."
+    },
+    {
+      "timestamp": "2026-02-24T21:13:11Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

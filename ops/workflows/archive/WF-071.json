@@ -1,0 +1,76 @@
+{
+  "id": "WF-071",
+  "decision": "Separate deploy phase budgets \u2014 independent build and health gate timeouts",
+  "source": "board:card-moved:#372",
+  "card": 372,
+  "created": "2026-02-25T01:51:45Z",
+  "updated": "2026-02-25T17:26:47Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Separate deploy phase budgets \u2014 independent build and health gate timeouts",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "app-state.sh"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-25T17:15:51Z",
+      "notes": "Card #372 completed \u2014 deploy phase budgets separated with named health gate constants"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #372",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "app-state.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-25-wf-071-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-25T17:26:47Z",
+      "notes": "Verified: #372 Done, Jeff accepted. Named budget constants, 6 wait_for_healthy calls wired, ~120s effective health window."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-25T01:51:45Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Separate deploy phase budgets \u2014 independent build and health gate timeouts"
+    },
+    {
+      "timestamp": "2026-02-25T17:15:51Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Separate deploy phase budgets \u2014 independent build and health gate timeouts \u2014 Card #372 completed \u2014 deploy phase budgets separated with named health gate constants"
+    },
+    {
+      "timestamp": "2026-02-25T17:15:51Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #372"
+    },
+    {
+      "timestamp": "2026-02-25T17:26:47Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #372 \u2014 Verified: #372 Done, Jeff accepted. Named budget constants, 6 wait_for_healthy calls wired, ~120s effective health window."
+    },
+    {
+      "timestamp": "2026-02-25T17:26:47Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

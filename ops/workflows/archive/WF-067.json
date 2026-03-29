@@ -1,0 +1,78 @@
+{
+  "id": "WF-067",
+  "decision": "Chorus context index HTTP wrapper",
+  "source": "board:card-moved:C#273",
+  "card": 273,
+  "created": "2026-02-24T21:51:47Z",
+  "updated": "2026-02-25T15:48:52Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Chorus context index HTTP wrapper",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "shared-observability/scripts/docker-startup.sh",
+        "messages/scripts/werk-init.sh",
+        "~/Library/LaunchAgents/com.chorus.api.plist"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-25T15:47:43Z",
+      "notes": "Chorus API running as LaunchAgent (port 3340, KeepAlive). Native module rebuilt for Node 20. werk-init wired to pull /api/chorus/reconcile for role-scoped boot context (both session and interactive modes). Boot script updated with Stage 3b (chorus API) and port validation."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify C#273",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/scripts/werk-init.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-25-wf-067-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-25T15:48:52Z",
+      "notes": "Verified: LaunchAgent running (PID 32526), /health OK (31337 msgs), reconcile returns role-scoped context, search returns structured results, werk-init wired with 3s timeout. All AC met."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T21:51:47Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Chorus context index HTTP wrapper"
+    },
+    {
+      "timestamp": "2026-02-25T15:47:43Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Chorus context index HTTP wrapper \u2014 Chorus API running as LaunchAgent (port 3340, KeepAlive). Native module rebuilt for Node 20. werk-init wired to pull /api/chorus/reconcile for role-scoped boot context (both session and interactive modes). Boot script updated with Stage 3b (chorus API) and port validation."
+    },
+    {
+      "timestamp": "2026-02-25T15:47:43Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify C#273"
+    },
+    {
+      "timestamp": "2026-02-25T15:48:52Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify C#273 \u2014 Verified: LaunchAgent running (PID 32526), /health OK (31337 msgs), reconcile returns role-scoped context, search returns structured results, werk-init wired with 3s timeout. All AC met."
+    },
+    {
+      "timestamp": "2026-02-25T15:48:52Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

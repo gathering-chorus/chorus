@@ -1,0 +1,79 @@
+{
+  "id": "WF-062",
+  "decision": "Chorus prompt timestamp wrong \u2014 roles show different incorrect times, not normalized to Boston",
+  "source": "board:card-moved:#341",
+  "card": 341,
+  "created": "2026-02-24T18:29:33Z",
+  "updated": "2026-02-24T18:36:44Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Chorus prompt timestamp wrong \u2014 roles show different incorrect times not normalized to Boston",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/claudemd/shared/chorus-prompt.md",
+        "architect/CLAUDE.md",
+        "engineer/CLAUDE.md",
+        "product-manager/CLAUDE.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T18:31:25Z",
+      "notes": "Root cause: CLAUDE.md told roles to 'construct from system clock' but Claude has no system clock access \u2014 it guesses from context. Fix: roles now run 'date' on first response and cache it. CLAUDE.md fragment updated, all 3 roles regenerated at v1.3.10."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #341",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/claudemd/shared/chorus-prompt.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-24-wf-062-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T18:36:44Z",
+      "notes": "Verified: CLAUDE.md fragment updated to run date on first response instead of guessing from context. All 3 roles regenerated at v1.3.10. Fix is correct \u2014 Claude has no system clock, must shell out once and cache."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T18:29:33Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Chorus prompt timestamp wrong \u2014 roles show different incorrect times, not normalized to Boston"
+    },
+    {
+      "timestamp": "2026-02-24T18:31:25Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Chorus prompt timestamp wrong \u2014 roles show different incorrect times not normalized to Boston \u2014 Root cause: CLAUDE.md told roles to 'construct from system clock' but Claude has no system clock access \u2014 it guesses from context. Fix: roles now run 'date' on first response and cache it. CLAUDE.md fragment updated, all 3 roles regenerated at v1.3.10."
+    },
+    {
+      "timestamp": "2026-02-24T18:31:25Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #341"
+    },
+    {
+      "timestamp": "2026-02-24T18:36:44Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #341 \u2014 Verified: CLAUDE.md fragment updated to run date on first response instead of guessing from context. All 3 roles regenerated at v1.3.10. Fix is correct \u2014 Claude has no system clock, must shell out once and cache."
+    },
+    {
+      "timestamp": "2026-02-24T18:36:44Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

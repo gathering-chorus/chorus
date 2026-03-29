@@ -1,0 +1,41 @@
+{
+  "id": "WF-163",
+  "name": "Hooks hardening + persistent observation",
+  "created": "2026-03-21T21:01:00Z",
+  "created_by": "wren",
+  "status": "completed",
+  "completed_at": "2026-03-21T21:23:00Z",
+  "steps": [
+    {
+      "step": 1,
+      "card_id": 1594,
+      "title": "Backfill chorus-hooks test coverage",
+      "owner": "silas",
+      "status": "completed",
+      "blocked_by": [],
+      "nudged_at": "2026-03-21T21:01:00Z",
+      "completed_at": "2026-03-21T21:16:00Z",
+      "history": [
+        {"event": "nudged", "at": "2026-03-21T21:01:00Z", "detail": "Initial nudge sent"},
+        {"event": "pulled", "at": "2026-03-21T21:10:00Z", "detail": "Silas pulled to WIP"},
+        {"event": "re-nudged", "at": "2026-03-21T21:15:00Z", "detail": "15-min reminder sent"},
+        {"event": "completed", "at": "2026-03-21T21:16:00Z", "detail": "105 tests, all AC met"}
+      ]
+    },
+    {
+      "step": 2,
+      "card_id": 1595,
+      "title": "Persistent role observation — ambient gemba via hooks service",
+      "owner": "silas",
+      "status": "completed",
+      "blocked_by": [1594],
+      "nudged_at": "2026-03-21T21:16:00Z",
+      "completed_at": "2026-03-21T21:23:00Z",
+      "history": [
+        {"event": "unblocked", "at": "2026-03-21T21:16:00Z", "detail": "#1594 completed, deps met"},
+        {"event": "nudged", "at": "2026-03-21T21:16:00Z", "detail": "Initial nudge sent"},
+        {"event": "completed", "at": "2026-03-21T21:23:00Z", "detail": "Observer module + shim subcommand + 19 tests. Needs service restart + live demo for AC6."}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "WF-119",
+  "decision": "Show WIP and Next cards inline on /flow sequence tiles \u2014 color-coded by status",
+  "source": "board:card-moved:#1434",
+  "card": 1434,
+  "created": "2026-03-15T17:00:27Z",
+  "updated": "2026-03-15T17:09:08.674Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Show WIP and Next cards inline on /flow sequence tiles \u2014 color-coded by status",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1434 marked Done by kade Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1434",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1434 marked Done by kade Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T17:00:27Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Show WIP and Next cards inline on /flow sequence tiles \u2014 color-coded by status"
+    },
+    {
+      "timestamp": "2026-03-15T17:09:08.674Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1434 marked Done by kade"
+    }
+  ]
+}

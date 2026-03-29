@@ -1,0 +1,54 @@
+{
+  "id": "WF-147",
+  "decision": "Execute photos drop-and-rebuild — clean harvest using ICD, mapper, and DEC-095 gate",
+  "source": "board:card-moved:#1507",
+  "card": 1507,
+  "created": "2026-03-17T17:16:01Z",
+  "updated": "2026-03-19T00:52:10.344Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Execute photos drop-and-rebuild — clean harvest using ICD mapper and DEC-095 gate",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T00:52:10.344Z",
+      "notes": "Skipped — card #1507 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1507",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T00:52:10.344Z",
+      "notes": "Skipped — card #1507 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-17T17:16:01Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Execute photos drop-and-rebuild — clean harvest using ICD, mapper, and DEC-095 gate"
+    },
+    {
+      "timestamp": "2026-03-19T00:52:10.344Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1507 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,396 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Metrics Manifest",
+  "description": "Canonical mapping of every metric to its source, tier, consuming surface(s), and migration path. DEC-070: every metric traces to a structured spine event, emitted by hooks, queried from Loki.",
+  "version": "1.0.0",
+  "created": "2026-03-04",
+  "card": "#1040",
+
+  "tiers": {
+    "T1": "Structured spine event → Loki query (gold standard)",
+    "T2": "Vikunja API / board-ts CLI (structured but not spine)",
+    "T3": "Git log grep / file scan / computed remainder (kill these)"
+  },
+
+  "surfaces": {
+    "loom": "/loom — team metrics dashboard (loom-metrics.sh → team.handler.ts)",
+    "werk_instruments": "/werk Instruments tab (werk-instruments.sh → team.handler.ts)",
+    "werk_flow": "/werk Flow Metrics tab (werk-flow.sh → team.handler.ts)"
+  },
+
+  "metrics": [
+    {
+      "id": "board.total",
+      "name": "Total cards",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "Vikunja API paginated fetch",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "18-140",
+      "migration": "none — T2 is correct for board state"
+    },
+    {
+      "id": "board.done",
+      "name": "Done card count",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "Vikunja API (done=true filter)",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "59-63",
+      "migration": "none"
+    },
+    {
+      "id": "board.open",
+      "name": "Open card count",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "Vikunja API (done=false filter)",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "59-63",
+      "migration": "none"
+    },
+    {
+      "id": "board.by_role",
+      "name": "Done cards by owner role",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "Vikunja API label scan (owner:role)",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "66-74",
+      "migration": "none"
+    },
+
+    {
+      "id": "werk.directing",
+      "name": "Directing stage count (Now + Next + Later)",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "board-ts buckets",
+      "surfaces": ["loom", "werk_flow"],
+      "script": "loom-metrics.sh",
+      "lines": "91-102",
+      "migration": "none — bucket counts are ground truth"
+    },
+    {
+      "id": "werk.building",
+      "name": "Building stage count (WIP + Harvesting)",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "board-ts buckets",
+      "surfaces": ["loom", "werk_flow"],
+      "script": "loom-metrics.sh",
+      "lines": "91-101",
+      "migration": "none"
+    },
+    {
+      "id": "werk.ideas",
+      "name": "Ideas count",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "board-ts buckets",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "103",
+      "migration": "none"
+    },
+    {
+      "id": "werk.ops",
+      "name": "Ops/uncategorized count",
+      "tier": "T3",
+      "target_tier": "T2",
+      "source_current": "Remainder: open_tasks - (directing + building + ideas)",
+      "source_target": "Sum non-standard buckets from board-ts buckets output",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "105-108",
+      "migration": "Phase 3: Parse all bucket names from board-ts buckets. Sum counts for buckets NOT in {Now, Next, Later, WIP, Harvesting, Ideas, Done, Won't Do}. Eliminates remainder math that breaks when bucket structure changes.",
+      "t3_kill": 1
+    },
+    {
+      "id": "werk.wont_do",
+      "name": "Won't Do card count",
+      "tier": "T3",
+      "target_tier": "T2",
+      "source_current": "Label scan on done tasks looking for 'wontdo' label, fallback to bucket count",
+      "source_target": "board-ts buckets 'Won't Do' count directly",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "110-121",
+      "migration": "Phase 3: Use bucket_counts.get(\"Won't Do\", 0) directly. Remove label scan loop entirely. The bucket count IS ground truth — the label scan was a workaround for when buckets weren't available.",
+      "t3_kill": 2
+    },
+    {
+      "id": "werk.shipped",
+      "name": "Shipped (Done minus Won't Do)",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "len(done) - wont_do (derived from T2 sources)",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "121",
+      "migration": "none — derived metric, improves when wont_do moves to T2"
+    },
+
+    {
+      "id": "throughput.weekly",
+      "name": "Weekly throughput (cards shipped per week)",
+      "tier": "T3",
+      "target_tier": "T1",
+      "source_current": "Git commit message grep for 'done/shipped/session close/accepted' + card # extraction",
+      "source_target": "Loki query: card.accepted events grouped by week",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "142-174",
+      "loki_query": "{app=\"chorus-events\"} |= `card.accepted` | json | line_format `{{.card_id}}` | __error__=``",
+      "loki_group": "sum by (week) — derive week from timestamp",
+      "migration": "Phase 3: Add query_loki() helper. Query card.accepted events from Loki. Group by ISO week. Dedup by card_id. Returns last 6 weeks. Fallback: empty {} with data_window note.",
+      "t3_kill": 3,
+      "event_dependency": "card.accepted (exists in spine-events.json)",
+      "historical_gap": "Spine events start ~2026-03-01. Pre-March shows 0. Accepted per DEC-070."
+    },
+
+    {
+      "id": "brief.flow",
+      "name": "Brief exchange counts by role pair",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "Filesystem scan of briefs/ directories, header parsing",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "177-239",
+      "migration": "none — filesystem IS ground truth for brief existence. Could upgrade to T1 via brief.handoff.written events, but filesystem scan is reliable and covers history.",
+      "note": "Phase 2 adds brief.handoff.read event for read-latency tracking (currently only .acknowledged exists)"
+    },
+
+    {
+      "id": "quality.accepted",
+      "name": "Cards accepted (proving gate)",
+      "tier": "T1",
+      "target_tier": "T1",
+      "source": "Spine event: card.accepted in chorus.log",
+      "surfaces": ["loom", "werk_instruments"],
+      "script": "loom-metrics.sh",
+      "lines": "262-289",
+      "migration": "none — already T1. Phase 3: migrate from file grep to Loki query for consistency."
+    },
+    {
+      "id": "quality.rejected",
+      "name": "Cards rejected",
+      "tier": "T1",
+      "target_tier": "T1",
+      "source": "Spine event: card.rejected in chorus.log",
+      "surfaces": ["loom", "werk_instruments"],
+      "script": "loom-metrics.sh",
+      "lines": "262-289",
+      "migration": "none — already T1"
+    },
+    {
+      "id": "quality.rejection_rate",
+      "name": "Rejection rate (%)",
+      "tier": "T1",
+      "target_tier": "T1",
+      "source": "Derived: rejected / (accepted + rejected) * 100",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "289",
+      "migration": "none — derived from T1 sources"
+    },
+    {
+      "id": "quality.builds",
+      "name": "TypeScript build count",
+      "tier": "T1",
+      "target_tier": "T1",
+      "source": "Spine event: build.tsc.completed in chorus.log",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "277-283",
+      "migration": "none — already T1"
+    },
+    {
+      "id": "quality.deploys_spine",
+      "name": "Deploy count (from spine only)",
+      "tier": "T1",
+      "target_tier": "T1",
+      "source": "Spine events: deploy.pipeline.completed + deploy.pipeline.succeeded",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "279-285",
+      "migration": "none — already T1. But operations.deploys double-counts this (see t3_kill #5)."
+    },
+
+    {
+      "id": "wip.age",
+      "name": "WIP card age in days",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "board-ts list + board-ts view (created date → age calc)",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "294-329",
+      "migration": "none — board API is correct source for card creation date"
+    },
+
+    {
+      "id": "operations.sessions",
+      "name": "Session count",
+      "tier": "T3",
+      "target_tier": "T1",
+      "source_current": "Git commit message grep for 'session close/reboot/start'",
+      "source_target": "Loki query: session.role.started events",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "348-358",
+      "loki_query": "{app=\"chorus-events\"} |= `session.role.started` | json | __error__=``",
+      "migration": "Phase 3: Query Loki for session.role.started events in date range. Count distinct. No dedup needed — each event is a unique session start.",
+      "t3_kill": 4,
+      "event_dependency": "session.role.started (exists in spine-events.json)",
+      "historical_gap": "Same as throughput — pre-March shows 0"
+    },
+    {
+      "id": "operations.deploys",
+      "name": "Deploy count (unified)",
+      "tier": "T3",
+      "target_tier": "T1",
+      "source_current": "Git commit grep for 'deploy' PLUS chorus.log file grep for deploy.pipeline.completed — DOUBLE COUNTS",
+      "source_target": "Loki query: deploy.pipeline.completed events only",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "360-374",
+      "loki_query": "{app=\"chorus-events\"} |= `deploy.pipeline.completed` | json | __error__=``",
+      "migration": "Phase 3: Query Loki for deploy.pipeline.completed only. Remove git grep entirely. Remove chorus.log supplement. Single source, no double-count.",
+      "t3_kill": 5,
+      "event_dependency": "deploy.pipeline.completed (exists in spine-events.json)",
+      "bug": "Current implementation adds git-grep deploys AND spine deploys, causing double-count when both sources have the same deploy"
+    },
+    {
+      "id": "operations.commits",
+      "name": "Git commit count",
+      "tier": "T2",
+      "target_tier": "T2",
+      "source": "Git log --format count",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "357",
+      "migration": "none — git IS the source of truth for commits. Could supplement with build.commit.created from Loki but git is authoritative."
+    },
+
+    {
+      "id": "data_window",
+      "name": "Data window metadata",
+      "tier": "T1",
+      "target_tier": "T1",
+      "source": "chorus.log first timestamp",
+      "surfaces": ["loom"],
+      "script": "loom-metrics.sh",
+      "lines": "384-396",
+      "migration": "Phase 3: Add t3_paths_remaining: 0 to output after all kills complete"
+    }
+  ],
+
+  "event_gaps": [
+    {
+      "id": "gap-1",
+      "event": "brief.handoff.read",
+      "status": "resolved",
+      "issue": "werk-init.sh emits brief.handoff.acknowledged but not brief.handoff.read. No read timestamp captured. Cannot compute brief read latency (time from write to read).",
+      "emitter": "werk-init.sh",
+      "emitter_line": "~214",
+      "fix": "Emit brief.handoff.read with timestamp when brief file is first opened, before acknowledged. Phase 2 (Silas).",
+      "resolved": "2026-03-05 — brief.handoff.read emitted in werk-init.sh boot brief scan, before acknowledged event",
+      "phase": 2
+    },
+    {
+      "id": "gap-2",
+      "event": "card.item.moved",
+      "status": "resolved",
+      "issue": "card.item.moved has no reason field for Won't Do. Cannot distinguish Done from Won't Do in spine events.",
+      "emitter": "board-client/src/cli.ts cmdMove()",
+      "fix": "Add reason=wont_do field when card moves to Won't Do bucket. Supports optional reason text as 3rd arg.",
+      "resolved": "2026-03-05 — reason field added to card.item.moved event when status matches Won't Do aliases",
+      "phase": 2
+    }
+  ],
+
+  "t3_kill_list": [
+    {
+      "kill_id": 1,
+      "metric": "werk.ops",
+      "current_lines": "105-108",
+      "technique": "Remainder math (open - known categories)",
+      "replacement": "Sum non-standard buckets from board-ts buckets",
+      "phase": 3,
+      "owner": "kade"
+    },
+    {
+      "kill_id": 2,
+      "metric": "werk.wont_do",
+      "current_lines": "110-121",
+      "technique": "Label scan on done tasks + fallback",
+      "replacement": "board-ts buckets 'Won't Do' count directly",
+      "phase": 3,
+      "owner": "kade"
+    },
+    {
+      "kill_id": 3,
+      "metric": "throughput.weekly",
+      "current_lines": "142-174",
+      "technique": "Git commit keyword grep",
+      "replacement": "Loki query: card.accepted events grouped by week",
+      "phase": 3,
+      "owner": "kade"
+    },
+    {
+      "kill_id": 4,
+      "metric": "operations.sessions",
+      "current_lines": "348-358",
+      "technique": "Git commit keyword grep",
+      "replacement": "Loki query: session.role.started events",
+      "phase": 3,
+      "owner": "kade"
+    },
+    {
+      "kill_id": 5,
+      "metric": "operations.deploys",
+      "current_lines": "360-374",
+      "technique": "Git keyword grep + chorus.log file grep (double-count bug)",
+      "replacement": "Loki query: deploy.pipeline.completed only",
+      "phase": 3,
+      "owner": "kade"
+    }
+  ],
+
+  "loki_query_patterns": {
+    "note": "All Loki queries need 5s timeout + graceful empty return. Loki endpoint: http://localhost:3102",
+    "base_url": "http://localhost:3102/loki/api/v1/query_range",
+    "auth": "none (local)",
+    "helper_function": "query_loki() in loom-metrics.sh — reusable for all 3 event queries",
+    "queries": {
+      "card_accepted": {
+        "logql": "{app=\"chorus-events\"} |= `\"event\":\"card.accepted\"` | json",
+        "purpose": "Weekly throughput (t3_kill #3)",
+        "group_by": "ISO week from timestamp",
+        "dedup": "by card_id"
+      },
+      "session_started": {
+        "logql": "{app=\"chorus-events\"} |= `\"event\":\"session.role.started\"` | json",
+        "purpose": "Session count (t3_kill #4)",
+        "count": "total events in range"
+      },
+      "deploy_completed": {
+        "logql": "{app=\"chorus-events\"} |= `\"event\":\"deploy.pipeline.completed\"` | json",
+        "purpose": "Deploy count (t3_kill #5)",
+        "count": "total events in range"
+      }
+    }
+  },
+
+  "verification": {
+    "after_phase_1": "Manifest committed, Phase 2/3 cards exist with AC, briefs delivered",
+    "after_phase_2": "grep brief.handoff.read chorus.log shows new events after boot",
+    "after_phase_3": "grep -c 'git.*log' loom-metrics.sh returns 0; both surfaces show same throughput/deploy/session numbers"
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "WF-164",
+  "decision": "Page + API test automation — end-to-end validation of Convergence page and ICD endpoints",
+  "source": "board:card-moved:#1554",
+  "card": 1554,
+  "created": "2026-03-19T22:41:03Z",
+  "updated": "2026-03-20T12:04:41.693Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Page + API test automation — end-to-end validation of Convergence page and ICD endpoints",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-20T12:04:41.693Z",
+      "notes": "Skipped — card #1554 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1554",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-20T12:04:41.693Z",
+      "notes": "Skipped — card #1554 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-19T22:41:03Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Page + API test automation — end-to-end validation of Convergence page and ICD endpoints"
+    },
+    {
+      "timestamp": "2026-03-20T12:04:41.693Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1554 marked Done by wren"
+    }
+  ]
+}

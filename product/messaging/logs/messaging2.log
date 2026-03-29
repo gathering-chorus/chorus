@@ -1,0 +1,18 @@
+
+/Users/jeffbridwell/CascadeProjects/chorus/messaging/node_modules/better-sqlite3/lib/methods/pragma.js:10
+	const stmt = this[cppdb].prepare(`PRAGMA ${source}`, this, true);
+	                         ^
+SqliteError: disk I/O error
+    at Database.pragma (/Users/jeffbridwell/CascadeProjects/chorus/messaging/node_modules/better-sqlite3/lib/methods/pragma.js:10:27)
+    at new MessageStore (/Users/jeffbridwell/CascadeProjects/chorus/messaging/dist/store.js:19:17)
+    at Object.<anonymous> (/Users/jeffbridwell/CascadeProjects/chorus/messaging/dist/service.js:17:15)
+    at Module._compile (node:internal/modules/cjs/loader:1376:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1435:10)
+    at Module.load (node:internal/modules/cjs/loader:1207:32)
+    at Module._load (node:internal/modules/cjs/loader:1023:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:135:12)
+    at node:internal/main/run_main_module:28:49 {
+  code: 'SQLITE_IOERR_SHORT_READ'
+}
+
+Node.js v20.11.1

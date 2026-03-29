@@ -1,0 +1,48 @@
+{
+  "id": "WF-047",
+  "decision": "Clearing voice tuning \u2014 /chorus context injection for Haiku sessions",
+  "source": "board:card-moved:C#265",
+  "card": 265,
+  "created": "2026-02-23T20:00:12Z",
+  "updated": "2026-02-23T20:00:12Z",
+  "status": "in_progress",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Clearing voice tuning \u2014 /chorus context injection for Haiku sessions",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify C#265",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T20:00:12Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Clearing voice tuning \u2014 /chorus context injection for Haiku sessions"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "id": "WF-036",
+  "decision": "Walk navbar menu tree \u2014 verify all links resolve to working pages",
+  "source": "board:card-moved:#217",
+  "card": 217,
+  "created": "2026-02-23T12:13:47Z",
+  "updated": "2026-02-23T14:21:19Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Walk navbar menu tree \u2014 verify all links resolve to working pages",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "package.json",
+        "views/partials/navbar.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T14:17:27Z",
+      "notes": "All 27 internal navbar links verified. 1 bug fixed: /api-docs 404 \u2014 swagger-output.json not copied to dist/ during tsc build. Fixed build script to include copy step. 2 external links down (WordPress 192.168.86.36:8081 \u2014 infra issue, not app bug). Watchlist appears in both Harvesting and Reflecting (intentional duplicate). 2 disabled placeholders (Images, Journal) working as designed."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #217",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "views/partials/navbar.ejs"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-036-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T14:21:19Z",
+      "notes": "Reviewed. Navbar clean \u2014 27 links verified, api-docs fix good. WordPress down is Silas's infra concern, not this card. Approved."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T12:13:47Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Walk navbar menu tree \u2014 verify all links resolve to working pages"
+    },
+    {
+      "timestamp": "2026-02-23T14:17:27Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Walk navbar menu tree \u2014 verify all links resolve to working pages \u2014 All 27 internal navbar links verified. 1 bug fixed: /api-docs 404 \u2014 swagger-output.json not copied to dist/ during tsc build. Fixed build script to include copy step. 2 external links down (WordPress 192.168.86.36:8081 \u2014 infra issue, not app bug). Watchlist appears in both Harvesting and Reflecting (intentional duplicate). 2 disabled placeholders (Images, Journal) working as designed."
+    },
+    {
+      "timestamp": "2026-02-23T14:17:27Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #217"
+    },
+    {
+      "timestamp": "2026-02-23T14:21:19Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #217 \u2014 Reviewed. Navbar clean \u2014 27 links verified, api-docs fix good. WordPress down is Silas's infra concern, not this card. Approved."
+    },
+    {
+      "timestamp": "2026-02-23T14:21:19Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

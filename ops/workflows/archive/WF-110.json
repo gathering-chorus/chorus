@@ -1,0 +1,54 @@
+{
+  "id": "WF-110",
+  "decision": "Fix About/Profile page \u2014 conform to site styles, populate from SOLID profile data",
+  "source": "board:card-moved:#381",
+  "card": 381,
+  "created": "2026-03-10T19:13:34Z",
+  "updated": "2026-03-10T21:16:48.394Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Fix About/Profile page \u2014 conform to site styles populate from SOLID profile data",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #381 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #381",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #381 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-10T19:13:34Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Fix About/Profile page \u2014 conform to site styles, populate from SOLID profile data"
+    },
+    {
+      "timestamp": "2026-03-10T21:16:48.394Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #381 marked Done by wren"
+    }
+  ]
+}

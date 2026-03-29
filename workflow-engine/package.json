@@ -1,0 +1,22 @@
+{
+  "name": "workflow-engine",
+  "version": "1.0.0",
+  "description": "TypeScript workflow execution engine — replaces workflow.sh",
+  "main": "dist/index.js",
+  "bin": {
+    "workflow": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "workflow": "ts-node src/cli.ts",
+    "test": "jest --forceExit"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.11.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  }
+}

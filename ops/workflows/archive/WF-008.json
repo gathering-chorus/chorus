@@ -1,0 +1,72 @@
+{
+  "id": "WF-008",
+  "decision": "Test workflow-ts lifecycle",
+  "source": "test:lifecycle",
+  "card": null,
+  "created": "2026-02-22T16:19:15Z",
+  "updated": "2026-02-22T16:19:23Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "wren",
+      "action": "Verify create",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-22T16:19:20Z",
+      "notes": "Create verified — all fields populated correctly"
+    },
+    {
+      "seq": 2,
+      "role": "kade",
+      "action": "Verify advance",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-22-wf-008-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-22T16:19:23Z",
+      "notes": "Advance verified — lifecycle complete"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-22T16:19:15Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Test workflow-ts lifecycle"
+    },
+    {
+      "timestamp": "2026-02-22T16:19:20Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 1 completed: wren — Verify create"
+    },
+    {
+      "timestamp": "2026-02-22T16:19:20Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 2 ready: kade — Verify advance"
+    },
+    {
+      "timestamp": "2026-02-22T16:19:23Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 2 completed: kade — Verify advance"
+    },
+    {
+      "timestamp": "2026-02-22T16:19:23Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Workflow completed: Test workflow-ts lifecycle"
+    }
+  ]
+}

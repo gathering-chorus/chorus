@@ -1,0 +1,54 @@
+{
+  "id": "WF-159",
+  "decision": "ICD migration fidelity gate — content-level completeness check before any migration ships",
+  "source": "board:card-moved:#1545",
+  "card": 1545,
+  "created": "2026-03-19T19:41:01Z",
+  "updated": "2026-03-19T19:50:52.288Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "ICD migration fidelity gate — content-level completeness check before any migration ships",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T19:50:52.288Z",
+      "notes": "Skipped — card #1545 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1545",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T19:50:52.288Z",
+      "notes": "Skipped — card #1545 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-19T19:41:01Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: ICD migration fidelity gate — content-level completeness check before any migration ships"
+    },
+    {
+      "timestamp": "2026-03-19T19:50:52.288Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1545 marked Done by wren"
+    }
+  ]
+}

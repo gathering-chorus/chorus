@@ -1,0 +1,54 @@
+{
+  "id": "WF-090",
+  "decision": "Integrate music + photos into search \u2014 complete cross-domain search coverage",
+  "source": "board:card-moved:#533",
+  "card": 533,
+  "created": "2026-02-28T02:29:11Z",
+  "updated": "2026-02-28T13:02:01.697Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Integrate music + photos into search \u2014 complete cross-domain search coverage",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #533 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #533",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #533 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-28T02:29:11Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Integrate music + photos into search \u2014 complete cross-domain search coverage"
+    },
+    {
+      "timestamp": "2026-02-28T13:02:01.697Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #533 marked Done by wren"
+    }
+  ]
+}

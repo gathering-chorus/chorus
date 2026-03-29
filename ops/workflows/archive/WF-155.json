@@ -1,0 +1,54 @@
+{
+  "id": "WF-155",
+  "decision": "Live instance counts in ICD — SPARQL against harvest graphs",
+  "source": "board:card-moved:#1536",
+  "card": 1536,
+  "created": "2026-03-19T13:37:12Z",
+  "updated": "2026-03-19T14:38:58.381Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Live instance counts in ICD — SPARQL against harvest graphs",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T14:38:58.381Z",
+      "notes": "Skipped — card #1536 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1536",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T14:38:58.381Z",
+      "notes": "Skipped — card #1536 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-19T13:37:12Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Live instance counts in ICD — SPARQL against harvest graphs"
+    },
+    {
+      "timestamp": "2026-03-19T14:38:58.381Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1536 marked Done by wren"
+    }
+  ]
+}

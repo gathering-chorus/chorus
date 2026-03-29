@@ -1,0 +1,70 @@
+{
+  "id": "WF-096",
+  "decision": "Optimize FTS search \u2014 BM25 ranking, prefix matching, collection boosting, faceted results",
+  "source": "board:card-moved:#850",
+  "card": 850,
+  "created": "2026-03-03T21:02:54Z",
+  "updated": "2026-03-03T22:17:03.356Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Optimize FTS search \u2014 BM25 ranking prefix matching collection boosting faceted results",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "src/services/fuseki-sync.service.ts",
+        "src/services/search-index.service.ts",
+        "src/app.ts"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-03T21:24:19Z",
+      "notes": "Shipped: BM25 ranking, prefix matching, 5min stats cache, batched sync stat checks, manifest-gated sync skip, search index skip on restart"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #850",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-03-03-wf-096-step2.md",
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #850 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-03T21:02:54Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Optimize FTS search \u2014 BM25 ranking, prefix matching, collection boosting, faceted results"
+    },
+    {
+      "timestamp": "2026-03-03T21:24:19Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Optimize FTS search \u2014 BM25 ranking prefix matching collection boosting faceted results \u2014 Shipped: BM25 ranking, prefix matching, 5min stats cache, batched sync stat checks, manifest-gated sync skip, search index skip on restart"
+    },
+    {
+      "timestamp": "2026-03-03T21:24:19Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #850"
+    },
+    {
+      "timestamp": "2026-03-03T22:17:03.356Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #850 marked Done by wren"
+    }
+  ]
+}

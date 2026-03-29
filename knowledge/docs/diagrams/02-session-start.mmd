@@ -1,0 +1,35 @@
+sequenceDiagram
+    participant Jeff
+    participant Start as SessionStart Hook
+    participant Sync as team-scan.sh (sync mode)
+    participant Audit as chorus-audit.sh
+    participant Slack as Slack API
+    participant FS as Filesystem
+    participant Role as Role (Wren/Silas/Kade)
+
+    Jeff->>Start: Opens new session
+    activate Start
+    par Sync scan
+        Start->>Sync: team-scan.sh sync
+        activate Sync
+        Sync->>Slack: slack-read.sh #role (10 msgs)
+        Slack-->>Sync: Messages
+        Sync->>Slack: slack-read.sh #all-gathering (20 msgs)
+        Slack-->>Sync: Messages
+        Sync->>FS: Check briefs/ for new files
+        FS-->>Sync: New brief list
+        Sync->>FS: Read last 20 lines of activity.md
+        FS-->>Sync: Recent activity
+        Sync-->>Start: Full sync context
+        deactivate Sync
+    and Audit
+        Start->>Audit: chorus-audit.sh start
+        activate Audit
+        Note over Audit: Checks: commits, disk, gates, health
+        Audit-->>Start: Gate results (pass/warn/fail)
+        deactivate Audit
+    end
+    Start-->>Jeff: Sync context + audit results injected
+    deactivate Start
+    Jeff->>Role: First prompt with full context
+    Role-->>Jeff: Session begins

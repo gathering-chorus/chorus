@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# chorus-api — Launch the Chorus context index HTTP wrapper
+# Usage: chorus-api [--port PORT]
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Parse args
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --port) export CHORUS_API_PORT="$2"; shift 2 ;;
+    *) echo "Unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+# Check if built
+if [ -f "$SCRIPT_DIR/dist/server.js" ]; then
+  exec node "$SCRIPT_DIR/dist/server.js"
+else
+  exec npx tsx "$SCRIPT_DIR/src/server.ts"
+fi

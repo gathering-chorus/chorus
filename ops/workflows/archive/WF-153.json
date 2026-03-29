@@ -1,0 +1,54 @@
+{
+  "id": "WF-153",
+  "decision": "Bulk migrate 6 remaining ICD domains to RDF ontology",
+  "source": "board:card-moved:#1533",
+  "card": 1533,
+  "created": "2026-03-19T12:59:01Z",
+  "updated": "2026-03-19T13:38:21.331Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Bulk migrate 6 remaining ICD domains to RDF ontology",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T13:38:21.331Z",
+      "notes": "Skipped — card #1533 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1533",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T13:38:21.331Z",
+      "notes": "Skipped — card #1533 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-19T12:59:01Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Bulk migrate 6 remaining ICD domains to RDF ontology"
+    },
+    {
+      "timestamp": "2026-03-19T13:38:21.331Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1533 marked Done by wren"
+    }
+  ]
+}

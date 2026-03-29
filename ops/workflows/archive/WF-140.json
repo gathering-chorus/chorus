@@ -1,0 +1,54 @@
+{
+  "id": "WF-140",
+  "decision": "Support multi-card and pipeline demos \u2014 /demo WF-NNN or /demo 1459 1461",
+  "source": "board:card-moved:#1481",
+  "card": 1481,
+  "created": "2026-03-16T23:52:53Z",
+  "updated": "2026-03-16T23:53:30.983Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Support multi-card and pipeline demos \u2014 /demo WF-NNN or /demo 1459 1461",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1481 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1481",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1481 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-16T23:52:53Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Support multi-card and pipeline demos \u2014 /demo WF-NNN or /demo 1459 1461"
+    },
+    {
+      "timestamp": "2026-03-16T23:53:30.983Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1481 marked Done by wren"
+    }
+  ]
+}

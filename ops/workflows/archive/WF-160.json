@@ -1,0 +1,54 @@
+{
+  "id": "WF-160",
+  "decision": "Wire SEMANTIC_MAPPER page to render from ICD API",
+  "source": "board:card-moved:#1535",
+  "card": 1535,
+  "created": "2026-03-19T20:31:55Z",
+  "updated": "2026-03-19T21:36:43.979Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Wire SEMANTIC_MAPPER page to render from ICD API",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T21:36:43.979Z",
+      "notes": "Skipped — card #1535 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1535",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T21:36:43.979Z",
+      "notes": "Skipped — card #1535 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-19T20:31:55Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Wire SEMANTIC_MAPPER page to render from ICD API"
+    },
+    {
+      "timestamp": "2026-03-19T21:36:43.979Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1535 marked Done by wren"
+    }
+  ]
+}

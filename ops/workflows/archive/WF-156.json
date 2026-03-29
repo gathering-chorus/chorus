@@ -1,0 +1,48 @@
+{
+  "id": "WF-156",
+  "decision": "Wire SEMANTIC_MAPPER page to render from ICD API",
+  "source": "board:card-moved:#1535",
+  "card": 1535,
+  "created": "2026-03-19T13:43:23Z",
+  "updated": "2026-03-19T13:43:23Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Wire SEMANTIC_MAPPER page to render from ICD API",
+      "status": "ready",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1535",
+      "status": "pending",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-19T13:43:23Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Wire SEMANTIC_MAPPER page to render from ICD API"
+    }
+  ]
+}

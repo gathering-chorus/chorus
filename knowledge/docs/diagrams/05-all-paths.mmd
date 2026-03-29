@@ -1,0 +1,36 @@
+graph TD
+    Jeff[Jeff]
+
+    subgraph "Synchronous - Jeff present"
+        S1[Terminal Session - Seconds latency]
+        S2[Session Start Sync - 15-30s one-time]
+        S3[Per-Prompt Scan - Every 2 min]
+    end
+
+    subgraph "Asynchronous - Jeff optional"
+        A1[Slack Bridge - 30s polling loop]
+        A2[Brief + Signal - Minutes to hours]
+        A3[Slack Scripts - One-shot no reply]
+    end
+
+    subgraph Roles
+        Wren[Wren]
+        Silas[Silas]
+        Kade[Kade]
+    end
+
+    Jeff -->|types prompt| S1
+    S1 --> Wren & Silas & Kade
+    Jeff -->|opens session| S2
+    S2 --> Wren & Silas & Kade
+    S1 -.->|triggers| S3
+
+    Jeff -->|posts to Slack| A1
+    A1 -->|bridge responds| Wren & Silas & Kade
+
+    Wren -->|writes brief| A2
+    A2 --> Silas & Kade
+    Silas -->|writes brief| A2
+    Kade -->|writes brief| A2
+
+    Jeff -->|slack-post.sh| A3

@@ -1,0 +1,78 @@
+{
+  "id": "WF-068",
+  "decision": "Promote Search to top-level mind map node \u2014 primary interaction, not admin tool",
+  "source": "board:card-moved:#354",
+  "card": 354,
+  "created": "2026-02-24T23:44:58Z",
+  "updated": "2026-02-25T00:25:08Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Promote Search to top-level mind map node \u2014 primary interaction not admin tool",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "views/home.ejs",
+        "src/app.ts"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-25T00:23:29Z",
+      "notes": "Search promoted to top-level mind map branch (180\u00b0, left side). Admin leaf removed. Routes changed from adminMiddleware to authMiddleware. Rebuild kept admin-only. Committed 29bb374, pushed, all tests green."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #354",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "views/home.ejs",
+        "src/app.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-25-wf-068-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-25T00:25:08Z",
+      "notes": "Verified: Search promoted to top-level mind map node, Notes searchable via Jena text index, 823 notes indexed, match highlighting working. Demo with Jeff \u2014 accepted."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T23:44:58Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Promote Search to top-level mind map node \u2014 primary interaction, not admin tool"
+    },
+    {
+      "timestamp": "2026-02-25T00:23:29Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Promote Search to top-level mind map node \u2014 primary interaction not admin tool \u2014 Search promoted to top-level mind map branch (180\u00b0, left side). Admin leaf removed. Routes changed from adminMiddleware to authMiddleware. Rebuild kept admin-only. Committed 29bb374, pushed, all tests green."
+    },
+    {
+      "timestamp": "2026-02-25T00:23:29Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #354"
+    },
+    {
+      "timestamp": "2026-02-25T00:25:08Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #354 \u2014 Verified: Search promoted to top-level mind map node, Notes searchable via Jena text index, 823 notes indexed, match highlighting working. Demo with Jeff \u2014 accepted."
+    },
+    {
+      "timestamp": "2026-02-25T00:25:08Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "id": "WF-108",
+  "decision": "Complete photo harvests \u2014 Apple Photos and Google Photos into Fuseki",
+  "source": "board:card-moved:#1261",
+  "card": 1261,
+  "created": "2026-03-10T19:12:01Z",
+  "updated": "2026-03-15T17:34:18Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Complete photo harvests \u2014 Apple Photos and Google Photos into Fuseki",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-15T17:34:09Z",
+      "notes": "Photos complete: 77K in Fuseki (24K Apple + 69K Google Takeout). Thumbnails generating. Card #1261 and #1351 both shipped."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1261",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-03-15-wf-108-step2.md",
+      "started_at": null,
+      "completed_at": "2026-03-15T17:34:18Z",
+      "notes": "Reviewed \u2014 77K photos live in app, thumbnails rendering, source filter working. Accepted."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-10T19:12:01Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Complete photo harvests \u2014 Apple Photos and Google Photos into Fuseki"
+    },
+    {
+      "timestamp": "2026-03-15T17:34:09Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Complete photo harvests \u2014 Apple Photos and Google Photos into Fuseki \u2014 Photos complete: 77K in Fuseki (24K Apple + 69K Google Takeout). Thumbnails generating. Card #1261 and #1351 both shipped."
+    },
+    {
+      "timestamp": "2026-03-15T17:34:09Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #1261"
+    },
+    {
+      "timestamp": "2026-03-15T17:34:18Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #1261 \u2014 Reviewed \u2014 77K photos live in app, thumbnails rendering, source filter working. Accepted."
+    },
+    {
+      "timestamp": "2026-03-15T17:34:18Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

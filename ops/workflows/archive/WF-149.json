@@ -1,0 +1,54 @@
+{
+  "id": "WF-149",
+  "decision": "Extract shared validateFromICD pattern from Stories inline code",
+  "source": "board:card-moved:#1514",
+  "card": 1514,
+  "created": "2026-03-18T21:40:35Z",
+  "updated": "2026-03-18T21:45:48.311Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Extract shared validateFromICD pattern from Stories inline code",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-18T21:45:48.311Z",
+      "notes": "Skipped — card #1514 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1514",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-18T21:45:48.311Z",
+      "notes": "Skipped — card #1514 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-18T21:40:35Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Extract shared validateFromICD pattern from Stories inline code"
+    },
+    {
+      "timestamp": "2026-03-18T21:45:48.311Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1514 marked Done by wren"
+    }
+  ]
+}

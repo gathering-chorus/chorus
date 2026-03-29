@@ -1,0 +1,54 @@
+{
+  "id": "WF-087",
+  "decision": "State transition consistency \u2014 /werk shows stale data across role sessions",
+  "source": "board:card-moved:#487",
+  "card": 487,
+  "created": "2026-02-27T20:32:45Z",
+  "updated": "2026-02-27T20:39:19.033Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "State transition consistency \u2014 /werk shows stale data across role sessions",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #487 marked Done by silas Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #487",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #487 marked Done by silas Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-27T20:32:45Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: State transition consistency \u2014 /werk shows stale data across role sessions"
+    },
+    {
+      "timestamp": "2026-02-27T20:39:19.033Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #487 marked Done by silas"
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: chorus-team-health
+    folder: Chorus
+    interval: 5m
+    rules:
+      - uid: chorus-no-sessions-48h
+        title: No team sessions in 48 hours
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 172800  # 48 hours in seconds
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: 'sum(count_over_time({job="chorus-operations", appName="chorus-events"} |= "session_start" [48h]))'
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 172800
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+              refId: C
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 1h
+        annotations:
+          summary: No team sessions detected in the last 48 hours.
+          description: The Chorus activity log shows zero session_start events in 48h. This may indicate idle roles or logging failures.
+        labels:
+          severity: warning
+          team: chorus
+
+      - uid: chorus-gate-failures
+        title: Gate check failures detected
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600  # 1 hour
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: 'sum(count_over_time({job="chorus-operations", level="error"} [1h]))'
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+              refId: C
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Multiple gate failures in the last hour.
+          description: "More than 2 error-level events detected in chorus-operations logs. Check Grafana: http://localhost:3100/d/chorus-activity (Row 3: Gate Health)."
+        labels:
+          severity: warning
+          team: chorus
+
+  - name: log-metrics
+    folder: Infrastructure
+    interval: 2m
+    rules:
+      - uid: high-error-log-rate
+        title: High error log rate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120  # 2 minutes
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: 'sum by (container_name) (count_over_time({level="error"} [2m])) / 120'
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [10]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+              refId: C
+        noDataState: OK
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          summary: "High error log rate detected"
+          description: "A container is generating more than 10 error logs per second. Check Grafana Explore → Loki for details."
+        labels:
+          severity: warning
+
+# Contact points and notification policies provisioned in contact-points.yaml.
+# Warning alerts → #silas, Critical alerts → #all-gathering.

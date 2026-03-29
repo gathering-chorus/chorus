@@ -1,0 +1,89 @@
+{
+  "id": "WF-034",
+  "decision": "Todo list collection \u2014 personal action items",
+  "source": "verbal",
+  "card": 152,
+  "created": "2026-02-23T04:39:54Z",
+  "updated": "2026-02-23T04:56:13Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Todo list collection",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "src/interfaces/todolist.interface.ts",
+        "src/services/todolist-pod.service.ts",
+        "src/handlers/todolist.handler.ts",
+        "views/collection-todolist.ejs",
+        "views/todolist-detail.ejs",
+        "views/admin-todolist-add.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T04:46:42Z",
+      "notes": "Todo list collection shipped: interface, pod service, handler, 3 views, routes, navbar, mind map. Priority/status/due-date fields."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #152",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "src/interfaces/todolist.interface.ts",
+        "src/services/todolist-pod.service.ts",
+        "src/handlers/todolist.handler.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-034-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T04:56:13Z",
+      "notes": "Review pass: interface clean with priority/status/due fields, pod service follows RDF patterns, CRUD handler solid, views XSS-safe with nonce. Minor: regex Turtle parsing fragile but matches existing codebase pattern. No blockers."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T04:39:54Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Todo list collection \u2014 personal action items"
+    },
+    {
+      "timestamp": "2026-02-23T04:39:54Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 1 ready: Todo list collection"
+    },
+    {
+      "timestamp": "2026-02-23T04:46:42Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Todo list collection \u2014 Todo list collection shipped: interface, pod service, handler, 3 views, routes, navbar, mind map. Priority/status/due-date fields."
+    },
+    {
+      "timestamp": "2026-02-23T04:46:42Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #152"
+    },
+    {
+      "timestamp": "2026-02-23T04:56:13Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #152 \u2014 Review pass: interface clean with priority/status/due fields, pod service follows RDF patterns, CRUD handler solid, views XSS-safe with nonce. Minor: regex Turtle parsing fragile but matches existing codebase pattern. No blockers."
+    },
+    {
+      "timestamp": "2026-02-23T04:56:13Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

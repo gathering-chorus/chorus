@@ -1,0 +1,54 @@
+{
+  "id": "WF-092",
+  "decision": "Universal PDF + share actions on all content cards \u2014 extend /self pattern site-wide",
+  "source": "board:card-moved:#551",
+  "card": 551,
+  "created": "2026-02-28T20:16:39Z",
+  "updated": "2026-03-01T13:25:37.409Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Universal PDF + share actions on all content cards \u2014 extend /self pattern site-wide",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #551 marked Done by silas Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #551",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #551 marked Done by silas Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-28T20:16:39Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Universal PDF + share actions on all content cards \u2014 extend /self pattern site-wide"
+    },
+    {
+      "timestamp": "2026-03-01T13:25:37.409Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #551 marked Done by silas"
+    }
+  ]
+}

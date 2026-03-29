@@ -1,0 +1,85 @@
+{
+  "id": "WF-056",
+  "decision": "Spine interface contract \u2014 schema file, chorus-log validation, docs page",
+  "source": "verbal",
+  "card": 313,
+  "created": "2026-02-24T02:21:07Z",
+  "updated": "2026-02-24T02:44:45Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Build spine-events.json schema + validation + docs page",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/schemas/spine-events.json",
+        "messages/scripts/chorus-log.sh",
+        "jeff-bridwell-personal-site/src/app.ts",
+        "jeff-bridwell-personal-site/views/werk.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T02:40:35Z",
+      "notes": "Schema (54 events), chorus-log.sh validation (fail-open), /api/werk/schema endpoint, Contract tab on /werk with vertebra grouping + filtering. Commits: 6ca8fd1 (team), 328a943 (app)."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review contract against product intent",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/schemas/spine-events.json"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-24-wf-056-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T02:44:45Z",
+      "notes": "Approved. Schema is solid \u2014 54 events, vertebra grouping, fail-open validation, Contract tab on /werk. Notes: session_start/end should be system not building; board field descriptions still reference chorus board (dead). Not blocking."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T02:21:07Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Spine interface contract \u2014 schema file, chorus-log validation, docs page"
+    },
+    {
+      "timestamp": "2026-02-24T02:21:07Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 1 ready: Build spine-events.json schema + validation + docs page"
+    },
+    {
+      "timestamp": "2026-02-24T02:40:35Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Build spine-events.json schema + validation + docs page \u2014 Schema (54 events), chorus-log.sh validation (fail-open), /api/werk/schema endpoint, Contract tab on /werk with vertebra grouping + filtering. Commits: 6ca8fd1 (team), 328a943 (app)."
+    },
+    {
+      "timestamp": "2026-02-24T02:40:35Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review contract against product intent"
+    },
+    {
+      "timestamp": "2026-02-24T02:44:45Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review contract against product intent \u2014 Approved. Schema is solid \u2014 54 events, vertebra grouping, fail-open validation, Contract tab on /werk. Notes: session_start/end should be system not building; board field descriptions still reference chorus board (dead). Not blocking."
+    },
+    {
+      "timestamp": "2026-02-24T02:44:45Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

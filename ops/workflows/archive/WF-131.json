@@ -1,0 +1,54 @@
+{
+  "id": "WF-131",
+  "decision": "Harden pair/gemba outer loop \u2014 navigator stays in pair, don't break loop to report to Jeff",
+  "source": "board:card-moved:#1474",
+  "card": 1474,
+  "created": "2026-03-16T20:59:06Z",
+  "updated": "2026-03-16T21:02:24.127Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Harden pair/gemba outer loop \u2014 navigator stays in pair don't break loop to report to Jeff",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1474 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1474",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1474 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-16T20:59:06Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Harden pair/gemba outer loop \u2014 navigator stays in pair, don't break loop to report to Jeff"
+    },
+    {
+      "timestamp": "2026-03-16T21:02:24.127Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1474 marked Done by wren"
+    }
+  ]
+}

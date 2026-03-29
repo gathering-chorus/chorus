@@ -1,0 +1,54 @@
+{
+  "id": "WF-102",
+  "decision": "Loom metrics via board SDK \u2014 replace shell script, add role ownership endpoint",
+  "source": "board:card-moved:#1065",
+  "card": 1065,
+  "created": "2026-03-05T11:23:53Z",
+  "updated": "2026-03-05T12:22:12.164Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Loom metrics via board SDK \u2014 replace shell script add role ownership endpoint",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1065 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1065",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1065 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-05T11:23:53Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Loom metrics via board SDK \u2014 replace shell script, add role ownership endpoint"
+    },
+    {
+      "timestamp": "2026-03-05T12:22:12.164Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1065 marked Done by wren"
+    }
+  ]
+}

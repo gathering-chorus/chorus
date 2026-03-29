@@ -1,0 +1,54 @@
+{
+  "id": "WF-112",
+  "decision": "Merge autonomy hooks \u2014 decision-gate + jdi-gate + jdi-counter \u2192 autonomy-guard",
+  "source": "board:card-moved:#1306",
+  "card": 1306,
+  "created": "2026-03-11T20:34:19Z",
+  "updated": "2026-03-11T20:38:11.885Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Merge autonomy hooks \u2014 decision-gate + jdi-gate + jdi-counter autonomy-guard",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1306 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1306",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1306 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-11T20:34:19Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Merge autonomy hooks \u2014 decision-gate + jdi-gate + jdi-counter \u2192 autonomy-guard"
+    },
+    {
+      "timestamp": "2026-03-11T20:38:11.885Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1306 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "id": "WF-052",
+  "decision": "Spine Phase 3 \u2014 Proving vertebrae (deploy, verification, workflow completion events)",
+  "source": "verbal",
+  "card": 267,
+  "created": "2026-02-23T23:42:24Z",
+  "updated": "2026-02-23T23:53:11Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Instrument deploy/verification/workflow events in chorus-log",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "jeff-bridwell-personal-site/app-state.sh",
+        "messages/scripts/workflow.sh",
+        "messages/board-client/src/cli.ts",
+        "product-manager/briefs/2026-02-23-spine-phase3-event-schema.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T23:49:52Z",
+      "notes": "Spine Phase 3 shipped: 6 event types (deploy_start, deploy_complete, health_check, verification_complete, workflow_complete, deploy_phase). Instrumented app-state.sh (deploy/restart/rollback), workflow.sh (completion), board-ts (card done). All verified in Loki. Event schema brief sent to Wren."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Wire buildSentence renderers for Phase 3 events",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "jeff-bridwell-personal-site/views/team.ejs",
+        "jeff-bridwell-personal-site/src/app.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-052-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T23:53:11Z",
+      "notes": "Phase 3 renderers wired: deploy_start, deploy_complete, health_check, verification_complete, workflow_complete. Added 7 new parseSpineEntries fields (action, trigger, endpoint, response_ms, method, step_count, total_duration_seconds). Compiled, restarted, live."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T23:42:24Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Spine Phase 3 \u2014 Proving vertebrae (deploy, verification, workflow completion events)"
+    },
+    {
+      "timestamp": "2026-02-23T23:42:24Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 1 ready: Instrument deploy/verification/workflow events in chorus-log"
+    },
+    {
+      "timestamp": "2026-02-23T23:49:52Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Instrument deploy/verification/workflow events in chorus-log \u2014 Spine Phase 3 shipped: 6 event types (deploy_start, deploy_complete, health_check, verification_complete, workflow_complete, deploy_phase). Instrumented app-state.sh (deploy/restart/rollback), workflow.sh (completion), board-ts (card done). All verified in Loki. Event schema brief sent to Wren."
+    },
+    {
+      "timestamp": "2026-02-23T23:49:52Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Wire buildSentence renderers for Phase 3 events"
+    },
+    {
+      "timestamp": "2026-02-23T23:53:11Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Wire buildSentence renderers for Phase 3 events \u2014 Phase 3 renderers wired: deploy_start, deploy_complete, health_check, verification_complete, workflow_complete. Added 7 new parseSpineEntries fields (action, trigger, endpoint, response_ms, method, step_count, total_duration_seconds). Compiled, restarted, live."
+    },
+    {
+      "timestamp": "2026-02-23T23:53:11Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

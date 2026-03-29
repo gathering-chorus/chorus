@@ -1,0 +1,37 @@
+# Chorus repo — ignore generated/runtime files
+node_modules/
+dist/
+target/
+coverage/
+*.js.map
+.env
+.env.*
+package-lock.json
+*.tsbuildinfo
+
+# Runtime data
+*.db
+*.db-wal
+*.db-shm
+
+# OS
+.DS_Store
+
+# Logs (indexed by Loki, not source)
+ops/logs/chorus.log
+ops/logs/permission-prompts.log
+ops/logs/command-errors.log
+ops/logs/*.log.*.gz
+ops/logs/board-snapshot-*.json
+
+# Clearing transcripts (runtime, not source)
+archive/clearing/transcripts/
+
+# Vikunja data
+vikunja/db/
+vikunja/files/
+
+# Temp files
+/tmp/
+*.swp
+*~

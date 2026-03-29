@@ -1,0 +1,48 @@
+{
+  "id": "WF-165",
+  "decision": "Fix session-start board unreachable — bash-to-zsh for node PATH",
+  "source": "board:card-moved:#1704",
+  "card": 1704,
+  "created": "2026-03-26T01:24:55Z",
+  "updated": "2026-03-26T01:24:55Z",
+  "status": "in_progress",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Fix session-start board unreachable — bash-to-zsh for node PATH",
+      "status": "ready",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1704",
+      "status": "pending",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-26T01:24:55Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Fix session-start board unreachable — bash-to-zsh for node PATH"
+    }
+  ]
+}

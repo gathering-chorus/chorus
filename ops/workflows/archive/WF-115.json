@@ -1,0 +1,54 @@
+{
+  "id": "WF-115",
+  "decision": "Migrate Express app from Docker to LaunchAgent \u2014 eliminate container overhead and deploy cycling",
+  "source": "board:card-moved:#1390",
+  "card": 1390,
+  "created": "2026-03-14T13:03:18Z",
+  "updated": "2026-03-14T13:28:31.972Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Migrate Express app from Docker to LaunchAgent \u2014 eliminate container overhead and deploy cycling",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1390 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1390",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1390 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-14T13:03:18Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Migrate Express app from Docker to LaunchAgent \u2014 eliminate container overhead and deploy cycling"
+    },
+    {
+      "timestamp": "2026-03-14T13:28:31.972Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1390 marked Done by wren"
+    }
+  ]
+}

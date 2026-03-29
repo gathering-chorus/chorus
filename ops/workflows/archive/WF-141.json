@@ -1,0 +1,54 @@
+{
+  "id": "WF-141",
+  "decision": "Disposition stale workflow steps — close skipped steps or reset baseline for flow metrics",
+  "source": "board:card-moved:#1486",
+  "card": 1486,
+  "created": "2026-03-17T00:25:16Z",
+  "updated": "2026-03-17T00:25:53.702Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Disposition stale workflow steps — close skipped steps or reset baseline for flow metrics",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-17T00:25:53.702Z",
+      "notes": "Skipped — card #1486 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1486",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-17T00:25:53.702Z",
+      "notes": "Skipped — card #1486 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-17T00:25:16Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Disposition stale workflow steps — close skipped steps or reset baseline for flow metrics"
+    },
+    {
+      "timestamp": "2026-03-17T00:25:53.702Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1486 marked Done by wren"
+    }
+  ]
+}

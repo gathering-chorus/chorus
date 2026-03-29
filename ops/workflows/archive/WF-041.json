@@ -1,0 +1,84 @@
+{
+  "id": "WF-041",
+  "decision": "Collection ontology views \u2014 Music, Photos, Notes, Books, Property",
+  "source": "board:card-moved:#242",
+  "card": 242,
+  "created": "2026-02-23T16:44:09Z",
+  "updated": "2026-02-23T17:06:06Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Collection ontology views \u2014 Music Photos Notes Books Property",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "public/ontology-views/music.html",
+        "public/ontology-views/photos.html",
+        "public/ontology-views/notes.html",
+        "public/ontology-views/books.html",
+        "public/ontology-views/property.html"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T17:03:54Z",
+      "notes": "All 5 views built and pushed (10e742a): music.html, photos.html, notes.html, books.html, property.html. model-data.html updated with live links, navbar sub-menu expanded."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #242",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "public/ontology-views/music.html",
+        "public/ontology-views/photos.html",
+        "public/ontology-views/notes.html",
+        "public/ontology-views/books.html",
+        "public/ontology-views/property.html"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-041-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T17:06:06Z",
+      "notes": "All 5 ontology views reviewed \u2014 valid HTML, rich content, consistent styling, navigation wired in model-data.html hub. No issues found."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T16:44:09Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Collection ontology views \u2014 Music, Photos, Notes, Books, Property"
+    },
+    {
+      "timestamp": "2026-02-23T17:03:54Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Collection ontology views \u2014 Music Photos Notes Books Property \u2014 All 5 views built and pushed (10e742a): music.html, photos.html, notes.html, books.html, property.html. model-data.html updated with live links, navbar sub-menu expanded."
+    },
+    {
+      "timestamp": "2026-02-23T17:03:54Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #242"
+    },
+    {
+      "timestamp": "2026-02-23T17:06:06Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #242 \u2014 All 5 ontology views reviewed \u2014 valid HTML, rich content, consistent styling, navigation wired in model-data.html hub. No issues found."
+    },
+    {
+      "timestamp": "2026-02-23T17:06:06Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

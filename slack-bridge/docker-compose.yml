@@ -1,0 +1,51 @@
+services:
+  slack-bridge:
+    build: .
+    container_name: slack-bridge
+    restart: unless-stopped
+    labels:
+      - "metrics.enabled=true"
+      - "metrics.port=3460"
+      - "metrics.path=/metrics"
+    ports:
+      - "127.0.0.1:3460:3460"  # ADR-012: localhost only
+    env_file:
+      - ../../.env.bridge
+    environment:
+      # Pod coordination — bridge needs to reach the app container
+      - APP_BASE_URL=${APP_BASE_URL:-http://jeff-bridwell-personal-site-app:3000}
+      # BRIDGE_AGENT_SECRET comes from .env.bridge
+    volumes:
+      # Team directories — READ ONLY
+      - ../../architect:/team/architect:ro
+      - ../../product-manager:/team/product-manager:ro
+      - ../../engineer:/team/engineer:ro
+      - ../../messages:/team/messages:ro
+      - ../../meetings:/team/meetings:ro
+      # Briefs directories — WRITABLE (bridge writes commitment briefs after group conversations)
+      - ../../architect/briefs:/team/architect/briefs
+      - ../../product-manager/briefs:/team/product-manager/briefs
+      - ../../engineer/briefs:/team/engineer/briefs
+      # Nudge log — WRITABLE (bridge appends nudges for Jeff)
+      - ../../messages/nudges:/team/nudges
+      # Decisions backlog — WRITABLE (bridge captures [DECISION] tags from Slack)
+      - ../../messages/decisions:/team/decisions
+      # Role memory directories — READ ONLY
+      - ${HOME}/.claude/projects/-Users-jeffbridwell-CascadeProjects-architect/memory:/memory/silas:ro
+      - ${HOME}/.claude/projects/-Users-jeffbridwell-CascadeProjects-product-manager/memory:/memory/wren:ro
+      - ${HOME}/.claude/projects/-Users-jeffbridwell-CascadeProjects-engineer/memory:/memory/kade:ro
+      # Runtime state (last_seen timestamps)
+      - ./data:/app/data
+    networks:
+      - default
+      - observability
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3460/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  observability:
+    external: true
+    name: observability-network

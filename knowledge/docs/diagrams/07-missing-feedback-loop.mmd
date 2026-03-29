@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant Jeff
+    participant Slack as Slack
+    participant Bridge as Bridge
+    participant Role as Role Session (Direct)
+    participant Memory as Role Memory Files
+
+    Jeff->>Slack: @team do X
+    Bridge->>Slack: Role commits - I will do X
+    Note over Memory: Commitment NOT written to memory
+
+    Note over Jeff: === Hours/days pass ===
+
+    Jeff->>Role: Opens direct session
+    Role->>Memory: Reads memory files on start
+    Note over Role: No record of Slack commitment
+    Role->>Jeff: Discusses X as if new
+    Note over Jeff: Didn't we already agree on this?

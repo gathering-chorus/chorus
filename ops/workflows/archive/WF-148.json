@@ -1,0 +1,58 @@
+{
+  "id": "WF-148",
+  "decision": "ICD validation pipeline — extract shared pattern, wire Photos, pilot LinkedIn+Facebook",
+  "source": "session:wren:2026-03-18",
+  "name": "ICD Validation Pipeline",
+  "created": "2026-03-18T21:45:00Z",
+  "status": "completed",
+  "steps": [
+    {
+      "step": 1,
+      "card": 1514,
+      "title": "Extract shared validateFromICD pattern",
+      "owner": "silas",
+      "blocked_by": [],
+      "status": "completed",
+      "started_at": "2026-03-18T21:47:00Z",
+      "completed_at": "2026-03-18T21:47:00Z"
+    },
+    {
+      "step": 2,
+      "card": 1515,
+      "title": "Wire Photos validation gate — domain #2",
+      "owner": "silas",
+      "blocked_by": [1514],
+      "status": "completed",
+      "started_at": "2026-03-18T21:49:00Z",
+      "completed_at": "2026-03-18T21:54:00Z"
+    },
+    {
+      "step": 3,
+      "card": 1516,
+      "title": "LinkedIn + Facebook ICD-first pilot — define mappings, validate existing data, extend harvest",
+      "owner": "wren",
+      "blocked_by": [1514],
+      "status": "completed",
+      "started_at": "2026-03-18T21:52:00Z",
+      "completed_at": "2026-03-18T21:55:00Z"
+    }
+  ],
+  "history": [
+    {
+      "timestamp": "2026-03-18T21:45:00Z",
+      "event": "Pipeline created from session. Steps 2 and 3 parallel after step 1."
+    },
+    {
+      "timestamp": "2026-03-18T21:47:00Z",
+      "event": "Step 1 (#1514) completed. Shared validateFromICD extracted."
+    },
+    {
+      "timestamp": "2026-03-18T21:54:00Z",
+      "event": "Step 2 (#1515) completed. Photos validation gate wired — 8,017 thumbnailPath violations confirmed."
+    },
+    {
+      "timestamp": "2026-03-18T21:55:00Z",
+      "event": "Step 3 (#1516) completed. ICD defined for Social & Professional domain (5 types). All schemas generated. SocialPost gate wired. Person/Recommendation/Position/Endorsement schemas ready, pending write paths + harvest. 50 tests pass."
+    }
+  ]
+}

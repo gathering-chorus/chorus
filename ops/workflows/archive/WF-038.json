@@ -1,0 +1,78 @@
+{
+  "id": "WF-038",
+  "decision": "Compare navbar menu to mind map graph \u2014 make navigation trees consistent",
+  "source": "board:card-moved:#219",
+  "card": 219,
+  "created": "2026-02-23T12:13:47Z",
+  "updated": "2026-02-23T14:21:23Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Compare navbar menu to mind map graph \u2014 make navigation trees consistent",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "views/partials/navbar.ejs",
+        "views/home.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T14:20:35Z",
+      "notes": "Full comparison complete. 5 inconsistencies found: (1) Chorus missing from mind map Cultivating branch, (2) Images in navbar but not mind map, (3) Movies in mind map but not navbar, (4) Watchlist duplicated in navbar (Harvesting+Reflecting) but only in Reflecting on mind map, (5) disabled placeholder mismatch (Images vs Movies). All are product/taxonomy decisions, not code bugs. Admin section correctly omitted from mind map. Self center node correctly absent from navbar."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #219",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "views/partials/navbar.ejs",
+        "views/home.ejs"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-038-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T14:21:23Z",
+      "notes": "Reviewed. 5 inconsistencies are product decisions: (1) Add Chorus to mind map Cultivating branch \u2014 it belongs there. (2) Rename Images\u2192Movies in navbar to match mind map. (3) Watchlist: keep in Reflecting only on both \u2014 remove navbar duplicate from Harvesting. (4) Disabled placeholders: align on Movies (not Images) as the placeholder name. Will card the fixes separately."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T12:13:47Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Compare navbar menu to mind map graph \u2014 make navigation trees consistent"
+    },
+    {
+      "timestamp": "2026-02-23T14:20:35Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Compare navbar menu to mind map graph \u2014 make navigation trees consistent \u2014 Full comparison complete. 5 inconsistencies found: (1) Chorus missing from mind map Cultivating branch, (2) Images in navbar but not mind map, (3) Movies in mind map but not navbar, (4) Watchlist duplicated in navbar (Harvesting+Reflecting) but only in Reflecting on mind map, (5) disabled placeholder mismatch (Images vs Movies). All are product/taxonomy decisions, not code bugs. Admin section correctly omitted from mind map. Self center node correctly absent from navbar."
+    },
+    {
+      "timestamp": "2026-02-23T14:20:35Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #219"
+    },
+    {
+      "timestamp": "2026-02-23T14:21:23Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #219 \u2014 Reviewed. 5 inconsistencies are product decisions: (1) Add Chorus to mind map Cultivating branch \u2014 it belongs there. (2) Rename Images\u2192Movies in navbar to match mind map. (3) Watchlist: keep in Reflecting only on both \u2014 remove navbar duplicate from Harvesting. (4) Disabled placeholders: align on Movies (not Images) as the placeholder name. Will card the fixes separately."
+    },
+    {
+      "timestamp": "2026-02-23T14:21:23Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

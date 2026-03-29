@@ -1,0 +1,86 @@
+{
+  "id": "WF-032",
+  "decision": "Music: Artist browse page",
+  "source": "verbal",
+  "card": 56,
+  "created": "2026-02-23T04:39:52Z",
+  "updated": "2026-02-23T04:56:11Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Music: Artist browse page",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "views/music-artists.ejs",
+        "src/handlers/music.handler.ts",
+        "src/app.ts"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T04:50:20Z",
+      "notes": "Artist browse page shipped: /collection/music/artists with A-Z letter nav, search filter, album count per artist. Artist detail view already existed but had no browse page to reach it."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #56",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "views/music-artists.ejs",
+        "src/handlers/music.handler.ts",
+        "src/app.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-032-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T04:56:11Z",
+      "notes": "Review pass: A-Z nav, client-side search, album counts, CSP nonce, proper route binding. Minor: handler uses 'any' type on sort. No blockers."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T04:39:52Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Music: Artist browse page"
+    },
+    {
+      "timestamp": "2026-02-23T04:39:52Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 1 ready: Music: Artist browse page"
+    },
+    {
+      "timestamp": "2026-02-23T04:50:20Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Music: Artist browse page \u2014 Artist browse page shipped: /collection/music/artists with A-Z letter nav, search filter, album count per artist. Artist detail view already existed but had no browse page to reach it."
+    },
+    {
+      "timestamp": "2026-02-23T04:50:20Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #56"
+    },
+    {
+      "timestamp": "2026-02-23T04:56:11Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #56 \u2014 Review pass: A-Z nav, client-side search, album counts, CSP nonce, proper route binding. Minor: handler uses 'any' type on sort. No blockers."
+    },
+    {
+      "timestamp": "2026-02-23T04:56:11Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

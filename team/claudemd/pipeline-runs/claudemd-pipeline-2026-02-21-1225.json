@@ -1,0 +1,63 @@
+{
+  "timestamp": "2026-02-21 12:25",
+  "version": "1.3.0",
+  "card": "116",
+  "steps": [
+    {
+      "name": "validate",
+      "status": "pass",
+      "detail": "9/9 checks (0 warning(s))"
+    },
+    {
+      "name": "drift",
+      "status": "warn",
+      "detail": "3 role(s) stale \u2014 shared/multi-role-discussions.md"
+    },
+    {
+      "name": "generate",
+      "status": "pass",
+      "detail": "wren 322L, silas 364L, kade 322L"
+    },
+    {
+      "name": "checksums",
+      "status": "pass",
+      "detail": "saved + v1.3.0 snapshot archived"
+    },
+    {
+      "name": "verify",
+      "status": "pass",
+      "detail": "all outputs at v1.3.0"
+    }
+  ],
+  "status": "PASS",
+  "generated": {
+    "wren": {
+      "path": "/Users/jeffbridwell/CascadeProjects/product-manager/CLAUDE.md",
+      "lines": 322
+    },
+    "silas": {
+      "path": "/Users/jeffbridwell/CascadeProjects/architect/CLAUDE.md",
+      "lines": 364
+    },
+    "kade": {
+      "path": "/Users/jeffbridwell/CascadeProjects/engineer/CLAUDE.md",
+      "lines": 322
+    }
+  },
+  "changed_fragments": {
+    "wren": [
+      "shared/multi-role-discussions.md"
+    ],
+    "silas": [
+      "shared/multi-role-discussions.md"
+    ],
+    "kade": [
+      "shared/multi-role-discussions.md"
+    ]
+  },
+  "stale_roles": [
+    "wren",
+    "silas",
+    "kade"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "roles": [
+    {
+      "name": "silas",
+      "channel": "silas",
+      "claudeMdPath": "/team/architect/CLAUDE.md",
+      "memoryPath": "/memory/silas/MEMORY.md",
+      "briefsPath": "/team/architect/briefs",
+      "maxCallsPerHour": 30
+    },
+    {
+      "name": "wren",
+      "channel": "wren",
+      "claudeMdPath": "/team/product-manager/CLAUDE.md",
+      "memoryPath": "/memory/wren/MEMORY.md",
+      "briefsPath": "/team/product-manager/briefs",
+      "maxCallsPerHour": 30
+    },
+    {
+      "name": "kade",
+      "channel": "kade",
+      "claudeMdPath": "/team/engineer/CLAUDE.md",
+      "memoryPath": "/memory/kade/MEMORY.md",
+      "briefsPath": "/team/engineer/briefs",
+      "maxCallsPerHour": 30
+    }
+  ],
+  "sharedChannel": "all-gathering",
+  "pollIntervalMs": 30000,
+  "globalMaxCallsPerHour": 90,
+  "groupConversation": {
+    "enabled": true,
+    "triggers": ["@team"],
+    "defaultTurnOrder": ["wren", "silas", "kade"],
+    "turnOrders": {
+      "demo": ["wren", "silas", "kade"],
+      "architecture": ["silas", "kade", "wren"],
+      "code-review": ["kade", "silas", "wren"]
+    },
+    "maxTurnsPerConversation": 3,
+    "turnDelayMs": 2500,
+    "maxTokensPerTurn": 150,
+    "maxTokensPerConversation": 600
+  }
+}

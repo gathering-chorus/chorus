@@ -1,0 +1,54 @@
+{
+  "id": "WF-151",
+  "decision": "Reconcile cross-source People duplicates — 139 name-variant matches across FB/LI/Apple",
+  "source": "board:card-moved:#1520",
+  "card": 1520,
+  "created": "2026-03-19T11:08:04Z",
+  "updated": "2026-03-19T11:29:31.536Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Reconcile cross-source People duplicates — 139 name-variant matches across FB/LI/Apple",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T11:29:31.536Z",
+      "notes": "Skipped — card #1520 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1520",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T11:29:31.536Z",
+      "notes": "Skipped — card #1520 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-19T11:08:04Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Reconcile cross-source People duplicates — 139 name-variant matches across FB/LI/Apple"
+    },
+    {
+      "timestamp": "2026-03-19T11:29:31.536Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1520 marked Done by wren"
+    }
+  ]
+}

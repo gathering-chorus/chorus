@@ -1,0 +1,54 @@
+{
+  "id": "WF-109",
+  "decision": "Rename Knowledge Graph \u2192 Gathering Graph, Codebase Graph \u2192 Gathering Chorus System Graph, fix nav placement",
+  "source": "board:card-moved:#1195",
+  "card": 1195,
+  "created": "2026-03-10T19:13:34Z",
+  "updated": "2026-03-10T19:15:05.939Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Rename Knowledge Graph Gathering Graph Codebase Graph Gathering Chorus System Graph fix nav placement",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1195 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1195",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1195 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-10T19:13:34Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Rename Knowledge Graph \u2192 Gathering Graph, Codebase Graph \u2192 Gathering Chorus System Graph, fix nav placement"
+    },
+    {
+      "timestamp": "2026-03-10T19:15:05.939Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1195 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "id": "WF-017",
+  "decision": "Chorus + Clearing architecture overview \u2014 document + address concerns",
+  "source": "board:card-moved:#143",
+  "card": 143,
+  "created": "2026-02-22T23:04:17Z",
+  "updated": "2026-02-22T23:30:24Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Chorus + Clearing architecture overview \u2014 document + address concerns",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "architect/chorus-clearing-architecture.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-22T23:20:25Z",
+      "notes": "Chorus + Clearing architecture doc written: SQLite FTS5 schema (4 tables, 23.6k records), 5 ingestion pipelines, 3 query interfaces (shell, HTTP, skill), ambient indexing daemon, Clearing session lifecycle, participant system, Socket.IO protocol, 12 concerns cataloged (6 Chorus, 6 Clearing)."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #143",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "architect/chorus-clearing-architecture.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-22-wf-017-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-22T23:30:24Z",
+      "notes": "Reviewed: clean deep dive. Schema, 5 pipelines, 12 concerns well-prioritized. Voice quality (C#37) correctly the biggest gap. Refs backfill is a quick win. No structural issues."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-22T23:04:17Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Chorus + Clearing architecture overview \u2014 document + address concerns"
+    },
+    {
+      "timestamp": "2026-02-22T23:20:25Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Chorus + Clearing architecture overview \u2014 document + address concerns \u2014 Chorus + Clearing architecture doc written: SQLite FTS5 schema (4 tables, 23.6k records), 5 ingestion pipelines, 3 query interfaces (shell, HTTP, skill), ambient indexing daemon, Clearing session lifecycle, participant system, Socket.IO protocol, 12 concerns cataloged (6 Chorus, 6 Clearing)."
+    },
+    {
+      "timestamp": "2026-02-22T23:20:25Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #143"
+    },
+    {
+      "timestamp": "2026-02-22T23:30:24Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #143 \u2014 Reviewed: clean deep dive. Schema, 5 pipelines, 12 concerns well-prioritized. Voice quality (C#37) correctly the biggest gap. Refs backfill is a quick win. No structural issues."
+    },
+    {
+      "timestamp": "2026-02-22T23:30:24Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "_comment": "Kade (Engineer) — test runners, builds, lint, app lifecycle",
+  "permissions": {
+    "allow": [
+      "Bash(npx jest*)",
+      "Bash(npx eslint*)",
+      "Bash(npx tsc*)",
+      "Bash(npx knip*)",
+      "Bash(npx jscpd*)",
+      "Bash(npx playwright*)",
+      "Bash(npx trivy*)",
+      "Bash(npm test*)",
+      "Bash(npm run test*)",
+      "Bash(npm run build*)",
+      "Bash(npm run lint*)",
+      "Bash(npm run precommit*)",
+      "Bash(npm install*)",
+      "Bash(npm ci*)",
+      "Bash(npm audit*)",
+      "Bash(node *)",
+      "Bash(npx *)",
+      "Bash(tsc *)",
+      "Bash(trivy *)",
+
+      "Bash(*/app-state.sh*)",
+
+      "Bash(python3 *)",
+      "Bash(curl*localhost:3000*)",
+      "Bash(curl*localhost:3030*)",
+      "Bash(curl -s *)"
+    ]
+  }
+}

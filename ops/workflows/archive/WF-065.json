@@ -1,0 +1,80 @@
+{
+  "id": "WF-065",
+  "decision": "Spike: text ripple \u2014 Jena text index over 823 notes in Fuseki",
+  "source": "board:card-moved:#318",
+  "card": 318,
+  "created": "2026-02-24T21:51:47Z",
+  "updated": "2026-02-24T22:38:07Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Spike: text ripple \u2014 Jena text index over 823 notes in Fuseki",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "docker/fuseki-text-config.ttl",
+        "docker/fuseki-entrypoint.sh",
+        "docker/Dockerfile.fuseki",
+        "docker-compose.yml",
+        "architect/briefs/spike-jena-text-index.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T22:33:21Z",
+      "notes": "Spike complete. Jena text index deployed and verified. Assembler config with Lucene indexing on dcterms:title, jb:body, rdfs:label. Auto-backfill entrypoint on first boot. 219K triples searchable. Notes not yet in Fuseki (0 jb:Note triples) \u2014 sync needed before note search works. text:query returns results in ~1ms vs 50-200ms for FILTER(CONTAINS)."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #318",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "architect/briefs/spike-jena-text-index.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-24-wf-065-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T22:38:07Z",
+      "notes": "Spike accepted. Text index live \u2014 219K triples, sub-ms queries. Music + Stories searchable. Notes gap: 0 jb:Note triples in Fuseki, sync needed. No app-side text:query wiring yet. Proved the concept, connects to #354 (promote Search)."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T21:51:47Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Spike: text ripple \u2014 Jena text index over 823 notes in Fuseki"
+    },
+    {
+      "timestamp": "2026-02-24T22:33:21Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Spike: text ripple \u2014 Jena text index over 823 notes in Fuseki \u2014 Spike complete. Jena text index deployed and verified. Assembler config with Lucene indexing on dcterms:title, jb:body, rdfs:label. Auto-backfill entrypoint on first boot. 219K triples searchable. Notes not yet in Fuseki (0 jb:Note triples) \u2014 sync needed before note search works. text:query returns results in ~1ms vs 50-200ms for FILTER(CONTAINS)."
+    },
+    {
+      "timestamp": "2026-02-24T22:33:21Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #318"
+    },
+    {
+      "timestamp": "2026-02-24T22:38:07Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #318 \u2014 Spike accepted. Text index live \u2014 219K triples, sub-ms queries. Music + Stories searchable. Notes gap: 0 jb:Note triples in Fuseki, sync needed. No app-side text:query wiring yet. Proved the concept, connects to #354 (promote Search)."
+    },
+    {
+      "timestamp": "2026-02-24T22:38:07Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

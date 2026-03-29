@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# The Clearing — multi-party chat launcher
+# Usage: clearing [--with roles] [--model model] [--port port]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Parse args
+GUEST_MODE=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --model) export CLEARING_MODEL="$2"; shift 2 ;;
+    --port) export CLEARING_PORT="$2"; shift 2 ;;
+    --context) export CLEARING_CONTEXT="$2"; shift 2 ;;
+    --context-file) export CLEARING_CONTEXT="$(cat "$2")"; shift 2 ;;
+    --ops-check) OPS_CHECK=true; shift ;;
+    --chorus) CHORUS_INJECT=true; shift ;;
+    --guest) GUEST_MODE=true; shift ;;
+    --help|-h)
+      echo "The Clearing — multi-party chat with AI roles"
+      echo ""
+      echo "Usage: clearing [options]"
+      echo ""
+      echo "Options:"
+      echo "  --model MODEL          Claude model (default: claude-haiku-4-5-20251001)"
+      echo "  --port PORT            Server port (default: random)"
+      echo "  --context TEXT         Inject context so all roles start oriented"
+      echo "  --context-file FILE    Read context from a file"
+      echo "  --chorus               Inject Chorus context (board, decisions, recent activity)"
+      echo "  --ops-check            Pre-fetch system state via ops-agent (containers, alerts, errors, disk)"
+      echo "  --guest                Enable guest access (Cloudflare tunnel + session token)"
+      echo "  -h, --help             Show this help"
+      echo ""
+      echo "Environment:"
+      echo "  ANTHROPIC_API_KEY    Required"
+      echo "  CLEARING_MODEL       Default model"
+      echo "  CLEARING_MAX_TOKENS  Max tokens per response (default: 300)"
+      echo ""
+      echo "In chat:"
+      echo "  @wren @silas @kade   Address specific roles"
+      echo "  (no @mention)        All roles respond"
+      exit 0
+      ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+
+# Source .env if API key not already set
+if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  ENV_FILE="$(cd "$SCRIPT_DIR/../.." && pwd)/jeff-bridwell-personal-site/.env"
+  if [[ -f "$ENV_FILE" ]]; then
+    export $(grep ANTHROPIC_API_KEY "$ENV_FILE" | xargs)
+  fi
+fi
+
+# Check API key
+if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "Error: ANTHROPIC_API_KEY not set (and no .env found)"
+  exit 1
+fi
+
+# Pre-fetch ops-agent system state if requested
+if [[ "${OPS_CHECK:-}" == "true" ]]; then
+  OPS_AGENT="$(cd "$SCRIPT_DIR/../.." && pwd)/messages/scripts/ops-agent.sh"
+  if [[ -x "$OPS_AGENT" ]]; then
+    OPS_CONTEXT=$("$OPS_AGENT" --dry-run 2>/dev/null) || OPS_CONTEXT="(ops-agent failed)"
+    OPS_STATUS=$("$OPS_AGENT" --status 2>/dev/null) || OPS_STATUS=""
+    OPS_BLOCK="## Live System State (from ops-agent)\n\n\`\`\`json\n${OPS_CONTEXT}\n\`\`\`\n\n### Last Agent Run\n${OPS_STATUS}"
+    if [[ -n "${CLEARING_CONTEXT:-}" ]]; then
+      export CLEARING_CONTEXT="${OPS_BLOCK}\n\n${CLEARING_CONTEXT}"
+    else
+      export CLEARING_CONTEXT="$OPS_BLOCK"
+    fi
+    echo "ops-check: system state injected"
+  else
+    echo "ops-check: ops-agent.sh not found at $OPS_AGENT"
+  fi
+fi
+
+# Inject Chorus context (board state, decisions, recent activity)
+if [[ "${CHORUS_INJECT:-}" == "true" ]]; then
+  TEAM_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+  CHORUS_QUERY="$TEAM_DIR/messages/scripts/chorus-query.sh"
+  BOARD_TS="$TEAM_DIR/messages/scripts/board-ts"
+  DECISIONS="$TEAM_DIR/product-manager/decisions.md"
+
+  CHORUS_BLOCK=""
+
+  # Active board cards (WIP + Now)
+  if [[ -x "$BOARD_TS" ]]; then
+    BOARD_STATE=$(bash "$BOARD_TS" list 2>/dev/null | grep -E '^\s*(WIP|Now)' -A 50 | head -40) || BOARD_STATE=""
+    if [[ -n "$BOARD_STATE" ]]; then
+      CHORUS_BLOCK+="## Active Board\n\n\`\`\`\n${BOARD_STATE}\n\`\`\`\n\n"
+    fi
+  fi
+
+  # Recent decisions (last 10)
+  if [[ -f "$DECISIONS" ]]; then
+    RECENT_DEC=$(grep -E '^## DEC-' "$DECISIONS" | tail -10) || RECENT_DEC=""
+    if [[ -n "$RECENT_DEC" ]]; then
+      CHORUS_BLOCK+="## Recent Decisions\n\n${RECENT_DEC}\n\n"
+    fi
+  fi
+
+  # Chorus reconciliation (what happened recently across roles)
+  if [[ -x "$CHORUS_QUERY" ]]; then
+    RECON=$("$CHORUS_QUERY" reconcile 2>/dev/null | head -80) || RECON=""
+    if [[ -n "$RECON" ]]; then
+      CHORUS_BLOCK+="## Recent Team Activity (from Chorus)\n\n${RECON}\n\n"
+    fi
+  fi
+
+  if [[ -n "$CHORUS_BLOCK" ]]; then
+    if [[ -n "${CLEARING_CONTEXT:-}" ]]; then
+      export CLEARING_CONTEXT="${CHORUS_BLOCK}${CLEARING_CONTEXT}"
+    else
+      export CLEARING_CONTEXT="$CHORUS_BLOCK"
+    fi
+    echo "chorus: board + decisions + activity injected"
+  fi
+fi
+
+# --- Guest mode: generate token + start Cloudflare tunnel ---
+if [[ "${GUEST_MODE:-}" == "true" ]]; then
+  # Generate 128-bit session token
+  export CLEARING_SESSION_TOKEN
+  CLEARING_SESSION_TOKEN=$(openssl rand -hex 16)
+  export CLEARING_GUEST=true
+
+  # Auto-select a free port starting from 3462 (leave 3460 for always-on service)
+  if [[ -z "${CLEARING_PORT:-}" ]]; then
+    GUEST_PORT=3462
+    while lsof -i ":${GUEST_PORT}" -sTCP:LISTEN &>/dev/null; do
+      GUEST_PORT=$((GUEST_PORT + 1))
+      if [[ "$GUEST_PORT" -gt 3470 ]]; then
+        echo "ERROR: No free port found (3462-3470)"
+        exit 1
+      fi
+    done
+    export CLEARING_PORT="$GUEST_PORT"
+    echo "Guest session on port $GUEST_PORT"
+  else
+    GUEST_PORT="$CLEARING_PORT"
+  fi
+
+  # Named tunnel: clearing.lightlifeurbangardens.com → localhost:GUEST_PORT
+  # The named tunnel (com.cloudflare.tunnel LaunchAgent) must be running.
+  # No ephemeral tunnel needed — DNS + ingress already configured.
+  TUNNEL_URL="https://clearing.lightlifeurbangardens.com"
+  GUEST_JOIN_URL="${TUNNEL_URL}?token=${CLEARING_SESSION_TOKEN}"
+
+  # Clean up on exit — server, temp files
+  cleanup() {
+    echo ""
+    echo "Shutting down guest session..."
+    [[ -n "${SERVER_PID:-}" ]] && kill "$SERVER_PID" 2>/dev/null
+    rm -f /tmp/clearing-guest-url
+    echo "Guest session ended."
+  }
+  trap cleanup EXIT
+  trap 'cleanup; exit 0' INT TERM HUP
+
+  # Verify named tunnel is running
+  if ! pgrep -f 'cloudflared tunnel run' &>/dev/null; then
+    echo "WARNING: Named tunnel not running. Start with: launchctl kickstart gui/\$(id -u)/com.cloudflare.tunnel"
+  fi
+
+  echo ""
+  echo "=== GUEST MODE ==="
+  echo "Session token: $CLEARING_SESSION_TOKEN"
+  echo "Server port:   $GUEST_PORT"
+  echo "Tunnel:        $TUNNEL_URL"
+  echo ""
+  echo "=========================================="
+  echo "  Send this link to your guest:"
+  echo "  $GUEST_JOIN_URL"
+  echo "=========================================="
+  echo ""
+
+  # Save for discovery by other scripts
+  echo "$GUEST_JOIN_URL" > /tmp/clearing-guest-url
+fi
+
+# Start the server
+# In guest mode: run without exec so the shell trap can clean up tunnel on exit
+# In normal mode: exec to replace the shell (no cleanup needed)
+if [[ "${GUEST_MODE:-}" == "true" ]]; then
+  if [[ -f "$SCRIPT_DIR/dist/server.js" ]]; then
+    node "$SCRIPT_DIR/dist/server.js" &
+    SERVER_PID=$!
+    # Wait for server — propagate signals to both tunnel and server
+    wait $SERVER_PID 2>/dev/null
+    # If server exits, cleanup trap handles the tunnel
+  else
+    npx --yes tsx "$SCRIPT_DIR/src/server.ts" &
+    SERVER_PID=$!
+    wait $SERVER_PID 2>/dev/null
+  fi
+else
+  if [[ -f "$SCRIPT_DIR/dist/server.js" ]]; then
+    exec node "$SCRIPT_DIR/dist/server.js"
+  else
+    exec npx --yes tsx "$SCRIPT_DIR/src/server.ts"
+  fi
+fi

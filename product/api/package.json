@@ -1,0 +1,26 @@
+{
+  "name": "chorus-api",
+  "version": "0.1.0",
+  "description": "HTTP wrapper around Chorus context index — file-backed reads, no cache",
+  "main": "dist/server.js",
+  "bin": {
+    "chorus-api": "./bin/chorus-api"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@lancedb/lancedb": "^0.26.2",
+    "better-sqlite3": "^11.10.0",
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

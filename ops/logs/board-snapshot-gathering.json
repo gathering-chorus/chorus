@@ -1,0 +1,2728 @@
+{
+  "board": "gathering",
+  "timestamp": "2026-03-11T22:19:14.613Z",
+  "tasks": [
+    {
+      "index": 1261,
+      "apiId": 1344,
+      "title": "Complete photo harvests — Apple Photos and Google Photos into Fuseki",
+      "description": "## What\nRun photo harvests from Apple Photos and Google Photos into Fuseki. Pipeline is 257h stale with 4 gaps.\n\n## Why\nPhotos collection is a core Gathering domain. 10+ days stale means new photos not in the knowledge graph.\n\n## AC\n- [ ] Apple Photos harvest runs successfully into Fuseki photo graph\n- [ ] Google Photos harvest runs successfully into Fuseki photo graph\n- [ ] 4 coverage gaps identified and filled\n- [ ] Harvest staleness drops below 24h\n- [ ] Photo collection page reflects updated counts",
+      "status": "Harvesting",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "sequence:sparql"
+      ],
+      "done": false,
+      "created": "2026-03-10T19:11:14Z",
+      "updated": "2026-03-10T19:30:47Z"
+    },
+    {
+      "index": 1304,
+      "apiId": 1387,
+      "title": "Filesystem photo harvest — scan ToDo folders on Bedroom Mac into Fuseki",
+      "description": "",
+      "status": "Harvesting",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory"
+      ],
+      "done": false,
+      "created": "2026-03-11T20:01:01Z",
+      "updated": "2026-03-11T20:39:51Z"
+    },
+    {
+      "index": 1265,
+      "apiId": 1348,
+      "title": "Site walkthrough — desktop then mobile, verify all SPARQL-backed pages render with data post-refactor",
+      "description": "",
+      "status": "WIP",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:flow-tests"
+      ],
+      "done": false,
+      "created": "2026-03-10T19:22:56Z",
+      "updated": "2026-03-11T17:53:39Z"
+    },
+    {
+      "index": 1318,
+      "apiId": 1401,
+      "title": "Blast radius WIP overlap — cross-card collision detection via domain + value stream scopes",
+      "description": "Extend blast radius system to detect overlap between active WIP cards.\n\n## Acceptance Criteria\n- On WIP entry, role sees other active WIP cards sharing the same chunk (domain)\n- On WIP entry, role sees other active WIP cards sharing the same sequence (value stream)\n- Output format: 'Silas has #1309 in ops domain' style warnings\n- No new systems — queries existing board data (chunk/sequence labels)\n\n**Blast radius:** messages/board-client/src/sdk.ts, messages/board-client/src/blast-radius.ts",
+      "status": "WIP",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": false,
+      "created": "2026-03-11T21:04:18Z",
+      "updated": "2026-03-11T22:18:05Z"
+    },
+    {
+      "index": 1290,
+      "apiId": 1373,
+      "title": "Doc drift audit — identify stale docs, enforce freshness as part of close-out",
+      "description": "## What\n\nThe If-Touched doc scan in session close-out isn't working. Docs in data/about/ are stale — decisions made, domains renamed, value streams redefined, but the docs still reflect old state. The close-out checklist says \"scan for staleness\" but roles skip it or do it superficially.\n\n## Problem\n\n- PRODUCT_VISION.md, GLOSSARY.md, SITE_MAP.md, API.md — likely stale after weeks of taxonomy/nav/domain changes\n- Close-out If-Touched section lists docs to check but there's no enforcement or freshness signal\n- No way to see at a glance which docs are current vs stale\n- Roles have no incentive to update docs they didn't create\n\n## AC\n\n- [ ] Audit all docs in data/about/ — mark each as current, stale, or obsolete with evidence\n- [ ] Add last-verified date to doc frontmatter or a freshness manifest\n- [ ] Borg churn lens (#1286) should flag docs whose domain has changed but the doc hasn't\n- [ ] Propose enforcement mechanism — gate, nudge, or dashboard visibility\n\n## Context\n\nJeff noticed docs are \"somewhat to very stale.\" This is the doc-drift gate (#515) that was never enforced. DEC-086 (domain-first) makes this worse — the map changed but the docs didn't follow. Third Borg lens: doc freshness.",
+      "status": "Now",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-11T14:34:16Z",
+      "updated": "2026-03-11T14:34:29Z"
+    },
+    {
+      "index": 1309,
+      "apiId": 1392,
+      "title": "Consolidate chorus-index scripts — 6 indexers → 1 with subcommands",
+      "description": "Phase 3 of Chorus consolidation (#1292).\n\nSix indexer scripts with identical patterns → one with subcommands.\n\n## Acceptance Criteria\n- [ ] Single chorus-index.sh with subcommands: artifacts|sessions|slack|spine|stories|journal\n- [ ] All 6 original scripts removed\n- [ ] session-watcher daemon calls unified script\n- [ ] Incremental watermarks preserved per source type\n- [ ] Migration path documented (Kade review request)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:11:44Z",
+      "updated": "2026-03-11T22:09:10Z"
+    },
+    {
+      "index": 1301,
+      "apiId": 1384,
+      "title": "Fix app-state.sh deploy to always recompile TypeScript before Docker build — stale dist/ cache caused demo failure",
+      "description": "Fix app-state.sh deploy to always recompile TypeScript before Docker build.\n\n## Acceptance Criteria\n- app-state.sh deploy runs npm run build before docker build every time\n- No path allows stale dist/ to be baked into the container image\n\n## Blast Radius\nscripts/app-state.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T19:05:11Z",
+      "updated": "2026-03-11T22:17:40Z"
+    },
+    {
+      "index": 1310,
+      "apiId": 1393,
+      "title": "Merge daemons — defect-poller + ops-agent → chorus-ops",
+      "description": "Phase 4 of Chorus consolidation (#1292).\n\nMerge defect-poller + ops-agent into single chorus-ops daemon. alert-notifier stays independent (Silas review: alarm ≠ monitored system).\n\n## Acceptance Criteria\n- [ ] Single chorus-ops LaunchAgent replaces two plists\n- [ ] Error detection and health check both preserved\n- [ ] alert-notifier remains independent\n- [ ] Single log file, single plist",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:11:47Z",
+      "updated": "2026-03-11T22:09:10Z"
+    },
+    {
+      "index": 1311,
+      "apiId": 1394,
+      "title": "Consolidate andon daemons — andon-enrich + jeff-input-monitor → fold into andon-light",
+      "description": "Phase 4 of Chorus consolidation (#1292).\n\nThree processes serving one menubar icon → fold into andon-light.\n\n## Acceptance Criteria\n- [ ] andon-light handles its own enrichment cycle (no external andon-enrich.sh)\n- [ ] Input monitoring folded in or justified as separate\n- [ ] Two fewer LaunchAgent plists\n- [ ] Menubar status still updates within 30s of state change",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:11:52Z",
+      "updated": "2026-03-11T22:09:10Z"
+    },
+    {
+      "index": 1319,
+      "apiId": 1402,
+      "title": "Verify #1315 fix — AC survives move",
+      "description": "Test card: create with AC, move through columns, confirm description persists. Verifying Silas's #1315 fix from PM side.",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": true,
+      "created": "2026-03-11T21:11:18Z",
+      "updated": "2026-03-11T21:11:42Z"
+    },
+    {
+      "index": 1315,
+      "apiId": 1398,
+      "title": "board-ts move wipes card description — read-then-merge missing on move path",
+      "description": "board-ts move wipes card description — read-then-merge missing on move path.\n\nRoot cause: moveToBucket synced the done flag via POST /tasks/{id} with only { done: bool }. Vikunja zeros omitted fields, wiping title and description.\n\nFix: include title + description in the done-flag sync payload, using the task state already read before the move.\n\n**Blast radius:** board-client/src/client.ts\n\n## Acceptance Criteria\n- board-ts move preserves the existing card description (and all other fields) after moving\n- A card with description + AC can be moved between columns without data loss\n- Regression: board-ts update --description still works correctly after the fix",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:35:36Z",
+      "updated": "2026-03-11T21:13:06Z"
+    },
+    {
+      "index": 1314,
+      "apiId": 1397,
+      "title": "Wire smoke-check.sh as hard gate on /demo skill",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:12:13Z",
+      "updated": "2026-03-11T20:46:21Z"
+    },
+    {
+      "index": 1312,
+      "apiId": 1395,
+      "title": "Fold team-scan + handoff-check into werk-init.sh boot sequence",
+      "description": "Phase 5 of Chorus consolidation (#1292).\n\nteam-scan.sh and handoff-check.sh both run at boot, both check role state. Fold into werk-init.sh directly.\n\n## Acceptance Criteria\n- [ ] team-scan.sh logic folded into werk-init.sh\n- [ ] handoff-check.sh logic folded into werk-init.sh\n- [ ] Both original scripts removed\n- [ ] Boot sequence timing unchanged or faster",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:12:04Z",
+      "updated": "2026-03-11T22:09:10Z"
+    },
+    {
+      "index": 1308,
+      "apiId": 1391,
+      "title": "Absorb pod-state-sync into handoff-logger hook",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:11:24Z",
+      "updated": "2026-03-11T20:44:25Z"
+    },
+    {
+      "index": 1307,
+      "apiId": 1390,
+      "title": "Merge telemetry hooks — permission-logger + command-outcome → tool-telemetry",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:11:20Z",
+      "updated": "2026-03-11T20:39:57Z"
+    },
+    {
+      "index": 1306,
+      "apiId": 1389,
+      "title": "Merge autonomy hooks — decision-gate + jdi-gate + jdi-counter → autonomy-guard",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:11:16Z",
+      "updated": "2026-03-11T20:38:11Z"
+    },
+    {
+      "index": 1305,
+      "apiId": 1388,
+      "title": "Remove deprecated scripts — slack-*, session-start.sh wrapper, one-shot installers",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:10:59Z",
+      "updated": "2026-03-11T20:33:02Z"
+    },
+    {
+      "index": 1297,
+      "apiId": 1380,
+      "title": "Audit team gates — catalog all hooks, guards, and quality gates, report reliability",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T17:45:45Z",
+      "updated": "2026-03-11T20:16:19Z"
+    },
+    {
+      "index": 1293,
+      "apiId": 1376,
+      "title": "Docker CLI guard hook — block direct docker compose/stop/kill, enforce app-state.sh",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T15:07:52Z",
+      "updated": "2026-03-11T16:14:20Z"
+    },
+    {
+      "index": 1291,
+      "apiId": 1374,
+      "title": "Unify Self inner-ring with generic sub-node system — eliminate toggle desync, solid backgrounds",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-11T14:52:23Z",
+      "updated": "2026-03-11T16:26:09Z"
+    },
+    {
+      "index": 1289,
+      "apiId": 1372,
+      "title": "[bug] board-ts update --title wipes card description",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T14:28:56Z",
+      "updated": "2026-03-11T14:55:30Z"
+    },
+    {
+      "index": 1313,
+      "apiId": 1396,
+      "title": "CLAUDE.md fragment audit — 51 fragments → ~25",
+      "description": "Phase 6 of Chorus consolidation (#1292).\n\n51 CLAUDE.md fragments → ~25. Merge overlapping content, remove stale fragments.\n\n## Acceptance Criteria\n- [ ] Fragment count reduced to ~25\n- [ ] No content loss — merged, not deleted\n- [ ] claudemd-gen.sh produces equivalent output\n- [ ] All three role CLAUDE.md files regenerated and verified",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": true,
+      "created": "2026-03-11T20:12:08Z",
+      "updated": "2026-03-11T22:15:14Z"
+    },
+    {
+      "index": 1287,
+      "apiId": 1370,
+      "title": "Refactor nav-tree.json — live-reload path, fix silent cache errors, eliminate build+deploy+restart cycle",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T14:06:58Z",
+      "updated": "2026-03-11T15:55:00Z"
+    },
+    {
+      "index": 1292,
+      "apiId": 1375,
+      "title": "Chorus method map — canonical model of skills, hooks, scripts, card lifecycle, and orchestration points",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T14:59:21Z",
+      "updated": "2026-03-11T21:21:14Z"
+    },
+    {
+      "index": 1283,
+      "apiId": 1366,
+      "title": "Product taxonomy deep dive — refine domain boundaries, validate with live data, add to System nav",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "sequence:style"
+      ],
+      "done": true,
+      "created": "2026-03-10T21:36:28Z",
+      "updated": "2026-03-11T16:25:40Z"
+    },
+    {
+      "index": 1281,
+      "apiId": 1364,
+      "title": "Review About page — verify content accuracy, polish copy, check mobile rendering",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:style"
+      ],
+      "done": true,
+      "created": "2026-03-10T21:07:08Z",
+      "updated": "2026-03-11T21:53:05Z"
+    },
+    {
+      "index": 1294,
+      "apiId": 1377,
+      "title": "Reorganize System into Gathering + Chorus hubs — two-hub nav-tree restructure",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:style"
+      ],
+      "done": true,
+      "created": "2026-03-11T15:35:30Z",
+      "updated": "2026-03-11T17:18:58Z"
+    },
+    {
+      "index": 1288,
+      "apiId": 1371,
+      "title": "[process] Implement gemba-tick skill — make gemba loop self-sustaining",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T14:26:02Z",
+      "updated": "2026-03-11T14:44:32Z"
+    },
+    {
+      "index": 1285,
+      "apiId": 1368,
+      "title": "[ops] Add host-side health probe to app-state.sh status — detect Docker-healthy but host-unreachable",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-11T13:25:41Z",
+      "updated": "2026-03-11T13:36:23Z"
+    },
+    {
+      "index": 1282,
+      "apiId": 1365,
+      "title": "Lint ceiling ratchet — max-warnings only moves down, block PRs that bump it up",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-10T21:19:50Z",
+      "updated": "2026-03-10T22:26:13Z"
+    },
+    {
+      "index": 1203,
+      "apiId": 1286,
+      "title": "Evaluate Incubation page — fold into Ideas or remove from nav",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:app",
+        "sequence:style"
+      ],
+      "done": true,
+      "created": "2026-03-09T14:18:15Z",
+      "updated": "2026-03-10T22:59:13Z"
+    },
+    {
+      "index": 1280,
+      "apiId": 1363,
+      "title": "Align board chunk labels to real domain taxonomy — expand 8 chunks to 28 bounded contexts",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "sequence:style"
+      ],
+      "done": true,
+      "created": "2026-03-10T20:55:52Z",
+      "updated": "2026-03-10T21:39:59Z"
+    },
+    {
+      "index": 1274,
+      "apiId": 1357,
+      "title": "Reconcile mind map and navbar — single source of truth for information architecture, rendered two ways",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:style"
+      ],
+      "done": true,
+      "created": "2026-03-10T20:26:39Z",
+      "updated": "2026-03-11T14:53:07Z"
+    },
+    {
+      "index": 1273,
+      "apiId": 1356,
+      "title": "Create product taxonomy doc — chunks (domains) and sequences (work themes) with definitions and tagging guide",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "sequence:style"
+      ],
+      "done": true,
+      "created": "2026-03-10T20:24:35Z",
+      "updated": "2026-03-10T20:56:12Z"
+    },
+    {
+      "index": 1272,
+      "apiId": 1355,
+      "title": "Enforce chunk + sequence labels on Now entry — block cards missing either taxonomy dimension",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-10T20:23:05Z",
+      "updated": "2026-03-10T21:12:26Z"
+    },
+    {
+      "index": 1271,
+      "apiId": 1354,
+      "title": "Harvest stories.md into Fuseki — stories as jb:Story triples in the knowledge graph",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "sequence:sparql"
+      ],
+      "done": true,
+      "created": "2026-03-10T19:59:05Z",
+      "updated": "2026-03-10T20:39:04Z"
+    },
+    {
+      "index": 1263,
+      "apiId": 1346,
+      "title": "Smoke-check script — authenticated page verification for roles, eliminate recurring curl-auth friction",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:flow-tests"
+      ],
+      "done": true,
+      "created": "2026-03-10T19:20:42Z",
+      "updated": "2026-03-10T20:32:51Z"
+    },
+    {
+      "index": 1268,
+      "apiId": 1351,
+      "title": "Migrate stories from MEMORY.md into stories.md — deduplicate and consolidate",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-10T19:39:51Z",
+      "updated": "2026-03-10T19:58:17Z"
+    },
+    {
+      "index": 381,
+      "apiId": 463,
+      "title": "Fix About/Profile page — conform to site styles, populate from SOLID profile data",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "",
+      "domains": [
+        "chunk:app",
+        "sequence:style"
+      ],
+      "done": true,
+      "created": "2026-02-25T13:59:06Z",
+      "updated": "2026-03-10T21:16:48Z"
+    },
+    {
+      "index": 1196,
+      "apiId": 1279,
+      "title": "Merge People + Network into one page — combine relationship filters with professional context",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-09T14:18:14Z",
+      "updated": "2026-03-10T19:46:19Z"
+    },
+    {
+      "index": 1260,
+      "apiId": 1343,
+      "title": "Make Product Flow page live — board-driven tile counts, WIP query, velocity, click-through",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:flow-tests"
+      ],
+      "done": true,
+      "created": "2026-03-10T18:57:42Z",
+      "updated": "2026-03-10T20:27:20Z"
+    },
+    {
+      "index": 1262,
+      "apiId": 1345,
+      "title": "Fix music handler test failures — SparqlService constructor throws in mock setup",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "sequence:sparql"
+      ],
+      "done": true,
+      "created": "2026-03-10T19:16:43Z",
+      "updated": "2026-03-10T19:22:32Z"
+    },
+    {
+      "index": 1266,
+      "apiId": 1349,
+      "title": "Harden blast radius gate — block WIP on zero-file code cards, require manual mapping (DEC-084)",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-10T19:33:25Z",
+      "updated": "2026-03-10T20:44:56Z"
+    },
+    {
+      "index": 1250,
+      "apiId": 1333,
+      "title": "Fix cost dashboard — stale stats cache, hardcoded $200/mo flat rate",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-10T15:17:02Z",
+      "updated": "2026-03-10T21:54:43Z"
+    },
+    {
+      "index": 1267,
+      "apiId": 1350,
+      "title": "Error handling discipline — board-ts verify-after-write, roles stop on error not continue",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-10T19:33:58Z",
+      "updated": "2026-03-10T20:32:52Z"
+    },
+    {
+      "index": 1259,
+      "apiId": 1342,
+      "title": "Add sequence label to board-ts — --sequence flag, validation, bulk retroactive tagging",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "sequence:sparql"
+      ],
+      "done": true,
+      "created": "2026-03-10T18:57:41Z",
+      "updated": "2026-03-10T19:54:31Z"
+    },
+    {
+      "index": 1252,
+      "apiId": 1335,
+      "title": "Fix broken Reflecting pages — attention-analytics and value-stream-render return raw GET",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-10T15:33:14Z",
+      "updated": "2026-03-10T18:56:28Z"
+    },
+    {
+      "index": 1249,
+      "apiId": 1332,
+      "title": "Add flow map to System nav — wire /flow-map.html into navbar under System spoke",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-10T12:45:56Z",
+      "updated": "2026-03-10T18:56:27Z"
+    },
+    {
+      "index": 1258,
+      "apiId": 1341,
+      "title": "SPARQL refactor — replace hardcoded URIs, fs reads, and query patterns with central constants",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "sequence:sparql"
+      ],
+      "done": true,
+      "created": "2026-03-10T17:59:04Z",
+      "updated": "2026-03-10T19:23:08Z"
+    },
+    {
+      "index": 1195,
+      "apiId": 1278,
+      "title": "Rename Knowledge Graph → Gathering Graph, Codebase Graph → Gathering Chorus System Graph, fix nav placement",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-09T14:18:13Z",
+      "updated": "2026-03-10T19:15:05Z"
+    },
+    {
+      "index": 1255,
+      "apiId": 1338,
+      "title": "Fix seed triage dropdown — add missing destinations, regroup by spoke",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-10T15:54:28Z",
+      "updated": "2026-03-10T16:07:11Z"
+    },
+    {
+      "index": 1257,
+      "apiId": 1340,
+      "title": "Add routedFrom lineage tracking for Practicing-spoke seed routes",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-10T15:54:29Z",
+      "updated": "2026-03-10T17:49:04Z"
+    },
+    {
+      "index": 1251,
+      "apiId": 1334,
+      "title": "Fix Pod Browser navbar — shows doc-chrome instead of main site nav",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-10T15:33:13Z",
+      "updated": "2026-03-10T18:07:07Z"
+    },
+    {
+      "index": 1253,
+      "apiId": 1336,
+      "title": "Flow test: Workflow engine — create, advance, complete, pending across multi-step workflows",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "sequence:flow-tests"
+      ],
+      "done": true,
+      "created": "2026-03-10T15:51:22Z",
+      "updated": "2026-03-10T19:56:32Z"
+    },
+    {
+      "index": 1246,
+      "apiId": 1329,
+      "title": "Suppress Claude Code TCC popups — '2.1.72 would like to access data from other apps' fires 15-20x/day",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-03-10T11:56:14Z",
+      "updated": "2026-03-10T17:59:01Z"
+    },
+    {
+      "index": 1302,
+      "apiId": 1385,
+      "title": "Invert search hierarchy — hook queries Chorus transparently before filesystem search, injects results",
+      "description": "IoC pattern: don't ask roles to query Chorus first, have the hook do it. On Grep/Glob intercept, hook runs chorus-query.sh with the search term, prepends relevant hits to the result. Role gets enriched context without changing behavior. The principle is satisfied by infrastructure, not discipline. Ref: DEC-074, fitness function data shows 260 flags with flat trend — nudging isn't working.",
+      "status": "Next",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-11T19:14:55Z",
+      "updated": "2026-03-11T21:19:52Z"
+    },
+    {
+      "index": 1303,
+      "apiId": 1386,
+      "title": "Add personal gate scorecard to werk-init.sh session boot — show role their own fitness data",
+      "description": "",
+      "status": "Next",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-11T19:14:55Z",
+      "updated": "2026-03-11T21:19:49Z"
+    },
+    {
+      "index": 1317,
+      "apiId": 1400,
+      "title": "Instrument demo seed capture — card ideas that emerge from demo conversations",
+      "description": "",
+      "status": "Next",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-11T20:44:31Z",
+      "updated": "2026-03-11T20:44:31Z"
+    },
+    {
+      "index": 1270,
+      "apiId": 1353,
+      "title": "Enrich People with relationship depth — beyond Friend/Family/Colleague to meaningful connection context",
+      "description": "## What\nEnrich People contacts with relationship depth beyond flat categories (Friend/Family/Colleague). Capture how Jeff knows someone, shared history, role in his life.\n\n## Why\n2,279 contacts with shallow labels. Chandra Bommas is a Colleague but also Jeffs favorite manager. The category doesnt carry that. As Apple Contacts (#1269) and other sources fill in, the relationship layer needs to express meaning, not just type.\n\n## AC\n- [ ] Relationship model extended beyond Friend/Family/Colleague (e.g. mentor, collaborator, neighbor, family-extended)\n- [ ] Ontology property for relationship context/notes (jb:relationshipNote or similar)\n- [ ] People page shows relationship context when available\n- [ ] Stories that mention people link to their People entry\n- [ ] Design doc: what relationship depth means for Gathering (not just more fields)",
+      "status": "Next",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "sequence:style"
+      ],
+      "done": false,
+      "created": "2026-03-10T19:44:58Z",
+      "updated": "2026-03-10T19:49:58Z"
+    },
+    {
+      "index": 1269,
+      "apiId": 1352,
+      "title": "Harvest Apple Contacts into People — import contacts from macOS Contacts.app into Fuseki people graph",
+      "description": "## What\nHarvest contacts from macOS Contacts.app (Apple Contacts) into the Fuseki people graph. Similar pattern to music and photo harvests.\n\n## Why\nPeople page has 2,256 contacts from Facebook/LinkedIn but none from Apple Contacts — the people Jeff actually communicates with daily. Family, local contacts, service providers. This is the relationship layer social networks miss.\n\n## Dependencies\n- Feeds into #1196 (People + Network merge) — more data makes the merged page richer\n- Follows same harvest pattern as music and photos\n- May need TCC permission for Contacts access (similar to #1246 pattern)\n\n## AC\n- [ ] Apple Contacts exported (vCard or Contacts framework)\n- [ ] Contacts mapped to jb:Person RDF triples (name, email, phone, org, notes)\n- [ ] Deduplication against existing Facebook/LinkedIn contacts\n- [ ] Ingested into Fuseki people graph\n- [ ] People page shows Apple Contacts alongside existing sources\n- [ ] Source attribution: each contact tagged with origin (apple/facebook/linkedin)",
+      "status": "Next",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "sequence:sparql"
+      ],
+      "done": false,
+      "created": "2026-03-10T19:42:04Z",
+      "updated": "2026-03-10T19:48:48Z"
+    },
+    {
+      "index": 1316,
+      "apiId": 1399,
+      "title": "Spike: garden map — hand-drawn aesthetic, machine-readable structure (Balsamiq for gardens)",
+      "description": "",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-11T20:41:53Z",
+      "updated": "2026-03-11T20:41:53Z"
+    },
+    {
+      "index": 1296,
+      "apiId": 1379,
+      "title": "Scan book collection — box-by-box catalog from library shelves",
+      "description": "Three triage categories from #534:\n- Books to shelve\n- Books that might shelve if space allows (most likely not)\n- Books to keep but not shelve\n\nWork one box at a time from the library. No deadline. Photos/OCR feed the books domain in Gathering (141+ and growing).",
+      "status": "Later",
+      "owner": "Jeff",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-11T17:35:12Z",
+      "updated": "2026-03-11T17:35:19Z"
+    },
+    {
+      "index": 1286,
+      "apiId": 1369,
+      "title": "Borg assessment dashboard — live model-vs-reality view under Product Vision",
+      "description": "## What\n\nLive dashboard page showing the taxonomy map assessed against the current codebase. For each domain × value stream stage, Borg classifies:\n\n- **Build** — domain defined in taxonomy but no page/handler exists yet\n- **Refactor** — page exists but in the wrong domain, wrong nav position, or missing boundaries\n- **Rewrite** — page exists but was built ahead of the map and can't be salvaged by moving\n\nColor-coded grid: green (conforms), yellow (refactor), red (rewrite), grey (build needed).\n\n## Why\n\nDEC-086 (domain-first development) establishes the taxonomy as the governing artifact. This dashboard is the enforcement surface — makes model-vs-reality visible at a glance. Chorus designs the model, Borg assesses conformance.\n\n## AC\n\n- [ ] Page at a Product Vision nav location (exact placement TBD with v5 nav)\n- [ ] Domain × value stream grid with color-coded status\n- [ ] Each cell links to the relevant page or card\n- [ ] Assessment logic reads from taxonomy + live routes/handlers\n- [ ] Three modes labeled: build, refactor, rewrite",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-11T13:34:27Z",
+      "updated": "2026-03-11T14:30:17Z"
+    },
+    {
+      "index": 1284,
+      "apiId": 1367,
+      "title": "Read Wardley on conversational programming lineage — Chorus positioning reference",
+      "description": "",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-11T12:39:51Z",
+      "updated": "2026-03-11T12:39:51Z"
+    },
+    {
+      "index": 945,
+      "apiId": 1028,
+      "title": "Help Jeff simplify personal password management tooling",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-04T13:29:18Z",
+      "updated": "2026-03-04T13:29:18Z"
+    },
+    {
+      "index": 1217,
+      "apiId": 1300,
+      "title": "Voice Analytics as Reflecting hub — aggregate posture, sentiment, session tempo, personal analytics",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-09T15:26:04Z",
+      "updated": "2026-03-09T15:26:04Z"
+    },
+    {
+      "index": 1096,
+      "apiId": 1179,
+      "title": "Borg two-phase delivery — hand drawings to HTML iteration, then build from validated prototype",
+      "description": "## What\nDocument and operationalize Borg's two-phase delivery pattern as a repeatable methodology.\n\n## Phase 1: Iterate with client (spike/discovery)\n- Hand drawings → HTML prototypes, rapidly iterated\n- Refine UI + OWL + value stream + domains as we go\n- 2-3 cycles\n- Identify integrations, security, and harvest considerations along the way\n- Output: validated prototype that captures intent\n\n## Phase 2: Build from 1 (commitment)\n- The iteration output becomes the spec — estimable, buildable\n- Code + tests + UX + tickets + logs + monitoring + security + documentation\n- Full blast radius coverage (DEC-072)\n\n## Why\nThis is Jeff's natural working pattern — validated by the Athena experience at Staples. Phase 1 is discovery through making. Phase 2 is commitment informed by understanding. Maps to spike/discovery/commitment taxonomy.\n\n## Athena lesson\nProcess weight kills adoption. Phase 1 must stay lightweight — sketches, conversation, rapid cycles. Phase 2 inherits rigor from the system, not from human paperwork.\n\n## AC\n- [ ] Pattern documented in About library\n- [ ] Card lifecycle integrates the two phases (spike → discovery → commitment maps to Phase 1 → Phase 2)\n- [ ] Borg can execute Phase 1 autonomously given hand drawings as input\n\n## Tags\n[medium] [discovery] chorus methodology",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-06T12:53:55Z",
+      "updated": "2026-03-06T12:54:07Z"
+    },
+    {
+      "index": 655,
+      "apiId": 738,
+      "title": "Drone garden survey pipeline — automated flyover, voice annotation, transcription, report generation",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-02T01:13:48Z",
+      "updated": "2026-03-03T20:46:11Z"
+    },
+    {
+      "index": 654,
+      "apiId": 737,
+      "title": "Seasonal light coverage map overlay — sun path and shade patterns across growing seasons",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-02T01:13:00Z",
+      "updated": "2026-03-03T20:46:11Z"
+    },
+    {
+      "index": 1109,
+      "apiId": 1192,
+      "title": "Album reviews — pull critic/user reviews into album detail page",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-06T16:49:18Z",
+      "updated": "2026-03-06T16:49:18Z"
+    },
+    {
+      "index": 624,
+      "apiId": 707,
+      "title": "Garden observability spike — build for own garden, learn what's valuable before community garden outreach",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-01T19:49:25Z",
+      "updated": "2026-03-03T20:46:11Z"
+    },
+    {
+      "index": 269,
+      "apiId": 351,
+      "title": "/talk — floating voice input for hands-free direction",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "product:chorus",
+        "chunk:senses"
+      ],
+      "done": false,
+      "created": "2026-02-23T20:00:20Z",
+      "updated": "2026-03-09T12:13:48Z"
+    },
+    {
+      "index": 286,
+      "apiId": 368,
+      "title": "Borg scan harness — raw output against FastX Partners",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "product:chorus",
+        "chunk:strategy"
+      ],
+      "done": false,
+      "created": "2026-02-23T20:00:39Z",
+      "updated": "2026-02-23T20:00:39Z"
+    },
+    {
+      "index": 405,
+      "apiId": 487,
+      "title": "Chorus /tools surface — team builder workbench for reusable system patterns",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy"
+      ],
+      "done": false,
+      "created": "2026-02-26T00:17:58Z",
+      "updated": "2026-03-03T20:46:12Z"
+    },
+    {
+      "index": 359,
+      "apiId": 441,
+      "title": "Surface usage dashboard — daily trend lines for /werk /chorus /flow",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine"
+      ],
+      "done": false,
+      "created": "2026-02-24T23:31:29Z",
+      "updated": "2026-03-03T20:46:13Z"
+    },
+    {
+      "index": 98,
+      "apiId": 147,
+      "title": "Mind map leaf density — collapse/threshold UX for growing collections",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:gathering",
+        "chunk:app"
+      ],
+      "done": false,
+      "created": "2026-02-21T13:22:52Z",
+      "updated": "2026-03-03T20:46:13Z"
+    },
+    {
+      "index": 335,
+      "apiId": 417,
+      "title": "Ontology view review loop — forcing function for roles to read and comment on data model docs at session boundaries",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine"
+      ],
+      "done": false,
+      "created": "2026-02-24T16:31:14Z",
+      "updated": "2026-03-03T20:46:13Z"
+    },
+    {
+      "index": 327,
+      "apiId": 409,
+      "title": "Privacy review for /flow — audit what product strategy data is exposed and define access boundaries",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy"
+      ],
+      "done": false,
+      "created": "2026-02-24T14:13:46Z",
+      "updated": "2026-03-03T20:46:13Z"
+    },
+    {
+      "index": 291,
+      "apiId": 373,
+      "title": "Session templates — interaction protocols for Demo, Board Walk, Review, SWAT",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus",
+        "chunk:strategy"
+      ],
+      "done": false,
+      "created": "2026-02-23T20:00:45Z",
+      "updated": "2026-03-03T20:46:14Z"
+    },
+    {
+      "index": 283,
+      "apiId": 365,
+      "title": "Team capacity measurement model",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus",
+        "chunk:strategy"
+      ],
+      "done": false,
+      "created": "2026-02-23T20:00:36Z",
+      "updated": "2026-03-03T20:46:14Z"
+    },
+    {
+      "index": 285,
+      "apiId": 367,
+      "title": "FastX findings schema for Borg output format",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "product:chorus",
+        "chunk:strategy"
+      ],
+      "done": false,
+      "created": "2026-02-23T20:00:38Z",
+      "updated": "2026-02-23T20:00:38Z"
+    },
+    {
+      "index": 229,
+      "apiId": 308,
+      "title": "Revenue idea: Gathering as practitioner tool for mental health — structured capture, pod-per-client, HIPAA-ready by design",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:gathering",
+        "chunk:strategy"
+      ],
+      "done": false,
+      "created": "2026-02-23T14:15:57Z",
+      "updated": "2026-03-03T20:46:14Z"
+    },
+    {
+      "index": 120,
+      "apiId": 170,
+      "title": "Shared clipboard watcher",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "product:chorus",
+        "chunk:senses"
+      ],
+      "done": false,
+      "created": "2026-02-21T18:36:14Z",
+      "updated": "2026-03-03T20:46:14Z"
+    },
+    {
+      "index": 1278,
+      "apiId": 1361,
+      "title": "Test taxonomy gate",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-10T20:47:27Z",
+      "updated": "2026-03-10T20:47:51Z"
+    },
+    {
+      "index": 1277,
+      "apiId": 1360,
+      "title": "[docs] Test blast radius exempt",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-10T20:43:07Z",
+      "updated": "2026-03-10T20:43:19Z"
+    },
+    {
+      "index": 1276,
+      "apiId": 1359,
+      "title": "Test: Refactor frobnicator service — zero blast radius demo",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-10T20:42:46Z",
+      "updated": "2026-03-10T20:43:46Z"
+    },
+    {
+      "index": 1275,
+      "apiId": 1358,
+      "title": "Test blast radius gate — zero file code card",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-10T20:42:32Z",
+      "updated": "2026-03-10T20:43:18Z"
+    },
+    {
+      "index": 1222,
+      "apiId": 1305,
+      "title": "Add text search filter to Seeds page — match collection pattern baseline",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-09T16:01:44Z",
+      "updated": "2026-03-09T19:23:42Z"
+    },
+    {
+      "index": 1209,
+      "apiId": 1292,
+      "title": "--help",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-09T14:54:57Z",
+      "updated": "2026-03-09T14:55:02Z"
+    },
+    {
+      "index": 1206,
+      "apiId": 1289,
+      "title": "Fix JDI gate false positive — blocks explanations Jeff explicitly asked for",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-09T14:45:27Z",
+      "updated": "2026-03-09T14:55:29Z"
+    },
+    {
+      "index": 1171,
+      "apiId": 1254,
+      "title": "V1 acceptance walkthrough — compare criteria against site screenshots, close gaps",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-08T15:26:28Z",
+      "updated": "2026-03-09T19:28:59Z"
+    },
+    {
+      "index": 195,
+      "apiId": 274,
+      "title": "Seed vs Glimmer — capture taxonomy for intake pipeline",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus",
+        "chunk:memory"
+      ],
+      "done": false,
+      "created": "2026-02-23T03:47:22Z",
+      "updated": "2026-03-08T12:27:34Z"
+    },
+    {
+      "index": 1144,
+      "apiId": 1227,
+      "title": "Demo test — no AC, should be blocked",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-07T18:17:57Z",
+      "updated": "2026-03-07T18:18:13Z"
+    },
+    {
+      "index": 1204,
+      "apiId": 1287,
+      "title": "Fix Kade demo pattern — align with team demo tuning (DEC-048)",
+      "description": "## What\nTwo issues with Kade's demo pattern:\n1. **No invitation** — Kade demos directly to Jeff without notifying Wren or Silas. Breaks DEC-048 proving gate (Wren accepts, not the builder). Wren only learns about acceptance when Jeff relays it.\n2. **Style drift** — demos are verbose/procedural instead of visual-first (show it, wait for Jeff, Wren accepts).\n\n## AC\n- Kade's /demo skill sends a nudge to Wren (and Silas if infra-touching) BEFORE presenting to Jeff\n- Demo output matches team pattern: frame → /look evidence → wait for Jeff → Wren accepts\n- No verbose narration — visual evidence first, words second\n- Verify nudge delivery so Wren can observe the demo live\n\n## Context\nJeff observed both gaps during #1197 acceptance. Compare to Silas #537 demo (nudged Wren, followed tuned pattern). The demo skill fragment in Kade's CLAUDE.md needs to enforce the routing, not just the format.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-09T14:35:05Z",
+      "updated": "2026-03-09T19:16:02Z"
+    },
+    {
+      "index": 1143,
+      "apiId": 1226,
+      "title": "Test capture gate — no AC",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-07T17:06:59Z",
+      "updated": "2026-03-07T17:07:25Z"
+    },
+    {
+      "index": 1227,
+      "apiId": 1310,
+      "title": "Flow tests — multi-hop end-to-end validation (seed pipeline, demo pipeline, harvest pipeline, deploy pipeline)",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "sequence:flow-tests"
+      ],
+      "done": false,
+      "created": "2026-03-09T19:14:28Z",
+      "updated": "2026-03-09T22:32:01Z"
+    },
+    {
+      "index": 1223,
+      "apiId": 1306,
+      "title": "Fix photo import for book catalog — errors on batch import, improve UX for 12+ photos",
+      "description": "## What\nJeff photographed a box of books (50 photos). Import flow had issues:\n- 50 photos at once didn't work well (too many? error? timeout?)\n- Scaled down to 12 — worked but had errors during import\n- Was able to tag cover + publisher after import\n- Relates to #534 (physical catalog capture)\n\n## AC\n- Batch import of 50+ photos completes without errors\n- Progress indicator during import (not a silent spinner)\n- Clear error messages when individual photos fail (don't abort the whole batch)\n- Import UX handles Jeff's actual workflow: phone photos → bulk upload → tag",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-09T16:09:35Z",
+      "updated": "2026-03-09T19:15:40Z"
+    },
+    {
+      "index": 963,
+      "apiId": 1046,
+      "title": "[auto-error] Recurring: SYNTAX_ERR — 4 sessions",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-04T15:33:23Z",
+      "updated": "2026-03-05T20:38:17Z"
+    },
+    {
+      "index": 1027,
+      "apiId": 1110,
+      "title": "[auto-error] Recurring: GIT_FATAL — 3 sessions",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-04T22:07:37Z",
+      "updated": "2026-03-05T20:38:17Z"
+    },
+    {
+      "index": 934,
+      "apiId": 1017,
+      "title": "--help",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-04T09:29:49Z",
+      "updated": "2026-03-04T09:29:55Z"
+    },
+    {
+      "index": 906,
+      "apiId": 989,
+      "title": "[auto-error] Recurring: 1ac966d0 — 3 sessions",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-04T00:09:54Z",
+      "updated": "2026-03-04T09:43:04Z"
+    },
+    {
+      "index": 698,
+      "apiId": 781,
+      "title": "[auto-error] Recurring: ENOENT — 5 sessions",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-02T22:15:01Z",
+      "updated": "2026-03-04T09:44:03Z"
+    },
+    {
+      "index": 912,
+      "apiId": 995,
+      "title": "[auto-error] Recurring: CMD_NOT_FOUND — 5 sessions",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-04T00:11:45Z",
+      "updated": "2026-03-04T09:43:04Z"
+    },
+    {
+      "index": 124,
+      "apiId": 175,
+      "title": "Claude vision auto-annotation for photos",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "product:gathering",
+        "chunk:memory"
+      ],
+      "done": false,
+      "created": "2026-02-21T19:45:15Z",
+      "updated": "2026-02-23T20:07:34Z"
+    },
+    {
+      "index": 52,
+      "apiId": 55,
+      "title": "UI research — TheBrain Plex-style graph navigation for Gathering",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "product:gathering",
+        "chunk:app"
+      ],
+      "done": false,
+      "created": "2026-02-16T22:30:27Z",
+      "updated": "2026-02-23T20:07:36Z"
+    },
+    {
+      "index": 90,
+      "apiId": 139,
+      "title": "Code walkthrough — login flow with Jeff",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "product:gathering",
+        "chunk:app"
+      ],
+      "done": false,
+      "created": "2026-02-21T11:35:35Z",
+      "updated": "2026-02-23T20:07:34Z"
+    },
+    {
+      "index": 91,
+      "apiId": 140,
+      "title": "Spike: GitNexus pattern — AST knowledge graphs + MCP for AI agent integration",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "product:chorus",
+        "chunk:app"
+      ],
+      "done": false,
+      "created": "2026-02-21T12:16:29Z",
+      "updated": "2026-02-23T20:07:38Z"
+    },
+    {
+      "index": 289,
+      "apiId": 371,
+      "title": "Rotation model — staggered 1x1 engagement protocol",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus",
+        "chunk:strategy"
+      ],
+      "done": false,
+      "created": "2026-02-23T20:00:42Z",
+      "updated": "2026-02-23T20:00:42Z"
+    },
+    {
+      "index": 762,
+      "apiId": 845,
+      "title": "Login SLA gate — alert if local CSS login exceeds 1s",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-03T15:06:53Z",
+      "updated": "2026-03-03T15:06:53Z"
+    },
+    {
+      "index": 292,
+      "apiId": 374,
+      "title": "Autonomous role activation — roles respond to work items without human prompt",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "product:chorus",
+        "chunk:strategy"
+      ],
+      "done": false,
+      "created": "2026-02-23T20:00:46Z",
+      "updated": "2026-02-23T20:00:46Z"
+    },
+    {
+      "index": 301,
+      "apiId": 383,
+      "title": "Clean up primary Mac disk — review Downloads and plan media migration",
+      "description": "Primary Mac at 93% (1.6TB of 1.8TB used). ~1.5TB is iTunes/media in Downloads (988GB) and Music (484GB). Docker pruned (140GB freed internally). Options: (1) Review Downloads for non-media deletables, (2) Move iTunes library to secondary Mac, (3) External SSD for media overflow. C2 threshold raised to 95%. AC: Disk below 90% or documented plan for media migration.",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-02-23T22:32:40Z",
+      "updated": "2026-02-23T22:50:12Z"
+    },
+    {
+      "index": 303,
+      "apiId": 385,
+      "title": "[DEFECT] wordpress-mysql: <TS> 0 [System] [MY-010229] [Server] Starting XA crash recov",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-02-23T22:36:52Z",
+      "updated": "2026-03-04T09:58:16Z"
+    },
+    {
+      "index": 365,
+      "apiId": 447,
+      "title": "Fix alert-notifier chorus-log args + wire disk events — broken role field",
+      "description": "Fix alert-notifier.py chorus_log() — passes message as role arg (broken). Add disk_check emission to chorus-audit.sh on session start and full audit. AC: Alert events log with role=system. Disk checks appear in chorus.log with disk_pct field.",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "",
+      "domains": [],
+      "done": false,
+      "created": "2026-02-25T01:27:31Z",
+      "updated": "2026-02-25T01:27:31Z"
+    },
+    {
+      "index": 349,
+      "apiId": 431,
+      "title": "Fuseki transaction isolation — prevent cross-role SPARQL contention",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-02-24T22:04:52Z",
+      "updated": "2026-02-24T22:04:52Z"
+    },
+    {
+      "index": 509,
+      "apiId": 591,
+      "title": "Local LLM sentiment analysis on Chorus index — Ollama on Bedroom Mac scores 36K messages",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [],
+      "done": false,
+      "created": "2026-02-27T22:26:48Z",
+      "updated": "2026-02-27T22:29:01Z"
+    },
+    {
+      "index": 148,
+      "apiId": 227,
+      "title": "Clearing return handling — slow processing of session results",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus",
+        "chunk:senses"
+      ],
+      "done": false,
+      "created": "2026-02-23T01:04:40Z",
+      "updated": "2026-02-23T20:07:37Z"
+    },
+    {
+      "index": 515,
+      "apiId": 597,
+      "title": "Enforce doc-drift gate — detect code-to-doc gaps (routes vs api.md) at commit or close",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [],
+      "done": false,
+      "created": "2026-02-27T23:29:55Z",
+      "updated": "2026-02-27T23:30:02Z"
+    },
+    {
+      "index": 407,
+      "apiId": 489,
+      "title": "[spike] CMDB — unified inventory of machines, services, drives, and dependencies",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [],
+      "done": false,
+      "created": "2026-02-26T11:30:46Z",
+      "updated": "2026-03-06T16:52:22Z"
+    },
+    {
+      "index": 539,
+      "apiId": 621,
+      "title": "Morning wake-up daemon — LaunchAgent triggers Silas at 5:08am to read briefs, check health, prep context",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [],
+      "done": false,
+      "created": "2026-02-28T10:09:13Z",
+      "updated": "2026-02-28T10:09:13Z"
+    },
+    {
+      "index": 608,
+      "apiId": 691,
+      "title": "--help",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-01T16:15:24Z",
+      "updated": "2026-03-01T16:15:29Z"
+    },
+    {
+      "index": 597,
+      "apiId": 680,
+      "title": "[ops-agent] External health endpoint down",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T15:19:50Z",
+      "updated": "2026-03-04T09:58:16Z"
+    },
+    {
+      "index": 596,
+      "apiId": 679,
+      "title": "[ops-agent] Cloudflare tunnel unreachable",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T15:19:49Z",
+      "updated": "2026-03-04T09:58:17Z"
+    },
+    {
+      "index": 590,
+      "apiId": 673,
+      "title": "[ops-agent] External traffic spike — 5x above hourly baseline",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T14:17:53Z",
+      "updated": "2026-03-04T09:58:17Z"
+    },
+    {
+      "index": 587,
+      "apiId": 670,
+      "title": "--help",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-01T13:58:18Z",
+      "updated": "2026-03-01T13:58:25Z"
+    },
+    {
+      "index": 586,
+      "apiId": 669,
+      "title": "[ops-agent] Endpoint https://lightlifeurbangardens.com/health is down",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T13:46:42Z",
+      "updated": "2026-03-04T09:58:18Z"
+    },
+    {
+      "index": 585,
+      "apiId": 668,
+      "title": "[ops-agent] Cloudflare tunnel down — lightlifeurbangardens.com unreachable",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T13:46:42Z",
+      "updated": "2026-03-04T09:58:19Z"
+    },
+    {
+      "index": 583,
+      "apiId": 666,
+      "title": "[ops-agent] Deploy failed for jeff-bridwell-personal-site",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T13:15:22Z",
+      "updated": "2026-03-04T09:58:19Z"
+    },
+    {
+      "index": 578,
+      "apiId": 661,
+      "title": "[ops-agent] Fuseki SPARQL query critical: triple_count",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T11:21:26Z",
+      "updated": "2026-03-04T09:58:20Z"
+    },
+    {
+      "index": 577,
+      "apiId": 660,
+      "title": "[ops-agent] C3 memory usage above 85%",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T09:16:41Z",
+      "updated": "2026-03-04T09:58:20Z"
+    },
+    {
+      "index": 576,
+      "apiId": 659,
+      "title": "[ops-agent] C3 memory usage above 85%",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T08:45:49Z",
+      "updated": "2026-03-04T09:58:21Z"
+    },
+    {
+      "index": 575,
+      "apiId": 658,
+      "title": "[ops-agent] C3 memory usage above 85%",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T08:14:29Z",
+      "updated": "2026-03-04T09:58:21Z"
+    },
+    {
+      "index": 574,
+      "apiId": 657,
+      "title": "[ops-agent] External traffic spike detected",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T07:58:51Z",
+      "updated": "2026-03-04T09:58:21Z"
+    },
+    {
+      "index": 573,
+      "apiId": 656,
+      "title": "[ops-agent] C3 memory usage above 85%",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-01T07:43:24Z",
+      "updated": "2026-03-04T09:58:22Z"
+    },
+    {
+      "index": 1325,
+      "apiId": 1408,
+      "title": "[DEFECT] vikunja: time=<TS> level=ERROR msg=\"Error while handling message <UUI",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: time=<TS> level=ERROR msg=\"Error while handling message <UUID>, subscriber_poisoned=<S> reason_poisoned=<REASON>\nSample: time=2026-03-11T22:03:39.536Z level=ERROR msg=\"Error while handling message c814390d-5848-4219-a0c5-126573c197d6, subscriber_poisoned=gochannel.GoChannel, reason_poisoned=panic occurred: &runtime.TypeAssertionError{_interface:(*abi.Type)(0x19add60), concrete:(*abi.Type)(nil), asserted:(*abi.Type)(0x\nFirst seen: 2026-03-11T22:06:06Z\nCount: 2\nHash: d4b40ee6c23cc17c",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T22:06:07Z",
+      "updated": "2026-03-11T22:06:07Z"
+    },
+    {
+      "index": 1324,
+      "apiId": 1407,
+      "title": "[DEFECT] vikunja: time=<TS> level=ERROR msg=\"Error while handling message <UUI",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: time=<TS> level=ERROR msg=\"Error while handling message <UUID>, handler_poisoned=<H> subscriber_poisoned=<S> reason_poisoned=<REASON>\nSample: time=2026-03-11T22:03:40.386Z level=ERROR msg=\"Error while handling message f6c9f280-6e8f-4a0d-94dd-e72b620a6341, handler_poisoned=task.updated.webhook.listener, subscriber_poisoned=gochannel.GoChannel, reason_poisoned=panic occurred: &runtime.TypeAssertionError{_interface:(*abi.Type)(0x19add60), co\nFirst seen: 2026-03-11T22:06:06Z\nCount: 1\nHash: 5d093fbcf2dfce98",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T22:06:07Z",
+      "updated": "2026-03-11T22:06:07Z"
+    },
+    {
+      "index": 1323,
+      "apiId": 1406,
+      "title": "[DEFECT] vikunja: time=<TS> level=ERROR msg=\"Error while handling message <UUI",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: time=<TS> level=ERROR msg=\"Error while handling message <UUID>, topic_poisoned=<T> handler_poisoned=<H> subscriber_poisoned=<S> reason_poisoned=<REASON>\nSample: time=2026-03-11T22:03:40.919Z level=ERROR msg=\"Error while handling message e17d1449-32a0-471a-a318-44f1b80a7539, topic_poisoned=task.updated, handler_poisoned=task.updated.task.updated.mentions, subscriber_poisoned=gochannel.GoChannel, reason_poisoned=panic occurred: \\\"invalid memory address or nil\nFirst seen: 2026-03-11T22:06:06Z\nCount: 4\nHash: b6bca95b514d9cf7",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T22:06:07Z",
+      "updated": "2026-03-11T22:06:07Z"
+    },
+    {
+      "index": 1322,
+      "apiId": 1405,
+      "title": "[DEFECT] vikunja: time=<TS> level=ERROR msg=\"Error while handling message <UUI",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: time=<TS> level=ERROR msg=\"Error while handling message <UUID>, reason_poisoned=<REASON>\nSample: time=2026-03-11T22:03:41.215Z level=ERROR msg=\"Error while handling message 5f376be9-c3b5-4da5-8e83-0b26a78b7b25, reason_poisoned=panic occurred: &runtime.TypeAssertionError{_interface:(*abi.Type)(0x19add60), concrete:(*abi.Type)(nil), asserted:(*abi.Type)(0x1a6f8c0), missingMethod:\\\"\\\"}, stacktrace\nFirst seen: 2026-03-11T22:06:06Z\nCount: 1\nHash: 0d6be7e20c0ae4a8",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T22:06:06Z",
+      "updated": "2026-03-11T22:06:06Z"
+    },
+    {
+      "index": 1321,
+      "apiId": 1404,
+      "title": "[ops-health] node-exporter-host service down",
+      "description": "Auto-detected by chorus-ops (health).\n\nAlertmanager reports node-exporter-host is down (critical alert). Host-level metrics collection is unavailable. All 17 containers are running.\n\nFinding ID: alert-node-exporter-host-down\nSeverity: critical\nCategory: alert",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T22:01:05Z",
+      "updated": "2026-03-11T22:01:05Z"
+    },
+    {
+      "index": 1320,
+      "apiId": 1403,
+      "title": "[defect] jeff-bridwell-personal-site-app: SPARQL query error",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: SPARQL query error\nSample: SPARQL query error\nFirst seen: 2026-03-11T21:50:45Z\nCount: 1\nHash: cf707e0c5d54b17d",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T21:50:46Z",
+      "updated": "2026-03-11T21:50:46Z"
+    },
+    {
+      "index": 1300,
+      "apiId": 1383,
+      "title": "[defect] jeff-bridwell-personal-site-app: Failed to list gallery images",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T18:24:07Z",
+      "updated": "2026-03-11T18:24:07Z"
+    },
+    {
+      "index": 1299,
+      "apiId": 1382,
+      "title": "[defect] jeff-bridwell-personal-site-app: Failed to fetch tag map from media server",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T18:24:07Z",
+      "updated": "2026-03-11T18:24:07Z"
+    },
+    {
+      "index": 1298,
+      "apiId": 1381,
+      "title": "[defect] jeff-bridwell-personal-site-app: Failed to proxy gallery image",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T18:24:06Z",
+      "updated": "2026-03-11T18:24:06Z"
+    },
+    {
+      "index": 1295,
+      "apiId": 1378,
+      "title": "[ops-agent] C3 Memory Usage Above 85%",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-11T17:01:14Z",
+      "updated": "2026-03-11T17:01:14Z"
+    },
+    {
+      "index": 1279,
+      "apiId": 1362,
+      "title": "[defect] jeff-bridwell-personal-site-app: SPARQL query error",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-10T20:52:29Z",
+      "updated": "2026-03-11T17:44:02Z"
+    },
+    {
+      "index": 1264,
+      "apiId": 1347,
+      "title": "[auto-error] Recurring: NPM_ERR_ — 3 sessions",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-10T19:22:52Z",
+      "updated": "2026-03-10T19:22:52Z"
+    },
+    {
+      "index": 1247,
+      "apiId": 1330,
+      "title": "[ops-agent] ExternalTrafficSpike alert firing",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-10T12:10:56Z",
+      "updated": "2026-03-10T12:10:56Z"
+    },
+    {
+      "index": 1233,
+      "apiId": 1316,
+      "title": "[defect] jeff-bridwell-personal-site-app: Failed to proxy gallery image",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-09T21:40:52Z",
+      "updated": "2026-03-09T21:40:52Z"
+    },
+    {
+      "index": 1232,
+      "apiId": 1315,
+      "title": "[defect] jeff-bridwell-personal-site-app: Failed to process photos",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-09T20:40:48Z",
+      "updated": "2026-03-09T20:40:48Z"
+    },
+    {
+      "index": 1231,
+      "apiId": 1314,
+      "title": "[defect] jeff-bridwell-personal-site-app: Book confirm validation failed",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-09T20:35:46Z",
+      "updated": "2026-03-09T20:35:47Z"
+    },
+    {
+      "index": 1192,
+      "apiId": 1275,
+      "title": "[defect] jeff-bridwell-personal-site-app: Failed to list gallery images",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-09T13:15:11Z",
+      "updated": "2026-03-09T13:15:11Z"
+    },
+    {
+      "index": 1191,
+      "apiId": 1274,
+      "title": "[defect] jeff-bridwell-personal-site-app: Failed to fetch tag map from media server",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-09T13:15:10Z",
+      "updated": "2026-03-09T13:15:10Z"
+    },
+    {
+      "index": 1190,
+      "apiId": 1273,
+      "title": "[ops-agent] HighLatency alert firing",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-09T06:09:47Z",
+      "updated": "2026-03-09T06:09:47Z"
+    },
+    {
+      "index": 1187,
+      "apiId": 1270,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 16:<PORT>:<PORT> INFO Fuseki :: [38749] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T16:23:46Z",
+      "updated": "2026-03-08T16:23:46Z"
+    },
+    {
+      "index": 1185,
+      "apiId": 1268,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 16:<PORT>:<PORT> INFO Fuseki :: [24438] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T16:08:35Z",
+      "updated": "2026-03-08T16:08:35Z"
+    },
+    {
+      "index": 1184,
+      "apiId": 1267,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 16:<PORT>:<PORT> INFO Fuseki :: [25789] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T16:08:35Z",
+      "updated": "2026-03-08T16:08:35Z"
+    },
+    {
+      "index": 1183,
+      "apiId": 1266,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 16:<PORT>:<PORT> INFO Fuseki :: [25907] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T16:08:35Z",
+      "updated": "2026-03-08T16:08:35Z"
+    },
+    {
+      "index": 1182,
+      "apiId": 1265,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [18791] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T16:03:32Z",
+      "updated": "2026-03-08T16:03:32Z"
+    },
+    {
+      "index": 1181,
+      "apiId": 1264,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 16:<PORT>:<PORT> INFO Fuseki :: [20480] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T16:03:32Z",
+      "updated": "2026-03-08T16:03:32Z"
+    },
+    {
+      "index": 1180,
+      "apiId": 1263,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 16:<PORT>:<PORT> INFO Fuseki :: [21402] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T16:03:32Z",
+      "updated": "2026-03-08T16:03:32Z"
+    },
+    {
+      "index": 1179,
+      "apiId": 1262,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 16:<PORT>:<PORT> INFO Fuseki :: [21403] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T16:03:32Z",
+      "updated": "2026-03-08T16:03:32Z"
+    },
+    {
+      "index": 1178,
+      "apiId": 1261,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 16:<PORT>:<PORT> INFO Fuseki :: [21801] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T16:03:31Z",
+      "updated": "2026-03-08T16:03:32Z"
+    },
+    {
+      "index": 1177,
+      "apiId": 1260,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [12880] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:53:27Z",
+      "updated": "2026-03-08T15:53:27Z"
+    },
+    {
+      "index": 1175,
+      "apiId": 1258,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [6005] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:43:22Z",
+      "updated": "2026-03-08T15:43:22Z"
+    },
+    {
+      "index": 1173,
+      "apiId": 1256,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [36893] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:33:18Z",
+      "updated": "2026-03-08T15:33:18Z"
+    },
+    {
+      "index": 1172,
+      "apiId": 1255,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [35216] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:28:14Z",
+      "updated": "2026-03-08T15:28:14Z"
+    },
+    {
+      "index": 1170,
+      "apiId": 1253,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [25334] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:13:08Z",
+      "updated": "2026-03-08T15:13:08Z"
+    },
+    {
+      "index": 1169,
+      "apiId": 1252,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [26241] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:13:08Z",
+      "updated": "2026-03-08T15:13:08Z"
+    },
+    {
+      "index": 1168,
+      "apiId": 1251,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [26244] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:13:07Z",
+      "updated": "2026-03-08T15:13:08Z"
+    },
+    {
+      "index": 1167,
+      "apiId": 1250,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [26644] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:13:07Z",
+      "updated": "2026-03-08T15:13:07Z"
+    },
+    {
+      "index": 1166,
+      "apiId": 1249,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [23681] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:08:04Z",
+      "updated": "2026-03-08T15:08:04Z"
+    },
+    {
+      "index": 1165,
+      "apiId": 1248,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 14:<PORT>:<PORT> INFO Fuseki :: [15742] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:03:02Z",
+      "updated": "2026-03-08T15:03:02Z"
+    },
+    {
+      "index": 1164,
+      "apiId": 1247,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 15:<PORT>:<PORT> INFO Fuseki :: [17395] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:03:02Z",
+      "updated": "2026-03-08T15:03:02Z"
+    },
+    {
+      "index": 1163,
+      "apiId": 1246,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 14:<PORT>:<PORT> INFO Fuseki :: [7894] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T14:47:53Z",
+      "updated": "2026-03-08T14:47:53Z"
+    },
+    {
+      "index": 1162,
+      "apiId": 1245,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 14:<PORT>:<PORT> INFO Fuseki :: [9547] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-08T14:47:53Z",
+      "updated": "2026-03-08T14:47:53Z"
+    },
+    {
+      "index": 1158,
+      "apiId": 1241,
+      "title": "[auto-error] Recurring: 1f2fb7d7 — 3 sessions",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-08T13:26:24Z",
+      "updated": "2026-03-08T13:26:24Z"
+    },
+    {
+      "index": 1152,
+      "apiId": 1235,
+      "title": "[auto-error] Recurring: SYNTAX_ERR_ — 3 sessions",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-08T10:51:03Z",
+      "updated": "2026-03-08T10:51:03Z"
+    },
+    {
+      "index": 1149,
+      "apiId": 1232,
+      "title": "[defect] jeff-bridwell-personal-site-app: Photo collection render error",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-07T23:16:43Z",
+      "updated": "2026-03-07T23:16:43Z"
+    },
+    {
+      "index": 1146,
+      "apiId": 1229,
+      "title": "[ops-agent] Cloudflare tunnel down",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-07T20:33:06Z",
+      "updated": "2026-03-07T20:33:06Z"
+    },
+    {
+      "index": 1145,
+      "apiId": 1228,
+      "title": "[auto-error] Recurring: CMD_NOT_FOUND_ — 3 sessions",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "infrastructure",
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-07T20:23:58Z",
+      "updated": "2026-03-07T20:23:58Z"
+    },
+    {
+      "index": 1142,
+      "apiId": 1225,
+      "title": "[defect] jeff-bridwell-personal-site-app: Failed to list gallery images",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-07T16:11:13Z",
+      "updated": "2026-03-07T16:11:13Z"
+    },
+    {
+      "index": 1141,
+      "apiId": 1224,
+      "title": "[defect] jeff-bridwell-personal-site-app: Failed to fetch tag map from media server",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-07T16:11:13Z",
+      "updated": "2026-03-07T16:11:13Z"
+    },
+    {
+      "index": 1139,
+      "apiId": 1222,
+      "title": "[defect] jeff-bridwell-personal-site-app: Graph load error",
+      "description": "",
+      "status": "Ops",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-07T15:05:59Z",
+      "updated": "2026-03-07T15:05:59Z"
+    },
+    {
+      "index": 1138,
+      "apiId": 1221,
+      "title": "[DEFECT] jeff-bridwell-personal-site-fuseki: 14:<PORT>:<PORT> INFO Fuseki :: [31022] PUT <URL>",
+      "description": "",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-07T14:50:51Z",
+      "updated": "2026-03-07T14:50:51Z"
+    }
+  ]
+}

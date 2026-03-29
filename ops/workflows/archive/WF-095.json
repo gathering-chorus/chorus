@@ -1,0 +1,54 @@
+{
+  "id": "WF-095",
+  "decision": "Dedup Apple Music library \u2014 remove numbered duplicates from source reconciliation",
+  "source": "board:card-moved:#727",
+  "card": 727,
+  "created": "2026-03-03T12:44:08Z",
+  "updated": "2026-03-03T16:26:00.814Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Dedup Apple Music library \u2014 remove numbered duplicates from source reconciliation",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #727 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #727",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #727 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-03T12:44:08Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Dedup Apple Music library \u2014 remove numbered duplicates from source reconciliation"
+    },
+    {
+      "timestamp": "2026-03-03T16:26:00.814Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #727 marked Done by wren"
+    }
+  ]
+}

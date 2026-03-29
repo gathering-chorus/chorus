@@ -1,0 +1,54 @@
+{
+  "id": "WF-123",
+  "decision": "Create Kade role page HTML + update /loom card \u2014 reflect engineering horizontal, implementation intelligence, harvest pipelines",
+  "source": "board:card-moved:#1440",
+  "card": 1440,
+  "created": "2026-03-15T17:24:16Z",
+  "updated": "2026-03-15T17:29:02.901Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Create Kade role page HTML + update /loom card \u2014 reflect engineering horizontal implementation intelligence harvest pipelines",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1440 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1440",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1440 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T17:24:16Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Create Kade role page HTML + update /loom card \u2014 reflect engineering horizontal, implementation intelligence, harvest pipelines"
+    },
+    {
+      "timestamp": "2026-03-15T17:29:02.901Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1440 marked Done by wren"
+    }
+  ]
+}

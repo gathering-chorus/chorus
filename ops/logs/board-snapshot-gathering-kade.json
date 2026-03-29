@@ -1,0 +1,2637 @@
+{
+  "board": "gathering",
+  "timestamp": "2026-03-29T15:14:40.161Z",
+  "tasks": [
+    {
+      "index": 1783,
+      "apiId": 1866,
+      "title": "Model-driven Chorus — revise value stream and domain taxonomy from Jeff's drawing, design service design page",
+      "description": "## Experience\nI open a service design page on Gathering and see my value streams, domains, and services laid out the way I drew them. I can model a new service like convergence — define its language, data, non-functionals, integration contracts — before anyone writes code.\n\n## AC\n- [ ] Revise PRODUCT_TAXONOMY.md incorporating Jeff's hand-drawn taxonomy (Phase as spine, Gathering left, Werk/Loom right, Knowledge/Practices/Services tiers)\n- [ ] Reconcile Corporation = Phase = Stance and Convergence = Practice framing\n- [ ] Map current services to the three bottom tiers: Knowledge (Harvest), Practices (TDD, Demo, Chat), Services\n- [ ] Design service design page wireframe — form-driven, models a service through define → map → build\n- [ ] Service design page shows: language choice, data model, non-functionals, integration contracts, experience statement\n- [ ] Use convergence as the reference service to validate the page design\n- [ ] Produce HTML artifact for Jeff to review",
+      "status": "Blocked",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:12:59Z",
+      "updated": "2026-03-29T12:33:58Z"
+    },
+    {
+      "index": 1827,
+      "apiId": 1910,
+      "title": "Unify Chorus repo — merge messages/ into chorus/, one product repo with team inside",
+      "description": "## Experience\nOne repo. Everything in git. Every role sees the same code. CI is possible. No more invisible production code.\n\n## AC\n1. chorus/ un-gitignored and committable\n2. messages/ contents moved into chorus/ (scripts, services, hooks, sdk, board-client, schemas, workflows)\n3. Role directories (architect, engineer, product-manager) moved into chorus/roles/\n4. All path references updated: CLAUDE.md fragments, skills, hooks, LaunchAgents, shell scripts\n5. 3 runtime app path.resolve() calls updated or symlinked (spine-events.json, loom-metrics.js, workflows)\n6. All 3 CLAUDE.md files regenerated via claudemd-gen.sh\n7. All 3 roles boot clean on new paths\n8. Full test suite passes from the new repo structure\n9. One coordinated commit — all 3 roles idle during migration\n10. Old messages/ path either removed or symlinked for backward compat\n\n## Files\n- .gitignore\n- messages/scripts/*.sh\n- messages/TEAM_PROTOCOL.md\n- chorus/bridge/src/server.ts\n- architect/CLAUDE.md\n- engineer/CLAUDE.md\n- product-manager/CLAUDE.md",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T15:03:56Z",
+      "updated": "2026-03-29T15:07:52Z"
+    },
+    {
+      "index": 1818,
+      "apiId": 1901,
+      "title": "Clearing UI validation tests — detailed front-end test coverage for all Clearing behaviors",
+      "description": "## Experience\nThe Clearing works reliably. Jeff types, the right role responds, no echoes, no leaks, no feedback loops. Every behavior is covered by tests that verify what Jeff sees.\n\n## AC\n1. Tests cover: Jeff sends a message → correct role receives it, response appears in stream\n2. Tests cover: role-to-role nudges do NOT appear in Clearing UI\n3. Tests cover: role-to-role /chat messages do NOT appear in Clearing send box\n4. Tests cover: no feedback loop — Clearing does not re-inject its own messages\n5. Tests cover: guest identity displays correctly (role names, not Guest)\n6. Tests cover: reconnect after disconnect — no duplicate messages, no lost messages\n7. Tests cover: background image renders, OG tags correct\n8. Tests cover: session tailer only shows Jeff-facing content (whitelist, not blacklist)\n9. All tests run in CI — no manual verification needed\n10. Wren navigates, Silas drives (/pair)\n\n## Files\n- chorus/bridge/src/server.ts\n- chorus/bridge/src/session-tailer.ts\n- chorus/bridge/tests/clearing-ui.test.ts",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T12:17:34Z",
+      "updated": "2026-03-29T12:22:42Z"
+    },
+    {
+      "index": 1810,
+      "apiId": 1893,
+      "title": "Wire express-prom-bundle for request metrics — no HTTP metrics exported",
+      "description": "## AC\n- [ ] http_requests_total{status,method,path} exported\n- [ ] http_request_duration_seconds histogram\n- [ ] Replace blackbox probe alerts with native metrics alerts\n\n## Context\nFrom Silas logging strategy. Relying on blackbox probes instead of native HTTP metrics.\n\n## Files\nsrc/app.ts\npackage.json",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T00:55:19Z",
+      "updated": "2026-03-29T12:31:30Z"
+    },
+    {
+      "index": 1804,
+      "apiId": 1887,
+      "title": "Add structured logging to messaging tier — zero operational logging today",
+      "description": "## AC\n- [ ] Request logging (method, path, status, duration)\n- [ ] Nudge lifecycle logging (received, stored, delivered, acked)\n- [ ] Queue depth exported as Prometheus metric\n- [ ] Dead letter entries logged with reason\n- [ ] Alert rule: nudge queue depth > 1000\n\n## Context\nFrom Silas logging strategy. Messaging tier has startup log only, zero operational logging. 4 services depend on it.",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T00:50:42Z",
+      "updated": "2026-03-29T10:30:37Z"
+    },
+    {
+      "index": 1825,
+      "apiId": 1908,
+      "title": "Add logger to SPARQL service layer — query failures, update failures, timeout context",
+      "description": "## AC\n- [ ] SparqlService logs failed queries with SPARQL text (truncated), endpoint, duration\n- [ ] SparqlService logs failed updates with operation context\n- [ ] Timeout errors include the query that timed out\n- [ ] All SPARQL errors surface to Loki with domain context\n\n## Files\nsrc/services/sparql.service.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T14:42:09Z",
+      "updated": "2026-03-29T14:51:54Z"
+    },
+    {
+      "index": 1824,
+      "apiId": 1907,
+      "title": "Add request-level structured logging middleware — method, path, status, duration for all routes",
+      "description": "## AC\n- [ ] Express middleware logs every request: method, path, status code, duration ms\n- [ ] Structured JSON format matching normalized envelope\n- [ ] Excludes /health and /metrics from logging (noise)\n- [ ] Logs to stdout (Loki scrapes)\n\n## Files\nsrc/app.ts\nsrc/middleware/",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T14:42:09Z",
+      "updated": "2026-03-29T14:47:14Z"
+    },
+    {
+      "index": 1823,
+      "apiId": 1906,
+      "title": "Add logger to chorus domain handlers — briefs, cards, roles, skills, decisions, pod-data",
+      "description": "## AC\n- [ ] All 6 chorus domain handlers have logger instances\n- [ ] Error paths log with context\n- [ ] Service failures surface to Loki\n\n## Files\nsrc/handlers/briefs.handler.ts\nsrc/handlers/cards.handler.ts\nsrc/handlers/roles.handler.ts\nsrc/handlers/skills.handler.ts\nsrc/handlers/decisions.handler.ts\nsrc/handlers/pod-data.handler.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T14:42:09Z",
+      "updated": "2026-03-29T14:54:34Z"
+    },
+    {
+      "index": 1822,
+      "apiId": 1905,
+      "title": "Add logger to content domain handlers — glimmer, idea-project, collection, docs, face-cluster",
+      "description": "## AC\n- [ ] All 5 content domain handlers have logger instances\n- [ ] Error paths log with context\n- [ ] SPARQL/pod read failures surface to Loki\n\n## Files\nsrc/handlers/glimmer.handler.ts\nsrc/handlers/idea-project.handler.ts\nsrc/handlers/collection.handler.ts\nsrc/handlers/docs.handler.ts\nsrc/handlers/face-cluster.handler.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T14:42:09Z",
+      "updated": "2026-03-29T14:54:29Z"
+    },
+    {
+      "index": 1821,
+      "apiId": 1904,
+      "title": "Add logger to auth/session handlers — login, logout, callback, session-replay, service-token",
+      "description": "## AC\n- [ ] All 6 auth/session handlers have logger instances\n- [ ] Error paths log with context (failed login, invalid callback, expired session)\n- [ ] Auth failures surface to Loki\n\n## Files\nsrc/handlers/login.handler.ts\nsrc/handlers/login-page.handler.ts\nsrc/handlers/logout.handler.ts\nsrc/handlers/callback.handler.ts\nsrc/handlers/session-replay.handler.ts\nsrc/handlers/service-token.handler.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T14:41:54Z",
+      "updated": "2026-03-29T14:54:15Z"
+    },
+    {
+      "index": 1819,
+      "apiId": 1902,
+      "title": "Front-end validation tests for high-use pages — /werk, /cost, /jeff, photos, music",
+      "description": "## AC\n1. Identify Jeff high-use pages: /werk, /cost, /jeff, photos, music, seeds, convergence, board\n2. Each page gets detailed front-end validation tests covering render, data accuracy, and interaction\n3. Tests verify what Jeff sees, not internal state\n4. Tests run in CI — no manual verification\n5. Board page: state cards, card numbers, streams, domains, WIP display, role assignments, priority badges, move operations, list accuracy\n6. After: #1818 (Clearing is the template)\n\n## Files\ntests/integration/\nsrc/handlers/jeff.handler.ts\nsrc/handlers/seed.handler.ts\nviews/",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T12:23:35Z",
+      "updated": "2026-03-29T14:42:47Z"
+    },
+    {
+      "index": 1817,
+      "apiId": 1900,
+      "title": "Normalize log metadata — enrich spine event emitter with product, stream, card, file, version",
+      "description": "## AC\n1. emitSpineEvent injects product, stream, card, file, version from context at construction — not per call site\n2. Field names normalized: vertebra→stream, appName→product (chorus-events→Chorus, jeff-bridwell-personal-site→Gathering)\n3. card populated from role-state.sh card context\n4. version populated from git rev-parse --short HEAD at app startup\n5. file populated by caller (code object path)\n6. Missing keys emit as null, not error\n7. chorus-log.sh accepts the same keys for bash callers\n8. Tests verify: all 7 fields present in emitted events, null for missing, field name normalization correct\n9. After: #1805",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T11:39:48Z",
+      "updated": "2026-03-29T12:14:46Z"
+    },
+    {
+      "index": 1806,
+      "apiId": 1889,
+      "title": "Add logger to 9 unlogged handlers — briefs, cards, glimmers, icd, ideas, roles, self, skills, sessions",
+      "description": "## AC\n- [ ] All 65 handlers have logger instances\n- [ ] Error paths log with context\n- [ ] Read failures surface to Loki\n\n## Context\nFrom Silas logging strategy. 9 of 65 handlers have NO logger instance. Silent failures on SPARQL reads.\n\n## Files\nsrc/handlers/briefs.handler.ts\nsrc/handlers/cards.handler.ts\nsrc/handlers/icd.handler.ts\nsrc/handlers/roles.handler.ts\nsrc/handlers/self-ai.handler.ts\nsrc/handlers/skills.handler.ts\nsrc/handlers/glimmer.handler.ts\nsrc/handlers/idea.handler.ts\nsrc/handlers/session.handler.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T00:52:20Z",
+      "updated": "2026-03-29T12:27:26Z"
+    },
+    {
+      "index": 1805,
+      "apiId": 1888,
+      "title": "Wire 7 missing spine events from schema — card.pulled, card.rejected, session.ended never emitted",
+      "description": "## AC\n- [ ] All 15 card lifecycle events emitted at their natural trigger points\n- [ ] session.role.ended emitted at close\n- [ ] brief.handoff.acknowledged emitted on read\n- [ ] Schema updated to include seed.captured, seed.received, seed.routed\n\n## Context\nFrom Silas logging strategy. 15 events defined in schema, only 8 ever emitted. 7 dark: card.pulled, card.rejected, card.item.blocked, card.item.unblocked, card.item.commented, card.item.tagged, card.stale.detected.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T00:50:56Z",
+      "updated": "2026-03-29T11:32:11Z"
+    },
+    {
+      "index": 1803,
+      "apiId": 1886,
+      "title": "Seed pipeline end-to-end logging — SMS adapter, routing, person-linking all dark",
+      "description": "## AC\n- [ ] SMS adapter logs extraction results (URLs, hashtags, media count)\n- [ ] Routing decision logged with destination\n- [ ] seed.received event at webhook entry\n- [ ] seed.routed event at routing decision\n- [ ] Person-linking failures emit warning event\n- [ ] Seeds handler gets logger instance\n- [ ] E2E test: send SMS, verify all events appear in chorus.log\n\n## Context\nFrom Silas logging strategy (architect/logging-strategy.html). Seed pipeline has 6 hops, only 2 logged. Every seed trust deficit traces to a dark integration seam.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:seeds"
+      ],
+      "done": true,
+      "created": "2026-03-29T00:49:42Z",
+      "updated": "2026-03-29T10:22:25Z"
+    },
+    {
+      "index": 1802,
+      "apiId": 1885,
+      "title": "Clearing keystroke injection — verify + nudge.sh fallback",
+      "description": "## AC\n- [ ] After osascript keystroke inject, verify the keystroke landed (check terminal input buffer or use nudge health approach)\n- [ ] If verification fails, fall back to nudge.sh (Rust binary with persistent accessibility permissions)\n- [ ] No silent failures — log DELIVERED or FALLBACK with diagnostic\n- [ ] Works after Clearing LaunchAgent restart without manual intervention\n\n## Context\nJeff's @wren message from phone at 7:05pm was received by the Clearing server, osascript ran and returned 'ok', but keystroke silently dropped. Root cause: Clearing had just restarted, new Node process lost System Events accessibility grant. osascript lies — returns 'ok' without actually delivering.",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-28T23:58:38Z",
+      "updated": "2026-03-29T00:43:08Z"
+    },
+    {
+      "index": 1800,
+      "apiId": 1883,
+      "title": "Synthetic SMS health probe — end-to-end seed pipeline verification",
+      "description": "## AC\n- [ ] Scheduled probe sends test SMS via Twilio API to the Gathering number\n- [ ] Verifies a capture appears in Pending within 30s\n- [ ] Alerts to Bridge on failure with diagnostic (which hop failed: Twilio send, tunnel, app, capture write)\n- [ ] Runs daily at 5:55am before daily review\n- [ ] Test seed auto-discarded (placeholder pattern match)\n\n## Context\nToday's 4-hour tunnel outage was invisible until Jeff discovered it by absence. Silas owns this — infra health monitoring. Pattern matches Check 7 (tunnel health) but tests the full pipeline, not just the tunnel.",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:seeds"
+      ],
+      "done": true,
+      "created": "2026-03-28T20:20:20Z",
+      "updated": "2026-03-28T22:11:52Z"
+    },
+    {
+      "index": 1799,
+      "apiId": 1882,
+      "title": "Seed idempotency gate — MessageSid dedup",
+      "description": "## AC\n- [ ] Duplicate Twilio webhooks (same MessageSid) do not create duplicate captures\n- [ ] Second webhook for same MessageSid returns 200 TwiML without creating a new seed\n- [ ] Dedup check happens before processCapture (early exit)\n\n## Context\nTwilio retries on timeout (up to 3 times with exponential backoff). Currently no dedup — each retry creates a new capture. Discovered during #1770 service design review.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:seeds"
+      ],
+      "done": true,
+      "created": "2026-03-28T20:20:11Z",
+      "updated": "2026-03-28T21:56:03Z"
+    },
+    {
+      "index": 1798,
+      "apiId": 1881,
+      "title": "Seed routing defaults + correlation window + voice memo",
+      "description": "## AC\n- [ ] Untagged seeds default-route to Wren (no more Pending forever)\n- [ ] Correlation window increased from 60s to 120s\n- [ ] Voice memo (audio) seeds added to routing — whisper transcription fires, transcript becomes seed content\n- [ ] Regression: hashtag-tagged seeds still route to their hashtag destination (not overridden by default)\n\n## Context\nWren's service design review answers: Q1=default Wren, Q4=120s. Voice memo proved working today (dog walk transcript) but not wired into the routing table. Small changes, one card.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:seeds"
+      ],
+      "done": true,
+      "created": "2026-03-28T20:20:02Z",
+      "updated": "2026-03-28T21:46:31Z"
+    },
+    {
+      "index": 1797,
+      "apiId": 1880,
+      "title": "Rename LaunchAgent com.chorus.bridge to com.chorus.clearing",
+      "description": "## AC\n1. com.chorus.bridge.plist renamed to com.chorus.clearing.plist\n2. Label inside plist updated to com.chorus.clearing\n3. LaunchAgent loads and runs on reboot\n4. No references to com.chorus.bridge remain in codebase or docs\n\n## Files\n- ~/Library/LaunchAgents/com.chorus.bridge.plist (rename)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "sequence:v1"
+      ],
+      "done": true,
+      "created": "2026-03-28T20:19:26Z",
+      "updated": "2026-03-28T21:05:13Z"
+    },
+    {
+      "index": 1796,
+      "apiId": 1879,
+      "title": "Retire Clearing Go binary + port 3460",
+      "description": "## AC\n1. LaunchAgent com.chorus.clearing unloaded and plist deleted\n2. Port 3460 no longer listening\n3. Cloudflare tunnel config: clearing.lightlifeurbangardens.com → 3470\n4. No consumer references port 3460 anywhere in codebase\n\n## Files\n- messages/scripts/nudge\n- architect/scripts/infra-alert.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:v1"
+      ],
+      "done": true,
+      "created": "2026-03-28T20:19:26Z",
+      "updated": "2026-03-28T21:02:54Z"
+    },
+    {
+      "index": 1795,
+      "apiId": 1878,
+      "title": "The Clearing: add chat panel — absorb Clearing chat into Bridge UI",
+      "description": "## AC (revised — backend only, UI panel split to #1796+)\n1. Chat API endpoints wired in Bridge server (/api/chat/start, /api/chat/message, /api/chat/state, /api/chat/end)\n2. Socket.IO chat events wired (chat:message, chat:typing, chat:token, chat:typed)\n3. Anthropic SDK installed, participants + transcript modules ported from Clearing\n4. Dashboard still works — verified on Jeff's phone via tunnel\n5. POST /api/message contract unchanged — all 6 existing consumers still work\n\n## Files\n- chorus/bridge/src/chat.ts (new)\n- chorus/bridge/src/participants.ts (ported from clearing)\n- chorus/bridge/src/transcript.ts (ported from clearing)\n- chorus/bridge/src/server.ts (chat endpoints added)\n- chorus/bridge/package.json (@anthropic-ai/sdk added)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "sequence:v1"
+      ],
+      "done": true,
+      "created": "2026-03-28T20:19:26Z",
+      "updated": "2026-03-28T20:49:14Z"
+    },
+    {
+      "index": 1794,
+      "apiId": 1877,
+      "title": "Kill dual write on seeds — Fuseki-only persistence",
+      "description": "## AC\n- [ ] processCapture writes seed to Fuseki graph via SeedCaptureService (replace pod file write)\n- [ ] /seeds triage page reads from SPARQL instead of filesystem scan\n- [ ] Seed status updates (routed, discarded) write to Fuseki graph, not pod files\n- [ ] Media download paths stored in Fuseki graph (seedMediaPath triple)\n- [ ] Existing pod captures migrated to Fuseki graph (one-time load script)\n- [ ] Regression: plain URL, Apple Music, photo+hashtag, voice memo all still capture and route correctly\n- [ ] Jeff sends test seed after deploy, it arrives in Wren inbox\n\n## Context\nDiscovery: there is no dual write. SeedCaptureService (Fuseki writer) is dead code — never wired to any handler. SMS seeds ONLY write to pod files today. This card migrates persistence from pod to Fuseki directly. No intermediate dual-write state.\n\n## Files\n- src/handlers/seed.handler.ts (wire SeedCaptureService into processCapture)\n- src/services/seed-capture.service.ts (activate the dead code)\n- src/services/seed-pod.service.ts (remove write path, keep read for migration)\n- views/seed-triage.ejs (SPARQL queries instead of pod file scan)\n- scripts/migrate-seeds-to-fuseki.sh (one-time migration)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:seeds"
+      ],
+      "done": true,
+      "created": "2026-03-28T20:14:07Z",
+      "updated": "2026-03-28T21:31:17Z"
+    },
+    {
+      "index": 1793,
+      "apiId": 1876,
+      "title": "Nudge delivery: first-class rewrite",
+      "description": "## AC\n1. Tab-name injection is the only path — no PID/lsof/TTY chain\n2. Every nudge returns actual delivery status (delivered/failed), never false \"ok\"\n3. When injection fails, the error includes WHY (no tab found, osascript error, permission denied)\n4. Health check LaunchAgent runs every 5 minutes — sends test inject to each role tab, verifies receipt, alerts on failure\n5. Jeff never discovers a broken nudge before the system does\n6. Zero silent failures — if it can't deliver, it says so loudly\n\n## Files\n- messages/services/chorus-hooks/src/nudge.rs\n- messages/services/chorus-hooks/src/process.rs",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "sequence:hardening"
+      ],
+      "done": true,
+      "created": "2026-03-28T17:37:03Z",
+      "updated": "2026-03-28T18:11:33Z"
+    },
+    {
+      "index": 1786,
+      "apiId": 1869,
+      "title": "Seed pipeline observability — traceable log events at every integration step",
+      "description": "## Experience\nWhen a seed doesn't arrive, I can ask 'what happened to my text?' and the system shows me exactly where it stopped.\n\n## AC\n- [ ] seed.hashtag.correlated event on hashtag correlation\n- [ ] seed.brief.written event when brief file created\n- [ ] seed.dropped event with reason for failed/dropped seeds\n- [ ] All events queryable via chorus log\n(seed.received, adapter log, seed.routed already shipped in #1803)\n\n## Files\nsrc/handlers/seed.handler.ts\nsrc/utils/spine-event.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-28T11:26:54Z",
+      "updated": "2026-03-29T12:47:40Z"
+    },
+    {
+      "index": 1785,
+      "apiId": 1868,
+      "title": "Seed pipeline integration tests — two-message webhook flow, experience-driven",
+      "description": "## Experience\nEvery seed card ships with tests that match how Jeff actually uses SMS — content message first, hashtag second, two separate webhook calls.\n\n## AC\n- [ ] Integration test: plain URL webhook → hashtag webhook → brief file appears in destination\n- [ ] Integration test: Apple Music share webhook → hashtag webhook → brief file appears with link extracted\n- [ ] Integration test: photo webhook → hashtag webhook → brief file appears with media attached\n- [ ] Integration test: hashtag first, content second (reverse order) → brief still arrives\n- [ ] Tests exercise the full handler path, not just adapter or service in isolation\n- [ ] No seed card accepted without these integration tests passing\n\n## Files\ntests/integration/seed-routing-flow.test.ts\nsrc/handlers/seed.handler.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-28T11:26:43Z",
+      "updated": "2026-03-29T12:54:12Z"
+    },
+    {
+      "index": 1773,
+      "apiId": 1856,
+      "title": "Chorus project structural audit — organization, dependencies, orphaned code",
+      "description": "## AC\n- [ ] Map current Chorus project structure — scripts, services, hooks, bridge, skills, LaunchAgents\n- [ ] Identify dependency graph between components (what calls what)\n- [ ] Flag orphaned files — scripts nobody calls, dead code, stale configs\n- [ ] Flag duplicated responsibility — multiple components doing the same thing\n- [ ] Produce a single-page map Jeff can read — component, purpose, health, dependencies\n- [ ] Card follow-up work from findings\n\n## Context\n115 bash scripts, Rust hooks service, TS messaging service, bridge, NiFi flows, 20+ LaunchAgents. Each built to solve immediate problems. No structural review since inception. Jeff: 'the structure of chorus project overall is begging for some attention.' This is the plank roads problem — infrastructure debt compounds.",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-27T22:37:39Z",
+      "updated": "2026-03-28T21:46:16Z"
+    },
+    {
+      "index": 1772,
+      "apiId": 1855,
+      "title": "Chorus hooks hardening — 3 critical, 3 high findings from deep review",
+      "description": "## AC\n- [ ] Fix detect_drain_role wrong state file path (shim.rs:344) — reads /tmp/role-state-*.json, should read /tmp/claude-team-scan/*-declared.json\n- [ ] Fix batch monitor orphan spawns — add dedup guard via PID file (batch_progress.rs)\n- [ ] Fix shared temp file race — unique temp files per monitor instance (batch_progress.rs)\n- [ ] Fix DST calculation — use actual transition dates, not month range (clock_sync.rs)\n- [ ] Add file locking to nudge inbox — prevent message loss on concurrent read/truncate (nudge.rs, shim.rs, role_state.rs)\n- [ ] Remove dead code in infra_guardrails.rs and fix broken test\n\n## Files\n- messages/services/chorus-hooks/src/shim.rs\n- messages/services/chorus-hooks/src/hooks/batch_progress.rs\n- messages/services/chorus-hooks/src/hooks/clock_sync.rs\n- messages/services/chorus-hooks/src/hooks/infra_guardrails.rs\n- messages/services/chorus-hooks/src/nudge.rs\n- messages/services/chorus-hooks/src/role_state.rs",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-27T22:33:05Z",
+      "updated": "2026-03-27T22:43:39Z"
+    },
+    {
+      "index": 1770,
+      "apiId": 1853,
+      "title": "Fix seed capture for rich media links",
+      "description": "## AC\n- [x] Apple Music share links captured and routed as seed briefs\n- [x] LinkedIn preview card links captured and routed as seed briefs\n- [x] SMS seed adapter handles non-plain-URL formats (rich previews, app shares)\n- [x] Regression: plain URL seeds still work\n\n## Context\n#1617 shipped 2026-03-26 — changed seed capture to graph persistence. Since then, 2 of 4 SMS seeds lost. Failed: Apple Music share (Ramones Teenage Lobotomy), LinkedIn rich preview. Succeeded: plain https URL. Classifier or SMS parser likely dropping non-plain-URL payload structures.\n\n## Fixes\n1. URL regex anchors removed — finds URLs embedded in text, not just URL-only messages\n2. Hashtag preservation — hashtag-only messages store raw #tag in content for correlation\n3. Correlation guard — hashtag-only captures skip self-routing in routePendingCaptures\n\n## Files\n- src/adapters/sms-seed.adapter.ts\n- src/handlers/seed.handler.ts\n- tests/unit/adapters/sms-seed.adapter.test.ts\n- tests/unit/handlers/seed.handler.test.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-27T21:51:06Z",
+      "updated": "2026-03-28T11:05:51Z"
+    },
+    {
+      "index": 1769,
+      "apiId": 1852,
+      "title": "Wire nudge.sh to messaging tier — backward compat shims not connected",
+      "description": "## Files\n- messages/scripts/nudge (wrapper)\n- messages/scripts/nudge-deliver (Rust binary)\n- messages/scripts/chat.sh\n- ~/Library/LaunchAgents/com.gathering.messaging.plist\n\n## AC\n- [x] nudge.sh persists to messaging API + delivers via Rust binary\n- [x] Nudge delivery works end-to-end\n- [x] chat.sh persists start/message to messaging API\n- [x] Nudge history queryable via /api/messages\n- [x] Backward compat — existing callers unchanged\n- [x] Messaging service LaunchAgent — KeepAlive at boot",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-27T17:34:36Z",
+      "updated": "2026-03-27T20:57:09Z"
+    },
+    {
+      "index": 1768,
+      "apiId": 1851,
+      "title": "Sexuality media player — playlist + photo/video picker + player on Bedroom",
+      "description": "Standalone Node.js app on Bedroom (port 8090) for browsing and playing sexuality photo sets and videos.\n\nAC:\n- [ ] Three-panel left sidebar: playlist tree (top), photo picker (mid), video picker (bottom)\n- [ ] Photo picker: category, tag color, text, and site filters; folders ≤ 125 photos; + button adds to playlist\n- [ ] Video picker: same filters and rules as photos\n- [ ] Playlist: persistent tree (Photos → folders, Videos → files) saved as JSON on disk\n- [ ] Player surface: photos auto-play at configurable interval with back/pause/forward; videos play inline with streaming controls\n- [ ] Photos rendered at highest quality filling player space\n- [ ] Video sound routed to Bedroom HomePod at 50% volume\n- [ ] Integrates with images-api-video (localhost:8082) for media streaming\n- [ ] Folder names parsed dynamically for category + site filters\n- [ ] Runs on Bedroom as LaunchAgent or standalone server",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:sexuality"
+      ],
+      "done": true,
+      "created": "2026-03-27T17:30:54Z",
+      "updated": "2026-03-27T21:20:15Z"
+    },
+    {
+      "index": 1766,
+      "apiId": 1849,
+      "title": "Schedule 6am daily review agents — ops, quality, summary to Bridge",
+      "description": "## AC\n- [x] 6am ops review agent — checks LaunchAgent health, service status, disk, delivers summary to Bridge\n- [x] 6am quality review agent — checks smoke tests, lint count, test coverage, delivers summary to Bridge\n- [x] 6am summary agent — aggregates ops + quality into one Bridge post with red/yellow/green status\n- [x] All three survive session restarts (LaunchAgent or durable trigger, not session cron)\n- [x] First run verified — agents produce output and Bridge receives it\n\n## Files\n- ~/Library/LaunchAgents/com.chorus.daily-review-*.plist\n- messages/scripts/daily-review-*.sh",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-27T16:38:54Z",
+      "updated": "2026-03-27T21:11:22Z"
+    },
+    {
+      "index": 1760,
+      "apiId": 1843,
+      "title": "Werk Spine tab — map to 5 value stream stages, absorb System, fix Completed counter",
+      "description": "## AC\n1. Five tiles: Capturing, Directing, Designing, Building, Proving — from werk-process.html\n2. System events classified into the stage they serve, not a peer tile\n3. Completed counter = card.accepted count\n4. Stage coverage max 100%\n5. Tiles and folds match — no count discrepancy\n6. Extend existing /api/analytics endpoints, no new APIs\n\n## Why\nCurrent Spine shows invented categories. Jeff wants Werk value stream stages. System events belong inside the stages they support.\n\n## Files\nviews/werk.ejs, messages/schemas/spine-events.json",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-27T15:42:51Z",
+      "updated": "2026-03-27T16:31:55Z"
+    },
+    {
+      "index": 1759,
+      "apiId": 1842,
+      "title": "Rework /werk page — all tabs aligned to 5 Werk stages, data quality fixes across Funnel, Spine, Flow Metrics, Instruments",
+      "description": "## AC\n1. Five tiles match Werk value stream: Capturing, Directing, Designing, Building, Proving — all five tabs\n2. Funnel tab: vertebra tiles use 5 stages, card classification maps to Werk stages\n3. Spine tab: tiles and folds match, same 5 stages, Completed = card.accepted count\n4. Flow Metrics tab: date range includes today, lead time = active work time not queue wait, bottleneck = slowest active builder\n5. Instruments tab: all panels verified accurate (WIP, Proving Gate, Brief Latency, Fitness, Velocity, Attention Cost)\n6. Contract tab: verified accurate\n7. Every spine event mapped to one of 5 Werk stages in spine-events.json\n8. System events in collapsed section, not peer tile\n9. All tabs consume from analytics API where applicable\n## Files\nviews/werk.ejs, messages/schemas/spine-events.json, src/handlers/werk.handler.ts, src/services/analytics.service.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:roles"
+      ],
+      "done": true,
+      "created": "2026-03-27T15:16:33Z",
+      "updated": "2026-03-27T15:45:40Z"
+    },
+    {
+      "index": 1758,
+      "apiId": 1841,
+      "title": "Block /health /metrics from Cloudflare tunnel on app",
+      "description": "## Files\n- src/app.ts (middleware)\n\n## AC\n- [ ] /health returns 403 from external (cf-connecting-ip header present)\n- [ ] /metrics returns 403 from external\n- [ ] All other public pages still work via tunnel\n- [ ] Local monitoring (Prometheus, Grafana) still gets 200",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure"
+      ],
+      "done": true,
+      "created": "2026-03-27T15:00:59Z",
+      "updated": "2026-03-27T16:39:37Z"
+    },
+    {
+      "index": 1757,
+      "apiId": 1840,
+      "title": "Migrate all service logs out of /tmp — 5GB+ lost on every reboot",
+      "description": "## Files\n- ~/Library/LaunchAgents/com.gathering.*.plist\n- messages/scripts/werk-init.sh\n- messages/scripts/andon-enrich.sh\n\n## AC\n- [ ] Shared LOG_BASE — all services read from one config\n- [ ] Library: ~22 plists updated from /tmp to ~/Library/Logs/Gathering/\n- [ ] Bedroom: ~6 plists updated\n- [ ] Log rotation on fuseki.log (4.3 GB, no rotation)\n- [ ] Log rotation on gathering-app.log and loki.log\n- [ ] /tmp/claude-team-scan/ moved to persistent location\n- [ ] /tmp/posture-timelapse/ moved to CSC scope\n- [ ] ~8 scripts with hardcoded /tmp paths updated\n- [ ] All LaunchAgents start clean after migration",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure"
+      ],
+      "done": true,
+      "created": "2026-03-27T14:56:18Z",
+      "updated": "2026-03-27T15:43:51Z"
+    },
+    {
+      "index": 1756,
+      "apiId": 1839,
+      "title": "Lock down Cloudflare tunnel — allowlist public paths only",
+      "description": "## Files\n- chorus/bridge/src/server.ts\n\n## AC\n- [x] Cloudflare tunnel blocks /health, /metrics, /api/debug from external (403)\n- [x] Admin APIs (/api/stream, /api/session, /api/commands, /api/flow, /api/restart) blocked from external\n- [x] Public pages + guest auth still work via tunnel\n- [x] Local monitoring unaffected (200)\n- [x] App-side lockdown carded as #1758 (Kade)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure"
+      ],
+      "done": true,
+      "created": "2026-03-27T14:44:09Z",
+      "updated": "2026-03-27T15:15:44Z"
+    },
+    {
+      "index": 1755,
+      "apiId": 1838,
+      "title": "Messaging tier service — replace /tmp file queues with persistent, observable message store",
+      "description": "## Files\n- chorus/messaging/src/store.ts\n- chorus/messaging/src/service.ts\n- chorus/messaging/src/store.test.ts\n\n## AC\n- [x] All messaging data persists across reboots — SQLite WAL\n- [x] Single service owns message lifecycle — port 3475\n- [x] Message store queryable — /api/messages with filters\n- [x] Delivery guarantees — ack + dead-letter after 3 attempts + replay\n- [x] Observable — /api/stats + /api/dead-letter\n- [x] No /tmp for messaging data — chorus/messaging/messages.db\n- [x] Backward compatible — thin curl shims to REST API\n\n## Tests: 31/31\nNudge delivery, ack, ack-all, dead-letter (3 attempts), replay, chat, role state, query, stats",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-27T14:26:08Z",
+      "updated": "2026-03-27T14:56:11Z"
+    },
+    {
+      "index": 1754,
+      "apiId": 1837,
+      "title": "Replace stale stats-cache.json with chorus.log data for Daily Activity table on /cost",
+      "description": "## AC\n1. Daily Activity table on /cost reads from chorus.log session events instead of ~/.claude/stats-cache.json\n2. Shows current month data including today\n3. Sessions, messages, and volume bars reflect real activity\n## Files\nviews/cost.ejs, src/handlers/cost.handler.ts, src/services/analytics.service.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:roles"
+      ],
+      "done": true,
+      "created": "2026-03-27T14:08:08Z",
+      "updated": "2026-03-27T14:48:30Z"
+    },
+    {
+      "index": 1752,
+      "apiId": 1835,
+      "title": "Reclassify coordination tone bucket — split catchall into sub-categories (status, acknowledgment, routing, coordination)",
+      "description": "## AC\n1. Split 'neutral/coordination' tone category into meaningful sub-categories: status update, acknowledgment, routing, actual coordination\n2. Add richer keyword patterns or LLM-based classification to reduce the 61% catchall bucket\n3. Tone distribution percentages shift meaningfully between 7d and all-time views\n4. Voice Deep Dive and Tone by Role sections show new sub-categories\n## Files\nchorus/api/src/server.ts (tone classification logic), views/jeff.ejs (display)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:roles"
+      ],
+      "done": true,
+      "created": "2026-03-27T13:06:29Z",
+      "updated": "2026-03-27T13:34:53Z"
+    },
+    {
+      "index": 1751,
+      "apiId": 1834,
+      "title": "Migrate /tmp pipeline artifacts to CSC scope — no production data in /tmp",
+      "description": "## Files\n- messages/scripts/nifi-dsl.sh\n- architect/scripts/fuseki-maintenance.sh\n- ~/Library/LaunchAgents/com.gathering.log-sync.plist\n\n## AC\n- [x] Audit /tmp — 8.9GB of pipeline artifacts\n- [x] Pipeline scripts → Bedroom CSC (/Volumes/Gathering/sources/webmethods/)\n- [x] wm-packages demo data → CSC (443MB)\n- [x] NiFi DSL, fuseki-maintenance, harvest-media /tmp paths → persistent\n- [x] CSC Ops structure created (logs, state, metrics)\n- [x] Nightly log sync at 2:30am (Library hot → Bedroom CSC cold)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure"
+      ],
+      "done": true,
+      "created": "2026-03-27T12:33:52Z",
+      "updated": "2026-03-27T16:28:47Z"
+    },
+    {
+      "index": 1750,
+      "apiId": 1833,
+      "title": "Wire /werk page to analytics pipeline + jeff endpoints — card velocity and attention cost",
+      "description": "## AC\n1. /werk page card velocity section consumes /api/analytics/pipeline (WIP durations, throughput)\n2. Attention cost counters consume /api/analytics/jeff reprompt data (fixes #1483 zeros)\n3. Date range parameter available on /werk\n## Files\nviews/werk.ejs, src/handlers/werk.handler.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:roles"
+      ],
+      "done": true,
+      "created": "2026-03-27T12:27:36Z",
+      "updated": "2026-03-27T15:25:28Z"
+    },
+    {
+      "index": 1749,
+      "apiId": 1832,
+      "title": "Wire /cost page to analytics roles endpoint — session/tool counts from canonical API",
+      "description": "## AC\n1. /cost page daily activity section consumes /api/analytics/roles instead of computing inline\n2. Per-role session count and tool call count sourced from analytics endpoint\n3. Date range parameter respects cost page day selector\n## Files\nviews/cost.ejs, src/handlers/cost.handler.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:roles"
+      ],
+      "done": true,
+      "created": "2026-03-27T12:27:31Z",
+      "updated": "2026-03-27T13:58:50Z"
+    },
+    {
+      "index": 1748,
+      "apiId": 1831,
+      "title": "Wire /jeff page to unified analytics endpoint — 3 fetches to 1",
+      "description": "## AC\n1. /jeff page fetches /api/analytics/jeff?range=30d instead of 3 separate proxy calls\n2. Voice, attention, and reprompt sections parse from unified response (.voice, .attention, .reprompt)\n3. Date range selector on /jeff page controls the range parameter\n4. Legacy proxy endpoints remain for backward compatibility\n## Files\nviews/jeff.ejs",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:roles"
+      ],
+      "done": true,
+      "created": "2026-03-27T12:27:22Z",
+      "updated": "2026-03-27T13:07:50Z"
+    },
+    {
+      "index": 1744,
+      "apiId": 1827,
+      "title": "Thumbnail generation — canonical UUID filenames for all merged photos",
+      "description": "## Files\n- architect/scripts/generate-thumbnails-v2.sh\n- architect/scripts/infra-alert.sh\n\n## AC\n- [x] Generate thumbnails using canonical UUID as filename\n- [x] Source images from Apple derivatives/originals, iPhone backup, Takeout files\n- [x] Date-bucketed to public/thumbnails/photos/\n- [x] Photos page shows 98K+ with thumbnails (99,024 of 100,399 = 98.6%)\n- [x] Idempotent — run again, skips existing, generates only new",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": true,
+      "created": "2026-03-27T10:24:31Z",
+      "updated": "2026-03-27T17:33:17Z"
+    },
+    {
+      "index": 1743,
+      "apiId": 1826,
+      "title": "3-way photo match — date bridge between Apple (UUID) and iPhone (IMG_NNNN)",
+      "description": "## Files\n- messages/scripts/nifi-dsl.sh\n- architect/scripts/photos-canonical-merge.groovy\n\n## AC\n- [x] Match Apple to iPhone by originalFilename + dateTaken within 2 sec\n- [x] Match iPhone to Takeout by filename (existing, working)\n- [x] Per-era SPARQL queries (no cross-graph full join)\n- [x] 3-way canonical merge with era-scoped authority\n- [x] Canonical count increased — 28,563 visible (up from 15K), 100K total in Fuseki",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": true,
+      "created": "2026-03-27T10:24:31Z",
+      "updated": "2026-03-27T12:19:03Z"
+    },
+    {
+      "index": 1742,
+      "apiId": 1825,
+      "title": "Apple Photos source re-ingest — add dateTaken as match key for iPhone bridge",
+      "description": "## Files\n- /tmp/wm-packages/apple-photos-to-rdf.groovy\n\n## AC\n- [x] Apple source ingest extracts dateTaken from ZDATECREATED\n- [x] dateTaken stored with second precision for matching\n- [x] 24,592 Apple records refreshed with originalFilename from ZADDITIONALASSETATTRIBUTES\n- [x] 24,586 of 24,592 have originalFilename — 9,490 are IMG_NNNN format (match key for iPhone/Takeout)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": true,
+      "created": "2026-03-27T10:24:31Z",
+      "updated": "2026-03-27T12:05:46Z"
+    },
+    {
+      "index": 1741,
+      "apiId": 1824,
+      "title": "Thumbnail re-key — generate thumbnails matching canonical UUIDs so all 110K+ photos render",
+      "description": "## Files\n- /tmp/wm-packages/photos-canonical-merge.groovy\n- messages/scripts/nifi-dsl.sh\n\n## AC\n- [ ] Apple source ingest uses ZORIGINALFILENAME for matching (not ZUUID) — enables 3-way match with iPhone/Takeout\n- [ ] Canonical merge matches Apple↔iPhone↔Takeout by original camera filename + dateTaken (±2 sec)\n- [ ] Thumbnails generated with canonical UUID (md5(filename|dateTaken))\n- [ ] Photos page shows 60K+ photos (Jeff sees it — current 15K is the floor)\n- [ ] No grey boxes — every displayed photo has a thumbnail\n\n## Why\nApple 24K records use UUID filenames that never match iPhone/Takeout IMG_NNNN. The 3-way merge only produced 36K iPhone+Takeout matches. Apple is isolated. Fix: extract ZORIGINALFILENAME from Apple SQLite, match on that.",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": true,
+      "created": "2026-03-26T21:30:06Z",
+      "updated": "2026-03-27T12:07:27Z"
+    },
+    {
+      "index": 1740,
+      "apiId": 1823,
+      "title": "Fix card.accepted event delivery to roles — bridge-subscriber drops events, session-tailer filters them",
+      "description": "## Root Cause\nbridge-subscriber.js:69-75 receives card.accepted via Socket.IO but intentionally drops it (empty if block, #1700 dedup fix). Session-tailer also filters spine events at line 250-251. Two filters, both blocking delivery.\n\n## Files\n- messages/scripts/bridge-subscriber.js (lines 69-75)\n- chorus/bridge/src/tailer.ts (lines 250-251)\n\n## AC\n1. card.accepted events reach observing roles' sessions within 10 seconds of emission\n2. No feedback loop regression (#1700 dedup behavior preserved)\n3. Wren receives acceptance signals without Jeff relaying them",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-26T21:28:25Z",
+      "updated": "2026-03-27T14:24:49Z"
+    },
+    {
+      "index": 1735,
+      "apiId": 1818,
+      "title": "Music page shuffle UI — play from browser",
+      "description": "## Files\n- jeff-bridwell-personal-site/views/music-collection.ejs\n- jeff-bridwell-personal-site/src/handlers/music.handler.ts\n\n## AC\n1. Shuffle button on /music page — archive and collection modes\n2. Results render as track list with artist, title, genre, play count\n3. Play button per track links to Navidrome stream\n4. V1/V2/V3 selector\n## Why\nShuffle endpoints work but Jeff has to curl them. Put it on the page he already visits.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:sparql",
+        "domain:music"
+      ],
+      "done": true,
+      "created": "2026-03-26T20:07:04Z",
+      "updated": "2026-03-26T20:40:32Z"
+    },
+    {
+      "index": 1734,
+      "apiId": 1817,
+      "title": "Fix music domain endpoints — artist/album queries + track API",
+      "description": "## Files\n- jeff-bridwell-personal-site/src/services/music-query.service.ts\n- jeff-bridwell-personal-site/src/handlers/music.handler.ts\n- jeff-bridwell-personal-site/src/app.ts\n\n## AC\n1. GET /api/music/albums returns albums — fix artist name join (extract from URI slug, not dcterms:title)\n2. GET /api/music/artists returns artists with album counts — same URI slug fix\n3. GET /api/music/tracks?count=N&genre=X returns track listing from Fuseki\n4. GET /api/music/genres returns genre list with track counts\n5. All endpoints use ontology# namespace (not ns/)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:sparql",
+        "domain:music"
+      ],
+      "done": true,
+      "created": "2026-03-26T19:40:25Z",
+      "updated": "2026-03-26T19:47:54Z"
+    },
+    {
+      "index": 1733,
+      "apiId": 1816,
+      "title": "Overnight performance baseline — scheduled system state capture",
+      "description": "## Files\n- messages/scripts/perf-baseline.sh\n- messages/scripts/perf-compare.sh\n- ~/Library/LaunchAgents/com.gathering.perf-baseline.plist\n\n## AC\n- [x] Script captures: disk, memory, CPU, Fuseki latency, NiFi queues, process count, errors\n- [x] Runs via LaunchAgent at 2am\n- [x] Results to messages/logs/perf-baseline-YYYY-MM-DD.json\n- [x] Compare script: diff overnight vs daytime, flag degradation",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": true,
+      "created": "2026-03-26T19:34:42Z",
+      "updated": "2026-03-26T20:02:25Z"
+    },
+    {
+      "index": 1732,
+      "apiId": 1815,
+      "title": "Fix stale app-state.sh path reference",
+      "description": "## Files\n- messages/scripts/app-state.sh (symlink)\n\n## AC\n- [x] app-state.sh callable from messages/scripts/ — symlink created\n- [x] Existing references work without full path",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": true,
+      "created": "2026-03-26T19:32:50Z",
+      "updated": "2026-03-26T19:58:19Z"
+    },
+    {
+      "index": 1730,
+      "apiId": 1813,
+      "title": "Refactor Apple Photos NiFi flow to DSL",
+      "description": "## Files\n- messages/scripts/nifi-dsl.sh\n- /tmp/wm-packages/apple-photos-to-rdf.groovy\n\n## AC\n- [x] Delete hand-wired Apple Photos PG (#1705)\n- [x] Create ICD-driven Groovy transform for Apple Photos SQLite\n- [x] Recreate via nifi-dsl.sh elt --name Photo-Apple --port 8878\n- [x] Send batch, verify 24K records in Fuseki\n- [x] nifi-dsl.sh list shows new PG",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:photos"
+      ],
+      "done": true,
+      "created": "2026-03-26T18:20:37Z",
+      "updated": "2026-03-26T18:45:30Z"
+    },
+    {
+      "index": 1729,
+      "apiId": 1812,
+      "title": "Refactor iPhone NiFi flow to DSL",
+      "description": "## Files\n- messages/scripts/nifi-dsl.sh\n\n## AC\n- [x] Delete hand-wired iPhone PG (Photo — iPhone Source Ingest #1710)\n- [x] Recreate via nifi-dsl.sh elt --name Photo-iPhone --port 8877\n- [x] Send 5 test photos, verify in Fuseki\n- [x] nifi-dsl.sh list shows new PG",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:photos"
+      ],
+      "done": true,
+      "created": "2026-03-26T18:20:37Z",
+      "updated": "2026-03-26T18:45:30Z"
+    },
+    {
+      "index": 1809,
+      "apiId": 1892,
+      "title": "Correlation IDs for data flows — seed trace, nudge trace, queryable in Loki",
+      "description": "## AC\n- [ ] Seed trace ID from webhook to display\n- [ ] Nudge trace ID from send to act\n- [ ] Queryable in Loki by trace ID\n\n## Context\nFrom Silas logging strategy. No end-to-end trace capability for any data flow.",
+      "status": "Next",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T00:55:19Z",
+      "updated": "2026-03-29T12:27:26Z"
+    },
+    {
+      "index": 1779,
+      "apiId": 1862,
+      "title": "Bidirectional Clearing — role narration syncs both ways between Claude sessions and the Clearing",
+      "description": "## Experience\nI open the Clearing and see what all three roles are doing. I type in the Clearing and the right role responds. I never open a Claude terminal.\n\n## AC\n- [ ] All role text responses (not tool calls) in Claude sessions appear in the Clearing message stream in real time\n- [ ] All Clearing messages (Jeff input, role posts, scheduled reviews) appear in Claude session context\n- [ ] Jeff's Clearing input routes to the addressed role's Claude session as user input\n- [ ] @role mention targets a specific role; unaddressed input goes to Wren by default\n- [ ] Session tailer covers all three roles bidirectionally\n- [ ] No duplicate messages — dedup by content hash + timestamp\n- [ ] Jeff can operate entirely from the Clearing without opening Claude terminals",
+      "status": "Next",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T10:24:07Z",
+      "updated": "2026-03-28T23:56:37Z"
+    },
+    {
+      "index": 1631,
+      "apiId": 1714,
+      "title": "Name face clusters — Jeff reviews 48 clusters, system persists names to Person nodes",
+      "description": "27K face detections across 48 clusters, all unnamed. Cluster browser UI exists (#1478). Jeff needs to review and name them.\n\n## AC\n- [ ] Face cluster review UI shows representative sample per cluster\n- [ ] Jeff can assign a name, system writes to Person node\n- [ ] Named clusters propagate to canonical photo enrichment (jb:depictsPerson)\n- [ ] Progress tracking: N of 48 clusters named",
+      "status": "Next",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:memory",
+        "domain:people"
+      ],
+      "done": false,
+      "created": "2026-03-23T12:20:33Z",
+      "updated": "2026-03-24T12:13:18Z"
+    },
+    {
+      "index": 1630,
+      "apiId": 1713,
+      "title": "Rebuild semantic embeddings after photo enrichment — richer metadata for search quality",
+      "description": "Embeddings built on thin metadata produce thin search results. After album import (#1627) and UUID reconciliation (#1626), rebuild embeddings with full enrichment context.\n\n## AC\n- [ ] Embeddings rebuilt after #1627 album import completes\n- [ ] Content strings include album names, person names, location, descriptions\n- [ ] Semantic search returns relevant results for natural queries (person + time + place)\n- [ ] Cross-domain links: photos ↔ stories (date overlap), photos ↔ people (face + name)",
+      "status": "Next",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:search"
+      ],
+      "done": false,
+      "created": "2026-03-23T12:20:29Z",
+      "updated": "2026-03-24T12:13:18Z"
+    },
+    {
+      "index": 1619,
+      "apiId": 1702,
+      "title": "Stamp records with source-chain provenance — schema hashes + lineage + era-scoped authority",
+      "description": "Per DEC-106: records need source-chain provenance, not just schema hashes. Each record must carry:\n1. Schema + mapping hashes (#1541 — which ICD version produced this record)\n2. Source provider chain — the full lineage (e.g., camera → Windows PC → Picasa → Google Photos → Takeout export)\n3. Era tag — which source is authoritative for this record's time period (Takeout for pre-2008, iPhone for 2008+)\n\nPlatform migrations (Windows→Mac, Picasa→Google, iCloud sync) are data quality events — metadata can degrade at each boundary. The provenance chain prevents chasing enrichments that the source never captured.\n\n## AC\n- [ ] story-harvester stamps instanceSchemaHash + instanceMappingHash on every record\n- [ ] notes-harvester stamps instanceSchemaHash + instanceMappingHash on every record\n- [ ] photos harvester stamps instanceSchemaHash + instanceMappingHash on every record\n- [ ] Each record carries icd:sourceChain — ordered list of systems it passed through\n- [ ] Each record carries icd:authoritativeSource — era-scoped (which provider is golden for this time period)\n- [ ] SPARQL query can find records produced under a specific hash pair\n- [ ] SPARQL query can find records by authoritative source era\n- [ ] icd-consistency-test.py --hashes verifies instance provenance matches current hashes\n\n## Files\n- src/services/story-harvester.service.ts\n- src/services/notes-harvester.service.ts\n- scripts/build-canonical-photos.py\n- src/services/icd.service.ts (getVersionHashes call)\n- scripts/icd-consistency-test.py\n- src/ontology/icd-instance-photos.ttl (provider chain model)",
+      "status": "Next",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "sequence:hardening",
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-22T21:43:12Z",
+      "updated": "2026-03-23T19:25:23Z"
+    },
+    {
+      "index": 1495,
+      "apiId": 1578,
+      "title": "iOS app for local wifi — native client for Gathering API on property/garden/photos",
+      "description": "## Acceptance Criteria\n1. SwiftUI iOS app connects to Gathering API over local wifi (192.168.86.36:3000)\n2. Browse photos natively — grid view, albums, face clusters\n3. Garden walk mode — take photos tagged to garden beds/zones\n4. Property inspection — view bed status, seasonal history, observations\n5. Runs only on local network — no cloud auth, respects concentric trust\n6. Uses existing API endpoints (DEC-093) — no new backend work needed\n\n## Context\nJeff has 370 API endpoints on the Gathering app. An iOS app is a native client for that API, not a new system. Local wifi only — Library serves, iPhone consumes. Garden, photos, property are the first use cases. The API contract discipline (DEC-093) means the endpoints are tested and documented.",
+      "status": "Next",
+      "owner": "Jeff",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:property"
+      ],
+      "done": false,
+      "created": "2026-03-17T13:38:47Z",
+      "updated": "2026-03-20T13:40:21Z"
+    },
+    {
+      "index": 1826,
+      "apiId": 1909,
+      "title": "Fix chorus folder structure — production code in gitignored directory",
+      "description": "## AC\n- [ ] Clearing/Bridge code (chorus/bridge/) is committable and shared across roles\n- [ ] Tests run from committed code, not working tree only\n- [ ] Folder structure documented — what lives where, why\n- [ ] No production code in gitignored paths\n\n## Context\nchorus/ is gitignored from the team repo. The Clearing server, session tailer, test files — all trapped in one role's working tree. Roles can't verify each other's changes. #1818 tests pass for Silas (52/52) and fail for Wren (41/52) because the test file isn't committed. This is a structural problem, not a test problem.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T14:55:25Z",
+      "updated": "2026-03-29T14:55:25Z"
+    },
+    {
+      "index": 1816,
+      "apiId": 1899,
+      "title": "Development framework — gate suite for agent software development lifecycle",
+      "description": "## Experience\nRoles follow a structured development lifecycle — like the integration framework (ICD, mapper, validation) but for code changes. No guessing, no solo debugging, no declaring done without proof.\n\n## AC\n1. Memory-and-research gate (#1811) — check decisions, memory, git history before any code change\n2. Root cause gate (#1815) — cross-role consultation with data (logs, errors, code refs) before coding a fix\n3. Prove-it gate (#1812) — \"cant be done\" requires evidence, not assertion\n4. Definition-of-done gate (#1814) — verified working against the symptom, not just code written and built\n5. TDD enforced — unit, integration, and page-level tests on all code cards (DEC-1674)\n6. Service design updated — every shipped card updates its service design page if touched\n7. ICD updated — data flow changes update ICD\n8. Blast radius and domain radius checks pass\n9. Structured logging — product, value stream, domain, card, code object, datetime, version on every log line\n10. Use lc/lw/ls/lk/nudge/chat when stuck — tools before guesses\n11. All gates implemented as PreToolUse hooks that block, not reminders that suggest\n12. Framework documented as a single reference page roles can read at session start",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T11:31:21Z",
+      "updated": "2026-03-29T11:31:21Z"
+    },
+    {
+      "index": 1815,
+      "apiId": 1898,
+      "title": "Root cause gate hook — require cross-role consultation with data before coding a fix",
+      "description": "## AC\n1. PreToolUse hook detects when a role begins editing code to fix a defect\n2. Hook checks session history for a /chat or brief exchange with at least one other role about the problem\n3. The exchange must include data — logs, error output, code references — not just description of symptoms\n4. If no cross-role consultation with data found, hook blocks with message: discuss root cause with another role first, bring data not guesses\n5. Tests cover: block solo fix attempt, block consultation without data, pass with data-backed cross-role discussion",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T10:56:45Z",
+      "updated": "2026-03-29T10:56:45Z"
+    },
+    {
+      "index": 1814,
+      "apiId": 1897,
+      "title": "Verification gate hook — block Done declaration without proof of fix",
+      "description": "## AC\n1. PreToolUse hook detects when a role moves a card to Done or declares a fix complete\n2. Hook checks session history for verification step — actual test of the fix, not just build success\n3. If no verification found, hook blocks with message: verify the fix works before declaring done\n4. Build passing is not verification — the symptom must be retested\n5. Tests cover: block without verification, pass with verification present",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T10:49:11Z",
+      "updated": "2026-03-29T11:35:56Z"
+    },
+    {
+      "index": 1813,
+      "apiId": 1896,
+      "title": "Clearing session tailer whitelist — invert filter logic to show only Jeff-facing content",
+      "description": "## AC\n1. Session tailer uses a whitelist (what Jeff should see) not a blacklist (what to hide)\n2. Role-to-role nudges, /chat messages, DELIVERED confirmations, and nudge.sh refs never appear in Clearing\n3. Only Jeff-authored messages and role responses addressed to Jeff flow through\n4. Tests cover: role-to-role chat filtered, nudge filtered, Jeff message passes, role response to Jeff passes\n5. No new filter needed when a new role-to-role message type is added",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T10:47:28Z",
+      "updated": "2026-03-29T10:47:29Z"
+    },
+    {
+      "index": 1812,
+      "apiId": 1895,
+      "title": "Prove-it gate hook — block 'cant be done' assertions without evidence",
+      "description": "## AC\n1. PreToolUse hook detects when a role asserts something is impossible or cant be done\n2. Hook blocks with message: prove it — show the constraint, the error, or the code path\n3. Assertion without evidence is not accepted — role must demonstrate the limitation\n4. Hook passes when evidence (error output, code reference, platform constraint) is provided\n5. Tests cover: block bare assertion, pass with evidence attached",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T10:45:09Z",
+      "updated": "2026-03-29T10:45:09Z"
+    },
+    {
+      "index": 1811,
+      "apiId": 1894,
+      "title": "Memory-and-research gate hook — PreToolUse block on writes without prior memory/git check",
+      "description": "## AC\n1. PreToolUse hook fires before Edit/Write to code files\n2. Hook checks session history for memory search (MEMORY.md, decisions, briefs) AND research (git log/show, Read of current state)\n3. If neither found, hook blocks with message: check memory and research first\n4. Hook passes silently when both checks detected\n5. Tests cover: block when no prior check, pass when memory checked, pass when both checked",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T10:43:45Z",
+      "updated": "2026-03-29T11:35:57Z"
+    },
+    {
+      "index": 1808,
+      "apiId": 1891,
+      "title": "Add events to context cache pipeline — silent empty returns",
+      "description": "## AC\n- [ ] session.context.built event on success with data sources included\n- [ ] session.context.error event when any source fails (with which source)\n- [ ] Thread failures no longer silently return empty strings\n\n## Context\nFrom Silas logging strategy. Context cache generates markdown, no events on success or failure.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T00:54:17Z",
+      "updated": "2026-03-29T00:56:46Z"
+    },
+    {
+      "index": 1807,
+      "apiId": 1890,
+      "title": "Instrument daily review pipeline — silent failures, no spine events",
+      "description": "## AC\n- [ ] Each review step emits spine event on completion\n- [ ] Bridge POST failures logged and retried once\n- [ ] ops.health.checked event with pass/fail status\n- [ ] Alert rule: daily review didn't fire by 6:30am\n\n## Context\nFrom Silas logging strategy. Daily review runs at 6am, failures silently suppressed with 2>/dev/null.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T00:53:24Z",
+      "updated": "2026-03-29T00:56:46Z"
+    },
+    {
+      "index": 1792,
+      "apiId": 1875,
+      "title": "Design meeting skill — Wren-led collaborative design session with role input",
+      "description": "## Experience\nJeff says /design-meeting and the team assembles around a whiteboard topic. Wren drives, roles contribute from their domain expertise via nudges, Jeff moderates and redirects. Artifacts get built in real time.\n\n## AC\n- [ ] Skill definition: /design-meeting <topic> [card-id]\n- [ ] Wren drives (produces artifact), Silas and Kade observe and respond to nudges\n- [ ] Structured input rounds — Wren nudges specific questions to each role\n- [ ] Artifacts produced inline (HTML, OWL, service design pages)\n- [ ] Decisions captured with DECISION: prefix\n- [ ] Session produces a design artifact, not just discussion\n- [ ] Pattern: Designing stance, not Building or Proving",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T12:44:18Z",
+      "updated": "2026-03-28T12:44:18Z"
+    },
+    {
+      "index": 1791,
+      "apiId": 1874,
+      "title": "Designing stage gate hook — block Building without design artifact",
+      "description": "## Experience\nA role tries to move a card to WIP without a service design artifact or experience statement. The system blocks them and says what's missing.\n\n## AC\n- [ ] PreToolUse hook checks for experience statement before card moves to WIP\n- [ ] Hook checks for service design artifact (or --quick exemption for housekeeping cards)\n- [ ] Blocked message tells the role exactly what's missing\n- [ ] After: #1781",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:34:22Z",
+      "updated": "2026-03-28T11:34:22Z"
+    },
+    {
+      "index": 1790,
+      "apiId": 1873,
+      "title": "Experience tag in card schema — first-class field on every card",
+      "description": "## Experience\nEvery card has an experience statement visible when pulled, demoed, and accepted. It's the test that matters.\n\n## AC\n- [ ] experience field added to board-ts schema (board-ts set <id> experience='...')\n- [ ] experience displayed in board-ts view output\n- [ ] experience required on card creation (or --quick exemption)\n- [ ] After: #1781",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:34:22Z",
+      "updated": "2026-03-28T11:34:22Z"
+    },
+    {
+      "index": 1789,
+      "apiId": 1872,
+      "title": "Acceptance events service design — single clean event per acceptance",
+      "description": "## Experience\nJeff accepts a card. One event appears on the Bridge, attributed correctly. No echoes, no duplicates.\n\n## AC\n- [ ] Service design page filled in: experience, identity, integration path with spine events, non-functionals, test contract\n- [ ] Root cause of 4x echo (#1769) and 2x echo (#1766) documented\n- [ ] Dedup contract: one acceptance event per card per actor\n- [ ] Integration test: card.accepted emitted → one Bridge message with correct attribution\n- [ ] After: #1781",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:34:22Z",
+      "updated": "2026-03-28T11:34:22Z"
+    },
+    {
+      "index": 1788,
+      "apiId": 1871,
+      "title": "Clearing/Bridge service design — bidirectional sync contract",
+      "description": "## Experience\nI open the Clearing and see what all three roles are doing. I type and the right role responds. No echoes, no duplicates, no dropped messages.\n\n## AC\n- [ ] Service design page filled in: experience, identity, integration path with spine events, non-functionals, test contract\n- [ ] Bidirectional contract defined: Claude → Clearing and Clearing → Claude\n- [ ] Dedup contract: content hash + timestamp, no echo\n- [ ] Integration test: role emits text → appears in Clearing stream; Jeff types in Clearing → arrives in role session\n- [ ] After: #1781",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:34:21Z",
+      "updated": "2026-03-28T11:34:22Z"
+    },
+    {
+      "index": 1787,
+      "apiId": 1870,
+      "title": "Nudge delivery service design — fill in service design page, lock the contract",
+      "description": "## Experience\nI nudge a role and it arrives instantly in their terminal. I never wonder if it landed.\n\n## AC\n- [ ] Service design page filled in: experience, identity, integration path with spine events, non-functionals, test contract\n- [ ] DEC-107 dual-path (persist + osascript) documented as the locked design\n- [ ] Integration test: nudge.sh → messaging API POST + osascript inject → verify delivery\n- [ ] Synthetic monitoring: periodic nudge health check\n- [ ] After: #1781",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:34:05Z",
+      "updated": "2026-03-28T11:34:05Z"
+    },
+    {
+      "index": 1784,
+      "apiId": 1867,
+      "title": "Seed pipeline synthetic monitoring — hourly live-path test, alert on failure",
+      "description": "## Experience\nThe system detects seed pipeline failures before Jeff does. Jeff never sends a text into the void.\n\n## AC\n- [ ] Cron job sends synthetic SMS payload through full pipeline every hour (webhook → adapter → handler → brief file)\n- [ ] Verifies brief file appears within 60 seconds\n- [ ] Posts red alert to Bridge if brief does not arrive\n- [ ] Cleans up synthetic seeds after verification (no pollution in Jeff's inbox)\n- [ ] Covers all three seed types: plain URL, rich link (Apple Music), photo + hashtag",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:26:32Z",
+      "updated": "2026-03-28T11:26:32Z"
+    },
+    {
+      "index": 1782,
+      "apiId": 1865,
+      "title": "Clearing voice capture — click mic, record, auto-transcribe and route to addressed role",
+      "description": "## Experience\nI tap the mic on the Clearing, talk, it shows up attributed to me and routed to the right role. No typing, no send button, no picking a recipient.\n\n## AC\n- [ ] Single click on mic button starts recording (no hold required)\n- [ ] Click again (or silence detection) stops recording\n- [ ] Audio transcribed automatically (Whisper or equivalent)\n- [ ] Transcription routed to addressed role (@kade, @silas, @wren) or Wren by default\n- [ ] Transcription appears in Clearing message stream attributed to Jeff\n- [ ] Audio file persisted for playback (not just transcript)\n- [ ] No manual send step — record → transcribe → route is one flow",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:07:57Z",
+      "updated": "2026-03-28T11:10:21Z"
+    },
+    {
+      "index": 1781,
+      "apiId": 1864,
+      "title": "Borg Chorus — systematic service design audit and formalization",
+      "description": "## Experience\nEvery integration path in Chorus has a service design artifact. When something breaks, we trace it. When something ships, it works the first time. The snake stops eating its tail.\n\n## AC\n- [ ] All 4 chronic integration paths assessed: seed pipeline, nudge delivery, Clearing/Bridge, acceptance events\n- [ ] Service design page filled in for each: experience, identity, integration path, non-functionals, test contract, dependencies\n- [ ] Designing stage gate enforced — no card moves to Building without design artifact\n- [ ] Experience tag added to card schema\n- [ ] Decision documented (DEC-next) locking the service design process\n- [ ] PRODUCT_TAXONOMY.md updated with Loom decomposition and three tiers\n\n## Decomposition\n- #1784 Seed pipeline synthetic monitoring (Silas)\n- #1785 Seed pipeline integration tests (Kade)\n- #1786 Seed pipeline observability (Kade)\n- #1787 Nudge delivery service design (Wren)\n- #1788 Clearing/Bridge service design (Wren)\n- #1789 Acceptance events service design (Wren)\n- #1790 Experience tag in card schema (Silas)\n- #1791 Designing stage gate hook (Silas)",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:00:33Z",
+      "updated": "2026-03-28T11:33:56Z"
+    },
+    {
+      "index": 1780,
+      "apiId": 1863,
+      "title": "Product taxonomy sketch — Jeff's hand-drawn architecture mapping Phase/Werk/Loom to domain structure",
+      "description": "## AC\n- [ ] Digitize Jeff's graph-paper sketch into structured product taxonomy\n- [ ] Reconcile with existing PRODUCT_TAXONOMY.md and team-architecture.md\n- [ ] Clarify new framing: Convergence = Practice, Corporation = Phase = Stance\n- [ ] Map the three bottom tiers (Knowledge/Practices/Services) to current system components\n- [ ] Present reconciled taxonomy to Jeff for validation",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-28T10:42:40Z",
+      "updated": "2026-03-28T10:42:40Z"
+    },
+    {
+      "index": 1778,
+      "apiId": 1861,
+      "title": "Document LaunchAgent namespace convention — com.chorus vs com.gathering",
+      "description": "## AC\n- [ ] Write naming convention doc: com.chorus.* = team coordination, com.gathering.* = app infrastructure\n- [ ] Audit all 51 LaunchAgents against convention\n- [ ] List any misplaced agents (e.g., com.gathering.messaging should be com.chorus.*)\n- [ ] Add to infrastructure-constraints.md\n\n## Context\nFound in #1773 audit (F9). 51 LaunchAgents split across two namespaces with no documented boundary.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T22:53:29Z",
+      "updated": "2026-03-27T22:53:29Z"
+    },
+    {
+      "index": 1777,
+      "apiId": 1860,
+      "title": "Migrate chorus-ops.sh to Rust — 37K bash, largest DEC-100 migration target",
+      "description": "## AC\n- [ ] Port error polling logic to Rust (Loki query + pattern match)\n- [ ] Port health check logic to Rust\n- [ ] Port auto-card creation to Rust (board-ts integration)\n- [ ] Match existing 300s LaunchAgent cadence\n- [ ] Decommission chorus-ops.sh after verification\n\n## Context\nFound in #1773 audit (F6). Largest bash script in the system at 37K. Unified ops daemon. DEC-100 says no bash APIs. This is the last major bash service.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T22:53:27Z",
+      "updated": "2026-03-27T22:53:27Z"
+    },
+    {
+      "index": 1776,
+      "apiId": 1859,
+      "title": "Remove orphaned andon scripts — andon-enrich.sh and andon-light.swift",
+      "description": "## AC\n- [ ] Confirm jeff-input-monitor replaced andon-light functionality\n- [ ] Confirm andon-enrich data is no longer consumed by any service\n- [ ] Delete andon-enrich.sh (26K) and andon-light.swift (39K)\n- [ ] Remove 3 source .plist files from messages/scripts/\n- [ ] Delete .retired LaunchAgent files from ~/Library/LaunchAgents/\n\n## Context\nFound in #1773 audit (F3). 65K of code with retired LaunchAgents. Scripts remain in scripts dir.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T22:53:24Z",
+      "updated": "2026-03-27T22:53:24Z"
+    },
+    {
+      "index": 1775,
+      "apiId": 1858,
+      "title": "Consolidate workflow engines — remove Python, keep TypeScript per DEC-100",
+      "description": "## AC\n- [ ] Verify workflow-engine (TS) handles all workflows that workflow.py currently runs\n- [ ] Remove workflow.py and workflow.sh wrapper\n- [ ] Update any references to workflow.sh → workflow-ts\n- [ ] Verify existing workflow definitions still execute\n\n## Context\nFound in #1773 audit (F2). Python workflow.py (8.8K) and TypeScript workflow-engine/ coexist. DEC-100 mandates TypeScript. Two engines for one purpose.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T22:53:21Z",
+      "updated": "2026-03-27T22:53:21Z"
+    },
+    {
+      "index": 1774,
+      "apiId": 1857,
+      "title": "Remove 5 duplicate LaunchAgents — double-firing context-cache, cruft-scan, perf-baseline",
+      "description": "## AC\n- [ ] Unload and remove com.gathering.context-cache-{5min,daily,hourly}.plist\n- [ ] Unload and remove com.gathering.cruft-scan.plist\n- [ ] Unload and remove com.gathering.perf-baseline.plist\n- [ ] Verify com.chorus.* versions still run on schedule\n- [ ] No double-firing in launchctl list after reboot\n\n## Context\nFound in #1773 audit (F1). Five LaunchAgents exist in both com.chorus.* and com.gathering.* with identical configs, causing every scheduled job to fire twice.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T22:53:14Z",
+      "updated": "2026-03-27T22:53:14Z"
+    },
+    {
+      "index": 1771,
+      "apiId": 1854,
+      "title": "Demo all NiFi photo pipelines — walkthrough of each flow with Jeff",
+      "description": "## AC\n- [ ] Demo Apple Photos source ingest pipeline — show flow, processors, routing, output\n- [ ] Demo iPhone source ingest pipeline — show flow, dedup logic, SQLite extraction\n- [ ] Demo Takeout source ingest pipeline — show JSON sidecar date handling, flow\n- [ ] Demo canonical merge pipeline — show era-scoped authority, cross-source dedup, SHACL gate\n- [ ] Each pipeline: Jeff sees it running or sees the flow definition with sample data\n- [ ] Explain what triggers each pipeline and how they connect\n\n## Context\nJeff wants to see all NiFi photo pipelines live. Should be 3-4 flows: Apple Photos, iPhone, Takeout, and canonical merge. Cards #1705, #1710, #1711, #1712 shipped these.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-27T22:30:22Z",
+      "updated": "2026-03-27T22:30:22Z"
+    },
+    {
+      "index": 1767,
+      "apiId": 1850,
+      "title": "Thumbnail gap — resolve final 1,375 missing (1.4%) via SQLite join + backup hash lookup",
+      "description": "## Files\n- architect/scripts/generate-thumbnails-v2.sh\n\n## AC\n- [ ] 475 no-extension records: join Apple SQLite to get actual extension, re-generate\n- [ ] 570 iPhone-only: per-file Manifest.db hash → backup file → ffmpeg/sips\n- [ ] 330 corrupt/missing: investigate, mark as dead-letter or exclude from canonical\n- [ ] Photos page shows 100K+ (Jeff sees it)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-27T17:22:00Z",
+      "updated": "2026-03-27T17:22:00Z"
+    },
+    {
+      "index": 1765,
+      "apiId": 1848,
+      "title": "Instrument Capturing and Designing stages — spine events missing for seeds, briefs, architecture decisions",
+      "description": "## AC\n1. Capturing events emitted: seed.captured, demo.seed.captured, interaction.pattern.detected (mandated in CLAUDE.md but rarely fired)\n2. Designing events emitted: brief.written, architecture.decision.made, icd.read, domain.context.read, blast_radius.checked (currently only 12 events on a day with 20+ briefs)\n3. Proving events include: deploy.*, build.test.completed, build.tsc.completed, ops.alert.*, smoke.check (per Jeff's direction — verification, not construction)\n4. All new events use chorus-log.sh with consistent naming\n5. Verify Spine tab counts shift to reflect real activity after instrumentation\n\n## Why\nCapturing (3%), Designing (2%), and Proving (3%) together account for 8% of spine events while Directing is 56% and Building 36%. This doesn't reflect reality — we write briefs, make decisions, check blast radius, run deploys constantly. The events aren't wired. The Werk page can't show what the spine doesn't emit.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T16:27:11Z",
+      "updated": "2026-03-27T16:27:11Z"
+    },
+    {
+      "index": 1764,
+      "apiId": 1847,
+      "title": "Nudge delivery must not steal Jeff's focus — queue instead of keystroke inject when Jeff is active",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T16:22:57Z",
+      "updated": "2026-03-27T16:22:57Z"
+    },
+    {
+      "index": 1763,
+      "apiId": 1846,
+      "title": "Werk Instruments tab — fix data accuracy, clean layout, real latency values",
+      "description": "## AC\n1. Brief Latency shows actual time-to-read, not just \"unread\" status\n2. Card Velocity shows all recent cards, not just 5\n3. Fitness Functions (weekly throughput, deploys) match actual numbers — 32/week is wrong when 24 shipped in one session\n4. Attention Cost signal rate validated against real message classification\n5. Visual hierarchy — sections organized by importance, not crammed two-column\n6. Extend existing /api/analytics endpoints\n\n## Why\nInstruments tab has the most useful data but numbers don't match reality and layout is dense. Brief latency shows \"unread\" not time. Fitness throughput at 32/week contradicts observed velocity. Jeff needs trustworthy instruments.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T15:43:31Z",
+      "updated": "2026-03-27T15:43:31Z"
+    },
+    {
+      "index": 1762,
+      "apiId": 1845,
+      "title": "Werk Contract tab — load and render team operating contract",
+      "description": "## AC\n1. Contract tab loads and renders — no empty placeholder\n2. Shows: WIP limits (DEC-051), attention contract (DEC-1571), proving gates (DEC-048), role ownership (DEC-058)\n3. Live contract status — which rules are being followed vs violated right now\n4. Data from existing decisions + board state, no new API needed\n5. Extend /api/analytics endpoints for contract compliance metrics\n\n## Why\nContract tab is broken — shows \"Click to load\" and never loads. The team operating contract exists in decisions but isn't visible. Jeff should see compliance at a glance.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T15:43:21Z",
+      "updated": "2026-03-27T15:43:21Z"
+    },
+    {
+      "index": 1761,
+      "apiId": 1844,
+      "title": "Werk Flow Metrics tab — validate data completeness, fix understated card counts",
+      "description": "## AC\n1. Card count matches Vikunja reality — all cards, all statuses, not a subset\n2. Completed count includes Won't Do + Done\n3. Per-role lead times exclude parked/Later cards that skew averages\n4. Cumulative flow slopes match actual velocity (24 cards/session, not flat)\n5. Trace and fix data source — Vikunja pagination, workflow engine subset, or query filter causing undercount\n6. Extend existing /api/analytics/pipeline endpoint\n\n## Why\n212 cards / 98 completed massively understates reality. All graphs show lower throughput than actual. Jeff can't trust the dashboard if the numbers don't match what he sees.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T15:43:04Z",
+      "updated": "2026-03-27T15:43:04Z"
+    },
+    {
+      "index": 1753,
+      "apiId": 1836,
+      "title": "Add Haiku classification layer to The Clearing — tone, intent, routing",
+      "description": "## AC\n1. Haiku classifies incoming messages: tone (directive, collaborative, question, corrective, narrative, etc.), intent (action request, status update, acknowledgment, routing)\n2. Classification drives message routing — replaces regex @mention parsing with intent-aware routing\n3. Feeds the tone analytics on /jeff page with richer signal than keyword waterfalls\n4. Latency budget: <500ms per message (Haiku is fast enough)\n5. Fallback to current regex if API unavailable — no hard dependency\n\n## Why\nThe Clearing currently uses regex for everything — routing, tailer filtering, message classification. The /jeff tone chart showed 61% \"coordination\" because keyword matching can't distinguish narrative from routing from acknowledgment. Haiku is $0.25/1M input tokens — cheap enough to classify every message. Richer classification improves the /jeff analytics, enables smarter routing, and powers the JDI intent detection (#1746).",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T13:51:20Z",
+      "updated": "2026-03-27T13:51:21Z"
+    },
+    {
+      "index": 1747,
+      "apiId": 1830,
+      "title": "Fix photos date sort — Takeout upload dates and scan dates push old photos to page 1",
+      "description": "## Files\n- src/handlers/photo.handler.ts\n\n## AC\n- [ ] Photos page sorts by actual capture date, not upload/scan date\n- [ ] Takeout records with dateTaken near harvest dates (2026-03-12) sorted to end or flagged\n- [ ] Page 1 shows most recent real photos (2025-2026), not 6-year-old or vintage scans\n- [ ] Sort order matches what Jeff expects when he opens the page",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-27T12:16:43Z",
+      "updated": "2026-03-27T12:16:43Z"
+    },
+    {
+      "index": 1746,
+      "apiId": 1829,
+      "title": "JDI hook enhancement — detect intent-without-action and auto-continue",
+      "description": "## AC\n1. Hook detects phrases that signal intent without execution (\"I'll start on X now\", \"Let me do X\", \"Going to X next\") in role output\n2. If the role's next action is NOT a tool call within 30 seconds of the intent statement, hook nudges the role: \"You said you'd do X — do it or retract\"\n3. Works across all three roles — not just builders\n4. Does not fire on genuinely informational statements (\"I'll brief Silas later\" — that's a future commitment, not an immediate action)\n5. Configurable in settings — can be disabled per role if too aggressive\n\n## Why\nRoles announce intent (\"I'll start on X now\") and then either go idle, narrate more, or pivot without executing. The announcement replaces the work. DEC-025 says go is default. This hook enforces that — if you say you'll do it, the system expects you to do it. Directly addresses feedback_announce_is_not_execute and feedback_no_narrate_before_execute.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T12:14:19Z",
+      "updated": "2026-03-27T12:14:19Z"
+    },
+    {
+      "index": 1745,
+      "apiId": 1828,
+      "title": "Clearing record button — capture audio to session transcript, not send window",
+      "description": "## AC\n1. Record button captures audio and saves to /tmp/chorus-recordings/<session-id>-<timestamp>.webm\n2. Audio auto-transcribes (Whisper or browser SpeechRecognition API)\n3. Transcript appends to the Clearing message stream as a Jeff message — attributed, timestamped\n4. No text in the send input — the transcript flows directly into the conversation\n5. Recording indicator visible while active (red dot or similar)\n6. Works on mobile Safari (phone use case from demo night)\n\n## Why\nJeff tried to record during the demo with Deb and Allu. The button exists but dumps text into the send window instead of streaming into the conversation. Jeff wants press-and-talk, not press-transcribe-edit-send. The Clearing should feel like a walkie-talkie, not a dictation app.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T12:12:19Z",
+      "updated": "2026-03-27T12:12:19Z"
+    },
+    {
+      "index": 1739,
+      "apiId": 1822,
+      "title": "Scanned photo dating strategy — dateTaken vs dateDigitized for physical archive",
+      "description": "## AC\n1. ICD extended with dateTaken (original, estimated) and dateDigitized (scan date) as separate fields\n2. Confidence level on dateTaken — exact, year, decade, unknown\n3. Batch scanning workflow: folder-level date ranges (e.g. '1960s Europe trip')\n4. Era 0 (pre-digital) authority rules in merge logic\n5. Decision: manual annotation vs AI vision vs context clues for date estimation\n## Why\n5K+ physical photos spanning 1880s-1985. Scanners write today's date. The real date is in Jeff's memory or context clues. Without separating dateTaken from dateDigitized, scanned photos sort to 2026 instead of 1920. The family archive needs both timestamps.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-26T20:54:02Z",
+      "updated": "2026-03-26T20:54:02Z"
+    },
+    {
+      "index": 1738,
+      "apiId": 1821,
+      "title": "Sequence diagram — /nudge delivery paths",
+      "description": "## Files\n- product-manager/artifacts/sequence-nudge.html\n- jeff-bridwell-personal-site/public/gathering-docs/sequence-nudge.html\n\n## AC\n1. /nudge sequence diagram — delivery paths (role-to-role osascript, Jeff-to-Bridge, queue fallback)\n2. HTML dark theme matching pair-flow-sequence.html\n3. Added to doc-catalog\n## Why\nProduct documentation for Chorus interaction skills.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-26T20:23:10Z",
+      "updated": "2026-03-26T20:23:10Z"
+    },
+    {
+      "index": 1737,
+      "apiId": 1820,
+      "title": "Sequence diagram — /chat flow",
+      "description": "## Files\n- product-manager/artifacts/sequence-chat.html\n- jeff-bridwell-personal-site/public/gathering-docs/sequence-chat.html\n\n## AC\n1. /chat sequence diagram — two-role direct channel (start → messages → end → summary)\n2. HTML dark theme matching pair-flow-sequence.html\n3. Added to doc-catalog\n## Why\nProduct documentation for Chorus interaction skills.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-26T20:23:09Z",
+      "updated": "2026-03-26T20:23:09Z"
+    },
+    {
+      "index": 1736,
+      "apiId": 1819,
+      "title": "Sequence diagram — /pipeline flow",
+      "description": "## Files\n- product-manager/artifacts/sequence-pipeline.html\n- jeff-bridwell-personal-site/public/gathering-docs/sequence-pipeline.html\n\n## AC\n1. /pipeline sequence diagram — multi-card pipeline flow (Wren drives, roles nudge on completion, Jeff sees demo at end)\n2. HTML dark theme matching pair-flow-sequence.html\n3. Added to doc-catalog\n## Why\nProduct documentation for Chorus interaction skills.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-26T20:23:09Z",
+      "updated": "2026-03-26T20:23:09Z"
+    },
+    {
+      "index": 1731,
+      "apiId": 1814,
+      "title": "Diagnose AirPlay stale session — Library HomePod silent from Mac",
+      "description": "## AC\n1. Identify root cause: HomePod plays via Siri but silent via Mac AirPlay. Transport shows HTTP 200s, Mac shows connected, no audio output.\n2. Music.app logs show 'Missing locationUrl to make a request' — stale discovery cache\n3. Document workaround (power cycle HomePod) and permanent fix if one exists\n4. Check if coreaudiod restart resolves without HomePod power cycle\n## Why\nAirPlay from Library Mac to Library HomePod fails frequently. Only fix is unplug/replug HomePod. Affects music playback for Jeff. Navidrome bypasses Apple Music but still needs AirPlay to reach HomePod.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:music"
+      ],
+      "done": false,
+      "created": "2026-03-26T19:28:54Z",
+      "updated": "2026-03-26T19:28:54Z"
+    },
+    {
+      "index": 1721,
+      "apiId": 1804,
+      "title": "PM-driven tab sharing — Wren navigates screen sharing during demos",
+      "description": "## AC\n1. Wren can switch which Chrome tab is shared during a Google Meet call\n2. Demo flow script drives tab transitions — PM says 'show convergence' and the tab switches\n3. Works with Jeff's existing Meet setup — no manual tab switching needed\n## Why\nJeff narrates demos, PM should stage them. Currently Jeff manages both narration and screen mechanics. Separating those roles lets Jeff focus on the story while Wren manages the visual surface. Idea from 2026-03-26 demo prep.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-26T16:38:40Z",
+      "updated": "2026-03-26T16:38:40Z"
+    },
+    {
+      "index": 1717,
+      "apiId": 1800,
+      "title": "Quality gate hooks — Stop + PostToolUse agent review",
+      "description": "## AC\n1. Stop hook with agent-type gate — fresh Claude instance reviews work against AC before role can finish. Returns ok:false with specifics if gaps found.\n2. PostToolUse hook on Edit/Write — lightweight edge-case and verification check after each code change.\n3. Cross-role review skill (/code-quality-check) that Silas runs async on Kade's code before demo.\n4. All hooks deployed to project settings.json, not user settings.\n## Why\nRoles cannot self-assess quality. Jeff is currently the only quality monitor. This adds external verification without requiring his attention.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-26T13:58:12Z",
+      "updated": "2026-03-26T13:58:13Z"
+    },
+    {
+      "index": 1715,
+      "apiId": 1798,
+      "title": "Chorus hooks code review — 14 findings from Kade audit",
+      "description": "## Code Review Findings (Kade, 2026-03-26)\n\n### Bugs (fix)\n1. **write_scrubber.rs:39 — CONTAINER_ID_RE false positives.** `[a-f0-9]{12,64}` matches git SHAs, UUIDs in shared files. Constant warn noise. Tighten pattern or exclude known-safe contexts.\n2. **csc_guard.rs:12 — ARTIFACT_PATTERN too broad.** \"extract\" and \"convert\" are common words. `npm run convert` false-positives. Require proximity to file path or /tmp.\n3. **main.rs:136-141 — batch_progress result silently dropped.** Checked but never returned. Surface the stderr or remove dead check.\n\n### Edge Cases (harden)\n4. **accept_gate.rs:34 — Role::Unknown allows everything.** If DEPLOY_ROLE unset, gate is wide open. Block Unknown from /acp.\n5. **autonomy_guard.rs:402 — reads entire JSONL into memory.** Large sessions waste memory. Read from end.\n6. **autonomy_guard.rs:267 — question-mark bypass.** Jeff's \"fix tests?\" skips permission-seeking detection. May be intentional but document.\n\n### Dead Code (clean)\n7. **types.rs:156 — permission_ask_json never called.** Remove.\n8. **shim.rs — duplicate dispatch tables.** Lines 40-96 and 108-179 are identical. Consolidate.\n\n### Code Quality (improve)\n9. **write_scrubber.rs:45 — add parens for operator precedence clarity.** Works correctly but reads ambiguously.\n10. **search_hierarchy.rs:85 — SQLite errors silently swallowed.** Log when Chorus DB is locked/corrupt.\n11. **observer.rs:20 — /tmp/claude-team-scan assumed to exist.** Add create_dir_all.\n12. **types.rs:119-124 — deny() uses exit_code 0.** Inconsistent with block_with_stderr (exit_code 2). Two blocking mechanisms confuse.\n13. **search_hierarchy.rs is_code_lookup — too permissive.** snake_case classifier lets most searches bypass Chorus. Reduces DEC-074 effectiveness.\n14. **infra_guardrails.rs — new, needs edge case review.**\n\n## AC\n- [ ] CONTAINER_ID_RE pattern tightened or context-aware (no false positives on git SHAs)\n- [ ] ARTIFACT_PATTERN requires proximity to output path, not just keyword presence\n- [ ] batch_progress result surfaced or dead check removed\n- [ ] Role::Unknown blocked from /acp\n- [ ] permission_ask_json removed\n- [ ] shim.rs dispatch consolidated\n- [ ] observer.rs creates /tmp/claude-team-scan if missing",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-26T13:43:31Z",
+      "updated": "2026-03-26T13:43:31Z"
+    },
+    {
+      "index": 1707,
+      "apiId": 1790,
+      "title": "Extract inline SPARQL queries from handlers into Chorus API endpoints",
+      "description": "## Files\n- src/handlers/photo.handler.ts\n- src/services/sparql.service.ts\n- src/routes/api.routes.ts\n\n## AC\n- [ ] All SPARQL queries in photo handler moved to dedicated Chorus API endpoints\n- [ ] Handler calls endpoints, not inline SPARQL strings\n- [ ] Applies to getAllPhotosFromCanonical and any other Fuseki queries in the photo path\n- [ ] Pattern established for other domains to follow (music, books, garden)",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-26T10:40:03Z",
+      "updated": "2026-03-26T10:40:03Z"
+    },
+    {
+      "index": 1703,
+      "apiId": 1786,
+      "title": "Wren holds the line — stop relaying role friction to Jeff, handle it",
+      "description": "When a role pushes back on a bug report or rejects feedback, Wren defers to Jeff instead of handling it. Jeff becomes the relay and escalation point for every friction. This is the highest-cost failure mode in the system.\n\n## AC\n- [ ] When a role says 'it's not a bug' or explains away a problem Jeff reported, Wren rejects and re-nudges — does not relay the explanation to Jeff\n- [ ] Roles nudge each other for help before escalating to Jeff — Wren enforces this\n- [ ] 'I fixed it' always gets 'show me' — no trust without evidence, Wren verifies before telling Jeff\n- [ ] Jeff only hears about a problem when it's actually fixed or Wren is genuinely blocked\n- [ ] When Jeff walks away, coordination continues — roles don't stop working because Jeff stopped watching",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-25T22:54:24Z",
+      "updated": "2026-03-25T22:54:24Z"
+    },
+    {
+      "index": 1690,
+      "apiId": 1773,
+      "title": "Implement ICD integration layer — add pattern, role, endpoint to ontology and instance TTLs",
+      "description": "After design card #1689 is accepted, implement the integration layer classes in the ICD ontology and update instance TTLs.\n\n## Files\n- jeff-bridwell-personal-site/src/ontology/icd-ontology.ttl\n- jeff-bridwell-personal-site/src/ontology/icd-instance-photos.ttl\n\n## AC\n- [ ] Add IntegrationPattern, InterfaceRole, Endpoint classes to icd-ontology.ttl\n- [ ] Add Direction property to Provider\n- [ ] Update photos ICD instance with pattern (batch for canonical rebuild, triggered for iPhone extraction)\n- [ ] Update convergence page to render integration pattern + role + endpoint per provider\n- [ ] Validate: webMethods extraction script can map OAGIS verbs to IntegrationPattern instances\n- [ ] Reload Fuseki, verify convergence page renders new fields",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-25T13:40:26Z",
+      "updated": "2026-03-25T13:40:26Z"
+    },
+    {
+      "index": 1682,
+      "apiId": 1765,
+      "title": "Short video replay for team — capture 5-10 second clips for roles to see what Jeff sees",
+      "description": "Jeff types 20 lines to describe what a 5-second clip shows instantly. Visual-to-text translation is real friction.\n\n## AC\n- [ ] Mechanism to capture short screen clips (5-10 sec) from Bridge or Claude\n- [ ] Frame extraction so roles can see the interaction sequence\n- [ ] Shareable artifact — drop a clip in Bridge like dropping an image\n- [ ] Works from Jeff phone or desktop",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-24T21:27:35Z",
+      "updated": "2026-03-24T21:31:29Z"
+    },
+    {
+      "index": 1677,
+      "apiId": 1760,
+      "title": "Borg calibration session — peer benchmark, scoring rubric, and self-assessment review with Jeff",
+      "description": "Jeff wants to walk through both Borg HTML documents together.\n\n## Files\n- product-manager/data/borg/ontology-comparison.html\n- product-manager/data/borg/self-assessment.html\n\n## AC\n- [ ] Jeff reviews ontology comparison — TOSCA vs SOSA/SSN vs K8s matrix and hybrid recommendation\n- [ ] Jeff reviews self-assessment — 7 dimensions with real data, 4/4 decision validation\n- [ ] Capture Jeff's feedback, questions, and direction for Borg next steps\n- [ ] Update Borg product roadmap based on review",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:borg"
+      ],
+      "done": false,
+      "created": "2026-03-24T20:13:59Z",
+      "updated": "2026-03-24T21:24:42Z"
+    },
+    {
+      "index": 1660,
+      "apiId": 1743,
+      "title": "Fix harvest-manifests page — restore per-domain harvest status tiles with real data",
+      "description": "",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-23T22:13:30Z",
+      "updated": "2026-03-23T22:13:30Z"
+    },
+    {
+      "index": 1647,
+      "apiId": 1730,
+      "title": "Source registry service — runtime API for provider status, load state, and staleness",
+      "description": "Jeff's direction: we keep rediscovering what sources exist, where they live, and what's loaded. The ICD (#1642) defines the rules. This service reads them at runtime.\n\nAPI endpoint that answers:\n- What source graphs exist in Fuseki per domain?\n- When was each last loaded/refreshed?\n- What's the record count vs expected count from provider?\n- Which sources are stale (schema hash changed since last load)?\n- For a given record (by date), which source is golden for each field?\n\nReads from: ICD provider model, Fuseki graph metadata, icd:schemaHash, icd:needsRevalidation.\n\nRelated: #1618 (cache version hashes), #1642 (era-scoped ICD)\n\n## AC\n- [ ] GET /api/registry/sources/:domain — list all providers with load status\n- [ ] GET /api/registry/authority/:domain?date=YYYY-MM-DD — which provider is golden per field for a given date\n- [ ] Staleness detection — flag source graphs where schema hash != current ICD version\n- [ ] Record count comparison — loaded vs expected per provider\n- [ ] Surfaced on a page or existing dashboard (not just API)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:34:16Z",
+      "updated": "2026-03-23T18:34:16Z"
+    },
+    {
+      "index": 945,
+      "apiId": 1028,
+      "title": "Help Jeff simplify personal password management tooling",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "domain:infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-04T13:29:18Z",
+      "updated": "2026-03-04T13:29:18Z"
+    },
+    {
+      "index": 1096,
+      "apiId": 1179,
+      "title": "Borg two-phase delivery — hand drawings to HTML iteration, then build from validated prototype",
+      "description": "## What\nDocument and operationalize Borg's two-phase delivery pattern as a repeatable methodology.\n\n## Phase 1: Iterate with client (spike/discovery)\n- Hand drawings → HTML prototypes, rapidly iterated\n- Refine UI + OWL + value stream + domains as we go\n- 2-3 cycles\n- Identify integrations, security, and harvest considerations along the way\n- Output: validated prototype that captures intent\n\n## Phase 2: Build from 1 (commitment)\n- The iteration output becomes the spec — estimable, buildable\n- Code + tests + UX + tickets + logs + monitoring + security + documentation\n- Full blast radius coverage (DEC-072)\n\n## Why\nThis is Jeff's natural working pattern — validated by the Athena experience at Staples. Phase 1 is discovery through making. Phase 2 is commitment informed by understanding. Maps to spike/discovery/commitment taxonomy.\n\n## Athena lesson\nProcess weight kills adoption. Phase 1 must stay lightweight — sketches, conversation, rapid cycles. Phase 2 inherits rigor from the system, not from human paperwork.\n\n## AC\n- [ ] Pattern documented in About library\n- [ ] Card lifecycle integrates the two phases (spike → discovery → commitment maps to Phase 1 → Phase 2)\n- [ ] Borg can execute Phase 1 autonomously given hand drawings as input\n\n## Tags\n[medium] [discovery] chorus methodology",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "domain:roles"
+      ],
+      "done": false,
+      "created": "2026-03-06T12:53:55Z",
+      "updated": "2026-03-06T12:54:07Z"
+    },
+    {
+      "index": 1109,
+      "apiId": 1192,
+      "title": "Album reviews — pull critic/user reviews into album detail page",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "domain:music"
+      ],
+      "done": false,
+      "created": "2026-03-06T16:49:18Z",
+      "updated": "2026-03-06T16:49:18Z"
+    },
+    {
+      "index": 1217,
+      "apiId": 1300,
+      "title": "Voice Analytics as Reflecting hub — aggregate posture, sentiment, session tempo, personal analytics",
+      "description": "",
+      "status": "Ideas",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "domain:self"
+      ],
+      "done": false,
+      "created": "2026-03-09T15:26:04Z",
+      "updated": "2026-03-09T15:26:04Z"
+    },
+    {
+      "index": 1820,
+      "apiId": 1903,
+      "title": "Board state validation tests — card numbers, state cards, stream/domain accuracy",
+      "description": "## AC\n1. Tests verify card numbers returned by board-ts match Vikunja source\n2. Tests verify state cards (WIP per role) show correct current card for each role\n3. Tests verify stream and domain tags display correctly on card views\n4. Tests verify card move operations update state immediately — no stale cache\n5. Tests verify board-ts list output matches actual Vikunja state\n6. All tests run in CI",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T12:53:24Z",
+      "updated": "2026-03-29T12:54:54Z"
+    },
+    {
+      "index": 1801,
+      "apiId": 1884,
+      "title": "Seed media persistence — SMS image and audio attachments must land on disk, not just metadata references",
+      "description": "## AC\n- [ ] capture/media/ directory created and writable\n- [ ] SMS image attachments (jpg, png) saved to capture/media/ with seed ID filename\n- [ ] SMS audio attachments (amr, m4a) saved to capture/media/ with seed ID filename\n- [ ] Seed brief media paths resolve to actual files on disk\n- [ ] Regression: text and link seeds still route correctly",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:seeds"
+      ],
+      "done": false,
+      "created": "2026-03-28T21:44:17Z",
+      "updated": "2026-03-28T21:45:31Z"
+    },
+    {
+      "index": 1702,
+      "apiId": 1785,
+      "title": "Repeatable photo pipeline — one command: extract → rebuild → thumbnails → verify",
+      "description": "AC:\n- [ ] Single script runs the full pipeline: extract iPhone → load to Fuseki → canonical rebuild → generate thumbnails → rebuild index → verify page renders\n- [ ] Thumbnail generation is part of the pipeline, not a separate manual step\n- [ ] UUIDs are stable across rebuilds (same filename+date = same UUID = same thumbnail file)\n- [ ] Pipeline verifies source counts against ICD baseline: iPhone 54,543, Apple 24,560, Takeout 102,490\n- [ ] Pipeline verifies page 1 renders thumbnails before declaring success\n- [ ] No manual steps — running twice produces the same result without breaking anything\n\nBaseline source counts (ICD verified):\n- iPhone: 54,543 (backup 2026-03-24)\n- Apple Photos: 24,560\n- Google Takeout: 102,490",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-25T22:30:23Z",
+      "updated": "2026-03-26T20:42:35Z"
+    },
+    {
+      "index": 1699,
+      "apiId": 1782,
+      "title": "Thumbnail service — single endpoint, one lookup, no fallback chains",
+      "description": "Replace the 4-strategy resolveThumbnail with a single service endpoint. Stop the regenerate-and-hope cycle.\n\n## AC\n- [ ] GET /api/photos/:uri/thumbnail returns image or 404 — no fallback chains\n- [ ] Backed by a UUID→path JSON map, rebuilt once when thumbnails are generated\n- [ ] 404s are logged — that log IS the real coverage metric\n- [ ] Existing resolveThumbnail strategies removed — one path, not four\n- [ ] Jeff sees thumbnails rendering on a photos page — browser verification, not database count",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-25T20:52:06Z",
+      "updated": "2026-03-26T10:30:59Z"
+    },
+    {
+      "index": 1695,
+      "apiId": 1778,
+      "title": "Fix nudge injection — broken again after hooks deploys",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-25T18:51:36Z",
+      "updated": "2026-03-25T23:24:50Z"
+    },
+    {
+      "index": 1670,
+      "apiId": 1753,
+      "title": "demo-provenance hook — auto-generate demo brief to Wren after demo completes",
+      "description": "Rust subcommand in chorus-hooks. PostToolUse hook after /demo skill completes.\n\n## Logic\n1. Capture: card ID, title, builder role, AC checklist, smoke result, timestamp\n2. Write structured brief to product-manager/briefs/YYYY-MM-DD-demo-{card}.md\n3. Emit spine event: card.demo.completed\n\nBuilder cannot skip the paper trail — the hook generates it automatically.\n\n## Files\n- messages/services/chorus-hooks/src/lib.rs\n- messages/services/chorus-hooks/src/demo_provenance.rs\n\n## AC\n- [ ] Brief auto-generated in Wren's inbox after every /demo\n- [ ] Brief contains: card ID, builder, smoke result, AC status, timestamp\n- [ ] spine event emitted\n- [ ] Builder doesn't need to manually write the brief",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-24T12:08:33Z",
+      "updated": "2026-03-24T18:18:12Z"
+    },
+    {
+      "index": 1653,
+      "apiId": 1736,
+      "title": "Enrich Takeout source graph — extract EXIF from image files for dimensions, fileSize, camera model",
+      "description": "Jeff's direction: enrich each source to its fullest BEFORE merge. Separation of concerns — merge picks the best across already-rich sources, not partially-enriched ones.\n\nTakeout source graph has 0% dimensions and 0% fileSize because JSON sidecars don't include them. The actual image files on Bedroom (/Volumes/Gathering/Photos) have EXIF with these fields.\n\nDepends on: #1645 (Takeout source loaded — done)\nBlocks: #1643 (merge logic should work from enriched sources)\n\n## AC\n- [ ] Read EXIF from Takeout image files on Bedroom via SSH\n- [ ] Extract: dimensions (width/height), fileSize, camera model where available\n- [ ] Update Takeout source graph triples with extracted fields\n- [ ] Validate: Takeout width coverage goes from 0% to near-100% for files on disk\n- [ ] Validate: Takeout fileSize coverage goes from 0% to near-100% for files on disk\n- [ ] Records without matching image file on disk documented (these stay at 0%)",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T20:06:02Z",
+      "updated": "2026-03-26T10:31:04Z"
+    },
+    {
+      "index": 1652,
+      "apiId": 1735,
+      "title": "Establish iPhone photo extraction path — repeatable governed pipeline from Jeff's phone to source graph",
+      "description": "iPhone is golden source for 2020+ but has no governed extraction path. source-iphone.json (54,479 records) exists with unknown provenance. Need a repeatable, documented method.\n\nDepends on: #1645 (Apple + Takeout loaded first)\nBlocks: #1643 (merge logic needs all 3 sources)\n\n## AC\n- [ ] Identify extraction tool (osxphotos CLI? direct SQLite? iCloud API? USB export?)\n- [ ] Document which machine runs it and access requirements\n- [ ] Run extraction, produce source JSON or TTL\n- [ ] Validate output matches ICD field inventory from #1648\n- [ ] Load to Fuseki as urn:jb:photos/source/iphone\n- [ ] Verify record count and field coverage against 3-way comparison (54,479 records, 89.3% GPS, 100% dimensions)\n- [ ] Document as repeatable — not a one-time snapshot",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T19:53:51Z",
+      "updated": "2026-03-26T20:42:35Z"
+    },
+    {
+      "index": 1648,
+      "apiId": 1731,
+      "title": "iPhone provider ICD — define source schema, field mappings, and interface for iPhone photo harvest",
+      "description": "iPhone is golden source for 2020+ (47K+ records, 7.8 avg fields, 89% GPS) but has no provider ICD. Can't harvest authoritatively without one. Blocks #1645 (authoritative source harvest).\n\nUse the source JSON (architect/docs/source-iphone.json) as reference for field inventory. Map against jb:Photo consumer ICD.\n\nFiles: src/ontology/icd-instance-photos.ttl\n\n## AC\n- [ ] Define iPhone provider section in icd-instance-photos.ttl\n- [ ] Field inventory: filename, dateTaken, width, height, lat, lng, fileSize, mediaType (+ any iPhone-specific fields)\n- [ ] Source-to-canonical field mappings (direct, transform, computed)\n- [ ] Interface definition: how to extract (osxphotos CLI, SQLite, direct export?)\n- [ ] Non-functionals: access method, machine location, expected record count\n- [ ] Source Authority section populated (golden Modern era, supplementary iPhone primary camera era)",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "sequence:hardening",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T19:12:33Z",
+      "updated": "2026-03-26T20:42:35Z"
+    },
+    {
+      "index": 1645,
+      "apiId": 1728,
+      "title": "Harvest Apple Photos + iPhone from authoritative sources — SQLite and direct export through ICD pipelines",
+      "description": "Scope: Apple Photos + Google Takeout only. iPhone descoped — no governed extraction path (agreed with Wren).\n\nCurrent Fuseki has zero Apple source graphs. Takeout source graph loaded (102,488 records) but needs ICD validation. The rebuild needs authoritative data from governed pipelines.\n\nDepends on: #1642 (era-scoped ICD — done)\n\n## AC\n- [ ] Harvest Apple Photos from Mac SQLite library through ICD-governed pipeline\n- [ ] Load as source graph: urn:gathering:photos/source/apple\n- [ ] Validate Apple record count against known library size (24,592)\n- [ ] All ICD-required fields populated where source supports them\n- [ ] Validate existing Takeout source graph (urn:gathering:photos/source/takeout) against ICD fields\n- [ ] Source graph field coverage matches 3-way comparison HTML (dims, GPS percentages)",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:28:16Z",
+      "updated": "2026-03-26T20:42:35Z"
+    },
+    {
+      "index": 1644,
+      "apiId": 1727,
+      "title": "Rebuild canonical photo graph — from-scratch rebuild using era-scoped golden source model",
+      "description": "Rebuild canonical photo graph — from-scratch rebuild using era-scoped golden source model.\n\n## Current State (2026-03-25)\nCanonical index has 80,090 records but is corrupt:\n- 52,887 iPhone records: ~87% wrong dates (extraction timestamps, not EXIF), wrong UUID→thumbnail mappings\n- 27,203 Apple Photos records: ~80% correct dates, trustworthy baseline\n- mapSource and merge bugs fixed in handler code\n\n## Fix Plan\n1. Verify apple-photos source is trustworthy (spot-check 50 records)\n2. Diagnose iPhone date source — find where pipeline reads wrong dates\n3. Diagnose UUID→thumbnail mismatch — trace one record end to end\n4. Rebuild canonical with correct EXIF dates\n5. Regenerate thumbnails with stable UUIDs\n6. Verify: Jeff opens page, sees correct photos sorted by date\n\nFull plan: architect/briefs/2026-03-25-photos-canonical-corruption-plan.md\n\n## Files\n- data/pods/jeff/photos/canonical-index.json\n- engineer/scripts/photo-pipeline.py\n- src/handlers/photo.handler.ts\n\n## AC\n- [ ] Apple Photos records verified as trustworthy baseline (50 records, 90%+ date match)\n- [ ] iPhone extraction bug identified and fixed — dates come from EXIF, not backup timestamp\n- [ ] UUID→thumbnail mapping verified — 50 random records, thumbnail content matches canonical record\n- [ ] Photos page shows correct thumbnails sorted by date on pages 1, 5, 10, 20\n- [ ] Jeff says it looks right",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:16:58Z",
+      "updated": "2026-03-26T10:31:04Z"
+    },
+    {
+      "index": 1643,
+      "apiId": 1726,
+      "title": "Design era-scoped merge logic — define per-era primary/supplementary source rules for canonical photo rebuild",
+      "description": "Jeff accepted the 4-era golden source model but doesn't trust the current canonical graph — it was built on Takeout-anchored assumptions. This card designs the merge rules before Kade rebuilds.\n\n## AC\n- [ ] Define merge rules per era: which source is primary, which are supplementary, how conflicts resolve\n- [ ] Document metadata ceiling per era — what fields are possible given source device capabilities\n- [ ] Define provenance tracing — every canonical record links back to source record + era authority\n- [ ] Wire era-scoped authority into ICD provider model (#1642)\n- [ ] Output: merge specification document that Kade can implement mechanically",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:16:48Z",
+      "updated": "2026-03-26T20:42:35Z"
+    },
+    {
+      "index": 1639,
+      "apiId": 1722,
+      "title": "Renamed by board set",
+      "description": "Temporary test card.\n\n## AC\n- [ ] Test board set",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T14:04:41Z",
+      "updated": "2026-03-26T20:42:36Z"
+    },
+    {
+      "index": 1632,
+      "apiId": 1715,
+      "title": "Fix unreliable photo dates — correct 1,033 photos using Google sidecar timestamps",
+      "description": "1,033 Google Takeout photos flagged dateUnreliable=true. Google export timestamp used instead of original date. Sidecar JSON has correct dates.\n\n## AC\n- [ ] Parse sidecar JSON for correct original dates on flagged photos\n- [ ] Update canonical graph dateTaken for corrected photos\n- [ ] Remove dateUnreliable flag after correction\n- [ ] Verify no date collisions in reconciliation after update",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T12:20:37Z",
+      "updated": "2026-03-26T10:31:12Z"
+    },
+    {
+      "index": 1629,
+      "apiId": 1712,
+      "title": "Unified photo serve endpoint — GET /api/photos/serve/:id with source fallback chain",
+      "description": "No unified serving endpoint. #1504 design approved but not built. Need Apple→Takeout→derivative→thumbnail fallback chain.\n\n## AC\n- [ ] GET /api/photos/serve/:canonicalId returns best available image\n- [ ] Fallback chain: Apple original → Google Takeout full-res (NFS) → derivative → thumbnail → 404\n- [ ] Response headers: X-Photo-Source, X-Photo-Resolution\n- [ ] HEIC served as-is or with Accept-based JPEG conversion\n- [ ] Album detail page uses unified endpoint",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T12:20:22Z",
+      "updated": "2026-03-26T10:31:04Z"
+    },
+    {
+      "index": 1628,
+      "apiId": 1711,
+      "title": "Generate thumbnails for all canonical photos — batch job on Bedroom Mac",
+      "description": "Zero thumbnails generated. /photos page can't render at scale. Batch generate 400px JPGs on Bedroom Mac (M2 Pro, proximity to source files).\n\nBlocks: #1644 acceptance (canonical without thumbnails isn't done)\n\n## Files\n- engineer/scripts/generate-thumbnails.sh (new)\n- data/pods/jeff/photos/thumbnails/ (output)\n\n## AC\n- [ ] Batch script runs on Bedroom via SSH, reads Apple originals + Takeout full-res\n- [ ] Output to public/thumbnails/photos/{YYYY-MM}/{uuid}.jpg\n- [ ] Progress emission to stderr (DEC batch-progress)\n- [ ] All 79K canonical photos have a thumbnail or documented skip reason\n- [ ] /photos page loads thumbnails — no NO PREVIEW tiles for photos with source files on disk\n- [ ] canonical-index.json updated with thumbnail paths",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T12:20:18Z",
+      "updated": "2026-03-26T10:31:04Z"
+    },
+    {
+      "index": 1627,
+      "apiId": 1710,
+      "title": "Complete Takeout album import — 1,271 remaining Google Takeout albums into canonical photo graph",
+      "description": "192 of 1,463 Takeout albums imported. 1,271 remain — structured metadata (album titles, dates, membership) sitting in sidecar JSON. Same parsing pattern as #1604.\n\nFiles: scripts/harvest-takeout-albums.sh, src/services/semantic-search.service.ts\n\n## AC\n- [ ] Parse remaining 1,271 Takeout album sidecar JSONs\n- [ ] Create album TTL files with photo membership links\n- [ ] SPARQL UPDATE to wire album titles into canonical photos\n- [ ] >60% of canonical photos have album membership after import\n- [ ] Embeddings rebuilt with album context",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "sequence:hardening",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T12:20:12Z",
+      "updated": "2026-03-23T12:39:08Z"
+    },
+    {
+      "index": 1603,
+      "apiId": 1686,
+      "title": "Verify iCloud→canonical photo coverage — match 24,494 iCloud items to canonical before disabling sync",
+      "description": "Gate for #1602 (disable Bedroom iCloud sync). Jeff wants all iCloud items accounted for in canonical before turning off sync.\n\n## AC\n1. Query Mac Apple Photos SQLite: get full item count and UUID list (24,592 items)\n2. Query canonical graph: get all Apple-sourced canonical photos (14,539 harvested)\n3. Diff: identify ~10K items in Mac library not yet in canonical\n4. Harvest missing items into source graph\n5. Re-run build-canonical-photos.py to update canonical layer\n6. Report: \"X/24,494 iCloud items are in canonical\" — target 100%\n7. Jeff accepts when count matches\n\n## Context\n- Mac library has 24,592 items, we harvested 14,539\n- ~10K gap may be videos, screenshots, or items the harvester filtered\n- Must complete before #1602 (disable Bedroom iCloud sync)\n\n## Files\nscripts/build-canonical-photos.py\nsrc/ontology/jb-ontology.ttl",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-22T11:57:26Z",
+      "updated": "2026-03-26T20:44:17Z"
+    },
+    {
+      "index": 1596,
+      "apiId": 1679,
+      "title": "Disk usage audit — 87% on Library, 1TB in media",
+      "description": "AC:\n1. Identify purgeable vs real disk usage (APFS-aware, not du)\n2. Assess Photos vs Pictures overlap — is 559GB across two dirs redundant with Bedroom?\n3. Check Parallels 29GB — still needed?\n4. Recommend what can move to Bedroom per DEC-089\n5. Get below 80% or document why not",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-21T21:06:55Z",
+      "updated": "2026-03-22T21:15:28Z"
+    },
+    {
+      "index": 1591,
+      "apiId": 1674,
+      "title": "Nudge wake — background poller that wakes idle roles when nudged, not just drain-on-prompt",
+      "description": "Nudge delivery currently requires the target role to have an active session AND submit a prompt to drain the inbox. If the role is idle, nudges pile up unread.\n\n## AC\n1. A background process polls each role's nudge inbox on a short interval (≤10s)\n2. When a nudge arrives for an idle role, the poller wakes that role's terminal session automatically\n3. Nudge delivery works whether the target role is active, idle, or has no session — no silent drops\n4. Zero config for the sender — `/nudge <role> <message>` just works, like `ls`\n5. No focus steal, no clipboard injection — wake mechanism respects Jeff's foreground context\n6. Works across all three roles without per-role setup\n\n## Files\n- messages/scripts/nudge.sh\n- messages/services/chorus-hooks/src/ (Rust shim nudge mode)\n- LaunchAgents (new poller agent if needed)",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-21T17:21:02Z",
+      "updated": "2026-03-21T19:08:26Z"
+    },
+    {
+      "index": 1583,
+      "apiId": 1666,
+      "title": "Evaluate local LLM for Claude Code — Ollama on Bedroom for lightweight coding tasks",
+      "description": "XDA article: bash script runs Claude Code against local llama.cpp/Ollama instead of Anthropic API. Uses Qwen3 Coder for agentic coding workflows.\n\n## Why it matters\n- Ollama already runs on Bedroom for embeddings — same infra could host a coding model\n- Privacy: Self domain data stays entirely local\n- Cost: save API budget for Opus-level work, use local model for housekeeping (lint, simple edits, test runs)\n- Could enable a \"local-only\" tier for Gathering's concentric trust model (DEC: Chorus=cloud, Gathering=hybrid, Self=local)\n\n## AC\n1. Evaluate: run Qwen3 Coder (or similar) on Bedroom via Ollama for simple Claude Code tasks\n2. Test: can it run board-ts commands, lint fixes, simple file edits reliably?\n3. Compare: quality/speed vs Anthropic API for housekeeping tasks\n4. If viable: document setup, assess which tasks can route to local vs cloud\n5. Privacy assessment: which domains could benefit from local-only processing\n\n## Reference\nhttps://www.xda-developers.com/wrote-script-run-claude-code-local-llm-skipping-cloud/\n\n## Files\nscripts/lcc.sh (new), architect/docs/local-llm-assessment.md (new)",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-21T14:13:19Z",
+      "updated": "2026-03-22T21:15:28Z"
+    },
+    {
+      "index": 1568,
+      "apiId": 1651,
+      "title": "Demo: SWAT quick card",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-20T13:49:42Z",
+      "updated": "2026-03-20T13:49:51Z"
+    },
+    {
+      "index": 1567,
+      "apiId": 1650,
+      "title": "Demo: domain auto-infers chunk",
+      "description": "## AC\n1. Test",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-20T13:49:41Z",
+      "updated": "2026-03-26T20:42:35Z"
+    },
+    {
+      "index": 1566,
+      "apiId": 1649,
+      "title": "Test card explicit chunk",
+      "description": "## AC\n1. Test item",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": false,
+      "created": "2026-03-20T13:46:14Z",
+      "updated": "2026-03-20T13:46:25Z"
+    },
+    {
+      "index": 1565,
+      "apiId": 1648,
+      "title": "Quick SWAT fix",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-20T13:46:08Z",
+      "updated": "2026-03-20T13:46:24Z"
+    },
+    {
+      "index": 1564,
+      "apiId": 1647,
+      "title": "Test card with domain",
+      "description": "## AC\n1. Test item",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-20T13:46:01Z",
+      "updated": "2026-03-26T20:42:36Z"
+    },
+    {
+      "index": 1523,
+      "apiId": 1606,
+      "title": "Fix People page sourceNetwork badge — GROUP_CONCAT all sources per person",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:people"
+      ],
+      "done": false,
+      "created": "2026-03-19T11:28:48Z",
+      "updated": "2026-03-19T15:48:55Z"
+    },
+    {
+      "index": 1519,
+      "apiId": 1602,
+      "title": "Consolidate mapper — serve SEMANTIC_MAPPER.html as canonical /harvesting/mapper",
+      "description": "## Acceptance Criteria\n1. /harvesting/mapper serves data/about/SEMANTIC_MAPPER.html directly (wrapped in app layout)\n2. harvest-mapper.ejs deleted — one canonical source, no drift\n3. /harvesting/icd redirect updated if needed\n4. Nav link unchanged — user sees same menu item, gets the real ICD\n5. Tests pass, lint clean\n\n## Context\nTwo mapper pages exist: SEMANTIC_MAPPER.html (source of truth, Wren maintains) and harvest-mapper.ejs (derivative visualization). They drift. Jeff likes the HTML file better — it has the full ICD structure. Serve the canonical source directly. No compensation layers, no duplication.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:stories",
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-18T23:32:51Z",
+      "updated": "2026-03-19T12:17:15Z"
+    },
+    {
+      "index": 1513,
+      "apiId": 1596,
+      "title": "Wire Photos ICD validation gate into write path — domain #2",
+      "description": "## Acceptance Criteria\n1. Photos ICD field definitions declared (required: dateTaken, filePath, dimensions; warning: camera, location)\n2. validateFromICD() from #1512 wired into Photos write path\n3. Violations reject, warnings log — same pattern as Stories\n4. Existing photo TTL files pass validation\n5. /photos page unchanged — zero read-path impact\n6. Tests pass, lint clean\n\n## Context\nSecond domain wired after Stories (#1509). Depends on #1512 (shared pattern extraction). Photos chosen because most data + most prior pain. DEC-094 harvest pause respected — validation gates only, no new harvesting.",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-18T20:50:21Z",
+      "updated": "2026-03-26T10:31:04Z"
+    },
+    {
+      "index": 1512,
+      "apiId": 1595,
+      "title": "Extract shared validateFromICD pattern — reusable validation before domain #2",
+      "description": "## Acceptance Criteria\n1. validateFromICD() extracted from stories-pod.service.ts:22-39 into shared module (e.g. src/services/icd-validation.service.ts)\n2. StoriesPodService imports and uses shared function — no behavior change\n3. Function signature accepts field definitions (required/warning) so each domain can declare its own schema\n4. Existing 78 story tests pass unchanged\n5. Lint clean\n\n## Context\nKade flagged in #1509 feedback: inline validation will copy-paste-diverge across domains. Extract before wiring domain #2. DEC-094 harvest pause respected — gates only.",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:stories",
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-18T20:50:12Z",
+      "updated": "2026-03-19T12:17:15Z"
+    },
+    {
+      "index": 1503,
+      "apiId": 1586,
+      "title": "Harvest full Facebook data export — friends, profile, messages, posts, comments, places",
+      "description": "## Acceptance Criteria\n1. Source: ~/Downloads/facebook-jeffbridwell169465-2026-03-03-34FwtHTO/ (March 3 export)\n2. Harvest ALL in one pass — canonical JSON first, reconcile, load:\n   - your_friends.json — full friend list, feeds People domain\n   - profile_information.json — bio, experience, contacts\n   - messages/inbox/ — conversation history (private, Self domain trust)\n   - your_posts__check_ins__photos_and_videos_1.json — posts with locations\n   - comments.json + likes_and_reactions (12 files) — engagement history\n   - places_you_have_been_tagged_in.json — location data\n   - your_experiences.json — life events\n3. Reconcile friends with existing People domain and LinkedIn Connections\n4. Reconcile posts with existing 2,030 Facebook SocialPosts in graph\n5. One extraction, one reconciliation, one load\n\n## Context\nFull export on disk (March 3 2026). Currently 2,030 Facebook posts harvested — friends, profile, messages, comments, places all unharvested. Same pattern as LinkedIn — grabbed posts, missed everything else. Friends + LinkedIn connections = Jeff's full social graph for People domain.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:social"
+      ],
+      "done": false,
+      "created": "2026-03-17T15:04:13Z",
+      "updated": "2026-03-19T15:48:56Z"
+    },
+    {
+      "index": 1501,
+      "apiId": 1584,
+      "title": "Harvest full LinkedIn data export — profile, recommendations, connections, not just posts",
+      "description": "## Acceptance Criteria\n1. Unzip Complete_LinkedInDataExport_03-01-2026.zip.zip from ~/Desktop/Gathering/\n2. Harvest ALL CSVs in one pass — canonical JSON dump first, then load:\n   - Recommendations_Received.csv (22KB) — who said what about Jeff\n   - Recommendations_Given.csv (20KB) — what Jeff said about others\n   - Connections.csv (243KB) — full network with dates\n   - Positions.csv (7.5KB) — career history timeline\n   - Skills.csv — skills list\n   - Endorsement_Received_Info.csv (30KB) — who endorsed what\n   - Endorsement_Given_Info.csv (16KB)\n   - ImportedContacts.csv (552KB) — all contacts\n   - Shares.csv (22KB) — posts\n   - Inferences_about_you.csv — LinkedIn's ML inferences about Jeff\n3. Reconcile with existing 57 LinkedIn posts in graph before loading\n4. Connections feed People domain — create jb:Person nodes with connection dates\n5. Recommendations link to People nodes — who recommended whom\n6. One extraction, one reconciliation, one load (DEC-093, feedback_reconcile_before_load)\n\n## Context\nFull export at ~/Desktop/Gathering/Complete_LinkedInDataExport_03-01-2026.zip.zip (1MB, dated March 1). Currently only 57 posts harvested. Recommendations, connections, endorsements, career history, skills all unharvested. Same anti-pattern as photos — grabbed the obvious, missed the rich data.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:social"
+      ],
+      "done": false,
+      "created": "2026-03-17T14:53:20Z",
+      "updated": "2026-03-19T15:48:56Z"
+    },
+    {
+      "index": 1490,
+      "apiId": 1573,
+      "title": "iPhone photo/video inventory — 55K items, people data extraction, delta with canonical home cloud",
+      "description": "## Acceptance Criteria\n1. Inventory Jeff's iPhone library: count of photos, videos, Live Photos, screenshots (55K total)\n2. Extract people/face data from iPhone library — Apple Photos has richer face recognition than what we harvested from the Mac library (2.7K items vs 55K)\n3. Compute delta: what's on iPhone/iCloud that ISN'T in the canonical home cloud (Fuseki graph + Bedroom storage)\n4. Report: N new photos, N new videos, N new people/faces, N already harvested\n5. Assess: is the iPhone library a superset of what we have, or are there gaps both ways?\n\n## Context\nJeff has 55K photos + videos on iPhone. Current harvest sources are Google Takeout (68K) and Mac Apple Photos Library (2.7K). The iPhone/iCloud library is likely much larger and has richer face/people data. This is the next major ingest source after Drive routing (#1472). Paused per DEC-094 until operations discipline work completes.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-17T12:07:43Z",
+      "updated": "2026-03-26T20:46:13Z"
+    },
+    {
+      "index": 1477,
+      "apiId": 1560,
+      "title": "Reclassify videos from existing graph into Video domain — SPARQL-based, no pipeline changes",
+      "description": "Videos are already in the graph from existing harvests — just classified as photos or documents. Reclassify via SPARQL instead of refactoring stable harvest pipelines. DEC-092 (Video is own domain). Paused per DEC-094.\n\n## AC\n1. SPARQL query identifies all items with video MIME types across Photos, Documents, and any other domain\n2. Reclassify those items to jb:Video type in the graph\n3. Create urn:jb:video/ graph namespace (per canonical namespace registry)\n4. No changes to existing harvest pipelines — stable pipelines stay stable\n5. Video collection page can query the reclassified items\n6. Report: count of videos found per source (Google Photos, Apple Photos, Drive)\n7. Add Video domain ICD (icd-instance-video.ttl) — define before reclassifying per DEC-095\n\n## Dependencies\n- #1502 (canonical photos) should be done first — reclassifying videos out of photos needs the canonical layer in place\n- Namespace must be registered in canonical-namespaces.md\n\n## Files\nsrc/ontology/icd-instance-video.ttl (new), scripts/reclassify-videos.sh (new), architect/canonical-namespaces.md",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-16T20:10:20Z",
+      "updated": "2026-03-22T11:48:59Z"
+    },
+    {
+      "index": 1476,
+      "apiId": 1559,
+      "title": "Harvest Apple Photos videos into Video domain — separate from photo harvest",
+      "description": "## Acceptance Criteria\n1. Identify video files in Apple Photos Library (MOV, MP4, M4V by extension or UTI type)\n2. Route to Video domain per DEC-092 — separate from Photos harvest\n3. Video metadata in Fuseki: duration, resolution, dateTaken, source (Apple Photos), thumbnail\n4. Existing Photos harvest excludes videos going forward (filter on ingest, not post-hoc)\n5. Count: determine how many Apple Photos items are actually videos\n\n## Context\nApple Photos Library mixes photos and videos. Current Photos harvest doesn't distinguish. DEC-092 says Video is its own domain. Same pattern as #1475 (Google Photos videos). Paused per DEC-094.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-16T20:09:24Z",
+      "updated": "2026-03-16T20:09:50Z"
+    },
+    {
+      "index": 1483,
+      "apiId": 1566,
+      "title": "Fix Attention Cost counters on /werk — re-prompts, approval overhead, corrections all showing 0",
+      "description": "## Acceptance Criteria\n1. Attention Cost section on /werk shows same data as /jeff page (re-prompts, approval overhead, corrections)\n2. Per-role breakdown matches (Wren 147/150, Silas 70/87, Kade 86/86 — or current values)\n3. Data source aligned — /jeff and /werk reading from same counters\n4. Verify after fix with Jeff on both pages side by side\n\n## Context\n/jeff page shows real numbers (303/239/306). /werk shows all zeros. Same data, different rendering paths. The counters are the team's self-awareness — if /werk lies, roles can't self-correct.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:roles"
+      ],
+      "done": false,
+      "created": "2026-03-16T22:56:15Z",
+      "updated": "2026-03-16T23:06:19Z"
+    },
+    {
+      "index": 1475,
+      "apiId": 1558,
+      "title": "Harvest Google Photos videos into Video domain — 28K+ items from Drive",
+      "description": "## Acceptance Criteria\n1. Identify all video files from Google Photos/Drive export (28K+ per /documents page)\n2. Route to Video domain per DEC-092 — separate collection, separate ontology type (jb:Video)\n3. Video metadata in Fuseki: duration, resolution, dateTaken, source, thumbnail\n4. Videos browsable on a Video collection page (separate from Photos)\n5. Depends on #1472 (Drive document routing) for the source data identification\n\n## Context\nDEC-092: Video is its own domain. 28K videos sitting in Documents from Google Photos/Drive export. Same harvest contract pattern as Photos (#1456/#1457). Paused per DEC-094 until operations discipline work completes.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-16T20:08:40Z",
+      "updated": "2026-03-16T20:09:50Z"
+    },
+    {
+      "index": 1143,
+      "apiId": 1226,
+      "title": "Test capture gate — no AC",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:cards"
+      ],
+      "done": false,
+      "created": "2026-03-07T17:06:59Z",
+      "updated": "2026-03-07T17:07:25Z"
+    },
+    {
+      "index": 1144,
+      "apiId": 1227,
+      "title": "Demo test — no AC, should be blocked",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:cards"
+      ],
+      "done": false,
+      "created": "2026-03-07T18:17:57Z",
+      "updated": "2026-03-07T18:18:13Z"
+    },
+    {
+      "index": 1171,
+      "apiId": 1254,
+      "title": "V1 acceptance walkthrough — compare criteria against site screenshots, close gaps",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-08T15:26:28Z",
+      "updated": "2026-03-09T19:28:59Z"
+    },
+    {
+      "index": 1463,
+      "apiId": 1546,
+      "title": "Move active workflows and recently completed into domain tiles on /flow — no orphaned sections",
+      "description": "## Acceptance Criteria\n1. Active Workflows cards appear inside their domain tile, not in a separate section below the grid\n2. Recently Completed cards appear inside their domain tile, not in a separate section below the grid\n3. Visual distinction within the tile (e.g. workflow badge, completed state) so they don't blend with active cards\n4. Remove the standalone Active Workflows and Recently Completed sections from the page\n5. Each tile tells the full story of its domain: active cards, in-flight workflows, recent completions\n\n## Context\nJeff looked at /flow and noticed Active Workflows (#1448) and Recently Completed are detached from their domain tiles. You have to mentally map them back. They should live inside the tile where they belong — Photos workflow in the Photos tile, etc.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:hardening",
+        "domain:cards"
+      ],
+      "done": false,
+      "created": "2026-03-16T16:12:48Z",
+      "updated": "2026-03-16T16:20:48Z"
+    },
+    {
+      "index": 1204,
+      "apiId": 1287,
+      "title": "Fix Kade demo pattern — align with team demo tuning (DEC-048)",
+      "description": "## What\nTwo issues with Kade's demo pattern:\n1. **No invitation** — Kade demos directly to Jeff without notifying Wren or Silas. Breaks DEC-048 proving gate (Wren accepts, not the builder). Wren only learns about acceptance when Jeff relays it.\n2. **Style drift** — demos are verbose/procedural instead of visual-first (show it, wait for Jeff, Wren accepts).\n\n## AC\n- Kade's /demo skill sends a nudge to Wren (and Silas if infra-touching) BEFORE presenting to Jeff\n- Demo output matches team pattern: frame → /look evidence → wait for Jeff → Wren accepts\n- No verbose narration — visual evidence first, words second\n- Verify nudge delivery so Wren can observe the demo live\n\n## Context\nJeff observed both gaps during #1197 acceptance. Compare to Silas #537 demo (nudged Wren, followed tuned pattern). The demo skill fragment in Kade's CLAUDE.md needs to enforce the routing, not just the format.",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:cards"
+      ],
+      "done": false,
+      "created": "2026-03-09T14:35:05Z",
+      "updated": "2026-03-09T19:16:02Z"
+    },
+    {
+      "index": 1209,
+      "apiId": 1292,
+      "title": "--help",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "",
+      "domains": [],
+      "done": false,
+      "created": "2026-03-09T14:54:57Z",
+      "updated": "2026-03-09T14:55:02Z"
+    },
+    {
+      "index": 1222,
+      "apiId": 1305,
+      "title": "Add text search filter to Seeds page — match collection pattern baseline",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:search"
+      ],
+      "done": false,
+      "created": "2026-03-09T16:01:44Z",
+      "updated": "2026-03-09T19:23:42Z"
+    },
+    {
+      "index": 1223,
+      "apiId": 1306,
+      "title": "Fix photo import for book catalog — errors on batch import, improve UX for 12+ photos",
+      "description": "## What\nJeff photographed a box of books (50 photos). Import flow had issues:\n- 50 photos at once didn't work well (too many? error? timeout?)\n- Scaled down to 12 — worked but had errors during import\n- Was able to tag cover + publisher after import\n- Relates to #534 (physical catalog capture)\n\n## AC\n- Batch import of 50+ photos completes without errors\n- Progress indicator during import (not a silent spinner)\n- Clear error messages when individual photos fail (don't abort the whole batch)\n- Import UX handles Jeff's actual workflow: phone photos → bulk upload → tag",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:books"
+      ],
+      "done": false,
+      "created": "2026-03-09T16:09:35Z",
+      "updated": "2026-03-09T19:15:40Z"
+    },
+    {
+      "index": 1227,
+      "apiId": 1310,
+      "title": "Flow tests — multi-hop end-to-end validation (seed pipeline, demo pipeline, harvest pipeline, deploy pipeline)",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "sequence:flow-tests",
+        "domain:infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-09T19:14:28Z",
+      "updated": "2026-03-09T22:32:01Z"
+    },
+    {
+      "index": 1265,
+      "apiId": 1348,
+      "title": "Site walkthrough — desktop then mobile, verify all SPARQL-backed pages render with data post-refactor",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:flow-tests",
+        "stream:reflecting",
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-10T19:22:56Z",
+      "updated": "2026-03-15T16:56:49Z"
+    },
+    {
+      "index": 1275,
+      "apiId": 1358,
+      "title": "Test blast radius gate — zero file code card",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:cards"
+      ],
+      "done": false,
+      "created": "2026-03-10T20:42:32Z",
+      "updated": "2026-03-10T20:43:18Z"
+    },
+    {
+      "index": 1276,
+      "apiId": 1359,
+      "title": "Test: Refactor frobnicator service — zero blast radius demo",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:cards"
+      ],
+      "done": false,
+      "created": "2026-03-10T20:42:46Z",
+      "updated": "2026-03-10T20:43:46Z"
+    },
+    {
+      "index": 1277,
+      "apiId": 1360,
+      "title": "[docs] Test blast radius exempt",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:cards"
+      ],
+      "done": false,
+      "created": "2026-03-10T20:43:07Z",
+      "updated": "2026-03-10T20:43:19Z"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "WF-103",
+  "decision": "Test capture gate \u2014 no AC",
+  "source": "board:card-moved:#1143",
+  "card": 1143,
+  "created": "2026-03-07T17:07:20Z",
+  "updated": "2026-03-10T18:05:00Z",
+  "status": "cancelled",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Test capture gate \u2014 no AC",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 parent card #1143 moved to Won't Do Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1143",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 parent card #1143 moved to Won't Do Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-07T17:07:20Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Test capture gate \u2014 no AC"
+    },
+    {
+      "timestamp": "2026-03-10T18:05:00Z",
+      "event": "cancelled",
+      "role": "silas",
+      "detail": "Cancelled \u2014 parent card #1143 moved to Won't Do, workflow never started"
+    }
+  ]
+}

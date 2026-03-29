@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Clearing</title>
+  <meta property="og:title" content="The Clearing">
+  <meta property="og:description" content="You've been invited to a live multi-party session">
+  <meta property="og:image" content="/clearing-og.jpg">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', 'Fira Code', monospace;
+      background: #0d1117 url('clearing-bg.jpg') no-repeat center center;
+      background-size: cover;
+      background-attachment: fixed;
+      color: #c9d1d9;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: rgba(13, 17, 23, 0.85);
+      z-index: 0;
+      pointer-events: none;
+    }
+    body > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    #header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+    }
+
+    #header-left {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    #header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    #header .version-tag {
+      font-size: 13px;
+      color: #6e7681;
+      font-weight: 400;
+    }
+
+    #participants-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .participant-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      padding: 5px 12px;
+      border-radius: 12px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.2s, border-color 0.2s;
+    }
+
+    .participant-badge.released {
+      opacity: 0.35;
+      border-color: transparent;
+    }
+
+    .participant-badge:hover {
+      border-color: #484f58;
+    }
+
+    .participant-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .participant-badge[data-role="Wren"] .participant-dot { background: #4ade80 !important; }
+    .participant-badge[data-role="Silas"] .participant-dot { background: #60a5fa !important; }
+    .participant-badge[data-role="Kade"] .participant-dot { background: #c084fc !important; }
+
+    /* Guest join screen */
+    #guest-join {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 17, 23, 0.95);
+      backdrop-filter: blur(12px);
+    }
+
+    #guest-join .join-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 40px;
+      max-width: 400px;
+      width: 90%;
+      text-align: center;
+    }
+
+    #guest-join h2 {
+      font-size: 24px;
+      color: #e6edf3;
+      margin-bottom: 8px;
+    }
+
+    #guest-join .subtitle {
+      color: #8b949e;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    #guest-join input {
+      width: 100%;
+      padding: 12px 16px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      color: #c9d1d9;
+      font-family: inherit;
+      font-size: 16px;
+      outline: none;
+      margin-bottom: 16px;
+    }
+
+    #guest-join input:focus {
+      border-color: #1f6feb;
+    }
+
+    #guest-join button {
+      width: 100%;
+      padding: 12px;
+      background: #238636;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    #guest-join button:hover { background: #2ea043; }
+    #guest-join button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #guest-join .error {
+      color: #f85149;
+      font-size: 13px;
+      margin-top: 12px;
+      display: none;
+    }
+
+    /* Guest badge in header */
+    .guest-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      padding: 5px 12px;
+      border-radius: 12px;
+      background: #21262d;
+      border: 1px solid #f0883e;
+      color: #f0883e;
+    }
+
+    /* Invite Guest button */
+    #invite-guest-btn {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      padding: 5px 14px;
+      border-radius: 12px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    #invite-guest-btn:hover {
+      border-color: #f0883e;
+      background: #2d2217;
+    }
+
+    #invite-guest-btn.active {
+      border-color: #f0883e;
+      color: #f0883e;
+    }
+
+    #invite-guest-btn.connected {
+      border-color: #238636;
+      color: #4ade80;
+    }
+
+    /* Guest invite modal */
+    #guest-invite-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 17, 23, 0.85);
+      backdrop-filter: blur(8px);
+    }
+
+    #guest-invite-modal .modal-card {
+      background: #161b22;
+      border: 1px solid #f0883e;
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 480px;
+      width: 90%;
+      text-align: center;
+    }
+
+    #guest-invite-modal h3 {
+      font-size: 18px;
+      color: #e6edf3;
+      margin-bottom: 16px;
+    }
+
+    #guest-invite-modal .invite-url {
+      width: 100%;
+      padding: 10px 14px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      color: #58a6ff;
+      font-family: inherit;
+      font-size: 13px;
+      text-align: center;
+      cursor: text;
+      margin-bottom: 12px;
+    }
+
+    #guest-invite-modal .btn-row {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    #guest-invite-modal button {
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+    }
+
+    #guest-invite-modal .copy-btn {
+      background: #238636;
+      color: white;
+    }
+
+    #guest-invite-modal .copy-btn:hover { background: #2ea043; }
+
+    #guest-invite-modal .revoke-btn {
+      background: transparent;
+      color: #f85149;
+      border: 1px solid #f85149;
+    }
+
+    #guest-invite-modal .revoke-btn:hover { background: #f851491a; }
+
+    #guest-invite-modal .close-btn {
+      background: transparent;
+      color: #8b949e;
+      border: 1px solid #30363d;
+    }
+
+    .message.guest {
+      border-left-color: #f0883e;
+    }
+
+    .message.guest .sender {
+      color: #f0883e;
+    }
+
+    /* Messages area — scrolls, fills available space */
+    #messages {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 20px 96px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      align-content: flex-start;
+    }
+
+    #messages > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .message {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 8px;
+      background: rgba(22, 27, 34, 0.92);
+      border: 1px solid #30363d;
+      border-left: 3px solid #30363d;
+      line-height: 1.6;
+      font-size: 16px;
+      transition: background 0.15s ease;
+      backdrop-filter: blur(8px);
+    }
+
+    .message:hover {
+      background: rgba(28, 33, 41, 0.95);
+    }
+
+    .message.role-wren { border-left-color: #4ade80; }
+    .message.role-silas { border-left-color: #60a5fa; }
+    .message.role-kade { border-left-color: #c084fc; }
+
+    .message.jeff {
+      align-self: flex-end;
+      background: rgba(31, 58, 95, 0.92);
+      border-color: #1f6feb;
+      border-left: 3px solid #1f6feb;
+    }
+
+    .message .sender {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .message .content {
+      word-wrap: break-word;
+    }
+
+    .message .content p { margin-bottom: 8px; }
+    .message .content p:last-child { margin-bottom: 0; }
+    .message .content code {
+      background: #0d1117;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .message .content pre {
+      background: #0d1117;
+      padding: 12px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+    .message .content pre code {
+      background: none;
+      padding: 0;
+    }
+    .message .content img {
+      max-width: 100%;
+      border-radius: 8px;
+      margin: 8px 0;
+    }
+    .message .content iframe {
+      width: 100%;
+      min-height: 300px;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      margin: 8px 0;
+    }
+    .message .content a {
+      color: #58a6ff;
+    }
+
+    .message .meta {
+      font-size: 10px;
+      color: #484f58;
+      margin-top: 6px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .message:hover .meta {
+      opacity: 1;
+    }
+
+    /* Streaming indicator */
+    .message.streaming .content::after {
+      content: '\25CF';
+      animation: blink 1s infinite;
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+
+    .system-message {
+      text-align: center;
+      color: #e6edf3;
+      font-size: 14px;
+      padding: 6px 12px;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    /* Terminal (Opus) responses — visually distinct from Haiku */
+    .message.via-terminal {
+      border-width: 2px;
+      box-shadow: 0 0 12px rgba(74, 222, 128, 0.08);
+    }
+    .terminal-tag {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 600;
+      color: #4ade80;
+      background: rgba(74, 222, 128, 0.1);
+      padding: 1px 6px;
+      border-radius: 3px;
+      margin-left: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      vertical-align: middle;
+    }
+
+    /* Context banner */
+    .context-banner {
+      margin: 8px auto 16px;
+      max-width: 90%;
+      padding: 10px 16px;
+      background: rgba(13, 29, 48, 0.95);
+      border: 1px solid #1f6feb;
+      border-radius: 8px;
+      backdrop-filter: blur(8px);
+      cursor: pointer;
+    }
+
+    .context-banner .context-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #58a6ff;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .context-banner .context-label .toggle {
+      font-size: 9px;
+      color: #8b949e;
+    }
+
+    .context-banner .context-text {
+      font-size: 13px;
+      color: #c9d1d9;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease, margin-top 0.3s ease;
+      margin-top: 0;
+    }
+
+    .context-banner.expanded .context-text {
+      max-height: 600px;
+      overflow-y: auto;
+      margin-top: 8px;
+    }
+
+    /* Decision markers */
+    .message.decision {
+      border-color: #f0883e;
+      border-width: 2px;
+      background: #2d1b00;
+    }
+
+    .decision-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      color: #f0883e;
+      background: #f0883e22;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* Decision summary panel */
+    #decisions-panel {
+      display: none;
+      padding: 8px 20px;
+      background: #2d1b00;
+      border-top: 1px solid #f0883e44;
+      font-size: 12px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    #decisions-panel.visible { display: block; }
+
+    #decisions-panel .decision-item {
+      padding: 2px 0;
+      color: #f0883e;
+    }
+
+    /* Input area — always visible at bottom */
+    #input-area {
+      display: flex;
+      gap: 8px;
+      padding: 12px 96px;
+      background: #161b22;
+      border-top: 1px solid #30363d;
+    }
+
+    #message-input {
+      flex: 1;
+      padding: 12px 16px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      color: #c9d1d9;
+      font-family: inherit;
+      font-size: 16px;
+      outline: none;
+      resize: none;
+      min-height: 42px;
+      max-height: 120px;
+    }
+
+    #message-input:focus {
+      border-color: #1f6feb;
+    }
+
+    #message-input::placeholder {
+      color: #484f58;
+    }
+
+    #send-btn {
+      padding: 12px 24px;
+      background: #238636;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 16px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    #send-btn:hover { background: #2ea043; }
+    #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Status bar */
+    #status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 20px;
+      background: #0d1117;
+      border-top: 1px solid #21262d;
+      font-size: 11px;
+      color: #484f58;
+    }
+
+    #end-session-btn {
+      padding: 4px 12px;
+      background: transparent;
+      color: #f85149;
+      border: 1px solid #f85149;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    #end-session-btn:hover {
+      background: #f851491a;
+    }
+
+    /* Scrollbar */
+    #messages::-webkit-scrollbar { width: 8px; }
+    #messages::-webkit-scrollbar-track { background: #0d1117; }
+    #messages::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+    #messages::-webkit-scrollbar-thumb:hover { background: #484f58; }
+  </style>
+</head>
+<body>
+  <!-- Guest join screen — shown when ?token= is in URL -->
+  <div id="guest-join" style="display: none;">
+    <div class="join-card">
+      <h2>The Clearing</h2>
+      <p class="subtitle">You've been invited to join a session</p>
+      <input type="text" id="guest-name" placeholder="Enter your name" maxlength="30" autofocus>
+      <button id="guest-join-btn">Join Session</button>
+      <div class="error" id="guest-error"></div>
+    </div>
+  </div>
+
+  <!-- Guest invite modal -->
+  <div id="guest-invite-modal">
+    <div class="modal-card">
+      <h3>Guest Invite Link</h3>
+      <input type="text" class="invite-url" id="invite-url" readonly>
+      <div class="btn-row">
+        <button class="copy-btn" id="copy-invite-btn">Copy Link</button>
+        <button class="revoke-btn" id="revoke-invite-btn">Revoke</button>
+        <button class="close-btn" id="close-invite-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="header">
+    <div id="header-left">
+      <h1>The Clearing</h1>
+      <span class="version-tag" id="werk-version"></span>
+    </div>
+    <div id="participants-bar">
+      <button id="invite-guest-btn">Invite Guest</button>
+    </div>
+  </div>
+
+  <div id="messages">
+    <div class="system-message">Session starting...</div>
+  </div>
+
+  <div id="input-area">
+    <textarea id="message-input" placeholder="Type a message... (@wren @silas @kade to address specific roles)" rows="1"></textarea>
+    <button id="send-btn">Send</button>
+  </div>
+
+  <div id="decisions-panel"></div>
+
+  <div id="status-bar">
+    <span id="cost-display">0 messages</span>
+    <span id="decision-count"></span>
+    <span id="model-display"></span>
+    <button id="end-session-btn">End Session</button>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    // --- Guest detection and join flow ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const guestToken = urlParams.get('token');
+    let isGuest = !!guestToken;
+    let guestDisplayName = '';
+    let socket;
+
+    if (isGuest) {
+      // Show join screen, wait for name entry
+      document.getElementById('guest-join').style.display = 'flex';
+      const nameInput = document.getElementById('guest-name');
+      const joinBtn = document.getElementById('guest-join-btn');
+      const errorEl = document.getElementById('guest-error');
+
+      function doGuestJoin() {
+        const name = nameInput.value.trim();
+        if (!name) {
+          errorEl.textContent = 'Please enter your name';
+          errorEl.style.display = 'block';
+          return;
+        }
+        joinBtn.disabled = true;
+        joinBtn.textContent = 'Joining...';
+        guestDisplayName = name;
+        // Connect with auth token
+        socket = io({ auth: { token: guestToken, name: guestDisplayName } });
+        socket.on('connect_error', (err) => {
+          joinBtn.disabled = false;
+          joinBtn.textContent = 'Join Session';
+          errorEl.textContent = err.message || 'Connection failed';
+          errorEl.style.display = 'block';
+        });
+        socket.on('connect', () => {
+          document.getElementById('guest-join').style.display = 'none';
+          // Clean token from URL (don't leak in screenshots)
+          window.history.replaceState({}, '', window.location.pathname);
+        });
+        setupSocket(socket);
+      }
+
+      joinBtn.addEventListener('click', doGuestJoin);
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doGuestJoin();
+      });
+    } else {
+      // Jeff — connect directly, no auth needed
+      socket = io();
+      setupSocket(socket);
+    }
+
+    function setupSocket(socket) {
+    const md = window.markdownit({
+      html: true,
+      linkify: true,
+      typographer: true,
+      highlight: function (str, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          try { return hljs.highlight(str, { language: lang }).value; } catch (_) {}
+        }
+        return '';
+      }
+    });
+
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('message-input');
+    const sendBtn = document.getElementById('send-btn');
+    const costDisplay = document.getElementById('cost-display');
+    const modelDisplay = document.getElementById('model-display');
+    const participantsBar = document.getElementById('participants-bar');
+    const endSessionBtn = document.getElementById('end-session-btn');
+
+    const decisionsPanel = document.getElementById('decisions-panel');
+    const decisionCount = document.getElementById('decision-count');
+
+    let participantColors = {};
+    let activeRoles = new Set(); // roles currently invited
+    let streaming = {}; // sender -> { el, content }
+    let sending = false;
+    let decisions = [];
+
+    // Auto-resize textarea
+    inputEl.addEventListener('input', () => {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+    });
+
+    // Send on Enter (Shift+Enter for newline)
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    sendBtn.addEventListener('click', sendMessage);
+
+    endSessionBtn.addEventListener('click', () => {
+      socket.emit('end-session');
+      endSessionBtn.disabled = true;
+      endSessionBtn.textContent = 'Closing...';
+      inputEl.disabled = true;
+      sendBtn.disabled = true;
+    });
+
+    function sendMessage() {
+      const content = inputEl.value.trim();
+      if (!content) return;
+      socket.emit('message', { text: content, activeRoles: Array.from(activeRoles) });
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+      inputEl.focus();
+    }
+
+    // Socket events
+    socket.on('init', (data) => {
+      modelDisplay.textContent = data.model;
+      document.getElementById('werk-version').textContent = data.werkVersion || '';
+      data.participants.forEach(p => {
+        participantColors[p.name] = p.color;
+        activeRoles.add(p.name.toLowerCase());
+        const badge = document.createElement('div');
+        badge.className = 'participant-badge';
+        badge.setAttribute('data-role', p.name);
+        badge.innerHTML = `<span class="participant-dot"></span>${p.name}`;
+        badge.addEventListener('click', () => {
+          const role = p.name.toLowerCase();
+          if (activeRoles.has(role)) {
+            activeRoles.delete(role);
+            badge.classList.add('released');
+          } else {
+            activeRoles.add(role);
+            badge.classList.remove('released');
+          }
+        });
+        participantsBar.appendChild(badge);
+      });
+      // Add Jeff
+      participantColors['Jeff'] = '#e6edf3';
+
+      // Show invite button for Jeff (host), not guests
+      if (!isGuest) {
+        const inviteBtn = document.getElementById('invite-guest-btn');
+        inviteBtn.style.display = 'flex';
+        if (data.guestMode) {
+          inviteBtn.classList.add('active');
+          inviteBtn.textContent = 'Guest Invited';
+        }
+      }
+
+      // If guest mode, add guest badge and update placeholder
+      if (isGuest && guestDisplayName) {
+        const guestBadge = document.createElement('div');
+        guestBadge.className = 'guest-badge';
+        guestBadge.textContent = guestDisplayName;
+        participantsBar.appendChild(guestBadge);
+        participantColors[guestDisplayName] = '#f0883e';
+        inputEl.placeholder = 'Type a message...';
+        // Hide role toggle badges for guests (they can't control who responds)
+        document.querySelectorAll('.participant-badge').forEach(b => {
+          b.style.pointerEvents = 'none';
+        });
+      }
+      messagesEl.innerHTML = '<div class="system-message">Session started. All roles are present.</div>';
+
+      // Show context banner if provided
+      if (data.context) {
+        const banner = document.createElement('div');
+        banner.className = 'context-banner';
+        banner.innerHTML = `<div class="context-label">Roles are context-aware <span class="toggle">▶ click to view</span></div><div class="context-text">${data.context.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`;
+        banner.addEventListener('click', () => {
+          banner.classList.toggle('expanded');
+          banner.querySelector('.toggle').textContent = banner.classList.contains('expanded') ? '▼ collapse' : '▶ click to view';
+        });
+        messagesEl.appendChild(banner);
+      }
+    });
+
+    socket.on('message', (msg) => {
+      addMessage(msg, msg.viaTerminal);
+    });
+
+    socket.on('stream:start', ({ sender }) => {
+      const el = createMessageEl(sender, '', true);
+      el.style.display = 'none'; // hidden until first real token
+      messagesEl.appendChild(el);
+      streaming[sender] = { el, content: '', revealed: false };
+      scrollToBottom();
+    });
+
+    socket.on('stream:token', ({ sender, token }) => {
+      if (streaming[sender]) {
+        streaming[sender].content += token;
+        // Don't reveal until we have enough to know it's not [pass]
+        if (!streaming[sender].revealed && streaming[sender].content.length > 8) {
+          if (!streaming[sender].content.trim().toLowerCase().startsWith('[pass]')) {
+            streaming[sender].el.style.display = '';
+            streaming[sender].revealed = true;
+          }
+        }
+        if (streaming[sender].revealed) {
+          const contentEl = streaming[sender].el.querySelector('.content');
+          contentEl.textContent = streaming[sender].content;
+          scrollToBottom();
+        }
+      }
+    });
+
+    socket.on('stream:end', ({ sender, message, cleanedContent, passed }) => {
+      if (streaming[sender]) {
+        // If the role passed, remove the streaming placeholder entirely
+        if (passed) {
+          streaming[sender].el.remove();
+          delete streaming[sender];
+          return;
+        }
+        const contentEl = streaming[sender].el.querySelector('.content');
+        // Render final markdown (use cleaned content if nudges were extracted)
+        const finalContent = cleanedContent !== undefined ? cleanedContent : streaming[sender].content;
+        contentEl.innerHTML = md.render(finalContent);
+        streaming[sender].el.classList.remove('streaming');
+
+        // Add token info
+        if (message.tokens) {
+          const metaEl = document.createElement('div');
+          metaEl.className = 'meta';
+          metaEl.textContent = `${message.tokens.input + message.tokens.output} tokens`;
+          streaming[sender].el.appendChild(metaEl);
+        }
+
+        delete streaming[sender];
+        scrollToBottom();
+      }
+
+      // Focus input when all streams are done
+      if (Object.keys(streaming).length === 0) {
+        inputEl.focus();
+      }
+    });
+
+    socket.on('decision', (data) => {
+      decisions.push(data);
+      updateDecisionsPanel();
+    });
+
+    socket.on('cost', (data) => {
+      const cost = data.estimatedCost < 0.01
+        ? '<$0.01'
+        : `~$${data.estimatedCost.toFixed(3)}`;
+      costDisplay.textContent = `${data.messageCount} msgs · ${data.totalTokens.input + data.totalTokens.output} tokens · ${cost}`;
+      if (data.decisionCount > 0) {
+        decisionCount.textContent = `${data.decisionCount} decisions`;
+        decisionCount.style.color = '#f0883e';
+      }
+    });
+
+    function updateDecisionsPanel() {
+      decisionsPanel.classList.add('visible');
+      decisionsPanel.innerHTML = decisions.map(d =>
+        `<div class="decision-item">[${d.speaker}] ${d.text}</div>`
+      ).join('');
+    }
+
+    socket.on('session-ended', ({ path }) => {
+      messagesEl.innerHTML += `<div class="system-message">Session ended. Transcript saved. Closing...</div>`;
+      inputEl.disabled = true;
+      sendBtn.disabled = true;
+      endSessionBtn.disabled = true;
+      endSessionBtn.textContent = 'Ended';
+      // Close tab after brief pause so user sees confirmation
+      setTimeout(() => { window.close(); }, 1500);
+    });
+
+    function addMessage(msg, viaTerminal) {
+      const el = createMessageEl(msg.sender, msg.content, false, viaTerminal);
+      if (msg.tokens) {
+        const metaEl = document.createElement('div');
+        metaEl.className = 'meta';
+        metaEl.textContent = `${msg.tokens.input + msg.tokens.output} tokens`;
+        el.appendChild(metaEl);
+      }
+      messagesEl.appendChild(el);
+      scrollToBottom();
+    }
+
+    function createMessageEl(sender, content, isStreaming, viaTerminal) {
+      const el = document.createElement('div');
+      const isJeff = sender === 'Jeff';
+      const isSystem = sender === 'System';
+      const isDecision = /^DECISION[\s:–—-]/i.test(content);
+      const knownRoles = ['wren', 'silas', 'kade'];
+      const isRole = knownRoles.includes(sender.toLowerCase());
+      const isGuestMsg = !isJeff && !isSystem && !isRole;
+      const roleClass = isRole ? ` role-${sender.toLowerCase()}` : '';
+      const guestClass = isGuestMsg ? ' guest' : '';
+      el.className = `message${isJeff ? ' jeff' : ''}${roleClass}${guestClass}${isStreaming ? ' streaming' : ''}${isDecision ? ' decision' : ''}${viaTerminal ? ' via-terminal' : ''}`;
+
+      if (isSystem) {
+        el.className = 'system-message';
+        el.textContent = content;
+        return el;
+      }
+
+      const color = participantColors[sender] || '#c9d1d9';
+
+      // Decision badge
+      if (isDecision) {
+        const badge = document.createElement('div');
+        badge.className = 'decision-badge';
+        badge.textContent = 'Decision';
+        el.appendChild(badge);
+      }
+
+      const senderEl = document.createElement('div');
+      senderEl.className = 'sender';
+      senderEl.style.color = color;
+      senderEl.textContent = sender;
+      if (viaTerminal) {
+        const tag = document.createElement('span');
+        tag.className = 'terminal-tag';
+        tag.textContent = 'Opus · terminal';
+        senderEl.appendChild(tag);
+      }
+      el.appendChild(senderEl);
+
+      const contentEl = document.createElement('div');
+      contentEl.className = 'content';
+      if (isStreaming) {
+        contentEl.textContent = content;
+      } else {
+        contentEl.innerHTML = md.render(content);
+      }
+      el.appendChild(contentEl);
+
+      return el;
+    }
+
+    function scrollToBottom() {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      // Keep cursor in input after scroll — prevents focus loss on nudge/system messages
+      if (!sending) inputEl.focus();
+    }
+
+    // --- Guest invite button logic (host only) ---
+    if (!isGuest) {
+      const inviteBtn = document.getElementById('invite-guest-btn');
+      const inviteModal = document.getElementById('guest-invite-modal');
+      const inviteUrlInput = document.getElementById('invite-url');
+      const copyBtn = document.getElementById('copy-invite-btn');
+      const revokeBtn = document.getElementById('revoke-invite-btn');
+      const closeModalBtn = document.getElementById('close-invite-modal');
+      let currentGuestUrl = '';
+
+      inviteBtn.addEventListener('click', async () => {
+        if (inviteBtn.classList.contains('connected')) {
+          // Guest is connected — show modal with revoke option
+          inviteUrlInput.value = 'Guest is connected';
+          copyBtn.style.display = 'none';
+          revokeBtn.style.display = '';
+          inviteModal.style.display = 'flex';
+          return;
+        }
+        if (inviteBtn.classList.contains('active') && currentGuestUrl) {
+          // Already have a token — show the link
+          inviteUrlInput.value = currentGuestUrl;
+          copyBtn.style.display = '';
+          revokeBtn.style.display = '';
+          inviteModal.style.display = 'flex';
+          return;
+        }
+        // Generate new invite
+        try {
+          const resp = await fetch('/api/guest-invite', { method: 'POST' });
+          const data = await resp.json();
+          if (!resp.ok) {
+            alert(data.error || 'Failed to create invite');
+            return;
+          }
+          currentGuestUrl = data.guestUrl;
+          inviteBtn.classList.add('active');
+          inviteBtn.textContent = 'Guest Invited';
+          inviteUrlInput.value = currentGuestUrl;
+          copyBtn.textContent = 'Copy Link';
+          copyBtn.style.display = '';
+          revokeBtn.style.display = '';
+          inviteModal.style.display = 'flex';
+        } catch (err) {
+          alert('Failed to create invite: ' + err.message);
+        }
+      });
+
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(currentGuestUrl).then(() => {
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => { copyBtn.textContent = 'Copy Link'; }, 2000);
+        });
+      });
+
+      revokeBtn.addEventListener('click', async () => {
+        try {
+          await fetch('/api/guest-invite', { method: 'DELETE' });
+          currentGuestUrl = '';
+          inviteBtn.classList.remove('active', 'connected');
+          inviteBtn.textContent = 'Invite Guest';
+          inviteModal.style.display = 'none';
+        } catch (err) {
+          alert('Failed to revoke: ' + err.message);
+        }
+      });
+
+      closeModalBtn.addEventListener('click', () => {
+        inviteModal.style.display = 'none';
+      });
+
+      // Listen for guest-mode state changes from server
+      socket.on('guest-mode', (data) => {
+        if (data.guestName) {
+          inviteBtn.classList.remove('active');
+          inviteBtn.classList.add('connected');
+          inviteBtn.textContent = `Guest: ${data.guestName}`;
+        } else if (data.active) {
+          inviteBtn.classList.add('active');
+          inviteBtn.classList.remove('connected');
+          inviteBtn.textContent = 'Guest Invited';
+        } else {
+          inviteBtn.classList.remove('active', 'connected');
+          inviteBtn.textContent = 'Invite Guest';
+          currentGuestUrl = '';
+        }
+      });
+    }
+
+    // Handle page close
+    window.addEventListener('beforeunload', () => {
+      socket.close();
+    });
+
+    } // end setupSocket
+  </script>
+</body>
+</html>

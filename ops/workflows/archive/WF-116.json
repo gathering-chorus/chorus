@@ -1,0 +1,140 @@
+{
+  "id": "WF-116",
+  "decision": "Drive routing pipeline \u2014 fuzzy match, route photos/music/video, cross-source dedup",
+  "source": "pipeline:wren:2026-03-14",
+  "card": null,
+  "created": "2026-03-14T21:45:00Z",
+  "updated": "2026-03-15T18:18:19Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Confidence-scored photo matching \u2014 fuzzy dedup across Drive, Takeout, and Apple Photos",
+      "status": "completed",
+      "card": 1421,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-15T01:19:06.739359Z",
+      "notes": "GATE \u2014 everything downstream depends on accurate overlap numbers"
+    },
+    {
+      "seq": 2,
+      "role": "kade",
+      "action": "Route truly-new Drive photos to Photos domain",
+      "status": "completed",
+      "card": 1422,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-15T18:05:17Z",
+      "notes": "Steps 2+3 shipped by Kade. Step 4: Wren recommends new Video domain (separate from Photos). 28K items, different browse pattern, different ontology type."
+    },
+    {
+      "seq": 3,
+      "role": "kade",
+      "action": "Route truly-new Drive music to Music domain",
+      "status": "completed",
+      "card": 1423,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-15T18:05:24Z",
+      "notes": "Music routing shipped. Moving to step 4."
+    },
+    {
+      "seq": 4,
+      "role": "wren",
+      "action": "Video domain decision \u2014 extend Photos or create Video collection",
+      "status": "completed",
+      "card": 1424,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-15T18:18:03Z",
+      "notes": "Cross-source dedup shipped. WF-116 complete \u2014 5/5 steps done. Full pipeline: fuzzy match \u2192 route photos \u2192 route music \u2192 video domain decision \u2192 cross-source dedup."
+    },
+    {
+      "seq": 5,
+      "role": "kade",
+      "action": "Cross-source dedup reconciliation \u2014 one photo, one node, multiple sources",
+      "status": "completed",
+      "card": 1425,
+      "blocked_by": [
+        2,
+        3
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-03-15-wf-116-step5.md",
+      "started_at": null,
+      "completed_at": "2026-03-15T18:18:19Z",
+      "notes": "Capstone shipped. Pipeline complete."
+    }
+  ],
+  "verification": {
+    "role": "wren",
+    "criteria": "Photo collection unified across sources, dedup verified, counts reconciled",
+    "verified_at": null
+  },
+  "history": [
+    {
+      "timestamp": "2026-03-14T21:45:00Z",
+      "event": "pipeline.created",
+      "role": "wren",
+      "detail": "Drive routing pipeline created with 5 steps. Gate card: #1421 (fuzzy matching)."
+    },
+    {
+      "timestamp": "2026-03-15T01:19:06.739589Z",
+      "event": "step.completed",
+      "role": "kade",
+      "detail": "#1421 confidence-scored matching complete. Steps 2,3,4 unblocked."
+    },
+    {
+      "timestamp": "2026-03-15T18:05:17Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 2 completed: Route truly-new Drive photos to Photos domain \u2014 Steps 2+3 shipped by Kade. Step 4: Wren recommends new Video domain (separate from Photos). 28K items, different browse pattern, different ontology type."
+    },
+    {
+      "timestamp": "2026-03-15T18:05:24Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 3 completed: Route truly-new Drive music to Music domain \u2014 Music routing shipped. Moving to step 4."
+    },
+    {
+      "timestamp": "2026-03-15T18:05:24Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 5 ready: Cross-source dedup reconciliation \u2014 one photo, one node, multiple sources"
+    },
+    {
+      "timestamp": "2026-03-15T18:18:03Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 4 completed: Video domain decision \u2014 extend Photos or create Video collection \u2014 Cross-source dedup shipped. WF-116 complete \u2014 5/5 steps done. Full pipeline: fuzzy match \u2192 route photos \u2192 route music \u2192 video domain decision \u2192 cross-source dedup."
+    },
+    {
+      "timestamp": "2026-03-15T18:18:19Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 5 completed: Cross-source dedup reconciliation \u2014 one photo, one node, multiple sources \u2014 Capstone shipped. Pipeline complete."
+    },
+    {
+      "timestamp": "2026-03-15T18:18:19Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

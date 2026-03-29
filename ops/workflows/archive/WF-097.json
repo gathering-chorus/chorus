@@ -1,0 +1,54 @@
+{
+  "id": "WF-097",
+  "decision": "Search functional test suite \u2014 coverage, recall, and precision validation",
+  "source": "board:card-moved:#861",
+  "card": 861,
+  "created": "2026-03-03T22:04:29Z",
+  "updated": "2026-03-03T22:18:23.135Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Search functional test suite \u2014 coverage recall and precision validation",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #861 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #861",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #861 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-03T22:04:29Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Search functional test suite \u2014 coverage, recall, and precision validation"
+    },
+    {
+      "timestamp": "2026-03-03T22:18:23.135Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #861 marked Done by wren"
+    }
+  ]
+}

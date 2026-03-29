@@ -1,0 +1,82 @@
+{
+  "id": "WF-084",
+  "decision": "Normalize spine event naming \u2014 domain.noun.verb_past convention across all emitters",
+  "source": "board:card-moved:#444",
+  "card": 444,
+  "created": "2026-02-27T13:53:55Z",
+  "updated": "2026-02-27T14:59:12Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Normalize spine event naming \u2014 domain.noun.verb_past convention across all emitters",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/schemas/spine-events.json",
+        "messages/scripts/chorus-log.sh",
+        "jeff-bridwell-personal-site/app-state.sh",
+        "engineer/briefs/2026-02-27-spine-event-rename-ts.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-27T14:22:57Z",
+      "notes": "Layer 1 (schema v2.0.0 + alias shim), Layer 2 (18 shell emitters), Layer 4 (CLAUDE.md fragments, Grafana dashboards) complete. Kade brief sent for Layer 3 (TS direct writers)."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #444",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/schemas/spine-events.json",
+        "messages/scripts/chorus-log.sh",
+        "messages/board-client/src/cli.ts",
+        "jeff-bridwell-personal-site/views/werk.ejs"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-27-wf-084-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-27T14:59:12Z",
+      "notes": "All 4 layers verified \u2014 schema v2.0.0, alias shim, 18 shell emitters, TS writers, werk.ejs renderer rewrite, summary normalization, card title enrichment, emitter detail fields. Demo approved by Jeff on /werk?tab=spine."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-27T13:53:55Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Normalize spine event naming \u2014 domain.noun.verb_past convention across all emitters"
+    },
+    {
+      "timestamp": "2026-02-27T14:22:57Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Normalize spine event naming \u2014 domain.noun.verb_past convention across all emitters \u2014 Layer 1 (schema v2.0.0 + alias shim), Layer 2 (18 shell emitters), Layer 4 (CLAUDE.md fragments, Grafana dashboards) complete. Kade brief sent for Layer 3 (TS direct writers)."
+    },
+    {
+      "timestamp": "2026-02-27T14:22:57Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #444"
+    },
+    {
+      "timestamp": "2026-02-27T14:59:12Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #444 \u2014 All 4 layers verified \u2014 schema v2.0.0, alias shim, 18 shell emitters, TS writers, werk.ejs renderer rewrite, summary normalization, card title enrichment, emitter detail fields. Demo approved by Jeff on /werk?tab=spine."
+    },
+    {
+      "timestamp": "2026-02-27T14:59:12Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

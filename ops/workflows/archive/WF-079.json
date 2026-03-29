@@ -1,0 +1,48 @@
+{
+  "id": "WF-079",
+  "decision": "Life board + revenue ideation session with Jeff",
+  "source": "board:card-moved:#92",
+  "card": 92,
+  "created": "2026-02-26T14:35:27Z",
+  "updated": "2026-02-26T14:35:27Z",
+  "status": "closed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Life board + revenue ideation session with Jeff",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #92",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-26T14:35:27Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Life board + revenue ideation session with Jeff"
+    }
+  ]
+}

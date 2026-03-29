@@ -1,0 +1,54 @@
+{
+  "id": "WF-135",
+  "decision": "Audit cross-domain page dependencies \u2014 map which pages query which graphs",
+  "source": "board:card-moved:#1461",
+  "card": 1461,
+  "created": "2026-03-16T21:50:09Z",
+  "updated": "2026-03-16T21:51:13.199Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Audit cross-domain page dependencies \u2014 map which pages query which graphs",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1461 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1461",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1461 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-16T21:50:09Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Audit cross-domain page dependencies \u2014 map which pages query which graphs"
+    },
+    {
+      "timestamp": "2026-03-16T21:51:13.199Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1461 marked Done by wren"
+    }
+  ]
+}

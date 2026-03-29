@@ -1,0 +1,78 @@
+{
+  "id": "WF-082",
+  "decision": "Self domain: design the convergent center of the ontology",
+  "source": "board:card-moved:#74",
+  "card": 74,
+  "created": "2026-02-27T01:37:28Z",
+  "updated": "2026-03-05T14:44:46Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Self domain: design the convergent center of the ontology",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "views/ontology-views/self.ejs",
+        "src/handlers/ontology-view.handler.ts"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-05T14:40:59Z",
+      "notes": "Self ontology page deployed \u2014 views/ontology-views/self.ejs, handler wired, navbar linked. Live at /ontology/self."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #74",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "views/ontology-views/self.ejs",
+        "src/handlers/ontology-view.handler.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-03-05-wf-082-step2.md",
+      "started_at": null,
+      "completed_at": "2026-03-05T14:44:46Z",
+      "notes": "Architecture review passed. View clean, handler wired correctly, graph URIs use localhost:3000 prefix, SPARQL covers stories/values/practices/people. Minor: some stats hardcoded in view rather than from query \u2014 acceptable for v1."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-27T01:37:28Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Self domain: design the convergent center of the ontology"
+    },
+    {
+      "timestamp": "2026-03-05T14:40:59Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Self domain: design the convergent center of the ontology \u2014 Self ontology page deployed \u2014 views/ontology-views/self.ejs, handler wired, navbar linked. Live at /ontology/self."
+    },
+    {
+      "timestamp": "2026-03-05T14:40:59Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #74"
+    },
+    {
+      "timestamp": "2026-03-05T14:44:46Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #74 \u2014 Architecture review passed. View clean, handler wired correctly, graph URIs use localhost:3000 prefix, SPARQL covers stories/values/practices/people. Minor: some stats hardcoded in view rather than from query \u2014 acceptable for v1."
+    },
+    {
+      "timestamp": "2026-03-05T14:44:46Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

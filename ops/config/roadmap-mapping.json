@@ -1,0 +1,297 @@
+{
+  "_comment": "Maps board cards to spine vertebrae. 'g:N' = Gathering card #N, 'c:N' = Chorus card C#N. Items without a card ref are static (always shown).",
+
+  "vertebrae": [
+    {
+      "id": "directing-signals",
+      "vertebra": "Directing",
+      "side": "Signals In",
+      "label": "Jeff's Direction",
+      "icon": "D",
+      "color": "#4a9eff",
+      "colorDark": "#3a7ecc",
+      "valueStream": "Directing",
+      "static": [
+        "The Clearing (multi-role chat)",
+        "Claude session prompts",
+        "Photos/screenshots shared"
+      ],
+      "cards": {
+        "g:78": "SMS text capture",
+        "g:99": "Calendar design — roles into Jeff's rhythm",
+        "g:93": "Weekly cadence calendar"
+      },
+      "laterStatic": [
+        "Calendar integration (full)"
+      ]
+    },
+    {
+      "id": "directing-actions",
+      "vertebra": "Directing",
+      "side": "Actions Out",
+      "label": "Capture & Route",
+      "icon": "→",
+      "iconOpacity": 0.6,
+      "color": "#4a9eff",
+      "colorDark": "#3a7ecc",
+      "valueStream": "Directing",
+      "static": [
+        "Workflow engine (/werk) routes handoffs",
+        "Clearing DECISION markers → intake queue",
+        "Capturing parser → commitments + actions",
+        "Brief routing (to/from role dirs)"
+      ],
+      "cards": {
+        "c:16": "The Clearing — Jeff's interaction surface",
+        "c:18": "Session templates — Demo, Board Walk, Review",
+        "c:22": "Rotation model — staggered 1x1"
+      },
+      "laterStatic": [
+        "Autonomous role activation"
+      ],
+      "laterCards": {
+        "c:15": "Autonomous role activation"
+      }
+    },
+    {
+      "id": "sensing-signals",
+      "vertebra": "Sensing",
+      "side": "Signals In",
+      "label": "Context Awareness",
+      "icon": "S",
+      "color": "#5c8afc",
+      "colorDark": "#4a6ecc",
+      "valueStream": "Sensing",
+      "static": [
+        "SessionStart hooks fire",
+        "chorus-audit.sh gates",
+        "session-start.sh (boards + briefs + workflows)",
+        "UserPromptSubmit context scan"
+      ],
+      "cards": {
+        "c:23": "Team communication ring — with/at/over detection"
+      },
+      "laterStatic": [
+        "Boundary change auto-detection (beyond hooks)"
+      ]
+    },
+    {
+      "id": "sensing-actions",
+      "vertebra": "Sensing",
+      "side": "Actions Out",
+      "label": "Reconciliation",
+      "icon": "→",
+      "iconOpacity": 0.6,
+      "color": "#5c8afc",
+      "colorDark": "#4a6ecc",
+      "valueStream": "Sensing",
+      "static": [
+        "Chorus HTTP API (5 endpoints)",
+        "17,800+ messages indexed",
+        "Stale state detection (X-Chorus-Stale)",
+        "Jeff's direction surfaced cross-session"
+      ],
+      "cards": {
+        "c:30": "Chorus HTTP API wrapper",
+        "c:21": "Concentric trust model — pod-mediated + local AI"
+      }
+    },
+    {
+      "id": "coordinating-signals",
+      "vertebra": "Designing",
+      "side": "Signals In",
+      "label": "Prioritization",
+      "icon": "C",
+      "color": "#7c5cfc",
+      "colorDark": "#6344cc",
+      "valueStream": "Designing",
+      "static": [
+        "Vikunja boards (2 boards)",
+        "Brief routing (to/from roles)",
+        "DEC-001 → DEC-036 decisions",
+        "Card-first workflow"
+      ],
+      "cards": {
+        "g:92": "Life board + revenue ideation",
+        "g:26": "Value stream + ontology refinement"
+      },
+      "laterCards": {
+        "g:3": "Vision refinement session"
+      }
+    },
+    {
+      "id": "coordinating-actions",
+      "vertebra": "Designing",
+      "side": "Actions Out",
+      "label": "Arch & Design",
+      "icon": "→",
+      "iconOpacity": 0.6,
+      "color": "#7c5cfc",
+      "colorDark": "#6344cc",
+      "valueStream": "Designing",
+      "static": [
+        "ADR-001 → ADR-015 on disk",
+        "Ontology v0.1.0 (Chorus)",
+        "system-architecture.md maintained",
+        "Spikes before building (pattern)"
+      ],
+      "cards": {
+        "g:74": "Self domain design — convergent center",
+        "g:70": "Cross-domain search architecture"
+      },
+      "laterCards": {
+        "g:91": "GitNexus — AST knowledge graphs"
+      }
+    },
+    {
+      "id": "building-signals",
+      "vertebra": "Building",
+      "side": "Signals In",
+      "label": "Implementation",
+      "icon": "B",
+      "color": "#e05cfc",
+      "colorDark": "#b844cc",
+      "valueStream": "Building",
+      "static": [
+        "Briefs: architect → engineer",
+        "CLAUDE.md per-role instructions",
+        "Permission profiles auto-allow",
+        "Infra guardrails hook (Kade)"
+      ],
+      "cards": {
+        "g:87": "Docker config simplify",
+        "g:8": "Annotation pattern — cross-collection"
+      },
+      "unmappedStatic": [
+        "Auth session bugs (SESSION_SECRET, OIDC)"
+      ],
+      "laterCards": {
+        "g:89": "Pod-mediated coordination phase 3"
+      }
+    },
+    {
+      "id": "building-actions",
+      "vertebra": "Building",
+      "side": "Actions Out",
+      "label": "Code & Deploy",
+      "icon": "→",
+      "iconOpacity": 0.6,
+      "color": "#e05cfc",
+      "colorDark": "#b844cc",
+      "valueStream": "Building",
+      "static": [
+        "Pre-commit: security + lint + test",
+        "CI: test → E2E → security → build",
+        "app-state.sh lifecycle",
+        "Deploy lock (prevents concurrent)"
+      ],
+      "unmappedStatic": [
+        "ADR-011 rollback pipeline"
+      ],
+      "cards": {},
+      "laterStatic": [
+        "Blue-green deploys (if needed)"
+      ]
+    },
+    {
+      "id": "proving-signals",
+      "vertebra": "Proving",
+      "side": "Signals In",
+      "label": "Verification",
+      "icon": "P",
+      "color": "#fc5c8a",
+      "colorDark": "#cc4466",
+      "valueStream": "Proving",
+      "static": [
+        "1,948 tests (98 suites)",
+        "119 E2E tests (Playwright)",
+        "Coverage gates (80%+ / 95% ACL)",
+        "SHACL ontology validation"
+      ],
+      "cards": {
+        "c:11": "Fitness functions catalog",
+        "c:19": "Werk scorecard — maturity refresh"
+      },
+      "laterCards": {
+        "g:83": "Local AI for Self domain — Ollama"
+      }
+    },
+    {
+      "id": "proving-actions",
+      "vertebra": "Proving",
+      "side": "Actions Out",
+      "label": "Observe & Respond",
+      "icon": "→",
+      "iconOpacity": 0.6,
+      "color": "#fc5c8a",
+      "colorDark": "#cc4466",
+      "valueStream": "Proving",
+      "static": [
+        "20 Prometheus alert rules",
+        "3 Grafana/Loki alert rules",
+        "Alert routing → Slack",
+        "8 Grafana dashboards",
+        "Container health checks (all)"
+      ],
+      "cards": {},
+      "laterStatic": [
+        "Runbooks / auto-remediation"
+      ]
+    },
+    {
+      "id": "reflecting-signals",
+      "vertebra": "Reflecting",
+      "side": "Signals In",
+      "label": "Memory & Learning",
+      "icon": "R",
+      "color": "#5cfc7c",
+      "colorDark": "#44cc66",
+      "valueStream": "Reflecting",
+      "static": [
+        "Git post-commit → chorus.log",
+        "Card-commit linking (#N, C#N)",
+        "Session cost tracking",
+        "Behavioral analysis (59% direction)"
+      ],
+      "cards": {
+        "c:20": "Mood ring refresh pipeline"
+      }
+    },
+    {
+      "id": "reflecting-actions",
+      "vertebra": "Reflecting",
+      "side": "Actions Out",
+      "label": "Persist & Evolve",
+      "icon": "→",
+      "iconOpacity": 0.6,
+      "color": "#5cfc7c",
+      "colorDark": "#44cc66",
+      "valueStream": "Reflecting",
+      "static": [
+        "SQLite FTS5 context index",
+        "Stories captured (15 in stories.md)",
+        "next-session.md close-out",
+        "Memory files auto-updated"
+      ],
+      "cards": {
+        "g:81": "Self-reflection dashboard"
+      }
+    }
+  ],
+
+  "techDebt": {
+    "doneStatic": [
+      "TD-007: Broken owner WebId in ACLs",
+      "Data scrubbing enforcement",
+      "Boundary contracts formalized"
+    ],
+    "cards": {
+      "g:30": "TD-003: Low coverage auth/ACL",
+      "g:34": "TD-008: Missing ACLs for private resources",
+      "g:31": "TD-005: Open test handles",
+      "g:32": "TD-006: ts-jest config",
+      "g:35": "TD-009: E2E artifacts",
+      "g:36": "TD-010: Redundant auth checks"
+    }
+  }
+}

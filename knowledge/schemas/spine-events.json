@@ -1,0 +1,1331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spine Event Contract",
+  "description": "Interface contract for all structured events flowing through the Chorus spine. Single source of truth for event types, fields, and vertebra mapping.",
+  "version": "2.0.0",
+  "schema_version": "2.0.0",
+  "envelope": {
+    "description": "Required fields on every spine event",
+    "fields": {
+      "timestamp": {
+        "type": "string",
+        "format": "ISO 8601 UTC",
+        "required": true,
+        "description": "Event timestamp"
+      },
+      "level": {
+        "type": "string",
+        "default": "info",
+        "required": true,
+        "description": "Log level (info, warn, error)"
+      },
+      "appName": {
+        "type": "string",
+        "enum": [
+          "chorus-events",
+          "board-client"
+        ],
+        "required": true,
+        "description": "Source system identifier"
+      },
+      "component": {
+        "type": "string",
+        "default": "lifecycle",
+        "required": true,
+        "description": "Component identifier"
+      },
+      "event": {
+        "type": "string",
+        "required": true,
+        "description": "Event type name \u2014 domain.noun.verb_past format (must match an entry in events)"
+      },
+      "role": {
+        "type": "string",
+        "enum": [
+          "wren",
+          "silas",
+          "kade",
+          "jeff",
+          "system"
+        ],
+        "required": true,
+        "description": "Role that triggered the event"
+      }
+    }
+  },
+  "vertebrae": {
+    "capturing": {
+      "description": "Card creation \u2014 Jeff pulls work into the flow",
+      "color": "#ede9fe"
+    },
+    "directing": {
+      "description": "Card sequencing \u2014 moving cards through the board",
+      "color": "#fef3c7"
+    },
+    "building": {
+      "description": "Engineering work \u2014 commits, tests, builds",
+      "color": "#d1fae5"
+    },
+    "proving": {
+      "description": "Deploy pipeline \u2014 verification and release",
+      "color": "#fce7f3"
+    },
+    "operations": {
+      "description": "Operating \u2014 infrastructure health, deploys, and system lifecycle",
+      "color": "#f3f4f6"
+    }
+  },
+  "aliases": {
+    "card_created": "card.item.created",
+    "quality_gate_warn": "card.quality.warned",
+    "card_moved": "card.item.moved",
+    "card_blocked": "card.item.blocked",
+    "card_unblocked": "card.item.unblocked",
+    "card_updated": "card.item.updated",
+    "card_commented": "card.item.commented",
+    "card_tagged": "card.item.tagged",
+    "card_done": "card.item.completed",
+    "stale_card_detected": "card.stale.detected",
+    "board_snapshot": "board.snapshot.taken",
+    "board_audit_start": "board.audit.started",
+    "board_audit_close": "board.audit.closed",
+    "bucket_limit_set": "board.limit.set",
+    "workflow_created": "workflow.manifest.created",
+    "workflow_complete": "workflow.manifest.completed",
+    "brief_written": "brief.handoff.written",
+    "brief_read": "brief.handoff.read",
+    "decision": "decision.record.created",
+    "commit": "build.commit.created",
+    "commit_linked": "build.commit.linked",
+    "commit_queue_waiting": "build.queue.waiting",
+    "commit_queue_acquired": "build.queue.acquired",
+    "commit_queue_released": "build.queue.released",
+    "commit_queue_timeout": "build.queue.timedout",
+    "tsc_compile": "build.tsc.completed",
+    "pre_commit": "build.precommit.completed",
+    "pre_commit_timed": "build.precommit.timed",
+    "pre_push_start": "build.prepush.started",
+    "pre_push_timed": "build.prepush.timed",
+    "test_run": "build.test.completed",
+    "git_push": "build.push.completed",
+    "memory_write": "build.memory.written",
+    "app_start": "app.service.started",
+    "app_start_fail": "app.service.startfailed",
+    "app_stop": "app.service.stopped",
+    "app_restart": "app.service.restarted",
+    "app_restart_fail": "app.service.restartfailed",
+    "app_rollback": "app.service.rolledback",
+    "app_rollback_fail": "app.service.rollbackfailed",
+    "deploy_start": "deploy.pipeline.started",
+    "deploy_phase": "deploy.phase.completed",
+    "deploy_complete": "deploy.pipeline.completed",
+    "deploy_success": "deploy.pipeline.succeeded",
+    "deploy_fail": "deploy.pipeline.failed",
+    "deploy_freeze": "deploy.freeze.activated",
+    "deploy_unfreeze": "deploy.freeze.deactivated",
+    "health_check": "deploy.health.checked",
+    "verification_complete": "deploy.verification.completed",
+    "session_start": "session.role.started",
+    "session_end": "session.role.ended",
+    "session_turn": "session.turn.completed",
+    "session_tool": "session.tool.used",
+    "session_compact": "session.context.compacted",
+    "doc_scan": "session.docscan.completed",
+    "ops_agent_run": "ops.agent.completed",
+    "defect_detected": "ops.defect.detected",
+    "alert_firing": "ops.alert.fired",
+    "alert_resolved": "ops.alert.resolved",
+    "disk_check": "ops.disk.checked",
+    "container_state_change": "ops.container.changed",
+    "system_start": "ops.system.started",
+    "system_stop": "ops.system.stopped",
+    "harvest_start": "harvest.pipeline.started",
+    "harvest_complete": "harvest.pipeline.completed",
+    "harvest_notify": "harvest.notify.sent",
+    "cost_report": "ops.cost.reported",
+    "guardrail_decision": "guard.rule.decided",
+    "write_scrub": "guard.scrub.blocked",
+    "data_classification": "guard.classify.decided",
+    "audit_check": "ops.audit.checked",
+    "transposition_rate": "self.biometric.transposition_rate",
+    "card_pulled": "card.pulled",
+    "seed_received": "seed.received",
+    "seed_captured": "seed.captured",
+    "seed_routed": "seed.routed",
+    "seed_recovered": "seed.recovered",
+    "nudge_sent": "role.nudge.sent",
+    "nudge_delivered": "role.nudge.delivered",
+    "chat_started": "chat.session.started",
+    "chat.started": "chat.session.started",
+    "chat_ended": "chat.session.ended",
+    "chat.ended": "chat.session.ended",
+    "pair_started": "pair.session.started",
+    "pair.started": "pair.session.started",
+    "pair_ended": "pair.session.ended",
+    "pair.ended": "pair.session.ended",
+    "pair_swapped": "pair.roles.swapped",
+    "pair.swapped": "pair.roles.swapped",
+    "protocol_boot_start": "protocol.boot.started",
+    "protocol_boot_complete": "protocol.boot.completed",
+    "protocol_close_start": "protocol.close.started",
+    "protocol_close_complete": "protocol.close.completed",
+    "protocol_step": "protocol.step.completed",
+    "role.nudge.consumed": "role.nudge.consumed"
+  },
+  "events": {
+    "card.item.created": {
+      "vertebra": "capturing",
+      "legacy_name": "card_created",
+      "source": "board-client",
+      "description": "New card added to the board",
+      "fields": {
+        "card_id": "Card identifier",
+        "title": "Card title",
+        "status": "Initial bucket/status",
+        "board": "Board name (gathering or chorus)",
+        "product": "Product label"
+      }
+    },
+    "card.quality.warned": {
+      "vertebra": "capturing",
+      "legacy_name": "quality_gate_warn",
+      "source": "board-client",
+      "description": "Quality gate warning \u2014 title too short, empty description, or no comments at done",
+      "fields": {
+        "gate": "Gate type (title_short, description_empty, no_comments)",
+        "stage": "Vertebra stage where warning fired",
+        "card_id": "Card identifier",
+        "title": "Card title (for title_short)",
+        "board": "Board name"
+      }
+    },
+    "card.swat.created": {
+      "vertebra": "capturing",
+      "legacy_name": null,
+      "source": "board-client",
+      "description": "SWAT card created \u2014 crisis fast-lane card outside WIP limit (DEC-055)",
+      "fields": {
+        "card_id": "Card identifier",
+        "title": "Card title",
+        "board": "Board name"
+      }
+    },
+    "card.item.moved": {
+      "vertebra": "directing",
+      "legacy_name": "card_moved",
+      "source": "board-client",
+      "description": "Card moved to a different bucket/status",
+      "fields": {
+        "card_id": "Card identifier",
+        "to": "Destination bucket name",
+        "board": "Board name"
+      }
+    },
+    "card.item.blocked": {
+      "vertebra": "directing",
+      "legacy_name": "card_blocked",
+      "source": "board-client",
+      "description": "Card marked as blocked",
+      "fields": {
+        "card_id": "Card identifier",
+        "reason": "Blocking reason",
+        "board": "Board name"
+      }
+    },
+    "card.item.unblocked": {
+      "vertebra": "directing",
+      "legacy_name": "card_unblocked",
+      "source": "board-client",
+      "description": "Card unblocked",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "card.item.updated": {
+      "vertebra": "directing",
+      "legacy_name": "card_updated",
+      "source": "board-client",
+      "description": "Card metadata updated (title, description, labels)",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name",
+        "new_title": "Updated title (if changed)",
+        "description_changed": "Whether description was modified",
+        "product": "Product label (if changed)"
+      }
+    },
+    "card.item.commented": {
+      "vertebra": "directing",
+      "legacy_name": "card_commented",
+      "source": "board-client",
+      "description": "Comment added to a card",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "card.item.tagged": {
+      "vertebra": "directing",
+      "legacy_name": "card_tagged",
+      "source": "board-client",
+      "description": "Label or tag added to a card",
+      "fields": {
+        "card_id": "Card identifier",
+        "tag": "Tag or label applied",
+        "board": "Board name"
+      }
+    },
+    "card.item.completed": {
+      "vertebra": "directing",
+      "legacy_name": "card_done",
+      "source": "board-client",
+      "description": "Card moved to Done",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "self.biometric.transposition_rate": {
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "Typing correction rate \u2014 backspace-after-keystroke sequences per 30s window. Proxy for cognitive load / stress.",
+      "fields": {
+        "rate": "Corrections / keystrokes ratio (0.0 to 1.0)",
+        "errors_30s": "Correction count in window",
+        "keystrokes_30s": "Total keystrokes in window"
+      }
+    },
+    "card.pulled": {
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "Card pulled to WIP — role started building",
+      "keys": ["card_id"],
+      "fields": {
+        "card_id": "Card identifier"
+      }
+    },
+    "seed.received": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "SMS webhook received — Twilio payload validated, before dedup check",
+      "keys": ["messageSid"],
+      "fields": {
+        "source": "Channel (sms)",
+        "from": "Sender phone number or name",
+        "messageSid": "Twilio MessageSid"
+      }
+    },
+    "seed.captured": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Seed classified and persisted to domain graph",
+      "keys": ["slug"],
+      "fields": {
+        "slug": "Seed slug",
+        "classification": "story|photo|note",
+        "graph": "Target graph URI",
+        "source": "Channel (sms)",
+        "preview": "First 100 chars of content",
+        "peopleLinked": "Number of person links created"
+      }
+    },
+    "seed.routed": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Seed routed to destination domain via hashtag or default routing",
+      "keys": ["slug"],
+      "fields": {
+        "slug": "Seed slug",
+        "hashtag": "Routing hashtag",
+        "destination": "Resolved destination (ideas, reading, wren, etc.)",
+        "routedTo": "Full route URI"
+      }
+    },
+    "seed.hashtag.correlated": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Pending seed correlated with a hashtag from the same sender within the correlation window",
+      "keys": ["slug"],
+      "fields": {
+        "slug": "Seed slug",
+        "hashtag": "Matched hashtag",
+        "destination": "Resolved destination",
+        "correlatedWith": "Sender identity"
+      }
+    },
+    "seed.brief.written": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Brief file written to a role's inbox from a routed seed",
+      "keys": ["slug"],
+      "fields": {
+        "slug": "Seed slug",
+        "role": "Target role",
+        "file": "Brief file path"
+      }
+    },
+    "seed.dropped": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Seed dropped — no routable content, no hashtag, no correlation",
+      "keys": ["slug"],
+      "fields": {
+        "slug": "Seed slug",
+        "reason": "Why the seed was dropped"
+      }
+    },
+    "seed.recovered": {
+      "vertebra": "capturing",
+      "source": "chorus-events",
+      "description": "Seed recovered — spine event emitted retroactively for a seed that arrived during app downtime",
+      "keys": ["slug"],
+      "fields": {
+        "slug": "Seed file slug",
+        "recovered_at": "Recovery timestamp",
+        "original_ts": "Original arrival timestamp"
+      }
+    },
+    "role.nudge.sent": {
+      "vertebra": "directing",
+      "source": "chorus-events",
+      "description": "Nudge message sent from one role to another",
+      "fields": {
+        "target": "Target role",
+        "chars": "Message length",
+        "content": "Message content (truncated)"
+      }
+    },
+    "role.nudge.delivered": {
+      "vertebra": "directing",
+      "source": "chorus-events",
+      "description": "Nudge message delivered to target role's session",
+      "fields": {
+        "target": "Target role",
+        "mode": "Delivery mode (idle, busy-inject)"
+      }
+    },
+    "card.demo.started": {
+      "vertebra": "proving",
+      "source": "board-client",
+      "description": "Demo started for card (DEC-048 Proving gate)",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "card.accepted": {
+      "vertebra": "proving",
+      "source": "board-client",
+      "description": "Card accepted after demo (DEC-048 Proving gate)",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "card.rejected": {
+      "vertebra": "proving",
+      "source": "board-client",
+      "description": "Card rejected after demo with reason",
+      "fields": {
+        "card_id": "Card identifier",
+        "reason": "Rejection reason",
+        "board": "Board name"
+      }
+    },
+    "card.stale.detected": {
+      "vertebra": "directing",
+      "legacy_name": "stale_card_detected",
+      "source": "board-client",
+      "description": "Card detected as stale during board audit (>48h in Now/WIP, >7d in Next)",
+      "fields": {
+        "card_id": "Card identifier",
+        "stage": "Current bucket",
+        "status": "Card status",
+        "age": "Age description",
+        "board": "Board name"
+      }
+    },
+    "board.snapshot.taken": {
+      "vertebra": "directing",
+      "legacy_name": "board_snapshot",
+      "source": "board-client",
+      "description": "Board state snapshot taken",
+      "fields": {
+        "board": "Board name",
+        "task_count": "Number of tasks in snapshot"
+      }
+    },
+    "board.audit.started": {
+      "vertebra": "directing",
+      "legacy_name": "board_audit_start",
+      "source": "board-client",
+      "description": "Board audit initiated at session start",
+      "fields": {
+        "board": "Board name",
+        "snapshot": "Snapshot file path"
+      }
+    },
+    "board.audit.closed": {
+      "vertebra": "directing",
+      "legacy_name": "board_audit_close",
+      "source": "board-client",
+      "description": "Board audit at session close \u2014 checks for retroactive cards",
+      "fields": {
+        "board": "Board name",
+        "new_cards": "Cards created during session",
+        "newly_done": "Cards completed during session",
+        "retroactive": "Retroactive card count"
+      }
+    },
+    "board.limit.set": {
+      "vertebra": "directing",
+      "legacy_name": "bucket_limit_set",
+      "source": "board-client",
+      "description": "WIP limit set on a board bucket",
+      "fields": {
+        "bucket": "Bucket name",
+        "limit": "New WIP limit",
+        "board": "Board name"
+      }
+    },
+    "workflow.manifest.created": {
+      "vertebra": "designing",
+      "legacy_name": "workflow_created",
+      "source": "board-client",
+      "description": "Workflow manifest auto-created when card moves to Now",
+      "fields": {
+        "workflow_id": "Workflow identifier (WF-NNN)",
+        "card_id": "Associated card identifier",
+        "board": "Board name"
+      }
+    },
+    "workflow.manifest.completed": {
+      "vertebra": "directing",
+      "legacy_name": "workflow_complete",
+      "source": "chorus-events",
+      "description": "All workflow steps completed",
+      "fields": {
+        "workflow_id": "Workflow identifier",
+        "card_id": "Associated card identifier",
+        "step_count": "Total steps in workflow",
+        "total_duration_seconds": "Total workflow duration"
+      }
+    },
+    "workflow.step.completed": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Individual workflow step completed",
+      "fields": {
+        "workflow_id": "Workflow identifier (WF-NNN)",
+        "step": "Step number",
+        "total_steps": "Total steps in workflow",
+        "notes": "Step completion notes"
+      }
+    },
+    "brief.handoff.written": {
+      "vertebra": "designing",
+      "legacy_name": "brief_written",
+      "source": "chorus-events",
+      "description": "Brief file written to a role's briefs/ directory",
+      "fields": {
+        "recipient": "Target role",
+        "title": "Brief title"
+      }
+    },
+    "brief.handoff.read": {
+      "vertebra": "designing",
+      "legacy_name": "brief_read",
+      "source": "chorus-events",
+      "description": "Brief file read/consumed by receiving role",
+      "fields": {
+        "author": "Brief author role",
+        "title": "Brief title"
+      }
+    },
+    "brief.handoff.acknowledged": {
+      "vertebra": "designing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Brief surfaced at boot by werk-init \u2014 closes the send/receive chain (#616)",
+      "fields": {
+        "artifact": "Brief filename"
+      }
+    },
+    "brief.notify.sent": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "macOS banner notification sent for brief delivery (#616)",
+      "fields": {
+        "from": "Sender role",
+        "to": "Recipient role",
+        "artifact": "Brief filename"
+      }
+    },
+    "decision.record.created": {
+      "vertebra": "designing",
+      "legacy_name": "decision",
+      "source": "chorus-events",
+      "description": "Product or architectural decision recorded",
+      "fields": {
+        "id": "Decision identifier (DEC-NNN)",
+        "title": "Decision title"
+      }
+    },
+    "build.commit.created": {
+      "vertebra": "building",
+      "legacy_name": "commit",
+      "source": "chorus-events",
+      "description": "Git commit to team repo",
+      "fields": {
+        "sha": "Commit SHA (short)",
+        "message": "Commit message"
+      }
+    },
+    "build.commit.linked": {
+      "vertebra": "building",
+      "legacy_name": "commit_linked",
+      "source": "chorus-events",
+      "description": "Commit linked to a card via (#N) or (C#N) reference",
+      "fields": {
+        "sha": "Commit SHA",
+        "card": "Card reference",
+        "board": "Board name (gathering or chorus)"
+      }
+    },
+    "build.queue.waiting": {
+      "vertebra": "building",
+      "legacy_name": "commit_queue_waiting",
+      "source": "chorus-events",
+      "description": "Role waiting to acquire git commit lock",
+      "fields": {
+        "files": "Files to be committed"
+      }
+    },
+    "build.queue.acquired": {
+      "vertebra": "building",
+      "legacy_name": "commit_queue_acquired",
+      "source": "chorus-events",
+      "description": "Git commit lock acquired",
+      "fields": {}
+    },
+    "build.queue.released": {
+      "vertebra": "building",
+      "legacy_name": "commit_queue_released",
+      "source": "chorus-events",
+      "description": "Git commit lock released",
+      "fields": {
+        "exit_code": "Commit exit code"
+      }
+    },
+    "build.queue.timedout": {
+      "vertebra": "building",
+      "legacy_name": "commit_queue_timeout",
+      "source": "chorus-events",
+      "description": "Git commit lock acquisition timed out (30s)",
+      "fields": {
+        "timeout": "Timeout duration"
+      }
+    },
+    "build.tsc.completed": {
+      "vertebra": "proving",
+      "legacy_name": "tsc_compile",
+      "source": "chorus-events",
+      "description": "TypeScript compilation run (app repo pre-commit)",
+      "fields": {
+        "duration_seconds": "Compilation time",
+        "error_count": "Number of type errors",
+        "result": "pass or fail"
+      }
+    },
+    "build.precommit.completed": {
+      "vertebra": "building",
+      "legacy_name": "pre_commit",
+      "source": "chorus-events",
+      "description": "Team repo pre-commit hook result",
+      "fields": {
+        "checks_run": "Number of checks executed",
+        "checks_passed": "Number passing",
+        "checks_failed": "Number failing"
+      }
+    },
+    "build.precommit.timed": {
+      "vertebra": "building",
+      "legacy_name": "pre_commit_timed",
+      "source": "chorus-events",
+      "description": "App repo pre-commit hook overall timing",
+      "fields": {
+        "duration_seconds": "Total hook time",
+        "trivy_seconds": "Security scan time",
+        "audit_seconds": "npm audit time",
+        "tsc_seconds": "TypeScript compilation time",
+        "lint_seconds": "ESLint time",
+        "lint_warnings": "Number of lint warnings",
+        "lint_threshold": "Warning threshold",
+        "ttl_seconds": "TTL check time",
+        "result": "pass or fail"
+      }
+    },
+    "build.prepush.started": {
+      "vertebra": "building",
+      "legacy_name": "pre_push_start",
+      "source": "chorus-events",
+      "description": "App repo pre-push hook started",
+      "fields": {
+        "tier": "Test tier (fast or full)"
+      }
+    },
+    "build.prepush.timed": {
+      "vertebra": "building",
+      "legacy_name": "pre_push_timed",
+      "source": "chorus-events",
+      "description": "App repo pre-push hook overall timing",
+      "fields": {
+        "duration_seconds": "Total hook time",
+        "unit_seconds": "Unit test time",
+        "integration_seconds": "Integration test time",
+        "security_seconds": "Security scan time",
+        "performance_seconds": "Performance test time",
+        "e2e_seconds": "End-to-end test time",
+        "tier": "Test tier",
+        "result": "pass or fail"
+      }
+    },
+    "build.test.completed": {
+      "vertebra": "proving",
+      "legacy_name": "test_run",
+      "source": "chorus-events",
+      "description": "Test suite execution result",
+      "fields": {
+        "result": "pass or fail",
+        "test_count": "Total tests run",
+        "failed_count": "Tests that failed",
+        "duration_seconds": "Test run time",
+        "tier": "Test tier"
+      }
+    },
+    "build.push.completed": {
+      "vertebra": "building",
+      "legacy_name": "git_push",
+      "source": "chorus-events",
+      "description": "Git push to remote",
+      "fields": {
+        "branch": "Branch name",
+        "sha": "HEAD commit SHA",
+        "commit_count": "Number of commits pushed"
+      }
+    },
+    "build.memory.written": {
+      "vertebra": "building",
+      "legacy_name": "memory_write",
+      "source": "chorus-events",
+      "description": "State file or memory file updated in a commit",
+      "fields": {
+        "file": "File basename",
+        "path": "Full file path",
+        "owner": "File owner role",
+        "sha": "Commit SHA"
+      }
+    },
+    "app.service.started": {
+      "vertebra": "proving",
+      "legacy_name": "app_start",
+      "source": "chorus-events",
+      "description": "Application started via app-state.sh",
+      "fields": {
+        "message": "Status message"
+      }
+    },
+    "app.service.startfailed": {
+      "vertebra": "proving",
+      "legacy_name": "app_start_fail",
+      "source": "chorus-events",
+      "description": "Application start failed",
+      "fields": {
+        "message": "Error message"
+      }
+    },
+    "app.service.stopped": {
+      "vertebra": "proving",
+      "legacy_name": "app_stop",
+      "source": "chorus-events",
+      "description": "Application stopped via app-state.sh",
+      "fields": {
+        "message": "Status message"
+      }
+    },
+    "app.service.restarted": {
+      "vertebra": "proving",
+      "legacy_name": "app_restart",
+      "source": "chorus-events",
+      "description": "Application restarted via app-state.sh",
+      "fields": {
+        "message": "Status message"
+      }
+    },
+    "app.service.restartfailed": {
+      "vertebra": "proving",
+      "legacy_name": "app_restart_fail",
+      "source": "chorus-events",
+      "description": "Application restart failed",
+      "fields": {
+        "message": "Error message"
+      }
+    },
+    "app.service.rolledback": {
+      "vertebra": "proving",
+      "legacy_name": "app_rollback",
+      "source": "chorus-events",
+      "description": "Application rolled back via app-state.sh",
+      "fields": {
+        "message": "Rollback message"
+      }
+    },
+    "app.service.rollbackfailed": {
+      "vertebra": "proving",
+      "legacy_name": "app_rollback_fail",
+      "source": "chorus-events",
+      "description": "Application rollback failed",
+      "fields": {
+        "message": "Error message"
+      }
+    },
+    "deploy.pipeline.started": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_start",
+      "source": "chorus-events",
+      "description": "Deploy/restart/rollback initiated",
+      "fields": {
+        "action": "Action type (restart, deploy, rollback)",
+        "sha": "Commit SHA (optional)",
+        "trigger": "What triggered the deploy"
+      }
+    },
+    "deploy.phase.completed": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_phase",
+      "source": "chorus-events",
+      "description": "Deploy phase completed (build, health_gate, smoke)",
+      "fields": {
+        "phase": "Phase name",
+        "duration_seconds": "Phase time",
+        "sha": "Commit SHA",
+        "result": "Phase result"
+      }
+    },
+    "deploy.pipeline.completed": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_complete",
+      "source": "chorus-events",
+      "description": "Deploy/restart/rollback finished",
+      "fields": {
+        "action": "Action type",
+        "duration_seconds": "Total deploy time",
+        "result": "success or fail",
+        "sha": "Commit SHA (optional)"
+      }
+    },
+    "deploy.pipeline.succeeded": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_success",
+      "source": "chorus-events",
+      "description": "Deploy succeeded (legacy event from app-state.sh)",
+      "fields": {
+        "message": "Success message",
+        "sha": "Commit SHA"
+      }
+    },
+    "deploy.pipeline.failed": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_fail",
+      "source": "chorus-events",
+      "description": "Deploy or rollback failed",
+      "fields": {
+        "message": "Error message"
+      }
+    },
+    "deploy.freeze.activated": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_freeze",
+      "source": "chorus-events",
+      "description": "Deploy freeze activated \u2014 blocks all deploys",
+      "fields": {
+        "message": "Freeze message",
+        "role": "Role that activated freeze"
+      }
+    },
+    "deploy.freeze.deactivated": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_unfreeze",
+      "source": "chorus-events",
+      "description": "Deploy freeze deactivated",
+      "fields": {
+        "message": "Unfreeze message",
+        "role": "Role that deactivated freeze"
+      }
+    },
+    "deploy.health.checked": {
+      "vertebra": "proving",
+      "legacy_name": "health_check",
+      "source": "chorus-events",
+      "description": "Health check after deploy/restart",
+      "fields": {
+        "endpoint": "Health endpoint URL",
+        "response_ms": "Response time in milliseconds",
+        "status": "ok or fail"
+      }
+    },
+    "deploy.verification.completed": {
+      "vertebra": "proving",
+      "legacy_name": "verification_complete",
+      "source": "chorus-events",
+      "description": "Card verification completed (board-ts done triggers this)",
+      "fields": {
+        "card_id": "Card identifier",
+        "result": "pass (always \u2014 manual verification)",
+        "method": "manual"
+      }
+    },
+    "session.role.started": {
+      "vertebra": "directing",
+      "legacy_name": "session_start",
+      "source": "chorus-events",
+      "description": "Role session started",
+      "fields": {
+        "domain": "Work domain (optional)",
+        "title": "Session title (optional)"
+      }
+    },
+    "session.role.ended": {
+      "vertebra": "directing",
+      "legacy_name": "session_end",
+      "source": "chorus-events",
+      "description": "Role session ended",
+      "fields": {
+        "cost": "Session cost estimate (optional)"
+      }
+    },
+    "session.turn.completed": {
+      "vertebra": "building",
+      "legacy_name": "session_turn",
+      "source": "chorus-events",
+      "description": "Session turn \u2014 user/assistant exchange",
+      "fields": {
+        "duration_seconds": "Turn duration",
+        "message": "Turn summary"
+      }
+    },
+    "session.tool.used": {
+      "vertebra": "building",
+      "legacy_name": "session_tool",
+      "source": "chorus-events",
+      "description": "Tool use within a session",
+      "fields": {
+        "action": "Tool name",
+        "message": "Tool use context"
+      }
+    },
+    "session.context.compacted": {
+      "vertebra": "directing",
+      "legacy_name": "session_compact",
+      "source": "chorus-events",
+      "description": "Context window compaction event",
+      "fields": {}
+    },
+    "session.docscan.completed": {
+      "vertebra": "directing",
+      "legacy_name": "doc_scan",
+      "source": "chorus-events",
+      "description": "Domain doc scan at session close \u2014 role validated their vertical docs for staleness (DEC-058, #312)",
+      "fields": {
+        "checked": "Number of files scanned",
+        "updated": "Number of files updated"
+      }
+    },
+    "ops.agent.completed": {
+      "vertebra": "directing",
+      "legacy_name": "ops_agent_run",
+      "source": "chorus-events",
+      "description": "Ops agent autonomous run completed",
+      "fields": {
+        "status": "Run status",
+        "findings": "Number of findings",
+        "cards": "Cards created/updated",
+        "model": "AI model used",
+        "summary": "Run summary"
+      }
+    },
+    "ops.defect.detected": {
+      "vertebra": "proving",
+      "legacy_name": "defect_detected",
+      "source": "chorus-events",
+      "description": "Defect poller found a new defect and carded it",
+      "fields": {
+        "source": "Detection source",
+        "tier": "Defect tier",
+        "hash": "Defect hash for dedup",
+        "card_id": "Created card identifier",
+        "pattern": "Defect pattern"
+      }
+    },
+    "ops.alert.fired": {
+      "vertebra": "proving",
+      "legacy_name": "alert_firing",
+      "source": "chorus-events",
+      "description": "Prometheus alert started firing",
+      "fields": {
+        "alertname": "Alert name",
+        "severity": "Alert severity"
+      }
+    },
+    "ops.alert.resolved": {
+      "vertebra": "proving",
+      "legacy_name": "alert_resolved",
+      "source": "chorus-events",
+      "description": "Prometheus alert resolved",
+      "fields": {
+        "alertname": "Alert name"
+      }
+    },
+    "ops.disk.checked": {
+      "vertebra": "proving",
+      "legacy_name": "disk_check",
+      "source": "chorus-events",
+      "description": "Disk usage check \u2014 emitted on session start, full audit, and periodic health",
+      "fields": {
+        "disk_pct": "Disk usage percentage",
+        "status": "ok, warning, or critical",
+        "volume": "Volume path checked"
+      }
+    },
+    "ops.container.changed": {
+      "vertebra": "building",
+      "legacy_name": "container_state_change",
+      "source": "chorus-events",
+      "description": "Container health or running state transition",
+      "fields": {
+        "container": "Container name",
+        "from_state": "Previous state (running, stopped, healthy, unhealthy)",
+        "to_state": "New state",
+        "reason": "Transition reason (optional)"
+      }
+    },
+    "ops.system.started": {
+      "vertebra": "directing",
+      "legacy_name": "system_start",
+      "source": "chorus-events",
+      "description": "Full system started via system-state.sh",
+      "fields": {}
+    },
+    "ops.system.stopped": {
+      "vertebra": "directing",
+      "legacy_name": "system_stop",
+      "source": "chorus-events",
+      "description": "Full system stopped via system-state.sh",
+      "fields": {}
+    },
+    "harvest.pipeline.started": {
+      "vertebra": "building",
+      "legacy_name": "harvest_start",
+      "source": "chorus-events",
+      "description": "Collection harvest initiated",
+      "fields": {
+        "collection": "Collection name (music, photos, notes, books)",
+        "source": "Harvest source path or endpoint"
+      }
+    },
+    "harvest.pipeline.completed": {
+      "vertebra": "building",
+      "legacy_name": "harvest_complete",
+      "source": "chorus-events",
+      "description": "Collection harvest finished",
+      "fields": {
+        "collection": "Collection name",
+        "items_processed": "Number of items harvested",
+        "duration_seconds": "Harvest duration",
+        "result": "success or fail",
+        "error": "Error message (on failure)"
+      }
+    },
+    "harvest.notify.sent": {
+      "vertebra": "building",
+      "legacy_name": "harvest_notify",
+      "source": "chorus-events",
+      "description": "Push notification sent for harvest completion or failure",
+      "fields": {
+        "domain": "Harvest domain name",
+        "result": "completed or failed",
+        "items": "Number of items harvested"
+      }
+    },
+    "ops.cost.reported": {
+      "vertebra": "directing",
+      "legacy_name": "cost_report",
+      "source": "chorus-events",
+      "description": "Daily cost and usage report emitted",
+      "fields": {
+        "sessions": "Number of sessions today",
+        "messages": "Number of messages today",
+        "tokens": "Output tokens today",
+        "sms_count": "SMS messages sent (optional)",
+        "sms_cost": "SMS cost in USD (optional)"
+      }
+    },
+    "guard.rule.decided": {
+      "vertebra": "building",
+      "legacy_name": "guardrail_decision",
+      "source": "chorus-events",
+      "description": "Infrastructure guardrail hook fired \u2014 deny/ask/allow on prohibited commands",
+      "fields": {
+        "decision": "deny, ask, or allow",
+        "pattern": "Pattern that matched (docker-exec, kill, etc.)",
+        "command": "Truncated command string (max 200 chars)"
+      }
+    },
+    "guard.scrub.blocked": {
+      "vertebra": "building",
+      "legacy_name": "write_scrub",
+      "source": "chorus-events",
+      "description": "Write scrubber hook fired \u2014 credential or internal pattern detected in shared file write",
+      "fields": {
+        "decision": "deny or warn",
+        "tier": "Data classification tier (private or internal)",
+        "pattern": "Pattern that matched",
+        "path": "File path being written"
+      }
+    },
+    "guard.classify.decided": {
+      "vertebra": "building",
+      "legacy_name": "data_classification",
+      "source": "chorus-events",
+      "description": "Sensitive paths hook fired \u2014 classified file read attempt",
+      "fields": {
+        "decision": "deny or ask",
+        "tier": "Data classification tier (private or internal)",
+        "path": "File path being read"
+      }
+    },
+    "ops.audit.checked": {
+      "vertebra": "proving",
+      "legacy_name": "audit_check",
+      "source": "chorus-events",
+      "description": "Chorus audit check result \u2014 pass/warn/fail for a specific gate",
+      "fields": {
+        "check": "Check name",
+        "result": "pass, warn, or fail",
+        "message": "Check result message",
+        "mode": "Audit mode (start, close, full)"
+      }
+    },
+    "protocol.boot.started": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Protocol boot sequence started \u2014 envelope open for grouping boot steps",
+      "fields": {}
+    },
+    "protocol.boot.completed": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Protocol boot sequence completed \u2014 envelope close with summary",
+      "fields": {
+        "steps": "Number of steps executed",
+        "ok": "Steps that passed",
+        "warn": "Steps with warnings",
+        "fail": "Steps that failed",
+        "status": "Overall boot status (green, yellow, red)"
+      }
+    },
+    "protocol.close.started": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Protocol close-out sequence started \u2014 envelope open for grouping close steps",
+      "fields": {}
+    },
+    "protocol.close.completed": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Protocol close-out sequence completed \u2014 envelope close with summary",
+      "fields": {
+        "steps": "Number of steps executed",
+        "ok": "Steps that passed",
+        "warn": "Steps with warnings",
+        "fail": "Steps that failed"
+      }
+    },
+    "protocol.step.completed": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Individual protocol step completed (boot or close)",
+      "fields": {
+        "phase": "Phase: boot or close",
+        "step": "Step name (board-check, state-files, briefs, claudemd, health, next-session, auto-promote, etc.)",
+        "status": "ok, warn, fail, or skip",
+        "detail": "Optional detail (e.g., count, specific issue)"
+      }
+    },
+    "chat.session.started": {
+      "vertebra": "directing",
+      "source": "chorus-events",
+      "description": "Chat channel opened between two roles",
+      "fields": {
+        "with": "Partner role",
+        "topic": "Chat topic",
+        "id": "Chat session ID"
+      }
+    },
+    "chat.session.ended": {
+      "vertebra": "directing",
+      "source": "chorus-events",
+      "description": "Chat channel closed",
+      "fields": {
+        "id": "Chat session ID",
+        "lines": "Number of messages exchanged"
+      }
+    },
+    "pair.session.started": {
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "Pair programming session started \u2014 strong-style pairing with navigator and driver",
+      "fields": {
+        "card": "Card being worked on",
+        "partner": "Partner role"
+      }
+    },
+    "pair.session.ended": {
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "Pair programming session ended",
+      "fields": {
+        "card": "Card worked on",
+        "partner": "Partner role",
+        "duration": "Session duration in minutes"
+      }
+    },
+    "pair.roles.swapped": {
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "Driver and navigator swapped roles during a pair session",
+      "fields": {
+        "card": "Card being worked on"
+      }
+    },
+    "search.query.executed": {
+      "vertebra": "building",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Search query executed \u2014 covers FTS, semantic, and hybrid across Chorus API and Gathering app (#1107)",
+      "fields": {
+        "system": "Source system (chorus-api or gathering-app)",
+        "query": "Search query text (truncated to 200 chars)",
+        "mode": "Search mode (fts, semantic, hybrid, fts-page)",
+        "result_count": "Number of results returned (0 = miss)",
+        "duration_ms": "Query latency in milliseconds",
+        "collection": "Collection filter (gathering-app only, optional)",
+        "role_filter": "Role filter (chorus-api only, optional)"
+      }
+    },
+    "observer.digest": {
+      "vertebra": "directing",
+      "envelope": [
+        "timestamp",
+        "role"
+      ]
+    },
+    "card.blast_radius.generated": {
+      "vertebra": "designing",
+      "envelope": [
+        "timestamp",
+        "role",
+        "card_id"
+      ]
+    },
+    "card.item.set": {
+      "vertebra": "directing",
+      "envelope": [
+        "timestamp",
+        "role",
+        "card_id"
+      ]
+    },
+    "card.owner.notified": {
+      "vertebra": "directing",
+      "envelope": [
+        "timestamp",
+        "role",
+        "card_id"
+      ]
+    },
+    "card.pm.briefed": {
+      "vertebra": "proving",
+      "envelope": [
+        "timestamp",
+        "role",
+        "card_id"
+      ]
+    },
+    "batch.progress": {
+      "vertebra": "building",
+      "envelope": [
+        "timestamp",
+        "role"
+      ]
+    },
+    "batch.progress.complete": {
+      "vertebra": "building",
+      "envelope": [
+        "timestamp",
+        "role"
+      ]
+    },
+    "role.nudge.consumed": {
+      "vertebra": "directing",
+      "envelope": [
+        "timestamp",
+        "role"
+      ]
+    },
+    "codebase.graph.harvest.started": {
+      "vertebra": "building"
+    },
+    "codebase.graph.harvest.completed": {
+      "vertebra": "building"
+    },
+    "harvest.codebase.load.started": {
+      "vertebra": "building"
+    },
+    "harvest.codebase.load.failed": {
+      "vertebra": "building"
+    },
+    "search.hierarchy.code_lookup": {
+      "vertebra": "building"
+    },
+    "search.hierarchy.enrichment": {
+      "vertebra": "building"
+    },
+    "guard.sparql.warned": {
+      "vertebra": "building"
+    },
+    "card.blast_radius.zero_code": {
+      "vertebra": "designing"
+    },
+    "card.wip_overlap.detected": {
+      "vertebra": "directing"
+    },
+    "card.quality.blocked": {
+      "vertebra": "proving"
+    },
+    "decision.gate.jdi_override": {
+      "vertebra": "directing"
+    },
+    "interaction.jdi.received": {
+      "vertebra": "directing"
+    }
+  }
+}

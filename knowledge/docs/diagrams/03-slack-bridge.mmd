@@ -1,0 +1,28 @@
+sequenceDiagram
+    participant Anyone as Jeff / Other Role
+    participant Slack as Slack Channel
+    participant Bridge as Slack Bridge (Docker)
+    participant Claude as Claude API (Sonnet)
+
+    loop Every 30 seconds
+        Bridge->>Slack: Poll channels
+        Slack-->>Bridge: New messages
+
+        alt New message found
+            Note over Bridge: Route to appropriate role
+            Bridge->>Bridge: Rate limit check
+
+            alt Within rate limit
+                Bridge->>Bridge: Assemble context
+                Bridge->>Claude: API call (1024 tokens)
+                Claude-->>Bridge: Response text
+                Bridge->>Slack: Post response + bridge marker
+            else Rate limited
+                Note over Bridge: Skip
+            end
+        else No new messages
+            Note over Bridge: Sleep until next poll
+        end
+    end
+
+    Note over Anyone: Jeff sees bridge responses in Slack

@@ -1,0 +1,48 @@
+{
+  "id": "WF-046",
+  "decision": "Instrumented viz: circles as live health instruments",
+  "source": "board:card-moved:C#264",
+  "card": 264,
+  "created": "2026-02-23T20:00:09Z",
+  "updated": "2026-02-23T20:00:09Z",
+  "status": "in_progress",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Instrumented viz: circles as live health instruments",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify C#264",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T20:00:09Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Instrumented viz: circles as live health instruments"
+    }
+  ]
+}

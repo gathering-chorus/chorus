@@ -1,0 +1,48 @@
+{
+  "id": "WF-111",
+  "decision": "Test taxonomy gate",
+  "source": "board:card-moved:#1278",
+  "card": 1278,
+  "created": "2026-03-10T20:47:46Z",
+  "updated": "2026-03-10T20:47:46Z",
+  "status": "in_progress",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Test taxonomy gate",
+      "status": "ready",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1278",
+      "status": "pending",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-10T20:47:46Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Test taxonomy gate"
+    }
+  ]
+}

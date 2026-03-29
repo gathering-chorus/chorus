@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta property="og:title" content="The Clearing — Chorus">
+<meta property="og:description" content="Where the team gathers. Three AI roles, one human, real-time.">
+<meta property="og:image" content="https://bridge.lightlifeurbangardens.com/bridge-og.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The Clearing — Chorus">
+<meta name="twitter:image" content="https://bridge.lightlifeurbangardens.com/bridge-og.jpg">
+<title>The Clearing</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --wren: #3fb950;
+    --silas: #58a6ff;
+    --kade: #d29922;
+    --jeff: #e6edf3;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Always show scrollbars — force visible on macOS */
+  .messages, .fold-content, .flow-content {
+    scrollbar-width: thin;
+    scrollbar-color: #555 #1a1a1a;
+    -webkit-overflow-scrolling: touch;
+  }
+  .messages::-webkit-scrollbar,
+  .fold-content::-webkit-scrollbar,
+  .flow-content::-webkit-scrollbar {
+    -webkit-appearance: none;
+    width: 12px;
+    display: block !important;
+  }
+  .messages::-webkit-scrollbar-track,
+  .fold-content::-webkit-scrollbar-track,
+  .flow-content::-webkit-scrollbar-track {
+    background: #1a1a1a;
+    border-left: 1px solid var(--border);
+  }
+  .messages::-webkit-scrollbar-thumb,
+  .fold-content::-webkit-scrollbar-thumb,
+  .flow-content::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 6px;
+    border: 2px solid #1a1a1a;
+    min-height: 40px;
+  }
+  .messages::-webkit-scrollbar-thumb:hover,
+  .fold-content::-webkit-scrollbar-thumb:hover,
+  .flow-content::-webkit-scrollbar-thumb:hover {
+    background: #777;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .header-title { font-weight: 700; font-size: 1.1rem; color: var(--accent); }
+  .header-status { color: var(--text-muted); font-size: 0.8rem; }
+  .header-status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+  .dot-connected { background: var(--green); }
+  .dot-disconnected { background: var(--red); }
+
+  /* Tiles */
+  .tiles {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .tile {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .tile:hover { border-color: var(--text-muted); }
+  .tile-top { display: flex; justify-content: space-between; align-items: center; }
+  .tile-name { font-weight: 700; font-size: 0.9rem; }
+  .tile-card { color: var(--text-muted); font-size: 0.8rem; }
+  .tile-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 0.4rem; }
+  .tile-state { font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
+  .tile-state .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+  .tile-age { color: var(--text-muted); font-size: 0.7rem; }
+  .tile-action { color: var(--text-muted); font-size: 0.7rem; margin-top: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .tile-jeff .tile-name { color: #c9d1d9; font-weight: 800; }
+  .tile-jeff { border-color: rgba(201,209,217,0.4); background: rgba(201,209,217,0.05); }
+  .tile-jeff.tile-locked { border-color: #c9d1d9; background: rgba(201,209,217,0.12); box-shadow: 0 0 20px rgba(201,209,217,0.3); }
+  .tile-jeff.tile-locked::after { background: #c9d1d9; color: var(--bg); }
+  .tile-wren .tile-name { color: var(--wren); }
+  .tile-wren { border-color: rgba(63,185,80,0.3); }
+  .tile-silas .tile-name { color: var(--silas); }
+  .tile-silas { border-color: rgba(88,166,255,0.3); }
+  .tile-kade .tile-name { color: var(--kade); }
+  .tile-kade { border-color: rgba(210,153,34,0.3); }
+  .tile-locked { border-width: 3px; position: relative; }
+  .tile-locked::after { content: '◀ speaking to'; position: absolute; top: -10px; right: 8px; font-size: 0.65rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+  .tile-locked.tile-wren { border-color: var(--wren); background: rgba(63,185,80,0.12); box-shadow: 0 0 20px rgba(63,185,80,0.4); }
+  .tile-locked.tile-wren::after { background: var(--wren); color: var(--bg); }
+  .tile-locked.tile-silas { border-color: var(--silas); background: rgba(88,166,255,0.12); box-shadow: 0 0 20px rgba(88,166,255,0.4); }
+  .tile-locked.tile-silas::after { background: var(--silas); color: var(--bg); }
+  .tile-locked.tile-kade { border-color: var(--kade); background: rgba(210,153,34,0.12); box-shadow: 0 0 20px rgba(210,153,34,0.4); }
+  .tile-locked.tile-kade::after { background: var(--kade); color: var(--bg); }
+  .tile-fold-btn { font-size: 0.65rem; color: var(--text-muted); margin-top: 0.3rem; cursor: pointer; text-align: right; }
+  .tile-fold-btn:hover { color: var(--accent); }
+
+  /* Main area — side by side when fold is open */
+  .main-area {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* Fold panels */
+  .fold-container { overflow: hidden; }
+  .fold-panel {
+    width: 0;
+    overflow: hidden;
+    transition: width 0.3s ease;
+    background: rgba(0,0,0,0.3);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .fold-panel.open { width: 420px; min-width: 200px; max-width: 700px; height: 100%; overflow: hidden; display: flex; flex-direction: column; flex-shrink: 0; }
+  .fold-content {
+    flex: 1;
+    overflow-y: scroll;
+    padding: 0.5rem 1rem;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .fold-line { margin-bottom: 2px; }
+  .fold-line .fold-ts { color: #484f58; margin-right: 0.5rem; }
+  .fold-line .fold-tool { color: var(--accent); }
+  .fold-line .fold-turn { color: var(--text); }
+  .fold-line .fold-card { color: var(--orange); font-size: 0.7rem; }
+  .fold-gemba { background: rgba(63,185,80,0.08); border-left: 2px solid var(--wren); padding-left: 0.5rem; margin: 2px 0; }
+
+  /* Flow pane */
+  .flow-pane {
+    width: 280px;
+    min-width: 150px;
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--surface);
+    position: relative;
+  }
+  .flow-header {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--accent);
+  }
+  .flow-content {
+    flex: 1;
+    overflow-y: scroll;
+    padding: 0.75rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+  }
+  .flow-section { margin-bottom: 0.5rem; }
+  .flow-section-title { font-weight: 700; color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.4rem 0; cursor: pointer; user-select: none; }
+  .flow-section-title:hover { color: var(--accent); }
+  .flow-section-cards { overflow: hidden; }
+  .flow-section-cards.collapsed { display: none; }
+  .flow-card { padding: 0.4rem 0.6rem; background: var(--bg); border-radius: 6px; margin-bottom: 0.3rem; border-left: 3px solid var(--border); }
+  .flow-card-wren { border-left-color: var(--wren); }
+  .flow-card-silas { border-left-color: var(--silas); }
+  .flow-card-kade { border-left-color: var(--kade); }
+  .flow-card-id { font-weight: 700; color: var(--text); font-size: 0.75rem; }
+  .flow-card-title { color: var(--text-muted); font-size: 0.7rem; }
+  .flow-card-owner { font-size: 0.65rem; }
+
+  /* Resize handles */
+  .resize-handle {
+    width: 5px;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .resize-handle:hover, .resize-handle.dragging {
+    background: var(--accent);
+  }
+
+  /* Filter bars */
+  .filter-bar, .fold-filter-bar {
+    padding: 0.4rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .filter-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-family: inherit;
+    outline: none;
+  }
+  .filter-input:focus { border-color: var(--accent); }
+  .filter-input::placeholder { color: var(--text-muted); }
+
+  /* Message pane */
+  .msg-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .messages {
+    flex: 1;
+    overflow-y: scroll;
+    padding: 0.75rem 1.25rem;
+    position: relative;
+    background-color: var(--bg);
+    background-image: linear-gradient(rgba(13,17,23,0.88), rgba(13,17,23,0.88)), url('/clearing-bg.jpg');
+    background-position: center center;
+    background-size: cover;
+    background-repeat: no-repeat;
+  }
+  .messages-inner { position: relative; z-index: 1; }
+  .messages-inner {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 100%;
+  }
+  .msg { margin-bottom: 2px; display: flex; flex-direction: column; }
+  .msg-jeff { align-items: flex-end; }
+  .msg-role { align-items: flex-start; }
+  .msg-bubble {
+    max-width: 70%;
+    padding: 0.5rem 0.85rem;
+    border-radius: 18px;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    word-wrap: break-word;
+  }
+  .msg-jeff .msg-bubble {
+    background: #34a4fb;
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+  .msg-jeff img { background: none; }
+  .msg-role .msg-bubble {
+    background: #2c2c2e;
+    color: #e5e5e7;
+    border-bottom-left-radius: 4px;
+  }
+  .msg-role.msg-from-wren .msg-bubble { background: rgba(63,185,80,0.10); }
+  .msg-role.msg-from-silas .msg-bubble { background: rgba(88,166,255,0.10); }
+  .msg-role.msg-from-kade .msg-bubble { background: rgba(210,153,34,0.10); }
+  .msg-role .msg-bubble strong { font-size: 0.8rem; }
+  .msg-role.msg-demo .msg-bubble, .msg-jeff.msg-demo .msg-bubble {
+    background: #1a2e1a; border: 1px solid var(--green); border-left: 4px solid var(--green);
+    font-style: normal; opacity: 1; font-size: 0.95rem; padding: 0.6rem 0.8rem;
+  }
+  .msg-role.msg-accept .msg-bubble, .msg-jeff.msg-accept .msg-bubble {
+    background: #1a2e1a; border: 1px solid var(--green); border-left: 4px solid var(--green);
+    font-style: normal; opacity: 1; font-size: 0.95rem; padding: 0.6rem 0.8rem;
+  }
+  .msg-role.msg-blocked .msg-bubble { background: #2e1a1a; }
+  .msg-role.msg-thinking .msg-bubble { background: rgba(136,166,255,0.06); border-left: 2px solid currentColor; font-style: italic; opacity: 0.8; font-size: 0.8rem; line-height: 1.5; }
+  .msg-role.msg-thinking .msg-bubble strong { display: block; margin-top: 0.6em; margin-bottom: 0.2em; font-style: normal; }
+  .msg-role.msg-thinking .msg-bubble br + br { display: none; }
+  .msg-role.msg-thinking .msg-bubble ul { margin: 0.3em 0; }
+  .msg-role.msg-thinking .msg-bubble li { margin-bottom: 0.15em; }
+  .msg-role.msg-thinking .msg-label::after { content: ' thinking'; font-weight: 400; font-style: italic; color: var(--text-muted); }
+  .msg-timestamp {
+    font-size: 0.65rem;
+    color: #86868b;
+    text-align: center;
+    margin: 0.6rem 0 0.3rem;
+  }
+  .msg-meta {
+    display: none;
+  }
+  .msg-guest .msg-bubble { background: rgba(210,168,255,0.12); border-left: 2px solid #d2a8ff; }
+  .msg-muted { opacity: 0.4; }
+  .msg-muted .msg-bubble { font-size: 0.8rem; padding: 0.35rem 0.7rem; }
+  .msg-hidden-count {
+    color: #86868b;
+    font-size: 0.75rem;
+    font-style: italic;
+    padding: 0.25rem 0;
+    cursor: pointer;
+    text-align: center;
+  }
+  .msg-hidden-count:hover { color: var(--accent); }
+
+  /* Input */
+  .input-area {
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .input-row { display: flex; gap: 0.5rem; }
+  .input-field {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    color: var(--text);
+    font-size: 0.9rem;
+    font-family: inherit;
+    outline: none;
+  }
+  .input-field:focus { border-color: var(--accent); }
+  .input-field::placeholder { color: var(--text-muted); }
+  .mic-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.2s;
+    line-height: 1;
+  }
+  .mic-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .mic-btn.recording { background: rgba(255,59,48,0.15); border-color: #ff3b30; color: #ff3b30; animation: pulse-mic 1.5s infinite; }
+  @keyframes pulse-mic { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .send-btn {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.25rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .send-btn:hover { opacity: 0.9; }
+  .input-hint { color: var(--text-muted); font-size: 0.7rem; margin-top: 0.4rem; }
+
+  /* Mobile tab bar */
+  .mobile-tabs {
+    display: none;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 0;
+    gap: 0;
+  }
+  .mobile-tab {
+    flex: 1;
+    padding: 0.6rem 0;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    cursor: pointer;
+    border: none;
+    background: none;
+    border-top: 2px solid transparent;
+  }
+  .mobile-tab.active { color: var(--accent); border-top-color: var(--accent); }
+
+  /* Mobile breakpoint */
+  @media (max-width: 768px) {
+    .tiles { padding: 0.4rem; gap: 0.3rem; }
+    .tile { padding: 0.4rem 0.5rem; font-size: 0.8rem; }
+    .tile-top { flex-wrap: nowrap; gap: 4px; }
+    .tile-name { font-size: 0.8rem; }
+    .tile-card { font-size: 0.65rem; white-space: nowrap; }
+    .tile-bottom { font-size: 0.65rem; }
+    .tile-age { white-space: nowrap; }
+    .tile-action, .tile-fold-btn { display: none; }
+    .mobile-tabs { display: flex; }
+    .resize-handle { display: none; }
+    .input-hint { display: none; }
+    .main-area { display: flex; flex-direction: column; position: relative; overflow: hidden; }
+    .msg-pane { flex: 1; min-height: 0; }
+    .flow-pane { display: none !important; width: 0 !important; min-width: 0 !important; max-width: 0 !important; overflow: hidden !important; }
+    .flow-pane.mobile-active { display: flex !important; width: 100% !important; min-width: 0 !important; max-width: 100% !important; position: absolute; inset: 0; z-index: 5; }
+    .fold-container { display: none !important; width: 0 !important; min-width: 0 !important; max-width: 0 !important; overflow: hidden !important; }
+    .fold-container .fold-panel, .fold-container .fold-panel.open { width: 0 !important; min-width: 0 !important; }
+    .fold-container.mobile-active { display: block !important; width: 100% !important; position: absolute; inset: 0; z-index: 5; }
+    .fold-container.mobile-active .fold-panel,
+    .fold-container.mobile-active .fold-panel.open { width: 100% !important; min-width: 0 !important; height: 100%; overflow-y: auto; }
+    .msg-pane.mobile-hidden { display: none; }
+    .input-area { padding: 0.5rem; padding-bottom: calc(0.5rem + env(safe-area-inset-bottom)); overflow: hidden; }
+    .input-row { overflow: hidden; max-width: 100%; }
+    .input-field { min-width: 0; flex: 1 1 0; font-size: 16px; }
+    .send-btn { flex: 0 0 auto; }
+    .msg-bubble { max-width: 80%; overflow-wrap: anywhere; }
+    .messages { overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; background-attachment: scroll; }
+    .msg { max-width: 100%; overflow-x: hidden; }
+    .messages::-webkit-scrollbar,
+    .fold-content::-webkit-scrollbar,
+    .flow-content::-webkit-scrollbar { width: 0 !important; display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="header-title">The Clearing</span>
+  <span class="header-status" id="connection-status">
+    <span class="dot dot-disconnected"></span> connecting...
+  </span>
+  <span id="guest-logout"></span>
+</div>
+<script>
+if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
+  document.getElementById('guest-logout').innerHTML = '<a href="/logout" style="color:var(--text-muted);font-size:0.75rem;text-decoration:none;margin-left:0.5rem">(' + window.BRIDGE_USER + ' · sign out)</a>';
+}
+</script>
+
+<div class="tiles" id="tiles"></div>
+
+<div class="main-area">
+  <div class="flow-pane" id="flow-pane">
+  <div class="flow-header">
+    <span class="flow-title">Domains</span>
+  </div>
+  <div class="flow-filter-bar" style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--border);">
+    <div style="display:flex;gap:4px;margin-bottom:4px;flex-wrap:wrap;">
+      <button class="role-filter-btn" data-filter="all" onclick="setRoleFilter('all')" style="font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:var(--bg);cursor:pointer;">All</button>
+      <button class="role-filter-btn" data-filter="wren" onclick="setRoleFilter('wren')" style="font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--wren);cursor:pointer;">Wren</button>
+      <button class="role-filter-btn" data-filter="silas" onclick="setRoleFilter('silas')" style="font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--silas);cursor:pointer;">Silas</button>
+      <button class="role-filter-btn" data-filter="kade" onclick="setRoleFilter('kade')" style="font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--kade);cursor:pointer;">Kade</button>
+    </div>
+    <input class="filter-input" id="domain-filter" type="text" placeholder="🔍 filter domains..." oninput="filterDomains()" />
+  </div>
+  <div class="flow-content" id="flow-content"></div>
+</div>
+<div class="resize-handle" id="resize-left"></div>
+<div class="msg-pane">
+  <div class="flow-header">
+    <span class="flow-title">Messages</span>
+  </div>
+  <div class="filter-bar">
+    <input class="filter-input" id="msg-filter" type="text" placeholder="🔍 filter messages..." oninput="filterMessages()" />
+  </div>
+  <div class="messages" id="messages"><div class="messages-inner" id="messages-inner"></div></div>
+</div>
+<div class="resize-handle" id="resize-right"></div>
+  <div class="fold-container">
+    <div class="fold-panel" id="fold-panel">
+      <div class="flow-header">
+        <span class="flow-title">Streams</span>
+      </div>
+      <div class="fold-filter-bar">
+        <input class="filter-input" id="stream-filter" type="text" placeholder="🔍 filter stream..." oninput="filterStream()" />
+      </div>
+      <div class="fold-content" id="fold-content"></div>
+    </div>
+  </div>
+</div>
+
+<div id="mobile-stream" style="display:none;flex:1;overflow-y:auto;padding:0.5rem;font-family:monospace;font-size:0.75rem;color:#8b949e;line-height:1.6;background:#0d1117;"></div>
+
+<div class="mobile-tabs" id="mobile-tabs">
+  <button class="mobile-tab active" data-panel="messages" onclick="switchMobileTab('messages')">Messages</button>
+  <button class="mobile-tab" data-panel="domains" onclick="switchMobileTab('domains')">Domains</button>
+  <button class="mobile-tab" data-panel="streams" onclick="switchMobileTab('streams')">Streams</button>
+</div>
+
+<div class="input-area">
+  <div class="input-row">
+    <input class="input-field" id="input" type="text"
+      placeholder="Type a message... (@wren @silas @kade or just type)"
+      autocomplete="off" />
+    <button class="mic-btn" id="mic-btn" title="Voice input (hold to talk)">🎙</button>
+    <button class="send-btn" id="send-btn">Send</button>
+  </div>
+  <div class="input-hint">@role to direct • no @ = Wren gets it • Enter to send</div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// Pass auth token to Socket.IO for remote connections (#1719)
+const bridgeCookie = document.cookie.match(/bridge_token=([^;]+)/);
+const bridgeToken = bridgeCookie ? bridgeCookie[1] : (new URLSearchParams(location.search).get('token') || '');
+const socket = io({
+  auth: { token: bridgeToken },
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 10000,
+});
+const msgContainer = document.getElementById('messages-inner');
+const msgScroller = document.getElementById('messages');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send-btn');
+const tilesContainer = document.getElementById('tiles');
+const statusEl = document.getElementById('connection-status');
+
+// Connection status + reconnect handling
+socket.on('connect', () => {
+  statusEl.innerHTML = '<span class="dot dot-connected"></span> connected';
+});
+socket.on('disconnect', () => {
+  statusEl.innerHTML = '<span class="dot dot-disconnected"></span> reconnecting...';
+});
+socket.io.on('reconnect', () => {
+  statusEl.innerHTML = '<span class="dot dot-connected"></span> connected';
+});
+
+// Tiles
+socket.on('tiles', (tiles) => renderTiles(tiles));
+
+// Initial messages
+socket.on('messages', (msgs) => {
+  msgContainer.innerHTML = '';
+  msgs.forEach(msg => appendMessage(msg));
+  scrollToBottom();
+});
+
+// New message
+socket.on('message', (msg) => {
+  appendMessage(msg);
+  scrollToBottom();
+});
+
+// Tile lock — click to target role(s)
+let lockedRole = null; // kept for backward compat
+const selectedRoles = new Set();
+
+function updateInputHint() {
+  const hint = document.querySelector('.input-hint');
+  if (selectedRoles.size > 0) {
+    const names = [...selectedRoles].map(r => r.charAt(0).toUpperCase() + r.slice(1));
+    const colors = [...selectedRoles].map(r => `<strong style="color:var(--${r})">${r.charAt(0).toUpperCase() + r.slice(1)}</strong>`);
+    hint.innerHTML = `Sending to ${colors.join(' + ')} — click tiles to change`;
+    input.placeholder = `Message ${names.join(' + ')}...`;
+    lockedRole = selectedRoles.size === 1 ? [...selectedRoles][0] : [...selectedRoles][0]; // for muting compat
+  } else {
+    lockedRole = null;
+    hint.innerHTML = '@role to direct &middot; no @ = Wren gets it &middot; Enter to send';
+    input.placeholder = 'Type a message... (@wren @silas @kade or just type)';
+  }
+}
+
+// Send message — include sender identity for guest attribution (#1719)
+const bridgeUser = window.BRIDGE_USER || 'jeff';
+const isGuest = bridgeUser !== 'jeff';
+
+function sendMessage() {
+  let text = input.value.trim();
+  if (!text) return;
+  // If roles selected and no explicit @mention, send to each selected role
+  if (selectedRoles.size > 0 && !text.match(/^@(wren|silas|kade)\b/i)) {
+    for (const role of selectedRoles) {
+      socket.emit('jeff-message', { text: `@${role} ${text}`, from: bridgeUser });
+    }
+  } else {
+    socket.emit('jeff-message', { text, from: bridgeUser });
+  }
+  input.value = '';
+}
+
+sendBtn.addEventListener('click', sendMessage);
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// Voice input — Web Speech API
+const micBtn = document.getElementById('mic-btn');
+let recognition = null;
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  let isRecording = false;
+
+  micBtn.addEventListener('click', () => {
+    if (isRecording) {
+      recognition.stop();
+    } else {
+      recognition.start();
+      micBtn.classList.add('recording');
+      isRecording = true;
+    }
+  });
+
+  recognition.onresult = (event) => {
+    let transcript = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    const existing = input.value.trim();
+    if (event.results[event.results.length - 1].isFinal) {
+      input.value = existing ? existing + ' ' + transcript : transcript;
+    } else {
+      input.placeholder = transcript + '...';
+    }
+  };
+
+  recognition.onend = () => {
+    micBtn.classList.remove('recording');
+    isRecording = false;
+    input.placeholder = 'Type a message... (@wren @silas @kade or just type)';
+    input.focus();
+  };
+
+  recognition.onerror = (event) => {
+    micBtn.classList.remove('recording');
+    isRecording = false;
+    if (event.error !== 'no-speech') {
+      console.warn('Speech recognition error:', event.error);
+    }
+  };
+} else {
+  micBtn.style.display = 'none'; // Hide on unsupported browsers
+}
+
+function renderTiles(tiles) {
+  tilesContainer.innerHTML = tiles.map(t => {
+    const stateColor = t.state === 'building' ? 'var(--green)' :
+                       t.state === 'directing' ? 'var(--green)' :
+                       t.state === 'blocked' ? 'var(--red)' :
+                       t.state === 'waiting' ? 'var(--orange)' :
+                       t.state === 'watching' ? 'var(--orange)' :
+                       t.state === 'observing' ? 'var(--accent)' :
+                       t.state === 'away' ? 'var(--text-muted)' :
+                       'var(--text-muted)';
+    const action = t.lastAction ? t.lastAction.substring(0, 50) : '';
+    const locked = selectedRoles.has(t.role);
+    return `
+      <div class="tile tile-${t.role}${locked ? ' tile-locked' : ''}${foldRole === t.role ? ' tile-folded' : ''}" onclick="toggleLock('${t.role}')">
+        <div class="tile-top">
+          <span class="tile-name">${t.role.charAt(0).toUpperCase() + t.role.slice(1)}${locked ? ' ◀' : ''}</span>
+          <span class="tile-card">${t.card || '—'}</span>
+        </div>
+        <div class="tile-bottom">
+          <span class="tile-state"><span class="dot" style="background:${stateColor}"></span> ${t.state}</span>
+          <span class="tile-age">${t.lastActionAge || ''}</span>
+        </div>
+        ${action ? `<div class="tile-action">${escapeHtml(action)}</div>` : ''}
+        <div class="tile-fold-btn" onclick="event.stopPropagation(); toggleFold('${t.role}')">${foldRole === t.role ? '▲ hide' : '▼ stream'}</div>
+        ${foldRole === t.role ? '<div class="tile-fold-btn" onclick="event.stopPropagation(); toggleFoldMode()">' + ({unified:'🌐 all roles', commands:'⚡ commands', terminal:'📄 terminal'}[foldMode] || foldMode) + '</div>' : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+let foldRole = null;
+let foldTimer = null;
+let foldMode = 'unified'; // 'unified', 'commands', or 'terminal'
+const foldPanel = document.getElementById('fold-panel');
+const foldContent = document.getElementById('fold-content');
+
+function toggleLock(role) {
+  if (selectedRoles.has(role)) {
+    selectedRoles.delete(role);
+  } else {
+    selectedRoles.add(role);
+  }
+  updateInputHint();
+  document.querySelectorAll('.tile').forEach(el => {
+    const tileRole = el.className.match(/tile-(wren|silas|kade)/)?.[1];
+    if (tileRole && selectedRoles.has(tileRole)) {
+      el.classList.add('tile-locked');
+    } else {
+      el.classList.remove('tile-locked');
+    }
+  });
+  input.focus();
+}
+
+function toggleFold(role) {
+  if (foldRole === role) {
+    // Close fold
+    foldRole = null;
+    foldPanel.classList.remove('open');
+    if (foldTimer) { clearInterval(foldTimer); foldTimer = null; }
+  } else {
+    // Open fold for this role
+    foldRole = role;
+    foldPanel.classList.add('open');
+    loadFold(role);
+    // Poll every 3 seconds
+    if (foldTimer) clearInterval(foldTimer);
+    foldTimer = setInterval(() => loadFold(role), 3000);
+  }
+}
+
+function toggleFoldMode() {
+  const modes = ['unified', 'commands', 'terminal'];
+  foldMode = modes[(modes.indexOf(foldMode) + 1) % modes.length];
+  if (foldRole) loadFold(foldRole);
+  // Force tile re-render to update button label
+  document.querySelectorAll('.tile-fold-btn').forEach(el => {
+    if (el.textContent.includes('commands') || el.textContent.includes('terminal')) {
+      const labels = { unified: '🌐 all roles', commands: '⚡ commands', terminal: '📄 terminal' };
+      el.textContent = labels[foldMode] || foldMode;
+    }
+  });
+}
+
+async function loadFold(role) {
+  try {
+    if (foldMode === 'unified') {
+      const resp = await fetch('/api/stream?lines=80');
+      const entries = await resp.json();
+      foldContent.innerHTML = entries.map(e => {
+        const color = e.role === 'wren' ? 'var(--wren)' : e.role === 'silas' ? 'var(--silas)' : 'var(--kade)';
+        const icon = e.type === 'gemba' ? '👁 ' : e.type === 'turn' ? '💬 ' : '';
+        const lineClass = e.type === 'gemba' ? 'fold-line fold-gemba' : 'fold-line';
+        return `<div class="${lineClass}" data-role="${e.role}"><span class="fold-ts">${e.ts}</span> <span style="color:${color};font-weight:700;">${e.role}</span> ${icon}${escapeHtml(e.text)}</div>`;
+      }).join('');
+      filterStream(); // Re-apply filter after reload
+      foldContent.scrollTop = foldContent.scrollHeight;
+    } else if (foldMode === 'commands') {
+      const resp = await fetch(`/api/commands/${role}`);
+      const data = await resp.json();
+      foldContent.textContent = data.text || 'No output';
+      foldContent.scrollTop = foldContent.scrollHeight;
+    } else {
+      const resp = await fetch(`/api/session/${role}?lines=60`);
+      const data = await resp.json();
+      foldContent.textContent = data.text || 'No output';
+      foldContent.scrollTop = foldContent.scrollHeight;
+    }
+  } catch {}
+}
+
+let lastMsgTime = '';
+let lastMsgFrom = '';
+
+function appendMessage(msg) {
+  if (!msg.visible) return;
+
+  const roles = ['wren', 'silas', 'kade'];
+  const isJeff = msg.from === 'jeff';
+  const isRole = roles.includes(msg.from);
+  const isGuest = !isJeff && !isRole;
+  const time = new Date(msg.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  // Show timestamp if time changed or sender switched
+  if (time !== lastMsgTime || (isJeff !== (lastMsgFrom === 'jeff'))) {
+    const tsDiv = document.createElement('div');
+    tsDiv.className = 'msg-timestamp';
+    tsDiv.textContent = time;
+    msgContainer.appendChild(tsDiv);
+    lastMsgTime = time;
+  }
+  lastMsgFrom = msg.from;
+
+  const div = document.createElement('div');
+  div.className = `msg ${(isJeff || isGuest) ? 'msg-jeff' : 'msg-role'}`;
+  if (isGuest) div.className += ' msg-guest';
+  if (!isJeff && !isGuest && msg.from) div.className += ` msg-from-${msg.from}`;
+  if (msg.type === 'demo-ready') div.className += ' msg-demo';
+  if (msg.type === 'accept-request') div.className += ' msg-accept';
+  if (msg.type === 'blocked') div.className += ' msg-blocked';
+  if (msg.type === 'pm-thinking') div.className += ' msg-thinking';
+
+  // Sender label — roles get colored name, guests get purple name, Jeff gets nothing
+  const sender = isJeff ? ''
+    : isGuest ? `<strong style="color:#d2a8ff">${msg.from.charAt(0).toUpperCase() + msg.from.slice(1)}</strong><br>`
+    : `<strong style="color:var(--${msg.from})">${msg.from.charAt(0).toUpperCase() + msg.from.slice(1)}</strong><br>`;
+
+  // Mute messages from unselected roles when tiles are selected
+  const isMuted = selectedRoles.size > 0 && !isJeff && !selectedRoles.has(msg.from);
+  if (isMuted) div.classList.add('msg-muted');
+
+  // Render images — check raw text BEFORE escaping
+  const rawText = msg.text || '';
+  const rawWithoutMention = rawText.replace(/^@(wren|silas|kade)\s*/i, '').trim();
+  const imageOnly = /^\[img:[^\]]+\]$/.test(rawWithoutMention);
+
+  if (imageOnly) {
+    const imgUrl = rawWithoutMention.match(/\[img:([^\]]+)\]/)[1];
+    div.className = `msg ${isJeff ? 'msg-jeff' : 'msg-role'}`; // reset — no bubble styles
+    div.style.background = 'none';
+    div.innerHTML = `<img src="${imgUrl}" style="max-width:300px;max-height:250px;border-radius:12px;display:block;" />`;
+  } else if (rawText.includes('[img:')) {
+    // Image + text: render image above, text in bubble below
+    const imgMatch = rawText.match(/\[img:([^\]]+)\]/);
+    const imgUrl = imgMatch ? imgMatch[1] : '';
+    const textPart = rawText.replace(/\[img:[^\]]+\]/g, '').replace(/^@(wren|silas|kade)\s*/i, '').trim();
+    let html = `<img src="${imgUrl}" style="max-width:300px;max-height:250px;border-radius:12px;display:block;margin-bottom:4px;" />`;
+    if (textPart) {
+      const renderedText = isJeff ? linkify(escapeHtml(textPart)) : renderMarkdown(textPart);
+      html += `<div class="msg-bubble">${sender}${renderedText}</div>`;
+    }
+    div.innerHTML = html;
+  } else {
+    // Jeff messages: plain text. Role/guest messages: markdown rendered (#1720)
+    let rendered;
+    try {
+      rendered = (isJeff || isGuest) ? linkify(escapeHtml(rawText)) : renderMarkdown(rawText);
+    } catch(e) {
+      rendered = linkify(escapeHtml(rawText)); // fallback on error
+    }
+    div.innerHTML = `<div class="msg-bubble">${sender}${rendered}</div>`;
+  }
+  msgContainer.appendChild(div);
+}
+
+function scrollToBottom() {
+  msgScroller.scrollTop = msgScroller.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function linkify(text) {
+  return text.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:#58a6ff;text-decoration:underline;">$1</a>');
+}
+
+/** Lightweight markdown→HTML for message bubbles (#1720) */
+function renderMarkdown(text) {
+  // Escape HTML first
+  const escaped = escapeHtml(text);
+  // Split into lines for block-level processing
+  const lines = escaped.split('\n');
+  const out = [];
+  let inList = false;
+
+  for (const line of lines) {
+    // Headers
+    if (line.match(/^#{1,3}\s+/)) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      const content = line.replace(/^#{1,3}\s+/, '');
+      out.push(`<strong style="display:block;margin:0.4em 0 0.2em">${content}</strong>`);
+      continue;
+    }
+    // Bullet list items (- or *)
+    if (line.match(/^\s*[-*]\s+/)) {
+      if (!inList) { out.push('<ul style="margin:0.2em 0;padding-left:1.2em">'); inList = true; }
+      const content = line.replace(/^\s*[-*]\s+/, '');
+      out.push(`<li>${inlineMd(content)}</li>`);
+      continue;
+    }
+    // Numbered list items
+    if (line.match(/^\s*\d+\.\s+/)) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      const content = line.replace(/^\s*\d+\.\s+/, '');
+      out.push(`<div style="margin-left:1em">${inlineMd(content)}</div>`);
+      continue;
+    }
+    // Empty line = paragraph break
+    if (!line.trim()) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      out.push('<br>');
+      continue;
+    }
+    // Regular text
+    if (inList) { out.push('</ul>'); inList = false; }
+    out.push(inlineMd(line));
+  }
+  if (inList) out.push('</ul>');
+  return linkify(out.join('\n'));
+}
+
+/** Inline markdown: bold, italic, code, strikethrough */
+function inlineMd(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,0.1);padding:0.1em 0.3em;border-radius:3px;font-size:0.85em">$1</code>')
+    .replace(/~~(.+?)~~/g, '<del>$1</del>');
+}
+
+// Filter functions
+function filterMessages() {
+  const query = document.getElementById('msg-filter').value.toLowerCase();
+  document.querySelectorAll('#messages-inner .msg, #messages-inner .msg-timestamp').forEach(el => {
+    if (!query) { el.style.display = ''; return; }
+    const text = el.textContent.toLowerCase();
+    el.style.display = text.includes(query) ? '' : 'none';
+  });
+}
+
+function filterStream() {
+  const filterEl = document.getElementById('stream-filter');
+  if (!filterEl) return;
+  const query = filterEl.value.toLowerCase();
+  document.querySelectorAll('#fold-content .fold-line').forEach(el => {
+    if (!query) { el.style.display = ''; return; }
+    // Match against role name and full text
+    const role = el.getAttribute('data-role') || '';
+    const text = el.textContent.toLowerCase();
+    el.style.display = (role.includes(query) || text.includes(query)) ? '' : 'none';
+  });
+}
+
+// Image paste support — upload, then stage in input (don't auto-send)
+document.addEventListener('paste', async (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/') || item.type === 'image/heic' || item.type === 'image/heif') {
+      e.preventDefault();
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      const resp = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+      const data = await resp.json();
+      if (data.url) {
+        // Stage in input — user adds @name and hits Send
+        const existing = input.value.trim();
+        input.value = existing ? `${existing} [img:${data.url}]` : `[img:${data.url}]`;
+        input.focus();
+      }
+    }
+  }
+});
+
+// Image drag-and-drop support — capture phase on window
+window.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); }, true);
+window.addEventListener('dragenter', (e) => { e.preventDefault(); document.body.style.outline = '2px dashed var(--accent)'; }, true);
+window.addEventListener('dragleave', (e) => { if (e.target === document.documentElement || e.target === document.body) document.body.style.outline = ''; });
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  document.body.style.outline = '';
+  const files = e.dataTransfer?.files;
+  if (!files) return;
+  for (const file of files) {
+    if (!file.type.startsWith('image/') && !file.name?.match(/\.heic$/i)) continue;
+    const uploadType = file.name?.match(/\.heic$/i) ? 'image/heic' : file.type;
+    const resp = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': uploadType }, body: file });
+    const data = await resp.json();
+    if (data.url) {
+      // Stage in input — user adds @name and hits Send
+      const existing = input.value.trim();
+      input.value = existing ? `${existing} [img:${data.url}]` : `[img:${data.url}]`;
+      input.focus();
+    }
+  }
+});
+
+// Domain filter
+function filterDomains() {
+  const query = document.getElementById('domain-filter').value.toLowerCase();
+  document.querySelectorAll('#flow-content .flow-section').forEach(el => {
+    if (!query) { el.style.display = ''; return; }
+    const text = el.textContent.toLowerCase();
+    el.style.display = text.includes(query) ? '' : 'none';
+  });
+}
+
+// Domain collapse state — persists across reloads
+const collapsedDomains = new Set(JSON.parse(localStorage.getItem('bridge-collapsed-domains') || '[]'));
+let activeRoleFilter = 'all';
+
+function setRoleFilter(role) {
+  activeRoleFilter = role;
+  document.querySelectorAll('.role-filter-btn').forEach(btn => {
+    const f = btn.getAttribute('data-filter');
+    if (f === role) {
+      btn.style.background = f === 'all' ? 'var(--accent)' : `var(--${f})`;
+      btn.style.color = 'var(--bg)';
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.color = f === 'all' ? 'var(--text-muted)' : `var(--${f})`;
+    }
+  });
+  // Re-render with filter
+  loadFlow();
+}
+
+function toggleDomain(domain) {
+  if (collapsedDomains.has(domain)) {
+    collapsedDomains.delete(domain);
+  } else {
+    collapsedDomains.add(domain);
+  }
+  localStorage.setItem('bridge-collapsed-domains', JSON.stringify([...collapsedDomains]));
+  loadFlow();
+}
+
+// Domain panel — load board state grouped by domain
+async function loadFlow() {
+  try {
+    const resp = await fetch('/api/flow');
+    const data = await resp.json();
+    const flowContent = document.getElementById('flow-content');
+    const domains = data.domains || {};
+
+    // Sort by activeTotal descending (matches /flow page)
+    const sorted = Object.entries(domains).sort((a, b) => {
+      return (b[1].counts?.activeTotal || 0) - (a[1].counts?.activeTotal || 0);
+    });
+
+    let html = '';
+    for (const [domain, data] of sorted) {
+      let cards = data.cards || [];
+      // Apply role filter
+      if (activeRoleFilter !== 'all') {
+        cards = cards.filter(c => c.owner === activeRoleFilter);
+        if (cards.length === 0) continue; // Hide empty domains when filtered
+      }
+      const counts = data.counts || {};
+      const isCollapsed = collapsedDomains.has(domain);
+      const arrow = isCollapsed ? '▶' : '▼';
+      const cardBadge = `${counts.activeCards || cards.length} cards`;
+      const wfBadge = counts.activeWorkflows > 0 ? ` · ${counts.activeWorkflows} wf` : '';
+      const totalBadge = `${counts.activeTotal || cards.length} total`;
+      const badges = `<span style="font-size:0.6rem;color:var(--text-muted);margin-left:4px;">${cardBadge}${wfBadge} · ${totalBadge}</span>`;
+      html += `<div class="flow-section"><div class="flow-section-title" onclick="toggleDomain('${domain}')">${arrow} ${domain} ${badges}</div>`;
+      html += `<div class="flow-section-cards${isCollapsed ? ' collapsed' : ''}">`;
+      for (const c of cards) {
+        const statusDot = c.status === 'WIP' ? '🔨' : c.status === 'Blocked' ? '🔴' : c.status === 'Harvesting' ? '🌾' : '';
+        html += `<div class="flow-card flow-card-${c.owner}"><div class="flow-card-id">#${c.id} ${statusDot} <span class="flow-card-owner" style="color:var(--${c.owner})">${c.owner}</span></div><div class="flow-card-title">${escapeHtml(c.title)}</div></div>`;
+      }
+      html += '</div></div>';
+    }
+
+    flowContent.innerHTML = html || '<div style="color:var(--text-muted);padding:1rem;">No cards</div>';
+  } catch {}
+}
+
+// Load flow on start, refresh every 15 seconds
+loadFlow();
+setInterval(loadFlow, 15000);
+
+// Auto-open unified stream on load (skip on mobile — causes overflow)
+if (window.innerWidth > 768) {
+  foldRole = 'all';
+  foldPanel.classList.add('open');
+  loadFold('all');
+  foldTimer = setInterval(() => loadFold('all'), 3000);
+} else {
+  foldPanel.classList.remove('open');
+}
+
+// Resize handles — drag to resize panes
+function setupResize(handleId, getTarget, side) {
+  const handle = document.getElementById(handleId);
+  if (!handle) return;
+  let startX, startW, target;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    target = getTarget();
+    if (!target) return;
+    startX = e.clientX;
+    startW = target.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMove(e) {
+      const dx = e.clientX - startX;
+      const newW = side === 'left' ? startW + dx : startW - dx;
+      target.style.width = Math.max(150, Math.min(700, newW)) + 'px';
+    }
+    function onUp() {
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+setupResize('resize-left', () => document.getElementById('flow-pane'), 'left');
+setupResize('resize-right', () => document.getElementById('fold-panel'), 'right');
+
+// Mobile tab switching
+let mobileStreamTimer = null;
+function switchMobileTab(panel) {
+  const flowPane = document.getElementById('flow-pane');
+  const msgPane = document.querySelector('.msg-pane');
+  const mobileStream = document.getElementById('mobile-stream');
+  const tabs = document.querySelectorAll('.mobile-tab');
+
+  tabs.forEach(t => t.classList.toggle('active', t.getAttribute('data-panel') === panel));
+
+  flowPane.classList.toggle('mobile-active', panel === 'domains');
+  msgPane.classList.toggle('mobile-hidden', panel !== 'messages');
+  mobileStream.style.display = panel === 'streams' ? 'block' : 'none';
+
+  if (panel === 'streams') {
+    loadMobileStream();
+    if (!mobileStreamTimer) mobileStreamTimer = setInterval(loadMobileStream, 3000);
+  } else if (mobileStreamTimer) {
+    clearInterval(mobileStreamTimer);
+    mobileStreamTimer = null;
+  }
+}
+
+async function loadMobileStream() {
+  try {
+    const resp = await fetch('/api/stream?lines=80');
+    const entries = await resp.json();
+    const el = document.getElementById('mobile-stream');
+    el.innerHTML = entries.map(function(e) {
+      var color = e.role === 'wren' ? '#3fb950' : e.role === 'silas' ? '#58a6ff' : '#d29922';
+      return '<div style="margin-bottom:2px;"><span style="color:#484f58;">' + e.ts + '</span> <span style="color:' + color + ';font-weight:700;">' + e.role + '</span> ' + escapeHtml(e.text) + '</div>';
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+  } catch(err) {}
+}
+
+// Focus input on load
+input.focus();
+</script>
+</body>
+</html>

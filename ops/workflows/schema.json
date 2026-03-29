@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Workflow Manifest",
+  "description": "Executable workflow that sequences work across roles with persistent state",
+  "type": "object",
+  "required": ["id", "decision", "status", "created", "steps"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^WF-[0-9]{3,}$",
+      "description": "Workflow ID (WF-001, WF-002, ...)"
+    },
+    "decision": {
+      "type": "string",
+      "description": "The decision or directive that triggered this workflow"
+    },
+    "source": {
+      "type": "string",
+      "description": "Where the decision came from (clearing:session-id, slack:msg-id, verbal)"
+    },
+    "card": {
+      "type": ["integer", "null"],
+      "description": "Primary kanban card tracking this workflow"
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "in_progress", "completed", "blocked", "cancelled"]
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["seq", "role", "action", "status"],
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": ["silas", "kade", "wren", "jeff"]
+          },
+          "action": {
+            "type": "string",
+            "description": "What this role needs to do"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "ready", "in_progress", "completed", "blocked", "skipped"]
+          },
+          "card": {
+            "type": ["integer", "null"],
+            "description": "Kanban card for this step"
+          },
+          "blocked_by": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "Step seq numbers that must complete first"
+          },
+          "artifacts": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "File paths produced by this step"
+          },
+          "brief": {
+            "type": ["string", "null"],
+            "description": "Path to the handoff brief for this step"
+          },
+          "started_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "notes": {
+            "type": ["string", "null"],
+            "description": "Completion notes or context for next step"
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "role": { "type": "string" },
+        "criteria": { "type": "string" },
+        "verified_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "timestamp": { "type": "string", "format": "date-time" },
+          "event": { "type": "string" },
+          "role": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      },
+      "description": "Audit trail of all state transitions"
+    }
+  }
+}

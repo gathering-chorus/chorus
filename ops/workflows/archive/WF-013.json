@@ -1,0 +1,78 @@
+{
+  "id": "WF-013",
+  "decision": "Werk version number reflects real system state",
+  "source": "board:card-moved:C#53",
+  "card": 53,
+  "created": "2026-02-22T21:21:40Z",
+  "updated": "2026-02-22T22:01:05Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "wren",
+      "action": "Werk version number reflects real system state",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/scripts/claudemd-gen.sh",
+        "messages/claudemd/manifest.json"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-22T21:22:54Z",
+      "notes": "Auto-bump implemented: claudemd-gen.sh detects input changes via checksums, bumps patch version automatically, updates manifest.json + changelog. Manual bumps for major/minor."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify C#53",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/claudemd/manifest.json",
+        "messages/scripts/claudemd-gen.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-22-wf-013-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-22T22:01:05Z",
+      "notes": "Werk version verified \u2014 claudemd-gen.sh auto-bumps patch on fragment/variable changes, checksums detect drift, manifest.json updated. Currently at v1.3.1. C#53 done."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-22T21:21:40Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Werk version number reflects real system state"
+    },
+    {
+      "timestamp": "2026-02-22T21:22:54Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 1 completed: wren \u2014 Werk version number reflects real system state"
+    },
+    {
+      "timestamp": "2026-02-22T21:22:54Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: silas \u2014 Review and verify C#53"
+    },
+    {
+      "timestamp": "2026-02-22T22:01:05Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify C#53 \u2014 Werk version verified \u2014 claudemd-gen.sh auto-bumps patch on fragment/variable changes, checksums detect drift, manifest.json updated. Currently at v1.3.1. C#53 done."
+    },
+    {
+      "timestamp": "2026-02-22T22:01:05Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "id": "WF-028",
+  "decision": "Clearing: ops-agent context injection for troubleshooting",
+  "source": "board:card-moved:#197",
+  "card": 197,
+  "created": "2026-02-23T03:56:26Z",
+  "updated": "2026-02-23T04:02:33Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Clearing: ops-agent context injection for troubleshooting",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "chorus/clearing/bin/clearing"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T04:02:27Z",
+      "notes": "Built and tested. Added --ops-check flag to Clearing launcher \u2014 runs ops-agent.sh --dry-run, injects system state JSON into all role system prompts. Validated in live Clearing session (16 messages, roles referenced data correctly)."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #197",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "chorus/clearing/bin/clearing"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-028-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T04:02:33Z",
+      "notes": "Self-review: launcher adds --ops-check flag, runs ops-agent --dry-run (read-only, zero cost), injects into CLEARING_CONTEXT env var. Tested in live session \u2014 grounding held, roles used data appropriately. Clean implementation."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T03:56:26Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Clearing: ops-agent context injection for troubleshooting"
+    },
+    {
+      "timestamp": "2026-02-23T04:02:27Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Clearing: ops-agent context injection for troubleshooting \u2014 Built and tested. Added --ops-check flag to Clearing launcher \u2014 runs ops-agent.sh --dry-run, injects system state JSON into all role system prompts. Validated in live Clearing session (16 messages, roles referenced data correctly)."
+    },
+    {
+      "timestamp": "2026-02-23T04:02:27Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #197"
+    },
+    {
+      "timestamp": "2026-02-23T04:02:33Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #197 \u2014 Self-review: launcher adds --ops-check flag, runs ops-agent --dry-run (read-only, zero cost), injects into CLEARING_CONTEXT env var. Tested in live session \u2014 grounding held, roles used data appropriately. Clean implementation."
+    },
+    {
+      "timestamp": "2026-02-23T04:02:33Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

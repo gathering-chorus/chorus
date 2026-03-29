@@ -1,0 +1,48 @@
+{
+  "id": "WF-073",
+  "decision": "Model content tiles + viewer \u2014 click model to see content grid, click content to view media",
+  "source": "board:card-moved:#388",
+  "card": 388,
+  "created": "2026-02-25T17:00:01Z",
+  "updated": "2026-02-25T17:00:01Z",
+  "status": "closed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Model content tiles + viewer \u2014 click model to see content grid click content to view media",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #388",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-25T17:00:01Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Model content tiles + viewer \u2014 click model to see content grid, click content to view media"
+    }
+  ]
+}

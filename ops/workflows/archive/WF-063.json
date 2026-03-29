@@ -1,0 +1,78 @@
+{
+  "id": "WF-063",
+  "decision": "Atomic add+commit in git-queue.sh \u2014 prevent cross-role staging collisions",
+  "source": "board:card-moved:#325",
+  "card": 325,
+  "created": "2026-02-24T21:07:09Z",
+  "updated": "2026-02-24T21:23:05Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Atomic add+commit in git-queue.sh \u2014 prevent cross-role staging collisions",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/scripts/git-queue.sh",
+        ".git/hooks/pre-commit"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T21:22:17Z",
+      "notes": "Two fixes: (1) pass files to git commit to prevent cross-role staging collisions, (2) pre-commit hook blocks bare git commit \u2014 all commits must go through git-queue.sh. Commits 61d2f24 + 930a22a. Jeff accepted."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #325",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/scripts/git-queue.sh",
+        ".git/hooks/pre-commit"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-24-wf-063-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T21:23:05Z",
+      "notes": "Jeff accepted. Two commits: 61d2f24 (atomic file-scoped commit) + 930a22a (pre-commit hook enforces git-queue). Proving gate met."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T21:07:09Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Atomic add+commit in git-queue.sh \u2014 prevent cross-role staging collisions"
+    },
+    {
+      "timestamp": "2026-02-24T21:22:17Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Atomic add+commit in git-queue.sh \u2014 prevent cross-role staging collisions \u2014 Two fixes: (1) pass files to git commit to prevent cross-role staging collisions, (2) pre-commit hook blocks bare git commit \u2014 all commits must go through git-queue.sh. Commits 61d2f24 + 930a22a. Jeff accepted."
+    },
+    {
+      "timestamp": "2026-02-24T21:22:17Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #325"
+    },
+    {
+      "timestamp": "2026-02-24T21:23:05Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #325 \u2014 Jeff accepted. Two commits: 61d2f24 (atomic file-scoped commit) + 930a22a (pre-commit hook enforces git-queue). Proving gate met."
+    },
+    {
+      "timestamp": "2026-02-24T21:23:05Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

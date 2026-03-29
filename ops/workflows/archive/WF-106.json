@@ -1,0 +1,54 @@
+{
+  "id": "WF-106",
+  "decision": "Style guide enforcement \u2014 deterministic margins for header, footer, container across all pages",
+  "source": "board:card-moved:#1213",
+  "card": 1213,
+  "created": "2026-03-09T16:05:11Z",
+  "updated": "2026-03-09T18:05:54.048Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Style guide enforcement \u2014 deterministic margins for header footer container across all pages",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1213 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1213",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1213 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-09T16:05:11Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Style guide enforcement \u2014 deterministic margins for header, footer, container across all pages"
+    },
+    {
+      "timestamp": "2026-03-09T18:05:54.048Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1213 marked Done by wren"
+    }
+  ]
+}

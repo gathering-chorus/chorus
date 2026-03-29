@@ -1,0 +1,77 @@
+{
+  "id": "WF-049",
+  "decision": "Git commit queue \u2014 FIFO lock for serialized multi-role commits",
+  "source": "board:card-moved:#297",
+  "card": 297,
+  "created": "2026-02-23T20:59:56Z",
+  "updated": "2026-02-23T22:17:27Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Git commit queue \u2014 FIFO lock for serialized multi-role commits",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/scripts/git-queue.sh",
+        "messages/claudemd/shared/infrastructure-operations.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T22:15:26Z",
+      "notes": "git-queue.sh shipped \u2014 lockf-based FIFO lock, pre-commit warning, CLAUDE.md fragment updated, Werk v1.3.6. Committed e8c8b38, pushed."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #297",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/scripts/git-queue.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-049-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T22:17:27Z",
+      "notes": "Verified: git-queue.sh shipped with lockf-based FIFO, role attribution, chorus logging. Pre-commit hook warns when not used. Script at messages/scripts/git-queue.sh."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T20:59:56Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Git commit queue \u2014 FIFO lock for serialized multi-role commits"
+    },
+    {
+      "timestamp": "2026-02-23T22:15:26Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Git commit queue \u2014 FIFO lock for serialized multi-role commits \u2014 git-queue.sh shipped \u2014 lockf-based FIFO lock, pre-commit warning, CLAUDE.md fragment updated, Werk v1.3.6. Committed e8c8b38, pushed."
+    },
+    {
+      "timestamp": "2026-02-23T22:15:26Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #297"
+    },
+    {
+      "timestamp": "2026-02-23T22:17:27Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #297 \u2014 Verified: git-queue.sh shipped with lockf-based FIFO, role attribution, chorus logging. Pre-commit hook warns when not used. Script at messages/scripts/git-queue.sh."
+    },
+    {
+      "timestamp": "2026-02-23T22:17:27Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

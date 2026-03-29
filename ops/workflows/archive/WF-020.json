@@ -1,0 +1,78 @@
+{
+  "id": "WF-020",
+  "decision": "Defect escape hatch \u2014 proactive log polling \u2192 auto-ticketing",
+  "source": "board:card-moved:#154",
+  "card": 154,
+  "created": "2026-02-23T02:17:30Z",
+  "updated": "2026-02-23T02:47:52Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Defect escape hatch \u2014 proactive log polling \u2192 auto-ticketing",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/scripts/defect-poller.sh",
+        "chorus/api/src/server.ts",
+        "architect/operations-assessment.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T02:39:44Z",
+      "notes": "Defect poller + alert routing shipped. defect-poller.sh queries Loki every 5min via launchd, deduplicates error patterns, auto-cards defects. Alert webhook wired to Grafana, macOS desktop notifications for critical alerts."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #154",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/scripts/defect-poller.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-020-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T02:47:52Z",
+      "notes": "Verified: mechanism is sound, poller is live (launchd running, state file tracking 16 defects). Found critical bug: FALSE_POSITIVES bash array can't be exported to Python subprocess \u2014 name collision causes all 13 false positive patterns to be empty in Python. Result: 12 of 16 auto-created cards are noise (write-scrubber, infra-guardrails, chorus-audit, grafana-alerts). Fix: rename export var from FALSE_POSITIVES to FP_PATTERNS on line 434. Also: cards #162-173 should be closed as false positives, cards #158-161 are legitimate app defects for Kade."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T02:17:30Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Defect escape hatch \u2014 proactive log polling \u2192 auto-ticketing"
+    },
+    {
+      "timestamp": "2026-02-23T02:39:44Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Defect escape hatch \u2014 proactive log polling \u2192 auto-ticketing \u2014 Defect poller + alert routing shipped. defect-poller.sh queries Loki every 5min via launchd, deduplicates error patterns, auto-cards defects. Alert webhook wired to Grafana, macOS desktop notifications for critical alerts."
+    },
+    {
+      "timestamp": "2026-02-23T02:39:44Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #154"
+    },
+    {
+      "timestamp": "2026-02-23T02:47:52Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #154 \u2014 Verified: mechanism is sound, poller is live (launchd running, state file tracking 16 defects). Found critical bug: FALSE_POSITIVES bash array can't be exported to Python subprocess \u2014 name collision causes all 13 false positive patterns to be empty in Python. Result: 12 of 16 auto-created cards are noise (write-scrubber, infra-guardrails, chorus-audit, grafana-alerts). Fix: rename export var from FALSE_POSITIVES to FP_PATTERNS on line 434. Also: cards #162-173 should be closed as false positives, cards #158-161 are legitimate app defects for Kade."
+    },
+    {
+      "timestamp": "2026-02-23T02:47:52Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

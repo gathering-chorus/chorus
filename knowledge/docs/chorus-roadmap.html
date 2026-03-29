@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chorus Roadmap — Plan Against the Spine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0a0f; color: #e0e0e0; padding: 30px 20px;
+    min-width: 1100px;
+  }
+  header { text-align: center; margin-bottom: 30px; }
+  h1 { font-size: 26px; font-weight: 300; letter-spacing: 2px; color: #fff; }
+  .subtitle { font-size: 13px; color: #888; letter-spacing: 1px; margin-top: 6px; }
+  .legend {
+    display: flex; gap: 24px; justify-content: center; margin: 16px 0 24px;
+    font-size: 12px; flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .phase-header {
+    display: grid; grid-template-columns: 140px 1fr 1fr 1fr 1fr;
+    gap: 8px; margin-bottom: 4px; padding: 0 8px;
+  }
+  .phase-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 2px; padding: 10px 14px; text-align: center;
+    border-radius: 8px 8px 0 0;
+  }
+  .phase-done { background: rgba(92,252,124,0.08); color: #5cfc7c; }
+  .phase-now { background: rgba(252,170,92,0.14); color: #fcaa5c; border: 1px solid rgba(252,170,92,0.25); }
+  .phase-next { background: rgba(74,158,255,0.08); color: #4a9eff; }
+  .phase-later { background: rgba(124,92,252,0.08); color: #7c5cfc; }
+  .phase-count { font-size: 18px; font-weight: 300; display: block; margin-top: 2px; }
+  .vertebra-row {
+    display: grid; grid-template-columns: 140px 1fr 1fr 1fr 1fr;
+    gap: 8px; margin-bottom: 6px; padding: 0 8px; min-height: 60px;
+  }
+  .v-label-cell {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 10px; padding-right: 12px;
+  }
+  .v-icon {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: bold; flex-shrink: 0;
+    box-shadow: 0 0 12px rgba(0,0,0,0.4);
+  }
+  .v-name {
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.5px; text-align: right;
+  }
+  .cell { padding: 10px 12px; border-radius: 6px; min-height: 50px; }
+  .cell-done { background: rgba(92,252,124,0.04); border: 1px solid rgba(92,252,124,0.08); }
+  .cell-now { background: rgba(252,170,92,0.07); border: 1px solid rgba(252,170,92,0.2); box-shadow: inset 0 0 12px rgba(252,170,92,0.04); }
+  .cell-next { background: rgba(74,158,255,0.04); border: 1px solid rgba(74,158,255,0.08); }
+  .cell-later { background: rgba(124,92,252,0.04); border: 1px solid rgba(124,92,252,0.08); }
+  .item { font-size: 11px; line-height: 1.5; padding: 4px 0; display: flex; align-items: flex-start; gap: 5px; }
+  .item-icon { flex-shrink: 0; font-size: 12px; margin-top: 1px; }
+  .item-done .item-icon { color: #5cfc7c; }
+  .item-now .item-icon { color: #fcaa5c; }
+  .item-next .item-icon { color: #4a9eff; }
+  .item-later .item-icon { color: #7c5cfc; }
+  .item-text { color: #ccc; }
+  .item-done .item-text { color: #9efaad; }
+  .item-now .item-text { color: #fcd09e; }
+  .item-next .item-text { color: #9ec6fa; }
+  .item-later .item-text { color: #b8a6fa; }
+  .card-ref {
+    font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px;
+    white-space: nowrap; margin-left: 3px; vertical-align: middle;
+  }
+  .card-g { background: rgba(74,158,255,0.15); color: #4a9eff; }
+  .card-c { background: rgba(224,92,252,0.15); color: #e05cfc; }
+  .role {
+    font-size: 8px; font-weight: 700; padding: 1px 4px; border-radius: 2px;
+    white-space: nowrap; margin-left: 3px; vertical-align: middle;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .role-s { background: rgba(92,138,252,0.2); color: #5c8afc; }
+  .role-k { background: rgba(224,92,252,0.2); color: #e05cfc; }
+  .role-w { background: rgba(252,170,92,0.2); color: #fcaa5c; }
+  .shipped-items { display: none; }
+  .shipped-items.expanded { display: block; }
+  .shipped-summary {
+    font-size: 11px; color: #5cfc7c; cursor: pointer; padding: 4px 0; opacity: 0.7;
+  }
+  .shipped-summary:hover { opacity: 1; }
+  .shipped-summary .expand-icon { transition: transform 0.2s; display: inline-block; }
+  .shipped-summary.expanded .expand-icon { transform: rotate(90deg); }
+  .vs-divider {
+    display: grid; grid-template-columns: 140px 1fr;
+    gap: 8px; padding: 8px 8px 4px; margin-top: 8px;
+  }
+  .vs-divider-label {
+    grid-column: 2 / -1; font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 2px; padding: 4px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  footer {
+    text-align: center; margin-top: 30px; padding: 16px;
+    font-size: 11px; color: #555; border-top: 1px solid rgba(255,255,255,0.05);
+  }
+  footer a { color: #4a9eff; text-decoration: none; }
+  .totals {
+    display: flex; justify-content: center; gap: 40px;
+    margin: 20px 0; padding: 14px 24px;
+    background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; font-size: 13px;
+  }
+  .total-num { font-size: 22px; font-weight: 300; }
+  .total-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #888; }
+  .gen-badge {
+    display: inline-block; font-size: 9px; padding: 2px 8px; border-radius: 10px;
+    background: rgba(92,252,124,0.1); color: #5cfc7c; margin-left: 8px;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>CHORUS ROADMAP</h1>
+  <div class="subtitle">Plan Against the Spine — What's Built, What's Next <span class="gen-badge">LIVE from board API — 2026-02-21 08:58</span></div>
+</header>
+
+<div class="totals">
+  <div style="text-align:center"><div class="total-num" style="color:#5cfc7c">53</div><div class="total-label">Done</div></div>
+  <div style="text-align:center"><div class="total-num" style="color:#fcaa5c">3</div><div class="total-label">Now</div></div>
+  <div style="text-align:center"><div class="total-num" style="color:#4a9eff">12</div><div class="total-label">Next</div></div>
+  <div style="text-align:center"><div class="total-num" style="color:#7c5cfc">19</div><div class="total-label">Later</div></div>
+  <div style="text-align:center;border-left:1px solid rgba(255,255,255,0.1);padding-left:40px;">
+    <div class="total-num" style="color:#fff">87</div><div class="total-label">Total Items</div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#5cfc7c"></div> Done — shipped &amp; wired</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fcaa5c"></div> Now — actively in progress</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#4a9eff"></div> Next — on board, prioritized</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7c5cfc"></div> Later — designed, not scheduled</div>
+  <div class="legend-item"><span class="card-ref card-g">#N</span> Gathering card</div>
+  <div class="legend-item"><span class="card-ref card-c">C#N</span> Chorus card</div>
+  <div class="legend-item"><span class="role role-s">Silas</span><span class="role role-k">Kade</span><span class="role role-w">Wren</span> Owner</div>
+</div>
+
+<div class="phase-header">
+  <div></div>
+  <div class="phase-label phase-done">Done <span class="phase-count">53</span></div>
+  <div class="phase-label phase-now">Now <span class="phase-count">3</span></div>
+  <div class="phase-label phase-next">Next <span class="phase-count">12</span></div>
+  <div class="phase-label phase-later">Later <span class="phase-count">19</span></div>
+</div>
+
+
+<div class="vs-divider">
+  <div></div>
+  <div class="vs-divider-label" style="color:#4a9eff;">&#9656; Directing</div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Jeff's<br>Direction</div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#4a9eff,#3a7ecc);">D</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Slack → bridge routing</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Claude session prompts</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Photos/screenshots shared</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">SMS text capture <span class="card-ref card-g">#78</span> <span class="role role-k">Kade</span></span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Calendar design — roles into Jeff's rhythm <span class="card-ref card-g">#99</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Weekly cadence calendar <span class="card-ref card-g">#93</span> <span class="role role-w">Wren</span></span></div></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Calendar integration (full)</span></div></div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Capture<br>&amp; Route</div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#4a9eff,#3a7ecc);opacity:0.6;">→</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Bridge routes to role channels</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">@team group conversation</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">[DECISION] tags → backlog.md</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Commitment briefs → role dirs</span></div>
+</div>
+</div>
+  <div class="cell cell-now"><div class="item item-now"><span class="item-icon">&#9684;</span><span class="item-text">The Clearing — Jeff's interaction surface <span class="card-ref card-c">C#16</span> <span class="role role-s">Silas</span></span></div></div>
+  <div class="cell cell-next"></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Session templates — Demo, Board Walk, Review <span class="card-ref card-c">C#18</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Rotation model — staggered 1x1 <span class="card-ref card-c">C#22</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Autonomous role activation <span class="card-ref card-c">C#15</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Autonomous role activation</span></div></div>
+</div>
+
+
+<div class="vs-divider">
+  <div></div>
+  <div class="vs-divider-label" style="color:#5c8afc;">&#9656; Sensing</div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Context<br>Awareness</div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#5c8afc,#4a6ecc);">S</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">SessionStart hooks fire</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">chorus-audit.sh gates</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">team-scan.sh (Slack + briefs)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">UserPromptSubmit context scan</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Team communication ring — with/at/over detection <span class="card-ref card-c">C#23</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Boundary change auto-detection (beyond hooks)</span></div></div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Reconciliation<br></div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#5c8afc,#4a6ecc);opacity:0.6;">→</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">chorus-query.sh reconcile</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">15,900+ messages indexed</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Stale state detection</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Jeff's direction surfaced cross-session</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Concentric trust model — pod-mediated + local AI <span class="card-ref card-c">C#21</span> <span class="role role-w">Wren</span></span></div></div>
+</div>
+
+
+<div class="vs-divider">
+  <div></div>
+  <div class="vs-divider-label" style="color:#7c5cfc;">&#9656; Designing</div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Prioritization<br></div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#7c5cfc,#6344cc);">C</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Vikunja boards (2 boards)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Brief routing (to/from roles)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">DEC-001 → DEC-030 decisions</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Card-first workflow</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Life board + revenue ideation <span class="card-ref card-g">#92</span> <span class="role role-w">Wren</span></span></div></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Value stream + ontology refinement <span class="card-ref card-g">#26</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Vision refinement session <span class="card-ref card-g">#3</span> <span class="role role-w">Wren</span></span></div></div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Arch<br>&amp; Design</div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#7c5cfc,#6344cc);opacity:0.6;">→</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">ADR-001 → ADR-015 on disk</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Ontology v0.1.0 (Chorus)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">system-architecture.md maintained</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Spikes before building (pattern)</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Self domain design — convergent center <span class="card-ref card-g">#74</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Cross-domain search architecture <span class="card-ref card-g">#70</span> <span class="role role-s">Silas</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">GitNexus — AST knowledge graphs <span class="card-ref card-g">#91</span> <span class="role role-s">Silas</span></span></div></div>
+</div>
+
+
+<div class="vs-divider">
+  <div></div>
+  <div class="vs-divider-label" style="color:#e05cfc;">&#9656; Building</div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Implementation<br></div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#e05cfc,#b844cc);">B</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Briefs: architect → engineer</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">CLAUDE.md per-role instructions</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Permission profiles auto-allow</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Infra guardrails hook (Kade)</span></div>
+</div>
+</div>
+  <div class="cell cell-now"><div class="item item-now"><span class="item-icon">&#9684;</span><span class="item-text">Auth session bugs (SESSION_SECRET, OIDC)</span></div></div>
+  <div class="cell cell-next"></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Docker config simplify <span class="card-ref card-g">#87</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Annotation pattern — cross-collection <span class="card-ref card-g">#8</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Pod-mediated coordination phase 3 <span class="card-ref card-g">#89</span> <span class="role role-k">Kade</span></span></div></div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Code<br>&amp; Deploy</div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#e05cfc,#b844cc);opacity:0.6;">→</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Pre-commit: security + lint + test</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">CI: test → E2E → security → build</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">app-state.sh lifecycle</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Deploy lock (prevents concurrent)</span></div>
+</div>
+</div>
+  <div class="cell cell-now"><div class="item item-now"><span class="item-icon">&#9684;</span><span class="item-text">ADR-011 rollback pipeline</span></div></div>
+  <div class="cell cell-next"></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Blue-green deploys (if needed)</span></div></div>
+</div>
+
+
+<div class="vs-divider">
+  <div></div>
+  <div class="vs-divider-label" style="color:#fc5c8a;">&#9656; Proving</div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Verification<br></div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#fc5c8a,#cc4466);">P</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">1,948 tests (98 suites)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">119 E2E tests (Playwright)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Coverage gates (80%+ / 95% ACL)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">SHACL ontology validation</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Fitness functions catalog <span class="card-ref card-c">C#11</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Werk scorecard — maturity refresh <span class="card-ref card-c">C#19</span> <span class="role role-w">Wren</span></span></div></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Local AI for Self domain — Ollama <span class="card-ref card-g">#83</span> <span class="role role-s">Silas</span></span></div></div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Observe<br>&amp; Respond</div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#fc5c8a,#cc4466);opacity:0.6;">→</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 5 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">20 Prometheus alert rules</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">3 Grafana/Loki alert rules</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Alert routing → Slack</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">8 Grafana dashboards</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Container health checks (all)</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Runbooks / auto-remediation</span></div></div>
+</div>
+
+
+<div class="vs-divider">
+  <div></div>
+  <div class="vs-divider-label" style="color:#5cfc7c;">&#9656; Reflecting</div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Memory<br>&amp; Learning</div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#5cfc7c,#44cc66);">R</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Git post-commit → chorus.log</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Card-commit linking (#N, C#N)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Session cost tracking</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Behavioral analysis (59% direction)</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Mood ring refresh pipeline <span class="card-ref card-c">C#20</span> <span class="role role-w">Wren</span></span></div></div>
+  <div class="cell cell-later"></div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Persist<br>&amp; Evolve</div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#5cfc7c,#44cc66);opacity:0.6;">→</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 5 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">SQLite FTS5 context index</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Stories captured (15 in stories.md)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">next-session.md close-out</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Memory files auto-updated</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Self-reflection dashboard <span class="card-ref card-g">#81</span> <span class="role role-w">Wren</span></span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"></div>
+  <div class="cell cell-later"></div>
+</div>
+
+
+<div class="vs-divider">
+  <div></div>
+  <div class="vs-divider-label" style="color:#fc5c5c;">&#9656; Tech Debt (Cross-cutting)</div>
+</div>
+
+<div class="vertebra-row">
+  <div class="v-label-cell">
+    <div class="v-name">Debt<br>Backlog</div>
+    <div class="v-icon" style="background:linear-gradient(135deg,#fc5c5c,#cc3333);">!</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> Resolved items</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">TD-007: Broken owner WebId in ACLs</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Data scrubbing enforcement</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Boundary contracts formalized</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-003: Low coverage auth/ACL <span class="card-ref card-g">#30</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-008: Missing ACLs for private resources <span class="card-ref card-g">#34</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-005: Open test handles <span class="card-ref card-g">#31</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-006: ts-jest config <span class="card-ref card-g">#32</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-009: E2E artifacts <span class="card-ref card-g">#35</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-010: Redundant auth checks <span class="card-ref card-g">#36</span> <span class="role role-k">Kade</span></span></div></div>
+  <div class="cell cell-later"></div>
+</div>
+
+
+<footer>
+  Chorus Roadmap — generated 2026-02-21 08:58 from live board data &nbsp;|&nbsp;
+  <a href="chorus-spine.html">View Spine</a> &nbsp;|&nbsp;
+  Gathering board: 51 cards &nbsp;|&nbsp; Chorus board: 15 cards
+</footer>
+
+<script>
+function toggleShipped(el) {
+  el.classList.toggle('expanded');
+  var items = el.nextElementSibling;
+  items.classList.toggle('expanded');
+}
+</script>
+
+</body>
+</html>

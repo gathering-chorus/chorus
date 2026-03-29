@@ -1,0 +1,78 @@
+{
+  "id": "WF-085",
+  "decision": "Andon event loop \u2014 priority-queued signals so Jeff can judge state at a glance",
+  "source": "board:card-moved:#430",
+  "card": 430,
+  "created": "2026-02-27T15:00:14Z",
+  "updated": "2026-02-27T16:13:48Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Andon event loop \u2014 priority-queued signals so Jeff can judge state at a glance",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/scripts/andon-light.swift",
+        "messages/scripts/andon-enrich.sh"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-27T16:11:42Z",
+      "notes": "Road-sign symbols shipped: \u2b21 blocked, \u25b2 waiting, \u25cf active. Stale-card fallback in enrichment. Jeff confirmed all states render correctly."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #430",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/scripts/andon-light.swift",
+        "messages/scripts/andon-enrich.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-27-wf-085-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-27T16:13:48Z",
+      "notes": "Reviewed and verified. Priority hierarchy correct (blocked>waiting>active), road-sign symbols render with override logic, stale-card fallback safe (<60s), event loop sound (single board query, per-role enrichment). Jeff confirmed states render. Ship-ready."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-27T15:00:14Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Andon event loop \u2014 priority-queued signals so Jeff can judge state at a glance"
+    },
+    {
+      "timestamp": "2026-02-27T16:11:42Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Andon event loop \u2014 priority-queued signals so Jeff can judge state at a glance \u2014 Road-sign symbols shipped: \u2b21 blocked, \u25b2 waiting, \u25cf active. Stale-card fallback in enrichment. Jeff confirmed all states render correctly."
+    },
+    {
+      "timestamp": "2026-02-27T16:11:42Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #430"
+    },
+    {
+      "timestamp": "2026-02-27T16:13:48Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #430 \u2014 Reviewed and verified. Priority hierarchy correct (blocked>waiting>active), road-sign symbols render with override logic, stale-card fallback safe (<60s), event loop sound (single board query, per-role enrichment). Jeff confirmed states render. Ship-ready."
+    },
+    {
+      "timestamp": "2026-02-27T16:13:48Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

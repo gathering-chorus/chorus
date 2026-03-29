@@ -1,0 +1,54 @@
+{
+  "id": "WF-126",
+  "decision": "Add domain label support to board-ts \u2014 board-ts tag <id> <domain> --category domain",
+  "source": "board:card-moved:#1449",
+  "card": 1449,
+  "created": "2026-03-15T19:21:38Z",
+  "updated": "2026-03-15T19:23:44.778Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Add domain label support to board-ts \u2014 board-ts tag <id> <domain> --category domain",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1449 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1449",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1449 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T19:21:38Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Add domain label support to board-ts \u2014 board-ts tag <id> <domain> --category domain"
+    },
+    {
+      "timestamp": "2026-03-15T19:23:44.778Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1449 marked Done by wren"
+    }
+  ]
+}

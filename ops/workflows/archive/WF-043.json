@@ -1,0 +1,79 @@
+{
+  "id": "WF-043",
+  "decision": "Build cycle instrumentation \u2014 test/build/deploy time tracking",
+  "source": "board:card-moved:#247",
+  "card": 247,
+  "created": "2026-02-23T18:08:53Z",
+  "updated": "2026-02-23T19:14:53Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Build cycle instrumentation \u2014 test/build/deploy time tracking",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "app/.git/hooks/pre-commit",
+        "app/.git/hooks/pre-push",
+        "app/app-state.sh",
+        "shared-observability/dashboards/chorus-activity.json"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T19:12:38Z",
+      "notes": "Shipped: pre-commit timing, pre-push T1/T2 tiering (21s default vs 90-120s), app-state.sh deploy phase instrumentation, 6-panel Build Health row in Grafana. All events dual-emit to Loki + Prometheus."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #247",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "product-manager/briefs/2026-02-23-wf-043-step2.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-043-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T19:14:53Z",
+      "notes": "Verified all 4 artifacts: pre-commit timing (4 phases), pre-push T1/T2 tiering (21s fast, 90-120s full), app-state.sh deploy phase instrumentation (build/health/smoke), 6-panel Build Health row in Grafana. All events dual-emit to Loki + Prometheus. Production-ready."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T18:08:53Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Build cycle instrumentation \u2014 test/build/deploy time tracking"
+    },
+    {
+      "timestamp": "2026-02-23T19:12:38Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Build cycle instrumentation \u2014 test/build/deploy time tracking \u2014 Shipped: pre-commit timing, pre-push T1/T2 tiering (21s default vs 90-120s), app-state.sh deploy phase instrumentation, 6-panel Build Health row in Grafana. All events dual-emit to Loki + Prometheus."
+    },
+    {
+      "timestamp": "2026-02-23T19:12:38Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #247"
+    },
+    {
+      "timestamp": "2026-02-23T19:14:53Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #247 \u2014 Verified all 4 artifacts: pre-commit timing (4 phases), pre-push T1/T2 tiering (21s fast, 90-120s full), app-state.sh deploy phase instrumentation (build/health/smoke), 6-panel Build Health row in Grafana. All events dual-emit to Loki + Prometheus. Production-ready."
+    },
+    {
+      "timestamp": "2026-02-23T19:14:53Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

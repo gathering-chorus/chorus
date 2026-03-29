@@ -1,0 +1,83 @@
+{
+  "id": "WF-157",
+  "decision": "Chunk A \u2014 Make the Convergence page work. Photos first, side-by-side demo.",
+  "source": "chat:wren-silas-kade:2026-03-19",
+  "name": "Convergence Page \u2014 Make It Work",
+  "created": "2026-03-19T19:13:00Z",
+  "status": "completed",
+  "steps": [
+    {
+      "step": 0,
+      "card": 1549,
+      "title": "Write endpoints for ICD API",
+      "owner": "kade",
+      "blocked_by": [],
+      "status": "in_progress",
+      "started_at": "2026-03-19T19:14:00Z",
+      "completed_at": null
+    },
+    {
+      "step": 1,
+      "card": 1547,
+      "title": "Power map Photos via API \u2014 dogfood write endpoints",
+      "owner": "wren",
+      "blocked_by": [
+        1549
+      ],
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "step": 2,
+      "card": 1545,
+      "title": "Migration fidelity gate \u2014 content-level completeness check",
+      "owner": "silas",
+      "blocked_by": [],
+      "status": "completed",
+      "started_at": "2026-03-19T19:14:00Z",
+      "completed_at": "2026-03-19T19:28:00Z"
+    },
+    {
+      "step": 3,
+      "card": 1535,
+      "title": "Wire page from API \u2014 data is complete and verified",
+      "owner": "kade",
+      "blocked_by": [
+        1547,
+        1545
+      ],
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "step": 4,
+      "card": 1537,
+      "title": "Deprecate HTML \u2014 Jeff eye test passes on Photos, then sweep remaining 3",
+      "owner": "wren",
+      "blocked_by": [
+        1535
+      ],
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null
+    }
+  ],
+  "demo": {
+    "method": "Side-by-side: original HTML (file://) vs /harvesting/convergence",
+    "gate": "Jeff picks a domain, expands both tabs. Content matches, mapping lines draw, severity badges correct, coverage %s real.",
+    "sequence": "Photos first (richest). If passes \u2192 sweep Stories, People, Social.",
+    "acceptance": "If Jeff can't tell the difference, we ship."
+  },
+  "history": [
+    {
+      "timestamp": "2026-03-19T19:13:00Z",
+      "event": "Pipeline created. Steps 0+2 parallel."
+    },
+    {
+      "timestamp": "2026-03-19T19:28:00Z",
+      "event": "Step 2 (#1545) completed. Fidelity gate built \u2014 --verify flag, 7/7 pass, 3 parser bugs fixed. Waiting on step 0 (#1549) for step 1 to unblock."
+    }
+  ]
+}

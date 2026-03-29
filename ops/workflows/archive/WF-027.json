@@ -1,0 +1,79 @@
+{
+  "id": "WF-027",
+  "decision": "Cooking list collection \u2014 recipes and meal ideas",
+  "source": "board:card-moved:#151",
+  "card": 151,
+  "created": "2026-02-23T03:37:55Z",
+  "updated": "2026-02-23T04:15:22Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Cooking list collection \u2014 recipes and meal ideas",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "src/interfaces/cookinglist.interface.ts",
+        "src/services/cookinglist-pod.service.ts",
+        "src/handlers/cookinglist.handler.ts",
+        "views/collection-cookinglist.ejs",
+        "views/cookinglist-detail.ejs",
+        "views/admin-cookinglist-add.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T04:05:09Z",
+      "notes": "Cooking list collection shipped: interface, pod service, handler, 3 views, routes, navbar, mind map. Tag-based filtering."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #151",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-027-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T04:15:22Z",
+      "notes": "Reviewed. Cooking list follows same collection pattern with tag-based filtering addition. Clean implementation, consistent with other collections. No concerns."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T03:37:55Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Cooking list collection \u2014 recipes and meal ideas"
+    },
+    {
+      "timestamp": "2026-02-23T04:05:09Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Cooking list collection \u2014 recipes and meal ideas \u2014 Cooking list collection shipped: interface, pod service, handler, 3 views, routes, navbar, mind map. Tag-based filtering."
+    },
+    {
+      "timestamp": "2026-02-23T04:05:09Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #151"
+    },
+    {
+      "timestamp": "2026-02-23T04:15:22Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #151 \u2014 Reviewed. Cooking list follows same collection pattern with tag-based filtering addition. Clean implementation, consistent with other collections. No concerns."
+    },
+    {
+      "timestamp": "2026-02-23T04:15:22Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

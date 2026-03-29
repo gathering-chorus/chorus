@@ -1,0 +1,54 @@
+{
+  "id": "WF-125",
+  "decision": "Redesign /flow as a visual funnel \u2014 wide intake at top, narrow infrastructure at bottom",
+  "source": "board:card-moved:#1442",
+  "card": 1442,
+  "created": "2026-03-15T18:59:38Z",
+  "updated": "2026-03-15T19:13:29.828Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Redesign /flow as a visual funnel \u2014 wide intake at top narrow infrastructure at bottom",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1442 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1442",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1442 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T18:59:38Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Redesign /flow as a visual funnel \u2014 wide intake at top, narrow infrastructure at bottom"
+    },
+    {
+      "timestamp": "2026-03-15T19:13:29.828Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1442 marked Done by wren"
+    }
+  ]
+}

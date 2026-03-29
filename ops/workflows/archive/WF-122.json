@@ -1,0 +1,54 @@
+{
+  "id": "WF-122",
+  "decision": "Create Silas role page HTML + update /loom card \u2014 reflect infra keeper, three-layer automation, Docker retirement",
+  "source": "board:card-moved:#1439",
+  "card": 1439,
+  "created": "2026-03-15T17:24:16Z",
+  "updated": "2026-03-15T17:31:35.279Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Create Silas role page HTML + update /loom card \u2014 reflect infra keeper three-layer automation Docker retirement",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1439 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1439",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1439 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T17:24:16Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Create Silas role page HTML + update /loom card \u2014 reflect infra keeper, three-layer automation, Docker retirement"
+    },
+    {
+      "timestamp": "2026-03-15T17:31:35.279Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1439 marked Done by wren"
+    }
+  ]
+}

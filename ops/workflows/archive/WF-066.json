@@ -1,0 +1,76 @@
+{
+  "id": "WF-066",
+  "decision": "Capturing vertebra \u2014 Clearing auto-card pipeline",
+  "source": "board:card-moved:C#275",
+  "card": 275,
+  "created": "2026-02-24T21:51:47Z",
+  "updated": "2026-02-25T17:35:22Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Capturing vertebra \u2014 Clearing auto-card pipeline",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "chorus/clearing/src/server.ts"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-25T17:31:41Z",
+      "notes": "Wired captureAndRoute() into endSession \u2014 chorus-capture.sh + auto-routing with workflow creation for decisions, handoff briefs for all routable items. Exit grace bumped 500ms\u21923s. All errors non-fatal."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify C#275",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "chorus/clearing/src/server.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-25-wf-066-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-25T17:35:22Z",
+      "notes": "Code verified: captureAndRoute() wired into endSession, auto-routing with workflow creation, exit grace 500ms\u21923s. Proving gate open \u2014 needs deploy + demo to Jeff before Done."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T21:51:47Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Capturing vertebra \u2014 Clearing auto-card pipeline"
+    },
+    {
+      "timestamp": "2026-02-25T17:31:41Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Capturing vertebra \u2014 Clearing auto-card pipeline \u2014 Wired captureAndRoute() into endSession \u2014 chorus-capture.sh + auto-routing with workflow creation for decisions, handoff briefs for all routable items. Exit grace bumped 500ms\u21923s. All errors non-fatal."
+    },
+    {
+      "timestamp": "2026-02-25T17:31:41Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify C#275"
+    },
+    {
+      "timestamp": "2026-02-25T17:35:22Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify C#275 \u2014 Code verified: captureAndRoute() wired into endSession, auto-routing with workflow creation, exit grace 500ms\u21923s. Proving gate open \u2014 needs deploy + demo to Jeff before Done."
+    },
+    {
+      "timestamp": "2026-02-25T17:35:22Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

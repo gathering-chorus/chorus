@@ -1,0 +1,43 @@
+{
+  "id": "WF-162",
+  "name": "Search Pipeline",
+  "created": "2026-03-21T11:01:00Z",
+  "created_by": "wren",
+  "status": "completed",
+  "steps": [
+    {
+      "step": 1,
+      "card_id": 1548,
+      "title": "Close search integration gaps \u2014 FTS + shape matching to all domains",
+      "owner": "silas",
+      "status": "completed",
+      "blocked_by": [],
+      "history": [],
+      "completed_at": "2026-03-21T13:46:00Z"
+    },
+    {
+      "step": 2,
+      "card_id": 1492,
+      "title": "Enrich shape-matching with theme-level graph queries",
+      "owner": "kade",
+      "status": "completed",
+      "blocked_by": [
+        1548
+      ],
+      "history": [],
+      "completed_at": "2026-03-21T14:00:00Z"
+    },
+    {
+      "step": 3,
+      "card_id": 1498,
+      "title": "Embed all domains via Ollama \u2014 semantic search",
+      "owner": "silas",
+      "status": "completed",
+      "blocked_by": [
+        1548
+      ],
+      "history": [],
+      "completed_at": "2026-03-21T13:53:00Z"
+    }
+  ]
+}

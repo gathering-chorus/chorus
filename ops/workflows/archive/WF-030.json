@@ -1,0 +1,79 @@
+{
+  "id": "WF-030",
+  "decision": "macOS native notifications for Alertmanager alerts",
+  "source": "board:card-moved:#202",
+  "card": 202,
+  "created": "2026-02-23T04:24:05Z",
+  "updated": "2026-02-23T04:35:40Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "macOS native notifications for Alertmanager alerts",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "shared-observability/scripts/alert-notifier.py",
+        "shared-observability/config/alertmanager/alertmanager.yml",
+        "~/Library/LaunchAgents/com.chorus.alert-notifier.plist"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T04:31:26Z",
+      "notes": "Built alert-notifier.py (Python HTTP on :9095), launchd KeepAlive, Alertmanager webhook config. Tested warning (banner+sound) and critical (modal dialog). Storm protection (max 5/batch). chorus-log integration."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #202",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "shared-observability/scripts/alert-notifier.py",
+        "shared-observability/config/alertmanager/alertmanager.yml"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-030-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T04:35:40Z",
+      "notes": "Reviewed alert-notifier.py: clean implementation. Storm protection, chorus-log integration, health endpoint, AppleScript escaping all solid. Alertmanager config correctly routes via host.docker.internal. Service running and healthy. Minor: 0.0.0.0 binding exposes to LAN (low risk). Approved."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T04:24:05Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: macOS native notifications for Alertmanager alerts"
+    },
+    {
+      "timestamp": "2026-02-23T04:31:26Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: macOS native notifications for Alertmanager alerts \u2014 Built alert-notifier.py (Python HTTP on :9095), launchd KeepAlive, Alertmanager webhook config. Tested warning (banner+sound) and critical (modal dialog). Storm protection (max 5/batch). chorus-log integration."
+    },
+    {
+      "timestamp": "2026-02-23T04:31:26Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #202"
+    },
+    {
+      "timestamp": "2026-02-23T04:35:40Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #202 \u2014 Reviewed alert-notifier.py: clean implementation. Storm protection, chorus-log integration, health endpoint, AppleScript escaping all solid. Alertmanager config correctly routes via host.docker.internal. Service running and healthy. Minor: 0.0.0.0 binding exposes to LAN (low risk). Approved."
+    },
+    {
+      "timestamp": "2026-02-23T04:35:40Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

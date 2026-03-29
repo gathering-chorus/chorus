@@ -1,0 +1,75 @@
+{
+  "id": "WF-060",
+  "decision": "Dense spine events \u2014 instrument sessions with tool calls, plan mode, coverage gates, compaction, reasoning traces into chorus",
+  "source": "board:card-moved:#338",
+  "card": 338,
+  "created": "2026-02-24T18:29:32Z",
+  "updated": "2026-02-24T21:15:27Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Dense spine events \u2014 instrument sessions with tool calls plan mode coverage gates compaction reasoning traces into chorus",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T21:09:29Z",
+      "notes": "Wren shipped #338 \u2014 dense spine events instrumented. Acknowledging as complete."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #338",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "spine-events.json",
+        "chorus-query.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-24-wf-060-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T21:15:27Z",
+      "notes": "Verified: DEC-047 recorded, chorus tail CLI working, JSONL session capture solid, chorus index has 27K messages. Foundation complete but /werk integration blocked on #346 (Loki bridge). #338 stays WIP until #346 ships."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T18:29:32Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Dense spine events \u2014 instrument sessions with tool calls, plan mode, coverage gates, compaction, reasoning traces into chorus"
+    },
+    {
+      "timestamp": "2026-02-24T21:09:29Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Dense spine events \u2014 instrument sessions with tool calls plan mode coverage gates compaction reasoning traces into chorus \u2014 Wren shipped #338 \u2014 dense spine events instrumented. Acknowledging as complete."
+    },
+    {
+      "timestamp": "2026-02-24T21:09:29Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #338"
+    },
+    {
+      "timestamp": "2026-02-24T21:15:27Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #338 \u2014 Verified: DEC-047 recorded, chorus tail CLI working, JSONL session capture solid, chorus index has 27K messages. Foundation complete but /werk integration blocked on #346 (Loki bridge). #338 stays WIP until #346 ships."
+    },
+    {
+      "timestamp": "2026-02-24T21:15:27Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

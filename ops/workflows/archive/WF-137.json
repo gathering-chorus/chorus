@@ -1,0 +1,54 @@
+{
+  "id": "WF-137",
+  "decision": "Review transposition rate data after 24h \u2014 verify signal quality, check correlation with session patterns",
+  "source": "board:card-moved:#1405",
+  "card": 1405,
+  "created": "2026-03-16T22:46:20Z",
+  "updated": "2026-03-16T22:48:57.731Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Review transposition rate data after 24h \u2014 verify signal quality check correlation with session patterns",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1405 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1405",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1405 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-16T22:46:20Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Review transposition rate data after 24h \u2014 verify signal quality, check correlation with session patterns"
+    },
+    {
+      "timestamp": "2026-03-16T22:48:57.731Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1405 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "id": "WF-044",
+  "decision": "Mind map: add About and Admin branch nodes with menu leaves",
+  "source": "board:card-moved:#251",
+  "card": 251,
+  "created": "2026-02-23T19:27:52Z",
+  "updated": "2026-02-23T20:53:09Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Mind map: add About and Admin branch nodes with menu leaves",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "views/home.ejs",
+        "src/app.ts",
+        "src/handlers/about.handler.ts"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T20:05:52Z",
+      "notes": "Mind map: About branch with 7 hierarchical section sub-nodes + doc leaves from /api/about-sections. Admin branch with 5 flat leaves + 2 sub-nodes (Model+Data 10 leaves, Operations 8 leaves). Full drag, SVG lines, localStorage persistence. Commit e01b1be."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #251",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-044-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T20:53:09Z",
+      "notes": "Verified: About branch with hierarchical section sub-nodes + /api/about-sections API, Admin branch with Model+Data and Operations sub-nodes. All in commit e01b1be. Mind map code confirmed in home.ejs and about.handler.ts."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T19:27:52Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Mind map: add About and Admin branch nodes with menu leaves"
+    },
+    {
+      "timestamp": "2026-02-23T20:05:52Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Mind map: add About and Admin branch nodes with menu leaves \u2014 Mind map: About branch with 7 hierarchical section sub-nodes + doc leaves from /api/about-sections. Admin branch with 5 flat leaves + 2 sub-nodes (Model+Data 10 leaves, Operations 8 leaves). Full drag, SVG lines, localStorage persistence. Commit e01b1be."
+    },
+    {
+      "timestamp": "2026-02-23T20:05:52Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #251"
+    },
+    {
+      "timestamp": "2026-02-23T20:53:09Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #251 \u2014 Verified: About branch with hierarchical section sub-nodes + /api/about-sections API, Admin branch with Model+Data and Operations sub-nodes. All in commit e01b1be. Mind map code confirmed in home.ejs and about.handler.ts."
+    },
+    {
+      "timestamp": "2026-02-23T20:53:09Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

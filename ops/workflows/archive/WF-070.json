@@ -1,0 +1,76 @@
+{
+  "id": "WF-070",
+  "decision": "Add ops event types to spine-events.json \u2014 close infra visibility gap",
+  "source": "board:card-moved:#364",
+  "card": 364,
+  "created": "2026-02-25T01:27:27Z",
+  "updated": "2026-02-25T17:26:46Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Add ops event types to spine-events.json \u2014 close infra visibility gap",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "spine-events.json"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-25T17:15:50Z",
+      "notes": "Card #364 completed previous session \u2014 ops event types added to spine-events.json"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #364",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "spine-events.json"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-25-wf-070-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-25T17:26:46Z",
+      "notes": "Verified: #364 Done, Jeff accepted. 5 new ops event types, schema v1.1.0, 65 total events."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-25T01:27:27Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Add ops event types to spine-events.json \u2014 close infra visibility gap"
+    },
+    {
+      "timestamp": "2026-02-25T17:15:50Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Add ops event types to spine-events.json \u2014 close infra visibility gap \u2014 Card #364 completed previous session \u2014 ops event types added to spine-events.json"
+    },
+    {
+      "timestamp": "2026-02-25T17:15:50Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #364"
+    },
+    {
+      "timestamp": "2026-02-25T17:26:46Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #364 \u2014 Verified: #364 Done, Jeff accepted. 5 new ops event types, schema v1.1.0, 65 total events."
+    },
+    {
+      "timestamp": "2026-02-25T17:26:46Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

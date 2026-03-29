@@ -1,0 +1,79 @@
+{
+  "id": "WF-054",
+  "decision": "Wire /werk init as session bootstrap \u2014 replace hook chain with single live-context entry point",
+  "source": "board:card-moved:C#310",
+  "card": 310,
+  "created": "2026-02-24T01:54:08Z",
+  "updated": "2026-02-24T02:41:25Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Wire /werk init as session bootstrap \u2014 replace hook chain with single live-context entry point",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/scripts/werk-init.sh",
+        "messages/claudemd/fragments/shared-how-you-operate.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T02:14:32Z",
+      "notes": "werk-init.sh --session absorbs session-start.sh + team-scan.sh + chorus-audit.sh into single hook. SessionStart hooks 3\u21922 per role. Commit 8133be8."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify C#310",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/scripts/werk-init.sh",
+        "messages/board-client/src/config.ts",
+        "messages/board-client/src/cli.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-24-wf-054-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T02:41:25Z",
+      "notes": "Verified: commit 8133be8, werk-init.sh is single entry point, CLAUDE.md fragments updated for all 3 roles, SessionStart hooks 3\u21922. Also made further improvements this session: stripped Chorus board, added Won't Do bucket, improved brief visibility in context file."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T01:54:08Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Wire /werk init as session bootstrap \u2014 replace hook chain with single live-context entry point"
+    },
+    {
+      "timestamp": "2026-02-24T02:14:32Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Wire /werk init as session bootstrap \u2014 replace hook chain with single live-context entry point \u2014 werk-init.sh --session absorbs session-start.sh + team-scan.sh + chorus-audit.sh into single hook. SessionStart hooks 3\u21922 per role. Commit 8133be8."
+    },
+    {
+      "timestamp": "2026-02-24T02:14:32Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify C#310"
+    },
+    {
+      "timestamp": "2026-02-24T02:41:25Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify C#310 \u2014 Verified: commit 8133be8, werk-init.sh is single entry point, CLAUDE.md fragments updated for all 3 roles, SessionStart hooks 3\u21922. Also made further improvements this session: stripped Chorus board, added Won't Do bucket, improved brief visibility in context file."
+    },
+    {
+      "timestamp": "2026-02-24T02:41:25Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

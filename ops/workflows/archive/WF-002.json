@@ -1,0 +1,142 @@
+{
+  "id": "WF-002",
+  "decision": "Build workflow execution engine with persistent state",
+  "source": "verbal",
+  "card": 118,
+  "created": "2026-02-21T17:50:25Z",
+  "updated": "2026-02-21T18:29:02Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Design schema and build CLI tool",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/workflows/schema.json",
+        "messages/scripts/workflow.sh"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-21T17:50:29Z",
+      "notes": "Schema + CLI shipped (workflow.sh with 7 commands)"
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Wire into session-start.sh",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/scripts/session-start.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-21-wf-002-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T17:51:00Z",
+      "notes": "Wired into session-start.sh \u2014 pending steps show in status line and context file"
+    },
+    {
+      "seq": 3,
+      "role": "kade",
+      "action": "Add workflow status to Chorus dashboard",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        2
+      ],
+      "artifacts": [
+        "views/chorus.ejs",
+        "src/app.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-21-wf-002-step3.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T18:21:38Z",
+      "notes": "Active workflows section added to /chorus page. Reads JSON manifests from messages/workflows/active/, renders cards with step progress, role colors, and card tags. Server-rendered, no JS."
+    },
+    {
+      "seq": 4,
+      "role": "wren",
+      "action": "Document workflow pattern in team-architecture.md",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        3
+      ],
+      "artifacts": [
+        "messages/team-architecture.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-21-wf-002-step4.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T18:29:02Z",
+      "notes": "Workflow pattern documented in team-architecture.md v1.3. Added Workflows subsection to Execution, updated artifact hierarchy (workflows, Clearing, Slack deprecation), changelog entry."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-21T17:50:25Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Build workflow execution engine with persistent state"
+    },
+    {
+      "timestamp": "2026-02-21T17:50:25Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 1 ready: Design schema and build CLI tool"
+    },
+    {
+      "timestamp": "2026-02-21T17:50:29Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Design schema and build CLI tool \u2014 Schema + CLI shipped (workflow.sh with 7 commands)"
+    },
+    {
+      "timestamp": "2026-02-21T17:50:29Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Wire into session-start.sh"
+    },
+    {
+      "timestamp": "2026-02-21T17:51:00Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Wire into session-start.sh \u2014 Wired into session-start.sh \u2014 pending steps show in status line and context file"
+    },
+    {
+      "timestamp": "2026-02-21T17:51:00Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 3 ready: Add workflow status to Chorus dashboard"
+    },
+    {
+      "timestamp": "2026-02-21T18:21:38Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 3 completed: Add workflow status to Chorus dashboard \u2014 Active workflows section added to /chorus page. Reads JSON manifests from messages/workflows/active/, renders cards with step progress, role colors, and card tags. Server-rendered, no JS."
+    },
+    {
+      "timestamp": "2026-02-21T18:21:38Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 4 ready: Document workflow pattern in team-architecture.md"
+    },
+    {
+      "timestamp": "2026-02-21T18:29:02Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 4 completed: Document workflow pattern in team-architecture.md \u2014 Workflow pattern documented in team-architecture.md v1.3. Added Workflows subsection to Execution, updated artifact hierarchy (workflows, Clearing, Slack deprecation), changelog entry."
+    },
+    {
+      "timestamp": "2026-02-21T18:29:02Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

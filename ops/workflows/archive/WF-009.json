@@ -1,0 +1,139 @@
+{
+  "id": "WF-009",
+  "decision": "Manifest handoffs: closed-loop proof of connection",
+  "source": "verbal:2026-02-22",
+  "card": 43,
+  "created": "2026-02-22T16:47:48Z",
+  "updated": "2026-02-22T17:09:22Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "wren",
+      "action": "Write spec and consultation briefs to Silas and Kade",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "product-manager/briefs/2026-02-22-manifest-handoffs-spec.md",
+        "architect/briefs/2026-02-22-manifest-handoffs-consultation.md",
+        "engineer/briefs/2026-02-22-manifest-handoffs-consultation.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-22T16:49:09Z",
+      "notes": "Spec written, consultation briefs sent to both Silas and Kade, Slack notifications posted"
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and respond with technical input",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "product-manager/briefs/2026-02-22-manifest-handoffs-silas-response.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-22-wf-009-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-22T16:52:04Z",
+      "notes": "Technical assessment complete. All 4 questions answered: log file for V1 (Loki V2), Grafana panel V2 (3 panels), Read hook sound but V2, Handoff is first-class ontology entity in C#40 merge."
+    },
+    {
+      "seq": 3,
+      "role": "kade",
+      "action": "Review and respond with engineering input",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        2
+      ],
+      "artifacts": [
+        "product-manager/briefs/2026-02-22-manifest-handoffs-kade-response.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-22-wf-009-step3.md",
+      "started_at": null,
+      "completed_at": "2026-02-22T17:00:09Z",
+      "notes": "Engineering response complete. 4 questions answered: workflow-ts log event trivial (~10 lines), Option B for brief detection (separate PostToolUse hook), session-start latency negligible (<50ms), documented 4 real handoff gaps from experience. Aligned with Silas on V1/V2 split."
+    },
+    {
+      "seq": 4,
+      "role": "wren",
+      "action": "Incorporate feedback and build",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        3
+      ],
+      "artifacts": [
+        "messages/scripts/handoff-logger-hook.sh",
+        "messages/scripts/handoff-check.sh",
+        "messages/workflow-engine/src/engine.ts",
+        "messages/scripts/session-start.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-22-wf-009-step4.md",
+      "started_at": null,
+      "completed_at": "2026-02-22T17:09:22Z",
+      "notes": "V1 manifest handoffs built: (1) handoff logging in workflow-ts advance(), (2) PostToolUse hook for ad-hoc brief writes, (3) handoff-check.sh with stale detection + auto-receipt marking, (4) session-start.sh integration. 59 tests green. Both consultations incorporated."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-22T16:47:48Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Manifest handoffs: closed-loop proof of connection"
+    },
+    {
+      "timestamp": "2026-02-22T16:49:09Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 1 completed: wren — Write spec and consultation briefs to Silas and Kade"
+    },
+    {
+      "timestamp": "2026-02-22T16:49:09Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: silas — Review and respond with technical input"
+    },
+    {
+      "timestamp": "2026-02-22T16:52:04Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and respond with technical input — Technical assessment complete. All 4 questions answered: log file for V1 (Loki V2), Grafana panel V2 (3 panels), Read hook sound but V2, Handoff is first-class ontology entity in C#40 merge."
+    },
+    {
+      "timestamp": "2026-02-22T16:52:04Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 3 ready: Review and respond with engineering input"
+    },
+    {
+      "timestamp": "2026-02-22T17:00:09Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 3 completed: Review and respond with engineering input — Engineering response complete. 4 questions answered: workflow-ts log event trivial (~10 lines), Option B for brief detection (separate PostToolUse hook), session-start latency negligible (<50ms), documented 4 real handoff gaps from experience. Aligned with Silas on V1/V2 split."
+    },
+    {
+      "timestamp": "2026-02-22T17:00:09Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 4 ready: Incorporate feedback and build"
+    },
+    {
+      "timestamp": "2026-02-22T17:09:22Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 4 completed: wren — Incorporate feedback and build"
+    },
+    {
+      "timestamp": "2026-02-22T17:09:22Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Workflow completed: Manifest handoffs: closed-loop proof of connection"
+    }
+  ]
+}

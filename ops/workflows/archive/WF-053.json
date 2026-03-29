@@ -1,0 +1,82 @@
+{
+  "id": "WF-053",
+  "decision": "Migrate CLAUDE.md rules into /werk init \u2014 replace static instructions with live-assembled context",
+  "source": "board:card-moved:C#308",
+  "card": 308,
+  "created": "2026-02-24T01:05:30Z",
+  "updated": "2026-02-24T01:47:09Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Migrate CLAUDE.md rules into /werk init \u2014 replace static instructions with live-assembled context",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/claudemd/shared/infrastructure-operations.md",
+        "messages/claudemd/shared/team-kanban-board.md",
+        "architect/CLAUDE.md",
+        "product-manager/CLAUDE.md",
+        "engineer/CLAUDE.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T01:45:44Z",
+      "notes": "Compressed 10 fragments (7 shared, 3 Silas-specific). 428\u2192253 lines Silas, ~350\u2192271 Wren, ~350\u2192262 Kade. app-state.sh and Loki rules bold/explicit. CLI reference removed (board-ts --help exists). Card quality philosophy kept, mechanics compressed. Werk v1.3.7."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify C#308",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "product-manager/CLAUDE.md",
+        "architect/CLAUDE.md",
+        "engineer/CLAUDE.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-24-wf-053-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T01:47:09Z",
+      "notes": "Reviewed and approved. 30% line reduction (1128\u2192786). Infra ops prohibitions now explicit. Card quality philosophy preserved. CLI reference correctly deferred to --help. Minor: Silas meetings section references stale Slack pattern. git-queue.sh adoption noted."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T01:05:30Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Migrate CLAUDE.md rules into /werk init \u2014 replace static instructions with live-assembled context"
+    },
+    {
+      "timestamp": "2026-02-24T01:45:44Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Migrate CLAUDE.md rules into /werk init \u2014 replace static instructions with live-assembled context \u2014 Compressed 10 fragments (7 shared, 3 Silas-specific). 428\u2192253 lines Silas, ~350\u2192271 Wren, ~350\u2192262 Kade. app-state.sh and Loki rules bold/explicit. CLI reference removed (board-ts --help exists). Card quality philosophy kept, mechanics compressed. Werk v1.3.7."
+    },
+    {
+      "timestamp": "2026-02-24T01:45:44Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify C#308"
+    },
+    {
+      "timestamp": "2026-02-24T01:47:09Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify C#308 \u2014 Reviewed and approved. 30% line reduction (1128\u2192786). Infra ops prohibitions now explicit. Card quality philosophy preserved. CLI reference correctly deferred to --help. Minor: Silas meetings section references stale Slack pattern. git-queue.sh adoption noted."
+    },
+    {
+      "timestamp": "2026-02-24T01:47:09Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

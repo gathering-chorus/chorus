@@ -1,0 +1,78 @@
+{
+  "id": "WF-076",
+  "decision": "SWAT lane in board-ts \u2014 fast-lane card creation outside WIP limit",
+  "source": "board:card-moved:#398",
+  "card": 398,
+  "created": "2026-02-26T01:11:29Z",
+  "updated": "2026-02-26T14:30:23Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "SWAT lane in board-ts \u2014 fast-lane card creation outside WIP limit",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/board-client/src/config.ts",
+        "messages/board-client/src/cli.ts"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-26T01:18:31Z",
+      "notes": "SWAT bucket created (ID 34, no WIP limit) in Vikunja. board-ts updated: cmdSwat function, audit-start flags SWAT cards, list order includes SWAT. 51 tests passing."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #398",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/board-client/src/config.ts",
+        "messages/board-client/src/cli.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-26-wf-076-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-26T14:30:23Z",
+      "notes": "Verified: SWAT bucket (ID 34, no WIP limit) live in Vikunja. cmdSwat function, audit-start flags, list order all correct. 51 tests passing."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-26T01:11:29Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: SWAT lane in board-ts \u2014 fast-lane card creation outside WIP limit"
+    },
+    {
+      "timestamp": "2026-02-26T01:18:31Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: SWAT lane in board-ts \u2014 fast-lane card creation outside WIP limit \u2014 SWAT bucket created (ID 34, no WIP limit) in Vikunja. board-ts updated: cmdSwat function, audit-start flags SWAT cards, list order includes SWAT. 51 tests passing."
+    },
+    {
+      "timestamp": "2026-02-26T01:18:31Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #398"
+    },
+    {
+      "timestamp": "2026-02-26T14:30:23Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #398 \u2014 Verified: SWAT bucket (ID 34, no WIP limit) live in Vikunja. cmdSwat function, audit-start flags, list order all correct. 51 tests passing."
+    },
+    {
+      "timestamp": "2026-02-26T14:30:23Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

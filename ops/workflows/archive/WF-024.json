@@ -1,0 +1,74 @@
+{
+  "id": "WF-024",
+  "decision": "Value Stream: workflow lines link to card details",
+  "source": "board:card-moved:#144",
+  "card": 144,
+  "created": "2026-02-23T03:28:26Z",
+  "updated": "2026-02-23T04:02:42Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Value Stream: workflow lines link to card details",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "views/value.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T03:31:59Z",
+      "notes": "Workflow lines on Funnel tab, Completed section, and Flow table all link to Vikunja card. Uses wf.card field."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #144",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-024-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T04:02:42Z",
+      "notes": "Card #144 already Done. Value Stream workflow lines link to card details \u2014 shipped by Kade. Architecturally sound, no concerns."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T03:28:26Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Value Stream: workflow lines link to card details"
+    },
+    {
+      "timestamp": "2026-02-23T03:31:59Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Value Stream: workflow lines link to card details \u2014 Workflow lines on Funnel tab, Completed section, and Flow table all link to Vikunja card. Uses wf.card field."
+    },
+    {
+      "timestamp": "2026-02-23T03:31:59Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #144"
+    },
+    {
+      "timestamp": "2026-02-23T04:02:42Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #144 \u2014 Card #144 already Done. Value Stream workflow lines link to card details \u2014 shipped by Kade. Architecturally sound, no concerns."
+    },
+    {
+      "timestamp": "2026-02-23T04:02:42Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

@@ -1,0 +1,619 @@
+{
+  "version": "78",
+  "description": "Werk manifest \u2014 shared fragments + role-specific fragments \u2192 generated CLAUDE.md per role + shared TEAM_PROTOCOL.md. Version = Werk version.",
+  "size_budget": 35000,
+  "_versioning_rule": "Monotonic integer. Bumps on protocol changes: CLAUDE.md fragments, scripts, manifest schema, boot sequence, hooks, spine events. NOT on state files, briefs, board ops, memory edits. manifest.json is the single source of truth. DEC-036, DEC-065.",
+  "changelog": [
+    {
+      "version": "78",
+      "card": "#auto",
+      "date": "2026-03-27",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "77",
+      "card": "#auto",
+      "date": "2026-03-27",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "76",
+      "card": "#auto",
+      "date": "2026-03-27",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "75",
+      "card": "#auto",
+      "date": "2026-03-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "74",
+      "card": "#auto",
+      "date": "2026-03-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "73",
+      "card": "#auto",
+      "date": "2026-03-23",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "72",
+      "card": "#auto",
+      "date": "2026-03-21",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "71",
+      "card": "#auto",
+      "date": "2026-03-21",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "70",
+      "card": "#auto",
+      "date": "2026-03-21",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "69",
+      "card": "#auto",
+      "date": "2026-03-20",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "68",
+      "card": "#auto",
+      "date": "2026-03-20",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "67",
+      "card": "#auto",
+      "date": "2026-03-19",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "66",
+      "card": "#auto",
+      "date": "2026-03-19",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "65",
+      "card": "#auto",
+      "date": "2026-03-16",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "64",
+      "card": "#auto",
+      "date": "2026-03-16",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "63",
+      "card": "#auto",
+      "date": "2026-03-16",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "62",
+      "card": "#auto",
+      "date": "2026-03-12",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "61",
+      "card": "#auto",
+      "date": "2026-03-12",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "60",
+      "card": "#auto",
+      "date": "2026-03-11",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "59",
+      "card": "#auto",
+      "date": "2026-03-11",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "58",
+      "card": "#auto",
+      "date": "2026-03-11",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "57",
+      "card": "#auto",
+      "date": "2026-03-11",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "56",
+      "card": "#auto",
+      "date": "2026-03-11",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "55",
+      "card": "#auto",
+      "date": "2026-03-10",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "53",
+      "card": "#auto",
+      "date": "2026-03-10",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "52",
+      "card": "#auto",
+      "date": "2026-03-10",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "51",
+      "card": "#auto",
+      "date": "2026-03-08",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "50",
+      "card": "#auto",
+      "date": "2026-03-06",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "49",
+      "card": "#auto",
+      "date": "2026-03-06",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "48",
+      "card": "#auto",
+      "date": "2026-03-06",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "47",
+      "card": "#auto",
+      "date": "2026-03-05",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "46",
+      "card": "#auto",
+      "date": "2026-03-05",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "45",
+      "card": "#auto",
+      "date": "2026-03-04",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "44",
+      "card": "#auto",
+      "date": "2026-03-04",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "43",
+      "card": "#auto",
+      "date": "2026-03-04",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "42",
+      "card": "#auto",
+      "date": "2026-03-04",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "41",
+      "card": "#auto",
+      "date": "2026-03-03",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "40",
+      "card": "#auto",
+      "date": "2026-03-02",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "39",
+      "card": "#auto",
+      "date": "2026-03-01",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "38",
+      "card": "#auto",
+      "date": "2026-03-01",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.37",
+      "card": "#auto",
+      "date": "2026-03-01",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.36",
+      "card": "#auto",
+      "date": "2026-03-01",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.35",
+      "card": "#auto",
+      "date": "2026-02-27",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.34",
+      "card": "#auto",
+      "date": "2026-02-27",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.33",
+      "card": "#auto",
+      "date": "2026-02-27",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.32",
+      "card": "#auto",
+      "date": "2026-02-27",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.31",
+      "card": "#auto",
+      "date": "2026-02-27",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.30",
+      "card": "#auto",
+      "date": "2026-02-27",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.29",
+      "card": "#auto",
+      "date": "2026-02-26",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.28",
+      "card": "#auto",
+      "date": "2026-02-26",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.27",
+      "card": "#auto",
+      "date": "2026-02-26",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.26",
+      "card": "#auto",
+      "date": "2026-02-26",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.25",
+      "card": "#auto",
+      "date": "2026-02-26",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.24",
+      "card": "#auto",
+      "date": "2026-02-26",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.23",
+      "card": "#auto",
+      "date": "2026-02-26",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.22",
+      "card": "#auto",
+      "date": "2026-02-25",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.21",
+      "card": "#auto",
+      "date": "2026-02-25",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.20",
+      "card": "#auto",
+      "date": "2026-02-25",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.19",
+      "card": "#auto",
+      "date": "2026-02-25",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.18",
+      "card": "#auto",
+      "date": "2026-02-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.17",
+      "card": "#auto",
+      "date": "2026-02-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.16",
+      "card": "#auto",
+      "date": "2026-02-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.15",
+      "card": "#auto",
+      "date": "2026-02-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.14",
+      "card": "#auto",
+      "date": "2026-02-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.13",
+      "card": "#auto",
+      "date": "2026-02-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.12",
+      "card": "#auto",
+      "date": "2026-02-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.11",
+      "card": "#auto",
+      "date": "2026-02-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.10",
+      "card": "#auto",
+      "date": "2026-02-24",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.9",
+      "card": "#auto",
+      "date": "2026-02-23",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.8",
+      "card": "#auto",
+      "date": "2026-02-23",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.7",
+      "card": "#auto",
+      "date": "2026-02-23",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.6",
+      "card": "#auto",
+      "date": "2026-02-23",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.5",
+      "card": "#auto",
+      "date": "2026-02-23",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.4",
+      "card": "#auto",
+      "date": "2026-02-22",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.3",
+      "card": "#C53",
+      "date": "2026-02-22",
+      "summary": "Baseline reset \u2014 settings.local.json included in checksum inputs"
+    },
+    {
+      "version": "1.3.2",
+      "card": "#C53",
+      "date": "2026-02-22",
+      "summary": "Permission profiles are Werk \u2014 settings.local.json now in checksum set"
+    },
+    {
+      "version": "1.3.1",
+      "card": "#auto",
+      "date": "2026-02-22",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
+    {
+      "version": "1.3.0",
+      "card": "#108",
+      "date": "2026-02-21",
+      "summary": "Werk versioning wired to manifest (DEC-036)"
+    },
+    {
+      "version": "1.2.0",
+      "card": "#104",
+      "date": "2026-02-21",
+      "summary": "Generator shipped \u2014 43 fragments, 3 roles, variable substitution"
+    },
+    {
+      "version": "1.1.0",
+      "card": "#110",
+      "date": "2026-02-21",
+      "summary": "Schema validation + pre-flight checks added"
+    },
+    {
+      "version": "1.1.1",
+      "card": "#111",
+      "date": "2026-02-21",
+      "summary": "Drift detection checksums + changelog + card linkage"
+    }
+  ],
+  "variables": {
+    "wren": {
+      "ROLE_NAME": "Wren",
+      "ROLE_LOWER": "wren",
+      "CLI_OWNER_EXAMPLE": "board-ts add \"title\" --owner Wren --priority P1 --status Next",
+      "BRIEF_ROUTING": "- For Silas: `../architect/briefs/`\n- For Kade: `../engineer/briefs/`\n- For Wren (incoming): `briefs/` (this directory)",
+      "SESSION_START_FILES": "`backlog.md`, `projects.md`, `decisions.md`",
+      "CREDENTIAL_EXAMPLE": "$SLACK_BOT_TOKEN"
+    },
+    "silas": {
+      "ROLE_NAME": "Silas",
+      "ROLE_LOWER": "silas",
+      "CLI_OWNER_EXAMPLE": "board-ts add \"title\" --owner Silas --priority P2 --domain infrastructure",
+      "BRIEF_ROUTING": "- For Wren: `../product-manager/briefs/`\n- For Kade: `../engineer/briefs/`\n- For Silas (incoming): `briefs/` (this directory)",
+      "SESSION_START_FILES": "`system-architecture.md`, `ontology-status.md`, `infrastructure-constraints.md`",
+      "CREDENTIAL_EXAMPLE": "$FUSEKI_ADMIN_PASSWORD"
+    },
+    "kade": {
+      "ROLE_NAME": "Kade",
+      "ROLE_LOWER": "kade",
+      "CLI_OWNER_EXAMPLE": "board-ts add \"title\" --owner Kade --priority P1 --domain infrastructure",
+      "BRIEF_ROUTING": "- For Silas: `../architect/briefs/`\n- For Wren: `../product-manager/briefs/`\n- For Kade (incoming): `briefs/` (this directory)",
+      "SESSION_START_FILES": "`current-work.md`, `tech-debt.md`",
+      "CREDENTIAL_EXAMPLE": "$TWILIO_AUTH_TOKEN"
+    }
+  },
+  "reference": {
+    "output": "../messages/TEAM_PROTOCOL.md",
+    "sections": [
+      "shared/infrastructure-operations-reference.md",
+      "shared/cross-machine-operations-reference.md",
+      "shared/team-kanban-board-reference.md",
+      "shared/session-close-out-reference.md",
+      "shared/lint-ceiling-ratchet.md",
+      "shared/domain-endpoints-reference.md",
+      "shared/portfolio-reference.md"
+    ]
+  },
+  "roles": {
+    "wren": {
+      "output": "../product-manager/CLAUDE.md",
+      "sections": [
+        "roles/wren/title.md",
+        "shared/chorus-prompt.md",
+        "roles/wren/principles.md",
+        "roles/wren/how-you-operate.md",
+        "roles/wren/portfolio.md",
+        "shared/infrastructure-operations-core.md",
+        "shared/cross-machine-operations-core.md",
+        "roles/wren/tone.md",
+        "shared/communication-discipline.md",
+        "shared/idle-awareness.md",
+        "roles/wren/session-moderation.md",
+        "shared/team-kanban-board-core.md",
+        "shared/team-operating-model.md",
+        "shared/execution-modes.md",
+        "shared/intellectual-honesty.md",
+        "shared/search-hierarchy.md",
+        "shared/domain-endpoints.md",
+        "shared/session-close-out-core.md",
+        "roles/wren/close-out-docs.md",
+        "shared/error-handling-discipline.md",
+        "shared/tdd-discipline.md",
+        "shared/icd-gate.md",
+        "roles/wren/state-files.md"
+      ]
+    },
+    "silas": {
+      "output": "../architect/CLAUDE.md",
+      "sections": [
+        "roles/silas/title.md",
+        "shared/chorus-prompt.md",
+        "roles/silas/principles.md",
+        "roles/silas/how-you-operate.md",
+        "roles/silas/portfolio.md",
+        "shared/infrastructure-operations-core.md",
+        "shared/cross-machine-operations-core.md",
+        "roles/silas/ops-responsibilities.md",
+        "roles/silas/working-with-jeff.md",
+        "roles/silas/tone.md",
+        "shared/communication-discipline.md",
+        "shared/idle-awareness.md",
+        "shared/team-kanban-board-core.md",
+        "shared/team-operating-model.md",
+        "shared/execution-modes.md",
+        "shared/intellectual-honesty.md",
+        "shared/search-hierarchy.md",
+        "shared/domain-endpoints.md",
+        "shared/session-close-out-core.md",
+        "roles/silas/close-out-docs.md",
+        "shared/error-handling-discipline.md",
+        "shared/tdd-discipline.md",
+        "shared/icd-gate.md",
+        "roles/silas/state-files.md"
+      ]
+    },
+    "kade": {
+      "output": "../engineer/CLAUDE.md",
+      "sections": [
+        "roles/kade/title.md",
+        "shared/chorus-prompt.md",
+        "roles/kade/principles.md",
+        "roles/kade/how-you-operate.md",
+        "roles/kade/portfolio.md",
+        "shared/infrastructure-operations-kade-extended.md",
+        "shared/cross-machine-operations-core.md",
+        "roles/kade/working-with-jeff.md",
+        "roles/kade/tone.md",
+        "shared/communication-discipline.md",
+        "shared/idle-awareness.md",
+        "shared/team-kanban-board-core.md",
+        "shared/team-operating-model.md",
+        "shared/execution-modes.md",
+        "shared/intellectual-honesty.md",
+        "shared/search-hierarchy.md",
+        "shared/domain-endpoints.md",
+        "shared/session-close-out-core.md",
+        "roles/kade/close-out-docs.md",
+        "shared/error-handling-discipline.md",
+        "shared/tdd-discipline.md",
+        "shared/icd-gate.md",
+        "roles/kade/state-files.md"
+      ]
+    }
+  }
+}

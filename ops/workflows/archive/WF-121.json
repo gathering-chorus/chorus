@@ -1,0 +1,54 @@
+{
+  "id": "WF-121",
+  "decision": "Update Wren role card on /loom \u2014 link to wren-role.html, refresh bio with practices and value/routine split",
+  "source": "board:card-moved:#1438",
+  "card": 1438,
+  "created": "2026-03-15T17:24:15Z",
+  "updated": "2026-03-15T17:29:03.464Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Update Wren role card on /loom \u2014 link to wren-role.html refresh bio with practices and value/routine split",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1438 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1438",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1438 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T17:24:15Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Update Wren role card on /loom \u2014 link to wren-role.html, refresh bio with practices and value/routine split"
+    },
+    {
+      "timestamp": "2026-03-15T17:29:03.464Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1438 marked Done by wren"
+    }
+  ]
+}

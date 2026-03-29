@@ -1,0 +1,54 @@
+{
+  "id": "WF-107",
+  "decision": "Add page-level integration tests \u2014 step through key functions per page, fix broken PDF/share/self buttons",
+  "source": "board:card-moved:#1119",
+  "card": 1119,
+  "created": "2026-03-09T16:05:11Z",
+  "updated": "2026-03-09T20:12:00.904Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Add page-level integration tests \u2014 step through key functions per page fix broken PDF/share/self buttons",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1119 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1119",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1119 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-09T16:05:11Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Add page-level integration tests \u2014 step through key functions per page, fix broken PDF/share/self buttons"
+    },
+    {
+      "timestamp": "2026-03-09T20:12:00.904Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1119 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "_meta": {
+    "description": "Jeff's known preferences — machine-readable manifest for DEC-069 rule 3",
+    "card": "#1010",
+    "updated": "2026-03-06",
+    "usage": "Roles check this before asking Jeff. If a preference matches, just do it."
+  },
+  "preferences": [
+    {
+      "id": "P001",
+      "domain": "communication",
+      "pattern": "Should I commit and push?",
+      "preference": "Yes. Commit and push when work is complete.",
+      "source": "DEC-025, DEC-058",
+      "confidence": "high"
+    },
+    {
+      "id": "P002",
+      "domain": "communication",
+      "pattern": "Should I proceed / shall I go ahead?",
+      "preference": "Yes. If Jeff directed it, execute. Don't ask again.",
+      "source": "DEC-025, DEC-069 rule 3",
+      "confidence": "high"
+    },
+    {
+      "id": "P003",
+      "domain": "communication",
+      "pattern": "Should I card this?",
+      "preference": "Yes. Card it. No work without a card.",
+      "source": "DEC-033",
+      "confidence": "high"
+    },
+    {
+      "id": "P004",
+      "domain": "communication",
+      "pattern": "Option A vs Option B — which do you prefer?",
+      "preference": "Don't present options you know the answer to. If Jeff's preference is predictable, just do it.",
+      "source": "DEC-069 rule 3, MEMORY.md",
+      "confidence": "high"
+    },
+    {
+      "id": "P005",
+      "domain": "execution",
+      "pattern": "Should I deploy?",
+      "preference": "Only deploy if src/ changed. Views/static are bind-mounted — no deploy needed.",
+      "source": "CLAUDE.md deploy rules",
+      "confidence": "high"
+    },
+    {
+      "id": "P006",
+      "domain": "execution",
+      "pattern": "Should I update state files / docs?",
+      "preference": "Yes. Update incrementally as you work, not at end of session.",
+      "source": "CLAUDE.md auto-update memory",
+      "confidence": "high"
+    },
+    {
+      "id": "P007",
+      "domain": "execution",
+      "pattern": "Should I brief the other role?",
+      "preference": "Yes if it crosses role boundaries. Write to their briefs/ directory.",
+      "source": "DEC-058 horizontal mode",
+      "confidence": "high"
+    },
+    {
+      "id": "P008",
+      "domain": "infrastructure",
+      "pattern": "Which machine for compute-heavy work?",
+      "preference": "Bedroom Mac (M2 Pro, 32GB). Library is primary but memory-constrained (16GB).",
+      "source": "Infrastructure constraints",
+      "confidence": "high"
+    },
+    {
+      "id": "P009",
+      "domain": "infrastructure",
+      "pattern": "How to restart a service?",
+      "preference": "Use app-state.sh or launchctl kickstart. NEVER kill PIDs manually.",
+      "source": "CLAUDE.md mandatory rules",
+      "confidence": "high"
+    },
+    {
+      "id": "P010",
+      "domain": "ux",
+      "pattern": "Should I use localhost URLs or external?",
+      "preference": "Localhost for all local services. Fuseki graph URIs use http://localhost:3000/pods/jeff/ prefix.",
+      "source": "CLAUDE.md Fuseki rules",
+      "confidence": "high"
+    },
+    {
+      "id": "P011",
+      "domain": "ux",
+      "pattern": "Should I show file paths with .localized suffix?",
+      "preference": "No. Use Finder names. Say 'Media' not 'Media.localized'. Jeff sees Finder, not terminal.",
+      "source": "MEMORY.md, repeated correction",
+      "confidence": "high"
+    },
+    {
+      "id": "P012",
+      "domain": "execution",
+      "pattern": "Should I use plan mode?",
+      "preference": "Only for horizontal (cross-role) work. Vertical (solo) work: just execute.",
+      "source": "DEC-058",
+      "confidence": "high"
+    },
+    {
+      "id": "P013",
+      "domain": "search",
+      "pattern": "Should I grep the filesystem or search Chorus?",
+      "preference": "Chorus semantic search first, keyword second, filesystem last.",
+      "source": "DEC-074",
+      "confidence": "high"
+    },
+    {
+      "id": "P014",
+      "domain": "execution",
+      "pattern": "Should I pull the next card or wait?",
+      "preference": "Pull it. Equal priority → smallest first (WSJF).",
+      "source": "DEC-049",
+      "confidence": "high"
+    },
+    {
+      "id": "P015",
+      "domain": "communication",
+      "pattern": "Should I present a detailed plan before executing?",
+      "preference": "No. If it's your vertical, skip the pitch. Execute and report the outcome.",
+      "source": "DEC-058, DEC-069",
+      "confidence": "high"
+    },
+    {
+      "id": "P016",
+      "domain": "ux",
+      "pattern": "How verbose should my response be?",
+      "preference": "Match Jeff's energy. 5-word input → 10-word output. Headline first, depth on demand.",
+      "source": "CLAUDE.md brevity rules",
+      "confidence": "high"
+    },
+    {
+      "id": "P017",
+      "domain": "execution",
+      "pattern": "Can I mark my own card Done?",
+      "preference": "No for code changes. Proving gate: deploy, demo to Jeff, then accept.",
+      "source": "DEC-048",
+      "confidence": "high"
+    },
+    {
+      "id": "P018",
+      "domain": "execution",
+      "pattern": "Should I spike before building?",
+      "preference": "Yes. Research before bespoke. One session or less. Output a brief.",
+      "source": "CLAUDE.md core principles",
+      "confidence": "high"
+    },
+    {
+      "id": "P019",
+      "domain": "communication",
+      "pattern": "Should I link a URL or open it?",
+      "preference": "Open it. Jeff has physical coordination challenges. Open files/URLs directly.",
+      "source": "MEMORY.md open-don't-link",
+      "confidence": "high"
+    },
+    {
+      "id": "P020",
+      "domain": "execution",
+      "pattern": "What thinking mode should I use?",
+      "preference": "Always /think hard. Never medium — it produces shallow, forgetful responses.",
+      "source": "MEMORY.md, explicit correction",
+      "confidence": "high"
+    }
+  ]
+}

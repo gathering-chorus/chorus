@@ -1,0 +1,54 @@
+{
+  "id": "WF-120",
+  "decision": "Implement scheduled health subagents \u2014 Bedroom monitoring, Fuseki baseline, doc staleness, stale handoffs",
+  "source": "board:card-moved:#1435",
+  "card": 1435,
+  "created": "2026-03-15T17:10:00Z",
+  "updated": "2026-03-15T17:31:35.124Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Implement scheduled health subagents \u2014 Bedroom monitoring Fuseki baseline doc staleness stale handoffs",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1435 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1435",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1435 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T17:10:00Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Implement scheduled health subagents \u2014 Bedroom monitoring, Fuseki baseline, doc staleness, stale handoffs"
+    },
+    {
+      "timestamp": "2026-03-15T17:31:35.124Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1435 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "WF-133",
+  "decision": "Define Briefs domain \u2014 endpoints, ontology type, service layer",
+  "source": "board:card-moved:#1468",
+  "card": 1468,
+  "created": "2026-03-16T21:35:09Z",
+  "updated": "2026-03-16T21:39:42.427Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Define Briefs domain \u2014 endpoints ontology type service layer",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1468 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1468",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1468 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-16T21:35:09Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Define Briefs domain \u2014 endpoints, ontology type, service layer"
+    },
+    {
+      "timestamp": "2026-03-16T21:39:42.427Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1468 marked Done by wren"
+    }
+  ]
+}

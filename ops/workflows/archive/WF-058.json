@@ -1,0 +1,74 @@
+{
+  "id": "WF-058",
+  "decision": "Harvest stories from session transcripts \u2014 scan chorus index for Jeff's experiences and values, write to Stories collection",
+  "source": "board:card-moved:#339",
+  "card": 339,
+  "created": "2026-02-24T17:37:39Z",
+  "updated": "2026-02-24T21:15:25Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Harvest stories from session transcripts \u2014 scan chorus index for Jeff's experiences and values write to Stories collection",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T21:09:28Z",
+      "notes": "Wren shipped #339 \u2014 stories harvested from session transcripts. Acknowledging as complete."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #339",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "data/pods/jeff/stories/"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-24-wf-058-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T21:15:25Z",
+      "notes": "Verified: 39 TTL story files in data/pods/jeff/stories/, well-formed RDF, ontology v1.1.0 aligned, visibility defaults to private. No concerns."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T17:37:39Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Harvest stories from session transcripts \u2014 scan chorus index for Jeff's experiences and values, write to Stories collection"
+    },
+    {
+      "timestamp": "2026-02-24T21:09:28Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Harvest stories from session transcripts \u2014 scan chorus index for Jeff's experiences and values write to Stories collection \u2014 Wren shipped #339 \u2014 stories harvested from session transcripts. Acknowledging as complete."
+    },
+    {
+      "timestamp": "2026-02-24T21:09:28Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #339"
+    },
+    {
+      "timestamp": "2026-02-24T21:15:25Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #339 \u2014 Verified: 39 TTL story files in data/pods/jeff/stories/, well-formed RDF, ontology v1.1.0 aligned, visibility defaults to private. No concerns."
+    },
+    {
+      "timestamp": "2026-02-24T21:15:25Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "WF-136",
+  "name": "Self domain pipeline",
+  "trigger": "jeff:pipeline-create:2026-03-16",
+  "card": null,
+  "status": "active",
+  "created": "2026-03-16T22:10:00Z",
+  "updated": "2026-03-16T22:50:00Z",
+  "steps": [
+    {
+      "role": "wren",
+      "title": "Review transposition rate data \u2014 verify signal quality, session correlation",
+      "card": 1405,
+      "status": "completed",
+      "blocked_by": [],
+      "created_at": "2026-03-16T22:10:00Z",
+      "completed_at": "2026-03-16T22:50:00Z"
+    },
+    {
+      "role": "kade",
+      "title": "Add posture photo strip to /jeff dashboard \u2014 timelapse with filters",
+      "card": 1409,
+      "status": "ready",
+      "blocked_by": [
+        1405
+      ],
+      "created_at": "2026-03-16T22:10:00Z",
+      "completed_at": null
+    }
+  ],
+  "history": [
+    {
+      "timestamp": "2026-03-16T22:10:00Z",
+      "event": "pipeline_created",
+      "role": "wren",
+      "detail": "Self domain: #1405 (Wren, data review) \u2192 #1409 (Kade, posture strip). Sequential."
+    },
+    {
+      "timestamp": "2026-03-16T22:50:00Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "#1405 done \u2014 transposition data exists live but not in history TSV. #1409 unblocked."
+    }
+  ]
+}

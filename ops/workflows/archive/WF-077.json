@@ -1,0 +1,48 @@
+{
+  "id": "WF-077",
+  "decision": "[spike] Converge RDF + images-api gallery views \u2014 shared renderer viability",
+  "source": "board:card-moved:#395",
+  "card": 395,
+  "created": "2026-02-26T01:11:29Z",
+  "updated": "2026-02-26T01:11:29Z",
+  "status": "closed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "[spike] Converge RDF + images-api gallery views \u2014 shared renderer viability",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #395",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": " Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-26T01:11:29Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: [spike] Converge RDF + images-api gallery views \u2014 shared renderer viability"
+    }
+  ]
+}

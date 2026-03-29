@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant Jeff
+    participant Hook as UserPromptSubmit Hook
+    participant Scan as team-scan.sh (scan mode)
+    participant Slack as Slack API
+    participant Role as Role (Wren/Silas/Kade)
+
+    Jeff->>Hook: Types prompt
+    activate Hook
+    Hook->>Scan: team-scan.sh scan
+    activate Scan
+    Note over Scan: Rate-limited: once per 2 min
+    alt Scan interval elapsed
+        Scan->>Slack: slack-read.sh #role (3 msgs)
+        Slack-->>Scan: Recent messages
+        Scan->>Slack: slack-read.sh #all-gathering (5 msgs)
+        Slack-->>Scan: Recent messages
+        Scan-->>Hook: team-scan context
+    else Scan interval not elapsed
+        Scan-->>Hook: (silent)
+    end
+    deactivate Scan
+    Hook-->>Jeff: Context injected into prompt
+    deactivate Hook
+    Jeff->>Role: Prompt + injected context
+    activate Role
+    Role-->>Jeff: Response (immediate)
+    Note over Role: May also write briefs, post to Slack
+    deactivate Role

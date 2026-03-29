@@ -1,0 +1,79 @@
+{
+  "id": "WF-025",
+  "decision": "Watchlist collection \u2014 movies/shows to watch",
+  "source": "board:card-moved:#149",
+  "card": 149,
+  "created": "2026-02-23T03:28:26Z",
+  "updated": "2026-02-23T04:02:44Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Watchlist collection \u2014 movies/shows to watch",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "src/interfaces/watchlist.interface.ts",
+        "src/services/watchlist-pod.service.ts",
+        "src/handlers/watchlist.handler.ts",
+        "views/collection-watchlist.ejs",
+        "views/watchlist-detail.ejs",
+        "views/admin-watchlist-add.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T03:43:47Z",
+      "notes": "Watchlist collection shipped: interface, pod service, handler, 3 views, routes, navbar, mind map node. Deploy live."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #149",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-025-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T04:02:44Z",
+      "notes": "Card #149 already Done. Watchlist collection \u2014 pod-backed CRUD, seed-routable. Follows established collection pattern. No structural concerns."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T03:28:26Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Watchlist collection \u2014 movies/shows to watch"
+    },
+    {
+      "timestamp": "2026-02-23T03:43:47Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Watchlist collection \u2014 movies/shows to watch \u2014 Watchlist collection shipped: interface, pod service, handler, 3 views, routes, navbar, mind map node. Deploy live."
+    },
+    {
+      "timestamp": "2026-02-23T03:43:47Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #149"
+    },
+    {
+      "timestamp": "2026-02-23T04:02:44Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #149 \u2014 Card #149 already Done. Watchlist collection \u2014 pod-backed CRUD, seed-routable. Follows established collection pattern. No structural concerns."
+    },
+    {
+      "timestamp": "2026-02-23T04:02:44Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

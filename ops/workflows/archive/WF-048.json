@@ -1,0 +1,74 @@
+{
+  "id": "WF-048",
+  "decision": "Add deploy freeze/unfreeze to app-state.sh \u2014 operational kill switch during sensitive ops",
+  "source": "board:card-moved:#296",
+  "card": 296,
+  "created": "2026-02-23T20:26:14Z",
+  "updated": "2026-02-23T20:53:11Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Add deploy freeze/unfreeze to app-state.sh \u2014 operational kill switch during sensitive ops",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "jeff-bridwell-personal-site/app-state.sh"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T20:30:32Z",
+      "notes": "freeze/unfreeze shipped in app-state.sh. Blocks start/restart/deploy/rollback. Shows in status. Chorus-logged. Currently frozen for sync manifest build."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #296",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-048-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T20:53:11Z",
+      "notes": "Verified: freeze/unfreeze commands in app-state.sh. check_freeze() gates start/restart/deploy/rollback. .deploy.freeze file pattern. Chorus-logged events. Status display. All in commit 762f8c8."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T20:26:14Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Add deploy freeze/unfreeze to app-state.sh \u2014 operational kill switch during sensitive ops"
+    },
+    {
+      "timestamp": "2026-02-23T20:30:32Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Add deploy freeze/unfreeze to app-state.sh \u2014 operational kill switch during sensitive ops \u2014 freeze/unfreeze shipped in app-state.sh. Blocks start/restart/deploy/rollback. Shows in status. Chorus-logged. Currently frozen for sync manifest build."
+    },
+    {
+      "timestamp": "2026-02-23T20:30:32Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #296"
+    },
+    {
+      "timestamp": "2026-02-23T20:53:11Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #296 \u2014 Verified: freeze/unfreeze commands in app-state.sh. check_freeze() gates start/restart/deploy/rollback. .deploy.freeze file pattern. Chorus-logged events. Status display. All in commit 762f8c8."
+    },
+    {
+      "timestamp": "2026-02-23T20:53:11Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

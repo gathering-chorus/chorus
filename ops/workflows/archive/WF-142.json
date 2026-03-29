@@ -1,0 +1,100 @@
+{
+  "id": "WF-142",
+  "name": "Memory retrieval pipeline \u2014 search, decisions, sessions",
+  "trigger": "jeff:pipeline-create:2026-03-17",
+  "card": null,
+  "status": "completed",
+  "created": "2026-03-17T12:00:00Z",
+  "updated": "2026-03-17T12:25:00Z",
+  "steps": [
+    {
+      "role": "kade",
+      "title": "Shape-matching retrieval \u2014 find memories with similar structure",
+      "card": 1418,
+      "status": "completed",
+      "blocked_by": [],
+      "created_at": "2026-03-17T12:00:00Z",
+      "completed_at": "2026-03-17T12:15:00Z"
+    },
+    {
+      "role": "kade",
+      "title": "Cross-domain memory linking \u2014 photos to stories, music to episodes",
+      "card": 1420,
+      "status": "completed",
+      "blocked_by": [],
+      "created_at": "2026-03-17T12:00:00Z",
+      "completed_at": "2026-03-17T12:15:00Z"
+    },
+    {
+      "role": "wren",
+      "title": "Decision-point memory trigger \u2014 surface relevant memories on card events",
+      "card": 1416,
+      "status": "completed",
+      "blocked_by": [],
+      "created_at": "2026-03-17T12:00:00Z",
+      "completed_at": "2026-03-17T12:20:00Z"
+    },
+    {
+      "role": "wren",
+      "title": "Define Decisions domain \u2014 endpoints, ontology type, service layer",
+      "card": 1467,
+      "status": "completed",
+      "blocked_by": [],
+      "created_at": "2026-03-17T12:00:00Z",
+      "completed_at": "2026-03-17T12:20:00Z"
+    },
+    {
+      "role": "silas",
+      "title": "Session-start memory retrieval \u2014 load context from Chorus + graph at boot",
+      "card": 1417,
+      "status": "completed",
+      "blocked_by": [],
+      "created_at": "2026-03-17T12:00:00Z",
+      "completed_at": "2026-03-17T12:10:00Z"
+    },
+    {
+      "role": "wren",
+      "title": "Ambient memory prompts \u2014 periodic context surfacing",
+      "card": 1419,
+      "status": "completed",
+      "blocked_by": [
+        1416,
+        1417
+      ],
+      "created_at": "2026-03-17T12:00:00Z",
+      "completed_at": "2026-03-17T12:25:00Z"
+    }
+  ],
+  "history": [
+    {
+      "timestamp": "2026-03-17T12:00:00Z",
+      "event": "pipeline_created",
+      "role": "wren",
+      "detail": "Memory retrieval pipeline: 5 parallel (#1418 #1420 Kade, #1416 #1467 Wren, #1417 Silas) \u2192 #1419 (Wren, blocked on #1416 + #1417)."
+    },
+    {
+      "timestamp": "2026-03-17T12:10:00Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "#1417 shipped \u2014 session-start memory retrieval."
+    },
+    {
+      "timestamp": "2026-03-17T12:15:00Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "#1418 + #1420 shipped \u2014 shape-matching + cross-domain linking."
+    },
+    {
+      "timestamp": "2026-03-17T12:20:00Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "#1416 + #1467 shipped. #1419 unblocked."
+    },
+    {
+      "timestamp": "2026-03-17T12:25:00Z",
+      "event": "pipeline_completed",
+      "role": "wren",
+      "detail": "WF-142 complete. 6/6 steps: shape-matching, cross-domain linking, decision triggers, decisions domain, session-start retrieval, ambient prompts."
+    }
+  ]
+}

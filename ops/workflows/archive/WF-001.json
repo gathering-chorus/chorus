@@ -1,0 +1,109 @@
+{
+  "id": "WF-001",
+  "decision": "Migrate WordPress from Terraform to docker-compose (ADR-015)",
+  "source": "clearing:2026-02-21",
+  "card": 118,
+  "created": "2026-02-21T17:48:56Z",
+  "updated": "2026-02-21T17:50:17Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Write ADR-015 and update system-architecture.md",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "architect/adr/ADR-015-iac-tool-changes.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-21T17:49:05Z",
+      "notes": "ADR-015 accepted \u2014 IaC discipline stays, tool changes to docker-compose"
+    },
+    {
+      "seq": 2,
+      "role": "kade",
+      "action": "Implement docker-compose migration for wordpress-blog",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "architect/adr/ADR-015-iac-tool-changes.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-21-wf-001-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T17:49:55Z",
+      "notes": "ADR-015 accepted \u2014 IaC discipline stays, tool changes to docker-compose"
+    },
+    {
+      "seq": 3,
+      "role": "wren",
+      "action": "Verify migration shipped and update roadmap",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        2
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-21-wf-001-step3.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T17:50:17Z",
+      "notes": "Verified \u2014 WordPress running on docker-compose, roadmap updated"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-21T17:48:56Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Migrate WordPress from Terraform to docker-compose (ADR-015)"
+    },
+    {
+      "timestamp": "2026-02-21T17:48:56Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 1 ready: Write ADR-015 and update system-architecture.md"
+    },
+    {
+      "timestamp": "2026-02-21T17:49:05Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Write ADR-015 and update system-architecture.md \u2014 ADR-015 accepted \u2014 IaC discipline stays, tool changes to docker-compose"
+    },
+    {
+      "timestamp": "2026-02-21T17:49:05Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 2 ready: Implement docker-compose migration for wordpress-blog"
+    },
+    {
+      "timestamp": "2026-02-21T17:49:55Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 2 completed: Implement docker-compose migration for wordpress-blog \u2014 ADR-015 accepted \u2014 IaC discipline stays, tool changes to docker-compose"
+    },
+    {
+      "timestamp": "2026-02-21T17:49:55Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 3 ready: Verify migration shipped and update roadmap"
+    },
+    {
+      "timestamp": "2026-02-21T17:50:17Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 3 completed: Verify migration shipped and update roadmap \u2014 Verified \u2014 WordPress running on docker-compose, roadmap updated"
+    },
+    {
+      "timestamp": "2026-02-21T17:50:17Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

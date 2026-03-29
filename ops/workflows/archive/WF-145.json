@@ -1,0 +1,54 @@
+{
+  "id": "WF-145",
+  "decision": "Ambient memory prompts — periodic context surfacing based on time, patterns, and Jeff's state",
+  "source": "board:card-moved:#1419",
+  "card": 1419,
+  "created": "2026-03-17T12:14:34Z",
+  "updated": "2026-03-17T12:14:51.020Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Ambient memory prompts — periodic context surfacing based on time patterns and Jeff's state",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-17T12:14:51.020Z",
+      "notes": "Skipped — card #1419 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1419",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-17T12:14:51.020Z",
+      "notes": "Skipped — card #1419 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-17T12:14:34Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Ambient memory prompts — periodic context surfacing based on time, patterns, and Jeff's state"
+    },
+    {
+      "timestamp": "2026-03-17T12:14:51.020Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1419 marked Done by wren"
+    }
+  ]
+}

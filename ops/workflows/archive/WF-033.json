@@ -1,0 +1,89 @@
+{
+  "id": "WF-033",
+  "decision": "Social posts harvester \u2014 Facebook + LinkedIn ingestion",
+  "source": "verbal",
+  "card": 96,
+  "created": "2026-02-23T04:39:53Z",
+  "updated": "2026-02-23T05:00:16Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Social posts harvester",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "src/interfaces/socialpost.interface.ts",
+        "src/services/socialpost-pod.service.ts",
+        "src/handlers/socialpost.handler.ts",
+        "views/collection-socialposts.ejs",
+        "views/socialpost-detail.ejs",
+        "views/admin-socialpost-add.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T04:58:28Z",
+      "notes": "Social posts collection shipped: interface, pod service, handler, 3 views, routes, navbar, mind map. Platform filter (facebook/linkedin). Manual add + future GDPR data export ingest. No live API integration \u2014 approach is file-based per brief."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #96",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "src/interfaces/socialpost.interface.ts",
+        "src/services/socialpost-pod.service.ts",
+        "src/handlers/socialpost.handler.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-033-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T05:00:16Z",
+      "notes": "Review pass: interface clean with platform field, pod service follows RDF patterns with proper escaping, XSS-safe views with nonce, platform filter client-side. No injection risks. Ship it."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T04:39:53Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Social posts harvester \u2014 Facebook + LinkedIn ingestion"
+    },
+    {
+      "timestamp": "2026-02-23T04:39:53Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 1 ready: Social posts harvester"
+    },
+    {
+      "timestamp": "2026-02-23T04:58:28Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Social posts harvester \u2014 Social posts collection shipped: interface, pod service, handler, 3 views, routes, navbar, mind map. Platform filter (facebook/linkedin). Manual add + future GDPR data export ingest. No live API integration \u2014 approach is file-based per brief."
+    },
+    {
+      "timestamp": "2026-02-23T04:58:28Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #96"
+    },
+    {
+      "timestamp": "2026-02-23T05:00:16Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #96 \u2014 Review pass: interface clean with platform field, pod service follows RDF patterns with proper escaping, XSS-safe views with nonce, platform filter client-side. No injection risks. Ship it."
+    },
+    {
+      "timestamp": "2026-02-23T05:00:16Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

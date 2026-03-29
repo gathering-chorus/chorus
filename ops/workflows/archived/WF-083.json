@@ -1,0 +1,48 @@
+{
+  "id": "WF-083",
+  "decision": "Calendar design — protect breathing room, fit roles into Jeff's rhythm",
+  "source": "board:card-moved:#99",
+  "card": 99,
+  "created": "2026-02-27T01:37:28Z",
+  "updated": "2026-02-27T01:37:28Z",
+  "status": "in_progress",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Calendar design — protect breathing room fit roles into Jeff's rhythm",
+      "status": "ready",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #99",
+      "status": "pending",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-27T01:37:28Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Calendar design — protect breathing room, fit roles into Jeff's rhythm"
+    }
+  ]
+}

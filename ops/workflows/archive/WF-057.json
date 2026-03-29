@@ -1,0 +1,117 @@
+{
+  "id": "WF-057",
+  "decision": "Stories collection \u2014 wire reflecting node in mind map and build CRUD collection for harvested stories",
+  "source": "verbal",
+  "card": 330,
+  "created": "2026-02-24T15:40:43Z",
+  "updated": "2026-02-24T17:29:48Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "wren",
+      "action": "design stories collection schema and harvest spec",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "engineer/briefs/2026-02-24-stories-collection.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T15:41:11Z",
+      "notes": "Stories collection schema designed. Brief sent to Kade with full collection pattern spec: interface, pod service, handler, views, routes, navbar, mind map node. Fuseki graph gathering:stories. RDF type gathering:Story."
+    },
+    {
+      "seq": 2,
+      "role": "kade",
+      "action": "wire Stories collection \u2014 pod service handler views routes navbar mind map node",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "src/services/stories-pod.service.ts",
+        "src/handlers/stories.handler.ts",
+        "src/interfaces/stories.interface.ts",
+        "views/collection-stories.ejs",
+        "views/story-detail.ejs",
+        "views/story-create.ejs",
+        "src/ontology/jb-ontology.ttl"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-24-wf-057-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T17:10:00Z",
+      "notes": "Stories collection shipped \u2014 pod service, handler, 3 views, routes, ontology v1.1.0, navbar, mind map. 23 new tests (2333 total). Commit dc98f75, deployed."
+    },
+    {
+      "seq": 3,
+      "role": "silas",
+      "action": "review Fuseki schema and verify deploy",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        2
+      ],
+      "artifacts": [
+        "product-manager/briefs/2026-02-24-stories-ontology-response.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-24-wf-057-step3.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T17:29:48Z",
+      "notes": "Schema review passed \u2014 ontology matches spec (jb:Story, StoryCollection, 4 new properties). Route live (200), Fuseki empty as expected. 23 tests, 2333 total. Deploy verified at dc98f75."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T15:40:43Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Stories collection \u2014 wire reflecting node in mind map and build CRUD collection for harvested stories"
+    },
+    {
+      "timestamp": "2026-02-24T15:40:43Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 1 ready: design stories collection schema and harvest spec"
+    },
+    {
+      "timestamp": "2026-02-24T15:41:11Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 1 completed: design stories collection schema and harvest spec \u2014 Stories collection schema designed. Brief sent to Kade with full collection pattern spec: interface, pod service, handler, views, routes, navbar, mind map node. Fuseki graph gathering:stories. RDF type gathering:Story."
+    },
+    {
+      "timestamp": "2026-02-24T15:41:11Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 2 ready: wire Stories collection \u2014 pod service handler views routes navbar mind map node"
+    },
+    {
+      "timestamp": "2026-02-24T17:10:00Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 2 completed: wire Stories collection \u2014 pod service handler views routes navbar mind map node \u2014 Stories collection shipped \u2014 pod service, handler, 3 views, routes, ontology v1.1.0, navbar, mind map. 23 new tests (2333 total). Commit dc98f75, deployed."
+    },
+    {
+      "timestamp": "2026-02-24T17:10:00Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 3 ready: review Fuseki schema and verify deploy"
+    },
+    {
+      "timestamp": "2026-02-24T17:29:48Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 3 completed: review Fuseki schema and verify deploy \u2014 Schema review passed \u2014 ontology matches spec (jb:Story, StoryCollection, 4 new properties). Route live (200), Fuseki empty as expected. 23 tests, 2333 total. Deploy verified at dc98f75."
+    },
+    {
+      "timestamp": "2026-02-24T17:29:48Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

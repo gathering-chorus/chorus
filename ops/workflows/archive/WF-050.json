@@ -1,0 +1,86 @@
+{
+  "id": "WF-050",
+  "decision": "Spine Phase 2 \u2014 mid-spine instrumentation (Building vertebra)",
+  "source": "verbal:jeff",
+  "card": 267,
+  "created": "2026-02-23T22:02:31Z",
+  "updated": "2026-02-23T22:08:51Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Instrument build events (test/tsc/push/role attribution)",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        ".git/hooks/pre-commit",
+        ".git/hooks/pre-push",
+        "app-state.sh",
+        "package.json",
+        "views/team.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T22:06:48Z",
+      "notes": "All 5 building-phase events instrumented: role attribution (CLAUDE_ROLE), test_run (pass/fail counts), tsc_compile (duration/errors), git_push (branch/sha/count), pre_push_start (role). Lint threshold 0\u219210. Prometheus metrics for lint warnings, tsc duration. Commit 932af26."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Verify Phase 2 events in Spine tab",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "views/team.ejs"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-050-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T22:08:51Z",
+      "notes": "Phase 2 verified: test_run, git_push, pre_push_start events confirmed in Loki with role attribution. Spine tab will render them automatically."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T22:02:31Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Spine Phase 2 \u2014 mid-spine instrumentation (Building vertebra)"
+    },
+    {
+      "timestamp": "2026-02-23T22:02:31Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 1 ready: Instrument build events (test/tsc/push/role attribution)"
+    },
+    {
+      "timestamp": "2026-02-23T22:06:48Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Instrument build events (test/tsc/push/role attribution) \u2014 All 5 building-phase events instrumented: role attribution (CLAUDE_ROLE), test_run (pass/fail counts), tsc_compile (duration/errors), git_push (branch/sha/count), pre_push_start (role). Lint threshold 0\u219210. Prometheus metrics for lint warnings, tsc duration. Commit 932af26."
+    },
+    {
+      "timestamp": "2026-02-23T22:06:48Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Verify Phase 2 events in Spine tab"
+    },
+    {
+      "timestamp": "2026-02-23T22:08:51Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Verify Phase 2 events in Spine tab \u2014 Phase 2 verified: test_run, git_push, pre_push_start events confirmed in Loki with role attribution. Spine tab will render them automatically."
+    },
+    {
+      "timestamp": "2026-02-23T22:08:51Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "id": "WF-019",
+  "decision": "Migrate main app from Terraform to docker-compose (ADR-015)",
+  "source": "board:card-moved:#139",
+  "card": 139,
+  "created": "2026-02-23T01:46:34Z",
+  "updated": "2026-02-23T02:53:43Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Migrate main app from Terraform to docker-compose (ADR-015)",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "docker-compose.yml",
+        "app-state.sh"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T02:49:57Z",
+      "notes": "docker-compose.yml created, app-state.sh updated, cutover complete. All 3 containers healthy on compose. Terraform files are dead code."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #139",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "jeff-bridwell-personal-site/docker-compose.yml",
+        "jeff-bridwell-personal-site/app-state.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-019-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T02:53:43Z",
+      "notes": "Verified: docker-compose.yml correct (3 services, health checks, ADR-012 bindings, FUSEKI_DATASET_1 fix). app-state.sh fully migrated \u2014 zero Terraform references. All 3 containers healthy. terraform/ dir exists as dead code \u2014 cleanup optional. Migration complete."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T01:46:34Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Migrate main app from Terraform to docker-compose (ADR-015)"
+    },
+    {
+      "timestamp": "2026-02-23T02:49:57Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Migrate main app from Terraform to docker-compose (ADR-015) \u2014 docker-compose.yml created, app-state.sh updated, cutover complete. All 3 containers healthy on compose. Terraform files are dead code."
+    },
+    {
+      "timestamp": "2026-02-23T02:49:57Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #139"
+    },
+    {
+      "timestamp": "2026-02-23T02:53:43Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #139 \u2014 Verified: docker-compose.yml correct (3 services, health checks, ADR-012 bindings, FUSEKI_DATASET_1 fix). app-state.sh fully migrated \u2014 zero Terraform references. All 3 containers healthy. terraform/ dir exists as dead code \u2014 cleanup optional. Migration complete."
+    },
+    {
+      "timestamp": "2026-02-23T02:53:43Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

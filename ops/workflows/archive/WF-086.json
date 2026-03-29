@@ -1,0 +1,80 @@
+{
+  "id": "WF-086",
+  "decision": "Update mind map for new value stream \u2014 Growing replaces Cultivating, add Practicing node",
+  "source": "board:card-moved:#465",
+  "card": 465,
+  "created": "2026-02-27T19:00:46Z",
+  "updated": "2026-02-28T13:45:51Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Update mind map for new value stream \u2014 Growing replaces Cultivating add Practicing node",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "e2e/tests/site-coherence.spec.ts",
+        "public/value-stream-render.html",
+        "views/home.ejs",
+        "public/images/branches/growing.jpg"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-28T13:44:55Z",
+      "notes": "Renamed Cultivating\u2192Growing in tests, CSS, value-stream-render. Added Practicing branch to all assertions. All 8 branches validated. Committed 79364ef."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #465",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "e2e/tests/site-coherence.spec.ts",
+        "views/home.ejs"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-28-wf-086-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-28T13:45:51Z",
+      "notes": "Verified: 8 branches in coherence tests (growing replaces cultivating, practicing added), mind map DOM IDs match, navbar includes Practicing dropdown. Commit 79364ef."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-27T19:00:46Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Update mind map for new value stream \u2014 Growing replaces Cultivating, add Practicing node"
+    },
+    {
+      "timestamp": "2026-02-28T13:44:55Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Update mind map for new value stream \u2014 Growing replaces Cultivating add Practicing node \u2014 Renamed Cultivating\u2192Growing in tests, CSS, value-stream-render. Added Practicing branch to all assertions. All 8 branches validated. Committed 79364ef."
+    },
+    {
+      "timestamp": "2026-02-28T13:44:55Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #465"
+    },
+    {
+      "timestamp": "2026-02-28T13:45:51Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #465 \u2014 Verified: 8 branches in coherence tests (growing replaces cultivating, practicing added), mind map DOM IDs match, navbar includes Practicing dropdown. Commit 79364ef."
+    },
+    {
+      "timestamp": "2026-02-28T13:45:51Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

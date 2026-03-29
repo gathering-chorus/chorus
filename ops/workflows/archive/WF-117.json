@@ -1,0 +1,54 @@
+{
+  "id": "WF-117",
+  "decision": "Implement Chrome window separation \u2014 role windows vs Jeff's window (DEC-090)",
+  "source": "board:card-moved:#1428",
+  "card": 1428,
+  "created": "2026-03-15T12:20:15Z",
+  "updated": "2026-03-15T12:29:59.112Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Implement Chrome window separation \u2014 role windows vs Jeff's window (DEC-090)",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1428 marked Done by silas Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1428",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1428 marked Done by silas Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-15T12:20:15Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Implement Chrome window separation \u2014 role windows vs Jeff's window (DEC-090)"
+    },
+    {
+      "timestamp": "2026-03-15T12:29:59.112Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1428 marked Done by silas"
+    }
+  ]
+}

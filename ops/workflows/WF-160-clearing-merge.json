@@ -1,0 +1,38 @@
+{
+  "id": "WF-160",
+  "name": "The Clearing — merge Bridge + Clearing into one service",
+  "source": "product-manager/artifacts/service-design-clearing-pulse.html",
+  "created": "2026-03-28",
+  "owner": "silas",
+  "status": "active",
+  "steps": [
+    {
+      "order": 1,
+      "card": 1795,
+      "title": "Add chat panel — absorb Clearing chat into Bridge UI",
+      "owner": "kade",
+      "depends_on": [],
+      "gate": "Chat panel opens on same page as dashboard. Anthropic API wired. DECISION: capture works. Transcript indexed.",
+      "status": "not_started"
+    },
+    {
+      "order": 2,
+      "card": 1796,
+      "title": "Retire Go binary + port 3460",
+      "owner": "silas",
+      "depends_on": [1795],
+      "gate": "Go binary deleted. LaunchAgent unloaded. Port 3460 not listening. Tunnel route removed. Zero codebase references.",
+      "status": "not_started"
+    },
+    {
+      "order": 3,
+      "card": 1797,
+      "title": "Rename LaunchAgent com.chorus.bridge → com.chorus.clearing",
+      "owner": "silas",
+      "depends_on": [1796],
+      "gate": "Plist renamed. Label updated. Loads on reboot. Zero references to com.chorus.bridge.",
+      "status": "not_started"
+    }
+  ],
+  "success_criteria": "Jeff opens one URL (localhost:3470 or clearing.lightlifeurbangardens.com) and sees dashboard + chat on the same screen. Port 3460 doesn't exist. The name is The Clearing everywhere."
+}

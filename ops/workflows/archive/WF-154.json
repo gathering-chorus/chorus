@@ -1,0 +1,54 @@
+{
+  "id": "WF-154",
+  "decision": "ICD API endpoints — serve domain/field/mapping/compliance data",
+  "source": "board:card-moved:#1534",
+  "card": 1534,
+  "created": "2026-03-19T13:37:11Z",
+  "updated": "2026-03-19T19:16:54.503Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "ICD API endpoints — serve domain/field/mapping/compliance data",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T19:16:54.503Z",
+      "notes": "Skipped — card #1534 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1534",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T19:16:54.503Z",
+      "notes": "Skipped — card #1534 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-19T13:37:11Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: ICD API endpoints — serve domain/field/mapping/compliance data"
+    },
+    {
+      "timestamp": "2026-03-19T19:16:54.503Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1534 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "id": "WF-064",
+  "decision": "Wire dense session events to /werk spine \u2014 chorus index \u2192 Loki bridge",
+  "source": "board:card-moved:#346",
+  "card": 346,
+  "created": "2026-02-24T21:07:09Z",
+  "updated": "2026-02-24T21:43:01Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Wire dense session events to /werk spine \u2014 chorus index Loki bridge",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "chorus-bridge-sessions.sh",
+        "src/app.ts",
+        "views/werk.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-24T21:42:56Z",
+      "notes": "Wren accepts. Bridge working \u2014 135 dense session events on /werk Spine tab. Classification review (vertebra bucketing) deferred to separate card. Demo via brief + Jeff's /look."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #346",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "product-manager/briefs/2026-02-24-346-demo-chorus-loki-bridge.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-24-wf-064-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-24T21:43:01Z",
+      "notes": "Accepted. Dense session events flowing to /werk Spine. Vertebra classification review deferred."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-24T21:07:09Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Wire dense session events to /werk spine \u2014 chorus index \u2192 Loki bridge"
+    },
+    {
+      "timestamp": "2026-02-24T21:42:56Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Wire dense session events to /werk spine \u2014 chorus index Loki bridge \u2014 Wren accepts. Bridge working \u2014 135 dense session events on /werk Spine tab. Classification review (vertebra bucketing) deferred to separate card. Demo via brief + Jeff's /look."
+    },
+    {
+      "timestamp": "2026-02-24T21:42:56Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #346"
+    },
+    {
+      "timestamp": "2026-02-24T21:43:01Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #346 \u2014 Accepted. Dense session events flowing to /werk Spine. Vertebra classification review deferred."
+    },
+    {
+      "timestamp": "2026-02-24T21:43:01Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

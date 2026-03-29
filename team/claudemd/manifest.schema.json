@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Werk Manifest",
+  "description": "CLAUDE.md generator manifest — defines fragment assembly order, per-role variables, output paths, and reference protocol doc.",
+  "type": "object",
+  "required": ["version", "variables", "roles"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Werk version — monotonic integer or legacy semver"
+    },
+    "description": {
+      "type": "string"
+    },
+    "_versioning_rule": {
+      "type": "string"
+    },
+    "size_budget": {
+      "type": "integer",
+      "description": "Max chars per generated CLAUDE.md before budget warning",
+      "default": 40000
+    },
+    "reference": {
+      "type": "object",
+      "description": "Shared reference protocol doc assembled from reference-tier fragments",
+      "properties": {
+        "output": {
+          "type": "string",
+          "description": "Relative path from messages/ to generated TEAM_PROTOCOL.md"
+        },
+        "sections": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": ["output", "sections"],
+      "additionalProperties": false
+    },
+    "changelog": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["version", "card", "date", "summary"],
+        "properties": {
+          "version": { "type": "string" },
+          "card": { "type": "string" },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "summary": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "variables": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["ROLE_NAME", "ROLE_LOWER"],
+        "additionalProperties": {
+          "type": "string"
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["output", "sections"],
+        "properties": {
+          "output": {
+            "type": "string",
+            "description": "Relative path from messages/ to the generated CLAUDE.md"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "Ordered list of core fragment paths relative to claudemd/"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": true
+}

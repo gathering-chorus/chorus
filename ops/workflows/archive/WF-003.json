@@ -1,0 +1,142 @@
+{
+  "id": "WF-003",
+  "decision": "SQLite FTS5 search for Gathering \u2014 pod-local, explicit annotations, collection-level visibility, write-time indexing, derived view",
+  "source": "clearing:2026-02-21T18-14-59",
+  "card": 115,
+  "created": "2026-02-21T18:19:47Z",
+  "updated": "2026-02-21T18:40:20Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Draft FTS5 schema and extraction pipeline doc",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "architect/briefs/2026-02-21-search-fts5-schema.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-21T18:24:15Z",
+      "notes": "FTS5 schema doc drafted: search_items + search_fts tables, extraction contract (title/description/tags/album), permission post-filter (collection-level visibility IN clause), sync rebuild trigger (derived view, rebuild after Fuseki sync), edge cases documented. Brief sent to Silas for sync safety review."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review schema for sync safety and reindex edge cases",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "architect/briefs/2026-02-21-search-fts5-schema.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-21-wf-003-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T18:27:37Z",
+      "notes": "Schema approved. Sync determinism: no concern (atomic writes). Reindex during query: no lock needed (WAL mode, <1s window). Cross-pod: structurally sound, note pod-level ACLs needed for multi-pod. One optimization: parallel triggers from index completion (search extraction + reconciliation), don't chain sequentially."
+    },
+    {
+      "seq": 3,
+      "role": "kade",
+      "action": "Build search service \u2014 photos collection first",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        2
+      ],
+      "artifacts": [
+        "src/services/search-index.service.ts",
+        "src/handlers/search.handler.ts",
+        "views/search.ejs"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-21-wf-003-step3.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T18:34:24Z",
+      "notes": "SearchIndexService (SQLite FTS5) + SearchHandler + search.ejs shipped. Write-time indexing wired into photo harvester. Routes: GET /search, GET /api/search, GET /api/search/stats. Build clean."
+    },
+    {
+      "seq": 4,
+      "role": "wren",
+      "action": "Document search pattern in product docs",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        3
+      ],
+      "artifacts": [
+        "product-manager/projects.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-21-wf-003-step4.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T18:40:20Z",
+      "notes": "Search pattern documented in projects.md. Key design: pod-local FTS5, explicit annotations only, write-time indexing, derived view (rebuilt on sync), collection-level visibility post-filter. Photos first, expand to books/music next. Same proven pattern as Chorus context index."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-21T18:19:47Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: SQLite FTS5 search for Gathering \u2014 pod-local, explicit annotations, collection-level visibility, write-time indexing, derived view"
+    },
+    {
+      "timestamp": "2026-02-21T18:19:47Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 1 ready: Draft FTS5 schema and extraction pipeline doc"
+    },
+    {
+      "timestamp": "2026-02-21T18:24:15Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Draft FTS5 schema and extraction pipeline doc \u2014 FTS5 schema doc drafted: search_items + search_fts tables, extraction contract (title/description/tags/album), permission post-filter (collection-level visibility IN clause), sync rebuild trigger (derived view, rebuild after Fuseki sync), edge cases documented. Brief sent to Silas for sync safety review."
+    },
+    {
+      "timestamp": "2026-02-21T18:24:15Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review schema for sync safety and reindex edge cases"
+    },
+    {
+      "timestamp": "2026-02-21T18:27:37Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review schema for sync safety and reindex edge cases \u2014 Schema approved. Sync determinism: no concern (atomic writes). Reindex during query: no lock needed (WAL mode, <1s window). Cross-pod: structurally sound, note pod-level ACLs needed for multi-pod. One optimization: parallel triggers from index completion (search extraction + reconciliation), don't chain sequentially."
+    },
+    {
+      "timestamp": "2026-02-21T18:27:37Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 3 ready: Build search service \u2014 photos collection first"
+    },
+    {
+      "timestamp": "2026-02-21T18:34:24Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 3 completed: Build search service \u2014 photos collection first \u2014 SearchIndexService (SQLite FTS5) + SearchHandler + search.ejs shipped. Write-time indexing wired into photo harvester. Routes: GET /search, GET /api/search, GET /api/search/stats. Build clean."
+    },
+    {
+      "timestamp": "2026-02-21T18:34:24Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 4 ready: Document search pattern in product docs"
+    },
+    {
+      "timestamp": "2026-02-21T18:40:20Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 4 completed: Document search pattern in product docs \u2014 Search pattern documented in projects.md. Key design: pod-local FTS5, explicit annotations only, write-time indexing, derived view (rebuilt on sync), collection-level visibility post-filter. Photos first, expand to books/music next. Same proven pattern as Chorus context index."
+    },
+    {
+      "timestamp": "2026-02-21T18:40:20Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

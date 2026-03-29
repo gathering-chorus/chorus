@@ -1,0 +1,205 @@
+{
+  "id": "WF-004",
+  "decision": "Deprecate Slack bridge \u2014 replace with /werk watcher + Chorus references table",
+  "source": "clearing:2026-02-21T18-57-43",
+  "card": 123,
+  "created": "2026-02-21T19:09:35Z",
+  "updated": "2026-02-21T21:23:58Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Spec references table schema and message ID structure",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "architect/briefs/2026-02-21-chorus-references-table-schema.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-21T19:10:17Z",
+      "notes": "References table schema spec complete. Message ID structure documented for Kade's join. Entity types: card, workflow, decision, adr, brief, message. Relationship types: mentions, responds_to, confirms, blocks, resolves. Extraction patterns defined. Query patterns for watcher documented. Backfill plan: regex over 17k rows, <5 seconds."
+    },
+    {
+      "seq": 2,
+      "role": "kade",
+      "action": "Build /werk watcher with pattern detection against live Chorus",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "chorus/scripts/chorus-backfill-refs.sh",
+        "chorus/scripts/chorus-extract-refs.sh",
+        "chorus/index/chorus-init-db.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-21-wf-004-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T19:26:57Z",
+      "notes": "References table created in live Chorus index. Backfill complete: 2,289 refs from 17,348 messages (1,208 card, 549 ADR, 442 decision, 90 workflow). All three indexers hooked to extract refs on each batch. Incremental extraction script ready. Schema in chorus-init-db.sh for new databases."
+    },
+    {
+      "seq": 3,
+      "role": "silas",
+      "action": "Backfill references table and validate with Kade's watcher",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        2
+      ],
+      "artifacts": [
+        "chorus/scripts/chorus-backfill-refs.sh",
+        "chorus/scripts/chorus-extract-refs.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-21-wf-004-step3.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T19:27:05Z",
+      "notes": "References table live in Chorus index. 2,289 refs backfilled. All indexers hooked for incremental extraction. Schema, backfill script, and extraction hook committed. Ready for Kade to validate watcher queries against refs table."
+    },
+    {
+      "seq": 4,
+      "role": "kade",
+      "action": "Validate watcher + references table work end-to-end",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        3
+      ],
+      "artifacts": [
+        "chorus/scripts/chorus-extract-refs.sh",
+        "chorus/scripts/chorus-backfill-refs.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-21-wf-004-step4.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T19:32:12Z",
+      "notes": "Validated end-to-end. Refs table live (2,357 refs, 4 entity types). All watcher query patterns from schema spec work: entity lookup, cross-reference joins, time-filtered activity. All 3 indexers hook extract-refs.sh for incremental extraction. Gap found: post-backfill messages had no refs \u2014 ran extraction, recovered 68 refs. Known limitation: only 'mentions' relationship populated \u2014 confirms/blocks/resolves need context-aware extraction (future work). Table name is 'refs' not 'references'."
+    },
+    {
+      "seq": 5,
+      "role": "jeff",
+      "action": "Approve bridge deprecation after Thursday regroup",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        4
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-21T21:14:20Z",
+      "notes": "Jeff approves bridge deprecation ahead of Thursday. Refs table backfilled (2,389 refs), watcher built against live Chorus (17,348 messages). Ready for final bridge cut."
+    },
+    {
+      "seq": 6,
+      "role": "kade",
+      "action": "Cut bridge service and update session-start to remove Slack reads",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        5
+      ],
+      "artifacts": [
+        "messages/scripts/session-start.sh",
+        "messages/scripts/system-state.sh",
+        "messages/claudemd/roles/kade/how-you-operate.md",
+        "messages/claudemd/roles/silas/how-you-operate.md",
+        "messages/claudemd/roles/wren/how-you-operate.md",
+        "messages/claudemd/shared/team-operating-model.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-21-wf-004-step6.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T21:23:58Z",
+      "notes": "Bridge service cut. Container stopped and removed via docker compose down. system-state.sh: removed slack-bridge from STACKS array and all stack_* lookup functions. session-start.sh: removed all Slack reads (slack-read.sh calls), Slack error checks, Slack output section, and CHANNEL variable. CLAUDE.md fragments updated (3 role how-you-operate + shared team-operating-model) and all 3 CLAUDE.md files regenerated. slack-post.sh and slack-read.sh still available as manual utilities. chorus-audit.sh standup check left intact."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-21T19:09:35Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Deprecate Slack bridge \u2014 replace with /werk watcher + Chorus references table"
+    },
+    {
+      "timestamp": "2026-02-21T19:09:35Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 1 ready: Spec references table schema and message ID structure"
+    },
+    {
+      "timestamp": "2026-02-21T19:10:17Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Spec references table schema and message ID structure \u2014 References table schema spec complete. Message ID structure documented for Kade's join. Entity types: card, workflow, decision, adr, brief, message. Relationship types: mentions, responds_to, confirms, blocks, resolves. Extraction patterns defined. Query patterns for watcher documented. Backfill plan: regex over 17k rows, <5 seconds."
+    },
+    {
+      "timestamp": "2026-02-21T19:10:17Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 2 ready: Build /werk watcher with pattern detection against live Chorus"
+    },
+    {
+      "timestamp": "2026-02-21T19:26:57Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 2 completed: Build /werk watcher with pattern detection against live Chorus \u2014 References table created in live Chorus index. Backfill complete: 2,289 refs from 17,348 messages (1,208 card, 549 ADR, 442 decision, 90 workflow). All three indexers hooked to extract refs on each batch. Incremental extraction script ready. Schema in chorus-init-db.sh for new databases."
+    },
+    {
+      "timestamp": "2026-02-21T19:26:57Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 3 ready: Backfill references table and validate with Kade's watcher"
+    },
+    {
+      "timestamp": "2026-02-21T19:27:05Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 3 completed: Backfill references table and validate with Kade's watcher \u2014 References table live in Chorus index. 2,289 refs backfilled. All indexers hooked for incremental extraction. Schema, backfill script, and extraction hook committed. Ready for Kade to validate watcher queries against refs table."
+    },
+    {
+      "timestamp": "2026-02-21T19:27:05Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 4 ready: Validate watcher + references table work end-to-end"
+    },
+    {
+      "timestamp": "2026-02-21T19:32:12Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 4 completed: Validate watcher + references table work end-to-end \u2014 Validated end-to-end. Refs table live (2,357 refs, 4 entity types). All watcher query patterns from schema spec work: entity lookup, cross-reference joins, time-filtered activity. All 3 indexers hook extract-refs.sh for incremental extraction. Gap found: post-backfill messages had no refs \u2014 ran extraction, recovered 68 refs. Known limitation: only 'mentions' relationship populated \u2014 confirms/blocks/resolves need context-aware extraction (future work). Table name is 'refs' not 'references'."
+    },
+    {
+      "timestamp": "2026-02-21T19:32:12Z",
+      "event": "step_ready",
+      "role": "jeff",
+      "detail": "Step 5 ready: Approve bridge deprecation after Thursday regroup"
+    },
+    {
+      "timestamp": "2026-02-21T21:14:20Z",
+      "event": "step_completed",
+      "role": "jeff",
+      "detail": "Step 5 completed: Approve bridge deprecation after Thursday regroup \u2014 Jeff approves bridge deprecation ahead of Thursday. Refs table backfilled (2,389 refs), watcher built against live Chorus (17,348 messages). Ready for final bridge cut."
+    },
+    {
+      "timestamp": "2026-02-21T21:14:20Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 6 ready: Cut bridge service and update session-start to remove Slack reads"
+    },
+    {
+      "timestamp": "2026-02-21T21:23:58Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 6 completed: Cut bridge service and update session-start to remove Slack reads \u2014 Bridge service cut. Container stopped and removed via docker compose down. system-state.sh: removed slack-bridge from STACKS array and all stack_* lookup functions. session-start.sh: removed all Slack reads (slack-read.sh calls), Slack error checks, Slack output section, and CHANNEL variable. CLAUDE.md fragments updated (3 role how-you-operate + shared team-operating-model) and all 3 CLAUDE.md files regenerated. slack-post.sh and slack-read.sh still available as manual utilities. chorus-audit.sh standup check left intact."
+    },
+    {
+      "timestamp": "2026-02-21T21:23:58Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

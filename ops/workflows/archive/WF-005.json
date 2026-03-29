@@ -1,0 +1,139 @@
+{
+  "id": "WF-005",
+  "decision": "Always a card \u2014 Capturing vertebra with Clearing API consumption contract",
+  "source": "clearing:2026-02-21T19-50-14",
+  "card": 27,
+  "created": "2026-02-21T19:58:28Z",
+  "updated": "2026-02-21T21:11:54Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Spec consumption contract \u2014 what shape Capturing needs from Clearing transcripts and index",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "architect/briefs/2026-02-21-capturing-consumption-contract.md"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-21T20:00:53Z",
+      "notes": "Consumption contract spec complete. Three extraction types: decisions (DECISION markers), commitments (I'll... patterns), action items (role-directed verbs). Intake queue design: post-session parser \u2192 ~/.chorus/intake/ JSON \u2192 Wren reviews \u2192 cards created. Does not replace /werk create \u2014 that's still manual for sequenced work. Open questions: auto-expiry, auto-run vs manual trigger, Wren approval authority."
+    },
+    {
+      "seq": 2,
+      "role": "kade",
+      "action": "Build Capturing parser and intake queue against Silas spec",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "chorus/scripts/chorus-capture.sh",
+        "messages/scripts/session-start.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-21-wf-005-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T20:06:47Z",
+      "notes": "Capturing parser + intake queue built. chorus-capture.sh extracts decisions (DECISION markers), commitments (I'll/I'm going to patterns), and action items (role-directed verbs) from Clearing return JSON. Writes to ~/.chorus/intake/ as structured JSON per Silas spec. Session-start.sh wired to surface pending count. Tested against all 14 existing transcripts \u2014 12 decisions, 43 commitments, 5 action items extracted total. CLI: --list, --count. Symlinked to ~/.chorus/scripts/."
+    },
+    {
+      "seq": 3,
+      "role": "wren",
+      "action": "Validate card routing tags and lead time tracking",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        2
+      ],
+      "artifacts": [
+        "chorus/scripts/chorus-capture.sh"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-21-wf-005-step3.md",
+      "started_at": null,
+      "completed_at": "2026-02-21T21:02:36Z",
+      "notes": "Validated capture parser output. 14 transcripts processed: 12 decisions, 43 commitments, 5 action items extracted. Routing tags working \u2014 commitments correctly attributed to roles (wren, silas, kade). Two gaps to close: (1) decisions need auto-card creation not just extraction, (2) lead time tracking needs timestamps from capture\u2192card\u2192completion to measure. Parser is solid foundation \u2014 routing tags validated, ready for Jeff to approve as 5th vertebra."
+    },
+    {
+      "seq": 4,
+      "role": "jeff",
+      "action": "Approve Capturing as 5th spine vertebra",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        3
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-21T21:11:54Z",
+      "notes": "Jeff approves Capturing as 5th spine vertebra. Intake pipeline: Clearing transcripts \u2192 parser \u2192 intake queue \u2192 Wren reviews \u2192 cards. Consumption contract specced by Silas, parser built by Kade, routing validated by Wren. Capturing joins Directing, Designing, Building, Proving in the Chorus value stream."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-21T19:58:28Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Always a card \u2014 Capturing vertebra with Clearing API consumption contract"
+    },
+    {
+      "timestamp": "2026-02-21T19:58:28Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 1 ready: Spec consumption contract \u2014 what shape Capturing needs from Clearing transcripts and index"
+    },
+    {
+      "timestamp": "2026-02-21T20:00:53Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Spec consumption contract \u2014 what shape Capturing needs from Clearing transcripts and index \u2014 Consumption contract spec complete. Three extraction types: decisions (DECISION markers), commitments (I'll... patterns), action items (role-directed verbs). Intake queue design: post-session parser \u2192 ~/.chorus/intake/ JSON \u2192 Wren reviews \u2192 cards created. Does not replace /werk create \u2014 that's still manual for sequenced work. Open questions: auto-expiry, auto-run vs manual trigger, Wren approval authority."
+    },
+    {
+      "timestamp": "2026-02-21T20:00:53Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 2 ready: Build Capturing parser and intake queue against Silas spec"
+    },
+    {
+      "timestamp": "2026-02-21T20:06:47Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 2 completed: Build Capturing parser and intake queue against Silas spec \u2014 Capturing parser + intake queue built. chorus-capture.sh extracts decisions (DECISION markers), commitments (I'll/I'm going to patterns), and action items (role-directed verbs) from Clearing return JSON. Writes to ~/.chorus/intake/ as structured JSON per Silas spec. Session-start.sh wired to surface pending count. Tested against all 14 existing transcripts \u2014 12 decisions, 43 commitments, 5 action items extracted total. CLI: --list, --count. Symlinked to ~/.chorus/scripts/."
+    },
+    {
+      "timestamp": "2026-02-21T20:06:47Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 3 ready: Validate card routing tags and lead time tracking"
+    },
+    {
+      "timestamp": "2026-02-21T21:02:36Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 3 completed: Validate card routing tags and lead time tracking \u2014 Validated capture parser output. 14 transcripts processed: 12 decisions, 43 commitments, 5 action items extracted. Routing tags working \u2014 commitments correctly attributed to roles (wren, silas, kade). Two gaps to close: (1) decisions need auto-card creation not just extraction, (2) lead time tracking needs timestamps from capture\u2192card\u2192completion to measure. Parser is solid foundation \u2014 routing tags validated, ready for Jeff to approve as 5th vertebra."
+    },
+    {
+      "timestamp": "2026-02-21T21:02:36Z",
+      "event": "step_ready",
+      "role": "jeff",
+      "detail": "Step 4 ready: Approve Capturing as 5th spine vertebra"
+    },
+    {
+      "timestamp": "2026-02-21T21:11:54Z",
+      "event": "step_completed",
+      "role": "jeff",
+      "detail": "Step 4 completed: Approve Capturing as 5th spine vertebra \u2014 Jeff approves Capturing as 5th spine vertebra. Intake pipeline: Clearing transcripts \u2192 parser \u2192 intake queue \u2192 Wren reviews \u2192 cards. Consumption contract specced by Silas, parser built by Kade, routing validated by Wren. Capturing joins Directing, Designing, Building, Proving in the Chorus value stream."
+    },
+    {
+      "timestamp": "2026-02-21T21:11:54Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

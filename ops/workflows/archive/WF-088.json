@@ -1,0 +1,54 @@
+{
+  "id": "WF-088",
+  "decision": "Seed harvest manifests \u2014 fuseki_count, source counts, sexuality type breakdown",
+  "source": "board:card-moved:#490",
+  "card": 490,
+  "created": "2026-02-27T21:02:44Z",
+  "updated": "2026-02-27T21:15:00.201Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Seed harvest manifests \u2014 fuseki_count source counts sexuality type breakdown",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #490 marked Done by kade Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #490",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #490 marked Done by kade Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-27T21:02:44Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Seed harvest manifests \u2014 fuseki_count, source counts, sexuality type breakdown"
+    },
+    {
+      "timestamp": "2026-02-27T21:15:00.201Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #490 marked Done by kade"
+    }
+  ]
+}

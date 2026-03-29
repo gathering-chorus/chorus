@@ -1,0 +1,684 @@
+{
+  "board": "chorus",
+  "timestamp": "2026-02-24T02:15:34.605Z",
+  "tasks": [
+    {
+      "index": 57,
+      "apiId": 326,
+      "title": "Card quality by value stream stage — define what a good card looks like at each vertebra",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-23T17:38:32Z",
+      "updated": "2026-02-23T20:00:51Z"
+    },
+    {
+      "index": 56,
+      "apiId": 325,
+      "title": "Spine rewrite — vertebra-by-vertebra architectural refactor",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-23T17:37:52Z",
+      "updated": "2026-02-23T20:00:52Z"
+    },
+    {
+      "index": 55,
+      "apiId": 324,
+      "title": "Spine visualization — persist and make accessible from Chorus system page",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-23T17:37:51Z",
+      "updated": "2026-02-23T20:00:53Z"
+    },
+    {
+      "index": 53,
+      "apiId": 212,
+      "title": "Werk version number reflects real system state",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T20:37:26Z",
+      "updated": "2026-02-22T21:22:58Z"
+    },
+    {
+      "index": 52,
+      "apiId": 211,
+      "title": "Werk auto-trigger: Now card → workflow creation",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T20:37:26Z",
+      "updated": "2026-02-22T20:55:47Z"
+    },
+    {
+      "index": 51,
+      "apiId": 209,
+      "title": "Cost metrics exporter + Grafana dashboard",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T20:21:39Z",
+      "updated": "2026-02-22T20:26:06Z"
+    },
+    {
+      "index": 50,
+      "apiId": 205,
+      "title": "Clean up slack-bridge deprecation remnants",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T19:50:58Z",
+      "updated": "2026-02-22T20:51:29Z"
+    },
+    {
+      "index": 49,
+      "apiId": 203,
+      "title": "/talk — floating voice input for hands-free direction",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-22T19:23:34Z",
+      "updated": "2026-02-23T20:00:53Z"
+    },
+    {
+      "index": 48,
+      "apiId": 202,
+      "title": "Cognitive load instrumentation — human vs agent measurement",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-22T17:41:08Z",
+      "updated": "2026-02-23T20:01:00Z"
+    },
+    {
+      "index": 47,
+      "apiId": 200,
+      "title": "Add test framework and baseline tests to Chorus repo",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-22T17:17:26Z",
+      "updated": "2026-02-23T20:01:01Z"
+    },
+    {
+      "index": 46,
+      "apiId": 199,
+      "title": "Team capacity measurement model",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-22T17:09:43Z",
+      "updated": "2026-02-23T20:01:01Z"
+    },
+    {
+      "index": 45,
+      "apiId": 198,
+      "title": "Werk status in prompt hooks — inject workflow state on every turn",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-22T17:04:02Z",
+      "updated": "2026-02-23T20:01:02Z"
+    },
+    {
+      "index": 42,
+      "apiId": 195,
+      "title": "Instrumented viz: circles as live health instruments",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-22T16:38:47Z",
+      "updated": "2026-02-23T20:00:50Z"
+    },
+    {
+      "index": 44,
+      "apiId": 197,
+      "title": "Card-first gate: activate and instrument DEC-033",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-22T16:56:44Z",
+      "updated": "2026-02-22T22:56:40Z"
+    },
+    {
+      "index": 43,
+      "apiId": 196,
+      "title": "Manifest handoffs: closed-loop proof of connection",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T16:44:22Z",
+      "updated": "2026-02-22T17:10:02Z"
+    },
+    {
+      "index": 41,
+      "apiId": 194,
+      "title": "Cost dashboard: session tracking broken",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T16:34:55Z",
+      "updated": "2026-02-22T22:07:40Z"
+    },
+    {
+      "index": 40,
+      "apiId": 193,
+      "title": "Chorus ontology: formalize entities and relationships",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T16:31:01Z",
+      "updated": "2026-02-22T16:57:14Z"
+    },
+    {
+      "index": 39,
+      "apiId": 192,
+      "title": "Werk version: make it real",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T16:26:02Z",
+      "updated": "2026-02-22T20:51:21Z"
+    },
+    {
+      "index": 38,
+      "apiId": 189,
+      "title": "Permission prompt logger — track blocked tool calls across all roles",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T14:22:35Z",
+      "updated": "2026-02-22T16:06:49Z"
+    },
+    {
+      "index": 37,
+      "apiId": 187,
+      "title": "Clearing voice tuning — /chorus context injection for Haiku sessions",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-22T14:04:21Z",
+      "updated": "2026-02-23T20:00:51Z"
+    },
+    {
+      "index": 36,
+      "apiId": 186,
+      "title": "Clearing mobile access — LAN binding + standalone launcher for iPhone",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-22T13:47:01Z",
+      "updated": "2026-02-23T20:00:54Z"
+    },
+    {
+      "index": 35,
+      "apiId": 185,
+      "title": "Clearing background image — Jeff's sunrise/Lichtung photo",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-22T00:52:17Z",
+      "updated": "2026-02-22T00:55:05Z"
+    },
+    {
+      "index": 34,
+      "apiId": 184,
+      "title": "FastX findings schema for Borg output format",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-21T22:25:42Z",
+      "updated": "2026-02-23T20:01:02Z"
+    },
+    {
+      "index": 33,
+      "apiId": 183,
+      "title": "Borg scan harness — raw output against FastX Partners",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-21T22:25:41Z",
+      "updated": "2026-02-23T20:01:03Z"
+    },
+    {
+      "index": 32,
+      "apiId": 182,
+      "title": "Spike: /listen — voice input for Chorus sessions",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-21T22:10:57Z",
+      "updated": "2026-02-23T20:00:54Z"
+    },
+    {
+      "index": 31,
+      "apiId": 181,
+      "title": "Spike: Clearing guest access — external party joins as meeting visitor",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-21T22:04:54Z",
+      "updated": "2026-02-23T20:00:55Z"
+    },
+    {
+      "index": 30,
+      "apiId": 179,
+      "title": "Chorus context index HTTP wrapper",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-21T21:10:50Z",
+      "updated": "2026-02-23T20:00:56Z"
+    },
+    {
+      "index": 29,
+      "apiId": 178,
+      "title": "Clearing end-session UX — clear tab, show summary",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-21T21:10:24Z",
+      "updated": "2026-02-22T22:09:05Z"
+    },
+    {
+      "index": 28,
+      "apiId": 177,
+      "title": "Embed Werk dashboard on /chorus page",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-21T21:02:13Z",
+      "updated": "2026-02-23T20:00:56Z"
+    },
+    {
+      "index": 27,
+      "apiId": 176,
+      "title": "Capturing vertebra — Clearing auto-card pipeline",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-21T19:58:21Z",
+      "updated": "2026-02-23T20:00:57Z"
+    },
+    {
+      "index": 26,
+      "apiId": 173,
+      "title": "/look full-page capture",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-21T19:01:02Z",
+      "updated": "2026-02-23T20:00:57Z"
+    },
+    {
+      "index": 25,
+      "apiId": 159,
+      "title": "Team dashboard page in Gathering — replace Slack as mobile read path",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-21T16:45:00Z",
+      "updated": "2026-02-23T20:00:58Z"
+    },
+    {
+      "index": 24,
+      "apiId": 118,
+      "title": "Card-first gate — TypeScript board client + audit enforcement",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-20T22:14:00Z",
+      "updated": "2026-02-20T22:16:03Z"
+    },
+    {
+      "index": 54,
+      "apiId": 49,
+      "title": "Book import — make location optional",
+      "description": "",
+      "status": "Done",
+      "owner": "",
+      "priority": "",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-16T16:33:09Z",
+      "updated": "2026-02-23T20:01:04Z"
+    },
+    {
+      "index": 23,
+      "apiId": 117,
+      "title": "Team communication ring — with/at/over detection from shared memory",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-20T21:38:12Z",
+      "updated": "2026-02-23T20:01:04Z"
+    },
+    {
+      "index": 22,
+      "apiId": 116,
+      "title": "Rotation model — staggered 1x1 engagement protocol",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-20T21:06:28Z",
+      "updated": "2026-02-23T20:01:05Z"
+    },
+    {
+      "index": 21,
+      "apiId": 115,
+      "title": "Concentric trust model — pod-mediated coordination + local AI for Self",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-20T21:06:27Z",
+      "updated": "2026-02-23T20:01:06Z"
+    },
+    {
+      "index": 20,
+      "apiId": 114,
+      "title": "Mood Ring refresh pipeline — auto-generate behavioral data + add understanding/reflecting tags",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-20T21:06:26Z",
+      "updated": "2026-02-23T20:00:58Z"
+    },
+    {
+      "index": 19,
+      "apiId": 113,
+      "title": "Werk scorecard — regular maturity refresh for the nervous system",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-20T21:06:24Z",
+      "updated": "2026-02-23T20:00:59Z"
+    },
+    {
+      "index": 18,
+      "apiId": 112,
+      "title": "Session templates — interaction protocols for Demo, Board Walk, Review, SWAT",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-20T21:06:21Z",
+      "updated": "2026-02-23T20:01:06Z"
+    },
+    {
+      "index": 16,
+      "apiId": 107,
+      "title": "The Clearing — where Jeff interacts with Chorus and learns from it",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-20T14:46:48Z",
+      "updated": "2026-02-23T18:44:30Z"
+    },
+    {
+      "index": 7,
+      "apiId": 85,
+      "title": "Chorus static page — doc links + team activity view",
+      "description": "## What\nChorus landing page at /chorus — project-level page in Cultivating nav, peer to Light Life.\n\n## Why\nGives Jeff a single entry point to see Chorus as a product: team structure, value stream diagrams, shared memory links, core documents, and live team activity.\n\n## Done criteria (all met)\n- [x] /chorus route renders with gathering.css\n- [x] Nav: moved from Admin to Cultivating dropdown\n- [x] 8 Mermaid diagrams covering value stream, ownership, interaction modes, security\n- [x] Shared Memory section: context service, both Vikunja boards, Grafana dashboard\n- [x] Core Documents, ADRs, Operational sections with doc links\n- [x] Team table (4 roles)\n- [x] Live Loki activity feed with role/component filters + auto-refresh\n\n## Links\n- Brief: engineer/briefs/2026-02-19-chorus-page.md\n- View: views/chorus.ejs\n- Nav: views/partials/navbar.ejs",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-19T01:07:30Z",
+      "updated": "2026-02-20T19:30:35Z"
+    },
+    {
+      "index": 17,
+      "apiId": 108,
+      "title": "Context service — shared memory index",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-20T17:01:06Z",
+      "updated": "2026-02-20T18:59:38Z"
+    },
+    {
+      "index": 15,
+      "apiId": 105,
+      "title": "Autonomous role activation — roles respond to work items without human prompt",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-20T00:08:23Z",
+      "updated": "2026-02-23T20:01:06Z"
+    },
+    {
+      "index": 14,
+      "apiId": 103,
+      "title": "Chorus product backlog — standalone prioritization separate from Gathering",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-19T21:40:37Z",
+      "updated": "2026-02-20T20:52:54Z"
+    },
+    {
+      "index": 13,
+      "apiId": 102,
+      "title": "Data scrubbing enforcement — bridge context + memory write scrubbers",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-19T21:40:37Z",
+      "updated": "2026-02-20T18:59:38Z"
+    },
+    {
+      "index": 12,
+      "apiId": 101,
+      "title": "Boundary contracts — formalize hook logic for cross-role change detection",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [],
+      "done": true,
+      "created": "2026-02-19T21:40:37Z",
+      "updated": "2026-02-20T18:59:39Z"
+    },
+    {
+      "index": 11,
+      "apiId": 100,
+      "title": "Evolutionary architecture fitness functions — catalog and track",
+      "description": "",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "product:chorus"
+      ],
+      "done": true,
+      "created": "2026-02-19T21:40:37Z",
+      "updated": "2026-02-23T20:01:00Z"
+    }
+  ]
+}

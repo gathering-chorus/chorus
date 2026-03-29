@@ -1,0 +1,11 @@
+{
+  "_comment": "Wren (PM) — image processing, analysis, file opening for Jeff",
+  "permissions": {
+    "allow": [
+      "Bash(sips *)",
+      "Bash(python3 *)",
+      "Bash(node *)",
+      "Bash(curl -s *)"
+    ]
+  }
+}

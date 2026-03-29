@@ -1,0 +1,54 @@
+{
+  "id": "WF-146",
+  "decision": "Replan photos harvest — ICD-driven sequence, source priority, drop-and-rebuild assessment",
+  "source": "board:card-moved:#1506",
+  "card": 1506,
+  "created": "2026-03-17T17:12:32Z",
+  "updated": "2026-03-17T17:13:40.539Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Replan photos harvest — ICD-driven sequence source priority drop-and-rebuild assessment",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-17T17:13:40.539Z",
+      "notes": "Skipped — card #1506 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1506",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-17T17:13:40.539Z",
+      "notes": "Skipped — card #1506 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-17T17:12:32Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Replan photos harvest — ICD-driven sequence, source priority, drop-and-rebuild assessment"
+    },
+    {
+      "timestamp": "2026-03-17T17:13:40.539Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1506 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "id": "WF-039",
+  "decision": "Nav consistency fixes: add Chorus to mind map, Images to Movies rename, Watchlist dedup, placeholder alignment",
+  "source": "verbal",
+  "card": 230,
+  "created": "2026-02-23T14:24:14Z",
+  "updated": "2026-02-23T15:36:19Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Nav consistency fixes",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "views/partials/navbar.ejs",
+        "views/home.ejs"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T14:30:46Z",
+      "notes": "4 fixes applied: (1) Chorus added to mind map Cultivating branch, (2) Images renamed to Movies in navbar, (3) Watchlist removed from navbar Harvesting (kept in Reflecting), (4) Navbar and mind map now consistent. Views bind-mounted, changes live. 2220 tests passing."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #230",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-23-wf-039-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T15:36:19Z",
+      "notes": "Verified all 4 fixes: Chorus in mind map Cultivating branch, Images\u2192Movies rename in navbar+mind map, Watchlist dedup (Harvesting removed, kept in Reflecting), navbar/mind map consistency confirmed."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T14:24:14Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Nav consistency fixes: add Chorus to mind map, Images to Movies rename, Watchlist dedup, placeholder alignment"
+    },
+    {
+      "timestamp": "2026-02-23T14:24:14Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 1 ready: Nav consistency fixes"
+    },
+    {
+      "timestamp": "2026-02-23T14:30:46Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Nav consistency fixes \u2014 4 fixes applied: (1) Chorus added to mind map Cultivating branch, (2) Images renamed to Movies in navbar, (3) Watchlist removed from navbar Harvesting (kept in Reflecting), (4) Navbar and mind map now consistent. Views bind-mounted, changes live. 2220 tests passing."
+    },
+    {
+      "timestamp": "2026-02-23T14:30:46Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #230"
+    },
+    {
+      "timestamp": "2026-02-23T15:36:19Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #230 \u2014 Verified all 4 fixes: Chorus in mind map Cultivating branch, Images\u2192Movies rename in navbar+mind map, Watchlist dedup (Harvesting removed, kept in Reflecting), navbar/mind map consistency confirmed."
+    },
+    {
+      "timestamp": "2026-02-23T15:36:19Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

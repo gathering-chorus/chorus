@@ -1,0 +1,114 @@
+{
+  "id": "WF-007",
+  "decision": "Loki consolidation Phase 3 \u2014 monitor, harden, document single observability stack",
+  "source": "clearing:2026-02-22T14-22-47",
+  "card": 127,
+  "created": "2026-02-22T14:40:57Z",
+  "updated": "2026-02-22T16:16:22Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "24h monitoring validation \u2014 verify shared Promtail covers all containers with no log gaps",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "none"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-22T14:41:55Z",
+      "notes": "Monitoring validated. 5/6 non-infra containers confirmed in shared Loki (webvowl is silent by nature). 8 infra containers dropped by design. App logging 69K entries/30min \u2014 no gaps. mailhog excluded (not on observability-network, dev-only). Coverage baseline documented."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Docker-compose audit \u2014 resource limits and persistence config for single-stack reliability",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "architect/briefs/2026-02-22-wf-007-docker-compose-audit.md",
+        "shared-observability/docker-compose.yml"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-22-wf-007-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-22T14:45:42Z",
+      "notes": "Docker-compose audit complete. Applied: (1) resource limits on all 8 containers (total cap ~2GB), (2) alertmanager persistence volume + pinned to v0.26.0, (3) promtail position tracking volume. Failure mode analysis documented. All containers verified healthy with limits."
+    },
+    {
+      "seq": 3,
+      "role": "kade",
+      "action": "Single-stack documentation \u2014 update infra docs and failure mode playbook",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        2
+      ],
+      "artifacts": [
+        "shared-observability/README.md",
+        "shared-observability/docs/ALERTING.md",
+        "shared-observability/docs/FAILURE-PLAYBOOK.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/engineer/briefs/2026-02-22-wf-007-step3.md",
+      "started_at": null,
+      "completed_at": "2026-02-22T16:16:22Z",
+      "notes": "Updated README (8 containers, resource limits, 3 alert rule files, directory structure). Updated ALERTING.md (alertmanager live, routing table, persistence). Created FAILURE-PLAYBOOK.md (8 failure scenarios, recovery procedures, dashboard/port reference, WF-007 summary)."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-22T14:40:57Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Loki consolidation Phase 3 \u2014 monitor, harden, document single observability stack"
+    },
+    {
+      "timestamp": "2026-02-22T14:40:57Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 1 ready: 24h monitoring validation \u2014 verify shared Promtail covers all containers with no log gaps"
+    },
+    {
+      "timestamp": "2026-02-22T14:41:55Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: 24h monitoring validation \u2014 verify shared Promtail covers all containers with no log gaps \u2014 Monitoring validated. 5/6 non-infra containers confirmed in shared Loki (webvowl is silent by nature). 8 infra containers dropped by design. App logging 69K entries/30min \u2014 no gaps. mailhog excluded (not on observability-network, dev-only). Coverage baseline documented."
+    },
+    {
+      "timestamp": "2026-02-22T14:41:55Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Docker-compose audit \u2014 resource limits and persistence config for single-stack reliability"
+    },
+    {
+      "timestamp": "2026-02-22T14:45:42Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Docker-compose audit \u2014 resource limits and persistence config for single-stack reliability \u2014 Docker-compose audit complete. Applied: (1) resource limits on all 8 containers (total cap ~2GB), (2) alertmanager persistence volume + pinned to v0.26.0, (3) promtail position tracking volume. Failure mode analysis documented. All containers verified healthy with limits."
+    },
+    {
+      "timestamp": "2026-02-22T14:45:42Z",
+      "event": "step_ready",
+      "role": "kade",
+      "detail": "Step 3 ready: Single-stack documentation \u2014 update infra docs and failure mode playbook"
+    },
+    {
+      "timestamp": "2026-02-22T16:16:22Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 3 completed: Single-stack documentation \u2014 update infra docs and failure mode playbook \u2014 Updated README (8 containers, resource limits, 3 alert rule files, directory structure). Updated ALERTING.md (alertmanager live, routing table, persistence). Created FAILURE-PLAYBOOK.md (8 failure scenarios, recovery procedures, dashboard/port reference, WF-007 summary)."
+    },
+    {
+      "timestamp": "2026-02-22T16:16:22Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

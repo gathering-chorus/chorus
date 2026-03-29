@@ -1,0 +1,60 @@
+{
+  "id": "WF-134",
+  "name": "Cards + Roles domain cleanup",
+  "trigger": "jeff:pipeline-create:2026-03-16",
+  "card": null,
+  "status": "active",
+  "created": "2026-03-16T21:50:00Z",
+  "updated": "2026-03-16T22:00:00Z",
+  "steps": [
+    {
+      "role": "wren",
+      "title": "Audit cross-domain page dependencies \u2014 map which pages query which graphs",
+      "card": 1461,
+      "status": "completed",
+      "blocked_by": [],
+      "created_at": "2026-03-16T21:50:00Z",
+      "completed_at": "2026-03-16T21:55:00Z"
+    },
+    {
+      "role": "kade",
+      "title": "Enforce API contract discipline \u2014 domain endpoints as validated access layer",
+      "card": 1459,
+      "status": "completed",
+      "blocked_by": [
+        1461
+      ],
+      "created_at": "2026-03-16T21:50:00Z",
+      "completed_at": "2026-03-16T22:00:00Z"
+    },
+    {
+      "role": "kade",
+      "title": "Audit spine event visibility on /werk \u2014 surface all coordination events in timeline",
+      "card": 1480,
+      "status": "ready",
+      "blocked_by": [],
+      "created_at": "2026-03-16T21:50:00Z",
+      "completed_at": null
+    }
+  ],
+  "history": [
+    {
+      "timestamp": "2026-03-16T21:50:00Z",
+      "event": "pipeline_created",
+      "role": "wren",
+      "detail": "Cards + Roles cleanup: #1461 (Wren) \u2192 #1459 (Kade, blocked on 1461) + #1480 (Kade, parallel). Two parallel tracks."
+    },
+    {
+      "timestamp": "2026-03-16T21:55:00Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "#1461 audit done. 6 handlers with inline SPARQL, 12 clean. #1459 unblocked."
+    },
+    {
+      "timestamp": "2026-03-16T22:00:00Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "#1459 shipped \u2014 swagger regen, domain tags, 12 integration tests, enforcement ratchet."
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+sequenceDiagram
+    participant Jeff
+    participant Slack as #all-gathering
+    participant Bridge as Slack Bridge
+    participant Claude as Claude API (Sonnet)
+
+    Jeff->>Slack: @team - can we convene?
+    Note over Bridge: Next poll (~30s)
+    Bridge->>Slack: Polls #all-gathering
+    Slack-->>Bridge: Sees @team message
+
+    Bridge->>Claude: API call with all 3 role contexts
+    Claude-->>Bridge: Wren response
+    Bridge->>Slack: Posts Wren + bridge:wren
+
+    Claude-->>Bridge: Silas response
+    Bridge->>Slack: Posts Silas + bridge:silas
+
+    Claude-->>Bridge: Kade response
+    Bridge->>Slack: Posts Kade + bridge:kade
+
+    Note over Slack: All 3 responses appear within ~30s
+    Note over Jeff: Jeff reads all 3, decides next move

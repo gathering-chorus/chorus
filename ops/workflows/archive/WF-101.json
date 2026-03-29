@@ -1,0 +1,54 @@
+{
+  "id": "WF-101",
+  "decision": "Rewrite board-client as board-sdk \u2014 layered API, spine events, tests, docs",
+  "source": "board:card-moved:#1064",
+  "card": 1064,
+  "created": "2026-03-05T02:01:45Z",
+  "updated": "2026-03-05T11:21:04.370Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Rewrite board-client as board-sdk \u2014 layered API spine events tests docs",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1064 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1064",
+      "status": "resolved-skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-16T23:59:00Z",
+      "notes": "Skipped \u2014 card #1064 marked Done by wren Baseline reset 2026-03-16: pre-pipeline process, dispositioned."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-05T02:01:45Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Rewrite board-client as board-sdk \u2014 layered API, spine events, tests, docs"
+    },
+    {
+      "timestamp": "2026-03-05T11:21:04.370Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1064 marked Done by wren"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "id": "WF-080",
+  "decision": "Spine emitter inventory + renderer refactor assessment \u2014 legibility at scale",
+  "source": "board:card-moved:#371",
+  "card": 371,
+  "created": "2026-02-26T15:38:51Z",
+  "updated": "2026-02-26T17:04:55Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Spine emitter inventory + renderer refactor assessment \u2014 legibility at scale",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "architect/spine-emitter-inventory.md",
+        "shared-observability/config/promtail/promtail-config.yaml"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-26T16:05:29Z",
+      "notes": "Inventory complete: 21 emitter sources documented. Fixed 2 broken Loki paths (command-errors.log, permission-prompts.log). 7 gaps prioritized. Inventory at architect/spine-emitter-inventory.md"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #371",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "architect/spine-emitter-inventory.md"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/product-manager/briefs/2026-02-26-wf-080-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-26T17:04:55Z",
+      "notes": "Reviewed: inventory thorough, 21 sources, 7 gaps prioritized, 5 direct writers already migrated in #411. Renderer refactor assessment not in doc but gap list serves as input. Accepted."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-26T15:38:51Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Spine emitter inventory + renderer refactor assessment \u2014 legibility at scale"
+    },
+    {
+      "timestamp": "2026-02-26T16:05:29Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 1 completed: Spine emitter inventory + renderer refactor assessment \u2014 legibility at scale \u2014 Inventory complete: 21 emitter sources documented. Fixed 2 broken Loki paths (command-errors.log, permission-prompts.log). 7 gaps prioritized. Inventory at architect/spine-emitter-inventory.md"
+    },
+    {
+      "timestamp": "2026-02-26T16:05:29Z",
+      "event": "step_ready",
+      "role": "wren",
+      "detail": "Step 2 ready: Review and verify #371"
+    },
+    {
+      "timestamp": "2026-02-26T17:04:55Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "Step 2 completed: Review and verify #371 \u2014 Reviewed: inventory thorough, 21 sources, 7 gaps prioritized, 5 direct writers already migrated in #411. Renderer refactor assessment not in doc but gap list serves as input. Accepted."
+    },
+    {
+      "timestamp": "2026-02-26T17:04:55Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

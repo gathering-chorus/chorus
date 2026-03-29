@@ -1,0 +1,76 @@
+{
+  "id": "WF-040",
+  "decision": "Manifest-first gate: trigger workflow on add --status Now, not just move",
+  "source": "board:card-moved:#222",
+  "card": 222,
+  "created": "2026-02-23T14:26:26Z",
+  "updated": "2026-02-23T16:30:20Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Manifest-first gate: trigger workflow on add --status Now not just move",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [
+        "messages/board-client/src/cli.ts"
+      ],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-02-23T14:27:18Z",
+      "notes": "Already fixed by Wren directly in cli.ts \u2014 cmdAdd now triggers workflow on --status Now. 50/50 tests passing."
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #222",
+      "status": "completed",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [
+        "messages/board-client/src/cli.ts"
+      ],
+      "brief": "/Users/jeffbridwell/CascadeProjects/architect/briefs/2026-02-23-wf-040-step2.md",
+      "started_at": null,
+      "completed_at": "2026-02-23T16:30:20Z",
+      "notes": "Verified: cmdAdd triggers triggerWorkflow when --status Now. Dedup guard prevents double manifests. Same code path as cmdMove. 50/50 tests passing."
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-02-23T14:26:26Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Manifest-first gate: trigger workflow on add --status Now, not just move"
+    },
+    {
+      "timestamp": "2026-02-23T14:27:18Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "Step 1 completed: Manifest-first gate: trigger workflow on add --status Now not just move \u2014 Already fixed by Wren directly in cli.ts \u2014 cmdAdd now triggers workflow on --status Now. 50/50 tests passing."
+    },
+    {
+      "timestamp": "2026-02-23T14:27:18Z",
+      "event": "step_ready",
+      "role": "silas",
+      "detail": "Step 2 ready: Review and verify #222"
+    },
+    {
+      "timestamp": "2026-02-23T16:30:20Z",
+      "event": "step_completed",
+      "role": "silas",
+      "detail": "Step 2 completed: Review and verify #222 \u2014 Verified: cmdAdd triggers triggerWorkflow when --status Now. Dedup guard prevents double manifests. Same code path as cmdMove. 50/50 tests passing."
+    },
+    {
+      "timestamp": "2026-02-23T16:30:20Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "All steps completed"
+    }
+  ]
+}

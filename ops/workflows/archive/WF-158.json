@@ -1,0 +1,54 @@
+{
+  "id": "WF-158",
+  "decision": "Add write endpoints to ICD API — POST/PUT for domains, fields, mappings",
+  "source": "board:card-moved:#1549",
+  "card": 1549,
+  "created": "2026-03-19T19:41:00Z",
+  "updated": "2026-03-19T19:55:20.964Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Add write endpoints to ICD API — POST/PUT for domains fields mappings",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T19:55:20.964Z",
+      "notes": "Skipped — card #1549 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1549",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-03-19T19:55:20.964Z",
+      "notes": "Skipped — card #1549 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-03-19T19:41:00Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Add write endpoints to ICD API — POST/PUT for domains, fields, mappings"
+    },
+    {
+      "timestamp": "2026-03-19T19:55:20.964Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1549 marked Done by wren"
+    }
+  ]
+}

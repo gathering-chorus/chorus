@@ -1,0 +1,22 @@
+{
+  "_comment": "Silas (Architect) — infrastructure queries, observability APIs, docker-compose for obs stack",
+  "permissions": {
+    "allow": [
+      "Bash(curl*localhost:9090*)",
+      "Bash(curl*localhost:9093*)",
+      "Bash(curl*localhost:3100*)",
+      "Bash(curl*localhost:3102*)",
+      "Bash(curl*localhost:9100*)",
+      "Bash(curl -s *)",
+      "Bash(curl -sG *)",
+
+      "Bash(cd /Users/jeffbridwell/CascadeProjects/shared-observability*)",
+      "Bash(docker compose*)",
+
+      "Bash(df *)",
+      "Bash(du *)",
+      "Bash(python3 *)",
+      "Bash(*/app-state.sh*)"
+    ]
+  }
+}

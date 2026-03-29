@@ -1,0 +1,68 @@
+{
+  "id": "WF-130",
+  "name": "Roles domain pipeline",
+  "trigger": "jeff:pipeline-create:2026-03-16",
+  "card": null,
+  "status": "completed",
+  "created": "2026-03-16T21:00:00Z",
+  "updated": "2026-03-16T21:30:00Z",
+  "steps": [
+    {
+      "role": "wren",
+      "title": "Harden pair/gemba outer loop \u2014 DND mode, heartbeat, shared doc polling",
+      "card": 1474,
+      "status": "completed",
+      "blocked_by": [],
+      "created_at": "2026-03-16T21:00:00Z",
+      "completed_at": "2026-03-16T21:10:00Z"
+    },
+    {
+      "role": "kade",
+      "title": "Define Roles domain \u2014 endpoints, ontology type, service layer",
+      "card": 1466,
+      "status": "completed",
+      "blocked_by": [
+        1474
+      ],
+      "created_at": "2026-03-16T21:00:00Z",
+      "completed_at": "2026-03-16T21:20:00Z"
+    },
+    {
+      "role": "silas",
+      "title": "Wire nudge, chat, and pair events into spine \u2014 coordination visibility",
+      "card": 1441,
+      "status": "completed",
+      "blocked_by": [
+        1466
+      ],
+      "created_at": "2026-03-16T21:00:00Z",
+      "completed_at": "2026-03-16T21:30:00Z"
+    }
+  ],
+  "history": [
+    {
+      "timestamp": "2026-03-16T21:00:00Z",
+      "event": "pipeline_created",
+      "role": "wren",
+      "detail": "Roles domain pipeline: #1474 \u2192 #1466 \u2192 #1441. Wren \u2192 Kade \u2192 Silas."
+    },
+    {
+      "timestamp": "2026-03-16T21:10:00Z",
+      "event": "step_completed",
+      "role": "wren",
+      "detail": "#1474 shipped \u2014 pair skill DND mode + heartbeat. #1466 unblocked for Kade."
+    },
+    {
+      "timestamp": "2026-03-16T21:20:00Z",
+      "event": "step_completed",
+      "role": "kade",
+      "detail": "#1466 shipped \u2014 Roles domain service + handler + 3 API endpoints + 6 tests. #1441 unblocked for Silas."
+    },
+    {
+      "timestamp": "2026-03-16T21:30:00Z",
+      "event": "pipeline_completed",
+      "role": "silas",
+      "detail": "#1441 shipped \u2014 5 spine event types. Pipeline WF-130 complete: 3/3 steps, 3 roles, Roles domain live."
+    }
+  ]
+}
