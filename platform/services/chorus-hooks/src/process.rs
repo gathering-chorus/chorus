@@ -62,7 +62,10 @@ pub fn role_pattern(role: &str) -> Option<&'static str> {
 }
 
 /// Inject by matching Terminal WINDOW name containing the role's directory + "claude".
-/// One path. No PID, no lsof, no TTY, no race condition.
+/// Uses osascript keystroke to type text into the target role's Terminal window.
+/// KEY FIX (#1764): saves and restores frontmost app so Jeff's focus isn't stolen.
+/// The keystroke must go to Terminal (only way to reach Claude's stdin), but we
+/// give focus back immediately after injection.
 /// Returns Ok if osascript confirms "ok", Err with reason if not.
 pub fn inject_by_tab_name(role: &str, text: &str) -> Result<(), String> {
     let pattern = role_pattern(role)
@@ -78,22 +81,39 @@ pub fn inject_by_tab_name(role: &str, text: &str) -> Result<(), String> {
         .replace('\u{201C}', "\"")
         .replace('\u{201D}', "\"");
 
+    // #1764: osascript keystroke into Terminal ONLY. Never Chrome.
+    // DEC-107: osascript is the path. The fix is proper app targeting:
+    // 1. Save what Jeff is using
+    // 2. Activate TERMINAL (not just set window frontmost — activate the APP)
+    // 3. Find the role's window and make it frontmost within Terminal
+    // 4. Keystroke the text + Enter
+    // 5. Restore Jeff's app
+    //
+    // Step 2 is what was missing — `set frontmost of w` only works within Terminal,
+    // it doesn't make Terminal the active app. Without `activate`, keystroke goes
+    // to whatever app has focus (Chrome/Clearing).
     let script = format!(
-        r#"tell application "Terminal"
+        r#"tell application "System Events"
+    set originalApp to name of first application process whose frontmost is true
+end tell
+tell application "Terminal"
     set winCount to count of windows
     repeat with i from 1 to winCount
         set w to window i
         set winName to name of w
         if winName contains "{pattern}" and winName contains "claude" then
+            activate
             set frontmost of w to true
-            delay 0.3
+            delay 0.15
             tell application "System Events"
                 tell process "Terminal"
                     keystroke "{text}"
-                    delay 0.1
+                    delay 0.05
                     key code 36
                 end tell
             end tell
+            delay 0.05
+            tell application originalApp to activate
             return "ok"
         end if
     end repeat
