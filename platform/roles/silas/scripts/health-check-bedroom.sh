@@ -9,8 +9,8 @@
 set -eo pipefail
 
 BEDROOM="192.168.86.242"
-BOARD_TS="/Users/jeffbridwell/CascadeProjects/messages/scripts/board-ts"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-log.sh"
+BOARD_TS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts"
+CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh"
 CARD_MODE=false
 [ "${1:-}" = "--card" ] && CARD_MODE=true
 

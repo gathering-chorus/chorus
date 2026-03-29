@@ -6,7 +6,7 @@
 
 set -uo pipefail
 
-SHIM="/Users/jeffbridwell/CascadeProjects/messages/services/chorus-hooks/target/release/chorus-hook-shim"
+SHIM="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 SOCKET="/tmp/chorus-hooks.sock"
 PASS=0
 FAIL=0

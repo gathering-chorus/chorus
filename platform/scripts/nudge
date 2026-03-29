@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 # nudge — thin wrapper to Rust binary. All logic is in chorus-hook-shim.
 # DEC-100: no bash APIs. This file only exists because scripts reference it by name.
-exec /Users/jeffbridwell/CascadeProjects/messages/services/chorus-hooks/target/release/chorus-hook-shim nudge "$@"
+exec /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim nudge "$@"

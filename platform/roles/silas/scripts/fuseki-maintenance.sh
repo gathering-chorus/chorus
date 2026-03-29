@@ -21,7 +21,7 @@ APP_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
 BACKUP_DIR="/Users/jeffbridwell/CascadeProjects/architect/backups"
 VOLUME_NAME="jeff-bridwell-personal-site-fuseki-data"
 CONTAINER_NAME="jeff-bridwell-personal-site-fuseki"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-log.sh"
+CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

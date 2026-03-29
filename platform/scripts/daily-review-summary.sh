@@ -17,7 +17,7 @@ echo "$OPS_OUTPUT$QUALITY_OUTPUT" | grep -q "🔴" && OVERALL="🔴"
 echo "$OPS_OUTPUT$QUALITY_OUTPUT" | grep -q "🟡" && [ "$OVERALL" != "🔴" ] && OVERALL="🟡"
 
 # Board snapshot
-BOARD_DIR="/Users/jeffbridwell/CascadeProjects/messages/scripts"
+BOARD_DIR="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts"
 WIP_COUNT=$(bash "$BOARD_DIR/board-ts" mine all 2>/dev/null | grep -c "WIP" || true)
 WIP_COUNT=${WIP_COUNT:-0}
 DONE_TODAY=$(bash "$BOARD_DIR/board-ts" list Done 2>/dev/null | grep "$(date +%Y-%m-%d)" | wc -l | tr -d ' ' || true)

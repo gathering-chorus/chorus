@@ -7,7 +7,7 @@ set -euo pipefail
 
 DATE=$(date +%Y-%m-%d)
 TIME=$(date +%H:%M:%S)
-OUTDIR="/Users/jeffbridwell/CascadeProjects/messages/logs"
+OUTDIR="/Users/jeffbridwell/CascadeProjects/chorus/proving/logs"
 OUTFILE="$OUTDIR/perf-baseline-${DATE}.json"
 
 # --- Disk ---

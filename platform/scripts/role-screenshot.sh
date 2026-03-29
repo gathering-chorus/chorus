@@ -6,7 +6,7 @@
 set -euo pipefail
 
 ROLE="${1:?Usage: role-screenshot.sh <role>}"
-OUTDIR="/Users/jeffbridwell/CascadeProjects/messages/screenshots"
+OUTDIR="/Users/jeffbridwell/CascadeProjects/chorus/proving/screenshots"
 mkdir -p "$OUTDIR"
 
 # Map role to working directory

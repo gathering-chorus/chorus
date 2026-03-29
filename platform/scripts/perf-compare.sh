@@ -2,7 +2,7 @@
 # Compare two performance baselines — flag degradation
 # Usage: perf-compare.sh [date1] [date2]  (defaults: yesterday vs today)
 
-LOGDIR="/Users/jeffbridwell/CascadeProjects/messages/logs"
+LOGDIR="/Users/jeffbridwell/CascadeProjects/chorus/proving/logs"
 DATE1=${1:-$(date -v-1d +%Y-%m-%d)}
 DATE2=${2:-$(date +%Y-%m-%d)}
 

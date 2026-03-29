@@ -10,7 +10,7 @@ STATUS="green"
 ISSUES=""
 
 # --- Smoke tests ---
-SMOKE_OUTPUT=$(bash /Users/jeffbridwell/CascadeProjects/messages/scripts/smoke-check.sh --all 2>&1 || true)
+SMOKE_OUTPUT=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh --all 2>&1 || true)
 SMOKE_PASS=$(echo "$SMOKE_OUTPUT" | grep -c "PASS" || true)
 SMOKE_PASS=${SMOKE_PASS:-0}
 SMOKE_FAIL=$(echo "$SMOKE_OUTPUT" | grep -c "FAIL" || true)

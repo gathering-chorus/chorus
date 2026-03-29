@@ -8,7 +8,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/jeffbridwell/CascadeProjects/messages/scripts/andon-enrich.sh</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/andon-enrich.sh</string>
   </array>
 
   <key>StartInterval</key>

@@ -2,7 +2,7 @@ import fs from 'fs';
 import { EventEmitter } from 'events';
 import { MessageRouter } from './router';
 
-const CHORUS_LOG = '/Users/jeffbridwell/CascadeProjects/messages/logs/chorus.log';
+const CHORUS_LOG = '/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log';
 const POLL_INTERVAL = 2000; // 2 seconds
 
 /**

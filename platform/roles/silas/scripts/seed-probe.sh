@@ -50,7 +50,7 @@ alert_bridge() {
 
 log_result() {
   local status="$1" detail="$2"
-  bash /Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-log.sh \
+  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh \
     seed.probe.${status} silas "detail=${detail}" 2>/dev/null || true
 }
 

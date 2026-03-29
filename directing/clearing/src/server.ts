@@ -9,7 +9,7 @@ import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
-const NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/messages/scripts/nudge.sh';
+const NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge.sh';
 
 // Auth token for remote access (#1719)
 // Generate a stable token per machine — persists across restarts
@@ -335,7 +335,7 @@ app.get('/api/commands/:role', (req, res) => {
 // API: unified activity stream — all roles interleaved by time
 app.get('/api/stream', (req, res) => {
   const fs = require('fs');
-  const logFile = '/Users/jeffbridwell/CascadeProjects/messages/logs/chorus.log';
+  const logFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log';
   const limit = parseInt(req.query.lines as string) || 60;
 
   const lines: any[] = [];
@@ -482,7 +482,7 @@ app.get('/api/flow', (_req, res) => {
     env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
   };
   try {
-    const boardTs = '/Users/jeffbridwell/CascadeProjects/messages/scripts/board-ts';
+    const boardTs = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts';
     const output = execSync(`bash ${boardTs} list 2>/dev/null`, envOpts).trim();
 
     // Parse all active cards
@@ -508,7 +508,7 @@ app.get('/api/flow', (_req, res) => {
     }
 
     // Count active workflows per card
-    const wfDir = '/Users/jeffbridwell/CascadeProjects/messages/workflows/archive';
+    const wfDir = '/Users/jeffbridwell/CascadeProjects/chorus/platform/workflows/archive';
     const wfByCard: Record<string, number> = {};
     try {
       const files = fs.readdirSync(wfDir).filter((f: string) => f.endsWith('.json'));

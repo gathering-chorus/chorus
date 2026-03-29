@@ -8,8 +8,8 @@
 set -euo pipefail
 
 FUSEKI="http://localhost:3030/pods/query"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-log.sh"
-BOARD_TS="/Users/jeffbridwell/CascadeProjects/messages/scripts/board-ts"
+CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh"
+BOARD_TS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts"
 THRESHOLD_MS=10000  # alert if any query > 10s
 
 run_query() {
