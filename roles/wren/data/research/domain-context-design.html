@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Domain Context Fetch — Product Design</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; color: #222; background: #fafafa; line-height: 1.6; }
+  h1 { font-size: 1.9rem; border-bottom: 3px solid #1a5276; padding-bottom: .5rem; color: #1a5276; }
+  h2 { font-size: 1.4rem; margin-top: 2.5rem; border-bottom: 1px solid #ccc; padding-bottom: .3rem; color: #1a5276; }
+  h3 { font-size: 1.1rem; margin-top: 1.5rem; color: #2c3e50; }
+  .subtitle { font-size: 1rem; color: #666; margin-top: -0.5rem; margin-bottom: 2rem; }
+
+  /* Callout boxes */
+  .callout { border-radius: 8px; padding: 1rem 1.25rem; margin: 1.25rem 0; }
+  .callout-problem { background: #fef3f0; border-left: 4px solid #e74c3c; }
+  .callout-solution { background: #eafaf1; border-left: 4px solid #27ae60; }
+  .callout-rule { background: #fef9e7; border-left: 4px solid #f39c12; }
+  .callout-cost { background: #fdedec; border: 1px solid #e74c3c; border-left: 4px solid #c0392b; }
+  .callout h4 { margin: 0 0 .5rem 0; font-size: .95rem; }
+  .callout-problem h4 { color: #c0392b; }
+  .callout-solution h4 { color: #1e8449; }
+  .callout-rule h4 { color: #b7950b; }
+  .callout-cost h4 { color: #922b21; }
+  .callout p, .callout li { font-size: .9rem; margin: .3rem 0; }
+
+  /* Stats row */
+  .stats { display: flex; gap: 1.5rem; margin: 1.5rem 0; flex-wrap: wrap; }
+  .stat { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: .75rem 1.25rem; text-align: center; flex: 1; min-width: 120px; }
+  .stat .number { font-size: 1.8rem; font-weight: 700; color: #c0392b; }
+  .stat .label { font-size: .8rem; color: #888; text-transform: uppercase; letter-spacing: .5px; }
+
+  /* Tables */
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .88rem; }
+  th, td { border: 1px solid #ddd; padding: .5rem .75rem; text-align: left; }
+  th { background: #f0f4f8; font-weight: 600; color: #2c3e50; }
+  tr:nth-child(even) { background: #fafcfe; }
+  td code, .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: .82rem; color: #6c3483; background: #f5f0fa; padding: .1rem .3rem; border-radius: 3px; }
+
+  /* Section label */
+  .section-label { display: inline-block; background: #1a5276; color: #fff; font-size: .7rem; font-weight: 600; padding: .2rem .6rem; border-radius: 3px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: .3rem; }
+
+  /* Flow diagram */
+  .flow { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0; font-family: 'SF Mono', 'Fira Code', monospace; font-size: .85rem; line-height: 2; }
+  .flow .step { display: flex; align-items: center; gap: .75rem; }
+  .flow .step-num { background: #1a5276; color: #fff; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; flex-shrink: 0; }
+  .flow .arrow { color: #bbb; font-size: 1.2rem; margin-left: 10px; }
+  .flow .action { font-family: -apple-system, sans-serif; font-size: .88rem; }
+  .flow .trigger { color: #2980b9; font-weight: 600; }
+  .flow .file { color: #6c3483; }
+  .flow .hook { color: #c0392b; }
+  .flow .role { color: #27ae60; font-weight: 600; }
+
+  /* Domain context file visual */
+  .domain-file { background: #fff; border: 2px solid #1a5276; border-radius: 10px; overflow: hidden; margin: 1.5rem 0; }
+  .domain-file-header { background: #1a5276; color: #fff; padding: .6rem 1rem; font-weight: 600; font-size: .9rem; }
+  .domain-file-section { border-bottom: 1px solid #eee; padding: .75rem 1rem; }
+  .domain-file-section:last-child { border-bottom: none; }
+  .domain-file-section .sec-title { font-weight: 700; font-size: .85rem; color: #1a5276; margin-bottom: .3rem; }
+  .domain-file-section .sec-desc { font-size: .8rem; color: #666; }
+  .domain-file-section .sec-icon { float: left; font-size: 1.2rem; margin-right: .5rem; margin-top: .1rem; }
+
+  /* Properties grid */
+  .props { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: 1rem 0; }
+  .prop { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: .75rem 1rem; }
+  .prop .check { color: #27ae60; font-weight: 700; margin-right: .3rem; }
+  .prop .label { font-weight: 600; font-size: .88rem; }
+  .prop .desc { font-size: .8rem; color: #666; margin-top: .2rem; }
+
+  /* Ownership table */
+  .owner-badge { display: inline-block; padding: .15rem .5rem; border-radius: 3px; font-size: .75rem; font-weight: 600; }
+  .owner-wren { background: #d4efdf; color: #1e8449; }
+  .owner-silas { background: #d6eaf8; color: #2471a3; }
+  .owner-kade { background: #fdebd0; color: #b9770e; }
+
+  footer { margin-top: 3rem; border-top: 1px solid #ccc; padding-top: 1rem; font-size: .8rem; color: #888; }
+</style>
+</head>
+<body>
+
+<h1>Domain Context Fetch</h1>
+<p class="subtitle">Product design for automatic domain knowledge injection into AI role sessions</p>
+
+<div class="stats">
+  <div class="stat"><div class="number">3</div><div class="label">AI Roles</div></div>
+  <div class="stat"><div class="number">6+</div><div class="label">Active Domains</div></div>
+  <div class="stat"><div class="number">5</div><div class="label">Context Sections</div></div>
+  <div class="stat"><div class="number">0</div><div class="label">Manual Steps</div></div>
+</div>
+
+<!-- ============================================================ -->
+<h2>The Problem</h2>
+
+<p>Three AI roles (Wren/PM, Silas/Architect, Kade/Engineer) work on cards tagged with domains &mdash; photos, music, infrastructure, and more. Each domain has accumulated knowledge across multiple repos, sessions, and roles. But roles repeatedly start building without knowing what already exists.</p>
+
+<div class="callout callout-problem">
+  <h4>Knowledge is scattered across the system</h4>
+  <ul>
+    <li>ICDs live in <code>architect/</code></li>
+    <li>Tests live in <code>engineer/</code></li>
+    <li>Decisions live in <code>product-manager/</code></li>
+    <li>Constraints live in session transcripts, memory files, and people's heads</li>
+  </ul>
+  <p>No single entry point tells a role: "here is everything you need to know about this domain before you touch it."</p>
+</div>
+
+<h3>The Cost of Not Having This</h3>
+
+<div class="callout callout-cost">
+  <h4>40% data loss &mdash; Photos canonical rebuild</h4>
+  <p>Kade built a photo merge pipeline without reading the ICD. Missed that Apple Photos uses UUID filenames internally. Matched across sources by filename, which is meaningless for Apple-sourced photos. Jeff caught the 40% data loss during verification. Root cause: Kade didn't know a constraint that was already documented in the ICD.</p>
+</div>
+
+<div class="callout callout-cost">
+  <h4>Duplicate test work &mdash; Nudge integration</h4>
+  <p>Silas wrote new nudge integration tests from scratch instead of running the existing suite that Kade had shipped the day before. The tests already existed in <code>engineer/tests/</code>. Root cause: Silas didn't know what test files existed in the domain.</p>
+</div>
+
+<div class="callout callout-cost">
+  <h4>Pattern: knowledge exists but isn't found</h4>
+  <p>These aren't knowledge gaps &mdash; they're discovery failures. The information existed. The role just didn't find it. A system that forces discovery before building eliminates this entire class of failure.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>The Solution</h2>
+
+<div class="callout callout-solution">
+  <h4>One file per domain. Automatic injection. Hook-enforced.</h4>
+  <p>Each domain gets a single <code>domain-context-{name}.md</code> file that serves as the entry point. When a role pulls a card tagged with <code>domain:photos</code>, the domain context file is automatically injected into their session. The role reads it before building &mdash; enforced by hook, not by discipline.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>Domain Context File Structure</h2>
+
+<div class="domain-file">
+  <div class="domain-file-header">domain-context-{domain}.md</div>
+  <div class="domain-file-section">
+    <div class="sec-icon">&#x1F4DC;</div>
+    <div class="sec-title">1. ICD &mdash; Interface Control Documents</div>
+    <div class="sec-desc">File paths to .ttl and .html specs that define the domain's data contracts. The source of truth for field mappings, source systems, and canonical schema.</div>
+  </div>
+  <div class="domain-file-section">
+    <div class="sec-icon">&#x2705;</div>
+    <div class="sec-title">2. Tests &mdash; Existing Test Coverage</div>
+    <div class="sec-desc">All test files related to this domain. File paths plus what each test covers. Prevents duplicate test work and ensures new work builds on existing coverage.</div>
+  </div>
+  <div class="domain-file-section">
+    <div class="sec-icon">&#x1F4BE;</div>
+    <div class="sec-title">3. Persistence &mdash; Where Data Lives</div>
+    <div class="sec-desc">Fuseki graph URIs with record counts, NiFi flow names and which machine they run on, file system paths, scripts. The physical topology of the domain.</div>
+  </div>
+  <div class="domain-file-section">
+    <div class="sec-icon">&#x2696;</div>
+    <div class="sec-title">4. Key Decisions &mdash; Constraints from Above</div>
+    <div class="sec-desc">Decision records (DEC-nnn) that constrain work in this domain. One-line summaries with enough context to avoid violating them.</div>
+  </div>
+  <div class="domain-file-section">
+    <div class="sec-icon">&#x26A0;</div>
+    <div class="sec-title">5. Constraints &mdash; Hard-Won Knowledge</div>
+    <div class="sec-desc">Non-obvious rules learned the hard way. The things that aren't in the ICD but will bite you if you don't know them. Domain-specific gotchas and edge cases.</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>Worked Example: Photos Domain</h2>
+
+<p><span class="section-label">ICD</span></p>
+<table>
+  <tr><th style="width:45%">File</th><th>Description</th></tr>
+  <tr><td><code>architect/icd-instance-photos.ttl</code></td><td>RDF/TTL spec &mdash; source-to-canonical field mappings for Apple, Takeout, iPhone</td></tr>
+  <tr><td><code>architect/docs/merge-specification-photos.html</code></td><td>Human-readable merge spec &mdash; dedup rules, priority order, conflict resolution</td></tr>
+</table>
+
+<p><span class="section-label">Tests</span></p>
+<table>
+  <tr><th style="width:45%">File</th><th>Coverage</th></tr>
+  <tr><td><code>engineer/tests/photos-canonical.test.ts</code></td><td>Canonical rebuild correctness &mdash; dedup, field mapping, era-based source priority</td></tr>
+  <tr><td><code>engineer/tests/nudge-integration.test.ts</code></td><td>Cross-role nudge delivery for photo pipeline stages</td></tr>
+</table>
+
+<p><span class="section-label">Persistence</span></p>
+<table>
+  <tr><th style="width:25%">Type</th><th style="width:45%">Location</th><th>Details</th></tr>
+  <tr><td>Fuseki &mdash; Apple source</td><td><code>urn:gathering:photos/source/apple</code></td><td>24,592 photos</td></tr>
+  <tr><td>Fuseki &mdash; Takeout source</td><td><code>urn:gathering:photos/source/takeout</code></td><td>102,488 photos</td></tr>
+  <tr><td>Fuseki &mdash; iPhone source</td><td><code>urn:gathering:photos/source/iphone</code></td><td>54,479 photos</td></tr>
+  <tr><td>Fuseki &mdash; Canonical</td><td><code>urn:jb:photos/canonical/</code></td><td>79,598 photos (merged)</td></tr>
+  <tr><td>NiFi flow</td><td>"Photos Canonical Rebuild"</td><td>Runs on Bedroom (192.168.86.242)</td></tr>
+  <tr><td>NiFi flow</td><td>"iPhone Photo Extraction"</td><td>Runs on Bedroom (192.168.86.242)</td></tr>
+  <tr><td>Script</td><td><code>engineer/scripts/run-canonical-rebuild.py</code></td><td>CLI wrapper for canonical rebuild</td></tr>
+  <tr><td>Script</td><td><code>engineer/scripts/nifi/photos-merge-cli.py</code></td><td>Direct merge invocation</td></tr>
+  <tr><td>Script</td><td><code>engineer/scripts/build-nifi-photos-flow.py</code></td><td>NiFi flow generator</td></tr>
+</table>
+
+<p><span class="section-label">Key Decisions</span></p>
+<table>
+  <tr><th style="width:15%">Decision</th><th>Summary</th></tr>
+  <tr><td><strong>DEC-094</strong></td><td>Harvest pause &mdash; tighten operations before scaling data migration</td></tr>
+  <tr><td><strong>DEC-095</strong></td><td>Mapper before harvest &mdash; no data loading without validated ICDs</td></tr>
+  <tr><td><strong>Jeff 2026-03-24</strong></td><td>Canonical rebuild runs through NiFi, not bash scripts</td></tr>
+</table>
+
+<p><span class="section-label">Constraints</span></p>
+<div class="callout callout-rule">
+  <h4>Photos Domain &mdash; Non-Obvious Rules</h4>
+  <ul>
+    <li><strong>Apple Photos uses UUID filenames internally.</strong> Don't match across sources by filename alone. UUIDs are meaningless outside Apple's database.</li>
+    <li><strong>iPhone reuses IMG_NNNN across years.</strong> Dedup by filename+date, not filename. IMG_0001.HEIC from 2021 and 2024 are different photos.</li>
+    <li><strong>Source priority shifts by era.</strong> Apple primary pre-2020, iPhone primary 2020+, Takeout supplementary all eras.</li>
+    <li><strong>Era boundaries matter.</strong> Pre-2006 (no digital), 2006&ndash;2012 (camera era), 2013&ndash;2019 (mixed), 2020+ (iPhone primary).</li>
+    <li><strong>Cross-graph SPARQL joins timeout on full datasets.</strong> Use per-era queries to stay under timeout thresholds.</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2>Hook Integration Flow</h2>
+
+<div class="flow">
+  <div class="step">
+    <span class="step-num">1</span>
+    <span class="action"><span class="role">Role</span> runs <span class="trigger">/pull 1644</span> &mdash; card has tag <code>domain:photos</code></span>
+  </div>
+  <div class="arrow">&darr;</div>
+  <div class="step">
+    <span class="step-num">2</span>
+    <span class="action"><span class="trigger">Pull skill</span> reads card metadata &rarr; finds <code>domain:photos</code> tag</span>
+  </div>
+  <div class="arrow">&darr;</div>
+  <div class="step">
+    <span class="step-num">3</span>
+    <span class="action"><span class="hook">Hook injects</span> <span class="file">domain-context-photos.md</span> into session context</span>
+  </div>
+  <div class="arrow">&darr;</div>
+  <div class="step">
+    <span class="step-num">4</span>
+    <span class="action"><span class="role">Role reads</span> domain context before building &mdash; enforced by <span class="hook">ICD pre-read hook</span></span>
+  </div>
+  <div class="arrow">&darr;</div>
+  <div class="step">
+    <span class="step-num">5</span>
+    <span class="action">At close-out: <span class="hook">if-touched check</span> asks "did you update domain context?"</span>
+  </div>
+</div>
+
+<p style="font-size: .88rem; color: #555;">The hook is the enforcement mechanism. Roles don't need to remember to check &mdash; the system injects the context before they can start building. The close-out check ensures context stays current after work is done.</p>
+
+<!-- ============================================================ -->
+<h2>Maintenance Model</h2>
+
+<table>
+  <tr><th style="width:18%">Trigger</th><th style="width:18%">Owner</th><th>What Changes</th></tr>
+  <tr>
+    <td>Code ships that changes persistence, adds tests, or discovers constraints</td>
+    <td><span class="owner-badge owner-kade">Kade</span></td>
+    <td>Tests section, Persistence section, Constraints section</td>
+  </tr>
+  <tr>
+    <td>Decisions made that affect the domain</td>
+    <td><span class="owner-badge owner-wren">Wren</span></td>
+    <td>Key Decisions section</td>
+  </tr>
+  <tr>
+    <td>ICDs or infrastructure changes</td>
+    <td><span class="owner-badge owner-silas">Silas</span></td>
+    <td>ICD section, Persistence section</td>
+  </tr>
+</table>
+
+<div class="callout callout-rule">
+  <h4>Stale domain context is worse than no domain context</h4>
+  <p>A role that reads outdated constraints will make confident wrong decisions. The if-touched check at close-out is the primary defense: if you changed anything in the domain, you update the context file before your session ends.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>Design Properties</h2>
+
+<div class="props">
+  <div class="prop">
+    <span class="check">&#10003;</span> <span class="label">One file per domain, not per card</span>
+    <div class="desc">Domain knowledge accumulates across cards. The file is the single entry point regardless of which card you're working.</div>
+  </div>
+  <div class="prop">
+    <span class="check">&#10003;</span> <span class="label">Human-readable markdown, not config</span>
+    <div class="desc">Roles read it as prose. No parsing, no schema, no tooling dependency. A new team member could read it cold.</div>
+  </div>
+  <div class="prop">
+    <span class="check">&#10003;</span> <span class="label">Injected automatically, not fetched manually</span>
+    <div class="desc">The pull skill handles injection. Roles never need to remember "go check domain context." The system does it for them.</div>
+  </div>
+  <div class="prop">
+    <span class="check">&#10003;</span> <span class="label">Enforced by hook, not by discipline</span>
+    <div class="desc">The ICD pre-read hook blocks building until domain context is acknowledged. Discipline fails; hooks don't.</div>
+  </div>
+  <div class="prop">
+    <span class="check">&#10003;</span> <span class="label">Updated incrementally, not regenerated</span>
+    <div class="desc">Each builder adds what they learned. The file grows with the domain's knowledge, session by session.</div>
+  </div>
+  <div class="prop">
+    <span class="check">&#10003;</span> <span class="label">Close-out enforced freshness</span>
+    <div class="desc">The if-touched check at session close catches stale context before it can mislead the next role.</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>Domain Inventory</h2>
+
+<p>Initial domains for context file creation, based on active work and failure history:</p>
+
+<table>
+  <tr><th>Domain</th><th>Tag</th><th>Priority</th><th>Rationale</th></tr>
+  <tr><td><strong>Photos</strong></td><td><code>domain:photos</code></td><td>P1</td><td>Highest failure cost. Most constraints. Active canonical rebuild.</td></tr>
+  <tr><td><strong>Music</strong></td><td><code>domain:music</code></td><td>P2</td><td>Large dataset, NiFi integration, Apple Music metadata quirks.</td></tr>
+  <tr><td><strong>Infrastructure</strong></td><td><code>domain:infra</code></td><td>P2</td><td>Two machines, LaunchAgents, service registry. Frequent cross-role work.</td></tr>
+  <tr><td><strong>Chorus</strong></td><td><code>domain:chorus</code></td><td>P2</td><td>Bridge, nudge system, hooks, scripts. All three roles contribute.</td></tr>
+  <tr><td><strong>Garden</strong></td><td><code>domain:garden</code></td><td>P3</td><td>Emerging domain. Fewer constraints, but growing.</td></tr>
+  <tr><td><strong>Blog</strong></td><td><code>domain:blog</code></td><td>P3</td><td>WordPress. Relatively isolated.</td></tr>
+</table>
+
+<footer>
+  Domain Context Fetch &mdash; Product Design &mdash; Wren (PM) &mdash; 2026-03-25<br>
+  Chorus team &mdash; Jeff Bridwell's personal infrastructure portfolio
+</footer>
+
+</body>
+</html>

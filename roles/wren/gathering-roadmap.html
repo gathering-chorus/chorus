@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gathering Roadmap &mdash; Domain Topology</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0a0f; color: #e0e0e0; padding: 30px 20px;
+    min-width: 1100px;
+  }
+  header { text-align: center; margin-bottom: 30px; }
+  h1 { font-size: 26px; font-weight: 300; letter-spacing: 2px; color: #fff; }
+  .subtitle { font-size: 13px; color: #888; letter-spacing: 1px; margin-top: 6px; }
+  .legend {
+    display: flex; gap: 24px; justify-content: center; margin: 16px 0 24px;
+    font-size: 12px; flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .phase-header {
+    display: grid; grid-template-columns: 140px 1fr 1fr 1fr 1fr;
+    gap: 8px; margin-bottom: 4px; padding: 0 8px;
+  }
+  .phase-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 2px; padding: 10px 14px; text-align: center;
+    border-radius: 8px 8px 0 0;
+  }
+  .phase-done { background: rgba(92,252,124,0.08); color: #5cfc7c; }
+  .phase-now { background: rgba(252,170,92,0.14); color: #fcaa5c; border: 1px solid rgba(252,170,92,0.25); }
+  .phase-next { background: rgba(74,158,255,0.08); color: #4a9eff; }
+  .phase-later { background: rgba(124,92,252,0.08); color: #7c5cfc; }
+  .phase-count { font-size: 18px; font-weight: 300; display: block; margin-top: 2px; }
+  .domain-row {
+    display: grid; grid-template-columns: 140px 1fr 1fr 1fr 1fr;
+    gap: 8px; margin-bottom: 6px; padding: 0 8px; min-height: 60px;
+  }
+  .d-label-cell {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 10px; padding-right: 12px;
+  }
+  .d-icon {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: bold; flex-shrink: 0;
+    box-shadow: 0 0 12px rgba(0,0,0,0.4);
+  }
+  .d-name {
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.5px; text-align: right;
+  }
+  .d-stat {
+    font-size: 9px; color: #666; margin-top: 2px; font-weight: 400;
+    text-transform: none; letter-spacing: 0;
+  }
+  .cell { padding: 10px 12px; border-radius: 6px; min-height: 50px; }
+  .cell-done { background: rgba(92,252,124,0.04); border: 1px solid rgba(92,252,124,0.08); }
+  .cell-now { background: rgba(252,170,92,0.07); border: 1px solid rgba(252,170,92,0.2); box-shadow: inset 0 0 12px rgba(252,170,92,0.04); }
+  .cell-next { background: rgba(74,158,255,0.04); border: 1px solid rgba(74,158,255,0.08); }
+  .cell-later { background: rgba(124,92,252,0.04); border: 1px solid rgba(124,92,252,0.08); }
+  .item { font-size: 11px; line-height: 1.5; padding: 4px 0; display: flex; align-items: flex-start; gap: 5px; }
+  .item-icon { flex-shrink: 0; font-size: 12px; margin-top: 1px; }
+  .item-done .item-icon { color: #5cfc7c; }
+  .item-now .item-icon { color: #fcaa5c; }
+  .item-next .item-icon { color: #4a9eff; }
+  .item-later .item-icon { color: #7c5cfc; }
+  .item-text { color: #ccc; }
+  .item-done .item-text { color: #9efaad; }
+  .item-now .item-text { color: #fcd09e; }
+  .item-next .item-text { color: #9ec6fa; }
+  .item-later .item-text { color: #b8a6fa; }
+  .card-ref {
+    font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px;
+    white-space: nowrap; margin-left: 3px; vertical-align: middle;
+  }
+  .card-g { background: rgba(74,158,255,0.15); color: #4a9eff; }
+  .role {
+    font-size: 8px; font-weight: 700; padding: 1px 4px; border-radius: 2px;
+    white-space: nowrap; margin-left: 3px; vertical-align: middle;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .role-s { background: rgba(92,138,252,0.2); color: #5c8afc; }
+  .role-k { background: rgba(224,92,252,0.2); color: #e05cfc; }
+  .role-w { background: rgba(252,170,92,0.2); color: #fcaa5c; }
+  .shipped-items { display: none; }
+  .shipped-items.expanded { display: block; }
+  .shipped-summary {
+    font-size: 11px; color: #5cfc7c; cursor: pointer; padding: 4px 0; opacity: 0.7;
+  }
+  .shipped-summary:hover { opacity: 1; }
+  .shipped-summary .expand-icon { transition: transform 0.2s; display: inline-block; }
+  .shipped-summary.expanded .expand-icon { transform: rotate(90deg); }
+  .ring-divider {
+    display: grid; grid-template-columns: 140px 1fr;
+    gap: 8px; padding: 10px 8px 4px; margin-top: 10px;
+  }
+  .ring-divider-label {
+    grid-column: 2 / -1; font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 2px; padding: 4px 12px; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .ring-divider-label .trust-tag {
+    font-size: 8px; font-weight: 400; letter-spacing: 1px; padding: 2px 8px;
+    border-radius: 10px; margin-left: auto;
+  }
+  .empty-signal {
+    font-size: 10px; color: #444; font-style: italic; padding: 8px 0;
+  }
+  footer {
+    text-align: center; margin-top: 30px; padding: 16px;
+    font-size: 11px; color: #555; border-top: 1px solid rgba(255,255,255,0.05);
+  }
+  .totals {
+    display: flex; justify-content: center; gap: 40px;
+    margin: 20px 0; padding: 14px 24px;
+    background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; font-size: 13px;
+  }
+  .total-num { font-size: 22px; font-weight: 300; }
+  .total-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #888; }
+  .gen-badge {
+    display: inline-block; font-size: 9px; padding: 2px 8px; border-radius: 10px;
+    background: rgba(252,170,92,0.15); color: #fcaa5c; margin-left: 8px;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GATHERING ROADMAP</h1>
+  <div class="subtitle">Domain Topology &mdash; What&rsquo;s Built, What&rsquo;s Next, Where the Gaps Are <span class="gen-badge">LIVE from board API &mdash; 2026-02-21 09:58</span></div>
+</header>
+
+<div class="totals">
+  <div style="text-align:center"><div class="total-num" style="color:#5cfc7c">47</div><div class="total-label">Shipped</div></div>
+  <div style="text-align:center"><div class="total-num" style="color:#fcaa5c">0</div><div class="total-label">Now</div></div>
+  <div style="text-align:center"><div class="total-num" style="color:#4a9eff">16</div><div class="total-label">Next</div></div>
+  <div style="text-align:center"><div class="total-num" style="color:#7c5cfc">16</div><div class="total-label">Later</div></div>
+  <div style="text-align:center;border-left:1px solid rgba(255,255,255,0.1);padding-left:40px;">
+    <div class="total-num" style="color:#fff">79</div><div class="total-label">Total</div>
+  </div>
+  <div style="text-align:center;border-left:1px solid rgba(255,255,255,0.1);padding-left:40px;">
+    <div class="total-num" style="color:#fc5c5c">9</div><div class="total-label">Domains</div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#5cfc7c"></div> Shipped</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fcaa5c"></div> Now</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#4a9eff"></div> Next</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7c5cfc"></div> Later</div>
+  <div class="legend-item"><span class="card-ref card-g">#N</span> Board card</div>
+  <div class="legend-item"><span class="role role-s">Silas</span><span class="role role-k">Kade</span><span class="role role-w">Wren</span> Owner</div>
+</div>
+
+<div class="phase-header">
+  <div></div>
+  <div class="phase-label phase-done">Shipped <span class="phase-count">47</span></div>
+  <div class="phase-label phase-now">Now <span class="phase-count">0</span></div>
+  <div class="phase-label phase-next">Next <span class="phase-count">16</span></div>
+  <div class="phase-label phase-later">Later <span class="phase-count">16</span></div>
+</div>
+
+
+<div class="ring-divider">
+  <div></div>
+  <div class="ring-divider-label" style="color:#fcaa5c;">♳ Core
+    <span class="trust-tag" style="background:rgba(252,92,92,0.15); color:#fc8888;">Local AI only — never leaves the Macs</span>
+  </div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Self<div class="d-stat">convergent center</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#fcaa5c,#cc8844);">☉</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 6 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">15 stories captured (stories.md)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Self-memories + values inventory</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Life’s Practice ontology</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Heidegger’s Gathering research <span class="card-ref card-g">#69</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Self domain on mind map <span class="card-ref card-g">#94</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Self-reflection dashboard <span class="card-ref card-g">#81</span> <span class="role role-w">Wren</span></span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Life board + revenue ideation <span class="card-ref card-g">#92</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Calendar design — protect breathing room <span class="card-ref card-g">#99</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Weekly cadence calendar <span class="card-ref card-g">#93</span> <span class="role role-w">Wren</span></span></div></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Self domain design — convergent center <span class="card-ref card-g">#74</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Value stream right side — reflection <span class="card-ref card-g">#25</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Local AI for Self — Ollama <span class="card-ref card-g">#83</span> <span class="role role-s">Silas</span></span></div></div>
+</div>
+
+
+<div class="ring-divider">
+  <div></div>
+  <div class="ring-divider-label" style="color:#4a9eff;">◆ Collections
+    <span class="trust-tag" style="background:rgba(252,170,92,0.15); color:#fccc88;">Hybrid — local store, cloud AI for enrichment</span>
+  </div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Music<div class="d-stat">66k tracks · 5,844 albums</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#4a9eff,#3a7ecc);">♫</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">66,000 tracks from iTunes + Apple Music</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">5,844 albums with metadata pipeline</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Album browse + artwork display</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Music harvester Phase 1-4 <span class="card-ref card-g">#44</span> <span class="role role-k">Kade</span></span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Artist browse page <span class="card-ref card-g">#56</span> <span class="role role-k">Kade</span></span></div></div>
+  <div class="cell cell-later"></div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Photos<div class="d-stat">7,978 items</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#5cfc7c,#44cc66);">▢</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 3 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Photos harvester Phase 1 — 7,978 items</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">HEIC/RAW format support</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Browse view with thumbnails</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Incremental harvesting <span class="card-ref card-g">#72</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Photo search <span class="card-ref card-g">#73</span> <span class="role role-w">Wren</span></span></div></div>
+  <div class="cell cell-later"></div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Books<div class="d-stat">growing</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#7c5cfc,#6344cc);">☊</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 2 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Book upload with ISBN lookup</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Collection view + browse</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Location optional on import <span class="card-ref card-g">#46</span></span></div></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Catalog interface — physical objects <span class="card-ref card-g">#38</span> <span class="role role-w">Wren</span></span></div></div>
+</div>
+
+
+<div class="ring-divider">
+  <div></div>
+  <div class="ring-divider-label" style="color:#5ce8fc;">▶ Intake Pipeline
+    <span class="trust-tag" style="background:rgba(252,170,92,0.15); color:#fccc88;">Hybrid</span>
+  </div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Capture<div class="d-stat">SMS · Notes · Social</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#5ce8fc,#44b8cc);">⇩</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 3 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">CaptureAdapter — multi-destination routing</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Slack channel routing</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">SMS capture v2 <span class="card-ref card-g">#78</span> <span class="role role-k">Kade</span></span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Notes harvester — Apple Notes <span class="card-ref card-g">#95</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Social posts — Facebook + LinkedIn <span class="card-ref card-g">#96</span> <span class="role role-w">Wren</span></span></div></div>
+  <div class="cell cell-later"></div>
+</div>
+
+
+<div class="ring-divider">
+  <div></div>
+  <div class="ring-divider-label" style="color:#8ccc44;">⚘ Living
+    <span class="trust-tag" style="background:rgba(252,170,92,0.15); color:#fccc88;">Hybrid</span>
+  </div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Property &amp; Garden<div class="d-stat">cultivating</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#8ccc44,#6ea833);">⚘</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 2 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Data model — rooms, houses, gardens, plants</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Property browse view</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="empty-signal">No cards queued</div></div>
+  <div class="cell cell-later"><div class="empty-signal">No cards planned</div></div>
+</div>
+
+
+<div class="ring-divider">
+  <div></div>
+  <div class="ring-divider-label" style="color:#c8c8cc;">✹ Public
+    <span class="trust-tag" style="background:rgba(92,252,124,0.15); color:#88cc88;">Cloud fine — same as any SaaS</span>
+  </div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Blog<br>Gallery<br>Glimmer<div class="d-stat">public-facing</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#c8c8cc,#999999);">♲</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 5 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Style guide — gathering.css across 19 views</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Swagger/OpenAPI — 147 endpoints</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">About page + PDF download <span class="card-ref card-g">#85</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Chorus landing page demo <span class="card-ref card-g">#80</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Board view in app <span class="card-ref card-g">#6</span> <span class="role role-k">Kade</span></span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="empty-signal">No cards queued</div></div>
+  <div class="cell cell-later"><div class="empty-signal">No cards planned</div></div>
+</div>
+
+
+<div class="ring-divider">
+  <div></div>
+  <div class="ring-divider-label" style="color:#44ccaa;">♲ Experience — Navigation & Search
+    
+  </div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Mind Map &amp; Search<div class="d-stat">graph = navigation</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#44ccaa,#33aa88);">✷</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 4 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">D3.js mind map — interactive ontology graph</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">DEC-021: Graph traversal IS navigation</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Ontology as interactive visual identity</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Mind map navbar z-index fix <span class="card-ref card-g">#71</span> <span class="role role-k">Kade</span></span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">Leaf density — collapse/threshold UX <span class="card-ref card-g">#98</span> <span class="role role-w">Wren</span></span></div></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Mind map UX — photos, shapes <span class="card-ref card-g">#86</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Visibility-aware mind map <span class="card-ref card-g">#45</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Cross-domain search <span class="card-ref card-g">#70</span> <span class="role role-s">Silas</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">TheBrain-style graph navigation <span class="card-ref card-g">#52</span> <span class="role role-w">Wren</span></span></div></div>
+</div>
+
+
+<div class="ring-divider">
+  <div></div>
+  <div class="ring-divider-label" style="color:#8888aa;">⚙ Substrate — Infrastructure & Architecture
+    
+  </div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Infrastructure<div class="d-stat">SOLID · Fuseki · Docker</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#8888aa,#666688);">⚙</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> 15 items shipped</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">SOLID pods + Turtle/RDF + ACLs</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Apache Jena Fuseki (SPARQL / TDB2)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Docker + Terraform lifecycle</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">app-state.sh — deploy, restart, health</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">1,948 unit tests + 119 E2E (82% coverage)</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Alert routing → Slack <span class="card-ref card-g">#88</span> <span class="role role-s">Silas</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Permission profiles <span class="card-ref card-g">#97</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Signal-not-narrate hooks <span class="card-ref card-g">#102</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Session start <1s <span class="card-ref card-g">#100</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Pod-mediated coordination <span class="card-ref card-g">#82</span> <span class="role role-s">Silas</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Cloud readiness assessment <span class="card-ref card-g">#50</span> <span class="role role-s">Silas</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">SOLID graduation model <span class="card-ref card-g">#40</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">External security scanning <span class="card-ref card-g">#79</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Data scrubbing enforcement <span class="card-ref card-g">#77</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Sitemap scraper <span class="card-ref card-g">#76</span> <span class="role role-k">Kade</span></span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"></div>
+  <div class="cell cell-later"><div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Docker config simplify <span class="card-ref card-g">#87</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Pod phase 3 — shared logs to pod <span class="card-ref card-g">#89</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">GitNexus — AST knowledge graphs <span class="card-ref card-g">#91</span> <span class="role role-s">Silas</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Annotation pattern cross-collection <span class="card-ref card-g">#8</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Value stream + ontology refinement <span class="card-ref card-g">#26</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Vision refinement session <span class="card-ref card-g">#3</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Explore SOLID capabilities <span class="card-ref card-g">#27</span> <span class="role role-w">Wren</span></span></div>
+<div class="item item-later"><span class="item-icon">&#9675;</span><span class="item-text">Code walkthrough with Jeff <span class="card-ref card-g">#90</span> <span class="role role-s">Silas</span></span></div></div>
+</div>
+
+
+<div class="ring-divider">
+  <div></div>
+  <div class="ring-divider-label" style="color:#fc5c5c;">&#9888; Tech Debt &mdash; Cross-cutting</div>
+</div>
+
+<div class="domain-row">
+  <div class="d-label-cell">
+    <div class="d-name">Debt<br>Backlog<div class="d-stat">6 open items</div></div>
+    <div class="d-icon" style="background:linear-gradient(135deg,#fc5c5c,#cc3333);">!</div>
+  </div>
+  <div class="cell cell-done"><div class="shipped-summary" onclick="toggleShipped(this)"><span class="expand-icon">&#9656;</span> Resolved items</div>
+<div class="shipped-items">
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">TD-007: Broken owner WebId in 22 ACLs</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Data scrubbing enforcement</span></div>
+<div class="item item-done"><span class="item-icon">&#9673;</span><span class="item-text">Boundary contracts formalized</span></div>
+</div>
+</div>
+  <div class="cell cell-now"></div>
+  <div class="cell cell-next"><div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-003: Low coverage auth/ACL <span class="card-ref card-g">#30</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-008: Missing ACLs for private resources <span class="card-ref card-g">#34</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-005: Open test handles <span class="card-ref card-g">#31</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-006: ts-jest config <span class="card-ref card-g">#32</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-009: E2E artifacts on disk <span class="card-ref card-g">#35</span> <span class="role role-k">Kade</span></span></div>
+<div class="item item-next"><span class="item-icon">&#9671;</span><span class="item-text">TD-010: Redundant auth checks <span class="card-ref card-g">#36</span> <span class="role role-k">Kade</span></span></div></div>
+  <div class="cell cell-later"></div>
+</div>
+
+
+<footer>
+  Gathering Roadmap &mdash; generated 2026-02-21 09:58 from live board data &nbsp;|&nbsp;
+  9 domains &nbsp;|&nbsp; 55 board cards &nbsp;|&nbsp;
+  Organized by concentric trust model (Core &rarr; Collections &rarr; Public)
+</footer>
+
+<script>
+function toggleShipped(el) {
+  el.classList.toggle('expanded');
+  var items = el.nextElementSibling;
+  items.classList.toggle('expanded');
+}
+</script>
+
+</body>
+</html>

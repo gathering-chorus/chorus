@@ -1,0 +1,27 @@
+# Next Session — Wren
+
+## Critical: Clearing injection broken
+Silas's #1802 rewrite broke nudge injection — nudges steal Jeff's browser focus and inject keystrokes into the Clearing input field. Three "fix" attempts, none verified before declaring done. Jeff couldn't type. DO NOT NUDGE ANY ROLE until this is confirmed fixed by Silas with his own verification — not Jeff testing.
+
+## What happened
+- Session started 17:34, ran through 03:30+
+- Productive evening: v3 assessment, doc-catalog update, seed triage, logging strategy carded (8 cards, pipeline wired), Clearing guest injection fixed, reconnect wired, background image fixed
+- Kade shipped #1803 (seed pipeline logging, 7/7 AC, 22 tests)
+- Rate limits blocked Kade for 6+ hours — I failed to re-nudge on schedule, just printed "holding" for hours
+- At 03:25 Clearing injection broke Jeff's ability to type — nudges from role-to-role were keystroke-injecting into Jeff's browser window
+
+## Cards to accept
+- #1800 (Silas, synthetic SMS probe) — demo ready, 5/5 AC
+- #1803 (Kade, seed pipeline logging) — demo ready, 7/7 AC
+- #1773 (Silas, structural audit) — shipped, needs review
+- #1802 (Silas, Clearing injection) — BROKEN, do not accept
+
+## Jeff's direction for today
+- Focus on Practice & Gate Coverage — 6 of 34 gated, 28 ungated
+- Card #1791 (Designing stage gate hook) is the entry point
+
+## Feedback absorbed
+- Don't send nudges that steal Jeff's window
+- Re-nudge on decay schedule when a role stalls, don't just print "holding"
+- Verify defect fixes before declaring them done — never use Jeff as the test suite
+- "We go too fast on defects" — guess → declare fixed → Jeff discovers broken is the recurring failure mode

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gathering.css</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/npx</string>
+        <string>community-solid-server</string>
+        <string>-c</string>
+        <string>@css:config/file.json</string>
+        <string>-f</string>
+        <string>/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/css</string>
+        <string>-p</string>
+        <string>3001</string>
+        <string>-b</string>
+        <string>http://localhost:3001/</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CSS_LOGGING_LEVEL</key>
+        <string>info</string>
+        <key>PATH</key>
+        <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/css.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/css.log</string>
+</dict>
+</plist>

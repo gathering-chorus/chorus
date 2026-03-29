@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cockpit — Mockup</title>
+    <style>
+        :root {
+            --bg: #fafafa;
+            --card-bg: #ffffff;
+            --border: #e5e7eb;
+            --text: #1f2937;
+            --text-muted: #6b7280;
+            --text-light: #9ca3af;
+            --wren: #5a8f5a;
+            --wren-bg: #e8f4e8;
+            --silas: #8a6a4a;
+            --silas-bg: #f4ede4;
+            --kade: #4a6a9a;
+            --kade-bg: #e4eaf4;
+            --jeff: #7c6faa;
+            --jeff-bg: #f0ecf5;
+            --attention: #dc2626;
+            --attention-bg: #fef2f2;
+            --shipped: #16a34a;
+            --shipped-bg: #f0fdf4;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px 16px;
+            line-height: 1.5;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        header h1 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        header .meta {
+            font-size: 0.8rem;
+            color: var(--text-light);
+        }
+
+        /* Sections */
+        section {
+            margin-bottom: 24px;
+        }
+
+        section h2 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        /* Attention items */
+        .attention-list {
+            list-style: none;
+        }
+
+        .attention-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 14px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+        }
+
+        .attention-item.hot {
+            border-left: 3px solid var(--attention);
+            background: var(--attention-bg);
+        }
+
+        .attention-item .badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .badge.brief { background: var(--jeff-bg); color: var(--jeff); }
+        .badge.blocked { background: var(--attention-bg); color: var(--attention); }
+        .badge.decision { background: #fef3c7; color: #92400e; }
+
+        .attention-item .detail {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        .nothing {
+            padding: 12px 14px;
+            color: var(--text-light);
+            font-size: 0.85rem;
+            font-style: italic;
+        }
+
+        /* Commits / shipped */
+        .commit-group {
+            margin-bottom: 12px;
+        }
+
+        .commit-group .role-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 10px;
+            display: inline-block;
+            margin-bottom: 6px;
+        }
+
+        .role-label.wren { background: var(--wren-bg); color: var(--wren); }
+        .role-label.silas { background: var(--silas-bg); color: var(--silas); }
+        .role-label.kade { background: var(--kade-bg); color: var(--kade); }
+
+        .commit-list {
+            list-style: none;
+            margin-left: 12px;
+        }
+
+        .commit-list li {
+            padding: 4px 0;
+            font-size: 0.85rem;
+            display: flex;
+            gap: 8px;
+            align-items: baseline;
+        }
+
+        .commit-hash {
+            font-family: 'SF Mono', Menlo, monospace;
+            font-size: 0.75rem;
+            color: var(--text-light);
+            flex-shrink: 0;
+        }
+
+        a { color: inherit; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .commit-hash a { color: var(--kade); }
+        .commit-hash a:hover { color: var(--text); }
+        .flight-card a { color: var(--text); }
+        .attention-item a { color: var(--text); }
+
+        .commit-msg {
+            color: var(--text);
+        }
+
+        .commit-time {
+            font-size: 0.75rem;
+            color: var(--text-light);
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        /* In-flight cards */
+        .flight-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 8px;
+        }
+
+        .flight-card {
+            padding: 10px 14px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .flight-card .card-title {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .flight-card .card-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .flight-card .card-owner {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 1px 6px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+
+        .card-owner.wren { background: var(--wren-bg); color: var(--wren); }
+        .card-owner.silas { background: var(--silas-bg); color: var(--silas); }
+        .card-owner.kade { background: var(--kade-bg); color: var(--kade); }
+
+        /* Role status row */
+        .role-status {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .role-box {
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+
+        .role-box.wren { background: var(--wren-bg); border: 1px solid #c3dcc3; }
+        .role-box.silas { background: var(--silas-bg); border: 1px solid #ddd0bc; }
+        .role-box.kade { background: var(--kade-bg); border: 1px solid #bcc8dd; }
+
+        .role-box .role-name {
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+
+        .role-box .role-current {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        .role-box .role-last {
+            font-size: 0.75rem;
+            color: var(--text-light);
+            margin-top: 4px;
+        }
+
+        /* Boards summary */
+        .board-row {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+        }
+
+        .board-count {
+            font-weight: 600;
+            font-size: 1.1rem;
+            min-width: 24px;
+        }
+
+        .board-label {
+            color: var(--text-muted);
+        }
+
+        .boards-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .board-section {
+            padding: 12px 14px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+
+        .board-section h3 {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        footer {
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--text-light);
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        @media (max-width: 600px) {
+            .role-status { grid-template-columns: 1fr; }
+            .boards-container { grid-template-columns: 1fr; }
+            .flight-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Cockpit</h1>
+    <span class="meta">Thu Feb 20, 10:15 AM &middot; Auto-refresh 60s</span>
+</header>
+
+<!-- SECTION 1: What needs my attention? -->
+<section>
+    <h2>Needs Your Attention</h2>
+    <ul class="attention-list">
+        <li class="attention-item hot">
+            <span class="badge blocked">BLOCKED</span>
+            <div>
+                <div><a href="http://localhost:3456/tasks/45">Glimmer List UI (#45)</a> &mdash; blocked on Silas ontology review</div>
+                <div class="detail">Kade &middot; blocked 3 days</div>
+            </div>
+        </li>
+        <li class="attention-item">
+            <span class="badge decision">DECISION</span>
+            <div>
+                <div>Cockpit scope &mdash; replace /chorus or new /cockpit route?</div>
+                <div class="detail">Wren &middot; DEC-030 pending</div>
+            </div>
+        </li>
+        <li class="attention-item">
+            <span class="badge brief">BRIEF</span>
+            <div>
+                <div>Silas: <a href="http://localhost:3456/tasks/16">cockpit architecture brief</a> &mdash; ready for review</div>
+                <div class="detail">In <a href="https://github.com/WJeffBridwell/gathering-team/tree/main/engineer/briefs">engineer/briefs/</a> &middot; 12 min ago</div>
+            </div>
+        </li>
+    </ul>
+</section>
+
+<!-- SECTION 2: What shipped? (last 24h) -->
+<section>
+    <h2>Shipped (Last 24h)</h2>
+
+    <div class="commit-group">
+        <span class="role-label kade">Kade</span>
+        <ul class="commit-list">
+            <li>
+                <span class="commit-hash"><a href="https://github.com/WJeffBridwell/gathering-team/commit/827ef00">827ef00</a></span>
+                <span class="commit-msg">DEC-028: decision capture + next-session.md</span>
+                <span class="commit-time">8:20 AM</span>
+            </li>
+            <li>
+                <span class="commit-hash"><a href="https://github.com/WJeffBridwell/gathering-team/commit/a3f1c92">a3f1c92</a></span>
+                <span class="commit-msg">commitment brief flood fix &mdash; deduplicate per conversation</span>
+                <span class="commit-time">7:45 AM</span>
+            </li>
+        </ul>
+    </div>
+
+    <div class="commit-group">
+        <span class="role-label wren">Wren</span>
+        <ul class="commit-list">
+            <li>
+                <span class="commit-hash"><a href="https://github.com/WJeffBridwell/gathering-team/commit/02fcc9f">02fcc9f</a></span>
+                <span class="commit-msg">DEC-028 status &rarr; shipped</span>
+                <span class="commit-time">9:48 AM</span>
+            </li>
+            <li>
+                <span class="commit-hash"><a href="https://github.com/WJeffBridwell/gathering-team/commit/b8c40da">b8c40da</a></span>
+                <span class="commit-msg">DEC-029 vertical/horizontal enforcement</span>
+                <span class="commit-time">9:05 AM</span>
+            </li>
+            <li>
+                <span class="commit-hash"><a href="https://github.com/WJeffBridwell/gathering-team/commit/b8cc902">b8cc902</a></span>
+                <span class="commit-msg">brief watcher &mdash; auto-notify roles on new briefs</span>
+                <span class="commit-time">last night</span>
+            </li>
+        </ul>
+    </div>
+
+    <div class="commit-group">
+        <span class="role-label silas">Silas</span>
+        <ul class="commit-list">
+            <li>
+                <span class="commit-hash"><a href="https://github.com/WJeffBridwell/gathering-team/commit/c6d170c">c6d170c</a></span>
+                <span class="commit-msg">PNG sequence diagrams for communication flows</span>
+                <span class="commit-time">9:01 AM</span>
+            </li>
+            <li>
+                <span class="commit-hash"><a href="https://github.com/WJeffBridwell/gathering-team/commit/5e752fc">5e752fc</a></span>
+                <span class="commit-msg">session artifacts &mdash; briefs, ADR-012 brief, guardrails</span>
+                <span class="commit-time">last night</span>
+            </li>
+        </ul>
+    </div>
+</section>
+
+<!-- SECTION 3: Boards at a glance -->
+<section>
+    <h2>Boards</h2>
+    <div class="boards-container">
+        <div class="board-section">
+            <h3>Gathering</h3>
+            <div class="board-row"><span class="board-count">1</span> <span class="board-label">Now</span></div>
+            <div class="board-row"><span class="board-count">5</span> <span class="board-label">Next</span></div>
+            <div class="board-row"><span class="board-count">17</span> <span class="board-label">Later</span></div>
+            <div class="board-row"><span class="board-count">6</span> <span class="board-label">Tech Debt</span></div>
+            <div class="board-row"><span class="board-count" style="color: var(--shipped);">3</span> <span class="board-label">Done (this week)</span></div>
+        </div>
+        <div class="board-section">
+            <h3>Chorus</h3>
+            <div class="board-row"><span class="board-count">0</span> <span class="board-label">Now</span></div>
+            <div class="board-row"><span class="board-count">1</span> <span class="board-label">Next</span></div>
+            <div class="board-row"><span class="board-count">12</span> <span class="board-label">Later</span></div>
+            <div class="board-row"><span class="board-count" style="color: var(--shipped);">4</span> <span class="board-label">Done (this week)</span></div>
+        </div>
+    </div>
+</section>
+
+<!-- SECTION 4: In flight right now -->
+<section>
+    <h2>In Flight</h2>
+    <div class="flight-grid">
+        <div class="flight-card">
+            <div class="card-title"><a href="http://localhost:3456/tasks/44">#44 Music collection &mdash; harvester pressure test</a></div>
+            <div class="card-meta"><span class="card-owner kade">Kade</span> &middot; Now &middot; P1</div>
+        </div>
+        <div class="flight-card">
+            <div class="card-title"><a href="http://localhost:3456/tasks/78">#78 SMS capture enhancements</a></div>
+            <div class="card-meta"><span class="card-owner kade">Kade</span> &middot; Next &middot; P1</div>
+        </div>
+        <div class="flight-card">
+            <div class="card-title"><a href="http://localhost:3456/tasks/16">C#16 Cockpit &mdash; single-pane console</a></div>
+            <div class="card-meta"><span class="card-owner silas">Silas</span> &middot; Next &middot; P1</div>
+        </div>
+    </div>
+</section>
+
+<!-- SECTION 5: Role status -->
+<section>
+    <h2>Role Status</h2>
+    <div class="role-status">
+        <div class="role-box wren">
+            <div class="role-name">Wren</div>
+            <div class="role-current">Cockpit product brief + mockup</div>
+            <div class="role-last">Last commit: 9:48 AM &middot; Cost today: ~$0.42</div>
+        </div>
+        <div class="role-box silas">
+            <div class="role-name">Silas</div>
+            <div class="role-current">Cockpit architecture brief for Kade</div>
+            <div class="role-last">Last commit: 9:01 AM &middot; Cost today: ~$0.37</div>
+        </div>
+        <div class="role-box kade">
+            <div class="role-name">Kade</div>
+            <div class="role-current">DEC-028 shipped. Waiting on cockpit brief.</div>
+            <div class="role-last">Last commit: 8:20 AM &middot; Cost today: ~$0.28</div>
+        </div>
+    </div>
+</section>
+
+<footer>
+    Cockpit v0 mockup &middot; Data sources: git log, Vikunja API, filesystem &middot; No Slack, no role opinions, no stale context
+</footer>
+
+</body>
+</html>

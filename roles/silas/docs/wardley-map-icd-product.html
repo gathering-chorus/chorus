@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wardley Map — ICD-Driven Integration Architecture as Product</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad: true, theme: 'neutral', securityLevel: 'loose'});</script>
+<style>
+  :root { --bg: #fff; --surface: #f5f5f5; --accent: #2471a3; --accent2: #c0392b; --text: #1a1a2e; --muted: #555; --green: #27ae60; --yellow: #d4a017; --red: #c0392b; --border: #ccc; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Georgia', serif; background: var(--bg); color: var(--text); line-height: 1.7; padding: 2rem; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 2rem; color: var(--accent); margin-bottom: 0.25rem; }
+  h1 + .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 2.5rem; }
+  h2 { font-size: 1.4rem; color: var(--accent2); margin: 2.5rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.1rem; color: var(--accent); margin: 1.5rem 0 0.75rem; }
+  p, li { font-size: 0.95rem; margin-bottom: 0.75rem; }
+  ul, ol { padding-left: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+  th, td { padding: 0.5rem 0.7rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--accent); font-size: 0.75rem; text-transform: uppercase; background: var(--surface); }
+  .callout { background: var(--surface); border-left: 3px solid var(--accent); padding: 1rem 1.25rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout.warn { border-left-color: var(--red); }
+  .callout.green { border-left-color: var(--green); }
+  code { background: #eee; padding: 0.1rem 0.3rem; border-radius: 2px; font-size: 0.85rem; }
+  .mermaid { background: #fafafa; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+  .genesis { background: #fce4ec; border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.8rem; font-weight: 700; color: #c62828; }
+  .custom { background: #fff3e0; border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.8rem; font-weight: 700; color: #e65100; }
+  .product { background: #e8f5e9; border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.8rem; font-weight: 700; color: #2e7d32; }
+  .commodity { background: #e3f2fd; border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.8rem; font-weight: 700; color: #1565c0; }
+  .map-table td:first-child { font-weight: 600; white-space: nowrap; }
+  @media print { body { padding: 0.5rem; font-size: 10pt; } }
+</style>
+</head>
+<body>
+
+<h1>Wardley Map — ICD-Driven Integration Architecture</h1>
+<p class="subtitle">Product positioning analysis &middot; Silas, 2026-03-18 &middot; Using Wardley's evolution axis: Genesis &rarr; Custom-Built &rarr; Product &rarr; Commodity</p>
+
+<!-- ============================================================ -->
+<h2>1. The User Need</h2>
+
+<p><strong>Enterprise CTO/VP Engineering says:</strong> "We need to retire our legacy integration platform (webMethods / Informatica / SSIS / DataStage) and migrate to a modern stack without losing business logic, breaking data flows, or spending 3 years and $20M on it."</p>
+
+<p>This need is <strong>universal and urgent</strong>. Every enterprise with 10+ years of integration systems faces this. Gartner predicts 70% cost reduction via GenAI by 2027. Datafold calls it a "$10B opportunity." The need is visible — it's the budget line item that keeps getting deferred because the risk is too high.</p>
+
+<!-- ============================================================ -->
+<h2>2. The Value Chain</h2>
+
+<p>Working backwards from the user need, every component required to deliver the product:</p>
+
+<div class="mermaid">
+graph TB
+    UN["User Need:<br/>Retire legacy integration platform<br/>without losing business logic"] --> MI
+    UN --> QA
+    UN --> TC
+
+    MI["Migration Intelligence<br/>(understand what exists)"] --> LE["Legacy Extraction<br/>(read vendor artifacts)"]
+    MI --> ICD["ICD Layer<br/>(contracts with severity tiers)"]
+    MI --> KG["Knowledge Graph<br/>(system of record)"]
+
+    QA["Quality Assurance<br/>(prove migration is correct)"] --> QG["Quality Gates<br/>(SHACL shapes + validators)"]
+    QA --> DR["Data Reconciliation<br/>(old vs new comparison)"]
+
+    TC["Target Code<br/>(the new implementation)"] --> CG["Code Generator<br/>(ICD → pipeline code)"]
+    TC --> SR["Serverless Runtime<br/>(Lambda / Cloud Functions)"]
+
+    ICD --> VM["Visual Mapper<br/>(HTML ICD editor)"]
+    ICD --> ST["Severity Tiers<br/>(Violation / Warning / Info)"]
+
+    LE --> VP["Vendor Parsers<br/>(SSIS XML, Informatica XML, etc.)"]
+    VP --> XML["XML/Config Parsing<br/>(standard libraries)"]
+
+    KG --> TS["Triple Store<br/>(Fuseki / Neptune / etc.)"]
+    KG --> SP["SPARQL Queries"]
+
+    CG --> TG["Template Generation<br/>(code from attributes)"]
+
+    QG --> SH["SHACL Engine"]
+
+    SR --> CL["Cloud Provider<br/>(AWS / Azure / GCP)"]
+
+    AA["Attention Architecture<br/>(Observer/Navigator/Driver)"] --> AG["AI Agents<br/>(Claude / GPT / etc.)"]
+    AA --> SL["Session Loops<br/>(gemba, pair, cron)"]
+</div>
+
+<!-- ============================================================ -->
+<h2>3. Evolution Analysis</h2>
+
+<p>Each component positioned on Wardley's evolution axis:</p>
+
+<table class="map-table">
+<tr><th>Component</th><th>Evolution</th><th>Rationale</th><th>Implication</th></tr>
+
+<tr><td>User Need (retire legacy)</td><td><span class="product">Product</span></td><td>Well-understood need, many enterprises have it, but solutions are still immature</td><td>Market is ready for a product — not too early, not commoditized</td></tr>
+
+<tr><td>Legacy Extraction</td><td><span class="custom">Custom</span> → <span class="product">Product</span></td><td>Bitwise and Datafold are productizing. Still requires per-vendor parsers.</td><td>Build vendor parsers as plugins. The extraction pattern is stable; the vendor specifics vary.</td></tr>
+
+<tr><td>Vendor Parsers (SSIS, Informatica, etc.)</td><td><span class="custom">Custom</span></td><td>Each vendor format is different. SSIS is XML, Informatica is XML, webMethods is XML but different schema.</td><td>Open-source the parsers. Low moat, high utility. Attracts contributors.</td></tr>
+
+<tr><td>XML/Config Parsing</td><td><span class="commodity">Commodity</span></td><td>Standard libraries in every language. Not a differentiator.</td><td>Use off-the-shelf. Never build this.</td></tr>
+
+<tr><td><strong>ICD Layer (contracts + severity tiers)</strong></td><td><span class="genesis">Genesis</span></td><td><strong>Nobody has this.</strong> No product offers a machine-readable, human-browsable, severity-tiered integration contract that drives both code generation AND validation. Prophecy has visual→code. Datafold has code→code. Nobody has contract→code→validation as a unified layer.</td><td><strong>This is the core IP. Protect it. Build everything around it.</strong></td></tr>
+
+<tr><td>Visual Mapper (HTML editor)</td><td><span class="genesis">Genesis</span> → <span class="custom">Custom</span></td><td>Our SEMANTIC_MAPPER.html is a proof. No commercial equivalent with data-* attributes driving generation.</td><td>Productize this first. It's what the user sees and touches.</td></tr>
+
+<tr><td>Severity Tiers</td><td><span class="genesis">Genesis</span></td><td>SHACL has Violation/Warning/Info but nobody applies it to integration contracts at the field level with inferred tiers from legacy code patterns.</td><td>Part of the ICD layer IP. The inference engine (NOT NULL → Violation) is the novel piece.</td></tr>
+
+<tr><td>Knowledge Graph (system of record)</td><td><span class="custom">Custom</span> → <span class="product">Product</span></td><td>Triple stores exist (Fuseki, Neptune, Stardog). Using a graph as the ICD system of record is novel.</td><td>The graph topology is the differentiator, not the store. Use commodity storage.</td></tr>
+
+<tr><td>Triple Store</td><td><span class="commodity">Commodity</span></td><td>Fuseki, Neptune, Stardog, GraphDB. Commodity infrastructure.</td><td>Don't build. Plug in.</td></tr>
+
+<tr><td>SPARQL Queries</td><td><span class="commodity">Commodity</span></td><td>Standard query language for RDF.</td><td>Leverage existing. Blast radius queries are the differentiator, not SPARQL itself.</td></tr>
+
+<tr><td>Code Generator</td><td><span class="custom">Custom</span></td><td>Our generate-from-icd.py is a proof. Prophecy does visual→code but not from a machine-readable ICD.</td><td>Multi-target generation (Python, TypeScript, Java, dbt) from one ICD is the value.</td></tr>
+
+<tr><td><strong>Quality Gates (derived from ICD)</strong></td><td><span class="genesis">Genesis</span></td><td><strong>Nobody generates validation from the same contract that generates code.</strong> Datafold has cross-database validation but it's separate from the migration spec. Our quality gate reads the same data-* attributes.</td><td><strong>This is the second piece of core IP.</strong> Contract = spec = test. One source of truth.</td></tr>
+
+<tr><td>SHACL Engine</td><td><span class="product">Product</span></td><td>Apache Jena, TopQuadrant. Mature technology.</td><td>Use existing. Don't rebuild.</td></tr>
+
+<tr><td>Data Reconciliation</td><td><span class="custom">Custom</span></td><td>Datafold has this well. Compare old system output vs new system output.</td><td>Partner or acquire this capability. Not our core.</td></tr>
+
+<tr><td>Serverless Runtime</td><td><span class="commodity">Commodity</span></td><td>AWS Lambda, Azure Functions, GCP Cloud Functions. Commodity.</td><td>Generate deployment configs from ICD. The runtime is irrelevant.</td></tr>
+
+<tr><td>Cloud Provider</td><td><span class="commodity">Commodity</span></td><td>AWS, Azure, GCP. Utility.</td><td>Multi-cloud by default because the ICD is platform-independent.</td></tr>
+
+<tr><td><strong>Attention Architecture</strong></td><td><span class="genesis">Genesis</span></td><td><strong>Nobody has formalized agent attention loops for integration work.</strong> Pacific Data Integrators mentions "agentic AI" but without the Observer/Navigator/Driver formalism or the scratch file protocol.</td><td><strong>Third piece of core IP.</strong> This is how agents maintain quality during long-running migration work.</td></tr>
+
+<tr><td>AI Agents</td><td><span class="product">Product</span> → <span class="commodity">Commodity</span></td><td>Claude, GPT, Gemini. Rapidly commoditizing.</td><td>Agent-agnostic. The architecture works with any LLM.</td></tr>
+
+<tr><td>Session Loops (gemba, pair, cron)</td><td><span class="genesis">Genesis</span></td><td>Part of the attention architecture. Novel implementation.</td><td>Formalize as SDK/framework.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>4. The Map</h2>
+
+<p>Positioned on Wardley's axes: Visibility (how visible to user) vs Evolution (genesis → commodity):</p>
+
+<table style="width:100%; border-collapse:collapse; margin:1rem 0; font-size:0.8rem;">
+<tr><th style="width:25%; background:#fce4ec;">Genesis<br/><span style="font-weight:400; font-size:0.7rem;">Novel, uncharted</span></th><th style="width:25%; background:#fff3e0;">Custom-Built<br/><span style="font-weight:400; font-size:0.7rem;">Tailored solutions</span></th><th style="width:25%; background:#e8f5e9;">Product<br/><span style="font-weight:400; font-size:0.7rem;">Feature-differentiated</span></th><th style="width:25%; background:#e3f2fd;">Commodity<br/><span style="font-weight:400; font-size:0.7rem;">Utility, standard</span></th></tr>
+<tr style="vertical-align:top;">
+<td style="padding:0.5rem; border:1px solid #ddd;">
+<strong style="color:#c62828;">VISIBLE (User-facing)</strong><br/>
+&#9679; <strong>ICD Layer</strong> ★<br/>
+&#9679; <strong>Visual Mapper</strong> ★<br/>
+&#9679; <strong>Quality Gates</strong> ★<br/>
+&#9679; <strong>Severity Tiers</strong> ★<br/>
+<br/>
+<strong style="color:#c62828;">INVISIBLE (Infrastructure)</strong><br/>
+&#9679; <strong>Attention Architecture</strong> ★<br/>
+&#9679; <strong>Session Loops</strong> ★
+</td>
+<td style="padding:0.5rem; border:1px solid #ddd;">
+<strong style="color:#e65100;">VISIBLE</strong><br/>
+&#9679; Code Generator<br/>
+&#9679; Legacy Extraction<br/>
+<br/>
+<strong style="color:#e65100;">INVISIBLE</strong><br/>
+&#9679; Vendor Parsers<br/>
+&#9679; Data Reconciliation<br/>
+&#9679; Knowledge Graph
+</td>
+<td style="padding:0.5rem; border:1px solid #ddd;">
+<strong style="color:#2e7d32;">VISIBLE</strong><br/>
+&#9679; User Need (retire legacy)<br/>
+<br/>
+<strong style="color:#2e7d32;">INVISIBLE</strong><br/>
+&#9679; SHACL Engine<br/>
+&#9679; AI Agents (commoditizing)
+</td>
+<td style="padding:0.5rem; border:1px solid #ddd;">
+<strong style="color:#1565c0;">INVISIBLE</strong><br/>
+&#9679; Triple Store<br/>
+&#9679; Cloud Provider<br/>
+&#9679; XML Parsing<br/>
+&#9679; Serverless Runtime<br/>
+&#9679; SPARQL
+</td>
+</tr>
+</table>
+<p style="font-size:0.75rem; color:var(--muted);">★ = Core IP (Genesis). These are the moat. Everything else is commodity or acquirable.</p>
+
+<!-- ============================================================ -->
+<h2>5. Strategic Plays</h2>
+
+<h3>5.1 Core IP (Genesis — Protect and Invest)</h3>
+
+<div class="callout green">
+<strong>Three components are in Genesis — nobody else has them:</strong>
+<ol>
+<li><strong>ICD Layer</strong> — machine-readable, human-browsable integration contracts with severity tiers that drive both code generation and validation from one source of truth</li>
+<li><strong>Quality Gates derived from ICD</strong> — the contract IS the test spec. Change the ICD, the gate updates automatically. No drift between spec and validation.</li>
+<li><strong>Attention Architecture</strong> — formalized agent attention loops (Observer/Navigator/Driver) that maintain quality during long-running migration work</li>
+</ol>
+These are the moat. Everything else is either commodity or can be acquired/partnered.
+</div>
+
+<h3>5.2 Productize First (Custom → Product)</h3>
+
+<table>
+<tr><th>Component</th><th>Current State</th><th>Productize As</th></tr>
+<tr><td>Visual Mapper</td><td>Static HTML with data-* attributes</td><td>Interactive web app — drag fields, set severity, generate code live</td></tr>
+<tr><td>Code Generator</td><td>Python script, single target</td><td>Multi-target SaaS — choose TypeScript/Python/Java/dbt, click generate</td></tr>
+<tr><td>Legacy Extraction</td><td>Python SSIS parser (proof)</td><td>Plugin architecture — community-contributed vendor parsers</td></tr>
+<tr><td>Knowledge Graph</td><td>Fuseki on local Mac</td><td>Hosted graph with SPARQL API — "show me blast radius of changing this field"</td></tr>
+</table>
+
+<h3>5.3 Commodity Layer (Don't Build)</h3>
+
+<p>These are utilities — use existing solutions, don't differentiate here:</p>
+<ul>
+<li>XML parsing, SPARQL engines, triple stores, cloud providers, serverless runtimes, AI model APIs</li>
+<li>Partner with Datafold for data reconciliation (they're best in class)</li>
+<li>Use open-source SHACL engines (Apache Jena)</li>
+</ul>
+
+<h3>5.4 Inertia and Blockers</h3>
+
+<table>
+<tr><th>Inertia Source</th><th>Why It Exists</th><th>How to Overcome</th></tr>
+<tr><td>Vendor lock-in fear</td><td>"What if the new thing locks us in too?"</td><td>ICD is open HTML. Version-controlled. You own it. No vendor format.</td></tr>
+<tr><td>Risk aversion</td><td>"We can't afford to break existing flows"</td><td>Quality gate runs against BOTH old and new output. Prove equivalence before cutover.</td></tr>
+<tr><td>Sunk cost in existing platform</td><td>"We invested $10M in webMethods"</td><td>The ICD extracts that investment as knowledge. The knowledge persists. The platform retires.</td></tr>
+<tr><td>Talent gap</td><td>"Nobody understands the old system"</td><td>The agent reads the old system. The ICD makes it human-readable. Knowledge transfer is automated.</td></tr>
+<tr><td>Project scale fear</td><td>"20 domains = 3 year project"</td><td>SSIS proof: 13 domains extracted in 5 seconds. ICD generation in minutes. Human review is the bottleneck, not extraction.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>6. Go-to-Market</h2>
+
+<h3>Phase 1: Open Source the Foundation</h3>
+<ul>
+<li>Open-source the ICD HTML format specification (data-* attribute schema)</li>
+<li>Open-source vendor parsers (SSIS, Informatica, webMethods)</li>
+<li>Open-source the code generator framework</li>
+<li>Build community around the ICD standard</li>
+</ul>
+
+<h3>Phase 2: Commercial Product</h3>
+<ul>
+<li>Hosted visual mapper (SaaS) with team collaboration</li>
+<li>Enterprise knowledge graph (hosted, SPARQL API, blast radius analysis)</li>
+<li>Attention architecture SDK (agent loops for migration projects)</li>
+<li>Multi-target code generation (choose your stack)</li>
+<li>Quality gate as CI/CD integration (GitHub Action / Azure Pipeline step)</li>
+</ul>
+
+<h3>Phase 3: Platform</h3>
+<ul>
+<li>Marketplace for vendor parsers (community + commercial)</li>
+<li>ICD graph as the enterprise integration catalog</li>
+<li>Continuous migration — not projects, but ongoing ICD-driven operations</li>
+<li>Cross-enterprise ICD sharing (industry canonical models for common domains like orders, customers, payments)</li>
+</ul>
+
+<h3>Pricing Model</h3>
+<table>
+<tr><th>Tier</th><th>Target</th><th>Price</th><th>Includes</th></tr>
+<tr><td>Open Source</td><td>Individual / startup</td><td>Free</td><td>ICD format, parsers, generator CLI, local quality gate</td></tr>
+<tr><td>Team</td><td>Small enterprise (5-50 integrations)</td><td>$2-5K/mo</td><td>Hosted mapper, graph, collaboration, 3 target platforms</td></tr>
+<tr><td>Enterprise</td><td>Large enterprise (50-500 integrations)</td><td>$20-50K/mo</td><td>Full platform, attention architecture, unlimited targets, SLA</td></tr>
+<tr><td>Migration Project</td><td>One-time legacy retirement</td><td>$100-500K fixed</td><td>Agent-driven extraction + human review + cutover support</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>7. Competitive Moat Summary</h2>
+
+<div class="callout">
+<strong>What we have that nobody else does:</strong>
+<ol>
+<li><strong>The contract IS the spec IS the test.</strong> One HTML document with data-* attributes drives visual display, code generation, SHACL shapes, and quality gates. Change one, all update.</li>
+<li><strong>Severity tiers inferred from legacy code.</strong> NOT NULL → Violation. DEFAULT → Warning. Nullable → Info. No other tool maps legacy constraints to validation severity automatically.</li>
+<li><strong>The ICD lives in a knowledge graph.</strong> Not a file. Not a database. A graph that supports blast radius queries, cross-domain impact analysis, and continuous evolution. Migration is not a project — it's an operating capability.</li>
+<li><strong>Attention architecture for agents.</strong> Observer/Navigator/Driver loops that keep AI agents focused, quality-checked, and accountable during long-running migration work. Nobody else has formalized this.</li>
+<li><strong>Platform-independent by design.</strong> The ICD is HTML. The graph is RDF. The targets are pluggable. No cloud vendor lock-in. No new lock-in replacing the old one.</li>
+</ol>
+</div>
+
+<div class="callout warn">
+<strong>What could kill us:</strong>
+<ul>
+<li><strong>Prophecy pivots to ICD-first.</strong> They have $47M and a visual mapper. If they add severity tiers and quality gate generation, they're us with more funding.</li>
+<li><strong>Datafold adds contract-driven generation.</strong> They have the reconciliation layer we don't. If they add ICD → code generation, they close the loop from the other direction.</li>
+<li><strong>Cloud vendors build it in.</strong> Azure already has Legacy Modernization Agents (open source). If Microsoft adds ICD-driven generation to Azure Data Factory, the enterprise market follows.</li>
+<li><strong>The ICD format doesn't get adoption.</strong> If nobody else uses data-* attributes in HTML for integration contracts, it's a proprietary format with a pretty face.</li>
+</ul>
+</div>
+
+<hr style="border-color:var(--border); margin: 3rem 0 1rem;">
+<p style="color:var(--muted); font-size:0.8rem;">
+  Silas (Architect) &middot; 2026-03-18 &middot; Wardley mapping methodology applied to ICD-driven integration architecture.
+  References: Simon Wardley (<a href="https://www.linkedin.com/posts/simonwardley_mapaware-share-7434597704749559808-PVWX">MapAware</a>),
+  Bridwell patent US9552400B2, Prophecy ($47M Series B), Datafold ("$10B opportunity"), Gartner (70% cost reduction by 2027).
+  Proof implementations: SEMANTIC_MAPPER.html, generate-from-icd.py, validate-canonical.py, SSIS assimilation (13 domains from one .dtsx).
+</p>
+
+</body>
+</html>

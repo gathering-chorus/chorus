@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Harvest Pipeline</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'Inter', system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .container { width: 900px; padding: 40px; }
+  h1 { font-size: 14px; text-transform: uppercase; letter-spacing: 3px; color: #666; margin-bottom: 40px; text-align: center; }
+
+  /* Diagram */
+  .diagram { position: relative; height: 320px; margin-bottom: 50px; }
+
+  /* Sources */
+  .source { position: absolute; background: #16213e; border: 2px solid #0f3460; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .source .label { color: #e94560; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 2px; }
+  .source .desc { color: #a0a0b8; font-size: 11px; font-weight: 400; }
+  .s1 { left: 0; top: 200px; }
+  .s2 { left: 0; top: 110px; }
+  .s3 { left: 0; top: 20px; }
+
+  /* Pipeline bar */
+  .pipeline { position: absolute; left: 200px; right: 200px; top: 120px; height: 80px; background: linear-gradient(90deg, #0f3460 0%, #16213e 40%, #16213e 60%, #0f3460 100%); border: 2px solid #0f3460; border-radius: 40px; display: flex; align-items: center; justify-content: center; }
+
+  /* Transform circle */
+  .tx { width: 64px; height: 64px; border-radius: 50%; background: #e94560; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: #fff; box-shadow: 0 0 24px rgba(233, 69, 96, 0.4); }
+
+  /* Target */
+  .target { position: absolute; right: 0; top: 105px; background: #16213e; border: 3px solid #e94560; border-radius: 50%; width: 110px; height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .target .label { color: #e94560; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .target .name { font-size: 16px; font-weight: 700; color: #fff; }
+  .target-count { position: absolute; right: 10px; top: 225px; font-size: 13px; color: #a0a0b8; font-style: italic; }
+
+  /* Connector lines via SVG */
+  .lines { position: absolute; inset: 0; pointer-events: none; }
+  .lines line { stroke: #0f3460; stroke-width: 2; }
+  .lines line.active { stroke: #e94560; stroke-width: 2; stroke-dasharray: 6 4; animation: flow 1s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -10; } }
+
+  /* Notes section */
+  .notes { display: flex; flex-direction: column; gap: 16px; border-top: 1px solid #0f3460; padding-top: 30px; }
+  .note { display: flex; align-items: flex-start; gap: 14px; }
+  .note-q { font-size: 15px; font-weight: 700; min-width: 90px; }
+  .note-q.static { color: #53d8a8; }
+  .note-q.dynamic { color: #f0a030; }
+  .note-q.count { color: #e94560; }
+  .note-a { font-size: 14px; color: #a0a0b8; line-height: 1.5; }
+
+  /* Current state callout */
+  .state { margin-top: 30px; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 20px; display: flex; gap: 30px; justify-content: center; }
+  .stat { text-align: center; }
+  .stat .num { font-size: 28px; font-weight: 700; }
+  .stat .num.red { color: #e94560; }
+  .stat .num.green { color: #53d8a8; }
+  .stat .num.yellow { color: #f0a030; }
+  .stat .lbl { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Harvest Pipeline &mdash; Music</h1>
+
+  <div class="diagram">
+    <svg class="lines" viewBox="0 0 900 320" preserveAspectRatio="none">
+      <!-- Source lines into pipeline -->
+      <line x1="170" y1="45" x2="280" y2="140" class="active"/>
+      <line x1="170" y1="135" x2="280" y2="155" class="active"/>
+      <line x1="170" y1="225" x2="280" y2="175" class="active"/>
+      <!-- Pipeline to target -->
+      <line x1="620" y1="160" x2="700" y2="160" class="active"/>
+    </svg>
+
+    <div class="source s3">
+      <span class="label">Source 3</span>
+      PhotosNew/iTunes Music
+      <span class="desc">41,690 files &middot; 1,401 artists</span>
+    </div>
+    <div class="source s2">
+      <span class="label">Source 2</span>
+      Gathering/iTunes
+      <span class="desc">98,993 files &middot; SMB backup</span>
+    </div>
+    <div class="source s1">
+      <span class="label">Source 1</span>
+      ~/Music/Music
+      <span class="desc">100,658 files &middot; canonical</span>
+    </div>
+
+    <div class="pipeline">
+      <div class="tx">Tx</div>
+    </div>
+
+    <div class="target">
+      <span class="label">Target</span>
+      <span class="name">RDF</span>
+    </div>
+    <span class="target-count">&minus; Count must match</span>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <span class="note-q static">Static?</span>
+      <span class="note-a">Ingest once, then merge to canonical. Sources #2 and #3 are frozen archives. Source #1 changes slowly.</span>
+    </div>
+    <div class="note">
+      <span class="note-q dynamic">Dynamic?</span>
+      <span class="note-a">Needs listener for incremental changes. Not needed yet &mdash; Jeff adds albums occasionally, not continuously.</span>
+    </div>
+    <div class="note">
+      <span class="note-q count">Count</span>
+      <span class="note-a">Count each source &mdash; must match target. Acceptance test: source count = Fuseki count, or the gap is explained.</span>
+    </div>
+  </div>
+
+  <div class="state">
+    <div class="stat">
+      <div class="num red">100,658</div>
+      <div class="lbl">Source #1 files</div>
+    </div>
+    <div class="stat">
+      <div class="num yellow">17,086</div>
+      <div class="lbl">In Fuseki</div>
+    </div>
+    <div class="stat">
+      <div class="num green">17%</div>
+      <div class="lbl">Ingested</div>
+    </div>
+    <div class="stat">
+      <div class="num red">83,572</div>
+      <div class="lbl">Gap</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Photos Domain — Era-Scoped Merge Specification</title>
+<style>
+  :root {
+    --apple: #555;
+    --google: #4285f4;
+    --iphone: #007aff;
+    --drive: #0f9d58;
+    --merge: #9b59b6;
+    --computed: #e67e22;
+    --ceiling: #e74c3c;
+    --bg: #fafafa;
+  }
+  body { font-family: 'Helvetica Neue', sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; color: #222; background: var(--bg); line-height: 1.5; }
+  h1 { font-size: 1.6rem; border-bottom: 3px solid #333; padding-bottom: .5rem; }
+  h2 { font-size: 1.2rem; margin-top: 2rem; border-bottom: 1px solid #ccc; padding-bottom: .3rem; }
+  h3 { font-size: 1rem; margin-top: 1.5rem; color: #555; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .85rem; }
+  th, td { border: 1px solid #ddd; padding: .4rem .6rem; text-align: left; }
+  th { background: #f0f0f0; font-weight: 600; }
+  .golden { background: #fff3cd; font-weight: 600; }
+  .supplementary { background: #d1ecf1; }
+  .volume-fill { background: #f8d7da; }
+  .ceiling { color: var(--ceiling); font-style: italic; }
+  .merge-all { background: #e8daef; }
+  .computed { background: #fdebd0; }
+  .chip { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: .75rem; color: white; }
+  .chip-apple { background: var(--apple); }
+  .chip-google { background: var(--google); }
+  .chip-iphone { background: var(--iphone); }
+  .chip-drive { background: var(--drive); }
+  .chip-merge { background: var(--merge); }
+  .chip-computed { background: var(--computed); }
+  code { background: #e8e8e8; padding: 1px 4px; border-radius: 2px; font-size: .85rem; }
+  .note { background: #fff3cd; border-left: 4px solid #ffc107; padding: .5rem .8rem; margin: 1rem 0; font-size: .85rem; }
+  .danger { background: #f8d7da; border-left: 4px solid #dc3545; padding: .5rem .8rem; margin: 1rem 0; font-size: .85rem; }
+  .provenance { background: #d4edda; border-left: 4px solid #28a745; padding: .5rem .8rem; margin: 1rem 0; font-size: .85rem; }
+  .era-header { display: flex; align-items: baseline; gap: .5rem; }
+  .era-header .dates { font-size: .85rem; color: #666; }
+  .field-row td:first-child { font-weight: 600; white-space: nowrap; }
+  footer { margin-top: 3rem; border-top: 1px solid #ccc; padding-top: 1rem; font-size: .8rem; color: #888; }
+</style>
+</head>
+<body>
+
+<h1>Photos Domain — Era-Scoped Merge Specification</h1>
+<p><strong>Card:</strong> #1643 &nbsp; <strong>Author:</strong> Silas &nbsp; <strong>Date:</strong> 2026-03-24 &nbsp; <strong>Status:</strong> Draft</p>
+<p><strong>Purpose:</strong> Define the exact merge algorithm for every canonical photo field, per era, so Kade can implement it mechanically. This document is the <em>contract</em> between architecture (Silas) and implementation (Kade).</p>
+<p><strong>Depends on:</strong> #1642 (era-scoped provider authority — shipped). <strong>Consumed by:</strong> <code>CrossSourceReconcilerService</code> rebuild.</p>
+
+<div class="note">
+  <strong>Principle:</strong> Richness before volume. The merge algorithm never counts records — it evaluates per-record field coverage within each era. A source with 7 fields per record beats one with 60K records at 3 fields each.
+</div>
+
+<h2>1. Era Summary</h2>
+
+<table>
+<tr>
+  <th>Era</th><th>Dates</th>
+  <th><span class="chip chip-apple">Apple</span></th>
+  <th><span class="chip chip-google">Takeout</span></th>
+  <th><span class="chip chip-iphone">iPhone</span></th>
+  <th>Golden Source</th>
+</tr>
+<tr>
+  <td><strong>Pre-digital</strong></td><td>before 2006</td>
+  <td>325 records, 6.0 avg fields, 0% GPS</td>
+  <td>466 records, 3.0 avg fields, 0.2% GPS</td>
+  <td>1 record (irrelevant)</td>
+  <td class="golden">Apple</td>
+</tr>
+<tr>
+  <td><strong>Camera + early iPhone</strong></td><td>2006–2012</td>
+  <td>7,229 records, 6.9 avg fields, 44.8% GPS</td>
+  <td>7,832 records, 3.6 avg fields, 32.5% GPS</td>
+  <td>39 records (irrelevant)</td>
+  <td class="golden">Apple</td>
+</tr>
+<tr>
+  <td><strong>iPhone primary</strong></td><td>2013–2019</td>
+  <td>16,063 records, 7.1 avg fields, 55.0% GPS</td>
+  <td>34,852 records, 4.1 avg fields, 54.9% GPS</td>
+  <td>7,149 records, 7.7 avg fields, 87.5% GPS</td>
+  <td class="golden">Apple</td>
+</tr>
+<tr>
+  <td><strong>Modern</strong></td><td>2020+</td>
+  <td>975 records, 6.5 avg fields, 27.2% GPS</td>
+  <td>59,338 records, 4.8 avg fields, 89.7% GPS</td>
+  <td>47,290 records, 7.8 avg fields, 89.7% GPS</td>
+  <td class="golden">iPhone</td>
+</tr>
+</table>
+
+<h2>2. Merge Strategies</h2>
+
+<p>Every canonical field uses exactly one of these strategies:</p>
+
+<table>
+<tr><th>Strategy</th><th>Behavior</th><th>Example</th></tr>
+<tr>
+  <td><strong>era-precedence</strong></td>
+  <td>Take value from era's golden source. If null, fall through to supplementary, then volume-fill. Never take a value from a source where the field has a metadata ceiling.</td>
+  <td><code>dateTaken</code>: Apple in Eras 1–3, iPhone in Era 4</td>
+</tr>
+<tr>
+  <td><strong>era-precedence + override</strong></td>
+  <td>Same as era-precedence, but a specific field overrides the default order for that era. Overrides are declared in <code>icd:EraFieldOverride</code>.</td>
+  <td><code>location</code>: Takeout preferred in Era 2, iPhone preferred in Era 3</td>
+</tr>
+<tr>
+  <td><strong>merge-all</strong></td>
+  <td>Union values from all sources. Deduplicate by key. True if true in ANY source.</td>
+  <td><code>albums</code>, <code>isFavorite</code>, <code>hasSourceRecord</code>, <code>people</code></td>
+</tr>
+<tr>
+  <td><strong>exclusive</strong></td>
+  <td>Only one source has this field. Take it or leave it null.</td>
+  <td><code>sceneLabels</code> (Apple only), <code>webViewLink</code> (Drive only)</td>
+</tr>
+<tr>
+  <td><strong>computed</strong></td>
+  <td>Derived from image content or merge output, not directly from any provider field.</td>
+  <td><code>canonicalId</code> (phash), <code>servingPath</code>, <code>thumbnailPath</code></td>
+</tr>
+</table>
+
+<h2>3. Field-by-Field Merge Rules</h2>
+
+<h3>3.1 Identity Fields (Violation severity — reject record if missing)</h3>
+
+<table>
+<tr><th>Field</th><th>Strategy</th><th>Era 1: Pre-digital</th><th>Era 2: Camera</th><th>Era 3: iPhone Primary</th><th>Era 4: Modern</th><th>Conflict Rule</th></tr>
+<tr class="field-row">
+  <td>canonicalId</td>
+  <td class="computed">computed</td>
+  <td colspan="4">Perceptual hash (phash) from image content. Requires image file access — not available from metadata-only sources. Reconciler computes this.</td>
+  <td>If two records produce the same phash, they are the same photo. Merge all source records into one canonical.</td>
+</tr>
+<tr class="field-row">
+  <td>dateTaken</td>
+  <td>era-precedence</td>
+  <td class="golden">Apple EXIF</td>
+  <td class="golden">Apple EXIF</td>
+  <td class="golden">Apple EXIF</td>
+  <td class="golden">iPhone EXIF</td>
+  <td>
+    Fallback: golden → supplementary → volume-fill.<br>
+    <strong>NEVER</strong> use Google <code>creationTime</code> or Drive <code>createdTime</code>.<br>
+    Gate: if date is within 7 days of harvest date, reject (Takeout date-fallback bug).
+  </td>
+</tr>
+<tr class="field-row">
+  <td>filename</td>
+  <td>era-precedence</td>
+  <td class="golden">Apple</td>
+  <td class="golden">Apple</td>
+  <td class="golden">Apple</td>
+  <td class="golden">iPhone</td>
+  <td>Camera original filename. Used as dedup join key across sources. Normalize case.</td>
+</tr>
+<tr class="field-row">
+  <td>hasSourceRecord</td>
+  <td class="merge-all">merge-all</td>
+  <td colspan="4">Accumulate all source IDs: <code>apple:{ZUUID}</code>, <code>google:{filename}</code>, <code>drive:{fileId}</code>, <code>iphone:{ZUUID}</code></td>
+  <td>Array of prefixed IDs. Every source record that contributed to this canonical gets listed.</td>
+</tr>
+<tr class="field-row">
+  <td>servingPath</td>
+  <td class="computed">computed</td>
+  <td colspan="4">Best available renderable path: <code>thumbnailPath</code> if exists, else <code>bestResPath</code>. Prefer local (Library) over remote (Bedroom).</td>
+  <td>Computed after merge. Must resolve to an actual file on disk.</td>
+</tr>
+<tr class="field-row">
+  <td>thumbnailPath</td>
+  <td class="computed">computed</td>
+  <td colspan="4">Generated via <code>sips</code> on Bedroom. Path: <code>public/thumbnails/photos/{YYYY-MM}/{uuid}.jpg</code></td>
+  <td>Generate from highest-quality source image available.</td>
+</tr>
+<tr class="field-row">
+  <td>dimensions</td>
+  <td>era-precedence</td>
+  <td class="golden">Apple</td>
+  <td class="golden">Apple</td>
+  <td class="golden">Apple</td>
+  <td class="golden">iPhone</td>
+  <td>
+    <span class="ceiling">Takeout ceiling: never has dimensions.</span><br>
+    Apple or iPhone only. If neither has the record, dimensions is null.
+  </td>
+</tr>
+<tr class="field-row">
+  <td>mediaType</td>
+  <td>era-precedence</td>
+  <td class="golden">Apple</td>
+  <td class="golden">Apple</td>
+  <td class="golden">Apple</td>
+  <td class="golden">iPhone</td>
+  <td>Apple ZKIND + ZKINDSUBTYPE is most granular (photo, video, panorama, slo-mo, timelapse, live, screenshot). Fall back to MIME type from filename extension.</td>
+</tr>
+</table>
+
+<h3>3.2 Location (era-precedence with field overrides)</h3>
+
+<table>
+<tr><th>Era</th><th>Primary GPS Source</th><th>Fallback</th><th>Rationale</th></tr>
+<tr>
+  <td>Pre-digital</td>
+  <td colspan="2" class="ceiling">No GPS possible — metadata ceiling. All sources 0% GPS.</td>
+  <td>Pre-2006 cameras had no GPS hardware.</td>
+</tr>
+<tr>
+  <td>Camera (2006–2012)</td>
+  <td class="supplementary"><strong>Takeout</strong> (override)</td>
+  <td>Apple (44.8%)</td>
+  <td>Takeout GPS fills Apple gaps. Union of both improves total coverage beyond either alone.</td>
+</tr>
+<tr>
+  <td>iPhone Primary (2013–2019)</td>
+  <td class="supplementary"><strong>iPhone</strong> (override, 87.5%)</td>
+  <td>Apple (55.0%) → Takeout (54.9%)</td>
+  <td>iPhone has 87.5% GPS vs Apple 55%. Prefer iPhone when record exists in both sources.</td>
+</tr>
+<tr>
+  <td>Modern (2020+)</td>
+  <td class="golden"><strong>iPhone</strong> (golden, 89.7%)</td>
+  <td>Takeout (89.7%) → Apple (27.2%)</td>
+  <td>iPhone is golden for everything in this era. Takeout GPS is equally good — true fallback.</td>
+</tr>
+</table>
+
+<div class="note">
+  <strong>Location merge rule:</strong> First non-null GPS from the era's location precedence chain. Filter Apple sentinel value <code>-180.0</code> → null before comparison. Validate lat/lon range: lat ∈ [-90, 90], lon ∈ [-180, 180].
+</div>
+
+<h3>3.3 Enrichment Fields (Enrichment severity — accept without, track gap)</h3>
+
+<table>
+<tr><th>Field</th><th>Strategy</th><th>Source(s)</th><th>Merge Rule</th></tr>
+<tr class="field-row">
+  <td>sceneLabels</td>
+  <td>exclusive</td>
+  <td><span class="chip chip-apple">Apple</span> (osxphotos enrichment)</td>
+  <td>1,538 unique labels, 96% coverage. Only available via osxphotos Python API reading Photos.sqlite. No other source provides this. <span class="ceiling">Ceiling: only photos in Apple Photos library get labels.</span></td>
+</tr>
+<tr class="field-row">
+  <td>faces</td>
+  <td>exclusive</td>
+  <td><span class="chip chip-apple">Apple</span></td>
+  <td>Face cluster IDs from ZDETECTEDFACE. Currently 48/50 clusters named. <span class="ceiling">Ceiling in Era 4 (Modern): Mac library frozen — no face detection for post-2020 photos.</span></td>
+</tr>
+<tr class="field-row">
+  <td>albums</td>
+  <td class="merge-all">merge-all</td>
+  <td><span class="chip chip-apple">Apple</span> + <span class="chip chip-google">Takeout</span></td>
+  <td>Union of album names from all sources. Deduplicate by slug (lowercase, strip whitespace). A photo can appear in albums from different platforms.</td>
+</tr>
+<tr class="field-row">
+  <td>isFavorite</td>
+  <td class="merge-all">merge-all</td>
+  <td>All sources</td>
+  <td><code>true</code> if favorited in ANY source. Logical OR across all source records.</td>
+</tr>
+<tr class="field-row">
+  <td>description</td>
+  <td>exclusive</td>
+  <td><span class="chip chip-google">Takeout</span></td>
+  <td>User caption. Rare (&lt;5% coverage) but valuable when present. Apple Photos doesn't expose descriptions in SQLite. Only Takeout JSON has this.</td>
+</tr>
+<tr class="field-row">
+  <td>fileHash</td>
+  <td>era-precedence</td>
+  <td><span class="chip chip-apple">Apple</span> / <span class="chip chip-iphone">iPhone</span></td>
+  <td>ZORIGINALSTABLEHASH from Apple/iPhone SQLite. Not available from Takeout or Drive. Used for dedup verification (secondary to phash).</td>
+</tr>
+<tr class="field-row">
+  <td>fileSize</td>
+  <td>era-precedence</td>
+  <td><span class="chip chip-apple">Apple</span> / <span class="chip chip-iphone">iPhone</span></td>
+  <td>From Apple/iPhone SQLite. <span class="ceiling">Takeout ceiling: never has fileSize.</span> Drive has it but Drive records were purged (phantom records).</td>
+</tr>
+<tr class="field-row">
+  <td>bestResPath</td>
+  <td class="computed">computed</td>
+  <td>Merge output</td>
+  <td>Highest-quality image file path. Prefer: iPhone originals (Bedroom) → Apple originals (Library) → Takeout files (Bedroom NFS). Include machine prefix: <code>library:</code> or <code>bedroom:</code>.</td>
+</tr>
+<tr class="field-row">
+  <td>deviceType</td>
+  <td>exclusive</td>
+  <td><span class="chip chip-google">Takeout</span></td>
+  <td>Camera device type from Takeout JSON. ~10% coverage. Apple SQLite doesn't expose camera model directly. Low priority.</td>
+</tr>
+<tr class="field-row">
+  <td>webViewLink</td>
+  <td>exclusive</td>
+  <td><span class="chip chip-drive">Drive</span></td>
+  <td>Google Drive URL. Drive provider purged (phantom records) — this field will be null for most records. Retain if matched record has it.</td>
+</tr>
+<tr class="field-row">
+  <td>people</td>
+  <td class="merge-all">merge-all</td>
+  <td><span class="chip chip-apple">Apple</span> + <span class="chip chip-google">Takeout</span></td>
+  <td>Union of people. Apple: face cluster → <code>jb:Person</code> URI via <code>jb:faceClusterId</code>. Takeout: people tags from JSON sidecar (18K/68K coverage). Deduplicate by person URI after name normalization.</td>
+</tr>
+</table>
+
+<h2>4. Metadata Ceilings Per Era</h2>
+
+<p>A metadata ceiling means the field is <em>impossible</em> at that source in that era — not missing, impossible. The merge algorithm must never attempt to fill a ceiling field from a ceilinged source.</p>
+
+<table>
+<tr><th>Era</th><th>Source</th><th>Ceilinged Fields</th><th>Reason</th></tr>
+<tr><td rowspan="2">Pre-digital</td><td>Apple</td><td>location, faces, sceneLabels</td><td>No GPS hardware. Scanned imports don't trigger ML classification.</td></tr>
+<tr><td>Takeout</td><td>location, dimensions</td><td>No GPS hardware. Takeout JSON never includes dimensions.</td></tr>
+<tr><td>Camera</td><td>Takeout</td><td>dimensions, fileSize</td><td>Persistent Takeout JSON format limitation.</td></tr>
+<tr><td>iPhone Primary</td><td>Takeout</td><td>dimensions, fileSize</td><td>Same format limitation.</td></tr>
+<tr><td rowspan="2">Modern</td><td>Takeout</td><td>dimensions, fileSize</td><td>Same format limitation.</td></tr>
+<tr><td>Apple</td><td>faces</td><td>Mac library frozen since 2020 — no new face detections.</td></tr>
+</table>
+
+<h2>5. Provenance Tracing</h2>
+
+<p>Every canonical record carries full provenance — which source contributed which value.</p>
+
+<div class="provenance">
+<strong>Provenance model:</strong> Each canonical record includes a <code>jb:mergeProvenance</code> block that records:
+<ol>
+  <li><strong>Era assignment:</strong> which era the photo belongs to (derived from <code>dateTaken</code>)</li>
+  <li><strong>Source records:</strong> all contributing source IDs (via <code>hasSourceRecord</code> array)</li>
+  <li><strong>Field attribution:</strong> for each non-null canonical field, which source provided the winning value</li>
+  <li><strong>Merge timestamp:</strong> when the canonical record was last rebuilt</li>
+</ol>
+</div>
+
+<h3>5.1 Provenance Triple Pattern</h3>
+
+<p>For each canonical photo, emit provenance as RDF reification or named graph annotations:</p>
+
+<pre><code># Canonical record
+&lt;urn:jb:photos/abc123&gt; a jb:Photo ;
+    jb:dateTaken "2018-06-15T14:30:00"^^xsd:dateTime ;
+    jb:location "42.3601,-71.0589" ;
+    jb:hasSourceRecord "apple:ABC-DEF-123" ;
+    jb:hasSourceRecord "google:IMG_4521.jpg" ;
+    jb:hasSourceRecord "iphone:XYZ-789" ;
+    jb:mergeEra &lt;icd/era/photos/iphone-primary&gt; ;
+    jb:mergeTimestamp "2026-03-24T16:00:00"^^xsd:dateTime .
+
+# Field attribution (in provenance graph)
+&lt;urn:jb:photos/abc123/provenance&gt; {
+    &lt;urn:jb:photos/abc123&gt; jb:fieldSource [
+        jb:field "dateTaken" ;
+        jb:sourceProvider &lt;icd/provider/photos/apple-photos-native-sqlite&gt; ;
+        jb:sourceRecord "apple:ABC-DEF-123"
+    ] , [
+        jb:field "location" ;
+        jb:sourceProvider &lt;icd/provider/photos/iphone-future-sync&gt; ;
+        jb:sourceRecord "iphone:XYZ-789" ;
+        jb:overrideApplied &lt;icd/era-override/photos/iphone-primary/iphone-gps&gt;
+    ] .
+}</code></pre>
+
+<h3>5.2 Provenance Requirements for Kade</h3>
+
+<ol>
+  <li>Every canonical photo MUST have <code>jb:mergeEra</code> pointing to its era URI</li>
+  <li>Every canonical photo MUST have at least one <code>jb:hasSourceRecord</code></li>
+  <li>Field attribution is SHOULD (implement for dateTaken, location, and people first — these are the fields where source matters most)</li>
+  <li>When a field override was applied, record <code>jb:overrideApplied</code> so we can audit era authority decisions</li>
+</ol>
+
+<h2>6. Merge Algorithm (Pseudocode)</h2>
+
+<pre><code>function mergePhoto(sourceRecords: SourceRecord[]): CanonicalPhoto {
+  // Step 1: Determine era from best available date
+  const bestDate = resolveDateTaken(sourceRecords);
+  const era = classifyEra(bestDate);
+
+  // Step 2: Get era authority chain
+  const chain = getAuthorityChain(era);
+  // e.g., Era 3: [apple (golden), iphone (supplementary), takeout (volume-fill)]
+
+  // Step 3: Get field overrides for this era
+  const overrides = getFieldOverrides(era);
+  // e.g., Era 3: { location: [iphone, apple, takeout] }
+
+  // Step 4: Merge each field
+  const canonical = {};
+
+  // Identity fields — era-precedence
+  canonical.dateTaken = eraPrecedence('dateTaken', sourceRecords, chain, era);
+  canonical.filename  = eraPrecedence('filename', sourceRecords, chain, era);
+  canonical.dimensions = eraPrecedence('dimensions', sourceRecords, chain, era);
+  canonical.mediaType = eraPrecedence('mediaType', sourceRecords, chain, era);
+  canonical.fileHash  = eraPrecedence('fileHash', sourceRecords, chain, era);
+  canonical.fileSize  = eraPrecedence('fileSize', sourceRecords, chain, era);
+
+  // Location — era-precedence with override
+  const locationChain = overrides['location'] || chain;
+  canonical.location = eraPrecedence('location', sourceRecords, locationChain, era);
+
+  // Merge-all fields
+  canonical.hasSourceRecord = mergeAll('hasSourceRecord', sourceRecords);
+  canonical.albums = mergeAllDedupe('albums', sourceRecords, slugify);
+  canonical.isFavorite = mergeAny('isFavorite', sourceRecords);
+  canonical.people = mergeAllDedupe('people', sourceRecords, normalizePersonURI);
+
+  // Exclusive fields — single source only
+  canonical.sceneLabels = exclusive('sceneLabels', sourceRecords, 'apple');
+  canonical.description = exclusive('description', sourceRecords, 'google');
+  canonical.deviceType  = exclusive('deviceType', sourceRecords, 'google');
+  canonical.webViewLink = exclusive('webViewLink', sourceRecords, 'drive');
+  canonical.faces = exclusive('faces', sourceRecords, 'apple');
+
+  // Computed fields — after all other fields resolved
+  canonical.canonicalId = computePhash(bestImageFile(sourceRecords));
+  canonical.servingPath = canonical.thumbnailPath || canonical.bestResPath;
+  canonical.thumbnailPath = computeThumbnailPath(canonical.dateTaken, canonical.canonicalId);
+  canonical.bestResPath = computeBestResPath(sourceRecords, chain);
+
+  // Step 5: Record provenance
+  canonical.mergeEra = era;
+  canonical.mergeTimestamp = now();
+  canonical.fieldProvenance = recordFieldSources(canonical, sourceRecords);
+
+  return canonical;
+}
+
+function eraPrecedence(field, records, chain, era) {
+  const ceilings = getCeilings(era);
+  for (const provider of chain) {
+    if (ceilings[provider]?.includes(field)) continue;  // skip ceilinged sources
+    const record = records.find(r => r.provider === provider);
+    if (record && record[field] != null) {
+      // Date-specific gate: reject if within 7 days of harvest
+      if (field === 'dateTaken' && isNearHarvestDate(record[field])) continue;
+      return record[field];
+    }
+  }
+  return null;
+}
+
+function classifyEra(dateTaken) {
+  if (!dateTaken) return 'unknown';  // requires manual triage
+  if (dateTaken < '2006-01-01') return 'pre-digital';
+  if (dateTaken < '2013-01-01') return 'camera-era';
+  if (dateTaken < '2020-01-01') return 'iphone-primary';
+  return 'modern';
+}</code></pre>
+
+<h2>7. Dedup / Record Matching</h2>
+
+<p>Before merge can happen, source records must be matched across providers. The reconciler uses a tiered matching strategy:</p>
+
+<table>
+<tr><th>Tier</th><th>Join Key</th><th>Confidence</th><th>Notes</th></tr>
+<tr><td>1</td><td>Perceptual hash (phash)</td><td>Definitive</td><td>Content-addressable. Same image = same phash regardless of source. Requires file access.</td></tr>
+<tr><td>2</td><td>filename + dateTaken (±2 sec)</td><td>High</td><td>Camera filenames are unique per session. Date tolerance handles timezone/rounding differences.</td></tr>
+<tr><td>3</td><td>filename only</td><td>Medium</td><td>Sufficient when only one record per filename per source. Watch for <code>IMG_NNNN</code> collisions across years.</td></tr>
+<tr><td>4</td><td>dateTaken + dimensions</td><td>Low</td><td>Fallback for renamed files. Many false positives — use only to suggest manual review.</td></tr>
+</table>
+
+<div class="danger">
+  <strong>Known risk:</strong> Google Takeout date fallback bug. ~15% of Takeout records have <code>photoTakenTime</code> set to the upload date (2026-03-12) instead of the actual capture date. These records will fail Tier 2 matching. Use Tier 3 (filename only) as fallback, then flag for manual review.
+</div>
+
+<h2>8. Migration Event Impact on Merge</h2>
+
+<table>
+<tr><th>Event</th><th>Date</th><th>Merge Impact</th></tr>
+<tr><td>Picasa → Google Photos</td><td>2016-05</td><td>Pre-2016 Takeout records may have Picasa-stripped GPS. Don't trust Takeout GPS for pre-2016 photos if Apple has GPS.</td></tr>
+<tr><td>Takeout JSON sidecar format</td><td>2019-01</td><td>Takeout JSON never has dimensions, fileSize, or camera model. These are permanent ceilings, not missing data.</td></tr>
+<tr><td>iPhoto → Photos.app</td><td>2015-04</td><td>Face clusters pre-2015 are iPhoto-era, not continuous with post-2015 ML. Don't merge face IDs across this boundary.</td></tr>
+<tr><td>iCloud sync disabled on Mac</td><td>2020-01</td><td>Mac library frozen. Post-2020 photos never reach Mac. Apple is supplementary (faces/sceneLabels only) for Era 4, not golden.</td></tr>
+<tr><td>Jeff's first iPhone</td><td>2007-12</td><td>Pre-2008 iPhone records are transfers, not captures. GPS available from iPhone 3G (2008+).</td></tr>
+<tr><td>HEIC format default</td><td>2017-09</td><td>Filename pattern changes. Reconciler must handle both <code>.JPG</code> and <code>.HEIC</code> extensions in filename matching.</td></tr>
+</table>
+
+<h2>9. Implementation Checklist for Kade</h2>
+
+<ol>
+  <li><strong>Era classifier function</strong> — <code>classifyEra(dateTaken)</code> with 4 era boundaries. Add to <code>CrossSourceReconcilerService</code>.</li>
+  <li><strong>Authority chain loader</strong> — read era authority rules from ICD TTL (via Fuseki SPARQL or compile-time extraction). Return ordered provider list per era.</li>
+  <li><strong>Field override resolver</strong> — check <code>icd:EraFieldOverride</code> for location field per era. Override the chain for that field.</li>
+  <li><strong>Ceiling filter</strong> — before attempting to read a field from a source, check if that source has a metadata ceiling for that field in this era. Skip if ceilinged.</li>
+  <li><strong>Date rejection gate</strong> — <code>dateTaken</code> values within 7 days of any known harvest date are suspect (Takeout bug). Reject and fall through.</li>
+  <li><strong>Merge-all implementation</strong> — for <code>albums</code>, <code>isFavorite</code>, <code>hasSourceRecord</code>, <code>people</code>: accumulate from all sources, deduplicate.</li>
+  <li><strong>Provenance emission</strong> — every canonical photo gets <code>jb:mergeEra</code> + <code>jb:hasSourceRecord[]</code>. Field-level provenance is Phase 2.</li>
+  <li><strong>Face cluster boundary</strong> — do not merge face IDs across the iPhoto → Photos.app migration (2015-04). Treat as separate cluster namespaces.</li>
+  <li><strong>HEIC filename handling</strong> — normalize <code>.HEIC</code>/<code>.heic</code> alongside <code>.JPG</code>/<code>.jpg</code> in filename join keys.</li>
+  <li><strong>Unknown era triage</strong> — photos with no dateTaken from any source go to a manual review queue, not discarded.</li>
+</ol>
+
+<h2>10. Validation Criteria</h2>
+
+<p>The merge rebuild is correct when:</p>
+
+<ol>
+  <li>Every canonical photo has a <code>jb:mergeEra</code> — no unclassified records</li>
+  <li>No canonical field value comes from a ceilinged source</li>
+  <li>Golden source values are preferred over supplementary in >95% of cases (remaining 5% are field overrides or null golden values)</li>
+  <li>Total canonical count approximates: ~24K (Apple unique) + ~44K (Takeout-only) + ~47K (iPhone-only) minus ~15K overlap ≈ ~100K canonical photos</li>
+  <li>Zero records with <code>dateTaken</code> within 7 days of harvest date survive into canonical</li>
+  <li>Albums and favorites from all sources are preserved (merge-all count >= max single-source count)</li>
+</ol>
+
+<h2>11. NiFi Processor Mapping</h2>
+
+<p><strong>Context:</strong> Jeff decided (#1644) that the canonical rebuild runs through NiFi, not bash/TypeScript. This section maps the merge algorithm to NiFi processor types so Kade can build the flow directly from this spec.</p>
+
+<div class="note">
+  <strong>Prerequisite:</strong> #1663 (NiFi observability — Loki + Prometheus) must complete before #1644 begins. NiFi runs on Bedroom (port 8443).
+</div>
+
+<h3>11.1 NiFi Flow Architecture</h3>
+
+<pre><code>Process Group: photos-canonical-rebuild
+├── PG: source-extraction
+│   ├── InvokeHTTP → Fuseki SPARQL (Apple source graph)
+│   ├── InvokeHTTP → Fuseki SPARQL (Takeout source graph)
+│   └── InvokeHTTP → Fuseki SPARQL (iPhone source graph)
+├── PG: record-matching
+│   ├── MergeContent (join by filename across sources)
+│   ├── RouteOnAttribute (tier 1: phash match → definitive)
+│   ├── RouteOnAttribute (tier 2: filename + dateTaken ±2s)
+│   └── RouteOnAttribute (tier 3: filename only → medium confidence)
+├── PG: era-classification
+│   └── UpdateAttribute (classify era from dateTaken → set flowfile attribute "era")
+├── PG: field-merge
+│   ├── RouteOnAttribute (route by era → 4 branches)
+│   ├── JoltTransformJSON (era-precedence merge per era config)
+│   ├── JoltTransformJSON (field overrides: location chain per era)
+│   ├── JoltTransformJSON (merge-all: albums, favorites, people, sourceRecords)
+│   └── JoltTransformJSON (exclusive fields: sceneLabels, description, deviceType)
+├── PG: validation
+│   ├── ValidateRecord (reject: no dateTaken, dateTaken near harvest, no canonicalId)
+│   ├── RouteOnAttribute (ceiling violations → dead-letter queue)
+│   └── UpdateAttribute (attach provenance: mergeEra, mergeTimestamp, fieldSources)
+├── PG: output
+│   ├── ConvertRecord (JSON → TTL/N-Triples)
+│   └── InvokeHTTP → Fuseki Graph Store (PUT canonical graph)
+└── PG: dead-letter
+    └── PutFile (unmatched/rejected records → review queue)</code></pre>
+
+<h3>11.2 Merge Strategy → NiFi Processor Mapping</h3>
+
+<table>
+<tr><th>Merge Strategy</th><th>NiFi Processor</th><th>Configuration Approach</th></tr>
+<tr>
+  <td>era-precedence</td>
+  <td>JoltTransformJSON</td>
+  <td>Per-era Jolt spec: <code>shift</code> operation that selects field from golden → supplementary → volume-fill. Four spec files, one per era. Era attribute routes to correct spec.</td>
+</tr>
+<tr>
+  <td>era-precedence + override</td>
+  <td>JoltTransformJSON</td>
+  <td>Same as above, but the Jolt spec for that field uses a different source order. E.g., Era 3 location spec: <code>iphone.location → apple.location → takeout.location</code>.</td>
+</tr>
+<tr>
+  <td>merge-all</td>
+  <td>JoltTransformJSON</td>
+  <td><code>modify-overwrite-beta</code> operation: concatenate arrays from all sources, then deduplicate via ScriptedTransformRecord (Groovy) for slug normalization.</td>
+</tr>
+<tr>
+  <td>exclusive</td>
+  <td>JoltTransformJSON</td>
+  <td>Simple <code>shift</code>: take field from designated source only.</td>
+</tr>
+<tr>
+  <td>computed</td>
+  <td>ExecuteScript (Python/Groovy)</td>
+  <td>Phash requires image file access — ExecuteScript calls phash library. ServingPath/thumbnailPath are derived from other fields — JoltTransformJSON <code>modify-default-beta</code>.</td>
+</tr>
+</table>
+
+<h3>11.3 Key NiFi Configuration Parameters</h3>
+
+<table>
+<tr><th>Parameter</th><th>Value</th><th>Notes</th></tr>
+<tr><td>fuseki.endpoint</td><td><code>http://192.168.86.36:3030</code></td><td>Library Mac — Fuseki SPARQL endpoint</td></tr>
+<tr><td>apple.graph</td><td><code>urn:jb:photos/apple-source</code></td><td>Apple Photos source graph</td></tr>
+<tr><td>takeout.graph</td><td><code>urn:jb:photos/google-source</code></td><td>Google Takeout source graph</td></tr>
+<tr><td>iphone.graph</td><td><code>urn:jb:photos/iphone-source</code></td><td>iPhone source graph</td></tr>
+<tr><td>canonical.graph</td><td><code>urn:jb:photos/</code></td><td>Target canonical graph</td></tr>
+<tr><td>era.boundaries</td><td><code>2006-01-01,2013-01-01,2020-01-01</code></td><td>Era date boundaries</td></tr>
+<tr><td>harvest.date.gate</td><td>7 days</td><td>Reject dateTaken within 7d of any harvest run</td></tr>
+<tr><td>dead.letter.path</td><td><code>/data/nifi/dead-letter/photos/</code></td><td>Bedroom local storage for rejected records</td></tr>
+</table>
+
+<h3>11.4 Jolt Spec Example (Era 3: iPhone Primary)</h3>
+
+<pre><code>// era-3-iphone-primary-merge.json
+[
+  {
+    "operation": "shift",
+    "spec": {
+      // Identity fields — Apple is golden
+      "apple": {
+        "dateTaken":  "canonical.dateTaken",
+        "filename":   "canonical.filename",
+        "dimensions": "canonical.dimensions",
+        "mediaType":  "canonical.mediaType",
+        "fileHash":   "canonical.fileHash",
+        "fileSize":   "canonical.fileSize"
+      },
+      // Location override — iPhone preferred (87.5% GPS)
+      "iphone": {
+        "location": "canonical.location"
+      },
+      // Fallback: if golden field was null, supplementary fills
+      "iphone": {
+        "dateTaken":  "canonical.dateTaken_fallback",
+        "filename":   "canonical.filename_fallback",
+        "dimensions": "canonical.dimensions_fallback"
+      },
+      // Exclusive fields
+      "apple": {
+        "sceneLabels": "canonical.sceneLabels",
+        "faces":       "canonical.faces"
+      },
+      "google": {
+        "description": "canonical.description",
+        "deviceType":  "canonical.deviceType"
+      }
+    }
+  },
+  {
+    "operation": "modify-default-beta",
+    "spec": {
+      "canonical": {
+        // Fill nulls from fallback chain
+        "dateTaken":  "${canonical.dateTaken_fallback}",
+        "filename":   "${canonical.filename_fallback}",
+        "dimensions": "${canonical.dimensions_fallback}",
+        // Location fallback: Apple → Takeout
+        "location":   "${apple.location}"
+      }
+    }
+  }
+]</code></pre>
+
+<div class="note">
+  <strong>For Kade:</strong> Each era gets its own Jolt spec file. The NiFi flow routes by <code>era</code> attribute to the correct spec. Merge-all fields (albums, isFavorite, people, hasSourceRecord) use a shared spec that runs after era-specific merge. The phash computation runs as a separate ExecuteScript processor since it requires image file access via SSH to Bedroom.
+</div>
+
+<footer>
+  <p>Generated by Silas (Architect) for card #1643. Depends on #1642 (era-scoped provider authority). Consumed by Kade for NiFi canonical rebuild (#1644).</p>
+  <p>NiFi prerequisite: #1663 (observability). ICD source: <code>src/ontology/icd-instance-photos.ttl</code> v3. Source data: <code>architect/docs/source-*.json</code>.</p>
+</footer>
+
+</body>
+</html>

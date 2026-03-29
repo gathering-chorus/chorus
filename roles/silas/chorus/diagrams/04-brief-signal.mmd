@@ -1,0 +1,27 @@
+sequenceDiagram
+    participant RoleA as Role A (e.g., Wren)
+    participant FS as Filesystem
+    participant Slack as Slack API
+    participant Bridge as Slack Bridge
+    participant RoleB as Role B (e.g., Silas)
+
+    Note over RoleA: Produces a brief
+    RoleA->>FS: Write brief to role-b/briefs/
+    RoleA->>Slack: Signal "Brief in your inbox"
+
+    alt Bridge is running
+        Bridge->>Slack: Polls channel
+        Slack-->>Bridge: Sees signal
+        Bridge->>Slack: Acknowledgment
+    end
+
+    Note over RoleB: === Time passes ===
+
+    alt Jeff opens Silas session
+        RoleB->>Slack: SessionStart reads messages
+        Slack-->>RoleB: Sees signal
+        RoleB->>FS: Checks briefs/ mtime
+        FS-->>RoleB: Detects new brief
+        RoleB->>FS: Reads brief, writes response
+        RoleB->>Slack: Posts signal to #wren
+    end

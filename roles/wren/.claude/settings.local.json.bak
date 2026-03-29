@@ -1,0 +1,104 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch",
+      "Skill(*)",
+      "NotebookEdit(*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/sensitive-paths-hook.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/write-scrubber-hook.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/write-scrubber-hook.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/pod-state-sync-hook.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/pod-state-sync-hook.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/team-scan.sh scan wren /Users/jeffbridwell/CascadeProjects/product-manager/briefs",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/team-scan.sh sync wren /Users/jeffbridwell/CascadeProjects/product-manager/briefs",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-audit.sh start wren",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/.chorus/scripts/chorus-query.sh reconcile wren",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

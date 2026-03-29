@@ -1,0 +1,28 @@
+# Workflow Handoff: WF-006 — Step 3
+
+**Workflow**: WF-006
+**Decision**: Thin HTTP wrapper around Chorus context index — first Chorus infra step
+**Your action**: Build HTTP wrapper — file-backed reads and no cache — serve from chorus repo
+
+## Context
+
+Previous step (completed by silas):
+- **Action**: Review contract for stability and document topology seams in /infra/topology.md
+- **Notes**: Contract reviewed. 5 endpoints are clean and well-scoped. Stability contract (frozen field names, latency bounds, error cases) is solid. One addition: POST /api/chorus/index should return elapsed time for operational visibility. Topology seam: wrapper runs as standalone process in chorus/ repo, reads ~/.chorus/index.db directly. No shared state with Clearing except the DB file. WAL mode handles concurrent reads. Approved for Kade to build.
+- **Artifacts**: architect/briefs/2026-02-21-chorus-http-contract.md
+
+## What You Need To Do
+
+Build HTTP wrapper — file-backed reads and no cache — serve from chorus repo
+
+When complete, run:
+```bash
+../messages/scripts/workflow.sh advance WF-006 --notes "your completion notes" --artifacts "file1,file2"
+```
+
+## Workflow Progress
+
+[x] Step 1: wren — Spec HTTP contract from Clearing actual usage — query shape and error cases and consumers
+[x] Step 2: silas — Review contract for stability and document topology seams in /infra/topology.md
+[>] Step 3: kade — Build HTTP wrapper — file-backed reads and no cache — serve from chorus repo
+[ ] Step 4: wren — Validate Clearing works from Chrome via wrapper

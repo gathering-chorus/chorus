@@ -1,0 +1,565 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+@prefix jb:       <https://jeffbridwell.com/ontology#> .
+@prefix building: <https://jeffbridwell.com/building#> .
+
+# =============================================================================
+# DEPRECATED — Merged into chorus.ttl v0.2.0 (2026-02-22, C#40)
+# =============================================================================
+#
+# This file is preserved for reference. The unified Chorus ontology at
+# chorus.ttl now contains all role, interaction, constraint, service,
+# and fitness function definitions previously in this file.
+#
+# Reason: building.ttl (team protocol) and chorus.ttl (pipeline execution)
+# both model "how the team operates" — an artificial split. Jeff directed
+# the merge: "feels like building.ttl and chorus.ttl should be same not separate."
+#
+# Original version: 0.1.0 (2026-02-15)
+# Deprecated: 2026-02-22
+# Successor: chorus.ttl v0.2.0
+# =============================================================================
+
+building: a owl:Ontology ;
+    owl:versionInfo "0.1.0" ;
+    dcterms:title "Building Ontology" ;
+    dcterms:description "Team protocol ontology — roles, interactions, constraints, services, and fitness functions for the Gathering team." ;
+    dcterms:created "2026-02-15"^^xsd:date ;
+    rdfs:seeAlso <https://jeffbridwell.com/ontology#> .
+
+# =============================================================================
+# CLASSES — Roles
+# =============================================================================
+
+building:Role a owl:Class ;
+    rdfs:label "Role" ;
+    rdfs:comment "A specialized function within the team. Each role has defined capabilities, boundaries, and interaction modes. Inspired by Team Topologies team types." .
+
+building:HumanRole a owl:Class ;
+    rdfs:subClassOf building:Role ;
+    rdfs:label "Human Role" ;
+    rdfs:comment "A role filled by a human participant. Owns judgment, direction, and meaning." .
+
+building:AgentRole a owl:Class ;
+    rdfs:subClassOf building:Role ;
+    rdfs:label "Agent Role" ;
+    rdfs:comment "A role filled by an AI agent. Persistent across sessions via state files and memory." .
+
+# --- Team Topology Types (applied to roles) ---
+
+building:TeamTopologyType a owl:Class ;
+    rdfs:label "Team Topology Type" ;
+    rdfs:comment "Classification from Team Topologies: stream-aligned, enabling, platform, complicated-subsystem." .
+
+building:StreamAligned a building:TeamTopologyType ;
+    rdfs:label "Stream-Aligned" ;
+    rdfs:comment "Aligned to the value stream. Owns the flow of what gets built and shipped." .
+
+building:Enabling a building:TeamTopologyType ;
+    rdfs:label "Enabling" ;
+    rdfs:comment "Reduces cognitive load on stream-aligned roles. Provides guidance, reviews, structural integrity." .
+
+building:Platform a building:TeamTopologyType ;
+    rdfs:label "Platform" ;
+    rdfs:comment "Self-service infrastructure that makes the team's work easier. Used by roles, not managed by them." .
+
+building:ComplicatedSubsystem a building:TeamTopologyType ;
+    rdfs:label "Complicated Subsystem" ;
+    rdfs:comment "Specialist knowledge domain. Owns complexity so it doesn't leak into every decision." .
+
+# =============================================================================
+# CLASSES — Interactions
+# =============================================================================
+
+building:InteractionMode a owl:Class ;
+    rdfs:label "Interaction Mode" ;
+    rdfs:comment "How two roles work together. From Team Topologies: collaboration, x-as-a-service, facilitating." .
+
+building:Collaboration a building:InteractionMode ;
+    rdfs:label "Collaboration" ;
+    rdfs:comment "High-bandwidth, temporary. Two roles working closely on a shared problem. Time-boxed." .
+
+building:XAsAService a building:InteractionMode ;
+    rdfs:label "X-as-a-Service" ;
+    rdfs:comment "Clear API contract, low friction. One role provides a service to another via defined interface (e.g., brief format)." .
+
+building:Facilitating a building:InteractionMode ;
+    rdfs:label "Facilitating" ;
+    rdfs:comment "One role helps another get better at something. Teaching, not doing." .
+
+# =============================================================================
+# CLASSES — Communication
+# =============================================================================
+
+building:MessageType a owl:Class ;
+    rdfs:label "Message Type" ;
+    rdfs:comment "Classification of team communication. Exactly four types per team-architecture.md." .
+
+building:Brief a building:MessageType ;
+    rdfs:label "Brief" ;
+    rdfs:comment "Structured document with substance. Lives in recipient's briefs/ directory. Source of truth." .
+
+building:Signal a building:MessageType ;
+    rdfs:label "Signal" ;
+    rdfs:comment "Short notification that context has changed. Lives in Slack. Ephemeral." .
+
+building:Question a building:MessageType ;
+    rdfs:label "Question" ;
+    rdfs:comment "Short, conversational, needs a short answer. Lives in Slack." .
+
+building:Record a building:MessageType ;
+    rdfs:label "Record" ;
+    rdfs:comment "Permanent log entry in activity.md. Captures that something significant happened." .
+
+building:Priority a owl:Class ;
+    rdfs:label "Priority" ;
+    rdfs:comment "Urgency classification for signals and briefs." .
+
+building:P1 a building:Priority ;
+    rdfs:label "P1" ;
+    rdfs:comment "Blocks someone's work. Respond this session." .
+
+building:P2 a building:Priority ;
+    rdfs:label "P2" ;
+    rdfs:comment "Important but not blocking. Respond within a session or two." .
+
+building:P3 a building:Priority ;
+    rdfs:label "P3" ;
+    rdfs:comment "Informational. Acknowledge when convenient." .
+
+# =============================================================================
+# CLASSES — Session Lifecycle
+# =============================================================================
+
+building:SessionPhase a owl:Class ;
+    rdfs:label "Session Phase" ;
+    rdfs:comment "A phase in the role session lifecycle. Every role, every session, same sequence." .
+
+building:Synchronize a building:SessionPhase ;
+    rdfs:label "Synchronize" ;
+    rdfs:comment "Session start. Pull repo, read CLAUDE.md + team-architecture.md, check briefs/, read Slack, scan activity.md." .
+
+building:Operate a building:SessionPhase ;
+    rdfs:label "Operate" ;
+    rdfs:comment "During session. Quick Slack scan every turn. Brief + signal + record when producing. Read + respond + log when consuming." .
+
+building:Close a building:SessionPhase ;
+    rdfs:label "Close" ;
+    rdfs:comment "Session end. Update activity.md, commit and push, post to #standup, run role-specific checks." .
+
+# =============================================================================
+# CLASSES — Services (Platform layer)
+# =============================================================================
+
+building:Service a owl:Class ;
+    rdfs:label "Service" ;
+    rdfs:comment "A platform component that provides self-service coordination infrastructure to the team." .
+
+building:AutomationService a owl:Class ;
+    rdfs:subClassOf building:Service ;
+    rdfs:label "Automation Service" ;
+    rdfs:comment "A service that runs automatically — hooks, polling, scheduled tasks." .
+
+building:ToolService a owl:Class ;
+    rdfs:subClassOf building:Service ;
+    rdfs:label "Tool Service" ;
+    rdfs:comment "A service invoked manually by roles — scripts, board commands." .
+
+# =============================================================================
+# CLASSES — Constraints & Fitness Functions
+# =============================================================================
+
+building:Constraint a owl:Class ;
+    rdfs:label "Constraint" ;
+    rdfs:comment "A rule that bounds team behavior. May be a principle, a decision, or an operational guardrail." .
+
+building:FitnessFunction a owl:Class ;
+    rdfs:subClassOf building:Constraint ;
+    rdfs:label "Fitness Function" ;
+    rdfs:comment "A testable assertion about team behavior. From evolutionary architecture: guided change through automated validation. If this fails, the protocol has drifted." .
+
+building:Principle a owl:Class ;
+    rdfs:subClassOf building:Constraint ;
+    rdfs:label "Principle" ;
+    rdfs:comment "A shared value that explains why. Principles are stable. Patterns derive from them." .
+
+building:Decision a owl:Class ;
+    rdfs:subClassOf building:Constraint ;
+    rdfs:label "Decision" ;
+    rdfs:comment "A specific choice that constrains future behavior. Captured in decisions.md or ADRs." .
+
+# =============================================================================
+# CLASSES — Artifacts
+# =============================================================================
+
+building:Artifact a owl:Class ;
+    rdfs:label "Artifact" ;
+    rdfs:comment "A persistent document that holds team state or substance. Files are ground, Slack is wind." .
+
+building:ArtifactType a owl:Class ;
+    rdfs:label "Artifact Type" ;
+    rdfs:comment "Classification of team artifacts by purpose and durability." .
+
+# =============================================================================
+# CLASSES — Value Stream (cross-reference to gathering:)
+# =============================================================================
+
+building:ValueStreamStage a owl:Class ;
+    rdfs:label "Value Stream Stage" ;
+    rdfs:comment "A stage in either value stream. Both are cycles, not pipes." .
+
+building:GatheringStage a owl:Class ;
+    rdfs:subClassOf building:ValueStreamStage ;
+    rdfs:label "Gathering Stage" ;
+    rdfs:comment "A stage in the Gathering value stream — the flow of meaning: Spark → Capture → Triage → Settle → Revisit → Transform → Connect → Reflect → (new Sparks)." .
+
+building:BuildingStage a owl:Class ;
+    rdfs:subClassOf building:ValueStreamStage ;
+    rdfs:label "Building Stage" ;
+    rdfs:comment "A stage in the Building value stream — the flow of making: Direct → Frame → Shape → Spec → Build → Verify → Ship → Operate → Evolve → (new Direction)." .
+
+# =============================================================================
+# OBJECT PROPERTIES
+# =============================================================================
+
+# --- Role properties ---
+
+building:hasTopologyType a owl:ObjectProperty ;
+    rdfs:label "has topology type" ;
+    rdfs:comment "The Team Topologies classification of this role." ;
+    rdfs:domain building:Role ;
+    rdfs:range building:TeamTopologyType .
+
+building:hasCapability a owl:ObjectProperty ;
+    rdfs:label "has capability" ;
+    rdfs:comment "What this role can do. Defines the role's functional boundary." ;
+    rdfs:domain building:Role .
+
+building:hasBoundary a owl:ObjectProperty ;
+    rdfs:label "has boundary" ;
+    rdfs:comment "What this role must NOT do. Defines the role's constraint boundary." ;
+    rdfs:domain building:Role ;
+    rdfs:range building:Constraint .
+
+building:interactsWith a owl:ObjectProperty ;
+    rdfs:label "interacts with" ;
+    rdfs:comment "Another role this role communicates with." ;
+    rdfs:domain building:Role ;
+    rdfs:range building:Role .
+
+building:viaMode a owl:ObjectProperty ;
+    rdfs:label "via mode" ;
+    rdfs:comment "The interaction mode used between two roles." ;
+    rdfs:range building:InteractionMode .
+
+building:operatesOn a owl:ObjectProperty ;
+    rdfs:label "operates on" ;
+    rdfs:comment "The value stream stage(s) this role primarily serves." ;
+    rdfs:domain building:Role ;
+    rdfs:range building:ValueStreamStage .
+
+# --- Message properties ---
+
+building:from a owl:ObjectProperty ;
+    rdfs:label "from" ;
+    rdfs:comment "The role that produced this message." ;
+    rdfs:domain building:MessageType ;
+    rdfs:range building:Role .
+
+building:to a owl:ObjectProperty ;
+    rdfs:label "to" ;
+    rdfs:comment "The role that should consume this message." ;
+    rdfs:domain building:MessageType ;
+    rdfs:range building:Role .
+
+building:hasPriority a owl:ObjectProperty ;
+    rdfs:label "has priority" ;
+    rdfs:comment "The urgency classification of a message." ;
+    rdfs:domain building:MessageType ;
+    rdfs:range building:Priority .
+
+building:referencesArtifact a owl:ObjectProperty ;
+    rdfs:label "references artifact" ;
+    rdfs:comment "The artifact this message points to (signals reference briefs)." ;
+    rdfs:domain building:MessageType ;
+    rdfs:range building:Artifact .
+
+# --- Service properties ---
+
+building:providedBy a owl:ObjectProperty ;
+    rdfs:label "provided by" ;
+    rdfs:comment "The platform service that provides this capability." ;
+    rdfs:range building:Service .
+
+building:usedBy a owl:ObjectProperty ;
+    rdfs:label "used by" ;
+    rdfs:comment "The role that uses this service." ;
+    rdfs:domain building:Service ;
+    rdfs:range building:Role .
+
+# --- Fitness function properties ---
+
+building:validates a owl:ObjectProperty ;
+    rdfs:label "validates" ;
+    rdfs:comment "What this fitness function tests — a constraint, a role boundary, or a protocol behavior." ;
+    rdfs:domain building:FitnessFunction .
+
+building:enforcedBy a owl:ObjectProperty ;
+    rdfs:label "enforced by" ;
+    rdfs:comment "The service or automation that enforces this constraint." ;
+    rdfs:domain building:Constraint ;
+    rdfs:range building:Service .
+
+# =============================================================================
+# DATATYPE PROPERTIES
+# =============================================================================
+
+building:responseWindow a owl:DatatypeProperty ;
+    rdfs:label "response window" ;
+    rdfs:comment "Expected response time for this role or service, in seconds." ;
+    rdfs:range xsd:integer .
+
+building:channelName a owl:DatatypeProperty ;
+    rdfs:label "channel name" ;
+    rdfs:comment "The Slack channel associated with this role." ;
+    rdfs:domain building:Role ;
+    rdfs:range xsd:string .
+
+building:artifactPath a owl:DatatypeProperty ;
+    rdfs:label "artifact path" ;
+    rdfs:comment "Filesystem path pattern for this artifact type." ;
+    rdfs:domain building:ArtifactType ;
+    rdfs:range xsd:string .
+
+building:protocolVersion a owl:DatatypeProperty ;
+    rdfs:label "protocol version" ;
+    rdfs:comment "The team-architecture.md version this instance conforms to." ;
+    rdfs:range xsd:string .
+
+building:decisionRef a owl:DatatypeProperty ;
+    rdfs:label "decision reference" ;
+    rdfs:comment "Reference to a decision ID (e.g., DEC-017, ADR-006)." ;
+    rdfs:domain building:Decision ;
+    rdfs:range xsd:string .
+
+building:auditMethod a owl:DatatypeProperty ;
+    rdfs:label "audit method" ;
+    rdfs:comment "How to verify this fitness function — the automated or semi-automated audit procedure." ;
+    rdfs:domain building:FitnessFunction ;
+    rdfs:range xsd:string .
+
+# =============================================================================
+# INSTANCES — Current Team (team-architecture.md v1.0)
+# =============================================================================
+
+# --- Roles ---
+
+building:jeff a building:HumanRole ;
+    rdfs:label "Jeff" ;
+    rdfs:comment "Owner. Judgment, direction, meaning. The self that the gathering serves." ;
+    building:hasTopologyType building:StreamAligned ;
+    building:channelName "#all-gathering" ;
+    building:responseWindow 0 ;  # Human — responds when present
+    building:operatesOn building:stage-direct, building:stage-verify .
+
+building:wren a building:AgentRole ;
+    rdfs:label "Wren" ;
+    rdfs:comment "Product Manager. Intentionality — what matters, what's next, why." ;
+    building:hasTopologyType building:StreamAligned ;
+    building:channelName "#wren" ;
+    building:responseWindow 30 ;
+    building:operatesOn building:stage-frame,
+                         building:stage-capture, building:stage-triage .
+
+building:silas a building:AgentRole ;
+    rdfs:label "Silas" ;
+    rdfs:comment "Architect. Structural integrity — how things fit, what holds, what breaks." ;
+    building:hasTopologyType building:Enabling ;
+    building:channelName "#silas" ;
+    building:responseWindow 30 ;
+    building:operatesOn building:stage-shape, building:stage-spec, building:stage-evolve .
+
+building:kade a building:AgentRole ;
+    rdfs:label "Kade" ;
+    rdfs:comment "Engineer. Execution — make it real, make it work." ;
+    building:hasTopologyType building:StreamAligned ;
+    building:channelName "#kade" ;
+    building:responseWindow 30 ;
+    building:operatesOn building:stage-build, building:stage-verify, building:stage-ship, building:stage-operate .
+
+# --- Gathering Value Stream Stages ---
+
+building:stage-spark a building:GatheringStage ;
+    rdfs:label "Spark" ;
+    rdfs:comment "Something catches attention. Pre-capture." .
+
+building:stage-capture a building:GatheringStage ;
+    rdfs:label "Capture" ;
+    rdfs:comment "The spark is recorded — SMS, Slack, catalog, voice." .
+
+building:stage-triage a building:GatheringStage ;
+    rdfs:label "Triage" ;
+    rdfs:comment "Captured item is routed: idea, glimmer, reading list, project, property." .
+
+building:stage-settle a building:GatheringStage ;
+    rdfs:label "Settle" ;
+    rdfs:comment "Item lands in its collection. Metadata enriched." .
+
+building:stage-revisit a building:GatheringStage ;
+    rdfs:label "Revisit" ;
+    rdfs:comment "Item is returned to — developed, pruned, promoted." .
+
+building:stage-transform a building:GatheringStage ;
+    rdfs:label "Transform" ;
+    rdfs:comment "Item evolves — glimmer becomes idea, idea becomes project." .
+
+building:stage-connect a building:GatheringStage ;
+    rdfs:label "Connect" ;
+    rdfs:comment "Cross-domain relationships discovered. The graph grows." .
+
+building:stage-reflect a building:GatheringStage ;
+    rdfs:label "Reflect" ;
+    rdfs:comment "Patterns emerge. Understanding deepens. New sparks generated." .
+
+# --- Building Value Stream Stages ---
+
+building:stage-direct a building:BuildingStage ;
+    rdfs:label "Direct" ;
+    rdfs:comment "Jeff expresses intent, direction, or feedback. The raw signal." .
+
+building:stage-frame a building:BuildingStage ;
+    rdfs:label "Frame" ;
+    rdfs:comment "Product framing: what is this, why does it matter, scope, priority." .
+
+building:stage-shape a building:BuildingStage ;
+    rdfs:label "Shape" ;
+    rdfs:comment "Architectural design: how it fits, risks, technical approach, ontology alignment." .
+
+building:stage-spec a building:BuildingStage ;
+    rdfs:label "Spec" ;
+    rdfs:comment "Build-ready specification: everything the engineer needs." .
+
+building:stage-build a building:BuildingStage ;
+    rdfs:label "Build" ;
+    rdfs:comment "Implementation: code, tests, integration." .
+
+building:stage-verify a building:BuildingStage ;
+    rdfs:label "Verify" ;
+    rdfs:comment "Automated tests + live user testing." .
+
+building:stage-ship a building:BuildingStage ;
+    rdfs:label "Ship" ;
+    rdfs:comment "Deploy, commit, push, announce." .
+
+building:stage-operate a building:BuildingStage ;
+    rdfs:label "Operate" ;
+    rdfs:comment "Monitoring, observability, coordination." .
+
+building:stage-evolve a building:BuildingStage ;
+    rdfs:label "Evolve" ;
+    rdfs:comment "Learning encoded: new constraints, fitness functions, protocol updates." .
+
+# --- Services (Platform) ---
+
+building:slack-bridge a building:AutomationService ;
+    rdfs:label "Slack-to-Claude Bridge (RETIRED)" ;
+    rdfs:comment "RETIRED 2026-03. Was polling-based Slack presence for all roles. Replaced by briefs + activity.md + Chorus index." ;
+    building:protocolVersion "1.0" .
+
+building:team-scan a building:AutomationService ;
+    rdfs:label "Team Scan (Hooks)" ;
+    rdfs:comment "Claude Code hooks that inject Slack + briefs context into sessions. Reactive — fires on UserPromptSubmit (2 min rate limit) and SessionStart." ;
+    building:usedBy building:wren, building:silas, building:kade ;
+    building:protocolVersion "1.0" .
+
+building:slack-post a building:ToolService ;
+    rdfs:label "slack-post.sh (RETIRED)" ;
+    rdfs:comment "RETIRED 2026-03. Was Slack channel posting tool. Slack deprecated." ;
+    building:artifactPath "messages/scripts/slack-post.sh" .
+
+building:slack-read a building:ToolService ;
+    rdfs:label "slack-read.sh (RETIRED)" ;
+    rdfs:comment "RETIRED 2026-03. Was Slack channel reader. Slack deprecated." ;
+    building:artifactPath "messages/scripts/slack-read.sh" .
+
+building:board a building:ToolService ;
+    rdfs:label "board.sh" ;
+    rdfs:comment "Vikunja kanban board wrapper — list, add, move, done, block." ;
+    building:artifactPath "messages/scripts/board.sh" .
+
+# --- Constraints ---
+
+building:dec-017 a building:Decision ;
+    rdfs:label "DEC-017: Bridge Scope Guardrail (RETIRED)" ;
+    rdfs:comment "RETIRED 2026-03 with Slack bridge. Was: bridge is for coordination on WIP and blocked items only. Superseded by brief + board + Chorus protocol." ;
+    building:decisionRef "DEC-017" .
+
+building:principle-artifacts-truth a building:Principle ;
+    rdfs:label "Artifacts are the source of truth" ;
+    rdfs:comment "When Slack and a file disagree, the file wins. Slack is wind, files are ground." .
+
+building:principle-owner-not-router a building:Principle ;
+    rdfs:label "Jeff is the owner, not the router" ;
+    rdfs:comment "Jeff sets direction and intent. Roles maintain shared context with each other directly." .
+
+building:principle-self-healing a building:Principle ;
+    rdfs:label "The system should be self-healing" ;
+    rdfs:comment "When a role starts after a gap, synchronization from artifacts should bring them current without Jeff recapping." .
+
+building:principle-substance-persistent a building:Principle ;
+    rdfs:label "Substance is persistent, signals are ephemeral" ;
+    rdfs:comment "Briefs hold substance. Slack carries signals. Never put substance only in Slack." .
+
+# --- Fitness Functions (auditable, automated where possible) ---
+
+building:ff-card-coverage a building:FitnessFunction ;
+    rdfs:label "Card Coverage" ;
+    rdfs:comment "Every shipped feature traces to a board card. Audit: compare git log to board Done items. Commits without a card = uncarded work." ;
+    building:validates building:principle-owner-not-router ;
+    building:auditMethod "Compare `git log --oneline` to `board.sh list` Done items. Scriptable." .
+
+building:ff-brief-chain a building:FitnessFunction ;
+    rdfs:label "Brief Chain" ;
+    rdfs:comment "Every shipped feature has a brief trail through the building value stream (Direction → Frame → Shape → Spec → Build). Audit: for each Done card, check role briefs/ for related files." ;
+    building:validates building:principle-artifacts-truth ;
+    building:auditMethod "For each Done card: ls -lt <role>/briefs/ for matching date+topic files. Scriptable." .
+
+building:ff-response-time a building:FitnessFunction ;
+    rdfs:label "Response Latency" ;
+    rdfs:comment "Agent roles respond to directed messages within 30s (bridge) or 2min (hooks). Audit: Slack timestamps between message and response. Bridge marker distinguishes response types." ;
+    building:validates building:silas, building:wren, building:kade ;
+    building:auditMethod "Parse Slack timestamps. Filter by channel, measure delta between non-bridge and bridge-marked messages. Scriptable." .
+
+building:ff-decision-capture a building:FitnessFunction ;
+    rdfs:label "Decision Capture" ;
+    rdfs:comment "Every Jeff directive appears in an artifact (DEC-*, ADR-*, decisions.md) within the same session. Audit: search #all-gathering for [DEC-*] signals, cross-reference decisions.md + adr/." ;
+    building:validates building:principle-artifacts-truth ;
+    building:auditMethod "Grep Slack for DEC/ADR signals, match against files in decisions.md and adr/. Semi-automated." .
+
+building:ff-session-artifact-rate a building:FitnessFunction ;
+    rdfs:label "Session Artifact Rate" ;
+    rdfs:comment "Every session that produces direction results in at least one artifact (card, brief, decision, ADR, or commit). Zero commits = invisible session." ;
+    building:validates building:principle-artifacts-truth ;
+    building:auditMethod "git log --since/--until per session. Zero commits = gap. Scriptable." .
+
+building:ff-pm-bypass-rate a building:FitnessFunction ;
+    rdfs:label "PM Bypass Rate" ;
+    rdfs:comment "What percentage of work comes Jeff-direct vs through Wren? Board cards with no Wren brief vs cards that trace to a Wren brief. Temporary: jeff-tickets.md until automated." ;
+    building:validates building:principle-owner-not-router ;
+    building:auditMethod "Board cards cross-referenced with product-manager/briefs/. Scriptable when jeff-tickets.md is retired." .
+
+building:ff-boundary-integrity a building:FitnessFunction ;
+    rdfs:label "Boundary Integrity" ;
+    rdfs:comment "Roles do not start new work or reprioritize without Jeff's directive (DEC-017). Audit: bridge responses checked for unauthorized work initiation." ;
+    building:validates building:dec-017 ;
+    building:auditMethod "Parse bridge-marked messages for work-initiation language. Semi-automated." .
+
+building:ff-slack-substance-leak a building:FitnessFunction ;
+    rdfs:label "No Substance in Slack" ;
+    rdfs:comment "No decisions, designs, or specs live only in Slack. If you can't find it in a file, it wasn't properly captured. Audit: search Slack for decision language, verify file exists." ;
+    building:validates building:principle-substance-persistent ;
+    building:auditMethod "Grep Slack for decision/design keywords, cross-reference with files. Semi-automated." .

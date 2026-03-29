@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pair Flow — Sequence Diagram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Mono', 'Fira Code', monospace; background: #1a1a2e; color: #e0e0e0; padding: 40px; }
+  h1 { font-size: 1.4rem; color: #fff; margin-bottom: 4px; }
+  .subtitle { font-size: 0.85rem; color: #888; margin-bottom: 30px; }
+
+  .diagram { position: relative; width: 900px; margin: 0 auto; }
+
+  /* Swimlanes */
+  .lanes { display: flex; justify-content: space-between; margin-bottom: 0; }
+  .lane-header {
+    width: 180px; text-align: center; padding: 10px 8px;
+    border-radius: 6px; font-weight: bold; font-size: 0.9rem;
+  }
+  .jeff { background: #2d4a7a; color: #7cb3ff; }
+  .driver { background: #4a2d6b; color: #c49bff; }
+  .navigator { background: #2d6b4a; color: #7bffb2; }
+  .scratch { background: #6b5a2d; color: #ffd97b; }
+
+  /* Lifelines */
+  .lifelines {
+    display: flex; justify-content: space-between; position: relative;
+  }
+  .lifeline {
+    width: 180px; display: flex; justify-content: center;
+    position: relative;
+  }
+  .lifeline::after {
+    content: ''; position: absolute; top: 0; bottom: 0;
+    left: 50%; width: 2px; border-left: 2px dashed #333;
+  }
+
+  /* Steps container */
+  .steps { position: relative; padding: 10px 0; }
+
+  /* Individual step */
+  .step {
+    position: relative; height: auto; min-height: 50px;
+    display: flex; align-items: center; margin: 4px 0;
+  }
+
+  /* Arrow + label */
+  .arrow {
+    position: absolute; display: flex; align-items: center;
+    font-size: 0.75rem; color: #ccc;
+  }
+  .arrow .label {
+    position: absolute; top: -16px; white-space: nowrap;
+    font-size: 0.72rem;
+  }
+  .arrow svg { overflow: visible; }
+
+  /* Phase markers */
+  .phase {
+    width: 100%; padding: 12px 20px; margin: 16px 0;
+    border-radius: 6px; font-size: 0.8rem;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .phase-setup { background: #1e2a3a; border-left: 3px solid #4a90d9; }
+  .phase-loop { background: #1a2e1a; border-left: 3px solid #4ac94a; }
+  .phase-check { background: #2e2a1a; border-left: 3px solid #d9a84a; }
+  .phase-end { background: #2e1a1a; border-left: 3px solid #d94a4a; }
+  .phase-title { font-weight: bold; font-size: 0.85rem; min-width: 140px; }
+
+  /* Scope loop box */
+  .scope-loop {
+    border: 2px solid #4ac94a; border-radius: 8px;
+    padding: 16px; margin: 20px 0; position: relative;
+  }
+  .scope-loop-label {
+    position: absolute; top: -12px; left: 16px;
+    background: #1a1a2e; padding: 0 8px;
+    color: #4ac94a; font-weight: bold; font-size: 0.85rem;
+  }
+  .loop-steps { list-style: none; }
+  .loop-steps li {
+    padding: 6px 0; font-size: 0.82rem;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .loop-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #2d6b4a; color: #7bffb2; font-size: 0.7rem; font-weight: bold;
+    flex-shrink: 0;
+  }
+
+  /* Message rows */
+  .msg-row {
+    display: grid; grid-template-columns: 180px 180px 180px 180px;
+    gap: 0; align-items: center; min-height: 44px;
+    column-gap: 60px;
+  }
+  .msg-cell { display: flex; justify-content: center; position: relative; }
+
+  /* Arrow rendering */
+  .msg-arrow {
+    position: relative; display: flex; align-items: center;
+    grid-column: span 4; height: 36px; padding: 0 90px;
+  }
+  .msg-arrow .line {
+    position: absolute; height: 2px; background: #666;
+  }
+  .msg-arrow .head {
+    position: absolute; width: 0; height: 0;
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+  }
+  .msg-arrow .head-right { border-left: 8px solid #888; }
+  .msg-arrow .head-left { border-right: 8px solid #888; }
+  .msg-arrow .msg-label {
+    position: absolute; top: -14px; font-size: 0.72rem; color: #aaa;
+    white-space: nowrap;
+  }
+
+  /* Simplified flow using flexbox rows */
+  .flow { width: 900px; margin: 0 auto; }
+
+  .flow-row {
+    display: flex; align-items: stretch; min-height: 40px;
+  }
+  .flow-col {
+    flex: 1; display: flex; justify-content: center; align-items: center;
+    position: relative; min-height: 40px;
+  }
+  .flow-col::before {
+    content: ''; position: absolute; top: 0; bottom: 0;
+    left: 50%; width: 2px; border-left: 2px dashed #282840;
+    z-index: 0;
+  }
+
+  /* Message arrow overlay */
+  .flow-msg {
+    position: absolute; display: flex; align-items: center;
+    z-index: 1;
+  }
+
+  /* Simple table-based approach */
+  table.seq { width: 900px; margin: 0 auto; border-collapse: collapse; }
+  table.seq td {
+    width: 225px; text-align: center; position: relative;
+    padding: 0; vertical-align: middle;
+  }
+  table.seq td::before {
+    content: ''; position: absolute; top: 0; bottom: 0;
+    left: 50%; width: 2px; border-left: 2px dashed #282840;
+  }
+
+  .seq-row { height: 48px; }
+  .seq-arrow {
+    position: relative; display: flex; align-items: center;
+    justify-content: center; height: 100%; z-index: 1;
+  }
+
+  /* Clean approach: SVG-based */
+  svg.sequence { display: block; margin: 0 auto; }
+  svg text { font-family: 'SF Mono', 'Fira Code', monospace; }
+</style>
+</head>
+<body>
+
+<h1>/pair — Sequence Diagram</h1>
+<p class="subtitle">Strong-style pairing with navigator scope loop</p>
+
+<svg class="sequence" width="920" height="1320" viewBox="0 0 920 1320">
+  <!-- Swimlane headers -->
+  <rect x="30" y="10" width="160" height="36" rx="6" fill="#2d4a7a"/>
+  <text x="110" y="33" text-anchor="middle" fill="#7cb3ff" font-size="13" font-weight="bold">Jeff</text>
+
+  <rect x="250" y="10" width="160" height="36" rx="6" fill="#4a2d6b"/>
+  <text x="330" y="33" text-anchor="middle" fill="#c49bff" font-size="13" font-weight="bold">Driver (A)</text>
+
+  <rect x="480" y="10" width="160" height="36" rx="6" fill="#2d6b4a"/>
+  <text x="560" y="33" text-anchor="middle" fill="#7bffb2" font-size="13" font-weight="bold">Navigator (B)</text>
+
+  <rect x="710" y="10" width="170" height="36" rx="6" fill="#6b5a2d"/>
+  <text x="795" y="33" text-anchor="middle" fill="#ffd97b" font-size="13" font-weight="bold">Scratch File</text>
+
+  <!-- Lifelines -->
+  <line x1="110" y1="50" x2="110" y2="1300" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="330" y1="50" x2="330" y2="1300" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="560" y1="50" x2="560" y2="1300" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="795" y1="50" x2="795" y2="1300" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+
+  <!-- === SETUP PHASE === -->
+  <rect x="10" y="70" width="900" height="24" rx="4" fill="#1e2a3a"/>
+  <text x="20" y="86" fill="#4a90d9" font-size="11" font-weight="bold">SETUP</text>
+
+  <!-- 1: Jeff -> Driver: /pair B #N -->
+  <line x1="110" y1="115" x2="320" y2="115" stroke="#7cb3ff" stroke-width="2"/>
+  <polygon points="320,115 312,110 312,120" fill="#7cb3ff"/>
+  <text x="215" y="108" text-anchor="middle" fill="#7cb3ff" font-size="11">/pair B #N</text>
+
+  <!-- 2: Driver -> Navigator: nudge /pair -->
+  <line x1="330" y1="150" x2="550" y2="150" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="550,150 542,145 542,155" fill="#c49bff"/>
+  <text x="440" y="143" text-anchor="middle" fill="#c49bff" font-size="11">nudge: /pair #N — you navigate</text>
+
+  <!-- 3: Driver -> Scratch: create file -->
+  <line x1="330" y1="185" x2="785" y2="185" stroke="#ffd97b" stroke-width="2" stroke-dasharray="4,3"/>
+  <polygon points="785,185 777,180 777,190" fill="#ffd97b"/>
+  <text x="550" y="178" text-anchor="middle" fill="#ffd97b" font-size="11">create /tmp/pair-N.md (AC checklist)</text>
+
+  <!-- 4: Navigator reads card -->
+  <rect x="510" y="205" width="100" height="22" rx="4" fill="#2d6b4a" opacity="0.5"/>
+  <text x="560" y="220" text-anchor="middle" fill="#7bffb2" font-size="10">read card AC</text>
+
+  <!-- 5: Driver -> Jeff: pair started -->
+  <line x1="330" y1="248" x2="120" y2="248" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="120,248 128,243 128,253" fill="#c49bff"/>
+  <text x="225" y="241" text-anchor="middle" fill="#e0e0e0" font-size="11">Pair started: A+B on #N, mode: build</text>
+
+  <!-- 6: Declare state -->
+  <rect x="270" y="268" width="120" height="20" rx="4" fill="#4a2d6b" opacity="0.4"/>
+  <text x="330" y="282" text-anchor="middle" fill="#c49bff" font-size="10">role-state: building</text>
+  <rect x="500" y="268" width="120" height="20" rx="4" fill="#2d6b4a" opacity="0.4"/>
+  <text x="560" y="282" text-anchor="middle" fill="#7bffb2" font-size="10">role-state: building</text>
+
+  <!-- === SCOPE LOOP === -->
+  <rect x="220" y="310" width="490" height="300" rx="8" fill="none" stroke="#4ac94a" stroke-width="2"/>
+  <rect x="240" y="298" width="220" height="20" rx="4" fill="#1a1a2e"/>
+  <text x="250" y="312" fill="#4ac94a" font-size="12" font-weight="bold">NAVIGATOR SCOPE LOOP</text>
+
+  <!-- Loop steps -->
+  <circle cx="490" cy="345" r="11" fill="#2d6b4a"/>
+  <text x="490" y="349" text-anchor="middle" fill="#7bffb2" font-size="10" font-weight="bold">1</text>
+  <text x="510" y="349" fill="#7bffb2" font-size="11">CHECK AC — what's unchecked?</text>
+
+  <circle cx="490" cy="375" r="11" fill="#2d6b4a"/>
+  <text x="490" y="379" text-anchor="middle" fill="#7bffb2" font-size="10" font-weight="bold">2</text>
+  <text x="510" y="379" fill="#7bffb2" font-size="11">DIRECT driver — do this next</text>
+
+  <!-- Navigator -> Driver: directive -->
+  <line x1="550" y1="400" x2="340" y2="400" stroke="#7bffb2" stroke-width="2"/>
+  <polygon points="340,400 348,395 348,405" fill="#7bffb2"/>
+  <text x="445" y="393" text-anchor="middle" fill="#7bffb2" font-size="10">"query Fuseki for the count"</text>
+
+  <!-- Driver executes -->
+  <rect x="280" y="418" width="100" height="22" rx="4" fill="#4a2d6b" opacity="0.5"/>
+  <text x="330" y="433" text-anchor="middle" fill="#c49bff" font-size="10">executes...</text>
+
+  <circle cx="490" cy="445" r="11" fill="#2d6b4a"/>
+  <text x="490" y="449" text-anchor="middle" fill="#7bffb2" font-size="10" font-weight="bold">3</text>
+  <text x="510" y="449" fill="#7bffb2" font-size="11">MONITOR — is it working?</text>
+
+  <!-- Driver -> Navigator: done -->
+  <line x1="330" y1="475" x2="550" y2="475" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="550,475 542,470 542,480" fill="#c49bff"/>
+  <text x="440" y="468" text-anchor="middle" fill="#c49bff" font-size="10">"done — 23K records"</text>
+
+  <circle cx="490" cy="500" r="11" fill="#2d6b4a"/>
+  <text x="490" y="504" text-anchor="middle" fill="#7bffb2" font-size="10" font-weight="bold">4</text>
+  <text x="510" y="504" fill="#7bffb2" font-size="11">INVESTIGATE next gap</text>
+
+  <!-- Navigator -> Scratch: write directions -->
+  <line x1="560" y1="525" x2="785" y2="525" stroke="#ffd97b" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="785,525 777,520 777,530" fill="#ffd97b"/>
+  <text x="672" y="518" text-anchor="middle" fill="#ffd97b" font-size="10">write directions</text>
+
+  <!-- Loop arrow -->
+  <path d="M 700 540 L 700 555 L 475 555 L 475 335 L 485 335" fill="none" stroke="#4ac94a" stroke-width="1.5" marker-end="none"/>
+  <polygon points="485,335 478,330 478,340" fill="#4ac94a"/>
+  <text x="700" y="552" fill="#4ac94a" font-size="10">back to 1</text>
+
+  <!-- 2min silence rule -->
+  <rect x="232" y="570" width="466" height="24" rx="4" fill="#2e1a1a" opacity="0.6"/>
+  <text x="465" y="586" text-anchor="middle" fill="#d94a4a" font-size="10">If navigator silent > 2min: driver asks "what's unchecked on the AC?"</text>
+
+  <!-- === JEFF GEMBA === -->
+  <rect x="10" y="630" width="900" height="24" rx="4" fill="#1e2a3a"/>
+  <text x="20" y="646" fill="#4a90d9" font-size="11" font-weight="bold">JEFF OBSERVES (optional)</text>
+
+  <!-- Jeff -> Scratch: /gemba -->
+  <line x1="110" y1="675" x2="785" y2="675" stroke="#7cb3ff" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="785,675 777,670 777,680" fill="#7cb3ff"/>
+  <text x="440" y="668" text-anchor="middle" fill="#7cb3ff" font-size="11">/gemba — writes PM notes to scratch file</text>
+
+  <!-- Navigator reads scratch -->
+  <line x1="785" y1="710" x2="570" y2="710" stroke="#ffd97b" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="570,710 578,705 578,715" fill="#ffd97b"/>
+  <text x="672" y="703" text-anchor="middle" fill="#ffd97b" font-size="10">reads PM notes on heartbeat tick</text>
+
+  <!-- DND note -->
+  <rect x="60" y="735" width="300" height="22" rx="4" fill="#2e1a1a" opacity="0.4"/>
+  <text x="210" y="750" text-anchor="middle" fill="#d94a4a" font-size="10">DND active — external nudges queue to scratch file</text>
+
+  <!-- === ROTATION CHECKPOINT === -->
+  <rect x="10" y="780" width="900" height="24" rx="4" fill="#2e2a1a"/>
+  <text x="20" y="796" fill="#d9a84a" font-size="11" font-weight="bold">15min ROTATION CHECKPOINT</text>
+
+  <!-- Double arrow: Driver <-> Navigator -->
+  <line x1="330" y1="825" x2="560" y2="825" stroke="#d9a84a" stroke-width="2"/>
+  <polygon points="560,825 552,820 552,830" fill="#d9a84a"/>
+  <polygon points="330,825 338,820 338,830" fill="#d9a84a"/>
+  <text x="445" y="818" text-anchor="middle" fill="#d9a84a" font-size="11">swap? mode shift? recommit?</text>
+
+  <!-- Options -->
+  <text x="445" y="855" text-anchor="middle" fill="#888" font-size="10">swap roles | shift mode (build/investigate/simple) | continue</text>
+
+  <!-- === OUTCOME GATE === -->
+  <rect x="10" y="890" width="900" height="24" rx="4" fill="#2e2a1a"/>
+  <text x="20" y="906" fill="#d9a84a" font-size="11" font-weight="bold">OUTCOME GATE (before close)</text>
+
+  <!-- Driver <-> Navigator: validate -->
+  <line x1="330" y1="940" x2="560" y2="940" stroke="#d9a84a" stroke-width="2"/>
+  <polygon points="560,940 552,935 552,945" fill="#d9a84a"/>
+  <polygon points="330,940 338,935 338,945" fill="#d9a84a"/>
+  <text x="445" y="933" text-anchor="middle" fill="#d9a84a" font-size="11">does result match what Jeff sees?</text>
+
+  <!-- Checklist -->
+  <text x="330" y="970" fill="#888" font-size="10">[ ] user-visible result matches reality</text>
+  <text x="330" y="985" fill="#888" font-size="10">[ ] count matches external source of truth</text>
+  <text x="330" y="1000" fill="#888" font-size="10">[ ] Jeff would say "that's right"</text>
+
+  <!-- === END === -->
+  <rect x="10" y="1030" width="900" height="24" rx="4" fill="#2e1a1a"/>
+  <text x="20" y="1046" fill="#d94a4a" font-size="11" font-weight="bold">PAIR END</text>
+
+  <!-- Navigator -> Scratch: write summary -->
+  <line x1="560" y1="1075" x2="785" y2="1075" stroke="#ffd97b" stroke-width="2" stroke-dasharray="4,3"/>
+  <polygon points="785,1075 777,1070 777,1080" fill="#ffd97b"/>
+  <text x="672" y="1068" text-anchor="middle" fill="#ffd97b" font-size="11">write ## For Jeff summary</text>
+
+  <!-- Emit pair.ended -->
+  <rect x="270" y="1095" width="120" height="20" rx="4" fill="#4a2d6b" opacity="0.4"/>
+  <text x="330" y="1109" text-anchor="middle" fill="#c49bff" font-size="10">pair.ended event</text>
+
+  <!-- Driver -> Jeff: pair ended -->
+  <line x1="330" y1="1135" x2="120" y2="1135" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="120,1135 128,1130 128,1140" fill="#c49bff"/>
+  <text x="225" y="1128" text-anchor="middle" fill="#e0e0e0" font-size="11">Pair ended: A+B on #N, Xmin</text>
+
+  <!-- State back to waiting -->
+  <rect x="270" y="1160" width="120" height="20" rx="4" fill="#4a2d6b" opacity="0.4"/>
+  <text x="330" y="1174" text-anchor="middle" fill="#c49bff" font-size="10">role-state: waiting</text>
+  <rect x="500" y="1160" width="120" height="20" rx="4" fill="#2d6b4a" opacity="0.4"/>
+  <text x="560" y="1174" text-anchor="middle" fill="#7bffb2" font-size="10">role-state: waiting</text>
+
+  <!-- Kill signals -->
+  <rect x="60" y="1210" width="800" height="80" rx="6" fill="#1e1e2e" stroke="#444" stroke-width="1"/>
+  <text x="80" y="1232" fill="#d94a4a" font-size="11" font-weight="bold">KILL SIGNALS</text>
+  <text x="80" y="1252" fill="#888" font-size="10">Card complete + outcome gate pass | Jeff says "unpair" / "stop" | Context full / 45min ceiling</text>
+  <text x="80" y="1272" fill="#888" font-size="10">Work no longer cross-domain | Navigator scope loop stopped and can't restart</text>
+</svg>
+
+</body>
+</html>

@@ -1,0 +1,28 @@
+# Workflow Handoff: WF-009 — Step 2
+
+**Workflow**: WF-009
+**Decision**: Manifest handoffs: closed-loop proof of connection
+**Your action**: Review and respond with technical input
+
+## Context
+
+Previous step (completed by wren):
+- **Action**: Write spec and consultation briefs to Silas and Kade
+- **Notes**: Spec written, consultation briefs sent to both Silas and Kade, Slack notifications posted
+- **Artifacts**: product-manager/briefs/2026-02-22-manifest-handoffs-spec.md, architect/briefs/2026-02-22-manifest-handoffs-consultation.md, engineer/briefs/2026-02-22-manifest-handoffs-consultation.md
+
+## What You Need To Do
+
+Review and respond with technical input
+
+When complete, run:
+```bash
+../messages/scripts/workflow-ts advance WF-009 --notes "..." --artifacts "file1,file2"
+```
+
+## Workflow Progress
+
+[x] Step 1: wren — Write spec and consultation briefs to Silas and Kade
+[>] Step 2: silas — Review and respond with technical input
+[ ] Step 3: kade — Review and respond with engineering input
+[ ] Step 4: wren — Incorporate feedback and build

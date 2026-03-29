@@ -28,7 +28,7 @@
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
       "roles/wren/state-files.md": "db298378771fcfa6f8a805d18c039d28256f6909b30b415247bb1d0b085d28d0"
     },
-    "generated_at": "2026-03-27 16:46",
+    "generated_at": "2026-03-29 11:44",
     "version": "78"
   },
   "silas": {
@@ -61,7 +61,7 @@
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
       "roles/silas/state-files.md": "3013233db35095d2270d6592f34c149401f4fe1b115a365b98042539575f092f"
     },
-    "generated_at": "2026-03-27 16:46",
+    "generated_at": "2026-03-29 11:44",
     "version": "78"
   },
   "kade": {
@@ -93,7 +93,7 @@
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
       "roles/kade/state-files.md": "a2c3cb49faa0b00736be5100f09b1ac2d08f441afd7a972e3d2266b3d782731c"
     },
-    "generated_at": "2026-03-27 16:46",
+    "generated_at": "2026-03-29 11:44",
     "version": "78"
   }
 }

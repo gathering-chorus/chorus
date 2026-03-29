@@ -1,0 +1,28 @@
+# Workflow Handoff: WF-005 — Step 2
+
+**Workflow**: WF-005
+**Decision**: Always a card — Capturing vertebra with Clearing API consumption contract
+**Your action**: Build Capturing parser and intake queue against Silas spec
+
+## Context
+
+Previous step (completed by silas):
+- **Action**: Spec consumption contract — what shape Capturing needs from Clearing transcripts and index
+- **Notes**: Consumption contract spec complete. Three extraction types: decisions (DECISION markers), commitments (I'll... patterns), action items (role-directed verbs). Intake queue design: post-session parser → ~/.chorus/intake/ JSON → Wren reviews → cards created. Does not replace /werk create — that's still manual for sequenced work. Open questions: auto-expiry, auto-run vs manual trigger, Wren approval authority.
+- **Artifacts**: architect/briefs/2026-02-21-capturing-consumption-contract.md
+
+## What You Need To Do
+
+Build Capturing parser and intake queue against Silas spec
+
+When complete, run:
+```bash
+../messages/scripts/workflow.sh advance WF-005 --notes "your completion notes" --artifacts "file1,file2"
+```
+
+## Workflow Progress
+
+[x] Step 1: silas — Spec consumption contract — what shape Capturing needs from Clearing transcripts and index
+[>] Step 2: kade — Build Capturing parser and intake queue against Silas spec
+[ ] Step 3: wren — Validate card routing tags and lead time tracking
+[ ] Step 4: jeff — Approve Capturing as 5th spine vertebra

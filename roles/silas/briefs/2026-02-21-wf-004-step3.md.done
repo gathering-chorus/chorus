@@ -1,0 +1,30 @@
+# Workflow Handoff: WF-004 — Step 3
+
+**Workflow**: WF-004
+**Decision**: Deprecate Slack bridge — replace with /werk watcher + Chorus references table
+**Your action**: Backfill references table and validate with Kade's watcher
+
+## Context
+
+Previous step (completed by kade):
+- **Action**: Build /werk watcher with pattern detection against live Chorus
+- **Notes**: References table created in live Chorus index. Backfill complete: 2,289 refs from 17,348 messages (1,208 card, 549 ADR, 442 decision, 90 workflow). All three indexers hooked to extract refs on each batch. Incremental extraction script ready. Schema in chorus-init-db.sh for new databases.
+- **Artifacts**: chorus/scripts/chorus-backfill-refs.sh, chorus/scripts/chorus-extract-refs.sh, chorus/index/chorus-init-db.sh
+
+## What You Need To Do
+
+Backfill references table and validate with Kade's watcher
+
+When complete, run:
+```bash
+../messages/scripts/workflow.sh advance WF-004 --notes "your completion notes" --artifacts "file1,file2"
+```
+
+## Workflow Progress
+
+[x] Step 1: silas — Spec references table schema and message ID structure
+[x] Step 2: kade — Build /werk watcher with pattern detection against live Chorus
+[>] Step 3: silas — Backfill references table and validate with Kade's watcher
+[ ] Step 4: kade — Validate watcher + references table work end-to-end
+[ ] Step 5: jeff — Approve bridge deprecation after Thursday regroup
+[ ] Step 6: kade — Cut bridge service and update session-start to remove Slack reads

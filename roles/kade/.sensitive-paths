@@ -1,0 +1,13 @@
+# Kade's sensitive paths — files that should not be sent to external APIs
+# Referenced by PreToolUse hook. See data-classification-policy.md.
+
+internal:
+  - jeff-bridwell-personal-site/docker-compose.yml
+  - "jeff-bridwell-personal-site/terraform/**"
+  - messages/slack-bridge/.env
+  - "messages/**/.env"
+
+private:
+  - jeff-bridwell-personal-site/.env
+  - "**/.env.local"
+  - "**/.env.production"

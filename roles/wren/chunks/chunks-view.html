@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Product Flow — Chunk Sidecar</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }
+  h1 { color: #e0e0e0; font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; }
+  .chunks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .chunk-card { background: #16213e; border-radius: 10px; padding: 18px; border-left: 4px solid #666; transition: transform 0.1s; }
+  .chunk-card:hover { transform: translateY(-2px); }
+  .chunk-card.has-context { border-left-color: #0f3460; }
+  .chunk-card.active { border-left-color: #e94560; }
+  .chunk-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .chunk-name { font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+  .chunk-count { font-size: 13px; color: #888; background: #0f3460; padding: 2px 8px; border-radius: 10px; }
+  .chunk-seq { font-size: 11px; color: #666; margin-bottom: 10px; }
+  .chunk-desc { font-size: 13px; color: #aaa; line-height: 1.5; margin-bottom: 12px; }
+  .chunk-cards { list-style: none; }
+  .chunk-cards li { font-size: 12px; color: #888; padding: 3px 0; border-top: 1px solid #1a1a2e; }
+  .chunk-cards li .card-id { color: #e94560; font-weight: 600; margin-right: 4px; }
+  .chunk-cards li .card-owner { color: #0f3460; background: #1a1a2e; padding: 1px 5px; border-radius: 3px; font-size: 11px; margin-left: 4px; }
+  .chunk-cards li .card-priority { font-size: 10px; margin-left: 4px; }
+  .chunk-cards li .card-priority.p1 { color: #e94560; }
+  .chunk-cards li .card-priority.p2 { color: #f5a623; }
+  .status-badge { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-right: 4px; }
+  .status-next { background: #1a3a5c; color: #6cb4ee; }
+  .status-later { background: #2a2a3e; color: #888; }
+  .status-wip { background: #3a2a1a; color: #f5a623; }
+
+  .context-section { background: #16213e; border-radius: 10px; padding: 24px; margin-top: 32px; border-left: 4px solid #e94560; }
+  .context-section h2 { font-size: 18px; margin-bottom: 16px; color: #e0e0e0; }
+  .context-section h3 { font-size: 14px; margin: 16px 0 8px; color: #ccc; }
+  .context-section p { font-size: 13px; line-height: 1.6; color: #aaa; margin-bottom: 10px; }
+  .context-section blockquote { border-left: 3px solid #e94560; padding-left: 12px; margin: 12px 0; font-style: italic; color: #999; font-size: 13px; }
+  .context-section table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+  .context-section th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #333; color: #888; }
+  .context-section td { padding: 6px 8px; border-bottom: 1px solid #1a1a2e; color: #aaa; }
+  .context-section ul { padding-left: 18px; margin: 8px 0; }
+  .context-section li { font-size: 13px; color: #aaa; margin-bottom: 6px; line-height: 1.5; }
+
+  .legend { display: flex; gap: 16px; margin-bottom: 20px; font-size: 12px; color: #666; }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot-context { background: #0f3460; }
+  .dot-empty { background: #444; }
+  .dot-active { background: #e94560; }
+</style>
+</head>
+<body>
+
+<h1>Product Flow</h1>
+<p class="subtitle">Chunk sidecar — vision + strategy alongside engineering cards | Feb 24 2026</p>
+
+<div class="legend">
+  <span><span class="dot dot-active"></span> Has context doc</span>
+  <span><span class="dot dot-empty"></span> Needs context doc</span>
+</div>
+
+<div class="chunks-grid">
+
+  <div class="chunk-card" onclick="scrollToContext('spine')">
+    <div class="chunk-header">
+      <span class="chunk-name">Spine</span>
+      <span class="chunk-count">11 cards</span>
+    </div>
+    <div class="chunk-seq">Sequence: 1st</div>
+    <div class="chunk-desc">Structural backbone. Events, legibility, value stream, contract.</div>
+    <ul class="chunk-cards">
+      <li><span class="card-id">#315</span> Spine walkthrough with Jeff <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#312</span> Session close validation <span class="card-owner">Wren</span><span class="card-priority p2">P2</span></li>
+      <li><span class="card-id">#266</span> Card quality by value stream stage <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#275</span> Capturing vertebra — auto-card pipeline <span class="card-owner">Silas</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#264</span> Instrumented viz — health instruments <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+    </ul>
+  </div>
+
+  <div class="chunk-card">
+    <div class="chunk-header">
+      <span class="chunk-name">Ops</span>
+      <span class="chunk-count">9 cards</span>
+    </div>
+    <div class="chunk-seq">Sequence: 2nd</div>
+    <div class="chunk-desc">Fuseki stability, disk, infrastructure health. Stop the wobbles.</div>
+    <ul class="chunk-cards">
+      <li><span class="card-id">#305</span> Fuseki collection_sizes critically slow <span class="card-owner">Silas</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#309</span> Error spike from personal-site-app <span class="card-owner">Silas</span><span class="card-priority p2">P2</span></li>
+      <li><span class="card-id">#303</span> WordPress-mysql XA crash <span class="card-owner">Kade</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#301</span> Clean up primary Mac disk <span class="card-owner">Silas</span><span class="card-priority p2">P2</span></li>
+      <li><span class="card-id">#320</span> Build SLA exceeded <span class="card-owner">Silas</span><span class="card-priority p1">P1</span></li>
+    </ul>
+  </div>
+
+  <div class="chunk-card active has-context" onclick="scrollToContext('memory')">
+    <div class="chunk-header">
+      <span class="chunk-name">Memory</span>
+      <span class="chunk-count">12 cards</span>
+    </div>
+    <div class="chunk-seq">Sequence: 3rd — has context doc</div>
+    <div class="chunk-desc">Reflecting layer. Resonance, not retrieval. The ripple. 823 notes as first corpus.</div>
+    <ul class="chunk-cards">
+      <li><span class="card-id">#318</span> Text ripple — Jena text index over notes <span class="card-owner">Silas</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#316</span> Invert MEMORY.md — context assembly <span class="card-owner">Silas</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#273</span> Chorus context index HTTP wrapper <span class="card-owner">Silas</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#74</span> Self domain — convergent center <span class="card-owner">Wren</span><span class="card-priority p2">P2</span></li>
+      <li><span class="card-id">#83</span> Local AI for Self domain (Ollama) <span class="card-owner">Silas</span><span class="card-priority p2">P2</span></li>
+    </ul>
+  </div>
+
+  <div class="chunk-card">
+    <div class="chunk-header">
+      <span class="chunk-name">Music</span>
+      <span class="chunk-count">4 cards</span>
+    </div>
+    <div class="chunk-seq">Sequence: 4th</div>
+    <div class="chunk-desc">Load, traverse, enrich, listen. First collection to prove memory traversal.</div>
+    <ul class="chunk-cards">
+      <li><span class="status-badge status-wip">WIP</span><span class="card-id">#311</span> Music library rescue <span class="card-owner">Silas</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#72</span> Photos: incremental harvesting <span class="card-owner">Wren</span><span class="card-priority p2">P2</span></li>
+      <li><span class="card-id">#38</span> Catalog interface — physical objects <span class="card-owner">Wren</span><span class="card-priority p3">P3</span></li>
+      <li><span class="card-id">#287</span> Book import — location optional <span class="card-owner">Kade</span><span class="card-priority p2">P2</span></li>
+    </ul>
+  </div>
+
+  <div class="chunk-card">
+    <div class="chunk-header">
+      <span class="chunk-name">Senses</span>
+      <span class="chunk-count">10 cards</span>
+    </div>
+    <div class="chunk-seq">Emerging — voice, vision, interaction</div>
+    <div class="chunk-desc">How participants show up to each other. Eyes, ears, voice. /talk is highest value.</div>
+    <ul class="chunk-cards">
+      <li><span class="card-id">#269</span> /talk — voice input <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#265</span> Clearing voice tuning <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#175</span> Ground roles with real state <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#194</span> SWAT pre-flight <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#272</span> Clearing guest access <span class="card-owner">Silas</span><span class="card-priority p2">P2</span></li>
+    </ul>
+  </div>
+
+  <div class="chunk-card">
+    <div class="chunk-header">
+      <span class="chunk-name">Strategy</span>
+      <span class="chunk-count">12 cards</span>
+    </div>
+    <div class="chunk-seq">Ongoing — not sequenced</div>
+    <div class="chunk-desc">Revenue, vision, Wardley map, value reflection. The why behind the what.</div>
+    <ul class="chunk-cards">
+      <li><span class="card-id">#321</span> Product flow sidecar <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#317</span> Value reflection practice <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#92</span> Life board + revenue ideation <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#292</span> Autonomous role activation <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#203</span> Chorus Wardley Map <span class="card-owner">Wren</span><span class="card-priority p2">P2</span></li>
+    </ul>
+  </div>
+
+  <div class="chunk-card">
+    <div class="chunk-header">
+      <span class="chunk-name">App</span>
+      <span class="chunk-count">10 cards</span>
+    </div>
+    <div class="chunk-seq">Parked — depends on stability + memory</div>
+    <div class="chunk-desc">Mind map, UI, collections, walkthroughs. Features for when the foundation is solid.</div>
+    <ul class="chunk-cards">
+      <li><span class="card-id">#211</span> Front-end walkthrough with Jeff <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#86</span> Mind map UX <span class="card-owner">Wren</span><span class="card-priority p2">P2</span></li>
+      <li><span class="card-id">#98</span> Mind map leaf density <span class="card-owner">Wren</span><span class="card-priority p2">P2</span></li>
+      <li><span class="card-id">#99</span> Calendar design <span class="card-owner">Wren</span><span class="card-priority p1">P1</span></li>
+      <li><span class="card-id">#45</span> Visibility-aware mind map <span class="card-owner">Kade</span><span class="card-priority p2">P2</span></li>
+    </ul>
+  </div>
+
+</div>
+
+<div class="context-section" id="memory">
+  <h2>Memory — Product Context</h2>
+
+  <h3>What We're Building</h3>
+  <p>A reflecting layer — personal and shared — where memory is resonance, not retrieval. A new ripple finding an old ripple. When something enters the system, it surfaces what's semantically related across all sources: conversations, music, philosophy, decisions, stories.</p>
+
+  <h3>The First Corpus</h3>
+  <p>823 notes already in Fuseki. Titles like "Practice," "Cosmos," "Reflectivity," "Encapsulation," "Sartre," "Heart/Hridya," "River," "Memory." Every note is intentional — no session chatter diluting signal. The densest, most personal corpus we have. Already in the house.</p>
+
+  <h3>Philosophical Frame</h3>
+  <ul>
+    <li><strong>Assembly</strong> (PIE *sem-*) — bringing together. Same root as Gathering (Versammlung).</li>
+    <li><strong>Desiring-production</strong> (Deleuze) — desire is generative, not lack. Produces connections.</li>
+    <li><strong>Deterritorialization</strong> — scattered data has potential for more fluid organization than a single catalog.</li>
+    <li><strong>Osmosis</strong> — personal and team reflecting share a permeable boundary. Ideas cross because the gradient is there.</li>
+  </ul>
+
+  <h3>Architecture (DEC-044)</h3>
+  <table>
+    <tr><th>Layer</th><th>Function</th><th>Tech</th><th>Status</th></tr>
+    <tr><td>1. Text</td><td>Recall</td><td>Jena text index (Lucene)</td><td>#318 — Phase 1</td></tr>
+    <tr><td>2. Semantic</td><td>Relevance</td><td>Ollama + ChromaDB</td><td>Phase 2</td></tr>
+    <tr><td>3. Graph</td><td>Reasoning</td><td>RDF/OWL + SPARQL</td><td>Exists</td></tr>
+    <tr><td>Orchestrator</td><td>The glue</td><td>TBD</td><td>Phase 3</td></tr>
+  </table>
+
+  <h3>The Reflecting Layer</h3>
+  <p>Not a quadrant alongside Gathering, Cultivating, Harvesting. It's the <strong>medium</strong> they exist in. Personal reflecting and team reflecting share a permeable boundary. The insights cross because the participants are close enough to the membrane.</p>
+
+  <blockquote>"A new ripple trying to find an old ripple."</blockquote>
+  <blockquote>"All of this is already in Gathering — yet it is not instantiated in either a memory search for me or for the team."</blockquote>
+  <blockquote>"We are all part of Gathering and Clearing regardless of how or what we are."</blockquote>
+</div>
+
+<script>
+function scrollToContext(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+
+</body>
+</html>

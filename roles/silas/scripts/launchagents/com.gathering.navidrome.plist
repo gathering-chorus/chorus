@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gathering.navidrome</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/navidrome</string>
+        <string>--musicfolder</string>
+        <string>/Volumes/VideosNew/Gathering/Music/Music</string>
+        <string>--datafolder</string>
+        <string>/Users/jeffbridwell/.navidrome</string>
+        <string>--address</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>4533</string>
+        <string>--scanschedule</string>
+        <string>1h</string>
+        <string>--loglevel</string>
+        <string>info</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/navidrome.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/navidrome.log</string>
+</dict>
+</plist>

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Photos Source Richness Comparison</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f8f9fa; color: #1a1a2e; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  .card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .card h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-top: 0; }
+  .big-number { font-size: 48px; font-weight: 800; color: #e94560; }
+  .stat-label { font-size: 13px; color: #666; }
+  .chart-container { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; background: #f0f0f0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; color: #666; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+  .bar { height: 16px; border-radius: 3px; display: inline-block; min-width: 2px; }
+  .bar-apple { background: #4361ee; }
+  .bar-takeout { background: #f72585; }
+  .legend { display: flex; gap: 20px; margin-bottom: 12px; font-size: 13px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+  .winner { font-weight: 700; color: #1a9a4a; }
+</style>
+</head>
+<body>
+<h1>Photos Source Richness Comparison</h1>
+<p class="subtitle">#1633 — Apple Photos vs Google Takeout | 24,592 vs 77,759 unique photos (source counts, not RDF)</p>
+
+<div class="grid">
+  <div class="card">
+    <h2>Apple Photos (SQLite)</h2>
+    <div class="big-number">24,592</div>
+    <div class="stat-label">photos &middot; avg <strong>11.1</strong> fields per record</div>
+  </div>
+  <div class="card">
+    <h2>Google Takeout</h2>
+    <div class="big-number">77,759</div>
+    <div class="stat-label">unique photos at source &middot; only 14,536 loaded to RDF (19%)</div>
+    <div class="stat-label" style="margin-top:4px;color:#e94560;font-weight:600;">3.2x more photos than Apple Photos</div>
+  </div>
+</div>
+
+<div class="card" style="grid-column:1/-1;margin-bottom:24px;border-left:4px solid #e94560;">
+  <h2 style="font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-top:0;">The Tradeoff</h2>
+  <table style="font-size:14px;">
+    <tr><th></th><th>Apple Photos</th><th>Google Takeout</th></tr>
+    <tr><td><strong>Volume</strong></td><td>24,592</td><td style="color:#1a9a4a;font-weight:700;">77,759 (3.2x)</td></tr>
+    <tr><td><strong>ICD Field Coverage</strong></td><td style="color:#1a9a4a;font-weight:700;">14/20 (70%)</td><td>7/20 (35%)</td></tr>
+    <tr><td><strong>Avg Fields/Record</strong></td><td>11.1</td><td>~10.9 (from loaded subset)</td></tr>
+    <tr><td><strong>Unique Capabilities</strong></td><td>faces, hash, dims, media type, file paths</td><td>albums, descriptions, device type</td></tr>
+    <tr><td><strong>Relationship to Jeff</strong></td><td>Authoritative — iPhone camera roll</td><td>Backup copy — 10+ years continuous</td></tr>
+    <tr><td><strong>Date Range</strong></td><td>Current library (pruned)</td><td>Full history (never deleted)</td></tr>
+  </table>
+  <p style="font-size:13px;color:#666;margin-top:12px;"><strong>Key insight:</strong> Apple Photos is richer per-record but Jeff's library is pruned to 24K. Takeout has 77K — the full history including photos Jeff deleted from Apple Photos. Neither source alone is complete.</p>
+</div>
+
+<div class="chart-container">
+  <h2 style="font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-top:0;">Distribution Over Time</h2>
+  <div class="legend">
+    <span><span class="legend-dot" style="background:#4361ee;"></span> Apple Photos</span>
+    <span><span class="legend-dot" style="background:#f72585;"></span> Google Takeout</span>
+  </div>
+  <canvas id="timeChart" height="100"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2 style="font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-top:0;">Metadata Depth Per Record</h2>
+  <p style="font-size:12px;color:#666;">How many fields are populated per photo record</p>
+  <canvas id="depthChart" height="80"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2 style="font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-top:0;">Field Population Rate</h2>
+  <p style="font-size:12px;color:#666;">Percentage of records that have each field populated</p>
+  <table>
+    <tr><th>Field</th><th>Apple Photos</th><th></th><th>Google Takeout</th><th></th><th>Richer</th></tr>
+    <tr>
+      <td><strong>album</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-takeout" style="width:200.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>date</strong></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-apple" style="width:200.0px;"></span></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-takeout" style="width:200.0px;"></span></td>
+      <td>Tie</td>
+    </tr>
+    <tr>
+      <td><strong>fav</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-takeout" style="width:200.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>favorite</strong></td>
+      <td>0.0%</td>
+      <td><span class="bar bar-apple" style="width:0.0px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td>Tie</td>
+    </tr>
+    <tr>
+      <td><strong>filename</strong></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-apple" style="width:200.0px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>fname</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-takeout" style="width:200.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>h</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-takeout" style="width:200.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>hash</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>79.5%</td>
+      <td><span class="bar bar-takeout" style="width:159.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>height</strong></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-apple" style="width:200.0px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>kind</strong></td>
+      <td>12.9%</td>
+      <td><span class="bar bar-apple" style="width:25.8px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>lat</strong></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-apple" style="width:200.0px;"></span></td>
+      <td>53.3%</td>
+      <td><span class="bar bar-takeout" style="width:106.6px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>lon</strong></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-apple" style="width:200.0px;"></span></td>
+      <td>53.3%</td>
+      <td><span class="bar bar-takeout" style="width:106.6px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>mediaType</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-takeout" style="width:200.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>origFilename</strong></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-apple" style="width:200.0px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>origH</strong></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-apple" style="width:200.0px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>origHash</strong></td>
+      <td>99.8%</td>
+      <td><span class="bar bar-apple" style="width:199.6px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>origSize</strong></td>
+      <td>99.8%</td>
+      <td><span class="bar bar-apple" style="width:199.6px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>origW</strong></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-apple" style="width:200.0px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+    <tr>
+      <td><strong>person</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>25.5%</td>
+      <td><span class="bar bar-takeout" style="width:51.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>size</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>79.5%</td>
+      <td><span class="bar bar-takeout" style="width:159.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>title</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-takeout" style="width:200.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>w</strong></td>
+      <td>0%</td>
+      <td><span class="bar bar-apple" style="width:0px;"></span></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-takeout" style="width:200.0px;"></span></td>
+      <td class="winner">Takeout</td>
+    </tr>
+    <tr>
+      <td><strong>width</strong></td>
+      <td>100.0%</td>
+      <td><span class="bar bar-apple" style="width:200.0px;"></span></td>
+      <td>0%</td>
+      <td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td class="winner">Apple</td>
+    </tr>
+  </table>
+</div>
+
+<script>
+new Chart(document.getElementById('timeChart'), {
+  type: 'bar',
+  data: {
+    labels: ["2002", "2003", "2004", "2005", "2006", "2007", "2008", "2009", "2010", "2011", "2012", "2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"],
+    datasets: [
+      { label: 'Apple Photos (24.6K source)', data: [97, 5, 35, 181, 951, 883, 459, 403, 1620, 1336, 1577, 1925, 3386, 2932, 2750, 1373, 626, 3071, 890, 0, 0, 0, 7, 25, 53], backgroundColor: '#4361ee', borderRadius: 3 },
+      { label: 'Google Takeout (77.8K source)', data: [190, 12, 122, 219, 1875, 1531, 809, 943, 1619, 1135, 1977, 5168, 4893, 3507, 7695, 6631, 2461, 8379, 15580, 12882, 8322, 4801, 6547, 7801, 1158], backgroundColor: '#f72585', borderRadius: 3 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: true, position: 'top' },
+      title: { display: true, text: 'Source: Apple Photos SQLite + Takeout folder paths (not RDF)' }
+    },
+    scales: { y: { beginAtZero: true } }
+  }
+});
+
+new Chart(document.getElementById('depthChart'), {
+  type: 'bar',
+  data: {
+    labels: [8, 9, 10, 11, 12, 13],
+    datasets: [
+      { label: 'Apple Photos', data: [0, 48, 7, 21361, 3170, 6], backgroundColor: '#4361ee', borderRadius: 3 },
+      { label: 'Google Takeout', data: [67, 0, 7003, 2636, 3754, 1076], backgroundColor: '#f72585', borderRadius: 3 }
+    ]
+  },
+  options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Fields populated per record' } }, y: { beginAtZero: true } } }
+});
+</script>
+</body>
+</html>

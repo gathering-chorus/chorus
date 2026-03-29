@@ -1,0 +1,16 @@
+# Silas's sensitive paths — files that should not be sent to external APIs
+# Referenced by PreToolUse hook. See data-classification-policy.md.
+#
+# ADRs are PUBLIC per policy (architectural decisions, no secrets).
+# Ontology .ttl files are PUBLIC (schema definitions).
+
+internal:
+  - architect/network-inventory.md
+  - architect/infrastructure-constraints.md
+  - architect/service-manifest.md
+  - shared-observability/docker-compose.yml
+  - "shared-observability/config/grafana/**/*.json"
+  - "shared-observability/config/promtail/*.yml"
+  - messages/vikunja/docker-compose.yml
+
+private: []

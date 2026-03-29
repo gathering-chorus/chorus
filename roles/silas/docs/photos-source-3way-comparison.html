@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Photos 3-Way Source Comparison</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f8f9fa; color: #1a1a2e; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  .card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-top: 0; }
+  .big-number { font-size: 42px; font-weight: 800; }
+  .num-apple { color: #4361ee; }
+  .num-takeout { color: #f72585; }
+  .num-iphone { color: #2ec4b6; }
+  .stat-label { font-size: 13px; color: #666; }
+  .chart-container { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 24px; }
+  .chart-container h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; background: #f0f0f0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; color: #666; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+  .bar { height: 14px; border-radius: 3px; display: inline-block; min-width: 0px; vertical-align: middle; }
+  .bar-apple { background: #4361ee; }
+  .bar-takeout { background: #f72585; }
+  .bar-iphone { background: #2ec4b6; }
+  .legend { display: flex; gap: 20px; margin-bottom: 12px; font-size: 13px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+  .winner { font-weight: 700; color: #1a9a4a; }
+  .tradeoff-table td:first-child { font-weight: 600; white-space: nowrap; }
+  .media-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .media-item { text-align: center; }
+  .media-pct { font-size: 28px; font-weight: 700; }
+  .media-label { font-size: 11px; color: #666; text-transform: uppercase; }
+  .insight { font-size: 13px; color: #666; margin-top: 12px; border-left: 3px solid #e94560; padding-left: 12px; }
+</style>
+</head>
+<body>
+<h1>Photos 3-Way Source Comparison</h1>
+<p class="subtitle">#1633 — Apple Photos Mac vs Google Takeout vs Jeff's iPhone | Source JSON analysis</p>
+
+<div class="grid">
+  <div class="card">
+    <h2>Apple Photos (Mac SQLite)</h2>
+    <div class="big-number num-apple">24,592</div>
+    <div class="stat-label">photos &middot; avg <strong>7.0</strong> fields/record</div>
+    <div class="stat-label" style="margin-top:4px;">87% image &middot; 13% video</div>
+  </div>
+  <div class="card">
+    <h2>Google Takeout</h2>
+    <div class="big-number num-takeout">102,490</div>
+    <div class="stat-label">photos &middot; avg <strong>4.5</strong> fields/record</div>
+    <div class="stat-label" style="margin-top:4px;">89% image &middot; 11% video &middot; 1% other</div>
+  </div>
+  <div class="card">
+    <h2>iPhone (Current)</h2>
+    <div class="big-number num-iphone">54,479</div>
+    <div class="stat-label">photos &middot; avg <strong>7.8</strong> fields/record</div>
+    <div class="stat-label" style="margin-top:4px;">92% image &middot; 8% video</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:24px;border-left:4px solid #e94560;">
+  <h2 style="font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-top:0;">The Tradeoff — 3 Sources</h2>
+  <table class="tradeoff-table" style="font-size:14px;">
+    <tr><th></th><th style="color:#4361ee;">Apple Photos</th><th style="color:#f72585;">Google Takeout</th><th style="color:#2ec4b6;">iPhone</th></tr>
+    <tr>
+      <td>Volume</td>
+      <td>24,592</td>
+      <td class="winner">102,490 (4.2x Apple)</td>
+      <td>54,479 (2.2x Apple)</td>
+    </tr>
+    <tr>
+      <td>Fields Populated (any %)</td>
+      <td class="winner">8 of 8 (100%)</td>
+      <td>4 of 8 (50%)</td>
+      <td class="winner">8 of 8 (100%)</td>
+    </tr>
+    <tr>
+      <td>Avg Fields/Record</td>
+      <td>7.0</td>
+      <td>4.5</td>
+      <td class="winner">7.8</td>
+    </tr>
+    <tr>
+      <td>GPS Coverage</td>
+      <td>50.2%</td>
+      <td>73.1%</td>
+      <td class="winner">89.3%</td>
+    </tr>
+    <tr>
+      <td>Dimensions</td>
+      <td class="winner">100%</td>
+      <td style="color:#c00;">0%*</td>
+      <td class="winner">100%</td>
+    </tr>
+    <tr>
+      <td>File Size</td>
+      <td>99.8%</td>
+      <td style="color:#c00;">0%*</td>
+      <td class="winner">99.8%</td>
+    </tr>
+    <tr>
+      <td>Date Range</td>
+      <td>1998–2026 (pruned)</td>
+      <td class="winner">1972–2026 (full history)</td>
+      <td>2005–2026 (current device)</td>
+    </tr>
+    <tr>
+      <td>Unique Strength</td>
+      <td>Filenames, hashes, faces, scene labels†</td>
+      <td>Deepest history, deleted photos survive</td>
+      <td>Richest per-record, best GPS, current truth</td>
+    </tr>
+    <tr>
+      <td>Relationship</td>
+      <td>Authoritative Mac library</td>
+      <td>Backup — never-delete archive</td>
+      <td>Current device — live camera roll</td>
+    </tr>
+  </table>
+  <p class="insight"><strong>Key insight:</strong> iPhone is the richest source per-record (7.8 avg fields, 89% GPS). Google Takeout has 4x the volume but is the shallowest (no dimensions, no file size in JSON sidecars). Apple Photos sits in the middle — good depth, smallest volume due to pruning. No single source is complete.</p>
+  <p style="font-size:11px;color:#999;margin-top:8px;">* Takeout JSON sidecars lack dimensions/fileSize, but the image files themselves contain EXIF data with these fields. A future EXIF extraction pass could close this gap.<br>
+  † Apple Photos SQLite has 20+ ICD-relevant fields beyond the 8 in this extract — including sceneLabels, face clusters, adjustmentType, and original resource paths. This comparison covers 8 of ~20 ICD fields.</p>
+</div>
+
+<div class="chart-container">
+  <h2>Distribution Over Time</h2>
+  <div class="legend">
+    <span><span class="legend-dot" style="background:#4361ee;"></span> Apple Photos (24.6K)</span>
+    <span><span class="legend-dot" style="background:#f72585;"></span> Google Takeout (102.5K)</span>
+    <span><span class="legend-dot" style="background:#2ec4b6;"></span> iPhone (54.5K)</span>
+  </div>
+  <canvas id="timeChart" height="100"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2>Metadata Depth Per Record</h2>
+  <p style="font-size:12px;color:#666;">How many of 8 fields are populated per photo record</p>
+  <canvas id="depthChart" height="80"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2>Field Population Rate</h2>
+  <p style="font-size:12px;color:#666;">Percentage of records that have each field populated</p>
+  <table>
+    <tr>
+      <th>Field</th>
+      <th>Apple</th><th></th>
+      <th>Takeout</th><th></th>
+      <th>iPhone</th><th></th>
+      <th>Richest</th>
+    </tr>
+    <tr>
+      <td><strong>filename</strong></td>
+      <td>100.0%</td><td><span class="bar bar-apple" style="width:150px;"></span></td>
+      <td>100.0%</td><td><span class="bar bar-takeout" style="width:150px;"></span></td>
+      <td>100.0%</td><td><span class="bar bar-iphone" style="width:150px;"></span></td>
+      <td>Tie</td>
+    </tr>
+    <tr>
+      <td><strong>dateTaken</strong></td>
+      <td>100.0%</td><td><span class="bar bar-apple" style="width:150px;"></span></td>
+      <td>100.0%</td><td><span class="bar bar-takeout" style="width:150px;"></span></td>
+      <td>100.0%</td><td><span class="bar bar-iphone" style="width:150px;"></span></td>
+      <td>Tie</td>
+    </tr>
+    <tr>
+      <td><strong>width</strong></td>
+      <td>100.0%</td><td><span class="bar bar-apple" style="width:150px;"></span></td>
+      <td style="color:#c00;">0.0%</td><td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td>100.0%</td><td><span class="bar bar-iphone" style="width:150px;"></span></td>
+      <td class="winner">Apple + iPhone</td>
+    </tr>
+    <tr>
+      <td><strong>height</strong></td>
+      <td>100.0%</td><td><span class="bar bar-apple" style="width:150px;"></span></td>
+      <td style="color:#c00;">0.0%</td><td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td>100.0%</td><td><span class="bar bar-iphone" style="width:150px;"></span></td>
+      <td class="winner">Apple + iPhone</td>
+    </tr>
+    <tr>
+      <td><strong>lat</strong></td>
+      <td>50.2%</td><td><span class="bar bar-apple" style="width:75px;"></span></td>
+      <td>73.1%</td><td><span class="bar bar-takeout" style="width:110px;"></span></td>
+      <td>89.3%</td><td><span class="bar bar-iphone" style="width:134px;"></span></td>
+      <td class="winner">iPhone</td>
+    </tr>
+    <tr>
+      <td><strong>lng</strong></td>
+      <td>50.2%</td><td><span class="bar bar-apple" style="width:75px;"></span></td>
+      <td>73.1%</td><td><span class="bar bar-takeout" style="width:110px;"></span></td>
+      <td>89.3%</td><td><span class="bar bar-iphone" style="width:134px;"></span></td>
+      <td class="winner">iPhone</td>
+    </tr>
+    <tr>
+      <td><strong>fileSize</strong></td>
+      <td>99.8%</td><td><span class="bar bar-apple" style="width:150px;"></span></td>
+      <td style="color:#c00;">0.0%</td><td><span class="bar bar-takeout" style="width:0px;"></span></td>
+      <td>99.8%</td><td><span class="bar bar-iphone" style="width:150px;"></span></td>
+      <td class="winner">Apple + iPhone</td>
+    </tr>
+    <tr>
+      <td><strong>mediaType</strong></td>
+      <td>100.0%</td><td><span class="bar bar-apple" style="width:150px;"></span></td>
+      <td>100.0%</td><td><span class="bar bar-takeout" style="width:150px;"></span></td>
+      <td>100.0%</td><td><span class="bar bar-iphone" style="width:150px;"></span></td>
+      <td>Tie</td>
+    </tr>
+  </table>
+</div>
+
+<div class="chart-container">
+  <h2>Coverage Overlap — What Each Source Adds</h2>
+  <table style="font-size:14px;">
+    <tr><th>Era</th><th style="color:#4361ee;">Apple Photos</th><th style="color:#f72585;">Google Takeout</th><th style="color:#2ec4b6;">iPhone</th><th>Notes</th></tr>
+    <tr>
+      <td><strong>Pre-2006</strong><br><span style="font-size:11px;color:#666;">Camera era</span></td>
+      <td>325</td>
+      <td class="winner">466</td>
+      <td>1</td>
+      <td style="font-size:12px;">Takeout has the most pre-digital-camera photos. iPhone barely exists.</td>
+    </tr>
+    <tr>
+      <td><strong>2006–2012</strong><br><span style="font-size:11px;color:#666;">Camera + early iPhone</span></td>
+      <td>7,229</td>
+      <td class="winner">7,832</td>
+      <td>39</td>
+      <td style="font-size:12px;">Apple and Takeout close (7.2K vs 7.8K). iPhone negligible — Jeff's early iPhones not in this export.</td>
+    </tr>
+    <tr>
+      <td><strong>2013–2019</strong><br><span style="font-size:11px;color:#666;">iPhone primary camera</span></td>
+      <td>16,063</td>
+      <td class="winner">34,852</td>
+      <td>7,149</td>
+      <td style="font-size:12px;">Takeout has 2.2x Apple. iPhone export covers this era partially.</td>
+    </tr>
+    <tr>
+      <td><strong>2020–2026</strong><br><span style="font-size:11px;color:#666;">Recent + current</span></td>
+      <td>975</td>
+      <td class="winner">59,338</td>
+      <td>47,290</td>
+      <td style="font-size:12px;">Apple Photos dramatically pruned. iPhone and Takeout have the real volume. iPhone is richest per-record.</td>
+    </tr>
+  </table>
+  <p class="insight"><strong>Key insight:</strong> Apple Photos drops off a cliff after 2020 (975 photos vs 59K in Takeout). Jeff pruned his Mac library. For 2020+, iPhone and Takeout are the only real sources — and iPhone has the richer metadata. For pre-2013, Takeout and Apple Photos are complementary; iPhone adds almost nothing. 2 Takeout records have no date.</p>
+</div>
+
+<div class="card" style="margin-bottom:24px;border-left:4px solid #2ec4b6;">
+  <h2 style="font-size:16px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-top:0;">Recommendation — Primary Authority by Era (Jeff-confirmed 2026-03-23)</h2>
+  <p style="font-size:12px;color:#666;margin-top:-4px;">ICD pattern: primary authority for richness, supplementary providers so nothing gets lost. Not "pick one" — merge all, weight by richness.</p>
+  <table style="font-size:14px;">
+    <tr><th>Era</th><th>Primary Authority</th><th>Supplementary</th><th>Rationale</th></tr>
+    <tr>
+      <td><strong>Pre-2006</strong></td>
+      <td style="color:#4361ee;font-weight:700;">Apple Photos</td>
+      <td>Takeout (+141 unmatched photos)</td>
+      <td style="font-size:12px;">Apple: 6.0 fields/rec, Takeout: 3.0. Neither has GPS. Takeout's 141 extra records are irreplaceable — rarest era.</td>
+    </tr>
+    <tr>
+      <td><strong>2006–2012</strong></td>
+      <td style="color:#4361ee;font-weight:700;">Apple Photos</td>
+      <td>Takeout (GPS 73% vs 50%, +8% volume)</td>
+      <td style="font-size:12px;">Apple richer per-record. Takeout fills GPS gaps and has ~600 photos Apple doesn't.</td>
+    </tr>
+    <tr>
+      <td><strong>2013–2019</strong></td>
+      <td style="color:#4361ee;font-weight:700;">Apple Photos</td>
+      <td>iPhone (GPS 89%) + Takeout (2.2x volume)</td>
+      <td style="font-size:12px;">Apple richest. iPhone adds GPS. Takeout fills volume gaps from Mac library pruning.</td>
+    </tr>
+    <tr>
+      <td><strong>2020+</strong></td>
+      <td style="color:#2ec4b6;font-weight:700;">iPhone</td>
+      <td>Takeout (59K volume, deleted items survive)</td>
+      <td style="font-size:12px;">iPhone: 7.8 fields, 89% GPS. Apple has only 975 photos post-2020. Takeout preserves what Jeff deleted.</td>
+    </tr>
+  </table>
+  <p class="insight"><strong>Next step:</strong> Rebuild canonical photo graph from scratch using this authority model. Current canonical was built on wrong assumptions.</p>
+</div>
+
+<script>
+const years = ["1972","1980","1998","2000","2001","2002","2003","2004","2005","2006","2007","2008","2009","2010","2011","2012","2013","2014","2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
+const appleByYear = {"1972":0,"1980":1,"1998":2,"2000":0,"2001":4,"2002":97,"2003":5,"2004":35,"2005":181,"2006":951,"2007":883,"2008":459,"2009":403,"2010":1620,"2011":1336,"2012":1577,"2013":1925,"2014":3386,"2015":2932,"2016":2750,"2017":1373,"2018":626,"2019":3071,"2020":890,"2021":0,"2022":0,"2023":0,"2024":7,"2025":25,"2026":53};
+const takeoutByYear = {"1972":4,"1980":0,"1998":2,"2000":1,"2001":4,"2002":96,"2003":6,"2004":208,"2005":145,"2006":1225,"2007":926,"2008":628,"2009":726,"2010":1447,"2011":1095,"2012":1785,"2013":4959,"2014":4744,"2015":4264,"2016":6114,"2017":5954,"2018":1845,"2019":6972,"2020":16793,"2021":12474,"2022":9090,"2023":5129,"2024":7221,"2025":7561,"2026":1070};
+const iphoneByYear = {"1972":0,"1980":0,"1998":0,"2000":0,"2001":0,"2002":0,"2003":0,"2004":0,"2005":1,"2006":3,"2007":3,"2008":5,"2009":4,"2010":4,"2011":3,"2012":17,"2013":314,"2014":298,"2015":194,"2016":364,"2017":1384,"2018":607,"2019":3988,"2020":9470,"2021":10663,"2022":8227,"2023":4083,"2024":5994,"2025":7357,"2026":1496};
+
+new Chart(document.getElementById('timeChart'), {
+  type: 'bar',
+  data: {
+    labels: years,
+    datasets: [
+      { label: 'Apple Photos (24.6K)', data: years.map(y => appleByYear[y] || 0), backgroundColor: '#4361ee', borderRadius: 3 },
+      { label: 'Google Takeout (102.5K)', data: years.map(y => takeoutByYear[y] || 0), backgroundColor: '#f72585', borderRadius: 3 },
+      { label: 'iPhone (54.5K)', data: years.map(y => iphoneByYear[y] || 0), backgroundColor: '#2ec4b6', borderRadius: 3 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: true, position: 'top' },
+      title: { display: true, text: 'Photo count by year from source JSON files' }
+    },
+    scales: { y: { beginAtZero: true } }
+  }
+});
+
+new Chart(document.getElementById('depthChart'), {
+  type: 'bar',
+  data: {
+    labels: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    datasets: [
+      { label: 'Apple Photos', data: [0, 0, 0, 0, 0, 6, 12250, 49, 12287], backgroundColor: '#4361ee', borderRadius: 3 },
+      { label: 'Google Takeout', data: [0, 2, 0, 27568, 0, 74920, 0, 0, 0], backgroundColor: '#f72585', borderRadius: 3 },
+      { label: 'iPhone', data: [0, 0, 0, 0, 0, 45, 5760, 85, 48589], backgroundColor: '#2ec4b6', borderRadius: 3 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: true, position: 'top' } },
+    scales: {
+      x: { title: { display: true, text: 'Fields populated per record (out of 8)' } },
+      y: { beginAtZero: true }
+    }
+  }
+});
+</script>
+</body>
+</html>

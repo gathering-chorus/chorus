@@ -1,0 +1,28 @@
+# Next Session — Silas
+
+## Accomplished this session
+- OWL graph linter (Level 1 + 2): 87 → 31 findings, script at scripts/owl-linter.py
+- Structural audit rewritten ontology-driven (have/need/rewrite/refactor)
+- #1793 Nudge delivery first-class rewrite — Rust only, one path, loud failure, health check LaunchAgent
+- WF-160 The Clearing merge pipeline (3/3 cards shipped):
+  - #1795 Chat backend merged into Bridge
+  - #1796 Port 3460 retired, Go binary gone
+  - #1797 LaunchAgent renamed com.chorus.clearing
+- Service design pages: Nudge (shipped), The Clearing (draft), Seed Pipeline (Kade)
+- Infra alert Check 7: Cloudflare tunnel end-to-end health
+- Night sky backdrop on The Clearing (Jeff's photo)
+- Cloudflare tunnel restart (seed outage root cause)
+
+## WIP
+- #1773 structural audit — in WIP, mostly complete, needs close-out
+
+## Pending
+- The Clearing UI chat panel — backend wired, UI toggle not built yet
+- OWL linter Level 3 (live binding verification) — designed, not built
+- Ontology crawler — Jeff liked the idea, not carded
+- Service design pages for remaining 20+ services
+
+## Pick up next session
+- Close #1773
+- Build chat panel UI for The Clearing (the "type and they respond" experience)
+- Update system-architecture.md and infrastructure-constraints.md (doc drift flagged)

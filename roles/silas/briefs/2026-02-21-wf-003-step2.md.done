@@ -1,0 +1,28 @@
+# Workflow Handoff: WF-003 — Step 2
+
+**Workflow**: WF-003
+**Decision**: SQLite FTS5 search for Gathering — pod-local, explicit annotations, collection-level visibility, write-time indexing, derived view
+**Your action**: Review schema for sync safety and reindex edge cases
+
+## Context
+
+Previous step (completed by kade):
+- **Action**: Draft FTS5 schema and extraction pipeline doc
+- **Notes**: FTS5 schema doc drafted: search_items + search_fts tables, extraction contract (title/description/tags/album), permission post-filter (collection-level visibility IN clause), sync rebuild trigger (derived view, rebuild after Fuseki sync), edge cases documented. Brief sent to Silas for sync safety review.
+- **Artifacts**: architect/briefs/2026-02-21-search-fts5-schema.md
+
+## What You Need To Do
+
+Review schema for sync safety and reindex edge cases
+
+When complete, run:
+```bash
+../messages/scripts/workflow.sh advance WF-003 --notes "your completion notes" --artifacts "file1,file2"
+```
+
+## Workflow Progress
+
+[x] Step 1: kade — Draft FTS5 schema and extraction pipeline doc
+[>] Step 2: silas — Review schema for sync safety and reindex edge cases
+[ ] Step 3: kade — Build search service — photos collection first
+[ ] Step 4: wren — Document search pattern in product docs

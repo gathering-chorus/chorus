@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Comprehensive Logging Strategy — Silas</title>
+<style>
+  :root { --bg: #f8f8f8; --card: #fff; --accent: #d0d0d0; --green: #1a8a5c; --yellow: #b38600; --red: #c0392b; --orange: #c0651a; --text: #222; --dim: #666; --blue: #2563eb; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'SF Mono', 'Fira Code', monospace; background: var(--bg); color: var(--text); padding: 24px; font-size: 13px; line-height: 1.5; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: var(--dim); margin-bottom: 24px; }
+  h2 { font-size: 15px; margin: 32px 0 12px; border-bottom: 1px solid var(--accent); padding-bottom: 4px; }
+  h3 { font-size: 13px; margin: 20px 0 8px; color: var(--blue); }
+  h4 { font-size: 12px; margin: 12px 0 6px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  .stat { background: var(--card); border: 1px solid var(--accent); border-radius: 6px; padding: 12px 16px; min-width: 130px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .stat .num { font-size: 24px; font-weight: bold; }
+  .stat .label { color: var(--dim); font-size: 11px; }
+  .stat.good .num { color: var(--green); }
+  .stat.warn .num { color: var(--yellow); }
+  .stat.bad .num { color: var(--red); }
+
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; }
+  th { text-align: left; color: var(--dim); font-size: 11px; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--accent); }
+  td { padding: 6px 8px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+  tr:hover { background: rgba(26, 138, 92, 0.04); }
+
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin: 1px 2px; }
+  .t-green { background: rgba(26,138,92,0.1); color: var(--green); border: 1px solid rgba(26,138,92,0.25); }
+  .t-yellow { background: rgba(179,134,0,0.1); color: var(--yellow); border: 1px solid rgba(179,134,0,0.25); }
+  .t-red { background: rgba(192,57,43,0.1); color: var(--red); border: 1px solid rgba(192,57,43,0.25); }
+  .t-blue { background: rgba(37,99,235,0.1); color: var(--blue); border: 1px solid rgba(37,99,235,0.25); }
+
+  .flow { background: var(--card); border: 1px solid var(--accent); border-radius: 6px; padding: 16px; margin: 12px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .flow-title { font-weight: bold; margin-bottom: 8px; }
+  .flow-step { display: flex; align-items: flex-start; margin: 4px 0; }
+  .flow-arrow { color: var(--dim); margin: 0 8px; min-width: 20px; text-align: center; }
+  .flow-stage { flex: 1; }
+  .flow-log { font-size: 11px; margin-top: 2px; }
+
+  .finding { background: var(--card); border-left: 3px solid var(--yellow); padding: 10px 14px; margin: 8px 0; border-radius: 0 4px 4px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .finding.critical { border-left-color: var(--red); }
+  .finding.good { border-left-color: var(--green); }
+  .finding .title { font-weight: bold; margin-bottom: 4px; }
+  .finding .detail { color: var(--dim); font-size: 12px; }
+
+  pre { background: var(--card); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; line-height: 1.6; border: 1px solid var(--accent); margin: 8px 0; }
+  code { font-size: 12px; background: rgba(0,0,0,0.04); padding: 1px 4px; border-radius: 2px; }
+
+  .layer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  @media (max-width: 800px) { .layer-grid { grid-template-columns: 1fr; } }
+
+  .layer-card { background: var(--card); border: 1px solid var(--accent); border-radius: 6px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .layer-card .lc-title { font-weight: bold; margin-bottom: 6px; }
+  .layer-card .lc-score { float: right; font-size: 18px; font-weight: bold; }
+
+  .toc { background: var(--card); border: 1px solid var(--accent); border-radius: 6px; padding: 16px; margin: 16px 0; columns: 2; }
+  .toc a { color: var(--blue); text-decoration: none; display: block; padding: 2px 0; }
+  .toc a:hover { text-decoration: underline; }
+
+  @media print { body { background: #fff; } .stat, .flow, .finding, .layer-card, pre { box-shadow: none; break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+<h1>Comprehensive Logging Strategy</h1>
+<p class="subtitle">Silas | 2026-03-28 | From #1773 structural audit | "Our instrumentation of logging on a comprehensive basis is not there"</p>
+
+<div class="stats">
+  <div class="stat good"><div class="num">9/10</div><div class="label">Infra Metrics</div></div>
+  <div class="stat warn"><div class="num">6/10</div><div class="label">Structured Logs</div></div>
+  <div class="stat bad"><div class="num">4/10</div><div class="label">Data Lineage</div></div>
+  <div class="stat bad"><div class="num">3/10</div><div class="label">Pipeline Tracing</div></div>
+  <div class="stat warn"><div class="num">7/10</div><div class="label">Alerting</div></div>
+  <div class="stat warn"><div class="num">5/10</div><div class="label">App Metrics</div></div>
+</div>
+
+<div class="toc">
+  <a href="#diagnosis">1. Diagnosis: What We Have vs What We Need</a>
+  <a href="#flows">2. Every Data Flow — Logged vs Dark</a>
+  <a href="#pages">3. Page Routes — 406 Routes, 9 Unlogged Handlers</a>
+  <a href="#spine">4. Spine Events — Schema vs Reality</a>
+  <a href="#services">5. Service Logging — Five Services, Five Approaches</a>
+  <a href="#alerts">6. Alert Rules — 40+ Rules, Key Gaps</a>
+  <a href="#strategy">7. Strategy: Three Layers of Fix</a>
+  <a href="#actions">8. Prioritized Action Plan</a>
+</div>
+
+<!-- ============ DIAGNOSIS ============ -->
+<h2 id="diagnosis">1. Diagnosis: What We Have vs What We Need</h2>
+
+<p style="margin: 12px 0; line-height: 1.8;">
+The system has <b>strong infrastructure observability</b> — Prometheus scrapes 23 targets, Loki ingests 18 log sources, Grafana serves 13 dashboards, and 40+ alert rules cover compute, network, and service health. <b>This is the Splunk-at-Staples pattern applied to infrastructure.</b>
+</p>
+<p style="margin: 12px 0; line-height: 1.8;">
+What's missing is the <b>integration layer</b> — the seams where data moves between components. When Jeff texts a seed, when a nudge fires, when a card moves through the pipeline — these are the flows where failures are <b>silent</b>. The system tells you when a service is down but not when a piece of data dropped between services.
+</p>
+
+<div class="layer-grid">
+  <div class="layer-card">
+    <div class="lc-score" style="color: var(--green);">Strong</div>
+    <div class="lc-title">Infrastructure Layer</div>
+    <ul style="margin-left: 16px; font-size: 12px; color: var(--dim);">
+      <li>CPU, RAM, disk on both Macs (node-exporter)</li>
+      <li>23 ICMP probes (router, mesh, devices)</li>
+      <li>HTTP probes for 7 services</li>
+      <li>Docker container status</li>
+      <li>Deploy SLA (build time, deploy time, staleness)</li>
+      <li>Fuseki query performance baselines</li>
+      <li>Disk space with APFS-aware thresholds</li>
+    </ul>
+  </div>
+  <div class="layer-card">
+    <div class="lc-score" style="color: var(--yellow);">Partial</div>
+    <div class="lc-title">Application Layer</div>
+    <ul style="margin-left: 16px; font-size: 12px; color: var(--dim);">
+      <li>Custom JSON logger in app (good format, inconsistent coverage)</li>
+      <li>Correlation IDs on requests (middleware)</li>
+      <li>9 of 65 handlers have NO logger instance</li>
+      <li>No HTTP request metrics exported (relying on blackbox probes)</li>
+      <li>No per-route latency histograms</li>
+      <li>Messaging service: startup log only, zero operational logging</li>
+    </ul>
+  </div>
+  <div class="layer-card">
+    <div class="lc-score" style="color: var(--red);">Weak</div>
+    <div class="lc-title">Integration Layer</div>
+    <ul style="margin-left: 16px; font-size: 12px; color: var(--dim);">
+      <li>Seed pipeline: arrival logged, routing silent, person-linking silent on failure</li>
+      <li>Nudge pipeline: send logged, delivery confirmation missing, API persist failures swallowed</li>
+      <li>Context cache: generates markdown, no events on success or failure</li>
+      <li>Daily reviews: run and post to Bridge, no spine events</li>
+      <li>Card lifecycle: 15 events defined in schema, only 8 ever emitted</li>
+    </ul>
+  </div>
+  <div class="layer-card">
+    <div class="lc-score" style="color: var(--red);">Dark</div>
+    <div class="lc-title">Data Lineage</div>
+    <ul style="margin-left: 16px; font-size: 12px; color: var(--dim);">
+      <li>No trace from "Jeff texted a link" to "seed on /seeds page"</li>
+      <li>No trace from "nudge sent" to "role acted on nudge"</li>
+      <li>No trace from "harvest started" to "data in Fuseki"</li>
+      <li>No delivery confirmation on Bridge messages</li>
+      <li>SPARQL update errors swallowed silently</li>
+      <li>OG metadata fetch failures invisible</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ DATA FLOWS ============ -->
+<h2 id="flows">2. Every Data Flow — Logged vs Dark</h2>
+
+<!-- SEED PIPELINE -->
+<h3>Seed Pipeline: SMS to /seeds page</h3>
+<div class="flow">
+  <div class="flow-title">Jeff texts a link or idea to the system phone number</div>
+  <div class="flow-step">
+    <span class="tag t-yellow">PARTIAL</span>
+    <div class="flow-stage">
+      <b>1. Twilio webhook</b> → POST /api/seed/sms
+      <div class="flow-log"><span class="tag t-green">LOGGED</span> "SMS received from X" on success | <span class="tag t-red">DARK</span> Auth failure at middleware (warn only, no event)</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-red">DARK</span>
+    <div class="flow-stage">
+      <b>2. SMS Adapter</b> — extracts text, media URLs, hashtags, sender
+      <div class="flow-log"><span class="tag t-red">DARK</span> No logging. Silent if NumMedia mismatches actual MediaUrl params. Silent if URL regex fails to match.</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-red">DARK</span>
+    <div class="flow-stage">
+      <b>3. Routing</b> — hashtag routes (#wren, #kade, etc.) determine destination
+      <div class="flow-log"><span class="tag t-red">DARK</span> routeCapture() has no logging of which destination was selected. No event emitted.</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-yellow">PARTIAL</span>
+    <div class="flow-stage">
+      <b>4. Capture Service</b> — classify, persist to graph, link people
+      <div class="flow-log"><span class="tag t-green">LOGGED</span> "Seed captured and persisted to graph" | <span class="tag t-red">DARK</span> Person linking SPARQL failures caught but only non-fatal warn</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-green">LOGGED</span>
+    <div class="flow-stage">
+      <b>5. Spine event</b> — <code>seed.captured</code> with slug, classification, graph
+      <div class="flow-log"><span class="tag t-yellow">NOTE</span> Event emitted but NOT in spine-events.json schema. No <code>seed.routed</code> or <code>seed.received</code> events exist.</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-red">DARK</span>
+    <div class="flow-stage">
+      <b>6. Display</b> — /seeds page reads from graph
+      <div class="flow-log"><span class="tag t-red">DARK</span> Seeds handler has no logger. If SPARQL query fails, silent error. No event for "seed displayed".</div>
+    </div>
+  </div>
+</div>
+
+<div class="finding critical">
+  <div class="title">Seed Trust Deficit (Jeff's feedback)</div>
+  <div class="detail">SMS seeds break repeatedly. Jeff discovers it, not the system. #1770 was a regex anchor bug that silently dropped Apple Music and LinkedIn links. The adapter had zero logging — the only signal was Jeff saying "where's my seed?" This is the pattern: <b>the integration seam between Twilio and the graph has no instrumentation.</b></div>
+</div>
+
+<!-- NUDGE PIPELINE -->
+<h3>Nudge Pipeline: Role-to-Role Communication</h3>
+<div class="flow">
+  <div class="flow-title">One role nudges another (DEC-107: persist + deliver, both paths every time)</div>
+  <div class="flow-step">
+    <span class="tag t-green">LOGGED</span>
+    <div class="flow-stage">
+      <b>1. Send</b> — nudge binary detects sender, formats message
+      <div class="flow-log"><span class="tag t-green">LOGGED</span> <code>role.nudge.sent</code> spine event with target, chars, preview</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-yellow">PARTIAL</span>
+    <div class="flow-stage">
+      <b>2. Persist</b> — POST to messaging API (localhost:3475)
+      <div class="flow-log"><span class="tag t-red">DARK</span> curl errors suppressed (<code>2>/dev/null || true</code>). Messaging service logs NOTHING about received nudges.</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-yellow">PARTIAL</span>
+    <div class="flow-stage">
+      <b>3. Deliver</b> — osascript terminal injection OR queue to /tmp/voice-inbox
+      <div class="flow-log"><span class="tag t-green">LOGGED</span> <code>role.nudge.delivered</code> with mode (injected/queued) | <span class="tag t-red">DARK</span> osascript failures return "tab not found" but no spine event</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-green">LOGGED</span>
+    <div class="flow-stage">
+      <b>4. Consume</b> — role drains inbox on next prompt
+      <div class="flow-log"><span class="tag t-green">LOGGED</span> <code>role.nudge.consumed</code> with count</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-red">DARK</span>
+    <div class="flow-stage">
+      <b>5. Act</b> — role reads nudge and responds
+      <div class="flow-log"><span class="tag t-red">DARK</span> No event for "nudge acknowledged" or "nudge acted on". No way to know if the message was read vs just drained.</div>
+    </div>
+  </div>
+</div>
+
+<!-- SESSION LIFECYCLE -->
+<h3>Session Lifecycle: Boot to Close</h3>
+<div class="flow">
+  <div class="flow-title">A role starts a Claude session</div>
+  <div class="flow-step">
+    <span class="tag t-green">LOGGED</span>
+    <div class="flow-stage">
+      <b>1. Boot</b> — session-start-thin creates marker, emits <code>session.role.started</code>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-red">DARK</span>
+    <div class="flow-stage">
+      <b>2. Context build</b> — context-cache gathers board, briefs, decisions, health
+      <div class="flow-log"><span class="tag t-red">DARK</span> All failures silently return empty strings. Board unreachable → "(board unreachable)" in markdown but no event. Chorus API timeout → silently omitted.</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-green">LOGGED</span>
+    <div class="flow-stage">
+      <b>3. Operate</b> — Bridge logs every turn + tool call via <code>session_turn</code> and <code>session_tool</code>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-red">DARK</span>
+    <div class="flow-stage">
+      <b>4. Close</b> — session-end-hook removes markers
+      <div class="flow-log"><span class="tag t-red">DARK</span> <code>session.role.ended</code> defined in schema but never emitted. Can't calculate session duration.</div>
+    </div>
+  </div>
+</div>
+
+<!-- DAILY REVIEW -->
+<h3>Daily Review Pipeline: 6am Health Check</h3>
+<div class="flow">
+  <div class="flow-title">Three LaunchAgents fire at 6:03, 6:06, 6:10</div>
+  <div class="flow-step">
+    <span class="tag t-red">DARK</span>
+    <div class="flow-stage">
+      <b>1. Ops check</b> — LaunchAgent health, service HTTP probes, disk
+      <div class="flow-log"><span class="tag t-red">DARK</span> curl -sf failures suppressed (<code>2>/dev/null</code>). LaunchAgent errors silently treated as "not found". No spine events.</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-red">DARK</span>
+    <div class="flow-stage">
+      <b>2. Quality check</b> — smoke tests, lint, jest
+      <div class="flow-log"><span class="tag t-red">DARK</span> Counts extracted via grep — if output format changes, counts silently go to 0. No spine events.</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <span class="tag t-yellow">PARTIAL</span>
+    <div class="flow-stage">
+      <b>3. Summary</b> — combine + post to Bridge
+      <div class="flow-log"><span class="tag t-yellow">PARTIAL</span> Posts to Bridge (visible to Jeff). But Bridge POST failures suppressed (<code>2>/dev/null</code>). If Bridge is down at 6am, daily review is silently lost.</div>
+    </div>
+  </div>
+</div>
+
+<!-- CARD LIFECYCLE -->
+<h3>Card Lifecycle: Pull to Done</h3>
+<div class="flow">
+  <div class="flow-title">A card moves through the value stream</div>
+  <table>
+    <tr><th>Transition</th><th>Event</th><th>Status</th><th>Notes</th></tr>
+    <tr><td>Create</td><td><code>card.item.created</code></td><td><span class="tag t-green">EMITTED</span></td><td></td></tr>
+    <tr><td>Quality warning</td><td><code>card.quality.warned</code></td><td><span class="tag t-green">EMITTED</span></td><td></td></tr>
+    <tr><td>Move to bucket</td><td><code>card.item.moved</code></td><td><span class="tag t-green">EMITTED</span></td><td></td></tr>
+    <tr><td>Pull to WIP</td><td><code>card.pulled</code></td><td><span class="tag t-red">SCHEMA ONLY</span></td><td>Defined, never emitted</td></tr>
+    <tr><td>Block</td><td><code>card.item.blocked</code></td><td><span class="tag t-red">SCHEMA ONLY</span></td><td>Defined, never emitted</td></tr>
+    <tr><td>Unblock</td><td><code>card.item.unblocked</code></td><td><span class="tag t-red">SCHEMA ONLY</span></td><td>Defined, never emitted</td></tr>
+    <tr><td>Comment</td><td><code>card.item.commented</code></td><td><span class="tag t-red">SCHEMA ONLY</span></td><td>Defined, never emitted</td></tr>
+    <tr><td>Tag</td><td><code>card.item.tagged</code></td><td><span class="tag t-red">SCHEMA ONLY</span></td><td>Defined, never emitted</td></tr>
+    <tr><td>Demo started</td><td><code>card.demo.started</code></td><td><span class="tag t-green">EMITTED</span></td><td></td></tr>
+    <tr><td>Accepted</td><td><code>card.accepted</code></td><td><span class="tag t-green">EMITTED</span></td><td></td></tr>
+    <tr><td>Rejected</td><td><code>card.rejected</code></td><td><span class="tag t-red">SCHEMA ONLY</span></td><td>Defined, never emitted</td></tr>
+    <tr><td>Done</td><td><code>card.item.completed</code></td><td><span class="tag t-green">EMITTED</span></td><td></td></tr>
+    <tr><td>Stale detected</td><td><code>card.stale.detected</code></td><td><span class="tag t-red">SCHEMA ONLY</span></td><td>Defined, never emitted</td></tr>
+    <tr><td>Brief handoff</td><td><code>brief.handoff.written</code></td><td><span class="tag t-green">EMITTED</span></td><td></td></tr>
+    <tr><td>Brief acknowledged</td><td><code>brief.handoff.acknowledged</code></td><td><span class="tag t-red">SCHEMA ONLY</span></td><td>Defined, never emitted</td></tr>
+  </table>
+  <p style="color: var(--dim); margin-top: 8px; font-size: 12px;"><b>8 of 15 defined events are actually emitted.</b> The gaps are concentrated in the Building and Proving stages — exactly where attention cost tracking matters most.</p>
+</div>
+
+<!-- ============ PAGE ROUTES ============ -->
+<h2 id="pages">3. Page Routes — 406 Routes, 9 Unlogged Handlers</h2>
+
+<p style="margin: 8px 0 12px;">The app has a correlation middleware that logs request start/end with duration. But 9 handlers have <b>no logger instance at all</b> — errors in these handlers are invisible.</p>
+
+<table>
+  <tr><th>Handler</th><th>Routes</th><th>Data Source</th><th>Logger?</th><th>Risk</th></tr>
+  <tr><td><b>/briefs</b></td><td>Briefs dashboard</td><td>Filesystem (briefs/)</td><td><span class="tag t-red">NONE</span></td><td>PM coordination blind</td></tr>
+  <tr><td><b>/cards</b></td><td>Cards dashboard</td><td>Board API</td><td><span class="tag t-red">NONE</span></td><td>Board state errors invisible</td></tr>
+  <tr><td><b>/glimmers</b></td><td>9 routes</td><td>GlimmerPodService (TTL)</td><td><span class="tag t-red">NONE</span></td><td>Read failures silent</td></tr>
+  <tr><td><b>/icd</b></td><td>ICD dashboard</td><td>ICD domain files</td><td><span class="tag t-red">NONE</span></td><td>Mapper errors invisible</td></tr>
+  <tr><td><b>/ideas</b></td><td>Ideas rendering</td><td>IdeaPodService (TTL)</td><td><span class="tag t-red">NONE</span></td><td>Creation failures silent</td></tr>
+  <tr><td><b>/roles</b></td><td>Roles dashboard</td><td>Analytics API</td><td><span class="tag t-red">NONE</span></td><td>Dashboard data gaps invisible</td></tr>
+  <tr><td><b>/self</b></td><td>Self AI page</td><td>Claude API + LanceDB</td><td><span class="tag t-red">NONE</span></td><td>AI call failures invisible</td></tr>
+  <tr><td><b>/skills</b></td><td>Skills dashboard</td><td>Filesystem</td><td><span class="tag t-red">NONE</span></td><td>Low risk (static data)</td></tr>
+  <tr><td><b>/sessions</b></td><td>Session replay (5)</td><td>In-memory</td><td><span class="tag t-red">NONE</span></td><td>Event loss invisible</td></tr>
+</table>
+
+<p style="margin: 8px 0; font-size: 12px; color: var(--dim);"><b>Well-logged handlers (56/65):</b> books, property, music, photos, documents, notes, gallery, sexuality, seeds, search, ontology, pods, auth, webhooks — all have structured JSON logging via the custom Logger class.</p>
+
+<!-- ============ SPINE EVENTS ============ -->
+<h2 id="spine">4. Spine Events — Schema vs Reality</h2>
+
+<table>
+  <tr><th>Category</th><th>Defined in Schema</th><th>Actually Emitted</th><th>Gap</th></tr>
+  <tr><td>Card lifecycle</td><td>15</td><td>8</td><td style="color: var(--red);"><b>7 events never fire</b></td></tr>
+  <tr><td>Nudge messaging</td><td>3</td><td>3</td><td style="color: var(--green);">Complete</td></tr>
+  <tr><td>Session lifecycle</td><td>5</td><td>2</td><td style="color: var(--red);"><b>3 events never fire</b></td></tr>
+  <tr><td>Brief handoffs</td><td>3</td><td>1</td><td style="color: var(--red);"><b>2 events never fire</b></td></tr>
+  <tr><td>Workflow</td><td>3</td><td>0</td><td style="color: var(--red);"><b>All 3 never fire</b></td></tr>
+  <tr><td>Operations</td><td>2</td><td>0</td><td style="color: var(--red);"><b>Both never fire</b></td></tr>
+  <tr><td>Seed pipeline</td><td>1 (seed.recovered)</td><td>0</td><td style="color: var(--red);"><b>seed.captured emitted but not in schema</b></td></tr>
+</table>
+
+<p style="margin: 8px 0; font-size: 12px; color: var(--dim);"><b>Card #1765 (Later, P2)</b> — "Instrument Capturing and Designing stages" — already identifies this gap. It's been sitting in Later since 3/27.</p>
+
+<!-- ============ SERVICES ============ -->
+<h2 id="services">5. Service Logging — Five Services, Five Approaches</h2>
+
+<table>
+  <tr><th>Service</th><th>Port</th><th>Framework</th><th>Format</th><th>Coverage</th><th>Verdict</th></tr>
+  <tr>
+    <td><b>Gathering App</b></td><td>3000</td>
+    <td>Custom Logger class</td><td>Structured JSON</td>
+    <td>High — auth, mutations, middleware correlation IDs</td>
+    <td><span class="tag t-green">GOOD</span></td>
+  </tr>
+  <tr>
+    <td><b>Chorus API</b></td><td>3340</td>
+    <td>console.log</td><td>Plain text [prefix]</td>
+    <td>Medium — indexing, errors, search events</td>
+    <td><span class="tag t-yellow">FAIR</span></td>
+  </tr>
+  <tr>
+    <td><b>Bridge</b></td><td>3470</td>
+    <td>console.log</td><td>Plain text [clearing]</td>
+    <td>Medium — auth, routing, guest access</td>
+    <td><span class="tag t-yellow">FAIR</span></td>
+  </tr>
+  <tr>
+    <td><b>Messaging</b></td><td>3475</td>
+    <td>console.log</td><td>Minimal</td>
+    <td><b>Startup only.</b> Zero operational logging. 181K messages, zero visibility.</td>
+    <td><span class="tag t-red">DARK</span></td>
+  </tr>
+  <tr>
+    <td><b>Clearing</b></td><td>3460</td>
+    <td>console.log</td><td>Plain text (detailed)</td>
+    <td>High — sessions, decisions, nudge execution, guest access</td>
+    <td><span class="tag t-green">GOOD</span></td>
+  </tr>
+  <tr>
+    <td><b>Chorus Hooks</b></td><td>sock</td>
+    <td>tracing crate</td><td>Structured (Rust)</td>
+    <td>Good — hook decisions, gate enforcement</td>
+    <td><span class="tag t-green">GOOD</span></td>
+  </tr>
+</table>
+
+<div class="finding critical">
+  <div class="title">Messaging Service: The Dark Heart</div>
+  <div class="detail">The messaging tier handles 181K messages, all nudge persistence, all chat state, and role state declarations. It logs exactly <b>one line</b>: "Messaging service listening on http://localhost:3475". No request logging, no error logging, no queue depth, no delivery tracking. This is the most critical operational gap — it's the backbone of role-to-role communication and it's completely invisible.</div>
+</div>
+
+<!-- ============ ALERTS ============ -->
+<h2 id="alerts">6. Alert Rules — 40+ Rules, Key Gaps</h2>
+
+<div class="finding good">
+  <div class="title">What's well-covered</div>
+  <div class="detail">Service availability (HTTP probes for 7 services), home network (23 ICMP targets), deploy SLA (build time, deploy time, staleness), Fuseki query performance baselines, disk space with APFS-aware thresholds, Cloudflare tunnel health, harvest pipeline staleness.</div>
+</div>
+
+<div class="finding critical">
+  <div class="title">Missing alert rules</div>
+  <div class="detail">
+    <b>No alert for:</b> messaging queue depth (29K pending nudges observed), seed delivery failure, Bridge POST failure during daily review, context cache build failure, session boot without context, SPARQL update errors, spine event emission failures, handler errors on unlogged pages.
+  </div>
+</div>
+
+<!-- ============ STRATEGY ============ -->
+<h2 id="strategy">7. Strategy: Three Layers of Fix</h2>
+
+<h3>Layer 1: Emit What's Defined (Quick Wins)</h3>
+<p style="margin: 8px 0;">The spine event schema already defines events that never fire. Wire them up. No new schema design needed.</p>
+<table>
+  <tr><th>Event</th><th>Where to Emit</th><th>Effort</th></tr>
+  <tr><td><code>card.pulled</code></td><td>board-ts move WIP</td><td>1 line</td></tr>
+  <tr><td><code>card.rejected</code></td><td>/demo skill rejection path</td><td>1 line</td></tr>
+  <tr><td><code>card.item.blocked</code></td><td>board-ts block command</td><td>1 line</td></tr>
+  <tr><td><code>session.role.ended</code></td><td>session-end-hook.rs</td><td>1 line</td></tr>
+  <tr><td><code>session.context.compacted</code></td><td>context-cache completion</td><td>3 lines</td></tr>
+  <tr><td><code>brief.handoff.acknowledged</code></td><td>brief read detection in hooks</td><td>5 lines</td></tr>
+  <tr><td><code>ops.health.checked</code></td><td>daily-review-ops.sh</td><td>3 lines</td></tr>
+</table>
+
+<h3>Layer 2: Instrument the Dark Seams (Medium Effort)</h3>
+<p style="margin: 8px 0;">Add logging at the integration points where data crosses service boundaries.</p>
+<table>
+  <tr><th>Seam</th><th>What to Add</th><th>Why</th></tr>
+  <tr><td><b>SMS Adapter</b></td><td>Log extraction results: URLs found, hashtags parsed, media count</td><td>Seed trust deficit — can't debug drops</td></tr>
+  <tr><td><b>Seed routing</b></td><td>Log which destination was selected and why</td><td>#1770 class of bug: routing logic invisible</td></tr>
+  <tr><td><b>Messaging service</b></td><td>Add structured logging: requests, nudge lifecycle, queue depth metric</td><td>Zero visibility into backbone service</td></tr>
+  <tr><td><b>Context cache failures</b></td><td>Emit <code>session.context.error</code> when board/API unreachable</td><td>Roles boot blind and don't know it</td></tr>
+  <tr><td><b>Daily review failures</b></td><td>Spine event on completion/failure + Bridge POST error handling</td><td>6am reviews silently lost if Bridge is down</td></tr>
+  <tr><td><b>9 unlogged handlers</b></td><td>Add logger instances to briefs, cards, glimmers, icd, ideas, roles, self, skills, sessions</td><td>Error visibility</td></tr>
+  <tr><td><b>Nudge API persist</b></td><td>Remove <code>2>/dev/null || true</code>, add error event</td><td>Silent persistence failures</td></tr>
+</table>
+
+<h3>Layer 3: Trace End-to-End (Architectural)</h3>
+<p style="margin: 8px 0;">Correlation IDs already exist in HTTP middleware. Extend the pattern to data flows.</p>
+<table>
+  <tr><th>Pattern</th><th>Design</th><th>Enables</th></tr>
+  <tr><td><b>Seed trace ID</b></td><td>Generate UUID at Twilio webhook, propagate through adapter → service → graph → display</td><td>"Where is my seed?" → query by trace ID</td></tr>
+  <tr><td><b>Nudge trace ID</b></td><td>Generate UUID at send, propagate through persist → deliver → consume → act</td><td>"Did the role see my nudge?" → trace from send to action</td></tr>
+  <tr><td><b>Card stage timing</b></td><td>Record timestamps at each spine event, compute stage durations</td><td>Flow metrics with real data (not just card counts)</td></tr>
+  <tr><td><b>App HTTP metrics</b></td><td>Wire express-prom-bundle for request rate, error rate, latency histograms</td><td>Proactive alerting vs reactive blackbox probes</td></tr>
+</table>
+
+<!-- ============ ACTION PLAN ============ -->
+<h2 id="actions">8. Prioritized Action Plan</h2>
+
+<h4>P1 — The seed must never silently drop again</h4>
+<div class="finding critical">
+  <div class="title">Card: Seed pipeline end-to-end logging</div>
+  <div class="detail">
+    <b>AC:</b> SMS adapter logs extraction results (URLs, hashtags, media count) &bull; Routing decision logged with destination &bull; <code>seed.received</code> event at webhook entry &bull; <code>seed.routed</code> event at routing decision &bull; Person-linking failures emit warning event &bull; Seeds handler gets logger instance &bull; E2E test: send SMS, verify all events appear in chorus.log
+  </div>
+</div>
+
+<h4>P1 — Messaging service must be observable</h4>
+<div class="finding critical">
+  <div class="title">Card: Add structured logging to messaging tier</div>
+  <div class="detail">
+    <b>AC:</b> Request logging (method, path, status, duration) &bull; Nudge lifecycle logging (received, stored, delivered, acked) &bull; Queue depth exported as Prometheus metric &bull; Dead letter entries logged with reason &bull; Alert rule: nudge queue depth > 1000
+  </div>
+</div>
+
+<h4>P2 — Emit all defined spine events</h4>
+<div class="finding">
+  <div class="title">Card: Wire 7 missing spine events from schema</div>
+  <div class="detail">
+    <b>AC:</b> All 15 card lifecycle events emitted at their natural trigger points &bull; <code>session.role.ended</code> emitted at close &bull; <code>brief.handoff.acknowledged</code> emitted on read &bull; Schema updated to include <code>seed.captured</code>, <code>seed.received</code>, <code>seed.routed</code>
+  </div>
+</div>
+
+<h4>P2 — Fix the 9 dark handlers</h4>
+<div class="finding">
+  <div class="title">Card: Add logger to 9 unlogged handlers</div>
+  <div class="detail">
+    <b>AC:</b> All 65 handlers have logger instances &bull; Error paths log with context &bull; Read failures surface to Loki
+  </div>
+</div>
+
+<h4>P2 — Daily review must not silently fail</h4>
+<div class="finding">
+  <div class="title">Card: Instrument daily review pipeline</div>
+  <div class="detail">
+    <b>AC:</b> Each review step emits spine event on completion &bull; Bridge POST failures logged and retried once &bull; <code>ops.health.checked</code> event with pass/fail status &bull; Alert rule: daily review didn't fire by 6:30am
+  </div>
+</div>
+
+<h4>P2 — Context cache failures must be visible</h4>
+<div class="finding">
+  <div class="title">Card: Add events to context cache pipeline</div>
+  <div class="detail">
+    <b>AC:</b> <code>session.context.built</code> event on success with data sources included &bull; <code>session.context.error</code> event when any source fails (with which source) &bull; Thread failures no longer silently return empty strings
+  </div>
+</div>
+
+<h4>P3 — End-to-end trace IDs</h4>
+<div class="finding">
+  <div class="title">Card: Correlation IDs for data flows</div>
+  <div class="detail">
+    <b>AC:</b> Seed trace ID from webhook to display &bull; Nudge trace ID from send to act &bull; Queryable in Loki by trace ID
+  </div>
+</div>
+
+<h4>P3 — App HTTP metrics</h4>
+<div class="finding">
+  <div class="title">Card: Wire express-prom-bundle for request metrics</div>
+  <div class="detail">
+    <b>AC:</b> <code>http_requests_total{status,method,path}</code> exported &bull; <code>http_request_duration_seconds</code> histogram &bull; Replace blackbox probe alerts with native metrics alerts
+  </div>
+</div>
+
+<!-- ============ THE PATTERN ============ -->
+<h2>The Pattern</h2>
+
+<p style="margin: 12px 0; line-height: 1.8;">
+This is the Staples integration architecture pattern applied to observability. At Staples, the ICD defined what data crosses each boundary and how to verify it. Here, the spine event schema is the ICD for operational events — but half the events are defined and never emitted. The schema is the blueprint; the implementation hasn't caught up.
+</p>
+<p style="margin: 12px 0; line-height: 1.8;">
+The fix follows the same sequence: <b>define (schema exists) → map (this document) → build (wire the events).</b> We're at step 2. The strategy is not "add more logging" — it's "emit what we already defined, then instrument the seams we missed."
+</p>
+<p style="margin: 12px 0; line-height: 1.8; color: var(--dim);">
+<b>The Splunk lesson:</b> instrument at the integration layer, share visibility. We did layer 1 (infrastructure). Now we need layer 2 (integration seams) and layer 3 (data lineage).
+</p>
+
+</body>
+</html>

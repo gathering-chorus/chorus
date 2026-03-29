@@ -1,0 +1,163 @@
+# Architect (Silas) Boundary Manifest
+# Declares files this role owns that others depend on,
+# and files this role considers sensitive.
+#
+# Format: ADR-013 (boundary-checking-operating-model)
+# Tiers: public | internal | private
+
+role: silas
+updated: "2026-02-19"
+
+files:
+  # === Files Kade depends on ===
+
+  shared-observability/docker-compose.yml:
+    tier: internal
+    depended_by:
+      - role: kade
+        usage: "App stack joins observability-network defined here. Promtail collects app logs."
+        break_risk: "Network rename or removal breaks app metrics/logs"
+    on_change: boundary
+
+  shared-observability/config/prometheus/prometheus.yml:
+    tier: internal
+    depended_by:
+      - role: kade
+        usage: "Scrape job names used in Grafana dashboards Kade built"
+        break_risk: "Job rename breaks dashboard queries"
+    on_change: boundary
+
+  shared-observability/config/prometheus/rules/*.yml:
+    tier: internal
+    depended_by:
+      - role: kade
+        usage: "Alert rules that fire for app issues"
+        break_risk: "Broken rule syntax silently disables all alerts"
+    on_change: boundary
+
+  shared-observability/config/blackbox/blackbox.yml:
+    tier: internal
+    depended_by:
+      - role: kade
+        usage: "HTTP probe modules used by App Operations dashboard"
+        break_risk: "Module change breaks service health panels"
+    on_change: boundary
+
+  architect/ontology/*.ttl:
+    tier: public
+    depended_by:
+      - role: kade
+        usage: "Class names, property names, namespace URIs used in code"
+        break_risk: "Renamed class/property breaks SPARQL queries and Turtle generation"
+    on_change: boundary
+
+  architect/adr/*.md:
+    tier: public
+    depended_by:
+      - role: kade
+        usage: "Architectural constraints Kade builds within"
+        break_risk: "Changed constraint without signal = Kade builds against stale rules"
+    on_change: boundary
+
+  architect/infrastructure-constraints.md:
+    tier: internal
+    depended_by:
+      - role: kade
+        usage: "Hard constraints (C1-C7) referenced before adding services/data"
+        break_risk: "Changed constraint = wrong capacity assumptions"
+      - role: wren
+        usage: "Constraints that bound product scope"
+        break_risk: "Wren plans work that violates constraints"
+    on_change: boundary
+
+  # === Files Wren depends on ===
+
+  messages/vikunja/docker-compose.yml:
+    tier: internal
+    depended_by:
+      - role: wren
+        usage: "Kanban board service"
+        break_risk: "Restart/config change = brief board outage"
+    on_change: infra
+
+  architect/ontology-status.md:
+    tier: public
+    depended_by:
+      - role: wren
+        usage: "Current ontology state for product decisions"
+        break_risk: "Stale info = wrong product assumptions"
+    on_change: boundary
+
+  architect/service-manifest.md:
+    tier: internal
+    depended_by:
+      - role: wren
+        usage: "Reference for what services exist, their ports, owners"
+        break_risk: "Stale info = wrong operational assumptions"
+    on_change: boundary
+
+  # === Sensitivity-only (no dependencies) ===
+
+  architect/network-inventory.md:
+    tier: internal
+    depended_by: []
+    on_change: none
+    note: "Contains 22 device IPs, hostnames, room locations"
+
+  architect/system-architecture.md:
+    tier: internal
+    depended_by:
+      - role: kade
+        usage: "Referenced when making implementation choices"
+        break_risk: "Stale architecture doc = wrong assumptions"
+      - role: wren
+        usage: "Referenced for product planning context"
+        break_risk: "Stale architecture doc = wrong scope assumptions"
+    on_change: boundary
+
+  # === Implicit format contracts ===
+
+formats:
+  prometheus_job_names:
+    tier: internal
+    examples: ["blackbox-app", "blackbox-fuseki", "blackbox-icmp"]
+    depended_by:
+      - role: kade
+        usage: "Grafana dashboard panel queries"
+    on_change: boundary
+
+  alert_label_conventions:
+    tier: internal
+    examples: ["severity: critical/warning", "category: compute/network", "constraint: C1-C7"]
+    depended_by:
+      - role: kade
+        usage: "Alertmanager routing, Slack notifications"
+    on_change: boundary
+
+  ontology_namespace_uris:
+    tier: public
+    examples: ["https://jeffbridwell.com/chorus#", "https://jeffbridwell.com/building#"]
+    depended_by:
+      - role: kade
+        usage: "SPARQL queries, Turtle generation"
+    on_change: boundary
+
+  docker_network_name:
+    tier: internal
+    examples: ["observability-network"]
+    depended_by:
+      - role: kade
+        usage: "Hardcoded in app Terraform config"
+    on_change: boundary
+
+# Patterns to scrub from memory/context assembly
+scrub_patterns:
+  - type: ipv4
+    pattern: '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+  - type: mac_address
+    pattern: '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}'
+  - type: api_token
+    pattern: '(xoxb|xoxp|xapp|sk-|ghp_|gho_)[A-Za-z0-9\-]+'
+  - type: port_with_host
+    pattern: 'localhost:\d{4,5}'
+    note: "Only scrub from external-facing context, not internal docs"

@@ -1,0 +1,78 @@
+{
+  "_comment": "Chorus System Ontology — viz data derived from chorus.ttl v0.2.0",
+  "_generated": "2026-02-22",
+  "_card": "C#40",
+
+  "entities": {
+    "roles": [
+      { "id": "jeff",  "label": "Jeff",  "domain": "directs",       "color": "#e6edf3", "type": "human" },
+      { "id": "wren",  "label": "Wren",  "domain": "product",       "color": "#4ade80", "type": "agent" },
+      { "id": "silas", "label": "Silas", "domain": "architecture",  "color": "#60a5fa", "type": "agent" },
+      { "id": "kade",  "label": "Kade",  "domain": "engineering",   "color": "#fb923c", "type": "agent" }
+    ],
+    "vertebrae": [
+      { "id": "capturing", "label": "Capturing", "order": 0 },
+      { "id": "directing", "label": "Directing", "order": 1 },
+      { "id": "designing", "label": "Designing", "order": 2 },
+      { "id": "building",  "label": "Building",  "order": 3 },
+      { "id": "proving",   "label": "Proving",   "order": 4 }
+    ],
+    "tools": [
+      { "id": "look",     "label": "/look",     "type": "sense",         "vizLabel": "eyes",      "color": "#22d3ee", "status": "live" },
+      { "id": "listen",   "label": "/listen",   "type": "sense",         "vizLabel": "ears",      "color": "#22d3ee", "status": "live" },
+      { "id": "talk",     "label": "/talk",     "type": "sense",         "vizLabel": "voice",     "color": "#22d3ee", "status": "planned" },
+      { "id": "clearing", "label": "/clearing", "type": "interaction",   "vizLabel": "alignment", "color": "#e6edf3", "status": "live" },
+      { "id": "chorus",   "label": "/chorus",   "type": "memory",        "vizLabel": "memory",    "color": "#c084fc", "status": "live" },
+      { "id": "werk",     "label": "/werk",     "type": "orchestration", "vizLabel": "the spine", "color": "#fbbf24", "status": "live" },
+      { "id": "borg",     "label": "Borg",      "type": "analysis",      "vizLabel": "decompose", "color": "#f87171", "status": "planned" }
+    ],
+    "products": [
+      { "id": "gathering", "label": "Gathering", "color": "#a78bfa" }
+    ]
+  },
+
+  "relationships": [
+    { "_comment": "--- Tool feeds Vertebra ---" },
+    { "from": "look",     "to": "capturing", "type": "feeds",      "label": "visual input" },
+    { "from": "listen",   "to": "capturing", "type": "feeds",      "label": "voice input" },
+    { "from": "talk",     "to": "directing", "type": "feeds",      "label": "voice output" },
+    { "from": "clearing", "to": "directing", "type": "feeds",      "label": "alignment" },
+    { "from": "borg",     "to": "designing", "type": "feeds",      "label": "codebase analysis" },
+
+    { "_comment": "--- Tool indexes (memory layer) ---" },
+    { "from": "clearing", "to": "chorus",    "type": "indexes",    "label": "transcripts indexed" },
+    { "from": "borg",     "to": "chorus",    "type": "indexes",    "label": "analysis indexed", "status": "planned" },
+
+    { "_comment": "--- /chorus as memory — connects to all via the spine ---" },
+    { "from": "chorus",   "to": "spine",     "type": "remembers",  "label": "shared memory" },
+
+    { "_comment": "--- Role operates-at Vertebra ---" },
+    { "from": "jeff",     "to": "directing",  "type": "operates-at", "affinity": "primary" },
+    { "from": "jeff",     "to": "capturing",  "type": "operates-at", "affinity": "secondary" },
+    { "from": "jeff",     "to": "proving",    "type": "operates-at", "affinity": "secondary" },
+    { "from": "wren",     "to": "directing",  "type": "operates-at", "affinity": "primary" },
+    { "from": "wren",     "to": "designing",  "type": "operates-at", "affinity": "primary" },
+    { "from": "wren",     "to": "capturing",  "type": "operates-at", "affinity": "secondary" },
+    { "from": "silas",    "to": "designing",  "type": "operates-at", "affinity": "primary" },
+    { "from": "silas",    "to": "building",   "type": "operates-at", "affinity": "primary" },
+    { "from": "silas",    "to": "proving",    "type": "operates-at", "affinity": "secondary" },
+    { "from": "kade",     "to": "building",   "type": "operates-at", "affinity": "primary" },
+    { "from": "kade",     "to": "proving",    "type": "operates-at", "affinity": "primary" },
+    { "from": "kade",     "to": "designing",  "type": "operates-at", "affinity": "secondary" },
+
+    { "_comment": "--- Product feedback loop ---" },
+    { "from": "gathering", "to": "building",  "type": "output-of",  "label": "emerges from" },
+    { "from": "gathering", "to": "proving",   "type": "output-of",  "label": "validated at" },
+    { "from": "gathering", "to": "capturing", "type": "input-to",   "label": "feeds back" }
+  ],
+
+  "vizMapping": {
+    "_comment": "Maps ontology relationships to viz connection styles",
+    "feeds":       { "style": "solid", "opacityBase": 0.35 },
+    "indexes":     { "style": "solid", "opacityBase": 0.3 },
+    "remembers":   { "style": "solid", "opacityBase": 0.3 },
+    "operates-at": { "style": "solid", "opacityBase": 0.35, "primaryOpacity": 0.4, "secondaryOpacity": 0.15 },
+    "output-of":   { "style": "solid", "opacityBase": 0.25 },
+    "input-to":    { "style": "dashed", "opacityBase": 0.2 }
+  }
+}

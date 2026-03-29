@@ -1,0 +1,655 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+
+# =============================================================================
+# Chorus Ontology v0.2.0 — Shared Awareness
+# =============================================================================
+#
+# Unified model of how the team operates: roles, tools, the value stream
+# (spine), artifacts, handoffs, gates, trust, and the products being built.
+#
+# Merges former building.ttl (team protocol) + chorus.ttl v0.1.0 (pipeline)
+# into a single coherent model. The viz at /chorus/system is a VIEW of this
+# ontology — connections are derived from relationships, not hand-coded.
+#
+# Prior art: US Patent 9,552,400 B2 (Bridwell) — RDF/OWL + SPARQL + workflow gates.
+#
+# Version: 0.2.0
+# Date: 2026-02-22
+# Status: Active (C#40, supersedes ADR-009 v0.1.0)
+# =============================================================================
+
+chorus: a owl:Ontology ;
+    owl:versionInfo "0.2.0" ;
+    dcterms:title "Chorus — Shared Awareness Ontology" ;
+    dcterms:description "Unified model of human+AI team coordination: roles, tools, spine, artifacts, handoffs, gates, trust." ;
+    dcterms:created "2026-02-22"^^xsd:date ;
+    rdfs:comment "Merges former building.ttl + chorus.ttl v0.1.0. Single namespace, single truth." .
+
+# =============================================================================
+# 1. ROLES
+# =============================================================================
+
+chorus:Role a owl:Class ;
+    rdfs:label "Role" ;
+    rdfs:comment "A persistent perspective within Chorus. Each role has context (CLAUDE.md, state files, briefs) that shapes how it thinks. Same model, different lens." .
+
+chorus:HumanRole a owl:Class ;
+    rdfs:subClassOf chorus:Role ;
+    rdfs:label "Human Role" ;
+    rdfs:comment "Filled by a human. Owns judgment, direction, meaning." .
+
+chorus:AgentRole a owl:Class ;
+    rdfs:subClassOf chorus:Role ;
+    rdfs:label "Agent Role" ;
+    rdfs:comment "Filled by an AI agent. Persistent across sessions via state files and memory." .
+
+chorus:jeff a chorus:HumanRole ;
+    rdfs:label "Jeff" ;
+    rdfs:comment "Owner. Judgment, direction, meaning." ;
+    chorus:domain "directs" ;
+    chorus:color "#e6edf3" ;
+    chorus:channelName "#all-gathering" .
+
+chorus:wren a chorus:AgentRole ;
+    rdfs:label "Wren" ;
+    rdfs:comment "Product Manager. What matters, what's next, why." ;
+    chorus:domain "product" ;
+    chorus:color "#4ade80" ;
+    chorus:channelName "#wren" .
+
+chorus:silas a chorus:AgentRole ;
+    rdfs:label "Silas" ;
+    rdfs:comment "Architect. Structural integrity, cross-project coherence." ;
+    chorus:domain "architecture" ;
+    chorus:color "#60a5fa" ;
+    chorus:channelName "#silas" .
+
+chorus:kade a chorus:AgentRole ;
+    rdfs:label "Kade" ;
+    rdfs:comment "Engineer. Make it real, make it work." ;
+    chorus:domain "engineering" ;
+    chorus:color "#fb923c" ;
+    chorus:channelName "#kade" .
+
+# =============================================================================
+# 2. VERTEBRAE (The Spine / Value Stream)
+# =============================================================================
+
+chorus:Vertebra a owl:Class ;
+    rdfs:label "Vertebra" ;
+    rdfs:comment "A stage in the value stream — the Werk. Work flows through vertebrae sequentially, with feedback loops. The spine is the ordered set of all vertebrae." .
+
+chorus:Capturing a chorus:Vertebra ;
+    rdfs:label "Capturing" ;
+    rdfs:comment "Intake. Signals, seeds, observations flow in from tools and from Gathering itself." ;
+    chorus:stageOrder 0 ;
+    chorus:nextStage chorus:Directing .
+
+chorus:Directing a chorus:Vertebra ;
+    rdfs:label "Directing" ;
+    rdfs:comment "Jeff expresses intent, direction, or feedback. Entry: human initiative. Exit: card on board." ;
+    chorus:stageOrder 1 ;
+    chorus:nextStage chorus:Designing ;
+    chorus:previousStage chorus:Capturing ;
+    chorus:exitArtifactType chorus:Card .
+
+chorus:Designing a chorus:Vertebra ;
+    rdfs:label "Designing" ;
+    rdfs:comment "Product framing (Wren) + architectural design (Silas). Exit: build-ready brief." ;
+    chorus:stageOrder 2 ;
+    chorus:nextStage chorus:Building ;
+    chorus:previousStage chorus:Directing ;
+    chorus:exitArtifactType chorus:Brief .
+
+chorus:Building a chorus:Vertebra ;
+    rdfs:label "Building" ;
+    rdfs:comment "Implementation by Kade. Exit: shipped code with visual proof." ;
+    chorus:stageOrder 3 ;
+    chorus:nextStage chorus:Proving ;
+    chorus:previousStage chorus:Designing ;
+    chorus:exitArtifactType chorus:Commit .
+
+chorus:Proving a chorus:Vertebra ;
+    rdfs:label "Proving" ;
+    rdfs:comment "Validation. UX verified, architecture sound, no regressions. Feeds back to Directing." ;
+    chorus:stageOrder 4 ;
+    chorus:previousStage chorus:Building ;
+    chorus:feedsInto chorus:Directing ;
+    chorus:exitArtifactType chorus:Signal .
+
+# --- Operating (parallel category, not a sequential vertebra) ----------------
+
+chorus:EventCategory a owl:Class ;
+    rdfs:label "Event Category" ;
+    rdfs:comment "A classification of spine events that runs parallel to the value stream rather than as a sequential stage." .
+
+chorus:Operating a chorus:EventCategory ;
+    rdfs:label "Operating" ;
+    rdfs:comment "Infrastructure health, deploys, disk monitoring, container lifecycle, and system resilience. Crosscuts all vertebrae — the substrate the value stream runs on." ;
+    chorus:color "#f3f4f6" ;
+    chorus:crosscuts chorus:Capturing, chorus:Directing, chorus:Designing, chorus:Building, chorus:Proving .
+
+# =============================================================================
+# 3. TOOLS
+# =============================================================================
+
+chorus:Tool a owl:Class ;
+    rdfs:label "Tool" ;
+    rdfs:comment "A capability available to roles within Chorus. Tools feed vertebrae, interact with products, or orchestrate work." .
+
+chorus:ToolType a owl:Class ;
+    rdfs:label "Tool Type" ;
+    rdfs:comment "Classification of tools by function." .
+
+chorus:Sense a chorus:ToolType ;
+    rdfs:label "Sense" ;
+    rdfs:comment "Input capture — eyes, ears, voice." .
+
+chorus:Interaction a chorus:ToolType ;
+    rdfs:label "Interaction" ;
+    rdfs:comment "Multi-party coordination and alignment." .
+
+chorus:Memory a chorus:ToolType ;
+    rdfs:label "Memory" ;
+    rdfs:comment "Persistent shared context — indexes, searches, remembers." .
+
+chorus:Orchestration a chorus:ToolType ;
+    rdfs:label "Orchestration" ;
+    rdfs:comment "Sequences and tracks work across roles." .
+
+chorus:Analysis a chorus:ToolType ;
+    rdfs:label "Analysis" ;
+    rdfs:comment "Decomposes, examines, produces structured insight." .
+
+# --- Tool instances ---
+
+chorus:look a chorus:Tool ;
+    rdfs:label "/look" ;
+    rdfs:comment "Screen capture — Jeff shows, Chorus sees." ;
+    chorus:toolType chorus:Sense ;
+    chorus:vizLabel "eyes" ;
+    chorus:color "#22d3ee" ;
+    chorus:status "live" .
+
+chorus:listen a chorus:Tool ;
+    rdfs:label "/listen" ;
+    rdfs:comment "Voice transcription — speech to text via local whisper.cpp." ;
+    chorus:toolType chorus:Sense ;
+    chorus:vizLabel "ears" ;
+    chorus:color "#22d3ee" ;
+    chorus:status "live" .
+
+chorus:talk a chorus:Tool ;
+    rdfs:label "/talk" ;
+    rdfs:comment "Voice output — text to speech." ;
+    chorus:toolType chorus:Sense ;
+    chorus:vizLabel "voice" ;
+    chorus:color "#22d3ee" ;
+    chorus:status "planned" .
+
+chorus:clearing a chorus:Tool ;
+    rdfs:label "/clearing" ;
+    rdfs:comment "Multi-party chat — Jeff + all roles in browser. Real-time alignment." ;
+    chorus:toolType chorus:Interaction ;
+    chorus:vizLabel "alignment" ;
+    chorus:color "#e6edf3" ;
+    chorus:status "live" .
+
+chorus:chorusTool a chorus:Tool ;
+    rdfs:label "/chorus" ;
+    rdfs:comment "Shared memory index — SQLite FTS5, 14k+ messages. Search, reconcile, remember." ;
+    chorus:toolType chorus:Memory ;
+    chorus:vizLabel "memory" ;
+    chorus:color "#c084fc" ;
+    chorus:status "live" .
+
+chorus:werk a chorus:Tool ;
+    rdfs:label "/werk" ;
+    rdfs:comment "Workflow engine — sequences decisions into steps across roles. IS the spine." ;
+    chorus:toolType chorus:Orchestration ;
+    chorus:vizLabel "the spine" ;
+    chorus:color "#fbbf24" ;
+    chorus:status "live" .
+
+chorus:borg a chorus:Tool ;
+    rdfs:label "Borg" ;
+    rdfs:comment "Codebase decomposition — structured assessment of code, architecture, tech debt." ;
+    chorus:toolType chorus:Analysis ;
+    chorus:vizLabel "decompose" ;
+    chorus:color "#f87171" ;
+    chorus:status "planned" .
+
+# =============================================================================
+# 4. PRODUCTS
+# =============================================================================
+
+chorus:Product a owl:Class ;
+    rdfs:label "Product" ;
+    rdfs:comment "A system being built by the team. Products are outputs of the spine AND inputs back to Capturing (feedback loop)." .
+
+chorus:gathering a chorus:Product ;
+    rdfs:label "Gathering" ;
+    rdfs:comment "Personal infrastructure — SOLID pods, knowledge graph, collections, Self domain. The product the spine builds." .
+
+# =============================================================================
+# 5. ARTIFACTS
+# =============================================================================
+
+chorus:ArtifactType a owl:Class ;
+    rdfs:label "Artifact Type" ;
+    rdfs:comment "Classification of work products by their role in the flow." .
+
+chorus:Card a chorus:ArtifactType ;
+    rdfs:label "Card" ;
+    rdfs:comment "Kanban board item. Entry point for pipeline work." .
+
+chorus:Brief a chorus:ArtifactType ;
+    rdfs:label "Brief" ;
+    rdfs:comment "Structured document in recipient's briefs/ directory. Carries substance." .
+
+chorus:ADR a chorus:ArtifactType ;
+    rdfs:label "ADR" ;
+    rdfs:comment "Architectural Decision Record. The why behind structural choices." .
+
+chorus:Commit a chorus:ArtifactType ;
+    rdfs:label "Commit" ;
+    rdfs:comment "Git commit with card reference. (#N) = Gathering, (C#N) = Chorus." .
+
+chorus:Signal a chorus:ArtifactType ;
+    rdfs:label "Signal" ;
+    rdfs:comment "Slack message. Ephemeral notification." .
+
+chorus:Screenshot a chorus:ArtifactType ;
+    rdfs:label "Screenshot" ;
+    rdfs:comment "Visual proof of shipped work. Required at Build Gate." .
+
+chorus:Decision a chorus:ArtifactType ;
+    rdfs:label "Decision" ;
+    rdfs:comment "A recorded choice that constrains future behavior. DEC-NNN in decisions.md." .
+
+# =============================================================================
+# 6. HANDOFFS (C#43)
+# =============================================================================
+
+chorus:Handoff a owl:Class ;
+    rdfs:label "Handoff" ;
+    rdfs:comment "Observable evidence that work moved between roles. Three properties: sent (timestamped), received (confirmed), visible (gaps surface automatically)." .
+
+chorus:HandoffType a owl:Class ;
+    rdfs:label "Handoff Type" .
+
+chorus:BriefHandoff a chorus:HandoffType ;
+    rdfs:label "Brief" ;
+    rdfs:comment "File written to target role's briefs/ directory." .
+
+chorus:WorkflowHandoff a chorus:HandoffType ;
+    rdfs:label "Workflow Step" ;
+    rdfs:comment "workflow-ts advance — step completion routes to next role." .
+
+chorus:DecisionHandoff a chorus:HandoffType ;
+    rdfs:label "Decision" ;
+    rdfs:comment "Decision made in Clearing or conversation, routed to affected role." .
+
+chorus:HandoffStatus a owl:Class ;
+    rdfs:label "Handoff Status" .
+
+chorus:Sent a chorus:HandoffStatus ;
+    rdfs:label "Sent" .
+
+chorus:Received a chorus:HandoffStatus ;
+    rdfs:label "Received" .
+
+chorus:Stale a chorus:HandoffStatus ;
+    rdfs:label "Stale" ;
+    rdfs:comment "Sent but not received after threshold (4h during work hours)." .
+
+# =============================================================================
+# 7. GATES
+# =============================================================================
+
+chorus:Gate a owl:Class ;
+    rdfs:label "Gate" ;
+    rdfs:comment "Quality gate between vertebrae. Failures bounce work backward." .
+
+chorus:GateResult a owl:Class ;
+    rdfs:label "Gate Result" .
+
+chorus:Pass a chorus:GateResult ; rdfs:label "Pass" .
+chorus:Fail a chorus:GateResult ; rdfs:label "Fail" .
+chorus:Override a chorus:GateResult ;
+    rdfs:label "Override" ;
+    rdfs:comment "Gate failed but Jeff overrode. Tracked for trust metrics." .
+
+chorus:DirectionGate a chorus:Gate ;
+    rdfs:label "Direction Gate" ;
+    chorus:fromStage chorus:Directing ;
+    chorus:toStage chorus:Designing ;
+    chorus:gatekeeper chorus:jeff .
+
+chorus:DesignGate a chorus:Gate ;
+    rdfs:label "Design Gate" ;
+    chorus:fromStage chorus:Designing ;
+    chorus:toStage chorus:Building ;
+    chorus:gatekeeper chorus:silas .
+
+chorus:BuildGate a chorus:Gate ;
+    rdfs:label "Build Gate" ;
+    chorus:fromStage chorus:Building ;
+    chorus:toStage chorus:Proving ;
+    chorus:gatekeeper chorus:kade .
+
+chorus:ProvingGate a chorus:Gate ;
+    rdfs:label "Proving Gate" ;
+    chorus:fromStage chorus:Proving ;
+    chorus:gatekeeper chorus:jeff .
+
+# =============================================================================
+# 8. WORKFLOWS
+# =============================================================================
+
+chorus:Workflow a owl:Class ;
+    rdfs:label "Workflow" ;
+    rdfs:comment "Sequenced execution of a decision across roles. WF-NNN manifests." .
+
+chorus:Step a owl:Class ;
+    rdfs:label "Step" ;
+    rdfs:comment "A unit of work within a workflow. Assigned to one role, produces artifacts." .
+
+chorus:WorkItem a owl:Class ;
+    rdfs:label "Work Item" ;
+    rdfs:comment "A unit of work flowing through the spine. Linked to a card." .
+
+chorus:StageTransition a owl:Class ;
+    rdfs:label "Stage Transition" ;
+    rdfs:comment "Record of a work item moving between vertebrae." .
+
+chorus:BounceBack a owl:Class ;
+    rdfs:subClassOf chorus:StageTransition ;
+    rdfs:label "Bounce Back" ;
+    rdfs:comment "Work returned to a prior stage after gate failure." .
+
+# =============================================================================
+# 9. TRUST + FITNESS
+# =============================================================================
+
+chorus:TrustMetric a owl:Class ;
+    rdfs:label "Trust Metric" ;
+    rdfs:comment "Emergent measure of system reliability. Computed from gate passages and handoff health." .
+
+chorus:GatePassRate a chorus:TrustMetric ;
+    rdfs:label "Gate Pass Rate" .
+
+chorus:BounceRate a chorus:TrustMetric ;
+    rdfs:label "Bounce Rate" .
+
+chorus:OverrideRate a chorus:TrustMetric ;
+    rdfs:label "Override Rate" .
+
+chorus:HandoffReceiptRate a chorus:TrustMetric ;
+    rdfs:label "Handoff Receipt Rate" ;
+    rdfs:comment "Handoffs received / handoffs sent. Per role. Low rate = broken connection." .
+
+chorus:FitnessFunction a owl:Class ;
+    rdfs:label "Fitness Function" ;
+    rdfs:comment "Testable assertion about team behavior. If this fails, the protocol has drifted." .
+
+chorus:Principle a owl:Class ;
+    rdfs:label "Principle" ;
+    rdfs:comment "A shared value. Stable. Patterns derive from principles." .
+
+# =============================================================================
+# 10. INTERACTIONS
+# =============================================================================
+
+chorus:InteractionMode a owl:Class ;
+    rdfs:label "Interaction Mode" ;
+    rdfs:comment "How two roles work together (Team Topologies)." .
+
+chorus:Collaboration a chorus:InteractionMode ;
+    rdfs:label "Collaboration" ;
+    rdfs:comment "High-bandwidth, temporary. Time-boxed." .
+
+chorus:XAsAService a chorus:InteractionMode ;
+    rdfs:label "X-as-a-Service" ;
+    rdfs:comment "Clear contract, low friction. Briefs are the interface." .
+
+chorus:Facilitating a chorus:InteractionMode ;
+    rdfs:label "Facilitating" ;
+    rdfs:comment "Teaching, not doing." .
+
+# =============================================================================
+# OBJECT PROPERTIES — Relationships
+# =============================================================================
+
+# --- Core viz relationships ---
+
+chorus:operatesAt a owl:ObjectProperty ;
+    rdfs:label "operates at" ;
+    rdfs:comment "Role works at this vertebra. Primary or secondary affinity." ;
+    rdfs:domain chorus:Role ;
+    rdfs:range chorus:Vertebra .
+
+chorus:feeds a owl:ObjectProperty ;
+    rdfs:label "feeds" ;
+    rdfs:comment "Tool provides input to this vertebra." ;
+    rdfs:domain chorus:Tool ;
+    rdfs:range chorus:Vertebra .
+
+chorus:indexes a owl:ObjectProperty ;
+    rdfs:label "indexes" ;
+    rdfs:comment "Tool remembers/indexes content. /chorus indexes everything." ;
+    rdfs:domain chorus:Tool .
+
+chorus:orchestrates a owl:ObjectProperty ;
+    rdfs:label "orchestrates" ;
+    rdfs:comment "/werk orchestrates workflows through the spine." ;
+    rdfs:domain chorus:Tool ;
+    rdfs:range chorus:Workflow .
+
+chorus:outputOf a owl:ObjectProperty ;
+    rdfs:label "output of" ;
+    rdfs:comment "Product emerges from Building + Proving." ;
+    rdfs:domain chorus:Product ;
+    rdfs:range chorus:Vertebra .
+
+chorus:inputTo a owl:ObjectProperty ;
+    rdfs:label "input to" ;
+    rdfs:comment "Product feeds back into Capturing. The feedback loop." ;
+    rdfs:domain chorus:Product ;
+    rdfs:range chorus:Vertebra .
+
+chorus:decomposes a owl:ObjectProperty ;
+    rdfs:label "decomposes" ;
+    rdfs:comment "Borg analyzes a product/codebase." ;
+    rdfs:domain chorus:Tool ;
+    rdfs:range chorus:Product .
+
+# --- Spine relationships ---
+
+chorus:nextStage a owl:ObjectProperty ;
+    rdfs:domain chorus:Vertebra ;
+    rdfs:range chorus:Vertebra .
+
+chorus:previousStage a owl:ObjectProperty ;
+    rdfs:domain chorus:Vertebra ;
+    rdfs:range chorus:Vertebra .
+
+chorus:feedsInto a owl:ObjectProperty ;
+    rdfs:comment "Proving → Directing feedback loop." ;
+    rdfs:domain chorus:Vertebra ;
+    rdfs:range chorus:Vertebra .
+
+chorus:exitArtifactType a owl:ObjectProperty ;
+    rdfs:domain chorus:Vertebra ;
+    rdfs:range chorus:ArtifactType .
+
+chorus:crosscuts a owl:ObjectProperty ;
+    rdfs:comment "An EventCategory that runs parallel to and underpins the listed vertebrae." ;
+    rdfs:domain chorus:EventCategory ;
+    rdfs:range chorus:Vertebra .
+
+# --- Gate relationships ---
+
+chorus:fromStage a owl:ObjectProperty ;
+    rdfs:domain chorus:Gate ;
+    rdfs:range chorus:Vertebra .
+
+chorus:toStage a owl:ObjectProperty ;
+    rdfs:domain chorus:Gate ;
+    rdfs:range chorus:Vertebra .
+
+chorus:gatekeeper a owl:ObjectProperty ;
+    rdfs:domain chorus:Gate ;
+    rdfs:range chorus:Role .
+
+# --- Handoff relationships ---
+
+chorus:handoffFrom a owl:ObjectProperty ;
+    rdfs:domain chorus:Handoff ;
+    rdfs:range chorus:Role .
+
+chorus:handoffTo a owl:ObjectProperty ;
+    rdfs:domain chorus:Handoff ;
+    rdfs:range chorus:Role .
+
+chorus:handoffType a owl:ObjectProperty ;
+    rdfs:domain chorus:Handoff ;
+    rdfs:range chorus:HandoffType .
+
+chorus:handoffStatus a owl:ObjectProperty ;
+    rdfs:domain chorus:Handoff ;
+    rdfs:range chorus:HandoffStatus .
+
+# --- Workflow relationships ---
+
+chorus:sequences a owl:ObjectProperty ;
+    rdfs:comment "Workflow contains ordered steps." ;
+    rdfs:domain chorus:Workflow ;
+    rdfs:range chorus:Step .
+
+chorus:assignedTo a owl:ObjectProperty ;
+    rdfs:domain chorus:Step ;
+    rdfs:range chorus:Role .
+
+chorus:produces a owl:ObjectProperty ;
+    rdfs:domain chorus:Step .
+
+chorus:createdBy a owl:ObjectProperty ;
+    rdfs:comment "Decision creates Workflow." ;
+    rdfs:domain chorus:Workflow ;
+    rdfs:range chorus:Decision .
+
+# --- Work item relationships ---
+
+chorus:currentStage a owl:ObjectProperty ;
+    rdfs:domain chorus:WorkItem ;
+    rdfs:range chorus:Vertebra .
+
+chorus:linkedCard a owl:ObjectProperty ;
+    rdfs:domain chorus:WorkItem ;
+    rdfs:range chorus:Card .
+
+chorus:evaluatedBy a owl:ObjectProperty ;
+    rdfs:domain chorus:StageTransition ;
+    rdfs:range chorus:Gate .
+
+chorus:result a owl:ObjectProperty ;
+    rdfs:domain chorus:StageTransition ;
+    rdfs:range chorus:GateResult .
+
+chorus:bouncedTo a owl:ObjectProperty ;
+    rdfs:domain chorus:BounceBack ;
+    rdfs:range chorus:Vertebra .
+
+# =============================================================================
+# DATATYPE PROPERTIES
+# =============================================================================
+
+chorus:stageOrder a owl:DatatypeProperty ;
+    rdfs:domain chorus:Vertebra ;
+    rdfs:range xsd:integer .
+
+chorus:domain a owl:DatatypeProperty ;
+    rdfs:comment "Role's domain label for viz display." ;
+    rdfs:domain chorus:Role ;
+    rdfs:range xsd:string .
+
+chorus:color a owl:DatatypeProperty ;
+    rdfs:comment "Hex color for viz rendering." ;
+    rdfs:range xsd:string .
+
+chorus:vizLabel a owl:DatatypeProperty ;
+    rdfs:comment "Short label shown on viz below the node." ;
+    rdfs:range xsd:string .
+
+chorus:status a owl:DatatypeProperty ;
+    rdfs:comment "Implementation status: live, designed, planned." ;
+    rdfs:range xsd:string .
+
+chorus:toolType a owl:ObjectProperty ;
+    rdfs:domain chorus:Tool ;
+    rdfs:range chorus:ToolType .
+
+chorus:channelName a owl:DatatypeProperty ;
+    rdfs:domain chorus:Role ;
+    rdfs:range xsd:string .
+
+chorus:cardId a owl:DatatypeProperty ;
+    rdfs:range xsd:string .
+
+chorus:blastRadius a owl:DatatypeProperty ;
+    rdfs:range xsd:string .
+
+chorus:feedback a owl:DatatypeProperty ;
+    rdfs:domain chorus:BounceBack ;
+    rdfs:range xsd:string .
+
+chorus:transitionDate a owl:DatatypeProperty ;
+    rdfs:domain chorus:StageTransition ;
+    rdfs:range xsd:dateTime .
+
+# =============================================================================
+# INSTANCE DATA — Role ↔ Vertebra Affinities
+# =============================================================================
+
+# Jeff: primarily Directing, secondarily Capturing (observes) + Proving (validates)
+chorus:jeff chorus:operatesAt chorus:Directing, chorus:Capturing, chorus:Proving .
+
+# Wren: primarily Directing + Designing, secondarily Capturing (intake)
+chorus:wren chorus:operatesAt chorus:Directing, chorus:Designing, chorus:Capturing .
+
+# Silas: primarily Designing + Building, secondarily Proving
+chorus:silas chorus:operatesAt chorus:Designing, chorus:Building, chorus:Proving .
+
+# Kade: primarily Building + Proving, secondarily Designing
+chorus:kade chorus:operatesAt chorus:Building, chorus:Proving, chorus:Designing .
+
+# =============================================================================
+# INSTANCE DATA — Tool ↔ Vertebra Feeds
+# =============================================================================
+
+chorus:look chorus:feeds chorus:Capturing .
+chorus:listen chorus:feeds chorus:Capturing .
+chorus:talk chorus:feeds chorus:Directing .
+chorus:clearing chorus:feeds chorus:Directing .
+chorus:clearing chorus:indexes chorus:chorusTool .
+chorus:borg chorus:feeds chorus:Designing .
+chorus:borg chorus:decomposes chorus:gathering .
+
+# /chorus is the memory layer — it indexes everything, doesn't feed a specific vertebra
+chorus:chorusTool chorus:indexes chorus:gathering .
+
+# /werk IS the spine — it orchestrates workflows through all vertebrae
+# (not a feed relationship — it's the container)
+
+# =============================================================================
+# INSTANCE DATA — Product Feedback Loop
+# =============================================================================
+
+chorus:gathering chorus:outputOf chorus:Building, chorus:Proving .
+chorus:gathering chorus:inputTo chorus:Capturing .

@@ -1,0 +1,117 @@
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix jb:    <https://jeffbridwell.com/ontology#> .
+@prefix shape: <urn:gathering:shapes/> .
+
+# SHACL Shape: Canonical Photo Record
+# Gate: no record enters urn:gathering:photos/canonical without passing this shape.
+# Card: #1705 | Author: Silas | Date: 2026-03-26
+#
+# A photo is not canonical until it has: a filename, a verified date,
+# a source provenance, a thumbnail on disk, and a stable UUID.
+# Incomplete records stay in the ingest error queue.
+
+shape:PhotoShape a sh:NodeShape ;
+    sh:targetClass jb:Photo ;
+    sh:message "Photo record incomplete — cannot enter canonical store" ;
+
+    # Required: original filename from source
+    sh:property [
+        sh:path jb:photoFilename ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 1 ;
+        sh:message "Missing or empty filename" ;
+    ] ;
+
+    # Required: date photo was taken (not backup/harvest date)
+    sh:property [
+        sh:path jb:dateTaken ;
+        sh:datatype xsd:dateTime ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Missing dateTaken — must be EXIF/ZDATECREATED, not extraction timestamp" ;
+    ] ;
+
+    # Required: source provenance (apple-photos | iphone | google-takeout)
+    sh:property [
+        sh:path jb:source ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "apple-photos" "iphone" "google-takeout" ) ;
+        sh:message "Missing or invalid source — must be apple-photos, iphone, or google-takeout" ;
+    ] ;
+
+    # Required: path to thumbnail file (verified to exist on disk)
+    sh:property [
+        sh:path jb:thumbnailPath ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 1 ;
+        sh:message "Missing thumbnailPath — every canonical photo must have a thumbnail" ;
+    ] ;
+
+    # Required: stable UUID (Apple ZUUID for Apple-sourced, md5(source+filename+date) for others)
+    sh:property [
+        sh:path jb:uuid ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" ;
+        sh:message "Missing or malformed UUID" ;
+    ] ;
+
+    # Optional: Apple Photos internal UUID (for derivative file resolution)
+    sh:property [
+        sh:path jb:appleUuid ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+    ] ;
+
+    # Optional: dimensions
+    sh:property [
+        sh:path jb:imageWidth ;
+        sh:datatype xsd:integer ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path jb:imageHeight ;
+        sh:datatype xsd:integer ;
+        sh:maxCount 1 ;
+    ] ;
+
+    # Optional: location
+    sh:property [
+        sh:path jb:latitude ;
+        sh:datatype xsd:decimal ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path jb:longitude ;
+        sh:datatype xsd:decimal ;
+        sh:maxCount 1 ;
+    ] ;
+
+    # Optional: place name
+    sh:property [
+        sh:path jb:placeName ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+    ] ;
+
+    # Optional: people in photo
+    sh:property [
+        sh:path jb:personName ;
+        sh:datatype xsd:string ;
+    ] ;
+
+    # Optional: media type
+    sh:property [
+        sh:path jb:mediaType ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:in ( "photo" "video" "screenshot" ) ;
+    ] .

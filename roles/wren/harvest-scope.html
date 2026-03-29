@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Harvest Scope — Live AC Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'Inter', system-ui, sans-serif; padding: 40px; }
+  .header { text-align: center; margin-bottom: 40px; }
+  .header h1 { font-size: 14px; text-transform: uppercase; letter-spacing: 3px; color: #666; margin-bottom: 8px; }
+  .header .subtitle { font-size: 12px; color: #444; }
+  .header .updated { font-size: 11px; color: #333; margin-top: 6px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1100px; margin: 0 auto; }
+  .grid-full { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+  .domain { background: #16213e; border: 2px solid #0f3460; border-radius: 10px; padding: 24px; position: relative; }
+  .domain.active { border-color: #e94560; }
+  .domain.done { border-color: #53d8a8; }
+
+  .domain-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+  .domain-title { font-size: 16px; font-weight: 700; color: #fff; }
+  .domain-card { font-size: 11px; color: #e94560; font-weight: 600; letter-spacing: 0.5px; }
+  .domain-status { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .domain-status.wip { background: #e9456020; color: #e94560; }
+  .domain-status.later { background: #f0a03020; color: #f0a030; }
+  .domain-status.done { background: #53d8a820; color: #53d8a8; }
+
+  /* Progress bar */
+  .progress-wrap { margin-bottom: 18px; }
+  .progress-bar { height: 6px; background: #0f3460; border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+  .progress-fill.red { background: #e94560; }
+  .progress-fill.yellow { background: #f0a030; }
+  .progress-fill.green { background: #53d8a8; }
+  .progress-label { display: flex; justify-content: space-between; margin-top: 6px; }
+  .progress-label span { font-size: 11px; color: #666; }
+  .progress-label .pct { color: #fff; font-weight: 600; }
+
+  /* Live counts */
+  .counts { display: flex; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  .count-box { text-align: center; flex: 1; min-width: 80px; }
+  .count-box .num { font-size: 22px; font-weight: 700; }
+  .count-box .num.live { color: #53d8a8; }
+  .count-box .num.target { color: #e94560; }
+  .count-box .num.gap { color: #f0a030; }
+  .count-box .num.neutral { color: #a0a0b8; }
+  .count-box .lbl { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  .count-box .num.loading { color: #333; animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 0.8; } }
+
+  /* Acceptance criteria */
+  .ac-list { list-style: none; }
+  .ac-list li { font-size: 13px; padding: 6px 0; border-bottom: 1px solid #0f346040; display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+  .ac-list li:last-child { border-bottom: none; }
+  .ac-icon { font-size: 14px; flex-shrink: 0; width: 18px; text-align: center; }
+  .ac-text { color: #a0a0b8; }
+  .ac-text.pass { color: #53d8a8; }
+  .ac-text.fail { color: #e94560; }
+  .ac-text.wip { color: #f0a030; }
+
+  /* Work cards */
+  .work-cards { margin-top: 14px; padding-top: 10px; border-top: 1px solid #0f3460; font-size: 11px; color: #555; }
+  .work-cards span { color: #e94560; font-weight: 600; }
+
+  /* Error state */
+  .query-error { font-size: 11px; color: #e94560; margin-bottom: 10px; }
+
+  /* Footer */
+  .footer { text-align: center; margin-top: 40px; font-size: 11px; color: #333; }
+
+  @media print {
+    body { background: #fff; color: #222; }
+    .domain { border-color: #ccc; background: #f8f8f8; }
+    .domain.active { border-color: #c33; }
+    .progress-bar { background: #ddd; }
+    .ac-text { color: #555; }
+    .ac-text.pass { color: #2a7; }
+    .ac-text.fail { color: #c33; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Harvest Scope Dashboard</h1>
+  <div class="subtitle">Live acceptance criteria &mdash; card to system state</div>
+  <div class="updated" id="last-updated"></div>
+</div>
+
+<div class="grid">
+
+  <!-- MUSIC #436 -->
+  <div class="domain active" id="music">
+    <div class="domain-head">
+      <div>
+        <div class="domain-title">Music</div>
+        <div class="domain-card">#436 &middot; Scope</div>
+      </div>
+      <div class="domain-status wip">Harvesting</div>
+    </div>
+    <div class="counts">
+      <div class="count-box"><div class="num target">100,658</div><div class="lbl">Source #1</div></div>
+      <div class="count-box"><div class="num live loading" id="music-count">&hellip;</div><div class="lbl">In Fuseki</div></div>
+      <div class="count-box"><div class="num gap" id="music-pct">&hellip;</div><div class="lbl">Ingested</div></div>
+      <div class="count-box"><div class="num gap" id="music-gap">&hellip;</div><div class="lbl">Gap</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill red" id="music-bar" style="width: 0%"></div></div>
+      <div class="progress-label"><span>0</span><span class="pct" id="music-bar-label">loading&hellip;</span><span>100,658</span></div>
+    </div>
+    <div class="query-error" id="music-error"></div>
+    <ul class="ac-list" id="music-ac">
+      <li><span class="ac-icon" id="music-ac1-icon">⬜</span><span class="ac-text" id="music-ac1">Source #1 count = Fuseki count (100,658)</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Spot check: 5 random tracks resolve to source files</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Sources #2/#3 overlap analyzed</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Spine events wired (harvest_start / harvest_complete)</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Total reconciled count documented</span></li>
+    </ul>
+    <div class="work-cards">Work: <span>#396</span> (Kade, WIP)</div>
+  </div>
+
+  <!-- PHOTOS #437 -->
+  <div class="domain active" id="photos">
+    <div class="domain-head">
+      <div>
+        <div class="domain-title">Photos</div>
+        <div class="domain-card">#437 &middot; Scope</div>
+      </div>
+      <div class="domain-status wip">Harvesting</div>
+    </div>
+    <div class="counts">
+      <div class="count-box"><div class="num target">~44,193</div><div class="lbl">Source (Primary)</div></div>
+      <div class="count-box"><div class="num live loading" id="photos-count">&hellip;</div><div class="lbl">In Fuseki</div></div>
+      <div class="count-box"><div class="num gap" id="photos-pct">&hellip;</div><div class="lbl">Ingested</div></div>
+      <div class="count-box"><div class="num gap" id="photos-gap">&hellip;</div><div class="lbl">Gap</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill yellow" id="photos-bar" style="width: 0%"></div></div>
+      <div class="progress-label"><span>0</span><span class="pct" id="photos-bar-label">loading&hellip;</span><span>~44,193</span></div>
+    </div>
+    <div class="query-error" id="photos-error"></div>
+    <ul class="ac-list">
+      <li><span class="ac-icon" id="photos-ac1-icon">⬜</span><span class="ac-text" id="photos-ac1">Re-harvest with source paths + file hash + file size</span></li>
+      <li><span class="ac-icon" id="photos-ac2-icon">⬜</span><span class="ac-text" id="photos-ac2">Count: ~44,193 photos in Fuseki</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Spot check: 5 random photos resolve to source files</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">GPS, faces, albums metadata complete where available</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text neutral">Phase 2: External storage (~175K files) — deferred</span></li>
+    </ul>
+    <div class="work-cards">Work: no active card yet</div>
+  </div>
+
+  <!-- SEXUALITY #438 -->
+  <div class="domain" id="sexuality">
+    <div class="domain-head">
+      <div>
+        <div class="domain-title">Sexuality</div>
+        <div class="domain-card">#438 &middot; Scope</div>
+      </div>
+      <div class="domain-status later">Later</div>
+    </div>
+    <div class="counts">
+      <div class="count-box"><div class="num live loading" id="sex-models">&hellip;</div><div class="lbl">Models</div></div>
+      <div class="count-box"><div class="num live loading" id="sex-photos">&hellip;</div><div class="lbl">Photos</div></div>
+      <div class="count-box"><div class="num live loading" id="sex-videos">&hellip;</div><div class="lbl">Videos</div></div>
+      <div class="count-box"><div class="num live loading" id="sex-archives">&hellip;</div><div class="lbl">Archives</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill green" id="sex-bar" style="width: 80%"></div></div>
+      <div class="progress-label"><span>Phase 1 shipped</span><span class="pct">4 / 5</span><span>Search pending</span></div>
+    </div>
+    <div class="query-error" id="sex-error"></div>
+    <ul class="ac-list">
+      <li><span class="ac-icon">✅</span><span class="ac-text pass">Model gallery page with search (#377)</span></li>
+      <li><span class="ac-icon">✅</span><span class="ac-text pass">Content drill-in working (#377)</span></li>
+      <li><span class="ac-icon">✅</span><span class="ac-text pass">Dual read path — SPARQL + HTTP proxy (#395)</span></li>
+      <li><span class="ac-icon">✅</span><span class="ac-text pass">Live stats from SPARQL (#395)</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Search integration — /search includes sexuality content (#363)</span></li>
+    </ul>
+    <div class="work-cards">Done: <span>#377</span> <span>#395</span> &middot; Remaining: <span>#363</span> (not started)</div>
+  </div>
+
+  <!-- STORIES #439 -->
+  <div class="domain" id="stories">
+    <div class="domain-head">
+      <div>
+        <div class="domain-title">Stories</div>
+        <div class="domain-card">#439 &middot; Scope</div>
+      </div>
+      <div class="domain-status later">Later</div>
+    </div>
+    <div class="counts">
+      <div class="count-box"><div class="num live loading" id="stories-count">&hellip;</div><div class="lbl">In Fuseki</div></div>
+      <div class="count-box"><div class="num neutral">38</div><div class="lbl">TTL files</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill yellow" id="stories-bar" style="width: 25%"></div></div>
+      <div class="progress-label"><span>Manual capture</span><span class="pct">1 / 4</span><span>Pipeline needed</span></div>
+    </div>
+    <div class="query-error" id="stories-error"></div>
+    <ul class="ac-list">
+      <li><span class="ac-icon" id="stories-ac1-icon">🔄</span><span class="ac-text wip" id="stories-ac1">38 stories have complete metadata</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Automated extraction from Chorus index</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Wren validation gate — human confirms before storage</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">New stories captured within same session</span></li>
+    </ul>
+    <div class="work-cards">Done: <span>#330</span> <span>#339</span> &middot; Pipeline not built yet</div>
+  </div>
+
+  <!-- NOTES #442 -->
+  <div class="domain" id="notes">
+    <div class="domain-head">
+      <div>
+        <div class="domain-title">Notes</div>
+        <div class="domain-card">#442 &middot; Scope</div>
+      </div>
+      <div class="domain-status later">Later</div>
+    </div>
+    <div class="counts">
+      <div class="count-box"><div class="num target">823</div><div class="lbl">Source (Apple Notes)</div></div>
+      <div class="count-box"><div class="num live loading" id="notes-count">&hellip;</div><div class="lbl">In Fuseki</div></div>
+      <div class="count-box"><div class="num live loading" id="notes-folders">&hellip;</div><div class="lbl">Folders</div></div>
+      <div class="count-box"><div class="num gap" id="notes-pct">&hellip;</div><div class="lbl">Ingested</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill green" id="notes-bar" style="width: 0%"></div></div>
+      <div class="progress-label"><span>0</span><span class="pct" id="notes-bar-label">loading&hellip;</span><span>823</span></div>
+    </div>
+    <div class="query-error" id="notes-error"></div>
+    <ul class="ac-list">
+      <li><span class="ac-icon" id="notes-ac1-icon">⬜</span><span class="ac-text" id="notes-ac1">Source count = Fuseki count (823 baseline)</span></li>
+      <li><span class="ac-icon">✅</span><span class="ac-text pass">All 47 folders preserved and filterable</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Spot check: 5 random notes render correctly</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Re-harvest captures new notes since Feb 22</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Spine events wired (harvest_start / harvest_complete)</span></li>
+    </ul>
+    <div class="work-cards">Harvester operational &middot; Last run: 2026-02-22</div>
+  </div>
+
+  <!-- SOCIAL MEDIA #443 -->
+  <div class="domain" id="social">
+    <div class="domain-head">
+      <div>
+        <div class="domain-title">Social Media</div>
+        <div class="domain-card">#443 &middot; Scope</div>
+      </div>
+      <div class="domain-status later">Later</div>
+    </div>
+    <div class="counts">
+      <div class="count-box"><div class="num live loading" id="social-count">&hellip;</div><div class="lbl">Posts in Fuseki</div></div>
+      <div class="count-box"><div class="num neutral">0</div><div class="lbl">Sources Connected</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill red" id="social-bar" style="width: 0%"></div></div>
+      <div class="progress-label"><span>Not started</span><span class="pct">0 / 6</span><span>Skeleton only</span></div>
+    </div>
+    <div class="query-error" id="social-error"></div>
+    <ul class="ac-list">
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Facebook data export ingested &mdash; count matches export</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">LinkedIn data export ingested &mdash; count matches export</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Platform filter works on collection page</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Spot check: 5 random posts render with content + date + platform</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">SPARQL query wired in ontology-view handler</span></li>
+      <li><span class="ac-icon">⬜</span><span class="ac-text">Harvester built for at least one platform</span></li>
+    </ul>
+    <div class="work-cards">No active card &middot; Routes + ontology + UI skeleton exist</div>
+  </div>
+
+</div>
+
+<div class="footer">
+  Chorus &middot; Harvest Scope &middot; Card AC &rarr; System State
+</div>
+
+<script>
+const FUSEKI = 'http://localhost:3031/pods/sparql';
+const JB = 'https://jeffbridwell.com/ontology#';
+
+async function sparql(query) {
+  const res = await fetch(FUSEKI, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/sparql-query', 'Accept': 'application/sparql-results+json' },
+    body: query
+  });
+  if (!res.ok) throw new Error(`SPARQL ${res.status}`);
+  return res.json();
+}
+
+function num(el, value) {
+  el.textContent = Number(value).toLocaleString();
+  el.classList.remove('loading');
+}
+
+function err(id, msg) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = msg;
+}
+
+// --- Music ---
+async function loadMusic() {
+  try {
+    const r = await sparql(`
+      SELECT (COUNT(DISTINCT ?track) AS ?tracks) (COUNT(DISTINCT ?album) AS ?albums)
+      WHERE {
+        GRAPH ?g {
+          { ?track a <${JB}Track> }
+          UNION
+          { ?album a <${JB}Album> }
+        }
+        FILTER(STRSTARTS(STR(?g), "https://jeffbridwell.com/pods/jeff/music/"))
+      }
+    `);
+    const b = r.results.bindings[0];
+    const tracks = parseInt(b?.tracks?.value || '0');
+    const albums = parseInt(b?.albums?.value || '0');
+    const source = 100658;
+    const pct = Math.round((tracks / source) * 100);
+    const gap = source - tracks;
+
+    num(document.getElementById('music-count'), tracks);
+    const pctEl = document.getElementById('music-pct');
+    pctEl.textContent = pct + '%';
+    pctEl.classList.remove('loading');
+    const gapEl = document.getElementById('music-gap');
+    gapEl.textContent = gap.toLocaleString();
+    gapEl.classList.remove('loading');
+
+    document.getElementById('music-bar').style.width = pct + '%';
+    document.getElementById('music-bar-label').textContent = pct + '% ingested';
+
+    // Update AC #1 based on live count
+    const ac1Icon = document.getElementById('music-ac1-icon');
+    const ac1Text = document.getElementById('music-ac1');
+    if (pct >= 99) {
+      ac1Icon.textContent = '✅';
+      ac1Text.className = 'ac-text pass';
+    } else if (pct > 0) {
+      ac1Icon.textContent = '🔄';
+      ac1Text.className = 'ac-text wip';
+    }
+    ac1Text.textContent = `Source #1 count = Fuseki count (${tracks.toLocaleString()} / ${source.toLocaleString()})`;
+  } catch (e) {
+    err('music-error', 'Fuseki unreachable — ' + e.message);
+  }
+}
+
+// --- Photos ---
+async function loadPhotos() {
+  try {
+    const r = await sparql(`
+      SELECT (COUNT(DISTINCT ?photo) AS ?photos) (COUNT(DISTINCT ?album) AS ?albums)
+      WHERE {
+        GRAPH ?g {
+          { ?photo a <${JB}Photo> }
+          UNION
+          { ?album a <${JB}PhotoAlbum> }
+        }
+        FILTER(STRSTARTS(STR(?g), "https://jeffbridwell.com/pods/jeff/photos"))
+      }
+    `);
+    const b = r.results.bindings[0];
+    const photos = parseInt(b?.photos?.value || '0');
+    const source = 44193;
+    const pct = Math.round((photos / source) * 100);
+    const gap = source - photos;
+
+    num(document.getElementById('photos-count'), photos);
+    const pctEl = document.getElementById('photos-pct');
+    pctEl.textContent = pct + '%';
+    pctEl.classList.remove('loading');
+    const gapEl = document.getElementById('photos-gap');
+    gapEl.textContent = gap.toLocaleString();
+    gapEl.classList.remove('loading');
+
+    document.getElementById('photos-bar').style.width = pct + '%';
+    document.getElementById('photos-bar-label').textContent = pct + '% ingested';
+
+    // Update AC based on live count
+    const ac2Icon = document.getElementById('photos-ac2-icon');
+    const ac2Text = document.getElementById('photos-ac2');
+    if (pct >= 99) {
+      ac2Icon.textContent = '✅';
+      ac2Text.className = 'ac-text pass';
+    } else if (pct > 0) {
+      ac2Icon.textContent = '🔄';
+      ac2Text.className = 'ac-text wip';
+    }
+    ac2Text.textContent = `Count: ${photos.toLocaleString()} / ~${source.toLocaleString()} photos in Fuseki`;
+  } catch (e) {
+    err('photos-error', 'Fuseki unreachable — ' + e.message);
+  }
+}
+
+// --- Sexuality ---
+async function loadSexuality() {
+  try {
+    const r = await sparql(`
+      SELECT
+        (COUNT(DISTINCT ?model) AS ?models)
+        (COUNT(DISTINCT ?photo) AS ?photos)
+        (COUNT(DISTINCT ?video) AS ?videos)
+        (COUNT(DISTINCT ?archive) AS ?archives)
+      WHERE {
+        GRAPH ?g {
+          { ?model a <${JB}Model> }
+          UNION { ?photo a <${JB}MediaPhoto> }
+          UNION { ?video a <${JB}Video> }
+          UNION { ?archive a <${JB}MediaArchive> }
+        }
+        FILTER(STRSTARTS(STR(?g), "https://jeffbridwell.com/pods/jeff/media/"))
+      }
+    `);
+    const b = r.results.bindings[0];
+    num(document.getElementById('sex-models'), b?.models?.value || '0');
+    num(document.getElementById('sex-photos'), b?.photos?.value || '0');
+    num(document.getElementById('sex-videos'), b?.videos?.value || '0');
+    num(document.getElementById('sex-archives'), b?.archives?.value || '0');
+  } catch (e) {
+    err('sex-error', 'Fuseki unreachable — ' + e.message);
+  }
+}
+
+// --- Stories ---
+async function loadStories() {
+  try {
+    const r = await sparql(`
+      SELECT (COUNT(DISTINCT ?s) AS ?count)
+      WHERE {
+        GRAPH ?g { ?s a <${JB}Story> }
+        FILTER(STRSTARTS(STR(?g), "https://jeffbridwell.com/pods/jeff/stories"))
+      }
+    `);
+    const b = r.results.bindings[0];
+    const count = parseInt(b?.count?.value || '0');
+    num(document.getElementById('stories-count'), count);
+
+    const ac1Icon = document.getElementById('stories-ac1-icon');
+    const ac1Text = document.getElementById('stories-ac1');
+    if (count >= 38) {
+      ac1Icon.textContent = '✅';
+      ac1Text.className = 'ac-text pass';
+    }
+    ac1Text.textContent = `${count} stories in Fuseki (target: 38 with complete metadata)`;
+  } catch (e) {
+    err('stories-error', 'Fuseki unreachable — ' + e.message);
+  }
+}
+
+// --- Notes ---
+async function loadNotes() {
+  try {
+    const r = await sparql(`
+      SELECT (COUNT(DISTINCT ?note) AS ?notes) (COUNT(DISTINCT ?folder) AS ?folders)
+      WHERE {
+        GRAPH ?g {
+          ?note a <${JB}Note> .
+          OPTIONAL { ?note <${JB}noteFolder> ?folder }
+        }
+        FILTER(STRSTARTS(STR(?g), "https://jeffbridwell.com/pods/jeff/notes"))
+      }
+    `);
+    const b = r.results.bindings[0];
+    const notes = parseInt(b?.notes?.value || '0');
+    const folders = parseInt(b?.folders?.value || '0');
+    const source = 823;
+    const pct = source > 0 ? Math.round((notes / source) * 100) : 0;
+
+    num(document.getElementById('notes-count'), notes);
+    num(document.getElementById('notes-folders'), folders);
+    const pctEl = document.getElementById('notes-pct');
+    pctEl.textContent = pct + '%';
+    pctEl.classList.remove('loading');
+
+    document.getElementById('notes-bar').style.width = Math.min(pct, 100) + '%';
+    document.getElementById('notes-bar-label').textContent = pct + '% ingested';
+
+    const ac1Icon = document.getElementById('notes-ac1-icon');
+    const ac1Text = document.getElementById('notes-ac1');
+    if (pct >= 99) {
+      ac1Icon.textContent = '✅';
+      ac1Text.className = 'ac-text pass';
+    } else if (pct > 0) {
+      ac1Icon.textContent = '🔄';
+      ac1Text.className = 'ac-text wip';
+    }
+    ac1Text.textContent = `Source count = Fuseki count (${notes.toLocaleString()} / ${source.toLocaleString()})`;
+  } catch (e) {
+    err('notes-error', 'Fuseki unreachable — ' + e.message);
+  }
+}
+
+// --- Social Media ---
+async function loadSocial() {
+  try {
+    const r = await sparql(`
+      SELECT (COUNT(DISTINCT ?post) AS ?posts)
+      WHERE {
+        GRAPH ?g { ?post a <${JB}SocialPost> }
+        FILTER(STRSTARTS(STR(?g), "https://jeffbridwell.com/pods/jeff/socialposts"))
+      }
+    `);
+    const b = r.results.bindings[0];
+    const posts = parseInt(b?.posts?.value || '0');
+    num(document.getElementById('social-count'), posts);
+
+    if (posts > 0) {
+      document.getElementById('social-bar').style.width = '16%';
+    }
+  } catch (e) {
+    err('social-error', 'Fuseki unreachable — ' + e.message);
+  }
+}
+
+// Load all
+async function refresh() {
+  document.getElementById('last-updated').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();
+  await Promise.allSettled([loadMusic(), loadPhotos(), loadSexuality(), loadStories(), loadNotes(), loadSocial()]);
+}
+
+refresh();
+// Auto-refresh every 60s
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>
