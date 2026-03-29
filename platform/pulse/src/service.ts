@@ -7,12 +7,88 @@
 
 import express from 'express';
 import { MessageStore } from './store';
+import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 
 const PORT = parseInt(process.env.MESSAGING_PORT || '3475');
 const app = express();
 app.use(express.json());
 
 const store = new MessageStore();
+
+// --- Prometheus metrics ---
+const register = new Registry();
+collectDefaultMetrics({ register });
+
+const httpRequestDuration = new Histogram({
+  name: 'messaging_http_request_duration_seconds',
+  help: 'HTTP request duration in seconds',
+  labelNames: ['method', 'path', 'status'],
+  buckets: [0.01, 0.05, 0.1, 0.5, 1, 5],
+  registers: [register],
+});
+
+const nudgesReceived = new Counter({
+  name: 'messaging_nudges_received_total',
+  help: 'Total nudges received',
+  labelNames: ['from', 'to'],
+  registers: [register],
+});
+
+const nudgesAcked = new Counter({
+  name: 'messaging_nudges_acknowledged_total',
+  help: 'Total nudges acknowledged',
+  registers: [register],
+});
+
+const nudgeQueueDepth = new Gauge({
+  name: 'messaging_nudge_queue_depth',
+  help: 'Number of unacknowledged nudges',
+  registers: [register],
+});
+
+const deadLetterCount = new Counter({
+  name: 'messaging_dead_letter_total',
+  help: 'Total messages dead-lettered',
+  registers: [register],
+});
+
+// --- Structured logging ---
+function log(level: string, event: string, data?: Record<string, unknown>): void {
+  const entry = {
+    ts: new Date().toISOString(),
+    level,
+    event,
+    ...data,
+  };
+  process.stderr.write(JSON.stringify(entry) + '\n');
+}
+
+// --- Request logging middleware ---
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    const durationSec = durationMs / 1000;
+    const route = req.route?.path || req.path;
+    httpRequestDuration.labels(req.method, route, String(res.statusCode)).observe(durationSec);
+    log('info', 'http.request', {
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs),
+    });
+  });
+  next();
+});
+
+// --- Metrics endpoint ---
+app.get('/metrics', async (_req, res) => {
+  // Update queue depth gauge before scrape
+  const stats = store.getStats();
+  nudgeQueueDepth.set(stats.pending);
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
 
 // --- Health ---
 app.get('/health', (_req, res) => {
@@ -25,6 +101,8 @@ app.post('/api/nudge', (req, res) => {
   const { from, to, content } = req.body;
   if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
   const id = store.sendNudge(from, to, content);
+  nudgesReceived.labels(from, to).inc();
+  log('info', 'nudge.received', { id, from, to, chars: content.length });
   res.json({ ok: true, id });
 });
 
@@ -35,11 +113,15 @@ app.get('/api/nudge/:role/pending', (req, res) => {
 
 app.post('/api/nudge/:id/ack', (req, res) => {
   store.acknowledgeNudge(parseInt(req.params.id));
+  nudgesAcked.inc();
+  log('info', 'nudge.acknowledged', { id: req.params.id });
   res.json({ ok: true });
 });
 
 app.post('/api/nudge/:role/ack-all', (req, res) => {
   const count = store.acknowledgeAllNudges(req.params.role);
+  nudgesAcked.inc(count);
+  log('info', 'nudge.ack-all', { role: req.params.role, count });
   res.json({ ok: true, acknowledged: count });
 });
 
@@ -76,12 +158,21 @@ app.get('/api/dead-letter', (_req, res) => {
 });
 
 app.post('/api/dead-letter/:id/replay', (req, res) => {
-  store.replayDeadLetter(parseInt(req.params.id));
+  const id = parseInt(req.params.id);
+  store.replayDeadLetter(id);
+  log('info', 'dead-letter.replayed', { id });
   res.json({ ok: true });
 });
 
 app.post('/api/nudge/:id/attempt', (req, res) => {
-  const result = store.recordDeliveryAttempt(parseInt(req.params.id));
+  const id = parseInt(req.params.id);
+  const result = store.recordDeliveryAttempt(id);
+  if (result.deadLettered) {
+    deadLetterCount.inc();
+    log('warn', 'nudge.dead-lettered', { id, reason: 'max delivery attempts exceeded' });
+  } else {
+    log('info', 'nudge.delivery-attempt', { id });
+  }
   res.json({ ok: true, ...result });
 });
 
@@ -125,9 +216,10 @@ app.get('/api/stats', (_req, res) => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => { store.close(); process.exit(0); });
-process.on('SIGINT', () => { store.close(); process.exit(0); });
+process.on('SIGTERM', () => { log('info', 'shutdown', { signal: 'SIGTERM' }); store.close(); process.exit(0); });
+process.on('SIGINT', () => { log('info', 'shutdown', { signal: 'SIGINT' }); store.close(); process.exit(0); });
 
 app.listen(PORT, () => {
-  console.log(`Messaging service listening on http://localhost:${PORT}`);
+  const stats = store.getStats();
+  log('info', 'startup', { port: PORT, ...stats });
 });

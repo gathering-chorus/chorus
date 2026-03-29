@@ -608,7 +608,7 @@ app.get('/api/messages', (_req, res) => res.json(messageRouter.getRecent(50)));
 app.post('/api/message', (req, res) => {
   const { from, text } = req.body;
   if (!from || !text) return res.status(400).json({ error: 'from and text required' });
-  messageRouter.ingest({ from, text, ts: new Date().toISOString(), type: 'role-response' });
+  messageRouter.ingest({ from, text, ts: new Date().toISOString(), type: req.body.type || 'role-response' });
   res.json({ ok: true });
 });
 

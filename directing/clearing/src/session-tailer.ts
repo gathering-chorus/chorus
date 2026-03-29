@@ -241,16 +241,25 @@ export class SessionTailer {
       if (combined.match(/^\[(reply|ack|feedback|direction|correction)\]/i)) return;
       // Chat channel messages between roles
       if (combined.includes('chat.sh')) return;
-      if (combined.match(/^\[chat\]/i)) return;
+      if (combined.match(/\[chat\]/i)) return;
+      if (combined.match(/chat (file|channel|nudge|delivery|silas-kade|kade-silas|wren-silas|silas-wren|wren-kade|kade-wren)/i)) return;
       if (combined.match(/^nudge\.sh|^bash.*nudge\.sh/)) return;
+      // Messaging tier coordination
+      if (combined.match(/messaging (tier|API|api)/i) && !combined.includes('Jeff')) return;
       // Role-to-role delivery confirmations
       if (combined.match(/^DELIVERED to (wren|silas|kade)/i)) return;
       // Hook echo — bridge events reflected back through session
       if (combined.includes('[bridge]')) return;
-      // Nudge delivery confirmations
-      if (combined.match(/^(Delivered to|Nudged |Ack\b|Acknowledged\b|Test nudge)/i)) return;
+      // Nudge delivery confirmations and receipts
+      if (combined.match(/^(Delivered to|Nudged |Ack\b|Acknowledged\b|Test nudge|Copy\.|Copy,|Got it)/i)) return;
+      if (combined.match(/DELIVERED to (wren|silas|kade)/i)) return;
+      if (combined.match(/nudge(s|d)? (received|landed|confirmed|delivered|hit)/i)) return;
+      if (combined.match(/^(Wren|Silas|Kade)'s (nudge|test|exchange|drain)/i)) return;
+      if (combined.match(/^All (three|3) (directions|roles|nudges)/i)) return;
+      if (combined.match(/^(Draining nudges|Nudge(s)? drained)/i)) return;
+      if (combined.match(/reply expected/i)) return;
       // Pure coordination — not Jeff-facing
-      if (combined.match(/^(Noted |Standing by|Test nudges|More test nudges)/i)) return;
+      if (combined.match(/^(Noted |Standing by|Test nudges|More test nudges|No action needed|Pipeline (solid|confirmed))/i)) return;
       // Spine event echoes — tailer.ts handles these as typed events (demo-ready, accept-request)
       if (combined.match(/^(Pulled #|Moved #|Demo ready:|Accepted #|card\.\w+)/)) return;
       // State declarations and board ops

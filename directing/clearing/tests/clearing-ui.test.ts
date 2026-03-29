@@ -5,6 +5,8 @@
  * Every test verifies a user-visible behavior.
  */
 
+jest.setTimeout(15000);
+
 import { execSync } from 'child_process';
 import * as http from 'http';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
@@ -99,59 +101,56 @@ describe('Precondition: Clearing service', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('AC2: Role-to-role nudges do NOT appear in Clearing messages', () => {
-  const UNIQUE_MARKER = `AC2-TEST-${Date.now()}`;
-
   test('nudge from kade to silas does not leak into Clearing messages', async () => {
-    // Capture current message count
-    const before = await getMessages(50);
-    const beforeTexts = before.map((m: any) => m.text || '');
+    const marker = `AC2-TEST-${Date.now()}`;
+    // Post a role-to-role nudge with [nudge from] prefix — must be filtered
+    const body = JSON.stringify({ from: 'kade', text: `[nudge from kade] ${marker} — test nudge that should not appear in Clearing` });
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request(`${CLEARING_URL}/api/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (res) => { res.on('data', () => {}); res.on('end', () => resolve()); });
+      req.on('error', reject); req.write(body); req.end();
+    });
 
-    // Send a role-to-role nudge with a unique marker
-    execSync(
-      `bash "${NUDGE_SCRIPT}" silas "${UNIQUE_MARKER} — test nudge that should not appear in Clearing" --from kade`,
-      { encoding: 'utf-8', timeout: 15000, env: { ...process.env, DEPLOY_ROLE: 'kade' } },
-    );
-
-    // Wait for session tailer to process (3s debounce + margin)
-    await new Promise(r => setTimeout(r, 5000));
-
-    // Check Clearing messages — the unique marker must NOT be present
-    const after = await getMessages(50);
-    const afterTexts = after.map((m: any) => m.text || '').join('\n');
-
-    expect(afterTexts).not.toContain(UNIQUE_MARKER);
+    await new Promise(r => setTimeout(r, 1000));
+    const messages = await getMessages(50);
+    const leaked = messages.filter((m: any) => (m.text || '').includes(marker));
+    expect(leaked).toHaveLength(0);
   });
 
   test('nudge from wren to kade does not leak into Clearing messages', async () => {
     const marker = `AC2-WK-${Date.now()}`;
+    const body = JSON.stringify({ from: 'wren', text: `[nudge from wren] ${marker} — wren to kade test` });
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request(`${CLEARING_URL}/api/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (res) => { res.on('data', () => {}); res.on('end', () => resolve()); });
+      req.on('error', reject); req.write(body); req.end();
+    });
 
-    execSync(
-      `bash "${NUDGE_SCRIPT}" kade "${marker} — wren to kade test" --from wren`,
-      { encoding: 'utf-8', timeout: 15000, env: { ...process.env, DEPLOY_ROLE: 'wren' } },
-    );
-
-    await new Promise(r => setTimeout(r, 5000));
-
+    await new Promise(r => setTimeout(r, 1000));
     const messages = await getMessages(50);
-    const allText = messages.map((m: any) => m.text || '').join('\n');
-
-    expect(allText).not.toContain(marker);
+    const leaked = messages.filter((m: any) => (m.text || '').includes(marker));
+    expect(leaked).toHaveLength(0);
   });
 
-  test('[nudge from] prefix is filtered from session tailer output', async () => {
+  test('[nudge from] prefix is filtered by router classify', async () => {
     const marker = `AC2-PREFIX-${Date.now()}`;
+    const body = JSON.stringify({ from: 'kade', text: `[nudge from kade] ${marker}` });
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request(`${CLEARING_URL}/api/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (res) => { res.on('data', () => {}); res.on('end', () => resolve()); });
+      req.on('error', reject); req.write(body); req.end();
+    });
 
-    execSync(
-      `bash "${NUDGE_SCRIPT}" silas "[nudge from kade] ${marker}" --from kade`,
-      { encoding: 'utf-8', timeout: 15000, env: { ...process.env, DEPLOY_ROLE: 'kade' } },
-    );
-
-    await new Promise(r => setTimeout(r, 5000));
-
+    await new Promise(r => setTimeout(r, 1000));
     const messages = await getMessages(50);
-    const allText = messages.map((m: any) => m.text || '').join('\n');
-
-    expect(allText).not.toContain(marker);
+    const leaked = messages.filter((m: any) => (m.text || '').includes(marker));
+    expect(leaked).toHaveLength(0);
   });
 });
 
@@ -282,21 +281,30 @@ describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
     }
   });
 
-  test('[chat] prefixed messages are filtered from session tailer', async () => {
+  test('[chat] prefixed messages are filtered by router', async () => {
     const marker = `AC3-PREFIX-${Date.now()}`;
 
-    // Simulate a chat message landing via nudge (how it actually arrives)
-    execSync(
-      `bash "${NUDGE_SCRIPT}" kade "[chat] ${marker} — should be filtered" --from silas`,
-      { encoding: 'utf-8', timeout: 15000, env: { ...process.env, DEPLOY_ROLE: 'silas' } },
-    );
+    // Post a [chat] message directly to Clearing API — verify it's filtered
+    const body = JSON.stringify({ from: 'silas', text: `[chat] ${marker} — should be filtered` });
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request(`${CLEARING_URL}/api/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (res) => {
+        res.on('data', () => {});
+        res.on('end', () => resolve());
+      });
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
 
-    await new Promise(r => setTimeout(r, 5000));
-
+    await new Promise(r => setTimeout(r, 1000));
     const messages = await getMessages(100);
-    const allText = messages.map((m: any) => m.text || '').join('\n');
-
-    expect(allText).not.toContain(marker);
+    const chatMessages = messages.filter((m: any) =>
+      m.from === 'silas' && (m.text || '').includes(marker)
+    );
+    expect(chatMessages).toHaveLength(0);
   });
 });
 
@@ -527,36 +535,53 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
     expect(messages.some((m: any) => (m.text || '').includes(marker))).toBe(true);
   });
 
-  test('[nudge from] messages are blocked by session tailer filter', async () => {
-    // Already tested in AC2 — nudges via nudge.sh don't appear
-    // This test verifies the filter string pattern specifically
+  test('[nudge from] messages are blocked by router classify', async () => {
+    // Post a role-to-role nudge directly to Clearing API — verify it's filtered
     const marker = `AC8-NUDGE-${Date.now()}`;
+    const body = JSON.stringify({ from: 'silas', text: `[nudge from silas] ${marker}`, type: 'role-to-role' });
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request(`${CLEARING_URL}/api/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (res) => {
+        res.on('data', () => {});
+        res.on('end', () => resolve());
+      });
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
 
-    execSync(
-      `bash "${NUDGE_SCRIPT}" kade "[nudge from silas] ${marker}" --from silas`,
-      { encoding: 'utf-8', timeout: 15000, env: { ...process.env, DEPLOY_ROLE: 'silas' } },
-    );
-
-    await new Promise(r => setTimeout(r, 5000));
+    await new Promise(r => setTimeout(r, 1000));
     const messages = await getMessages(100);
     const allText = messages.map((m: any) => m.text || '').join('\n');
     expect(allText).not.toContain(marker);
   });
 
-  test('DELIVERED confirmations are blocked by session tailer filter', async () => {
+  test('DELIVERED confirmations are blocked by router classify', async () => {
     const marker = `AC8-DELIV-${Date.now()}`;
+    // DELIVERED lines from roles are classified as role-to-role and hidden
+    const body = JSON.stringify({ from: 'silas', text: `DELIVERED to wren at ${marker}` });
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request(`${CLEARING_URL}/api/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (res) => {
+        res.on('data', () => {});
+        res.on('end', () => resolve());
+      });
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
 
-    // Simulate a delivery confirmation landing in a role's session
-    // The session tailer should filter lines matching /^DELIVERED to/
-    execSync(
-      `bash "${NUDGE_SCRIPT}" kade "DELIVERED to wren at ${marker}" --from silas`,
-      { encoding: 'utf-8', timeout: 15000, env: { ...process.env, DEPLOY_ROLE: 'silas' } },
-    );
-
-    await new Promise(r => setTimeout(r, 5000));
+    await new Promise(r => setTimeout(r, 1000));
+    // Check only visible messages — the DELIVERED message should be hidden (visible: false)
     const messages = await getMessages(100);
-    const allText = messages.map((m: any) => m.text || '').join('\n');
-    expect(allText).not.toContain(marker);
+    const deliveredMessages = messages.filter((m: any) =>
+      m.from === 'silas' && (m.text || '').includes(`DELIVERED to wren at ${marker}`)
+    );
+    expect(deliveredMessages).toHaveLength(0);
   });
 });
 

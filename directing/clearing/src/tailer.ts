@@ -136,14 +136,19 @@ export class ChorusLogTailer extends EventEmitter {
       return;
     }
 
-    // Nudge sent — classify by target
+    // Nudge sent — only surface nudges TO jeff
     if (event === 'role.nudge.sent') {
       const target = parsed.target?.split(',')[0] || '';
       const content = parsed.target?.match(/content=(.+)/)?.[1] || '';
-      if (target && content) {
-        // Only surface nudges TO jeff
-        // Role-to-role nudges stay hidden
+      if (target === 'jeff' && content) {
+        this.router.ingest({
+          from: role,
+          text: content,
+          ts: parsed.timestamp || new Date().toISOString(),
+          type: 'role-response',
+        });
       }
+      return;
     }
 
     // Session turns — handled by SessionTailer (reads JSONL directly for user/assistant distinction)

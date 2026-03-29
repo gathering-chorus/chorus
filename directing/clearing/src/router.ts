@@ -126,18 +126,18 @@ export class MessageRouter extends EventEmitter {
       return { from, text: text.replace('[gemba] ', '👁 '), ts, type: 'role-response', visible: true };
     }
 
-    // Role-to-role nudges — hidden
+    // Role-to-role nudges — hidden (check BEFORE role-response to catch coordination noise)
     if (isRoleToRole(from, text)) {
       return { from, text, ts, type: 'role-to-role', visible: false };
     }
 
-    // Role responding to Jeff — visible
+    // Role responding to Jeff — visible (must be explicitly tagged AND not caught by role-to-role)
     if (raw.type === 'role-response') {
       return { from, text, ts, type: 'role-response', visible: true };
     }
 
-    // Default: visible — strip metadata from all messages
-    return { from, text: stripSpineMetadata(text), ts, type: 'role-response', visible: true };
+    // Default: HIDDEN — whitelist only. If not explicitly matched above, Jeff doesn't see it.
+    return { from, text: stripSpineMetadata(text), ts, type: 'role-to-role', visible: false };
   }
 }
 
@@ -194,10 +194,13 @@ function isRoleToRole(from: string, text: string): boolean {
   if (text.match(/^\[nudge from (wren|silas|kade)/i)) return true;
 
   // Role-to-role coordination prefixes — all hidden from Jeff
-  if (text.match(/^\[(reply|ack|feedback|direction|correction)\]/i)) return true;
+  if (text.match(/^\[(reply|ack|feedback|direction|correction|chat)\]/i)) return true;
 
   // Acknowledgments without bracket prefix
   if (text.match(/^(ack|acknowledged|got it|will do|on it)\b/i)) return true;
+
+  // Delivery confirmations
+  if (text.match(/^DELIVERED to (wren|silas|kade)/i)) return true;
 
   return false;
 }
