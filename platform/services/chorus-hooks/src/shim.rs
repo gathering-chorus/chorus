@@ -316,7 +316,7 @@ fn drain_nudge_inbox() -> Option<String> {
     if content.trim().is_empty() { return None; }
     // Log consumption as spine event
     let msg_count = content.lines().filter(|l| !l.trim().is_empty()).count();
-    let _ = std::process::Command::new("/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-log.sh")
+    let _ = std::process::Command::new("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh")
         .args(["role.nudge.consumed", &role, &format!("count={}", msg_count)])
         .output();
     // Post consumed nudges to Bridge so Jeff sees them land
@@ -381,8 +381,8 @@ fn is_ancestor(target_pid: u32) -> bool {
 /// Bash eliminated; Python logic extracted to claudemd-gen.py, called directly.
 fn claudemd_gen_cmd() -> ExitCode {
     let repo = "/Users/jeffbridwell/CascadeProjects";
-    let script = format!("{}/messages/scripts/claudemd-gen.py", repo);
-    let claudemd_dir = format!("{}/messages/claudemd", repo);
+    let script = format!("{}/chorus/platform/scripts/claudemd-gen.py", repo);
+    let claudemd_dir = format!("{}/chorus/designing/claudemd", repo);
     let manifest = format!("{}/manifest.json", claudemd_dir);
 
     // Parse args — skip binary name and "claudemd-gen" subcommand
@@ -483,7 +483,7 @@ fn session_start_cmd(args: &[String]) -> ExitCode {
     // Runs in background for session duration — receives card/state events from other roles
     // Guard: skip if a subscriber for this role is already running
     let subscriber_script = format!(
-        "{}/messages/scripts/bridge-subscriber.js",
+        "{}/chorus/platform/scripts/bridge-subscriber.js",
         std::env::var("HOME")
             .map(|h| format!("{}/CascadeProjects", h))
             .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects".to_string())
@@ -538,7 +538,7 @@ fn session_close_cmd(args: &[String]) -> ExitCode {
     }
 
     // Board audit
-    let board_ts = format!("{}/messages/scripts/cards", repo);
+    let board_ts = format!("{}/chorus/platform/scripts/cards", repo);
     let _ = std::process::Command::new("bash")
         .args([&board_ts, "audit-close", role])
         .output().ok().and_then(|o| {
@@ -567,7 +567,7 @@ fn session_close_cmd(args: &[String]) -> ExitCode {
 
 /// Generic Python dispatch — run a .py script with remaining args (#1624)
 fn python_dispatch_cmd(script_name: &str) -> ExitCode {
-    let script = format!("/Users/jeffbridwell/CascadeProjects/messages/scripts/{}", script_name);
+    let script = format!("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/{}", script_name);
     // Skip binary name + subcommand (when called as `shim workflow status`)
     // or skip just binary name (when called via argv[0] symlink as `workflow status`)
     let all_args: Vec<String> = std::env::args().collect();
@@ -600,7 +600,7 @@ fn role_checkpoint_cmd(args: &[String]) -> ExitCode {
     let repo = "/Users/jeffbridwell/CascadeProjects";
     let role_dir = match role { "wren" => "product-manager", "silas" => "architect", "kade" => "engineer", _ => unreachable!() };
     let checkpoint = format!("/tmp/role-checkpoint-{}.json", role);
-    let board_ts = format!("{}/messages/scripts/cards", repo);
+    let board_ts = format!("{}/chorus/platform/scripts/cards", repo);
 
     match action {
         "write" => {
@@ -771,7 +771,7 @@ fn cruft_scan_cmd() -> ExitCode {
 
     // Activity log size
     out.push_str("## Activity Log\n");
-    let activity_size = fs::metadata(&format!("{}/messages/activity.md", repo))
+    let activity_size = fs::metadata(&format!("{}/chorus/activity.md", repo))
         .map(|m| m.len()).unwrap_or(0);
     out.push_str(&format!("Size: {} bytes\n\n", activity_size));
 
@@ -876,11 +876,11 @@ fn context_cache_cmd(args: &[String]) -> ExitCode {
     let repo = "/Users/jeffbridwell/CascadeProjects";
     let role_dir_name = match role { "wren" => "product-manager", "silas" => "architect", "kade" => "engineer", _ => unreachable!() };
     let role_dir = format!("{}/{}", repo, role_dir_name);
-    let board_ts = format!("{}/messages/scripts/cards", repo);
+    let board_ts = format!("{}/chorus/platform/scripts/cards", repo);
     let out_path = format!("/tmp/session-context-{}.md", role);
 
     // Werk version
-    let manifest_path = format!("{}/messages/claudemd/manifest.json", repo);
+    let manifest_path = format!("{}/chorus/designing/claudemd/manifest.json", repo);
     let werk_version = fs::read_to_string(&manifest_path).ok()
         .and_then(|c| c.lines().find(|l| l.contains("\"version\"")).map(|l| {
             l.split('"').nth(3).unwrap_or("unknown").to_string()
@@ -935,10 +935,10 @@ fn context_cache_cmd(args: &[String]) -> ExitCode {
     } else { String::new() };
 
     // Handoff check
-    let handoff_log = format!("{}/messages/logs/handoffs.log", repo);
+    let handoff_log = format!("{}/chorus/proving/logs/handoffs.log", repo);
     let role_s = role.to_string();
     let briefs_dir_c = briefs_dir.clone();
-    let archive_dir = format!("{}/messages/workflows/archive", repo);
+    let archive_dir = format!("{}/chorus/proving/workflows/archive", repo);
     let handoff_check = std::thread::spawn(move || {
         check_handoffs(&handoff_log, &role_s, &briefs_dir_c, &archive_dir)
     });
@@ -950,12 +950,24 @@ fn context_cache_cmd(args: &[String]) -> ExitCode {
         fetch_memory_context(&board_ts_c, &role_s)
     });
 
-    // Wait for threads
+    // Wait for threads — track failures for spine event
+    let mut failed_sources: Vec<&str> = Vec::new();
+    let mut ok_sources: Vec<&str> = Vec::new();
+
     let (mine_ok, mine_text) = board_mine.join().unwrap_or((false, String::new()));
+    if mine_ok { ok_sources.push("board_mine"); } else { failed_sources.push("board_mine"); }
+
     let (list_ok, list_text) = board_list.join().unwrap_or((false, String::new()));
+    if list_ok { ok_sources.push("board_list"); } else { failed_sources.push("board_list"); }
+
     let audit_text = board_audit.join().unwrap_or_default();
+    if !audit_text.is_empty() { ok_sources.push("board_audit"); } else { failed_sources.push("board_audit"); }
+
     let handoff_text = handoff_check.join().unwrap_or_default();
+    ok_sources.push("handoffs"); // handoffs returning empty is normal (no pending)
+
     let memory_text = memory_ctx.join().unwrap_or_default();
+    if !memory_text.is_empty() { ok_sources.push("memory"); } else { failed_sources.push("memory"); }
 
     // Health checks
     let disk_out = Cmd::new("df").args(["-h", "/System/Volumes/Data"]).output().ok()
@@ -968,7 +980,7 @@ fn context_cache_cmd(args: &[String]) -> ExitCode {
         .output().ok().and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.lines().count()).unwrap_or(0);
 
-    let activity_path = format!("{}/messages/activity.md", repo);
+    let activity_path = format!("{}/chorus/activity.md", repo);
     let activity_age = fs::metadata(&activity_path).ok()
         .and_then(|m| m.modified().ok())
         .map(|t| format!("{}h", t.elapsed().unwrap_or_default().as_secs() / 3600))
@@ -1031,6 +1043,43 @@ fn context_cache_cmd(args: &[String]) -> ExitCode {
     let _ = fs::write(&out_path, &out);
     let lines = out.lines().count();
     println!("Context cached: {} ({} lines)", out_path, lines);
+
+    // Spine events — AC for #1808
+    let log_path = format!("{}/chorus/platform/logs/chorus.log", repo);
+    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+
+    if !failed_sources.is_empty() {
+        let event = serde_json::json!({
+            "timestamp": ts,
+            "level": "warn",
+            "appName": "chorus-events",
+            "component": "context-cache",
+            "event": "session.context.error",
+            "role": role,
+            "failed_sources": failed_sources.join(","),
+            "ok_sources": ok_sources.join(","),
+            "lines": lines,
+        });
+        eprintln!("session.context.error | {} — failed: {}", role, failed_sources.join(", "));
+        let _ = std::fs::OpenOptions::new().create(true).append(true).open(&log_path)
+            .and_then(|mut f| { use std::io::Write; writeln!(f, "{}", event) });
+    }
+
+    // Always emit success with source inventory
+    let event = serde_json::json!({
+        "timestamp": ts,
+        "level": "info",
+        "appName": "chorus-events",
+        "component": "context-cache",
+        "event": "session.context.built",
+        "role": role,
+        "sources": ok_sources.join(","),
+        "failed": failed_sources.join(","),
+        "lines": lines,
+    });
+    let _ = std::fs::OpenOptions::new().create(true).append(true).open(&log_path)
+        .and_then(|mut f| { use std::io::Write; writeln!(f, "{}", event) });
+
     ExitCode::SUCCESS
 }
 
@@ -1262,7 +1311,7 @@ fn health_hourly_cmd(args: &[String]) -> ExitCode {
 
     // Cost log check
     let today = process::wall_clock().chars().take(10).collect::<String>();
-    let cost_path = format!("{}/messages/cost-log.md", repo);
+    let cost_path = format!("{}/chorus/cost-log.md", repo);
     if let Ok(content) = fs::read_to_string(&cost_path) {
         if !content.contains(&today) {
             eprintln!("WARNING: no cost entry for today");
@@ -1270,7 +1319,7 @@ fn health_hourly_cmd(args: &[String]) -> ExitCode {
     }
 
     // Activity.md recency
-    let activity_path = format!("{}/messages/activity.md", repo);
+    let activity_path = format!("{}/chorus/activity.md", repo);
     if let Ok(meta) = fs::metadata(&activity_path) {
         if let Ok(modified) = meta.modified() {
             let age_h = modified.elapsed().unwrap_or_default().as_secs() / 3600;
@@ -1289,7 +1338,7 @@ fn health_hourly_cmd(args: &[String]) -> ExitCode {
     if uncommitted > 5 { eprintln!("WARNING: {} uncommitted files in {}/", uncommitted, role_dir); }
 
     // Recurring errors
-    let error_log = format!("{}/messages/logs/command-errors.log", repo);
+    let error_log = format!("{}/chorus/proving/logs/command-errors.log", repo);
     if let Ok(content) = fs::read_to_string(&error_log) {
         let mut fps: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         for line in content.lines() {
@@ -1394,7 +1443,7 @@ fn log_rotate_cmd() -> ExitCode {
     use std::fs;
     use std::process::Command as Cmd;
 
-    let log_dir = "/Users/jeffbridwell/CascadeProjects/messages/logs";
+    let log_dir = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs";
     let max_size: u64 = 10 * 1024 * 1024; // 10MB
     let keep_rotations = 3u32;
 

@@ -30,7 +30,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             };
 
             if let Some(role) = pod_role {
-                let sync_script = state.config.repo_root.join("messages/scripts/pod-state-sync.sh");
+                let sync_script = state.config.repo_root.join("chorus/platform/scripts/pod-state-sync.sh");
                 if sync_script.exists() {
                     let role = role.to_string();
                     let fp = file_path.clone();
@@ -70,7 +70,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     // Check for duplicate (workflow-ts already logged)
-    let log_path = PathBuf::from("/Users/jeffbridwell/CascadeProjects/messages/logs/handoffs.log");
+    let log_path = PathBuf::from("/Users/jeffbridwell/CascadeProjects/chorus/proving/logs/handoffs.log");
     if log_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&log_path) {
             if content.contains(filename) {

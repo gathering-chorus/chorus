@@ -17,7 +17,7 @@ use crate::process;
 const SCAN_DIR: &str = "/tmp/claude-team-scan";
 const VALID_STATES: &[&str] = &["building", "blocked", "waiting", "observing", "idle"];
 const ROLES: &[&str] = &["wren", "silas", "kade"];
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/messages/logs/chorus.log";
+const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
 
 pub fn run(args: &[String]) -> ExitCode {
     if args.is_empty() {

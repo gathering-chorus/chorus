@@ -7,8 +7,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const LOG_FILE: &str = "/Users/jeffbridwell/CascadeProjects/messages/logs/chorus.log";
-const SCHEMA_FILE: &str = "/Users/jeffbridwell/CascadeProjects/messages/schemas/spine-events.json";
+const LOG_FILE: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
+const SCHEMA_FILE: &str = "/Users/jeffbridwell/CascadeProjects/chorus/designing/schemas/spine-events.json";
 
 pub fn run(args: &[String]) -> ExitCode {
     if args.len() < 2 {

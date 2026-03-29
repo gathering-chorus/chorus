@@ -8,8 +8,8 @@ use crate::types::{HookInput, HookResponse, permission_deny_json, Role};
 use std::process::Command;
 use tracing::{info, warn};
 
-const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/cards";
-const BRIEFS_DIR: &str = "/Users/jeffbridwell/CascadeProjects/product-manager/briefs";
+const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards";
+const BRIEFS_DIR: &str = "/Users/jeffbridwell/CascadeProjects/chorus/product-manager/briefs";
 
 /// Check if this is an /acp invocation and validate acceptance gates
 pub async fn check(input: &HookInput) -> HookResponse {

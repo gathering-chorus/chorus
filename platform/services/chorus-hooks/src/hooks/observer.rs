@@ -362,7 +362,7 @@ mod tests {
     fn test_digest_bash_board() {
         let input = make_post_input(
             "Bash",
-            json!({"command": "bash ../messages/scripts/board-ts move 1594 Done"}),
+            json!({"command": "bash ../chorus/platform/scripts/cards move 1594 Done"}),
             "/Users/jeffbridwell/CascadeProjects/architect",
         );
         let d = digest_tool_call(&input);
@@ -373,7 +373,7 @@ mod tests {
     fn test_digest_bash_nudge() {
         let input = make_post_input(
             "Bash",
-            json!({"command": "bash ../messages/scripts/nudge.sh wren 'done with 1594'"}),
+            json!({"command": "bash ../chorus/platform/scripts/nudge.sh wren 'done with 1594'"}),
             "/Users/jeffbridwell/CascadeProjects/architect",
         );
         let d = digest_tool_call(&input);
@@ -395,7 +395,7 @@ mod tests {
     fn test_digest_write() {
         let input = make_post_input(
             "Write",
-            json!({"file_path": "/Users/jeffbridwell/CascadeProjects/messages/services/chorus-hooks/src/hooks/observer.rs", "content": "test"}),
+            json!({"file_path": "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/observer.rs", "content": "test"}),
             "/Users/jeffbridwell/CascadeProjects/architect",
         );
         let d = digest_tool_call(&input);

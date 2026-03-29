@@ -9,7 +9,7 @@ use crate::types::{HookInput, HookResponse};
 use std::process::Command;
 use tracing::{info, warn};
 
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-log.sh";
+const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh";
 
 /// PreToolUse: detect run_in_background=true and spawn a monitor.
 /// The monitor waits for the output file to appear, then tails it every 30s.

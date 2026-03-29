@@ -7,7 +7,7 @@ use crate::types::{HookInput, HookResponse};
 use std::process::Command;
 use tracing::info;
 
-const NUDGE: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/nudge.sh";
+const NUDGE: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge.sh";
 
 /// PreToolUse: when /pair skill is invoked, nudge the target role to also load /pair
 pub async fn check(input: &HookInput) -> HookResponse {

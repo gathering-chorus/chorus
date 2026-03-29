@@ -47,8 +47,8 @@ impl AppState {
                 session_init_done: HashMap::new(),
             })),
             config: Arc::new(Config {
-                log_dir: repo_root.join("messages/logs"),
-                prefs_file: repo_root.join("messages/jeff-preferences.json"),
+                log_dir: repo_root.join("chorus/platform/logs"),
+                prefs_file: repo_root.join("chorus/jeff-preferences.json"),
                 chorus_db: PathBuf::from(&home).join(".chorus/index.db"),
                 repo_root,
                 home_dir: PathBuf::from(home),
@@ -164,7 +164,7 @@ pub async fn append_log(path: &std::path::Path, line: &str) {
 
 /// Emit a chorus-log event (replaces bash chorus-log.sh)
 pub async fn chorus_log(event: &str, role: &str, kvs: &[(&str, &str)]) {
-    let log_path = PathBuf::from("/Users/jeffbridwell/CascadeProjects/messages/logs/chorus.log");
+    let log_path = PathBuf::from("/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log");
     let ts = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
 
     let mut obj = serde_json::json!({

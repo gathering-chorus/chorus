@@ -408,7 +408,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_allow_app_state_sh() {
-        let input = kade_bash("bash ../messages/scripts/app-state.sh status");
+        let input = kade_bash("bash ../chorus/platform/scripts/app-state.sh status");
         let r = check(&input).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);

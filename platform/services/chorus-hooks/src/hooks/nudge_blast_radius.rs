@@ -8,7 +8,7 @@ use crate::types::{HookInput, HookResponse};
 use std::process::Command;
 use tracing::{info, warn};
 
-const ROLE_STATE: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/role-state";
+const ROLE_STATE: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state";
 const ROLES: &[&str] = &["wren", "silas", "kade"];
 
 /// Check if a bash command is invoking nudge and warn about blast radius

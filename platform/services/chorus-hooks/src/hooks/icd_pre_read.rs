@@ -121,7 +121,7 @@ pub async fn check(input: &HookInput, _state: &AppState) {
     // Check if domain context was read
     if !domain_context_read(&role, domain) {
         let context_path = format!(
-            "/Users/jeffbridwell/CascadeProjects/messages/domain-context/domain-context-{}.md",
+            "/Users/jeffbridwell/CascadeProjects/chorus/designing/domain-context/domain-context-{}.md",
             domain
         );
         warn!(
