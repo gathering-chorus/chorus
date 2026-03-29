@@ -24,7 +24,7 @@ curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \
 
 | Script | Canonical invocation |
 |--------|---------------------|
-| board-ts | `bash ../messages/scripts/board-ts <command>` |
+| cards | `bash ../messages/scripts/cards <command>` |
 | git-queue.sh | `cd /Users/jeffbridwell/CascadeProjects && DEPLOY_ROLE=<role> bash messages/scripts/git-queue.sh commit <dirs> -- -m "message"` |
 | role-state.sh | `../messages/scripts/role-state.sh <role> <state>` |
 | nudge.sh | `bash ../messages/scripts/nudge.sh <target> "message" --from <sender>` |

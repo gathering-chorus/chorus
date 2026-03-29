@@ -28,7 +28,7 @@ static ROLE_STATE_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 static BOARD_TS_JQ_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"board-ts.*(list|view|mine).*jq").unwrap()
+    Regex::new(r"cards.*(list|view|mine).*jq").unwrap()
 });
 
 pub async fn check(input: &HookInput) -> HookResponse {
@@ -64,7 +64,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     }
 
     if BOARD_TS_JQ_RE.is_match(&cmd) {
-        warnings.push("DEC-093: Parsing board-ts output? Use: GET /api/chorus/cards for structured JSON instead.");
+        warnings.push("DEC-093: Parsing cards output? Use: GET /api/chorus/cards for structured JSON instead.");
     }
 
     if !warnings.is_empty() {

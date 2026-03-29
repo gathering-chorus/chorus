@@ -16,7 +16,7 @@ After updates: `../messages/scripts/chorus-log.sh session.docscan.completed <rol
 
 ### Hard 5 (in order)
 1. **Journal** — reflective entry in `journal/<date>.md`. Not status — reflection. 3-8 sentences.
-2. **Board audit** — `board-ts audit-close <role>`. Finished → Done. Continuing → note.
+2. **Board audit** — `cards audit-close <role>`. Finished → Done. Continuing → note.
 3. **Activity log** — append to `../messages/activity.md`.
 4. **next-session.md** — accomplishments, WIP, handoffs, what next session picks up.
 5. **Commit** — `git-queue.sh`. Message: `<role>: session close — <summary>`. Then: `role-state.sh <role> idle`.

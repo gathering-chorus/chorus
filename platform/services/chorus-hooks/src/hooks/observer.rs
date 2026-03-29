@@ -88,7 +88,7 @@ fn digest_tool_call(input: &HookInput) -> String {
                 format!("building: {}", truncate(&short, 80))
             } else if short.contains("git commit") || short.contains("git-queue") {
                 "committing changes".to_string()
-            } else if short.contains("board-ts") {
+            } else if short.contains("board-ts") || short.contains("/cards ") {
                 format!("board op: {}", truncate(&short, 80))
             } else if short.contains("app-state") {
                 format!("service op: {}", truncate(&short, 80))

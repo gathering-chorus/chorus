@@ -51,7 +51,7 @@ Demos generate ideas. Jeff's reaction to seeing live work produces "what if..." 
 - Describes a future state prompted by what he just saw
 
 **Action — immediately, in the same response:**
-1. Card it: `board-ts add "<verb> <what> — <why>" --owner <role> --priority P3`
+1. Card it: `cards add "<verb> <what> — <why>" --owner <role> --priority P3`
 2. Emit: `chorus-log.sh demo.seed.captured wren card=<id> source=demo`
 3. Don't interrupt the demo flow — card silently, mention it at the end: "Carded #N from that idea."
 

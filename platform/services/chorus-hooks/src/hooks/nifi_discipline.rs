@@ -82,9 +82,9 @@ pub async fn check(input: &HookInput, _state: &AppState) -> Option<String> {
         return None;
     }
 
-    // Check if card description mentions NiFi — query board-ts
+    // Check if card description mentions NiFi — query cards
     let output = std::process::Command::new("bash")
-        .args(&["../messages/scripts/board-ts", "view", card_id])
+        .args(&["../messages/scripts/cards", "view", card_id])
         .output()
         .ok()?;
     let desc = String::from_utf8_lossy(&output.stdout);

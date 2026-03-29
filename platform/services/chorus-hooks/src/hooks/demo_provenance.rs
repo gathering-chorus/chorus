@@ -8,7 +8,7 @@ use crate::types::{HookInput, HookResponse};
 use std::process::Command;
 use tracing::info;
 
-const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/board-ts";
+const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/cards";
 const BRIEFS_DIR: &str = "/Users/jeffbridwell/CascadeProjects/product-manager/briefs";
 const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/chorus-log.sh";
 

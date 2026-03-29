@@ -2,7 +2,7 @@
 
 | Domain | Endpoint | Filters | Notes |
 |--------|----------|---------|-------|
-| Cards | `GET /api/chorus/cards` | `?owner=silas&status=Now` | Wraps board-ts — DEC-093 compliant |
+| Cards | `GET /api/chorus/cards` | `?owner=silas&status=Now` | Wraps cards — DEC-093 compliant |
 | Cards | `GET /api/chorus/cards/:id` | — | Full card detail with description, comments |
 | Cards | `GET /api/chorus/cards/domain/:domain` | — | Filter by domain label |
 | Roles | `GET /api/chorus/roles` | — | All roles with current state |
@@ -14,4 +14,4 @@
 | Harvest | `GET /api/chorus/harvest` | — | Graph counts and triples per domain from Fuseki |
 | Cost | `GET /api/chorus/cost` | `?period=summary` | Cost report output (summary, daily, weekly) |
 
-CLI (`board-ts`) for mutations. API is read-only.
+CLI (`cards`) for mutations. API is read-only.

@@ -11,7 +11,7 @@ use crate::types::{HookInput, HookResponse, permission_deny_json};
 use std::process::Command;
 use tracing::{info, warn};
 
-const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/board-ts";
+const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/cards";
 const SMOKE_CHECK: &str = "/Users/jeffbridwell/CascadeProjects/messages/scripts/smoke-check.sh";
 
 /// Check if this is a /demo invocation and validate preflight gates
@@ -49,8 +49,8 @@ pub async fn check(input: &HookInput) -> HookResponse {
             return HookResponse::deny(&permission_deny_json(&msg));
         }
         CardStatus::Error(e) => {
-            warn!("demo-preflight: board-ts failed: {}", e);
-            // Don't block on board-ts failures — let the skill handle it
+            warn!("demo-preflight: cards failed: {}", e);
+            // Don't block on cards failures — let the skill handle it
             return HookResponse::allow();
         }
     }

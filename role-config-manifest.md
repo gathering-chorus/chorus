@@ -18,7 +18,7 @@ How each role is launched, what normal looks like, and how to fix it when it bre
 
 ## What Normal Feels Like
 
-- Roles remember tools they've built (whisper-cli, board-ts, app-state.sh)
+- Roles remember tools they've built (whisper-cli, cards, app-state.sh)
 - Roles know file locations without searching the filesystem
 - Responses are direct, not hedging
 - "I don't know" when uncertain, not plausible guesses
@@ -81,7 +81,7 @@ How each role is launched, what normal looks like, and how to fix it when it bre
 |------|------|
 | whisper-cli | `/opt/homebrew/bin/whisper-cli` |
 | whisper models | `/Users/jeffbridwell/models/ggml-small.en.bin`, `ggml-medium.en.bin` |
-| board-ts | `../messages/scripts/board-ts` |
+| cards | `../messages/scripts/cards` |
 | app-state.sh | `../jeff-bridwell-personal-site/app-state.sh` |
 | git-queue.sh | `../messages/scripts/git-queue.sh` |
 | werk-init.sh | `../messages/scripts/werk-init.sh` |

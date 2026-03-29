@@ -538,7 +538,7 @@ fn session_close_cmd(args: &[String]) -> ExitCode {
     }
 
     // Board audit
-    let board_ts = format!("{}/messages/scripts/board-ts", repo);
+    let board_ts = format!("{}/messages/scripts/cards", repo);
     let _ = std::process::Command::new("bash")
         .args([&board_ts, "audit-close", role])
         .output().ok().and_then(|o| {
@@ -600,7 +600,7 @@ fn role_checkpoint_cmd(args: &[String]) -> ExitCode {
     let repo = "/Users/jeffbridwell/CascadeProjects";
     let role_dir = match role { "wren" => "product-manager", "silas" => "architect", "kade" => "engineer", _ => unreachable!() };
     let checkpoint = format!("/tmp/role-checkpoint-{}.json", role);
-    let board_ts = format!("{}/messages/scripts/board-ts", repo);
+    let board_ts = format!("{}/messages/scripts/cards", repo);
 
     match action {
         "write" => {
@@ -876,7 +876,7 @@ fn context_cache_cmd(args: &[String]) -> ExitCode {
     let repo = "/Users/jeffbridwell/CascadeProjects";
     let role_dir_name = match role { "wren" => "product-manager", "silas" => "architect", "kade" => "engineer", _ => unreachable!() };
     let role_dir = format!("{}/{}", repo, role_dir_name);
-    let board_ts = format!("{}/messages/scripts/board-ts", repo);
+    let board_ts = format!("{}/messages/scripts/cards", repo);
     let out_path = format!("/tmp/session-context-{}.md", role);
 
     // Werk version

@@ -74,7 +74,7 @@ pub async fn post_tool_use_bash(input: &HookInput, state: &AppState) -> HookResp
 
     // Skip commands that search for errors or produce noisy output
     let skip_patterns = [
-        "grep", "board-ts", "command-errors.log", "auto-error-carded",
+        "grep", "board-ts", "/cards ", "command-errors.log", "auto-error-carded",
         "--dry-run", "--status", "chorus-test", "jest", "vitest", "npm",
         "playwright", "npx", "git commit", "git add", "git push",
         "werk-init", "close-out", "reboot", "trivy", "Trivy scan",

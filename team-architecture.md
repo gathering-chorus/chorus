@@ -266,7 +266,7 @@ Same principle as infrastructure observability: if you can't see it, you can't i
 
 | Instrument | What it measures | How to audit | Manual? |
 |---|---|---|---|
-| **Card coverage** | What % of shipped work traces to a board card? | Compare `git log --oneline` to `board-ts list` Done items. Commits without a card = uncarded work. | Automated (scriptable) |
+| **Card coverage** | What % of shipped work traces to a board card? | Compare `git log --oneline` to `cards list` Done items. Commits without a card = uncarded work. | Automated (scriptable) |
 | **Brief chain** | Does every shipped feature have a brief trail? | For each Done card: check `<role>/briefs/` for related files. Missing brief = gap in the chain. | Automated (scriptable) |
 | **Decision capture** | Are Jeff's directives in artifacts? | Search chorus log for `decision.*` events, cross-reference `decisions.md` + `adr/`. Missing = uncaptured decision. | Semi-automated |
 | **Response latency** | How fast do roles respond to directed messages? | Nudge timestamps: time between nudge sent and response. Spine events track delivery and acknowledgment. | Automated (scriptable) |
@@ -348,8 +348,8 @@ Tooling and automation that implements the patterns.
 |------|---------|----------|
 | `nudge.sh <role> <message>` | Send nudge to role | `messages/scripts/` |
 | `chat.sh start/say/read/end` | Role-to-role chat | `messages/scripts/` |
-| `board-ts list` | See kanban state | `messages/scripts/` |
-| `board-ts mine <role>` | See assigned work | `messages/scripts/` |
+| `cards list` | See kanban state | `messages/scripts/` |
+| `cards mine <role>` | See assigned work | `messages/scripts/` |
 | Briefs directories | Substance exchange | `<project>/briefs/` |
 | `activity.md` | Timeline / record | `messages/` |
 

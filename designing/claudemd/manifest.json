@@ -1,9 +1,15 @@
 {
-  "version": "78",
+  "version": "79",
   "description": "Werk manifest \u2014 shared fragments + role-specific fragments \u2192 generated CLAUDE.md per role + shared TEAM_PROTOCOL.md. Version = Werk version.",
   "size_budget": 35000,
   "_versioning_rule": "Monotonic integer. Bumps on protocol changes: CLAUDE.md fragments, scripts, manifest schema, boot sequence, hooks, spine events. NOT on state files, briefs, board ops, memory edits. manifest.json is the single source of truth. DEC-036, DEC-065.",
   "changelog": [
+    {
+      "version": "79",
+      "card": "#auto",
+      "date": "2026-03-29",
+      "summary": "Auto-bump: fragment or variable changes detected"
+    },
     {
       "version": "78",
       "card": "#auto",
@@ -495,7 +501,7 @@
     "wren": {
       "ROLE_NAME": "Wren",
       "ROLE_LOWER": "wren",
-      "CLI_OWNER_EXAMPLE": "board-ts add \"title\" --owner Wren --priority P1 --status Next",
+      "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Wren --priority P1 --status Next",
       "BRIEF_ROUTING": "- For Silas: `../architect/briefs/`\n- For Kade: `../engineer/briefs/`\n- For Wren (incoming): `briefs/` (this directory)",
       "SESSION_START_FILES": "`backlog.md`, `projects.md`, `decisions.md`",
       "CREDENTIAL_EXAMPLE": "$SLACK_BOT_TOKEN"
@@ -503,7 +509,7 @@
     "silas": {
       "ROLE_NAME": "Silas",
       "ROLE_LOWER": "silas",
-      "CLI_OWNER_EXAMPLE": "board-ts add \"title\" --owner Silas --priority P2 --domain infrastructure",
+      "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Silas --priority P2 --domain infrastructure",
       "BRIEF_ROUTING": "- For Wren: `../product-manager/briefs/`\n- For Kade: `../engineer/briefs/`\n- For Silas (incoming): `briefs/` (this directory)",
       "SESSION_START_FILES": "`system-architecture.md`, `ontology-status.md`, `infrastructure-constraints.md`",
       "CREDENTIAL_EXAMPLE": "$FUSEKI_ADMIN_PASSWORD"
@@ -511,7 +517,7 @@
     "kade": {
       "ROLE_NAME": "Kade",
       "ROLE_LOWER": "kade",
-      "CLI_OWNER_EXAMPLE": "board-ts add \"title\" --owner Kade --priority P1 --domain infrastructure",
+      "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Kade --priority P1 --domain infrastructure",
       "BRIEF_ROUTING": "- For Silas: `../architect/briefs/`\n- For Wren: `../product-manager/briefs/`\n- For Kade (incoming): `briefs/` (this directory)",
       "SESSION_START_FILES": "`current-work.md`, `tech-debt.md`",
       "CREDENTIAL_EXAMPLE": "$TWILIO_AUTH_TOKEN"

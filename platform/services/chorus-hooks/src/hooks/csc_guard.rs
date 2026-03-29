@@ -44,7 +44,7 @@ pub fn check(input: &HookInput) -> HookResponse {
     // Skip commands that are clearly not file operations:
     // nudge, echo, curl POST (message sending), board-ts, chorus-log, chat
     if cmd.contains("nudge.sh")
-        || cmd.contains("board-ts")
+        || cmd.contains("board-ts") || cmd.contains("/cards ")
         || cmd.contains("chorus-log")
         || cmd.contains("chat.sh")
         || cmd.contains("curl -s -X POST http://localhost:3470")

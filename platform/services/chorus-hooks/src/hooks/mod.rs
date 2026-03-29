@@ -25,3 +25,6 @@ pub mod csc_guard;
 pub mod icd_pre_read;
 pub mod nifi_discipline;
 pub mod memory_gate;
+pub mod tdd_gate;
+pub mod pair_gate;
+pub mod demo_gate;

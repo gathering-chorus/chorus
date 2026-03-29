@@ -133,6 +133,18 @@ async fn pre_tool_use(
                 return Json(r);
             }
 
+            // TDD gate (#1814) — block demo/done without test evidence
+            let r = hooks::tdd_gate::check(&input);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return Json(r);
+            }
+
+            // Demo gate (#1814) — block done without demo evidence
+            let r = hooks::demo_gate::check(&input);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return Json(r);
+            }
+
             // Batch progress (#1656) — detect run_in_background in PreToolUse
             // PostToolUse doesn't fire until background task completes
             let r = hooks::batch_progress::check_pre_bg(&input);
@@ -179,6 +191,16 @@ async fn pre_tool_use(
             }
         }
         "Skill" => {
+            // TDD gate (#1814) — block demo/done without test evidence
+            let r = hooks::tdd_gate::check(&input);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return Json(r);
+            }
+            // Demo gate (#1814) — block done without demo evidence
+            let r = hooks::demo_gate::check(&input);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return Json(r);
+            }
             // Demo preflight gate (#1657)
             let r = hooks::demo_preflight::check(&input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
