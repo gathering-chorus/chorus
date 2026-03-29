@@ -98,12 +98,12 @@ app.get('/health', (_req, res) => {
 
 // --- Nudges ---
 app.post('/api/nudge', (req, res) => {
-  const { from, to, content } = req.body;
+  const { from, to, content, traceId } = req.body;
   if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
   const id = store.sendNudge(from, to, content);
   nudgesReceived.labels(from, to).inc();
-  log('info', 'nudge.received', { id, from, to, chars: content.length });
-  res.json({ ok: true, id });
+  log('info', 'nudge.stored', { id, from, to, chars: content.length, traceId: traceId || undefined });
+  res.json({ ok: true, id, traceId });
 });
 
 app.get('/api/nudge/:role/pending', (req, res) => {

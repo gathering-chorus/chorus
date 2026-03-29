@@ -7,8 +7,16 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::process;
+
+/// Generate a short trace ID: timestamp_ms + 4 random hex chars
+fn trace_id() -> String {
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+    let rand: u16 = (std::process::id() as u16).wrapping_mul(31).wrapping_add(ts as u16);
+    format!("ntr-{}-{:04x}", ts, rand)
+}
 
 const INBOX_DIR: &str = "/tmp/voice-inbox";
 const EXCHANGE_DIR: &str = "/tmp/nudge-exchanges";
@@ -228,6 +236,7 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 
     let sender = explicit_sender.unwrap_or_else(detect_sender);
+    let tid = trace_id();
 
     // If --reply-to is set, POST response back to that URL (Bridge integration)
     if let Some(ref url) = reply_to {
@@ -261,6 +270,7 @@ pub fn run(args: &[String]) -> ExitCode {
         "from": sender,
         "to": target,
         "content": message,
+        "traceId": tid,
     });
     let _ = Command::new("curl")
         .args([
@@ -276,7 +286,7 @@ pub fn run(args: &[String]) -> ExitCode {
     chorus_log(
         "role.nudge.sent",
         &sender,
-        &format!("target={},chars={},content={}", target, message.len(), content_preview),
+        &format!("target={},chars={},trace={},content={}", target, message.len(), tid, content_preview),
     );
 
     // ONE PATH: osascript window-name inject. No persist-then-drain.
@@ -308,7 +318,7 @@ pub fn run(args: &[String]) -> ExitCode {
     chorus_log(
         "role.nudge.delivered",
         &sender,
-        &format!("target={},mode={}", target, mode),
+        &format!("target={},mode={},trace={}", target, mode, tid),
     );
 
     ExitCode::SUCCESS
