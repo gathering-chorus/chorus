@@ -239,12 +239,18 @@ async fn post_tool_use(
     match tool.as_str() {
         "Bash" => {
             hooks::tool_telemetry::post_tool_use_bash(&input, &state).await;
+            // Context synthesis tracker — log Chorus searches and git lookups
+            hooks::memory_gate::post_check(&input);
             // Batch progress monitor (#1656) — detect background jobs, emit progress
             let r = hooks::batch_progress::check(&input).await;
             if r.stderr.is_some() {
                 // Pass stderr through but don't block
                 return Json(r);
             }
+        }
+        "Read" => {
+            // Context synthesis tracker — log memory/decision file reads
+            hooks::memory_gate::post_check(&input);
         }
         "Write" | "Edit" => {
             hooks::handoff_logger::check(&input, &state).await;
@@ -277,7 +283,7 @@ async fn post_tool_use(
 }
 
 
-/// UserPromptSubmit — clock sync + autonomy guard + JDI detection
+/// UserPromptSubmit — clock sync + context injection + autonomy guard + JDI detection
 async fn user_prompt_submit(
     State(state): State<AppState>,
     Json(input): Json<HookInput>,
@@ -292,6 +298,9 @@ async fn user_prompt_submit(
         // But still run JDI + autonomy guard
     }
 
+    // Context injection (#1838) — search Chorus + memory, inject before role thinks
+    let context_result = hooks::context_inject::check(&input).await;
+
     // JDI detector — fire-and-forget (#1598)
     let state_clone = state.clone();
     let input_clone = input.clone();
@@ -299,22 +308,31 @@ async fn user_prompt_submit(
         hooks::jdi_detector::check(&input_clone, &state_clone).await;
     });
 
-    // If classifier emitted a signal, merge it with autonomy guard result
+    // Merge all stderr signals: classifier + context injection + autonomy guard
     let guard_result = hooks::autonomy_guard::check(&input, &state).await;
-    if let Some(ref classifier_msg) = classifier_result.stderr {
-        // Classifier has a message — combine with guard result
-        let merged_stderr = match guard_result.stderr {
-            Some(ref guard_msg) => Some(format!("{}\n{}", classifier_msg, guard_msg)),
-            None => Some(classifier_msg.clone()),
-        };
-        return Json(HookResponse {
-            stdout: guard_result.stdout,
-            stderr: merged_stderr,
-            exit_code: guard_result.exit_code,
-        });
+
+    let mut stderr_parts: Vec<String> = Vec::new();
+    if let Some(ref msg) = classifier_result.stderr {
+        stderr_parts.push(msg.clone());
+    }
+    if let Some(ref msg) = context_result.stderr {
+        stderr_parts.push(msg.clone());
+    }
+    if let Some(ref msg) = guard_result.stderr {
+        stderr_parts.push(msg.clone());
     }
 
-    Json(guard_result)
+    let merged_stderr = if stderr_parts.is_empty() {
+        None
+    } else {
+        Some(stderr_parts.join("\n"))
+    };
+
+    Json(HookResponse {
+        stdout: guard_result.stdout,
+        stderr: merged_stderr,
+        exit_code: guard_result.exit_code,
+    })
 }
 
 /// Stop hook — autonomy guard (permission-seeking scan)

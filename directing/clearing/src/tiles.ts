@@ -105,33 +105,37 @@ export class TilePoller {
       sessionAlive: false,
     };
 
-    const stateFile = path.join(SCAN_DIR, 'jeff-state.json');
+    const stateFile = path.join(SCAN_DIR, 'jeff-input.json');
     try {
       const content = fs.readFileSync(stateFile, 'utf-8');
       const data = JSON.parse(content);
 
-      // Map composite signal to state
-      const composite = data.composite || 'gray';
-      if (composite === 'green') tile.state = 'directing';
-      else if (composite === 'yellow') tile.state = 'watching';
-      else if (composite === 'red') tile.state = 'blocked';
-      else tile.state = 'away';
+      // Derive presence from input metrics
+      const updated = data.updated || 0;
+      const nowSecs = Math.floor(Date.now() / 1000);
+      const ageSecs = nowSecs - updated;
 
-      const sinceLastMin = data.since_last_min ?? 999;
-      tile.sessionAlive = sinceLastMin < 10;
+      // Active if input within last 5 minutes
+      if (ageSecs < 300) {
+        const keysPerMin = data.keys_per_min || 0;
+        const clicksPerMin = data.clicks_per_min || 0;
+        if (keysPerMin > 0) tile.state = 'directing';
+        else if (clicksPerMin > 0 || data.mouse_active) tile.state = 'watching';
+        else tile.state = 'present';
+        tile.sessionAlive = true;
+      } else {
+        tile.state = 'away';
+        tile.sessionAlive = false;
+      }
 
-      // Card: show mood + energy as the "card" slot
-      const mood = data.mood || '';
-      const energy = data.energy || '';
-      tile.card = mood && energy ? `${mood} · ${energy}` : mood || '';
+      // Show input activity as last action
+      const kpm = Math.round(data.keys_per_min || 0);
+      const cpm = Math.round(data.clicks_per_min || 0);
+      if (kpm > 0 || cpm > 0) {
+        tile.lastAction = `${kpm} keys/min · ${cpm} clicks/min`;
+      }
 
-      // Last action: posture + prompt type
-      const posture = data.posture || '';
-      const promptType = data.prompt_type || '';
-      tile.lastAction = [posture, promptType].filter(Boolean).join(' · ');
-
-      // Use since_last_min for age — more accurate than the stale updated timestamp
-      tile.lastActionAge = formatAge(sinceLastMin * 60);
+      tile.lastActionAge = formatAge(ageSecs);
     } catch {
       // No jeff state file
     }

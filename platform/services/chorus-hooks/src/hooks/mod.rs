@@ -28,3 +28,4 @@ pub mod memory_gate;
 pub mod tdd_gate;
 pub mod pair_gate;
 pub mod demo_gate;
+pub mod context_inject;

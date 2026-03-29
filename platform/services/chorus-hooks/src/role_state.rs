@@ -60,6 +60,24 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 
+    // Carry forward card from previous state if not explicitly provided
+    if card.is_empty() {
+        let prev_file = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));
+        if let Ok(content) = fs::read_to_string(&prev_file) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(prev_card) = parsed.get("card") {
+                    if let Some(n) = prev_card.as_u64() {
+                        card = n.to_string();
+                    } else if let Some(s) = prev_card.as_str() {
+                        if !s.is_empty() {
+                            card = s.to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Build enriched state — L2 fields
     let _ = fs::create_dir_all(SCAN_DIR);
     let ts = std::time::SystemTime::now()
