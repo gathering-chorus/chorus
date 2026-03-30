@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Domain — Seeds</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 10px; font-size: 0.86rem; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.74rem; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .stage { display: inline-block; background: #fef3c7; color: #92400e; padding: 2px 10px; border-radius: 12px; font-size: 0.76rem; font-weight: 600; }
+  .status-ok { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
+  .status-issue { background: #fef2f2; border-left: 3px solid #dc2626; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
+  .status-partial { background: #eff6ff; border-left: 3px solid #3b82f6; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
+  .svc { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px; margin: 8px 0; }
+  .svc h3 { font-size: 0.9rem; color: #2d4a7a; margin-bottom: 6px; }
+  .svc p { font-size: 0.82rem; margin-bottom: 4px; }
+  .svc a { color: #3b82f6; text-decoration: none; font-size: 0.8rem; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.8rem; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<h1>Domain — Seeds</h1>
+<p class="subtitle"><span class="stage">Sowing</span> &bull; Capture & intake &bull; Personal + Life + Chorus value streams</p>
+
+<p>Seeds are the entry point for all personal signal. Jeff texts a link, a thought, a photo from his phone. The system classifies, routes, and persists it. Two-message pattern: content then hashtag. This is how Jeff's world enters the graph.</p>
+
+<h2>UI</h2>
+<table>
+  <tr><th>Page</th><th>Route</th><th>Description</th></tr>
+  <tr><td>Seeds Triage</td><td><code>/seeds</code></td><td>Inbox of captured seeds. Status badges, type badges, route/discard actions. Auth required.</td></tr>
+  <tr><td>Seed Pipeline</td><td><code>/seeds/pipeline</code></td><td>Pipeline visualization. Admin only.</td></tr>
+</table>
+
+<h2>API</h2>
+<table>
+  <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+  <tr><td><code>/api/seed/sms</code></td><td>POST</td><td>Twilio webhook. Signature auth + phone whitelist.</td></tr>
+  <tr><td><code>/api/seed</code></td><td>GET</td><td>List captures (app, auth required)</td></tr>
+  <tr><td><code>/api/seeds</code></td><td>GET</td><td>List captures (alias)</td></tr>
+  <tr><td><code>/api/seed/destinations</code></td><td>GET</td><td>Routing destinations</td></tr>
+  <tr><td><code>/api/seed/:slug/route</code></td><td>POST</td><td>Route seed to destination</td></tr>
+  <tr><td><code>/api/seed/:slug/discard</code></td><td>POST</td><td>Discard seed</td></tr>
+  <tr><td><code>/api/seed/sync</code></td><td>POST</td><td>Sync missed messages</td></tr>
+  <tr><td><code>/api/chorus/seeds</code></td><td>GET</td><td>Chorus API — no auth, terminal-accessible (#1869)</td></tr>
+</table>
+
+<h2>Integration</h2>
+<table>
+  <tr><th>Pipeline</th><th>Source</th><th>Path</th></tr>
+  <tr><td>SMS Capture</td><td>Twilio webhook</td><td>Phone → Twilio → Cloudflare tunnel → /api/seed/sms → capture → classify → route</td></tr>
+  <tr><td>Correlation</td><td>Two-message pattern</td><td>Content msg + hashtag msg → 60s correlation window → auto-route to destination</td></tr>
+  <tr><td>Brief Writing</td><td>Hashtag routing</td><td>#wren/#silas/#kade → brief file in recipient's briefs/ directory</td></tr>
+</table>
+
+<div class="status-issue"><b>KNOWN ISSUE (2026-03-30):</b> Photo seeds don't arrive. Twilio webhook fixed (URL mismatch), brief writing fixed (broken symlink), but photo content still not captured. #1869 rejected, needs handler fix.</div>
+
+<h2>Data</h2>
+<table>
+  <tr><th>Property</th><th>Value</th></tr>
+  <tr><td>Graph</td><td><code>pods/jeff/capture/*</code></td></tr>
+  <tr><td>Ontology classes</td><td><code>jb:CaptureItem</code></td></tr>
+  <tr><td>Media storage</td><td><code>data/pods/jeff/capture/media/</code></td></tr>
+  <tr><td>Spine events</td><td><code>seed.received</code>, <code>seed.routed</code>, <code>seed.discarded</code></td></tr>
+</table>
+
+<p><strong>Routing destinations:</strong></p>
+<table>
+  <tr><th>Hashtag</th><th>Destination</th></tr>
+  <tr><td>#wren, #silas, #kade</td><td>Role brief</td></tr>
+  <tr><td>#team</td><td>All 3 role briefs</td></tr>
+  <tr><td>#idea</td><td>Ideas pod</td></tr>
+  <tr><td>#glimmer</td><td>Glimmers pod</td></tr>
+  <tr><td>#read, #watch, #cook, #todo</td><td>Corresponding collection</td></tr>
+  <tr><td>#garden</td><td>Garden bed (needs slug)</td></tr>
+</table>
+
+<h2>Child Services</h2>
+
+<div class="svc">
+  <h3>Service Design — Seed Pipeline</h3>
+  <p>Full service design with experience statement, integration paths (3 flows), non-functionals, failure modes, blast radius (8 files, 6 domains), and design gate checklist.</p>
+  <a href="/docs/pm/artifacts/service-design-seed-pipeline.html">Open in doc-catalog →</a>
+</div>
+
+<h2>Blast Radius</h2>
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>src/adapters/sms-seed.adapter.ts</code></td><td>SMS payload parsing, type detection, hashtag extraction</td></tr>
+  <tr><td><code>src/handlers/seed.handler.ts</code></td><td>Webhook handler, processCapture, routing, correlation</td></tr>
+  <tr><td><code>src/services/seed-capture.service.ts</code></td><td>Graph persistence, classification, person linking</td></tr>
+  <tr><td><code>src/services/seed-pod.service.ts</code></td><td>SOLID Pod CRUD, media download</td></tr>
+  <tr><td><code>src/interfaces/seed.interface.ts</code></td><td>Type definitions</td></tr>
+  <tr><td><code>src/validation/seed.schemas.ts</code></td><td>Zod schemas</td></tr>
+  <tr><td><code>src/middleware/twilio-auth.middleware.ts</code></td><td>HMAC signature validation, phone whitelist</td></tr>
+</table>
+
+<p><strong>Cross-domain reach:</strong> Seeds operates in 6 domains (seeds, coordination, people, stories, photos, notes) across all 3 value streams. Most cross-cutting service in the system.</p>
+
+<p class="meta">Domain Page — Seeds &bull; Generated from ontology + domain registry &bull; Wren &bull; 2026-03-30</p>
+</body>
+</html>
