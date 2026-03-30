@@ -775,14 +775,29 @@ fn cruft_scan_cmd() -> ExitCode {
         .map(|m| m.len()).unwrap_or(0);
     out.push_str(&format!("Size: {} bytes\n\n", activity_size));
 
-    // Disk check
+    // Disk check — APFS-aware via Finder free space (includes purgeable, matches Finder)
     out.push_str("## Disk\n");
-    let disk_out = std::process::Command::new("diskutil").args(["info", "/"])
-        .output().ok().and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default();
-    let disk_pct = disk_out.lines()
-        .find(|l| l.contains("Volume Used"))
-        .and_then(|l| l.split_whitespace().find(|w| w.ends_with('%')))
-        .unwrap_or("unknown");
+    let finder_free = std::process::Command::new("osascript")
+        .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
+        .output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().parse::<f64>().ok());
+    let container_total = std::process::Command::new("diskutil").args(["info", "/"])
+        .output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|text| {
+            text.lines()
+                .find(|l| l.contains("Container Total Space"))
+                .and_then(|l| l.split('(').nth(1))
+                .and_then(|s| s.split_whitespace().next())
+                .and_then(|n| n.parse::<u64>().ok())
+        });
+    let disk_pct = match (container_total, finder_free) {
+        (Some(total), Some(free)) if total > 0 => {
+            format!("{}%", ((total as f64 - free) / total as f64 * 100.0) as u64)
+        }
+        _ => "unknown".to_string(),
+    };
     out.push_str(&format!("Library: {}\n", disk_pct));
     if disk_pct.starts_with("9") { out.push_str("WARNING: disk above 90%\n"); }
     out.push('\n');
@@ -837,10 +852,7 @@ fn cruft_scan_cmd() -> ExitCode {
     // Disk trend
     out.push_str("## Disk Trend\n");
     let trend_file = "/tmp/disk-trend.log";
-    let disk_num = disk_out.lines()
-        .find(|l| l.contains("Volume Used"))
-        .and_then(|l| l.split_whitespace().find(|w| w.contains('.')))
-        .unwrap_or("0");
+    let disk_num = disk_pct.trim_end_matches('%');
     let today: String = clock.chars().take(10).collect();
     let trend_line = format!("{},{}\n", today, disk_num);
     let _ = fs::OpenOptions::new().create(true).append(true).open(trend_file)
@@ -969,12 +981,32 @@ fn context_cache_cmd(args: &[String]) -> ExitCode {
     let memory_text = memory_ctx.join().unwrap_or_default();
     if !memory_text.is_empty() { ok_sources.push("memory"); } else { failed_sources.push("memory"); }
 
-    // Health checks
-    let disk_out = Cmd::new("df").args(["-h", "/System/Volumes/Data"]).output().ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default();
-    let disk_pct = disk_out.lines().last()
-        .and_then(|l| l.split_whitespace().nth(4))
-        .unwrap_or("?%");
+    // Health checks — APFS disk via Finder free space (includes purgeable, matches Finder)
+    let disk_pct = {
+        // osascript returns Finder's free space which includes purgeable — matches what Jeff sees
+        let finder_free = Cmd::new("osascript")
+            .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
+            .output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse::<f64>().ok());
+        let container_total = Cmd::new("diskutil").args(["info", "/"])
+            .output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|text| {
+                text.lines()
+                    .find(|l| l.contains("Container Total Space"))
+                    .and_then(|l| l.split('(').nth(1))
+                    .and_then(|s| s.split_whitespace().next())
+                    .and_then(|n| n.parse::<u64>().ok())
+            });
+        match (container_total, finder_free) {
+            (Some(total), Some(free)) if total > 0 => {
+                format!("{}%", ((total as f64 - free) / total as f64 * 100.0) as u64)
+            }
+            _ => "?%".to_string(),
+        }
+    };
+    let disk_pct = disk_pct.as_str();
 
     let uncommitted = Cmd::new("git").args(["-C", repo, "status", "--porcelain", &format!("{}/", role_dir_name)])
         .output().ok().and_then(|o| String::from_utf8(o.stdout).ok())
@@ -1309,17 +1341,30 @@ fn health_hourly_cmd(args: &[String]) -> ExitCode {
         _ => unreachable!(),
     };
 
-    // Disk check
-    let disk_out = std::process::Command::new("df")
-        .args(["-h", "/System/Volumes/Data"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .unwrap_or_default();
-    let disk_pct: u32 = disk_out.lines().last()
-        .and_then(|l| l.split_whitespace().nth(4))
-        .and_then(|s| s.trim_end_matches('%').parse().ok())
-        .unwrap_or(0);
+    // Disk check — APFS-aware via Finder free space (includes purgeable, matches Finder)
+    let disk_pct: u32 = {
+        let finder_free = std::process::Command::new("osascript")
+            .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
+            .output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse::<f64>().ok());
+        let container_total = std::process::Command::new("diskutil").args(["info", "/"])
+            .output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|text| {
+                text.lines()
+                    .find(|l| l.contains("Container Total Space"))
+                    .and_then(|l| l.split('(').nth(1))
+                    .and_then(|s| s.split_whitespace().next())
+                    .and_then(|n| n.parse::<u64>().ok())
+            });
+        match (container_total, finder_free) {
+            (Some(total), Some(free)) if total > 0 => {
+                ((total as f64 - free) / total as f64 * 100.0) as u32
+            }
+            _ => 0,
+        }
+    };
     if disk_pct > 95 { eprintln!("CRITICAL: disk at {}%", disk_pct); }
     else if disk_pct > 90 { eprintln!("WARNING: disk at {}%", disk_pct); }
 
