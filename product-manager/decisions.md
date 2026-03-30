@@ -1,5 +1,14 @@
 # Decision Log
 
+## DEC-109: Design artifacts link to cards — ## Design section convention
+- **Date**: 2026-03-30
+- **Context**: The pair-flow-sequence diagram drove the pair gate hook (#1814), but the card didn't link to it. When Kade picked up the card, he implemented from AC text, not the design. The design was invisible — in an artifacts directory nobody searched. Service designs, sequence diagrams, borg assessments are domain-level artifacts that should travel with the work.
+- **Decision**: Every card that has a corresponding design artifact includes a `## Design` section in its description with the doc-catalog link. Convention: `## Design\n- [Service Design — Seed Pipeline](/docs/pm/artifacts/service-design-seed-pipeline.html)`. The design section goes after Experience, before AC.
+- **Rationale**: "We don't attach designs to cards." Jeff's observation. Builders implement from AC text and CLAUDE.md instructions, missing the actual design that informed the work. The design becomes invisible the moment the card enters WIP.
+- **Card**: #1875
+- **Consequences**: Wren adds ## Design to cards when design artifacts exist. Doc-catalog is the link target (not file paths). Builders read the design before implementing.
+- **Status**: Active
+
 ## DEC-108: Drop chunk taxonomy — domain and sequence are the two dimensions
 - **Date**: 2026-03-30
 - **Context**: Cards require both chunk (spine, ops, memory, app, strategy) and domain (chorus, photos, seeds, infrastructure). In practice, chunk and domain answer the same question: "what area is this?" Chunk is abstract, domain maps to real things. Nobody filters by chunk. It's friction at card creation with no consumer.
