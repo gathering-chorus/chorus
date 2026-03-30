@@ -43,6 +43,68 @@ fn log_hook(hook: &str, tool: &str, role: &str, decision: &str, detail: &str) {
     log_decision(hook, tool, role, "-", decision, 0, "-", detail);
 }
 
+/// Circuit-breaker wrapper for async hook calls (#1858)
+/// Returns HookResponse::allow() if module is disabled or times out.
+async fn guarded_hook<F, Fut>(state: &AppState, module: &str, f: F) -> HookResponse
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = HookResponse>,
+{
+    // Check circuit breaker
+    if state.is_hook_disabled(module).await {
+        return HookResponse::allow();
+    }
+
+    // Run with 2-second timeout
+    match tokio::time::timeout(std::time::Duration::from_secs(2), f()).await {
+        Ok(response) => response,
+        Err(_) => {
+            // Timeout — record failure
+            let broke = state.record_hook_failure(module).await;
+            let msg = format!("TIMEOUT after 2s");
+            log_decision("circuit_breaker", "-", "-", module, if broke { "BREAK" } else { "TIMEOUT" }, 2000, "-", &msg);
+            if broke {
+                // Notify Bridge
+                let _ = std::process::Command::new("curl")
+                    .args(["-s", "-X", "POST", "http://localhost:3470/api/message",
+                           "-H", "Content-Type: application/json",
+                           "-d", &format!(r#"{{"from":"system","text":"[ALERT] Hook circuit-breaker: {} disabled after 3 failures in 5min"}}"#, module),
+                           "--connect-timeout", "2"])
+                    .output();
+            }
+            HookResponse::allow() // fail open
+        }
+    }
+}
+
+/// Circuit-breaker wrapper for sync hook calls (#1858)
+async fn guarded_hook_sync<F>(state: &AppState, module: &str, f: F) -> HookResponse
+where
+    F: FnOnce() -> HookResponse,
+{
+    if state.is_hook_disabled(module).await {
+        return HookResponse::allow();
+    }
+    // Sync hooks can't timeout with tokio — just run them and catch panics
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    match result {
+        Ok(response) => response,
+        Err(_) => {
+            let broke = state.record_hook_failure(module).await;
+            log_decision("circuit_breaker", "-", "-", module, if broke { "BREAK" } else { "PANIC" }, 0, "-", "hook panicked");
+            if broke {
+                let _ = std::process::Command::new("curl")
+                    .args(["-s", "-X", "POST", "http://localhost:3470/api/message",
+                           "-H", "Content-Type: application/json",
+                           "-d", &format!(r#"{{"from":"system","text":"[ALERT] Hook circuit-breaker: {} disabled after 3 panics in 5min"}}"#, module),
+                           "--connect-timeout", "2"])
+                    .output();
+            }
+            HookResponse::allow()
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
