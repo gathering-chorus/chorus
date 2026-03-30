@@ -4,6 +4,13 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-03-30 — Kade (reboot)
+
+- [17:02] [Kade] → Pulled #1877 doc-catalog as live service. Built GET /api/doc-catalog (scans 5→10 dirs), POST /api/doc-catalog/add, rewrote static HTML to API client. 12 tests. → Jeff accepted
+- [16:58] [Kade] → Navigated for Silas on #1807 (daily review pipeline). Found alert rule bug (grep -q piped to grep -q). 18/18 AC tests pass. → Jeff, Silas
+- [16:55] [Kade] → Pulled #1866 Docker cleanup (Silas card). Background agent completed all 11 AC items. Nudged Silas for guardrails review. → Silas
+- [17:54] [Kade] → Reviewed #1861 session JSONL cache for Silas. Clean from engineering domain. → Silas
+
 ## 2026-03-29 — Kade (reboot)
 
 - [18:16] [Kade] → Paired with Wren on #1814 (verification gate hook) — navigated while Wren drove. All 5 AC verified: tdd_gate, pair_gate, demo_gate, all deny-blocking, 18 tests. → Jeff, Wren
