@@ -536,3 +536,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [2026-03-29 21:03] [Kade] #1843 seed endpoint fix — added /api/seeds plural alias, made webhook respond-before-process (prevents Twilio 502). AC #2/#3 blocked on Fuseki (#1833). Audited GRAPH ?g patterns for Silas consolidation — green light.
 
 - [2026-03-30 06:24–08:27] [Kade] Fixed broken gemba skill (paths + missing tail mode). Gemba'd Silas on #1833. Investigated photos page blank — root cause: Fuseki rebuild lost ~18K photos and left predicate variants unnormalized. Jeff identified data loss as the real issue. Pair gate now blocks handler edits.
+
+- [2026-03-30 12:06–12:14] [Kade] Short session. Committed 116 untracked files (briefs, seed SMS routing, scripts, workflows, handoff log) and pushed. Tested Silas's #1859 hook tracing — DENY entries show module name, duration, session ID, full reason. Confirmed working, nudged Silas.

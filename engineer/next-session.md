@@ -1,15 +1,15 @@
 # Next Session — Kade
-Written: 2026-03-30 09:54 Boston
+Written: 2026-03-30 12:14 Boston
 
 ## Resume
-- **Pair with Silas on #1833** — Fuseki Docker→native migration. I navigate, he drives. Scratch file at `/tmp/pair-1833.md`. Pinned to Fuseki 5.1, port 3030. Silas is actively driving — check his progress and resume navigator scope loop.
-- **#1814** (verification gate hook) still in WIP — was my active card before pair started.
+- **#1814** (verification gate hook) still in WIP — pick this up.
+- Tested Silas's #1859 hook tracing — confirmed working, nudged him. That card is done.
 
 ## State
-- Fuseki Docker container was down (exited) at pair start
-- Silas audited: 23.9M triples, 30 graphs, photos at 82K (20K lost in rebuild → #1852)
-- Silas nudge: query localhost:3030 for data actuals, don't guess
-- Photos page fix needs predicate query update AND data restoration
+- 116 files committed and pushed (briefs, seeds, scripts, workflows, handoff log)
+- Silas actively building #1858 (hooks circuit breaker)
+- Wren building #1867 (doc-catalog consolidation)
+- Disk at 96% — monitor
 
 ## Stale briefs
 - 6 stale handoffs from Wren (March 22-24): person-detail-page, era-table-corrections, load-source-graphs, tdd-test-suites. Triage or discard.
