@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gathering — User Manual</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 28px; }
+  h2 { font-size: 1.15rem; color: #2d4a7a; margin-top: 32px; margin-bottom: 12px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 12px; font-size: 0.88rem; }
+  .exp { font-size: 1.0rem; font-style: italic; color: #92400e; background: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .page { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 12px 0; }
+  .page h3 { font-size: 0.95rem; color: #2d4a7a; margin-bottom: 8px; }
+  .page p { font-size: 0.84rem; margin-bottom: 6px; }
+  .page .url { font-size: 0.74rem; color: #6b7280; font-family: monospace; display: block; margin-top: 6px; }
+  .warn { background: #fef2f2; border-left: 3px solid #dc2626; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
+  .warn b { color: #dc2626; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  @media print { body { padding: 20px; } .page { break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+<h1>Gathering — User Manual</h1>
+<p class="subtitle">What you see when you use your system &bull; For Jeff &bull; Wren &bull; 2026-03-30</p>
+
+<div class="exp">Everything you've collected, created, and cared about — music, photos, stories, books, people, ideas, notes — lives here and connects to everything else. You log in and see a mind map of your entire world. Click into any branch and you're browsing that part of your life.</div>
+
+<!-- HOME -->
+<h2>Home</h2>
+
+<div class="page">
+  <h3>The Mind Map</h3>
+  <p>You log in and land on a dark screen with the Miró fence moon behind it. In the center is a glowing node labeled "Gathering" with your photo and a mood ring that pulses based on your current posture and sentiment. Six branches radiate outward — <strong>Sowing</strong>, <strong>Growing</strong>, <strong>Practicing</strong>, <strong>Harvesting</strong>, <strong>Reflecting</strong>, and <strong>Chorus</strong>. Each branch is a circle with a photo background.</p>
+  <p>Click a branch and leaf nodes fan out — each one links to a collection page. Photos, Music, People, Stories — they're all one click from center. You can drag branches around on desktop to arrange them how you think about them.</p>
+  <p>This is the front door to everything. You don't navigate a menu — you navigate a map of your life.</p>
+  <span class="url">localhost:3000</span>
+</div>
+
+<!-- CAPTURING -->
+<h2>Capturing</h2>
+
+<div class="page">
+  <h3>Seeds — Your Inbox</h3>
+  <p>You open Seeds and see everything you've texted in from your phone. Each seed is a card with a colored status badge — blue for pending, green for routed, gray for discarded. Type badges show what it is: SMS in purple, links in blue, photos in pink, audio in orange.</p>
+  <p>You scan the list, decide what matters. Route a seed to a role or a collection. Discard the noise. Cards fade out when you act on them. This is triage — fast, decisive, nothing lingers unless you want it to.</p>
+  <p><strong>To send a seed:</strong> Text your Twilio number. Content first (a link, photo, thought), then a hashtag second (<code>#wren</code>, <code>#idea</code>, <code>#read</code>). Two messages, any order, 60-second window. It lands here.</p>
+  <span class="url">localhost:3000/seeds</span>
+</div>
+
+<div class="page">
+  <h3>Glimmers — Sparks You Noticed</h3>
+  <p>Glimmers are things that caught your attention but aren't ideas yet. You open this page and see cards with titles, notes, and sometimes link previews with images. Two action buttons on each: <strong>Ignite</strong> (amber — this spark matters, promote it) or <strong>Fade</strong> (muted — let it go). Filter by type or status. This is your peripheral vision, organized.</p>
+  <span class="url">localhost:3000/glimmers</span>
+</div>
+
+<!-- GROWING -->
+<h2>Growing</h2>
+
+<div class="page">
+  <h3>Ideas &amp; Projects</h3>
+  <p>Two sections on one page. Ideas on the left — shaped thoughts with status and categories. Projects on the right — committed work with a lifecycle. You can promote an idea to a project when it's ready. Share button opens a collaboration modal. This is where seeds graduate into something real.</p>
+  <span class="url">localhost:3000/ideas</span>
+</div>
+
+<!-- PRACTICING -->
+<h2>Practicing</h2>
+
+<div class="page">
+  <h3>Cooking</h3>
+  <p>A list of recipes and food things you've saved. Each item has a title, tags, and notes. Search and filter by tags. Add new items. Simple and functional — a recipe box, not a food blog.</p>
+  <span class="url">localhost:3000/cooking</span>
+</div>
+
+<div class="page">
+  <h3>Reading</h3>
+  <p>Your reading list with status tracking. Items show as <strong>done</strong> (green), <strong>reading</strong> (amber), or <strong>to-read</strong> (purple). If a link has OG metadata, you see a rich preview card with the image and description from the source. Otherwise just the title and your notes. Filter by status to see what's in progress.</p>
+  <span class="url">localhost:3000/reading</span>
+</div>
+
+<div class="page">
+  <h3>Watching</h3>
+  <p>Movies, shows, videos you're tracking. Each item has a category tag, a status badge (watched/watching/to-watch/dropped), and a star rating — 1 to 5 filled stars. Filter by category and status together. Your personal Letterboxd without the social pressure.</p>
+  <span class="url">localhost:3000/watching</span>
+</div>
+
+<!-- HARVESTING -->
+<h2>Harvesting</h2>
+
+<div class="page">
+  <h3>Photos</h3>
+  <p>Dark theme. A grid of your photos spanning three eras of your life — scanned prints from before 2006, camera shots from 2006-07, and iPhone photos since December 2007. Sort by date or name. Filter by album, source (Apple Photos, Google Photos, Google Drive), or person. Each photo card shows a source badge and hover metadata — title, dates, dimensions.</p>
+  <p>63K photos in canonical. Face clusters let you click a person and see every photo of them across decades.</p>
+  <span class="url">localhost:3000/photos</span>
+  <div class="warn"><b>KNOWN ISSUE:</b> Date sort shows upload/scan dates instead of taken dates (#1747). Old photos push to page 1. Browse by album as a workaround.</div>
+</div>
+
+<div class="page">
+  <h3>Music</h3>
+  <p>108K tracks. 40+ years of listening. You see an album grid with cover art (or generated letter placeholders when art is missing). Sort by artist, year, or recent plays. Filter by genre. Search by anything.</p>
+  <p>At the top, the <strong>Shuffle</strong> section — three algorithm versions. V3 is time-aware (favors music you haven't heard recently), V2 is genre-threaded (maintains flow between songs), V1 is pure random. Hit "Send to Navidrome" and the playlist exports to your streaming server. 30K songs on your phone via Subsonic.</p>
+  <p>Click an album to see its tracks, play counts, and metadata.</p>
+  <span class="url">localhost:3000/music &bull; localhost:4533 (Navidrome streaming)</span>
+</div>
+
+<div class="page">
+  <h3>People</h3>
+  <p>2,942 contacts. A stats bar at the top shows totals by source — Personal, LinkedIn, Facebook, Apple. Alphabetical navigation bar across the top for jumping to a letter. Search by name, company, or position.</p>
+  <p>Each person shows as a row with their name (linked to a detail page), their company and position, and color-coded source tags — LinkedIn blue, Facebook blue, Personal amber, Apple purple. Relationship tags (Family, Friend, Colleague, Team Member) show alongside. Click through to see everything connected to that person — photos, stories, mentions.</p>
+  <span class="url">localhost:3000/people</span>
+</div>
+
+<div class="page">
+  <h3>Stories</h3>
+  <p>135+ personal stories. Each one has a title, date, period tag, theme tags, and an excerpt. Filter by theme — click a theme button and the list narrows. Search by keyword. Click through to read the full story.</p>
+  <p>These are your experiences as persistent product inputs. The arc of your life told in first person — Dallas Systems, Staples, your sister Crissy, the dog walks, the garden blueprint your dad drew. They feed the Self ontology and connect to everything else in the graph.</p>
+  <span class="url">localhost:3000/stories</span>
+</div>
+
+<div class="page">
+  <h3>Books</h3>
+  <p>141+ books. Stats cards show total count and rooms. You see a grid of book cards with cover images, title, and author. Filter by room (where the physical book lives) or search. Add new books by uploading photos — Claude Vision classifies them automatically.</p>
+  <span class="url">localhost:3000/books</span>
+</div>
+
+<div class="page">
+  <h3>Notes</h3>
+  <p>823 items harvested from Apple Notes. Listed with title, date, folder tag, and a text excerpt. Filter by folder or search. Click through to read the full note. These are your Apple Notes, searchable and connected to the rest of your graph.</p>
+  <span class="url">localhost:3000/notes</span>
+</div>
+
+<div class="page">
+  <h3>Blog</h3>
+  <p>43 posts from 2019-2024 on lifes-practice. This is the only public page — no login required. Posts show with title, author, date, category badges, and an excerpt. "Read on lifes-practice" links to the full post on WordPress.</p>
+  <p>The arc: uncertainty → personal stories grounded in music → loss and recovery → principles. Water imagery throughout. People you lost form the spine.</p>
+  <span class="url">localhost:3000/blog &bull; Public at lightlifeurbangardens.com/blog</span>
+</div>
+
+<div class="page">
+  <h3>Property</h3>
+  <p>Your physical spaces. A property card shows name, address, acreage, purchase date, notes, and linked public records. Photos of the property in a strip. Tabs for sub-sections: <strong>Houses</strong> (with rooms), <strong>Gardens</strong> (with beds), <strong>Land</strong>. Add and edit through modals. This is where the garden maps your dad drew come to life digitally.</p>
+  <span class="url">localhost:3000/property</span>
+</div>
+
+<div class="page">
+  <h3>Gallery</h3>
+  <p>A browsable image grid with search, tag filtering, and alphabetical navigation. Sort by name or date. Click a photo and a lightbox opens for full-size viewing. Tags are color-coded. This is distinct from Photos — Gallery is the curated view, Photos is the complete archive.</p>
+  <span class="url">localhost:3000/gallery</span>
+</div>
+
+<!-- REFLECTING -->
+<h2>Reflecting</h2>
+
+<div class="page">
+  <h3>Self (/self)</h3>
+  <p>Curated story cards about your life. "Working Since Thirteen." "Staples 15 Incidents." "Outdoor Meditation." Each card has a theme label, a narrative in your voice, an insight callout in italics, and action buttons for PDF download and sharing. Memory chains show connected concepts with arrows between them.</p>
+  <p>This is also where the local AI lives — Mistral on the Bedroom Mac. You can have a conversation with your own data. It knows your stories, your values, your patterns. It never makes things up. Voice input via Whisper. Conversation persists across sessions.</p>
+  <span class="url">localhost:3000/self</span>
+</div>
+
+<div class="page">
+  <h3>Jeff (/jeff)</h3>
+  <p>Your personal dashboard — a cockpit. At the top, five state chips: Intensity, Mood, Energy, Posture, Pattern. Color-coded green/yellow/red/gray. Below that, collapsible sections: role activity bars (Wren/Silas/Kade with percentages), posture timeline, interaction patterns with counts, insights callouts, point-of-view boxes. Data-dense, earthy green accents, minimal chrome. This is how you see yourself in the system — not a profile page, an instrument panel.</p>
+  <span class="url">localhost:3000/jeff</span>
+</div>
+
+<!-- SEARCHING -->
+<h2>Searching</h2>
+
+<div class="page">
+  <h3>Search</h3>
+  <p>A hero banner with the dawn reflection image. A large search box in the center. Dropdown to filter by collection (checkboxes for each domain). Toggle for semantic search — when on, it finds things that <em>mean</em> something similar, not just keyword matches.</p>
+  <p>Results show title, collection, date, excerpt, and relevance score. When semantic search is active, a badge appears. 154K items indexed for full-text, 15K for semantic. Three layers working together: keywords for recall, vectors for resonance, SPARQL for precision.</p>
+  <span class="url">localhost:3000/search</span>
+</div>
+
+<!-- FINDING DOCS -->
+<h2>Finding Docs</h2>
+
+<div class="page">
+  <h3>Doc Catalog</h3>
+  <p>140 HTML artifacts the team has produced — manuals, service designs, architecture docs, research, borg assessments. Dark theme, search box at top. Stats: total docs, how many are in the navbar, how many aren't. Badges: NAV (green), NOT IN NAV (amber), EXTERNAL (blue), NEW (pink for today). Sections organize by topic. This is where you find everything the team has written.</p>
+  <span class="url">localhost:3000/doc-catalog.html</span>
+</div>
+
+<!-- PRIVACY -->
+<h2>Privacy</h2>
+
+<p>Everything starts private. Only you can see it. The graduation model:</p>
+<ul style="margin: 8px 0 12px 20px; font-size: 0.86rem;">
+  <li><strong>Private</strong> (default) — behind your login on the Library Mac. Seeds, experiments, personal memories.</li>
+  <li><strong>Shared</strong> — invite specific people to see specific collections. Read or read+write per collection.</li>
+  <li><strong>Public</strong> — open web at lightlifeurbangardens.com. Only the blog is public right now.</li>
+</ul>
+
+<p>The Self AI runs on a physically separate machine (Bedroom Mac). Your most private conversations never touch the machine serving the web. The trust boundary is the network cable, not a setting.</p>
+
+<p class="meta">Gathering User Manual &bull; For Jeff &bull; Wren &bull; 2026-03-30 &bull; Written from actual page inspection, not docs</p>
+
+</body>
+</html>
