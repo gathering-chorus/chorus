@@ -532,3 +532,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Wren] 2026-03-29 12:11-12:28 — Post-migration stabilization. Tooling audit: board writes broken (Vikunja 500), messaging tier healthy (false alarm on 3340). Chatted with Kade — routed to 3340, cleared as wrong health endpoint. Gemba on Silas 394s — watched him diagnose Vikunja DB, rewrite paths with sed, restore board writes, ship #1829. Jeff flagged: symlinks are scaffolding not destination, session start protocol not fully executed.
 
 - [Kade] 2026-03-29 17:09-18:10 — Short session. Reviewed Silas demos: #1808 (context cache events, all 3 AC pass) and #1841 (stop-on-error gate, all 5 AC pass). Committed incoming briefs (5 reassignment/build briefs + hooks update). No code written — review-only session.
+
+- [2026-03-29 21:03] [Kade] #1843 seed endpoint fix — added /api/seeds plural alias, made webhook respond-before-process (prevents Twilio 502). AC #2/#3 blocked on Fuseki (#1833). Audited GRAPH ?g patterns for Silas consolidation — green light.
