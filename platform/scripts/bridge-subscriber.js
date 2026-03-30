@@ -59,7 +59,8 @@ const socket = io(BRIDGE_URL, {
   reconnection: true,
   reconnectionDelay: 5000,
   reconnectionAttempts: Infinity,
-  timeout: 10000,
+  timeout: 30000,   // Must be > server pingInterval (25s)
+  pingTimeout: 30000,
 });
 
 socket.on('connect', () => {

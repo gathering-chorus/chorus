@@ -522,7 +522,7 @@ const socket = io({
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
-  timeout: 10000,
+  timeout: 30000,  // Must be > server pingInterval (25s)
 });
 const msgContainer = document.getElementById('messages-inner');
 const msgScroller = document.getElementById('messages');
