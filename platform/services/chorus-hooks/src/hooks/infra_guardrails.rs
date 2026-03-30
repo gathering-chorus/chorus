@@ -27,8 +27,12 @@ static DOCKER_LIFECYCLE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bdocker\s+(stop|rm|restart|kill)\b").unwrap()
 });
 
-static DOCKER_COMPOSE_DOWN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\bdocker[\s-]compose\s+down\b").unwrap()
+static DOCKER_COMPOSE_LIFECYCLE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bdocker[\s-]compose\s+(up|down|stop|restart|rm|kill|create|build)\b").unwrap()
+});
+
+static DOCKER_COMPOSE_FLAGS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bdocker[\s-]compose\s+--\S+").unwrap()
 });
 
 static GIT_COMMIT_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -54,6 +58,9 @@ static TERRAFORM_RE: LazyLock<Regex> = LazyLock::new(|| {
 const TEAM_REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects";
 
 /// Blocks dangerous infra commands for all roles (#1714)
+/// Docker is retired for app+Fuseki (now native LaunchAgents).
+/// Three containers remain: Vikunja (board), Navidrome (music), webvowl (ontology viz).
+/// Docker guards stay active to protect those containers.
 pub async fn check(input: &HookInput) -> HookResponse {
     if input.tool_name_str() != "Bash" {
         return HookResponse::allow();
@@ -64,6 +71,24 @@ pub async fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
     tracing::trace!(hook = "infra_guardrails", phase = "receive", cmd_len = cmd.len(), "checking bash command");
+
+    // Skip heredocs and echo/printf (absorbed from app_state_guard #1862)
+    if cmd.contains("<<") {
+        return HookResponse::allow();
+    }
+    let first_line = cmd.lines().next().unwrap_or("").trim_start();
+    if first_line.starts_with("echo ")
+        || first_line.starts_with("printf ")
+        || first_line.starts_with("cat >")
+        || first_line.starts_with("cat <<")
+    {
+        return HookResponse::allow();
+    }
+
+    // Allow service-lifecycle.sh (absorbed from app_state_guard #1862)
+    if cmd.contains("service-lifecycle.sh") || cmd.contains("app-state.sh") {
+        return HookResponse::allow();
+    }
 
     // docker exec
     if DOCKER_EXEC_RE.is_match(&cmd) {
@@ -113,11 +138,19 @@ pub async fn check(input: &HookInput) -> HookResponse {
         ));
     }
 
-    // docker compose down
-    if DOCKER_COMPOSE_DOWN_RE.is_match(&cmd) {
-        log_guardrail("deny", "docker-compose-down").await;
+    // docker compose lifecycle (up/down/stop/restart/rm/kill/create/build)
+    if DOCKER_COMPOSE_LIFECYCLE_RE.is_match(&cmd) {
+        log_guardrail("deny", "docker-compose-lifecycle").await;
         return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: docker compose down is prohibited. Use app-state.sh stop."
+            "BLOCKED: docker compose lifecycle commands are prohibited. Use app-state.sh (start|stop|restart|deploy|status)."
+        ));
+    }
+
+    // docker compose flags (--force-recreate, etc.)
+    if DOCKER_COMPOSE_FLAGS_RE.is_match(&cmd) {
+        log_guardrail("deny", "docker-compose-flags").await;
+        return HookResponse::deny(&permission_deny_json(
+            "BLOCKED: docker compose flags are prohibited. Use app-state.sh for container lifecycle."
         ));
     }
 
@@ -152,7 +185,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if DOCKER_RUN_RE.is_match(&cmd) {
         log_guardrail("ask", "docker-run").await;
         return HookResponse::deny(&permission_ask_json(
-            "docker run detected. Containers should be managed through app-state.sh and Terraform, not run directly. Is this a temporary test container? If so, Jeff must approve."
+            "docker run detected. App+Fuseki are native LaunchAgents. Only Vikunja, Navidrome, and webvowl still use Docker. Is this a temporary test container? If so, Jeff must approve."
         ));
     }
 
@@ -160,7 +193,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if TERRAFORM_RE.is_match(&cmd) {
         log_guardrail("ask", "terraform-direct").await;
         return HookResponse::deny(&permission_ask_json(
-            "Direct terraform apply/destroy detected. These should go through app-state.sh which wraps Terraform with health checks and verification."
+            "Direct terraform apply/destroy detected. App+Fuseki are native LaunchAgents now. Terraform is only used for remaining Docker services (Vikunja, Navidrome, webvowl)."
         ));
     }
 
@@ -324,14 +357,30 @@ mod tests {
         assert!(r.stdout.unwrap().contains("Docker lifecycle"));
     }
 
-    // === docker compose down ===
+    // === docker compose lifecycle (absorbed from app_state_guard #1862) ===
 
     #[tokio::test]
     async fn test_deny_docker_compose_down() {
         let input = kade_bash("docker compose down");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker compose down"));
+        assert!(r.stdout.unwrap().contains("docker compose lifecycle"));
+    }
+
+    #[tokio::test]
+    async fn test_deny_docker_compose_up() {
+        let input = kade_bash("docker compose up -d");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some());
+        assert!(r.stdout.unwrap().contains("docker compose lifecycle"));
+    }
+
+    #[tokio::test]
+    async fn test_deny_docker_compose_restart() {
+        let input = kade_bash("docker compose restart app");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some());
+        assert!(r.stdout.unwrap().contains("docker compose lifecycle"));
     }
 
     #[tokio::test]
@@ -339,7 +388,43 @@ mod tests {
         let input = kade_bash("docker-compose down");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker compose down"));
+        assert!(r.stdout.unwrap().contains("docker compose lifecycle"));
+    }
+
+    #[tokio::test]
+    async fn test_deny_docker_compose_flags() {
+        let input = kade_bash("docker compose --force-recreate up");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some());
+        assert!(r.stdout.unwrap().contains("docker compose flags"));
+    }
+
+    // === heredoc/echo skip (absorbed from app_state_guard #1862) ===
+
+    #[tokio::test]
+    async fn test_allow_heredoc_with_docker() {
+        let input = kade_bash("cat <<EOF\ndocker compose up\nEOF");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none());
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_allow_echo_with_docker() {
+        let input = kade_bash("echo 'docker compose up -d'");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none());
+        assert_eq!(r.exit_code, 0);
+    }
+
+    // === service-lifecycle.sh allowlist (absorbed from app_state_guard #1862) ===
+
+    #[tokio::test]
+    async fn test_allow_service_lifecycle() {
+        let input = kade_bash("bash service-lifecycle.sh restart app");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none());
+        assert_eq!(r.exit_code, 0);
     }
 
     // === git commit/add in team repo ===

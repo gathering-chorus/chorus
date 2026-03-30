@@ -224,12 +224,6 @@ async fn pre_tool_use_inner(
 
     match tool.as_str() {
         "Bash" => {
-            // app-state guard
-            last_module = "app_state_guard".into(); let r = hooks::app_state_guard::check(&input);
-            if r.stdout.is_some() {
-                return (last_module.clone(), r);
-            }
-
             // sparql guard
             last_module = "sparql_guard".into(); let r = hooks::sparql_guard::check(&input).await;
             if r.stderr.is_some() {
