@@ -382,6 +382,111 @@ conn.close()
 " 2>/dev/null
     ;;
 
+  tail)
+    # Tail a role's recent session activity
+    # Usage: chorus-query.sh tail <role> [--lines N] [--follow]
+    TAIL_ROLE=""
+    TAIL_LINES=20
+    TAIL_FOLLOW=false
+    for arg in $ARGS; do
+      case "$arg" in
+        --follow) TAIL_FOLLOW=true ;;
+        --lines) :;; # next arg is the count
+        [0-9]*) TAIL_LINES="$arg" ;;
+        *) TAIL_ROLE="$arg" ;;
+      esac
+    done
+
+    if [ -z "$TAIL_ROLE" ]; then
+      echo "Usage: chorus-query.sh tail <role> [--lines N] [--follow]"
+      exit 1
+    fi
+
+    tail_query() {
+      python3 -c "
+import sqlite3, os
+
+db_path = os.environ.get('CHORUS_DB', os.path.expanduser('~/.chorus/index.db'))
+conn = sqlite3.connect(db_path)
+cur = conn.cursor()
+
+role = '$TAIL_ROLE'
+limit = $TAIL_LINES
+
+cur.execute('''
+    SELECT author, content, timestamp
+    FROM messages
+    WHERE source='claude' AND channel=?
+    ORDER BY timestamp DESC
+    LIMIT ?
+''', (f'session:{role}', limit))
+
+results = cur.fetchall()
+results.reverse()
+
+for author, content, ts in results:
+    short = content.replace('\n', ' ')[:300]
+    tag = 'user' if author == 'user' else role
+    print(f'[{ts[:19]}] {tag}: {short}')
+
+conn.close()
+" 2>/dev/null
+    }
+
+    tail_query
+
+    if [ "$TAIL_FOLLOW" = "true" ]; then
+      LAST_TS=""
+      while true; do
+        sleep 5
+        NEW=$(python3 -c "
+import sqlite3, os
+
+db_path = os.environ.get('CHORUS_DB', os.path.expanduser('~/.chorus/index.db'))
+conn = sqlite3.connect(db_path)
+cur = conn.cursor()
+
+role = '$TAIL_ROLE'
+last = '$LAST_TS'
+
+if last:
+    cur.execute('''
+        SELECT author, content, timestamp
+        FROM messages
+        WHERE source='claude' AND channel=? AND timestamp > ?
+        ORDER BY timestamp ASC
+    ''', (f'session:{role}', last))
+else:
+    cur.execute('''
+        SELECT author, content, timestamp
+        FROM messages
+        WHERE source='claude' AND channel=?
+        ORDER BY timestamp DESC LIMIT 1
+    ''', (f'session:{role}',))
+
+results = cur.fetchall()
+for author, content, ts in results:
+    short = content.replace('\n', ' ')[:300]
+    tag = 'user' if author == 'user' else role
+    print(f'[{ts[:19]}] {tag}: {short}')
+
+if results:
+    print(f'__LAST_TS__={results[-1][2]}')
+
+conn.close()
+" 2>/dev/null)
+
+        if [ -n "$NEW" ]; then
+          NEW_TS=$(echo "$NEW" | grep '__LAST_TS__=' | sed 's/__LAST_TS__=//')
+          echo "$NEW" | grep -v '__LAST_TS__='
+          if [ -n "$NEW_TS" ]; then
+            LAST_TS="$NEW_TS"
+          fi
+        fi
+      done
+    fi
+    ;;
+
   *)
     echo "Usage: chorus-query.sh <mode> [args]"
     echo ""
@@ -389,6 +494,7 @@ conn.close()
     echo "  reconcile [role]  — What happened since your last session (default)"
     echo "  search <term>     — Full-text search across all sources"
     echo "  role <name>       — Recent activity for a specific role"
+    echo "  tail <role>       — Tail a role's recent session (--lines N, --follow)"
     echo "  stats             — Index statistics"
     ;;
 esac
