@@ -3,7 +3,11 @@
 # Card #1766 | DEC-107 compliant (no osascript)
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/bridge-post.sh"
+
 BRIDGE="http://localhost:3470/api/message"
+CHORUS_LOG="$SCRIPT_DIR/chorus-log.sh"
 TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
 APP_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
 STATUS="green"
@@ -52,11 +56,10 @@ else
   BODY="🔴 **Quality Review** — $TIMESTAMP\n\n$ISSUES"
 fi
 
-# --- Post to Bridge ---
-curl -sf -X POST "$BRIDGE" \
-  -H 'Content-Type: application/json' \
-  -d "$(jq -n --arg text "$(echo -e "$BODY")" --arg from "wren" \
-    '{from: $from, text: $text}')" \
-  &>/dev/null || echo "WARN: Bridge post failed" >&2
+# --- Post to Bridge (with retry) ---
+bridge_post "$BRIDGE" "wren" "$(echo -e "$BODY")" || true
+
+# --- Emit completion event ---
+"$CHORUS_LOG" quality.review.completed silas status=$STATUS 2>/dev/null || true
 
 echo -e "$BODY"

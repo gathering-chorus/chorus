@@ -4,7 +4,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/bridge-post.sh"
+
 BRIDGE="http://localhost:3470/api/message"
+CHORUS_LOG="$SCRIPT_DIR/chorus-log.sh"
 TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
 
 # Run both reviews and capture output
@@ -34,11 +37,15 @@ $QUALITY_OUTPUT
 ---
 **Board:** ${WIP_COUNT} WIP, ${DONE_TODAY} completed today."
 
-# Post combined summary to Bridge
-curl -sf -X POST "$BRIDGE" \
-  -H 'Content-Type: application/json' \
-  -d "$(jq -n --arg text "$BODY" --arg from "wren" \
-    '{from: $from, text: $text}')" \
-  &>/dev/null || echo "WARN: Bridge post failed" >&2
+# Post combined summary to Bridge (with retry)
+bridge_post "$BRIDGE" "wren" "$BODY" || true
+
+# Determine overall status string for spine event
+OVERALL_STATUS="green"
+echo "$OPS_OUTPUT$QUALITY_OUTPUT" | grep -q "🔴" && OVERALL_STATUS="red"
+echo "$OPS_OUTPUT$QUALITY_OUTPUT" | grep -q "🟡" && [ "$OVERALL_STATUS" != "red" ] && OVERALL_STATUS="yellow"
+
+# Emit completion event
+"$CHORUS_LOG" daily.review.completed silas status=$OVERALL_STATUS wip=$WIP_COUNT done_today=$DONE_TODAY 2>/dev/null || true
 
 echo "$BODY"

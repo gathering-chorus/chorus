@@ -1,0 +1,34 @@
+# daily-review-missing.yml — Alert when daily review doesn't fire by 6:30am
+# Card #1807 | AC4
+#
+# The daily review summary runs at ~6:05am Eastern via LaunchAgent.
+# If daily.review.completed is absent from chorus.log by 6:30am, something failed silently.
+#
+# Implementation: cron check at 6:30am scans today's chorus.log for the event.
+# If missing, posts a red alert to Bridge.
+
+name: daily-review-missing
+description: Daily review did not complete by 6:30am Eastern
+severity: warning
+schedule: "30 6 * * *"  # 6:30am daily
+
+check: |
+  # Look for daily.review.completed in today's chorus log
+  TODAY=$(TZ=America/New_York date '+%Y-%m-%d')
+  LOG_DIR="$HOME/Library/Logs/Gathering"
+  if grep -q "daily.review.completed" "$LOG_DIR/chorus.log" 2>/dev/null | grep -q "$TODAY"; then
+    echo "ok"
+    exit 0
+  fi
+  echo "missing"
+  exit 1
+
+action: |
+  # Post alert to Bridge
+  BRIDGE="http://localhost:3470/api/message"
+  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+  curl -sf -X POST "$BRIDGE" \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg text "🔴 **Alert** — $TIMESTAMP\n\nDaily review did not fire by 6:30am. Check LaunchAgents and logs." \
+      --arg from "silas" '{from: $from, text: $text}')" \
+    &>/dev/null || true
