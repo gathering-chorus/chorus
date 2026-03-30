@@ -31,7 +31,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     let (title, owner) = get_card_info(&card_id);
 
     // Check if brief already exists (builder may have written one manually)
-    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let date = chrono::Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%d").to_string();
     let brief_path = format!("{}/{}-demo-{}.md", BRIEFS_DIR, date, card_id);
     if std::path::Path::new(&brief_path).exists() {
         info!(card = %card_id, "demo-provenance: brief already exists, skipping");
@@ -52,7 +52,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
         owner = if owner.is_empty() { role.as_str() } else { &owner },
         title = if title.is_empty() { "unknown" } else { &title },
         role = role.as_str(),
-        ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ"),
+        ts = chrono::Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%z"),
     );
 
     if std::fs::write(&brief_path, &brief).is_ok() {

@@ -744,7 +744,7 @@ if mode == "pipeline":
         comment = "\n".join(comment_parts)
 
         # Post to board
-        board_ts = os.path.join(os.path.dirname(claudemd_dir), "scripts", "board-ts")
+        board_ts = os.path.join(os.path.dirname(claudemd_dir), "scripts", "cards")
         try:
             result = subprocess.run(
                 [board_ts, "comment", card_ref.lstrip('#'), comment],

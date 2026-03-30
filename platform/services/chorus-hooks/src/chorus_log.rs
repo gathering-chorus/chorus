@@ -10,6 +10,26 @@ use std::process::ExitCode;
 const LOG_FILE: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
 const SCHEMA_FILE: &str = "/Users/jeffbridwell/CascadeProjects/chorus/designing/schemas/spine-events.json";
 
+/// Eastern timezone offset — standalone for shim binary (#1850)
+fn eastern_offset() -> chrono::FixedOffset {
+    let output = std::process::Command::new("date")
+        .args(["+%z"])
+        .env("TZ", "America/New_York")
+        .output();
+    if let Ok(out) = output {
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if s.len() >= 5 {
+            let sign = if s.starts_with('-') { -1 } else { 1 };
+            let h: i32 = s[1..3].parse().unwrap_or(5);
+            let m: i32 = s[3..5].parse().unwrap_or(0);
+            if let Some(offset) = chrono::FixedOffset::east_opt(sign * (h * 3600 + m * 60)) {
+                return offset;
+            }
+        }
+    }
+    chrono::FixedOffset::west_opt(5 * 3600).unwrap()
+}
+
 pub fn run(args: &[String]) -> ExitCode {
     if args.len() < 2 {
         eprintln!("Usage: chorus-hook-shim log <event> <role> [key=value ...]");
@@ -30,8 +50,9 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 
-    // Timestamp
-    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    // Timestamp — Eastern time (#1850), matching wall-clock.txt and gemba output
+    let offset = eastern_offset();
+    let ts = chrono::Utc::now().with_timezone(&offset).format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
 
     // Build extra fields
     let mut extras = String::new();
@@ -147,7 +168,8 @@ mod tests {
 
         let line = find_event_line("test.timestamp2").expect("event in log");
         assert!(line.contains("\"timestamp\":\"20"));
-        assert!(line.contains("Z\""));
+        // Eastern time: -0400 or -0500 instead of Z
+        assert!(line.contains("-04") || line.contains("-05"), "should have Eastern offset, not Z: {}", line);
     }
 
     #[test]

@@ -9,6 +9,11 @@ const CLOCK_ISO_FILE: &str = "/tmp/wall-clock-iso.txt";
 /// Uses system `date` for correct DST transitions — month range was wrong
 /// for early March and early November (~2 weeks/year).
 fn boston_offset() -> FixedOffset {
+    boston_offset_pub()
+}
+
+/// Public accessor for boston_offset — used by chorus_log.rs (#1850)
+pub fn boston_offset_pub() -> FixedOffset {
     // Ask the OS — it knows the actual DST transition rules
     let output = std::process::Command::new("date")
         .args(["+%z"])
@@ -32,7 +37,8 @@ fn boston_offset() -> FixedOffset {
 }
 
 /// Write authoritative wall clock on every user prompt submit.
-/// Roles read /tmp/wall-clock.txt instead of running `date`.
+/// Also injects the timestamp into the hook response so roles see it
+/// without having to read a file — prevents stale cached timestamps (#1849).
 pub async fn tick(_input: &HookInput) -> HookResponse {
     let offset = boston_offset();
     let now = Utc::now().with_timezone(&offset);
@@ -40,9 +46,23 @@ pub async fn tick(_input: &HookInput) -> HookResponse {
     let human = now.format("%Y-%m-%d %H:%M").to_string();
     let iso = now.format("%Y-%m-%dT%H:%M:%S%z").to_string();
 
-    // Write both formats atomically
+    // Write both formats atomically (backward compat for scripts that read these)
     let _ = fs::write(CLOCK_FILE, &human);
     let _ = fs::write(CLOCK_ISO_FILE, &iso);
+
+    // Inject timestamp into stderr — role sees this on every prompt, can't cache a stale one
+    HookResponse::warn_stderr(&format!("wall-clock: {} Boston", human))
+}
+
+/// PostToolUse: inject current wall clock into every tool response cycle.
+/// This ensures the role can't go an entire response without a fresh timestamp.
+pub async fn post_tick(_input: &HookInput) -> HookResponse {
+    let offset = boston_offset();
+    let now = Utc::now().with_timezone(&offset);
+    let human = now.format("%Y-%m-%d %H:%M").to_string();
+
+    // Update the file on every tool call, not just prompt submit
+    let _ = fs::write(CLOCK_FILE, &human);
 
     HookResponse::allow()
 }

@@ -54,7 +54,7 @@ No formal ICD yet. Chorus is coordination infrastructure, not a data domain. If 
 - **Era 3 (shim wrappers):** Most bash scripts are now 50-byte wrappers calling chorus-hook-shim
 
 **Key scripts by function:**
-- Board: `board-ts`, `cards` (symlink)
+- Board: `cards`, `cards` (symlink)
 - Nudge: `nudge` (binary), `nudge.sh` (wrapper)
 - Spine: `chorus-log.sh` → chorus-hook-shim
 - Git: `git-queue.sh` (FIFO lock)
@@ -86,5 +86,5 @@ No formal ICD yet. Chorus is coordination infrastructure, not a data domain. If 
 - **Messaging tier is append-only.** 181K messages. SQLite WAL mode. Never truncate — downstream consumers depend on message IDs.
 - **Bridge is Jeff's primary surface.** Downtime = Jeff is blind to role activity. KeepAlive is set but monitor for silent failures.
 - **LaunchAgent changes go through Silas.** Cross-machine ops (ADR-012): read is free, write needs a card.
-- **No raw Vikunja API.** All board operations through board-ts CLI. Direct API caused 1,410 duplicate rows (#1774 context).
+- **No raw Vikunja API.** All board operations through cards CLI. Direct API caused 1,410 duplicate rows (#1774 context).
 - **Scripts dir has three eras.** Don't assume a .sh file is bash — many are 50-byte shim wrappers calling the Rust binary. Read before editing.

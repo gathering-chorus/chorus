@@ -1,27 +1,43 @@
 # Next Session — Wren
 
-## Critical: Clearing injection broken
-Silas's #1802 rewrite broke nudge injection — nudges steal Jeff's browser focus and inject keystrokes into the Clearing input field. Three "fix" attempts, none verified before declaring done. Jeff couldn't type. DO NOT NUDGE ANY ROLE until this is confirmed fixed by Silas with his own verification — not Jeff testing.
-
 ## What happened
-- Session started 17:34, ran through 03:30+
-- Productive evening: v3 assessment, doc-catalog update, seed triage, logging strategy carded (8 cards, pipeline wired), Clearing guest injection fixed, reconnect wired, background image fixed
-- Kade shipped #1803 (seed pipeline logging, 7/7 AC, 22 tests)
-- Rate limits blocked Kade for 6+ hours — I failed to re-nudge on schedule, just printed "holding" for hours
-- At 03:25 Clearing injection broke Jeff's ability to type — nudges from role-to-role were keystroke-injecting into Jeff's browser window
+- Massive session: development framework born from frustration, repo unified, 10+ cards shipped
+- Voice memos on dog walk → gates designed → logging standard shipped → Clearing tests paired → Chorus repo restructured
+- Jeff's direction: memory-and-research gate, prove-it gate, definition-of-done gate, root cause gate — all carded (#1811-1815, parent #1816)
+- Kade shipped: #1805 (spine events), #1806 (handler logging), #1810 (request metrics), #1817 (normalized log metadata with trace_id, value_stream, instance keys), #1786 (seed pipeline observability), #1824, #1825
+- Silas paired with Wren on #1818 (Clearing UI tests — 52 tests), then paired with Kade on #1827 (Chorus repo unification)
+- Chorus repo now has value stream L1 structure: capturing/ directing/ designing/ building/ proving/ platform/ archive/
+- Phase 2 filesystem design saved in memory
 
-## Cards to accept
-- #1800 (Silas, synthetic SMS probe) — demo ready, 5/5 AC
-- #1803 (Kade, seed pipeline logging) — demo ready, 7/7 AC
-- #1773 (Silas, structural audit) — shipped, needs review
-- #1802 (Silas, Clearing injection) — BROKEN, do not accept
+## Cards to review
+- #1818 (Clearing tests) — 52 tests, needs re-verify after migration
+- #1817 log metadata — Jeff accepted via Bridge (Kade self-committed — DEC-048 violation noted)
 
-## Jeff's direction for today
-- Focus on Practice & Gate Coverage — 6 of 34 gated, 28 ungated
-- Card #1791 (Designing stage gate hook) is the entry point
+## Critical: post-migration stabilization
+- Clearing flow section broken — Jeff flagged
+- PostToolUse hook still referencing old messages/services/ path
+- Board API returned 500 on comment — may need Vikunja restart
+- 5002 uncommitted files — migration artifacts need clean commit
+- All roles rebooting to pick up new paths
 
-## Feedback absorbed
-- Don't send nudges that steal Jeff's window
-- Re-nudge on decay schedule when a role stalls, don't just print "holding"
-- Verify defect fixes before declaring them done — never use Jeff as the test suite
-- "We go too fast on defects" — guess → declare fixed → Jeff discovers broken is the recurring failure mode
+## Gates to build (after stabilization)
+- #1811 Memory-and-research gate
+- #1812 Prove-it gate
+- #1814 Definition-of-done gate (TDD must be explicit, not inferred)
+- #1815 Root cause gate
+- #1828 Rename board-ts to cards
+
+## Feedback absorbed this session
+- Card immediately when Jeff asks — don't narrate
+- Memory-and-research gate renamed (was "check memory first")
+- Gemba splits attention — superficial attention on Jeff when observing another role
+- "Shit rolls downhill" — every skipped check lands on Jeff
+- Front-end tests mandatory on high-use pages
+- Don't make new cards when Jeff says don't
+- Playback before building — wait for Jeff to finish before acting
+
+## Stories captured
+- Sean McAloon — dropped prod Informix DB 1997
+- IMIRA — EXE WMS 50K lines, 7 years on taxonomy
+- Neighbors Amy + Malcolm — literal loom next door
+- "Borging" — new glossary term

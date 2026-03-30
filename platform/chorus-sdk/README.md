@@ -10,7 +10,7 @@ import { emit, search, subscribe } from 'chorus-sdk';
 
 ## Why
 
-Before this SDK, interacting with Chorus required shelling out to `chorus-log.sh` or hand-rolling HTTP calls. Every tool reinvented the same patterns. The SDK provides a typed, testable, consistent interface that any TypeScript process can use — from board-ts to future services.
+Before this SDK, interacting with Chorus required shelling out to `chorus-log.sh` or hand-rolling HTTP calls. Every tool reinvented the same patterns. The SDK provides a typed, testable, consistent interface that any TypeScript process can use — from cards to future services.
 
 ## Functions
 
@@ -83,7 +83,7 @@ unsub();
 
 ## Consumers
 
-- **board-ts** — the Kanban board CLI uses the SDK for spine event emission on every card mutation
+- **cards** — the Kanban board CLI uses the SDK for spine event emission on every card mutation
 - **nudge.sh / clearing-reply.sh** — shell scripts emit via `chorus-log.sh`; the SDK is the TypeScript equivalent
 
 ## Architecture
@@ -114,6 +114,6 @@ node demo.js     # live walkthrough (emit + search + subscribe)
 
 ## Card History
 
-- **#972** — SDK built: emit/search/subscribe, board-ts wired, 57 tests → 6 focused tests
+- **#972** — SDK built: emit/search/subscribe, cards wired, 57 tests → 6 focused tests
 - **#973** — This README + demo script + linked from System/About
 - **#1148** — Nudge spine events wired using the patterns this SDK established

@@ -57,7 +57,7 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
     let card = read_role_card(role.as_str());
 
     let obs = Observation {
-        ts: Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        ts: Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%z").to_string(),
         role: role.as_str().to_string(),
         tool: tool.to_string(),
         action,

@@ -79,7 +79,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         }
     }
 
-    let ts = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let ts = Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%z").to_string();
     let ho_id = format!("HO-{}", Utc::now().timestamp());
 
     let entry = serde_json::json!({

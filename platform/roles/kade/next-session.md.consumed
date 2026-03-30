@@ -1,28 +1,32 @@
 # Kade — Next Session
 
-## Accomplished
-- #1770 accepted: seed capture fix (URL regex, hashtag correlation, photo+hashtag routing) — 3 bugs, 3 fixes, live verified
-- #1794 accepted: Fuseki-only seed persistence — SeedSparqlService, 343 seeds migrated, pod fallback removed
-- #1798 accepted: default route to Wren, 120s correlation window, voice memo routing
-- #1799 accepted: MessageSid dedup gate
-- Design meeting: contributed gate inventory (30+ enforcement points), domain validation (7 missing domains, status corrections), practices list (14 across 4 categories), codebasePath+testCount on all 30+ domains, disposition property examples
-- OWL: added 6 services, expanded GatheringApp to 17 domain edges, Kade role to 10 owned domains
-- Transcribed Jeff voice memo (whisper) + Susskind YouTube (yt-dlp auto-subs)
-- Seed service design page (product-manager/artifacts/service-design-seed-pipeline.html)
-- Sexuality player LaunchAgent on Bedroom (com.gathering.sexuality-player)
-- Gemba: observed Wren ~90min on #1783, Silas ~36min on #1793
-
-## Seed Pipeline Status
-- 3/4 Kade cards done (#1794, #1798, #1799)
-- #1800 (Silas) in progress — synthetic SMS health probe
-- Pipeline auto-advances via board dependencies
-
-## Pending
-- Seed service design HTML needs Silas + Wren review feedback applied
-- 8 remaining pod domains to migrate to Fuseki (same pattern as seeds)
-- Gemba observation bug: TaskOutput returns accumulated buffer, can't distinguish new from old batches
-- Blog domain has testCount=0 — ungoverned territory
+## Accomplished (13 cards)
+- #1803: Seed pipeline e2e logging — 5 events across 6 hops
+- #1805: card.pulled spine event + spine schema seed events
+- #1817: Normalized 17-field log envelope with trace_id, value_stream, domain
+- #1806: Logger to ICD (12 catch blocks) + Self-AI (3 catch blocks)
+- #1810: HTTP metrics verified pre-existing, reassigned to Silas for alert migration
+- #1786: Seed observability — hashtag correlation, brief written, dropped events
+- #1785: 8 seed pipeline integration tests (two-message webhook flow)
+- #1819: 24 front-end validation tests + Playwright spine reporter
+- #1824: Request-level structured logging middleware with normalized envelope
+- #1825: SPARQL service error logging with endpoint + queryPreview
+- #1821/#1822/#1823: Verified auth, content, chorus handlers already logged
+- #1827: Chorus repo unification — 19 app path refs updated (pair with Silas)
 
 ## Board State
-- No WIP cards
-- Next candidates: #1800 waiting on Silas, seed pipeline card 4/4
+- No WIP cards for Kade
+- #1827 accepted, #1829 (Phase 2 folder structure) accepted
+- Remaining logging: #1821/#1822/#1823 closed as pre-existing
+
+## Pending
+- Wren chat on dev framework gates (#1814/#1811) — DoD + memory gate feedback delivered
+- Silas brief on session.role.ended + brief.handoff.acknowledged (from #1805)
+- #1631 (face clusters) discussed but not pulled — Jeff redirected to #1827
+- Chorus repo paths changed: messages/ → chorus/platform/scripts/, chorus/knowledge/schemas/, chorus/ops/logs/
+
+## Key Context
+- Repo restructured: chorus/ is now the canonical path, messages/ is a symlink
+- All app runtime resolves point to chorus/ subdirs (knowledge/, platform/, ops/)
+- Spine event envelope: 17 fields including value_stream, trace_id, domain
+- Test spine reporter wired into Playwright — test runs emit to chorus.log

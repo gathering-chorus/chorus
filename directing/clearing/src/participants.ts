@@ -131,7 +131,7 @@ An external guest is present in this session. Follow these rules strictly:
 
 - Do NOT mention internal infrastructure details (machine names, IP addresses, ports, file paths, Docker containers)
 - Do NOT reference internal cards, card numbers, board state, or sprint details
-- Do NOT mention specific tools (board-ts, nudge.sh, chorus-log, app-state.sh, etc.)
+- Do NOT mention specific tools (cards, nudge.sh, chorus-log, app-state.sh, etc.)
 - Do NOT reference internal team processes, hooks, gates, or operational patterns
 - Do NOT disclose the Chorus index, Fuseki, SPARQL, or internal data stores by name
 - Keep responses focused on the topic at hand — product, design, or strategy level

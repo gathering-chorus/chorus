@@ -1,7 +1,7 @@
 #!/bin/bash
 # andon-enrich.sh — slow-path enrichment + Jeff intensity for andon light
 # Runs every 30s via LaunchAgent (com.chorus.andon-enrich).
-# Part 1: Queries board-ts, workflow.sh, brief dirs, struggling markers, chorus.log
+# Part 1: Queries cards, workflow.sh, brief dirs, struggling markers, chorus.log
 #          Writes per-role JSON to /tmp/claude-team-scan/{role}-state.json
 # Part 2: Aggregates prompt timestamps to measure Jeff's pacing + input signals
 #          Writes /tmp/claude-team-scan/jeff-state.json
@@ -9,7 +9,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BOARD_TS="$SCRIPT_DIR/board-ts"
+BOARD_TS="$SCRIPT_DIR/cards"
 WORKFLOW="$SCRIPT_DIR/workflow.sh"
 SCAN_DIR="/tmp/claude-team-scan"
 TEMPO_LOG="$SCAN_DIR/tempo.log"
@@ -192,8 +192,8 @@ for role in $ROLE_NAMES; do
     fi
   fi
 
-  # Stale-card fallback: if board-ts returned no card but previous state had one
-  # within the last 300s, keep the previous card. Prevents transient board-ts
+  # Stale-card fallback: if cards returned no card but previous state had one
+  # within the last 300s, keep the previous card. Prevents transient cards
   # failures (contention, lock timeout) from flipping Active → Waiting.
   if [ -z "$card_id" ] && [ -f "$out_file" ]; then
     prev_updated=$(python3 -c "import json,sys; d=json.load(open('$out_file')); print(d.get('updated',0))" 2>/dev/null || echo 0)

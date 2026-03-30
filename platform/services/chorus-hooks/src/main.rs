@@ -242,6 +242,9 @@ async fn post_tool_use(
 ) -> Json<HookResponse> {
     let tool = input.tool_name_str().to_string();
 
+    // Clock sync on every tool call (#1849) — keeps /tmp/wall-clock.txt fresh
+    hooks::clock_sync::post_tick(&input).await;
+
     // Stop-on-error gate (#1841) — block next action when previous errored
     let r = hooks::stop_on_error::check(&input, &state).await;
     if r.exit_code != 0 {
@@ -300,8 +303,8 @@ async fn user_prompt_submit(
     State(state): State<AppState>,
     Json(input): Json<HookInput>,
 ) -> Json<HookResponse> {
-    // Clock sync on every prompt (#1559)
-    hooks::clock_sync::tick(&input).await;
+    // Clock sync on every prompt (#1559, #1849)
+    let clock_result = hooks::clock_sync::tick(&input).await;
 
     // Input classifier (#1659) — statement vs command detection
     let classifier_result = hooks::input_classifier::check(&input).await;
@@ -324,6 +327,9 @@ async fn user_prompt_submit(
     let guard_result = hooks::autonomy_guard::check(&input, &state).await;
 
     let mut stderr_parts: Vec<String> = Vec::new();
+    if let Some(ref msg) = clock_result.stderr {
+        stderr_parts.push(msg.clone());
+    }
     if let Some(ref msg) = classifier_result.stderr {
         stderr_parts.push(msg.clone());
     }

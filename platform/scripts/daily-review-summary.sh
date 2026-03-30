@@ -18,9 +18,9 @@ echo "$OPS_OUTPUT$QUALITY_OUTPUT" | grep -q "🟡" && [ "$OVERALL" != "🔴" ] &
 
 # Board snapshot
 BOARD_DIR="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts"
-WIP_COUNT=$(bash "$BOARD_DIR/board-ts" mine all 2>/dev/null | grep -c "WIP" || true)
+WIP_COUNT=$(bash "$BOARD_DIR/cards" mine all 2>/dev/null | grep -c "WIP" || true)
 WIP_COUNT=${WIP_COUNT:-0}
-DONE_TODAY=$(bash "$BOARD_DIR/board-ts" list Done 2>/dev/null | grep "$(date +%Y-%m-%d)" | wc -l | tr -d ' ' || true)
+DONE_TODAY=$(bash "$BOARD_DIR/cards" list Done 2>/dev/null | grep "$(date +%Y-%m-%d)" | wc -l | tr -d ' ' || true)
 DONE_TODAY=${DONE_TODAY:-0}
 
 BODY="$OVERALL **Daily Review** — $TIMESTAMP

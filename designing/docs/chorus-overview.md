@@ -33,7 +33,7 @@ Session templates (demo, board walk, review, SWAT) aren't meeting formats — th
 | **Peripheral nerves** | Block bad actions at the edge | sensitive-paths-hook, write-scrubber, infra-guardrails |
 | **Shared memory** | Persistent context across sessions | ~/.chorus/index.db, state files, activity.md |
 | **Sensory organs** | Observability — what happened? | chorus.log → Loki → Grafana (8 dashboards) |
-| **Muscles** | Operational scripts — do things | app-state.sh, system-state.sh, board-ts, slack-post.sh |
+| **Muscles** | Operational scripts — do things | app-state.sh, system-state.sh, cards, slack-post.sh |
 
 ### Value Stream Maturity (2026-02-20 snapshot)
 
@@ -108,7 +108,7 @@ Each stage has gates. Work items flow through the pipeline. Trust accrues as ite
 
 ## Board
 
-Run `board-ts --chorus list` or visit http://localhost:3456 (Project: Chorus).
+Run `cards --chorus list` or visit http://localhost:3456 (Project: Chorus).
 
 ## Logs & Observability
 

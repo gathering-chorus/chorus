@@ -39,7 +39,7 @@ case "$ROLE" in
   *)     echo "Unknown role: $ROLE" >&2; exit 1 ;;
 esac
 
-BOARD_TS="$SCRIPT_DIR/board-ts"
+BOARD_TS="$SCRIPT_DIR/cards"
 
 # ============================================================
 # HELPER: Dedup gate for auto-error card creation (#1455)
@@ -188,12 +188,17 @@ import json,sys,time
 try:
   o=json.load(sys.stdin)
   ts=o.get('ts','')
-  # Parse ISO timestamp to epoch for age calc
-  from datetime import datetime
+  from datetime import datetime,timezone,timedelta
   try:
-    from datetime import timezone
-    dt=datetime.strptime(ts,'%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+    # Handle both UTC (Z) and Eastern offset (-0400/-0500) formats
+    if ts.endswith('Z'):
+      dt=datetime.strptime(ts,'%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+    elif '-' in ts[-5:] or '+' in ts[-5:]:
+      dt=datetime.fromisoformat(ts)
+    else:
+      dt=datetime.strptime(ts,'%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
     age_s=int(time.time()-dt.timestamp())
+    if age_s<0: age_s=0
     if age_s<60: age=f'{age_s}s ago'
     elif age_s<3600: age=f'{age_s//60}m ago'
     else: age=f'{age_s//3600}h ago'
@@ -205,7 +210,15 @@ except: pass" 2>/dev/null || true)
     fi
     if [ -n "$OTHER_STATE" ] && [ "$OTHER_STATE" != "?" ]; then
       LINE="${OTHER_ROLE}: ${OTHER_STATE}${OTHER_CARD:+ ${OTHER_CARD}}"
-      [ -n "$LAST_OBS" ] && LINE="${LINE} — ${LAST_OBS}"
+      if [ -n "$LAST_OBS" ]; then
+        LINE="${LINE} — ${LAST_OBS}"
+      else
+        # No recent observation but state declared — check if session PID is alive
+        OTHER_PID=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('pid',''))" 2>/dev/null || true)
+        if [ -n "$OTHER_PID" ] && kill -0 "$OTHER_PID" 2>/dev/null; then
+          LINE="${LINE} — (thinking)"
+        fi
+      fi
       GLANCE="${GLANCE:+${GLANCE}
 }${LINE}"
     fi

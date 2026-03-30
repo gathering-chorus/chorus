@@ -39,7 +39,7 @@ pub async fn pre_tool_use(input: &HookInput, state: &AppState) -> HookResponse {
         .take(200)
         .collect();
 
-    let ts = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let ts = Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
     let line = serde_json::json!({
         "timestamp": ts,
         "level": "info",
@@ -148,8 +148,8 @@ pub async fn post_tool_use_bash(input: &HookInput, state: &AppState) -> HookResp
         format!("{:08x}", hasher.finish() & 0xFFFFFFFF)
     };
 
-    let ts = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let date_str = Utc::now().format("%Y-%m-%d").to_string();
+    let ts = Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%z").to_string();
+    let date_str = Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%d").to_string();
     let cmd_short: String = command.lines().next().unwrap_or("").chars().take(200).collect();
     let err_short: String = error_line.chars().take(300).collect();
 

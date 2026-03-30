@@ -313,7 +313,7 @@ app.get('/api/commands/:role', (req, res) => {
         short = short.replace(/^bash: bash .*\/scripts\//, '→ ')
                       .replace(/^bash: cd .*? && /, '→ ')
                       .replace(/^bash: /, '→ ')
-                      .replace(/^board op: bash .*\/board-ts /, '📋 ')
+                      .replace(/^board op: bash .*\/cards /, '📋 ')
                       .replace(/^committing changes$/, '📦 commit')
                       .replace(/^editing /, '✏️ ')
                       .replace(/^writing /, '📝 ')
@@ -428,7 +428,7 @@ app.get('/api/stream', (req, res) => {
           const digest = obs.digest || '';
           // Filter nudge traffic and system plumbing from stream
           if (digest.includes('nudge.sh') || digest.includes('nudge ') || digest.includes('chorus-log.sh') ||
-              digest.includes('role-state.sh') || digest.includes('board-ts') || digest.includes('smoke-check')) continue;
+              digest.includes('role-state.sh') || digest.includes('cards') || digest.includes('smoke-check')) continue;
           lines.push({
             ts: obs.ts,
             role: obs.role,
@@ -482,7 +482,7 @@ app.get('/api/flow', (_req, res) => {
     env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
   };
   try {
-    const boardTs = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts';
+    const boardTs = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards';
     const output = execSync(`bash ${boardTs} list 2>/dev/null`, envOpts).trim();
 
     // Parse all active cards

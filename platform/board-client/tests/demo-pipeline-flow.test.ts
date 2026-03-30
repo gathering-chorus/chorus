@@ -2,7 +2,7 @@
  * Demo Pipeline Flow Tests — #1241
  *
  * End-to-end validation of the demo pipeline:
- *   board-ts demo → spine event → observer nudge → brief to PM → accept/reject
+ *   cards demo → spine event → observer nudge → brief to PM → accept/reject
  *
  * Tests SDK functions with mocked BoardClient and spine events.
  */
@@ -103,7 +103,7 @@ beforeEach(() => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 1. DEMO START — board-ts demo emits spine event
+// 1. DEMO START — cards demo emits spine event
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Flow: Demo start', () => {

@@ -2,7 +2,7 @@
  * Card Lifecycle Flow Tests — #1235
  *
  * End-to-end validation of the card lifecycle pipeline:
- *   board-ts commands → WIP limits → AC gate → proving gate → accept/reject
+ *   cards commands → WIP limits → AC gate → proving gate → accept/reject
  *
  * Tests the SDK functions with mocked BoardClient and spine events.
  */
@@ -157,7 +157,7 @@ beforeEach(() => {
 // 1. BOARD-TS COMMANDS — list, view, mine, add, comment
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('Flow: board-ts read commands', () => {
+describe('Flow: cards read commands', () => {
   test('list returns all tasks across buckets', async () => {
     const client = createMockClient();
     const tasks = await client.list();

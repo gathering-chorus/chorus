@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-03-29T16:05:02.369Z",
+  "timestamp": "2026-03-29T21:25:16.644Z",
   "tasks": [
     {
       "index": 1783,
@@ -19,36 +19,36 @@
       "updated": "2026-03-29T12:33:58Z"
     },
     {
-      "index": 1829,
-      "apiId": 1912,
-      "title": "Phase 2 folder structure — value stream dirs + platform/",
-      "description": "## AC\n- [ ] Rename 5 groups from functional (product/team/knowledge/ops/archive) to value stream (capturing/directing/designing/building/proving)\n- [ ] Add platform/ for cross-cutting services (api, hooks, scripts, sdk)\n- [ ] L2 names use product names not tech names (clearing not bridge, pulse not messaging)\n- [ ] All path references updated (symlinks during transition)\n- [ ] All 3 roles boot clean on new structure\n\n## Context\nPhase 1 (#1827) landed the 5-group functional structure. Phase 2 maps to Jeff's hand-drawn architecture: value streams at L1, product names at L2.\n\n## Files\n- chorus/.gitignore\n- chorus/product/ → chorus/platform/ + value stream dirs\n- chorus/team/ → chorus/building/\n- chorus/knowledge/ → chorus/designing/\n- chorus/ops/ → chorus/proving/",
+      "index": 1839,
+      "apiId": 1922,
+      "title": "Experience-driven card format — every card starts with Jeff's experience in his voice",
+      "description": "## Experience\nI describe what I want to happen. The card captures that — my words, my sequence, what I see. Not implementation. Not AC checklist. The experience IS the directive.\n\n## AC\n1. Every new card has an Experience section written in Jeff's voice before AC\n2. Experience section is 2-5 sentences describing what Jeff sees/feels/gets\n3. AC items derive FROM the experience, not the other way around\n4. Cards without an Experience section are blocked from WIP\n5. Wren owns writing the Experience section — translating Jeff's words, not inventing\n6. Retrofit open Next/Later cards with Experience sections",
       "status": "WIP",
-      "owner": "Silas",
-      "priority": "P2",
+      "owner": "Wren",
+      "priority": "P1",
       "domains": [
         "chunk:strategy",
         "domain:chorus"
       ],
       "done": false,
-      "created": "2026-03-29T15:51:57Z",
-      "updated": "2026-03-29T15:52:37Z"
+      "created": "2026-03-29T21:06:13Z",
+      "updated": "2026-03-29T21:09:43Z"
     },
     {
-      "index": 1818,
-      "apiId": 1901,
-      "title": "Clearing UI validation tests — detailed front-end test coverage for all Clearing behaviors",
-      "description": "## Experience\nThe Clearing works reliably. Jeff types, the right role responds, no echoes, no leaks, no feedback loops. Every behavior is covered by tests that verify what Jeff sees.\n\n## AC\n1. Tests cover: Jeff sends a message → correct role receives it, response appears in stream\n2. Tests cover: role-to-role nudges do NOT appear in Clearing UI\n3. Tests cover: role-to-role /chat messages do NOT appear in Clearing send box\n4. Tests cover: no feedback loop — Clearing does not re-inject its own messages\n5. Tests cover: guest identity displays correctly (role names, not Guest)\n6. Tests cover: reconnect after disconnect — no duplicate messages, no lost messages\n7. Tests cover: background image renders, OG tags correct\n8. Tests cover: session tailer only shows Jeff-facing content (whitelist, not blacklist)\n9. All tests run in CI — no manual verification needed\n10. Wren navigates, Silas drives (/pair)\n\n## Files\n- chorus/bridge/src/server.ts\n- chorus/bridge/src/session-tailer.ts\n- chorus/bridge/tests/clearing-ui.test.ts",
+      "index": 1814,
+      "apiId": 1897,
+      "title": "Verification gate hook — block Done declaration without proof of fix",
+      "description": "## AC\n1. TDD gate — block demo/done without tests covering every AC item\n2. Pair gate — block building without pair on code cards\n3. Demo gate — block done without demo evidence\n4. All PreToolUse hooks that block, not suggest\n5. Tests cover each gate\n\n## Files\n- chorus/platform/services/chorus-hooks/src/hooks/tdd_gate.rs\n- chorus/platform/services/chorus-hooks/src/hooks/pair_gate.rs\n- chorus/platform/services/chorus-hooks/src/hooks/demo_gate.rs\n- chorus/platform/services/chorus-hooks/src/hooks/mod.rs\n- chorus/platform/services/chorus-hooks/src/main.rs",
       "status": "WIP",
-      "owner": "Silas",
+      "owner": "Kade",
       "priority": "P1",
       "domains": [
-        "chunk:spine",
+        "chunk:ops",
         "domain:chorus"
       ],
       "done": false,
-      "created": "2026-03-29T12:17:34Z",
-      "updated": "2026-03-29T12:22:42Z"
+      "created": "2026-03-29T10:49:11Z",
+      "updated": "2026-03-29T19:30:40Z"
     },
     {
       "index": 1810,
@@ -67,20 +67,147 @@
       "updated": "2026-03-29T12:31:30Z"
     },
     {
-      "index": 1804,
-      "apiId": 1887,
-      "title": "Add structured logging to messaging tier — zero operational logging today",
-      "description": "## AC\n- [ ] Request logging (method, path, status, duration)\n- [ ] Nudge lifecycle logging (received, stored, delivered, acked)\n- [ ] Queue depth exported as Prometheus metric\n- [ ] Dead letter entries logged with reason\n- [ ] Alert rule: nudge queue depth > 1000\n\n## Context\nFrom Silas logging strategy. Messaging tier has startup log only, zero operational logging. 4 services depend on it.",
+      "index": 1808,
+      "apiId": 1891,
+      "title": "Add events to context cache pipeline — silent empty returns",
+      "description": "## AC\n- [ ] session.context.built event on success with data sources included\n- [ ] session.context.error event when any source fails (with which source)\n- [ ] Thread failures no longer silently return empty strings\n\n## Context\nFrom Silas logging strategy. Context cache generates markdown, no events on success or failure.",
       "status": "WIP",
       "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T00:54:17Z",
+      "updated": "2026-03-29T21:11:28Z"
+    },
+    {
+      "index": 1838,
+      "apiId": 1921,
+      "title": "Context-synthesis hook — UserPromptSubmit searches Chorus/memory/git before role responds",
+      "description": "## Experience\nJeff states a problem. The system brings the context. Jeff never repeats himself.\n\n## AC\n1. UserPromptSubmit hook fires on every user message\n2. Hook extracts problem/question signal from Jeff's message\n3. Hook searches: Chorus index, MEMORY.md, decisions, git history, briefs\n4. Hook synthesizes results into a context block injected into the role's prompt\n5. Role's first response is grounded in 42 days of accumulated context — not a guess\n6. Sub-second — no perceptible delay to Jeff\n7. Tests cover: problem statement triggers search, synthesis block appears in prompt, role response references found context\n\n## Files\n- platform/services/chorus-hooks/src/hooks/memory_gate.rs\n- platform/services/chorus-hooks/src/main.rs",
+      "status": "Done",
+      "owner": "Silas",
       "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T20:55:23Z",
+      "updated": "2026-03-29T21:06:19Z"
+    },
+    {
+      "index": 1837,
+      "apiId": 1920,
+      "title": "Add logging to context synthesis gate — deny/allow/warn decisions invisible",
+      "description": "## AC\n1. memory_gate logs every decision: allow (reason), deny (reason), warn (reason)\n2. Logs include role, file path, session ID, and which markers were found/missing\n3. Visible in chorus-hooks stdout log (Loki-queryable)\n\n## Files\n- platform/services/chorus-hooks/src/hooks/memory_gate.rs",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T20:32:52Z",
+      "updated": "2026-03-29T21:06:25Z"
+    },
+    {
+      "index": 1835,
+      "apiId": 1918,
+      "title": "Memory gate must require Chorus search — DEC-074 enforcement gap",
+      "description": "## AC\n1. memory_gate.rs scans session JSONL for chorus-query.sh or /chorus skill invocations, not just file reads\n2. Gate blocks Edit/Write when no Chorus search detected in session\n3. File-level memory reads (MEMORY.md, decisions/) remain required alongside Chorus search\n4. Tests cover: block when only file reads done, pass when Chorus search + file reads both present\n\n## Files\n- platform/services/chorus-hooks/src/hooks/memory_gate.rs",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T20:01:55Z",
+      "updated": "2026-03-29T20:40:37Z"
+    },
+    {
+      "index": 1832,
+      "apiId": 1915,
+      "title": "LaunchAgent plists + Claude settings must be repo-tracked — path drift broke Vikunja + SessionStart",
+      "description": "LaunchAgent plists and Claude settings.local.json files live outside the repo. Path drift after repo restructure broke Vikunja writes and SessionStart hooks for all roles. These must be version-controlled.\n\n## AC\n- [ ] All LaunchAgent plists (com.chorus.*, com.gathering.*) have canonical source files in chorus/proving/config/launchagents/\n- [ ] A deploy script copies/symlinks canonical plists to ~/Library/LaunchAgents/\n- [ ] Role settings.local.json files have canonical source in chorus/{role}/.claude/ (already gitignored — add exception or move to config/)\n- [ ] A validation script checks that deployed plists match canonical source (detects drift)\n- [ ] No runtime config file references paths outside chorus/ (no messages/, no standalone architect/)\n\n## Files\n- chorus/proving/config/launchagents/ (new — canonical plist source)\n- chorus/platform/scripts/deploy-launchagents.sh (new)\n- chorus/platform/scripts/validate-config-paths.sh (new)\n- ~/Library/LaunchAgents/com.*.plist (deploy targets)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": true,
+      "created": "2026-03-29T16:30:34Z",
+      "updated": "2026-03-29T17:50:13Z"
+    },
+    {
+      "index": 1831,
+      "apiId": 1914,
+      "title": "Restore SessionStart hooks for all 3 roles",
+      "description": "Restore SessionStart hooks for all 3 roles — settings.local.json missing/stale after repo restructure.\n\n## AC\n- [ ] architect/.claude/settings.local.json exists with SessionStart hook pointing to session-start-thin.sh silas\n- [ ] engineer/.claude/settings.local.json SessionStart hook path updated from messages/ to chorus/platform/\n- [ ] product-manager/.claude/settings.local.json SessionStart hook path updated from messages/ to chorus/platform/\n- [ ] All 3 roles boot with session start context injection (session-start-thin.sh runs, /tmp/session-start-{role}.md created)\n- [ ] Init gate fires on first prompt for each role\n\n## Files\n- chorus/architect/.claude/settings.local.json\n- chorus/engineer/.claude/settings.local.json\n- chorus/product-manager/.claude/settings.local.json\n- chorus/platform/scripts/session-start-thin.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": true,
+      "created": "2026-03-29T16:24:47Z",
+      "updated": "2026-03-29T16:29:01Z"
+    },
+    {
+      "index": 1830,
+      "apiId": 1913,
+      "title": "Fix stale messages/ paths after repo restructure",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops"
+      ],
+      "done": true,
+      "created": "2026-03-29T16:24:47Z",
+      "updated": "2026-03-29T16:29:01Z"
+    },
+    {
+      "index": 1829,
+      "apiId": 1912,
+      "title": "Phase 2 folder structure — value stream dirs + platform/",
+      "description": "## AC\n- [ ] Rename 5 groups from functional (product/team/knowledge/ops/archive) to value stream (capturing/directing/designing/building/proving)\n- [ ] Add platform/ for cross-cutting services (api, hooks, scripts, sdk)\n- [ ] L2 names use product names not tech names (clearing not bridge, pulse not messaging)\n- [ ] All path references updated (symlinks during transition)\n- [ ] All 3 roles boot clean on new structure\n\n## Context\nPhase 1 (#1827) landed the 5-group functional structure. Phase 2 maps to Jeff's hand-drawn architecture: value streams at L1, product names at L2.\n\n## Files\n- chorus/.gitignore\n- chorus/product/ → chorus/platform/ + value stream dirs\n- chorus/team/ → chorus/building/\n- chorus/knowledge/ → chorus/designing/\n- chorus/ops/ → chorus/proving/",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T15:51:57Z",
+      "updated": "2026-03-29T16:25:44Z"
+    },
+    {
+      "index": 1828,
+      "apiId": 1911,
+      "title": "Rename board-ts to cards — CLI name matches what it does",
+      "description": "## AC\n1. CLI binary/script renamed from board-ts to cards\n2. All references updated: CLAUDE.md, skills, scripts, hooks, docs\n3. Alias board-ts → cards for backward compat during transition\n4. Help output says cards, not board-ts\n5. After: #1827 (repo unification lands first)\n\n## Files\n- chorus/platform/scripts/board-ts\n- chorus/platform/scripts/cards\n- chorus/engineer/CLAUDE.md\n- chorus/product-manager/CLAUDE.md\n- chorus/architect/CLAUDE.md",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
       "domains": [
         "chunk:spine",
         "domain:chorus"
       ],
-      "done": false,
-      "created": "2026-03-29T00:50:42Z",
-      "updated": "2026-03-29T10:30:37Z"
+      "done": true,
+      "created": "2026-03-29T15:25:16Z",
+      "updated": "2026-03-29T19:51:32Z"
     },
     {
       "index": 1827,
@@ -195,6 +322,22 @@
       "updated": "2026-03-29T14:42:47Z"
     },
     {
+      "index": 1818,
+      "apiId": 1901,
+      "title": "Clearing UI validation tests — detailed front-end test coverage for all Clearing behaviors",
+      "description": "## Experience\nThe Clearing works reliably. Jeff types, the right role responds, no echoes, no leaks, no feedback loops. Every behavior is covered by tests that verify what Jeff sees.\n\n## AC\n1. Tests cover: Jeff sends a message → correct role receives it, response appears in stream\n2. Tests cover: role-to-role nudges do NOT appear in Clearing UI\n3. Tests cover: role-to-role /chat messages do NOT appear in Clearing send box\n4. Tests cover: no feedback loop — Clearing does not re-inject its own messages\n5. Tests cover: guest identity displays correctly (role names, not Guest)\n6. Tests cover: reconnect after disconnect — no duplicate messages, no lost messages\n7. Tests cover: background image renders, OG tags correct\n8. Tests cover: session tailer only shows Jeff-facing content (whitelist, not blacklist)\n9. All tests run in CI — no manual verification needed\n10. Wren navigates, Silas drives (/pair)\n\n## Files\n- chorus/bridge/src/server.ts\n- chorus/bridge/src/session-tailer.ts\n- chorus/bridge/tests/clearing-ui.test.ts",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T12:17:34Z",
+      "updated": "2026-03-29T18:05:40Z"
+    },
+    {
       "index": 1817,
       "apiId": 1900,
       "title": "Normalize log metadata — enrich spine event emitter with product, stream, card, file, version",
@@ -209,6 +352,54 @@
       "done": true,
       "created": "2026-03-29T11:39:48Z",
       "updated": "2026-03-29T12:14:46Z"
+    },
+    {
+      "index": 1813,
+      "apiId": 1896,
+      "title": "Clearing session tailer whitelist — invert filter logic to show only Jeff-facing content",
+      "description": "## AC\n1. Session tailer uses a whitelist (what Jeff should see) not a blacklist (what to hide)\n2. Role-to-role nudges, /chat messages, DELIVERED confirmations, and nudge.sh refs never appear in Clearing\n3. Only Jeff-authored messages and role responses addressed to Jeff flow through\n4. Tests cover: role-to-role chat filtered, nudge filtered, Jeff message passes, role response to Jeff passes\n5. No new filter needed when a new role-to-role message type is added",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T10:47:28Z",
+      "updated": "2026-03-29T19:06:39Z"
+    },
+    {
+      "index": 1811,
+      "apiId": 1894,
+      "title": "Memory-and-research gate hook — PreToolUse block on writes without prior memory/git check",
+      "description": "## AC\n1. PreToolUse hook fires before Edit/Write to code files\n2. Hook checks session history for memory search (MEMORY.md, decisions, briefs) AND research (git log/show, Read of current state)\n3. If neither found, hook blocks with message: check memory and research first\n4. Hook passes silently when both checks detected\n5. Tests cover: block when no prior check, pass when memory checked, pass when both checked",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T10:43:45Z",
+      "updated": "2026-03-29T19:15:29Z"
+    },
+    {
+      "index": 1809,
+      "apiId": 1892,
+      "title": "Correlation IDs for data flows — seed trace, nudge trace, queryable in Loki",
+      "description": "## AC\n- [ ] Seed trace ID from webhook to display\n- [ ] Nudge trace ID from send to act\n- [ ] Queryable in Loki by trace ID\n\n## Context\nFrom Silas logging strategy. No end-to-end trace capability for any data flow.",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T00:55:19Z",
+      "updated": "2026-03-29T19:17:13Z"
     },
     {
       "index": 1806,
@@ -241,6 +432,22 @@
       "done": true,
       "created": "2026-03-29T00:50:56Z",
       "updated": "2026-03-29T11:32:11Z"
+    },
+    {
+      "index": 1804,
+      "apiId": 1887,
+      "title": "Add structured logging to messaging tier — zero operational logging today",
+      "description": "## AC\n- [ ] Request logging (method, path, status, duration)\n- [ ] Nudge lifecycle logging (received, stored, delivered, acked)\n- [ ] Queue depth exported as Prometheus metric\n- [ ] Dead letter entries logged with reason\n- [ ] Alert rule: nudge queue depth > 1000\n\n## Context\nFrom Silas logging strategy. Messaging tier has startup log only, zero operational logging. 4 services depend on it.",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-29T00:50:42Z",
+      "updated": "2026-03-29T18:58:31Z"
     },
     {
       "index": 1803,
@@ -530,6 +737,22 @@
       "updated": "2026-03-27T21:11:22Z"
     },
     {
+      "index": 1764,
+      "apiId": 1847,
+      "title": "Nudge delivery must not steal Jeff's focus — queue instead of keystroke inject when Jeff is active",
+      "description": "",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus"
+      ],
+      "done": true,
+      "created": "2026-03-27T16:22:57Z",
+      "updated": "2026-03-29T18:54:49Z"
+    },
+    {
       "index": 1760,
       "apiId": 1843,
       "title": "Werk Spine tab — map to 5 value stream stages, absorb System, fix Completed counter",
@@ -658,244 +881,20 @@
       "updated": "2026-03-27T13:34:53Z"
     },
     {
-      "index": 1751,
-      "apiId": 1834,
-      "title": "Migrate /tmp pipeline artifacts to CSC scope — no production data in /tmp",
-      "description": "## Files\n- messages/scripts/nifi-dsl.sh\n- architect/scripts/fuseki-maintenance.sh\n- ~/Library/LaunchAgents/com.gathering.log-sync.plist\n\n## AC\n- [x] Audit /tmp — 8.9GB of pipeline artifacts\n- [x] Pipeline scripts → Bedroom CSC (/Volumes/Gathering/sources/webmethods/)\n- [x] wm-packages demo data → CSC (443MB)\n- [x] NiFi DSL, fuseki-maintenance, harvest-media /tmp paths → persistent\n- [x] CSC Ops structure created (logs, state, metrics)\n- [x] Nightly log sync at 2:30am (Library hot → Bedroom CSC cold)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:infrastructure"
-      ],
-      "done": true,
-      "created": "2026-03-27T12:33:52Z",
-      "updated": "2026-03-27T16:28:47Z"
-    },
-    {
-      "index": 1750,
-      "apiId": 1833,
-      "title": "Wire /werk page to analytics pipeline + jeff endpoints — card velocity and attention cost",
-      "description": "## AC\n1. /werk page card velocity section consumes /api/analytics/pipeline (WIP durations, throughput)\n2. Attention cost counters consume /api/analytics/jeff reprompt data (fixes #1483 zeros)\n3. Date range parameter available on /werk\n## Files\nviews/werk.ejs, src/handlers/werk.handler.ts",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:roles"
-      ],
-      "done": true,
-      "created": "2026-03-27T12:27:36Z",
-      "updated": "2026-03-27T15:25:28Z"
-    },
-    {
-      "index": 1749,
-      "apiId": 1832,
-      "title": "Wire /cost page to analytics roles endpoint — session/tool counts from canonical API",
-      "description": "## AC\n1. /cost page daily activity section consumes /api/analytics/roles instead of computing inline\n2. Per-role session count and tool call count sourced from analytics endpoint\n3. Date range parameter respects cost page day selector\n## Files\nviews/cost.ejs, src/handlers/cost.handler.ts",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:roles"
-      ],
-      "done": true,
-      "created": "2026-03-27T12:27:31Z",
-      "updated": "2026-03-27T13:58:50Z"
-    },
-    {
-      "index": 1748,
-      "apiId": 1831,
-      "title": "Wire /jeff page to unified analytics endpoint — 3 fetches to 1",
-      "description": "## AC\n1. /jeff page fetches /api/analytics/jeff?range=30d instead of 3 separate proxy calls\n2. Voice, attention, and reprompt sections parse from unified response (.voice, .attention, .reprompt)\n3. Date range selector on /jeff page controls the range parameter\n4. Legacy proxy endpoints remain for backward compatibility\n## Files\nviews/jeff.ejs",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:roles"
-      ],
-      "done": true,
-      "created": "2026-03-27T12:27:22Z",
-      "updated": "2026-03-27T13:07:50Z"
-    },
-    {
-      "index": 1744,
-      "apiId": 1827,
-      "title": "Thumbnail generation — canonical UUID filenames for all merged photos",
-      "description": "## Files\n- architect/scripts/generate-thumbnails-v2.sh\n- architect/scripts/infra-alert.sh\n\n## AC\n- [x] Generate thumbnails using canonical UUID as filename\n- [x] Source images from Apple derivatives/originals, iPhone backup, Takeout files\n- [x] Date-bucketed to public/thumbnails/photos/\n- [x] Photos page shows 98K+ with thumbnails (99,024 of 100,399 = 98.6%)\n- [x] Idempotent — run again, skips existing, generates only new",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": true,
-      "created": "2026-03-27T10:24:31Z",
-      "updated": "2026-03-27T17:33:17Z"
-    },
-    {
-      "index": 1743,
-      "apiId": 1826,
-      "title": "3-way photo match — date bridge between Apple (UUID) and iPhone (IMG_NNNN)",
-      "description": "## Files\n- messages/scripts/nifi-dsl.sh\n- architect/scripts/photos-canonical-merge.groovy\n\n## AC\n- [x] Match Apple to iPhone by originalFilename + dateTaken within 2 sec\n- [x] Match iPhone to Takeout by filename (existing, working)\n- [x] Per-era SPARQL queries (no cross-graph full join)\n- [x] 3-way canonical merge with era-scoped authority\n- [x] Canonical count increased — 28,563 visible (up from 15K), 100K total in Fuseki",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": true,
-      "created": "2026-03-27T10:24:31Z",
-      "updated": "2026-03-27T12:19:03Z"
-    },
-    {
-      "index": 1742,
-      "apiId": 1825,
-      "title": "Apple Photos source re-ingest — add dateTaken as match key for iPhone bridge",
-      "description": "## Files\n- /tmp/wm-packages/apple-photos-to-rdf.groovy\n\n## AC\n- [x] Apple source ingest extracts dateTaken from ZDATECREATED\n- [x] dateTaken stored with second precision for matching\n- [x] 24,592 Apple records refreshed with originalFilename from ZADDITIONALASSETATTRIBUTES\n- [x] 24,586 of 24,592 have originalFilename — 9,490 are IMG_NNNN format (match key for iPhone/Takeout)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": true,
-      "created": "2026-03-27T10:24:31Z",
-      "updated": "2026-03-27T12:05:46Z"
-    },
-    {
-      "index": 1741,
-      "apiId": 1824,
-      "title": "Thumbnail re-key — generate thumbnails matching canonical UUIDs so all 110K+ photos render",
-      "description": "## Files\n- /tmp/wm-packages/photos-canonical-merge.groovy\n- messages/scripts/nifi-dsl.sh\n\n## AC\n- [ ] Apple source ingest uses ZORIGINALFILENAME for matching (not ZUUID) — enables 3-way match with iPhone/Takeout\n- [ ] Canonical merge matches Apple↔iPhone↔Takeout by original camera filename + dateTaken (±2 sec)\n- [ ] Thumbnails generated with canonical UUID (md5(filename|dateTaken))\n- [ ] Photos page shows 60K+ photos (Jeff sees it — current 15K is the floor)\n- [ ] No grey boxes — every displayed photo has a thumbnail\n\n## Why\nApple 24K records use UUID filenames that never match iPhone/Takeout IMG_NNNN. The 3-way merge only produced 36K iPhone+Takeout matches. Apple is isolated. Fix: extract ZORIGINALFILENAME from Apple SQLite, match on that.",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": true,
-      "created": "2026-03-26T21:30:06Z",
-      "updated": "2026-03-27T12:07:27Z"
-    },
-    {
-      "index": 1740,
-      "apiId": 1823,
-      "title": "Fix card.accepted event delivery to roles — bridge-subscriber drops events, session-tailer filters them",
-      "description": "## Root Cause\nbridge-subscriber.js:69-75 receives card.accepted via Socket.IO but intentionally drops it (empty if block, #1700 dedup fix). Session-tailer also filters spine events at line 250-251. Two filters, both blocking delivery.\n\n## Files\n- messages/scripts/bridge-subscriber.js (lines 69-75)\n- chorus/bridge/src/tailer.ts (lines 250-251)\n\n## AC\n1. card.accepted events reach observing roles' sessions within 10 seconds of emission\n2. No feedback loop regression (#1700 dedup behavior preserved)\n3. Wren receives acceptance signals without Jeff relaying them",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus"
-      ],
-      "done": true,
-      "created": "2026-03-26T21:28:25Z",
-      "updated": "2026-03-27T14:24:49Z"
-    },
-    {
-      "index": 1735,
-      "apiId": 1818,
-      "title": "Music page shuffle UI — play from browser",
-      "description": "## Files\n- jeff-bridwell-personal-site/views/music-collection.ejs\n- jeff-bridwell-personal-site/src/handlers/music.handler.ts\n\n## AC\n1. Shuffle button on /music page — archive and collection modes\n2. Results render as track list with artist, title, genre, play count\n3. Play button per track links to Navidrome stream\n4. V1/V2/V3 selector\n## Why\nShuffle endpoints work but Jeff has to curl them. Put it on the page he already visits.",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "sequence:sparql",
-        "domain:music"
-      ],
-      "done": true,
-      "created": "2026-03-26T20:07:04Z",
-      "updated": "2026-03-26T20:40:32Z"
-    },
-    {
-      "index": 1734,
-      "apiId": 1817,
-      "title": "Fix music domain endpoints — artist/album queries + track API",
-      "description": "## Files\n- jeff-bridwell-personal-site/src/services/music-query.service.ts\n- jeff-bridwell-personal-site/src/handlers/music.handler.ts\n- jeff-bridwell-personal-site/src/app.ts\n\n## AC\n1. GET /api/music/albums returns albums — fix artist name join (extract from URI slug, not dcterms:title)\n2. GET /api/music/artists returns artists with album counts — same URI slug fix\n3. GET /api/music/tracks?count=N&genre=X returns track listing from Fuseki\n4. GET /api/music/genres returns genre list with track counts\n5. All endpoints use ontology# namespace (not ns/)",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "sequence:sparql",
-        "domain:music"
-      ],
-      "done": true,
-      "created": "2026-03-26T19:40:25Z",
-      "updated": "2026-03-26T19:47:54Z"
-    },
-    {
-      "index": 1733,
-      "apiId": 1816,
-      "title": "Overnight performance baseline — scheduled system state capture",
-      "description": "## Files\n- messages/scripts/perf-baseline.sh\n- messages/scripts/perf-compare.sh\n- ~/Library/LaunchAgents/com.gathering.perf-baseline.plist\n\n## AC\n- [x] Script captures: disk, memory, CPU, Fuseki latency, NiFi queues, process count, errors\n- [x] Runs via LaunchAgent at 2am\n- [x] Results to messages/logs/perf-baseline-YYYY-MM-DD.json\n- [x] Compare script: diff overnight vs daytime, flag degradation",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops"
-      ],
-      "done": true,
-      "created": "2026-03-26T19:34:42Z",
-      "updated": "2026-03-26T20:02:25Z"
-    },
-    {
-      "index": 1732,
-      "apiId": 1815,
-      "title": "Fix stale app-state.sh path reference",
-      "description": "## Files\n- messages/scripts/app-state.sh (symlink)\n\n## AC\n- [x] app-state.sh callable from messages/scripts/ — symlink created\n- [x] Existing references work without full path",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P3",
-      "domains": [
-        "chunk:ops"
-      ],
-      "done": true,
-      "created": "2026-03-26T19:32:50Z",
-      "updated": "2026-03-26T19:58:19Z"
-    },
-    {
-      "index": 1730,
-      "apiId": 1813,
-      "title": "Refactor Apple Photos NiFi flow to DSL",
-      "description": "## Files\n- messages/scripts/nifi-dsl.sh\n- /tmp/wm-packages/apple-photos-to-rdf.groovy\n\n## AC\n- [x] Delete hand-wired Apple Photos PG (#1705)\n- [x] Create ICD-driven Groovy transform for Apple Photos SQLite\n- [x] Recreate via nifi-dsl.sh elt --name Photo-Apple --port 8878\n- [x] Send batch, verify 24K records in Fuseki\n- [x] nifi-dsl.sh list shows new PG",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:photos"
-      ],
-      "done": true,
-      "created": "2026-03-26T18:20:37Z",
-      "updated": "2026-03-26T18:45:30Z"
-    },
-    {
-      "index": 1809,
-      "apiId": 1892,
-      "title": "Correlation IDs for data flows — seed trace, nudge trace, queryable in Loki",
-      "description": "## AC\n- [ ] Seed trace ID from webhook to display\n- [ ] Nudge trace ID from send to act\n- [ ] Queryable in Loki by trace ID\n\n## Context\nFrom Silas logging strategy. No end-to-end trace capability for any data flow.",
+      "index": 1807,
+      "apiId": 1890,
+      "title": "Instrument daily review pipeline — silent failures, no spine events",
+      "description": "## AC\n- [ ] Each review step emits spine event on completion\n- [ ] Bridge POST failures logged and retried once\n- [ ] ops.health.checked event with pass/fail status\n- [ ] Alert rule: daily review didn't fire by 6:30am\n\n## Context\nFrom Silas logging strategy. Daily review runs at 6am, failures silently suppressed with 2>/dev/null.",
       "status": "Next",
       "owner": "Silas",
-      "priority": "P3",
+      "priority": "P2",
       "domains": [
-        "chunk:spine",
+        "chunk:ops",
         "domain:chorus"
       ],
       "done": false,
-      "created": "2026-03-29T00:55:19Z",
-      "updated": "2026-03-29T12:27:26Z"
+      "created": "2026-03-29T00:53:24Z",
+      "updated": "2026-03-29T18:58:32Z"
     },
     {
       "index": 1779,
@@ -979,20 +978,84 @@
       "updated": "2026-03-20T13:40:21Z"
     },
     {
-      "index": 1828,
-      "apiId": 1911,
-      "title": "Rename board-ts to cards — CLI name matches what it does",
-      "description": "## AC\n1. CLI binary/script renamed from board-ts to cards\n2. All references updated: CLAUDE.md, skills, scripts, hooks, docs\n3. Alias board-ts → cards for backward compat during transition\n4. Help output says cards, not board-ts\n5. After: #1827 (repo unification lands first)",
+      "index": 1841,
+      "apiId": 1924,
+      "title": "Stop-on-error gate — PostToolUse hook blocks next action when previous tool errors",
+      "description": "## Experience\nI watch a role hit 3-4 tool errors per turn and keep going like nothing happened. Spine events fail silently, paths break, scripts 404 — and the role just moves to the next tool call. I shouldn't have to be the one who notices.\n\n## AC\n1. PostToolUse hook detects non-zero exit code or error in tool output\n2. Hook blocks the next tool call with a clear message: stop, diagnose, fix\n3. Role must explicitly acknowledge or fix the error before continuing\n4. Exemptions only for known-benign patterns (e.g. grep finding no matches)\n5. Spine event emitted on every suppressed error so we can measure the problem",
       "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
+      "owner": "Silas",
+      "priority": "P1",
       "domains": [
-        "chunk:spine",
+        "chunk:ops",
         "domain:chorus"
       ],
       "done": false,
-      "created": "2026-03-29T15:25:16Z",
-      "updated": "2026-03-29T15:25:16Z"
+      "created": "2026-03-29T21:18:21Z",
+      "updated": "2026-03-29T21:18:21Z"
+    },
+    {
+      "index": 1840,
+      "apiId": 1923,
+      "title": "Repo-track all skills — ~/.claude/skills/ canonical source in chorus, symlinks out",
+      "description": "## Experience\nI edit a skill during a card and can't commit the change. Git can't see it, can't diff it, can't track it. 30+ skills live outside the repo in ~/.claude/skills/ with no version control. Edits vanish between sessions.\n\n## AC\n1. All skill SKILL.md files have canonical source inside the chorus repo\n2. ~/.claude/skills/ contains symlinks pointing to repo source, not standalone files\n3. Skill edits show up in git diff and can be committed normally\n4. Existing skill content preserved — no content loss during migration\n5. Document the convention so new skills get created in-repo first",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T21:17:05Z",
+      "updated": "2026-03-29T21:17:05Z"
+    },
+    {
+      "index": 1836,
+      "apiId": 1919,
+      "title": "Make /gemba deterministic — replace 138-line prompt with a script that outputs structured data, role just commentates",
+      "description": "## AC\n1. gemba-start.sh takes role name, outputs: card context, last 20 session lines, role state — one command\n2. gemba-tick.sh takes role name, outputs: new activity since last check — one command\n3. SKILL.md shrinks to: run the script, read output, commentate in 3-line format\n4. Behavior is identical every invocation — no improvisation, no variation\n5. First signal to Jeff in under 5 seconds",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T20:24:31Z",
+      "updated": "2026-03-29T20:24:31Z"
+    },
+    {
+      "index": 1834,
+      "apiId": 1917,
+      "title": "Reports from the Blockverse — blog about what it's actually like to coordinate AI agents",
+      "description": "Blog/content series documenting the honest reality of human-AI team coordination. Working title: \"Reports from the Blockverse\" (from Susskind's block universe — agents experience time flat, Jeff experiences it linearly).\n\nAC:\n- [ ] First post drafted — pick from today's session stories (seasick Clearing, invisible elephant, 710GB nobody asked for, the nudge that said nothing)\n- [ ] Published on wordpress-blog or lightlifeurbangardens.com/blog (Jeff's call)\n- [ ] Connects to Chorus product positioning — this is the honest version of \"AI team coordination\"",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-29T18:14:40Z",
+      "updated": "2026-03-29T18:14:40Z"
+    },
+    {
+      "index": 1833,
+      "apiId": 1916,
+      "title": "Investigate Fuseki TDB2 710GB disk usage — compact or rebuild indexes",
+      "description": "Fuseki pods TDB2 database is 710GB — 36% of Library's 2TB disk. Six quad indexes (OSPG 179G, POSG 135G, etc.) plus 19G nodes.dat.\n\nAC:\n- [ ] Count actual triples vs expected — determine if data is duplicated across graphs\n- [ ] Check for large literal values stored inline (base64, HTML blobs)\n- [ ] Test TDB2 compact operation and measure space reclaimed\n- [ ] If compact insufficient, plan clean rebuild from TTL sources\n- [ ] Disk usage under 200GB after fix (or documented justification for current size)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-29T16:34:17Z",
+      "updated": "2026-03-29T16:34:17Z"
     },
     {
       "index": 1826,
@@ -1043,38 +1106,6 @@
       "updated": "2026-03-29T10:56:45Z"
     },
     {
-      "index": 1814,
-      "apiId": 1897,
-      "title": "Verification gate hook — block Done declaration without proof of fix",
-      "description": "## AC\n1. PreToolUse hook detects when a role moves a card to Done or declares a fix complete\n2. Hook checks session history for verification step — actual test of the fix, not just build success\n3. If no verification found, hook blocks with message: verify the fix works before declaring done\n4. Build passing is not verification — the symptom must be retested\n5. Tests cover: block without verification, pass with verification present",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-29T10:49:11Z",
-      "updated": "2026-03-29T11:35:56Z"
-    },
-    {
-      "index": 1813,
-      "apiId": 1896,
-      "title": "Clearing session tailer whitelist — invert filter logic to show only Jeff-facing content",
-      "description": "## AC\n1. Session tailer uses a whitelist (what Jeff should see) not a blacklist (what to hide)\n2. Role-to-role nudges, /chat messages, DELIVERED confirmations, and nudge.sh refs never appear in Clearing\n3. Only Jeff-authored messages and role responses addressed to Jeff flow through\n4. Tests cover: role-to-role chat filtered, nudge filtered, Jeff message passes, role response to Jeff passes\n5. No new filter needed when a new role-to-role message type is added",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-29T10:47:28Z",
-      "updated": "2026-03-29T10:47:29Z"
-    },
-    {
       "index": 1812,
       "apiId": 1895,
       "title": "Prove-it gate hook — block 'cant be done' assertions without evidence",
@@ -1089,54 +1120,6 @@
       "done": false,
       "created": "2026-03-29T10:45:09Z",
       "updated": "2026-03-29T10:45:09Z"
-    },
-    {
-      "index": 1811,
-      "apiId": 1894,
-      "title": "Memory-and-research gate hook — PreToolUse block on writes without prior memory/git check",
-      "description": "## AC\n1. PreToolUse hook fires before Edit/Write to code files\n2. Hook checks session history for memory search (MEMORY.md, decisions, briefs) AND research (git log/show, Read of current state)\n3. If neither found, hook blocks with message: check memory and research first\n4. Hook passes silently when both checks detected\n5. Tests cover: block when no prior check, pass when memory checked, pass when both checked",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-29T10:43:45Z",
-      "updated": "2026-03-29T11:35:57Z"
-    },
-    {
-      "index": 1808,
-      "apiId": 1891,
-      "title": "Add events to context cache pipeline — silent empty returns",
-      "description": "## AC\n- [ ] session.context.built event on success with data sources included\n- [ ] session.context.error event when any source fails (with which source)\n- [ ] Thread failures no longer silently return empty strings\n\n## Context\nFrom Silas logging strategy. Context cache generates markdown, no events on success or failure.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-29T00:54:17Z",
-      "updated": "2026-03-29T00:56:46Z"
-    },
-    {
-      "index": 1807,
-      "apiId": 1890,
-      "title": "Instrument daily review pipeline — silent failures, no spine events",
-      "description": "## AC\n- [ ] Each review step emits spine event on completion\n- [ ] Bridge POST failures logged and retried once\n- [ ] ops.health.checked event with pass/fail status\n- [ ] Alert rule: daily review didn't fire by 6:30am\n\n## Context\nFrom Silas logging strategy. Daily review runs at 6am, failures silently suppressed with 2>/dev/null.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-29T00:53:24Z",
-      "updated": "2026-03-29T00:56:46Z"
     },
     {
       "index": 1792,
@@ -1425,22 +1408,6 @@
       "done": false,
       "created": "2026-03-27T16:27:11Z",
       "updated": "2026-03-27T16:27:11Z"
-    },
-    {
-      "index": 1764,
-      "apiId": 1847,
-      "title": "Nudge delivery must not steal Jeff's focus — queue instead of keystroke inject when Jeff is active",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-27T16:22:57Z",
-      "updated": "2026-03-27T16:22:57Z"
     },
     {
       "index": 1763,
@@ -1776,6 +1743,37 @@
       "done": false,
       "created": "2026-03-23T22:13:30Z",
       "updated": "2026-03-23T22:13:30Z"
+    },
+    {
+      "index": 1647,
+      "apiId": 1730,
+      "title": "Source registry service — runtime API for provider status, load state, and staleness",
+      "description": "Jeff's direction: we keep rediscovering what sources exist, where they live, and what's loaded. The ICD (#1642) defines the rules. This service reads them at runtime.\n\nAPI endpoint that answers:\n- What source graphs exist in Fuseki per domain?\n- When was each last loaded/refreshed?\n- What's the record count vs expected count from provider?\n- Which sources are stale (schema hash changed since last load)?\n- For a given record (by date), which source is golden for each field?\n\nReads from: ICD provider model, Fuseki graph metadata, icd:schemaHash, icd:needsRevalidation.\n\nRelated: #1618 (cache version hashes), #1642 (era-scoped ICD)\n\n## AC\n- [ ] GET /api/registry/sources/:domain — list all providers with load status\n- [ ] GET /api/registry/authority/:domain?date=YYYY-MM-DD — which provider is golden per field for a given date\n- [ ] Staleness detection — flag source graphs where schema hash != current ICD version\n- [ ] Record count comparison — loaded vs expected per provider\n- [ ] Surfaced on a page or existing dashboard (not just API)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:34:16Z",
+      "updated": "2026-03-23T18:34:16Z"
+    },
+    {
+      "index": 1646,
+      "apiId": 1729,
+      "title": "Rebuild search index from new canonical photo graph",
+      "description": "After canonical photo graph is rebuilt (#1644), the search index (FTS + semantic embeddings) needs to reflect the new data.\n\nDepends on: #1644 (canonical rebuild complete)\n\n## AC\n- [ ] Rebuild FTS index from new canonical photo graph\n- [ ] Rebuild semantic embeddings for photos from new canonical\n- [ ] Verify photo search returns results with correct field coverage (dimensions, GPS, dates)\n- [ ] Search result count reflects new canonical count, not old 63K inflated count",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:28:22Z",
+      "updated": "2026-03-23T18:28:22Z"
     },
     {
       "index": 945,

@@ -8,7 +8,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 WORKFLOWS_DIR = os.path.join(REPO_ROOT, "messages", "workflows")
 ACTIVE_DIR = os.path.join(WORKFLOWS_DIR, "active")
 ARCHIVE_DIR = os.path.join(WORKFLOWS_DIR, "archive")
-BOARD_TS = os.path.join(SCRIPT_DIR, "board-ts")
+BOARD_TS = os.path.join(SCRIPT_DIR, "cards")
 
 os.makedirs(ACTIVE_DIR, exist_ok=True)
 os.makedirs(ARCHIVE_DIR, exist_ok=True)

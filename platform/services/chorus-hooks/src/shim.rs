@@ -1046,7 +1046,21 @@ fn context_cache_cmd(args: &[String]) -> ExitCode {
 
     // Spine events — AC for #1808
     let log_path = format!("{}/chorus/platform/logs/chorus.log", repo);
-    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let eastern_offset = {
+        let out = std::process::Command::new("date").args(["+%z"]).env("TZ", "America/New_York").output();
+        out.ok().and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| {
+                let s = s.trim();
+                if s.len() >= 5 {
+                    let sign = if s.starts_with('-') { -1 } else { 1 };
+                    let h: i32 = s[1..3].parse().unwrap_or(5);
+                    let m: i32 = s[3..5].parse().unwrap_or(0);
+                    chrono::FixedOffset::east_opt(sign * (h * 3600 + m * 60))
+                } else { None }
+            })
+            .unwrap_or_else(|| chrono::FixedOffset::west_opt(5 * 3600).unwrap())
+    };
+    let ts = chrono::Utc::now().with_timezone(&eastern_offset).format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
 
     if !failed_sources.is_empty() {
         let event = serde_json::json!({
