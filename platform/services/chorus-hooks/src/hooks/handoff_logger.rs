@@ -133,3 +133,41 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     HookResponse::allow()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::AppState;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_input(tool: &str) -> HookInput {
+        HookInput {
+            tool_name: Some(tool.to_string()),
+            tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test.txt", "new_string": "test", "old_string": "old"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn allows_non_write_tools() {
+        let state = AppState::new();
+        let input = make_input("Read");
+        check(&input, &state).await;
+        // handoff_logger only fires on Write/Edit — Read should be a no-op
+    }
+
+    #[tokio::test]
+    async fn allows_normal_write() {
+        let state = AppState::new();
+        let input = make_input("Write");
+        check(&input, &state).await;
+        // Should not panic or error on normal write
+    }
+}

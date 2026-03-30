@@ -115,3 +115,63 @@ pub fn check(input: &HookInput) -> HookResponse {
 
     HookResponse::allow()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_bash(cmd: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(json!({"command": cmd})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    #[test]
+    fn allows_normal_bash_commands() {
+        let input = make_bash("ls -la /Users/jeffbridwell/CascadeProjects");
+        let r = check(&input);
+        assert_eq!(r.exit_code, 0);
+        assert!(r.stdout.is_none());
+    }
+
+    #[test]
+    fn allows_non_bash_tools() {
+        let input = HookInput {
+            tool_name: Some("Read".to_string()),
+            tool_input: Some(json!({"file_path": "/tmp/test.txt"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        };
+        let r = check(&input);
+        assert_eq!(r.exit_code, 0);
+    }
+}
+
+    #[test]
+    fn allows_read_commands() {
+        let input = HookInput {
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(serde_json::json!({"command": "cat /tmp/session-start-silas.md"})),
+            tool_response: None, session_id: Some("test".into()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            prompt: None, stop_hook_active: None, hook_type: None,
+            deploy_role: Some("silas".into()),
+        };
+        let r = check(&input);
+        assert_eq!(r.exit_code, 0);
+    }

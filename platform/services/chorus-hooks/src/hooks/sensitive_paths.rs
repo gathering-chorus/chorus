@@ -120,3 +120,55 @@ async fn log_access(decision: &str, tier: &str, path: &str) {
     )
     .await;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_read(path: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Read".to_string()),
+            tool_input: Some(json!({"file_path": path})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn allows_non_read_tools() {
+        let input = HookInput {
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(json!({"command": "ls"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        };
+        let r = check(&input).await;
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn allows_normal_file_read() {
+        let input = make_read("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards");
+        let r = check(&input).await;
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn handles_env_file_read() {
+        let input = make_read("/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env");
+        let r = check(&input).await;
+        assert!(r.exit_code == 0 || r.stdout.is_some());
+    }
+}

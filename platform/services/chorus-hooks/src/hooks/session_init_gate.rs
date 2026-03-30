@@ -65,3 +65,57 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     HookResponse::allow()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_input(tool: &str, role_dir: &str) -> HookInput {
+        HookInput {
+            tool_name: Some(tool.to_string()),
+            tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some(format!("/Users/jeffbridwell/CascadeProjects/{}", role_dir)),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn allows_read_always() {
+        let state = AppState::new();
+        let input = make_input("Read", "architect");
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn allows_bash_when_no_pending_marker() {
+        // No pending marker = no gate
+        let state = AppState::new();
+        let input = make_input("Bash", "architect");
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0);
+    }
+}
+
+    #[tokio::test]
+    async fn allows_unknown_role() {
+        let state = AppState::new();
+        let input = HookInput {
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(serde_json::json!({"command": "echo test"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/some/unknown/path".to_string()),
+            prompt: None, stop_hook_active: None, hook_type: None,
+            deploy_role: None,
+        };
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0);
+    }

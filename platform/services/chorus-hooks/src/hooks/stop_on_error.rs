@@ -365,4 +365,60 @@ mod tests {
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 0, "should not match Exit code deep in string output");
     }
+
+    #[tokio::test]
+    async fn allows_npm_test_failures() {
+        let state = AppState::new();
+        let input = make_bash_input("npm test", "Exit code 1\nTests failed", "");
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0, "npm test is exempt");
+    }
+
+    #[tokio::test]
+    async fn allows_smoke_check_failures() {
+        let state = AppState::new();
+        let input = make_bash_input("smoke-check.sh --all", "Exit code 1\n2 failures", "");
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0, "smoke-check is exempt");
+    }
+
+    #[tokio::test]
+    async fn allows_which_not_found() {
+        let state = AppState::new();
+        let input = make_bash_input("which nonexistent", "Exit code 1", "");
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0, "which is benign");
+    }
+
+    #[tokio::test]
+    async fn allows_stderr_redirect() {
+        let state = AppState::new();
+        let input = make_bash_input("cmd 2>/dev/null", "Exit code 1\nsome error", "");
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0, "2>/dev/null pattern is exempt");
+    }
+
+    #[tokio::test]
+    async fn allows_rg_no_match() {
+        let state = AppState::new();
+        let input = make_bash_input("rg 'pattern' .", "Exit code 1", "");
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0, "rg exit 1 is benign");
+    }
+
+    #[tokio::test]
+    async fn allows_git_status() {
+        let state = AppState::new();
+        let input = make_bash_input("git status --porcelain", "Exit code 1", "");
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0, "git status is benign");
+    }
+
+    #[tokio::test]
+    async fn allows_git_diff() {
+        let state = AppState::new();
+        let input = make_bash_input("git diff HEAD", "Exit code 1\ndifferences found", "");
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0, "git diff is benign");
+    }
 }

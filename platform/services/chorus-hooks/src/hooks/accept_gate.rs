@@ -124,3 +124,48 @@ fn is_exempt_card(card_view: &str) -> bool {
         .iter()
         .any(|c| domains_line.contains(c))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_skill(skill: &str, role_dir: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Skill".to_string()),
+            tool_input: Some(json!({"skill": skill})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some(format!("/Users/jeffbridwell/CascadeProjects/{}", role_dir)),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn allows_non_acp_skills() {
+        let input = make_skill("demo", "architect");
+        let r = check(&input).await;
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn allows_non_skill_tools() {
+        let input = HookInput {
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(json!({"command": "echo test"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        };
+        let r = check(&input).await;
+        assert_eq!(r.exit_code, 0);
+    }
+}

@@ -118,3 +118,39 @@ pub async fn check(input: &HookInput, _state: &AppState) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::AppState;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn does_not_panic_on_non_ttl_write() {
+        let state = AppState::new();
+        let input = HookInput {
+            tool_name: Some("Write".to_string()),
+            tool_input: Some(json!({"file_path": "/tmp/test.ts", "content": "const x = 1;"})),
+            tool_response: None, session_id: Some("t".into()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            prompt: None, stop_hook_active: None, hook_type: None,
+            deploy_role: Some("silas".into()),
+        };
+        check(&input, &state).await;
+    }
+
+    #[tokio::test]
+    async fn does_not_panic_on_non_write_tool() {
+        let state = AppState::new();
+        let input = HookInput {
+            tool_name: Some("Read".to_string()),
+            tool_input: Some(json!({"file_path": "/tmp/test.ttl"})),
+            tool_response: None, session_id: Some("t".into()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            prompt: None, stop_hook_active: None, hook_type: None,
+            deploy_role: Some("silas".into()),
+        };
+        check(&input, &state).await;
+    }
+}

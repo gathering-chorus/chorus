@@ -139,3 +139,39 @@ pub async fn check(input: &HookInput, _state: &AppState) {
         // TODO: Switch to blocking after team validates the detection is accurate
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::AppState;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn does_not_panic_on_read() {
+        let state = AppState::new();
+        let input = HookInput {
+            tool_name: Some("Read".to_string()),
+            tool_input: Some(json!({"file_path": "/tmp/test.md"})),
+            tool_response: None, session_id: Some("t".into()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            prompt: None, stop_hook_active: None, hook_type: None,
+            deploy_role: Some("silas".into()),
+        };
+        check(&input, &state).await;
+    }
+
+    #[tokio::test]
+    async fn does_not_panic_on_write() {
+        let state = AppState::new();
+        let input = HookInput {
+            tool_name: Some("Write".to_string()),
+            tool_input: Some(json!({"file_path": "/tmp/test.ts", "content": "test"})),
+            tool_response: None, session_id: Some("t".into()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            prompt: None, stop_hook_active: None, hook_type: None,
+            deploy_role: Some("silas".into()),
+        };
+        check(&input, &state).await;
+    }
+}

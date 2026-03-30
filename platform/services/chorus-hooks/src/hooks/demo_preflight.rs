@@ -262,3 +262,48 @@ async fn check_icd_render(domain: &str) -> Option<String> {
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_skill(skill: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Skill".to_string()),
+            tool_input: Some(json!({"skill": skill})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn allows_non_demo_skills() {
+        let input = make_skill("acp");
+        let r = check(&input).await;
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn allows_non_skill_tools() {
+        let input = HookInput {
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(json!({"command": "echo test"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        };
+        let r = check(&input).await;
+        assert_eq!(r.exit_code, 0);
+    }
+}

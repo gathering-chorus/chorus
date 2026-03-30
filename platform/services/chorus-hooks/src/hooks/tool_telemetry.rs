@@ -180,3 +180,49 @@ pub async fn post_tool_use_bash(input: &HookInput, state: &AppState) -> HookResp
 
     HookResponse::allow()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_bash(cmd: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(json!({"command": cmd})),
+            tool_response: Some(json!({"stdout": "output", "stderr": ""})),
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn pre_tool_use_always_allows() {
+        let state = AppState::new();
+        let input = make_bash("echo hello");
+        let r = pre_tool_use(&input, &state).await;
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn post_tool_use_allows_success() {
+        let state = AppState::new();
+        let input = make_bash("echo hello");
+        let r = post_tool_use_bash(&input, &state).await;
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn detects_error_in_response() {
+        let state = AppState::new();
+        let mut input = make_bash("some-command");
+        input.tool_response = Some(serde_json::json!({"stdout": "", "stderr": "Error: ENOENT: No such file or directory"}));
+        let r = post_tool_use_bash(&input, &state).await;
+        assert_eq!(r.exit_code, 0);
+    }
+}

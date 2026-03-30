@@ -72,3 +72,46 @@ pub fn check(input: &HookInput) -> HookResponse {
 
     HookResponse::allow()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_input(tool: &str) -> HookInput {
+        HookInput {
+            tool_name: Some(tool.to_string()),
+            tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test", "skill": "demo"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    #[test]
+    fn allows_non_matching_tool() {
+        let input = make_input("Read");
+        let r = check(&input);
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[test]
+    fn allows_normal_input() {
+        let input = make_input("Bash");
+        let r = check(&input);
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[test]
+    fn handles_nfs_path() {
+        let mut input = make_input("Bash");
+        input.tool_input = Some(serde_json::json!({"command": "cp file.txt /Volumes/Gathering/data/"}));
+        let r = check(&input);
+        assert!(r.exit_code == 0);
+    }
+}

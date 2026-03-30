@@ -374,3 +374,38 @@ fn extract_task_id(response: &str) -> String {
         })
         .unwrap_or_else(|| format!("{}", std::process::id()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_input(tool: &str) -> HookInput {
+        HookInput {
+            tool_name: Some(tool.to_string()),
+            tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test", "skill": "demo"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    #[test]
+    fn pre_bg_allows_non_matching_tool() {
+        let input = make_input("Read");
+        let r = check_pre_bg(&input);
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[test]
+    fn pre_bg_allows_normal_bash() {
+        let input = make_input("Bash");
+        let r = check_pre_bg(&input);
+        assert_eq!(r.exit_code, 0);
+    }
+}

@@ -106,3 +106,38 @@ fn query_role_state(role: &str) -> String {
         _ => String::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    fn make_input(tool: &str) -> HookInput {
+        HookInput {
+            tool_name: Some(tool.to_string()),
+            tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test", "skill": "demo"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn allows_non_matching_tool() {
+        let input = make_input("Read");
+        let r = check(&input).await;
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn allows_normal_input() {
+        let input = make_input("Bash");
+        let r = check(&input).await;
+        assert_eq!(r.exit_code, 0);
+    }
+}

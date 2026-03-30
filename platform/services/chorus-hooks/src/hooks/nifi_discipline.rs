@@ -122,3 +122,39 @@ pub async fn check(input: &HookInput, _state: &AppState) -> Option<String> {
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::AppState;
+    use crate::types::HookInput;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn returns_none_for_non_bash() {
+        let state = AppState::new();
+        let input = HookInput {
+            tool_name: Some("Read".to_string()),
+            tool_input: Some(json!({"file_path": "/tmp/test"})),
+            tool_response: None, session_id: Some("t".into()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            prompt: None, stop_hook_active: None, hook_type: None,
+            deploy_role: Some("silas".into()),
+        };
+        assert!(check(&input, &state).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn returns_none_for_normal_bash() {
+        let state = AppState::new();
+        let input = HookInput {
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(json!({"command": "echo hello"})),
+            tool_response: None, session_id: Some("t".into()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            prompt: None, stop_hook_active: None, hook_type: None,
+            deploy_role: Some("silas".into()),
+        };
+        assert!(check(&input, &state).await.is_none());
+    }
+}
