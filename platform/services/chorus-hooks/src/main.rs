@@ -15,31 +15,32 @@ use types::{HookInput, HookResponse};
 
 const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
 const HOOK_LOG: &str = "/Users/jeffbridwell/Library/Logs/Gathering/hooks.log";
+const HOOK_LOG_MAX: u64 = 10 * 1024 * 1024; // 10MB rotation
 
-/// Log every hook intercept to a human-readable file (#1854)
-fn log_hook(hook: &str, tool: &str, role: &str, decision: &str, detail: &str) {
+/// Enriched pulse log — module, duration, full reason, session_id (#1859)
+fn log_decision(hook: &str, tool: &str, role: &str, module: &str, decision: &str, duration_ms: u64, session_id: &str, reason: &str) {
     use std::io::Write;
-    let ts = chrono::Local::now().format("%H:%M:%S").to_string();
-    let line = format!("{} | {:20} | {:6} | {:5} | {:6} | {}\n",
-        ts, hook, tool, role, decision, detail);
+    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+    let sid = if session_id.len() > 8 { &session_id[..8] } else { session_id };
+    let line = format!("{} | {:15} | {:6} | {:5} | {:20} | {:5} | {:4}ms | {} | {}\n",
+        ts, hook, tool, role, module, decision, duration_ms, sid, reason);
+
+    // Rotate if over 10MB
+    if let Ok(meta) = std::fs::metadata(HOOK_LOG) {
+        if meta.len() > HOOK_LOG_MAX {
+            let rotated = format!("{}.1", HOOK_LOG);
+            let _ = std::fs::rename(HOOK_LOG, &rotated);
+        }
+    }
+
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(HOOK_LOG) {
         let _ = f.write_all(line.as_bytes());
     }
 }
 
-/// Log and return a hook response — captures every block/deny/allow decision
-fn log_return(hook: &str, tool: &str, role: &str, source: &str, r: HookResponse) -> Json<HookResponse> {
-    let decision = if r.exit_code != 0 { "BLOCK" }
-        else if r.stdout.as_ref().map(|s| s.contains("deny")).unwrap_or(false) { "DENY" }
-        else if r.stderr.is_some() { "WARN" }
-        else { "allow" };
-    let detail = r.stderr.as_deref()
-        .or(r.stdout.as_deref())
-        .unwrap_or("")
-        .lines().next().unwrap_or("")
-        .chars().take(100).collect::<String>();
-    log_hook(hook, tool, role, decision, &format!("{}: {}", source, detail));
-    Json(r)
+/// Backward-compat wrapper for simple entry logging
+fn log_hook(hook: &str, tool: &str, role: &str, decision: &str, detail: &str) {
+    log_decision(hook, tool, role, "-", decision, 0, "-", detail);
 }
 
 #[tokio::main]
@@ -99,28 +100,37 @@ async fn pre_tool_use(
     State(state): State<AppState>,
     Json(input): Json<HookInput>,
 ) -> Json<HookResponse> {
-    let result = pre_tool_use_inner(&state, &input).await;
+    let start = std::time::Instant::now();
+    let (module, result) = pre_tool_use_inner(&state, &input).await;
+    let duration_ms = start.elapsed().as_millis() as u64;
     let tool = input.tool_name_str();
     let role = input.role();
+    let session_id = input.session_id.as_deref().unwrap_or("-");
     let decision = if result.exit_code != 0 { "BLOCK" }
         else if result.stdout.as_ref().map(|s| s.contains("deny")).unwrap_or(false) { "DENY" }
         else if result.stderr.is_some() { "WARN" }
         else { "allow" };
-    let detail = result.stderr.as_deref()
-        .or(result.stdout.as_deref())
-        .unwrap_or("")
-        .lines().next().unwrap_or("")
-        .chars().take(120).collect::<String>();
-    log_hook("pre_tool_use", tool, role.as_str(), decision, &detail);
+    // Full reason for blocks, truncated for allows
+    let reason = if decision == "allow" {
+        tool.to_string()
+    } else {
+        result.stderr.as_deref()
+            .or(result.stdout.as_deref())
+            .unwrap_or("")
+            .lines().next().unwrap_or("")
+            .to_string()
+    };
+    log_decision("pre_tool_use", tool, role.as_str(), &module, decision, duration_ms, session_id, &reason);
     Json(result)
 }
 
 async fn pre_tool_use_inner(
     state: &AppState,
     input: &HookInput,
-) -> HookResponse {
+) -> (String, HookResponse) {
     let tool = input.tool_name_str().to_string();
     let role = input.role();
+    let mut last_module = String::from("none");
     let detail_str = match tool.as_str() {
         "Bash" => input.get_tool_input_str("command").chars().take(80).collect::<String>(),
         "Read" | "Write" | "Edit" => input.get_tool_input_str("file_path").chars().take(80).collect::<String>(),
@@ -135,7 +145,7 @@ async fn pre_tool_use_inner(
     let gate_result = hooks::session_init_gate::check(&input, &state).await;
     if let Some(ref stdout) = gate_result.stdout {
         if stdout.contains("\"deny\"") {
-            return gate_result;
+            return ("session_init_gate".into(), gate_result);
         }
     }
 
@@ -152,52 +162,52 @@ async fn pre_tool_use_inner(
     match tool.as_str() {
         "Bash" => {
             // app-state guard
-            let r = hooks::app_state_guard::check(&input);
+            last_module = "app_state_guard".into(); let r = hooks::app_state_guard::check(&input);
             if r.stdout.is_some() {
-                return r;
+                return (last_module.clone(), r);
             }
 
             // sparql guard
-            let r = hooks::sparql_guard::check(&input).await;
+            last_module = "sparql_guard".into(); let r = hooks::sparql_guard::check(&input).await;
             if r.stderr.is_some() {
-                return r;
+                return (last_module.clone(), r);
             }
 
             // bedroom NFS guard
-            let r = hooks::bedroom_nfs_guard::check(&input);
+            last_module = "bedroom_nfs_guard".into(); let r = hooks::bedroom_nfs_guard::check(&input);
             if r.stdout.is_some() {
-                return r;
+                return (last_module.clone(), r);
             }
 
             // infra guardrails (engineer only)
-            let r = hooks::infra_guardrails::check(&input).await;
+            last_module = "infra_guardrails".into(); let r = hooks::infra_guardrails::check(&input).await;
             if r.stdout.is_some() {
-                return r;
+                return (last_module.clone(), r);
             }
 
             // Nudge blast radius (#1658) — warn if target role is WIP
-            let r = hooks::nudge_blast_radius::check(&input).await;
+            last_module = "nudge_blast_radius".into(); let r = hooks::nudge_blast_radius::check(&input).await;
             if r.stderr.is_some() {
                 // Don't block — just surface the warning
-                return r;
+                return (last_module.clone(), r);
             }
 
             // CSC guard (#1685) — block /tmp/ artifact writes, warn outside /Volumes/Gathering/
-            let r = hooks::csc_guard::check(&input);
+            last_module = "csc_guard".into(); let r = hooks::csc_guard::check(&input);
             if r.stdout.is_some() || r.stderr.is_some() {
-                return r;
+                return (last_module.clone(), r);
             }
 
             // TDD gate (#1814) — block demo/done without test evidence
-            let r = hooks::tdd_gate::check(&input);
+            last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
 
             // Demo gate (#1814) — block done without demo evidence
-            let r = hooks::demo_gate::check(&input);
+            last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
 
             // Batch progress (#1656) — detect run_in_background in PreToolUse
@@ -208,86 +218,86 @@ async fn pre_tool_use_inner(
             }
         }
         "Grep" | "Glob" => {
-            let r = hooks::search_hierarchy::check(&input, &state).await;
+            last_module = "search_hierarchy".into(); let r = hooks::search_hierarchy::check(&input, &state).await;
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
         }
         "Write" | "Edit" => {
-            let r = hooks::write_scrubber::check(&input).await;
+            last_module = "write_scrubber".into(); let r = hooks::write_scrubber::check(&input).await;
             if r.stdout.is_some() {
-                return r;
+                return (last_module.clone(), r);
             }
-            let r = hooks::story_write_gate::check(&input).await;
+            last_module = "story_write_gate".into(); let r = hooks::story_write_gate::check(&input).await;
             if r.stderr.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
             // Memory-and-research gate (#1811) — block code writes without prior checks
-            let r = hooks::memory_gate::check(&input);
+            last_module = "memory_gate".into(); let r = hooks::memory_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
 
             // Pair gate (#1814) — block code edits without active pair
-            let r = hooks::pair_gate::check(&input);
+            last_module = "pair_gate".into(); let r = hooks::pair_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
 
             // ICD pre-read gate (#1684) — warn on data domain writes without context read
             hooks::icd_pre_read::check(&input, &state).await;
         }
         "Read" => {
-            let r = hooks::sensitive_paths::check(&input).await;
+            last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(&input).await;
             if r.stdout.is_some() {
-                return r;
+                return (last_module.clone(), r);
             }
             // ICD pre-read (#1684) — set flag when domain context is read
             hooks::icd_pre_read::check(&input, &state).await;
         }
         "AskUserQuestion" => {
-            let r = hooks::autonomy_guard::check(&input, &state).await;
+            last_module = "autonomy_guard".into(); let r = hooks::autonomy_guard::check(&input, &state).await;
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
         }
         "Skill" => {
             // TDD gate (#1814) — block demo/done without test evidence
-            let r = hooks::tdd_gate::check(&input);
+            last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
             // Demo gate (#1814) — block done without demo evidence
-            let r = hooks::demo_gate::check(&input);
+            last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
             // Demo preflight gate (#1657)
-            let r = hooks::demo_preflight::check(&input).await;
+            last_module = "demo_preflight".into(); let r = hooks::demo_preflight::check(&input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
             // Accept gate (#1671)
-            let r = hooks::accept_gate::check(&input).await;
+            last_module = "accept_gate".into(); let r = hooks::accept_gate::check(&input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
-                return r;
+                return (last_module.clone(), r);
             }
             // NiFi discipline (#1686) — warn on bash wrapper pattern
             if let Some(msg) = hooks::nifi_discipline::check(&input, &state).await {
                 eprintln!("{}", msg);
             }
             // Pair enforcement (#1673) — nudge target to load /pair
-            let r = hooks::pair_enforcement::check(&input).await;
+            last_module = "pair_enforcement".into(); let r = hooks::pair_enforcement::check(&input).await;
             if r.stderr.is_some() {
                 // Don't block — just notify
-                return r;
+                return (last_module.clone(), r);
             }
         }
         _ => {}
     }
 
     trace!(hook = "pre_tool_use", phase = "respond", %tool, role = role.as_str(), "allow (no guard triggered)");
-    HookResponse::allow()
+    ("none".into(), HookResponse::allow())
 }
 
 /// PostToolUse — telemetry + handoff logger + observer

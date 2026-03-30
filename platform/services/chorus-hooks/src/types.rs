@@ -12,11 +12,11 @@ pub enum Role {
 
 impl Role {
     pub fn from_cwd(cwd: &str) -> Self {
-        if cwd.contains("product-manager") {
+        if cwd.contains("product-manager") || cwd.contains("roles/wren") {
             Role::Wren
-        } else if cwd.contains("architect") {
+        } else if cwd.contains("architect") || cwd.contains("roles/silas") {
             Role::Silas
-        } else if cwd.contains("engineer") {
+        } else if cwd.contains("engineer") || cwd.contains("roles/kade") {
             Role::Kade
         } else {
             Role::Unknown
