@@ -1,5 +1,14 @@
 # Decision Log
 
+## DEC-108: Drop chunk taxonomy — domain and sequence are the two dimensions
+- **Date**: 2026-03-30
+- **Context**: Cards require both chunk (spine, ops, memory, app, strategy) and domain (chorus, photos, seeds, infrastructure). In practice, chunk and domain answer the same question: "what area is this?" Chunk is abstract, domain maps to real things. Nobody filters by chunk. It's friction at card creation with no consumer.
+- **Decision**: Retire chunk. Two dimensions remain: (1) **Domain** — what area (chorus, photos, seeds, infrastructure, people, music). Required on card creation. (2) **Sequence** — what initiative (v1, hardening, km). Cross-cutting campaigns. Optional. Chunk tags on existing cards can be migrated to domain where they add signal, or dropped.
+- **Rationale**: "Chunk feels a lot like domain." It does. Two taxonomies for the same axis is overhead. Sequence is different — it's a campaign that cuts across domains. That stays.
+- **Card**: #1873
+- **Consequences**: Cards CLI drops --chunk requirement. Existing chunk values migrated or removed. Sequence list expanded (add km, others as needed).
+- **Status**: Active
+
 ## DEC-107: Nudge delivery — osascript is the path, stop cycling
 - **Date**: 2026-03-27
 - **Context**: Nudge delivery has been revisited at least 4 times: osascript injection (#1591), TTY polling, background drain, passive queue (DEC-104). Each iteration breaks something differently. Today Silas lost the nudge binary, thrashed for 20 minutes, and Jeff interrupted twice: "I'm tired of looping over osascript/tty/background nudges." The cost isn't technical — it's Jeff's attention spent re-litigating a solved problem.
