@@ -3,6 +3,7 @@
 //! Scans session JSONL for test runs (cargo test, npx jest, npm test).
 //! Jeff's direction: "No card is done without tests covering every AC item."
 
+use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 
 /// Check if the current tool call is a demo or done action
@@ -25,38 +26,20 @@ fn is_demo_or_done(input: &HookInput) -> bool {
     false
 }
 
-/// Scan session JSONL for evidence of test runs
-fn has_test_evidence(input: &HookInput) -> bool {
+/// Scan session JSONL for evidence of test runs (uses shared cache #1861)
+fn has_test_evidence(input: &HookInput, state: &AppState) -> bool {
     let session_id = match &input.session_id {
         Some(id) => id.clone(),
         None => return true, // No session = can't check, allow
     };
 
     let cwd = input.cwd.as_deref().unwrap_or("");
-    let project_key = cwd.replace('/', "-");
-    let project_key = if project_key.starts_with('-') {
-        &project_key[1..]
-    } else {
-        &project_key
-    };
+    let lines = state.session_cache.get_tail(&session_id, cwd, 300);
+    if lines.is_empty() {
+        return true; // Can't read = allow
+    }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let jsonl_path = format!(
-        "{}/.claude/projects/-{}/{}.jsonl",
-        home, project_key, session_id
-    );
-
-    let file = match std::fs::File::open(&jsonl_path) {
-        Ok(f) => f,
-        Err(_) => return true, // Can't read = allow
-    };
-
-    use std::io::{BufRead, BufReader};
-    let reader = BufReader::new(file);
-    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
-    let start = if lines.len() > 300 { lines.len() - 300 } else { 0 };
-
-    for line in &lines[start..] {
+    for line in &lines {
         let lower = line.to_lowercase();
         if (lower.contains("cargo test") || lower.contains("npx jest")
             || lower.contains("npm test") || lower.contains("npm run test")
@@ -70,12 +53,12 @@ fn has_test_evidence(input: &HookInput) -> bool {
     false
 }
 
-pub fn check(input: &HookInput) -> HookResponse {
+pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     if !is_demo_or_done(input) {
         return HookResponse::allow();
     }
 
-    if !has_test_evidence(input) {
+    if !has_test_evidence(input, state) {
         return HookResponse::deny(&permission_deny_json(
             "TDD gate: no test runs detected in this session. \
              Run tests (cargo test, npx jest) before demo/done. \
@@ -105,10 +88,12 @@ mod tests {
         }
     }
 
+    fn state() -> AppState { AppState::new() }
+
     #[test]
     fn allows_non_demo_tools() {
         let input = make_input("Edit", "file_path", "/some/file.ts");
-        let r = check(&input);
+        let r = check(&input, &state());
         assert!(r.stdout.is_none());
     }
 
@@ -140,7 +125,7 @@ mod tests {
     fn allows_demo_without_session() {
         // No session ID = can't verify, allow
         let input = make_input("Skill", "skill", "demo");
-        let r = check(&input);
+        let r = check(&input, &state());
         assert!(r.stdout.is_none());
     }
 }

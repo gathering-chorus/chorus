@@ -17,6 +17,7 @@
 //! - Cross-domain: enforce
 //! - Sub-millisecond — same scan pattern as JDI hook
 
+use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 use tracing::info;
 
@@ -134,46 +135,27 @@ const SEARCH_MARKERS: &[&str] = &[
     "/memory/",
 ];
 
-/// Scan session JSONL for context synthesis in assistant output.
+/// Scan session JSONL for context synthesis in assistant output (uses shared cache #1861).
 /// Returns (has_search, has_synthesis)
 ///
 /// has_search: the role ran a search (Chorus, memory files, git)
 /// has_synthesis: the role produced output demonstrating understanding of what they found
-fn scan_session_for_synthesis(input: &HookInput) -> (bool, bool) {
+fn scan_session_for_synthesis(input: &HookInput, state: &AppState) -> (bool, bool) {
     let session_id = match &input.session_id {
         Some(id) => id.clone(),
         None => return (true, true), // No session ID = can't check, allow
     };
 
     let cwd = input.cwd.as_deref().unwrap_or("");
-    let project_key = cwd.replace('/', "-");
-    let project_key = if project_key.starts_with('-') {
-        &project_key[1..]
-    } else {
-        &project_key
-    };
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let jsonl_path = format!(
-        "{}/.claude/projects/-{}/{}.jsonl",
-        home, project_key, session_id
-    );
-
-    let file = match std::fs::File::open(&jsonl_path) {
-        Ok(f) => f,
-        Err(_) => return (true, true), // Can't read JSONL = allow
-    };
-
-    use std::io::{BufRead, BufReader};
-    let reader = BufReader::new(file);
-    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
-
-    let start = if lines.len() > 300 { lines.len() - 300 } else { 0 };
+    let lines = state.session_cache.get_tail(&session_id, cwd, 300);
+    if lines.is_empty() {
+        return (true, true); // Can't read JSONL = allow
+    }
 
     let mut has_search = false;
     let mut has_synthesis = false;
 
-    for line in &lines[start..] {
+    for line in &lines {
         if line.is_empty() {
             continue;
         }
@@ -214,7 +196,7 @@ fn scan_session_for_synthesis(input: &HookInput) -> (bool, bool) {
     (has_search, has_synthesis)
 }
 
-pub fn check(input: &HookInput) -> HookResponse {
+pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let tool = input.tool_name_str();
     if tool != "Edit" && tool != "Write" {
         return HookResponse::allow();
@@ -255,7 +237,7 @@ pub fn check(input: &HookInput) -> HookResponse {
     }
 
     // The real gate: check for synthesis, not just search
-    let (has_search, has_synthesis) = scan_session_for_synthesis(input);
+    let (has_search, has_synthesis) = scan_session_for_synthesis(input, state);
 
     let role_name = format!("{:?}", role).to_lowercase();
 
@@ -368,29 +350,31 @@ mod tests {
         (input, tmp)
     }
 
+    fn state() -> AppState { AppState::new() }
+
     // --- Basic gate behavior (unchanged) ---
 
     #[test]
     fn allows_non_code_files() {
-        let r = check(&make_input("Edit", "/some/path/README.md"));
+        let r = check(&make_input("Edit", "/some/path/README.md"), &state());
         assert!(r.exit_code == 0);
     }
 
     #[test]
     fn allows_non_edit_tools() {
-        let r = check(&make_input("Read", "/some/file.ts"));
+        let r = check(&make_input("Read", "/some/file.ts"), &state());
         assert!(r.exit_code == 0);
     }
 
     #[test]
     fn allows_own_domain() {
-        let r = check(&make_input("Edit", "/Users/jeffbridwell/CascadeProjects/chorus/engineer/src/app.ts"));
+        let r = check(&make_input("Edit", "/Users/jeffbridwell/CascadeProjects/chorus/engineer/src/app.ts"), &state());
         assert!(r.exit_code == 0);
     }
 
     #[test]
     fn allows_target_dir() {
-        let r = check(&make_input("Edit", "/project/target/debug/build.rs"));
+        let r = check(&make_input("Edit", "/project/target/debug/build.rs"), &state());
         assert!(r.exit_code == 0);
     }
 
@@ -407,13 +391,14 @@ mod tests {
     // Search happened but no synthesis — BLOCKED
     #[test]
     fn blocks_search_without_synthesis() {
+        let s = state();
         let lines = vec![
             r#"{"type":"tool_use","name":"Bash","input":{"command":"bash chorus-query.sh search seeds"}}"#,
             r#"{"type":"tool_result","content":"Found 20 results..."}"#,
             r#"{"type":"assistant","content":"What are you seeing with seeds?"}"#,
         ];
         let (input, _tmp) = make_input_with_session("Edit", "/cross/domain/file.ts", &lines);
-        let (has_search, has_synthesis) = scan_session_for_synthesis(&input);
+        let (has_search, has_synthesis) = scan_session_for_synthesis(&input, &s);
         assert!(has_search, "search should be detected");
         assert!(!has_synthesis, "no synthesis — role asked Jeff instead of reasoning");
     }
@@ -421,13 +406,14 @@ mod tests {
     // Search + synthesis — PASS
     #[test]
     fn passes_search_with_synthesis() {
+        let s = state();
         let lines = vec![
             r#"{"type":"tool_use","name":"Bash","input":{"command":"bash chorus-query.sh search seed pipeline"}}"#,
             r#"{"type":"tool_result","content":"Found 20 results: Kade shipped #1794 dual write..."}"#,
             r#"{"type":"assistant","content":"Prior work: Kade shipped #1794 (kill dual write) and #1798 (routing defaults) last week. Current state: the Twilio webhook routes through SMS adapter to Fuseki. Approach: check the webhook endpoint first since the route may have shifted in restructure."}"#,
         ];
         let (input, _tmp) = make_input_with_session("Edit", "/cross/domain/file.ts", &lines);
-        let (has_search, has_synthesis) = scan_session_for_synthesis(&input);
+        let (has_search, has_synthesis) = scan_session_for_synthesis(&input, &s);
         assert!(has_search);
         assert!(has_synthesis, "synthesis with prior work reference should pass");
     }
@@ -435,11 +421,12 @@ mod tests {
     // No search, no synthesis — BLOCKED
     #[test]
     fn blocks_nothing() {
+        let s = state();
         let lines = vec![
             r#"{"type":"assistant","content":"Let me fix this file."}"#,
         ];
         let (input, _tmp) = make_input_with_session("Edit", "/cross/domain/file.ts", &lines);
-        let (has_search, has_synthesis) = scan_session_for_synthesis(&input);
+        let (has_search, has_synthesis) = scan_session_for_synthesis(&input, &s);
         assert!(!has_search);
         assert!(!has_synthesis);
     }
@@ -447,12 +434,13 @@ mod tests {
     // Synthesis referencing a decision — PASS
     #[test]
     fn detects_decision_reference() {
+        let s = state();
         let lines = vec![
             r#"{"type":"tool_use","name":"Read","input":{"file_path":"/project/memory/MEMORY.md"}}"#,
             r#"{"type":"assistant","content":"Based on DEC-094, harvest is paused. This change aligns with the tightening operations phase."}"#,
         ];
         let (input, _tmp) = make_input_with_session("Edit", "/cross/domain/file.ts", &lines);
-        let (has_search, has_synthesis) = scan_session_for_synthesis(&input);
+        let (has_search, has_synthesis) = scan_session_for_synthesis(&input, &s);
         assert!(has_search, "MEMORY.md read is a search");
         assert!(has_synthesis, "DEC reference is synthesis");
     }
@@ -460,31 +448,33 @@ mod tests {
     // Synthesis referencing prior card — PASS
     #[test]
     fn detects_card_reference() {
+        let s = state();
         let lines = vec![
             r#"{"type":"tool_use","name":"Bash","input":{"command":"bash chorus-query.sh search nudge delivery"}}"#,
             r#"{"type":"assistant","content":"Shipped in #1793 — nudge delivery was rewritten. The current path uses osascript inject, not TTY polling."}"#,
         ];
         let (input, _tmp) = make_input_with_session("Edit", "/cross/domain/file.ts", &lines);
-        let (_, has_synthesis) = scan_session_for_synthesis(&input);
+        let (_, has_synthesis) = scan_session_for_synthesis(&input, &s);
         assert!(has_synthesis, "card reference shows understanding");
     }
 
     // Chorus shows pattern — PASS
     #[test]
     fn detects_chorus_shows() {
+        let s = state();
         let lines = vec![
             r#"{"type":"tool_use","name":"Bash","input":{"command":"bash chorus-query.sh search clearing path"}}"#,
             r#"{"type":"assistant","content":"Chorus shows this was flagged Feb 26 — same stale path pattern after restructure."}"#,
         ];
         let (input, _tmp) = make_input_with_session("Edit", "/cross/domain/file.ts", &lines);
-        let (_, has_synthesis) = scan_session_for_synthesis(&input);
+        let (_, has_synthesis) = scan_session_for_synthesis(&input, &s);
         assert!(has_synthesis);
     }
 
     // No session ID — allow (can't check)
     #[test]
     fn allows_no_session() {
-        let r = check(&make_input("Edit", "/some/cross-domain/file.ts"));
+        let r = check(&make_input("Edit", "/some/cross-domain/file.ts"), &state());
         assert!(r.exit_code == 0);
     }
 }

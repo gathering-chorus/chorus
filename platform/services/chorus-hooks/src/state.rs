@@ -4,11 +4,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::session_cache::SessionCache;
+
 /// Shared application state
 #[derive(Clone)]
 pub struct AppState {
     inner: Arc<Mutex<StateInner>>,
     pub config: Arc<Config>,
+    /// Session JSONL cache — shared across all hooks (#1861)
+    /// Uses std::sync::Mutex internally so sync hooks can access it
+    pub session_cache: SessionCache,
 }
 
 struct StateInner {
@@ -52,6 +57,7 @@ impl AppState {
                 hook_failures: HashMap::new(),
                 disabled_hooks: HashMap::new(),
             })),
+            session_cache: SessionCache::new(),
             config: Arc::new(Config {
                 log_dir: repo_root.join("chorus/platform/logs"),
                 prefs_file: repo_root.join("chorus/jeff-preferences.json"),

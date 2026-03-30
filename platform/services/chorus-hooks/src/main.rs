@@ -1,4 +1,5 @@
 mod hooks;
+mod session_cache;
 mod state;
 mod types;
 
@@ -261,13 +262,13 @@ async fn pre_tool_use_inner(
             }
 
             // TDD gate (#1814) — block demo/done without test evidence
-            last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input);
+            last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input, &state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (last_module.clone(), r);
             }
 
             // Demo gate (#1814) — block done without demo evidence
-            last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input);
+            last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input, &state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (last_module.clone(), r);
             }
@@ -295,13 +296,13 @@ async fn pre_tool_use_inner(
                 return (last_module.clone(), r);
             }
             // Memory-and-research gate (#1811) — block code writes without prior checks
-            last_module = "memory_gate".into(); let r = hooks::memory_gate::check(&input);
+            last_module = "memory_gate".into(); let r = hooks::memory_gate::check(&input, &state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (last_module.clone(), r);
             }
 
             // Pair gate (#1814) — block code edits without active pair
-            last_module = "pair_gate".into(); let r = hooks::pair_gate::check(&input);
+            last_module = "pair_gate".into(); let r = hooks::pair_gate::check(&input, &state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (last_module.clone(), r);
             }
@@ -325,12 +326,12 @@ async fn pre_tool_use_inner(
         }
         "Skill" => {
             // TDD gate (#1814) — block demo/done without test evidence
-            last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input);
+            last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input, &state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (last_module.clone(), r);
             }
             // Demo gate (#1814) — block done without demo evidence
-            last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input);
+            last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input, &state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (last_module.clone(), r);
             }

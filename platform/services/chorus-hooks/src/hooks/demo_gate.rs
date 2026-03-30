@@ -3,6 +3,7 @@
 //! Checks for demo spine event or demo brief in product-manager/briefs/.
 //! Jeff's direction: "block done without demo evidence."
 
+use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 
 /// Check if the tool call is a "done" action
@@ -49,8 +50,8 @@ fn extract_card_id(input: &HookInput) -> Option<String> {
     None
 }
 
-/// Check for demo evidence: demo brief or demo spine event in session
-fn has_demo_evidence(input: &HookInput, card_id: &str) -> bool {
+/// Check for demo evidence: demo brief or demo spine event in session (uses shared cache #1861)
+fn has_demo_evidence(input: &HookInput, card_id: &str, state: &AppState) -> bool {
     // Check 1: Demo brief exists in product-manager/briefs/
     let today = chrono_today();
     let brief_pattern = format!("demo-{}", card_id);
@@ -74,37 +75,16 @@ fn has_demo_evidence(input: &HookInput, card_id: &str) -> bool {
         }
     }
 
-    // Check 2: Demo spine event in session JSONL
+    // Check 2: Demo spine event in session JSONL (cached)
     let session_id = match &input.session_id {
         Some(id) => id.clone(),
         None => return false,
     };
 
     let cwd = input.cwd.as_deref().unwrap_or("");
-    let project_key = cwd.replace('/', "-");
-    let project_key = if project_key.starts_with('-') {
-        &project_key[1..]
-    } else {
-        &project_key
-    };
+    let lines = state.session_cache.get_tail(&session_id, cwd, 300);
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let jsonl_path = format!(
-        "{}/.claude/projects/-{}/{}.jsonl",
-        home, project_key, session_id
-    );
-
-    let file = match std::fs::File::open(&jsonl_path) {
-        Ok(f) => f,
-        Err(_) => return false,
-    };
-
-    use std::io::{BufRead, BufReader};
-    let reader = BufReader::new(file);
-    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
-    let start = if lines.len() > 300 { lines.len() - 300 } else { 0 };
-
-    for line in &lines[start..] {
+    for line in &lines {
         let lower = line.to_lowercase();
         if lower.contains("demo") && lower.contains(card_id) {
             return true;
@@ -125,7 +105,7 @@ fn chrono_today() -> String {
     output.trim().to_string()
 }
 
-pub fn check(input: &HookInput) -> HookResponse {
+pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     if !is_done_action(input) {
         return HookResponse::allow();
     }
@@ -135,7 +115,7 @@ pub fn check(input: &HookInput) -> HookResponse {
         None => return HookResponse::allow(), // Can't determine card = allow
     };
 
-    if has_demo_evidence(input, &card_id) {
+    if has_demo_evidence(input, &card_id, state) {
         return HookResponse::allow();
     }
 
@@ -165,10 +145,12 @@ mod tests {
         }
     }
 
+    fn state() -> AppState { AppState::new() }
+
     #[test]
     fn allows_non_done_actions() {
         let input = make_input("Edit", "file_path", "/some/file.ts");
-        let r = check(&input);
+        let r = check(&input, &state());
         assert!(r.stdout.is_none());
     }
 
@@ -208,7 +190,7 @@ mod tests {
         // No session + no demo brief = would block, but no card ID extractable from skill without args
         let input = make_input("Skill", "skill", "acp");
         // No args = can't extract card ID = allow
-        let r = check(&input);
+        let r = check(&input, &state());
         assert!(r.stdout.is_none());
     }
 }

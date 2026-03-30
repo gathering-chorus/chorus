@@ -3,6 +3,7 @@
 //! Checks for /tmp/pair-*.md as evidence of a pair session.
 //! Jeff's direction: "block building without pair on code cards."
 
+use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 
 /// File extensions that count as code files
@@ -35,38 +36,17 @@ fn has_active_pair() -> bool {
     false
 }
 
-/// Check if the session has pair evidence in JSONL
-fn has_pair_evidence_in_session(input: &HookInput) -> bool {
+/// Check if the session has pair evidence in JSONL (uses shared cache #1861)
+fn has_pair_evidence_in_session(input: &HookInput, state: &AppState) -> bool {
     let session_id = match &input.session_id {
         Some(id) => id.clone(),
         None => return false, // No session = can't verify pair, deny
     };
 
     let cwd = input.cwd.as_deref().unwrap_or("");
-    let project_key = cwd.replace('/', "-");
-    let project_key = if project_key.starts_with('-') {
-        &project_key[1..]
-    } else {
-        &project_key
-    };
+    let lines = state.session_cache.get_tail(&session_id, cwd, 200);
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let jsonl_path = format!(
-        "{}/.claude/projects/-{}/{}.jsonl",
-        home, project_key, session_id
-    );
-
-    let file = match std::fs::File::open(&jsonl_path) {
-        Ok(f) => f,
-        Err(_) => return false, // Can't read session = can't verify pair, deny
-    };
-
-    use std::io::{BufRead, BufReader};
-    let reader = BufReader::new(file);
-    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
-    let start = if lines.len() > 200 { lines.len() - 200 } else { 0 };
-
-    for line in &lines[start..] {
+    for line in &lines {
         let lower = line.to_lowercase();
         // Evidence of pair: /pair skill invoked, or pair doc read/written
         if lower.contains("/pair") || lower.contains("pair-") && lower.contains(".md") {
@@ -77,7 +57,7 @@ fn has_pair_evidence_in_session(input: &HookInput) -> bool {
     false
 }
 
-pub fn check(input: &HookInput) -> HookResponse {
+pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let tool = input.tool_name_str();
     if tool != "Edit" && tool != "Write" {
         return HookResponse::allow();
@@ -96,7 +76,7 @@ pub fn check(input: &HookInput) -> HookResponse {
     }
 
     // Check for active pair — either a pair file on disk or pair evidence in session
-    if has_active_pair() || has_pair_evidence_in_session(input) {
+    if has_active_pair() || has_pair_evidence_in_session(input, state) {
         return HookResponse::allow();
     }
 
@@ -126,31 +106,33 @@ mod tests {
         }
     }
 
+    fn state() -> AppState { AppState::new() }
+
     #[test]
     fn allows_non_code_files() {
         let input = make_input("Edit", "/some/path/README.md");
-        let r = check(&input);
+        let r = check(&input, &state());
         assert!(r.stdout.is_none());
     }
 
     #[test]
     fn allows_read_tool() {
         let input = make_input("Read", "/some/file.ts");
-        let r = check(&input);
+        let r = check(&input, &state());
         assert!(r.stdout.is_none());
     }
 
     #[test]
     fn allows_generated_paths() {
         let input = make_input("Edit", "/project/target/debug/build.rs");
-        let r = check(&input);
+        let r = check(&input, &state());
         assert!(r.stdout.is_none());
     }
 
     #[test]
     fn allows_node_modules() {
         let input = make_input("Edit", "/project/node_modules/pkg/index.js");
-        let r = check(&input);
+        let r = check(&input, &state());
         assert!(r.stdout.is_none());
     }
 

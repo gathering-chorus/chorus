@@ -242,11 +242,11 @@ async fn handle_stop(input: &HookInput, state: &AppState) -> HookResponse {
     // If no cached human message, try reading from JSONL
     let (last_human_msg, last_response) = if last_human.is_some() {
         // We have the human msg cached; still need the response from JSONL
-        let response = read_last_response_from_jsonl(cwd, &session_id, &state.config.home_dir);
+        let response = read_last_response_from_jsonl(cwd, &session_id, &state.config.home_dir, state);
         (last_human.unwrap_or_default(), response)
     } else {
         // No cache — read both from JSONL
-        let (h, r) = read_last_messages_from_jsonl(cwd, &session_id, &state.config.home_dir);
+        let (h, r) = read_last_messages_from_jsonl(cwd, &session_id, &state.config.home_dir, state);
         (h, r)
     };
 
@@ -364,53 +364,30 @@ fn strip_code_blocks(text: &str) -> String {
     result
 }
 
-/// Read last assistant response from JSONL (for Stop hook)
+/// Read last assistant response from JSONL (for Stop hook, uses shared cache #1861)
 fn read_last_response_from_jsonl(
     cwd: &str,
     session_id: &str,
     home_dir: &std::path::Path,
+    state: &AppState,
 ) -> String {
-    let (_, response) = read_last_messages_from_jsonl(cwd, session_id, home_dir);
+    let (_, response) = read_last_messages_from_jsonl(cwd, session_id, home_dir, state);
     response
 }
 
-/// Read last human message and assistant response from session JSONL
+/// Read last human message and assistant response from session JSONL (uses shared cache #1861)
 fn read_last_messages_from_jsonl(
     cwd: &str,
     session_id: &str,
-    home_dir: &std::path::Path,
+    _home_dir: &std::path::Path,
+    state: &AppState,
 ) -> (String, String) {
-    let project_key = cwd.replace('/', "-");
-    // Remove leading dash if present
-    let project_key = if project_key.starts_with('-') {
-        &project_key[1..]
-    } else {
-        &project_key
-    };
-    let jsonl_path = home_dir
-        .join(".claude/projects")
-        .join(format!("-{}", project_key))
-        .join(format!("{}.jsonl", session_id));
-
-    let file = match std::fs::File::open(&jsonl_path) {
-        Ok(f) => f,
-        Err(_) => return (String::new(), String::new()),
-    };
-
-    // Read last ~500 lines efficiently
-    use std::io::{BufRead, BufReader};
-    let reader = BufReader::new(file);
-    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
-    let start = if lines.len() > 500 {
-        lines.len() - 500
-    } else {
-        0
-    };
+    let lines = state.session_cache.get_tail(session_id, cwd, 500);
 
     let mut last_human = String::new();
     let mut last_response = String::new();
 
-    for line in &lines[start..] {
+    for line in &lines {
         if line.is_empty() {
             continue;
         }
