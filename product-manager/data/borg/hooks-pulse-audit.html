@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Hooks &amp; Pulse Logging Audit</title>
+<style>
+  body { font-family: 'Georgia', serif; max-width: 900px; margin: 2em auto; padding: 0 1em; color: #222; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 0.3em; }
+  h2 { font-size: 1.3em; border-bottom: 1px solid #999; padding-bottom: 0.2em; margin-top: 2em; }
+  h3 { font-size: 1.1em; margin-top: 1.5em; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.88em; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; font-weight: bold; }
+  tr:nth-child(even) { background: #fafafa; }
+  .block { color: #c0392b; font-weight: bold; }
+  .warn { color: #d35400; }
+  .allow { color: #27ae60; }
+  .info { color: #2980b9; }
+  .gap { background: #fff3cd; }
+  .ok { background: #d4edda; }
+  .critical { background: #f8d7da; }
+  code { background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
+  .summary-box { border: 2px solid #333; padding: 1em; margin: 1em 0; background: #f9f9f9; }
+  .pillar { display: inline-block; background: #e8e8e8; padding: 2px 8px; border-radius: 3px; margin: 2px; font-size: 0.85em; }
+  .pillar-miss { background: #fff3cd; }
+  .pillar-hit { background: #d4edda; }
+  ul { margin: 0.5em 0; }
+  li { margin-bottom: 0.3em; }
+  .metric { font-family: monospace; font-size: 0.95em; }
+  @media print { body { max-width: 100%; margin: 0; font-size: 11pt; } table { font-size: 9pt; } h1 { font-size: 14pt; } }
+</style>
+</head>
+<body>
+
+<h1>Chorus Hooks &amp; Pulse Logging Audit</h1>
+<p><strong>Date:</strong> 2026-03-30 | <strong>Author:</strong> Wren (PM) | <strong>Source:</strong> Code review of <code>chorus-hooks/src/</code></p>
+<p><strong>Related cards:</strong> #1854 (hook tracing, shipped), #1855 (pulse logging, carded), #1772 (hardening, shipped), #1715 (code review, Later)</p>
+
+<div class="summary-box">
+<h3>Executive Summary</h3>
+<ol>
+<li><strong>33 hook modules, 8,033 lines, 221 tests.</strong> The system is substantial and well-tested for its age. This is a real codebase, not a prototype.</li>
+<li><strong>Pulse logging (#1854) is live but incomplete.</strong> Every hook entry/exit is logged to <code>hooks.log</code> with timestamp, tool, role, and decision. Missing: module name, duration_ms, reason on blocks, session_id.</li>
+<li><strong>No circuit breakers.</strong> A broken hook (like the grep lobotomy) blocks all three roles with no auto-disable. This is the highest-risk gap.</li>
+<li><strong>Subprocess calls in the hot path.</strong> 7 hooks shell out to <code>board-ts</code>, <code>role-state</code>, or <code>find</code> synchronously. One slow Vikunja response blocks the entire hooks pipeline.</li>
+<li><strong>Session JSONL scanning is a recurring pattern.</strong> 5 hooks scan the session JSONL file for evidence (tests, pairs, demos, synthesis). Each re-reads the file independently. No caching, no shared reader.</li>
+</ol>
+</div>
+
+<h2>1. Hook Inventory</h2>
+
+<table>
+<thead>
+<tr>
+  <th>#</th>
+  <th>Hook Module</th>
+  <th>Type</th>
+  <th>Tool Scope</th>
+  <th>Decision</th>
+  <th>What It Does</th>
+  <th>Tests</th>
+  <th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<!-- INFRASTRUCTURE GUARDS -->
+<tr>
+  <td>1</td>
+  <td><code>session_init_gate</code></td>
+  <td>PreToolUse</td>
+  <td>Write/Edit/Bash</td>
+  <td class="block">BLOCK</td>
+  <td>Forces roles to read <code>/tmp/session-start-{role}.md</code> before any work. Gate clears after the read.</td>
+  <td>0</td>
+  <td class="gap">No tests. Uses filesystem markers in <code>/tmp/claude-session-init/</code>.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>clock_sync</code></td>
+  <td>Pre+Post ToolUse, UserPrompt</td>
+  <td>All</td>
+  <td class="allow">INJECT</td>
+  <td>Writes authoritative wall clock to <code>/tmp/wall-clock.txt</code> on every tool call. Injects timestamp via stderr. Fixes #1559 stale timestamps.</td>
+  <td>4</td>
+  <td class="ok">Shells out to <code>date +%z</code> for DST. Correct approach.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>tool_telemetry</code></td>
+  <td>Pre+Post ToolUse</td>
+  <td>All (Pre), Bash (Post)</td>
+  <td class="allow">LOG</td>
+  <td>Logs every tool call to <code>permission-prompts.log</code>. Post: error fingerprinting, struggle detection (3+ errors in 60s).</td>
+  <td>0</td>
+  <td class="gap">Fire-and-forget (tokio::spawn). No tests.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>stop_on_error</code></td>
+  <td>PostToolUse</td>
+  <td>Bash</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks next action when previous Bash command exited non-zero. Exemptions for grep, diff, cargo test, board-ts, etc.</td>
+  <td>11</td>
+  <td class="ok">Well-tested. Smart exemption list.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>observer</code></td>
+  <td>PostToolUse</td>
+  <td>Bash/Write/Edit/Agent/Skill</td>
+  <td class="info">LOG</td>
+  <td>Persistent role observation. Digests tool calls into compact observations written to <code>/tmp/claude-team-scan/{role}-observations.jsonl</code>. Rotates at 200 entries.</td>
+  <td>15</td>
+  <td class="ok">Good digest logic. Fire-and-forget.</td>
+</tr>
+
+<!-- SAFETY GUARDS -->
+<tr>
+  <td>6</td>
+  <td><code>app_state_guard</code></td>
+  <td>PreToolUse</td>
+  <td>Bash</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks <code>docker compose</code> lifecycle, piped kills, <code>kill -9</code>, terraform. Forces <code>app-state.sh</code>.</td>
+  <td>7</td>
+  <td class="ok">Clean regex patterns. Heredoc exemption.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>infra_guardrails</code></td>
+  <td>PreToolUse</td>
+  <td>Bash</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks docker exec, docker logs (unbounded), kill/pkill/killall, docker lifecycle, git commit/add in team repo. Forces git-queue.sh.</td>
+  <td>18</td>
+  <td class="ok">Best tested hook. Overlaps with app_state_guard on some patterns.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>write_scrubber</code></td>
+  <td>PreToolUse</td>
+  <td>Write/Edit</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks credentials (passwords, AWS keys, Slack/GitHub/API tokens) from shared files. Warns on IPs, MACs, localhost ports.</td>
+  <td>16</td>
+  <td class="ok">Well-tested. Only scans shared files (activity.md, MEMORY.md, CLAUDE.md, etc.).</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>sensitive_paths</code></td>
+  <td>PreToolUse</td>
+  <td>Read</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks reads of .env, terraform.tfstate, .ssh/. Loads tier manifests from <code>.sensitive-paths</code> files. Private=deny, Internal=ask.</td>
+  <td>0</td>
+  <td class="gap">No tests. Path matching uses custom glob-to-regex.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>bedroom_nfs_guard</code></td>
+  <td>PreToolUse</td>
+  <td>Bash</td>
+  <td class="warn">WARN</td>
+  <td>Warns when writing to <code>/Volumes/Gathering/</code> over NFS. Suggests SSH to Bedroom for bulk ops. (DEC-089)</td>
+  <td>0</td>
+  <td class="gap">No tests. Warn only, doesn't block.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>csc_guard</code></td>
+  <td>PreToolUse</td>
+  <td>Bash</td>
+  <td class="block">BLOCK/WARN</td>
+  <td>Blocks pipeline artifact writes to <code>/tmp/</code>. Warns on domain data writes outside <code>/Volumes/Gathering/</code>. Canonical Storage Convention.</td>
+  <td>0</td>
+  <td class="gap">No tests. Complex regex logic.</td>
+</tr>
+
+<!-- QUALITY GATES -->
+<tr>
+  <td>12</td>
+  <td><code>tdd_gate</code></td>
+  <td>PreToolUse</td>
+  <td>Skill/Bash</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks /demo and /acp without test evidence in session JSONL. Scans for cargo test, jest, npm test.</td>
+  <td>5</td>
+  <td>Scans session JSONL. Allows if no session ID (can't verify).</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>demo_gate</code></td>
+  <td>PreToolUse</td>
+  <td>Skill/Bash</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks "done" without demo evidence. Checks for demo brief file or demo spine event in session.</td>
+  <td>7</td>
+  <td>Scans session JSONL + filesystem. Shells out to <code>date</code>.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>demo_preflight</code></td>
+  <td>PreToolUse</td>
+  <td>Skill (demo)</td>
+  <td class="block">BLOCK</td>
+  <td>Four gates: card in WIP, AC exists, smoke check passes, ICD render check for domain cards. Shells out to board-ts + smoke-check.sh.</td>
+  <td>0</td>
+  <td class="gap">No tests. Most subprocess-heavy hook (4 subprocesses).</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>accept_gate</code></td>
+  <td>PreToolUse</td>
+  <td>Skill (acp)</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks /acp without demo brief. Blocks self-accept on code cards (DEC-048). Shells out to board-ts + find.</td>
+  <td>0</td>
+  <td class="gap">No tests. Uses subprocess.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>pair_gate</code></td>
+  <td>PreToolUse</td>
+  <td>Write/Edit</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks code file edits without active pair session. Checks <code>/tmp/pair-*.md</code> + session JSONL.</td>
+  <td>5</td>
+  <td>Scans session JSONL.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>memory_gate</code></td>
+  <td>Pre+Post ToolUse</td>
+  <td>Edit/Write (Pre), Bash/Read (Post)</td>
+  <td class="block">BLOCK</td>
+  <td>Context synthesis gate. Blocks code writes without demonstrated research synthesis. Pre: scans session JSONL for search + synthesis markers. Post: logs research activity.</td>
+  <td>10</td>
+  <td>Most complex gate. Scans session JSONL with two-pass check.</td>
+</tr>
+
+<!-- COORDINATION HOOKS -->
+<tr>
+  <td>18</td>
+  <td><code>autonomy_guard</code></td>
+  <td>Pre+UserPrompt+Stop</td>
+  <td>AskUserQuestion/All</td>
+  <td class="block">BLOCK</td>
+  <td>Three triggers: (1) PreToolUse on AskUserQuestion intercepts permission-seeking questions with known Jeff preferences. (2) UserPromptSubmit caches human messages, detects JDI. (3) Stop hook scans response for permission-seeking patterns, blocks with rewrite instructions.</td>
+  <td>18</td>
+  <td class="ok">Well-tested. Reads session JSONL for Stop hook. Most regex-heavy hook.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>search_hierarchy</code></td>
+  <td>PreToolUse</td>
+  <td>Grep/Glob</td>
+  <td class="warn">WARN/INJECT</td>
+  <td>DEC-074 enforcement. Classifies search as code-lookup vs concept-search. For concept searches, queries Chorus SQLite FTS and injects results via stderr. Retry bypass (60s cooldown).</td>
+  <td>12</td>
+  <td class="ok">Well-tested. Uses rusqlite for FTS.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>context_inject</code></td>
+  <td>UserPromptSubmit</td>
+  <td>N/A (prompt)</td>
+  <td class="info">INJECT</td>
+  <td>On every Jeff prompt, extracts keywords, searches Chorus FTS + memory files, injects context synthesis via stderr. Zero discretion.</td>
+  <td>4</td>
+  <td>Direct SQLite queries. Scans memory files on every prompt.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>input_classifier</code></td>
+  <td>UserPromptSubmit</td>
+  <td>N/A (prompt)</td>
+  <td class="info">INJECT</td>
+  <td>Classifies Jeff's input as command/question/continuation/statement. Injects classification hint. Prevents "5 words, 12 tool calls" pattern.</td>
+  <td>4</td>
+  <td>Pure logic, no I/O.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>jdi_detector</code></td>
+  <td>UserPromptSubmit</td>
+  <td>N/A (prompt)</td>
+  <td class="info">LOG</td>
+  <td>Detects "jdi/jfdi/just do it" signals. Emits <code>interaction.jdi.received</code> spine event. Fire-and-forget.</td>
+  <td>6</td>
+  <td class="ok">Clean regex. 200-char guard for false positives.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>handoff_logger</code></td>
+  <td>PostToolUse</td>
+  <td>Write/Edit</td>
+  <td class="info">LOG</td>
+  <td>Logs brief handoffs between roles. Writes to <code>handoffs.log</code>. Emits spine event. Sends push notification via TCP to port 9095. Also syncs state files to SOLID pods.</td>
+  <td>0</td>
+  <td class="gap">No tests. TCP push to 9095 (alert-notifier).</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>nudge_blast_radius</code></td>
+  <td>PreToolUse</td>
+  <td>Bash (nudge.sh)</td>
+  <td class="warn">WARN</td>
+  <td>Warns when nudging a role that's WIP on a card. Shells out to <code>role-state</code>.</td>
+  <td>0</td>
+  <td class="gap">No tests. Uses subprocess.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>pair_enforcement</code></td>
+  <td>PreToolUse</td>
+  <td>Skill (pair)</td>
+  <td class="warn">NOTIFY</td>
+  <td>When /pair starts, nudges the target role to also load /pair. Shells out to nudge.sh.</td>
+  <td>0</td>
+  <td class="gap">No tests. Uses subprocess.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>demo_provenance</code></td>
+  <td>PostToolUse</td>
+  <td>Skill (demo)</td>
+  <td class="info">GENERATE</td>
+  <td>Auto-generates demo brief file after /demo completes. Emits spine event. Shells out to board-ts for card info.</td>
+  <td>0</td>
+  <td class="gap">No tests. File generation + subprocess.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>batch_progress</code></td>
+  <td>Pre+Post ToolUse</td>
+  <td>Bash (run_in_background)</td>
+  <td class="info">MONITOR</td>
+  <td>Spawns a background monitor script for run_in_background Bash commands. Tails output every 30s, posts progress to Bridge + chorus log.</td>
+  <td>0</td>
+  <td class="gap">No tests. Spawns external bash scripts. Most complex side-effects.</td>
+</tr>
+
+<!-- DATA DOMAIN GUARDS -->
+<tr>
+  <td>28</td>
+  <td><code>sparql_guard</code></td>
+  <td>PreToolUse</td>
+  <td>Bash (port 3030)</td>
+  <td class="warn">WARN</td>
+  <td>Warns on wrong Fuseki dataset, missing GRAPH clause, POST to read endpoint. Points to DEC-093 API endpoints.</td>
+  <td>0</td>
+  <td class="gap">No tests. Warn only.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>icd_pre_read</code></td>
+  <td>PreToolUse</td>
+  <td>Write/Edit/Read</td>
+  <td class="warn">WARN</td>
+  <td>Warns on data domain writes without prior domain-context read. Sets flag files in <code>/tmp/</code>. Currently warn-only (TODO: switch to block).</td>
+  <td>0</td>
+  <td class="gap">No tests. Uses filesystem flags.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>icd_write_gate</code></td>
+  <td>PostToolUse</td>
+  <td>Write/Edit</td>
+  <td class="info">VALIDATE</td>
+  <td>Athena pattern: after ICD TTL file write, validates TTL, reloads Fuseki, runs linter. Three sequential subprocesses (npx turtle-validator, curl to Fuseki, python3 linter).</td>
+  <td>0</td>
+  <td class="gap">No tests. Most subprocess-heavy post-hook.</td>
+</tr>
+<tr>
+  <td>31</td>
+  <td><code>story_write_gate</code></td>
+  <td>PreToolUse</td>
+  <td>Write/Edit</td>
+  <td class="block">BLOCK</td>
+  <td>Blocks story content (matching "What he said"/"What it tells us"/"Where it applies" markers) from being written to markdown. Redirects to TTL write path.</td>
+  <td>6</td>
+  <td class="ok">Clean pattern matching.</td>
+</tr>
+<tr>
+  <td>32</td>
+  <td><code>nifi_discipline</code></td>
+  <td>PreToolUse</td>
+  <td>Skill (demo/acp)</td>
+  <td class="warn">WARN</td>
+  <td>Warns if NiFi card uses bash wrapper processors (ExecuteStreamCommand) without native NiFi processors. Heuristic check on card description.</td>
+  <td>0</td>
+  <td class="gap">No tests. Shells out to board-ts.</td>
+</tr>
+</tbody>
+</table>
+
+<h3>Dispatch Summary</h3>
+<table>
+<tr><th>Hook Type</th><th>Count</th><th>Route</th></tr>
+<tr><td>PreToolUse</td><td>~25 checks across Bash/Write/Edit/Read/Grep/Glob/Skill/AskUserQuestion</td><td>Sequential in <code>pre_tool_use_inner()</code></td></tr>
+<tr><td>PostToolUse</td><td>~8 checks (stop_on_error, tool_telemetry, memory_gate, handoff, batch_progress, icd_write_gate, demo_provenance, observer)</td><td>Sequential in <code>post_tool_use()</code></td></tr>
+<tr><td>UserPromptSubmit</td><td>5 checks (clock_sync, input_classifier, context_inject, jdi_detector, autonomy_guard)</td><td>Parallel-ish (JDI is fire-and-forget)</td></tr>
+<tr><td>Stop</td><td>1 (autonomy_guard response scan)</td><td>Dedicated handler</td></tr>
+</table>
+
+<h2>2. Pulse Logging Assessment</h2>
+
+<h3>Current State (hooks.log, shipped #1854)</h3>
+
+<p>The <code>log_hook()</code> function in <code>main.rs</code> logs every hook intercept:</p>
+
+<table>
+<tr><th>Field</th><th>Format</th><th>Example</th></tr>
+<tr><td>timestamp</td><td><code>%H:%M:%S</code></td><td><code>10:37:33</code></td></tr>
+<tr><td>hook_type</td><td>20-char padded</td><td><code>pre_tool_use</code></td></tr>
+<tr><td>tool</td><td>6-char padded</td><td><code>Read</code></td></tr>
+<tr><td>role</td><td>5-char padded</td><td><code>wren</code></td></tr>
+<tr><td>decision</td><td>6-char padded</td><td><code>allow</code> / <code>BLOCK</code> / <code>DENY</code> / <code>WARN</code></td></tr>
+<tr><td>detail</td><td>100-char truncated</td><td>First line of stderr/stdout</td></tr>
+</table>
+
+<h3>What's Working</h3>
+<ul>
+<li>Every hook entry is logged with <code>enter</code> phase showing tool input</li>
+<li>Every hook exit is logged with decision (allow/BLOCK/DENY/WARN)</li>
+<li>File: <code>~/Library/Logs/Gathering/hooks.log</code> -- clean, human-readable, printable</li>
+<li>Log rotation: append-only, no rotation configured (will grow unbounded)</li>
+</ul>
+
+<h3>What's Missing</h3>
+<table>
+<tr><th>Missing Field</th><th>Why It Matters</th><th>Priority</th></tr>
+<tr class="critical"><td><strong>module name</strong></td><td>When a hook blocks, the log shows "BLOCK" but not <em>which</em> hook module made the decision. Currently the detail field has a source prefix from <code>log_return()</code>, but not all paths use it. You can't tell if <code>infra_guardrails</code> or <code>app_state_guard</code> blocked.</td><td>P1</td></tr>
+<tr class="critical"><td><strong>duration_ms</strong></td><td>No way to detect slow hooks. demo_preflight shells out to board-ts + smoke-check.sh -- could take 5+ seconds. Without timing, performance regression is invisible.</td><td>P1</td></tr>
+<tr class="gap"><td><strong>reason on blocks</strong></td><td>The detail field captures the first 100 chars of stderr/stdout, but blocking hooks put their message in stdout (permission_deny_json). The deny reason gets truncated or lost.</td><td>P2</td></tr>
+<tr class="gap"><td><strong>session_id</strong></td><td>Can't correlate hooks to specific sessions. Multiple roles running concurrently = interleaved log lines with no session context.</td><td>P2</td></tr>
+<tr class="gap"><td><strong>date in timestamp</strong></td><td>Only <code>HH:MM:SS</code> -- no date. Logs spanning midnight are ambiguous.</td><td>P3</td></tr>
+<tr class="gap"><td><strong>log rotation</strong></td><td>Append-only file grows forever. No rotation, no size cap.</td><td>P3</td></tr>
+</table>
+
+<h3>Two-Log Architecture</h3>
+<p>The system currently writes to two logs with different audiences:</p>
+<table>
+<tr><th>Log</th><th>Format</th><th>Audience</th><th>Content</th></tr>
+<tr><td><code>hooks.log</code></td><td>Human-readable pipe-delimited</td><td>Jeff (printed, marked up)</td><td>Every hook entry/exit, decision, tool input preview</td></tr>
+<tr><td><code>permission-prompts.log</code></td><td>JSONL</td><td>Borg (analysis)</td><td>All tool calls with role, tool, detail. Error fingerprints in command-errors.log.</td></tr>
+</table>
+<p>This is the right architecture. hooks.log is for Jeff, JSONL is for Borg. Don't merge them.</p>
+
+<h2>3. Definition of Done for Hooks</h2>
+
+<p>Based on Jeff's Fund That Flip operational excellence pillars and engineering best practices for middleware/hook systems:</p>
+
+<table>
+<tr>
+  <th>Pillar</th>
+  <th>Current State</th>
+  <th>Target State</th>
+</tr>
+<tr>
+  <td><span class="pillar pillar-hit">Auditability</span></td>
+  <td>hooks.log captures every decision. chorus.log captures spine events.</td>
+  <td>Add module name + session_id to every log line. Every BLOCK must log the full reason.</td>
+</tr>
+<tr>
+  <td><span class="pillar pillar-miss">Observability</span></td>
+  <td>No timing. No health metrics. No hook failure count.</td>
+  <td>duration_ms on every hook. Expose <code>/metrics</code> endpoint: hook_calls_total, hook_blocks_total, hook_duration_seconds (histogram by module).</td>
+</tr>
+<tr>
+  <td><span class="pillar pillar-miss">Traceability</span></td>
+  <td>No trace IDs. Can't follow a single prompt through all hooks.</td>
+  <td>Generate trace_id on pre_tool_use entry, pass through all hooks. Log it in hooks.log and chorus.log.</td>
+</tr>
+<tr>
+  <td><span class="pillar pillar-miss">Alerting</span></td>
+  <td>No alerts. Broken hook = silent failure until Jeff notices.</td>
+  <td>Auto-card when a hook panics or times out. Bridge notification on hook circuit break.</td>
+</tr>
+<tr>
+  <td><span class="pillar pillar-miss">Monitoring</span></td>
+  <td>struggle detection (3+ errors in 60s) exists for tool_telemetry. Nothing for hooks themselves.</td>
+  <td>Monitor hook latency. Alert if any hook exceeds 2s. Dashboard panel for hooks.</td>
+</tr>
+<tr>
+  <td><span class="pillar pillar-hit">Testability</span></td>
+  <td>221 tests. 12 of 33 modules have tests.</td>
+  <td>Every module has at least 3 tests: allow path, block path, edge case. Integration test for full pipeline.</td>
+</tr>
+<tr>
+  <td><span class="pillar pillar-hit">Deployability</span></td>
+  <td>Single binary, Unix socket, LaunchAgent-managed. Clean deploy via <code>cargo build --release</code>.</td>
+  <td>Add health check endpoint (exists: <code>/health</code>). Add version endpoint.</td>
+</tr>
+<tr>
+  <td><span class="pillar pillar-miss">Configurability</span></td>
+  <td>All configuration is hardcoded (paths, thresholds, timeouts). No runtime disable.</td>
+  <td>Config file or env vars for: hook enable/disable per module, timeout per hook, log level per hook.</td>
+</tr>
+</table>
+
+<h2>4. Gap Analysis</h2>
+
+<h3>4a. Critical Gaps</h3>
+
+<table>
+<tr><th>Gap</th><th>Risk</th><th>Evidence</th><th>Fix</th></tr>
+<tr class="critical">
+  <td><strong>No circuit breakers</strong></td>
+  <td>One broken hook blocks all 3 roles. Recovery requires manual restart.</td>
+  <td>The "lobotomy" -- grep hook broke all roles for 2 days, nobody reported it.</td>
+  <td>Per-hook timeout (2s). If hook panics/times out 3x in 5min, auto-disable and log. Re-enable on next restart. Bridge alert.</td>
+</tr>
+<tr class="critical">
+  <td><strong>No hook timing</strong></td>
+  <td>Slow hooks (subprocess-heavy: demo_preflight, accept_gate, icd_write_gate) are invisible. Performance regression has no signal.</td>
+  <td>demo_preflight calls board-ts 3x + smoke-check.sh. Each can take 1-3s. Total: potentially 10s blocking.</td>
+  <td>Wrap each hook call with <code>Instant::now()</code>. Log duration_ms. Alert if >2s.</td>
+</tr>
+<tr class="critical">
+  <td><strong>12 modules with zero tests</strong></td>
+  <td>session_init_gate, tool_telemetry, sensitive_paths, bedroom_nfs_guard, csc_guard, demo_preflight, accept_gate, handoff_logger, nudge_blast_radius, pair_enforcement, demo_provenance, batch_progress, sparql_guard, icd_pre_read, icd_write_gate, nifi_discipline -- all untested.</td>
+  <td>21 of 33 modules have no tests.</td>
+  <td>Add at least allow + block path tests for each module. Many have pure logic that's easy to test.</td>
+</tr>
+</table>
+
+<h3>4b. Structural Concerns</h3>
+
+<table>
+<tr><th>Concern</th><th>Detail</th><th>Impact</th></tr>
+<tr class="gap">
+  <td><strong>Subprocess calls in hot path</strong></td>
+  <td>7 hooks shell out synchronously: accept_gate (board-ts, find), demo_preflight (board-ts x3, smoke-check.sh), demo_provenance (board-ts, chorus-log.sh), nudge_blast_radius (role-state), pair_enforcement (nudge.sh), nifi_discipline (board-ts), icd_write_gate (npx, curl x3, python3). These block the hooks pipeline.</td>
+  <td>One slow subprocess blocks all hooks for all roles. No timeouts on subprocesses.</td>
+</tr>
+<tr class="gap">
+  <td><strong>Session JSONL scanning (5 hooks)</strong></td>
+  <td>tdd_gate, demo_gate, pair_gate, memory_gate, autonomy_guard all independently read and scan the session JSONL file. No caching, no shared reader. Each scans the last 200-300 lines.</td>
+  <td>5x I/O on the same file per tool call (when all hooks fire). File can be large (100MB+).</td>
+</tr>
+<tr class="gap">
+  <td><strong>Overlap between app_state_guard and infra_guardrails</strong></td>
+  <td>Both block docker compose, kill commands, terraform. Both fire on every Bash command. Duplicate regex evaluation.</td>
+  <td>Confusion about which blocked. Maintenance burden. Consider consolidating.</td>
+</tr>
+<tr class="gap">
+  <td><strong>Inconsistent response conventions</strong></td>
+  <td>Some hooks use <code>permission_deny_json()</code> (stdout), others use <code>block_with_stderr()</code> (stderr + exit_code 2). The <code>log_return()</code> function tries to detect decision from both stdout and stderr, but the logic differs.</td>
+  <td>Pulse log decision field can be wrong. The "DENY" detection checks stdout for "deny" string, but some blocks use exit_code + stderr.</td>
+</tr>
+</table>
+
+<h3>4c. What's Working Well</h3>
+
+<ul>
+<li><strong>Architectural clarity.</strong> One binary, Unix socket, axum router. Clear dispatch from main.rs to hook modules. Easy to add new hooks.</li>
+<li><strong>Fire-and-forget for non-blocking hooks.</strong> tool_telemetry, observer, jdi_detector, handoff_logger all use <code>tokio::spawn</code> for async operations that shouldn't block the response.</li>
+<li><strong>Shared state management.</strong> AppState with Arc<Mutex<>> for cross-hook coordination (search blocks, chorus search cooldown, session init markers).</li>
+<li><strong>Guard exemptions are well-designed.</strong> stop_on_error has a carefully curated exemption list (grep, diff, cargo test, board-ts). infra_guardrails exempts heredocs and git-in-heredoc.</li>
+<li><strong>The autonomy guard is remarkably sophisticated.</strong> Three trigger paths (PreTool, UserPrompt, Stop), 7 preference patterns, legitimate signal detection, response scanning with code block stripping. 18 tests.</li>
+<li><strong>chorus_log.rs (shim) is properly tested.</strong> 8 tests including roundtrip, alias resolution, special characters, error handling.</li>
+</ul>
+
+<h2>5. Three Architecture Lenses</h2>
+
+<p>Every hook operates at the intersection of three systems. A hook that's correct in one lens can be broken in another.</p>
+
+<h3>5a. Memory Architecture — What the Team Knows</h3>
+<p>Hooks are the system's enforced memory. Each encodes a decision, feedback, or pattern from Jeff's history. When a hook fires, it's the system <em>remembering</em> something.</p>
+
+<table>
+<tr><th>Hook</th><th>Memory Encoded</th><th>Gap</th></tr>
+<tr><td><code>infra_guardrails</code></td><td>ADR-011 (no docker exec), DEC-089 (SSH for bulk ops)</td><td class="ok">Well-encoded, well-tested</td></tr>
+<tr><td><code>autonomy_guard</code></td><td>DEC-025 (go is default), DEC-069 (intellectual honesty)</td><td class="ok">Sophisticated — 7 preference patterns</td></tr>
+<tr><td><code>write_scrubber</code></td><td>Data safety — never write credentials to shared files</td><td class="ok">Well-tested, correct scope</td></tr>
+<tr><td><code>search_hierarchy</code></td><td>DEC-074 (Chorus first for search)</td><td class="ok">Enforces search order</td></tr>
+<tr><td><code>nudge_blast_radius</code></td><td>Attention contract — don't interrupt WIP roles</td><td class="gap">Warns on <code>--force</code> nudges. <code>--force</code> means "I know, do it" — warn is wrong here</td></tr>
+<tr><td><code>icd_write_gate</code></td><td>DEC-095 (mapper before harvest)</td><td class="ok">Blocks harvester writes without ICD</td></tr>
+<tr><td><code>demo_preflight</code></td><td>DEC-048 (proving gate)</td><td class="gap">Shells out to 4 subprocesses, no timeout. Slow = broken demo</td></tr>
+<tr><td colspan="2"><strong>Feedback memories with NO hook enforcement</strong></td><td class="critical">8 nudge corrections, no nudge syntax validation hook. "Delete don't deprecate" has no hook. "Playback before building" has no hook. "No time speculation" has no hook.</td></tr>
+</table>
+
+<p><strong>Key insight:</strong> MEMORY.md has 200+ entries. Hooks encode ~15 of them. The rest depend on roles reading and remembering — which is the pattern that produced the Docker fiction.</p>
+
+<h3>5b. Attention Architecture — What the Team Sees</h3>
+<p>Hooks control what roles can see and do. A broken hook is a blindfold (lobotomy). A noisy hook is a distraction (Jeff overriding false positives). Both cost Jeff attention.</p>
+
+<table>
+<tr><th>Attention Pattern</th><th>Hooks Involved</th><th>Cost to Jeff</th></tr>
+<tr><td><strong>Blindfold</strong> — hook broken, roles can't see</td><td>grep lobotomy (2 days), any hook with 0 tests + no circuit breaker</td><td class="critical">Jeff becomes the monitoring system. Highest cost.</td></tr>
+<tr><td><strong>False positive</strong> — hook blocks correct action</td><td>nudge_blast_radius warning on <code>--force</code>, autonomy_guard blocking legitimate cautious responses</td><td class="gap">Jeff has to explain why the hook is wrong. 6 touches per message.</td></tr>
+<tr><td><strong>Silent pass</strong> — hook allows incorrect action</td><td>No hook validates nudge syntax (garbage delivered). No hook verifies Fuseki is responding.</td><td class="gap">Jeff discovers the problem hours later. Trust erosion.</td></tr>
+<tr><td><strong>Correct block</strong> — hook prevents real mistake</td><td>infra_guardrails blocking docker exec, write_scrubber blocking credentials</td><td class="ok">Zero Jeff attention cost. System handles it.</td></tr>
+</table>
+
+<p><strong>Key insight:</strong> The ratio of Jeff-attention-required hooks to self-handling hooks determines system health. Today: ~12 hooks are self-handling, ~5 create false positives or silent passes, and any of the 21 untested hooks could become a blindfold. Jeff should need zero attention on hooks. He currently needs ~3-4 interventions per session.</p>
+
+<h3>5c. Urgency &amp; Expectations — When Context Matters</h3>
+<p>Not every hook should fire the same way. Jeff's current interaction pattern (SWAT vs reflection vs demo) should influence hook behavior.</p>
+
+<table>
+<tr><th>Context</th><th>Hook Behavior Should Be</th><th>Current Behavior</th></tr>
+<tr><td><strong>SWAT mode</strong> — something's broken, act fast</td><td>Loosen guards. Allow docker exec for debugging. Skip blast radius warnings.</td><td class="gap">All hooks fire identically regardless of urgency. No context awareness.</td></tr>
+<tr><td><strong>Demo mode</strong> — showing Jeff live work</td><td>Tighten quality. demo_preflight should be fast and reliable.</td><td class="gap">demo_preflight shells out to 4 subprocesses with no timeout. Can break the demo.</td></tr>
+<tr><td><strong>Pair mode</strong> — two roles building together</td><td>Navigator's blocks should be visible to driver.</td><td class="gap">Each role sees only their own hook decisions. No cross-role visibility.</td></tr>
+<tr><td><strong>Reflection mode</strong> — Jeff thinking about process</td><td>Hooks should be invisible. No interruptions.</td><td class="ok">Most hooks don't fire during conversation-only turns.</td></tr>
+</table>
+
+<p><strong>Key insight:</strong> The interaction pattern detection (<code>interaction.pattern.detected</code> spine events) exists but doesn't feed into hook behavior. Wren detects patterns, hooks ignore them. Wiring pattern → hook urgency would eliminate most false-positive attention cost.</p>
+
+<h2>6. Recommended Acceptance Criteria for Hooks Hardening</h2>
+
+<h3>Card: "Hooks Circuit Breaker + Pulse Hardening"</h3>
+<p><strong>Priority:</strong> P1 | <strong>Owner:</strong> Silas | <strong>Estimate:</strong> 2-3 sessions</p>
+
+<h4>AC1: Circuit Breaker (prevents next lobotomy)</h4>
+<ul>
+<li>Each hook module wrapped with a 2-second timeout (<code>tokio::time::timeout</code>)</li>
+<li>Per-module failure counter: if a hook panics or times out 3x in 5 minutes, it auto-disables</li>
+<li>Auto-disabled hooks log: <code>CIRCUIT_BREAK | module_name | reason</code> to hooks.log</li>
+<li>Auto-disabled hooks emit Bridge notification</li>
+<li>Hooks re-enable on service restart (stateless circuit breaker)</li>
+<li>Test: mock a panicking hook, verify it circuit-breaks after 3 failures</li>
+</ul>
+
+<h4>AC2: Pulse Enrichment (hooks.log gets useful)</h4>
+<ul>
+<li>Every log line includes: <code>YYYY-MM-DD HH:MM:SS.mmm</code> (full timestamp with date and millis)</li>
+<li>Every log line includes the hook <strong>module name</strong> that made the decision</li>
+<li>Every log line includes <code>duration_ms</code></li>
+<li>BLOCK/DENY lines include the full reason (not truncated to 100 chars)</li>
+<li>Add session_id to log lines (truncated to 8 chars for readability)</li>
+<li>Add log rotation: max 10MB, rotate to hooks.log.1</li>
+</ul>
+
+<h4>AC3: Test Coverage Floor</h4>
+<ul>
+<li>Every hook module has at least 2 tests: one allow path, one block/warn path</li>
+<li>Priority modules for new tests: session_init_gate, csc_guard, demo_preflight, accept_gate, sensitive_paths</li>
+<li>One integration test: send a mock request through the full pre_tool_use pipeline and verify the correct hook fires</li>
+</ul>
+
+<h4>AC4: Subprocess Timeout</h4>
+<ul>
+<li>All subprocess calls (Command::new) wrapped with a 3-second timeout</li>
+<li>Subprocess timeout logs: <code>SUBPROCESS_TIMEOUT | module | command</code></li>
+<li>Test: verify hook returns allow (not hang) when subprocess times out</li>
+</ul>
+
+<h3>Card: "Session JSONL Cache" (future, P2)</h3>
+<ul>
+<li>Shared session JSONL reader in AppState: read once per prompt cycle, cache results</li>
+<li>tdd_gate, demo_gate, pair_gate, memory_gate, autonomy_guard all use the cached reader</li>
+<li>Cache invalidates on new tool_response (not on every check)</li>
+</ul>
+
+<h3>Card: "Guard Consolidation" (future, P3)</h3>
+<ul>
+<li>Merge app_state_guard into infra_guardrails (they overlap on docker, kill, terraform)</li>
+<li>Standardize response conventions: all blocks use exit_code 2 + stderr message + stdout deny JSON</li>
+<li>Single <code>log_decision()</code> function that all hooks call, guaranteeing consistent pulse format</li>
+</ul>
+
+<h2>7. Risk Summary</h2>
+
+<table>
+<tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
+<tr class="critical">
+  <td>Hook panic blocks all roles (lobotomy repeat)</td>
+  <td>Medium</td>
+  <td>Critical -- 2 days lost last time</td>
+  <td>AC1: Circuit breaker</td>
+</tr>
+<tr class="critical">
+  <td>Slow subprocess blocks hooks pipeline</td>
+  <td>High (demo_preflight is already slow)</td>
+  <td>High -- 10s delay per tool call during demo flow</td>
+  <td>AC4: Subprocess timeout</td>
+</tr>
+<tr class="gap">
+  <td>Untested hook silently misclassifies</td>
+  <td>Medium</td>
+  <td>Medium -- wrong blocks or missed blocks</td>
+  <td>AC3: Test coverage floor</td>
+</tr>
+<tr class="gap">
+  <td>hooks.log grows unbounded</td>
+  <td>Certain (it's append-only)</td>
+  <td>Low -- disk space, but visible</td>
+  <td>AC2: Log rotation</td>
+</tr>
+</table>
+
+<hr>
+<p><em>This audit was generated from direct code review of all 33 hook modules in <code>chorus-hooks/src/hooks/</code> and <code>main.rs</code>. No behavior was inferred -- every claim maps to a line of code read during this session.</em></p>
+
+</body>
+</html>

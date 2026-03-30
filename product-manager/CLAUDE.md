@@ -195,6 +195,8 @@ Board CLI: `../messages/scripts/cards` (alias: `cards`) | `cards --help` for ful
 
 **No work without a card.** Move to WIP when starting (`cards move <id> WIP` + `role-state.sh <role> building card=<id>`). Move to Done when complete, not at session close. Equal priority → smallest first (DEC-049).
 
+**Experience-driven cards (#1839).** Every card has a `## Experience` section — 2-5 sentences in Jeff's voice describing what he sees, feels, or gets. AC derives from the experience, not the other way around. Wren owns writing Experience sections — translate Jeff's words, don't invent. The `cards move` gate blocks WIP entry without one.
+
 ## Team Operating Model
 
 Full model: `../messages/team-architecture.md`. Session lifecycle: **Synchronize** (automatic hook loads context to `/tmp/session-start-<role>.md`, read it + state files) → **Operate** (brief + signal + record) → **Close** (update activity.md, commit).
