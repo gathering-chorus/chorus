@@ -534,3 +534,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Kade] 2026-03-29 17:09-18:10 — Short session. Reviewed Silas demos: #1808 (context cache events, all 3 AC pass) and #1841 (stop-on-error gate, all 5 AC pass). Committed incoming briefs (5 reassignment/build briefs + hooks update). No code written — review-only session.
 
 - [2026-03-29 21:03] [Kade] #1843 seed endpoint fix — added /api/seeds plural alias, made webhook respond-before-process (prevents Twilio 502). AC #2/#3 blocked on Fuseki (#1833). Audited GRAPH ?g patterns for Silas consolidation — green light.
+
+- [2026-03-30 06:24–08:27] [Kade] Fixed broken gemba skill (paths + missing tail mode). Gemba'd Silas on #1833. Investigated photos page blank — root cause: Fuseki rebuild lost ~18K photos and left predicate variants unnormalized. Jeff identified data loss as the real issue. Pair gate now blocks handler edits.
