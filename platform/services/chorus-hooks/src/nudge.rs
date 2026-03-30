@@ -214,6 +214,21 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 
     let message = &args[1];
+
+    // Validate: message can't be a flag
+    if message.starts_with("--") {
+        eprintln!("ERROR: '{}' is a flag, not a message.", message);
+        eprintln!("Usage: nudge <role> \"your message\" [--force] [--from <sender>]");
+        eprintln!("  The message must come BEFORE any flags.");
+        return ExitCode::from(1);
+    }
+
+    // Validate: message can't be empty
+    if message.trim().is_empty() {
+        eprintln!("ERROR: empty message. What are you telling the role to do?");
+        return ExitCode::from(1);
+    }
+
     let mut explicit_sender = None;
     let mut force = false;
     let mut reply_to: Option<String> = None;

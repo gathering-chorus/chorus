@@ -14,6 +14,33 @@ use tracing::{info, trace};
 use types::{HookInput, HookResponse};
 
 const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
+const HOOK_LOG: &str = "/Users/jeffbridwell/Library/Logs/Gathering/hooks.log";
+
+/// Log every hook intercept to a human-readable file (#1854)
+fn log_hook(hook: &str, tool: &str, role: &str, decision: &str, detail: &str) {
+    use std::io::Write;
+    let ts = chrono::Local::now().format("%H:%M:%S").to_string();
+    let line = format!("{} | {:20} | {:6} | {:5} | {:6} | {}\n",
+        ts, hook, tool, role, decision, detail);
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(HOOK_LOG) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+/// Log and return a hook response — captures every block/deny/allow decision
+fn log_return(hook: &str, tool: &str, role: &str, source: &str, r: HookResponse) -> Json<HookResponse> {
+    let decision = if r.exit_code != 0 { "BLOCK" }
+        else if r.stdout.as_ref().map(|s| s.contains("deny")).unwrap_or(false) { "DENY" }
+        else if r.stderr.is_some() { "WARN" }
+        else { "allow" };
+    let detail = r.stderr.as_deref()
+        .or(r.stdout.as_deref())
+        .unwrap_or("")
+        .lines().next().unwrap_or("")
+        .chars().take(100).collect::<String>();
+    log_hook(hook, tool, role, decision, &format!("{}: {}", source, detail));
+    Json(r)
+}
 
 #[tokio::main]
 async fn main() {
@@ -72,15 +99,43 @@ async fn pre_tool_use(
     State(state): State<AppState>,
     Json(input): Json<HookInput>,
 ) -> Json<HookResponse> {
+    let result = pre_tool_use_inner(&state, &input).await;
+    let tool = input.tool_name_str();
+    let role = input.role();
+    let decision = if result.exit_code != 0 { "BLOCK" }
+        else if result.stdout.as_ref().map(|s| s.contains("deny")).unwrap_or(false) { "DENY" }
+        else if result.stderr.is_some() { "WARN" }
+        else { "allow" };
+    let detail = result.stderr.as_deref()
+        .or(result.stdout.as_deref())
+        .unwrap_or("")
+        .lines().next().unwrap_or("")
+        .chars().take(120).collect::<String>();
+    log_hook("pre_tool_use", tool, role.as_str(), decision, &detail);
+    Json(result)
+}
+
+async fn pre_tool_use_inner(
+    state: &AppState,
+    input: &HookInput,
+) -> HookResponse {
     let tool = input.tool_name_str().to_string();
     let role = input.role();
+    let detail_str = match tool.as_str() {
+        "Bash" => input.get_tool_input_str("command").chars().take(80).collect::<String>(),
+        "Read" | "Write" | "Edit" => input.get_tool_input_str("file_path").chars().take(80).collect::<String>(),
+        "Grep" | "Glob" => input.get_tool_input_str("pattern").chars().take(80).collect::<String>(),
+        "Skill" => input.get_tool_input_str("skill"),
+        _ => String::new(),
+    };
+    log_hook("pre_tool_use", &tool, role.as_str(), "enter", &detail_str);
     trace!(hook = "pre_tool_use", phase = "receive", %tool, role = role.as_str(), "dispatching");
 
     // Session init gate (all tools for Write/Edit/Bash/Read)
     let gate_result = hooks::session_init_gate::check(&input, &state).await;
     if let Some(ref stdout) = gate_result.stdout {
         if stdout.contains("\"deny\"") {
-            return Json(gate_result);
+            return gate_result;
         }
     }
 
@@ -99,50 +154,50 @@ async fn pre_tool_use(
             // app-state guard
             let r = hooks::app_state_guard::check(&input);
             if r.stdout.is_some() {
-                return Json(r);
+                return r;
             }
 
             // sparql guard
             let r = hooks::sparql_guard::check(&input).await;
             if r.stderr.is_some() {
-                return Json(r);
+                return r;
             }
 
             // bedroom NFS guard
             let r = hooks::bedroom_nfs_guard::check(&input);
             if r.stdout.is_some() {
-                return Json(r);
+                return r;
             }
 
             // infra guardrails (engineer only)
             let r = hooks::infra_guardrails::check(&input).await;
             if r.stdout.is_some() {
-                return Json(r);
+                return r;
             }
 
             // Nudge blast radius (#1658) — warn if target role is WIP
             let r = hooks::nudge_blast_radius::check(&input).await;
             if r.stderr.is_some() {
                 // Don't block — just surface the warning
-                return Json(r);
+                return r;
             }
 
             // CSC guard (#1685) — block /tmp/ artifact writes, warn outside /Volumes/Gathering/
             let r = hooks::csc_guard::check(&input);
             if r.stdout.is_some() || r.stderr.is_some() {
-                return Json(r);
+                return r;
             }
 
             // TDD gate (#1814) — block demo/done without test evidence
             let r = hooks::tdd_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
 
             // Demo gate (#1814) — block done without demo evidence
             let r = hooks::demo_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
 
             // Batch progress (#1656) — detect run_in_background in PreToolUse
@@ -155,28 +210,28 @@ async fn pre_tool_use(
         "Grep" | "Glob" => {
             let r = hooks::search_hierarchy::check(&input, &state).await;
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
         }
         "Write" | "Edit" => {
             let r = hooks::write_scrubber::check(&input).await;
             if r.stdout.is_some() {
-                return Json(r);
+                return r;
             }
             let r = hooks::story_write_gate::check(&input).await;
             if r.stderr.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
             // Memory-and-research gate (#1811) — block code writes without prior checks
             let r = hooks::memory_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
 
             // Pair gate (#1814) — block code edits without active pair
             let r = hooks::pair_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
 
             // ICD pre-read gate (#1684) — warn on data domain writes without context read
@@ -185,7 +240,7 @@ async fn pre_tool_use(
         "Read" => {
             let r = hooks::sensitive_paths::check(&input).await;
             if r.stdout.is_some() {
-                return Json(r);
+                return r;
             }
             // ICD pre-read (#1684) — set flag when domain context is read
             hooks::icd_pre_read::check(&input, &state).await;
@@ -193,29 +248,29 @@ async fn pre_tool_use(
         "AskUserQuestion" => {
             let r = hooks::autonomy_guard::check(&input, &state).await;
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
         }
         "Skill" => {
             // TDD gate (#1814) — block demo/done without test evidence
             let r = hooks::tdd_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
             // Demo gate (#1814) — block done without demo evidence
             let r = hooks::demo_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
             // Demo preflight gate (#1657)
             let r = hooks::demo_preflight::check(&input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
             // Accept gate (#1671)
             let r = hooks::accept_gate::check(&input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
-                return Json(r);
+                return r;
             }
             // NiFi discipline (#1686) — warn on bash wrapper pattern
             if let Some(msg) = hooks::nifi_discipline::check(&input, &state).await {
@@ -225,14 +280,14 @@ async fn pre_tool_use(
             let r = hooks::pair_enforcement::check(&input).await;
             if r.stderr.is_some() {
                 // Don't block — just notify
-                return Json(r);
+                return r;
             }
         }
         _ => {}
     }
 
     trace!(hook = "pre_tool_use", phase = "respond", %tool, role = role.as_str(), "allow (no guard triggered)");
-    Json(HookResponse::allow())
+    HookResponse::allow()
 }
 
 /// PostToolUse — telemetry + handoff logger + observer
