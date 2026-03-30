@@ -1918,6 +1918,55 @@ app.get('/api/chorus/cost', (req: Request, res: Response) => {
   });
 });
 
+// --- Seeds endpoint (#1869) ---
+
+app.get('/api/chorus/seeds', async (_req: Request, res: Response) => {
+  try {
+    const fusekiUrl = process.env.FUSEKI_URL || 'http://localhost:3030';
+    const query = `
+      PREFIX jb: <https://jeffbridwell.com/ontology#>
+      SELECT DISTINCT ?slug ?content ?seedUrl ?linkTitle ?seededAt ?routedTo
+      WHERE {
+        GRAPH <urn:jb:seeds/> {
+          ?s jb:slug ?slug .
+          OPTIONAL { ?s jb:seedContent ?content }
+          OPTIONAL { ?s jb:seedUrl ?seedUrl }
+          OPTIONAL { ?s jb:linkTitle ?linkTitle }
+          OPTIONAL { ?s jb:seededAt ?seededAt }
+          OPTIONAL { ?s jb:routedTo ?routedTo }
+        }
+      }
+      LIMIT 50
+    `;
+    const url = `${fusekiUrl}/pods/query`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: `query=${encodeURIComponent(query)}`,
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) {
+      res.status(502).json({ error: 'Fuseki query failed', status: response.status });
+      return;
+    }
+    const data = await response.json() as { results: { bindings: Array<Record<string, { value: string }>> } };
+    const seeds = data.results.bindings.map(b => ({
+      slug: b.slug?.value,
+      content: b.content?.value?.substring(0, 200),
+      seedUrl: b.seedUrl?.value,
+      linkTitle: b.linkTitle?.value,
+      status: b.status?.value || 'pending',
+      type: b.type?.value,
+      source: b.source?.value,
+      seededAt: b.seededAt?.value,
+      routedTo: b.routedTo?.value,
+    }));
+    res.json({ seeds, total: seeds.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Seeds query failed', detail: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // --- Health check ---
 
 app.get('/health', (_req: Request, res: Response) => {
