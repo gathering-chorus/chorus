@@ -54,21 +54,47 @@ pub fn run(args: &[String]) -> ExitCode {
     let offset = eastern_offset();
     let ts = chrono::Utc::now().with_timezone(&offset).format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
 
-    // Build extra fields
+    // Parse --level flag, default to info
+    let mut level = "info".to_string();
     let mut extras = String::new();
     let mut display = String::new();
     for kv in args.iter().skip(2) {
+        if kv == "--level" || kv.starts_with("--level=") {
+            // Handle --level=critical or --level critical (next arg)
+            if let Some(val) = kv.strip_prefix("--level=") {
+                level = val.to_string();
+            }
+            continue;
+        }
+        // Handle --level <value> (previous was --level, this is the value)
+        if ["info", "warn", "critical"].contains(&kv.as_str())
+            && args.iter().skip(2).any(|a| a == "--level")
+            && !kv.contains('=')
+        {
+            level = kv.clone();
+            continue;
+        }
         if let Some((key, val)) = kv.split_once('=') {
+            if key == "level" {
+                level = val.to_string();
+                continue;
+            }
             let escaped = val.replace('"', "\\\"");
             extras.push_str(&format!(r#","{}":"{}""#, key, escaped));
             display.push_str(&format!(" {}={}", key, val));
         }
     }
 
+    // Validate level
+    if !["info", "warn", "critical"].contains(&level.as_str()) {
+        eprintln!("Invalid level '{}' — use info, warn, or critical", level);
+        level = "info".to_string();
+    }
+
     // Write to log
     let line = format!(
-        r#"{{"timestamp":"{}","level":"info","appName":"chorus-events","component":"lifecycle","event":"{}","role":"{}"{}}}"#,
-        ts, event, role, extras
+        r#"{{"timestamp":"{}","level":"{}","appName":"chorus-events","component":"lifecycle","event":"{}","role":"{}"{}}}"#,
+        ts, level, event, role, extras
     );
 
     let path = PathBuf::from(LOG_FILE);
@@ -223,6 +249,45 @@ mod tests {
     fn single_arg_returns_error() {
         let result = run(&["event.only".into()]);
         assert_eq!(result, ExitCode::from(1));
+    }
+
+    // --- Level flag (#1895) ---
+
+    #[test]
+    fn default_level_is_info() {
+        run(&["test.level.default".into(), "silas".into()]);
+        let line = find_event_line("test.level.default").expect("event in log");
+        let json = extract_json_object(&line, "test.level.default").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["level"], "info");
+    }
+
+    #[test]
+    fn level_equals_syntax() {
+        run(&["test.level.equals".into(), "silas".into(), "--level=critical".into()]);
+        let line = find_event_line("test.level.equals").expect("event in log");
+        let json = extract_json_object(&line, "test.level.equals").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["level"], "critical");
+    }
+
+    #[test]
+    fn level_kv_syntax() {
+        run(&["test.level.kv".into(), "kade".into(), "level=warn".into()]);
+        let line = find_event_line("test.level.kv").expect("event in log");
+        let json = extract_json_object(&line, "test.level.kv").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["level"], "warn");
+    }
+
+    #[test]
+    fn level_with_other_fields() {
+        run(&["test.level.combo".into(), "wren".into(), "--level=critical".into(), "card=1895".into()]);
+        let line = find_event_line("test.level.combo").expect("event in log");
+        let json = extract_json_object(&line, "test.level.combo").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["level"], "critical");
+        assert_eq!(parsed["card"], "1895");
     }
 
     // --- AC3: special characters in values ---
