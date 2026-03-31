@@ -14,6 +14,8 @@ mod role_state;
 mod chorus_log;
 #[path = "process.rs"]
 mod process;
+#[path = "ops.rs"]
+mod ops;
 
 use std::io::Read;
 use std::os::unix::net::UnixStream;
@@ -92,6 +94,10 @@ fn main() -> ExitCode {
             "chorus-init-db" => {
                 return chorus_init_db_cmd();
             }
+            "chorus-ops" | "ops" => {
+                let args: Vec<String> = std::env::args().skip(1).collect();
+                return ops::run(&args);
+            }
             _ => {} // Fall through to normal arg parsing
         }
     }
@@ -125,6 +131,10 @@ fn main() -> ExitCode {
         "role-state" => {
             let args: Vec<String> = std::env::args().skip(2).collect();
             return role_state::run(&args);
+        }
+        "ops" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            return ops::run(&args);
         }
         "log" => {
             let args: Vec<String> = std::env::args().skip(2).collect();
