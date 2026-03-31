@@ -35,8 +35,10 @@ static LOCALHOST_PORT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"localhost:[0-9]{4,5}").unwrap()
 });
 
+/// Full 64-char docker container IDs only. The old 12-64 range matched
+/// git SHAs, UUIDs, and hex constants — constant false positive noise.
 static CONTAINER_ID_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b[a-f0-9]{12,64}\b").unwrap()
+    Regex::new(r"\b[a-f0-9]{64}\b").unwrap()
 });
 
 fn is_shared_file(path: &str) -> bool {

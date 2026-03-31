@@ -33,95 +33,40 @@ fn log_debug(msg: &str) {
 }
 
 fn main() -> ExitCode {
-    // argv[0] dispatch — when symlinked as chorus-log, role-state, etc. (#1621)
-    if let Some(argv0) = std::env::args().next() {
-        let bin_name = std::path::Path::new(&argv0)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        match bin_name {
-            "chorus-log" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return chorus_log::run(&args);
-            }
-            "role-state" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return role_state::run(&args);
-            }
-            "nudge" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return nudge::run(&args);
-            }
-            "wall-clock" => {
-                return wall_clock_cmd();
-            }
-            "log-rotate" => {
-                return log_rotate_cmd();
-            }
-            "health-hourly" | "context-cache-hourly" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return health_hourly_cmd(&args);
-            }
-            "health-daily" | "context-cache-daily" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return health_daily_cmd(&args);
-            }
-            "context-cache" | "context-cache-5min" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return context_cache_cmd(&args);
-            }
-            "session-start" | "session-start-thin" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return session_start_cmd(&args);
-            }
-            "session-close" | "session-close-thin" | "session-end-hook" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return session_close_cmd(&args);
-            }
-            "cruft-scan" => {
-                return cruft_scan_cmd();
-            }
-            "claudemd-gen" => {
-                return claudemd_gen_cmd();
-            }
-            "workflow" => {
-                return workflow_ts_cmd();
-            }
-            "role-checkpoint" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return role_checkpoint_cmd(&args);
-            }
-            "chorus-init-db" => {
-                return chorus_init_db_cmd();
-            }
-            "chorus-ops" | "ops" => {
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                return ops::run(&args);
-            }
-            "heartbeat" => {
-                return heartbeat_cmd();
-            }
-            _ => {} // Fall through to normal arg parsing
-        }
-    }
+    // Unified dispatch — handles both argv[0] symlinks and `shim <subcommand>` invocations.
+    // argv[0] symlink: args start at index 1 (skip binary name)
+    // Subcommand:      args start at index 2 (skip binary name + subcommand)
+    let all_args: Vec<String> = std::env::args().collect();
+    let bin_name = std::path::Path::new(&all_args[0])
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
 
-    let endpoint = match std::env::args().nth(1) {
-        Some(e) => e,
-        None => {
-            eprintln!("Usage: chorus-hook-shim <endpoint|nudge>");
-            return ExitCode::from(1);
-        }
+    // Determine command and arg offset
+    let (cmd, skip) = if bin_name != "chorus-hook-shim" && bin_name != "chorus-hooks" {
+        // argv[0] symlink dispatch (e.g., `chorus-log event role`)
+        (bin_name.as_str().to_string(), 1usize)
+    } else if let Some(subcmd) = all_args.get(1) {
+        // Subcommand dispatch (e.g., `chorus-hook-shim log event role`)
+        (subcmd.clone(), 2usize)
+    } else {
+        eprintln!("Usage: chorus-hook-shim <endpoint|nudge>");
+        return ExitCode::from(1);
     };
 
-    // Direct CLI subcommands — no socket needed
-    match endpoint.as_str() {
-        "nudge" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return nudge::run(&args);
-        }
+    let args: Vec<String> = all_args.into_iter().skip(skip).collect();
+
+    match cmd.as_str() {
+        // --- Core signal path ---
+        "chorus-log" | "log" => return chorus_log::run(&args),
+        "role-state" => return role_state::run(&args),
+        "nudge" => return nudge::run(&args),
+        "wall-clock" => return wall_clock_cmd(),
+        "heartbeat" => return heartbeat_cmd(),
+
+        // --- Inject (needs special arg check) ---
         "inject" => {
-            // Direct inject: chorus-hook-shim inject <role> <message>
-            let args: Vec<String> = std::env::args().skip(2).collect();
             if args.len() < 2 {
                 eprintln!("Usage: chorus-hook-shim inject <role> <message>");
                 return ExitCode::from(1);
@@ -131,72 +76,31 @@ fn main() -> ExitCode {
                 Err(e) => { eprintln!("FAILED: {}", e); ExitCode::from(1) }
             };
         }
-        "role-state" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return role_state::run(&args);
-        }
-        "ops" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return ops::run(&args);
-        }
-        "heartbeat" => {
-            return heartbeat_cmd();
-        }
-        "log" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return chorus_log::run(&args);
-        }
-        "wall-clock" => {
-            return wall_clock_cmd();
-        }
-        "log-rotate" => {
-            return log_rotate_cmd();
-        }
-        "health-hourly" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return health_hourly_cmd(&args);
-        }
-        "health-daily" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return health_daily_cmd(&args);
-        }
-        "context-cache" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return context_cache_cmd(&args);
-        }
-        "session-start" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return session_start_cmd(&args);
-        }
-        "session-close" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return session_close_cmd(&args);
-        }
-        "cruft-scan" => {
-            return cruft_scan_cmd();
-        }
-        "claudemd-gen" => {
-            return claudemd_gen_cmd();
-        }
-        "workflow" => {
-            return workflow_ts_cmd();
-        }
-        "role-checkpoint" => {
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return role_checkpoint_cmd(&args);
-        }
-        "chorus-init-db" => {
-            return chorus_init_db_cmd();
-        }
-        "observe-missed" => {
-            // Load missed observations from other roles since a timestamp
-            // Usage: chorus-hook-shim observe-missed <my-role> [since-ts]
-            let args: Vec<String> = std::env::args().skip(2).collect();
-            return observe_missed_cmd(&args);
-        }
+
+        // --- Ops + workflow ---
+        "chorus-ops" | "ops" => return ops::run(&args),
+        "workflow" => return workflow_ts_cmd(),
+
+        // --- Scheduled tasks ---
+        "health-hourly" | "context-cache-hourly" => return health_hourly_cmd(&args),
+        "health-daily" | "context-cache-daily" => return health_daily_cmd(&args),
+        "context-cache" | "context-cache-5min" => return context_cache_cmd(&args),
+        "session-start" | "session-start-thin" => return session_start_cmd(&args),
+        "session-close" | "session-close-thin" | "session-end-hook" => return session_close_cmd(&args),
+
+        // --- Utilities ---
+        "log-rotate" => return log_rotate_cmd(),
+        "cruft-scan" => return cruft_scan_cmd(),
+        "claudemd-gen" => return claudemd_gen_cmd(),
+        "role-checkpoint" => return role_checkpoint_cmd(&args),
+        "chorus-init-db" => return chorus_init_db_cmd(),
+        "observe-missed" => return observe_missed_cmd(&args),
+
         _ => {} // Fall through to hook proxy
     }
 
+    // For the hook proxy path, cmd is the endpoint name (pre-tool-use, post-tool-use, etc.)
+    let endpoint = cmd;
     log_debug(&format!("START endpoint={}", endpoint));
 
     // Read stdin

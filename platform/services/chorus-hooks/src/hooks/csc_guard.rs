@@ -7,9 +7,10 @@ use crate::types::{permission_deny_json, HookInput, HookResponse};
 use regex::Regex;
 use std::sync::LazyLock;
 
-// Patterns that indicate pipeline artifact output
+/// Pipeline artifact commands — require proximity to a file path or /tmp.
+/// "extract" and "convert" alone are too broad (e.g. `npm run convert`).
 static ARTIFACT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(sips|thumbnail|harvest|canonical|extract|convert)").unwrap()
+    Regex::new(r"(?i)(sips|thumbnail|harvest|canonical)\s+\S|(?i)(extract|convert)\s+\S*[/.]").unwrap()
 });
 
 // File extensions that are pipeline artifacts
