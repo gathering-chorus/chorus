@@ -176,7 +176,7 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
         script_dir: script_dir.clone(),
         state_file: state_dir.join("chorus-ops-state.json"),
         cards_bin: script_dir.join("cards"),
-        chorus_log_bin: script_dir.join("chorus-log.sh"),
+        chorus_log_bin: script_dir.join("chorus-log"),
         prompt_file: script_dir.join("ops-agent-prompt.md"),
     };
 

@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/bridge-post.sh"
 
 BRIDGE="http://localhost:3470/api/message"
-CHORUS_LOG="$SCRIPT_DIR/chorus-log.sh"
+CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
 
 # Run both reviews and capture output

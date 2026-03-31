@@ -5,7 +5,7 @@
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CHORUS_LOG="$SCRIPT_DIR/chorus-log.sh"
+CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 LOKI_URL="http://localhost:3102"
 CLEARING_URL="http://localhost:3470"
 
@@ -35,7 +35,7 @@ echo "1. Emit critical event..."
 if bash "$CHORUS_LOG" "pulse.test" "kade" "marker=$MARKER" --level critical 2>/dev/null; then
   result "PASS" "Event emitted with --level critical"
 else
-  result "FAIL" "chorus-log.sh failed to emit"
+  result "FAIL" "chorus-log failed to emit"
 fi
 
 # Step 2: Verify in chorus.log file

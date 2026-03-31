@@ -98,6 +98,9 @@ fn main() -> ExitCode {
                 let args: Vec<String> = std::env::args().skip(1).collect();
                 return ops::run(&args);
             }
+            "heartbeat" => {
+                return heartbeat_cmd();
+            }
             _ => {} // Fall through to normal arg parsing
         }
     }
@@ -135,6 +138,9 @@ fn main() -> ExitCode {
         "ops" => {
             let args: Vec<String> = std::env::args().skip(2).collect();
             return ops::run(&args);
+        }
+        "heartbeat" => {
+            return heartbeat_cmd();
         }
         "log" => {
             let args: Vec<String> = std::env::args().skip(2).collect();
@@ -326,7 +332,7 @@ fn drain_nudge_inbox() -> Option<String> {
     if content.trim().is_empty() { return None; }
     // Log consumption as spine event
     let msg_count = content.lines().filter(|l| !l.trim().is_empty()).count();
-    let _ = std::process::Command::new("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh")
+    let _ = std::process::Command::new("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log")
         .args(["role.nudge.consumed", &role, &format!("count={}", msg_count)])
         .output();
     // Post consumed nudges to Bridge so Jeff sees them land
@@ -592,6 +598,39 @@ fn workflow_ts_cmd() -> ExitCode {
         Ok(s) => ExitCode::from(s.code().unwrap_or(1) as u8),
         Err(e) => { eprintln!("Failed to run workflow-ts: {}", e); ExitCode::from(1) }
     }
+}
+
+/// Heartbeat — replaces heartbeat.sh (#1917)
+/// Emits system.heartbeat pulse + checks key services.
+fn heartbeat_cmd() -> ExitCode {
+    // Emit heartbeat
+    chorus_log::run(&["system.heartbeat".into(), "silas".into(), "--level=info".into()]);
+
+    // Quick health checks
+    let services: &[(&str, &str, &str)] = &[
+        ("app", "http://localhost:3000/health", "critical"),
+        ("fuseki", "http://localhost:3030/$/ping", "warn"),
+        ("clearing", "http://localhost:3470/", "warn"),
+        ("chorus-api", "http://localhost:3340/", "warn"),
+        ("vikunja", "http://localhost:3456/", "warn"),
+    ];
+
+    for (name, url, level) in services {
+        let ok = ureq::get(url)
+            .timeout(std::time::Duration::from_secs(3))
+            .call()
+            .is_ok();
+        if !ok {
+            chorus_log::run(&[
+                "system.service.down".into(),
+                "silas".into(),
+                format!("service={}", name),
+                format!("--level={}", level),
+            ]);
+        }
+    }
+
+    ExitCode::SUCCESS
 }
 
 /// Role checkpoint — replaces role-checkpoint.sh (#1622)

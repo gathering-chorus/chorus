@@ -13,7 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHAT_DIR="/tmp/chorus-chat"
-CHORUS_LOG="${SCRIPT_DIR}/chorus-log.sh"
+CHORUS_LOG="${SCRIPT_DIR}/chorus-log"
 MESSAGING_API="http://localhost:3475"
 
 mkdir -p "$CHAT_DIR"

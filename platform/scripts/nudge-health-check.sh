@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh"
+CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
 ROLES=(wren silas kade)
 FAILURES=0
 CANARY_DIR="/tmp/nudge-canary"

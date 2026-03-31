@@ -20,7 +20,7 @@ fn trace_id() -> String {
 
 const INBOX_DIR: &str = "/tmp/voice-inbox";
 const EXCHANGE_DIR: &str = "/tmp/nudge-exchanges";
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh";
+const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log";
 
 /// Role directory names for Terminal tab matching
 fn role_dir(role: &str) -> Option<&'static str> {

@@ -10,7 +10,7 @@ use tracing::info;
 
 const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards";
 const BRIEFS_DIR: &str = "/Users/jeffbridwell/CascadeProjects/chorus/product-manager/briefs";
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh";
+const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log";
 
 /// PostToolUse: after /demo skill completes, generate the demo brief
 pub async fn check(input: &HookInput) -> HookResponse {

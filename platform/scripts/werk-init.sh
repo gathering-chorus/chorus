@@ -97,7 +97,7 @@ if $SCAN_MODE; then
   mkdir -p "$CACHE_DIR"
 
   echo "$(date +%s)" >> "$CACHE_DIR/${ROLE}-prompt-times.log"
-  "$SCRIPT_DIR/wall-clock.sh" --write >/dev/null 2>&1 || true
+  "$SCRIPT_DIR/wall-clock" --write >/dev/null 2>&1 || true
 
   # Session PID for andon
   _CPID=$PPID

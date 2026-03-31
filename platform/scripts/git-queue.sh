@@ -18,7 +18,7 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "/Users/jeffbridwell/CascadeProjects")"
 LOCK_FILE="${REPO_ROOT}/.git-commit.lock"
 META_FILE="${REPO_ROOT}/.git-commit.meta"
-CHORUS_LOG="${REPO_ROOT}/messages/scripts/chorus-log.sh"
+CHORUS_LOG="${REPO_ROOT}/messages/scripts/chorus-log"
 LOCK_TIMEOUT=30
 ROLE="${DEPLOY_ROLE:-unknown}"
 

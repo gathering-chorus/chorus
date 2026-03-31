@@ -48,8 +48,8 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             if cmd.contains("session-start.sh")
                 || cmd.contains("chorus-prompt.sh")
                 || cmd.contains("werk-init.sh")
-                || cmd.contains("wall-clock.sh")
-                || cmd.contains("role-state.sh")
+                || cmd.contains("wall-clock")
+                || cmd.contains("role-state")
                 || cmd.starts_with("TZ=")
             {
                 return HookResponse::allow();
