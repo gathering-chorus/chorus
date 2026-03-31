@@ -1066,7 +1066,7 @@ async function loadFlow() {
         const statusDot = c.status === 'WIP' ? '🔨' : c.status === 'Blocked' ? '🔴' : c.status === 'Harvesting' ? '🌾' : '';
         const agingStyle = isAging ? 'border-left:3px solid var(--orange);opacity:0.85;' : '';
         const agingBadge = isAging ? ' <span style="font-size:0.55rem;color:var(--orange);">aging</span>' : '';
-        html += `<div class="flow-card flow-card-${c.owner}" style="${agingStyle}"><div class="flow-card-id">#${c.id} ${statusDot}${agingBadge} <span class="flow-card-owner" style="color:var(--${c.owner})">${c.owner}</span></div><div class="flow-card-title">${escapeHtml(c.title)}</div></div>`;
+        html += `<div class="flow-card flow-card-${c.owner}" style="${agingStyle}"><div class="flow-card-id"><span class="card-id-link" data-card-id="${c.id}" style="cursor:pointer;text-decoration:underline;color:var(--accent);">#${c.id}</span> ${statusDot}${agingBadge} <span class="flow-card-owner" style="color:var(--${c.owner})">${c.owner}</span></div><div class="flow-card-title">${escapeHtml(c.title)}</div><div class="card-detail" id="card-detail-${c.id}" style="display:none;"></div></div>`;
       }
       html += '</div></div>';
     }
@@ -1078,6 +1078,72 @@ async function loadFlow() {
 // Load flow on start, refresh every 15 seconds
 loadFlow();
 setInterval(loadFlow, 15000);
+
+// Card detail click handler (#1905)
+const cardDetailCache = {};
+document.addEventListener('click', async (e) => {
+  const link = e.target.closest('.card-id-link');
+  if (!link) return;
+  const cardId = link.getAttribute('data-card-id');
+  const detailEl = document.getElementById('card-detail-' + cardId);
+  if (!detailEl) return;
+
+  // Toggle
+  if (detailEl.style.display !== 'none') {
+    detailEl.style.display = 'none';
+    return;
+  }
+
+  // Fetch and render
+  if (cardDetailCache[cardId]) {
+    renderCardDetail(detailEl, cardDetailCache[cardId]);
+    return;
+  }
+
+  detailEl.style.display = '';
+  detailEl.innerHTML = '<div style="font-size:0.7rem;color:var(--text-muted);padding:4px 0;">Loading...</div>';
+  try {
+    const resp = await fetch('/api/card/' + cardId);
+    if (!resp.ok) throw new Error('Not found');
+    const data = await resp.json();
+    cardDetailCache[cardId] = data;
+    renderCardDetail(detailEl, data);
+  } catch {
+    detailEl.innerHTML = '<div style="font-size:0.7rem;color:var(--red);padding:4px 0;">Failed to load card</div>';
+  }
+});
+
+function renderCardDetail(el, card) {
+  let html = '<div style="font-size:0.72rem;padding:6px 0 4px;border-top:1px solid var(--border);margin-top:4px;">';
+  html += '<div style="color:var(--text);font-weight:600;margin-bottom:4px;">' + escapeHtml(card.title) + '</div>';
+  html += '<div style="color:var(--text-muted);margin-bottom:4px;">' + escapeHtml(card.status) + ' · ' + escapeHtml(card.owner);
+  if (card.domains) html += ' · <span style="color:var(--accent);">' + escapeHtml(card.domains) + '</span>';
+  html += '</div>';
+  if (card.ac && card.ac.length > 0) {
+    html += '<div style="margin-top:4px;">';
+    for (const item of card.ac) {
+      const check = item.done ? '✓' : '○';
+      const color = item.done ? 'var(--green)' : 'var(--text-muted)';
+      html += '<div style="color:' + color + ';">' + check + ' ' + escapeHtml(item.text) + '</div>';
+    }
+    html += '</div>';
+  }
+  if (card.blastRadius) {
+    html += '<div style="margin-top:6px;padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;border-left:2px solid var(--orange);">';
+    html += '<div style="font-weight:600;color:var(--orange);margin-bottom:2px;">Blast Radius</div>';
+    html += '<div style="white-space:pre-wrap;">' + escapeHtml(card.blastRadius.replace(/\*\*Blast Radius\*\*[^\n]*\n?/, '')) + '</div>';
+    html += '</div>';
+  }
+  if (card.domainRadius) {
+    html += '<div style="margin-top:4px;padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;border-left:2px solid var(--accent);">';
+    html += '<div style="font-weight:600;color:var(--accent);margin-bottom:2px;">Domain Radius</div>';
+    html += '<div style="white-space:pre-wrap;">' + escapeHtml(card.domainRadius.replace(/\*\*Domain Radius\*\*[^\n]*\n?/, '')) + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+  el.style.display = '';
+  el.innerHTML = html;
+}
 
 // Auto-open unified stream on load (skip on mobile — causes overflow)
 if (window.innerWidth > 768) {

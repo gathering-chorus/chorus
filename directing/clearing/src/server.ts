@@ -550,6 +550,55 @@ app.get('/api/flow', (_req, res) => {
   }
 });
 
+// API: card detail — fetch full card view for inline expansion
+app.get('/api/card/:id', (_req, res) => {
+  const { execSync } = require('child_process');
+  const cardId = _req.params.id.replace(/\D/g, '');
+  if (!cardId) { res.status(400).json({ error: 'Invalid card ID' }); return; }
+  const envOpts = {
+    encoding: 'utf-8' as const, timeout: 10000,
+    env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
+  };
+  try {
+    const boardTs = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards';
+    const output = execSync(`bash ${boardTs} view ${cardId} 2>/dev/null`, envOpts).trim();
+    // Parse the output
+    const titleMatch = output.match(/^#\d+\s+(.+)/);
+    const statusMatch = output.match(/Status:\s+(\S+)/);
+    const ownerMatch = output.match(/Owner:\s+(\S+)/);
+    const descMatch = output.match(/Desc:\n([\s\S]*?)(?=\n  \w+:|$)/);
+    const desc = descMatch ? descMatch[1].replace(/^    /gm, '').trim() : '';
+    // Extract AC items
+    const acItems = (desc.match(/- \[[ x]\].+/g) || []).map((line: string) => ({
+      done: line.includes('[x]'),
+      text: line.replace(/^- \[[ x]\]\s*/, ''),
+    }));
+    // Extract domains/labels
+    const domainsMatch = output.match(/Domains:\s+(.+)/);
+    const domains = domainsMatch ? domainsMatch[1].trim() : '';
+    // Extract comments (blast radius, domain radius, etc.)
+    const commentsSection = output.match(/Comments \(\d+\):\n([\s\S]*?)(?=\n\*\*|$)/);
+    const comments = commentsSection ? commentsSection[1].replace(/^    /gm, '').trim() : '';
+    // Extract blast/domain radius sections
+    const blastRadius = output.match(/\*\*Blast Radius\*\*[^\n]*\n([\s\S]*?)(?=\n\*\*|_Generated|$)/);
+    const domainRadius = output.match(/\*\*Domain Radius\*\*[^\n]*(?:\n([\s\S]*?))?(?=\n\*\*|_Generated|$)/);
+    res.json({
+      id: cardId,
+      title: titleMatch ? titleMatch[1].trim() : 'Unknown',
+      status: statusMatch ? statusMatch[1] : 'Unknown',
+      owner: ownerMatch ? ownerMatch[1] : 'Unknown',
+      domains,
+      description: desc,
+      ac: acItems,
+      blastRadius: blastRadius ? blastRadius[0].trim() : '',
+      domainRadius: domainRadius ? domainRadius[0].trim() : '',
+      comments,
+    });
+  } catch {
+    res.status(404).json({ error: 'Card not found' });
+  }
+});
+
 // Role TTY map — populated on first request
 const roleTTYs: Record<string, string> = {};
 
