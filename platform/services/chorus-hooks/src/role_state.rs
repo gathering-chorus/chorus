@@ -46,6 +46,7 @@ pub fn run(args: &[String]) -> ExitCode {
 
     // Parse key=value extras
     let mut card = String::new();
+    let mut card_type = String::new();
     let mut detail = String::new();
     let mut gemba = String::new();
 
@@ -53,6 +54,7 @@ pub fn run(args: &[String]) -> ExitCode {
         if let Some((key, val)) = kv.split_once('=') {
             match key {
                 "card" => card = val.to_string(),
+                "type" => card_type = val.to_string(),
                 "detail" => detail = val.replace('"', "\\\""),
                 "gemba" => gemba = val.to_string(),
                 _ => {}
@@ -98,6 +100,9 @@ pub fn run(args: &[String]) -> ExitCode {
     }
     if !card.is_empty() {
         json.push_str(&format!(r#","card":{}"#, card));
+    }
+    if !card_type.is_empty() {
+        json.push_str(&format!(r#","card_type":"{}""#, card_type));
     }
     if !detail.is_empty() {
         json.push_str(&format!(r#","detail":"{}""#, detail));

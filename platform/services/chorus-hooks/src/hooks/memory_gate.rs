@@ -122,6 +122,36 @@ const SEARCH_MARKERS: &[&str] = &[
 ];
 
 /// Scan session JSONL for context synthesis in assistant output (uses shared cache #1861).
+/// Check if session contains git log/blame on the specific file being edited (#1903).
+/// Only called for fix/swat cards — ensures the role read commit history before modifying.
+fn scan_for_git_history(input: &HookInput, state: &AppState, target_file: &str) -> bool {
+    let session_id = match &input.session_id {
+        Some(id) => id.clone(),
+        None => return true, // No session = can't check, allow
+    };
+
+    let cwd = input.cwd.as_deref().unwrap_or("");
+    let lines = state.session_cache.get_tail(&session_id, cwd, 300);
+    if lines.is_empty() {
+        return true; // Can't read = allow
+    }
+
+    // Extract filename for matching (git log shows relative paths)
+    let fname = target_file.rsplit('/').next().unwrap_or(target_file);
+
+    for line in &lines {
+        let lower = line.to_lowercase();
+        // Check for git log/blame/show on this file or its parent directory
+        if (lower.contains("git log") || lower.contains("git blame") || lower.contains("git show"))
+            && lower.contains(&fname.to_lowercase())
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Returns (has_search, has_synthesis)
 ///
 /// has_search: the role ran a search (Chorus, memory files, git)
@@ -220,6 +250,29 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
             file = %file_path,
         );
         return HookResponse::allow();
+    }
+
+    // Fix cards: require git log on the target file (#1903)
+    if is_defect_fix() {
+        let has_git_history = scan_for_git_history(input, state, &file_path);
+        if !has_git_history {
+            let fname = file_path.rsplit('/').next().unwrap_or(&file_path);
+            info!(
+                gate = "context-synthesis",
+                decision = "deny",
+                reason = "fix card without git history on target file",
+                role = %format!("{:?}", role).to_lowercase(),
+                file = %file_path,
+            );
+            return HookResponse::deny(&permission_deny_json(
+                &format!(
+                    "Context synthesis gate: fix card but no git history on {}. \
+                     Run `git log {}` or `git blame {}` first — this file has prior commits \
+                     that explain what was tried before. Don't repeat the same fix.",
+                    fname, fname, fname
+                )
+            ));
+        }
     }
 
     // The real gate: check for synthesis, not just search

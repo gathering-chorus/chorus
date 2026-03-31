@@ -207,14 +207,24 @@ pub fn card_type_for_role(role: &str) -> String {
         return "unknown".to_string();
     }
 
-    // Query board for card labels — use cards CLI for reliability
+    // Check state file for card_type (written by /pull via role-state.sh)
+    if let Ok(content) = std::fs::read_to_string(&state_path) {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(ct) = parsed.get("card_type").and_then(|v| v.as_str()) {
+                if !ct.is_empty() && ct != "unknown" {
+                    return ct.to_string();
+                }
+            }
+        }
+    }
+
+    // Fallback: query board for card labels via cards CLI
     let output = std::process::Command::new("bash")
-        .args(["/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards", "view", &card_id])
+        .args(["-lc", &format!("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view {}", card_id)])
         .output();
 
     if let Ok(out) = output {
         let text = String::from_utf8_lossy(&out.stdout);
-        // Look for type: label in the Domains line
         for line in text.lines() {
             if line.contains("type:") {
                 if let Some(t) = line.split("type:").nth(1) {
