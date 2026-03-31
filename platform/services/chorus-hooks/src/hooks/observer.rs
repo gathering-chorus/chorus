@@ -181,8 +181,25 @@ async fn rotate_if_needed(path: &PathBuf, _role: &str) {
     let _ = tokio::fs::write(path, new_content).await;
 }
 
-/// Read the card a role is currently working on from andon state
+/// Read the card a role is currently working on.
+/// Primary: recent card.pulled event from chorus.log (most current).
+/// Fallback: andon state file (for backwards compat when log is unavailable).
 fn read_role_card(role: &str) -> Option<String> {
+    // Primary: check chorus.log for most recent card.pulled by this role
+    let log_path = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
+    if let Ok(content) = std::fs::read_to_string(log_path) {
+        for line in content.lines().rev().take(200) {
+            if line.contains("card.pulled") && line.contains(&format!("\"role\":\"{}\"", role)) {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {
+                    if let Some(card) = parsed.get("card").and_then(|c| c.as_str()) {
+                        return Some(card.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: andon state file
     let state_file = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));
     let content = std::fs::read_to_string(&state_file).ok()?;
     let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;

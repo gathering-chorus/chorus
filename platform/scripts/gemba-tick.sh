@@ -15,13 +15,26 @@ echo "=== GEMBA TICK: $ROLE ==="
 echo "--- $(TZ=America/New_York date '+%Y-%m-%d %H:%M') Boston | ${ELAPSED}s elapsed ---"
 echo ""
 
-# 1. Role state
+# 1. Role state (new JSON format, fallback to old)
+STATE_JSON="/tmp/claude-team-scan/${ROLE}-declared.json"
 STATE_FILE="/tmp/role-state-${ROLE}"
-if [ -f "$STATE_FILE" ]; then
-  echo "## State"
+echo "## State"
+if [ -f "$STATE_JSON" ]; then
+  STATE=$(python3 -c "
+import json, sys
+d = json.load(open('$STATE_JSON'))
+card = d.get('card', '')
+state = d.get('state', 'unknown')
+ts = d.get('last_emit', '?')
+print(f'{state} card=#{card} (declared {ts})')
+" 2>/dev/null || cat "$STATE_JSON")
+  echo "$STATE"
+elif [ -f "$STATE_FILE" ]; then
   cat "$STATE_FILE"
-  echo ""
+else
+  echo "unknown (no state file)"
 fi
+echo ""
 
 # 2. New activity since last check
 DB_PATH="${CHORUS_DB:-$HOME/.chorus/index.db}"
@@ -30,8 +43,27 @@ if [ -f "$LAST_CHECK_FILE" ]; then
   LAST_CHECK=$(cat "$LAST_CHECK_FILE")
 fi
 
-if [ -f "$DB_PATH" ]; then
-  echo "## New Activity"
+echo "## New Activity"
+RESULTS=""
+
+# Primary: observer JSONL (written by PostToolUse hook — always current)
+OBS_FILE="/tmp/claude-team-scan/${ROLE}-observations.jsonl"
+if [ -f "$OBS_FILE" ]; then
+  RESULTS=$(tail -10 "$OBS_FILE" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        d = json.loads(line.strip())
+        ts = d.get('ts','?')[:16]
+        digest = d.get('digest','')[:120]
+        if digest:
+            print(f'{ts}|{digest}')
+    except: pass
+" 2>/dev/null || true)
+fi
+
+# Fallback: Chorus SQLite index
+if [ -z "$RESULTS" ] && [ -f "$DB_PATH" ]; then
   RESULTS=$(sqlite3 "$DB_PATH" "
     SELECT datetime(timestamp, 'localtime') as ts, substr(content, 1, 150) as line
     FROM messages
@@ -40,14 +72,14 @@ if [ -f "$DB_PATH" ]; then
     ORDER BY timestamp DESC
     LIMIT 10;
   " 2>/dev/null || true)
-
-  if [ -n "$RESULTS" ]; then
-    echo "$RESULTS"
-  else
-    echo "(no new indexed activity)"
-  fi
-  echo ""
 fi
+
+if [ -n "$RESULTS" ]; then
+  echo "$RESULTS"
+else
+  echo "(no new activity from observer or index)"
+fi
+echo ""
 
 # 3. Recent file changes by this role (live signal)
 echo "## Recent Files Changed"
