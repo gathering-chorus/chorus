@@ -295,6 +295,12 @@ async fn pre_tool_use_inner(
                 return (last_module.clone(), r);
             }
 
+            // Log-first gate (#1879) — block fix writes without log inspection
+            last_module = "log_first_gate".into(); let r = hooks::log_first_gate::check(&input, &state);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (last_module.clone(), r);
+            }
+
             // Pair gate (#1814) — block code edits without active pair
             last_module = "pair_gate".into(); let r = hooks::pair_gate::check(&input, &state);
             if r.stdout.is_some() || r.exit_code != 0 {
