@@ -1,23 +1,28 @@
-# Silas — Next Session
+# Silas Next Session — 2026-04-01
 
-## Accomplished this session
-- #1807 Instrument daily review pipeline — spine events, bridge retry, health check, 6:30am alert rule
-- #1861 Session JSONL cache — shared reader for 5 hooks, 1 read per prompt cycle instead of 5
-- #1862 Guard consolidation — app_state_guard merged into infra_guardrails, deleted duplicate
+## Session Summary (2026-03-31)
+7 cards shipped + gate fixes. DEC-100 bash elimination + hooks hardening.
 
-## Pending
-- Wren flagged doc-catalog route issue — Kade's #1877 may need a deploy
-- Release binary built but hooks daemon not restarted — restart on next session start
-- Kade's #1866 AC9 (infra_guardrails Docker guards) — reviewed as part of #1862
+**Cards shipped:**
+1. #1777 — chorus-ops.sh → Rust (ops.rs, 1095 lines bash → 750 lines Rust)
+2. #1775 — Consolidate workflow engines (workflow.py deleted, TS engine only)
+3. #1776 — Remove orphaned andon scripts (65K dead code deleted)
+4. #1917 — Pulse scripts to API (4 .sh → Rust + 2 new API endpoints)
+5. #1715 — Hooks code review (9/14 Kade audit findings resolved)
+6. #1717 — Quality gate hooks (agent review before /demo, post-edit warnings)
+7. #1765 — Stage instrumentation (6 new spine events for Capturing/Designing/Proving)
 
-## Known issues
-- 20 retroactive cards flagged in audit — card-first discipline needs attention
-- 13 pre-existing jest failures (not from this session's work)
-- Fuseki binary at ~/.gathering/data/fuseki-5.1.0/ (not package-managed)
+**Gate fixes (no card):**
+- Promtail chorus.log path fixed (post-restructure)
+- CHORUS_HOOK_RAW test mode for external gate testing
+- Shim stdin 3s timeout (prevents hang from test scripts)
+- sensitive_paths blocks .env writes, write_scrubber covers team files
+- log_first_gate falls closed on empty session data
+- Session cache fallback search across all project dirs
+- .sh exec wrappers restored for backward compat
+- CSC: 4 log paths moved from /tmp to ~/Library/Logs/Chorus/
 
-## WIP
-- None — clean slate
-
-## Jeff's state
-- Crissy's anniversary is tomorrow (March 31)
-- Productive session — 3 cards shipped, clean flow
+## Resume
+- No WIP cards
+- Gate infrastructure verified end-to-end by Wren
+- Kade's #1926 gate integration: 39/39 pass
