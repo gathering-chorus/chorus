@@ -1806,21 +1806,21 @@ app.get('/api/chorus/services', (_req: Request, res: Response) => {
 // --- GET /api/chorus/disk — Disk usage summary (#1485) ---
 
 app.get('/api/chorus/disk', (_req: Request, res: Response) => {
-  execFile('/usr/sbin/diskutil', ['info', '/'], { timeout: 10000 }, (err, stdout) => {
-    if (err) {
-      res.status(500).json({ error: 'diskutil info failed', detail: err.message });
+  // Two data sources: diskutil for container total, osascript for Finder free (includes purgeable)
+  execFile('/usr/sbin/diskutil', ['info', '/'], { timeout: 10000 }, (diskErr, diskStdout) => {
+    if (diskErr) {
+      res.status(500).json({ error: 'diskutil info failed', detail: diskErr.message });
       return;
     }
 
     const extract = (label: string): string | null => {
-      const match = stdout.match(new RegExp(`${label}:\\s*(.+)`));
+      const match = diskStdout.match(new RegExp(`${label}:\\s*(.+)`));
       return match ? match[1].trim() : null;
     };
 
     const totalSize = extract('Container Total Space');
-    const freeSize = extract('Container Free Space');
+    const containerFreeSize = extract('Container Free Space');
 
-    // Parse bytes from strings like "1.8 TB (2000000000000 Bytes)"
     const parseBytes = (s: string | null): number | null => {
       if (!s) return null;
       const m = s.match(/\((\d+)\s*Bytes\)/);
@@ -1828,20 +1828,29 @@ app.get('/api/chorus/disk', (_req: Request, res: Response) => {
     };
 
     const totalBytes = parseBytes(totalSize);
-    const freeBytes = parseBytes(freeSize);
-    const usedBytes = totalBytes && freeBytes ? totalBytes - freeBytes : null;
-    const usedPct = totalBytes && usedBytes ? Math.round((usedBytes / totalBytes) * 100) : null;
+    const containerFreeBytes = parseBytes(containerFreeSize);
 
-    res.json({
-      machine: 'Library',
-      total: totalSize,
-      free: freeSize,
-      total_bytes: totalBytes,
-      free_bytes: freeBytes,
-      used_bytes: usedBytes,
-      used_pct: usedPct,
-      warning: usedPct !== null && usedPct >= 90,
-      critical: usedPct !== null && usedPct >= 95,
+    // Finder free space includes purgeable — matches what Jeff sees in Finder
+    execFile('/usr/bin/osascript', ['-e', 'tell application "Finder" to get free space of startup disk'],
+      { timeout: 5000 }, (finderErr, finderStdout) => {
+      const finderFreeBytes = finderErr ? null : Math.round(parseFloat(finderStdout.trim()));
+      const freeBytes = finderFreeBytes ?? containerFreeBytes;
+      const usedBytes = totalBytes && freeBytes ? totalBytes - freeBytes : null;
+      const usedPct = totalBytes && usedBytes ? Math.round((usedBytes / totalBytes) * 100) : null;
+
+      res.json({
+        machine: 'Library',
+        total: totalSize,
+        free: containerFreeSize,
+        total_bytes: totalBytes,
+        container_free_bytes: containerFreeBytes,
+        finder_free_bytes: finderFreeBytes,
+        free_bytes: freeBytes,
+        used_bytes: usedBytes,
+        used_pct: usedPct,
+        warning: usedPct !== null && usedPct >= 90,
+        critical: usedPct !== null && usedPct >= 95,
+      });
     });
   });
 });
