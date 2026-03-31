@@ -58,6 +58,12 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
         return HookResponse::allow();
     }
 
+    // Skip TDD for chore cards (#1881) — maintenance/docs don't need tests
+    let card_type = crate::types::card_type_for_role(input.role().as_str());
+    if card_type == "chore" {
+        return HookResponse::allow();
+    }
+
     if !has_test_evidence(input, state) {
         return HookResponse::deny(&permission_deny_json(
             "TDD gate: no test runs detected in this session. \

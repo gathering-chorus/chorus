@@ -115,6 +115,12 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
         None => return HookResponse::allow(), // Can't determine card = allow
     };
 
+    // Skip demo for chore and swat cards (#1881) — nothing to demo
+    let card_type = crate::types::card_type_for_role(input.role().as_str());
+    if card_type == "chore" || card_type == "swat" {
+        return HookResponse::allow();
+    }
+
     if has_demo_evidence(input, &card_id, state) {
         return HookResponse::allow();
     }
