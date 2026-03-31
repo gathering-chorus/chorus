@@ -1030,6 +1030,11 @@ async function loadFlow() {
       return (b[1].counts?.activeTotal || 0) - (a[1].counts?.activeTotal || 0);
     });
 
+    // Compute median card ID for aging threshold
+    const allCardIds = sorted.flatMap(([, d]) => (d.cards || []).map(c => parseInt(c.id)));
+    const medianId = allCardIds.length > 0 ? allCardIds.sort((a, b) => a - b)[Math.floor(allCardIds.length / 2)] : 0;
+    const agingThreshold = medianId - 100; // Cards 100+ IDs below median are "aging"
+
     let html = '';
     for (const [domain, data] of sorted) {
       let cards = data.cards || [];
@@ -1038,6 +1043,14 @@ async function loadFlow() {
         cards = cards.filter(c => c.owner === activeRoleFilter);
         if (cards.length === 0) continue; // Hide empty domains when filtered
       }
+      // Sort cards: WIP/Blocked first, then oldest first (lowest ID = oldest)
+      const statusPriority = { 'WIP': 0, 'Blocked': 1 };
+      cards = [...cards].sort((a, b) => {
+        const aPri = statusPriority[a.status] ?? 2;
+        const bPri = statusPriority[b.status] ?? 2;
+        if (aPri !== bPri) return aPri - bPri;
+        return parseInt(a.id) - parseInt(b.id);
+      });
       const counts = data.counts || {};
       const isCollapsed = collapsedDomains.has(domain);
       const arrow = isCollapsed ? '▶' : '▼';
@@ -1048,8 +1061,12 @@ async function loadFlow() {
       html += `<div class="flow-section"><div class="flow-section-title" onclick="toggleDomain('${domain}')">${arrow} ${domain} ${badges}</div>`;
       html += `<div class="flow-section-cards${isCollapsed ? ' collapsed' : ''}">`;
       for (const c of cards) {
+        const cardId = parseInt(c.id);
+        const isAging = cardId < agingThreshold;
         const statusDot = c.status === 'WIP' ? '🔨' : c.status === 'Blocked' ? '🔴' : c.status === 'Harvesting' ? '🌾' : '';
-        html += `<div class="flow-card flow-card-${c.owner}"><div class="flow-card-id">#${c.id} ${statusDot} <span class="flow-card-owner" style="color:var(--${c.owner})">${c.owner}</span></div><div class="flow-card-title">${escapeHtml(c.title)}</div></div>`;
+        const agingStyle = isAging ? 'border-left:3px solid var(--orange);opacity:0.85;' : '';
+        const agingBadge = isAging ? ' <span style="font-size:0.55rem;color:var(--orange);">aging</span>' : '';
+        html += `<div class="flow-card flow-card-${c.owner}" style="${agingStyle}"><div class="flow-card-id">#${c.id} ${statusDot}${agingBadge} <span class="flow-card-owner" style="color:var(--${c.owner})">${c.owner}</span></div><div class="flow-card-title">${escapeHtml(c.title)}</div></div>`;
       }
       html += '</div></div>';
     }
