@@ -408,6 +408,28 @@ async fn post_tool_use(
             hooks::handoff_logger::check(&input, &state).await;
             // ICD write gate — Athena pattern: validate + reload + lint on ICD file writes
             hooks::icd_write_gate::check(&input, &state).await;
+            // Artifact creation pulse (#1907) — detect new docs in artifacts/ dirs
+            let file_path = input.get_tool_input_str("file_path");
+            if file_path.contains("/artifacts/") && tool == "Write" {
+                let fname = file_path.rsplit('/').next().unwrap_or(&file_path).to_string();
+                let role_name = format!("{:?}", input.role()).to_lowercase();
+                // Emit spine event
+                crate::state::chorus_log(
+                    "artifact.created", &role_name,
+                    &[("file", &fname), ("path", &file_path)],
+                ).await;
+                // Auto-brief relevant roles — all roles except author
+                for target in &["wren", "silas", "kade"] {
+                    if *target == role_name { continue; }
+                    let msg = format!("[artifact] {} created {} — new design doc", role_name, fname);
+                    let _ = std::process::Command::new("bash")
+                        .args([
+                            "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge.sh",
+                            target, &msg, "--level", "info", "--from", &role_name,
+                        ])
+                        .spawn(); // fire-and-forget, don't block
+                }
+            }
         }
         _ => {}
     }
