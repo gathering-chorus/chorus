@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>/nudge — Sequence Diagram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px 1in; max-width: 1100px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 1.4rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 30px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 36px; margin-bottom: 14px; }
+
+  .sequence { max-width: 960px; margin: 0 auto; }
+
+  /* Participants */
+  .participants { display: flex; justify-content: space-between; margin-bottom: 0; }
+  .participant {
+    width: 160px; text-align: center; padding: 10px 6px;
+    border-radius: 6px; font-weight: bold; font-size: 0.85rem;
+  }
+  .p-sender { background: #2d6b4a; color: #7bffb2; }
+  .p-nudge { background: #4a2d6b; color: #c49bff; }
+  .p-messaging { background: #6b5a2d; color: #ffd97b; }
+  .p-osascript { background: #6b2d2d; color: #ff9b9b; }
+  .p-target { background: #2d4a7a; color: #7cb3ff; }
+
+  /* Flow rows */
+  .flow { position: relative; margin: 0 auto; padding: 8px 0; }
+  .flow-row {
+    display: flex; align-items: center; min-height: 44px;
+    position: relative; padding: 4px 0;
+  }
+  .flow-row:hover { background: rgba(0,0,0,0.02); }
+
+  /* Lifelines */
+  .flow::before { content: ''; position: absolute; left: 80px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
+  .flow::after { content: ''; position: absolute; right: 80px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
+  .ll2 { position: absolute; left: 240px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
+  .ll3 { position: absolute; left: 480px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
+  .ll4 { position: absolute; left: 640px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
+
+  /* Message arrow */
+  .msg {
+    position: relative; margin-left: 80px; font-size: 0.76rem;
+    display: flex; align-items: center;
+  }
+  .msg .line {
+    flex: 1; height: 2px; background: #666;
+    position: relative;
+  }
+  .msg .line::after {
+    content: '▶'; position: absolute; right: -8px; top: -7px;
+    font-size: 0.7rem; color: #6b7280;
+  }
+  .msg .line.reverse::after { content: '◀'; left: -8px; right: auto; }
+  .msg .text {
+    position: absolute; top: -16px; left: 10px;
+    font-size: 0.72rem; white-space: nowrap; color: #4a5568;
+  }
+
+  /* Phase divider */
+  .phase {
+    padding: 10px 16px; margin: 16px 0 8px;
+    background: rgba(196, 163, 90, 0.1); border-left: 3px solid #c4a35a;
+    font-size: 0.78rem; color: #2d4a7a;
+  }
+
+  /* Step boxes */
+  .step-box {
+    background: #f0f4ff; border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 10px 14px; margin: 6px 0; font-size: 0.78rem;
+    max-width: 300px;
+  }
+  .step-box.left { margin-right: auto; }
+  .step-box.center { margin: 6px auto; }
+  .step-box.right { margin-left: auto; }
+  .step-box strong { color: #2d4a7a; }
+  .step-box .detail { color: #6b7280; font-size: 0.7rem; margin-top: 4px; }
+
+  /* Path labels */
+  .path-label {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 0.72rem; font-weight: 600; margin: 4px 4px 4px 0;
+  }
+  .path-persist { background: #2d6b4a; color: #7bffb2; }
+  .path-deliver { background: #6b2d2d; color: #ff9b9b; }
+  .path-both { background: #4a2d6b; color: #c49bff; }
+
+  /* Decision diamond */
+  .decision {
+    background: #f0f4ff; border: 1px solid #d1d5db; border-radius: 4px;
+    padding: 8px 14px; margin: 8px auto; text-align: center;
+    font-size: 0.76rem; max-width: 400px;
+  }
+  .decision em { color: #2d4a7a; }
+
+  /* Notes */
+  .note {
+    background: #f9fafb; border: 1px solid #d1d5db; border-radius: 6px;
+    padding: 10px 14px; margin: 10px 0; font-size: 0.76rem;
+  }
+  .note b { color: #f59e0b; }
+  .note.locked { border-color: #dc2626; }
+  .note.locked b { color: #dc2626; }
+
+  .meta { font-size: 0.68rem; color: #6b7280; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+
+  /* Simple flow visualization */
+  .swim { display: grid; grid-template-columns: 140px 1fr; gap: 0; margin: 8px 0; align-items: start; }
+  .swim-label { font-size: 0.72rem; color: #6b7280; padding: 8px 0; text-align: right; padding-right: 12px; border-right: 2px solid #333; }
+  .swim-content { padding: 4px 12px; }
+  .swim-arrow { color: #666; font-size: 0.8rem; padding: 2px 12px; }
+
+  @media print { body { background: #fff; color: #222; } .step-box { background: #f5f5f5; border-color: #4a5568; } }
+</style>
+</head>
+<body>
+
+<div class="sequence">
+
+<h1>/nudge — Delivery Paths</h1>
+<p class="subtitle">DEC-107 (locked) &bull; Two paths, both fire every time &bull; nudge.sh &bull; From service-design-nudge.html</p>
+
+<div class="note locked">
+  <b>LOCKED DECISION (DEC-107):</b> This was revisited 4 times and locked. Do not reopen. Do not propose alternatives. Persist AND deliver. Every time.
+</div>
+
+<!-- TRIGGER -->
+<h2>1. Trigger</h2>
+
+<div class="step-box left">
+  <strong>Sender role calls nudge.sh</strong>
+  <div class="detail">bash nudge.sh &lt;target&gt; "message" [--force] [--from &lt;sender&gt;]</div>
+</div>
+
+<div class="decision">
+  <em>Validate args</em> — target role exists, message not empty, sender identified
+</div>
+
+<div class="note">
+  <b>Arg validation (DEC: nudge-reject-bad-calls):</b> Hard-reject malformed calls. No warn-and-send-garbage. Six touches = relay failure.
+</div>
+
+<!-- PATH 1: PERSIST -->
+<h2>2. Path 1: Persist <span class="path-label path-persist">PERSIST</span></h2>
+
+<div class="swim">
+  <div class="swim-label">nudge.sh</div>
+  <div class="swim-content">
+    <div class="step-box">
+      <strong>POST to messaging API</strong>
+      <div class="detail">curl -X POST http://localhost:3475/api/message<br>Body: { from, to, text, timestamp, type: "nudge" }</div>
+    </div>
+  </div>
+</div>
+
+<div class="swim">
+  <div class="swim-label">Messaging Tier<br><span style="font-size:0.65rem;color:#666">:3475</span></div>
+  <div class="swim-content">
+    <div class="step-box">
+      <strong>Store in SQLite</strong>
+      <div class="detail">Persistent message store. Queryable history.<br>Drained by team-scan on next prompt cycle.</div>
+    </div>
+  </div>
+</div>
+
+<div class="swim">
+  <div class="swim-label">team-scan hook</div>
+  <div class="swim-content">
+    <div class="step-box">
+      <strong>Drain on next prompt</strong>
+      <div class="detail">UserPromptSubmit hook queries messaging API.<br>Injects queued messages into role's context.<br>"[nudge from silas | timestamp] message"</div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>Persist path purpose:</b> History + team-scan drain. The message survives session boundaries. If the target role reboots, the nudge is still there.
+</div>
+
+<!-- PATH 2: DELIVER -->
+<h2>3. Path 2: Deliver <span class="path-label path-deliver">DELIVER</span></h2>
+
+<div class="swim">
+  <div class="swim-label">nudge.sh</div>
+  <div class="swim-content">
+    <div class="step-box">
+      <strong>osascript inject</strong>
+      <div class="detail">osascript -e 'tell application "Terminal"<br>&nbsp;&nbsp;do script "echo [nudge...]" in window N<br>end tell'</div>
+    </div>
+  </div>
+</div>
+
+<div class="swim">
+  <div class="swim-label">macOS</div>
+  <div class="swim-content">
+    <div class="step-box">
+      <strong>Keystroke injection</strong>
+      <div class="detail">Text appears in target role's Terminal window.<br>Immediate — no polling, no queue drain wait.</div>
+    </div>
+  </div>
+</div>
+
+<div class="decision">
+  <em>--force flag</em> — always inject (role-to-role). Without --force, respects Jeff-active detection.
+</div>
+
+<div class="note">
+  <b>Deliver path purpose:</b> Immediacy. The target role sees the nudge right now, in the current prompt cycle. No waiting for next prompt drain.
+</div>
+
+<!-- THE PROBLEM -->
+<h2>4. The Focus Problem</h2>
+
+<div class="step-box center" style="border-color: #dc2626; max-width: 500px;">
+  <strong style="color: #dc2626;">osascript doesn't distinguish windows</strong>
+  <div class="detail">When Wren nudges Silas, the inject targets Silas's Terminal window.<br>But macOS brings that window to front — stealing focus from Jeff's window.<br><br>"It happens a lot" — Jeff, 2026-03-31<br>"Every time you fire off a nudge while I am typing you steal my focus"</div>
+</div>
+
+<div class="swim">
+  <div class="swim-label">Jeff typing</div>
+  <div class="swim-content">
+    <div class="step-box" style="border-color: #dc2626;">
+      <strong style="color: #dc2626;">Focus stolen</strong>
+      <div class="detail">Jeff is mid-sentence in Wren's terminal.<br>Wren nudges Silas. osascript activates Silas's window.<br>Jeff loses his thought. Has to rebuild context.</div>
+    </div>
+  </div>
+</div>
+
+<div class="swim">
+  <div class="swim-label">Current state</div>
+  <div class="swim-content">
+    <div class="step-box">
+      <strong>DEC-107 says both paths always fire</strong>
+      <div class="detail">DEC-104 (superseded) said: osascript reserved for Jeff, role-to-role goes passive.<br>DEC-107 reversed this: both paths, every time.<br>The focus steal is a known cost of DEC-107.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ALL PATHS SUMMARY -->
+<h2>5. Complete Path Map</h2>
+
+<table style="width:100%; border-collapse: collapse; font-size: 0.78rem; margin: 12px 0;">
+  <tr style="background: #f0f4ff;">
+    <th style="padding: 8px; text-align: left; color: #2d4a7a;">Scenario</th>
+    <th style="padding: 8px; text-align: left; color: #2d4a7a;">Persist</th>
+    <th style="padding: 8px; text-align: left; color: #2d4a7a;">Deliver (osascript)</th>
+    <th style="padding: 8px; text-align: left; color: #2d4a7a;">Jeff impact</th>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 8px;">Role → Role (--force)</td>
+    <td style="padding: 8px;"><span class="path-label path-persist">POST :3475</span></td>
+    <td style="padding: 8px;"><span class="path-label path-deliver">osascript inject</span></td>
+    <td style="padding: 8px; color: #dc2626;">Focus steal if Jeff is active</td>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 8px;">Role → Jeff</td>
+    <td style="padding: 8px;"><span class="path-label path-persist">POST :3475</span></td>
+    <td style="padding: 8px;"><span class="path-label path-deliver">Queued (passive)</span></td>
+    <td style="padding: 8px; color: #16a34a;">No steal — drains on next prompt</td>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 8px;">Jeff → Role</td>
+    <td style="padding: 8px;"><span class="path-label path-persist">POST :3475</span></td>
+    <td style="padding: 8px;"><span class="path-label path-deliver">osascript inject</span></td>
+    <td style="padding: 8px; color: #16a34a;">Jeff initiated — expected</td>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 8px;">Bridge event (card move)</td>
+    <td style="padding: 8px;"><span class="path-label path-persist">POST :3470</span></td>
+    <td style="padding: 8px;">—</td>
+    <td style="padding: 8px; color: #16a34a;">Ambient — no inject</td>
+  </tr>
+</table>
+
+<!-- INCIDENT HISTORY -->
+<h2>6. Incident History</h2>
+
+<table style="width:100%; border-collapse: collapse; font-size: 0.76rem; margin: 12px 0;">
+  <tr style="background: #f0f4ff;">
+    <th style="padding: 6px; color: #2d4a7a;">Card</th>
+    <th style="padding: 6px; color: #2d4a7a;">What happened</th>
+    <th style="padding: 6px; color: #2d4a7a;">Decision</th>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 6px;">#1591</td>
+    <td style="padding: 6px;">osascript injection built. First working nudge delivery.</td>
+    <td style="padding: 6px;">DEC-104: osascript reserved for Jeff</td>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 6px;">#1695</td>
+    <td style="padding: 6px;">Broken again after hooks deploy</td>
+    <td style="padding: 6px;">Won't Do — superseded by rewrite</td>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 6px;">#1755</td>
+    <td style="padding: 6px;">Messaging tier built — persistent store replaces /tmp queues</td>
+    <td style="padding: 6px;">Persist path now reliable</td>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 6px;">#1764</td>
+    <td style="padding: 6px;">Nudge steals Jeff's focus — queue instead of inject when active</td>
+    <td style="padding: 6px;">Shipped but then DEC-107 reversed</td>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 6px;">#1769</td>
+    <td style="padding: 6px;">nudge.sh not connected to messaging tier</td>
+    <td style="padding: 6px;">Wired both paths</td>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 6px;">#1793</td>
+    <td style="padding: 6px;">Full rewrite — single Rust binary</td>
+    <td style="padding: 6px;">DEC-107: both paths, always. Locked.</td>
+  </tr>
+  <tr style="border-bottom: 1px solid #e5e7eb;">
+    <td style="padding: 6px;">2026-03-31</td>
+    <td style="padding: 6px;">Wren nudging Silas/Kade steals Jeff's focus mid-sentence</td>
+    <td style="padding: 6px;">Observed. Not resolved. Diagram captures it.</td>
+  </tr>
+</table>
+
+<!-- RELATED -->
+<h2>7. Related Artifacts</h2>
+
+<div class="step-box" style="max-width: 100%;">
+  <strong>Service Design</strong> — <a href="/docs/pm/artifacts/service-design-nudge.html" style="color: #3b82f6;">Service Design — Nudge Delivery</a>
+  <div class="detail">Full service design: experience, identity, integration path, non-functionals, failure modes, blast radius</div>
+</div>
+<div class="step-box" style="max-width: 100%;">
+  <strong>Decisions</strong>
+  <div class="detail">DEC-104 (superseded): Passive queue for role-to-role<br>DEC-107 (active, locked): Both paths always fire<br>DEC: nudge-reject-bad-calls: Hard-reject malformed args</div>
+</div>
+
+</div>
+
+<p class="meta">Sequence Diagram — /nudge delivery paths &bull; Card #1738 &bull; Wren &bull; 2026-03-31 &bull; DEC-107 locked</p>
+
+</body>
+</html>
