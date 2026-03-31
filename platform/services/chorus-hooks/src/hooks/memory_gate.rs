@@ -84,23 +84,9 @@ fn is_code_file(path: &str) -> bool {
     code_exts.iter().any(|ext| path.ends_with(ext))
 }
 
-/// Check if the card context suggests a defect fix
+/// Check if the card context is a fix — reads type: label from board (#1909)
 fn is_defect_fix() -> bool {
-    for role in &["kade", "silas", "wren"] {
-        let state_path = format!("/tmp/role-state-{}.txt", role);
-        if let Ok(content) = std::fs::read_to_string(&state_path) {
-            let lower = content.to_lowercase();
-            if lower.contains("building") {
-                if lower.contains("fix") || lower.contains("bug")
-                    || lower.contains("broken") || lower.contains("wrong")
-                    || lower.contains("fails") || lower.contains("failing")
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    false
+    crate::types::is_fix_card()
 }
 
 /// Markers that indicate the role produced a context synthesis —

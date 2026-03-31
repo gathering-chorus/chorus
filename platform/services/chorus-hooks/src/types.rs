@@ -179,3 +179,61 @@ pub fn decision_block_json(message: &str) -> String {
     })
     .to_string()
 }
+
+/// Card type from board labels — replaces is_defect_fix() keyword matching (#1909).
+/// Reads card ID from role-state JSON, then checks board labels for type: prefix.
+/// Returns "fix", "new", "enhance", "chore", "swat", or "unknown".
+pub fn card_type_for_role(role: &str) -> String {
+    let state_path = format!("/tmp/claude-team-scan/{}-declared.json", role);
+    let card_id = match std::fs::read_to_string(&state_path) {
+        Ok(content) => {
+            match serde_json::from_str::<serde_json::Value>(&content) {
+                Ok(parsed) => {
+                    if parsed.get("state").and_then(|s| s.as_str()) != Some("building") {
+                        return "unknown".to_string();
+                    }
+                    parsed.get("card")
+                        .and_then(|c| c.as_u64())
+                        .map(|n| n.to_string())
+                        .unwrap_or_default()
+                }
+                Err(_) => return "unknown".to_string(),
+            }
+        }
+        Err(_) => return "unknown".to_string(),
+    };
+
+    if card_id.is_empty() {
+        return "unknown".to_string();
+    }
+
+    // Query board for card labels — use cards CLI for reliability
+    let output = std::process::Command::new("bash")
+        .args(["/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards", "view", &card_id])
+        .output();
+
+    if let Ok(out) = output {
+        let text = String::from_utf8_lossy(&out.stdout);
+        // Look for type: label in the Domains line
+        for line in text.lines() {
+            if line.contains("type:") {
+                if let Some(t) = line.split("type:").nth(1) {
+                    let card_type = t.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("unknown");
+                    return card_type.to_string();
+                }
+            }
+        }
+    }
+
+    "unknown".to_string()
+}
+
+/// Check if ANY building role is working a fix card.
+pub fn is_fix_card() -> bool {
+    for role in &["kade", "silas", "wren"] {
+        if card_type_for_role(role) == "fix" {
+            return true;
+        }
+    }
+    false
+}
