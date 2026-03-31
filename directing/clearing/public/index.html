@@ -464,7 +464,7 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
       <button class="role-filter-btn" data-filter="silas" onclick="setRoleFilter('silas')" style="font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--silas);cursor:pointer;">Silas</button>
       <button class="role-filter-btn" data-filter="kade" onclick="setRoleFilter('kade')" style="font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--kade);cursor:pointer;">Kade</button>
     </div>
-    <input class="filter-input" id="domain-filter" type="text" placeholder="🔍 filter domains..." oninput="filterDomains()" />
+    <input class="filter-input" id="domain-filter" type="text" placeholder="🔍 filter domains or cards..." oninput="filterDomains()" />
   </div>
   <div class="flow-content" id="flow-content"></div>
 </div>
@@ -488,6 +488,10 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
         <input class="filter-input" id="stream-filter" type="text" placeholder="🔍 filter stream..." oninput="filterStream()" />
       </div>
       <div class="fold-content" id="fold-content"></div>
+      <div id="alerts-panel" style="display:none;border-top:2px solid var(--red);padding:0.5rem 0.75rem;background:rgba(248,81,73,0.08);flex-shrink:0;">
+        <div style="font-size:0.7rem;font-weight:700;color:var(--red);margin-bottom:0.3rem;">ALERTS</div>
+        <div id="alerts-content" style="font-size:0.72rem;max-height:150px;overflow-y:auto;"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -749,7 +753,9 @@ async function loadFold(role) {
         const color = e.role === 'wren' ? 'var(--wren)' : e.role === 'silas' ? 'var(--silas)' : 'var(--kade)';
         const icon = e.type === 'gemba' ? '👁 ' : e.type === 'turn' ? '💬 ' : '';
         const lineClass = e.type === 'gemba' ? 'fold-line fold-gemba' : 'fold-line';
-        return `<div class="${lineClass}" data-role="${e.role}"><span class="fold-ts">${e.ts}</span> <span style="color:${color};font-weight:700;">${e.role}</span> ${icon}${escapeHtml(e.text)}</div>`;
+        const eLevel = e.level || (/^\[critical\]/i.test(e.text) ? 'critical' : /^\[warn\]/i.test(e.text) ? 'warn' : '');
+        const levelStyle = eLevel === 'critical' ? 'border-left:4px solid var(--red);padding-left:6px;' : eLevel === 'warn' ? 'border-left:4px solid var(--orange);padding-left:6px;' : '';
+        return `<div class="${lineClass}" data-role="${e.role}" style="${levelStyle}"><span class="fold-ts">${e.ts}</span> <span style="color:${color};font-weight:700;">${e.role}</span> ${icon}${escapeHtml(e.text)}</div>`;
       }).join('');
       filterStream(); // Re-apply filter after reload
       foldContent.scrollTop = foldContent.scrollHeight;
@@ -797,6 +803,23 @@ function appendMessage(msg) {
   if (msg.type === 'accept-request') div.className += ' msg-accept';
   if (msg.type === 'blocked') div.className += ' msg-blocked';
   if (msg.type === 'pm-thinking') div.className += ' msg-thinking';
+
+  // Pulse level highlighting (#1897) — detect level from content or type
+  const msgText = (msg.text || '').toLowerCase();
+  const level = msg.level
+    || (msg.type === 'blocked' ? 'critical' : '')
+    || (/^\[critical\]/i.test(msg.text || '') ? 'critical' : '')
+    || (/^\[warn\]/i.test(msg.text || '') ? 'warn' : '');
+  if (level === 'critical') {
+    div.style.background = 'rgba(248, 81, 73, 0.15)';
+    div.style.border = '2px solid var(--red)';
+    div.style.borderRadius = '8px';
+    div.style.boxShadow = '0 0 12px rgba(248, 81, 73, 0.3)';
+  }
+  if (level === 'warn') {
+    div.style.background = 'rgba(210, 153, 34, 0.1)';
+    div.style.borderLeft = '4px solid var(--orange)';
+  }
 
   // Sender label — roles get colored name, guests get purple name, Jeff gets nothing
   const sender = isJeff ? ''
@@ -977,13 +1000,27 @@ window.addEventListener('drop', async (e) => {
   }
 });
 
-// Domain filter
+// Domain + card filter — searches domain names, card IDs, and card titles
 function filterDomains() {
-  const query = document.getElementById('domain-filter').value.toLowerCase();
-  document.querySelectorAll('#flow-content .flow-section').forEach(el => {
-    if (!query) { el.style.display = ''; return; }
-    const text = el.textContent.toLowerCase();
-    el.style.display = text.includes(query) ? '' : 'none';
+  const query = document.getElementById('domain-filter').value.toLowerCase().trim();
+  document.querySelectorAll('#flow-content .flow-section').forEach(section => {
+    if (!query) {
+      section.style.display = '';
+      section.querySelectorAll('.flow-card').forEach(c => c.style.display = '');
+      return;
+    }
+    // Check if domain name matches
+    const domainTitle = section.querySelector('.flow-section-title');
+    const domainMatch = domainTitle && domainTitle.textContent.toLowerCase().includes(query);
+    // Check individual cards
+    let anyCardMatch = false;
+    section.querySelectorAll('.flow-card').forEach(card => {
+      const cardText = card.textContent.toLowerCase();
+      const matches = cardText.includes(query);
+      card.style.display = (domainMatch || matches) ? '' : 'none';
+      if (matches) anyCardMatch = true;
+    });
+    section.style.display = (domainMatch || anyCardMatch) ? '' : 'none';
   });
 }
 
@@ -1117,7 +1154,14 @@ function renderCardDetail(el, card) {
   let html = '<div style="font-size:0.72rem;padding:6px 0 4px;border-top:1px solid var(--border);margin-top:4px;">';
   html += '<div style="color:var(--text);font-weight:600;margin-bottom:4px;">' + escapeHtml(card.title) + '</div>';
   html += '<div style="color:var(--text-muted);margin-bottom:4px;">' + escapeHtml(card.status) + ' · ' + escapeHtml(card.owner);
-  if (card.domains) html += ' · <span style="color:var(--accent);">' + escapeHtml(card.domains) + '</span>';
+  // Extract and display type badge (#1909 AC5)
+  var typeMatch = (card.domains || '').match(/type:(\w+)/);
+  if (typeMatch) {
+    var typeColors = { 'new': '#3fb950', enhance: '#58a6ff', fix: '#f85149', chore: '#8b949e', swat: '#d29922' };
+    var typeColor = typeColors[typeMatch[1]] || 'var(--text-muted)';
+    html += ' · <span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:8px;border:1px solid ' + typeColor + ';color:' + typeColor + ';">' + escapeHtml(typeMatch[1]) + '</span>';
+  }
+  if (card.domains) html += ' · <span style="color:var(--accent);font-size:0.65rem;">' + escapeHtml(card.domains.replace(/type:\w+,?\s*/g, '').trim()) + '</span>';
   html += '</div>';
   if (card.ac && card.ac.length > 0) {
     html += '<div style="margin-top:4px;">';
@@ -1144,6 +1188,46 @@ function renderCardDetail(el, card) {
   el.style.display = '';
   el.innerHTML = html;
 }
+
+// Alerts panel — collect critical/warn messages (#1897)
+const alertsSeen = new Set();
+function checkAlerts(messages) {
+  const panel = document.getElementById('alerts-panel');
+  const content = document.getElementById('alerts-content');
+  if (!panel || !content) return;
+  let hasNew = false;
+  for (const msg of messages) {
+    const text = msg.text || '';
+    const key = msg.ts + ':' + text.slice(0, 50);
+    if (alertsSeen.has(key)) continue;
+    const level = msg.level
+      || (msg.type === 'blocked' ? 'critical' : '')
+      || (/^\[critical\]/i.test(text) ? 'critical' : '')
+      || (/^\[warn\]/i.test(text) ? 'warn' : '');
+    if (!level) continue;
+    alertsSeen.add(key);
+    hasNew = true;
+    const color = level === 'critical' ? 'var(--red)' : 'var(--orange)';
+    const time = new Date(msg.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);display:flex;gap:6px;align-items:baseline;';
+    div.innerHTML = '<span style="color:' + color + ';font-weight:700;font-size:0.65rem;">' + level.toUpperCase() + '</span>'
+      + '<span style="color:var(--text-muted);font-size:0.6rem;">' + escapeHtml(time) + '</span> '
+      + '<span style="color:var(--text);">' + escapeHtml(msg.from || '') + ': ' + escapeHtml(text.slice(0, 120)) + '</span>';
+    content.prepend(div);
+  }
+  if (hasNew || content.children.length > 0) panel.style.display = '';
+}
+// Poll alerts from messages every 5s
+setInterval(async () => {
+  try {
+    const resp = await fetch('/api/messages');
+    const msgs = await resp.json();
+    checkAlerts(msgs);
+  } catch {}
+}, 5000);
+// Initial check
+fetch('/api/messages').then(r => r.json()).then(checkAlerts).catch(() => {});
 
 // Auto-open unified stream on load (skip on mobile — causes overflow)
 if (window.innerWidth > 768) {

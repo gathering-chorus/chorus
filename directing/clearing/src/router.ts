@@ -5,6 +5,7 @@ export interface ChannelMessage {
   text: string;
   ts: string;
   type: 'jeff-input' | 'role-response' | 'demo-ready' | 'accept-request' | 'blocked' | 'role-to-role' | 'system-error' | 'pm-thinking';
+  level?: string;
   visible: boolean;
 }
 
@@ -14,8 +15,9 @@ export class MessageRouter extends EventEmitter {
   private messages: ChannelMessage[] = [];
 
   /** Ingest a raw message, classify it, and store */
-  ingest(raw: { from: string; text: string; ts: string; type?: string }): void {
+  ingest(raw: { from: string; text: string; ts: string; type?: string; level?: string }): void {
     const classified = this.classify(raw);
+    if (raw.level) classified.level = raw.level;
 
     // Dedup: skip if any recent message (last 10) has same from + text
     // Also catch @mention-stripped duplicates — Bridge sends "@silas do X",
@@ -61,7 +63,7 @@ export class MessageRouter extends EventEmitter {
   }
 
   /** Classify a message: determine type and visibility */
-  private classify(raw: { from: string; text: string; ts: string; type?: string }): ChannelMessage {
+  private classify(raw: { from: string; text: string; ts: string; type?: string; level?: string }): ChannelMessage {
     const { from, text, ts } = raw;
 
     // Batch progress / chorus-query system messages — hidden from message stream (#1706)

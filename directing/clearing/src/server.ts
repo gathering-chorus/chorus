@@ -497,12 +497,14 @@ app.get('/api/flow', (_req, res) => {
         const tags = cardMatch[3];
         const ownerMatch = tags.match(/^(Wren|Silas|Kade)/i);
         const domains = (tags.match(/domain:(\w+)/g) || []).map((d: string) => d.replace('domain:', ''));
+        const typeMatch = tags.match(/type:(\w+)/);
         cards.push({
           id: cardMatch[1],
           title: cardMatch[2].trim(),
           status: currentStatus,
           owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
           domains: domains.length > 0 ? domains : ['uncategorized'],
+          type: typeMatch ? typeMatch[1] : '',
         });
       }
     }
@@ -544,7 +546,17 @@ app.get('/api/flow', (_req, res) => {
       data.counts.activeTotal = data.counts.activeCards + wfCount;
     }
 
-    res.json({ domains: byDomain, totalCards: cards.length });
+    // Fix:feature ratio (#1909 AC6)
+    const typeCounts: Record<string, number> = {};
+    for (const card of cards) {
+      const t = (card as any).type || 'untyped';
+      typeCounts[t] = (typeCounts[t] || 0) + 1;
+    }
+    const fixes = typeCounts['fix'] || 0;
+    const features = (typeCounts['new'] || 0) + (typeCounts['enhance'] || 0);
+    const fixFeatureRatio = features > 0 ? (fixes / features).toFixed(2) : fixes > 0 ? 'all-fix' : 'n/a';
+
+    res.json({ domains: byDomain, totalCards: cards.length, typeCounts, fixFeatureRatio });
   } catch (err) {
     res.json({ domains: {}, totalCards: 0 });
   }
@@ -657,7 +669,7 @@ app.get('/api/messages', (_req, res) => res.json(messageRouter.getRecent(50)));
 app.post('/api/message', (req, res) => {
   const { from, text } = req.body;
   if (!from || !text) return res.status(400).json({ error: 'from and text required' });
-  messageRouter.ingest({ from, text, ts: new Date().toISOString(), type: req.body.type || 'role-response' });
+  messageRouter.ingest({ from, text, ts: new Date().toISOString(), type: req.body.type || 'role-response', level: req.body.level || '' });
   res.json({ ok: true });
 });
 
