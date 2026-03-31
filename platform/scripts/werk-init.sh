@@ -165,6 +165,34 @@ ${_content}"
     [ "$CURRENT_VERSION" != "$ACKED_VERSION" ] && VERSION_WARNING="⚠ PROTOCOL UPDATE: v${ACKED_VERSION:-unknown} → v${CURRENT_VERSION}. Re-read team-architecture.md."
   fi
 
+  # Card events from chorus.log — filtered by pulse level (#1896)
+  CARD_EVENTS=""
+  CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log"
+  if [ -f "$CHORUS_LOG" ]; then
+    CARD_EVENTS=$(tail -500 "$CHORUS_LOG" | python3 -c "
+import sys, json
+events = []
+for line in sys.stdin:
+    try:
+        d = json.loads(line.strip())
+        evt = d.get('event', '')
+        if not evt.startswith('card.') and not evt.startswith('icd.'): continue
+        role = d.get('role', '?')
+        level = d.get('level', 'info')
+        card = d.get('card', '')
+        ts = d.get('timestamp', '')[:16]
+        label = f'[{level.upper()}] ' if level != 'info' else ''
+        if card:
+            events.append(f'{label}{evt} | {role} #{card}')
+        else:
+            events.append(f'{label}{evt} | {role}')
+    except: pass
+# Show last 5, critical first
+events = events[-5:]
+print('\n'.join(events))
+" 2>/dev/null || true)
+  fi
+
   # Cross-role observation glance — ambient gemba
   GLANCE=""
   for OTHER_ROLE in wren silas kade; do
@@ -224,10 +252,11 @@ except: pass" 2>/dev/null || true)
     fi
   done
 
-  if [ -n "$BRIEF_OUTPUT" ] || [ -n "$VERSION_WARNING" ] || [ -n "$GLANCE" ]; then
+  if [ -n "$BRIEF_OUTPUT" ] || [ -n "$VERSION_WARNING" ] || [ -n "$GLANCE" ] || [ -n "$CARD_EVENTS" ]; then
     echo "<team-scan>"
     [ -n "$VERSION_WARNING" ] && echo "$VERSION_WARNING" && echo ""
     [ -n "$GLANCE" ] && echo "$GLANCE" && echo ""
+    [ -n "$CARD_EVENTS" ] && echo "$CARD_EVENTS" && echo ""
     [ -n "$BRIEF_OUTPUT" ] && echo "$BRIEF_OUTPUT"
     echo "</team-scan>"
   fi
