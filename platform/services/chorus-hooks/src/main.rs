@@ -215,6 +215,15 @@ async fn pre_tool_use_inner(
     // Clock sync — update /tmp/wall-clock.txt on every tool call (#1559)
     hooks::clock_sync::tick(&input).await;
 
+    // Set interaction pattern from card type (#1911)
+    let role_str = role.as_str();
+    if state.get_interaction_pattern(role_str).await == "unknown" {
+        let card_type = crate::types::card_type_for_role(role_str);
+        if card_type != "unknown" {
+            state.set_interaction_pattern(role_str, &card_type).await;
+        }
+    }
+
     // Tool telemetry (always, never blocks — fire-and-forget)
     let state_clone = state.clone();
     let input_clone = input.clone();

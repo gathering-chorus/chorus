@@ -31,6 +31,8 @@ struct StateInner {
     hook_failures: HashMap<String, Vec<i64>>,
     /// Circuit breaker: disabled modules (#1858)
     disabled_hooks: HashMap<String, i64>,
+    /// Interaction pattern per role (#1911): fix→swat, new→ideation, enhance→demo, chore→direction, swat→bypass
+    interaction_pattern: HashMap<String, String>,
 }
 
 /// Static configuration
@@ -56,6 +58,7 @@ impl AppState {
                 session_init_done: HashMap::new(),
                 hook_failures: HashMap::new(),
                 disabled_hooks: HashMap::new(),
+                interaction_pattern: HashMap::new(),
             })),
             session_cache: SessionCache::new(),
             config: Arc::new(Config {
@@ -177,6 +180,35 @@ impl AppState {
             .get(role)
             .copied()
             .unwrap_or(false)
+    }
+
+    /// Set interaction pattern for a role based on card type (#1911)
+    /// Maps: fix→swat, new→ideation, enhance→demo, chore→direction, swat→bypass
+    pub async fn set_interaction_pattern(&self, role: &str, card_type: &str) {
+        let pattern = match card_type {
+            "fix" => "swat",
+            "new" => "ideation",
+            "enhance" => "demo",
+            "chore" => "direction",
+            "swat" => "bypass",
+            _ => "unknown",
+        };
+        self.inner
+            .lock()
+            .await
+            .interaction_pattern
+            .insert(role.to_string(), pattern.to_string());
+    }
+
+    /// Get current interaction pattern for a role
+    pub async fn get_interaction_pattern(&self, role: &str) -> String {
+        self.inner
+            .lock()
+            .await
+            .interaction_pattern
+            .get(role)
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string())
     }
 }
 
