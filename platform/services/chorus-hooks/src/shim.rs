@@ -85,7 +85,7 @@ fn main() -> ExitCode {
                 return claudemd_gen_cmd();
             }
             "workflow" => {
-                return python_dispatch_cmd("workflow.py");
+                return workflow_ts_cmd();
             }
             "role-checkpoint" => {
                 let args: Vec<String> = std::env::args().skip(1).collect();
@@ -173,7 +173,7 @@ fn main() -> ExitCode {
             return claudemd_gen_cmd();
         }
         "workflow" => {
-            return python_dispatch_cmd("workflow.py");
+            return workflow_ts_cmd();
         }
         "role-checkpoint" => {
             let args: Vec<String> = std::env::args().skip(2).collect();
@@ -576,21 +576,21 @@ fn session_close_cmd(args: &[String]) -> ExitCode {
 }
 
 /// Generic Python dispatch — run a .py script with remaining args (#1624)
-fn python_dispatch_cmd(script_name: &str) -> ExitCode {
-    let script = format!("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/{}", script_name);
-    // Skip binary name + subcommand (when called as `shim workflow status`)
-    // or skip just binary name (when called via argv[0] symlink as `workflow status`)
+/// Dispatch to TypeScript workflow engine (replaces workflow.py per DEC-100 / #1775)
+fn workflow_ts_cmd() -> ExitCode {
+    let cli_path = "/Users/jeffbridwell/CascadeProjects/chorus/platform/workflow-engine/dist/cli.js";
     let all_args: Vec<String> = std::env::args().collect();
-    let skip = if all_args.len() > 1 && all_args[1] == script_name.replace(".py", "") { 2 } else { 1 };
+    // Skip binary name + "workflow" subcommand if present
+    let skip = if all_args.len() > 1 && all_args[1] == "workflow" { 2 } else { 1 };
     let args: Vec<String> = all_args.into_iter().skip(skip).collect();
-    let status = std::process::Command::new("python3")
-        .arg(&script)
+    let status = std::process::Command::new("node")
+        .arg(cli_path)
         .args(&args)
         .status();
     match status {
         Ok(s) if s.success() => ExitCode::SUCCESS,
         Ok(s) => ExitCode::from(s.code().unwrap_or(1) as u8),
-        Err(e) => { eprintln!("Failed to run {}: {}", script_name, e); ExitCode::from(1) }
+        Err(e) => { eprintln!("Failed to run workflow-ts: {}", e); ExitCode::from(1) }
     }
 }
 
@@ -1055,7 +1055,7 @@ fn context_cache_cmd(args: &[String]) -> ExitCode {
     out.push_str(if audit_text.is_empty() { "(none)" } else { &audit_text });
 
     out.push_str("\n\n## Workflow Steps Waiting\n");
-    out.push_str("(none)\n"); // workflow.sh is Tier 3 — skip for now
+    out.push_str("(none)\n"); // workflow dispatches to TS engine (#1775)
 
     out.push_str("\n## Recent Briefs\n");
     out.push_str(if briefs.is_empty() { "(none)" } else { &briefs });
