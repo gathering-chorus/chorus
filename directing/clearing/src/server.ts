@@ -499,7 +499,7 @@ app.get('/api/flow', (_req, res) => {
         const domains = (tags.match(/domain:(\w+)/g) || []).map((d: string) => d.replace('domain:', ''));
         cards.push({
           id: cardMatch[1],
-          title: cardMatch[2].trim().substring(0, 70),
+          title: cardMatch[2].trim(),
           status: currentStatus,
           owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
           domains: domains.length > 0 ? domains : ['uncategorized'],
