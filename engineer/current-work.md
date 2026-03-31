@@ -1,17 +1,12 @@
 # Current Work
 
-Last updated: 2026-03-29 18:53 Boston
+Last updated: 2026-03-31 18:24 Boston
 
 ## WIP
-None — #1814 shipped (paired with Wren).
-
-## This Session
-- #1814 Verification gate hook — paired with Wren (navigator), verified all 5 AC items: tdd_gate, pair_gate, demo_gate all blocking with deny, 18 tests total
-
-## Blockers
-None
+- #1926 — Gate integration test suite. 39/39, 100% coverage. Awaiting /acp.
+- #1865 — Photo detail thumbnail. Not started.
 
 ## Queue
-- #1631 Face clusters (Next)
-- #1630 Embeddings (Next)
-- #1619 Provenance stamps (Next)
+- #1631 — Name face clusters (P3)
+- #1630 — Rebuild semantic embeddings (P2)
+- #1619 — Source-chain provenance (P2)
