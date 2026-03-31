@@ -57,7 +57,7 @@ fi
 echo "3. Verify in Loki..."
 sleep 3
 LOKI_RESP=$(curl -s -G "$LOKI_URL/loki/api/v1/query" \
-  --data-urlencode "query={job=\"chorus-events\"} |= \"$MARKER\"" \
+  --data-urlencode "query={job=\"chorus-operations\"} |= \"$MARKER\"" \
   --data-urlencode "limit=1" 2>/dev/null)
 LOKI_COUNT=$(echo "$LOKI_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('data',{}).get('result',[])))" 2>/dev/null || echo "0")
 if [ "$LOKI_COUNT" -gt 0 ] 2>/dev/null; then
