@@ -64,7 +64,19 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     let from_role = input.role();
 
-    // Skip self-writes
+    // Emit brief.written for ALL brief writes (Designing stage event #1765)
+    let from_str_design = from_role.as_str().to_string();
+    let basename_design = filename.to_string();
+    let to_str_design = to_role.as_str().to_string();
+    tokio::spawn(async move {
+        chorus_log(
+            "brief.written",
+            &from_str_design,
+            &[("to", &to_str_design), ("artifact", &basename_design)],
+        ).await;
+    });
+
+    // Skip self-writes for handoff logging (but brief.written already emitted above)
     if from_role == to_role {
         return HookResponse::allow();
     }

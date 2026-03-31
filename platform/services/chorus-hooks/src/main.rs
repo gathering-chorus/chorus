@@ -344,6 +344,11 @@ async fn pre_tool_use_inner(
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (last_module.clone(), r);
             }
+            // Quality gate (#1717) — agent review of AC before demo
+            last_module = "quality_gate".into(); let r = hooks::quality_gate::pre_demo_check(&input).await;
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (last_module.clone(), r);
+            }
             // Demo preflight gate (#1657)
             last_module = "demo_preflight".into(); let r = hooks::demo_preflight::check(&input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
@@ -393,6 +398,21 @@ async fn post_tool_use(
             hooks::tool_telemetry::post_tool_use_bash(&input, &state).await;
             // Context synthesis tracker — log Chorus searches and git lookups
             hooks::memory_gate::post_check(&input);
+            // Proving stage events (#1765) — detect test runs and smoke checks
+            let cmd = input.get_tool_input_str("command");
+            if cmd.contains("cargo test") || cmd.contains("npx jest") || cmd.contains("npm test") {
+                let role_name = input.role().as_str().to_string();
+                let test_type = if cmd.contains("cargo") { "rust" } else { "typescript" }.to_string();
+                tokio::spawn(async move {
+                    crate::state::chorus_log("build.test.completed", &role_name, &[("type", &test_type)]).await;
+                });
+            }
+            if cmd.contains("smoke-check") {
+                let role_name = input.role().as_str().to_string();
+                tokio::spawn(async move {
+                    crate::state::chorus_log("smoke.check.completed", &role_name, &[]).await;
+                });
+            }
             // Batch progress monitor (#1656) — detect background jobs, emit progress
             let r = hooks::batch_progress::check(&input).await;
             if r.stderr.is_some() {
@@ -403,9 +423,36 @@ async fn post_tool_use(
         "Read" => {
             // Context synthesis tracker — log memory/decision file reads
             hooks::memory_gate::post_check(&input);
+            // Designing stage events (#1765) — domain context + architecture reads
+            let read_path = input.get_tool_input_str("file_path");
+            if read_path.contains("domain-context") {
+                let role_name = input.role().as_str().to_string();
+                let domain = read_path.rsplit('/').next().unwrap_or("").replace("domain-context-", "").replace(".md", "");
+                let domain_owned = domain.to_string();
+                tokio::spawn(async move {
+                    crate::state::chorus_log("domain.context.read", &role_name, &[("domain", &domain_owned)]).await;
+                });
+            }
+            // Capturing stage events (#1765) — seed processing
+            if read_path.contains("/seeds/") || read_path.contains("seed-") {
+                let role_name = input.role().as_str().to_string();
+                let artifact = read_path.rsplit('/').next().unwrap_or("").to_string();
+                tokio::spawn(async move {
+                    crate::state::chorus_log("seed.reviewed", &role_name, &[("artifact", &artifact)]).await;
+                });
+            }
+            if read_path.contains("/adr/") || read_path.contains("system-architecture") || read_path.contains("infrastructure-constraints") {
+                let role_name = input.role().as_str().to_string();
+                let artifact = read_path.rsplit('/').next().unwrap_or("").to_string();
+                tokio::spawn(async move {
+                    crate::state::chorus_log("architecture.artifact.read", &role_name, &[("artifact", &artifact)]).await;
+                });
+            }
         }
         "Write" | "Edit" => {
             hooks::handoff_logger::check(&input, &state).await;
+            // Quality gate (#1717) — lightweight post-edit check
+            hooks::quality_gate::post_edit_check(&input);
             // ICD write gate — Athena pattern: validate + reload + lint on ICD file writes
             hooks::icd_write_gate::check(&input, &state).await;
             // Artifact creation pulse (#1907) — detect new docs in artifacts/ dirs

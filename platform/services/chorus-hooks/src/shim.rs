@@ -26,7 +26,7 @@ const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
 
 fn log_debug(msg: &str) {
     use std::fs::OpenOptions;
-    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/chorus-shim-debug.log") {
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/Users/jeffbridwell/Library/Logs/Chorus/chorus-shim-debug.log") {
         let _ = writeln!(f, "[{}] {}", std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(), msg);
     }
@@ -424,7 +424,7 @@ fn session_start_cmd(args: &[String]) -> ExitCode {
                 .arg(role)
                 .env("NODE_PATH", format!("{}/node_modules", bridge_dir))
                 .stdout(std::process::Stdio::null())
-                .stderr(std::fs::File::create(format!("/tmp/bridge-subscriber-{}.log", role)).unwrap_or_else(|_| {
+                .stderr(std::fs::File::create(format!("/Users/jeffbridwell/Library/Logs/Chorus/bridge-subscriber-{}.log", role)).unwrap_or_else(|_| {
                     std::fs::File::create("/dev/null").unwrap()
                 }))
                 .spawn();
@@ -804,7 +804,7 @@ fn cruft_scan_cmd() -> ExitCode {
 
     // Disk trend
     out.push_str("## Disk Trend\n");
-    let trend_file = "/tmp/disk-trend.log";
+    let trend_file = "/Users/jeffbridwell/Library/Logs/Chorus/disk-trend.log";
     let disk_num = disk_pct.trim_end_matches('%');
     let today: String = clock.chars().take(10).collect();
     let trend_line = format!("{},{}\n", today, disk_num);

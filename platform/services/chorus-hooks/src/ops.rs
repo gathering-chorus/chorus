@@ -1147,7 +1147,7 @@ fn do_health(config: &Config) -> Result<(), String> {
     }
 
     // Save last response for debugging
-    let _ = fs::write("/tmp/chorus-ops-last-health-response.json", &response_raw);
+    let _ = fs::write("/Users/jeffbridwell/Library/Logs/Chorus/chorus-ops-last-health-response.json", &response_raw);
 
     if config.verbose {
         log_msg(&format!(
