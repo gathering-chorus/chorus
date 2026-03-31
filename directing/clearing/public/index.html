@@ -1187,6 +1187,33 @@ function renderCardDetail(el, card) {
   html += '</div>';
   el.style.display = '';
   el.innerHTML = html;
+
+  // Fetch domain context if card has a domain tag (#1908 consumer)
+  var domainMatch = (card.domains || '').match(/domain:(\w+)/);
+  if (domainMatch) {
+    var domainName = domainMatch[1];
+    fetch('http://localhost:3340/api/chorus/domain/' + domainName)
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d || !d.sections) return;
+        var dHtml = '<div style="margin-top:6px;padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;border-left:2px solid var(--green);">';
+        dHtml += '<div style="font-weight:600;color:var(--green);margin-bottom:2px;">' + escapeHtml(d.domain) + ' — ' + escapeHtml(d.product) + '/' + escapeHtml(d.step) + '</div>';
+        dHtml += '<div style="color:var(--text-muted);font-size:0.65rem;">' + escapeHtml(d.description) + '</div>';
+        var secs = d.sections;
+        if (secs.api && secs.api.table) {
+          dHtml += '<div style="margin-top:3px;font-size:0.65rem;"><strong>API:</strong> ' + (secs.api.table.length - 1) + ' endpoints</div>';
+        }
+        if (secs.integration && secs.integration.table) {
+          dHtml += '<div style="font-size:0.65rem;"><strong>Pipelines:</strong> ' + (secs.integration.table.length - 1) + '</div>';
+        }
+        if (d.cards) {
+          dHtml += '<div style="font-size:0.65rem;"><strong>Cards:</strong> ' + d.cards.total + ' active, ' + d.cards.wip + ' WIP</div>';
+        }
+        dHtml += '</div>';
+        el.innerHTML += dHtml;
+      })
+      .catch(function() {});
+  }
 }
 
 // Alerts panel — collect critical/warn messages (#1897)
