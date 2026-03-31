@@ -7,333 +7,287 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px 1in; max-width: 1100px; margin: 0 auto; line-height: 1.6; }
   h1 { font-size: 1.4rem; color: #1a1a2e; margin-bottom: 4px; }
-  .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 30px; }
-  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 36px; margin-bottom: 14px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 28px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 32px; margin-bottom: 12px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 10px; font-size: 0.86rem; }
 
-  .sequence { max-width: 960px; margin: 0 auto; }
+  /* Sequence diagram */
+  .seq { width: 100%; margin: 20px 0; }
+  .seq-header { display: flex; justify-content: space-between; margin-bottom: 0; }
+  .seq-actor { width: 120px; text-align: center; padding: 10px 4px; border-radius: 6px; font-weight: 600; font-size: 0.82rem; }
+  .seq-actor.jeff { background: #f3e8ff; color: #7c3aed; border: 2px solid #7c3aed; }
+  .seq-actor.wren { background: #dcfce7; color: #16a34a; border: 2px solid #16a34a; }
+  .seq-actor.silas { background: #fef3c7; color: #d97706; border: 2px solid #d97706; }
+  .seq-actor.kade { background: #dbeafe; color: #2563eb; border: 2px solid #2563eb; }
+  .seq-actor.system { background: #f1f5f9; color: #475569; border: 2px solid #94a3b8; }
 
-  /* Participants */
-  .participants { display: flex; justify-content: space-between; margin-bottom: 0; }
-  .participant {
-    width: 160px; text-align: center; padding: 10px 6px;
-    border-radius: 6px; font-weight: bold; font-size: 0.85rem;
-  }
-  .p-sender { background: #2d6b4a; color: #7bffb2; }
-  .p-nudge { background: #4a2d6b; color: #c49bff; }
-  .p-messaging { background: #6b5a2d; color: #ffd97b; }
-  .p-osascript { background: #6b2d2d; color: #ff9b9b; }
-  .p-target { background: #2d4a7a; color: #7cb3ff; }
+  .seq-body { display: flex; justify-content: space-between; position: relative; min-height: 40px; }
+  .seq-lifeline { width: 120px; display: flex; justify-content: center; position: relative; }
+  .seq-lifeline::after { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; border-left: 2px dashed #d1d5db; }
 
-  /* Flow rows */
-  .flow { position: relative; margin: 0 auto; padding: 8px 0; }
-  .flow-row {
-    display: flex; align-items: center; min-height: 44px;
-    position: relative; padding: 4px 0;
-  }
-  .flow-row:hover { background: rgba(0,0,0,0.02); }
+  /* Message rows */
+  .seq-row { position: relative; padding: 6px 0; min-height: 36px; display: flex; align-items: center; }
+  .seq-msg { position: absolute; font-size: 0.74rem; display: flex; flex-direction: column; align-items: center; }
+  .seq-msg .label { background: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap; border: 1px solid #e5e7eb; font-size: 0.72rem; }
+  .seq-msg .line { height: 2px; background: #6b7280; position: relative; }
+  .seq-msg .line.direct { background: #16a34a; }
+  .seq-msg .line.mediated { background: #3b82f6; }
+  .seq-msg .line.ambient { background: #8b5cf6; }
+  .seq-msg .line.broken { background: #dc2626; stroke-dasharray: 4,4; }
 
-  /* Lifelines */
-  .flow::before { content: ''; position: absolute; left: 80px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
-  .flow::after { content: ''; position: absolute; right: 80px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
-  .ll2 { position: absolute; left: 240px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
-  .ll3 { position: absolute; left: 480px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
-  .ll4 { position: absolute; left: 640px; top: 0; bottom: 0; width: 2px; border-left: 2px dashed #ccc; }
+  /* Phase dividers */
+  .seq-phase { background: #f8fafc; border-left: 3px solid #2d4a7a; padding: 8px 14px; margin: 12px 0; font-size: 0.78rem; color: #2d4a7a; font-weight: 600; }
 
-  /* Message arrow */
-  .msg {
-    position: relative; margin-left: 80px; font-size: 0.76rem;
-    display: flex; align-items: center;
-  }
-  .msg .line {
-    flex: 1; height: 2px; background: #666;
-    position: relative;
-  }
-  .msg .line::after {
-    content: '▶'; position: absolute; right: -8px; top: -7px;
-    font-size: 0.7rem; color: #6b7280;
-  }
-  .msg .line.reverse::after { content: '◀'; left: -8px; right: auto; }
-  .msg .text {
-    position: absolute; top: -16px; left: 10px;
-    font-size: 0.72rem; white-space: nowrap; color: #4a5568;
-  }
+  /* Shared Awareness layers as swim lanes */
+  .layer-label { position: absolute; right: -60px; font-size: 0.65rem; color: #6366f1; transform: rotate(-90deg); transform-origin: right center; }
 
-  /* Phase divider */
-  .phase {
-    padding: 10px 16px; margin: 16px 0 8px;
-    background: rgba(196, 163, 90, 0.1); border-left: 3px solid #c4a35a;
-    font-size: 0.78rem; color: #2d4a7a;
-  }
+  /* Simple flow rows */
+  .flow { margin: 8px 0; }
+  .flow-row { display: grid; grid-template-columns: 80px 1fr 80px; gap: 12px; align-items: center; padding: 8px 0; font-size: 0.84rem; }
+  .flow-from { text-align: right; font-weight: 600; }
+  .flow-to { text-align: left; font-weight: 600; }
+  .flow-channel { display: flex; align-items: center; gap: 6px; }
+  .flow-line { flex: 1; height: 2px; position: relative; border-radius: 1px; }
+  .flow-line::after { content: ''; position: absolute; right: 0; top: -4px; width: 0; height: 0; border-left: 8px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+  .flow-desc { font-size: 0.74rem; color: #6b7280; text-align: center; padding-bottom: 8px; border-bottom: 1px solid #f3f4f6; }
+  .flow-layer { font-size: 0.65rem; padding: 1px 6px; border-radius: 8px; }
 
-  /* Step boxes */
-  .step-box {
-    background: #f0f4ff; border: 1px solid #e5e7eb; border-radius: 6px;
-    padding: 10px 14px; margin: 6px 0; font-size: 0.78rem;
-    max-width: 300px;
-  }
-  .step-box.left { margin-right: auto; }
-  .step-box.center { margin: 6px auto; }
-  .step-box.right { margin-left: auto; }
-  .step-box strong { color: #2d4a7a; }
-  .step-box .detail { color: #6b7280; font-size: 0.7rem; margin-top: 4px; }
+  .l-time { background: #fef3c7; color: #92400e; }
+  .l-pulse { background: #fce7f3; color: #9d174d; }
+  .l-memory { background: #e0e7ff; color: #3730a3; }
+  .l-knowledge { background: #dcfce7; color: #166534; }
+  .l-context { background: #f1f5f9; color: #475569; }
 
-  /* Path labels */
-  .path-label {
-    display: inline-block; padding: 3px 10px; border-radius: 12px;
-    font-size: 0.72rem; font-weight: 600; margin: 4px 4px 4px 0;
-  }
-  .path-persist { background: #2d6b4a; color: #7bffb2; }
-  .path-deliver { background: #6b2d2d; color: #ff9b9b; }
-  .path-both { background: #4a2d6b; color: #c49bff; }
+  .direct { color: #16a34a; }
+  .mediated { color: #3b82f6; }
+  .ambient { color: #8b5cf6; }
+  .broken { color: #dc2626; }
 
-  /* Decision diamond */
-  .decision {
-    background: #f0f4ff; border: 1px solid #d1d5db; border-radius: 4px;
-    padding: 8px 14px; margin: 8px auto; text-align: center;
-    font-size: 0.76rem; max-width: 400px;
-  }
-  .decision em { color: #2d4a7a; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.74rem; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
 
-  /* Notes */
-  .note {
-    background: #f9fafb; border: 1px solid #d1d5db; border-radius: 6px;
-    padding: 10px 14px; margin: 10px 0; font-size: 0.76rem;
-  }
-  .note b { color: #f59e0b; }
-  .note.locked { border-color: #dc2626; }
-  .note.locked b { color: #dc2626; }
+  .note { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 0.82rem; }
+  .issue { background: #fef2f2; border-left: 3px solid #dc2626; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 0.82rem; }
+  .locked { background: #fef2f2; border: 1px solid #dc2626; padding: 10px 14px; border-radius: 6px; margin: 10px 0; font-size: 0.82rem; }
+  .locked b { color: #dc2626; }
 
   .meta { font-size: 0.68rem; color: #6b7280; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
-
-  /* Simple flow visualization */
-  .swim { display: grid; grid-template-columns: 140px 1fr; gap: 0; margin: 8px 0; align-items: start; }
-  .swim-label { font-size: 0.72rem; color: #6b7280; padding: 8px 0; text-align: right; padding-right: 12px; border-right: 2px solid #333; }
-  .swim-content { padding: 4px 12px; }
-  .swim-arrow { color: #666; font-size: 0.8rem; padding: 2px 12px; }
-
-  @media print { body { background: #fff; color: #222; } .step-box { background: #f5f5f5; border-color: #4a5568; } }
+  @media print { body { padding: 20px 1in; } }
 </style>
 </head>
 <body>
 
-<div class="sequence">
+<h1>/nudge — Communication Flows</h1>
+<p class="subtitle">Four actors inside Shared Awareness &bull; #1738 &bull; Wren &bull; 2026-03-31</p>
 
-<h1>/nudge — Delivery Paths</h1>
-<p class="subtitle">DEC-107 (locked) &bull; Two paths, both fire every time &bull; nudge.sh &bull; From service-design-nudge.html</p>
-
-<div class="note locked">
-  <b>LOCKED DECISION (DEC-107):</b> This was revisited 4 times and locked. Do not reopen. Do not propose alternatives. Persist AND deliver. Every time.
-</div>
-
-<!-- TRIGGER -->
-<h2>1. Trigger</h2>
-
-<div class="step-box left">
-  <strong>Sender role calls nudge.sh</strong>
-  <div class="detail">bash nudge.sh &lt;target&gt; "message" [--force] [--from &lt;sender&gt;]</div>
-</div>
-
-<div class="decision">
-  <em>Validate args</em> — target role exists, message not empty, sender identified
-</div>
-
-<div class="note">
-  <b>Arg validation (DEC: nudge-reject-bad-calls):</b> Hard-reject malformed calls. No warn-and-send-garbage. Six touches = relay failure.
-</div>
-
-<!-- PATH 1: PERSIST -->
-<h2>2. Path 1: Persist <span class="path-label path-persist">PERSIST</span></h2>
-
-<div class="swim">
-  <div class="swim-label">nudge.sh</div>
-  <div class="swim-content">
-    <div class="step-box">
-      <strong>POST to messaging API</strong>
-      <div class="detail">curl -X POST http://localhost:3475/api/message<br>Body: { from, to, text, timestamp, type: "nudge" }</div>
-    </div>
+<!-- ACTOR CIRCLE -->
+<div style="position: relative; width: 500px; height: 500px; margin: 30px auto; background: rgba(99,102,241,0.04); border: 2px solid #c7d2fe; border-radius: 50%;">
+  <svg style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+    <line x1="250" y1="60" x2="410" y2="180" stroke="#c7d2fe" stroke-width="1.5" stroke-dasharray="6,4"/>
+    <line x1="250" y1="60" x2="90" y2="280" stroke="#c7d2fe" stroke-width="1.5" stroke-dasharray="6,4"/>
+    <line x1="250" y1="60" x2="250" y2="380" stroke="#c7d2fe" stroke-width="1.5" stroke-dasharray="6,4"/>
+    <line x1="410" y1="180" x2="90" y2="280" stroke="#93c5fd" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="410" y1="180" x2="250" y2="380" stroke="#93c5fd" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="90" y1="280" x2="250" y2="380" stroke="#93c5fd" stroke-width="1" stroke-dasharray="4,4"/>
+  </svg>
+  <div style="position: absolute; left: 200px; top: 10px; text-align: center; width: 100px;">
+    <div style="width: 70px; height: 70px; border-radius: 50%; background: #f3e8ff; border: 3px solid #7c3aed; color: #7c3aed; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; margin: 0 auto 6px;">Jeff</div>
+    <div style="font-size: 0.78rem; font-weight: 600;">Jeff</div>
+    <div style="font-size: 0.65rem; color: #6b7280;">Owner</div>
+    <div style="font-size: 0.62rem; color: #9ca3af; font-style: italic;">keyboard, phone, voice</div>
+  </div>
+  <div style="position: absolute; left: 360px; top: 140px; text-align: center; width: 100px;">
+    <div style="width: 70px; height: 70px; border-radius: 50%; background: #dcfce7; border: 3px solid #16a34a; color: #16a34a; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; margin: 0 auto 6px;">W</div>
+    <div style="font-size: 0.78rem; font-weight: 600;">Wren</div>
+    <div style="font-size: 0.65rem; color: #6b7280;">PM</div>
+    <div style="font-size: 0.62rem; color: #9ca3af; font-style: italic;">nudge, briefs, cards</div>
+  </div>
+  <div style="position: absolute; left: 40px; top: 240px; text-align: center; width: 100px;">
+    <div style="width: 70px; height: 70px; border-radius: 50%; background: #fef3c7; border: 3px solid #d97706; color: #d97706; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; margin: 0 auto 6px;">S</div>
+    <div style="font-size: 0.78rem; font-weight: 600;">Silas</div>
+    <div style="font-size: 0.65rem; color: #6b7280;">Architect</div>
+    <div style="font-size: 0.62rem; color: #9ca3af; font-style: italic;">nudge, briefs, scripts</div>
+  </div>
+  <div style="position: absolute; left: 200px; top: 340px; text-align: center; width: 100px;">
+    <div style="width: 70px; height: 70px; border-radius: 50%; background: #dbeafe; border: 3px solid #2563eb; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; margin: 0 auto 6px;">K</div>
+    <div style="font-size: 0.78rem; font-weight: 600;">Kade</div>
+    <div style="font-size: 0.65rem; color: #6b7280;">Engineer</div>
+    <div style="font-size: 0.62rem; color: #9ca3af; font-style: italic;">nudge, briefs, code</div>
+  </div>
+  <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center;">
+    <div style="font-size: 0.82rem; color: #6366f1; font-weight: 600;">Shared<br>Awareness</div>
+    <div style="font-size: 0.62rem; color: #8b8fc7; margin-top: 4px;">Time &bull; Pulse &bull; Memory<br>Knowledge &bull; Context</div>
   </div>
 </div>
 
-<div class="swim">
-  <div class="swim-label">Messaging Tier<br><span style="font-size:0.65rem;color:#666">:3475</span></div>
-  <div class="swim-content">
-    <div class="step-box">
-      <strong>Store in SQLite</strong>
-      <div class="detail">Persistent message store. Queryable history.<br>Drained by team-scan on next prompt cycle.</div>
+<div class="locked"><b>DEC-107 (LOCKED):</b> Persist AND deliver. Both paths, every nudge. Revisited 4 times. Do not reopen.</div>
+
+<!-- SCENARIO 1: Jeff gives direction -->
+<h2>Scenario 1: Jeff Gives Direction</h2>
+<p>Jeff types in Wren's terminal. Direct. Wren acts.</p>
+
+<div class="flow">
+  <div class="flow-row">
+    <div class="flow-from direct">Jeff</div>
+    <div class="flow-channel">
+      <div class="flow-line direct" style="background: #16a34a;"></div>
     </div>
+    <div class="flow-to direct">Wren</div>
   </div>
-</div>
+  <div class="flow-desc">Types in terminal — direct, instant, no intermediary <span class="flow-layer l-time">Time</span></div>
 
-<div class="swim">
-  <div class="swim-label">team-scan hook</div>
-  <div class="swim-content">
-    <div class="step-box">
-      <strong>Drain on next prompt</strong>
-      <div class="detail">UserPromptSubmit hook queries messaging API.<br>Injects queued messages into role's context.<br>"[nudge from silas | timestamp] message"</div>
+  <div class="flow-row">
+    <div class="flow-from mediated">Wren</div>
+    <div class="flow-channel">
+      <div class="flow-line mediated" style="background: #3b82f6;"></div>
     </div>
+    <div class="flow-to mediated">Silas</div>
   </div>
-</div>
+  <div class="flow-desc">Nudge: persist to messaging tier + osascript inject <span class="flow-layer l-pulse">Pulse</span></div>
 
-<div class="note">
-  <b>Persist path purpose:</b> History + team-scan drain. The message survives session boundaries. If the target role reboots, the nudge is still there.
-</div>
-
-<!-- PATH 2: DELIVER -->
-<h2>3. Path 2: Deliver <span class="path-label path-deliver">DELIVER</span></h2>
-
-<div class="swim">
-  <div class="swim-label">nudge.sh</div>
-  <div class="swim-content">
-    <div class="step-box">
-      <strong>osascript inject</strong>
-      <div class="detail">osascript -e 'tell application "Terminal"<br>&nbsp;&nbsp;do script "echo [nudge...]" in window N<br>end tell'</div>
+  <div class="flow-row">
+    <div class="flow-from ambient">System</div>
+    <div class="flow-channel">
+      <div class="flow-line ambient" style="background: #8b5cf6;"></div>
     </div>
+    <div class="flow-to ambient">Clearing</div>
   </div>
+  <div class="flow-desc">card.pulled event flows to Clearing ambient panel <span class="flow-layer l-pulse">Pulse</span></div>
 </div>
 
-<div class="swim">
-  <div class="swim-label">macOS</div>
-  <div class="swim-content">
-    <div class="step-box">
-      <strong>Keystroke injection</strong>
-      <div class="detail">Text appears in target role's Terminal window.<br>Immediate — no polling, no queue drain wait.</div>
+<div class="issue"><b>Focus steal:</b> Wren's nudge to Silas activates Silas's Terminal window, pulling Jeff's cursor away mid-thought.</div>
+
+<!-- SCENARIO 2: Jeff sends a seed -->
+<h2>Scenario 2: Jeff Sends a Seed</h2>
+<p>Jeff texts a photo from his phone, then #wren. Two messages.</p>
+
+<div class="flow">
+  <div class="flow-row">
+    <div class="flow-from direct">Jeff</div>
+    <div class="flow-channel">
+      <div class="flow-line mediated" style="background: #3b82f6;"></div>
     </div>
+    <div class="flow-to mediated">Twilio</div>
   </div>
-</div>
+  <div class="flow-desc">SMS from phone — content message (photo) <span class="flow-layer l-pulse">Pulse</span></div>
 
-<div class="decision">
-  <em>--force flag</em> — always inject (role-to-role). Without --force, respects Jeff-active detection.
-</div>
-
-<div class="note">
-  <b>Deliver path purpose:</b> Immediacy. The target role sees the nudge right now, in the current prompt cycle. No waiting for next prompt drain.
-</div>
-
-<!-- THE PROBLEM -->
-<h2>4. The Focus Problem</h2>
-
-<div class="step-box center" style="border-color: #dc2626; max-width: 500px;">
-  <strong style="color: #dc2626;">osascript doesn't distinguish windows</strong>
-  <div class="detail">When Wren nudges Silas, the inject targets Silas's Terminal window.<br>But macOS brings that window to front — stealing focus from Jeff's window.<br><br>"It happens a lot" — Jeff, 2026-03-31<br>"Every time you fire off a nudge while I am typing you steal my focus"</div>
-</div>
-
-<div class="swim">
-  <div class="swim-label">Jeff typing</div>
-  <div class="swim-content">
-    <div class="step-box" style="border-color: #dc2626;">
-      <strong style="color: #dc2626;">Focus stolen</strong>
-      <div class="detail">Jeff is mid-sentence in Wren's terminal.<br>Wren nudges Silas. osascript activates Silas's window.<br>Jeff loses his thought. Has to rebuild context.</div>
+  <div class="flow-row">
+    <div class="flow-from direct">Jeff</div>
+    <div class="flow-channel">
+      <div class="flow-line mediated" style="background: #3b82f6;"></div>
     </div>
+    <div class="flow-to mediated">Twilio</div>
   </div>
-</div>
+  <div class="flow-desc">SMS from phone — #wren hashtag (60s correlation window) <span class="flow-layer l-pulse">Pulse</span></div>
 
-<div class="swim">
-  <div class="swim-label">Current state</div>
-  <div class="swim-content">
-    <div class="step-box">
-      <strong>DEC-107 says both paths always fire</strong>
-      <div class="detail">DEC-104 (superseded) said: osascript reserved for Jeff, role-to-role goes passive.<br>DEC-107 reversed this: both paths, every time.<br>The focus steal is a known cost of DEC-107.</div>
+  <div class="flow-row">
+    <div class="flow-from mediated">Twilio</div>
+    <div class="flow-channel">
+      <div class="flow-line mediated" style="background: #3b82f6;"></div>
     </div>
+    <div class="flow-to mediated">App</div>
   </div>
+  <div class="flow-desc">Webhook → Cloudflare tunnel → /api/seed/sms → capture + classify + route <span class="flow-layer l-memory">Memory</span></div>
+
+  <div class="flow-row">
+    <div class="flow-from mediated">App</div>
+    <div class="flow-channel">
+      <div class="flow-line broken" style="background: #dc2626; border-top: 2px dashed #dc2626;"></div>
+    </div>
+    <div class="flow-to broken">Wren</div>
+  </div>
+  <div class="flow-desc">Brief should write to briefs/ — correlation + photo capture broken <span class="flow-layer l-knowledge">Knowledge</span></div>
 </div>
 
-<!-- ALL PATHS SUMMARY -->
-<h2>5. Complete Path Map</h2>
+<div class="issue"><b>Permanently broken:</b> Photo seeds don't correlate. 18 commits. Jeff's most valuable input (handwritten thinking) vanishes. The ideas die in transit.</div>
 
-<table style="width:100%; border-collapse: collapse; font-size: 0.78rem; margin: 12px 0;">
-  <tr style="background: #f0f4ff;">
-    <th style="padding: 8px; text-align: left; color: #2d4a7a;">Scenario</th>
-    <th style="padding: 8px; text-align: left; color: #2d4a7a;">Persist</th>
-    <th style="padding: 8px; text-align: left; color: #2d4a7a;">Deliver (osascript)</th>
-    <th style="padding: 8px; text-align: left; color: #2d4a7a;">Jeff impact</th>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 8px;">Role → Role (--force)</td>
-    <td style="padding: 8px;"><span class="path-label path-persist">POST :3475</span></td>
-    <td style="padding: 8px;"><span class="path-label path-deliver">osascript inject</span></td>
-    <td style="padding: 8px; color: #dc2626;">Focus steal if Jeff is active</td>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 8px;">Role → Jeff</td>
-    <td style="padding: 8px;"><span class="path-label path-persist">POST :3475</span></td>
-    <td style="padding: 8px;"><span class="path-label path-deliver">Queued (passive)</span></td>
-    <td style="padding: 8px; color: #16a34a;">No steal — drains on next prompt</td>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 8px;">Jeff → Role</td>
-    <td style="padding: 8px;"><span class="path-label path-persist">POST :3475</span></td>
-    <td style="padding: 8px;"><span class="path-label path-deliver">osascript inject</span></td>
-    <td style="padding: 8px; color: #16a34a;">Jeff initiated — expected</td>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 8px;">Bridge event (card move)</td>
-    <td style="padding: 8px;"><span class="path-label path-persist">POST :3470</span></td>
-    <td style="padding: 8px;">—</td>
-    <td style="padding: 8px; color: #16a34a;">Ambient — no inject</td>
-  </tr>
+<!-- SCENARIO 3: Role-to-role coordination -->
+<h2>Scenario 3: Role Hands Off Work</h2>
+<p>Silas finishes ontology TTL. Kade builds the page.</p>
+
+<div class="flow">
+  <div class="flow-row">
+    <div class="flow-from mediated">Silas</div>
+    <div class="flow-channel">
+      <div class="flow-line mediated" style="background: #3b82f6;"></div>
+    </div>
+    <div class="flow-to mediated">Kade</div>
+  </div>
+  <div class="flow-desc">Nudge: "Fuseki reloaded, your turn on AC4" <span class="flow-layer l-pulse">Pulse</span></div>
+
+  <div class="flow-row">
+    <div class="flow-from ambient">System</div>
+    <div class="flow-channel">
+      <div class="flow-line ambient" style="background: #8b5cf6;"></div>
+    </div>
+    <div class="flow-to ambient">Clearing</div>
+  </div>
+  <div class="flow-desc">card.pulled (Kade) + role.state.changed → ambient on Clearing <span class="flow-layer l-pulse">Pulse</span></div>
+
+  <div class="flow-row">
+    <div class="flow-from ambient">System</div>
+    <div class="flow-channel">
+      <div class="flow-line ambient" style="background: #8b5cf6;"></div>
+    </div>
+    <div class="flow-to ambient">team-scan</div>
+  </div>
+  <div class="flow-desc">Next prompt cycle shows Kade building, card #1690 <span class="flow-layer l-context">Context</span></div>
+</div>
+
+<!-- SCENARIO 4: Critical alert -->
+<h2>Scenario 4: Something Breaks</h2>
+<p>A hook circuit-breaks. Critical signal.</p>
+
+<div class="flow">
+  <div class="flow-row">
+    <div class="flow-from broken">Hooks</div>
+    <div class="flow-channel">
+      <div class="flow-line broken" style="background: #dc2626;"></div>
+    </div>
+    <div class="flow-to broken">hooks.log</div>
+  </div>
+  <div class="flow-desc">CIRCUIT_BREAK logged with module name + reason <span class="flow-layer l-pulse">Pulse</span></div>
+
+  <div class="flow-row">
+    <div class="flow-from broken">System</div>
+    <div class="flow-channel">
+      <div class="flow-line broken" style="background: #dc2626;"></div>
+    </div>
+    <div class="flow-to broken">Bridge</div>
+  </div>
+  <div class="flow-desc">Alert → Clearing + nudge to Jeff (critical = justified focus steal) <span class="flow-layer l-pulse">Pulse</span></div>
+</div>
+
+<div class="note"><b>Signal hierarchy:</b> Critical alerts (circuit break, service down) justify osascript inject to Jeff. Card moves and status updates are ambient only — Clearing, not nudge.</div>
+
+<!-- SHARED AWARENESS LAYER MAP -->
+<h2>Shared Awareness Layers in Each Scenario</h2>
+
+<table>
+  <tr><th>Layer</th><th>Scenario 1 (Direction)</th><th>Scenario 2 (Seed)</th><th>Scenario 3 (Handoff)</th><th>Scenario 4 (Break)</th></tr>
+  <tr><td><span class="flow-layer l-time">Time</span></td><td>Jeff types → instant</td><td>60s correlation window</td><td>Silas → Kade sequencing</td><td>Circuit break timestamp</td></tr>
+  <tr><td><span class="flow-layer l-pulse">Pulse</span></td><td>Nudge delivered event</td><td>seed.received event</td><td>card.pulled + state change</td><td>CIRCUIT_BREAK event</td></tr>
+  <tr><td><span class="flow-layer l-memory">Memory</span></td><td>Session transcript</td><td>Seed persisted to Fuseki</td><td>Brief in briefs/</td><td>Loki log entry</td></tr>
+  <tr><td><span class="flow-layer l-knowledge">Knowledge</span></td><td>Card created/updated</td><td>Brief routes to role</td><td>Domain page updated</td><td>Incident in decisions</td></tr>
+  <tr><td><span class="flow-layer l-context">Context</span></td><td>team-scan shows role building</td><td>Seed visible in API</td><td>team-scan shows handoff</td><td>Clearing shows alert</td></tr>
 </table>
 
 <!-- INCIDENT HISTORY -->
-<h2>6. Incident History</h2>
+<h2>Incident History</h2>
 
-<table style="width:100%; border-collapse: collapse; font-size: 0.76rem; margin: 12px 0;">
-  <tr style="background: #f0f4ff;">
-    <th style="padding: 6px; color: #2d4a7a;">Card</th>
-    <th style="padding: 6px; color: #2d4a7a;">What happened</th>
-    <th style="padding: 6px; color: #2d4a7a;">Decision</th>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 6px;">#1591</td>
-    <td style="padding: 6px;">osascript injection built. First working nudge delivery.</td>
-    <td style="padding: 6px;">DEC-104: osascript reserved for Jeff</td>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 6px;">#1695</td>
-    <td style="padding: 6px;">Broken again after hooks deploy</td>
-    <td style="padding: 6px;">Won't Do — superseded by rewrite</td>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 6px;">#1755</td>
-    <td style="padding: 6px;">Messaging tier built — persistent store replaces /tmp queues</td>
-    <td style="padding: 6px;">Persist path now reliable</td>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 6px;">#1764</td>
-    <td style="padding: 6px;">Nudge steals Jeff's focus — queue instead of inject when active</td>
-    <td style="padding: 6px;">Shipped but then DEC-107 reversed</td>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 6px;">#1769</td>
-    <td style="padding: 6px;">nudge.sh not connected to messaging tier</td>
-    <td style="padding: 6px;">Wired both paths</td>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 6px;">#1793</td>
-    <td style="padding: 6px;">Full rewrite — single Rust binary</td>
-    <td style="padding: 6px;">DEC-107: both paths, always. Locked.</td>
-  </tr>
-  <tr style="border-bottom: 1px solid #e5e7eb;">
-    <td style="padding: 6px;">2026-03-31</td>
-    <td style="padding: 6px;">Wren nudging Silas/Kade steals Jeff's focus mid-sentence</td>
-    <td style="padding: 6px;">Observed. Not resolved. Diagram captures it.</td>
-  </tr>
+<table>
+  <tr><th>Card</th><th>What happened</th><th>Decision</th></tr>
+  <tr><td>#1591</td><td>osascript injection built</td><td>DEC-104: osascript reserved for Jeff</td></tr>
+  <tr><td>#1695</td><td>Broken after hooks deploy</td><td>Won't Do</td></tr>
+  <tr><td>#1755</td><td>Messaging tier built</td><td>Persist path reliable</td></tr>
+  <tr><td>#1764</td><td>Focus steal — queue when Jeff active</td><td>Shipped, then DEC-107 reversed</td></tr>
+  <tr><td>#1793</td><td>Full Rust rewrite</td><td>DEC-107: both paths, always. Locked.</td></tr>
+  <tr><td>#1887</td><td>Card events filtered from Clearing</td><td>Fixed — regex was too aggressive</td></tr>
+  <tr><td>2026-03-31</td><td>Role-to-role nudges steal Jeff's focus</td><td>Observed. Signal hierarchy proposed.</td></tr>
 </table>
 
-<!-- RELATED -->
-<h2>7. Related Artifacts</h2>
-
-<div class="step-box" style="max-width: 100%;">
-  <strong>Service Design</strong> — <a href="/docs/pm/artifacts/service-design-nudge.html" style="color: #3b82f6;">Service Design — Nudge Delivery</a>
-  <div class="detail">Full service design: experience, identity, integration path, non-functionals, failure modes, blast radius</div>
-</div>
-<div class="step-box" style="max-width: 100%;">
-  <strong>Decisions</strong>
-  <div class="detail">DEC-104 (superseded): Passive queue for role-to-role<br>DEC-107 (active, locked): Both paths always fire<br>DEC: nudge-reject-bad-calls: Hard-reject malformed args</div>
-</div>
-
-</div>
-
-<p class="meta">Sequence Diagram — /nudge delivery paths &bull; Card #1738 &bull; Wren &bull; 2026-03-31 &bull; DEC-107 locked</p>
+<p class="meta">Sequence + Actor Diagram — /nudge &bull; Four actors, five Shared Awareness layers &bull; Wren &bull; 2026-03-31 &bull; #1738</p>
 
 </body>
 </html>
