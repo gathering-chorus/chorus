@@ -260,8 +260,8 @@ export class SessionTailer {
       if (combined.match(/reply expected/i)) return;
       // Pure coordination — not Jeff-facing
       if (combined.match(/^(Noted |Standing by|Test nudges|More test nudges|No action needed|Pipeline (solid|confirmed))/i)) return;
-      // Spine event echoes — tailer.ts handles these as typed events (demo-ready, accept-request)
-      if (combined.match(/^(Pulled #|Moved #|Demo ready:|Accepted #|card\.\w+)/)) return;
+      // Spine event echoes — filter raw event format, keep human-readable card lifecycle
+      if (combined.match(/^card\.\w+/)) return;
       // State declarations and board ops
       if (combined.match(/^(bash .*scripts\/|role-state\.sh|chorus-log\.sh)/)) return;
 
