@@ -1,35 +1,37 @@
-# Daily Morning Summary — 2026-03-29
+# Daily Morning Summary — 2026-03-31
 
-**HEADLINE:** Board-client is RED with 62 test failures across 5 suites — clearing binary and seed SMS handler gaps need an engineer assigned today.
+**HEADLINE:** ts-jest wiped from 3 packages (board-client, workflow-engine, slack-bridge) — 183 tests went dark overnight and photos Fuseki lost ~18K records; both need same-day resolution.
 
 ---
 
-**OPS** 🟡 YELLOW (Silas)
+**OPS** 🟡 YELLOW (Silas — 2026-03-29)
 - 4 yellows, 4 greens. No reds.
-- Top concern: `chorus-hooks/target/` (321 untracked files) likely missing from `.gitignore` — Silas to confirm and add.
-- Also: 8 cargo warnings, 4 auto-fixable via `cargo fix --bin chorus-hooks`. Remaining 4 need manual review this week.
-- /tmp usage in 6 plists + 7 scripts is known/accepted risk. bedroom-heartbeat state loss on reboot not yet carded.
+- Top concern: `chorus-hooks/target/` (321 untracked files) likely not in `.gitignore` — confirm and add.
+- Secondary: 8 cargo warnings (4 auto-fixable via `cargo fix --bin chorus-hooks`); /tmp usage in 6 plists + 7 scripts is accepted risk.
 
-**QUALITY** 🔴 RED (Kade — baseline run 2026-03-28)
-- Total: 235 tests | 62 failed | 142 passed | 31 skipped
-- Board-client RED: 5 suites failing — `brief-pipeline-flow`, `clearing-flow`, `seed-pipeline-flow`, `gemba-flow`, `jdi-gate-flow`
-- Root causes: clearing binary missing, seed SMS handler missing, JDI gate logic errors
-- Workflow-engine (61/61), Chorus-SDK (6/6), Slack-bridge (60/60): all GREEN
-- App suite (jeff-bridwell-personal-site): YELLOW — directory not found, skipped entirely
+**QUALITY** 🔴 RED (Kade — 2026-03-29)
+- chorus-sdk: GREEN — 6/6 passed. Everything else broken.
+- board-client, workflow-engine, slack-bridge: runner broken — `ts-jest` preset not found.
+- Delta: workflow-engine was 61/61 green, slack-bridge 60/60 green — both regressed to zero.
+- Root cause: node_modules cleared or ts-jest dep removed across messages packages.
+- Fix: `cd messages && npm install` (or restore ts-jest per package).
 
-**YESTERDAY** — 5 cards shipped
-- #1800 Silas — synthetic SMS health probe, 5-hop end-to-end pipeline verified
-- #1799 Kade — MessageSid dedup (seed pipeline card 3/4)
-- #1798 Kade — seed default routing to Wren, 120s correlation, voice memo routing
-- #1794 Kade — Fuseki-only seed persistence, 343 seeds migrated, pod fallback removed
-- #1773 Silas — Chorus structural audit updated with ontology session findings
+**YESTERDAY** — 8 cards shipped (2026-03-30)
+- #1879 Silas — log-first gate: require log inspection before coding a fix
+- #1862 Silas — guard consolidation: merge app_state_guard into infra_guardrails, 22 hooks audited
+- #1861 Silas — session JSONL cache: 1 read/prompt cycle (was 5)
+- #1868 Silas — session-start disk check fix: df→Finder free space on APFS
+- #1882 Kade — doc-catalog filters, dedup, life loop, domains group
+- #1885 Kade — Clearing domain sort, WIP/Blocked first, aging flags
+- #1871 Wren — deprecate formal /docs into doc-catalog, nav-tree trimmed (DEC-108)
+- #1883 Wren — 23-domain page index + design artifact linking convention (DEC-109)
 
 **TODAY** (recommended order)
-1. **Kade** — board-client 62 failures are the highest-priority fire: clear clearing binary + seed SMS handler gaps first
-2. **Silas** — `cargo fix --bin chorus-hooks`, confirm `chorus-hooks/target/` in `.gitignore`
-3. **Wren** — #1783 OWL ontology card must ship by EOD or goes stale (flag deadline: 2026-03-30)
-4. **Next pull** — #1641 demo prep (agent-driven schema inference) is ready when WIP clears
+1. **Kade** — restore ts-jest (`cd messages && npm install`); unblock 183 tests before any new code
+2. **Silas/Kade** — photos Fuseki: ~18K records lost in rebuild, predicates unnormalized — assess scope, card recovery if not already carded
+3. **Silas** — `cargo fix --bin chorus-hooks`, confirm `chorus-hooks/target/` in `.gitignore`
+4. **All** — #1652 iPhone extraction (Silas WIP) and #1675 nudge filtering remain in WIP; no new WIP until ts-jest is green
 
 **BLOCKERS** — needs Jeff's attention
-- 🔴 Board-client 62 failures: infrastructure gaps (clearing binary, seed SMS handler) — needs engineer assigned, not just carded
-- 🟡 App test suite: confirm `jeff-bridwell-personal-site` repo path or remove from check matrix
+- 🔴 ts-jest regression: 3 suites dark, 183 tests not running — assign Kade now, not later
+- 🔴 Photos Fuseki data loss: ~18K records missing post-rebuild — is this recoverable from source graph or re-harvest needed?
