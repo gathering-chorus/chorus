@@ -1,45 +1,45 @@
-# Daily Quality Review — 2026-03-29
+# Daily Quality Review — 2026-03-31
 
 ## App Tests
-**YELLOW** — `jeff-bridwell-personal-site` directory not found in repo. Suite could not run.
-Action: Confirm repo path or remove from check matrix. (Persists from yesterday.)
+**YELLOW** — `jeff-bridwell-personal-site` directory not found. Suite cannot run.
+Action: Confirm repo path or remove from check matrix. (Persistent — 3rd day.)
 
 ## Lint
-**YELLOW** — Could not run; app directory missing. No lint data available.
+**YELLOW** — Cannot run; app directory missing. No lint data.
 
 ## Build
-**YELLOW** — Could not run; app directory missing. No TypeScript build data.
+**YELLOW** — Cannot run; app directory missing. No TypeScript build data.
 
 ## Board-Client
-**RED** — Suite failed to launch: `ts-jest` preset not found.
-Delta: Yesterday ran (62 failures / 142 passed). Today: runner broken — regression.
-Action: **Immediate** — `npm install ts-jest` or restore node_modules in board-client.
+**RED** — `ts-jest` not found; `node_modules` absent entirely.
+Delta: Unchanged from 2026-03-29. Runner broken.
+Action: `cd chorus/platform/board-client && npm install`
 
 ## Workflow-Engine
-**RED** — Suite failed to launch: `ts-jest` preset not found.
-Delta: Yesterday GREEN (61/61). Today: runner broken — regression.
-Action: Restore ts-jest in workflow-engine node_modules.
+**RED** — `ts-jest` not found; `node_modules` absent entirely.
+Delta: Unchanged from 2026-03-29. Runner broken.
+Action: `cd chorus/platform/workflow-engine && npm install`
 
 ## Chorus-SDK
-**GREEN** — 2 suites passed | 6/6 tests passed. No action needed.
+**RED** — `ts-jest` not found; `node_modules` absent entirely.
+Delta: **REGRESSION** — was GREEN on 2026-03-29 (2 suites, 6/6 passed). Now broken.
+Action: `cd chorus/platform/chorus-sdk && npm install` — **priority fix.**
 
 ## Slack-Bridge
-**RED** — Suite failed to launch: `ts-jest` preset not found.
-Delta: Yesterday GREEN (60/60). Today: runner broken — regression.
-Action: Restore ts-jest in slack-bridge node_modules.
+**RED** — `ts-jest` not found; `node_modules` absent entirely.
+Delta: Unchanged from 2026-03-29. Runner broken.
+Action: `cd chorus/archive/slack-bridge && npm install`
 
 ## Coverage
-| Package | Stmts | Branch | Funcs | Lines |
-|---|---|---|---|---|
-| chorus-sdk | 91.7% | 52.9% | 85.7% | 91.3% |
-| board-client | N/A (runner broken) | — | — | — |
-| workflow-engine | N/A (runner broken) | — | — | — |
-| slack-bridge | N/A (runner broken) | — | — | — |
+| Package | Status |
+|---|---|
+| chorus-sdk | N/A — node_modules missing (was 91.7% stmts on 2026-03-29) |
+| board-client | N/A — node_modules missing |
+| workflow-engine | N/A — node_modules missing |
+| slack-bridge | N/A — node_modules missing |
 
 ## Failure Delta
-**REGRESSION vs. 2026-03-28** — `ts-jest` missing in 3 packages (board-client, workflow-engine, slack-bridge).
-- board-client: 62 failures → runner broken (worse)
-- workflow-engine: 61 passed → runner broken (regression)
-- slack-bridge: 60 passed → runner broken (regression)
-Root cause likely: `node_modules` cleared or `ts-jest` dep removed across messages packages.
-Action: `cd messages && npm install` or restore ts-jest in each package.
+**REGRESSION vs. 2026-03-29** — Chorus-SDK dropped from GREEN (6/6) to broken.
+Root cause: `node_modules` missing in all 4 platform packages (not just 3).
+Fix: `npm install` in board-client, workflow-engine, chorus-sdk, slack-bridge.
+Blocker: No test signal on any package for 2+ days. CI coverage is dark.
