@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Domain Index — Gathering &amp; Chorus</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1100px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .stage-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; margin-top: 24px; margin-bottom: 8px; }
+  .domain-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .domain-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px; text-decoration: none; color: #1a1a2e; transition: border-color 0.2s, box-shadow 0.2s; }
+  .domain-card:hover { border-color: #3b82f6; box-shadow: 0 2px 8px rgba(59,130,246,0.1); }
+  .domain-card h3 { font-size: 0.92rem; color: #2d4a7a; margin-bottom: 4px; }
+  .domain-card p { font-size: 0.78rem; color: #4a5568; margin-bottom: 6px; }
+  .domain-card .stats { font-size: 0.72rem; color: #6b7280; }
+  .domain-card .stats span { margin-right: 10px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 600; margin-right: 4px; }
+  .badge-sowing { background: #fef3c7; color: #92400e; }
+  .badge-growing { background: #dcfce7; color: #166534; }
+  .badge-practicing { background: #e0f2fe; color: #075985; }
+  .badge-harvesting { background: #fed7aa; color: #9a3412; }
+  .badge-reflecting { background: #f3e8ff; color: #6b21a8; }
+  .badge-chorus { background: #e0e7ff; color: #3730a3; }
+  .badge-cross { background: #f1f5f9; color: #475569; }
+  .issue { font-size: 0.72rem; color: #dc2626; }
+  .ok { font-size: 0.72rem; color: #16a34a; }
+  .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .summary-stat { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 16px; text-align: center; }
+  .summary-stat .num { font-size: 1.4rem; font-weight: bold; color: #2d4a7a; }
+  .summary-stat .label { font-size: 0.68rem; color: #6b7280; text-transform: uppercase; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  @media print { body { padding: 20px; } .domain-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) { .domain-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>Domain Index</h1>
+<p class="subtitle">Every domain in Gathering &amp; Chorus &bull; 21 domains &bull; Wren &bull; 2026-03-30</p>
+
+<div class="summary">
+  <div class="summary-stat"><div class="num">16</div><div class="label">Gathering Domains</div></div>
+  <div class="summary-stat"><div class="num">5</div><div class="label">Chorus Domains</div></div>
+  <div class="summary-stat"><div class="num">15.7M</div><div class="label">Total Triples</div></div>
+  <div class="summary-stat"><div class="num">108</div><div class="label">Decisions</div></div>
+  <div class="summary-stat"><div class="num">150+</div><div class="label">HTML Artifacts</div></div>
+</div>
+
+<!-- GATHERING -->
+<h2>Gathering — Personal Knowledge Graph</h2>
+
+<p class="stage-label"><span class="badge badge-sowing">Sowing</span> Capture &amp; intake</p>
+<div class="domain-grid">
+  <a class="domain-card" href="/docs/pm/artifacts/domain-seeds.html">
+    <h3>Seeds</h3>
+    <p>SMS intake from phone. Two-message pattern (content + hashtag). Routes to roles, collections, pods.</p>
+    <div class="stats"><span>6 domains reached</span><span>106+ tests</span><span class="issue">Photos broken</span></div>
+  </a>
+</div>
+
+<p class="stage-label"><span class="badge badge-growing">Growing</span> Ideas &amp; growth</p>
+<div class="domain-grid">
+  <a class="domain-card" href="/docs/pm/artifacts/domain-glimmers.html">
+    <h3>Glimmers</h3>
+    <p>Sparks — things noticed but not committed. Ignite or Fade.</p>
+    <div class="stats"><span>Upstream from seeds</span><span>Downstream to ideas</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-ideas.html">
+    <h3>Ideas &amp; Projects</h3>
+    <p>Shaped thoughts with lifecycle. Ideas promote to Projects.</p>
+    <div class="stats"><span>Native CRUD</span><span>Sharing modal</span></div>
+  </a>
+</div>
+
+<p class="stage-label"><span class="badge badge-practicing">Practicing</span> Daily life</p>
+<div class="domain-grid">
+  <a class="domain-card" href="/docs/pm/artifacts/domain-property.html">
+    <h3>Property</h3>
+    <p>Physical spaces — houses, rooms, gardens, beds. Nested hierarchy.</p>
+    <div class="stats"><span>Manual CRUD</span><span>Garden maps</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-cooking.html">
+    <h3>Cooking</h3>
+    <p>Recipes and food. Tag filtering. #cooking seed routing.</p>
+    <div class="stats"><span>Manual + seeds</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-reading.html">
+    <h3>Reading</h3>
+    <p>Reading list. Done/reading/to-read status. OG link previews.</p>
+    <div class="stats"><span>Status tracking</span><span>#read routing</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-watching.html">
+    <h3>Watching</h3>
+    <p>Movies, shows, videos. Star ratings, category + status filters.</p>
+    <div class="stats"><span>1-5 stars</span><span>#watch routing</span></div>
+  </a>
+</div>
+
+<p class="stage-label"><span class="badge badge-harvesting">Harvesting</span> Collections</p>
+<div class="domain-grid">
+  <a class="domain-card" href="/docs/pm/artifacts/domain-music.html">
+    <h3>Music</h3>
+    <p>40+ years, 108K tracks. Apple Music harvest. Navidrome streaming. Shuffle algorithms.</p>
+    <div class="stats"><span>~15M triples</span><span class="ok">Complete</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-photos.html">
+    <h3>Photos</h3>
+    <p>Three eras. 63K canonical from 83K source. Apple + Google Takeout. Face clusters.</p>
+    <div class="stats"><span>63K canonical</span><span class="issue">Date sort broken</span><span class="issue">20K may be missing</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-people.html">
+    <h3>People</h3>
+    <p>2,942 contacts. 48 face clusters. LinkedIn, Facebook, Apple, Google exports.</p>
+    <div class="stats"><span>2,942 contacts</span><span>Partial harvest</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-books.html">
+    <h3>Books</h3>
+    <p>141+ items. Photo upload with Claude Vision classification. Room tracking.</p>
+    <div class="stats"><span>141+ items</span><span class="ok">Built</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-gallery.html">
+    <h3>Gallery / Sexuality</h3>
+    <p>1.86M items across 5 typed graphs. Lightbox viewer. Tag filtering.</p>
+    <div class="stats"><span>1.86M items</span><span>5 graphs</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-social.html">
+    <h3>Social</h3>
+    <p>Archive from Facebook/LinkedIn GDPR exports. Static, one-time import.</p>
+    <div class="stats"><span>Static archive</span></div>
+  </a>
+</div>
+
+<p class="stage-label"><span class="badge badge-reflecting">Reflecting</span> Inner world</p>
+<div class="domain-grid">
+  <a class="domain-card" href="/docs/pm/artifacts/domain-stories.html">
+    <h3>Stories</h3>
+    <p>135+ personal narratives. Jeff's life arc in first person. Persistent product inputs.</p>
+    <div class="stats"><span>135+ stories</span><span>Theme filtering</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-notes.html">
+    <h3>Notes</h3>
+    <p>823 items from Apple Notes. Folder filtering. Search.</p>
+    <div class="stats"><span>823 items</span><span>Partial harvest</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-blog.html">
+    <h3>Blog</h3>
+    <p>43 posts (2019-2024). WordPress webhook. The only public page. Water imagery.</p>
+    <div class="stats"><span>43 posts</span><span class="ok">Public</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-self.html">
+    <h3>Self</h3>
+    <p>Local AI reflection. Mistral on Bedroom. Voice input. Graph-grounded. The inner circle.</p>
+    <div class="stats"><span>Local AI</span><span>Whisper voice</span><span class="ok">Running</span></div>
+  </a>
+</div>
+
+<!-- CHORUS -->
+<h2>Chorus — Team Coordination Protocol</h2>
+
+<p class="stage-label"><span class="badge badge-chorus">Chorus</span> Directing → Designing → Building → Proving</p>
+<div class="domain-grid">
+  <a class="domain-card" href="/docs/pm/artifacts/domain-chorus.html">
+    <h3>Chorus</h3>
+    <p>The protocol itself. 3 roles, 9 patterns, 108 decisions, spine events, hooks, board.</p>
+    <div class="stats"><span>1800+ cards</span><span>97K messages</span><span>33 hook modules</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-observability.html">
+    <h3>Observability</h3>
+    <p>7 sub-domains: Logs, Alerts, Code, Cards, Tool Chain, Pulse, Chorus Search. From Jeff's handwritten taxonomy.</p>
+    <div class="stats"><span>5/7 have endpoints</span><span class="issue">Tool Chain + Pulse need APIs</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-loom.html">
+    <h3>Loom</h3>
+    <p>How the team operates. 8 sub-domains: Decisions, Cards, Practices, Dependencies, Policy, Roles, Skills, Services.</p>
+    <div class="stats"><span>108 decisions</span><span>9 patterns</span><span>10+ skills</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-infrastructure.html">
+    <h3>Infrastructure</h3>
+    <p>Two Macs: Library (all services) + Bedroom (storage + AI). LaunchAgents. Observability stack.</p>
+    <div class="stats"><span>34 alert rules</span><span>10+ dashboards</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-search.html">
+    <h3>Search</h3>
+    <p>Three layers: FTS (154K), semantic (15K), SPARQL (15.7M triples). Hybrid mode.</p>
+    <div class="stats"><span>154K FTS</span><span>15K semantic</span><span class="issue">10:1 gap</span></div>
+  </a>
+  <a class="domain-card" href="/docs/pm/artifacts/domain-knowledge-graph.html">
+    <h3>Knowledge Graph</h3>
+    <p>15.7M triples, 37K named graphs. Fuseki. The foundation everything sits on.</p>
+    <div class="stats"><span>15.7M triples</span><span>37K graphs</span></div>
+  </a>
+</div>
+
+<p class="meta">Domain Index &bull; 23 domains &bull; Gathering + Chorus &bull; Wren &bull; 2026-03-30 &bull; Click any card to see full domain page</p>
+
+</body>
+</html>
