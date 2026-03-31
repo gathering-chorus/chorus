@@ -232,6 +232,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let mut explicit_sender = None;
     let mut force = false;
     let mut reply_to: Option<String> = None;
+    let mut level = "info".to_string();
 
     let mut i = 2;
     while i < args.len() {
@@ -244,6 +245,15 @@ pub fn run(args: &[String]) -> ExitCode {
             "--reply-to" => {
                 i += 1;
                 if i < args.len() { reply_to = Some(args[i].clone()); }
+            }
+            "--level" => {
+                i += 1;
+                if i < args.len() {
+                    let l = args[i].to_lowercase();
+                    if matches!(l.as_str(), "info" | "warn" | "critical") {
+                        level = l;
+                    }
+                }
             }
             _ => {}
         }
@@ -304,36 +314,48 @@ pub fn run(args: &[String]) -> ExitCode {
         &format!("target={},chars={},trace={},content={}", target, message.len(), tid, content_preview),
     );
 
-    // ONE PATH: osascript window-name inject. No persist-then-drain.
-    // If inject fails, it fails loud. The sender sees FAILED and decides what to do.
-    // Queue is ONLY written on inject failure as a receipt — not as a delivery mechanism.
+    // Level-based delivery (#1898):
+    // critical = osascript inject (justified focus steal) + queue
+    // warn     = queue (drain on next prompt) + stderr hint
+    // info     = queue only (ambient, drain on next prompt)
+    // DEC-107: persist AND deliver on every nudge — level controls the 'deliver' method.
     let mode;
 
-    match process::inject_by_tab_name(target, &full_text) {
-        Ok(()) => {
-            mode = "injected";
-            println!("DELIVERED to {} at {}", target, clock_short);
+    // Always queue for drain-on-prompt delivery
+    queue_message(target, &full_text);
+
+    if level == "critical" || force {
+        // Critical: osascript inject — immediate delivery
+        match process::inject_by_tab_name(target, &full_text) {
+            Ok(()) => {
+                mode = "injected";
+                println!("DELIVERED to {} at {}", target, clock_short);
+            }
+            Err(e) => {
+                mode = "inject-failed-queued";
+                eprintln!("INJECT FAILED for {} (queued for drain): {}", target, e);
+                println!("DELIVERED to {} at {} (queued — inject failed)", target, clock_short);
+                chorus_log(
+                    "role.nudge.inject_failed",
+                    &sender,
+                    &format!("target={},level={},error={}", target, level, e),
+                );
+            }
         }
-        Err(e) => {
-            mode = "inject-failed";
-            // Queue as receipt so the message isn't lost — but this is NOT delivery
-            queue_message(target, &full_text);
-            eprintln!("FAILED to deliver to {}: {}", target, e);
-            println!("FAILED to deliver to {} — {}", target, e);
-            // Return failure exit code so the caller knows
-            chorus_log(
-                "role.nudge.failed",
-                &sender,
-                &format!("target={},error={}", target, e),
-            );
-            return ExitCode::from(1);
-        }
+    } else if level == "warn" {
+        mode = "queued-warn";
+        println!("DELIVERED to {} at {}", target, clock_short);
+        // Stderr hint so the sending role knows it's queued, not injected
+        eprintln!("nudge to {} queued (level=warn, drain on next prompt)", target);
+    } else {
+        mode = "queued";
+        println!("DELIVERED to {} at {}", target, clock_short);
     }
 
     chorus_log(
         "role.nudge.delivered",
         &sender,
-        &format!("target={},mode={},trace={}", target, mode, tid),
+        &format!("target={},mode={},level={},trace={}", target, mode, level, tid),
     );
 
     ExitCode::SUCCESS
@@ -711,5 +733,30 @@ mod tests {
     fn run_single_arg_returns_error() {
         let result = run(&["wren".into()]);
         assert_eq!(result, ExitCode::from(1));
+    }
+
+    // --- Level-based delivery (#1898) ---
+
+    #[test]
+    fn info_level_queues_without_inject() {
+        let test_role = "test-level-info";
+        let inbox_dir = format!("{}/{}", INBOX_DIR, test_role);
+        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
+        let _ = fs::remove_file(&inbox_file);
+        let _ = fs::remove_dir(&inbox_dir);
+
+        // Info level should queue, not inject
+        // Can't test full run (needs osascript), but verify queue_message works
+        queue_message(test_role, "info level test");
+        let content = fs::read_to_string(&inbox_file).unwrap_or_default();
+        assert!(content.contains("info level test"));
+
+        let _ = fs::remove_file(&inbox_file);
+        let _ = fs::remove_dir(&inbox_dir);
+    }
+
+    #[test]
+    fn needs_reply_with_reply_expected() {
+        assert!(needs_reply("[REPLY EXPECTED — nudge kade back]"));
     }
 }
