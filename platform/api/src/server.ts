@@ -2257,6 +2257,143 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
 // --- Start ---
 
+// --- GET /api/chorus/domain/:name — Full domain view (#1908) ---
+
+const DOMAIN_REGISTRY: Record<string, { product: string; step: string; description: string }> = {
+  photos:    { product: 'gathering', step: 'harvesting', description: 'Three eras, 63K canonical from 83K source. Apple + Google + Takeout.' },
+  music:     { product: 'gathering', step: 'harvesting', description: '40+ years, 100K tracks. Apple Music harvest. Shuffle algorithms.' },
+  people:    { product: 'gathering', step: 'harvesting', description: '3,942 contacts, 48 face clusters. LinkedIn, Facebook, Apple, Google exports.' },
+  stories:   { product: 'gathering', step: 'reflecting', description: 'Narrative capture. Manual + voice memo + seed pipeline.' },
+  documents: { product: 'gathering', step: 'practicing', description: 'Reading list. Done/reading/to-read status tracking.' },
+  social:    { product: 'gathering', step: 'harvesting', description: 'Archive from Facebook/LinkedIn GDPR exports. Static, one-time.' },
+  notes:     { product: 'gathering', step: 'practicing', description: 'Quick capture. Downstream from seeds, upstream to stories.' },
+  webmethods:{ product: 'chorus',    step: 'building', description: 'Reference data. OAGIS verb mapping for ICD integration patterns.' },
+  seeds:     { product: 'gathering', step: 'sowing', description: 'SMS intake from phone. Two-message pattern (content + #hashtag).' },
+  glimmers:  { product: 'gathering', step: 'sowing', description: 'Sparks noticed but not committed. Ignite or fade.' },
+  ideas:     { product: 'gathering', step: 'growing', description: 'Ideas promote to Projects. Native CRUD. Sharing model.' },
+  property:  { product: 'gathering', step: 'practicing', description: 'Houses, rooms, gardens, beds. Nested hierarchy.' },
+  cooking:   { product: 'gathering', step: 'practicing', description: 'Recipes and food. Tag filtering. #cooking seed routing.' },
+  reading:   { product: 'gathering', step: 'practicing', description: 'Reading list. Status tracking. #read routing.' },
+  watching:  { product: 'gathering', step: 'practicing', description: 'Movies, shows, videos. Star ratings, category + status filters.' },
+  books:     { product: 'gathering', step: 'harvesting', description: '141+ items. Photo upload with Claude Vision classification.' },
+  gallery:   { product: 'gathering', step: 'harvesting', description: 'Tag filtering. Lightbox viewer. OG link previews.' },
+  blog:      { product: 'gathering', step: 'reflecting', description: 'WordPress at 192.168.86.36:8081. Harvested via REST API.' },
+  self:      { product: 'gathering', step: 'reflecting', description: 'Jeff\'s self domain. Ontology from spring 2024 sketch.' },
+  search:    { product: 'gathering', step: 'practicing', description: 'Full-text search across all domains. Semantic embeddings.' },
+  chorus:    { product: 'chorus',    step: 'building', description: 'Team coordination product. Hooks, gates, pulse, Clearing.' },
+};
+
+app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
+  const name = _req.params.name.toLowerCase();
+  const meta = DOMAIN_REGISTRY[name];
+  if (!meta) {
+    res.status(404).json({ error: `Unknown domain: ${name}`, validDomains: Object.keys(DOMAIN_REGISTRY) });
+    return;
+  }
+
+  try {
+    const { execSync } = require('child_process');
+    const boardTs = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards';
+    const envOpts = {
+      encoding: 'utf-8' as const, timeout: 15000,
+      env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
+    };
+
+    let cards: { id: string; title: string; status: string; owner: string; type: string }[] = [];
+    try {
+      const output = execSync(`bash ${boardTs} list 2>/dev/null`, envOpts).trim();
+      let currentStatus = '';
+      for (const line of output.split('\n')) {
+        const statusMatch = line.match(/^(WIP|Blocked|Next|Later|Done|Won't Do)\s*\(\d+\)/);
+        if (statusMatch) { currentStatus = statusMatch[1]; continue; }
+        if (currentStatus === 'Done' || currentStatus === "Won't Do") continue;
+        const cardMatch = line.trim().match(/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/);
+        if (cardMatch) {
+          const tags = cardMatch[3];
+          if (!tags.includes(`domain:${name}`)) continue;
+          const ownerMatch = tags.match(/^(Wren|Silas|Kade)/i);
+          const typeMatch = tags.match(/type:(\w+)/);
+          cards.push({
+            id: cardMatch[1],
+            title: cardMatch[2].trim(),
+            status: currentStatus,
+            owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
+            type: typeMatch ? typeMatch[1] : '',
+          });
+        }
+      }
+    } catch {}
+
+    const wip = cards.filter(c => c.status === 'WIP');
+    const blocked = cards.filter(c => c.status === 'Blocked');
+
+    // Parse domain HTML page for structured sections
+    const fs = require('fs');
+    const domainHtmlPath = '/Users/jeffbridwell/CascadeProjects/chorus/product-manager/artifacts/domain-' + name + '.html';
+    let sections: Record<string, any> = {};
+    try {
+      if (fs.existsSync(domainHtmlPath)) {
+        const html = fs.readFileSync(domainHtmlPath, 'utf-8');
+        // Split by h2, extract section name and table rows
+        const h2Parts = html.split(/<h2>/);
+        for (const part of h2Parts.slice(1)) {
+          const titleMatch = part.match(/^([^<]+)<\/h2>/);
+          if (!titleMatch) continue;
+          const sectionName = titleMatch[1].trim().toLowerCase().replace(/\s+/g, '_');
+
+          // Extract table rows as arrays
+          const rows: string[][] = [];
+          const trMatches = part.match(/<tr>([\s\S]*?)<\/tr>/g) || [];
+          for (const tr of trMatches) {
+            const cells = (tr.match(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g) || [])
+              .map((cell: string) => cell.replace(/<[^>]+>/g, '').trim());
+            if (cells.length > 0) rows.push(cells);
+          }
+
+          // Extract list items
+          const listItems = (part.match(/<li[^>]*>([\s\S]*?)<\/li>/g) || [])
+            .map((li: string) => li.replace(/<[^>]+>/g, '').trim())
+            .filter((s: string) => s.length > 0);
+
+          sections[sectionName] = {
+            title: titleMatch[1].trim(),
+            table: rows.length > 0 ? rows : undefined,
+            items: listItems.length > 0 ? listItems : undefined,
+          };
+        }
+      }
+    } catch {}
+
+    res.json({
+      domain: name,
+      product: meta.product,
+      step: meta.step,
+      description: meta.description,
+      sections,
+      cards: {
+        total: cards.length,
+        wip: wip.length,
+        blocked: blocked.length,
+        items: cards,
+      },
+      hasIcd: ['photos', 'stories', 'people', 'music', 'documents', 'social', 'notes', 'webmethods'].includes(name),
+      icdEndpoint: `/api/icd/domains/${name}`,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to build domain view', detail: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// --- GET /api/chorus/domains — List all domains (#1908) ---
+app.get('/api/chorus/domains', (_req: Request, res: Response) => {
+  const domains = Object.entries(DOMAIN_REGISTRY).map(([name, meta]) => ({
+    name,
+    ...meta,
+    hasIcd: ['photos', 'stories', 'people', 'music', 'documents', 'social', 'notes', 'webmethods'].includes(name),
+  }));
+  res.json({ domains, total: domains.length });
+});
+
 const BIND_HOST = process.env.CHORUS_BIND || '0.0.0.0';
 app.listen(PORT, BIND_HOST, () => {
   console.log(`[chorus-api] Listening on ${BIND_HOST}:${PORT}`);
