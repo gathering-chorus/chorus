@@ -49,6 +49,8 @@ fn is_shared_file(path: &str) -> bool {
         || path.ends_with("/tech-debt.md")
         || path.ends_with("/decisions.md")
         || path.ends_with("/system-architecture.md")
+        || path.ends_with("/TEAM_PROTOCOL.md")
+        || path.ends_with("/team-architecture.md")
         || path.contains("/.claude/settings") && path.ends_with(".json")
         || path.ends_with("/CLAUDE.md")
 }

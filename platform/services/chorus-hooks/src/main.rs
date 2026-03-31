@@ -290,6 +290,11 @@ async fn pre_tool_use_inner(
             }
         }
         "Write" | "Edit" => {
+            // Sensitive paths — block writes to .env, credentials, SSH keys
+            last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(&input).await;
+            if r.stdout.is_some() {
+                return (last_module.clone(), r);
+            }
             last_module = "write_scrubber".into(); let r = hooks::write_scrubber::check(&input).await;
             if r.stdout.is_some() {
                 return (last_module.clone(), r);

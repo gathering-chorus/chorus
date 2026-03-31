@@ -48,7 +48,10 @@ fn has_log_evidence(input: &HookInput, state: &AppState) -> bool {
     let cwd = input.cwd.as_deref().unwrap_or("");
     let lines = state.session_cache.get_tail(&session_id, cwd, 300);
     if lines.is_empty() {
-        return true; // Can't read = allow
+        // Fall closed: if we know it's a fix card but have no session data,
+        // require log inspection. Original #1879 fell open here but that
+        // meant the gate never actually blocked (#1926 finding).
+        return false;
     }
 
     for line in &lines {

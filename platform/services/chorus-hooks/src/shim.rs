@@ -103,20 +103,36 @@ fn main() -> ExitCode {
     let endpoint = cmd;
     log_debug(&format!("START endpoint={}", endpoint));
 
-    // Read stdin
-    let mut input = String::new();
-    if let Err(e) = std::io::stdin().read_to_string(&mut input) {
-        log_debug(&format!("FAIL stdin read: {}", e));
-        return ExitCode::SUCCESS;
-    }
+    // Read stdin with timeout — prevents hang when called from test scripts without piped input.
+    // Uses a thread + channel so we can bail after 3 seconds.
+    let input = {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = std::io::stdin().read_to_string(&mut buf);
+            let _ = tx.send(buf);
+        });
+        match rx.recv_timeout(std::time::Duration::from_secs(3)) {
+            Ok(s) => s,
+            Err(_) => {
+                log_debug("TIMEOUT reading stdin (3s) — no input piped?");
+                // Fall open — return success so the tool isn't blocked
+                return ExitCode::SUCCESS;
+            }
+        }
+    };
 
     // Inject DEPLOY_ROLE into hook input so the service can detect role (#1714)
-    if let Ok(deploy_role) = std::env::var("DEPLOY_ROLE") {
+    let input = if let Ok(deploy_role) = std::env::var("DEPLOY_ROLE") {
         if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&input) {
             json["deploy_role"] = serde_json::Value::String(deploy_role);
-            input = json.to_string();
+            json.to_string()
+        } else {
+            input
         }
-    }
+    } else {
+        input
+    };
 
     log_debug(&format!("stdin={}bytes", input.len()));
 
@@ -202,6 +218,12 @@ fn main() -> ExitCode {
 
     let exit_code = parsed.get("exit_code").and_then(|v| v.as_i64()).unwrap_or(0);
     log_debug(&format!("OK exit={} has_stdout={} has_stderr={}", exit_code, parsed.get("stdout").is_some(), parsed.get("stderr").is_some()));
+
+    // --raw mode: output full JSON response for test scripts (#1926)
+    if std::env::var("CHORUS_HOOK_RAW").is_ok() {
+        println!("{}", json_str);
+        return ExitCode::from(exit_code as u8);
+    }
 
     if let Some(stdout) = parsed.get("stdout").and_then(|v| v.as_str()) {
         print!("{}\n", stdout);

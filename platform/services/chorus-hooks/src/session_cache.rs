@@ -94,28 +94,56 @@ impl SessionCache {
     }
 }
 
-/// Read session JSONL from disk
+/// Read session JSONL from disk.
+/// First tries the cwd-derived path. If not found, searches all project dirs
+/// for the session UUID — handles cwd changes after hooks service restart.
 fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+
+    // Try cwd-derived path first (fast path)
     let project_key = cwd.replace('/', "-");
     let project_key = if project_key.starts_with('-') {
         &project_key[1..]
     } else {
         &project_key
     };
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let jsonl_path = format!(
+    let primary_path = format!(
         "{}/.claude/projects/-{}/{}.jsonl",
         home, project_key, session_id
     );
+    if let Ok(f) = std::fs::File::open(&primary_path) {
+        let reader = BufReader::new(f);
+        let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+        if !lines.is_empty() {
+            return lines;
+        }
+    }
 
-    let file = match std::fs::File::open(&jsonl_path) {
-        Ok(f) => f,
-        Err(_) => return Vec::new(),
-    };
+    // Fallback: search all project dirs for this session UUID
+    let projects_dir = format!("{}/.claude/projects", home);
+    if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let candidate = entry.path().join(format!("{}.jsonl", session_id));
+            if let Ok(f) = std::fs::File::open(&candidate) {
+                let reader = BufReader::new(f);
+                let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+                if !lines.is_empty() {
+                    debug!(
+                        module = "session_cache",
+                        event = "fallback_found",
+                        path = %candidate.display(),
+                        lines = lines.len(),
+                    );
+                    return lines;
+                }
+            }
+        }
+    }
 
-    let reader = BufReader::new(file);
-    reader.lines().filter_map(|l| l.ok()).collect()
+    Vec::new()
 }
 
 /// Construct JSONL path from session ID and cwd (for hooks that need the path)

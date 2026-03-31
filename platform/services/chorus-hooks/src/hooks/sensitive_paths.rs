@@ -12,7 +12,8 @@ const MANIFEST_PATHS: &[&str] = &[
 ];
 
 pub async fn check(input: &HookInput) -> HookResponse {
-    if input.tool_name_str() != "Read" {
+    let tool = input.tool_name_str();
+    if tool != "Read" && tool != "Write" && tool != "Edit" {
         return HookResponse::allow();
     }
 
@@ -21,21 +22,26 @@ pub async fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
 
-    // Common patterns — always Private
+    // Common patterns — always Private (block read AND write)
     if file_path.ends_with("/.env")
+        || file_path.ends_with(".env")
         || file_path.contains("/.env.")
         || file_path.contains("/terraform.tfstate")
         || file_path.contains("/.ssh/")
+        || file_path.ends_with("/credentials.json")
     {
         log_access("deny", "private", &file_path).await;
-        let reason = if file_path.contains("/.env") {
-            "BLOCKED: .env files contain credentials and must never be sent to external APIs."
+        let action = if tool == "Read" { "read" } else { "write to" };
+        let reason = if file_path.contains(".env") {
+            format!("BLOCKED: Cannot {} .env files — they contain credentials.", action)
         } else if file_path.contains("terraform.tfstate") {
-            "BLOCKED: Terraform state files contain infrastructure secrets."
+            format!("BLOCKED: Cannot {} Terraform state — contains infrastructure secrets.", action)
+        } else if file_path.contains("credentials") {
+            format!("BLOCKED: Cannot {} credentials files.", action)
         } else {
-            "BLOCKED: SSH key files must never be sent to external APIs."
+            format!("BLOCKED: Cannot {} SSH key files.", action)
         };
-        return HookResponse::deny(&permission_deny_json(reason));
+        return HookResponse::deny(&permission_deny_json(&reason));
     }
 
     // Check manifests
