@@ -50,8 +50,8 @@ pub async fn tick(_input: &HookInput) -> HookResponse {
     let _ = fs::write(CLOCK_FILE, &human);
     let _ = fs::write(CLOCK_ISO_FILE, &iso);
 
-    // Inject timestamp into stderr — role sees this on every prompt, can't cache a stale one
-    HookResponse::warn_stderr(&format!("wall-clock: {} Boston", human))
+    // Clock written to files above — don't emit to stderr, Claude Code treats stderr as hook error (#1559)
+    HookResponse::allow()
 }
 
 /// PostToolUse: inject current wall clock into every tool response cycle.
