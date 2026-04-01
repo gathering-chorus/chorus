@@ -176,9 +176,28 @@ async function cmdMine(client: BoardClient, args: string[], label: string) {
 }
 
 async function cmdView(client: BoardClient, args: string[]) {
-  if (!args[0]) die('Usage: cards view <id>');
-  const index = parseInt(args[0], 10);
+  if (!args[0]) die('Usage: cards view <id> [--json]');
+  const jsonFlag = args.includes('--json');
+  const index = parseInt(args.filter(a => a !== '--json')[0], 10);
   const task = await client.view(index);
+
+  if (jsonFlag) {
+    const comments = await client.comments(index);
+    console.log(JSON.stringify({
+      index: task.index,
+      title: task.title,
+      status: task.status,
+      owner: task.owner || 'unassigned',
+      priority: task.priority || 'none',
+      description: task.description,
+      domains: task.domains,
+      created: task.created,
+      updated: task.updated,
+      comments: comments.map(c => ({ author: c.author, text: c.text })),
+    }, null, 2));
+    return;
+  }
+
   console.log(`#${task.index} ${task.title}`);
   console.log(`  Status:   ${task.status}`);
   console.log(`  Owner:    ${task.owner || 'unassigned'}`);
