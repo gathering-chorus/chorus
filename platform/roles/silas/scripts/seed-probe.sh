@@ -216,6 +216,14 @@ send_signed_webhook() {
     -d "$form" 2>/dev/null || echo "000"
 }
 
+# Alternative: send real SMS via Messages.app (full carrier→Twilio→tunnel→app path)
+# Uncomment and replace send_signed_webhook calls to test the real Jeff path.
+# Costs real carrier SMS. Use for proving, not daily probe.
+# send_real_sms() {
+#   local body="$1"
+#   osascript -e "tell application \"Messages\" to send \"${body}\" to participant \"${CAPTURE_ALLOWED_PHONES}\" of (first account whose service type is SMS)"
+# }
+
 fuseki_has_sid() {
   local sid="$1"
   local count=$(curl -sf --max-time "$TIMEOUT" \
