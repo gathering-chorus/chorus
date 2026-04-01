@@ -15,7 +15,7 @@ Minimize visual footprint. Narrate outcomes, not steps. Don't announce what you'
 **The rules:**
 1. **Complete → next action.** After shipping a card or AC item, immediately: nudge the accepting role, pull next work, or declare what you're doing. Never go silent.
 2. **60-second heartbeat in pairs.** If your pair partner completes an AC item, you respond within 60 seconds. If you can't, emit a status ("thinking", "blocked on X"). Silence = stall.
-3. **Idle is a declared state.** If you have nothing to do, declare `idle` via `role-state.sh`. Don't just stop emitting. The system can't distinguish silence from a crash.
+3. **Idle is a declared state.** If you have nothing to do, declare `idle` via `role-state`. Don't just stop emitting. The system can't distinguish silence from a crash.
 4. **Jeff's coordination target: 2 touches per card.** Start + accept. Not 13. Every re-nudge Jeff sends is a failure of this contract.
 5. **Nudge recipients must act.** A nudge is not informational — it requires a response or action. If you receive a nudge, the sender is waiting.
 

@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log.sh"
+CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
@@ -26,7 +26,7 @@ if [ -z "$COMMAND" ]; then
   exit 0
 fi
 
-# Log guardrail events via chorus-log.sh (schema-validated)
+# Log guardrail events via chorus-log (schema-validated)
 log_guardrail() {
   local decision="$1" pattern="$2"
   local cmd_truncated

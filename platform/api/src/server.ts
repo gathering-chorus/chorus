@@ -297,7 +297,7 @@ function mergeUnified(
 }
 
 // --- Spine event emitter (fire-and-forget to chorus-log.sh) ---
-const CHORUS_LOG = path.join(os.homedir(), 'CascadeProjects/chorus/platform/scripts/chorus-log.sh');
+const CHORUS_LOG = path.join(os.homedir(), 'CascadeProjects/chorus/platform/scripts/chorus-log');
 
 function emitSearchEvent(fields: Record<string, string | number>): void {
   const args = ['search.query.executed', 'system', ...Object.entries(fields).map(([k, v]) => `${k}=${v}`)];
@@ -2281,6 +2281,10 @@ const DOMAIN_REGISTRY: Record<string, { product: string; step: string; descripti
   self:      { product: 'gathering', step: 'reflecting', description: 'Jeff\'s self domain. Ontology from spring 2024 sketch.' },
   search:    { product: 'gathering', step: 'practicing', description: 'Full-text search across all domains. Semantic embeddings.' },
   chorus:    { product: 'chorus',    step: 'building', description: 'Team coordination product. Hooks, gates, pulse, Clearing.' },
+  infrastructure: { product: 'chorus', step: 'building', description: 'Servers, LaunchAgents, Docker, deploy, disk, network. Two machines.' },
+  'knowledge-graph': { product: 'gathering', step: 'practicing', description: 'RDF/SPARQL semantic layer. Fuseki, ontologies, SHACL validation.' },
+  observability: { product: 'chorus', step: 'building', description: 'Grafana, Loki, Promtail, alerts. Operational visibility.' },
+  loom:      { product: 'chorus',    step: 'directing', description: 'Team coordination surface. Roles, cards, briefs, decisions.' },
 };
 
 app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {

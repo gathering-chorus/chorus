@@ -5,7 +5,7 @@
  *   /gemba invoked → tail builder session → cron loop digest → commentary → exit on signal
  *
  * Tests the infrastructure components that support gemba:
- *   chorus-query.sh tail, role-state.sh, spine events
+ *   chorus-query.sh tail, role-state, spine events
  */
 import { execSync } from 'child_process';
 import * as fs from 'fs';
@@ -26,15 +26,15 @@ describe('Flow: Gemba infrastructure', () => {
     expect(stat.mode & 0o111).toBeGreaterThan(0);
   });
 
-  test('role-state.sh exists and is executable', () => {
-    const script = path.join(SCRIPTS_DIR, 'role-state.sh');
+  test('role-state exists and is executable', () => {
+    const script = path.join(SCRIPTS_DIR, 'role-state');
     expect(fs.existsSync(script)).toBe(true);
     const stat = fs.statSync(script);
     expect(stat.mode & 0o111).toBeGreaterThan(0);
   });
 
-  test('chorus-log.sh exists for spine event emission', () => {
-    const script = path.join(SCRIPTS_DIR, 'chorus-log.sh');
+  test('chorus-log exists for spine event emission', () => {
+    const script = path.join(SCRIPTS_DIR, 'chorus-log');
     expect(fs.existsSync(script)).toBe(true);
   });
 });
@@ -80,10 +80,10 @@ describe('Flow: Gemba tail', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe.skip('Flow: Gemba state [migrated to Rust] transitions', () => {
-  test('role-state.sh accepts observing state with gemba target', () => {
+  test('role-state accepts observing state with gemba target', () => {
     try {
       const output = execSync(
-        `bash ${SCRIPTS_DIR}/role-state.sh silas observing gemba=kade 2>/dev/null`,
+        `${SCRIPTS_DIR}/role-state silas observing gemba=kade 2>/dev/null`,
         { encoding: 'utf-8', timeout: 5000 }
       );
       expect(typeof output).toBe('string');
@@ -92,22 +92,6 @@ describe.skip('Flow: Gemba state [migrated to Rust] transitions', () => {
       expect(true).toBe(true);
     }
   });
-
-  test('role-state.sh supports waiting state for exit', () => {
-    const script = fs.readFileSync(
-      path.join(SCRIPTS_DIR, 'role-state.sh'),
-      'utf-8'
-    );
-    expect(script).toMatch(/waiting/);
-  });
-
-  test('role-state.sh supports observing state', () => {
-    const script = fs.readFileSync(
-      path.join(SCRIPTS_DIR, 'role-state.sh'),
-      'utf-8'
-    );
-    expect(script).toMatch(/observing/);
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -115,26 +99,17 @@ describe.skip('Flow: Gemba state [migrated to Rust] transitions', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Flow: Gemba spine events', () => {
-  test('chorus-log.sh can emit gemba-related events', () => {
+  test('chorus-log can emit gemba-related events', () => {
     try {
       const output = execSync(
-        `bash ${SCRIPTS_DIR}/chorus-log.sh gemba.observation.started silas target=kade 2>/dev/null`,
+        `${SCRIPTS_DIR}/chorus-log gemba.observation.started silas target=kade 2>/dev/null`,
         { encoding: 'utf-8', timeout: 5000 }
       );
       expect(output).toContain('gemba.observation.started');
     } catch {
       // chorus-log may fail if log dir missing — check it exists
-      expect(fs.existsSync(path.join(SCRIPTS_DIR, 'chorus-log.sh'))).toBe(true);
+      expect(fs.existsSync(path.join(SCRIPTS_DIR, 'chorus-log'))).toBe(true);
     }
-  });
-
-  test('chorus-log.sh accepts key=value extra fields', () => {
-    const script = fs.readFileSync(
-      path.join(SCRIPTS_DIR, 'chorus-log.sh'),
-      'utf-8'
-    );
-    // Script should parse key=value pairs
-    expect(script.length).toBeGreaterThan(0);
   });
 });
 

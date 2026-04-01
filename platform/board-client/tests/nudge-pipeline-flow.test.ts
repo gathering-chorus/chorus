@@ -215,10 +215,9 @@ describe.skip('Flow: Stale nudge [migrated to Rust] handling', () => {
   });
 
   test('stale discard logic exists in drain pipeline', () => {
-    const roleState = path.join(SCRIPTS_DIR, 'role-state.sh');
+    const roleState = path.join(SCRIPTS_DIR, 'role-state');
     expect(fs.existsSync(roleState)).toBe(true);
-    const content = fs.readFileSync(roleState, 'utf-8');
-    // role-state.sh handles idle transition which triggers drain
-    expect(content).toMatch(/drain|nudge/);
+    // role-state is a symlink to the Rust binary — verify it exists and is executable
+    expect(fs.lstatSync(roleState).isSymbolicLink() || fs.statSync(roleState).mode & 0o111).toBeTruthy();
   });
 });

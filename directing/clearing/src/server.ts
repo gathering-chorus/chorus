@@ -427,8 +427,8 @@ app.get('/api/stream', (req, res) => {
           seen.add(key);
           const digest = obs.digest || '';
           // Filter nudge traffic and system plumbing from stream
-          if (digest.includes('nudge.sh') || digest.includes('nudge ') || digest.includes('chorus-log.sh') ||
-              digest.includes('role-state.sh') || digest.includes('cards') || digest.includes('smoke-check')) continue;
+          if (digest.includes('nudge.sh') || digest.includes('nudge ') || digest.includes('chorus-log') ||
+              digest.includes('role-state') || digest.includes('cards') || digest.includes('smoke-check')) continue;
           lines.push({
             ts: obs.ts,
             role: obs.role,

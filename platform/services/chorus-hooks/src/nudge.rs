@@ -128,7 +128,7 @@ fn needs_reply(msg: &str) -> bool {
         || lower.ends_with('?')
 }
 
-/// Emit spine event via chorus-log.sh
+/// Emit spine event via chorus-log
 fn chorus_log(event: &str, role: &str, extra: &str) {
     if Path::new(CHORUS_LOG).exists() {
         let _ = Command::new(CHORUS_LOG)

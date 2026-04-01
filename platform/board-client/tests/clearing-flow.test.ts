@@ -174,12 +174,12 @@ describe('Flow: Transcript indexing', () => {
     }
   });
 
-  test('chorus-log.sh can emit clearing-related events', () => {
-    const chorusLog = path.join(SCRIPTS_DIR, 'chorus-log.sh');
+  test('chorus-log can emit clearing-related events', () => {
+    const chorusLog = path.join(SCRIPTS_DIR, 'chorus-log');
     expect(fs.existsSync(chorusLog)).toBe(true);
     try {
       const output = execSync(
-        `bash ${chorusLog} clearing.session.started silas port=3470 2>/dev/null`,
+        `${chorusLog} clearing.session.started silas port=3470 2>/dev/null`,
         { encoding: 'utf-8', timeout: 5000 }
       );
       expect(output).toContain('clearing.session.started');

@@ -12,14 +12,14 @@ Scan: "did anything I did today make these stale?" Gate — Hard 5 cannot procee
 - `/cost` → log to cost-log.md
 - Role-specific domain docs (listed in each role's CLAUDE.md)
 
-After updates: `../messages/scripts/chorus-log.sh session.docscan.completed <role> checked=<N> updated=<M>`
+After updates: `../messages/scripts/chorus-log session.docscan.completed <role> checked=<N> updated=<M>`
 
 ### Hard 5 (in order)
 1. **Journal** — reflective entry in `journal/<date>.md`. Not status — reflection. 3-8 sentences.
 2. **Board audit** — `cards audit-close <role>`. Finished → Done. Continuing → note.
 3. **Activity log** — append to `../messages/activity.md`.
 4. **next-session.md** — accomplishments, WIP, handoffs, what next session picks up.
-5. **Commit** — `git-queue.sh`. Message: `<role>: session close — <summary>`. Then: `role-state.sh <role> idle`.
+5. **Commit** — `git-queue.sh`. Message: `<role>: session close — <summary>`. Then: `role-state <role> idle`.
 
 ### Verify
 Run `werk-init.sh <role> --close` after Hard 5. All items ok. If warn, fix before commit.

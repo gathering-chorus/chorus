@@ -85,5 +85,5 @@ How each role is launched, what normal looks like, and how to fix it when it bre
 | app-state.sh | `../jeff-bridwell-personal-site/app-state.sh` |
 | git-queue.sh | `../messages/scripts/git-queue.sh` |
 | werk-init.sh | `../messages/scripts/werk-init.sh` |
-| chorus-log.sh | `../messages/scripts/chorus-log.sh` |
+| chorus-log | `../messages/scripts/chorus-log` |
 | chorus-query.sh | `~/.chorus/scripts/chorus-query.sh` |

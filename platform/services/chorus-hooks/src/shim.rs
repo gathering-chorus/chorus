@@ -383,8 +383,12 @@ fn session_start_cmd(args: &[String]) -> ExitCode {
     let out = format!("/tmp/session-start-{}.md", role);
     let init_dir = "/tmp/claude-session-init";
 
-    // Build cache if missing
-    if !std::path::Path::new(&cache).exists() {
+    // Build cache if missing or stale (>10 min)
+    let cache_stale = std::path::Path::new(&cache).metadata().ok()
+        .and_then(|m| m.modified().ok())
+        .map(|t| t.elapsed().unwrap_or_default().as_secs() > 600)
+        .unwrap_or(true);
+    if cache_stale {
         let _ = context_cache_cmd(&[role.to_string()]);
     }
 

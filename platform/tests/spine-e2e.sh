@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # spine-e2e.sh — End-to-end test for the spine event pipeline (#1075)
-# Verifies: emit (chorus-log.sh) → chorus.log → index (chorus-index) → query (API)
+# Verifies: emit (chorus-log) → chorus.log → index (chorus-index) → query (API)
 # Target: runs in under 10s
 set -euo pipefail
 
@@ -21,11 +21,11 @@ echo ""
 # --- Step 1: Emit a unique spine event ---
 TEST_ID="e2e-$(date +%s)-$$"
 echo "Step 1: Emit spine event (marker=$TEST_ID)"
-OUTPUT=$("$MSG_SCRIPTS/chorus-log.sh" spine.e2e.test silas marker="$TEST_ID" 2>&1)
+OUTPUT=$("$MSG_SCRIPTS/chorus-log" spine.e2e.test silas marker="$TEST_ID" 2>&1)
 if echo "$OUTPUT" | grep -q "spine.e2e.test"; then
-  pass "chorus-log.sh emitted event"
+  pass "chorus-log emitted event"
 else
-  fail "chorus-log.sh did not emit event: $OUTPUT"
+  fail "chorus-log did not emit event: $OUTPUT"
 fi
 
 # --- Step 2: Verify event in chorus.log ---
@@ -82,7 +82,7 @@ fi
 # --- Step 5: Session start event ---
 echo "Step 5: session_start lifecycle event"
 START_MARKER="e2e-start-$(date +%s)-$$"
-OUTPUT=$("$MSG_SCRIPTS/chorus-log.sh" session_start silas marker="$START_MARKER" 2>&1)
+OUTPUT=$("$MSG_SCRIPTS/chorus-log" session_start silas marker="$START_MARKER" 2>&1)
 if echo "$OUTPUT" | grep -q "session"; then
   pass "session_start emitted"
 else
@@ -104,7 +104,7 @@ fi
 # --- Step 6: Session end event ---
 echo "Step 6: session_end lifecycle event"
 END_MARKER="e2e-end-$(date +%s)-$$"
-OUTPUT=$("$MSG_SCRIPTS/chorus-log.sh" session_end silas marker="$END_MARKER" cost="\$0.00" 2>&1)
+OUTPUT=$("$MSG_SCRIPTS/chorus-log" session_end silas marker="$END_MARKER" cost="\$0.00" 2>&1)
 if echo "$OUTPUT" | grep -q "session"; then
   pass "session_end emitted"
 else

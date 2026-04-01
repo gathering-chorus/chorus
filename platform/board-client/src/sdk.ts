@@ -453,7 +453,7 @@ export async function auditClose(client: BoardClient, role: string): Promise<{
 export async function addCard(
   client: BoardClient,
   title: string,
-  opts: { status?: string; owner?: string; priority?: string; domain?: string; description?: string; product?: string; chunk?: string; sequence?: string; quick?: boolean }
+  opts: { status?: string; owner?: string; priority?: string; domain?: string; description?: string; product?: string; chunk?: string; sequence?: string; type?: string; quick?: boolean }
 ): Promise<BoardTask> {
   warnShortTitle(title, client.boardName);
 
@@ -486,6 +486,22 @@ export async function addCard(
       emitSpineEvent('card.quality.blocked', detectRole(), {
         title, gate: 'add_chunk_missing', board: client.boardName,
       });
+      process.exit(1);
+    }
+  }
+
+  // Type gate: cards must have a type unless --quick
+  if (!opts.quick) {
+    const validTypes = Object.keys(LABELS.type).join(', ');
+    if (!opts.type) {
+      console.error(`ERROR: Cards require a type. Add --type <${validTypes}>.`);
+      emitSpineEvent('card.quality.blocked', detectRole(), {
+        title, gate: 'add_type_missing', board: client.boardName,
+      });
+      process.exit(1);
+    }
+    if (!LABELS.type[opts.type.toLowerCase()]) {
+      console.error(`ERROR: Unknown type "${opts.type}". Valid: ${validTypes}`);
       process.exit(1);
     }
   }
@@ -857,7 +873,7 @@ export async function reassignCard(client: BoardClient, index: number, newOwner:
 
 /** Unified set — apply multiple key=value mutations and print resulting state (#1635) */
 export async function setCard(client: BoardClient, index: number, pairs: Record<string, string>): Promise<void> {
-  const VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates']);
+  const VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates']);
   const changes: string[] = [];
 
   // Validate all keys first
@@ -868,7 +884,7 @@ export async function setCard(client: BoardClient, index: number, pairs: Record<
   }
 
   // Apply tag-category changes
-  for (const cat of ['domain', 'chunk', 'sequence', 'stream']) {
+  for (const cat of ['domain', 'chunk', 'sequence', 'stream', 'type']) {
     if (pairs[cat]) {
       await client.tag(index, cat, pairs[cat]);
       changes.push(`${cat}=${pairs[cat]}`);

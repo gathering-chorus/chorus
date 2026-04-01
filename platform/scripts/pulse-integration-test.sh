@@ -32,7 +32,7 @@ echo ""
 
 # Step 1: Emit event with --level critical
 echo "1. Emit critical event..."
-if bash "$CHORUS_LOG" "pulse.test" "kade" "marker=$MARKER" --level critical 2>/dev/null; then
+if "$CHORUS_LOG" "pulse.test" "kade" "marker=$MARKER" --level critical 2>/dev/null; then
   result "PASS" "Event emitted with --level critical"
 else
   result "FAIL" "chorus-log failed to emit"

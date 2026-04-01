@@ -35,6 +35,9 @@ export const LABELS = {
   sequence: {
     v1: 25, hardening: 26, style: 27, sparql: 28, 'flow-tests': 29,
   } as Record<string, number>,
+  type: {
+    new: 87, enhance: 88, fix: 89, chore: 90, swat: 91,
+  } as Record<string, number>,
   stream: {
     sowing: 54, growing: 55, practicing: 56,
     harvesting: 57, reflecting: 58, connecting: 59,

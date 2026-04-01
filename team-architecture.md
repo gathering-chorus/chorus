@@ -197,7 +197,7 @@ Jeff participates when he wants to, not because the system breaks without him.
 
 When Jeff makes a call (e.g., "foundation before features"), the active role:
 1. Captures it in the right artifact (design principle, ADR, decision log)
-2. Emits spine event via chorus-log.sh
+2. Emits spine event via chorus-log
 3. Writes briefs to affected roles
 4. Logs in activity.md
 

@@ -50,7 +50,7 @@ function classifyFile(filePath: string): string {
 // Extract explicit file paths from text — deterministic regex, no fuzzy matching
 function extractFilePaths(text: string): string[] {
   const patterns = [
-    /(?:src|views|data|public|scripts|tests?|architect|engineer|product-manager|messages)\/[\w./-]+\.\w{1,5}/g,
+    /(?:src|views|data|public|scripts|tests?|architect|engineer|product-manager|messages|platform)\/[\w./-]+\.\w{1,5}/g,
     /[\w-]+\.handler\.ts/g,
     /[\w-]+\.service\.ts/g,
     /[\w-]+\.ejs/g,

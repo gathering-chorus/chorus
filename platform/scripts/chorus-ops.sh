@@ -25,7 +25,7 @@ set -euo pipefail
 # --- Common Configuration ---
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BOARD_TS="$SCRIPT_DIR/cards"
-CHORUS_LOG="$SCRIPT_DIR/chorus-log.sh"
+CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 PROMPT_FILE="$SCRIPT_DIR/ops-agent-prompt.md"
 STATE_FILE="$HOME/.chorus/chorus-ops-state.json"
 STATE_DIR="$HOME/.chorus"

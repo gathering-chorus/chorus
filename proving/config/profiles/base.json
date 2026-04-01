@@ -52,7 +52,7 @@
       "Bash(bash */slack-post*)",
       "Bash(*/slack-read.sh*)",
       "Bash(*/slack-post.sh*)",
-      "Bash(*/chorus-log.sh*)",
+      "Bash(*/chorus-log*)",
       "Bash(*/chorus-query.sh*)",
       "Bash(*/chorus-index*)",
       "Bash(*/chorus-audit*)",

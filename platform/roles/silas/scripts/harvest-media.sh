@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHUNK_LIMIT=100000  # items per upload chunk (200K caused Fuseki OOM)
 
 # Chorus log (optional)
-CHORUS_LOG="$SCRIPT_DIR/../../messages/scripts/chorus-log.sh"
+CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
 
 # Fuseki auth from app .env
 ENV_FILE="$SCRIPT_DIR/../../jeff-bridwell-personal-site/.env"

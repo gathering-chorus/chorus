@@ -23,7 +23,7 @@ Detect which pattern is active from Jeff's intent — he will NOT label it:
 **Emit a spine event when you detect a pattern.** This is not optional — it feeds Borg.
 
 ```bash
-../messages/scripts/chorus-log.sh interaction.pattern.detected wren pattern=<name>
+../messages/scripts/chorus-log interaction.pattern.detected wren pattern=<name>
 ```
 
 Rules:
@@ -52,7 +52,7 @@ Demos generate ideas. Jeff's reaction to seeing live work produces "what if..." 
 
 **Action — immediately, in the same response:**
 1. Card it: `cards add "<verb> <what> — <why>" --owner <role> --priority P3`
-2. Emit: `chorus-log.sh demo.seed.captured wren card=<id> source=demo`
+2. Emit: `chorus-log demo.seed.captured wren card=<id> source=demo`
 3. Don't interrupt the demo flow — card silently, mention it at the end: "Carded #N from that idea."
 
 **Pattern:** Demo → Jeff reacts → idea emerges → Wren cards it → demo continues. The card captures the spark. The description can be thin — context lives in the session. The point is: no demo seed lost to session context.

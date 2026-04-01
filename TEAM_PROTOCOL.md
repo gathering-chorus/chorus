@@ -7,14 +7,14 @@ See each role's CLAUDE.md for behavioral rules and identity.
 
 ## Fuseki & SPARQL Reference
 
-**Fuseki port is 3030 everywhere.** Host, container, scripts — always `http://localhost:3030`. Inside Docker network: `http://fuseki:3030`. One port, no translation.
+**Fuseki port is 3030 everywhere.** Native LaunchAgent, always `http://localhost:3030`. One port, no translation.
 
 **Graph URIs use `http://localhost:3000/pods/jeff/<domain>/` prefix. Never `https://jeffbridwell.com/`.** All domains — music, photos, media, stories, notes, blog, ontology — use the localhost scheme. `graph-lint.sh` check #1 enforces this.
 
 **SPARQL working pattern:**
 - **Dataset**: `/pods` — NOT `/jeff`, NOT `/ds`, NOT `/dataset`
 - **Query endpoint**: `http://localhost:3030/pods/query` (GET with URL-encoded `query` param)
-- **Inside Docker**: `http://fuseki:3030/pods/query`
+- **Always**: `http://localhost:3030/pods/query`
 
 ```bash
 curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \
@@ -33,9 +33,9 @@ curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \
 |--------|---------------------|
 | cards | `bash ../messages/scripts/cards <command>` |
 | git-queue.sh | `cd /Users/jeffbridwell/CascadeProjects && DEPLOY_ROLE=<role> bash messages/scripts/git-queue.sh commit <dirs> -- -m "message"` |
-| role-state.sh | `../messages/scripts/role-state.sh <role> <state>` |
+| role-state | `../messages/scripts/role-state <role> <state>` |
 | nudge.sh | `bash ../messages/scripts/nudge.sh <target> "message" --from <sender>` |
-| chorus-log.sh | `bash ../messages/scripts/chorus-log.sh <event> <role> key=value` |
+| chorus-log | `../messages/scripts/chorus-log <event> <role> key=value` |
 | werk-init.sh | `bash ../messages/scripts/werk-init.sh <role> [--close]` |
 
 **Never use:** `/Users/jeffbridwell/CascadeProjects/chorus/scripts/nudge.sh` (stale copy), `gathering-team/messages/scripts/` (wrong repo name).
@@ -51,7 +51,7 @@ ssh jeffbridwell@192.168.86.242 "df -h"
 ```
 
 ### Service Registry (Library LaunchAgents)
-- `com.chorus.docker-services` — Boot-order orchestration (run-once)
+- `com.chorus.docker-services` — Boot-order for remaining Docker services: Vikunja, Navidrome, webvowl (run-once)
 - `com.chorus.api` — Chorus context index HTTP API (KeepAlive)
 - `com.chorus.alert-notifier` — Alert notifications (KeepAlive)
 - `com.chorus.session-watcher` — Ambient index daemon (KeepAlive)
@@ -103,14 +103,14 @@ Scan: "did anything I did today make these stale?" Gate — Hard 5 cannot procee
 - `/cost` → log to cost-log.md
 - Role-specific domain docs (listed in each role's CLAUDE.md)
 
-After updates: `../messages/scripts/chorus-log.sh session.docscan.completed <role> checked=<N> updated=<M>`
+After updates: `../messages/scripts/chorus-log session.docscan.completed <role> checked=<N> updated=<M>`
 
 ### Hard 5 (in order)
 1. **Journal** — reflective entry in `journal/<date>.md`. Not status — reflection. 3-8 sentences.
 2. **Board audit** — `cards audit-close <role>`. Finished → Done. Continuing → note.
 3. **Activity log** — append to `../messages/activity.md`.
 4. **next-session.md** — accomplishments, WIP, handoffs, what next session picks up.
-5. **Commit** — `git-queue.sh`. Message: `<role>: session close — <summary>`. Then: `role-state.sh <role> idle`.
+5. **Commit** — `git-queue.sh`. Message: `<role>: session close — <summary>`. Then: `role-state <role> idle`.
 
 ### Verify
 Run `werk-init.sh <role> --close` after Hard 5. All items ok. If warn, fix before commit.

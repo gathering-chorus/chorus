@@ -169,6 +169,7 @@ export class BoardClient {
     product?: string;
     chunk?: string;
     sequence?: string;
+    type?: string;
   }): Promise<BoardTask> {
     const result = await this.api<VikunjaTask>(
       'PUT',
@@ -201,6 +202,10 @@ export class BoardClient {
     }
     if (opts?.sequence) {
       const labelId = LABELS.sequence[opts.sequence.toLowerCase()];
+      if (labelId) await this.addLabel(result.id, labelId);
+    }
+    if (opts?.type) {
+      const labelId = LABELS.type[opts.type.toLowerCase()];
       if (labelId) await this.addLabel(result.id, labelId);
     }
 
