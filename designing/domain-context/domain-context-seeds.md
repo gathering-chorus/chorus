@@ -1,39 +1,60 @@
 # Domain Context: Seeds
 
-Last updated: 2026-03-29 by Kade (#1843)
+Last updated: 2026-04-01 by Wren (#1942)
 
-## ICD
+## Seed Policy
 
-No ICD defined yet for seeds domain.
+Seeds are Jeff's thinking arriving asynchronously. They deserve the same attention as if he said it to your face. A seed is not a ticket — it's a spark.
 
-## Tests
+- All roles MUST take time to read, understand, and comment on new seeds
+- The receiving role states what the seed means and how it connects to current work
+- The role either cards it, routes it, or discards with a reason Jeff can see
+- Response appears on the Bridge within one prompt cycle
+- Quick Chorus search for the seed content — see if there's a thread. Light touch, not a ceremony.
+- #tags are routing/correlation markers, NEVER seeds themselves
+- Jeff will NEVER send #wren in isolation — it always follows content
+- Seeds route to Chorus (team memory), NOT to briefs
 
-| File | Coverage |
-|------|----------|
-| `tests/unit/handlers/seed.handler.test.ts` | webhook, routing, error handling |
-| `tests/unit/adapters/sms-seed.adapter.test.ts` | SMS payload parsing |
-| `tests/unit/services/seed-sparql.service.test.ts` | Fuseki persistence |
-| `tests/unit/services/seed-pod.service.test.ts` | legacy pod persistence |
-| `tests/integration/seed-two-message-flow.test.ts` | two-message SMS flow |
-| `tests/integration/seed-routing-flow.test.ts` | routing to all destinations |
-| `tests/unit/seed-pipeline-logging.test.ts` | logging coverage |
+## Actor Flow
 
-## Persistence
+Jeff sends a seed. It arrives. Someone cares. Jeff sees proof.
 
-| Type | Location | Details |
-|------|----------|---------|
-| Fuseki graph | `urn:jb:seeds/` | SMS seeds via SeedSparqlService |
-| Twilio webhook | `POST /api/seed/sms` | signature-verified, phone-whitelisted |
-| List endpoints | `GET /api/seed` and `GET /api/seeds` | admin-gated |
+```
+JEFF (phone, anywhere)
+  │
+  ├─ SMS 1: content (link, photo, thought, music)
+  ├─ SMS 2: #tag (routing — who or where)
+  │
+  ▼
+ARRIVE
+  │ Two messages correlate as one seed
+  │ #tag is routing, not content
+  │ Hashtag-only message is never a seed
+  │
+  ▼
+PERSIST
+  │ Seed stored in Chorus as structured record
+  │ Content, source, destination, timestamp
+  │
+  ▼
+ENGAGE
+  │ Role reads the seed with care
+  │ Role states what it means, connects to work
+  │ Role acts: card it, route it, or discard with reason
+```
 
-## Key Decisions
+## What Does Not Exist Yet
 
-| Decision | Summary |
-|----------|---------|
-| #1794 | Kill dual write — Fuseki-only persistence, no more pod files |
+- Bridge confirmation on seed arrival
+- Role nudge on seed arrival
+- Hashtag-only messages still create empty captures
+- Triage page shows hashtags as seeds (seven empty `#wren` entries)
+- No Chorus persistence for seeds (still in Fuseki pods, not team memory)
+- No "close the loop" — Jeff never sees what the role did with the seed
 
-## Constraints
+## Active Cards
 
-- **Webhook must respond immediately.** Twilio retries on timeout, Cloudflare returns 502. As of #1843, webhook responds before Fuseki processing to prevent 11200 errors.
-- **Fuseki dependency.** Seeds don't persist when Fuseki is down. No fallback. Sync endpoint exists to recover missed messages from Twilio API.
-- **Dedup via MessageSid.** getKnownSids() queries Fuseki before processing. If Fuseki is down, dedup is skipped (seed may duplicate on retry).
+| Card | Status | What |
+|------|--------|------|
+| #1937 | Later (code changes deployed, needs operational proof) | Bridge + nudge on arrival, hashtag-only skip |
+| #1942 | WIP | This design — actor flow, policy, domain context |

@@ -38,7 +38,11 @@ fn is_defect_fix() -> bool {
     crate::types::is_fix_card()
 }
 
-/// Scan session JSONL for evidence of log inspection (uses shared cache #1861)
+/// Scan session JSONL for evidence of log inspection AND synthesis.
+/// Two checks (both required for fix cards):
+/// 1. Did the role read a log file? (motion check)
+/// 2. Did the role produce a "Log evidence:" statement connecting findings to the domain?
+///    (synthesis check — prevents performative log opens)
 fn has_log_evidence(input: &HookInput, state: &AppState) -> bool {
     let session_id = match &input.session_id {
         Some(id) => id.clone(),
@@ -54,25 +58,45 @@ fn has_log_evidence(input: &HookInput, state: &AppState) -> bool {
         return false;
     }
 
+    let mut has_log_read = false;
+    let mut has_log_synthesis = false;
+
     for line in &lines {
         let lower = line.to_lowercase();
 
-        // Check for log file reads or greps
-        for marker in LOG_INSPECTION_MARKERS {
-            if lower.contains(marker) {
-                return true;
+        // Check 1: log file reads or greps
+        if !has_log_read {
+            for marker in LOG_INSPECTION_MARKERS {
+                if lower.contains(marker) {
+                    has_log_read = true;
+                    break;
+                }
+            }
+            if !has_log_read
+                && (lower.contains("tail") || lower.contains("grep") || lower.contains("rg "))
+                && lower.contains(".log")
+            {
+                has_log_read = true;
             }
         }
 
-        // Check for tail/grep of log files
-        if (lower.contains("tail") || lower.contains("grep") || lower.contains("rg "))
-            && lower.contains(".log")
-        {
-            return true;
+        // Check 2: "Log evidence:" synthesis in assistant output
+        // Must contain what the logs revealed, not just that logs were opened.
+        if !has_log_synthesis && lower.contains("assistant") {
+            if lower.contains("log evidence:") || lower.contains("logs show")
+                || lower.contains("log shows") || lower.contains("from the logs:")
+                || lower.contains("log output:") || lower.contains("the log reveals")
+            {
+                has_log_synthesis = true;
+            }
+        }
+
+        if has_log_read && has_log_synthesis {
+            break;
         }
     }
 
-    false
+    has_log_read && has_log_synthesis
 }
 
 pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
@@ -109,8 +133,10 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
             file = %file_path,
         );
         return HookResponse::deny(&permission_deny_json(
-            "Log-first gate: you're fixing a bug but haven't checked the logs. \
-             Check the logs before fixing. What do chorus.log and hooks.log say about this failure? \
+            "Log-first gate: you're fixing a bug but haven't checked the logs — or haven't said what you found. \
+             1) Read the relevant logs (chorus.log, hooks.log, or Loki). \
+             2) State what you found: 'Log evidence: <what the logs revealed about this problem>'. \
+             Not just that you opened a log — what it told you. \
              Logs reveal root cause in seconds; reading code without them leads to wrong theories."
         ));
     }
