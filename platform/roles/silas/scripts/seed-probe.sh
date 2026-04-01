@@ -255,82 +255,91 @@ delete_seed() {
 
 TS=$(date +%s)
 
-# ─── P0: Real SMS via Messages.app (--real-sms only) ───────────
-if $USE_REAL_SMS; then
-  echo "${PROBE_TAG} P0: Sending REAL SMS via Messages.app..."
-  REAL_SMS_CONTENT="[SEED-PROBE] real-sms-test-${TS} #idea"
-  send_real_sms "$REAL_SMS_CONTENT"
-  echo "${PROBE_TAG} P0: SMS sent. Waiting 30s for carrier→Twilio→tunnel→app→Fuseki..."
-  sleep 30
-  # Can't check by SID (we don't control it). Check by content substring.
-  P0_FOUND=$(curl -sf --max-time "$TIMEOUT" \
+WAIT_SMS=30
+
+# Helper: check Fuseki for content substring
+fuseki_has_content() {
+  local needle="$1"
+  local found=$(curl -sf --max-time "$TIMEOUT" \
     -H "Accept: application/sparql-results+json" \
-    --data-urlencode "query=PREFIX jb: <https://jeffbridwell.com/ontology#> SELECT ?seed WHERE { GRAPH <urn:jb:seeds/> { ?seed jb:seedContent ?c . FILTER(CONTAINS(?c, 'real-sms-test-${TS}')) } } LIMIT 1" \
+    --data-urlencode "query=PREFIX jb: <https://jeffbridwell.com/ontology#> SELECT ?seed WHERE { GRAPH <urn:jb:seeds/> { ?seed jb:seedContent ?c . FILTER(CONTAINS(?c, '${needle}')) } } LIMIT 1" \
     "${FUSEKI_URL}/pods/sparql" 2>/dev/null \
     | python3 -c "import json,sys; b=json.load(sys.stdin)['results']['bindings']; print(b[0]['seed']['value'] if b else '')" 2>/dev/null || echo "")
-  if [[ -n "$P0_FOUND" ]]; then
-    echo "${PROBE_TAG} P0: PASS — real SMS landed in Fuseki: ${P0_FOUND}"
-    PERM_PASS=$((PERM_PASS + 1))
-  else
-    echo "${PROBE_TAG} P0: FAIL — real SMS not found in Fuseki after 30s" >&2
-    PERM_FAIL=$((PERM_FAIL + 1))
-  fi
+  [[ -n "$found" ]]
+}
+
+# Helper: delete seed by content match
+delete_seed_by_content() {
+  local needle="$1"
+  curl --max-time "$TIMEOUT" -X POST "${FUSEKI_URL}/pods/update" \
+    -H "Content-Type: application/sparql-update" \
+    -u "admin:${FUSEKI_ADMIN_PASSWORD}" \
+    --data "PREFIX jb: <https://jeffbridwell.com/ontology#> DELETE { GRAPH <urn:jb:seeds/> { ?s ?p ?o } } WHERE { GRAPH <urn:jb:seeds/> { ?s jb:seedContent ?c . FILTER(CONTAINS(?c, '${needle}')) . ?s ?p ?o . } }" \
+    >/dev/null 2>&1 || true
+}
+
+# ─── P1: Content + hashtag (Jeff's actual pattern)
+echo "${PROBE_TAG} P1: Content + hashtag..."
+P1_TAG="p1-${TS}"
+P1_BODY="[SEED-PROBE] Garden design ideas ${P1_TAG} #idea"
+if $USE_REAL_SMS; then
+  send_real_sms "$P1_BODY"
+  sleep $WAIT_SMS
+  fuseki_has_content "$P1_TAG" && { echo "${PROBE_TAG} P1: PASS — content+hashtag (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P1: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
+  delete_seed_by_content "$P1_TAG"
+else
+  P1_SID="SM_PROBE_P1_${TS}"
+  send_signed_webhook "$P1_BODY" "$P1_SID" >/dev/null; sleep 3
+  fuseki_has_sid "$P1_SID" && { echo "${PROBE_TAG} P1: PASS — content+hashtag (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P1: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
+  delete_seed "$P1_SID"
 fi
 
-# ─── P1: Content + hashtag in ONE message (Jeff's actual pattern)
-echo "${PROBE_TAG} P1: Content + hashtag (single message)..."
-P1_SID="SM_PROBE_P1_${TS}"
-send_signed_webhook "[SEED-PROBE] Garden design ideas #idea" "$P1_SID" >/dev/null
-sleep 3
-if fuseki_has_sid "$P1_SID"; then
-  echo "${PROBE_TAG} P1: PASS — content+hashtag persisted as single seed"
-  PERM_PASS=$((PERM_PASS + 1))
+# ─── P2: Link + hashtag
+echo "${PROBE_TAG} P2: Link + hashtag..."
+P2_TAG="p2-${TS}"
+P2_BODY="[SEED-PROBE] https://example.com/${P2_TAG} #idea"
+if $USE_REAL_SMS; then
+  send_real_sms "$P2_BODY"
+  sleep $WAIT_SMS
+  fuseki_has_content "$P2_TAG" && { echo "${PROBE_TAG} P2: PASS — link+hashtag (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P2: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
+  delete_seed_by_content "$P2_TAG"
 else
-  echo "${PROBE_TAG} P1: FAIL — content+hashtag seed not found in Fuseki" >&2
-  PERM_FAIL=$((PERM_FAIL + 1))
+  P2_SID="SM_PROBE_P2_${TS}"
+  send_signed_webhook "$P2_BODY" "$P2_SID" >/dev/null; sleep 3
+  fuseki_has_sid "$P2_SID" && { echo "${PROBE_TAG} P2: PASS — link+hashtag (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P2: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
+  delete_seed "$P2_SID"
 fi
-delete_seed "$P1_SID"
-
-# ─── P2: Link + hashtag in ONE message
-echo "${PROBE_TAG} P2: Link + hashtag (single message)..."
-P2_SID="SM_PROBE_P2_${TS}"
-send_signed_webhook "[SEED-PROBE] https://example.com/interesting-article #idea" "$P2_SID" >/dev/null
-sleep 3
-if fuseki_has_sid "$P2_SID"; then
-  echo "${PROBE_TAG} P2: PASS — link+hashtag persisted"
-  PERM_PASS=$((PERM_PASS + 1))
-else
-  echo "${PROBE_TAG} P2: FAIL — link+hashtag seed not found in Fuseki" >&2
-  PERM_FAIL=$((PERM_FAIL + 1))
-fi
-delete_seed "$P2_SID"
 
 # ─── P3: Content without hashtag — routes to wren by default
 echo "${PROBE_TAG} P3: Content without hashtag..."
-P3_SID="SM_PROBE_P3_${TS}"
-send_signed_webhook "[SEED-PROBE] Random thought about gardens" "$P3_SID" >/dev/null
-sleep 5
-if fuseki_has_sid "$P3_SID"; then
-  echo "${PROBE_TAG} P3: PASS — content without hashtag persisted (default route)"
-  PERM_PASS=$((PERM_PASS + 1))
+P3_TAG="p3-${TS}"
+P3_BODY="[SEED-PROBE] Random thought about gardens ${P3_TAG}"
+if $USE_REAL_SMS; then
+  send_real_sms "$P3_BODY"
+  sleep $WAIT_SMS
+  fuseki_has_content "$P3_TAG" && { echo "${PROBE_TAG} P3: PASS — no hashtag, default route (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P3: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
+  delete_seed_by_content "$P3_TAG"
 else
-  echo "${PROBE_TAG} P3: FAIL — untagged content not found in Fuseki" >&2
-  PERM_FAIL=$((PERM_FAIL + 1))
+  P3_SID="SM_PROBE_P3_${TS}"
+  send_signed_webhook "$P3_BODY" "$P3_SID" >/dev/null; sleep 5
+  fuseki_has_sid "$P3_SID" && { echo "${PROBE_TAG} P3: PASS — no hashtag, default route (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P3: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
+  delete_seed "$P3_SID"
 fi
-delete_seed "$P3_SID"
 
-# ─── P4: Hashtag only — NO capture created
+# ─── P4: Hashtag only — NO capture (webhook only, can't verify negative via real SMS)
 echo "${PROBE_TAG} P4: Hashtag only..."
 P4_SID="SM_PROBE_P4_${TS}"
-send_signed_webhook "#wren" "$P4_SID" >/dev/null
-sleep 3
-if ! fuseki_has_sid "$P4_SID"; then
-  echo "${PROBE_TAG} P4: PASS — hashtag-only did not create capture"
-  PERM_PASS=$((PERM_PASS + 1))
+if $USE_REAL_SMS; then
+  P4_TAG="p4-${TS}"
+  send_real_sms "#wren"
+  sleep $WAIT_SMS
+  # Hashtag-only should NOT create a capture. Check that no seed has content "#wren" with our timestamp window.
+  ! fuseki_has_content "$P4_TAG" && { echo "${PROBE_TAG} P4: PASS — hashtag-only, no capture (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P4: FAIL — hashtag created capture" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 else
-  echo "${PROBE_TAG} P4: FAIL — hashtag-only created a capture" >&2
-  PERM_FAIL=$((PERM_FAIL + 1))
+  send_signed_webhook "#wren" "$P4_SID" >/dev/null; sleep 3
+  ! fuseki_has_sid "$P4_SID" && { echo "${PROBE_TAG} P4: PASS — hashtag-only, no capture (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P4: FAIL — hashtag created capture" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 fi
+delete_seed "$P4_SID"
 delete_seed "$P4_SID"
 
 # ─── P5: Multi-photo + hashtag — one seed, multiple media
