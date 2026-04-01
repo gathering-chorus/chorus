@@ -14,12 +14,14 @@ const NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/script
 // Auth token for remote access (#1719)
 // Generate a stable token per machine — persists across restarts
 const crypto = require('crypto');
-const BRIDGE_TOKEN_FILE = '/tmp/bridge-auth-token';
+const CHORUS_HOME = `${require('os').homedir()}/.chorus`;
+const BRIDGE_TOKEN_FILE = `${CHORUS_HOME}/bridge-auth-token`;
 let BRIDGE_TOKEN: string;
 try {
   BRIDGE_TOKEN = require('fs').readFileSync(BRIDGE_TOKEN_FILE, 'utf-8').trim();
 } catch {
   BRIDGE_TOKEN = crypto.randomBytes(16).toString('hex');
+  require('fs').mkdirSync(CHORUS_HOME, { recursive: true });
   require('fs').writeFileSync(BRIDGE_TOKEN_FILE, BRIDGE_TOKEN);
 }
 console.log(`[clearing] remote access token: ${BRIDGE_TOKEN}`);
@@ -663,7 +665,7 @@ end tell'`, { encoding: 'utf-8', timeout: 5000, env: { ...process.env, PATH: '/u
 app.get('/api/tiles', (_req, res) => res.json(tilePoller.getTiles()));
 
 // API: get recent messages (for page load)
-app.get('/api/messages', (_req, res) => res.json(messageRouter.getRecent(50)));
+app.get('/api/messages', (req, res) => res.json(messageRouter.getRecent(50, !!req.query.includeHidden)));
 
 // API: receive message from role (callback endpoint)
 app.post('/api/message', (req, res) => {

@@ -4,7 +4,7 @@ export interface ChannelMessage {
   from: string;
   text: string;
   ts: string;
-  type: 'jeff-input' | 'role-response' | 'demo-ready' | 'accept-request' | 'blocked' | 'role-to-role' | 'system-error' | 'pm-thinking';
+  type: 'jeff-input' | 'role-response' | 'demo-ready' | 'accept-request' | 'blocked' | 'role-to-role' | 'system-error' | 'pm-thinking' | 'probe';
   level?: string;
   visible: boolean;
 }
@@ -65,6 +65,11 @@ export class MessageRouter extends EventEmitter {
   /** Classify a message: determine type and visibility */
   private classify(raw: { from: string; text: string; ts: string; type?: string; level?: string }): ChannelMessage {
     const { from, text, ts } = raw;
+
+    // Synthetic probe messages — hidden (#1933)
+    if (raw.type === 'probe' || from === 'probe') {
+      return { from, text, ts, type: 'probe', visible: false };
+    }
 
     // Batch progress / chorus-query system messages — hidden from message stream (#1706)
     if (text.includes('[progress]') || text.includes('[batch]') || text.includes('[batch-complete]')) {

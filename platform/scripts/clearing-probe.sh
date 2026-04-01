@@ -20,7 +20,7 @@ log() {
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   -X POST "$CLEARING/api/message" \
   -H 'Content-Type: application/json' \
-  -d "{\"from\":\"probe\",\"text\":\"$MARKER\"}" \
+  -d "{\"from\":\"probe\",\"text\":\"$MARKER\",\"type\":\"probe\"}" \
   --connect-timeout 3 --max-time 5 2>/dev/null || echo "000")
 
 if [ "$HTTP_CODE" != "200" ]; then
@@ -32,7 +32,7 @@ fi
 # Step 2: Verify the probe appears in message history
 FOUND=false
 for i in $(seq 1 $MAX_WAIT); do
-  MESSAGES=$(curl -s "$CLEARING/api/messages" --connect-timeout 3 --max-time 5 2>/dev/null || echo "[]")
+  MESSAGES=$(curl -s "$CLEARING/api/messages?includeHidden=1" --connect-timeout 3 --max-time 5 2>/dev/null || echo "[]")
   if echo "$MESSAGES" | grep -q "$MARKER"; then
     FOUND=true
     break

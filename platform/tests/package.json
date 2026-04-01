@@ -1,0 +1,15 @@
+{
+  "name": "chorus-gate-specs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BDD gate specs — Gherkin scenarios for chorus-hooks gates",
+  "scripts": {
+    "test": "cucumber-js",
+    "test:gates": "cucumber-js --tags @gate"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^10.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}
