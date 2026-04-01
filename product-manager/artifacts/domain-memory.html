@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Domain — Memory</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 10px; font-size: 0.86rem; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.74rem; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .stage { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 10px; border-radius: 12px; font-size: 0.76rem; font-weight: 600; }
+  .svc { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px; margin: 8px 0; }
+  .svc h3 { font-size: 0.9rem; color: #2d4a7a; margin-bottom: 6px; }
+  .svc p { font-size: 0.82rem; margin-bottom: 4px; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.8rem; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  .role { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.74rem; font-weight: 600; }
+  .role-wren { background: #dcfce7; color: #166534; }
+  .role-silas { background: #fef3c7; color: #92400e; }
+  .role-kade { background: #dbeafe; color: #1e40af; }
+  .role-jeff { background: #f3e8ff; color: #6b21a8; }
+  .actor-diagram { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.78rem; line-height: 2; white-space: pre; overflow-x: auto; }
+  .dep { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 0.82rem; }
+  .dep strong { color: #9a3412; }
+  .gap { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 0.82rem; }
+  .gap strong { color: #991b1b; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<h1>Domain — Memory</h1>
+<p class="subtitle"><span class="stage">Memory</span> &bull; Team recall &bull; Chorus product</p>
+
+<p>Memory is how the team recalls what happened. Not search infrastructure — recall. "What did Jeff and Wren talk about this morning?" The data exists: 97K messages indexed from Claude sessions, Clearing transcripts, and artifacts. The experience doesn't: getting an answer requires knowing query syntax, field names, timestamp formats, and often writing code. Chorus captures everything. Chorus surfaces almost nothing.</p>
+
+<p>Jeff depends on the engineering team. The engineering team depends on Memory to do their job. When Memory doesn't surface conversations, Jeff becomes the memory system — carrying context between roles manually.</p>
+
+<h2>Actor Flow — Current State</h2>
+<div class="actor-diagram">
+  Jeff / Role                  /chorus skill              Chorus API (3340)          Data Stores
+       │                            │                           │                       │
+       ├── "what did wren           │                           │                       │
+       │    and I talk about" ─────▶│                           │                       │
+       │                            │                           │                       │
+       │                            ├── parse query ───────────▶│                       │
+       │                            │   GET /api/chorus/search  │                       │
+       │                            │   ?q=wren+jeff            │                       │
+       │                            │   &mode=fts               │                       │
+       │                            │                           │                       │
+       │                            │                           ├── FTS5 match ────────▶│ SQLite
+       │                            │                           │   messages_fts        │ index.db
+       │                            │                           │                       │ 97K msgs
+       │                            │                           │                       │
+       │                            │                           ├── semantic search ───▶│ LanceDB
+       │                            │                           │   nomic-embed-text    │ 15K docs
+       │                            │                           │                       │
+       │                            │                           ├── SPARQL search ────▶│ Fuseki
+       │                            │                           │   text index          │ RDF graphs
+       │                            │                           │                       │
+       │                            │◀── JSON array of hits ────┤                       │
+       │                            │    [{id, source, channel,  │                       │
+       │                            │      role, author, content,│                       │
+       │                            │      timestamp, snippet}]  │                       │
+       │                            │                           │                       │
+       │◀── 20 disconnected ────────┤                           │                       │
+       │    search results          │                           │                       │
+       │    (not a conversation)    │                           │                       │
+       │                            │                           │                       │
+</div>
+
+<h2>Actor Flow — What Jeff Wants</h2>
+<div class="actor-diagram">
+  Jeff / Role                  /chorus skill              Chorus API (3340)          Data Stores
+       │                            │                           │                       │
+       ├── "show me my convo        │                           │                       │
+       │    with wren 10am-2pm" ───▶│                           │                       │
+       │                            │                           │                       │
+       │                            ├── parse intent ──────────▶│                       │
+       │                            │   GET /api/chorus/convo   │                       │
+       │                            │   ?roles=jeff,wren        │                       │
+       │                            │   &after=2026-04-01T10:00 │                       │
+       │                            │   &before=2026-04-01T14:00│                       │
+       │                            │   &tz=America/New_York    │                       │
+       │                            │                           │                       │
+       │                            │                           ├── find session ──────▶│ JSONL
+       │                            │                           │   files for wren      │ session
+       │                            │                           │   in time range       │ files
+       │                            │                           │                       │
+       │                            │                           ├── extract both ──────▶│ SQLite
+       │                            │                           │   Jeff's messages     │ index.db
+       │                            │                           │   (from 'user' type)  │
+       │                            │                           │   + Wren's responses  │
+       │                            │                           │   (from 'assistant')  │
+       │                            │                           │                       │
+       │                            │◀── conversation thread ───┤                       │
+       │                            │    [{speaker, text, time}] │                       │
+       │                            │    ordered chronologically │                       │
+       │                            │    Jeff's words included   │                       │
+       │                            │                           │                       │
+       │◀── readable thread ────────┤                           │                       │
+       │    [10:01] Jeff: "..."     │                           │                       │
+       │    [10:02] Wren: "..."     │                           │                       │
+       │    [10:05] Jeff: "..."     │                           │                       │
+       │                            │                           │                       │
+</div>
+
+<h2>Gaps — Why It Doesn't Work Today</h2>
+
+<div class="gap"><strong>Gap 1: Jeff's messages aren't first-class.</strong> Session JSONL stores Jeff's words as <code>type: "user"</code> content blocks, often mixed with system-reminder tags and skill loads. The indexer may skip them or bury them. When a role searches Chorus, Jeff's half of the conversation is missing or requires parsing raw JSONL.</div>
+
+<div class="gap"><strong>Gap 2: No conversation view.</strong> Search returns 20 disconnected hits ranked by relevance. There's no way to say "show me the conversation between Jeff and Wren from 10am to 2pm." Results are fragments, not threads.</div>
+
+<div class="gap"><strong>Gap 3: Time is UTC, not Boston.</strong> All timestamps stored in UTC or mixed formats. Jeff thinks in Boston time. Querying "this morning" requires manual UTC conversion.</div>
+
+<div class="gap"><strong>Gap 4: No session-level query.</strong> The API searches messages, not sessions. There's no concept of "the conversation Jeff and Wren had" — only individual messages that happen to be from the same session file.</div>
+
+<h2>API — Current</h2>
+<table>
+  <tr><th>Endpoint</th><th>Port</th><th>Description</th></tr>
+  <tr><td><code>GET /api/chorus/search?q=&mode=&role=&limit=</code></td><td>3340</td><td>Search indexed messages — modes: fts (default), semantic, hybrid, unified</td></tr>
+</table>
+
+<h2>API — Needed</h2>
+<table>
+  <tr><th>Endpoint</th><th>Port</th><th>Description</th></tr>
+  <tr><td><code>GET /api/chorus/conversation?roles=&after=&before=&tz=</code></td><td>3340</td><td>Threaded conversation between named participants in a time range</td></tr>
+</table>
+
+<h2>Data Sources</h2>
+<table>
+  <tr><th>Source</th><th>What's Indexed</th><th>Jeff's Words?</th></tr>
+  <tr><td>Claude session JSONL</td><td>Assistant responses (type: assistant)</td><td>Partial — user messages exist in JSONL but may not be indexed as first-class</td></tr>
+  <tr><td>Clearing transcripts</td><td>All messages from all participants</td><td>Yes — Jeff's Clearing messages are attributed</td></tr>
+  <tr><td>Artifacts (HTML, MD)</td><td>Full text of team documents</td><td>N/A</td></tr>
+  <tr><td>Briefs</td><td>Markdown brief content</td><td>N/A</td></tr>
+</table>
+
+<h2>Integration</h2>
+<table>
+  <tr><th>Service</th><th>Direction</th><th>Purpose</th></tr>
+  <tr><td>SQLite FTS5 (index.db)</td><td>← sessions</td><td>97K messages indexed, full-text searchable</td></tr>
+  <tr><td>LanceDB</td><td>← sessions</td><td>15K docs with nomic-embed-text vectors for semantic search</td></tr>
+  <tr><td>Fuseki</td><td>← RDF graphs</td><td>SPARQL text index for domain knowledge</td></tr>
+  <tr><td>/chorus skill</td><td>→ API</td><td>Skill translates natural language to API query</td></tr>
+</table>
+
+<h2>Related Cards</h2>
+<table>
+  <tr><th>Card</th><th>Status</th><th>Description</th></tr>
+  <tr><td>#1946</td><td>Later</td><td>Chorus search returns readable conversations — one query, Boston time, Jeff's words included</td></tr>
+</table>
+
+<p class="meta">Domain Page — Memory &bull; Kade &bull; 2026-04-01 &bull; Actor diagrams show current state vs desired state</p>
+</body>
+</html>

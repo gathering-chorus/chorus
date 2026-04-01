@@ -452,6 +452,170 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
   }
 });
 
+// --- GET /api/chorus/conversation ---
+// Returns a readable conversation thread between participants in a time range.
+// Memory domain — team recall, not search. #1946
+
+app.get('/api/chorus/conversation', (req: Request, res: Response) => {
+  const rolesParam = req.query.roles as string;
+  if (!rolesParam) {
+    res.status(400).json({ error: 'Missing required parameter: roles (comma-separated, e.g. jeff,wren)' });
+    return;
+  }
+
+  const roles = rolesParam.split(',').map(r => r.trim().toLowerCase());
+  const date = req.query.date as string || new Date().toISOString().slice(0, 10);
+  const tz = req.query.tz as string || 'America/New_York';
+  const afterTime = req.query.after as string; // HH:MM in local tz
+  const beforeTime = req.query.before as string; // HH:MM in local tz
+  const limit = Math.min(parseInt(req.query.limit as string || '500', 10), 2000);
+
+  let db: Database.Database;
+  try {
+    db = getDb();
+  } catch (e) {
+    if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
+    throw e;
+  }
+
+  try {
+    // Find sessions for the requested roles on the given date
+    // A conversation between jeff and wren = messages where role is wren
+    // (Jeff's words are author='user' in wren's session)
+    const roleFilter = roles.filter(r => r !== 'jeff');
+    if (roleFilter.length === 0) {
+      res.status(400).json({ error: 'At least one non-jeff role required (jeff is always a participant via user messages)' });
+      return;
+    }
+
+    const placeholders = roleFilter.map(() => '?').join(',');
+
+    // Build time range — convert local time to query bounds
+    let afterISO = `${date}T00:00:00`;
+    let beforeISO = `${date}T23:59:59`;
+
+    if (afterTime) {
+      // Convert Boston time to UTC for query
+      // Boston is UTC-4 (EDT) or UTC-5 (EST)
+      const offsetHours = isEDT(date) ? 4 : 5;
+      const [h, m] = afterTime.split(':').map(Number);
+      const utcH = h + offsetHours;
+      afterISO = `${date}T${String(utcH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
+    }
+    if (beforeTime) {
+      const offsetHours = isEDT(date) ? 4 : 5;
+      const [h, m] = beforeTime.split(':').map(Number);
+      const utcH = h + offsetHours;
+      // Handle day rollover
+      if (utcH >= 24) {
+        const nextDate = new Date(date);
+        nextDate.setDate(nextDate.getDate() + 1);
+        const nd = nextDate.toISOString().slice(0, 10);
+        beforeISO = `${nd}T${String(utcH - 24).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
+      } else {
+        beforeISO = `${date}T${String(utcH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
+      }
+    }
+
+    const rows = db.prepare(`
+      SELECT author, content, timestamp, role, session_id
+      FROM messages
+      WHERE role IN (${placeholders})
+      AND timestamp >= ?
+      AND timestamp <= ?
+      ORDER BY timestamp ASC
+      LIMIT ?
+    `).all(...roleFilter, afterISO, beforeISO, limit) as Array<{
+      author: string; content: string; timestamp: string; role: string; session_id: string;
+    }>;
+
+    // Convert to conversation thread
+    const thread = rows
+      .filter(row => {
+        const text = row.content.trim();
+        // Filter out system noise
+        if (text.startsWith('<system-reminder>')) return false;
+        if (text.startsWith('<task-')) return false;
+        if (text.startsWith('Base directory for this skill:')) return false;
+        if (text.startsWith('[Request interrupted')) return false;
+        if (text.length < 2) return false;
+        return true;
+      })
+      .map(row => {
+        const speaker = row.author === 'user' ? 'jeff' : row.role;
+        const time = convertToLocal(row.timestamp, tz);
+        return {
+          speaker,
+          text: row.content.trim(),
+          time,
+        };
+      });
+
+    // If time filter was in local time, re-filter by local time
+    // (the UTC conversion is approximate — DST edge cases)
+    let filteredThread = thread;
+    if (afterTime || beforeTime) {
+      filteredThread = thread.filter(msg => {
+        const localHM = msg.time.split(' ')[1] || msg.time.slice(11, 16);
+        if (afterTime && localHM < afterTime) return false;
+        if (beforeTime && localHM >= beforeTime) return false;
+        return true;
+      });
+    }
+
+    res.json({
+      thread: filteredThread,
+      participants: roles,
+      date,
+      timezone: tz,
+      count: filteredThread.length,
+    });
+
+  } finally {
+    db.close();
+  }
+});
+
+/** Check if a date falls in US Eastern Daylight Time */
+function isEDT(dateStr: string): boolean {
+  // Approximate: EDT is second Sunday of March to first Sunday of November
+  const d = new Date(dateStr);
+  const month = d.getMonth(); // 0-indexed
+  if (month > 2 && month < 10) return true; // Apr-Oct always EDT
+  if (month === 2) {
+    // March: EDT starts second Sunday
+    const firstDay = new Date(d.getFullYear(), 2, 1).getDay();
+    const secondSunday = firstDay === 0 ? 8 : 15 - firstDay;
+    return d.getDate() >= secondSunday;
+  }
+  if (month === 10) {
+    // November: EDT ends first Sunday
+    const firstDay = new Date(d.getFullYear(), 10, 1).getDay();
+    const firstSunday = firstDay === 0 ? 1 : 8 - firstDay;
+    return d.getDate() < firstSunday;
+  }
+  return false; // Dec-Feb always EST
+}
+
+/** Convert ISO timestamp to local time string */
+function convertToLocal(isoTimestamp: string, _tz: string): string {
+  try {
+    const d = new Date(isoTimestamp);
+    // Use Intl for proper timezone conversion
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(d);
+    const get = (type: string) => parts.find(p => p.type === type)?.value || '';
+    return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+  } catch {
+    return isoTimestamp;
+  }
+}
+
 /** Reciprocal Rank Fusion — merge FTS + semantic results by message ID */
 function mergeRRF(ftsResults: any[], semResults: SemanticResult[], limit: number, k = 60): any[] {
   const scoreMap = new Map<number, { score: number; result: any }>();
