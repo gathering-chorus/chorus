@@ -173,6 +173,51 @@ if [[ -z "$SEED_FOUND" ]]; then
   exit 1
 fi
 
+# ─── HOP 6: Bridge confirmation (#1937 AC1) ─────────────────────
+echo "${PROBE_TAG} Hop 6: Checking Bridge for seed arrival notification..."
+
+BRIDGE_FOUND=""
+BRIDGE_ELAPSED=0
+
+while [[ $BRIDGE_ELAPSED -lt 10 ]]; do
+  BRIDGE_MSGS=$(curl -sf --max-time "$TIMEOUT" \
+    "http://localhost:3470/api/messages?limit=10" 2>/dev/null || echo "")
+
+  if echo "$BRIDGE_MSGS" | grep -q "seed arrived"; then
+    if echo "$BRIDGE_MSGS" | grep -q "$PROBE_SID\|SEED-PROBE"; then
+      BRIDGE_FOUND="yes"
+      echo "${PROBE_TAG} Hop 6: OK — Bridge notification found after ${BRIDGE_ELAPSED}s"
+      break
+    fi
+  fi
+
+  sleep 2
+  BRIDGE_ELAPSED=$((BRIDGE_ELAPSED + 2))
+done
+
+if [[ -z "$BRIDGE_FOUND" ]]; then
+  # Warn but don't fail — Bridge may be down, seed still landed
+  echo "${PROBE_TAG} Hop 6: WARN — no Bridge notification found (Bridge may be down)" >&2
+  alert_bridge "WARN hop=bridge-notify — seed landed but Jeff didn't get confirmation"
+fi
+
+# ─── HOP 7: Nudge delivery (#1937 AC2+AC6) ──────────────────────
+echo "${PROBE_TAG} Hop 7: Checking chorus.log for nudge delivery..."
+
+NUDGE_FOUND=""
+if [[ -f "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log" ]]; then
+  RECENT_NUDGE=$(tail -20 /Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log 2>/dev/null \
+    | grep -i "seed.*routed\|seed.*nudge" || echo "")
+  if [[ -n "$RECENT_NUDGE" ]]; then
+    NUDGE_FOUND="yes"
+    echo "${PROBE_TAG} Hop 7: OK — nudge delivery evidence found"
+  fi
+fi
+
+if [[ -z "$NUDGE_FOUND" ]]; then
+  echo "${PROBE_TAG} Hop 7: WARN — no nudge delivery evidence (probe may not route to real role)" >&2
+fi
+
 # ─── CLEANUP: Delete probe seed from Fuseki ──────────────────────
 echo "${PROBE_TAG} Cleanup: removing probe seed..."
 
