@@ -1,24 +1,28 @@
 # Wren — Next Session
 
-## Accomplished (2026-03-30 → 2026-03-31)
-- KM sequence: manuals, doc-catalog, domain pages, nav cleanup
-- Pulse sequence: --level, card types, signal hierarchy, watchdog, integration test 39/39
-- Card type field: new/enhance/fix/chore/swat drives gates + patterns
-- ICD: 7 cards, 23 providers, convergence filters
-- Scripts → Rust/API: chorus-ops, Python, 4 pulse scripts
-- Seeds fixed: Twilio URL, photo delivery, seed endpoint
-- Diagrams: nudge sequence, actor, pipeline, genome visualization
-- Gate verified: log-first blocks fix edits without log inspection
+## Accomplished (2026-04-01)
+- Value stream designed: Shaping → Designing → Building → Proving (HTML artifact)
+- Anti-enshittification principle named and documented
+- #1929 accepted — gate smoke check on session boot
+- #1930 demo'd — Gherkin gate specs (38 scenarios), needs reshaping to real gate chain
+- #1942 accepted — seeds domain context with actor flow, policy, BDD, probe 6 permutations
+- Log-first gate hardened: requires "Log evidence:" synthesis, not just opening any log
+- Seed pipeline: hashtag-only skip, notifySeedArrival added then REMOVED (Jeff never asked for notifications)
+- Real SMS from Jeff's phone landed clean — Zip-A-Dee-Doo-Dah
+- UX empathy research: no plugin exists, Jeff is building the literature
+- Four Chorus domains defined: Policy, Practice, Evidence, Research
 
-## Critical Finding
-- 44% of accepts bypassed demo gate
-- TDD gate satisfied by any test run, not actual TDD
-- 7 of 8 gates untested on real card pull
-- Session cache path bug caused all gates to allow everything — fixed
+## Critical Findings
+- Jeff reads ~5% of output. System produces 10x his input. 64% of his channel is system noise.
+- Gates were performative — "check the logs" meant any log file. Fixed to require synthesis.
+- Seeds broken since mid-February. Seven empty hashtags on triage page. Three real seeds from yesterday never arrived.
+- The Gherkin made performativeness visible — Jeff read one scenario and saw the theater instantly.
+- "There's this part I don't know how to convey" — the gap between what Jeff needs and what agents can understand.
+- Building and proving are where Jeff loses the team. Shaping and designing work because Jeff is in them.
 
 ## Next Session
-1. Verify all 8 gates on fresh fix card pull
-2. BDD specs for gate behavior (cucumber-js or jest)
-3. Conformance dashboard: gates fired vs bypassed
-4. #1865 photo thumbnail fix
-5. #1925 auto-nudge on completion
+1. #1936 Clearing from phone — Silas's card, relieves three-terminal pain. Push this.
+2. Reshape #1930 Gherkin to match real gate chain sequence (memory → log-first → pair for building, tdd → demo → accept for proving)
+3. Update Chorus page value stream from 5 steps to 4 (surface area change)
+4. Seed osascript SMS: works but carrier blocks Mac→Twilio. Only Jeff's phone is the real test.
+5. Definition-of-done.html needs updating to match value stream

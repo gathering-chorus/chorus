@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BDD — Seed Pipeline</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .scenario { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 12px 0; }
+  .scenario-title { font-weight: 700; color: #1a1a2e; font-size: 0.9rem; margin-bottom: 10px; }
+  .step { font-family: 'SF Mono', Monaco, monospace; font-size: 0.82rem; padding: 3px 0; }
+  .keyword { color: #2d4a7a; font-weight: 600; display: inline-block; width: 60px; }
+  .param { color: #92400e; font-weight: 600; }
+  .section-label { font-size: 0.74rem; color: #999; text-transform: uppercase; letter-spacing: 1px; margin-top: 24px; margin-bottom: 8px; }
+  .anti { border-color: #fca5a5; }
+  .anti .scenario-title { color: #991b1b; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+</style>
+</head>
+<body>
+
+<h1>BDD — Seed Pipeline</h1>
+<p class="subtitle">Jeff sends a seed from his phone. It arrives. Someone cares. Jeff sees proof.</p>
+
+<p class="section-label">Arrive</p>
+
+<div class="scenario">
+  <div class="scenario-title">Content then hashtag — seed correlates and routes</div>
+  <div class="step"><span class="keyword">Given</span> Jeff sends <span class="param">"Kitchen reno concept"</span> from his phone</div>
+  <div class="step"><span class="keyword">And</span> Jeff sends <span class="param">"#idea"</span> 30 seconds later</div>
+  <div class="step"><span class="keyword">When</span> the seed pipeline processes both messages</div>
+  <div class="step"><span class="keyword">Then</span> the content is routed to ideas in Chorus</div>
+  <div class="step"><span class="keyword">And</span> the hashtag message does not create a capture</div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Hashtag-only message — not a seed</div>
+  <div class="step"><span class="keyword">Given</span> Jeff sends <span class="param">"#wren"</span> from his phone</div>
+  <div class="step"><span class="keyword">And</span> no content message preceded it</div>
+  <div class="step"><span class="keyword">Then</span> no seed record is created</div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Content without hashtag — routes to Wren by default</div>
+  <div class="step"><span class="keyword">Given</span> Jeff sends <span class="param">"Random thought about gardens"</span> from his phone</div>
+  <div class="step"><span class="keyword">And</span> no hashtag follows within 120 seconds</div>
+  <div class="step"><span class="keyword">Then</span> the seed routes to wren by default</div>
+</div>
+
+<p class="section-label">Confirm</p>
+
+<div class="scenario">
+  <div class="scenario-title">Jeff sees arrival on Bridge</div>
+  <div class="step"><span class="keyword">Given</span> a seed has been routed successfully</div>
+  <div class="step"><span class="keyword">Then</span> Jeff sees <span class="param">"seed arrived"</span> on the Bridge</div>
+  <div class="step"><span class="keyword">And</span> the message shows the content and destination</div>
+</div>
+
+<p class="section-label">Engage</p>
+
+<div class="scenario">
+  <div class="scenario-title">Target role is nudged immediately</div>
+  <div class="step"><span class="keyword">Given</span> a seed has been routed to wren</div>
+  <div class="step"><span class="keyword">Then</span> wren receives a nudge with <span class="param">--force</span></div>
+  <div class="step"><span class="keyword">And</span> the nudge contains the seed content</div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Role engages with the seed</div>
+  <div class="step"><span class="keyword">Given</span> wren received a seed about <span class="param">"OrionBelt Ontology Builder"</span></div>
+  <div class="step"><span class="keyword">When</span> wren picks up the seed</div>
+  <div class="step"><span class="keyword">Then</span> wren states what the seed means and how it connects to current work</div>
+  <div class="step"><span class="keyword">And</span> wren either cards it, routes it, or discards with a reason Jeff can see</div>
+</div>
+
+<p class="section-label">Close the Loop</p>
+
+<div class="scenario">
+  <div class="scenario-title">Jeff sees what the role did</div>
+  <div class="step"><span class="keyword">Given</span> wren acted on a seed</div>
+  <div class="step"><span class="keyword">Then</span> Jeff sees on the Bridge who picked it up and what they did</div>
+</div>
+
+<p class="section-label">Anti-patterns</p>
+
+<div class="scenario anti">
+  <div class="scenario-title">Hashtag displayed as seed on triage page — wrong</div>
+  <div class="step"><span class="keyword">Given</span> Jeff sends <span class="param">"Cool article"</span> then <span class="param">"#wren"</span></div>
+  <div class="step"><span class="keyword">When</span> the triage page loads</div>
+  <div class="step"><span class="keyword">Then</span> only the content message appears as a seed</div>
+  <div class="step"><span class="keyword">And</span> <span class="param">"#wren"</span> does not appear as a separate pending seed</div>
+</div>
+
+<div class="scenario anti">
+  <div class="scenario-title">Seed treated as spam — wrong</div>
+  <div class="step"><span class="keyword">Given</span> Jeff sends a seed</div>
+  <div class="step"><span class="keyword">When</span> a role receives it</div>
+  <div class="step"><span class="keyword">Then</span> the role does not batch it for later</div>
+  <div class="step"><span class="keyword">And</span> the role does not discard without reading</div>
+  <div class="step"><span class="keyword">And</span> the role engages in the same prompt cycle</div>
+</div>
+
+<p class="meta">BDD — Seed Pipeline &bull; Derived from actor flow &bull; Wren + Jeff &bull; 2026-04-01</p>
+</body>
+</html>
