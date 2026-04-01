@@ -223,10 +223,11 @@ send_signed_webhook() {
 
 # Real SMS via Messages.app — gated behind --real-sms flag.
 # Tests full carrier→Twilio→tunnel→app path. One SMS per daily 5:55am run only.
+SMS_SERVICE_ID="00BA859D-E329-4998-A366-E934E6B49E0A"
 send_real_sms() {
   local body="$1"
   if $USE_REAL_SMS; then
-    osascript -e "tell application \"Messages\" to send \"${body}\" to participant \"${CAPTURE_ALLOWED_PHONES}\" of (first account whose service type is SMS)" 2>/dev/null
+    osascript -e "tell application \"Messages\" to send \"${body}\" to buddy \"${CAPTURE_ALLOWED_PHONES}\" of service id \"${SMS_SERVICE_ID}\"" 2>/dev/null
     echo "${PROBE_TAG} Sent real SMS: ${body:0:40}..."
   fi
 }
@@ -252,6 +253,28 @@ delete_seed() {
 }
 
 TS=$(date +%s)
+
+# ─── P0: Real SMS via Messages.app (--real-sms only) ───────────
+if $USE_REAL_SMS; then
+  echo "${PROBE_TAG} P0: Sending REAL SMS via Messages.app..."
+  REAL_SMS_CONTENT="[SEED-PROBE] real-sms-test-${TS} #idea"
+  send_real_sms "$REAL_SMS_CONTENT"
+  echo "${PROBE_TAG} P0: SMS sent. Waiting 30s for carrier→Twilio→tunnel→app→Fuseki..."
+  sleep 30
+  # Can't check by SID (we don't control it). Check by content substring.
+  P0_FOUND=$(curl -sf --max-time "$TIMEOUT" \
+    -H "Accept: application/sparql-results+json" \
+    --data-urlencode "query=PREFIX jb: <https://jeffbridwell.com/ontology#> SELECT ?seed WHERE { GRAPH <urn:jb:seeds/> { ?seed jb:seedContent ?c . FILTER(CONTAINS(?c, 'real-sms-test-${TS}')) } } LIMIT 1" \
+    "${FUSEKI_URL}/pods/sparql" 2>/dev/null \
+    | python3 -c "import json,sys; b=json.load(sys.stdin)['results']['bindings']; print(b[0]['seed']['value'] if b else '')" 2>/dev/null || echo "")
+  if [[ -n "$P0_FOUND" ]]; then
+    echo "${PROBE_TAG} P0: PASS — real SMS landed in Fuseki: ${P0_FOUND}"
+    PERM_PASS=$((PERM_PASS + 1))
+  else
+    echo "${PROBE_TAG} P0: FAIL — real SMS not found in Fuseki after 30s" >&2
+    PERM_FAIL=$((PERM_FAIL + 1))
+  fi
+fi
 
 # ─── P1: Content + hashtag in ONE message (Jeff's actual pattern)
 echo "${PROBE_TAG} P1: Content + hashtag (single message)..."
