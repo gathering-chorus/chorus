@@ -1,35 +1,33 @@
-# Daily Morning Summary — 2026-03-29
+# Daily Morning Summary — 2026-04-01
 
-**HEADLINE:** Board-client is RED with 62 test failures across 5 suites — clearing binary and seed SMS handler gaps need an engineer assigned today.
+**HEADLINE:** CI has been dark for 2+ days — all 4 platform packages lost `node_modules` and a chorus-sdk regression went undetected; restore test signal before anything new ships.
 
 ---
 
-**OPS** 🟡 YELLOW (Silas)
+**OPS** 🟡 YELLOW (Silas review: 2026-03-29)
 - 4 yellows, 4 greens. No reds.
-- Top concern: `chorus-hooks/target/` (321 untracked files) likely missing from `.gitignore` — Silas to confirm and add.
-- Also: 8 cargo warnings, 4 auto-fixable via `cargo fix --bin chorus-hooks`. Remaining 4 need manual review this week.
-- /tmp usage in 6 plists + 7 scripts is known/accepted risk. bedroom-heartbeat state loss on reboot not yet carded.
+- Top concern: 8 cargo warnings in chorus-hooks — 4 auto-fixable (`cargo fix --bin chorus-hooks`), 4 need manual review
+- /tmp usage in 7 scripts + 6 plists is known/accepted. bedroom-heartbeat state loss on reboot not yet carded.
+- `chorus-hooks/target/` (321 untracked) — confirm `.gitignore` covers build artifacts
 
-**QUALITY** 🔴 RED (Kade — baseline run 2026-03-28)
-- Total: 235 tests | 62 failed | 142 passed | 31 skipped
-- Board-client RED: 5 suites failing — `brief-pipeline-flow`, `clearing-flow`, `seed-pipeline-flow`, `gemba-flow`, `jdi-gate-flow`
-- Root causes: clearing binary missing, seed SMS handler missing, JDI gate logic errors
-- Workflow-engine (61/61), Chorus-SDK (6/6), Slack-bridge (60/60): all GREEN
-- App suite (jeff-bridwell-personal-site): YELLOW — directory not found, skipped entirely
+**QUALITY** 🔴 RED (Kade review: 2026-03-31)
+- **0 tests running** — board-client, workflow-engine, chorus-sdk, slack-bridge all missing `node_modules`
+- **Regression:** chorus-sdk was GREEN (6/6) on 2026-03-29; now broken — day 3 of CI darkness
+- App suite (jeff-bridwell-personal-site): directory not found — no lint/build data, day 3 persistent
+- Fix: `npm install` in each of the 4 packages — 10 minutes, restores full signal
 
-**YESTERDAY** — 5 cards shipped
-- #1800 Silas — synthetic SMS health probe, 5-hop end-to-end pipeline verified
-- #1799 Kade — MessageSid dedup (seed pipeline card 3/4)
-- #1798 Kade — seed default routing to Wren, 120s correlation, voice memo routing
-- #1794 Kade — Fuseki-only seed persistence, 343 seeds migrated, pod fallback removed
-- #1773 Silas — Chorus structural audit updated with ontology session findings
+**YESTERDAY** — 2026-03-31 (~26 cards shipped)
+- Silas: 7 cards — gate fixes, DEC-100 bash elimination (bash wrappers gone, Rust-only path locked)
+- Kade: 12 cards — domain API, seed fix; gate test 39/39, pulse test 6/6 verified
+- Wren: acp #1928 (pulse integration test fix, .sh wrappers removed from skills/callers); carded #1929, #1930
+- Key decision: DEC-100 locked — no more .sh wrappers, Rust-only ops path permanent
 
 **TODAY** (recommended order)
-1. **Kade** — board-client 62 failures are the highest-priority fire: clear clearing binary + seed SMS handler gaps first
-2. **Silas** — `cargo fix --bin chorus-hooks`, confirm `chorus-hooks/target/` in `.gitignore`
-3. **Wren** — #1783 OWL ontology card must ship by EOD or goes stale (flag deadline: 2026-03-30)
-4. **Next pull** — #1641 demo prep (agent-driven schema inference) is ready when WIP clears
+1. **Kade → `npm install` x4** — board-client, workflow-engine, chorus-sdk, slack-bridge. Nothing else before this.
+2. **Silas → `cargo fix --bin chorus-hooks`** — clear 4 auto-fixable warnings; schedule manual review for remaining 4
+3. **Silas → #1929** (gate smoke check on session boot) — carded and ready to pull
+4. **Wren/Kade → app path** — confirm or remove `jeff-bridwell-personal-site` from check matrix; 3 days stale is noise
 
 **BLOCKERS** — needs Jeff's attention
-- 🔴 Board-client 62 failures: infrastructure gaps (clearing binary, seed SMS handler) — needs engineer assigned, not just carded
-- 🟡 App test suite: confirm `jeff-bridwell-personal-site` repo path or remove from check matrix
+- 🔴 **CI dark 2+ days** — chorus-sdk regressed from GREEN and nobody caught it. `npm install` is the fix but it hasn't happened. If this persists past today, gate merges on test signal.
+- 🟡 **App suite path** — 3 days of missing-directory yellow is masking real signal. Confirm path or drop it from the matrix.
