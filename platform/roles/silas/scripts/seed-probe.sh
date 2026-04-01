@@ -9,6 +9,11 @@
 
 set -euo pipefail
 
+USE_REAL_SMS=false
+if [[ "${1:-}" == "--real-sms" ]]; then
+  USE_REAL_SMS=true
+fi
+
 PROBE_TAG="[SEED-PROBE]"
 PROBE_SID="SM_PROBE_$(date +%s)"
 PROBE_CONTENT="${PROBE_TAG} synthetic health check $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -216,13 +221,15 @@ send_signed_webhook() {
     -d "$form" 2>/dev/null || echo "000"
 }
 
-# Alternative: send real SMS via Messages.app (full carrier→Twilio→tunnel→app path)
-# Uncomment and replace send_signed_webhook calls to test the real Jeff path.
-# Costs real carrier SMS. Use for proving, not daily probe.
-# send_real_sms() {
-#   local body="$1"
-#   osascript -e "tell application \"Messages\" to send \"${body}\" to participant \"${CAPTURE_ALLOWED_PHONES}\" of (first account whose service type is SMS)"
-# }
+# Real SMS via Messages.app — gated behind --real-sms flag.
+# Tests full carrier→Twilio→tunnel→app path. One SMS per daily 5:55am run only.
+send_real_sms() {
+  local body="$1"
+  if $USE_REAL_SMS; then
+    osascript -e "tell application \"Messages\" to send \"${body}\" to participant \"${CAPTURE_ALLOWED_PHONES}\" of (first account whose service type is SMS)" 2>/dev/null
+    echo "${PROBE_TAG} Sent real SMS: ${body:0:40}..."
+  fi
+}
 
 fuseki_has_sid() {
   local sid="$1"
