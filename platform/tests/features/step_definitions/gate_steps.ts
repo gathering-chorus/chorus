@@ -273,6 +273,18 @@ Given('they have full context synthesis for a fix', function () {
   writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
 });
 
+Given('they have full context synthesis without log evidence', function () {
+  // Satisfy memory_gate (search + synthesis + git log) but NOT log_first (no "Log evidence:" marker)
+  ctx.sessionLines.push(
+    '{"type":"tool_use","name":"Bash","input":{"command":"bash chorus-query.sh search gate fix"}}',
+    '{"type":"tool_result","content":"Found 10 results: prior gate fixes..."}',
+    '{"type":"assistant","content":"Prior work: checked gate history. Current state: gate needs fix. Approach: apply targeted fix."}',
+    '{"type":"tool_use","name":"Bash","input":{"command":"git log --oneline app.ts"}}',
+    '{"type":"tool_result","content":"abc1234 last change to app.ts"}'
+  );
+  writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
 // --- Demo brief steps ---
 
 Given('a demo brief exists for the card', function () {
@@ -322,6 +334,33 @@ Given('they have run {string} in the session', function (testCmd: string) {
     '{"type":"tool_result","content":"test result: ok. 10 passed; 0 failed"}'
   );
   writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
+Given('they have not edited any test files', function () {
+  // Session has no test file edits — only neutral content
+  if (ctx.sessionLines.length === 0) {
+    ctx.sessionLines.push('{"type":"assistant","content":"Starting work on the card."}');
+  }
+  writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
+Given('they have edited a test file', function () {
+  // Session shows a test file was edited before production code
+  ctx.sessionLines.push(
+    '{"type":"tool_use","name":"Edit","input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/platform/tests/features/gates/tdd.feature","old_string":"x","new_string":"y"}}',
+    '{"type":"tool_result","content":"File updated successfully"}'
+  );
+  writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
+When('they try to edit a test file', function () {
+  ctx.targetTool = 'Edit';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/tests/features/gates/tdd.feature';
+  ctx.hookResult = callHook('Edit', {
+    file_path: ctx.targetFile,
+    old_string: 'x',
+    new_string: 'y',
+  }, ctx.sessionId, ctx.cwd, ctx.role);
 });
 
 // --- Pair session steps ---

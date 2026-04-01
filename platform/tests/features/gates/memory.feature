@@ -36,10 +36,11 @@ Feature: Context synthesis gate (memory gate)
 
   Scenario: Fix card edit with all evidence — allowed
     Given a role is building a fix card
+    And they have edited a test file
     And they have git history for the target file
     And they have read "chorus.log"
     And they have searched "chorus-query.sh search seeds"
-    And they have produced a synthesis with "Prior work: Kade shipped #1794"
+    And they have produced a synthesis with "Prior work: Kade shipped #1794. Log evidence: seed.received events present but no routing within 30s"
     When they try to edit a cross-domain code file
     Then the gate allows the edit
 
@@ -47,6 +48,7 @@ Feature: Context synthesis gate (memory gate)
 
   Scenario: Enhance card edit in own domain without synthesis — allowed
     Given a role is building an enhance card
+    And they have edited a test file
     And they have not searched Chorus or memory
     When they try to edit a file in their own domain
     Then the gate allows the edit
@@ -69,6 +71,12 @@ Feature: Context synthesis gate (memory gate)
 
   Scenario: Chore card edit without synthesis — allowed
     Given a role is building a chore card
+    And they have not searched Chorus or memory
+    When they try to edit a file in their own domain
+    Then the gate allows the edit
+
+  Scenario: SWAT card edit in own domain without synthesis — allowed
+    Given a role is building a swat card
     And they have not searched Chorus or memory
     When they try to edit a file in their own domain
     Then the gate allows the edit

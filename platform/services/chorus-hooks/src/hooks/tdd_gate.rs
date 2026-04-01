@@ -1,22 +1,46 @@
-//! TDD gate (#1814 AC1)
-//! PreToolUse on Skill("demo") and board-ts done: blocks without tests covering AC items.
-//! Scans session JSONL for test runs (cargo test, npx jest, npm test).
-//! Jeff's direction: "No card is done without tests covering every AC item."
+//! TDD gate (#1814, refined per Jeff's feedback)
+//!
+//! Two enforcement points:
+//! 1. PreToolUse on Edit/Write of production code: blocks unless a test file
+//!    was edited FIRST in this session. Tests before code, not tests before done.
+//! 2. PreToolUse on demo/done/acp: blocks unless tests were actually RUN.
+//!
+//! Jeff's direction: "Running tests just to get past the gate is performative.
+//! TDD means tests come before code, not after."
 
 use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
+
+/// Test file patterns — files that count as "writing tests"
+fn is_test_file(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.contains(".test.") || lower.contains(".spec.")
+        || lower.contains("/tests/") || lower.contains("/test/")
+        || lower.starts_with("tests/") || lower.starts_with("test/")
+        || lower.contains("_test.") || lower.contains("test_")
+        || lower.ends_with("_test.rs") || lower.ends_with("_test.ts")
+        || lower.contains(".feature")
+}
+
+/// Production code — files that should have tests first
+fn is_production_code(path: &str) -> bool {
+    let code_exts = [".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".sh"];
+    let is_code = code_exts.iter().any(|ext| path.ends_with(ext));
+    let lower = path.to_lowercase();
+    is_code && !is_test_file(path)
+        && !lower.contains("/target/") && !lower.starts_with("target/")
+        && !lower.contains("/node_modules/") && !lower.starts_with("node_modules/")
+}
 
 /// Check if the current tool call is a demo or done action
 fn is_demo_or_done(input: &HookInput) -> bool {
     let tool = input.tool_name_str();
 
-    // Skill invocation of /demo
     if tool == "Skill" {
         let skill = input.get_tool_input_str("skill");
         return skill == "demo" || skill == "acp";
     }
 
-    // Bash calling board-ts done
     if tool == "Bash" {
         let cmd = input.get_tool_input_str("command");
         return cmd.contains("board-ts done") || cmd.contains("cards done")
@@ -26,24 +50,62 @@ fn is_demo_or_done(input: &HookInput) -> bool {
     false
 }
 
-/// Scan session JSONL for evidence of test runs (uses shared cache #1861)
-fn has_test_evidence(input: &HookInput, state: &AppState) -> bool {
+/// Check if the current tool call is editing production code
+fn is_code_edit(input: &HookInput) -> bool {
+    let tool = input.tool_name_str();
+    if tool != "Edit" && tool != "Write" {
+        return false;
+    }
+    let file_path = input.get_tool_input_str("file_path");
+    is_production_code(&file_path)
+}
+
+/// Scan session for test file edits BEFORE the current point
+fn has_test_file_edit(input: &HookInput, state: &AppState) -> bool {
     let session_id = match &input.session_id {
         Some(id) => id.clone(),
-        None => return true, // No session = can't check, allow
+        None => return true,
     };
 
     let cwd = input.cwd.as_deref().unwrap_or("");
-    let lines = state.session_cache.get_tail(&session_id, cwd, 300);
+    let lines = state.session_cache.get_tail(&session_id, cwd, 500);
     if lines.is_empty() {
-        return true; // Can't read = allow
+        return false; // No session data = no evidence of tests = block
+    }
+
+    for line in &lines {
+        let lower = line.to_lowercase();
+        // Look for Edit/Write tool calls on test files
+        if (lower.contains("\"edit\"") || lower.contains("\"write\""))
+            && (lower.contains(".test.") || lower.contains(".spec.")
+                || lower.contains("/tests/") || lower.contains("/test/")
+                || lower.contains("_test.") || lower.contains(".feature"))
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Scan session JSONL for evidence of test runs
+fn has_test_run(input: &HookInput, state: &AppState) -> bool {
+    let session_id = match &input.session_id {
+        Some(id) => id.clone(),
+        None => return true,
+    };
+
+    let cwd = input.cwd.as_deref().unwrap_or("");
+    let lines = state.session_cache.get_tail(&session_id, cwd, 500);
+    if lines.is_empty() {
+        return true;
     }
 
     for line in &lines {
         let lower = line.to_lowercase();
         if (lower.contains("cargo test") || lower.contains("npx jest")
             || lower.contains("npm test") || lower.contains("npm run test")
-            || lower.contains("vitest"))
+            || lower.contains("npx cucumber") || lower.contains("vitest"))
             && lower.contains("\"bash\"")
         {
             return true;
@@ -53,23 +115,47 @@ fn has_test_evidence(input: &HookInput, state: &AppState) -> bool {
     false
 }
 
+/// Card-type-specific test guidance — tells the role what kind of test to write
+fn test_guidance(card_type: &str) -> &'static str {
+    match card_type {
+        "fix" => "Write a test that reproduces the bug from the AC. It should FAIL now (proving the bug exists) and PASS after your fix. Test what Jeff sees break, not internals.",
+        "new" => "Write a test for the first AC item. Describe what Jeff experiences — page loads, message appears, data shows up. The test should FAIL because the feature doesn't exist yet.",
+        "enhance" => "Write a test that verifies the new behavior alongside existing behavior. Both the enhancement and the original must pass. Start from the AC.",
+        _ => "Write a test that covers the first AC item. It should FAIL before you write the code.",
+    }
+}
+
 pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
-    if !is_demo_or_done(input) {
-        return HookResponse::allow();
-    }
-
-    // Skip TDD for chore cards (#1881) — maintenance/docs don't need tests
+    // Skip TDD for chore and swat cards
     let card_type = crate::types::card_type_for_role(input.role().as_str());
-    if card_type == "chore" {
+    if card_type == "chore" || card_type == "swat" {
         return HookResponse::allow();
     }
 
-    if !has_test_evidence(input, state) {
-        return HookResponse::deny(&permission_deny_json(
-            "TDD gate: no test runs detected in this session. \
-             Run tests (cargo test, npx jest) before demo/done. \
-             DEC-1674: AC → tests → code → green → demo."
-        ));
+    // Gate 1: Production code edit — require test file edit first
+    if is_code_edit(input) {
+        if !has_test_file_edit(input, state) {
+            let file_path = input.get_tool_input_str("file_path");
+            let fname = file_path.rsplit('/').next().unwrap_or(&file_path);
+            let guidance = test_guidance(&card_type);
+            return HookResponse::deny(&permission_deny_json(&format!(
+                "TDD gate: you're editing production code ({}) but haven't written a test yet in this session. \
+                 {} \
+                 DEC-1674: AC → tests (red) → code → tests (green) → demo.",
+                fname, guidance
+            )));
+        }
+    }
+
+    // Gate 2: Demo/done/acp — require test runs
+    if is_demo_or_done(input) {
+        if !has_test_run(input, state) {
+            return HookResponse::deny(&permission_deny_json(
+                "TDD gate: no test runs detected in this session. \
+                 Run tests (cargo test, npx jest, npx cucumber-js) before demo/done. \
+                 DEC-1674: AC → tests → code → green → demo."
+            ));
+        }
     }
 
     HookResponse::allow()
@@ -97,10 +183,30 @@ mod tests {
     fn state() -> AppState { AppState::new() }
 
     #[test]
-    fn allows_non_demo_tools() {
-        let input = make_input("Edit", "file_path", "/some/file.ts");
+    fn allows_non_code_tools() {
+        let input = make_input("Read", "file_path", "/some/file.ts");
         let r = check(&input, &state());
         assert!(r.stdout.is_none());
+    }
+
+    #[test]
+    fn test_file_detection() {
+        assert!(is_test_file("src/hooks/tdd_gate_test.rs"));
+        assert!(is_test_file("src/app.test.ts"));
+        assert!(is_test_file("tests/integration.rs"));
+        assert!(is_test_file("features/gates/tdd.feature"));
+        assert!(!is_test_file("src/main.rs"));
+        assert!(!is_test_file("src/app.ts"));
+    }
+
+    #[test]
+    fn production_code_detection() {
+        assert!(is_production_code("src/main.rs"));
+        assert!(is_production_code("src/app.ts"));
+        assert!(!is_production_code("src/app.test.ts"));
+        assert!(!is_production_code("tests/integration.rs"));
+        assert!(!is_production_code("README.md"));
+        assert!(!is_production_code("target/debug/build.rs"));
     }
 
     #[test]
@@ -128,8 +234,19 @@ mod tests {
     }
 
     #[test]
+    fn code_edit_detected() {
+        let input = make_input("Edit", "file_path", "/project/src/main.rs");
+        assert!(is_code_edit(&input));
+    }
+
+    #[test]
+    fn test_edit_not_code_edit() {
+        let input = make_input("Edit", "file_path", "/project/tests/gate.test.ts");
+        assert!(!is_code_edit(&input));
+    }
+
+    #[test]
     fn allows_demo_without_session() {
-        // No session ID = can't verify, allow
         let input = make_input("Skill", "skill", "demo");
         let r = check(&input, &state());
         assert!(r.stdout.is_none());

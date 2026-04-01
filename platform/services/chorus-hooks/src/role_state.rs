@@ -62,6 +62,30 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 
+    // Auto-resolve card_type from board when card is provided but type isn't.
+    // The hook service can't run `cards` (no node in LaunchAgent PATH),
+    // so we resolve it here in the role's terminal where node is available.
+    if !card.is_empty() && card_type.is_empty() {
+        if let Ok(output) = std::process::Command::new("bash")
+            .args(["/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards", "view", &card])
+            .output()
+        {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                for line in text.lines() {
+                    if line.contains("type:") {
+                        if let Some(t) = line.split("type:").last() {
+                            let resolved = t.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("");
+                            if !resolved.is_empty() && resolved != "unknown" {
+                                card_type = resolved.to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Carry forward card from previous state if not explicitly provided
     if card.is_empty() {
         let prev_file = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));

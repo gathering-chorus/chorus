@@ -20,19 +20,20 @@ Feature: Log-first gate
     Given a role is building a fix card
     And they have read "chorus.log"
     And they have not stated what the logs revealed
-    And they have full context synthesis for a fix
+    And they have full context synthesis without log evidence
     When they try to edit a code file in their own domain
     Then the gate blocks with "haven't checked the logs"
 
   Scenario: Fix card stated findings but never read a log — blocked
     Given a role is building a fix card
     And they have stated log findings without reading logs
-    And they have full context synthesis for a fix
+    And they have full context synthesis without log evidence
     When they try to edit a code file in their own domain
     Then the gate blocks with "haven't checked the logs"
 
   Scenario: Fix card read logs AND stated what they found — allowed
     Given a role is building a fix card
+    And they have edited a test file
     And they have read "chorus.log"
     And they have stated "Log evidence: seed.received fired but no seed.routed within 30s"
     And they have full context synthesis for a fix
@@ -43,12 +44,14 @@ Feature: Log-first gate
 
   Scenario: New card edit in own domain without logs — allowed
     Given a role is building a new card
+    And they have edited a test file
     And they have not read any log files
     When they try to edit a file in their own domain
     Then the gate allows the edit
 
   Scenario: Enhance card edit in own domain without logs — allowed
     Given a role is building an enhance card
+    And they have edited a test file
     And they have not read any log files
     When they try to edit a file in their own domain
     Then the gate allows the edit

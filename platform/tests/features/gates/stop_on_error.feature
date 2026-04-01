@@ -11,6 +11,7 @@ Feature: Stop-on-error gate
 
   Scenario: Edit after benign grep in session — allowed
     Given a role is building a new card
+    And they have edited a test file
     And a pair session is active
     When they try to edit a file in their own domain
     Then the gate allows the edit

@@ -11,6 +11,7 @@ Feature: Pair gate
 
   Scenario: Code edit with active pair session — allowed
     Given a role is building a new card
+    And they have edited a test file
     And a pair session is active
     When they try to edit a code file in their own domain
     Then the gate allows the edit

@@ -315,6 +315,12 @@ async fn pre_tool_use_inner(
                 return (last_module.clone(), r);
             }
 
+            // TDD gate — block production code edits without test file edit first
+            last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input, &state);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (last_module.clone(), r);
+            }
+
             // Pair gate (#1814) — block code edits without active pair
             last_module = "pair_gate".into(); let r = hooks::pair_gate::check(&input, &state);
             if r.stdout.is_some() || r.exit_code != 0 {
