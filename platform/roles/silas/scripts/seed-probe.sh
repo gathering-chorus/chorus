@@ -309,18 +309,59 @@ else
 fi
 delete_seed "$P4_SID"
 
-# ─── P5: Cleanup verification — all test seeds gone
-echo "${PROBE_TAG} P5: Cleanup verification..."
+# ─── P5: Multi-photo + hashtag — one seed, multiple media
+echo "${PROBE_TAG} P5: Multi-photo + hashtag (single webhook)..."
+P5_SID="SM_PROBE_P5_${TS}"
+P5_BODY="[SEED-PROBE] Family photos from the garden #kade"
+P5_SIGN_URL="${PUBLIC_URL}${WEBHOOK_PATH}"
+P5_FORM="Body=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${P5_BODY}', safe=''))")"
+P5_FORM="${P5_FORM}&From=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${CAPTURE_ALLOWED_PHONES}', safe=''))")"
+P5_FORM="${P5_FORM}&MediaUrl0=https%3A%2F%2Fapi.twilio.com%2Ffake%2Fmedia0.jpg"
+P5_FORM="${P5_FORM}&MediaUrl1=https%3A%2F%2Fapi.twilio.com%2Ffake%2Fmedia1.jpg"
+P5_FORM="${P5_FORM}&MessageSid=${P5_SID}"
+P5_FORM="${P5_FORM}&NumMedia=2"
+P5_FORM="${P5_FORM}&To=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${CAPTURE_ALLOWED_PHONES}', safe=''))")"
+# Sign with all params sorted: Body, From, MediaUrl0, MediaUrl1, MessageSid, NumMedia, To
+P5_SIGN_DATA="${P5_SIGN_URL}Body${P5_BODY}From${CAPTURE_ALLOWED_PHONES}MediaUrl0https://api.twilio.com/fake/media0.jpgMediaUrl1https://api.twilio.com/fake/media1.jpgMessageSid${P5_SID}NumMedia2To${CAPTURE_ALLOWED_PHONES}"
+P5_SIG=$(echo -n "$P5_SIGN_DATA" | openssl dgst -sha1 -hmac "$TWILIO_AUTH_TOKEN" -binary | base64)
+P5_HTTP=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "${LOCAL_URL}${WEBHOOK_PATH}" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -H "X-Twilio-Signature: ${P5_SIG}" \
+  -d "$P5_FORM" 2>/dev/null || echo "000")
+sleep 3
+if fuseki_has_sid "$P5_SID"; then
+  # Verify only ONE seed was created (not two from two media)
+  P5_COUNT=$(curl -sf --max-time "$TIMEOUT" \
+    -H "Accept: application/sparql-results+json" \
+    --data-urlencode "query=PREFIX jb: <https://jeffbridwell.com/ontology#> SELECT (COUNT(?s) AS ?c) WHERE { GRAPH <urn:jb:seeds/> { ?s jb:messageSid \"${P5_SID}\" } }" \
+    "${FUSEKI_URL}/pods/sparql" 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['results']['bindings'][0]['c']['value'])" 2>/dev/null || echo "0")
+  if [[ "$P5_COUNT" == "1" ]]; then
+    echo "${PROBE_TAG} P5: PASS — multi-photo created exactly 1 seed (HTTP ${P5_HTTP})"
+    PERM_PASS=$((PERM_PASS + 1))
+  else
+    echo "${PROBE_TAG} P5: FAIL — multi-photo created ${P5_COUNT} seeds (expected 1)" >&2
+    PERM_FAIL=$((PERM_FAIL + 1))
+  fi
+else
+  echo "${PROBE_TAG} P5: FAIL — multi-photo seed not found in Fuseki (HTTP ${P5_HTTP})" >&2
+  PERM_FAIL=$((PERM_FAIL + 1))
+fi
+delete_seed "$P5_SID"
+
+# ─── P6: Cleanup verification — all test seeds gone
+echo "${PROBE_TAG} P6: Cleanup verification..."
 LEFTOVER=$(curl -sf --max-time "$TIMEOUT" \
   -H "Accept: application/sparql-results+json" \
   --data-urlencode "query=PREFIX jb: <https://jeffbridwell.com/ontology#> SELECT (COUNT(?s) AS ?c) WHERE { GRAPH <urn:jb:seeds/> { ?s jb:messageSid ?sid . FILTER(STRSTARTS(?sid, 'SM_PROBE_')) } }" \
   "${FUSEKI_URL}/pods/sparql" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['results']['bindings'][0]['c']['value'])" 2>/dev/null || echo "?")
 
 if [[ "$LEFTOVER" == "0" ]]; then
-  echo "${PROBE_TAG} P5: PASS — all test seeds cleaned up"
+  echo "${PROBE_TAG} P6: PASS — all test seeds cleaned up"
   PERM_PASS=$((PERM_PASS + 1))
 else
-  echo "${PROBE_TAG} P5: WARN — ${LEFTOVER} probe seeds remain in Fuseki" >&2
+  echo "${PROBE_TAG} P6: WARN — ${LEFTOVER} probe seeds remain in Fuseki" >&2
   PERM_PASS=$((PERM_PASS + 1)) # warn, not fail
 fi
 
