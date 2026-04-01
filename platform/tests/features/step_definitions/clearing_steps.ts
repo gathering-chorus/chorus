@@ -1,4 +1,4 @@
-import { Given, When, Then, Before, After } from '@cucumber/cucumber';
+import { Given, When, Then, After } from '@cucumber/cucumber';
 import { execSync } from 'child_process';
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -8,6 +8,8 @@ import * as os from 'os';
 let authToken = '';
 let lastResponse = { status: 0, body: '' };
 let probeMarker = '';
+let nameAccepted = false;
+let lastNudgeOutput = '';
 
 // Endpoints
 const LOCAL = 'http://localhost:3470';
@@ -50,7 +52,7 @@ function curlPost(url: string, data: string, headers: string = ''): { status: nu
 
 Given('the Clearing is running on port {int}', function (port: number) {
   const r = curl(`http://localhost:${port}/health`);
-  assert.strictEqual(r.status, 200, `Clearing not running: health returned ${r.status}`);
+  assert.strictEqual(r.status, 200, `Clearing not running on port ${port}: health returned ${r.status}`);
   const health = JSON.parse(r.body);
   assert.strictEqual(health.status, 'ok', `Clearing unhealthy: ${r.body}`);
 });
@@ -85,6 +87,43 @@ Then('the page contains {string}', function (text: string) {
     lastResponse.body.includes(text),
     `Page does not contain "${text}". Body preview: ${lastResponse.body.slice(0, 300)}`
   );
+});
+
+// --- Name entry (identity) ---
+// Actor diagram: enter name → join room → set identity → then message
+
+When('Jeff enters the name {string} via the public URL with token auth', function (name: string) {
+  const r = curlPost(
+    `${PUBLIC}/api/message`,
+    JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
+    `-b "bridge_token=${authToken}"`
+  );
+  nameAccepted = r.status === 200;
+  lastResponse = r;
+});
+
+When('Jeff enters the name {string} via LAN', function (name: string) {
+  const r = curlPost(
+    `${LAN}/api/message`,
+    JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
+    ''
+  );
+  nameAccepted = r.status === 200;
+  lastResponse = r;
+});
+
+When('Jeff enters the name {string} via localhost', function (name: string) {
+  const r = curlPost(
+    `${LOCAL}/api/message`,
+    JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
+    ''
+  );
+  nameAccepted = r.status === 200;
+  lastResponse = r;
+});
+
+Then('the name is accepted', function () {
+  assert.ok(nameAccepted, `Name entry failed: status ${lastResponse.status}, body: ${lastResponse.body.slice(0, 200)}`);
 });
 
 // --- Message send ---
@@ -122,7 +161,6 @@ When('Jeff sends a message {string} via the API from localhost', function (label
 // --- Message verification ---
 
 Then('the message {string} appears in the message feed', function (_label: string) {
-  // Poll for up to 5 seconds
   let found = false;
   for (let i = 0; i < 5; i++) {
     const r = curl(`${LOCAL}/api/messages`);
@@ -135,34 +173,9 @@ Then('the message {string} appears in the message feed', function (_label: strin
   assert.ok(found, `Message "${probeMarker}" not found in feed after 5s`);
 });
 
-// --- Real role response verification ---
-
-Then('{word} responds via the Clearing within {int} seconds', function (role: string, timeout: number) {
-  // The e2e-responder.sh hook auto-posts "[e2e-ack] <role> received <marker>" to the Clearing
-  // when it sees an [e2e-test] nudge in the UserPromptSubmit prompt.
-  // We look for that ack matching the last nudge's marker specifically.
-  const nudgeMarker = lastNudgeOutput.match(/e2e-[a-z]+-\d+/)?.[0] || '';
-  let found = false;
-  for (let i = 0; i < timeout; i++) {
-    const r = curl(`${LOCAL}/api/messages`);
-    // Match either the specific marker or any recent ack from this role
-    if (nudgeMarker && r.body.includes(nudgeMarker) && r.body.includes('[e2e-ack]')) {
-      found = true;
-      break;
-    }
-    if (!nudgeMarker && r.body.includes('[e2e-ack]') && r.body.includes(role)) {
-      found = true;
-      break;
-    }
-    execSync('sleep 1');
-  }
-  assert.ok(found, `No [e2e-ack] from ${role} for marker "${nudgeMarker}" in Clearing feed after ${timeout}s. The role's session may not have the e2e-responder hook loaded.`);
-});
-
 // --- Nudge delivery (--force = osascript inject) ---
 
 const NUDGE = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
-let lastNudgeOutput = '';
 
 When('Jeff nudges {word} with {string} via --force', function (role: string, label: string) {
   const msg = `[e2e-test] ${label}-${Date.now()}`;
@@ -181,6 +194,26 @@ Then('the nudge is delivered', function () {
     lastNudgeOutput.includes('DELIVERED'),
     `Nudge not delivered. Output: ${lastNudgeOutput}`
   );
+});
+
+// --- Real role response verification ---
+
+Then('{word} responds via the Clearing within {int} seconds', function (role: string, timeout: number) {
+  const nudgeMarker = lastNudgeOutput.match(/e2e-[a-z]+-\d+/)?.[0] || '';
+  let found = false;
+  for (let i = 0; i < timeout; i++) {
+    const r = curl(`${LOCAL}/api/messages`);
+    if (nudgeMarker && r.body.includes(nudgeMarker) && r.body.includes('[e2e-ack]')) {
+      found = true;
+      break;
+    }
+    if (!nudgeMarker && r.body.includes('[e2e-ack]') && r.body.includes(role)) {
+      found = true;
+      break;
+    }
+    execSync('sleep 1');
+  }
+  assert.ok(found, `No [e2e-ack] from ${role} for marker "${nudgeMarker}" in Clearing feed after ${timeout}s. The role's session may not have the e2e-responder hook loaded.`);
 });
 
 // --- Cleanup ---

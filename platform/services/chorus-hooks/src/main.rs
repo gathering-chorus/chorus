@@ -534,6 +534,12 @@ async fn user_prompt_submit(
         hooks::jdi_detector::check(&input_clone, &state_clone).await;
     });
 
+    // E2E responder (#1936) — fire-and-forget, detect [e2e-test] nudges, post ack to Clearing
+    let input_e2e = input.clone();
+    tokio::task::spawn_blocking(move || {
+        hooks::e2e_responder::check(&input_e2e);
+    });
+
     // Merge all stderr signals: classifier + context injection + autonomy guard
     let guard_result = hooks::autonomy_guard::check(&input, &state).await;
 

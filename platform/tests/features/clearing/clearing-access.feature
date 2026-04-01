@@ -14,6 +14,8 @@ Feature: Clearing access paths
     When Jeff loads "https://clearing.lightlifeurbangardens.com" with token cookie
     Then the page returns 200
     And the page contains "The Clearing"
+    When Jeff enters the name "jeff" via the public URL with token auth
+    Then the name is accepted
     When Jeff sends a message "public-probe" via the API with token auth
     Then the message "public-probe" appears in the message feed
     When Jeff nudges silas with "e2e-public" via --force
@@ -25,6 +27,8 @@ Feature: Clearing access paths
     When Jeff loads "http://192.168.86.36:3470" without auth
     Then the page returns 200
     And the page contains "The Clearing"
+    When Jeff enters the name "jeff" via LAN
+    Then the name is accepted
     When Jeff sends a message "lan-probe" via the API from LAN
     Then the message "lan-probe" appears in the message feed
     When Jeff nudges silas with "e2e-lan" via --force
@@ -36,6 +40,8 @@ Feature: Clearing access paths
     When Jeff loads "http://localhost:3470" without auth
     Then the page returns 200
     And the page contains "The Clearing"
+    When Jeff enters the name "jeff" via localhost
+    Then the name is accepted
     When Jeff sends a message "local-probe" via the API from localhost
     Then the message "local-probe" appears in the message feed
     When Jeff nudges silas with "e2e-local" via --force
