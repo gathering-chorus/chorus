@@ -22,13 +22,22 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         let file_path = input.get_tool_input_str("file_path");
         let expected = format!("/tmp/session-start-{}.md", role_str);
         if file_path == expected && Path::new(&pending).exists() {
-            // Create done marker
-            let _ = tokio::fs::create_dir_all(INIT_DIR).await;
-            let _ = tokio::fs::write(&done, "").await;
-            state.mark_session_init_done(role_str).await;
+            // Gate smoke check (#1929): verify critical gates BEFORE marking done.
+            // If smoke fails, don't create the done marker — session init gate
+            // keeps blocking all Edit/Write/Bash until gates are fixed.
+            let smoke_ok = run_gate_smoke(role_str, state);
 
-            // Gate smoke check (#1929): verify critical gates are functional
-            run_gate_smoke(role_str, state);
+            if smoke_ok {
+                let _ = tokio::fs::create_dir_all(INIT_DIR).await;
+                let _ = tokio::fs::write(&done, "").await;
+                state.mark_session_init_done(role_str).await;
+            } else {
+                error!(
+                    gate = "session-init",
+                    role = role_str,
+                    "Session boot blocked: gate smoke check failed. Fix the broken gates before working."
+                );
+            }
         }
         // Read always allowed
         return HookResponse::allow();
@@ -71,16 +80,17 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 }
 
 /// Gate smoke check (#1929): on session boot, verify critical gates block when they should.
-/// Sets temporary fix-card state, sends a synthetic Edit, confirms log_first_gate denies.
-/// If the gate allows, emits a loud error — gates are broken.
-fn run_gate_smoke(role: &str, state: &AppState) {
-    use crate::hooks::log_first_gate;
+/// Sets temporary fix-card state, sends a synthetic Edit, confirms gates deny.
+/// Returns true if all gates pass smoke, false if any gate is broken.
+/// If false, the session init gate will NOT mark done — blocking all work.
+fn run_gate_smoke(role: &str, state: &AppState) -> bool {
+    use crate::hooks::{log_first_gate, memory_gate};
 
     // Save current state file
     let state_path = format!("/tmp/claude-team-scan/{}-declared.json", role);
     let backup = std::fs::read_to_string(&state_path).ok();
 
-    // Write temporary fix-card state
+    // Write temporary fix-card state — gates should fire for fix cards
     let smoke_state = format!(
         r#"{{"role":"{}","state":"building","card":99999,"card_type":"fix","ts":{}}}"#,
         role,
@@ -92,7 +102,24 @@ fn run_gate_smoke(role: &str, state: &AppState) {
     let _ = std::fs::create_dir_all("/tmp/claude-team-scan");
     let _ = std::fs::write(&state_path, &smoke_state);
 
-    // Synthetic Edit on a code file — should be DENIED (no log evidence)
+    // Synthetic Edit on a cross-domain code file — both gates should DENY:
+    // - log_first_gate: no log evidence in session
+    // - memory_gate: no search/synthesis in session
+    let smoke_cwd = format!("/Users/jeffbridwell/CascadeProjects/chorus/{}",
+        match role { "wren" => "product-manager", "silas" => "architect", _ => "engineer" });
+    let smoke_session_id = format!("smoke-{}", role);
+
+    // Seed a minimal JSONL file so gates have session data to scan (and find no evidence).
+    // Without this, gates fall open on empty session data and smoke can't verify blocking.
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+    let project_key = smoke_cwd.replace('/', "-");
+    let project_key = if project_key.starts_with('-') { &project_key[1..] } else { &project_key };
+    let jsonl_dir = format!("{}/.claude/projects/-{}", home, project_key);
+    let jsonl_path = format!("{}/{}.jsonl", jsonl_dir, smoke_session_id);
+    let _ = std::fs::create_dir_all(&jsonl_dir);
+    // Neutral content — no log markers, no synthesis markers
+    let _ = std::fs::write(&jsonl_path, r#"{"type":"assistant","content":"Starting smoke check session."}"#);
+
     let smoke_input = HookInput {
         tool_name: Some("Edit".to_string()),
         tool_input: Some(serde_json::json!({
@@ -101,39 +128,58 @@ fn run_gate_smoke(role: &str, state: &AppState) {
             "new_string": "y"
         })),
         tool_response: None,
-        session_id: Some(format!("smoke-{}", role)),
-        cwd: Some(format!("/Users/jeffbridwell/CascadeProjects/chorus/{}",
-            match role { "wren" => "product-manager", "silas" => "architect", _ => "engineer" })),
+        session_id: Some(smoke_session_id.clone()),
+        cwd: Some(smoke_cwd),
         prompt: None,
         stop_hook_active: None,
         hook_type: None,
         deploy_role: Some(role.to_string()),
     };
 
-    let result = log_first_gate::check(&smoke_input, state);
+    let mut all_pass = true;
 
-    // Restore original state
+    // Smoke #1: log_first_gate — should deny (no log evidence)
+    let log_result = log_first_gate::check(&smoke_input, state);
+    if log_result.stdout.is_none() {
+        error!(
+            gate = "smoke-check",
+            target = "log_first_gate",
+            role = role,
+            "SMOKE FAILED: log_first_gate allowed a fix-card edit without log inspection."
+        );
+        eprintln!("⚠ GATE SMOKE FAILED: log_first_gate did not block. Gates may be silently broken.");
+        all_pass = false;
+    } else {
+        info!(gate = "smoke-check", target = "log_first_gate", role = role, "SMOKE PASS");
+    }
+
+    // Smoke #2: memory_gate (context synthesis) — should deny (no search/synthesis)
+    let mem_result = memory_gate::check(&smoke_input, state);
+    if mem_result.stdout.is_none() {
+        error!(
+            gate = "smoke-check",
+            target = "memory_gate",
+            role = role,
+            "SMOKE FAILED: memory_gate allowed a fix-card edit without context synthesis."
+        );
+        eprintln!("⚠ GATE SMOKE FAILED: memory_gate did not block. Gates may be silently broken.");
+        all_pass = false;
+    } else {
+        info!(gate = "smoke-check", target = "memory_gate", role = role, "SMOKE PASS");
+    }
+
+    // Restore original state and clean up smoke artifacts
     match backup {
         Some(original) => { let _ = std::fs::write(&state_path, original); }
         None => { let _ = std::fs::remove_file(&state_path); }
     }
+    let _ = std::fs::remove_file(&jsonl_path);
 
-    if result.exit_code == 0 && result.stdout.is_none() {
-        // Gate allowed when it should have blocked — gates are broken
-        error!(
-            gate = "smoke-check",
-            role = role,
-            "GATE SMOKE FAILED: log_first_gate did not block a fix-card edit without log evidence. Gates may be broken."
-        );
-        eprintln!("⚠ GATE SMOKE FAILED: log_first_gate allowed a fix-card edit without log inspection.");
-        eprintln!("  Gates may be silently broken. Check session_cache and is_fix_card().");
-    } else {
-        info!(
-            gate = "smoke-check",
-            role = role,
-            "Gate smoke PASS: log_first_gate correctly blocked fix edit without log evidence"
-        );
+    if all_pass {
+        info!(gate = "smoke-check", role = role, "All gate smoke checks passed");
     }
+
+    all_pass
 }
 
 #[cfg(test)]
@@ -166,13 +212,11 @@ mod tests {
 
     #[tokio::test]
     async fn allows_bash_when_no_pending_marker() {
-        // No pending marker = no gate
         let state = AppState::new();
         let input = make_input("Bash", "architect");
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 0);
     }
-
 
     #[tokio::test]
     async fn allows_unknown_role() {
@@ -188,5 +232,73 @@ mod tests {
         };
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 0);
+    }
+
+    #[test]
+    fn smoke_check_passes_when_gates_block() {
+        // With fix-card state and no log/synthesis evidence,
+        // both gates should deny → smoke returns true.
+        // Must use a real role name — is_fix_card() only checks kade/silas/wren.
+        let state = AppState::new();
+        let state_path = "/tmp/claude-team-scan/wren-declared.json";
+        let backup = std::fs::read_to_string(state_path).ok();
+
+        let result = run_gate_smoke("wren", &state);
+        assert!(result, "smoke should pass when gates correctly block");
+
+        // Restore any pre-existing state
+        match backup {
+            Some(original) => { let _ = std::fs::write(state_path, original); }
+            None => { let _ = std::fs::remove_file(state_path); }
+        }
+    }
+
+    #[test]
+    fn smoke_check_restores_original_state() {
+        let state = AppState::new();
+        let state_path = "/tmp/claude-team-scan/kade-declared.json";
+        let _ = std::fs::create_dir_all("/tmp/claude-team-scan");
+        let pre_existing = std::fs::read_to_string(state_path).ok();
+
+        let original = r#"{"role":"kade","state":"building","card":42,"card_type":"new","ts":1234}"#;
+        std::fs::write(state_path, original).unwrap();
+
+        let _result = run_gate_smoke("kade", &state);
+
+        let restored = std::fs::read_to_string(state_path).unwrap();
+        assert_eq!(restored, original, "original state should be restored after smoke");
+
+        match pre_existing {
+            Some(orig) => { let _ = std::fs::write(state_path, orig); }
+            None => { let _ = std::fs::remove_file(state_path); }
+        }
+    }
+
+    #[tokio::test]
+    async fn session_boot_blocked_when_smoke_fails_pending() {
+        let state = AppState::new();
+        let _ = std::fs::create_dir_all(INIT_DIR);
+        let pending = format!("{}/wren.pending", INIT_DIR);
+        let done = format!("{}/wren.done", INIT_DIR);
+        let had_pending = Path::new(&pending).exists();
+        let had_done = Path::new(&done).exists();
+
+        std::fs::write(&pending, "").unwrap();
+        let _ = std::fs::remove_file(&done);
+
+        let input = HookInput {
+            tool_name: Some("Edit".to_string()),
+            tool_input: Some(json!({"file_path": "/tmp/test.rs", "old_string": "x", "new_string": "y"})),
+            tool_response: None,
+            session_id: Some("test-boot".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/chorus/product-manager".to_string()),
+            prompt: None, stop_hook_active: None, hook_type: None,
+            deploy_role: Some("wren".to_string()),
+        };
+        let r = check(&input, &state).await;
+        assert!(r.stdout.is_some(), "Edit should be blocked when session init not complete");
+
+        if !had_pending { let _ = std::fs::remove_file(&pending); }
+        if had_done { let _ = std::fs::write(&done, ""); }
     }
 }
