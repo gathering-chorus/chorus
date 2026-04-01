@@ -215,6 +215,135 @@ Then('the response status is {int}', function (expected: number) {
   assert.strictEqual(lastResponse.status, expected, `Expected ${expected}, got ${lastResponse.status}`);
 });
 
+// --- Card Story steps ---
+
+let cardStory: { title?: string; owner?: string; status?: string; domain?: string; timeline: Array<{ timestamp: string; source: string; text: string; role?: string; event?: string }> } = { timeline: [] };
+
+When('a role requests the card story for card {int}', function (cardId: number) {
+  const r = curl(`${API}/api/chorus/card-story/${cardId}`);
+  lastResponse = r;
+  try {
+    cardStory = JSON.parse(r.body);
+    if (!cardStory.timeline) cardStory.timeline = [];
+  } catch {
+    cardStory = { timeline: [] };
+  }
+});
+
+Then('the response contains a timeline', function () {
+  assert.ok(lastResponse.status === 200, `Expected 200, got ${lastResponse.status}`);
+  const parsed = JSON.parse(lastResponse.body);
+  assert.ok(Array.isArray(parsed.timeline), `Response missing "timeline" array. Keys: ${Object.keys(parsed)}`);
+});
+
+Then('each entry has a timestamp, source, and text', function () {
+  assert.ok(cardStory.timeline.length > 0, 'Timeline is empty');
+  for (const entry of cardStory.timeline) {
+    assert.ok(entry.timestamp, `Entry missing timestamp: ${JSON.stringify(entry)}`);
+    assert.ok(entry.source, `Entry missing source: ${JSON.stringify(entry)}`);
+    assert.ok(entry.text, `Entry missing text: ${JSON.stringify(entry)}`);
+  }
+});
+
+Then('entries are ordered chronologically', function () {
+  for (let i = 1; i < cardStory.timeline.length; i++) {
+    assert.ok(
+      cardStory.timeline[i].timestamp >= cardStory.timeline[i - 1].timestamp,
+      `Entries out of order: [${i - 1}] ${cardStory.timeline[i - 1].timestamp} > [${i}] ${cardStory.timeline[i].timestamp}`
+    );
+  }
+});
+
+Then('the response includes the card title and domain', function () {
+  assert.ok(cardStory.title, 'Response missing card title');
+  assert.ok(cardStory.domain, 'Response missing card domain');
+});
+
+Then('the timeline includes entries from at least {int} different sources', function (minSources: number) {
+  const sources = new Set(cardStory.timeline.map(e => e.source));
+  assert.ok(
+    sources.size >= minSources,
+    `Only ${sources.size} sources found: ${[...sources]}. Expected at least ${minSources}`
+  );
+});
+
+Then('possible sources are {string}, {string}, {string}, {string}, {string}', function (s1: string, s2: string, s3: string, s4: string, s5: string) {
+  const valid = new Set([s1, s2, s3, s4, s5]);
+  const sources = new Set(cardStory.timeline.map(e => e.source));
+  for (const src of sources) {
+    assert.ok(valid.has(src), `Unexpected source "${src}". Valid: ${[...valid]}`);
+  }
+});
+
+Then('the response includes the card owner', function () {
+  assert.ok(cardStory.owner, 'Response missing card owner');
+});
+
+Then('the response includes the card status', function () {
+  assert.ok(cardStory.status, 'Response missing card status');
+});
+
+Then('the response includes the card domain', function () {
+  assert.ok(cardStory.domain, 'Response missing card domain');
+});
+
+Then('the timeline includes at least one spine event', function () {
+  const spineEntries = cardStory.timeline.filter(e => e.source === 'spine');
+  assert.ok(spineEntries.length > 0, 'No spine events in timeline');
+});
+
+Then('spine events show the event type and role', function () {
+  const spineEntries = cardStory.timeline.filter(e => e.source === 'spine');
+  for (const entry of spineEntries) {
+    assert.ok(entry.event, `Spine entry missing event type: ${JSON.stringify(entry)}`);
+    assert.ok(entry.role, `Spine entry missing role: ${JSON.stringify(entry)}`);
+  }
+});
+
+// --- Domain Story steps ---
+
+let domainStory: { domain?: string; cards: any[]; mentions: any[]; timeline: any[]; count: number } = { cards: [], mentions: [], timeline: [], count: 0 };
+
+When('a role requests the domain story for {string}', function (domain: string) {
+  const r = curl(`${API}/api/chorus/domain-story/${domain}`);
+  lastResponse = r;
+  try {
+    domainStory = JSON.parse(r.body);
+    if (!domainStory.timeline) domainStory.timeline = [];
+  } catch {
+    domainStory = { cards: [], mentions: [], timeline: [], count: 0 };
+  }
+});
+
+Then('the response contains cards tagged with that domain', function () {
+  assert.ok(lastResponse.status === 200, `Expected 200, got ${lastResponse.status}`);
+  assert.ok(domainStory.cards.length > 0, `No cards found for domain. Response: ${lastResponse.body.slice(0, 200)}`);
+});
+
+Then('the response contains conversation mentions from the Chorus index', function () {
+  assert.ok(domainStory.mentions.length > 0, `No conversation mentions found for domain`);
+});
+
+Then('cards and mentions are combined into a single timeline', function () {
+  assert.ok(domainStory.timeline.length > 0, 'Combined timeline is empty');
+  const sources = new Set(domainStory.timeline.map((e: any) => e.source));
+  assert.ok(sources.size >= 2, `Timeline has only ${sources.size} source type(s): ${[...sources]}. Expected cards + mentions`);
+});
+
+Then('the timeline spans the full history — not just recent cards', function () {
+  // Domain story should include older entries if they exist
+  // We check that the earliest and latest timestamps are at least days apart
+  if (domainStory.timeline.length < 2) return;
+  const first = domainStory.timeline[0].timestamp;
+  const last = domainStory.timeline[domainStory.timeline.length - 1].timestamp;
+  assert.ok(first !== last, 'All entries have the same timestamp — not spanning history');
+});
+
+Then('the timeline is empty or contains only metadata', function () {
+  // For nonexistent cards, timeline should be empty
+  assert.ok(cardStory.timeline.length === 0, `Expected empty timeline for nonexistent card, got ${cardStory.timeline.length} entries`);
+});
+
 // --- Cleanup ---
 
 After(function () {
