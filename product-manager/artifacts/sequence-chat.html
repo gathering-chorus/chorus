@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chat Flow — Sequence Diagram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Mono', 'Fira Code', monospace; background: #1a1a2e; color: #e0e0e0; padding: 40px; }
+  h1 { font-size: 1.4rem; color: #fff; margin-bottom: 4px; }
+  .subtitle { font-size: 0.85rem; color: #888; margin-bottom: 30px; }
+  svg.sequence { display: block; margin: 0 auto; }
+  svg text { font-family: 'SF Mono', 'Fira Code', monospace; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>/chat — Sequence Diagram</h1>
+<p class="subtitle">Lightweight two-role direct channel &bull; Jeff watches or participates</p>
+
+<svg class="sequence" width="920" height="1080" viewBox="0 0 920 1080">
+  <!-- Swimlane headers -->
+  <rect x="30" y="10" width="160" height="36" rx="6" fill="#2d4a7a"/>
+  <text x="110" y="33" text-anchor="middle" fill="#7cb3ff" font-size="13" font-weight="bold">Jeff (watches)</text>
+
+  <rect x="250" y="10" width="160" height="36" rx="6" fill="#4a2d6b"/>
+  <text x="330" y="33" text-anchor="middle" fill="#c49bff" font-size="13" font-weight="bold">Role A (initiator)</text>
+
+  <rect x="480" y="10" width="160" height="36" rx="6" fill="#2d6b4a"/>
+  <text x="560" y="33" text-anchor="middle" fill="#7bffb2" font-size="13" font-weight="bold">Role B (invited)</text>
+
+  <rect x="710" y="10" width="170" height="36" rx="6" fill="#6b5a2d"/>
+  <text x="795" y="33" text-anchor="middle" fill="#ffd97b" font-size="13" font-weight="bold">chat.sh (transcript)</text>
+
+  <!-- Lifelines -->
+  <line x1="110" y1="50" x2="110" y2="1050" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="330" y1="50" x2="330" y2="1050" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="560" y1="50" x2="560" y2="1050" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="795" y1="50" x2="795" y2="1050" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+
+  <!-- === START PHASE === -->
+  <rect x="10" y="70" width="900" height="24" rx="4" fill="#1e2a3a"/>
+  <text x="20" y="86" fill="#4a90d9" font-size="11" font-weight="bold">START</text>
+
+  <!-- 1: Role A -> chat.sh: start -->
+  <line x1="330" y1="115" x2="785" y2="115" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="785,115 777,110 777,120" fill="#c49bff"/>
+  <text x="550" y="108" text-anchor="middle" fill="#c49bff" font-size="11">chat.sh start A B "topic"</text>
+
+  <!-- chat.sh returns ID -->
+  <line x1="785" y1="145" x2="340" y2="145" stroke="#ffd97b" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="340,145 348,140 348,150" fill="#ffd97b"/>
+  <text x="562" y="138" text-anchor="middle" fill="#ffd97b" font-size="10">returns CHAT_ID</text>
+
+  <!-- Spine event: chat.session.started -->
+  <rect x="270" y="163" width="140" height="20" rx="4" fill="#4a2d6b" opacity="0.4"/>
+  <text x="340" y="177" text-anchor="middle" fill="#c49bff" font-size="10">chat.session.started event</text>
+
+  <!-- 2: Role A -> chat.sh: first message -->
+  <line x1="330" y1="205" x2="785" y2="205" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="785,205 777,200 777,210" fill="#c49bff"/>
+  <text x="550" y="198" text-anchor="middle" fill="#c49bff" font-size="11">chat.sh say $ID A "opening message"</text>
+
+  <!-- 3: Role A -> Role B: nudge to join -->
+  <line x1="330" y1="220" x2="550" y2="220" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="550,220 542,215 542,225" fill="#c49bff"/>
+  <text x="440" y="213" text-anchor="middle" fill="#c49bff" font-size="11">nudge --force: [chat] Join $ID</text>
+
+  <!-- Role B reads chat -->
+  <line x1="560" y1="255" x2="785" y2="255" stroke="#7bffb2" stroke-width="1.5"/>
+  <polygon points="785,255 777,250 777,260" fill="#7bffb2"/>
+  <text x="672" y="248" text-anchor="middle" fill="#7bffb2" font-size="10">chat.sh read $ID</text>
+
+  <!-- chat.sh returns transcript -->
+  <line x1="785" y1="280" x2="570" y2="280" stroke="#ffd97b" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="570,280 578,275 578,285" fill="#ffd97b"/>
+  <text x="672" y="273" text-anchor="middle" fill="#ffd97b" font-size="10">returns transcript so far</text>
+
+  <!-- === MESSAGE LOOP === -->
+  <rect x="220" y="310" width="590" height="280" rx="8" fill="none" stroke="#4ac94a" stroke-width="2"/>
+  <rect x="240" y="298" width="160" height="20" rx="4" fill="#1a1a2e"/>
+  <text x="250" y="312" fill="#4ac94a" font-size="12" font-weight="bold">MESSAGE LOOP</text>
+
+  <!-- Role B replies -->
+  <line x1="560" y1="345" x2="785" y2="345" stroke="#7bffb2" stroke-width="2"/>
+  <polygon points="785,345 777,340 777,350" fill="#7bffb2"/>
+  <text x="672" y="338" text-anchor="middle" fill="#7bffb2" font-size="11">chat.sh say $ID B "reply"</text>
+
+  <!-- chat.sh delivers to A -->
+  <line x1="785" y1="375" x2="340" y2="375" stroke="#ffd97b" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="340,375 348,370 348,380" fill="#ffd97b"/>
+  <text x="562" y="368" text-anchor="middle" fill="#ffd97b" font-size="10">cron tick: read --since last_line</text>
+
+  <!-- Role A reads and replies -->
+  <line x1="330" y1="410" x2="785" y2="410" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="785,410 777,405 777,415" fill="#c49bff"/>
+  <text x="550" y="403" text-anchor="middle" fill="#c49bff" font-size="11">chat.sh say $ID A "response"</text>
+
+  <!-- chat.sh delivers to B -->
+  <line x1="785" y1="440" x2="570" y2="440" stroke="#ffd97b" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="570,440 578,435 578,445" fill="#ffd97b"/>
+  <text x="672" y="433" text-anchor="middle" fill="#ffd97b" font-size="10">cron tick: read --since last_line</text>
+
+  <!-- Rules -->
+  <text x="445" y="480" text-anchor="middle" fill="#888" font-size="10">1-3 sentences per turn — don't monologue</text>
+  <text x="445" y="495" text-anchor="middle" fill="#888" font-size="10">Write one message, wait for the reply</text>
+
+  <!-- Loop arrow -->
+  <path d="M 800 505 L 800 520 L 475 520 L 475 335 L 485 335" fill="none" stroke="#4ac94a" stroke-width="1.5"/>
+  <polygon points="485,335 478,330 478,340" fill="#4ac94a"/>
+  <text x="800" y="517" fill="#4ac94a" font-size="10">repeat</text>
+
+  <!-- === JEFF CAN READ === -->
+  <rect x="10" y="610" width="900" height="24" rx="4" fill="#1e2a3a"/>
+  <text x="20" y="626" fill="#4a90d9" font-size="11" font-weight="bold">JEFF VISIBILITY (anytime)</text>
+
+  <!-- Jeff -> chat.sh: read -->
+  <line x1="110" y1="660" x2="785" y2="660" stroke="#7cb3ff" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="785,660 777,655 777,665" fill="#7cb3ff"/>
+  <text x="440" y="653" text-anchor="middle" fill="#7cb3ff" font-size="11">chat.sh read $ID — full transcript anytime</text>
+
+  <!-- Returns transcript -->
+  <line x1="785" y1="690" x2="120" y2="690" stroke="#ffd97b" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="120,690 128,685 128,695" fill="#ffd97b"/>
+  <text x="440" y="683" text-anchor="middle" fill="#ffd97b" font-size="10">timestamped messages with role attribution</text>
+
+  <!-- === END PHASE === -->
+  <rect x="10" y="730" width="900" height="24" rx="4" fill="#2e1a1a"/>
+  <text x="20" y="746" fill="#d94a4a" font-size="11" font-weight="bold">CLOSE</text>
+
+  <!-- Either role -> chat.sh: end -->
+  <line x1="330" y1="780" x2="785" y2="780" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="785,780 777,775 777,785" fill="#c49bff"/>
+  <text x="550" y="773" text-anchor="middle" fill="#c49bff" font-size="11">chat.sh end $ID</text>
+
+  <!-- chat.sh saves transcript -->
+  <rect x="735" y="800" width="120" height="22" rx="4" fill="#6b5a2d" opacity="0.5"/>
+  <text x="795" y="815" text-anchor="middle" fill="#ffd97b" font-size="10">save to /tmp/chorus-chat/</text>
+
+  <!-- Emit spine event -->
+  <rect x="270" y="835" width="140" height="20" rx="4" fill="#4a2d6b" opacity="0.4"/>
+  <text x="340" y="849" text-anchor="middle" fill="#c49bff" font-size="10">chat.session.ended event</text>
+
+  <!-- Closer writes summary -->
+  <rect x="232" y="870" width="466" height="24" rx="4" fill="#2e2a1a" opacity="0.6"/>
+  <text x="465" y="886" text-anchor="middle" fill="#d9a84a" font-size="10">Closer owns the summary — what was discussed, agreed, actions to follow</text>
+
+  <!-- Summary to Jeff -->
+  <line x1="330" y1="915" x2="120" y2="915" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="120,915 128,910 128,920" fill="#c49bff"/>
+  <text x="225" y="908" text-anchor="middle" fill="#e0e0e0" font-size="11">Chat closed: A+B, topic, outcome</text>
+
+  <!-- CronDelete -->
+  <rect x="270" y="940" width="120" height="20" rx="4" fill="#4a2d6b" opacity="0.4"/>
+  <text x="330" y="954" text-anchor="middle" fill="#c49bff" font-size="10">CronDelete tick loop</text>
+  <rect x="500" y="940" width="120" height="20" rx="4" fill="#2d6b4a" opacity="0.4"/>
+  <text x="560" y="954" text-anchor="middle" fill="#7bffb2" font-size="10">CronDelete tick loop</text>
+
+  <!-- End signals box -->
+  <rect x="60" y="985" width="800" height="50" rx="6" fill="#1e1e2e" stroke="#444" stroke-width="1"/>
+  <text x="80" y="1007" fill="#d94a4a" font-size="11" font-weight="bold">END TRIGGERS</text>
+  <text x="80" y="1025" fill="#888" font-size="10">Topic resolved | Jeff says stop | Natural conclusion | Scope creep — card it, end chat</text>
+</svg>
+
+<p class="meta">/chat Sequence Diagram &bull; Interactions domain &bull; Wren &bull; 2026-04-01</p>
+</body>
+</html>

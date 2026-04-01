@@ -110,6 +110,59 @@
        │                            │                           │                       │
 </div>
 
+<h2>Actor Flow — Card Story</h2>
+<div class="actor-diagram">
+  Jeff / Role                  Chorus API (3340)          Data Sources
+       │                            │                       │
+       ├── "what happened           │                       │
+       │    on card #1930?" ───────▶│                       │
+       │                            │                       │
+       │                            ├── card metadata ─────▶│ Vikunja
+       │                            │   title, AC, owner,   │ (3456)
+       │                            │   domain, type, dates │
+       │                            │                       │
+       │                            ├── comments ──────────▶│ Vikunja
+       │                            │   who said what       │ comments
+       │                            │   on the card         │
+       │                            │                       │
+       │                            ├── mentions ──────────▶│ SQLite
+       │                            │   session transcripts │ index.db
+       │                            │   where #1930 appears │
+       │                            │                       │
+       │                            ├── spine events ──────▶│ chorus.log
+       │                            │   card.pulled         │ / Loki
+       │                            │   card.demo.started   │
+       │                            │   card.accepted       │
+       │                            │                       │
+       │                            ├── nudges ────────────▶│ Messaging
+       │                            │   referencing #1930   │ (3475)
+       │                            │                       │
+       │                            ├── domain context ────▶│ domain
+       │                            │   what part of the    │ pages
+       │                            │   system this touches │
+       │                            │                       │
+       │◀── card story ─────────────┤                       │
+       │                            │                       │
+       │    Card #1930 — BDD gate specs in Gherkin          │
+       │    Domain: chorus → loom → gates                   │
+       │    Owner: Wren                                     │
+       │                                                    │
+       │    Timeline:                                       │
+       │    [06:23] Jeff wrote the Gherkin spec             │
+       │    [06:24] Wren pulled to WIP                      │
+       │    [08:14] Silas nudged re: script dependency      │
+       │    [10:13] Wren: 30/41 passing, 11 failures        │
+       │    [12:31] Jeff + Wren paired on fixes             │
+       │    [16:14] Silas reviewed, LGTM                    │
+       │    [17:04] Silas: TDD gate enforces test-first     │
+       │    [17:10] Jeff accepted                           │
+       │                                                    │
+       │    Related: #1929, #1936                           │
+       │                                                    │
+</div>
+
+<p>Six data sources, one story. All six already have APIs — Vikunja comments, Chorus index, spine events, messaging tier, domain pages. No new infrastructure. Just a join on card number.</p>
+
 <h2>Gaps — Why It Doesn't Work Today</h2>
 
 <div class="gap"><strong>Gap 1: Jeff's messages aren't first-class.</strong> Session JSONL stores Jeff's words as <code>type: "user"</code> content blocks, often mixed with system-reminder tags and skill loads. The indexer may skip them or bury them. When a role searches Chorus, Jeff's half of the conversation is missing or requires parsing raw JSONL.</div>
