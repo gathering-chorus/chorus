@@ -1,42 +1,45 @@
-@gate @log_first
+@gate @log_first @building
 Feature: Log-first gate
   The log-first gate blocks code edits on fix cards until the builder
-  has checked the logs. Logs reveal root cause in seconds — reading code
-  without them leads to wrong theories.
+  has checked the logs AND stated what they found. Opening a log file
+  is not enough — the role must produce a "Log evidence:" statement
+  connecting findings to the problem. No performative log checks.
 
   Background:
     Given the hook binary is available
 
-  # --- Fix card scenarios ---
+  # --- Fix card: both read AND synthesis required ---
 
   Scenario: Fix card edit without checking logs — blocked
     Given a role is building a fix card
     And they have context synthesis but no log evidence
     When they try to edit a code file in their own domain
-    Then the gate blocks with "check the logs"
+    Then the gate blocks with "haven't checked the logs"
 
-  Scenario: Fix card edit after checking chorus.log — allowed
+  Scenario: Fix card opened a log but didn't say what they found — blocked
     Given a role is building a fix card
     And they have read "chorus.log"
+    And they have not stated what the logs revealed
     And they have full context synthesis for a fix
     When they try to edit a code file in their own domain
-    Then the gate allows the edit
+    Then the gate blocks with "haven't checked the logs"
 
-  Scenario: Fix card edit after checking hooks.log — allowed
+  Scenario: Fix card stated findings but never read a log — blocked
     Given a role is building a fix card
-    And they have read "hooks.log"
+    And they have stated log findings without reading logs
     And they have full context synthesis for a fix
     When they try to edit a code file in their own domain
-    Then the gate allows the edit
+    Then the gate blocks with "haven't checked the logs"
 
-  Scenario: Fix card edit after using Loki — allowed
+  Scenario: Fix card read logs AND stated what they found — allowed
     Given a role is building a fix card
-    And they have read "localhost:3102"
+    And they have read "chorus.log"
+    And they have stated "Log evidence: seed.received fired but no seed.routed within 30s"
     And they have full context synthesis for a fix
     When they try to edit a code file in their own domain
     Then the gate allows the edit
 
-  # --- Non-fix card scenarios (own domain, so memory gate doesn't fire) ---
+  # --- Non-fix cards don't need log evidence ---
 
   Scenario: New card edit in own domain without logs — allowed
     Given a role is building a new card

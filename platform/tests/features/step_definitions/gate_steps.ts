@@ -227,6 +227,27 @@ Given('they have git history for the target file', function () {
   writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
 });
 
+Given('they have not stated what the logs revealed', function () {
+  // Log was read (from a previous Given step) but no "Log evidence:" synthesis
+  // Just ensure no log synthesis markers in session — don't add any
+  writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
+Given('they have stated log findings without reading logs', function () {
+  // Has synthesis but no log read — fabricated findings
+  ctx.sessionLines.push(
+    '{"type":"assistant","content":"Log evidence: the seed pipeline is dropping messages at the routing step."}'
+  );
+  writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
+Given('they have stated {string}', function (statement: string) {
+  ctx.sessionLines.push(
+    `{"type":"assistant","content":"${statement}"}`
+  );
+  writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
 Given('they have context synthesis but no log evidence', function () {
   // Satisfy memory_gate (search + synthesis + git log) but NOT log_first (no log markers).
   // This isolates log_first_gate as the only gate that should block.
@@ -241,11 +262,11 @@ Given('they have context synthesis but no log evidence', function () {
 });
 
 Given('they have full context synthesis for a fix', function () {
-  // Satisfy memory_gate: search + synthesis + git log on target
+  // Satisfy memory_gate (search + synthesis + git log) AND log_first (log read + log synthesis)
   ctx.sessionLines.push(
     '{"type":"tool_use","name":"Bash","input":{"command":"bash chorus-query.sh search gate fix"}}',
     '{"type":"tool_result","content":"Found 10 results: prior gate fixes..."}',
-    '{"type":"assistant","content":"Prior work: checked gate history. Current state: gate needs fix. Approach: apply targeted fix based on log evidence."}',
+    '{"type":"assistant","content":"Prior work: checked gate history. Current state: gate needs fix. Approach: apply targeted fix based on log evidence. Log evidence: chorus.log shows gate smoke check failing at session boot — the deny response is empty."}',
     '{"type":"tool_use","name":"Bash","input":{"command":"git log --oneline app.ts"}}',
     '{"type":"tool_result","content":"abc1234 last change to app.ts"}'
   );

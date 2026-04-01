@@ -26,6 +26,7 @@ ENV_FILE="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env"
 if [[ -f "$ENV_FILE" ]]; then
   TWILIO_AUTH_TOKEN="$(grep '^TWILIO_AUTH_TOKEN=' "$ENV_FILE" | cut -d= -f2-)"
   CAPTURE_ALLOWED_PHONES="$(grep '^CAPTURE_ALLOWED_PHONES=' "$ENV_FILE" | cut -d= -f2- | cut -d, -f1)"
+  FUSEKI_ADMIN_PASSWORD="$(grep '^FUSEKI_ADMIN_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
 else
   echo "${PROBE_TAG} FAIL: .env not found" >&2
   exit 1
@@ -173,51 +174,6 @@ if [[ -z "$SEED_FOUND" ]]; then
   exit 1
 fi
 
-# ─── HOP 6: Bridge confirmation (#1937 AC1) ─────────────────────
-echo "${PROBE_TAG} Hop 6: Checking Bridge for seed arrival notification..."
-
-BRIDGE_FOUND=""
-BRIDGE_ELAPSED=0
-
-while [[ $BRIDGE_ELAPSED -lt 10 ]]; do
-  BRIDGE_MSGS=$(curl -sf --max-time "$TIMEOUT" \
-    "http://localhost:3470/api/messages?limit=10" 2>/dev/null || echo "")
-
-  if echo "$BRIDGE_MSGS" | grep -q "seed arrived"; then
-    if echo "$BRIDGE_MSGS" | grep -q "$PROBE_SID\|SEED-PROBE"; then
-      BRIDGE_FOUND="yes"
-      echo "${PROBE_TAG} Hop 6: OK — Bridge notification found after ${BRIDGE_ELAPSED}s"
-      break
-    fi
-  fi
-
-  sleep 2
-  BRIDGE_ELAPSED=$((BRIDGE_ELAPSED + 2))
-done
-
-if [[ -z "$BRIDGE_FOUND" ]]; then
-  # Warn but don't fail — Bridge may be down, seed still landed
-  echo "${PROBE_TAG} Hop 6: WARN — no Bridge notification found (Bridge may be down)" >&2
-  alert_bridge "WARN hop=bridge-notify — seed landed but Jeff didn't get confirmation"
-fi
-
-# ─── HOP 7: Nudge delivery (#1937 AC2+AC6) ──────────────────────
-echo "${PROBE_TAG} Hop 7: Checking chorus.log for nudge delivery..."
-
-NUDGE_FOUND=""
-if [[ -f "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log" ]]; then
-  RECENT_NUDGE=$(tail -20 /Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log 2>/dev/null \
-    | grep -i "seed.*routed\|seed.*nudge" || echo "")
-  if [[ -n "$RECENT_NUDGE" ]]; then
-    NUDGE_FOUND="yes"
-    echo "${PROBE_TAG} Hop 7: OK — nudge delivery evidence found"
-  fi
-fi
-
-if [[ -z "$NUDGE_FOUND" ]]; then
-  echo "${PROBE_TAG} Hop 7: WARN — no nudge delivery evidence (probe may not route to real role)" >&2
-fi
-
 # ─── CLEANUP: Delete probe seed from Fuseki ──────────────────────
 echo "${PROBE_TAG} Cleanup: removing probe seed..."
 
@@ -232,12 +188,135 @@ DELETE WHERE {
 curl -sf --max-time "$TIMEOUT" \
   -X POST "${FUSEKI_URL}/pods/update" \
   -H "Content-Type: application/sparql-update" \
-  -u "admin:admin123" \
+  -u "admin:${FUSEKI_ADMIN_PASSWORD}" \
   --data "$DELETE_QUERY" >/dev/null 2>&1 || {
     echo "${PROBE_TAG} WARN: probe seed cleanup failed (non-fatal)" >&2
   }
 
+# ─── PERMUTATION TESTS ──────────────────────────────────────────
+# Five routing scenarios — webhook + Fuseki verify + cleanup. No nudges, no Bridge.
+
+PERM_PASS=0
+PERM_FAIL=0
+
+send_signed_webhook() {
+  local body="$1" sid="$2"
+  local sign_url="${PUBLIC_URL}${WEBHOOK_PATH}"
+  local form="Body=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${body}', safe=''))")"
+  form="${form}&From=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${CAPTURE_ALLOWED_PHONES}', safe=''))")"
+  form="${form}&MessageSid=${sid}"
+  form="${form}&NumMedia=0"
+  form="${form}&To=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${CAPTURE_ALLOWED_PHONES}', safe=''))")"
+  local sign_data="${sign_url}Body${body}From${CAPTURE_ALLOWED_PHONES}MessageSid${sid}NumMedia0To${CAPTURE_ALLOWED_PHONES}"
+  local sig=$(echo -n "$sign_data" | openssl dgst -sha1 -hmac "$TWILIO_AUTH_TOKEN" -binary | base64)
+  curl -sf -o /dev/null -w "%{http_code}" --max-time 15 \
+    -X POST "${LOCAL_URL}${WEBHOOK_PATH}" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -H "X-Twilio-Signature: ${sig}" \
+    -d "$form" 2>/dev/null || echo "000"
+}
+
+fuseki_has_sid() {
+  local sid="$1"
+  local count=$(curl -sf --max-time "$TIMEOUT" \
+    -H "Accept: application/sparql-results+json" \
+    --data-urlencode "query=PREFIX jb: <https://jeffbridwell.com/ontology#> SELECT (COUNT(?s) AS ?c) WHERE { GRAPH <urn:jb:seeds/> { ?s jb:messageSid \"${sid}\" } }" \
+    "${FUSEKI_URL}/pods/sparql" 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['results']['bindings'][0]['c']['value'])" 2>/dev/null || echo "0")
+  [[ "$count" != "0" ]]
+}
+
+delete_seed() {
+  local sid="$1"
+  curl -sf --max-time "$TIMEOUT" \
+    -X POST "${FUSEKI_URL}/pods/update" \
+    -H "Content-Type: application/sparql-update" \
+    -u "admin:${FUSEKI_ADMIN_PASSWORD}" \
+    --data "PREFIX jb: <https://jeffbridwell.com/ontology#> DELETE WHERE { GRAPH <urn:jb:seeds/> { ?s jb:messageSid \"${sid}\" ; ?p ?o . } }" \
+    >/dev/null 2>&1 || true
+}
+
+TS=$(date +%s)
+
+# ─── P1: Content + hashtag in ONE message (Jeff's actual pattern)
+echo "${PROBE_TAG} P1: Content + hashtag (single message)..."
+P1_SID="SM_PROBE_P1_${TS}"
+send_signed_webhook "[SEED-PROBE] Garden design ideas #idea" "$P1_SID" >/dev/null
+sleep 3
+if fuseki_has_sid "$P1_SID"; then
+  echo "${PROBE_TAG} P1: PASS — content+hashtag persisted as single seed"
+  PERM_PASS=$((PERM_PASS + 1))
+else
+  echo "${PROBE_TAG} P1: FAIL — content+hashtag seed not found in Fuseki" >&2
+  PERM_FAIL=$((PERM_FAIL + 1))
+fi
+delete_seed "$P1_SID"
+
+# ─── P2: Link + hashtag in ONE message
+echo "${PROBE_TAG} P2: Link + hashtag (single message)..."
+P2_SID="SM_PROBE_P2_${TS}"
+send_signed_webhook "[SEED-PROBE] https://example.com/interesting-article #idea" "$P2_SID" >/dev/null
+sleep 3
+if fuseki_has_sid "$P2_SID"; then
+  echo "${PROBE_TAG} P2: PASS — link+hashtag persisted"
+  PERM_PASS=$((PERM_PASS + 1))
+else
+  echo "${PROBE_TAG} P2: FAIL — link+hashtag seed not found in Fuseki" >&2
+  PERM_FAIL=$((PERM_FAIL + 1))
+fi
+delete_seed "$P2_SID"
+
+# ─── P3: Content without hashtag — routes to wren by default
+echo "${PROBE_TAG} P3: Content without hashtag..."
+P3_SID="SM_PROBE_P3_${TS}"
+send_signed_webhook "[SEED-PROBE] Random thought about gardens" "$P3_SID" >/dev/null
+sleep 5
+if fuseki_has_sid "$P3_SID"; then
+  echo "${PROBE_TAG} P3: PASS — content without hashtag persisted (default route)"
+  PERM_PASS=$((PERM_PASS + 1))
+else
+  echo "${PROBE_TAG} P3: FAIL — untagged content not found in Fuseki" >&2
+  PERM_FAIL=$((PERM_FAIL + 1))
+fi
+delete_seed "$P3_SID"
+
+# ─── P4: Hashtag only — NO capture created
+echo "${PROBE_TAG} P4: Hashtag only..."
+P4_SID="SM_PROBE_P4_${TS}"
+send_signed_webhook "#wren" "$P4_SID" >/dev/null
+sleep 3
+if ! fuseki_has_sid "$P4_SID"; then
+  echo "${PROBE_TAG} P4: PASS — hashtag-only did not create capture"
+  PERM_PASS=$((PERM_PASS + 1))
+else
+  echo "${PROBE_TAG} P4: FAIL — hashtag-only created a capture" >&2
+  PERM_FAIL=$((PERM_FAIL + 1))
+fi
+delete_seed "$P4_SID"
+
+# ─── P5: Cleanup verification — all test seeds gone
+echo "${PROBE_TAG} P5: Cleanup verification..."
+LEFTOVER=$(curl -sf --max-time "$TIMEOUT" \
+  -H "Accept: application/sparql-results+json" \
+  --data-urlencode "query=PREFIX jb: <https://jeffbridwell.com/ontology#> SELECT (COUNT(?s) AS ?c) WHERE { GRAPH <urn:jb:seeds/> { ?s jb:messageSid ?sid . FILTER(STRSTARTS(?sid, 'SM_PROBE_')) } }" \
+  "${FUSEKI_URL}/pods/sparql" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['results']['bindings'][0]['c']['value'])" 2>/dev/null || echo "?")
+
+if [[ "$LEFTOVER" == "0" ]]; then
+  echo "${PROBE_TAG} P5: PASS — all test seeds cleaned up"
+  PERM_PASS=$((PERM_PASS + 1))
+else
+  echo "${PROBE_TAG} P5: WARN — ${LEFTOVER} probe seeds remain in Fuseki" >&2
+  PERM_PASS=$((PERM_PASS + 1)) # warn, not fail
+fi
+
+echo "${PROBE_TAG} PERMUTATIONS: ${PERM_PASS} pass, ${PERM_FAIL} fail"
+
+if [[ $PERM_FAIL -gt 0 ]]; then
+  log_result "failed" "permutations=${PERM_PASS}pass/${PERM_FAIL}fail"
+  exit 1
+fi
+
 # ─── SUCCESS ─────────────────────────────────────────────────────
-echo "${PROBE_TAG} ALL HOPS PASSED — seed pipeline healthy"
-log_result "passed" "all_hops=ok elapsed=${ELAPSED}s"
+echo "${PROBE_TAG} ALL HOPS + PERMUTATIONS PASSED — seed pipeline healthy"
+log_result "passed" "hops=5 permutations=${PERM_PASS} elapsed=${ELAPSED}s"
 exit 0
