@@ -224,11 +224,12 @@ send_signed_webhook() {
 # Real SMS via Messages.app — gated behind --real-sms flag.
 # Tests full carrier→Twilio→tunnel→app path. One SMS per daily 5:55am run only.
 SMS_SERVICE_ID="00BA859D-E329-4998-A366-E934E6B49E0A"
+TWILIO_PHONE="+14015922496"
 send_real_sms() {
   local body="$1"
   if $USE_REAL_SMS; then
-    osascript -e "tell application \"Messages\" to send \"${body}\" to buddy \"${CAPTURE_ALLOWED_PHONES}\" of service id \"${SMS_SERVICE_ID}\"" 2>/dev/null
-    echo "${PROBE_TAG} Sent real SMS: ${body:0:40}..."
+    osascript -e "tell application \"Messages\" to send \"${body}\" to buddy \"${TWILIO_PHONE}\" of service id \"${SMS_SERVICE_ID}\"" 2>/dev/null
+    echo "${PROBE_TAG} Sent real SMS to Twilio: ${body:0:40}..."
   fi
 }
 
