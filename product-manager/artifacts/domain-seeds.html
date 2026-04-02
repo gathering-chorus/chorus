@@ -29,8 +29,13 @@
   ul { padding-left: 20px; margin: 8px 0; font-size: 0.82rem; }
   li { margin: 4px 0; }
   .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  .mermaid { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; }
   @media print { body { padding: 20px; } }
 </style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', sequence: { mirrorActors: false } });
+</script>
 </head>
 <body>
 
@@ -56,25 +61,26 @@ Seeds are Jeff's thinking arriving asynchronously. They deserve the same attenti
 <h2>Actor Flow</h2>
 <p>Jeff sends a seed. It arrives. Someone cares. Jeff sees proof.</p>
 
-<div class="flow"><span class="actor">JEFF</span> (phone, anywhere)
-<span class="action">SMS 1: content (link, photo, thought, music)</span>
-<span class="action">SMS 2: #tag (routing — who or where)</span>
+<pre class="mermaid">
+sequenceDiagram
+    actor Jeff as Jeff (phone)
+    participant Twilio as Twilio
+    participant App as Gathering App
+    participant Chorus as Chorus Index
+    participant Role as Target Role
 
-<span class="actor">ARRIVE</span>
-<span class="action">Two messages correlate as one seed (120s window)</span>
-<span class="action">#tag is routing, not content</span>
-<span class="action">Hashtag-only message is never a seed</span>
+    Jeff->>Twilio: SMS 1: content (link, photo, thought)
+    Jeff->>Twilio: SMS 2: #tag (routing)
+    Twilio->>App: webhook POST /api/seed/sms
+    Note right of App: correlate 2 messages (120s window)<br/>#tag is routing, not content<br/>hashtag-only is never a seed
 
-<span class="actor">PERSIST</span>
-<span class="action">Seed stored in Chorus as structured record</span>
-<span class="action">Content, source, destination, timestamp</span>
+    App->>Chorus: persist structured record
+    Note right of Chorus: content, source, destination, timestamp
 
-<span class="actor">ENGAGE</span>
-<span class="action">Role reads the seed with care</span>
-<span class="action">Role states what it means, connects to work</span>
-<span class="action">Role acts: card it, route it, or discard with reason</span>
-<span class="action">The reading IS the close — Jeff trusts it landed because the team knows</span>
-</div>
+    App->>Role: route to target role
+    Role->>Role: read with care
+    Note right of Role: state what it means<br/>card it, route it, or discard with reason<br/>the reading IS the close
+</pre>
 
 <h2>What Does Not Exist Yet</h2>
 <div class="status-issue">

@@ -28,8 +28,13 @@
   .actor-diagram { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.78rem; line-height: 2; white-space: pre; overflow-x: auto; }
   .dep { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 0.82rem; }
   .dep strong { color: #9a3412; }
+  .mermaid { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; }
   @media print { body { padding: 20px; } }
 </style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', sequence: { mirrorActors: false } });
+</script>
 </head>
 <body>
 
@@ -41,36 +46,31 @@
 <div class="dep"><strong>Depends on:</strong> Claude (platform). Pulse consumes spine events emitted by Claude sessions. No sessions → no events → no pulse.</div>
 
 <h2>Actor Flow</h2>
-<div class="actor-diagram">
-  Claude Session             Spine (chorus-log)           Pulse API (3340)            Consumers
-       │                           │                           │                         │
-       ├── role action ───────────▶│                           │                         │
-       │   (card move, nudge,      │                           │                         │
-       │    hook decision,         │                           │                         │
-       │    gate pass/fail)        │                           │                         │
-       │                           ├── structured event ──────▶│                         │
-       │                           │   {type, role, level,     │                         │
-       │                           │    card, domain, ts}      │                         │
-       │                           │                           ├── aggregate ────────────▶│
-       │                           │                           │   level classification   │
-       │                           │                           │   (info/warn/critical)   │
-       │                           │                           │                         │
-       │                           │                           │   ┌─ Clearing: highlight │
-       │                           │                           │   │  critical events     │
-       │                           │                           │   ├─ Nudge: urgency      │
-       │                           │                           │   │  (critical=inject,   │
-       │                           │                           │   │   info=persist-only) │
-       │                           │                           │   ├─ team-scan: filter   │
-       │                           │                           │   │  by pulse level      │
-       │                           │                           │   ├─ session-start:      │
-       │                           │                           │   │  health summary      │
-       │                           │                           │   └─ Grafana: dashboards │
-       │                           │                           │                         │
-  Jeff                             │                           │                         │
-       │◀────── sees health on ────┼───────────────────────────┤                         │
-       │        /werk, /chorus,    │                           │                         │
-       │        Clearing           │                           │                         │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    actor Session as Claude Session
+    participant Spine as Spine (chorus-log)
+    participant Pulse as Pulse API (3340)
+    participant Clearing
+    participant Nudge
+    participant TeamScan as team-scan
+    participant Start as session-start
+    participant Grafana
+    actor Jeff
+
+    Session->>Spine: role action (card move, nudge, hook decision, gate pass/fail)
+    Spine->>Pulse: structured event {type, role, level, card, domain, ts}
+    Pulse->>Pulse: aggregate — level classification (info/warn/critical)
+
+    Pulse->>Clearing: highlight critical events
+    Pulse->>Nudge: urgency (critical=inject, info=persist-only)
+    Pulse->>TeamScan: filter by pulse level
+    Pulse->>Start: health summary
+    Pulse->>Grafana: dashboards
+
+    Clearing-->>Jeff: sees health on /werk, /chorus, Clearing
+    Grafana-->>Jeff: dashboards
+</pre>
 
 <h2>Pulse Levels</h2>
 <table>

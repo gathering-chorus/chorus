@@ -24,8 +24,13 @@
   .dep { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 0.82rem; }
   .dep strong { color: #9a3412; }
   .principle { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 8px 14px; margin: 6px 0; font-size: 0.82rem; }
+  .mermaid { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; }
   @media print { body { padding: 20px; } }
 </style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', sequence: { mirrorActors: false } });
+</script>
 </head>
 <body>
 
@@ -45,133 +50,97 @@
 <div class="principle">One path, not two — delete don't deprecate. No shims, no fallbacks.</div>
 
 <h2>Actor Flow — Jeff Says Stop</h2>
-<div class="actor-diagram">
-  Jeff                         Role                          System
-   │                            │                              │
-   ├── "stop" / "enough" ─────▶│                              │
-   │   / redirects to           │                              │
-   │   different work           │                              │
-   │                            ├── stop current action ──────▶│
-   │                            │   immediately                │ cancel in-flight
-   │                            │                              │
-   │                            │   NO: "let me just finish"   │
-   │                            │   NO: "one more thing"       │
-   │                            │   NO: explain why you were   │
-   │                            │       doing what you were    │
-   │                            │                              │
-   │                            ├── acknowledge ──────────────▶│
-   │◀── follows Jeff's new ─────┤   1 sentence max             │
-   │    direction               │                              │
-   │                            │                              │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant Jeff
+    participant Role
+    participant System
+
+    Jeff->>Role: "stop" / "enough" / redirects to different work
+    Role->>System: Stop current action immediately
+    Note over System: Cancel in-flight
+    Note over Role: NO: "let me just finish"<br/>NO: "one more thing"<br/>NO: explain why you were doing what you were
+    Role->>Jeff: Acknowledge (1 sentence max)
+    Role->>Jeff: Follows Jeff's new direction
+</pre>
 
 <h2>Actor Flow — Jeff Reports a Problem (Incident Runbook)</h2>
-<div class="actor-diagram">
-  Jeff                         Role (on-call)                Sources
-   │                            │                              │
-   ├── "seeds are broken" ─────▶│                              │
-   │                            │                              │
-   │                            │  STEP 1: TRIAGE              │
-   │◀── "what are you seeing?" ─┤  (one short question)        │
-   │                            │                              │
-   ├── "i sent a seed and ─────▶│                              │
-   │    nothing arrived"        │                              │
-   │                            │  STEP 2: INVESTIGATE         │
-   │                            ├── check memory ─────────────▶│ Chorus search
-   │                            ├── check logs ───────────────▶│ hooks.log, Loki
-   │                            ├── check endpoints ──────────▶│ API, webhook
-   │                            ├── trace the chain ──────────▶│ webhook → seed →
-   │                            │                              │ brief → inbox
-   │                            │                              │
-   │                            │   NO: ask Jeff again         │
-   │                            │   NO: show raw API output    │
-   │                            │   NO: "probably cache"       │
-   │                            │   NO: defend the pipeline    │
-   │                            │                              │
-   │                            │  STEP 3: REPORT              │
-   │◀── "found it: webhook ─────┤                              │
-   │    returns 404, the         │                              │
-   │    route moved when..."    │                              │
-   │                            │                              │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant Jeff
+    participant Role as Role (on-call)
+    participant Sources
+
+    Jeff->>Role: "seeds are broken"
+    Note over Role: STEP 1: TRIAGE
+    Role->>Jeff: "What are you seeing?" (one short question)
+    Jeff->>Role: "I sent a seed and nothing arrived"
+    Note over Role: STEP 2: INVESTIGATE
+    Role->>Sources: Check memory (Chorus search)
+    Role->>Sources: Check logs (hooks.log, Loki)
+    Role->>Sources: Check endpoints (API, webhook)
+    Role->>Sources: Trace the chain (webhook → seed → brief → inbox)
+    Note over Role: NO: ask Jeff again<br/>NO: show raw API output<br/>NO: "probably cache"<br/>NO: defend the pipeline
+    Note over Role: STEP 3: REPORT
+    Role->>Jeff: "Found it: webhook returns 404, the route moved when..."
+</pre>
 
 <h2>Actor Flow — Jeff Gives Feedback</h2>
-<div class="actor-diagram">
-  Jeff                         Role                          Memory
-   │                            │                              │
-   ├── "don't do X" ──────────▶│                              │
-   │   / "stop doing Y"        │                              │
-   │   / "that worked, keep it"│                              │
-   │                            ├── change behavior ──────────▶│
-   │                            │   IN THE SAME RESPONSE       │ save feedback
-   │                            │                              │ memory
-   │                            │   NO: "I understand"         │
-   │                            │   NO: "I apologize"          │
-   │                            │   NO: acknowledge then       │
-   │                            │       do the same thing      │
-   │                            │                              │
-   │◀── demonstrates changed ───┤                              │
-   │    behavior immediately    │                              │
-   │                            │                              │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant Jeff
+    participant Role
+    participant Memory
+
+    Jeff->>Role: "don't do X" / "stop doing Y" / "that worked, keep it"
+    Role->>Memory: Change behavior IN THE SAME RESPONSE
+    Note over Memory: Save feedback memory
+    Note over Role: NO: "I understand"<br/>NO: "I apologize"<br/>NO: acknowledge then do the same thing
+    Role->>Jeff: Demonstrates changed behavior immediately
+</pre>
 
 <h2>Actor Flow — Jeff Gives Direction</h2>
-<div class="actor-diagram">
-  Jeff                         Role                          Board
-   │                            │                              │
-   ├── "do X" / "card it" ────▶│                              │
-   │   / "make that" / "jdi"   │                              │
-   │                            ├── execute ──────────────────▶│
-   │                            │   immediately                │ card created,
-   │                            │                              │ or action taken
-   │                            │   NO: "here's my plan"       │
-   │                            │   NO: "should I..."          │
-   │                            │   NO: restate what Jeff said │
-   │                            │                              │
-   │◀── "done: <outcome>" ──────┤                              │
-   │                            │                              │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant Jeff
+    participant Role
+    participant Board
+
+    Jeff->>Role: "do X" / "card it" / "make that" / "jdi"
+    Role->>Board: Execute immediately
+    Note over Board: Card created, or action taken
+    Note over Role: NO: "here's my plan"<br/>NO: "should I..."<br/>NO: restate what Jeff said
+    Role->>Jeff: "done: [outcome]"
+</pre>
 
 <h2>Actor Flow — Jeff Shares a Story</h2>
-<div class="actor-diagram">
-  Jeff                         Role                          Memory
-   │                            │                              │
-   ├── personal memory, ───────▶│                              │
-   │   family, values,          │                              │
-   │   life experience          │                              │
-   │                            ├── receive it ───────────────▶│
-   │                            │                              │ save to
-   │                            │   NO: deflect to product     │ stories.md
-   │                            │   NO: "that reminds me       │
-   │                            │       of a feature we..."    │
-   │                            │   NO: summarize or analyze   │
-   │                            │                              │
-   │◀── reflect back what ──────┤                              │
-   │    matters, connect to     │                              │
-   │    what you know about Jeff│                              │
-   │                            │                              │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant Jeff
+    participant Role
+    participant Memory
+
+    Jeff->>Role: Personal memory, family, values, life experience
+    Role->>Memory: Receive it
+    Note over Memory: Save to stories.md
+    Note over Role: NO: deflect to product<br/>NO: "that reminds me of a feature we..."<br/>NO: summarize or analyze
+    Role->>Jeff: Reflect back what matters, connect to what you know about Jeff
+</pre>
 
 <h2>Actor Flow — Jeff Asks a Question</h2>
-<div class="actor-diagram">
-  Jeff                         Role                          Sources
-   │                            │                              │
-   ├── "what is X?" ──────────▶│                              │
-   │   / "how does Y work?"    │                              │
-   │   / "show me Z"           │                              │
-   │                            ├── check memory ─────────────▶│ Chorus search
-   │                            ├── check decisions ──────────▶│ DEC log
-   │                            ├── check code ───────────────▶│ filesystem
-   │                            │                              │
-   │                            │   NO: "I'm not sure, what    │
-   │                            │       do you think?"         │
-   │                            │   NO: guess without checking │
-   │                            │                              │
-   │◀── answer with source ─────┤                              │
-   │    or "I don't know" if    │                              │
-   │    genuinely unknown       │                              │
-   │                            │                              │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant Jeff
+    participant Role
+    participant Sources
+
+    Jeff->>Role: "what is X?" / "how does Y work?" / "show me Z"
+    Role->>Sources: Check memory (Chorus search)
+    Role->>Sources: Check decisions (DEC log)
+    Role->>Sources: Check code (filesystem)
+    Note over Role: NO: "I'm not sure, what do you think?"<br/>NO: guess without checking
+    Role->>Jeff: Answer with source, or "I don't know" if genuinely unknown
+</pre>
 
 <h2>Policy Source — Key Feedback Memories</h2>
 <table>

@@ -26,10 +26,15 @@
   .role-kade { background: #dbeafe; color: #1e40af; }
   .role-jeff { background: #f3e8ff; color: #6b21a8; }
   .actor-diagram { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.78rem; line-height: 2; white-space: pre; overflow-x: auto; }
+  .mermaid { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; }
   .dep { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 0.82rem; }
   .dep strong { color: #9a3412; }
   @media print { body { padding: 20px; } }
 </style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', sequence: { mirrorActors: false } });
+</script>
 </head>
 <body>
 
@@ -41,31 +46,31 @@
 <div class="dep"><strong>Depends on:</strong> Pulse (circulation) → Claude (platform). If Claude drops, Pulse goes dark, Clearing loses its signal feed.</div>
 
 <h2>Actor Flow</h2>
-<div class="actor-diagram">
-  Jeff (phone/Mac)          Role (Claude session)         Clearing Server (3470)
-       │                           │                              │
-       ├── opens Clearing ─────────┼────── GET / ────────────────▶│
-       │                           │                    page load + auth
-       │                           │                              │
-       ├── enters name ────────────┼────── Socket.IO connect ───▶│
-       │                           │                   join room, set identity
-       │                           │                              │
-       ├── sends message ──────────┼────── emit('message') ─────▶│
-       │                           │                   broadcast to all
-       │                           │                              │◀── session-tailer feeds
-       │                           │◀──── emit('message') ───────┤    spine events into
-       │◀── sees message ──────────┤                              │    the message feed
-       │                           │                              │
-       │    "DECISION: we do X"    │                              │
-       ├── sends decision ─────────┼────── emit('message') ─────▶│
-       │                           │                   detect DECISION: prefix
-       │                           │                   auto-capture to log
-       │                           │                              │
-       │                           │◀──── pulse events ──────────┤◀── Pulse feed
-       │◀── sees domain tiles ─────┤      (card moves, accepts,  │    (filtered by level)
-       │    with live activity     │       spine events)          │
-       │                           │                              │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    actor Jeff as Jeff (phone/Mac)
+    participant Role as Role (Claude session)
+    participant Server as Clearing Server (3470)
+    participant Tailer as Session Tailer
+
+    Jeff->>Server: opens Clearing (GET /)
+    Note right of Server: page load + auth
+    Jeff->>Server: enters name (Socket.IO connect)
+    Note right of Server: join room, set identity
+
+    Jeff->>Server: sends message (emit 'message')
+    Note right of Server: broadcast to all
+    Tailer->>Server: spine events feed
+    Server->>Role: emit('message')
+    Role->>Jeff: sees message
+
+    Jeff->>Server: "DECISION: we do X"
+    Note right of Server: detect DECISION: prefix<br/>auto-capture to log
+
+    Server->>Role: pulse events (card moves, accepts)
+    Note left of Server: filtered by level
+    Role->>Jeff: sees domain tiles with live activity
+</pre>
 
 <h2>Three Access Paths</h2>
 <table>

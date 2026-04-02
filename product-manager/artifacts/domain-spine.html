@@ -28,8 +28,13 @@
   .actor-diagram { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.78rem; line-height: 2; white-space: pre; overflow-x: auto; }
   .dep { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 0.82rem; }
   .dep strong { color: #9a3412; }
+  .mermaid { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; }
   @media print { body { padding: 20px; } }
 </style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', sequence: { mirrorActors: false } });
+</script>
 </head>
 <body>
 
@@ -41,41 +46,35 @@
 <div class="dep"><strong>Depends on:</strong> Claude (platform). Events originate from Claude sessions. The Spine is the transport layer — it needs producers to have something to say.</div>
 
 <h2>Actor Flow</h2>
-<div class="actor-diagram">
-  Producers                     Spine (chorus-log)              Consumers
-       │                              │                              │
-  Role action ────────────────────────▶                              │
-  (card.moved, card.accepted,         │                              │
-   nudge.sent, gate.passed,           │                              │
-   interaction.pattern.detected,       │                              │
-   session.role.started)              │                              │
-       │                              │                              │
-  Hook decision ──────────────────────▶                              │
-  (PreToolUse allow/block,            │                              │
-   PostToolUse audit)                 │                              │
-       │                              │                              │
-  Script action ──────────────────────▶                              │
-  (role-state change,                 │                              │
-   seed.routed,                       │                              │
-   demo.seed.captured)                │                              │
-       │                              │                              │
-       │                              ├── structured JSON ──────────▶│
-       │                              │   {                          │
-       │                              │     event_type: "card.moved",│
-       │                              │     role: "silas",           │
-       │                              │     level: "info",           │
-       │                              │     card: 1936,              │
-       │                              │     domain: "chorus",        │
-       │                              │     ts: "2026-04-01T14:22"   │
-       │                              │   }                          │
-       │                              │                              │
-       │                              │              ┌─ Loki (persist)
-       │                              │              ├─ Pulse (aggregate)
-       │                              │              ├─ Clearing (display)
-       │                              │              ├─ context-cache (enrich)
-       │                              │              └─ team-scan (filter)
-       │                              │                              │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant RA as Role Actions
+    participant HD as Hook Decisions
+    participant SA as Script Actions
+    participant SP as Spine (chorus-log)
+    participant LK as Loki
+    participant PL as Pulse
+    participant CL as Clearing
+    participant CC as context-cache
+    participant TS as team-scan
+
+    Note over RA: card.moved, card.accepted,<br/>nudge.sent, gate.passed,<br/>interaction.pattern.detected,<br/>session.role.started
+    RA->>SP: emit event
+
+    Note over HD: PreToolUse allow/block,<br/>PostToolUse audit
+    HD->>SP: emit event
+
+    Note over SA: role-state change,<br/>seed.routed,<br/>demo.seed.captured
+    SA->>SP: emit event
+
+    Note over SP: structured JSON<br/>{event_type, role, level,<br/>card, domain, ts}
+
+    SP->>LK: persist
+    SP->>PL: aggregate
+    SP->>CL: display
+    SP->>CC: enrich
+    SP->>TS: filter
+</pre>
 
 <h2>Event Types</h2>
 <table>

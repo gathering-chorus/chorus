@@ -28,8 +28,13 @@
   .actor-diagram { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.78rem; line-height: 2; white-space: pre; overflow-x: auto; }
   .dep { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 0.82rem; }
   .dep strong { color: #9a3412; }
+  .mermaid { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; }
   @media print { body { padding: 20px; } }
 </style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', sequence: { mirrorActors: false } });
+</script>
 </head>
 <body>
 
@@ -41,36 +46,53 @@
 <div class="dep"><strong>Depends on:</strong> Spine (events) for signaling. Clearing (coordination) as a venue for live interactions. Pulse (circulation) for urgency routing on nudges.</div>
 
 <h2>Actor Flow</h2>
-<div class="actor-diagram">
-  Jeff                  Wren (moderator)         Builder (Silas/Kade)      System
-   │                         │                          │                    │
-   │  "do X" ───────────────▶│  detect: direction       │                    │
-   │                         ├── emit pattern ──────────┼───────────────────▶│
-   │                         │                          │              spine event
-   │                         │                          │                    │
-   │  "what if..." ─────────▶│  detect: ideation        │                    │
-   │                         ├── moderate ──────────────▶│                    │
-   │                         │  (3 sentences max,       │                    │
-   │                         │   one role at a time)    │                    │
-   │                         │                          │                    │
-   │  /demo 1943 ───────────▶│  detect: demo            │                    │
-   │                         ├── nudge builder ────────▶│                    │
-   │                         │                          ├── smoke check ────▶│
-   │                         │                          ├── show feature     │
-   │◀── sees the thing ──────┼──────────────────────────┤                    │
-   │  reacts ───────────────▶│  capture reaction        │                    │
-   │                         ├── accept/reject ────────▶│                    │
-   │                         │                          │                    │
-   │  /pair ────────────────▶│                          │                    │
-   │                         ├── navigator + driver ───▶│                    │
-   │                         │  (scope loop, rotation,  │                    │
-   │                         │   60s heartbeat)         │                    │
-   │                         │                          │                    │
-   │  /pipeline ────────────▶│  orchestrate ───────────▶│                    │
-   │                         │  (multi-card sequence,   │                    │
-   │                         │   advance on completion) │                    │
-   │                         │                          │                    │
-</div>
+<pre class="mermaid">
+sequenceDiagram
+    actor Jeff
+    participant Wren as Wren (moderator)
+    participant Builder as Builder (Silas/Kade)
+    participant System
+
+    rect rgb(240, 245, 255)
+    Note over Jeff,System: Direction Pattern
+    Jeff->>Wren: "do X"
+    Wren->>Wren: detect: direction
+    Wren->>System: emit pattern → spine event
+    end
+
+    rect rgb(255, 248, 240)
+    Note over Jeff,System: Ideation Pattern
+    Jeff->>Wren: "what if..."
+    Wren->>Wren: detect: ideation
+    Wren->>Builder: moderate (3 sentences max, one role at a time)
+    end
+
+    rect rgb(240, 255, 240)
+    Note over Jeff,System: Demo Pattern
+    Jeff->>Wren: /demo 1943
+    Wren->>Wren: detect: demo
+    Wren->>Builder: nudge builder
+    Builder->>System: smoke check
+    Builder->>Jeff: show feature
+    Jeff->>Wren: reacts
+    Wren->>Wren: capture reaction
+    Wren->>Builder: accept / reject
+    end
+
+    rect rgb(255, 240, 255)
+    Note over Jeff,System: Pair Pattern
+    Jeff->>Wren: /pair
+    Wren->>Builder: navigator + driver
+    Note over Wren,Builder: scope loop, rotation, 60s heartbeat
+    end
+
+    rect rgb(255, 255, 235)
+    Note over Jeff,System: Pipeline Pattern
+    Jeff->>Wren: /pipeline
+    Wren->>Builder: orchestrate
+    Note over Wren,Builder: multi-card sequence, advance on completion
+    end
+</pre>
 
 <h2>Interaction Protocols</h2>
 <table>
