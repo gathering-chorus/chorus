@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Service Design — Cards</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 0.95rem; color: #374151; margin-top: 16px; margin-bottom: 8px; }
+  p { margin-bottom: 10px; font-size: 0.86rem; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.74rem; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.8rem; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; margin: 10px 0; font-size: 0.78rem; line-height: 1.8; overflow-x: auto; }
+  .hard { color: #dc2626; font-weight: 600; }
+  .soft { color: #d97706; }
+  .note { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 0.82rem; }
+  .issue { background: #fef2f2; border-left: 3px solid #dc2626; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 0.82rem; }
+  .status-ok { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
+
+  .flow { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 12px 0; font-family: monospace; font-size: 0.82rem; white-space: pre-line; line-height: 2; }
+  .flow .actor { font-weight: bold; color: #2d4a7a; }
+  .flow .gate { color: #dc2626; font-weight: bold; }
+  .flow .event { color: #7c3aed; font-style: italic; }
+
+  .channels { margin-top: 12px; }
+  .channel { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; margin: 6px 0; border-radius: 8px; font-size: 0.82rem; }
+  .channel-from { font-weight: 600; min-width: 60px; }
+  .channel-arrow { color: #6b7280; }
+  .channel-to { font-weight: 600; min-width: 60px; }
+  .channel-how { color: #4a5568; flex: 1; }
+  .channel-speed { font-size: 0.72rem; color: #6b7280; min-width: 80px; text-align: right; }
+  .ch-broken { background: #fef2f2; }
+  .ch-gate { background: #fff7ed; }
+
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<h1>Service Design &mdash; Cards</h1>
+<p class="subtitle">Lifecycle, gates, mandatory fields, BDD scenarios &bull; 2026-04-02</p>
+
+<!-- LIFECYCLE -->
+<h2>Card Lifecycle</h2>
+
+<div class="flow"><span class="actor">Wren</span> creates card with Experience + AC
+  <span class="event">&rarr; card.item.created</span>
+
+<span class="actor">Wren</span> moves card to Now
+  <span class="gate">GATE: description with Experience + AC (hard block)</span>
+  <span class="event">&rarr; card.item.moved, workflow.manifest.created</span>
+  auto-assigns: builder + reviewer
+
+<span class="actor">Builder</span> pulls card to WIP
+  <span class="gate">GATE: AC section exists (hard block)</span>
+  <span class="gate">GATE: Experience section exists (hard block)</span>
+  <span class="gate">GATE: chunk tag exists (hard block)</span>
+  <span class="gate">GATE: blast radius &mdash; code card has file paths (hard block)</span>
+  <span class="gate">WARN: WIP overlap &mdash; same domain already in WIP</span>
+  <span class="event">&rarr; card.item.moved, card.pulled</span>
+
+<span class="actor">Builder</span> builds, tests, completes
+  <span class="event">&rarr; card.item.completed</span>
+
+<span class="actor">Builder</span> demos to Jeff (via Wren)
+  <span class="gate">GATE: demo evidence exists (hard block on accept)</span>
+  <span class="gate">GATE: self-accept blocked for code cards</span>
+  <span class="event">&rarr; card.demo.started</span>
+
+<span class="actor">Jeff</span> accepts (/acp)
+  <span class="event">&rarr; card.accepted, card.pm.briefed</span>
+  auto-unblocks downstream cards
+  auto-archives workflow</div>
+
+<!-- GATE MATRIX -->
+<h2>Gate Matrix</h2>
+
+<table>
+  <tr><th>Gate</th><th>Transition</th><th>Enforcement</th><th>Exempt</th></tr>
+  <tr><td>Type tag</td><td>Create</td><td class="hard">Hard block</td><td>&mdash;</td></tr>
+  <tr><td>Chunk tag</td><td>Create</td><td class="hard">Hard block</td><td>&mdash;</td></tr>
+  <tr><td>Domain tag</td><td>Create</td><td class="hard">Hard block</td><td>&mdash;</td></tr>
+  <tr><td>Priority</td><td>Create</td><td class="hard">Hard block</td><td>&mdash;</td></tr>
+  <tr><td>Description (Experience + AC)</td><td>&rarr; Now</td><td class="hard">Hard block</td><td>SWAT</td></tr>
+  <tr><td>Acceptance Criteria</td><td>&rarr; WIP</td><td class="hard">Hard block</td><td>SWAT, parent cards</td></tr>
+  <tr><td>Experience section</td><td>&rarr; WIP</td><td class="hard">Hard block</td><td>SWAT, parent cards</td></tr>
+  <tr><td>Blast radius (file paths)</td><td>&rarr; WIP (code cards)</td><td class="hard">Hard block</td><td>process, docs, spike</td></tr>
+  <tr><td>WIP overlap</td><td>&rarr; WIP</td><td class="soft">Warn</td><td>&mdash;</td></tr>
+  <tr><td>Demo evidence</td><td>&rarr; Accept</td><td class="hard">Hard block</td><td>SWAT, chore</td></tr>
+  <tr><td>Self-accept</td><td>&rarr; Accept</td><td class="hard">Hard block</td><td>strategy, Jeff always allowed</td></tr>
+</table>
+
+<!-- MANDATORY FIELDS -->
+<h2>Mandatory Fields by Transition</h2>
+
+<div class="note"><b>Principle:</b> If a field is required at a gate, make it mandatory at the API level for that transition. Don't let cards accumulate without specs and rely on late enforcement.</div>
+
+<table>
+  <tr><th>Field</th><th>Required At</th><th>Current</th><th>Proposed</th></tr>
+  <tr><td>Title</td><td>Create</td><td class="hard">Mandatory</td><td>No change</td></tr>
+  <tr><td>Type (new/enhance/fix/chore/swat)</td><td>Create</td><td class="hard">Mandatory (unless --quick)</td><td class="hard">Mandatory always</td></tr>
+  <tr><td>Chunk</td><td>Create</td><td class="hard">Mandatory (unless --quick)</td><td class="hard">Mandatory always</td></tr>
+  <tr><td>Domain</td><td>Create</td><td class="soft">Optional</td><td class="hard">Mandatory &mdash; cards without domain can't be grouped</td></tr>
+  <tr><td>Priority</td><td>Create</td><td class="soft">Optional</td><td class="hard">Mandatory &mdash; unprioritized cards can't be sorted</td></tr>
+  <tr><td>Owner</td><td>Create</td><td class="soft">Optional (defaults to caller)</td><td>No change</td></tr>
+  <tr><td>Description (Experience + AC)</td><td>Before Now</td><td class="soft">Warn at Now, block at WIP</td><td class="hard">Block at Now</td></tr>
+</table>
+
+<div class="issue"><b>Current gap:</b> <code>--quick</code> bypasses type, chunk, and description. Cards enter unclassified, then hit hard blocks at WIP. Proposed: <code>--quick</code> only exempts description, not classification. All cards get type + chunk + domain + priority at creation.</div>
+
+<!-- GAPS -->
+<h2>What's Missing or Broken</h2>
+
+<div class="channels">
+  <div class="channel ch-broken">
+    <span class="channel-from">CLI</span>
+    <span class="channel-arrow">&rarr;</span>
+    <span class="channel-to">Vikunja</span>
+    <span class="channel-how"><b>#1964:</b> <code>cards update --desc</code> &mdash; in progress (Silas). Unblocks Wren's spec workflow.</span>
+    <span class="channel-speed">in progress</span>
+  </div>
+  <div class="channel ch-broken">
+    <span class="channel-from">Gate</span>
+    <span class="channel-arrow">&rarr;</span>
+    <span class="channel-to">Now</span>
+    <span class="channel-how">Description gate is warn, not block. Cards enter Now without Experience + AC.</span>
+    <span class="channel-speed">gap</span>
+  </div>
+  <div class="channel ch-broken">
+    <span class="channel-from">Create</span>
+    <span class="channel-arrow">&rarr;</span>
+    <span class="channel-to">Board</span>
+    <span class="channel-how"><code>--quick</code> bypasses type, chunk, domain. Cards enter unclassified.</span>
+    <span class="channel-speed">gap</span>
+  </div>
+</div>
+
+<!-- ANTI-PATTERNS -->
+<h2>Anti-Patterns</h2>
+<div class="channels">
+  <div class="channel ch-gate">
+    <span class="channel-from">Builder</span>
+    <span class="channel-arrow">&rarr;</span>
+    <span class="channel-to">WIP</span>
+    <span class="channel-how">Pulling with <code>--quick</code> to skip AC gate, building without a spec. Specs that don't exist can't be tested.</span>
+    <span class="channel-speed">&mdash;</span>
+  </div>
+  <div class="channel ch-gate">
+    <span class="channel-from">Builder</span>
+    <span class="channel-arrow">&rarr;</span>
+    <span class="channel-to">Done</span>
+    <span class="channel-how">Self-accepting code cards. DEC-048: builder cannot accept own work.</span>
+    <span class="channel-speed">&mdash;</span>
+  </div>
+  <div class="channel ch-gate">
+    <span class="channel-from">Jeff</span>
+    <span class="channel-arrow">&rarr;</span>
+    <span class="channel-to">Wren</span>
+    <span class="channel-how">Jeff as relay between roles. Target: 2 touches per card (direction + acceptance).</span>
+    <span class="channel-speed">&mdash;</span>
+  </div>
+</div>
+
+<!-- BDD SCENARIOS -->
+<h2>BDD Scenarios</h2>
+
+<h3>Card Creation</h3>
+<pre>
+Feature: Card creation enforces mandatory fields
+
+  Scenario: Create card with all required fields
+    Given Wren runs cards add "Fix login bug" --owner silas --priority P2 --chunk ops --type fix --domain chorus
+    Then the card is created in Later
+    And a card.item.created event is emitted
+
+  Scenario: Create card without type is rejected
+    Given Wren runs cards add "Fix login bug" --owner silas --priority P2 --chunk ops --domain chorus
+    Then the command exits with error
+    And the error message says "Cards require a type"
+
+  Scenario: Create card without chunk is rejected
+    Given Wren runs cards add "Fix login bug" --owner silas --priority P2 --type fix --domain chorus
+    Then the command exits with error
+    And the error message says "Cards require a chunk tag"
+
+  Scenario: Create card without domain is rejected
+    Given Wren runs cards add "Fix login bug" --owner silas --priority P2 --chunk ops --type fix
+    Then the command exits with error
+    And the error message says "Cards require a domain"
+
+  Scenario: Create card without priority is rejected
+    Given Wren runs cards add "Fix login bug" --owner silas --chunk ops --type fix --domain chorus
+    Then the command exits with error
+    And the error message says "Cards require a priority"
+
+  Scenario: Quick card still requires classification
+    Given Wren runs cards add "Quick fix" -q --chunk ops --type fix --domain chorus --priority P2
+    Then the card is created without description
+    And type, chunk, domain, and priority are set
+</pre>
+
+<h3>Move to Now</h3>
+<pre>
+Feature: Now gate requires description with Experience and AC
+
+  Scenario: Move card without description to Now is blocked
+    Given card #100 exists with no description
+    When Wren runs cards move 100 Now
+    Then the command exits with error
+    And the error says "Cards entering Now require Experience + AC in description"
+    And a card.quality.blocked event is emitted
+
+  Scenario: Move card with Experience + AC to Now succeeds
+    Given card #100 has description with "## Experience" and "## AC" sections
+    When Wren runs cards move 100 Now
+    Then card #100 is in Now
+    And a workflow.manifest.created event is emitted
+    And builder and reviewer are auto-assigned
+
+  Scenario: SWAT card bypasses description gate
+    Given card #100 is type swat with no description
+    When Wren runs cards move 100 Now
+    Then card #100 is in Now
+</pre>
+
+<h3>Pull to WIP</h3>
+<pre>
+Feature: WIP gate enforces spec quality
+
+  Scenario: Pull card without AC to WIP is blocked
+    Given card #100 is in Now with description but no AC section
+    When Silas runs cards move 100 WIP
+    Then the command exits with error
+    And the error says "Missing acceptance criteria"
+    And a card.quality.blocked event is emitted
+
+  Scenario: Pull card without Experience to WIP is blocked
+    Given card #100 is in Now with AC but no Experience section
+    When Kade runs cards move 100 WIP
+    Then the command exits with error
+    And the error says "Missing Experience section"
+
+  Scenario: Pull code card without file paths to WIP is blocked
+    Given card #100 is in Now with AC and Experience
+    And card #100 title contains "Fix" (code indicator)
+    And card #100 description has zero file paths
+    When Kade runs cards move 100 WIP
+    Then the command exits with error
+    And the error says "Code card must list affected files"
+
+  Scenario: Pull fully specced card to WIP succeeds
+    Given card #100 is in Now with Experience, AC, chunk, and file paths
+    When Kade runs cards move 100 WIP
+    Then card #100 is in WIP
+    And a card.pulled event is emitted
+
+  Scenario: WIP overlap warns but does not block
+    Given card #200 is in WIP with domain=chorus chunk=ops
+    And card #100 is in Now with domain=chorus chunk=ops
+    When Silas runs cards move 100 WIP
+    Then card #100 is in WIP
+    And a card.wip_overlap.detected event is emitted
+</pre>
+
+<h3>Accept</h3>
+<pre>
+Feature: Accept gate enforces demo and prevents self-accept
+
+  Scenario: Accept without demo evidence is blocked
+    Given card #100 is in Done
+    And no demo brief or demo spine event exists for #100
+    When Wren runs /acp for card #100
+    Then the command is blocked
+    And the error says "Demo evidence required"
+
+  Scenario: Builder cannot self-accept code card
+    Given card #100 is a code card built by Kade
+    When Kade runs /acp for card #100
+    Then the command is blocked
+    And the error says "Builder cannot accept their own code card"
+
+  Scenario: Jeff can always accept
+    Given card #100 is in Done built by any role
+    When Jeff runs /acp for card #100
+    Then card #100 is accepted
+    And a card.accepted event is emitted
+
+  Scenario: Chore card skips demo gate
+    Given card #100 is type chore in Done
+    And no demo evidence exists
+    When Wren runs /acp for card #100
+    Then card #100 is accepted
+
+  Scenario: Accept auto-unblocks downstream cards
+    Given card #200 is blocked by card #100
+    And card #100 is the only blocker of #200
+    When card #100 is accepted
+    Then card #200 is moved from Later to Next
+    And a card.unblocked event is emitted for #200
+</pre>
+
+<h3>Description Update</h3>
+<pre>
+Feature: Cards CLI can update description (#1964)
+
+  Scenario: Update card description with Experience + AC
+    Given card #100 exists with no description
+    When Wren runs cards update 100 --desc "## Experience\nJeff sees...\n\n## AC\n- [ ] Item one"
+    Then card #100 description contains "## Experience"
+    And card #100 description contains "## AC"
+
+  Scenario: Description preserves markdown
+    Given card #100 exists
+    When Wren runs cards update 100 --desc with headings, checkboxes, and lists
+    Then the description renders correctly in cards view
+</pre>
+
+<p class="meta">Service Design &mdash; Cards &bull; Lifecycle + Gates + BDD &bull; Wren &bull; 2026-04-02</p>
+
+</body>
+</html>

@@ -1,12 +1,12 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-01T18:19:45.362Z",
+  "timestamp": "2026-04-02T10:38:51.846Z",
   "tasks": [
     {
-      "index": 1936,
-      "apiId": 2019,
-      "title": "Clearing e2e Gherkin tests — 3 access paths, message round-trip verification",
-      "description": "## Experience\nI open the Clearing from my phone on wifi, my phone on 5G, and my Mac in Chrome. All three should just work — I type my name, send a message, and see it appear. When one path breaks I want the test to tell me which one and why.\n\n## AC\n1. Gherkin feature file with 3 scenarios: public URL (wifi+5G on iPhone), localhost on iPhone wifi, localhost on Library Mac Chrome\n2. Each scenario tests: page loads, auth succeeds (token cookie or local bypass), name entry works, message send round-trips, message appears in feed\n3. Steps use curl or playwright to simulate each access path — real HTTP, not mocked\n4. Can run as: npx cucumber-js features/clearing-access.feature\n5. Failure output names the path and step that broke\n\n## Files\n- platform/tests/features/clearing-access.feature\n- platform/tests/features/step_definitions/clearing_steps.ts",
+      "index": 1958,
+      "apiId": 2041,
+      "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
+      "description": "## Experience\nA role stalls. Within 2 minutes the watchdog nudges them. Within 3 minutes Wren knows. Within 5 minutes Jeff knows.\n\n## AC\n1. Gherkin feature file with scenarios: role goes silent, 2min nudge, 3min escalate, 5min alert\n2. LaunchAgent spec: 60s cron, reads role-state timestamps, computes age\n3. Steps test real role-state files and real nudge delivery\n4. Scenario: role resumes after nudge, watchdog resets\n5. Scenario: all three roles silent, system-wide alert\n\n## Files\n- platform/tests/features/awareness/team-awareness.feature\n- platform/tests/features/step_definitions/awareness_steps.ts\n- platform/services/watchdog/com.chorus.watchdog.plist\n- platform/scripts/watchdog.sh",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
@@ -17,43 +17,146 @@
         "type:new"
       ],
       "done": false,
-      "created": "2026-04-01T13:11:29Z",
-      "updated": "2026-04-01T13:13:42Z"
+      "created": "2026-04-02T01:33:22Z",
+      "updated": "2026-04-02T01:34:01Z"
     },
     {
-      "index": 1930,
-      "apiId": 2013,
-      "title": "BDD gate specs in Gherkin — cucumber-js tests for all 8 gates × card types",
-      "description": "## Experience\nI read the gate spec and it tells me exactly what each gate does in plain English. When a gate breaks, the test tells me which scenario failed — not which line of Rust. I trust the gates because they have behavioral tests I can read.\n\n## AC\n1. Gherkin feature files for log_first, tdd, demo, accept, quality, memory, stop_on_error, pair gates\n2. Each gate has scenarios for fix/enhance/new/chore/swat card types\n3. Steps set up real file state and call the hook binary — no CHORUS_HOOK_RAW synthetic mode\n4. cucumber-js runner executes all scenarios, reports pass/fail per gate × type\n5. Can run as: npx cucumber-js\n\n## Files\n- platform/tests/features/gates/log_first.feature\n- platform/tests/features/gates/memory.feature\n- platform/tests/features/gates/demo.feature\n- platform/tests/features/gates/accept.feature\n- platform/tests/features/gates/quality.feature\n- platform/tests/features/gates/tdd.feature\n- platform/tests/features/gates/stop_on_error.feature\n- platform/tests/features/gates/pair.feature\n- platform/tests/features/step_definitions/gate_steps.ts\n- platform/tests/cucumber.js",
+      "index": 1872,
+      "apiId": 1955,
+      "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
+      "description": "## Experience\nI hand Silas the architecture manual and say \"red pen this.\" He marks what's wrong. Same with Kade on engineering. The manuals are written from existing docs as-is — stale parts included. The gaps ARE the value. This is how I find out what we actually know vs what we think we know.\n\n## AC\n- [ ] Product manual — Gathering (vision, domains, value streams, user experience)\n- [ ] Product manual — Chorus (vision, services, coordination model, team ops)\n- [ ] Architecture manual — Gathering (topology, data stores, integrations, infra)\n- [ ] Architecture manual — Chorus (hooks, scripts, messaging, observability)\n- [ ] Engineering manual — Gathering (codebase, conventions, test strategy, deploy)\n- [ ] Engineering manual — Chorus (codebase, hooks, gates, CLI tools)\n- [ ] All manuals as HTML artifacts in doc-catalog\n- [ ] Written from current docs state — no cleanup first\n- [ ] Briefed to Silas and Kade for red-pen review",
       "status": "WIP",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
-        "chunk:ops",
+        "chunk:strategy",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-30T16:39:38Z",
+      "updated": "2026-04-02T01:29:43Z"
+    },
+    {
+      "index": 1957,
+      "apiId": 2040,
+      "title": "Team awareness actor diagram + BDD — spine and pulse detect stalled roles before Jeff does",
+      "description": "## Experience\nA role stalls for 20 minutes. Jeff notices before the system does. The other roles should detect it — not Jeff. Team awareness means: when a role goes dark, the spine stops emitting, Pulse flags the gap, and the observing role re-nudges or escalates.\n\n## AC\n1. Actor diagram for team awareness flow: role action → spine event → Pulse aggregation → team-scan → other roles aware\n2. Actor diagram for stall detection: no spine events for N minutes → Pulse flags → observing role nudges → escalation if no response\n3. BDD scenarios: role goes silent → system detects → nudge sent → escalation at 3 minutes\n4. Domain page section added to Pulse or Spine (whichever owns detection)\n5. Linked from domain-interactions.html\n\n## Context\nApril 1 session: both Kade and Silas stalled for 20+ minutes on #1956. Wren nudged at 8 minutes but only because Jeff was watching. The system should catch this automatically. DEC-1571 attention contract says roles poll each other — this is the infrastructure that makes that possible.",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": true,
+      "created": "2026-04-02T01:01:17Z",
+      "updated": "2026-04-02T01:33:02Z"
+    },
+    {
+      "index": 1956,
+      "apiId": 2039,
+      "title": "Domain crawler — traverse OWL + cards + conversations + spine into connected subgraph",
+      "description": "## AC\n- [ ] GET /api/chorus/crawl/:domain returns a connected subgraph from 6 sources\n- [ ] Sources: cards (via cards --json), Fuseki RDF triples, Chorus index mentions, spine events, domain page, OWL classes\n- [ ] Link phase connects entities across layers — cards to code, code to OWL classes, conversations to cards\n- [ ] Related domains surfaced by shared cards and conversations\n- [ ] Institutional history — unresolved cards, Jeff's recurring feedback, trust indicators\n\n## Experience\nJeff asks 'tell me about the seeds domain.' Instead of 20 minutes searching 6 systems, one query returns the full picture: 6 cards, 99 conversations, infrastructure, code, OWL relationships, and the trust deficit Jeff has raised 30 times.\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/domain-crawler.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n\n## Prerequisites\n- OWL class definitions stable (Silas confirms ready)\n- Fuseki named graph pattern: GRAPH ?g FILTER(CONTAINS(STR(?g), 'domain'))",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
         "sequence:hardening",
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
-      "created": "2026-04-01T00:56:40Z",
-      "updated": "2026-04-01T12:32:32Z"
+      "done": true,
+      "created": "2026-04-01T23:51:07Z",
+      "updated": "2026-04-02T01:28:21Z"
     },
     {
-      "index": 1865,
-      "apiId": 1948,
-      "title": "Photo detail shows thumbnail instead of full image",
-      "description": "## Experience\nI click on a photo in the grid and get a blurry thumbnail instead of the full-size image. I want to see my photos — the detail view should show the real thing, not a tiny render scaled up.\n\n## AC\n1. Photo detail view serves full-resolution image, not thumbnail\n2. Verify with 5+ photos across different sources (Apple, Takeout, iPhone)\n3. If full image unavailable, show thumbnail with a clear indicator that full-size is missing",
-      "status": "WIP",
+      "index": 1955,
+      "apiId": 2038,
+      "title": "Align OWL ontology with domain class diagram — enumerate 26 domains as chorus:Domain instances, map Gathering data classes to domain boundaries",
+      "description": "## Experience\nI look at the class diagram and the OWL and they describe the same system in the same language. Every domain box in the diagram has a corresponding chorus:Domain instance in the ontology. Every Gathering data class (Track, Photo, Person) is mapped to its domain boundary. The OWL IS the class diagram, queryable.\n\n## AC\n1. Enumerate all 26 domains as chorus:Domain instances in chorus-product-ontology.owl with rdfs:label, phase, product\n2. Map Gathering data classes (v1.5.2 ontology) to their domain boundaries — Track→Music, Photo→Photos, Person→People etc\n3. Map Chorus operational classes (Gate, SpineEvent, Interaction) to their domain boundaries\n4. Verify with SPARQL: SELECT ?domain ?class WHERE { ?class chorus:inDomain ?domain } returns complete mapping\n5. Class diagram HTML can be generated from the OWL query — diagram and ontology are one source of truth",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": true,
+      "created": "2026-04-01T23:33:06Z",
+      "updated": "2026-04-02T10:35:22Z"
+    },
+    {
+      "index": 1952,
+      "apiId": 2035,
+      "title": "Policy domain — actor diagrams for Jeff behavioral contracts, conversation gates",
+      "description": "## Experience\nJeff stops a role, asks a question, gives feedback, reports a problem. Each has a known right response — codified in decisions and memory. But roles drift. The contract makes expectations structural: actor diagrams showing Jeff's action → expected role response sequence, backed by BDD scenarios that verify the behavior.\n\n## AC\n1. Actor diagram for each Jeff interaction type: stop, question, feedback, problem report, direction, story, reflection\n2. Each diagram shows: Jeff's action → role lookup (memory/decisions/Chorus) → expected response sequence\n3. Gherkin scenarios for each type — 'Given Jeff says stop / Then the role stops immediately, no explain'\n4. Linked from domain-interactions.html as 'Jeff Experience Contract'\n5. Silas builds conversation gates that enforce the sequences\n\n## Context\nThe nine interaction patterns exist (detected by Wren). The feedback memories exist (120+ entries). This card connects them — the patterns trigger the lookup, the memories define the contract, the BDD proves it, the gates enforce it. Principles/patterns/practices as an actor diagram.",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": true,
+      "created": "2026-04-01T22:02:15Z",
+      "updated": "2026-04-02T01:27:17Z"
+    },
+    {
+      "index": 1947,
+      "apiId": 2030,
+      "title": "Card story endpoint — what happened on card #N, six sources joined into a timeline",
+      "description": "## AC\n- [ ] GET /api/chorus/card-story/:id returns a timeline from all 6 sources ordered by timestamp\n- [ ] Sources: Vikunja metadata, Vikunja comments, Chorus index mentions, spine events, nudges, domain context\n- [ ] Timeline entries have timestamp, source, speaker/role, and text\n- [ ] Related cards linked by card number mentions in comments and transcripts\n\n## Experience\nJeff asked 'what happened on card #1930?' — the answer is scattered across Vikunja comments, session transcripts, spine events, nudges, and domain pages. All six sources have APIs. No new infrastructure — just a join on card number.\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/card-story.feature",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
-        "chunk:app",
-        "domain:photos",
+        "chunk:memory",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": true,
+      "created": "2026-04-01T21:33:59Z",
+      "updated": "2026-04-01T21:56:58Z"
+    },
+    {
+      "index": 1946,
+      "apiId": 2029,
+      "title": "Chorus search returns readable conversations — one query, Boston time, Jeff's words included",
+      "description": "## Experience\nI search Chorus for something Jeff and I discussed this morning. I get a readable conversation — timestamps in Boston time, Jeff's words included, not just assistant responses. One query, complete picture.\n\n## AC\n1. Chorus search returns conversation threads with Jeff messages included\n2. Timestamps display in Boston time, not UTC\n3. Results group by session with clear conversation flow\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/conversation-recall.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n- product-manager/artifacts/domain-memory.html\n- product-manager/artifacts/domain-chorus.html\n- product-manager/artifacts/domain-index.html",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "sequence:hardening",
+        "domain:chorus",
         "type:fix"
       ],
-      "done": false,
-      "created": "2026-03-30T15:41:51Z",
-      "updated": "2026-03-31T22:31:06Z"
+      "done": true,
+      "created": "2026-04-01T20:32:49Z",
+      "updated": "2026-04-01T21:16:50Z"
+    },
+    {
+      "index": 1943,
+      "apiId": 2026,
+      "title": "Three Chorus domains — Clearing/Pulse/Spine domain pages + actor diagrams",
+      "description": "## Experience\nJeff clicks into the Chorus section of the domain index and sees three distinct domain tiles: Clearing (coordination), Pulse (circulation), Spine (events). Each links to its own domain page with roles, UI, API, and an actor flow diagram showing who does what.\n\n## AC\n1. Domain page for Clearing — coordination domain. Actor diagram: roles → Clearing UI → message round-trip → decision capture\n2. Domain page for Pulse — circulation domain. Actor diagram: Claude sessions → spine events → pulse aggregation → health signals → dashboards\n3. Domain page for Spine — events domain. Actor diagram: role actions → chorus-log → event bus → consumers (Pulse, Clearing, context-cache)\n4. Domain index Chorus section updated — three new tiles with descriptions and stats\n5. Dependency chain documented: Clearing depends on Pulse depends on Claude (spine underneath both)",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": true,
+      "created": "2026-04-01T18:26:42Z",
+      "updated": "2026-04-01T19:55:38Z"
     },
     {
       "index": 1942,
@@ -72,6 +175,42 @@
       "done": true,
       "created": "2026-04-01T15:36:07Z",
       "updated": "2026-04-01T17:53:33Z"
+    },
+    {
+      "index": 1937,
+      "apiId": 2020,
+      "title": "Seed pipeline trust — Jeff sends it, team picks it up, always arrives, never drops #tags as seeds",
+      "description": "## Experience\nI send a seed and the team picks it up with urgency and attention. I never wonder if it arrived. I never discover days later that a seed was silently dropped. When I use #wren or #silas, it routes to that role — the hashtag is correlation, not the seed itself. The content before the tag is the seed. The system treats both parts together, never the tag alone.\n\n## AC\n1. Seed delivery is confirmed — Jeff gets visible proof the seed arrived and who picked it up\n2. Seeds are processed with urgency — not batched, not queued for next session, not waiting for /cs\n3. #tags are NEVER treated as seeds — they are routing/correlation markers attached to the preceding content\n4. A seed is always two SMS messages: content first, #tag second. Both messages together form the seed. Never process them independently.\n5. End-to-end test: Jeff sends SMS seed → team receives → Jeff sees confirmation — no unit test fakes\n6. When seed arrives, the receiving role acts on it in the same prompt cycle — card it, route it, or discard with reason\n\n## Files\n- platform/roles/silas/scripts/seed-probe.sh\n- platform/board-client/tests/seed-pipeline-flow.test.ts\n- platform/api/src/server.ts\n- product-manager/docs/seed-pipeline-criteria.md",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "sequence:hardening",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-01T13:13:35Z",
+      "updated": "2026-04-01T22:04:30Z"
+    },
+    {
+      "index": 1936,
+      "apiId": 2019,
+      "title": "Clearing e2e Gherkin tests — 3 access paths, message round-trip verification",
+      "description": "## Experience\nI open the Clearing from my phone on wifi, my phone on 5G, and my Mac in Chrome. All three should just work — I type my name, send a message, and see it appear. When one path breaks I want the test to tell me which one and why.\n\n## AC\n1. Gherkin feature file with 3 scenarios: public URL (wifi+5G on iPhone), localhost on iPhone wifi, localhost on Library Mac Chrome\n2. Each scenario tests: page loads, auth succeeds (token cookie or local bypass), name entry works, message send round-trips, message appears in feed\n3. Steps use curl or playwright to simulate each access path — real HTTP, not mocked\n4. Can run as: npx cucumber-js features/clearing-access.feature\n5. Failure output names the path and step that broke\n\n## Files\n- platform/tests/features/clearing-access.feature\n- platform/tests/features/step_definitions/clearing_steps.ts",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": true,
+      "created": "2026-04-01T13:11:29Z",
+      "updated": "2026-04-01T20:21:17Z"
     },
     {
       "index": 1933,
@@ -108,6 +247,24 @@
       "done": true,
       "created": "2026-04-01T12:19:48Z",
       "updated": "2026-04-01T12:27:08Z"
+    },
+    {
+      "index": 1930,
+      "apiId": 2013,
+      "title": "BDD gate specs in Gherkin — cucumber-js tests for all 8 gates × card types",
+      "description": "## Experience\nI read the gate spec and it tells me exactly what each gate does in plain English. When a gate breaks, the test tells me which scenario failed — not which line of Rust. I trust the gates because they have behavioral tests I can read.\n\n## AC\n1. Gherkin feature files for log_first, tdd, demo, accept, quality, memory, stop_on_error, pair gates\n2. Each gate has scenarios for fix/enhance/new/chore/swat card types\n3. Steps set up real file state and call the hook binary — no CHORUS_HOOK_RAW synthetic mode\n4. cucumber-js runner executes all scenarios, reports pass/fail per gate × type\n5. Can run as: npx cucumber-js\n\n## Files\n- platform/tests/features/gates/log_first.feature\n- platform/tests/features/gates/memory.feature\n- platform/tests/features/gates/demo.feature\n- platform/tests/features/gates/accept.feature\n- platform/tests/features/gates/quality.feature\n- platform/tests/features/gates/tdd.feature\n- platform/tests/features/gates/stop_on_error.feature\n- platform/tests/features/gates/pair.feature\n- platform/tests/features/step_definitions/gate_steps.ts\n- platform/tests/cucumber.js",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": true,
+      "created": "2026-04-01T00:56:40Z",
+      "updated": "2026-04-01T21:09:38Z"
     },
     {
       "index": 1929,
@@ -707,22 +864,6 @@
       "updated": "2026-03-31T14:30:11Z"
     },
     {
-      "index": 1872,
-      "apiId": 1955,
-      "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
-      "description": "## Experience\nI hand Silas the architecture manual and say \"red pen this.\" He marks what's wrong. Same with Kade on engineering. The manuals are written from existing docs as-is — stale parts included. The gaps ARE the value. This is how I find out what we actually know vs what we think we know.\n\n## AC\n- [ ] Product manual — Gathering (vision, domains, value streams, user experience)\n- [ ] Product manual — Chorus (vision, services, coordination model, team ops)\n- [ ] Architecture manual — Gathering (topology, data stores, integrations, infra)\n- [ ] Architecture manual — Chorus (hooks, scripts, messaging, observability)\n- [ ] Engineering manual — Gathering (codebase, conventions, test strategy, deploy)\n- [ ] Engineering manual — Chorus (codebase, hooks, gates, CLI tools)\n- [ ] All manuals as HTML artifacts in doc-catalog\n- [ ] Written from current docs state — no cleanup first\n- [ ] Briefed to Silas and Kade for red-pen review",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus"
-      ],
-      "done": true,
-      "created": "2026-03-30T16:39:38Z",
-      "updated": "2026-03-30T21:57:23Z"
-    },
-    {
       "index": 1871,
       "apiId": 1954,
       "title": "Deprecate formal /docs into doc-catalog — single docs surface",
@@ -755,158 +896,21 @@
       "updated": "2026-03-30T20:55:30Z"
     },
     {
-      "index": 1869,
-      "apiId": 1952,
-      "title": "Seed read endpoint on Chorus API — roles can't see seeds without browser auth",
-      "description": "## Experience\nI text a seed from my phone. I expect the team to see it. But no role can check seeds from their terminal. The whole point of seeds is I can send from anywhere and it lands in the workflow. Right now it lands in a black box.\n\n## AC\n- [ ] GET /seeds on Chorus API (localhost:3340) returns recent seeds\n- [ ] No browser auth — open like other Chorus endpoints\n- [ ] Roles can verify seed arrival from terminal\n- [ ] Include status, timestamp, content preview\n\n## Files\n- chorus/platform/chorus-sdk/src/routes/seeds.ts\n- chorus/platform/chorus-sdk/src/app.ts",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-30T16:25:44Z",
-      "updated": "2026-03-30T21:59:55Z"
-    },
-    {
-      "index": 1868,
-      "apiId": 1951,
-      "title": "Fix session-start disk check — uses df, reports false 96% on APFS",
-      "description": "## Experience\nI glance at my session boot and see 96% disk. My stomach drops — then I remember it's wrong. df lies on APFS. I shouldn't have to remember that; the system should report truth.\n\n## Acceptance Criteria\n- [ ] Session-start health check uses diskutil (not df/du) for disk reporting\n- [ ] Purgeable space is excluded from \"used\" calculation\n- [ ] Reported percentage matches what Finder shows\n\n## Files\n- platform/services/chorus-hooks/src/shim.rs (context_cache_cmd disk check ~L973)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-30T16:22:46Z",
-      "updated": "2026-03-30T22:55:45Z"
-    },
-    {
-      "index": 1867,
-      "apiId": 1950,
-      "title": "Doc-catalog consolidation — 232 HTML files scattered, catalog only reads one folder",
-      "description": "## Experience\nI create an HTML artifact and it ends up in one of 5 different directories. When I want to find it later, I go to doc-catalog and it is not there. 63 HTML files across chorus and the app repo — service designs, research, borg assessments, architecture docs, manuals — and doc-catalog only reads from one folder. The catalog should be where I find everything.\n\n## AC\n1. doc-catalog.html in public/ scans multiple source directories (docs/, data/about/, public/gathering-docs/, chorus product-manager/artifacts/, chorus product-manager/data/borg/)\n2. NOT a handler — standalone static page with client-side or build-time directory listing\n3. NOT in the navbar — standalone page at /doc-catalog.html\n4. Search box — filter by title or content\n5. Deduplicate: product-manager/ and platform/roles/wren/ have ~60 identical files — single canonical location\n6. Section map covers all authored HTML (not generated reports or screenshots)\n7. Every authored HTML artifact accessible from doc-catalog page\n8. Delete duplicate copies after consolidation\n\n## Files\n- public/doc-catalog.html (existing static page — extend this, don't create a handler)\n- docs/ (current source)\n- data/about/ (30 files not in catalog)\n- public/gathering-docs/ (50 files not in catalog)\n- chorus product-manager/artifacts/ (23 files not in catalog)\n- chorus product-manager/data/borg/ (9 files not in catalog)",
-      "status": "Done",
+      "index": 1865,
+      "apiId": 1948,
+      "title": "Photo detail shows thumbnail instead of full image",
+      "description": "## Experience\nI click on a photo in the grid and get a blurry thumbnail instead of the full-size image. I want to see my photos — the detail view should show the real thing, not a tiny render scaled up.\n\n## AC\n1. Photo detail view serves full-resolution image, not thumbnail\n2. Verify with 5+ photos across different sources (Apple, Takeout, iPhone)\n3. If full image unavailable, show thumbnail with a clear indicator that full-size is missing",
+      "status": "Next",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
         "chunk:app",
-        "domain:chorus",
+        "domain:photos",
         "type:fix"
       ],
-      "done": true,
-      "created": "2026-03-30T16:09:57Z",
-      "updated": "2026-03-30T19:47:49Z"
-    },
-    {
-      "index": 1864,
-      "apiId": 1947,
-      "title": "Fix Promtail JSON parsing — structured logs reaching Loki as plain text",
-      "description": "## Experience\nWe spent all day adding structured logging. App writes perfect JSON. Loki gets plain text.\n\n## AC\n1. Promtail config parses JSON log lines preserving all fields\n2. Loki receives full structured JSON\n3. Loki queries by appName, level, component work\n4. Verify last 100 lines in Loki have JSON fields\n\n## Files\n- src/config/promtail-native.yaml\n- chorus/platform/scripts/log-rotate",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:infrastructure",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-30T15:37:24Z",
-      "updated": "2026-03-30T16:02:12Z"
-    },
-    {
-      "index": 1862,
-      "apiId": 1945,
-      "title": "Guard consolidation — merge overlapping hooks, standardize response format",
-      "description": "## Experience\nTwo hooks block the same docker commands with slightly different patterns. When one gets updated and the other doesn't, the rules drift. I get confused about which guard is which. The hooks should have clean boundaries — one concern per module, no overlaps.\n\n## AC\n1. Merge app_state_guard into infra_guardrails (they overlap on docker, kill, terraform patterns)\n2. Audit all remaining hooks for pattern overlap — flag and consolidate\n3. Standardize response conventions: all blocks use exit_code 2 + stderr message + stdout deny JSON\n4. Single log_decision() function that all hooks call\n\n## Context\nFrom hooks-pulse-audit.html. app_state_guard and infra_guardrails overlap on docker, kill, and terraform. Inconsistent response conventions between hooks.",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P3",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": true,
-      "created": "2026-03-30T14:54:31Z",
-      "updated": "2026-03-30T22:05:18Z"
-    },
-    {
-      "index": 1861,
-      "apiId": 1944,
-      "title": "Session JSONL cache — 5 hooks re-reading the same file independently",
-      "description": "## Experience\nFive hooks scan my entire session JSONL looking for evidence — did I write tests? Am I in a pair? Did I do a demo? Each one re-reads the whole file independently, every tool call. As sessions get longer, this gets slower. I shouldn't feel the hooks getting heavier.\n\n## AC\n1. Shared session JSONL reader in AppState: read once per prompt cycle, cache results\n2. tdd_gate, demo_gate, pair_gate, memory_gate, autonomy_guard all use the cached reader\n3. Cache invalidates on new tool_response (not on every check)\n4. Benchmark: measure per-hook JSONL read time before and after, log in pulse\n\n## Context\nFrom hooks-pulse-audit.html. 5 hooks independently scan session JSONL with no caching or shared reader.",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": true,
-      "created": "2026-03-30T14:54:22Z",
-      "updated": "2026-03-30T21:59:56Z"
-    },
-    {
-      "index": 1860,
-      "apiId": 1943,
-      "title": "Hook test coverage floor — every module gets allow + block tests",
-      "description": "## Experience\n21 of 33 hook modules have zero tests. When I change a hook, I can't tell if an untested module started misclassifying.\n\n## AC\n1. Every hook module has at least 2 tests: one allow, one block/warn\n2. Priority: session_init_gate, csc_guard, demo_preflight, accept_gate, sensitive_paths\n3. One integration test through full pre_tool_use pipeline\n4. tool_telemetry gets 2 tests\n5. Test count 221 → 280+\n\n## Files\n- chorus/platform/services/chorus-hooks/src/main.rs\n- chorus/platform/services/chorus-hooks/src/hooks/",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-03-30T14:54:10Z",
-      "updated": "2026-03-30T21:59:56Z"
-    },
-    {
-      "index": 1859,
-      "apiId": 1942,
-      "title": "Pulse log enrichment — module name, duration, full reasons on every hook decision",
-      "description": "## Experience\nI tail hooks.log and see allow/block decisions but can't tell which hook module made the call. When something blocks wrong, I need the module name, duration, and full reason — not just 'DENY'.\n\n## AC\n1. Every log line includes the hook module name\n2. Every log line includes duration_ms\n3. BLOCK/DENY lines include full reason (not truncated)\n4. Timestamp: YYYY-MM-DD HH:MM:SS.mmm\n5. Session_id (8 chars) in log lines\n6. Log rotation: max 10MB, rotate to hooks.log.1\n7. Consistent response conventions: blocks use exit_code 2 + stderr + deny JSON\n8. Single log_decision() function all hooks call\n\n## Files\n- chorus/platform/services/chorus-hooks/src/main.rs",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-30T14:53:56Z",
-      "updated": "2026-03-30T16:18:18Z"
-    },
-    {
-      "index": 1858,
-      "apiId": 1941,
-      "title": "Hooks circuit breaker — auto-disable broken hooks after 3 failures",
-      "description": "## Experience\nA hook panics or hangs and all three roles can't do anything. Two days pass before anyone notices. I need hooks that protect themselves — if one breaks, it steps aside.\n\n## AC\n1. Each hook module wrapped with 2-second tokio timeout\n2. Per-module failure counter: 3 failures in 5 min triggers auto-disable\n3. Auto-disabled hooks log CIRCUIT_BREAK to hooks.log\n4. Auto-disabled hooks notify Bridge so Jeff sees it\n5. Hooks re-enable on service restart\n6. Test: mock panicking hook, verify circuit-break after 3 failures\n7. All subprocess-calling hooks wrapped with 3-second timeout\n8. Subprocess timeout logs SUBPROCESS_TIMEOUT\n\n## Files\n- chorus/platform/services/chorus-hooks/src/main.rs\n- chorus/platform/services/chorus-hooks/src/state.rs",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-03-30T14:53:42Z",
-      "updated": "2026-03-30T21:59:56Z"
+      "done": false,
+      "created": "2026-03-30T15:41:51Z",
+      "updated": "2026-04-01T21:09:00Z"
     },
     {
       "index": 1631,
@@ -978,6 +982,142 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 1961,
+      "apiId": 2044,
+      "title": "Mermaid diagrams on domain pages — replace ASCII actor flows with rendered Mermaid",
+      "description": "## Experience\nI open a domain page and the actor diagrams render as clean visual flowcharts, not ASCII art. I can read the flow at a glance. The diagrams are Mermaid source text — editable, versionable, renderable in the browser.\n\n## AC\n1. Mermaid.js loaded on domain pages (CDN or local)\n2. Existing ASCII actor flow diagrams converted to Mermaid sequence/flowchart syntax\n3. All domain pages updated: Clearing, Pulse, Spine, Interactions, Policy, Memory\n4. Mermaid source is inline in the HTML — editable without a build step\n5. Print-friendly rendering\n\n## Files\n- product-manager/artifacts/domain-clearing.html\n- product-manager/artifacts/domain-pulse.html\n- product-manager/artifacts/domain-spine.html\n- product-manager/artifacts/domain-interactions.html\n- product-manager/artifacts/domain-policy.html\n- product-manager/artifacts/domain-memory.html\n\n## Context\nCurrent diagrams are pre-formatted ASCII in monospace divs. Mermaid gives proper visual rendering from text source. When live domain pages land (#1960), Mermaid diagrams can be generated from crawler data.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance"
+      ],
+      "done": false,
+      "created": "2026-04-02T10:36:17Z",
+      "updated": "2026-04-02T10:36:17Z"
+    },
+    {
+      "index": 1960,
+      "apiId": 2043,
+      "title": "Live domain pages — static design + dynamic data from crawler API",
+      "description": "## Experience\nI open a domain page and see authored design (actor diagrams, decisions, principles) alongside live operational data (code files, recent logs, alert status, cards, conversations, spine events, test results). The page refreshes on load. No stale HTML.\n\n## AC\n1. Domain page HTML shell with fetch() calls to crawler API per facet\n2. Static sections (actor diagrams, decisions, principles) authored by hand, preserved across refreshes\n3. Dynamic sections (code, logs, alerts, cards, conversations, spine, OWL, BDD status) populated from GET /api/chorus/crawl/:domain\n4. Works for all domains — Gathering and Chorus\n5. Convergence page pattern generalized to every domain\n\n## Files\n- jeff-bridwell-personal-site/views/domain.ejs\n- jeff-bridwell-personal-site/src/handlers/domain.handler.ts\n- platform/api/src/server.ts\n- platform/tests/features/memory/domain-crawler.feature\n\n## Context\nStatic domain pages built yesterday (#1943, #1952). Crawler built today (#1956). This wires them together — the page becomes a live document. Same pattern as convergence tiles but per-domain. Jeff's hypothesis: fetch all 7 data sources and visualize on the domain page.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": false,
+      "created": "2026-04-02T10:28:02Z",
+      "updated": "2026-04-02T10:28:02Z"
+    },
+    {
+      "index": 1959,
+      "apiId": 2042,
+      "title": "Domain crawler v2 — add code, logs, and alerts to the crawl",
+      "description": "## Experience\nI crawl a domain and see everything — not just cards and conversations, but the actual code, the logs it emitted today, and the alerts configured for it. Full operational picture of any domain from one query.\n\n## AC\n1. Code facet: codebase scan by directory structure and imports, mapped to domain\n2. Logs facet: Loki query filtered by domain name, recent entries\n3. Alerts facet: Grafana alert rules tagged by domain\n4. All three integrated into existing crawl response alongside cards, conversations, OWL, spine\n5. BDD scenarios for each new facet\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/domain-crawler.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n\n## Context\nCurrent crawler (#1956) joins cards, conversations, OWL, and spine. Jeff wants the full operational picture: 7 data sources per domain. Code scan by directory, Loki for logs, Grafana for alerts.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:chorus",
+        "type:enhance"
+      ],
+      "done": false,
+      "created": "2026-04-02T10:26:28Z",
+      "updated": "2026-04-02T10:26:28Z"
+    },
+    {
+      "index": 1951,
+      "apiId": 2034,
+      "title": "Memory-first search gate — enforce conversation and card-story endpoints before filesystem grep",
+      "description": "## Experience\nI ask about a card and the role greps the filesystem instead of hitting card-story. I ask what we discussed and the role searches session files instead of the conversation endpoint. The endpoints exist but roles default to old habits.\n\n## AC\n1. PreToolUse gate detects search-pattern commands (grep, rg, find on session files, card-related queries)\n2. Gate checks whether the role has queried the Memory domain endpoints first (card-story, conversation)\n3. If no Memory query detected in session, gate blocks with: 'Check /api/chorus/card-story/:id or /api/chorus/conversation first — DEC-074'\n4. Gate skips if the search target is code files (not session/card context)\n5. BDD scenarios for the gate\n\n## Context\nDEC-074 says Chorus first for search. Kade built card-story (#1947) and conversation (#1946) endpoints today. Without a gate, roles will keep grepping. Same pattern as TDD gate — enforce the sequence, not just document it.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": false,
+      "created": "2026-04-01T21:57:51Z",
+      "updated": "2026-04-01T21:57:51Z"
+    },
+    {
+      "index": 1950,
+      "apiId": 2033,
+      "title": "Backfill domain tags on Done cards — reverse-engineer from title, description, and file paths",
+      "description": "## Experience\nI ask Card Story for the seed pipeline history and get 6 cards. Jeff knows there are 40+. The gap: older cards were created before domain tags existed. Card Story joins on domain — no tag, no story.\n\n## AC\n1. Script scans Done cards without domain tags\n2. For each, infers domain from title keywords, description content, and file paths in comments\n3. Tags with inferred domain — human review for ambiguous cases\n4. Seeds domain gets full coverage first (Jeff asked for this specifically)\n5. Dry-run mode shows proposed tags before applying\n\n## Context\nKade tried to tag old seed cards by number from Chorus search — numbers were stale. The board is the source of truth for current card state. This card builds the bridge between historical knowledge and current board structure.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-01T21:54:40Z",
+      "updated": "2026-04-01T21:54:40Z"
+    },
+    {
+      "index": 1948,
+      "apiId": 2031,
+      "title": "Permutation coverage gate — actor diagram states drive test scenario count",
+      "description": "## Experience\nI change a page handler and the gate checks whether my tests cover the states Jeff would actually see. Not just 'did you write a test' but 'did your test cover the permutations.' The actor diagram for each page lists the states — the gate counts scenarios against states.\n\n## AC\n1. Gate reads the domain page actor diagram for the file being edited — extracts state count\n2. Gate reads the matching Gherkin feature file — counts Scenario Outline examples or distinct scenarios\n3. If scenario count < state count from diagram, gate blocks with: 'Photo detail has 4 states but your test covers 2. Missing: no-thumbnail, no-EXIF.'\n4. Gate skips if no actor diagram exists for the domain (graceful degradation)\n5. BDD scenarios for the gate itself — meta-testing\n\n## Context\nCurrent TDD gate enforces sequence (test file before code). This gate enforces coverage shape. The domain actor diagrams from #1943 become the coverage spec. Jeff asked: 'what about a hook that forces meaningful page level permutation tests?'",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": false,
+      "created": "2026-04-01T21:37:31Z",
+      "updated": "2026-04-01T21:37:31Z"
+    },
+    {
+      "index": 1945,
+      "apiId": 2028,
+      "title": "role-state must emit spine event on every state transition — Clearing tiles go stale",
+      "description": "## AC\n- [ ] role-state binary emits role.state.changed to chorus.log on every state transition (building, idle, blocked, observing)\n- [ ] Clearing tailer picks up the event and updates tile card number within 5s\n- [ ] No silent state changes — if the state file updates, the spine event fires\nRoot cause: role-state updates /tmp/role-state-<role> but never writes to chorus.log, breaking the Clearing tile subscription chain.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-01T20:08:38Z",
+      "updated": "2026-04-01T20:11:00Z"
+    },
+    {
+      "index": 1944,
+      "apiId": 2027,
+      "title": "Activity-day decay for chorus search — relevance scoring inspired by MIRA-OSS",
+      "description": "## Experience\nJeff searches Chorus for a topic discussed weeks ago. Results from active working sessions rank higher than results from days with low or no activity. Sessions where nobody was building naturally decay in relevance. Going on vacation does not erase memory — decay counts activity days, not calendar days.\n\n## AC\n1. Relevance scoring formula that weights results by activity-day proximity — days with spine events count, idle days do not\n2. Chorus search results incorporate the decay score alongside FTS5 and semantic ranking\n3. Prior art documented: MIRA-OSS sigmoid formula (access count, momentum decay, hub score, entity links, mention count)\n\n## Context\nSeed from Michael Gruen (CTO, Fund That Flip/Upright) via github.com/taylorsatula/mira-OSS. Their memory decay formula uses 5 percent per day momentum with activity-day normalization. Our index grows monotonically — no decay means old noise ranks alongside recent signal.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:enhance"
+      ],
+      "done": false,
+      "created": "2026-04-01T19:47:15Z",
+      "updated": "2026-04-01T19:47:16Z"
+    },
+    {
       "index": 1941,
       "apiId": 2024,
       "title": "Design gate — actor flow + BDD scenarios required before code starts",
@@ -1046,24 +1186,6 @@
       "updated": "2026-04-01T13:27:32Z"
     },
     {
-      "index": 1937,
-      "apiId": 2020,
-      "title": "Seed pipeline trust — Jeff sends it, team picks it up, always arrives, never drops #tags as seeds",
-      "description": "## Experience\nI send a seed and the team picks it up with urgency and attention. I never wonder if it arrived. I never discover days later that a seed was silently dropped. When I use #wren or #silas, it routes to that role — the hashtag is correlation, not the seed itself. The content before the tag is the seed. The system treats both parts together, never the tag alone.\n\n## AC\n1. Seed delivery is confirmed — Jeff gets visible proof the seed arrived and who picked it up\n2. Seeds are processed with urgency — not batched, not queued for next session, not waiting for /cs\n3. #tags are NEVER treated as seeds — they are routing/correlation markers attached to the preceding content\n4. A seed is always two SMS messages: content first, #tag second. Both messages together form the seed. Never process them independently.\n5. End-to-end test: Jeff sends SMS seed → team receives → Jeff sees confirmation — no unit test fakes\n6. When seed arrives, the receiving role acts on it in the same prompt cycle — card it, route it, or discard with reason\n\n## Files\n- platform/roles/silas/scripts/seed-probe.sh\n- platform/board-client/tests/seed-pipeline-flow.test.ts\n- platform/api/src/server.ts\n- product-manager/docs/seed-pipeline-criteria.md",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-01T13:13:35Z",
-      "updated": "2026-04-01T15:39:10Z"
-    },
-    {
       "index": 1935,
       "apiId": 2018,
       "title": "Fix accept_gate chore/swat demo brief exemption — align with demo_gate skip logic",
@@ -1078,7 +1200,7 @@
       ],
       "done": false,
       "created": "2026-04-01T12:52:09Z",
-      "updated": "2026-04-01T12:52:09Z"
+      "updated": "2026-04-01T20:47:47Z"
     },
     {
       "index": 1934,
@@ -1594,23 +1716,6 @@
       "updated": "2026-03-30T16:49:41Z"
     },
     {
-      "index": 1784,
-      "apiId": 1867,
-      "title": "Seed pipeline synthetic monitoring — hourly live-path test, alert on failure",
-      "description": "## Experience\nThe system detects seed pipeline failures before Jeff does. Jeff never sends a text into the void.\n\n## AC\n- [ ] Cron job sends synthetic SMS payload through full pipeline every hour (webhook → adapter → handler → brief file)\n- [ ] Verifies brief file appears within 60 seconds\n- [ ] Posts red alert to Bridge if brief does not arrive\n- [ ] Cleans up synthetic seeds after verification (no pollution in Jeff's inbox)\n- [ ] Covers all three seed types: plain URL, rich link (Apple Music), photo + hashtag",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:26:32Z",
-      "updated": "2026-03-28T11:26:32Z"
-    },
-    {
       "index": 1782,
       "apiId": 1865,
       "title": "Clearing voice capture — click mic, record, auto-transcribe and route to addressed role",
@@ -1725,102 +1830,6 @@
       "done": false,
       "created": "2026-03-26T20:54:02Z",
       "updated": "2026-03-30T13:03:39Z"
-    },
-    {
-      "index": 1737,
-      "apiId": 1820,
-      "title": "Sequence diagram — /chat flow",
-      "description": "## Experience\nI want to understand the /chat flow the same way I can see pair and nudge flows — a visual sequence showing who talks to whom, how the channel opens and closes, and where the summary lands. I expect the same dark-theme HTML format so all the Chorus skill diagrams live together as a set.\n\n## Files\n- product-manager/artifacts/sequence-chat.html\n- jeff-bridwell-personal-site/public/gathering-docs/sequence-chat.html\n\n## AC\n1. /chat sequence diagram — two-role direct channel (start → messages → end → summary)\n2. HTML dark theme matching pair-flow-sequence.html\n3. Added to doc-catalog\n\n## Why\nProduct documentation for Chorus interaction skills.",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P3",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-26T20:23:09Z",
-      "updated": "2026-03-30T13:03:49Z"
-    },
-    {
-      "index": 1736,
-      "apiId": 1819,
-      "title": "Sequence diagram — /pipeline flow",
-      "description": "## Experience\nI want to see how a multi-card pipeline flows — how Wren drives it, when roles get nudged, and where I come in for the demo at the end. A sequence diagram makes the orchestration legible at a glance. Same dark-theme HTML as the other Chorus skill diagrams so they form a complete visual reference.\n\n## Files\n- product-manager/artifacts/sequence-pipeline.html\n- jeff-bridwell-personal-site/public/gathering-docs/sequence-pipeline.html\n\n## AC\n1. /pipeline sequence diagram — multi-card pipeline flow (Wren drives, roles nudge on completion, Jeff sees demo at end)\n2. HTML dark theme matching pair-flow-sequence.html\n3. Added to doc-catalog\n\n## Why\nProduct documentation for Chorus interaction skills.",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P3",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-26T20:23:09Z",
-      "updated": "2026-04-01T00:39:34Z"
-    },
-    {
-      "index": 1731,
-      "apiId": 1814,
-      "title": "Diagnose AirPlay stale session — Library HomePod silent from Mac",
-      "description": "## Experience\nI tell Siri to play music on the HomePod and it works. Then I try to AirPlay from my Mac and nothing comes out — the Mac shows it's connected, HTTP 200s are flowing, but silence. The only fix is unplugging the HomePod and plugging it back in. I need this to either just work or have a software workaround that doesn't require me to physically touch the HomePod.\n\n## AC\n1. Identify root cause: HomePod plays via Siri but silent via Mac AirPlay. Transport shows HTTP 200s, Mac shows connected, no audio output.\n2. Music.app logs show 'Missing locationUrl to make a request' — stale discovery cache\n3. Document workaround (power cycle HomePod) and permanent fix if one exists\n4. Check if coreaudiod restart resolves without HomePod power cycle\n\n## Why\nAirPlay from Library Mac to Library HomePod fails frequently. Only fix is unplug/replug HomePod. Affects music playback for Jeff. Navidrome bypasses Apple Music but still needs AirPlay to reach HomePod.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P3",
-      "domains": [
-        "chunk:ops",
-        "domain:music"
-      ],
-      "done": false,
-      "created": "2026-03-26T19:28:54Z",
-      "updated": "2026-03-30T13:04:01Z"
-    },
-    {
-      "index": 1707,
-      "apiId": 1790,
-      "title": "Extract inline SPARQL queries from handlers into Chorus API endpoints",
-      "description": "## Experience\nI look at the photo handler code and see SPARQL queries inlined as giant template strings. When I want to change how photos are queried, I'm digging through handler logic instead of hitting a clean API endpoint. I expect photo data access to go through Chorus API endpoints like every other domain — consistent, testable, and separated from the rendering logic.\n\n## Files\n- src/handlers/photo.handler.ts\n- src/services/sparql.service.ts\n- src/routes/api.routes.ts\n\n## AC\n- [ ] All SPARQL queries in photo handler moved to dedicated Chorus API endpoints\n- [ ] Handler calls endpoints, not inline SPARQL strings\n- [ ] Applies to getAllPhotosFromCanonical and any other Fuseki queries in the photo path\n- [ ] Pattern established for other domains to follow (music, books, garden)",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-26T10:40:03Z",
-      "updated": "2026-03-30T13:04:45Z"
-    },
-    {
-      "index": 1677,
-      "apiId": 1760,
-      "title": "Borg calibration session — peer benchmark, scoring rubric, and self-assessment review with Jeff",
-      "description": "## Experience\nI open the Borg self-assessment and ontology comparison documents and I want to walk through them together with the team. I know we'll score ourselves wrong if we grade our own work — I need an external benchmark so the scores mean something. I want to pick a system I know well, score it on the same axes, and then compare. That calibration turns the Borg assessment from an opinion into a measurement.\n\nJeff wants to walk through both Borg HTML documents together.\n\n## Files\n- product-manager/data/borg/ontology-comparison.html\n- product-manager/data/borg/self-assessment.html\n\n## AC\n- [ ] Jeff reviews ontology comparison — TOSCA vs SOSA/SSN vs K8s matrix and hybrid recommendation\n- [ ] Jeff reviews self-assessment — 7 dimensions with real data, 4/4 decision validation\n- [ ] Capture Jeff's feedback, questions, and direction for Borg next steps\n- [ ] Update Borg product roadmap based on review",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:borg"
-      ],
-      "done": false,
-      "created": "2026-03-24T20:13:59Z",
-      "updated": "2026-03-30T13:05:17Z"
-    },
-    {
-      "index": 1660,
-      "apiId": 1743,
-      "title": "Fix harvest-manifests page — restore per-domain harvest status tiles with real data",
-      "description": "## Experience\nI open the harvest-manifests page and I expect to see per-domain tiles showing me the health of each harvest — what ran, when, how many records, any errors. Right now the page is broken or showing stale data. I need this page to be my at-a-glance view of whether the data pipeline is healthy across all domains.\n\n## AC\n- [ ] Harvest-manifests page renders per-domain harvest status tiles\n- [ ] Each tile shows last run timestamp, record count, and error state\n- [ ] Data comes from real harvest run metadata, not hardcoded or stale\n- [ ] All active domains represented (photos, music, books, garden)",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "domain:convergence"
-      ],
-      "done": false,
-      "created": "2026-03-23T22:13:30Z",
-      "updated": "2026-03-30T13:05:22Z"
     },
     {
       "index": 1721,
@@ -2178,6 +2187,23 @@
       "done": false,
       "created": "2026-03-28T11:34:05Z",
       "updated": "2026-03-31T17:05:13Z"
+    },
+    {
+      "index": 1784,
+      "apiId": 1867,
+      "title": "Seed pipeline synthetic monitoring — hourly live-path test, alert on failure",
+      "description": "## Experience\nThe system detects seed pipeline failures before Jeff does. Jeff never sends a text into the void.\n\n## AC\n- [ ] Cron job sends synthetic SMS payload through full pipeline every hour (webhook → adapter → handler �� brief file)\n- [ ] Verifies brief file appears within 60 seconds\n- [ ] Posts red alert to Bridge if brief does not arrive\n- [ ] Cleans up synthetic seeds after verification (no pollution in Jeff's inbox)\n- [ ] Covers all three seed types: plain URL, rich link (Apple Music), photo + hashtag",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:seeds",
+        "type:new"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:26:32Z",
+      "updated": "2026-04-01T21:23:37Z"
     },
     {
       "index": 1783,
@@ -2708,17 +2734,52 @@
       "updated": "2026-03-20T13:46:25Z"
     },
     {
-      "index": 1565,
-      "apiId": 1648,
-      "title": "Quick SWAT fix",
-      "description": "",
-      "status": "Won't Do",
-      "owner": "",
-      "priority": "",
-      "domains": [],
+      "index": 1954,
+      "apiId": 2037,
+      "title": "[defect] gathering-app: SMS seed creation failed",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: SMS seed creation failed\nSample: SMS seed creation failed\nFirst seen: 2026-04-01T22:40:13Z\nCount: 1\nHash: 28784b570a0c4734",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:infrastructure",
+        "type:fix"
+      ],
       "done": false,
-      "created": "2026-03-20T13:46:08Z",
-      "updated": "2026-03-20T13:46:24Z"
+      "created": "2026-04-01T22:40:13Z",
+      "updated": "2026-04-01T22:40:13Z"
+    },
+    {
+      "index": 1953,
+      "apiId": 2036,
+      "title": "[defect] gathering-app: SPARQL update error",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: SPARQL update error\nSample: SPARQL update error\nFirst seen: 2026-04-01T22:40:13Z\nCount: 1\nHash: 4619041ddb4463fd",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-01T22:40:13Z",
+      "updated": "2026-04-01T22:40:13Z"
+    },
+    {
+      "index": 1949,
+      "apiId": 2032,
+      "title": "[ops-health] HighLatency alert firing",
+      "description": "Auto-detected by chorus-ops (health).\n\nAlert summary incomplete ('High latency for '), indicating monitoring data delivery issue or misconfigured alert context.\n\nFinding ID: alert-highlatency\nSeverity: warning\nCategory: alert",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-01T21:44:15Z",
+      "updated": "2026-04-01T21:44:15Z"
     },
     {
       "index": 1924,
@@ -2766,7 +2827,7 @@
       ],
       "done": false,
       "created": "2026-03-31T17:34:33Z",
-      "updated": "2026-03-31T18:22:04Z"
+      "updated": "2026-04-01T21:09:21Z"
     }
   ]
 }
