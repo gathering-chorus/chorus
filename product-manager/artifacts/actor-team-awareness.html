@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Actor Diagram — Team Awareness via Spine + Pulse</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 10px; font-size: 0.86rem; }
+  .actor-diagram { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 16px 0; font-family: 'SF Mono', 'Menlo', monospace; font-size: 0.78rem; line-height: 2; white-space: pre; overflow-x: auto; }
+  .dep { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 0.82rem; }
+  .dep strong { color: #9a3412; }
+  .problem { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 0.82rem; }
+  .problem strong { color: #dc2626; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.74rem; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<h1>Team Awareness via Spine + Pulse</h1>
+<p class="subtitle">How roles know what other roles are doing — and detect when they stop</p>
+
+<div class="problem"><strong>The problem:</strong> April 1, 2026 — both Kade and Silas stalled for 20+ minutes on #1956. Wren noticed at 8 minutes only because Jeff was watching. Jeff noticed at 20 minutes because Wren's gemba TTL expired. The system should catch this before either human or PM does.</div>
+
+<h2>Actor Flow — Normal: Team Awareness</h2>
+<div class="actor-diagram">
+  Role A (active)          Spine                Pulse              team-scan            Role B (observing)
+       │                     │                    │                    │                      │
+       ├── action ──────────▶│                    │                    │                      │
+       │   (edit, build,     │                    │                    │                      │
+       │    nudge, card move) │                    │                    │                      │
+       │                     ├── event ──────────▶│                    │                      │
+       │                     │   {role: A,        │                    │                      │
+       │                     │    type: card.moved,│                   │                      │
+       │                     │    level: info}     │                    │                      │
+       │                     │                    ├── classify ───────▶│                      │
+       │                     │                    │   info/warn/crit   │                      │
+       │                     │                    │                    ├── inject ────────────▶│
+       │                     │                    │                    │  "silas: building     │
+       │                     │                    │                    │   #1956 (3s ago)"     │
+       │                     │                    │                    │                      │
+       │                     │                    │                    │                      ├── aware
+       │                     │                    │                    │                      │   of A's
+       │                     │                    │                    │                      │   state
+       │                     │                    │                    │                      │
+</div>
+
+<h2>Actor Flow — Stall Detection</h2>
+<div class="actor-diagram">
+  Role A (stalled)         Spine                Pulse              Watchdog             Role B / Wren
+       │                     │                    │                    │                      │
+       │  (no actions)       │                    │                    │                      │
+       │  (no tool calls)    │                    │                    │                      │
+       │  (silence)          │                    │                    │                      │
+       │                     │  (no events        │                    │                      │
+       │                     │   from Role A)     │                    │                      │
+       │                     │                    │                    │                      │
+       │                     │                    ├── 2 min: no ──────▶│                      │
+       │                     │                    │   events from A    │                      │
+       │                     │                    │                    │                      │
+       │                     │                    │                    ├── nudge A ───────────▶│
+       │                     │                    │                    │  "[watchdog] A silent │
+       │                     │                    │                    │   2min on #N — status?"│
+       │                     │                    │                    │                      │
+       │                     │                    │                    │   IF no response:     │
+       │                     │                    │                    │                      │
+       │                     │                    ├── 3 min: ─────────▶│                      │
+       │                     │                    │   escalate         │                      │
+       │                     │                    │                    ├── nudge Wren ────────▶│
+       │                     │                    │                    │  "[stall] A dark 3min │
+       │                     │                    │                    │   on #N. May need     │
+       │                     │                    │                    │   restart."           │
+       │                     │                    │                    │                      │
+       │                     │                    │   IF 5+ min:       │                      │
+       │                     │                    │                    ├── nudge Jeff ────────▶│
+       │                     │                    │                    │  "[alert] A stalled   │
+       │                     │                    │                    │   5min. Sessions may  │
+       │                     │                    │                    │   need restart."      │
+       │                     │                    │                    │                      │
+</div>
+
+<h2>Escalation Timeline</h2>
+<table>
+  <tr><th>Duration</th><th>Action</th><th>Who acts</th></tr>
+  <tr><td>0-2 min</td><td>Normal thinking time. No action.</td><td>—</td></tr>
+  <tr><td>2 min</td><td>Nudge the stalled role: "status?"</td><td>Watchdog (automated)</td></tr>
+  <tr><td>3 min</td><td>Escalate to Wren: "role dark, may need restart"</td><td>Watchdog → Wren</td></tr>
+  <tr><td>5 min</td><td>Alert Jeff: "role stalled, sessions may need restart"</td><td>Watchdog → Jeff (passive queue)</td></tr>
+  <tr><td>10 min</td><td>Role marked unresponsive in team-scan</td><td>System</td></tr>
+</table>
+
+<h2>What "Dark" Means</h2>
+<table>
+  <tr><th>Signal</th><th>Meaning</th></tr>
+  <tr><td>No spine events</td><td>Role not emitting — no tool calls, no state changes</td></tr>
+  <tr><td>No team-scan update</td><td>Last tool call timestamp aging</td></tr>
+  <tr><td>Nudge not acknowledged</td><td>Role session may be dead or context-full</td></tr>
+  <tr><td>State still "building"</td><td>Declared building but not producing — stall, not idle</td></tr>
+</table>
+
+<h2>Today's Incident</h2>
+<table>
+  <tr><th>Time</th><th>What happened</th><th>Who detected</th><th>With watchdog</th></tr>
+  <tr><td>20:40</td><td>Both roles go silent on #1956</td><td>Nobody</td><td>Watchdog detects at 20:42</td></tr>
+  <tr><td>20:46</td><td>Wren flags "6 min dark"</td><td>Wren (gemba)</td><td>Wren nudged at 20:42, escalated at 20:43</td></tr>
+  <tr><td>20:48</td><td>Wren nudges both roles</td><td>Wren (manual)</td><td>Already done automatically</td></tr>
+  <tr><td>20:50</td><td>No response. Wren closes gemba.</td><td>Wren</td><td>Jeff notified at 20:45</td></tr>
+  <tr><td>20:59</td><td>Jeff says "they are idle"</td><td>Jeff</td><td>Jeff knew at 20:45, 14 min earlier</td></tr>
+</table>
+
+<div class="dep"><strong>Depends on:</strong> Spine (events), Pulse (classification + timing), Nudge delivery (osascript inject for roles, passive queue for Jeff)</div>
+
+<p class="meta">Actor Diagram — Team Awareness &bull; #1957 &bull; Wren &bull; 2026-04-01</p>
+</body>
+</html>

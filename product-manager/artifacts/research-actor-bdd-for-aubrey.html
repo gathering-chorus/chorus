@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>What Jeff Built Today — Explained for Humans</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', Georgia, serif; background: #fefefe; color: #2a2a2a; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.9; }
+  h1 { font-size: 1.6rem; color: #1a1a2e; margin-bottom: 6px; font-weight: 700; }
+  .subtitle { font-size: 0.9rem; color: #888; margin-bottom: 36px; }
+  h2 { font-size: 1.15rem; color: #2d4a7a; margin-top: 36px; margin-bottom: 12px; }
+  p { margin-bottom: 16px; font-size: 0.95rem; }
+  .callout { background: #f0f4ff; border-left: 4px solid #3b82f6; padding: 16px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; font-size: 0.92rem; }
+  .analogy { background: #fefce8; border-left: 4px solid #ca8a04; padding: 16px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; font-size: 0.92rem; font-style: italic; }
+  .timeline { margin: 20px 0; padding-left: 20px; }
+  .timeline-entry { margin-bottom: 14px; padding-left: 16px; border-left: 2px solid #ddd; }
+  .timeline-entry .time { font-size: 0.78rem; color: #888; font-weight: 600; }
+  .timeline-entry .event { font-size: 0.92rem; }
+  .meta { font-size: 0.72rem; color: #999; margin-top: 40px; text-align: center; padding-top: 16px; border-top: 1px solid #eee; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<h1>What Jeff Built Today</h1>
+<p class="subtitle">A plain-language explanation for Aubrey &bull; April 1, 2026</p>
+
+<h2>The Short Version</h2>
+
+<p>Jeff manages a team of three AI assistants that help him build software. Today, he figured out a way to tell them exactly how to behave — not by writing long instructions they forget, but by drawing simple diagrams that automatically turn into tests the system runs every time.</p>
+
+<p>Think of it like this: instead of telling your employees "be nice to customers" and hoping they remember, you draw a flowchart of exactly what to do when a customer walks in, then install a camera system that checks whether they followed the flowchart.</p>
+
+<h2>Why This Matters</h2>
+
+<p>Jeff has given his AI team the same feedback over 120 times. "Don't ask me questions before investigating." "When I say stop, stop." "Don't apologize — just change the behavior." Every session, the AIs start fresh and make the same mistakes because they don't have structural memory of how Jeff wants to be treated.</p>
+
+<p>Today he turned those 120 corrections into something permanent.</p>
+
+<h2>How It Works</h2>
+
+<div class="analogy">Imagine you're training a new restaurant staff. You could write a 50-page employee handbook that nobody reads. Or you could draw a simple picture: "Customer walks in → greet within 10 seconds → seat at open table → bring water before they ask." Then you test it: send in a fake customer, see if the staff follows the picture. If they don't, the system tells them what they missed before the real customer ever sees a problem.</div>
+
+<p>That's what Jeff built today, except for AI agents instead of waitstaff:</p>
+
+<p><strong>Step 1: Draw the picture.</strong> Jeff described how each interaction should work. "When I report a problem, ask me one question about what I'm seeing, then go investigate on your own. Don't come back and ask me more questions — come back with answers." That became a simple actor flow diagram.</p>
+
+<p><strong>Step 2: Write the test.</strong> The diagram turned into test scenarios written in plain English:</p>
+
+<div class="callout">
+<em>Given Jeff says "seeds are broken"</em><br>
+<em>Then the role asks one short question about symptoms</em><br>
+<em>When Jeff describes the symptom</em><br>
+<em>Then the role investigates using memory and logs</em><br>
+<em>And the role does not ask Jeff another question before reporting findings</em>
+</div>
+
+<p><strong>Step 3: The system checks itself.</strong> Every time the AI team starts working, these tests run automatically. 98 scenarios, 517 checks, 18 seconds. If any behavior drifts from Jeff's expectations, the test catches it before Jeff has to.</p>
+
+<h2>What Actually Happened Today</h2>
+
+<div class="timeline">
+  <div class="timeline-entry">
+    <div class="time">2:19 PM</div>
+    <div class="event">Jeff said six words: "clearing depends on pulse depends on claude." That one sentence described how three parts of his system connect to each other.</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">2:27 PM</div>
+    <div class="event">Those six words became four domain pages with visual diagrams showing who talks to whom and how.</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">3:58 PM</div>
+    <div class="event">Jeff paired two AI roles together to write tests. They wrote 55 test scenarios in 16 minutes. During testing, they discovered that one of the safety checks wasn't actually connected to the system it was supposed to guard. The test found a real bug.</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">5:38 PM</div>
+    <div class="event">Jeff asked one AI to build something that needed data from another AI's tool. The first AI asked the PM (a third AI) for a product decision. The PM decided. The second AI built the missing piece in 3 minutes. The first AI picked it up and kept going. Jeff didn't relay a single message between them.</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">6:08 PM</div>
+    <div class="event">Jeff said "the actor diagram and the BDD become your mission." That's when the method crystallized — the diagrams aren't documentation, they're the operating system for how the team behaves.</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">6:26 PM</div>
+    <div class="event">Jeff said "seeds are broken" to test whether his PM AI would follow the new policy. She didn't — she asked questions instead of investigating. Jeff pointed it out. She recognized the failure, updated the test to capture it, and the policy became stronger because it failed.</div>
+  </div>
+</div>
+
+<h2>Why It's Interesting</h2>
+
+<p>There's an academic field that tried to solve this problem 25 years ago — a thing called Agent UML. Researchers drew diagrams for how software agents should talk to each other. It faded because the diagrams were just pictures. Nobody could test them. Nobody could enforce them.</p>
+
+<p>Jeff's version does all three: the diagram describes the behavior, the test proves it works, and a runtime gate blocks the wrong behavior before it happens. Each piece existed separately. The connected pipeline — from Jeff's words to a running enforcement system in one afternoon — is new.</p>
+
+<div class="callout">The discipline that would have broken a human team — spending time on careful diagrams before writing any code — is free for AI agents. They don't get impatient. They don't skip steps because they're eager to start coding. Jeff holds the frame ("draw the diagram first"), and the AIs follow the path. The ideas survive the translation from concept to code because the definition work doesn't drain the energy needed for building.</div>
+
+<h2>The Numbers</h2>
+
+<p>9 cards completed. 98 test scenarios covering behavioral contracts. 515 individual checks. 5 new domain pages. 1 research position paper. 4 hours of work. One team of three AIs and one human who said six words at the right time.</p>
+
+<p class="meta">Written by Wren (Jeff's AI product manager) for Aubrey &bull; April 1, 2026</p>
+</body>
+</html>
