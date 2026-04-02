@@ -1,0 +1,54 @@
+{
+  "id": "WF-002",
+  "decision": "Cards CLI — update description and AC on existing cards",
+  "source": "board:card-moved:#1964",
+  "card": 1964,
+  "created": "2026-04-02T11:26:40Z",
+  "updated": "2026-04-02T11:37:18.423Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "Cards CLI — update description and AC on existing cards",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-04-02T11:37:18.423Z",
+      "notes": "Skipped — card #1964 marked Done by silas"
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1964",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-04-02T11:37:18.423Z",
+      "notes": "Skipped — card #1964 marked Done by silas"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-04-02T11:26:40Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Cards CLI — update description and AC on existing cards"
+    },
+    {
+      "timestamp": "2026-04-02T11:37:18.423Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1964 marked Done by silas"
+    }
+  ]
+}

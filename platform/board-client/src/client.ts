@@ -84,10 +84,18 @@ export class BoardClient {
   async resolveIndex(index: number): Promise<number> {
     const map = await this.buildTaskMap();
     const id = map.get(index);
-    if (id === undefined) {
+    if (id !== undefined) return id;
+    // Bucket query misses old Done tasks — fall back to full project scan
+    const allTasks = await this.fetchAllTasks();
+    for (const task of allTasks) {
+      const idx = (task as any).index ?? task.id;
+      if (!map.has(idx)) map.set(idx, task.id);
+    }
+    const fullId = map.get(index);
+    if (fullId === undefined) {
       throw new Error(`No task #${index} on ${this.board.name} board`);
     }
-    return id;
+    return fullId;
   }
 
   // ── Core operations ──

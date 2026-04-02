@@ -1,0 +1,48 @@
+{
+  "id": "WF-006",
+  "decision": "BDD now-gate pass",
+  "source": "board:card-moved:#1977",
+  "card": 1977,
+  "created": "2026-04-02T11:55:06Z",
+  "updated": "2026-04-02T11:55:06Z",
+  "status": "in_progress",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "silas",
+      "action": "BDD now-gate pass",
+      "status": "ready",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1977",
+      "status": "pending",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-04-02T11:55:06Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: BDD now-gate pass"
+    }
+  ]
+}
