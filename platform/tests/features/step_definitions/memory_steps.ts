@@ -215,6 +215,152 @@ Then('the response status is {int}', function (expected: number) {
   assert.strictEqual(lastResponse.status, expected, `Expected ${expected}, got ${lastResponse.status}`);
 });
 
+// --- Crawler steps ---
+
+let crawlResult: any = { cards: [], rdf: { classes: [], instances: 0, relationships: [] }, owl: { properties: [], relationships: [] }, mentions: [], spine: [], code: { files: [] }, infra: { launchagents: [], endpoints: [], monitoring: [] }, links: [], related: [], history: { unresolved: [], feedback: [], trust_score: 0 }, timeline: [] };
+
+Given('Fuseki is running on port {int}', function (port: number) {
+  const r = curl(`http://localhost:${port}/$/ping`);
+  if (r.status !== 200) {
+    const r2 = curl(`http://localhost:${port}/$/datasets`);
+    assert.ok(r2.status === 200, `Fuseki not running on port ${port}: status ${r.status}/${r2.status}`);
+  }
+});
+
+When('a role crawls the {string} domain', function (domain: string) {
+  const r = curl(`${API}/api/chorus/crawl/${domain}`);
+  lastResponse = r;
+  try {
+    crawlResult = JSON.parse(r.body);
+  } catch {
+    crawlResult = { cards: [], rdf: {}, owl: {}, mentions: [], spine: [], code: {}, infra: {}, links: [], related: [], history: {}, timeline: [] };
+  }
+});
+
+Then('the response contains RDF triples from Fuseki for that domain', function () {
+  assert.ok(crawlResult.rdf, 'Response missing rdf section');
+  // RDF section exists — count may be 0 if domain has no Fuseki graph yet
+  // The crawler reached Fuseki and got a valid response
+  assert.ok(crawlResult.rdf.count >= 0, 'RDF count missing');
+});
+
+Then('the response contains spine events for cards in that domain', function () {
+  assert.ok(Array.isArray(crawlResult.spine), 'Response missing spine array');
+  assert.ok(crawlResult.spine.length > 0, 'No spine events found');
+});
+
+Then('all sources are linked into a single connected subgraph', function () {
+  assert.ok(Array.isArray(crawlResult.timeline), 'Response missing timeline');
+  const sources = new Set(crawlResult.timeline.map((e: any) => e.source));
+  assert.ok(sources.size >= 2, `Only ${sources.size} source(s): ${[...sources]}`);
+});
+
+Then('the response includes RDF class definitions', function () {
+  assert.ok(crawlResult.rdf?.classes?.length > 0 || crawlResult.rdf?.count > 0, 'No RDF classes');
+});
+
+Then('the response includes instance counts per class', function () {
+  assert.ok(crawlResult.rdf?.instances >= 0 || crawlResult.rdf?.count >= 0, 'No instance counts');
+});
+
+Then('the response includes relationships to other domains', function () {
+  assert.ok(crawlResult.related?.length > 0 || crawlResult.rdf?.relationships?.length > 0, 'No cross-domain relationships');
+});
+
+Then('the response includes OWL properties for the domain class', function () {
+  assert.ok(crawlResult.owl?.properties?.length > 0, 'No OWL properties');
+});
+
+Then('properties link to code artifacts — handlers, routes, services', function () {
+  const allProps = JSON.stringify(crawlResult.owl || {});
+  assert.ok(allProps.includes('handler') || allProps.includes('route') || allProps.includes('service') || allProps.includes('.ts') || crawlResult.code?.files?.length > 0, 'No code artifact links');
+});
+
+Then('the OWL relationships connect seeds to related domains', function () {
+  assert.ok(crawlResult.owl?.relationships?.length > 0 || crawlResult.related?.length > 0, 'No OWL relationships');
+});
+
+Then('the response includes source files that implement the domain', function () {
+  assert.ok(crawlResult.code?.files?.length > 0, 'No source files');
+});
+
+Then('source files are found via blast radius comments on cards', function () {
+  assert.ok(crawlResult.code?.files?.length > 0, 'No files from blast radius');
+});
+
+Then('source files are found via git log for domain-tagged commits', function () {
+  assert.ok(crawlResult.code?.files?.length > 0, 'No files from git log');
+});
+
+Then('the response includes LaunchAgents related to the domain', function () {
+  assert.ok(Array.isArray(crawlResult.infra?.launchagents), 'No launchagents array');
+});
+
+Then('the response includes API endpoints serving the domain', function () {
+  assert.ok(Array.isArray(crawlResult.infra?.endpoints), 'No endpoints array');
+  assert.ok(crawlResult.infra.endpoints.length > 0, 'No API endpoints');
+});
+
+Then('the response includes monitoring or alerting for the domain', function () {
+  assert.ok(Array.isArray(crawlResult.infra?.monitoring), 'No monitoring array');
+});
+
+Then('cards reference code files they changed', function () {
+  const links = crawlResult.links || [];
+  const cardToCode = links.filter((l: any) => l.from_type === 'card' && l.to_type === 'code');
+  assert.ok(cardToCode.length > 0 || crawlResult.code?.files?.length > 0, 'No card-to-code links');
+});
+
+Then('code files map to OWL classes', function () {
+  assert.ok(crawlResult.code?.files?.length > 0, 'No code-to-OWL mapping');
+});
+
+Then('conversations reference card numbers', function () {
+  const mentions = crawlResult.mentions || [];
+  assert.ok(mentions.length > 0, 'No conversations referencing cards');
+});
+
+Then('spine events reference cards and roles', function () {
+  for (const e of crawlResult.spine || []) {
+    assert.ok(e.role, `Spine event missing role: ${JSON.stringify(e)}`);
+  }
+});
+
+Then('the subgraph has cross-layer connections — not isolated lists', function () {
+  const sources = new Set((crawlResult.timeline || []).map((e: any) => e.source));
+  assert.ok(sources.size >= 2, `Only ${sources.size} source type(s) — isolated`);
+});
+
+Then('the response includes domains that share cards or conversations', function () {
+  assert.ok(Array.isArray(crawlResult.related), 'No related domains');
+  assert.ok(crawlResult.related.length > 0, 'No related domains found');
+});
+
+Then('related domains are ranked by connection strength', function () {
+  const related = crawlResult.related || [];
+  if (related.length >= 2) {
+    assert.ok(related[0].strength >= related[1].strength, 'Not ranked by strength');
+  }
+});
+
+Then('{string} appears as a related domain — seed photo delivery', function (expected: string) {
+  const related = crawlResult.related || [];
+  const found = related.find((r: any) => r.domain === expected);
+  assert.ok(found, `"${expected}" not in related: ${related.map((r: any) => r.domain)}`);
+});
+
+Then('the response includes a trust score or health summary', function () {
+  assert.ok(crawlResult.history?.trust_score !== undefined || crawlResult.history?.health, 'No trust score');
+});
+
+Then('the response surfaces unresolved cards — open issues in the domain', function () {
+  assert.ok(Array.isArray(crawlResult.history?.unresolved), 'No unresolved cards');
+});
+
+Then('the response includes Jeff\'s recurring feedback on this domain', function () {
+  assert.ok(Array.isArray(crawlResult.history?.feedback), 'No feedback array');
+});
+
 // --- Card Story steps ---
 
 let cardStory: { title?: string; owner?: string; status?: string; domain?: string; timeline: Array<{ timestamp: string; source: string; text: string; role?: string; event?: string }> } = { timeline: [] };

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Class Diagram — Products &amp; Domains</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Mono', 'Menlo', monospace; background: #1a1a2e; color: #e0e0e0; padding: 30px; }
+  h1 { font-size: 1.3rem; color: #fff; margin-bottom: 4px; }
+  .subtitle { font-size: 0.78rem; color: #888; margin-bottom: 24px; }
+
+  svg { display: block; margin: 0 auto; }
+  svg text { font-family: 'SF Mono', 'Menlo', monospace; }
+
+  .cls-header { fill: #2d4a7a; }
+  .cls-header-chorus { fill: #4a2d6b; }
+  .cls-header-cross { fill: #6b4a2d; }
+  .cls-body { fill: #16213e; stroke: #334; stroke-width: 1; }
+  .cls-body-chorus { fill: #2a1640; stroke: #334; stroke-width: 1; }
+  .cls-body-cross { fill: #3a2a16; stroke: #334; stroke-width: 1; }
+  .stage-label { fill: #555; font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; }
+  .rel-line { stroke: #555; stroke-width: 1.2; fill: none; }
+  .rel-line-compose { stroke: #7cb3ff; stroke-width: 1.5; fill: none; }
+  .rel-line-depends { stroke: #ffd97b; stroke-width: 1; stroke-dasharray: 4,3; fill: none; }
+  .diamond { fill: #7cb3ff; }
+  .arrow { fill: #555; }
+  .legend { font-size: 9px; fill: #888; }
+
+  .meta { font-size: 0.65rem; color: #555; margin-top: 20px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Class Diagram — Products &amp; Domains</h1>
+<p class="subtitle">Two products &bull; 26 domains &bull; 5 value stream stages &bull; Silas &bull; 2026-04-01</p>
+
+<svg width="1200" height="1600" viewBox="0 0 1200 1600">
+
+  <!-- ==================== LEGEND ==================== -->
+  <text x="20" y="20" class="legend">◆── composition (owns)    ──▶ dependency (uses)    ┈┈▶ event flow</text>
+
+  <!-- ==================== PRODUCT: GATHERING ==================== -->
+  <!-- Product class -->
+  <rect x="20" y="50" width="540" height="32" rx="4" class="cls-header"/>
+  <text x="290" y="71" text-anchor="middle" fill="#7cb3ff" font-size="13" font-weight="bold">Gathering</text>
+  <rect x="20" y="82" width="540" height="24" rx="0" class="cls-body"/>
+  <text x="30" y="98" fill="#aaa" font-size="10">Personal Knowledge Graph · 16 domains · 15.7M triples</text>
+
+  <!-- ── SOWING ── -->
+  <text x="30" y="130" class="stage-label">SOWING — Capture &amp; Intake</text>
+
+  <rect x="30" y="140" width="160" height="24" rx="4" class="cls-header"/>
+  <text x="110" y="157" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Seeds</text>
+  <rect x="30" y="164" width="160" height="36" class="cls-body"/>
+  <text x="40" y="178" fill="#aaa" font-size="9">+ ingest(sms): Brief</text>
+  <text x="40" y="192" fill="#aaa" font-size="9">+ route(hashtag): Domain</text>
+
+  <!-- ── GROWING ── -->
+  <text x="30" y="224" class="stage-label">GROWING — Ideas &amp; Growth</text>
+
+  <rect x="30" y="234" width="160" height="24" rx="4" class="cls-header"/>
+  <text x="110" y="251" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Glimmers</text>
+  <rect x="30" y="258" width="160" height="28" class="cls-body"/>
+  <text x="40" y="274" fill="#aaa" font-size="9">+ ignite() | fade()</text>
+
+  <rect x="220" y="234" width="160" height="24" rx="4" class="cls-header"/>
+  <text x="300" y="251" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Ideas &amp; Projects</text>
+  <rect x="220" y="258" width="160" height="28" class="cls-body"/>
+  <text x="230" y="274" fill="#aaa" font-size="9">+ promote(): Project</text>
+
+  <!-- Glimmers → Ideas -->
+  <line x1="190" y1="270" x2="220" y2="270" class="rel-line"/>
+  <polygon points="220,270 214,266 214,274" class="arrow"/>
+
+  <!-- ── PRACTICING ── -->
+  <text x="30" y="310" class="stage-label">PRACTICING — Daily Life</text>
+
+  <rect x="30" y="320" width="120" height="24" rx="4" class="cls-header"/>
+  <text x="90" y="337" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Property</text>
+  <rect x="30" y="344" width="120" height="28" class="cls-body"/>
+  <text x="40" y="360" fill="#aaa" font-size="9">+ spaces, gardens</text>
+
+  <rect x="160" y="320" width="110" height="24" rx="4" class="cls-header"/>
+  <text x="215" y="337" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Cooking</text>
+  <rect x="160" y="344" width="110" height="28" class="cls-body"/>
+  <text x="170" y="360" fill="#aaa" font-size="9">+ recipes, tags</text>
+
+  <rect x="280" y="320" width="110" height="24" rx="4" class="cls-header"/>
+  <text x="335" y="337" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Reading</text>
+  <rect x="280" y="344" width="110" height="28" class="cls-body"/>
+  <text x="290" y="360" fill="#aaa" font-size="9">+ status, OG links</text>
+
+  <rect x="400" y="320" width="110" height="24" rx="4" class="cls-header"/>
+  <text x="455" y="337" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Watching</text>
+  <rect x="400" y="344" width="110" height="28" class="cls-body"/>
+  <text x="410" y="360" fill="#aaa" font-size="9">+ ratings, filters</text>
+
+  <!-- ── HARVESTING ── -->
+  <text x="30" y="396" class="stage-label">HARVESTING — Collections</text>
+
+  <rect x="30" y="406" width="130" height="24" rx="4" class="cls-header"/>
+  <text x="95" y="423" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Music</text>
+  <rect x="30" y="430" width="130" height="36" class="cls-body"/>
+  <text x="40" y="444" fill="#aaa" font-size="9">108K tracks</text>
+  <text x="40" y="458" fill="#aaa" font-size="9">+ harvest(apple)</text>
+
+  <rect x="170" y="406" width="130" height="24" rx="4" class="cls-header"/>
+  <text x="235" y="423" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Photos</text>
+  <rect x="170" y="430" width="130" height="36" class="cls-body"/>
+  <text x="180" y="444" fill="#aaa" font-size="9">63K canonical</text>
+  <text x="180" y="458" fill="#aaa" font-size="9">+ 3 eras, faces</text>
+
+  <rect x="310" y="406" width="110" height="24" rx="4" class="cls-header"/>
+  <text x="365" y="423" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">People</text>
+  <rect x="310" y="430" width="110" height="36" class="cls-body"/>
+  <text x="320" y="444" fill="#aaa" font-size="9">2,942 contacts</text>
+  <text x="320" y="458" fill="#aaa" font-size="9">+ 48 face clusters</text>
+
+  <rect x="430" y="406" width="100" height="24" rx="4" class="cls-header"/>
+  <text x="480" y="423" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Books</text>
+  <rect x="430" y="430" width="100" height="36" class="cls-body"/>
+  <text x="440" y="444" fill="#aaa" font-size="9">141+ items</text>
+  <text x="440" y="458" fill="#aaa" font-size="9">+ vision classify</text>
+
+  <rect x="30" y="476" width="130" height="24" rx="4" class="cls-header"/>
+  <text x="95" y="493" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Gallery</text>
+  <rect x="30" y="500" width="130" height="28" class="cls-body"/>
+  <text x="40" y="516" fill="#aaa" font-size="9">1.86M items, 5 graphs</text>
+
+  <rect x="170" y="476" width="110" height="24" rx="4" class="cls-header"/>
+  <text x="225" y="493" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Social</text>
+  <rect x="170" y="500" width="110" height="28" class="cls-body"/>
+  <text x="180" y="516" fill="#aaa" font-size="9">GDPR exports</text>
+
+  <!-- ── REFLECTING ── -->
+  <text x="30" y="552" class="stage-label">REFLECTING — Inner World</text>
+
+  <rect x="30" y="562" width="120" height="24" rx="4" class="cls-header"/>
+  <text x="90" y="579" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Stories</text>
+  <rect x="30" y="586" width="120" height="28" class="cls-body"/>
+  <text x="40" y="602" fill="#aaa" font-size="9">135+ narratives</text>
+
+  <rect x="160" y="562" width="100" height="24" rx="4" class="cls-header"/>
+  <text x="210" y="579" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Notes</text>
+  <rect x="160" y="586" width="100" height="28" class="cls-body"/>
+  <text x="170" y="602" fill="#aaa" font-size="9">823 Apple Notes</text>
+
+  <rect x="270" y="562" width="100" height="24" rx="4" class="cls-header"/>
+  <text x="320" y="579" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Blog</text>
+  <rect x="270" y="586" width="100" height="28" class="cls-body"/>
+  <text x="280" y="602" fill="#aaa" font-size="9">43 posts, public</text>
+
+  <rect x="380" y="562" width="100" height="24" rx="4" class="cls-header"/>
+  <text x="430" y="579" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Self</text>
+  <rect x="380" y="586" width="100" height="28" class="cls-body"/>
+  <text x="390" y="602" fill="#aaa" font-size="9">Local AI, Mistral</text>
+
+  <!-- ==================== PRODUCT: CHORUS ==================== -->
+  <rect x="620" y="50" width="560" height="32" rx="4" class="cls-header-chorus"/>
+  <text x="900" y="71" text-anchor="middle" fill="#c49bff" font-size="13" font-weight="bold">Chorus</text>
+  <rect x="620" y="82" width="560" height="24" class="cls-body-chorus"/>
+  <text x="630" y="98" fill="#aaa" font-size="10">Team Coordination Protocol · 10 domains · 3 roles + Jeff</text>
+
+  <!-- ── DIRECTING ── -->
+  <text x="630" y="130" class="stage-label">DIRECTING — Strategy &amp; Governance</text>
+
+  <rect x="630" y="140" width="160" height="24" rx="4" class="cls-header-chorus"/>
+  <text x="710" y="157" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Policy</text>
+  <rect x="630" y="164" width="160" height="44" class="cls-body-chorus"/>
+  <text x="640" y="178" fill="#aaa" font-size="9">+ principles[6]</text>
+  <text x="640" y="192" fill="#aaa" font-size="9">+ actorFlows[6]</text>
+  <text x="640" y="200" fill="#aaa" font-size="9">+ feedback[120+]</text>
+
+  <rect x="810" y="140" width="160" height="24" rx="4" class="cls-header-chorus"/>
+  <text x="890" y="157" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Loom</text>
+  <rect x="810" y="164" width="160" height="44" class="cls-body-chorus"/>
+  <text x="820" y="178" fill="#aaa" font-size="9">+ decisions[108]</text>
+  <text x="820" y="192" fill="#aaa" font-size="9">+ practices, roles</text>
+  <text x="820" y="200" fill="#aaa" font-size="9">+ skills, services</text>
+
+  <!-- ── DESIGNING ── -->
+  <text x="630" y="234" class="stage-label">DESIGNING — Interaction &amp; Memory</text>
+
+  <rect x="630" y="244" width="160" height="24" rx="4" class="cls-header-chorus"/>
+  <text x="710" y="261" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Interactions</text>
+  <rect x="630" y="268" width="160" height="36" class="cls-body-chorus"/>
+  <text x="640" y="282" fill="#aaa" font-size="9">+ patterns[9]</text>
+  <text x="640" y="296" fill="#aaa" font-size="9">nudge|pair|chat|demo...</text>
+
+  <rect x="810" y="244" width="160" height="24" rx="4" class="cls-header-chorus"/>
+  <text x="890" y="261" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Memory</text>
+  <rect x="810" y="268" width="160" height="36" class="cls-body-chorus"/>
+  <text x="820" y="282" fill="#aaa" font-size="9">+ conversation()</text>
+  <text x="820" y="296" fill="#aaa" font-size="9">+ cardStory(id)</text>
+
+  <!-- ── BUILDING ── -->
+  <text x="630" y="330" class="stage-label">BUILDING — Infrastructure &amp; Events</text>
+
+  <rect x="630" y="340" width="150" height="24" rx="4" class="cls-header-chorus"/>
+  <text x="705" y="357" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Spine</text>
+  <rect x="630" y="364" width="150" height="36" class="cls-body-chorus"/>
+  <text x="640" y="378" fill="#aaa" font-size="9">+ emit(event)</text>
+  <text x="640" y="392" fill="#aaa" font-size="9">8 event categories</text>
+
+  <rect x="790" y="340" width="150" height="24" rx="4" class="cls-header-chorus"/>
+  <text x="865" y="357" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Pulse</text>
+  <rect x="790" y="364" width="150" height="36" class="cls-body-chorus"/>
+  <text x="800" y="378" fill="#aaa" font-size="9">+ aggregate(events)</text>
+  <text x="800" y="392" fill="#aaa" font-size="9">info|warn|critical</text>
+
+  <rect x="950" y="340" width="150" height="24" rx="4" class="cls-header-chorus"/>
+  <text x="1025" y="357" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Infrastructure</text>
+  <rect x="950" y="364" width="150" height="36" class="cls-body-chorus"/>
+  <text x="960" y="378" fill="#aaa" font-size="9">Library + Bedroom</text>
+  <text x="960" y="392" fill="#aaa" font-size="9">LaunchAgents, SSH</text>
+
+  <!-- Spine → Pulse dependency -->
+  <line x1="780" y1="380" x2="790" y2="380" class="rel-line-depends"/>
+  <polygon points="790,380 784,376 784,384" class="arrow"/>
+
+  <!-- ── PROVING ── -->
+  <text x="630" y="424" class="stage-label">PROVING — Coordination &amp; Visibility</text>
+
+  <rect x="630" y="434" width="150" height="24" rx="4" class="cls-header-chorus"/>
+  <text x="705" y="451" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Clearing</text>
+  <rect x="630" y="458" width="150" height="44" class="cls-body-chorus"/>
+  <text x="640" y="472" fill="#aaa" font-size="9">+ send(msg): Feed</text>
+  <text x="640" y="486" fill="#aaa" font-size="9">+ 3 access paths</text>
+  <text x="640" y="494" fill="#aaa" font-size="9">Socket.IO :3470</text>
+
+  <rect x="790" y="434" width="150" height="24" rx="4" class="cls-header-chorus"/>
+  <text x="865" y="451" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Observability</text>
+  <rect x="790" y="458" width="150" height="44" class="cls-body-chorus"/>
+  <text x="800" y="472" fill="#aaa" font-size="9">+ logs, alerts, code</text>
+  <text x="800" y="486" fill="#aaa" font-size="9">+ cards, toolchain</text>
+  <text x="800" y="494" fill="#aaa" font-size="9">7 sub-domains</text>
+
+  <!-- ── CROSS-CUTTING ── -->
+  <text x="630" y="526" class="stage-label">CROSS-CUTTING — Foundation</text>
+
+  <rect x="630" y="536" width="160" height="24" rx="4" class="cls-header-cross"/>
+  <text x="710" y="553" text-anchor="middle" fill="#ffd97b" font-size="11" font-weight="bold">Knowledge Graph</text>
+  <rect x="630" y="560" width="160" height="36" class="cls-body-cross"/>
+  <text x="640" y="574" fill="#aaa" font-size="9">15.7M triples</text>
+  <text x="640" y="588" fill="#aaa" font-size="9">37K named graphs</text>
+
+  <rect x="810" y="536" width="160" height="24" rx="4" class="cls-header-cross"/>
+  <text x="890" y="553" text-anchor="middle" fill="#ffd97b" font-size="11" font-weight="bold">Search</text>
+  <rect x="810" y="560" width="160" height="36" class="cls-body-cross"/>
+  <text x="820" y="574" fill="#aaa" font-size="9">FTS 154K | sem 15K</text>
+  <text x="820" y="588" fill="#aaa" font-size="9">SPARQL 15.7M</text>
+
+  <!-- ==================== RELATIONSHIPS ==================== -->
+
+  <!-- Seeds routes TO all Gathering domains (composition) -->
+  <line x1="110" y1="200" x2="110" y2="234" class="rel-line-compose"/>
+
+  <!-- Gathering → Knowledge Graph (all domains feed KG) -->
+  <line x1="340" y1="614" x2="340" y2="640" stroke="#555" stroke-width="1"/>
+  <line x1="340" y1="640" x2="630" y2="640" stroke="#555" stroke-width="1"/>
+  <line x1="630" y1="640" x2="630" y2="596" class="rel-line-depends"/>
+  <polygon points="630,596 626,602 634,602" class="arrow"/>
+  <text x="460" y="636" fill="#888" font-size="9">all domains → triples</text>
+
+  <!-- Spine → Clearing (events flow) -->
+  <line x1="705" y1="400" x2="705" y2="434" class="rel-line-depends"/>
+  <polygon points="705,434 701,428 709,428" class="arrow"/>
+
+  <!-- Spine → Observability (events flow) -->
+  <line x1="740" y1="400" x2="865" y2="434" class="rel-line-depends"/>
+  <polygon points="865,434 859,430 863,438" class="arrow"/>
+
+  <!-- Pulse → Clearing -->
+  <line x1="830" y1="400" x2="760" y2="434" class="rel-line-depends"/>
+  <polygon points="760,434 758,426 766,430" class="arrow"/>
+
+  <!-- Policy → Gates (enforcement) -->
+  <rect x="1000" y="140" width="160" height="24" rx="4" fill="#2d6b4a"/>
+  <text x="1080" y="157" text-anchor="middle" fill="#7bffb2" font-size="11" font-weight="bold">Gates</text>
+  <rect x="1000" y="164" width="160" height="52" fill="#1a3a2a" stroke="#334" stroke-width="1"/>
+  <text x="1010" y="178" fill="#aaa" font-size="9">+ tdd_gate (test-first)</text>
+  <text x="1010" y="192" fill="#aaa" font-size="9">+ log_first (investigate)</text>
+  <text x="1010" y="206" fill="#aaa" font-size="9">+ memory_gate (context)</text>
+
+  <!-- Policy → Gates -->
+  <line x1="790" y1="175" x2="1000" y2="175" class="rel-line-compose"/>
+  <polygon points="1000,175 994,171 994,179" fill="#7bffb2"/>
+  <text x="880" y="168" fill="#888" font-size="9">enforces</text>
+
+  <!-- Loom → Interactions -->
+  <line x1="890" y1="208" x2="890" y2="244" class="rel-line-compose"/>
+  <polygon points="890,244 886,238 894,238" fill="#7cb3ff"/>
+
+  <!-- Memory → Search -->
+  <line x1="890" y1="304" x2="890" y2="536" class="rel-line-depends"/>
+
+  <!-- ==================== ROLES ==================== -->
+  <text x="630" y="660" class="stage-label">ACTORS</text>
+
+  <rect x="630" y="670" width="100" height="40" rx="20" fill="#2d4a7a" stroke="#7cb3ff" stroke-width="1.5"/>
+  <text x="680" y="694" text-anchor="middle" fill="#7cb3ff" font-size="11" font-weight="bold">Jeff</text>
+
+  <rect x="750" y="670" width="100" height="40" rx="20" fill="#4a2d6b" stroke="#c49bff" stroke-width="1.5"/>
+  <text x="800" y="694" text-anchor="middle" fill="#c49bff" font-size="11" font-weight="bold">Wren</text>
+
+  <rect x="870" y="670" width="100" height="40" rx="20" fill="#2d6b4a" stroke="#7bffb2" stroke-width="1.5"/>
+  <text x="920" y="694" text-anchor="middle" fill="#7bffb2" font-size="11" font-weight="bold">Silas</text>
+
+  <rect x="990" y="670" width="100" height="40" rx="20" fill="#6b5a2d" stroke="#ffd97b" stroke-width="1.5"/>
+  <text x="1040" y="694" text-anchor="middle" fill="#ffd97b" font-size="11" font-weight="bold">Kade</text>
+
+  <!-- Role ownership lines -->
+  <text x="750" y="730" fill="#c49bff" font-size="9">Directing + Designing</text>
+  <text x="870" y="730" fill="#7bffb2" font-size="9">Building (ops)</text>
+  <text x="990" y="730" fill="#ffd97b" font-size="9">Building (app)</text>
+  <text x="630" y="730" fill="#7cb3ff" font-size="9">Product owner</text>
+
+</svg>
+
+<p class="meta">Class Diagram — Products &amp; Domains &bull; Silas &bull; 2026-04-01 &bull; 2 products, 26 domains, 4 actors</p>
+</body>
+</html>

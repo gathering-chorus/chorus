@@ -836,6 +836,279 @@ app.get('/api/chorus/domain-story/:domain', async (req: Request, res: Response) 
   });
 });
 
+// --- GET /api/chorus/crawl/:domain ---
+// Memory domain — domain crawler. Traverse OWL + cards + conversations + spine into connected subgraph. #1956
+
+app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
+  const domain = req.params.domain.toLowerCase();
+  const FUSEKI_URL = 'http://localhost:3030';
+  const NODE_PATH = '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin';
+
+  const cards: any[] = [];
+  const rdf: { classes: string[]; instances: number; count: number; relationships: string[] } = { classes: [], instances: 0, count: 0, relationships: [] };
+  const owl: { properties: string[]; relationships: string[] } = { properties: [], relationships: [] };
+  const mentions: any[] = [];
+  const spine: any[] = [];
+  const code: { files: string[] } = { files: [] };
+  const infra: { launchagents: string[]; endpoints: string[]; monitoring: string[] } = { launchagents: [], endpoints: [], monitoring: [] };
+  const links: any[] = [];
+  const related: any[] = [];
+  const history: { unresolved: any[]; feedback: string[]; trust_score: number; health: string } = { unresolved: [], feedback: [], trust_score: 0, health: '' };
+  const timeline: any[] = [];
+
+  // Source 1: Cards tagged with this domain (via cards CLI --json boundary)
+  try {
+    const { execSync } = require('child_process');
+    const cardsScript = path.resolve(__dirname, '../../scripts/cards');
+    const listOutput = execSync(
+      `bash ${cardsScript} list 2>/dev/null`,
+      { encoding: 'utf-8', timeout: 15000, env: { ...process.env, PATH: `${NODE_PATH}:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
+    );
+
+    const domainCounts: Record<string, number> = {};
+
+    for (const line of listOutput.split('\n')) {
+      // Track all domains for related calculation
+      const domainMatch = line.match(/domain:(\w+)/);
+      if (domainMatch) {
+        const d = domainMatch[1];
+        domainCounts[d] = (domainCounts[d] || 0) + 1;
+      }
+
+      if (!line.includes(`domain:${domain}`)) continue;
+      const indexMatch = line.match(/^\s*(\d+)/);
+      if (!indexMatch) continue;
+      const cardIndex = parseInt(indexMatch[1], 10);
+      const titleMatch = line.match(/^\s*\d+\s+(.+?)\s*\[/);
+      const statusMatch = line.match(/\[(WIP|Done|Next|Later|Won't Do|Blocked)/);
+      const ownerMatch = line.match(/\[(\w+)\|/);
+
+      // Get full card details via --json for accurate status + code files
+      let cardStatus = '';
+      let cardOwner = ownerMatch ? ownerMatch[1].toLowerCase() : '';
+      try {
+        const cardJson = execSync(
+          `bash ${cardsScript} view ${cardIndex} --json 2>/dev/null`,
+          { encoding: 'utf-8', timeout: 10000, env: { ...process.env, PATH: `${NODE_PATH}:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
+        );
+        const parsed = JSON.parse(cardJson);
+        cardStatus = parsed.status || '';
+        cardOwner = (parsed.owner || cardOwner).toLowerCase();
+
+        // Extract file paths from description and comments
+        const allText = (parsed.description || '') + ' ' + (parsed.comments || []).map((c: any) => c.text).join(' ');
+        const fileMatches = allText.match(/[\w\-/.]+\.(ts|js|rs|sh|html|json|feature)/g) || [];
+        for (const f of fileMatches) {
+          if (!code.files.includes(f)) code.files.push(f);
+          links.push({ from_type: 'card', from: cardIndex, to_type: 'code', to: f });
+        }
+      } catch { /* card detail failed */ }
+
+      const card = {
+        index: cardIndex,
+        title: titleMatch ? titleMatch[1].trim() : '',
+        status: cardStatus,
+        owner: cardOwner,
+      };
+      cards.push(card);
+      timeline.push({ timestamp: '', source: 'card', text: `#${cardIndex} ${card.title} [${card.status}]`, role: card.owner, card: cardIndex });
+
+      // Track unresolved
+      if (card.status !== 'Done' && card.status !== "Won't Do") {
+        history.unresolved.push(card);
+      }
+    }
+
+    // Related domains: any domain that shares conversation mentions
+    // (calculated after mentions phase below)
+  } catch { /* cards CLI failed */ }
+
+  // Source 2: Fuseki RDF triples
+  try {
+    const sparql = `SELECT ?s ?p ?o WHERE { GRAPH ?g { ?s ?p ?o } FILTER(CONTAINS(LCASE(STR(?g)), '${domain}')) } LIMIT 200`;
+    const fusekiResp = await fetch(`${FUSEKI_URL}/gathering/sparql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/sparql-results+json' },
+      body: `query=${encodeURIComponent(sparql)}`,
+    });
+    if (fusekiResp.ok) {
+      const result = await fusekiResp.json() as any;
+      const bindings = result.results?.bindings || [];
+      rdf.count = bindings.length;
+
+      // Extract unique classes (objects of rdf:type predicates)
+      const classes = new Set<string>();
+      for (const b of bindings) {
+        if (b.p?.value?.includes('type') || b.p?.value?.includes('Type')) {
+          classes.add(b.o?.value || '');
+        }
+      }
+      rdf.classes = [...classes].filter(c => c.length > 0);
+      rdf.instances = bindings.length;
+    }
+  } catch { /* fuseki not available */ }
+
+  // Source 3: Session mentions from Chorus index
+  let db: Database.Database | null = null;
+  try {
+    db = getDb();
+    const rows = db.prepare(`
+      SELECT author, content, timestamp, role
+      FROM messages
+      WHERE content LIKE ?
+      ORDER BY timestamp ASC
+      LIMIT 100
+    `).all(`%${domain}%`) as Array<{ author: string; content: string; timestamp: string; role: string }>;
+
+    const relatedDomainCounts: Record<string, number> = {};
+
+    for (const m of rows) {
+      const text = m.content.trim();
+      if (text.startsWith('<system-reminder>')) continue;
+      if (text.startsWith('Base directory for this skill:')) continue;
+      if (text.length < 20) continue;
+
+      const speaker = m.author === 'user' ? 'jeff' : m.role;
+      mentions.push({ timestamp: m.timestamp, role: speaker, text: text.slice(0, 300) });
+      timeline.push({ timestamp: m.timestamp, source: 'chorus-index', text: text.slice(0, 300), role: speaker });
+
+      // Find other domains mentioned in same conversations
+      const domainRefs = text.match(/domain:(\w+)/g) || [];
+      for (const ref of domainRefs) {
+        const d = ref.replace('domain:', '');
+        if (d !== domain) {
+          relatedDomainCounts[d] = (relatedDomainCounts[d] || 0) + 1;
+        }
+      }
+
+      // Check for cross-domain references in conversation text
+      const knownDomains = ['photos', 'music', 'people', 'books', 'cooking', 'reading', 'watching', 'property', 'stories', 'notes', 'blog', 'gallery', 'social', 'glimmers', 'ideas', 'seeds', 'self', 'chorus', 'clearing', 'pulse', 'spine', 'interactions', 'memory', 'infrastructure', 'observability', 'loom', 'search'];
+      const lower = text.toLowerCase();
+      for (const kd of knownDomains) {
+        if (kd !== domain && lower.includes(kd)) {
+          relatedDomainCounts[kd] = (relatedDomainCounts[kd] || 0) + 1;
+        }
+      }
+    }
+
+    // Build related domains list
+    for (const [d, count] of Object.entries(relatedDomainCounts)) {
+      related.push({ domain: d, strength: count });
+    }
+    related.sort((a, b) => b.strength - a.strength);
+
+  } catch { /* db not available */ }
+  finally { if (db) db.close(); }
+
+  // Source 4: Spine events from chorus.log
+  try {
+    const logPath = path.resolve(__dirname, '../../logs/chorus.log');
+    if (fs.existsSync(logPath)) {
+      const cardIds = new Set(cards.map(c => c.index));
+      const lines = fs.readFileSync(logPath, 'utf-8').split('\n');
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line);
+          if (!parsed.event || !parsed.event.startsWith('card.')) continue;
+          const cardId = parseInt(parsed.card || '0', 10);
+          if (!cardIds.has(cardId)) continue;
+          spine.push({ timestamp: parsed.timestamp, event: parsed.event, role: parsed.role, card: cardId });
+          timeline.push({ timestamp: parsed.timestamp, source: 'spine', text: parsed.event, role: parsed.role, card: cardId });
+        } catch { /* skip */ }
+      }
+    }
+  } catch { /* log not readable */ }
+
+  // Source 5: OWL classes from Fuseki ontology
+  try {
+    const owlSparql = `
+      PREFIX owl: <http://www.w3.org/2002/07/owl#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      PREFIX chorus: <urn:chorus:ontology/>
+      SELECT ?class ?prop ?range WHERE {
+        ?class a owl:Class .
+        FILTER(CONTAINS(LCASE(STR(?class)), '${domain}'))
+        OPTIONAL { ?prop rdfs:domain ?class . ?prop rdfs:range ?range . }
+      } LIMIT 50
+    `;
+    const owlResp = await fetch(`${FUSEKI_URL}/gathering/sparql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/sparql-results+json' },
+      body: `query=${encodeURIComponent(owlSparql)}`,
+    });
+    if (owlResp.ok) {
+      const result = await owlResp.json() as any;
+      const bindings = result.results?.bindings || [];
+      for (const b of bindings) {
+        if (b.prop?.value) owl.properties.push(b.prop.value);
+        if (b.range?.value) owl.relationships.push(b.range.value);
+      }
+    }
+  } catch { /* fuseki OWL query failed */ }
+
+  // Source 6: Infrastructure — LaunchAgents, endpoints, monitoring
+  try {
+    const { execSync } = require('child_process');
+    // LaunchAgents matching domain
+    // Match domain stem without plural (e.g. "seed" not "seeds") to catch com.chorus.seed-probe
+    const domainStem = domain.replace(/s$/, '');
+    const agents = execSync(`launchctl list 2>/dev/null | grep -iE "${domain}|${domainStem}" | grep "com.chorus" || true`, { encoding: 'utf-8', timeout: 5000 });
+    infra.launchagents = agents.split('\n').filter((l: string) => l.trim()).map((l: string) => l.trim());
+
+    // Known endpoints for this domain (from domain page or hardcoded registry)
+    if (domain === 'seeds') {
+      infra.endpoints = ['GET /api/chorus/seeds (3340)', 'POST /webhook/sms (3000)', 'GET /seeds (3000)'];
+      infra.monitoring = ['seed-probe LaunchAgent'];
+    } else if (domain === 'chorus') {
+      infra.endpoints = ['GET /api/chorus/* (3340)', 'Socket.IO (3470)', 'POST /api/nudge (3475)'];
+      infra.monitoring = ['heartbeat LaunchAgent', 'alert-notifier LaunchAgent'];
+    }
+  } catch { /* infra lookup failed */ }
+
+  // Source 7: Jeff's feedback from memory files
+  try {
+    const memoryDir = path.join(os.homedir(), '.claude/projects/-Users-jeffbridwell-CascadeProjects/memory');
+    if (fs.existsSync(memoryDir)) {
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('feedback_'));
+      for (const file of files) {
+        const content = fs.readFileSync(path.join(memoryDir, file), 'utf-8');
+        if (content.toLowerCase().includes(domain)) {
+          const nameMatch = content.match(/^name:\s*(.+)/m);
+          history.feedback.push(nameMatch ? nameMatch[1] : file);
+        }
+      }
+    }
+  } catch { /* memory dir not readable */ }
+
+  // Calculate trust score: balance unresolved issues against completed work and activity
+  const unresolvedCount = history.unresolved.length;
+  const feedbackCount = history.feedback.length;
+  const doneCount = cards.filter(c => c.status === 'Done').length;
+  const recentSpine = spine.filter(s => s.event === 'card.accepted').length;
+  const activityBonus = Math.min(40, (doneCount * 10) + (recentSpine * 5));
+  history.trust_score = Math.max(0, Math.min(100, 50 + activityBonus - (unresolvedCount * 10) - (feedbackCount * 5)));
+  history.health = history.trust_score >= 60 ? 'healthy' : history.trust_score >= 30 ? 'attention' : 'concern';
+
+  // Sort timeline chronologically
+  timeline.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+
+  res.json({
+    domain,
+    cards,
+    rdf,
+    owl,
+    mentions,
+    spine,
+    code,
+    infra,
+    links,
+    related,
+    history,
+    timeline,
+    count: timeline.length,
+  });
+});
+
 /** Check if a date falls in US Eastern Daylight Time */
 function isEDT(dateStr: string): boolean {
   // Approximate: EDT is second Sunday of March to first Sunday of November
