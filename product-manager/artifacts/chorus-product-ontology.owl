@@ -585,10 +585,11 @@
 
   <chorus:Product rdf:about="http://gathering.local/ontology/chorus#ConvergenceProduct">
     <rdfs:label>Convergence</rdfs:label>
-    <rdfs:comment>Consulting deliverable: integration analysis + proposal + tooling. The Chorus method applied to someone else's problem. Not a build — a delivery.</rdfs:comment>
+    <rdfs:comment>Both product AND practice. Product: ICD system output, integration deliverable. Practice: the define→map→build discipline applied to integration problems. Jeff confirmed 2026-04-01.</rdfs:comment>
     <chorus:hasValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:hasValueStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" />
-    <chorus:primaryPhaseProduct rdf:resource="http://gathering.local/ontology/chorus#Designing" />
+    <chorus:primaryPhaseProduct rdf:resource="http://gathering.local/ontology/chorus#Building" />
+    <rdf:type rdf:resource="http://gathering.local/ontology/chorus#Practice" />
   </chorus:Product>
 
   
@@ -904,14 +905,18 @@
     <chorus:codebasePath>src/handlers/property.handler.ts</chorus:codebasePath>
     <chorus:testCount>3</chorus:testCount>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" />
-  <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#GatheringProduct" /><chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Practicing" /></chorus:GatheringDomain>
+  <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#GatheringProduct" /><chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Practicing" /><chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Growing" /><chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Harvesting" /><rdfs:comment>Spans Practicing/Growing/Harvesting in Short Loop — includes garden. Jeff 2026-04-01.</rdfs:comment></chorus:GatheringDomain>
 
+  <!-- Garden folded into Property per Jeff 2026-04-01. Garden is a physical space within Property. -->
+  <!-- Property spans Practicing/Growing/Harvesting in Short Loop. -->
   <chorus:GatheringDomain rdf:about="http://gathering.local/ontology/chorus#GardenDomain">
-    <rdfs:label>garden</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Partial</chorus:status>
+    <rdfs:label>garden</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Folded into PropertyDomain — garden is part of property. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" />
     <chorus:codebasePath>src/handlers/gardening.handler.ts</chorus:codebasePath>
-    <chorus:testCount>2</chorus:testCount>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" />
-  <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#GatheringProduct" /><chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Practicing" /></chorus:GatheringDomain>
+    <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#GatheringProduct" />
+  </chorus:GatheringDomain>
 
   
   <chorus:GatheringDomain rdf:about="http://gathering.local/ontology/chorus#GlimmersDomain">
@@ -1045,8 +1050,11 @@
   
   
 
+  <!-- Coordination folded into Loom (Chorus meta broadly, Loom specifically). Jeff 2026-04-01. -->
   <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#CoordinationDomain">
-    <rdfs:label>coordination</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:label>coordination</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Folded into LoomDomain. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" />
     <chorus:codebasePath>messages/scripts/ + messages/services/</chorus:codebasePath>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Directing" />
@@ -1069,8 +1077,11 @@
   <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" /></chorus:ChorusDomain>
 
   
+  <!-- Org, Practices, Roles, Skills folded into Loom. Jeff 2026-04-01. -->
   <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#OrgDomain">
-    <rdfs:label>org</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:label>org</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Folded into LoomDomain. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" />
     <chorus:codebasePath>messages/team-architecture.md</chorus:codebasePath>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
@@ -1078,7 +1089,9 @@
   </chorus:ChorusDomain>
 
   <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#PracticesDomainChorus">
-    <rdfs:label>practices (chorus)</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:label>practices (chorus)</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Folded into LoomDomain. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" />
     <chorus:codebasePath>messages/claudemd/ + */CLAUDE.md</chorus:codebasePath>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
@@ -1094,22 +1107,30 @@
   </chorus:ChorusDomain>
 
   <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#RolesDomain">
-    <rdfs:label>roles</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:label>roles</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Folded into LoomDomain. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" />
     <chorus:codebasePath>engineer/ + product-manager/ + architect/</chorus:codebasePath>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
-  <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Directing" /></chorus:ChorusDomain>
+    <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Directing" />
+  </chorus:ChorusDomain>
 
   <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#SkillsDomain">
-    <rdfs:label>skills</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:label>skills</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Folded into LoomDomain. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" />
     <chorus:codebasePath>.claude/skills/</chorus:codebasePath>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
     <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Building" />
   </chorus:ChorusDomain>
 
+  <!-- ToolChain and Logs folded into Observability. Messages folded into Spine. Jeff 2026-04-01. -->
   <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#ToolChainDomain">
-    <rdfs:label>tool chain</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:label>tool chain</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Folded into ObservabilityDomain. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#ObservabilityDomain" />
     <chorus:codebasePath>messages/scripts/ + .claude/hooks/</chorus:codebasePath>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
@@ -1117,7 +1138,9 @@
   </chorus:ChorusDomain>
 
   <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#MessagesDomain">
-    <rdfs:label>messages</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:label>messages</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Folded into SpineDomain. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#SpineDomain" />
     <chorus:codebasePath>messages/services/messaging-tier/</chorus:codebasePath>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
@@ -1125,16 +1148,21 @@
   </chorus:ChorusDomain>
 
   <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#LogsDomain">
-    <rdfs:label>logs</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:label>logs</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Folded into ObservabilityDomain. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#ObservabilityDomain" />
     <chorus:codebasePath>messages/logs/</chorus:codebasePath>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
     <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Proving" />
   </chorus:ChorusDomain>
 
+  <!-- Gates is a Policy enforcement service, not a peer domain. Jeff 2026-04-01. -->
   <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#GatesDomain">
-    <rdfs:label>gates</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
-    <chorus:codebasePath>messages/services/chorus-hooks/src/hooks/</chorus:codebasePath>
+    <rdfs:label>gates</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Merged</chorus:status>
+    <rdfs:comment>Policy enforcement service, not a domain. Folded into PolicyDomain. Jeff 2026-04-01.</rdfs:comment>
+    <chorus:mergedInto rdf:resource="http://gathering.local/ontology/chorus#PolicyDomain" />
+    <chorus:codebasePath>chorus/platform/services/chorus-hooks/src/hooks/</chorus:codebasePath>
     <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
     <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
     <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Designing" />
@@ -2087,4 +2115,108 @@
     <chorus:appliesTo rdf:resource="http://gathering.local/ontology/chorus#CoordinationDomain" />
   </chorus:Practice>
 
-<chorus:Service rdf:about="http://gathering.local/ontology/chorus#SeedService"><rdfs:label>Seed Service</rdfs:label><chorus:experience>I text something, it shows up.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#SeedsDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#CoordinationDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PeopleDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#StoriesDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PhotosDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#NotesDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#PersonalStream" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#SearchService"><rdfs:label>Search Service</rdfs:label><chorus:experience>I search, I find.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#SearchDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#KnowledgeGraphDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#PersonalStream" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#PhotosService"><rdfs:label>Photos Service</rdfs:label><chorus:experience>I browse my photos by date, place, person.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PhotosDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#MusicService"><rdfs:label>Music Service</rdfs:label><chorus:experience>I shuffle and play from 40 years of music.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#MusicDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#StoriesService"><rdfs:label>Stories Service</rdfs:label><chorus:experience>My life narratives, captured and connected.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#StoriesDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#PersonalStream" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#PeopleService"><rdfs:label>People Service</rdfs:label><chorus:experience>I see my network, faces, relationships.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PeopleDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#BooksService"><rdfs:label>Books Service</rdfs:label><chorus:experience>My library, room by room, shelf by shelf.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#BooksDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#PropertyService"><rdfs:label>Property Service</rdfs:label><chorus:experience>My houses, gardens, rooms.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#GardenDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#IdeasService"><rdfs:label>Ideas &amp; Projects Service</rdfs:label><chorus:experience>My ideas develop into projects.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#IdeasDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#ProjectsDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#GlimmersDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#PersonalStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#SexualityService"><rdfs:label>Sexuality Service</rdfs:label><chorus:experience>Galleries, models, player.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#SexualityDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#NudgeService"><rdfs:label>Nudge Service</rdfs:label><chorus:experience>I nudge a role and it arrives instantly.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#CoordinationDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#MessagesDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#ClearingService"><rdfs:label>Clearing Service</rdfs:label><chorus:experience>I see what all roles are doing and talk to them.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#CoordinationDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#SearchDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#BoardService"><rdfs:label>Board Service</rdfs:label><chorus:experience>One command to manage all cards.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#CoordinationDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#ObservabilityService"><rdfs:label>Observability Service</rdfs:label><chorus:experience>System health visible without asking.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#ObservabilityDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#InfrastructureDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service></rdf:RDF>
+<chorus:Service rdf:about="http://gathering.local/ontology/chorus#SeedService"><rdfs:label>Seed Service</rdfs:label><chorus:experience>I text something, it shows up.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#SeedsDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#CoordinationDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PeopleDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#StoriesDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PhotosDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#NotesDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#PersonalStream" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#SearchService"><rdfs:label>Search Service</rdfs:label><chorus:experience>I search, I find.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#SearchDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#KnowledgeGraphDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#PersonalStream" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#PhotosService"><rdfs:label>Photos Service</rdfs:label><chorus:experience>I browse my photos by date, place, person.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PhotosDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#MusicService"><rdfs:label>Music Service</rdfs:label><chorus:experience>I shuffle and play from 40 years of music.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#MusicDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#StoriesService"><rdfs:label>Stories Service</rdfs:label><chorus:experience>My life narratives, captured and connected.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#StoriesDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#PersonalStream" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#PeopleService"><rdfs:label>People Service</rdfs:label><chorus:experience>I see my network, faces, relationships.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PeopleDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#BooksService"><rdfs:label>Books Service</rdfs:label><chorus:experience>My library, room by room, shelf by shelf.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#BooksDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#PropertyService"><rdfs:label>Property Service</rdfs:label><chorus:experience>My houses, gardens, rooms.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#GardenDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#IdeasService"><rdfs:label>Ideas &amp; Projects Service</rdfs:label><chorus:experience>My ideas develop into projects.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#IdeasDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#ProjectsDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#GlimmersDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#PersonalStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#SexualityService"><rdfs:label>Sexuality Service</rdfs:label><chorus:experience>Galleries, models, player.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#SexualityDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#LifeStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#NudgeService"><rdfs:label>Nudge Service</rdfs:label><chorus:experience>I nudge a role and it arrives instantly.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#CoordinationDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#MessagesDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#ClearingService"><rdfs:label>Clearing Service</rdfs:label><chorus:experience>I see what all roles are doing and talk to them.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#CoordinationDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#SearchDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#BoardService"><rdfs:label>Board Service</rdfs:label><chorus:experience>One command to manage all cards.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#CoordinationDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service><chorus:Service rdf:about="http://gathering.local/ontology/chorus#ObservabilityService"><rdfs:label>Observability Service</rdfs:label><chorus:experience>System health visible without asking.</chorus:experience><chorus:tier>Domain Service</chorus:tier><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#ObservabilityDomain" /><chorus:operatesIn rdf:resource="http://gathering.local/ontology/chorus#InfrastructureDomain" /><chorus:supportsStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" /></chorus:Service>
+
+  <!-- ================================================================ -->
+  <!-- AC #3: Chorus operational classes → domain boundaries            -->
+  <!-- Maps chorus: classes to their governing domains                  -->
+  <!-- Added 2026-04-01 as part of #1955 OWL alignment                 -->
+  <!-- ================================================================ -->
+
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#Decision"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" /></owl:Class>
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#Constraint"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PolicyDomain" /></owl:Class>
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#Role"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" /></owl:Class>
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#Responsibility"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" /></owl:Class>
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#Service"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" /></owl:Class>
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#Practice"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#LoomDomain" /></owl:Class>
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#InteractionPattern"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#InteractionsDomain" /></owl:Class>
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#NonFunctionals"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#ObservabilityDomain" /></owl:Class>
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#Machine"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#InfrastructureDomain" /></owl:Class>
+  <owl:Class rdf:about="http://gathering.local/ontology/chorus#DataSource"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#MemoryDomain" /></owl:Class>
+
+  <!-- ================================================================ -->
+  <!-- AC #2: Gathering data classes → domain boundaries                -->
+  <!-- Maps jb: ontology classes to chorus:Domain instances             -->
+  <!-- Added 2026-04-01 as part of #1955 OWL alignment                 -->
+  <!-- ================================================================ -->
+
+  <!-- Seeds domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Seed"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#SeedsDomain" /></owl:Class>
+
+  <!-- Glimmers domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Glimmer"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#GlimmersDomain" /></owl:Class>
+
+  <!-- Ideas domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Idea"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#IdeasDomain" /></owl:Class>
+
+  <!-- Projects domain (separate per Jeff) -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Project"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#ProjectsDomain" /></owl:Class>
+
+  <!-- Property domain (includes Garden) -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Property"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#House"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Room"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Garden"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#GardenBed"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Plant"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Bookcase"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Shelf"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PropertyDomain" /></owl:Class>
+
+  <!-- Cooking domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#CookingItem"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#CookingDomain" /></owl:Class>
+
+  <!-- Reading domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#ReadingItem"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#ReadingDomain" /></owl:Class>
+
+  <!-- Watching domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#WatchingItem"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#WatchingDomain" /></owl:Class>
+
+  <!-- Music domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Track"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#MusicDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Album"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#MusicDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Artist"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#MusicDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Genre"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#MusicDomain" /></owl:Class>
+
+  <!-- Photos domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Photo"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PhotosDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#PhotoAlbum"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PhotosDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#PhotoLocation"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PhotosDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#FaceDetection"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PhotosDomain" /></owl:Class>
+
+  <!-- People domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Person"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#PeopleDomain" /></owl:Class>
+
+  <!-- Books domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Book"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#BooksDomain" /></owl:Class>
+
+  <!-- Gallery/Sexuality domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#MediaItem"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#SexualityDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Video"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#SexualityDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#MediaPhoto"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#SexualityDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#MediaArchive"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#SexualityDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Model"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#SexualityDomain" /></owl:Class>
+
+  <!-- Social domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#SocialPost"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#SocialDomain" /></owl:Class>
+
+  <!-- Stories domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Story"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#StoriesDomain" /></owl:Class>
+
+  <!-- Notes domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Note"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#NotesDomain" /></owl:Class>
+
+  <!-- Blog domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#BlogPost"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#BlogDomain" /></owl:Class>
+
+  <!-- Self domain -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Value"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#SelfDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Practice"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#SelfDomain" /></owl:Class>
+
+  <!-- Infrastructure domain (cross-cutting) -->
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Machine"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#InfrastructureDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#ManagedService"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#InfrastructureDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#PhysicalDrive"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#InfrastructureDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#Volume"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#InfrastructureDomain" /></owl:Class>
+  <owl:Class rdf:about="https://jeffbridwell.com/ontology#NetworkDevice"><chorus:inDomain rdf:resource="http://gathering.local/ontology/chorus#InfrastructureDomain" /></owl:Class>
+
+</rdf:RDF>

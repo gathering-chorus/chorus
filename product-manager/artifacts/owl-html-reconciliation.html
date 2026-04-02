@@ -63,31 +63,31 @@
   <tr><th>Product</th><th>Parent</th><th>OWL</th><th>HTML</th><th>Modeled As</th><th>Jeff's Call</th></tr>
   <tr class="match">
     <td><strong>Gathering</strong></td><td>—</td><td>GatheringProduct</td><td>Product header</td>
-    <td><span class="tag tag-match">match</span></td><td></td>
+    <td><span class="tag tag-match">match</span></td><td>Confirmed</td>
   </tr>
   <tr class="match">
     <td><strong>Chorus</strong></td><td>Gathering</td><td>ChorusProduct</td><td>Product header</td>
-    <td><span class="tag tag-match">match</span></td><td></td>
+    <td><span class="tag tag-match">match</span></td><td>Confirmed</td>
   </tr>
   <tr class="stage-diff">
     <td><strong>Bridge</strong></td><td>Chorus</td><td>BridgeProduct</td><td>—</td>
-    <td><span class="tag tag-owl">OWL=product, HTML=missing</span></td><td></td>
+    <td><span class="tag tag-owl">OWL=product, HTML=missing</span></td><td>Confirmed</td>
   </tr>
   <tr class="stage-diff">
     <td><strong>Clearing</strong></td><td>Chorus</td><td>ClearingProduct</td><td>domain-clearing.html</td>
-    <td><span class="tag tag-stage">OWL=product, HTML=domain</span></td><td></td>
+    <td><span class="tag tag-stage">OWL=product, HTML=domain</span></td><td>Confirmed</td>
   </tr>
   <tr class="stage-diff">
     <td><strong>Board</strong></td><td>Chorus</td><td>BoardProduct</td><td>—</td>
-    <td><span class="tag tag-owl">OWL=product, HTML=missing</span></td><td></td>
+    <td><span class="tag tag-owl">OWL=product, HTML=missing</span></td><td>Confirmed</td>
   </tr>
   <tr class="stage-diff">
     <td><strong>Loom</strong></td><td>Chorus</td><td>LoomProduct</td><td>domain-loom.html</td>
-    <td><span class="tag tag-stage">OWL=product, HTML=domain</span></td><td></td>
+    <td><span class="tag tag-stage">OWL=product, HTML=domain</span></td><td>Confirmed</td>
   </tr>
   <tr class="stage-diff">
     <td><strong>Convergence</strong></td><td>Chorus</td><td>ConvergenceProduct</td><td>—</td>
-    <td><span class="tag tag-owl">OWL=product, HTML=missing</span></td><td></td>
+    <td><span class="tag tag-owl">OWL=product, HTML=missing</span></td><td>Confirmed — also a Practice</td>
   </tr>
 </table>
 <p><strong>Key question:</strong> If Clearing, Loom, Board are sub-products of Chorus, then each has its own domains and services. The HTML pages that currently describe them as domains would become product pages with domain sections inside them. The class diagram needs a Product → Sub-Product → Domain hierarchy.</p>
@@ -118,7 +118,7 @@
     <td><strong>Projects</strong></td><td>ProjectsDomain</td><td>—</td>
     <td>Transform</td><td>—</td>
     <td><span class="tag tag-owl">OWL only</span></td>
-    <td></td>
+    <td>Keep separate — Transform phase</td>
   </tr>
   <tr class="match">
     <td><strong>Property</strong></td><td>PropertyDomain</td><td>domain-property.html</td>
@@ -130,7 +130,7 @@
     <td><strong>Garden</strong></td><td>GardenDomain</td><td>—</td>
     <td>Practicing</td><td>—</td>
     <td><span class="tag tag-owl">OWL only</span></td>
-    <td></td>
+    <td>Fold into Property (spans Practicing/Growing/Harvesting)</td>
   </tr>
   <tr class="match">
     <td><strong>Cooking</strong></td><td>CookingDomain</td><td>domain-cooking.html</td>
@@ -172,19 +172,19 @@
     <td><strong>Books</strong></td><td>BooksDomain</td><td>domain-books.html</td>
     <td>Practicing</td><td>Harvesting</td>
     <td><span class="tag tag-stage">stage diff</span></td>
-    <td></td>
+    <td>Both: Harvesting + Practicing</td>
   </tr>
   <tr class="stage-diff">
     <td><strong>Gallery</strong></td><td>SexualityDomain</td><td>domain-gallery.html</td>
     <td>Practicing</td><td>Harvesting</td>
     <td><span class="tag tag-stage">stage diff</span></td>
-    <td></td>
+    <td>Harvesting</td>
   </tr>
   <tr class="stage-diff">
     <td><strong>Social</strong></td><td>SocialDomain</td><td>domain-social.html</td>
     <td>Reflect</td><td>Harvesting</td>
     <td><span class="tag tag-stage">stage diff</span></td>
-    <td></td>
+    <td>Harvesting</td>
   </tr>
   <tr class="match">
     <td><strong>Stories</strong></td><td>StoriesDomain</td><td>domain-stories.html</td>
@@ -196,7 +196,7 @@
     <td><strong>Notes</strong></td><td>NotesDomain</td><td>domain-notes.html</td>
     <td>Settle</td><td>Reflecting</td>
     <td><span class="tag tag-stage">stage diff</span></td>
-    <td></td>
+    <td>Both: Settle (Long) + Reflecting (Short)</td>
   </tr>
   <tr class="match">
     <td><strong>Blog</strong></td><td>BlogDomain</td><td>domain-blog.html</td>
@@ -299,21 +299,21 @@
 <p>These exist in the OWL but were consolidated into parent domains in the HTML. Jeff decides: keep as sub-domains inside their parent, or remove from OWL?</p>
 <table>
   <tr><th>OWL Domain</th><th>Phase</th><th>Likely Parent</th><th>Jeff's Call</th></tr>
-  <tr class="owl-only"><td>Projects</td><td>Transform</td><td>Ideas &amp; Projects (merged)</td><td></td></tr>
-  <tr class="owl-only"><td>Garden</td><td>Practicing</td><td>Property (merged)</td><td></td></tr>
-  <tr class="owl-only"><td>Coordination</td><td>Directing</td><td>Chorus (meta) or Loom</td><td></td></tr>
-  <tr class="owl-only"><td>Convergence</td><td>Designing</td><td>Practice, not domain (per OWL comment)</td><td></td></tr>
-  <tr class="owl-only"><td>Org</td><td>Directing</td><td>Loom sub-domain</td><td></td></tr>
-  <tr class="owl-only"><td>Practices (chorus)</td><td>Designing</td><td>Loom sub-domain</td><td></td></tr>
-  <tr class="owl-only"><td>Roles</td><td>Directing</td><td>Loom sub-domain</td><td></td></tr>
-  <tr class="owl-only"><td>Skills</td><td>Building</td><td>Loom sub-domain</td><td></td></tr>
-  <tr class="owl-only"><td>ToolChain</td><td>Building</td><td>Observability sub-domain</td><td></td></tr>
-  <tr class="owl-only"><td>Messages</td><td>Capturing</td><td>Spine or Interactions</td><td></td></tr>
-  <tr class="owl-only"><td>Logs</td><td>Proving</td><td>Observability sub-domain</td><td></td></tr>
-  <tr class="owl-only"><td>Gates</td><td>Designing</td><td>Policy service</td><td></td></tr>
+  <tr class="owl-only"><td>Projects</td><td>Transform</td><td>Ideas &amp; Projects (merged)</td><td>Keep separate — Transform phase</td></tr>
+  <tr class="owl-only"><td>Garden</td><td>Practicing</td><td>Property (merged)</td><td>Fold into Property (spans Practicing/Growing/Harvesting)</td></tr>
+  <tr class="owl-only"><td>Coordination</td><td>Directing</td><td>Chorus (meta) or Loom</td><td>Fold into Loom (Chorus meta broadly, Loom specifically)</td></tr>
+  <tr class="owl-only"><td>Convergence</td><td>Designing</td><td>Practice, not domain (per OWL comment)</td><td>Keep as sub-product AND practice</td></tr>
+  <tr class="owl-only"><td>Org</td><td>Directing</td><td>Loom sub-domain</td><td>Fold into Loom</td></tr>
+  <tr class="owl-only"><td>Practices (chorus)</td><td>Designing</td><td>Loom sub-domain</td><td>Fold into Loom</td></tr>
+  <tr class="owl-only"><td>Roles</td><td>Directing</td><td>Loom sub-domain</td><td>Fold into Loom</td></tr>
+  <tr class="owl-only"><td>Skills</td><td>Building</td><td>Loom sub-domain</td><td>Fold into Loom</td></tr>
+  <tr class="owl-only"><td>ToolChain</td><td>Building</td><td>Observability sub-domain</td><td>Fold into Observability</td></tr>
+  <tr class="owl-only"><td>Messages</td><td>Capturing</td><td>Spine or Interactions</td><td>Fold into Spine</td></tr>
+  <tr class="owl-only"><td>Logs</td><td>Proving</td><td>Observability sub-domain</td><td>Fold into Observability</td></tr>
+  <tr class="owl-only"><td>Gates</td><td>Designing</td><td>Policy service</td><td>Policy service</td></tr>
 </table>
 
-<h2>Phase Vocabulary — RESOLVED</h2>
+<h2>Phase Vocabulary — RESOLVED — Jeff confirmed 2026-04-01</h2>
 <p><strong>Jeff's resolution:</strong> The two phase vocabularies are not in conflict — they are <em>two different value streams</em>. The OWL already has 3 ValueStream instances. Each domain can belong to one or both Gathering streams.</p>
 
 <table>
