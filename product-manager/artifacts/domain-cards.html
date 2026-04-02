@@ -14,27 +14,19 @@
   th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.74rem; }
   td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
   code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.8rem; }
+  ul { padding-left: 20px; margin: 8px 0; font-size: 0.82rem; }
+  li { margin: 4px 0; }
   .stage { display: inline-block; background: #dcfce7; color: #166534; padding: 2px 10px; border-radius: 12px; font-size: 0.76rem; font-weight: 600; }
   .policy { background: #e8f0fe; padding: 12px 16px; margin: 12px 0; border-radius: 6px; font-size: 0.86rem; font-style: italic; }
   .status-ok { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
   .status-issue { background: #fef2f2; border-left: 3px solid #dc2626; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
-  .note { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 0.82rem; }
-
-  .actor-stage { position: relative; width: 600px; height: 600px; margin: 20px auto; background: rgba(99, 102, 241, 0.04); border: 2px solid #c7d2fe; border-radius: 50%; }
-  .actor { position: absolute; text-align: center; width: 120px; }
-  .actor-circle { width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: bold; }
-  .actor-name { font-size: 0.88rem; font-weight: 600; }
-  .actor-role { font-size: 0.7rem; color: #6b7280; }
-  .actor-interface { font-size: 0.68rem; color: #9ca3af; margin-top: 4px; font-style: italic; }
-  .jeff .actor-circle { background: #f3e8ff; border: 3px solid #7c3aed; color: #7c3aed; }
-  .wren .actor-circle { background: #dcfce7; border: 3px solid #16a34a; color: #16a34a; font-size: 1.2rem; width: 90px; height: 90px; box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15); }
-  .silas .actor-circle { background: #fef3c7; border: 3px solid #d97706; color: #d97706; }
-  .kade .actor-circle { background: #dbeafe; border: 3px solid #2563eb; color: #2563eb; }
-  .vikunja .actor-circle { background: #f3f4f6; border: 3px solid #6b7280; color: #6b7280; font-size: 0.9rem; }
-  .shared { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 160px; height: 80px; display: flex; align-items: center; justify-content: center; text-align: center; }
-  .shared-label { font-size: 0.82rem; color: #6366f1; font-weight: 600; }
-  .shared-sub { font-size: 0.68rem; color: #8b8fc7; display: block; margin-top: 4px; }
-
+  .flow { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 12px 0; font-family: monospace; font-size: 0.82rem; white-space: pre-line; line-height: 2; }
+  .flow .actor { font-weight: bold; color: #2d4a7a; font-size: 0.88rem; }
+  .flow .action { color: #444; margin-left: 24px; }
+  .svc { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px; margin: 8px 0; }
+  .svc h3 { font-size: 0.9rem; color: #2d4a7a; margin-bottom: 6px; }
+  .svc p { font-size: 0.82rem; margin-bottom: 4px; }
+  .svc a { color: #3b82f6; text-decoration: none; font-size: 0.8rem; }
   .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
   @media print { body { padding: 20px; } }
 </style>
@@ -45,108 +37,132 @@
 <p class="subtitle"><span class="stage">Operating</span> &bull; Work items from idea to acceptance &bull; Wren is the primary actor</p>
 
 <div class="policy">
-No work without a card. The cards CLI is the only interface to the board. No direct Vikunja API calls from roles. All mutations through <code>cards</code> &mdash; the CLI is the product surface.
+No work without a card. The cards CLI is the only interface to the board. No direct Vikunja API calls from roles. All mutations through <code>cards</code> &mdash; the CLI is the product surface. Jeff's target: two touches per card &mdash; direction + acceptance. Everything in between is the team's job.
 </div>
 
-<h2>Actor Diagram</h2>
+<h2>Card Policy</h2>
+<ul>
+  <li>Every piece of work has a card before it starts</li>
+  <li>Wren writes Experience + AC on every card &mdash; no card enters WIP without a spec</li>
+  <li>Cards require type, chunk, domain, and priority at creation</li>
+  <li>WIP limit: 3 total, 1 per role is healthy (DEC-051)</li>
+  <li>Equal priority &rarr; smallest first (DEC-049 WSJF)</li>
+  <li>Builder cannot self-accept code cards (DEC-048)</li>
+  <li>Demo before acceptance &mdash; Jeff sees every demo</li>
+</ul>
 
-<div class="actor-stage">
-  <svg style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
-    <line x1="300" y1="55" x2="510" y2="170" stroke="#16a34a" stroke-width="2.5" stroke-dasharray="6,4"/>
-    <line x1="510" y1="170" x2="80" y2="250" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="4,4"/>
-    <line x1="510" y1="170" x2="300" y2="440" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="4,4"/>
-    <line x1="510" y1="170" x2="130" y2="430" stroke="#6b7280" stroke-width="2"/>
-    <line x1="80" y1="250" x2="130" y2="430" stroke="#6b7280" stroke-width="1" stroke-dasharray="4,4"/>
-    <line x1="300" y1="440" x2="130" y2="430" stroke="#6b7280" stroke-width="1" stroke-dasharray="4,4"/>
-    <line x1="300" y1="55" x2="300" y2="240" stroke="rgba(99,102,241,0.2)" stroke-width="1"/>
-    <line x1="510" y1="170" x2="370" y2="270" stroke="rgba(99,102,241,0.15)" stroke-width="1"/>
-    <line x1="80" y1="250" x2="230" y2="280" stroke="rgba(99,102,241,0.15)" stroke-width="1"/>
-    <line x1="300" y1="440" x2="300" y2="340" stroke="rgba(99,102,241,0.15)" stroke-width="1"/>
-  </svg>
+<h2>Actor Flow</h2>
+<p>Jeff gives direction. Wren cards it. Builder builds it. Jeff accepts it.</p>
 
-  <div class="actor jeff" style="left: 240px; top: 20px;">
-    <div class="actor-circle">Jeff</div>
-    <div class="actor-name">Jeff</div>
-    <div class="actor-role">Owner</div>
-    <div class="actor-interface">directs, accepts, overrides</div>
-  </div>
-  <div class="actor wren" style="left: 420px; top: 140px;">
-    <div class="actor-circle">W</div>
-    <div class="actor-name">Wren</div>
-    <div class="actor-role">PM &mdash; Primary</div>
-    <div class="actor-interface">creates, specs, sequences,<br>moves, reviews, accepts</div>
-  </div>
-  <div class="actor silas" style="left: 20px; top: 210px;">
-    <div class="actor-circle">S</div>
-    <div class="actor-name">Silas</div>
-    <div class="actor-role">Architect</div>
-    <div class="actor-interface">pulls, builds, demos</div>
-  </div>
-  <div class="actor kade" style="left: 240px; top: 400px;">
-    <div class="actor-circle">K</div>
-    <div class="actor-name">Kade</div>
-    <div class="actor-role">Engineer</div>
-    <div class="actor-interface">pulls, builds, demos</div>
-  </div>
-  <div class="actor vikunja" style="left: 70px; top: 400px;">
-    <div class="actor-circle" style="width: 70px; height: 70px; font-size: 0.7rem;">API</div>
-    <div class="actor-name">Vikunja</div>
-    <div class="actor-role">Board Backend</div>
-    <div class="actor-interface">:3456 &bull; persistence</div>
-  </div>
-  <div class="shared">
-    <div>
-      <div class="shared-label">Cards CLI</div>
-      <span class="shared-sub">board-client TS<br>chorus-hooks Rust<br>Spine events</span>
-    </div>
-  </div>
+<div class="flow"><span class="actor">JEFF</span> (direction)
+<span class="action">Gives intent via conversation, seed, or triage</span>
+<span class="action">Two touches: direction + acceptance</span>
+
+<span class="actor">WREN</span> (spec &mdash; primary actor)
+<span class="action">Creates card with Experience + AC</span>
+<span class="action">Sets type, chunk, domain, priority</span>
+<span class="action">Sequences work by domain grouping</span>
+<span class="action">Moves card to Now &rarr; workflow auto-assigns builder + reviewer</span>
+
+<span class="actor">BUILDER</span> (Silas or Kade)
+<span class="action">Pulls card to WIP &mdash; gates enforce AC, Experience, chunk, blast radius</span>
+<span class="action">Builds, tests, completes</span>
+<span class="action">Demos to Jeff via Wren</span>
+
+<span class="actor">ACCEPT</span>
+<span class="action">Demo evidence required (hard block)</span>
+<span class="action">Self-accept blocked for code cards</span>
+<span class="action">Jeff accepts &rarr; card.accepted event</span>
+<span class="action">Auto-unblocks downstream cards</span>
 </div>
 
-<h2>Who Does What</h2>
+<h2>What Does Not Exist Yet</h2>
+<div class="status-issue">
+<b>Gaps between the design and reality (2026-04-02):</b>
+<ul>
+  <li><code>--quick</code> bypasses type, chunk, domain &mdash; cards enter system unclassified (#1966, Silas WIP)</li>
+  <li>Now gate is a warn, not a block &mdash; cards enter Now without Experience + AC (#1966)</li>
+  <li>Domain and priority are optional at creation &mdash; should be mandatory (#1966)</li>
+</ul>
+</div>
 
+<h2>UI</h2>
 <table>
-  <tr><th>Action</th><th>Wren</th><th>Silas</th><th>Kade</th><th>Jeff</th></tr>
-  <tr><td>Create cards</td><td><b>Primary.</b> Writes Experience + AC</td><td>Quick fixes in own domain</td><td>Quick fixes in own domain</td><td>Seeds &rarr; Wren cards</td></tr>
-  <tr><td>Spec (Experience + AC)</td><td><b>Always.</b> No card enters WIP without spec</td><td>&mdash;</td><td>&mdash;</td><td>Provides intent</td></tr>
-  <tr><td>Sequence / prioritize</td><td><b>Primary.</b> Domain grouping, pull order</td><td>&mdash;</td><td>&mdash;</td><td>Approves direction</td></tr>
-  <tr><td>Move to Now</td><td><b>Primary.</b> Triggers workflow</td><td>Own cards</td><td>Own cards</td><td>&mdash;</td></tr>
-  <tr><td>Pull to WIP</td><td>Strategy cards</td><td>Ops/spine cards</td><td>App/memory cards</td><td>&mdash;</td></tr>
-  <tr><td>Build</td><td>Product artifacts, briefs</td><td>Hooks, gates, infra</td><td>App code, tests, UI</td><td>&mdash;</td></tr>
-  <tr><td>Demo</td><td>Facilitates</td><td>Presents own work</td><td>Presents own work</td><td>Reacts, seeds ideas</td></tr>
-  <tr><td>Accept (/acp)</td><td>Reviews, recommends</td><td>&mdash;</td><td>&mdash;</td><td><b>Final authority</b></td></tr>
-  <tr><td>Triage / groom</td><td><b>Primary.</b> Groups, sorts, proposes</td><td>&mdash;</td><td>&mdash;</td><td>Decides</td></tr>
+  <tr><th>Page</th><th>Route</th><th>Description</th></tr>
+  <tr><td>Board</td><td><code>localhost:3456</code></td><td>Vikunja board UI. Browser-based kanban view.</td></tr>
+  <tr><td>Clearing &mdash; Domain Fold</td><td><code>localhost:3470</code></td><td>Cards grouped by domain, collapsed with counts (#1963, shipped)</td></tr>
+  <tr><td>Werk</td><td><code>/werk</code></td><td>Flow metrics, instruments, contract tabs</td></tr>
 </table>
 
-<div class="note"><b>Target:</b> Two touches per card for Jeff &mdash; direction + acceptance. Everything in between is the team's job.</div>
-
-<h2>Spine Events</h2>
-
+<h2>API</h2>
 <table>
-  <tr><th>Event</th><th>When</th></tr>
-  <tr><td><code>card.item.created</code></td><td>Card created</td></tr>
-  <tr><td><code>card.item.moved</code></td><td>Status change</td></tr>
-  <tr><td><code>card.pulled</code></td><td>Entered WIP</td></tr>
-  <tr><td><code>card.item.completed</code></td><td>Marked Done</td></tr>
-  <tr><td><code>card.accepted</code></td><td>Accepted via /acp</td></tr>
-  <tr><td><code>card.pm.briefed</code></td><td>PM notified of completion</td></tr>
-  <tr><td><code>card.quality.blocked</code></td><td>Hard gate blocked transition</td></tr>
-  <tr><td><code>card.quality.warned</code></td><td>Soft gate warning</td></tr>
-  <tr><td><code>card.demo.started</code></td><td>Demo initiated</td></tr>
-  <tr><td><code>card.unblocked</code></td><td>Dependency chain resolved</td></tr>
-  <tr><td><code>workflow.manifest.created</code></td><td>Card entered Now, workflow assigned</td></tr>
+  <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+  <tr><td><code>cards list</code></td><td>CLI</td><td>All cards by status</td></tr>
+  <tr><td><code>cards add "title" [opts]</code></td><td>CLI</td><td>Create card with labels</td></tr>
+  <tr><td><code>cards move &lt;id&gt; &lt;status&gt;</code></td><td>CLI</td><td>Change status (triggers gates)</td></tr>
+  <tr><td><code>cards done &lt;id&gt;</code></td><td>CLI</td><td>Mark Done (triggers accept gates)</td></tr>
+  <tr><td><code>cards update &lt;id&gt; --desc</code></td><td>CLI</td><td>Update description (#1964, shipped)</td></tr>
+  <tr><td><code>cards view &lt;id&gt;</code></td><td>CLI</td><td>Full card details + comments</td></tr>
+  <tr><td><code>cards mine [role]</code></td><td>CLI</td><td>Cards owned by role</td></tr>
+  <tr><td><code>cards comment &lt;id&gt; "text"</code></td><td>CLI</td><td>Add comment</td></tr>
+  <tr><td><code>cards set &lt;id&gt; key=value</code></td><td>CLI</td><td>Set domain, chunk, sequence labels</td></tr>
+  <tr><td><code>cards swat "desc"</code></td><td>CLI</td><td>Create SWAT card (bypasses WIP limit)</td></tr>
+  <tr><td><code>cards snapshot</code></td><td>CLI</td><td>Save board state</td></tr>
 </table>
 
-<h2>Services</h2>
+<h2>Integration</h2>
+<table>
+  <tr><th>Pipeline</th><th>Source</th><th>Path</th></tr>
+  <tr><td>Card Create</td><td>CLI</td><td>cards CLI &rarr; board-client TS &rarr; Vikunja REST API &rarr; spine event</td></tr>
+  <tr><td>Gate Enforcement</td><td>board-client SDK</td><td>Move command &rarr; SDK gates (AC, Experience, chunk, blast radius) &rarr; block or allow</td></tr>
+  <tr><td>Accept Gate</td><td>chorus-hooks (Rust)</td><td>/acp skill &rarr; demo evidence check &rarr; self-accept check &rarr; accept or block</td></tr>
+  <tr><td>Workflow</td><td>board-client SDK</td><td>Card enters Now &rarr; auto-assign builder + reviewer &rarr; manifest created</td></tr>
+  <tr><td>Auto-unblock</td><td>board-client SDK</td><td>Card accepted &rarr; check dependency chain &rarr; unblock downstream cards</td></tr>
+</table>
 
-<div class="status-ok"><b>Cards CLI</b> &mdash; <code>cards</code> bash wrapper &rarr; board-client TypeScript &rarr; Vikunja REST API. All board mutations.</div>
-<div class="status-ok"><b>Board Client SDK</b> &mdash; <code>platform/board-client/src/sdk.ts</code>. Gates, events, workflow automation.</div>
-<div class="status-ok"><b>Chorus Hooks</b> &mdash; <code>platform/services/chorus-hooks/</code> (Rust). Accept gate, demo gate, quality gate.</div>
-<div class="status-issue"><b>Description Update</b> &mdash; #1964 in progress. CLI can't update card descriptions after creation.</div>
+<h2>Data</h2>
+<table>
+  <tr><th>Property</th><th>Value</th></tr>
+  <tr><td>Backend</td><td>Vikunja (localhost:3456), project 2</td></tr>
+  <tr><td>Labels</td><td>owner, priority, domain, chunk, sequence, type, product</td></tr>
+  <tr><td>Statuses</td><td>Later, Next, Now, WIP, Blocked, Harvesting, SWAT, Done, Won't Do</td></tr>
+  <tr><td>Card types</td><td>new, enhance, fix, chore, swat</td></tr>
+  <tr><td>Spine events</td><td><code>card.item.created</code>, <code>card.item.moved</code>, <code>card.pulled</code>, <code>card.item.completed</code>, <code>card.accepted</code>, <code>card.quality.blocked</code>, <code>card.demo.started</code>, <code>card.unblocked</code>, <code>workflow.manifest.created</code></td></tr>
+</table>
 
-<h2>Related</h2>
-<p><a href="service-design-cards.html">Service Design &mdash; Cards</a> &bull; Lifecycle, gate matrix, mandatory fields, BDD scenarios</p>
+<h2>Active Cards</h2>
+<table>
+  <tr><th>Card</th><th>Status</th><th>What</th></tr>
+  <tr><td>#1963</td><td>Done</td><td>Clearing domain fold &mdash; expand/collapse card stack per domain</td></tr>
+  <tr><td>#1964</td><td>Done</td><td>Cards CLI &mdash; update description and AC on existing cards</td></tr>
+  <tr><td>#1965</td><td>WIP (Wren)</td><td>Cards domain page + service design + BDD</td></tr>
+  <tr><td>#1966</td><td>WIP (Silas)</td><td>Tighten cards CLI &mdash; mandatory fields, harden Now gate</td></tr>
+  <tr><td>#1962</td><td>Later (Silas)</td><td>Handoff checker scans archive &mdash; false stale alerts</td></tr>
+</table>
 
-<p class="meta">Domain &mdash; Cards &bull; Wren primary actor &bull; 2026-04-02</p>
+<h2>Child Services</h2>
+
+<div class="svc">
+  <h3>Service Design &mdash; Cards</h3>
+  <p>Full service design with lifecycle, gate matrix, mandatory fields proposal, anti-patterns, and 21 BDD scenarios covering creation, Now gate, WIP gate, accept gate, and description update.</p>
+  <a href="service-design-cards.html">Open service design &rarr;</a>
+</div>
+
+<h2>Blast Radius</h2>
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>platform/board-client/src/cli.ts</code></td><td>CLI command parsing, argument handling</td></tr>
+  <tr><td><code>platform/board-client/src/sdk.ts</code></td><td>Gates (AC, Experience, chunk, blast radius), events, workflow automation</td></tr>
+  <tr><td><code>platform/board-client/src/client.ts</code></td><td>Vikunja REST API client (BoardClient class)</td></tr>
+  <tr><td><code>platform/board-client/src/config.ts</code></td><td>Bucket IDs, label IDs, board configuration</td></tr>
+  <tr><td><code>platform/board-client/src/events.ts</code></td><td>Spine event emission (chorus-sdk)</td></tr>
+  <tr><td><code>platform/services/chorus-hooks/src/hooks/accept_gate.rs</code></td><td>Demo evidence + self-accept block</td></tr>
+  <tr><td><code>platform/services/chorus-hooks/src/hooks/demo_gate.rs</code></td><td>Demo evidence validation</td></tr>
+  <tr><td><code>platform/services/chorus-hooks/src/hooks/quality_gate.rs</code></td><td>Edit/write quality warnings</td></tr>
+  <tr><td><code>platform/scripts/cards</code></td><td>Bash wrapper &rarr; board-client CLI</td></tr>
+</table>
+
+<p class="meta">Domain Page &mdash; Cards &bull; Wren primary actor &bull; 2026-04-02</p>
 
 </body>
 </html>

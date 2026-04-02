@@ -5,38 +5,34 @@
 <title>Service Design — Cards</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
-  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1100px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 1.4rem; color: #1a1a2e; margin-bottom: 4px; }
   .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
   h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
-  h3 { font-size: 0.95rem; color: #374151; margin-top: 16px; margin-bottom: 8px; }
-  p { margin-bottom: 10px; font-size: 0.86rem; }
-  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.82rem; }
-  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.74rem; }
-  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
-  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.8rem; }
+  h3 { font-size: 0.95rem; color: #4a5568; margin-top: 20px; margin-bottom: 8px; }
+  p { margin-bottom: 10px; font-size: 0.88rem; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.84rem; }
+  th { text-align: left; padding: 8px 12px; background: #e0e7ff; color: #2d4a7a; font-size: 0.78rem; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.82rem; }
   pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; margin: 10px 0; font-size: 0.78rem; line-height: 1.8; overflow-x: auto; }
+  .exp { font-size: 1.1rem; font-style: italic; color: #92400e; background: #fffbeb; border-left: 4px solid #f59e0b; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .path { display: flex; align-items: center; gap: 0; margin: 16px 0; flex-wrap: wrap; }
+  .pn { background: #eef2ff; border: 1px solid #c7d2fe; padding: 8px 14px; border-radius: 6px; font-size: 0.82rem; font-weight: 500; }
+  .pn small { display: block; font-size: 0.68rem; color: #6b21a8; }
+  .pa { color: #6366f1; font-size: 1.2rem; padding: 0 6px; }
   .hard { color: #dc2626; font-weight: 600; }
   .soft { color: #d97706; }
-  .note { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 0.82rem; }
-  .issue { background: #fef2f2; border-left: 3px solid #dc2626; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 0.82rem; }
-  .status-ok { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
-
-  .flow { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 12px 0; font-family: monospace; font-size: 0.82rem; white-space: pre-line; line-height: 2; }
-  .flow .actor { font-weight: bold; color: #2d4a7a; }
-  .flow .gate { color: #dc2626; font-weight: bold; }
-  .flow .event { color: #7c3aed; font-style: italic; }
-
-  .channels { margin-top: 12px; }
-  .channel { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; margin: 6px 0; border-radius: 8px; font-size: 0.82rem; }
-  .channel-from { font-weight: 600; min-width: 60px; }
-  .channel-arrow { color: #6b7280; }
-  .channel-to { font-weight: 600; min-width: 60px; }
-  .channel-how { color: #4a5568; flex: 1; }
-  .channel-speed { font-size: 0.72rem; color: #6b7280; min-width: 80px; text-align: right; }
-  .ch-broken { background: #fef2f2; }
-  .ch-gate { background: #fff7ed; }
-
+  .fail { background: #fef2f2; border-left: 3px solid #dc2626; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.84rem; }
+  .fail b { color: #dc2626; }
+  .ok { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.84rem; }
+  .ok b { color: #16a34a; }
+  .draft { background: #fff7ed; border-left: 4px solid #ea580c; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 16px 0; font-size: 0.84rem; }
+  .draft b { color: #ea580c; }
+  .check { list-style: none; margin: 8px 0; padding: 0; }
+  .check li { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; font-size: 0.84rem; display: flex; align-items: center; gap: 8px; }
+  .cx { width: 16px; height: 16px; border: 2px solid #d1d5db; border-radius: 3px; flex-shrink: 0; }
+  .cx.done { background: #4ade80; border-color: #16a34a; }
   .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
   @media print { body { padding: 20px; } }
 </style>
@@ -44,133 +40,95 @@
 <body>
 
 <h1>Service Design &mdash; Cards</h1>
-<p class="subtitle">Lifecycle, gates, mandatory fields, BDD scenarios &bull; 2026-04-02</p>
+<p class="subtitle">Owner: Wren &bull; Disposition: enhance &bull; Domains: chorus (coordination)</p>
 
-<!-- LIFECYCLE -->
-<h2>Card Lifecycle</h2>
+<div class="draft"><b>DATA QUALITY GAP:</b> <code>--quick</code> flag bypasses type, chunk, domain, and priority. Cards enter the system unclassified, then hit hard blocks at WIP. Every unspecced card is deferred pain &mdash; the gate catches it late instead of early. #1966 (Silas, WIP) closes this gap.</div>
 
-<div class="flow"><span class="actor">Wren</span> creates card with Experience + AC
-  <span class="event">&rarr; card.item.created</span>
+<!-- 1. EXPERIENCE -->
+<h2>1. Experience</h2>
 
-<span class="actor">Wren</span> moves card to Now
-  <span class="gate">GATE: description with Experience + AC (hard block)</span>
-  <span class="event">&rarr; card.item.moved, workflow.manifest.created</span>
-  auto-assigns: builder + reviewer
+<div class="exp">I say what I want. Wren cards it with a spec. A builder pulls it and builds it. I see the demo. Two touches &mdash; direction and acceptance. I never chase status.</div>
 
-<span class="actor">Builder</span> pulls card to WIP
-  <span class="gate">GATE: AC section exists (hard block)</span>
-  <span class="gate">GATE: Experience section exists (hard block)</span>
-  <span class="gate">GATE: chunk tag exists (hard block)</span>
-  <span class="gate">GATE: blast radius &mdash; code card has file paths (hard block)</span>
-  <span class="gate">WARN: WIP overlap &mdash; same domain already in WIP</span>
-  <span class="event">&rarr; card.item.moved, card.pulled</span>
+<p>Jeff directs work through conversation, seeds, and triage. Wren translates intent into cards with Experience statements and Acceptance Criteria. Builders pull cards through gates that enforce spec quality. Jeff sees every demo. The system handles coordination &mdash; Jeff handles decisions.</p>
 
-<span class="actor">Builder</span> builds, tests, completes
-  <span class="event">&rarr; card.item.completed</span>
-
-<span class="actor">Builder</span> demos to Jeff (via Wren)
-  <span class="gate">GATE: demo evidence exists (hard block on accept)</span>
-  <span class="gate">GATE: self-accept blocked for code cards</span>
-  <span class="event">&rarr; card.demo.started</span>
-
-<span class="actor">Jeff</span> accepts (/acp)
-  <span class="event">&rarr; card.accepted, card.pm.briefed</span>
-  auto-unblocks downstream cards
-  auto-archives workflow</div>
-
-<!-- GATE MATRIX -->
-<h2>Gate Matrix</h2>
+<!-- 2. IDENTITY -->
+<h2>2. Identity</h2>
 
 <table>
-  <tr><th>Gate</th><th>Transition</th><th>Enforcement</th><th>Exempt</th></tr>
-  <tr><td>Type tag</td><td>Create</td><td class="hard">Hard block</td><td>&mdash;</td></tr>
-  <tr><td>Chunk tag</td><td>Create</td><td class="hard">Hard block</td><td>&mdash;</td></tr>
-  <tr><td>Domain tag</td><td>Create</td><td class="hard">Hard block</td><td>&mdash;</td></tr>
-  <tr><td>Priority</td><td>Create</td><td class="hard">Hard block</td><td>&mdash;</td></tr>
-  <tr><td>Description (Experience + AC)</td><td>&rarr; Now</td><td class="hard">Hard block</td><td>SWAT</td></tr>
-  <tr><td>Acceptance Criteria</td><td>&rarr; WIP</td><td class="hard">Hard block</td><td>SWAT, parent cards</td></tr>
-  <tr><td>Experience section</td><td>&rarr; WIP</td><td class="hard">Hard block</td><td>SWAT, parent cards</td></tr>
-  <tr><td>Blast radius (file paths)</td><td>&rarr; WIP (code cards)</td><td class="hard">Hard block</td><td>process, docs, spike</td></tr>
-  <tr><td>WIP overlap</td><td>&rarr; WIP</td><td class="soft">Warn</td><td>&mdash;</td></tr>
-  <tr><td>Demo evidence</td><td>&rarr; Accept</td><td class="hard">Hard block</td><td>SWAT, chore</td></tr>
-  <tr><td>Self-accept</td><td>&rarr; Accept</td><td class="hard">Hard block</td><td>strategy, Jeff always allowed</td></tr>
+  <tr><th>Property</th><th>Value</th></tr>
+  <tr><td><strong>Port</strong></td><td>3456 (Vikunja board backend)</td></tr>
+  <tr><td><strong>Language</strong></td><td>TypeScript (board-client), Rust (chorus-hooks gates)</td></tr>
+  <tr><td><strong>Data Store</strong></td><td>Vikunja SQLite (tasks, labels, comments, relations)</td></tr>
+  <tr><td><strong>Owner</strong></td><td>Wren (primary user), Silas (gates/hooks), Kade (UI)</td></tr>
+  <tr><td><strong>Phase Affinity</strong></td><td>All phases &mdash; cards span Directing through Proving</td></tr>
+  <tr><td><strong>Disposition</strong></td><td><strong>enhance</strong> &mdash; tighten mandatory fields, harden Now gate</td></tr>
+  <tr><td><strong>Product</strong></td><td>Chorus</td></tr>
+  <tr><td><strong>Value Streams</strong></td><td>All &mdash; cards are the work unit for every value stream</td></tr>
+  <tr><td><strong>Codebase Path</strong></td><td><code>platform/board-client/src/</code> (CLI + SDK) + <code>platform/services/chorus-hooks/src/hooks/</code> (gates)</td></tr>
+  <tr><td><strong>Test Count</strong></td><td>155 passing, 49 pre-existing failures (board-client suite)</td></tr>
 </table>
 
-<!-- MANDATORY FIELDS -->
-<h2>Mandatory Fields by Transition</h2>
+<!-- 3. INTEGRATION PATH -->
+<h2>3. Integration Path</h2>
 
-<div class="note"><b>Principle:</b> If a field is required at a gate, make it mandatory at the API level for that transition. Don't let cards accumulate without specs and rely on late enforcement.</div>
+<h3>Create &rarr; Spec &rarr; Now (happy path)</h3>
+<div class="path">
+  <div class="pn">Wren creates card<small>cards add "title" --type --chunk --domain --priority</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">Classification gates<small>type, chunk, domain, priority required</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">Vikunja API<small>task created with labels</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">Wren writes spec<small>cards update --desc with Experience + AC</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">Move to Now<small>description gate (hard block)</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">Workflow assigned<small>builder + reviewer auto-assigned</small></div>
+</div>
 
+<h3>Pull &rarr; Build &rarr; Demo &rarr; Accept</h3>
+<div class="path">
+  <div class="pn">Builder pulls to WIP<small>AC + Experience + chunk + blast radius gates</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">Build + test<small>TDD: AC &rarr; tests &rarr; code &rarr; green</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">/demo<small>smoke check + quality gate + demo brief</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">Jeff reviews<small>demo evidence required (hard block)</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">/acp<small>self-accept blocked, Jeff accepts</small></div>
+  <span class="pa">&rarr;</span>
+  <div class="pn">Auto-unblock<small>downstream cards released</small></div>
+</div>
+
+<!-- 4. NON-FUNCTIONALS -->
+<h2>4. Non-Functionals</h2>
 <table>
-  <tr><th>Field</th><th>Required At</th><th>Current</th><th>Proposed</th></tr>
-  <tr><td>Title</td><td>Create</td><td class="hard">Mandatory</td><td>No change</td></tr>
-  <tr><td>Type (new/enhance/fix/chore/swat)</td><td>Create</td><td class="hard">Mandatory (unless --quick)</td><td class="hard">Mandatory always</td></tr>
-  <tr><td>Chunk</td><td>Create</td><td class="hard">Mandatory (unless --quick)</td><td class="hard">Mandatory always</td></tr>
-  <tr><td>Domain</td><td>Create</td><td class="soft">Optional</td><td class="hard">Mandatory &mdash; cards without domain can't be grouped</td></tr>
-  <tr><td>Priority</td><td>Create</td><td class="soft">Optional</td><td class="hard">Mandatory &mdash; unprioritized cards can't be sorted</td></tr>
-  <tr><td>Owner</td><td>Create</td><td class="soft">Optional (defaults to caller)</td><td>No change</td></tr>
-  <tr><td>Description (Experience + AC)</td><td>Before Now</td><td class="soft">Warn at Now, block at WIP</td><td class="hard">Block at Now</td></tr>
+  <tr><td><strong>Data quality</strong></td><td>Every card must have type, chunk, domain, priority at creation. Experience + AC before Now. No unclassified cards in the system.</td></tr>
+  <tr><td><strong>Gate enforcement</strong></td><td>Hard blocks exit with non-zero. Warnings emit events but allow. No silent failures &mdash; every gate produces a spine event.</td></tr>
+  <tr><td><strong>WIP limits</strong></td><td>3 total, 1 per role healthy. Vikunja bucket limit returns 412 on breach. SWAT bypasses.</td></tr>
+  <tr><td><strong>Latency</strong></td><td>CLI commands complete in &lt;2s. Vikunja API is local (localhost:3456). No network dependency.</td></tr>
+  <tr><td><strong>Observability</strong></td><td>Every transition emits a spine event. 13 event types cover the full lifecycle. Clearing shows events in real-time.</td></tr>
+  <tr><td><strong>Access</strong></td><td>All roles access through cards CLI only. No direct Vikunja API. No raw SQL. CLI is the product surface.</td></tr>
 </table>
 
-<div class="issue"><b>Current gap:</b> <code>--quick</code> bypasses type, chunk, and description. Cards enter unclassified, then hit hard blocks at WIP. Proposed: <code>--quick</code> only exempts description, not classification. All cards get type + chunk + domain + priority at creation.</div>
+<!-- 5. FAILURE MODES -->
+<h2>5. Failure Modes</h2>
 
-<!-- GAPS -->
-<h2>What's Missing or Broken</h2>
+<div class="fail"><b>Jeff must NEVER see:</b> A card he asked for that wasn't created. If Jeff gives direction, Wren cards it in the same response. No narrating without acting.</div>
 
-<div class="channels">
-  <div class="channel ch-broken">
-    <span class="channel-from">CLI</span>
-    <span class="channel-arrow">&rarr;</span>
-    <span class="channel-to">Vikunja</span>
-    <span class="channel-how"><b>#1964:</b> <code>cards update --desc</code> &mdash; in progress (Silas). Unblocks Wren's spec workflow.</span>
-    <span class="channel-speed">in progress</span>
-  </div>
-  <div class="channel ch-broken">
-    <span class="channel-from">Gate</span>
-    <span class="channel-arrow">&rarr;</span>
-    <span class="channel-to">Now</span>
-    <span class="channel-how">Description gate is warn, not block. Cards enter Now without Experience + AC.</span>
-    <span class="channel-speed">gap</span>
-  </div>
-  <div class="channel ch-broken">
-    <span class="channel-from">Create</span>
-    <span class="channel-arrow">&rarr;</span>
-    <span class="channel-to">Board</span>
-    <span class="channel-how"><code>--quick</code> bypasses type, chunk, domain. Cards enter unclassified.</span>
-    <span class="channel-speed">gap</span>
-  </div>
-</div>
+<div class="fail"><b>Jeff must NEVER see:</b> A card in WIP without a spec. The gate exists because unspecced work can't be tested, can't be demoed, can't be accepted. Every bypass is deferred pain.</div>
 
-<!-- ANTI-PATTERNS -->
-<h2>Anti-Patterns</h2>
-<div class="channels">
-  <div class="channel ch-gate">
-    <span class="channel-from">Builder</span>
-    <span class="channel-arrow">&rarr;</span>
-    <span class="channel-to">WIP</span>
-    <span class="channel-how">Pulling with <code>--quick</code> to skip AC gate, building without a spec. Specs that don't exist can't be tested.</span>
-    <span class="channel-speed">&mdash;</span>
-  </div>
-  <div class="channel ch-gate">
-    <span class="channel-from">Builder</span>
-    <span class="channel-arrow">&rarr;</span>
-    <span class="channel-to">Done</span>
-    <span class="channel-how">Self-accepting code cards. DEC-048: builder cannot accept own work.</span>
-    <span class="channel-speed">&mdash;</span>
-  </div>
-  <div class="channel ch-gate">
-    <span class="channel-from">Jeff</span>
-    <span class="channel-arrow">&rarr;</span>
-    <span class="channel-to">Wren</span>
-    <span class="channel-how">Jeff as relay between roles. Target: 2 touches per card (direction + acceptance).</span>
-    <span class="channel-speed">&mdash;</span>
-  </div>
-</div>
+<div class="fail"><b>Jeff must NEVER see:</b> Himself as the relay between roles. Two touches per card. If Jeff is checking status or chasing nudges, the system failed.</div>
 
-<!-- BDD SCENARIOS -->
-<h2>BDD Scenarios</h2>
+<div class="ok"><b>System handles:</b> WIP overlap detection &mdash; warns when same domain/chunk already in WIP. Non-blocking but visible.</div>
+<div class="ok"><b>System handles:</b> Auto-unblock &mdash; when a blocking card is accepted, downstream cards move from Later to Next automatically.</div>
+<div class="ok"><b>System handles:</b> Workflow auto-assignment &mdash; builder and reviewer assigned when card enters Now. No manual routing.</div>
 
-<h3>Card Creation</h3>
+<!-- 6. TEST CONTRACT (BDD) -->
+<h2>6. Test Contract (BDD Scenarios)</h2>
+
+<h3>Card Creation (6 scenarios)</h3>
 <pre>
 Feature: Card creation enforces mandatory fields
 
@@ -205,7 +163,7 @@ Feature: Card creation enforces mandatory fields
     And type, chunk, domain, and priority are set
 </pre>
 
-<h3>Move to Now</h3>
+<h3>Now Gate (3 scenarios)</h3>
 <pre>
 Feature: Now gate requires description with Experience and AC
 
@@ -229,7 +187,7 @@ Feature: Now gate requires description with Experience and AC
     Then card #100 is in Now
 </pre>
 
-<h3>Pull to WIP</h3>
+<h3>WIP Gate (5 scenarios)</h3>
 <pre>
 Feature: WIP gate enforces spec quality
 
@@ -268,7 +226,7 @@ Feature: WIP gate enforces spec quality
     And a card.wip_overlap.detected event is emitted
 </pre>
 
-<h3>Accept</h3>
+<h3>Accept Gate (5 scenarios)</h3>
 <pre>
 Feature: Accept gate enforces demo and prevents self-accept
 
@@ -305,7 +263,7 @@ Feature: Accept gate enforces demo and prevents self-accept
     And a card.unblocked event is emitted for #200
 </pre>
 
-<h3>Description Update</h3>
+<h3>Description Update (2 scenarios)</h3>
 <pre>
 Feature: Cards CLI can update description (#1964)
 
@@ -321,7 +279,46 @@ Feature: Cards CLI can update description (#1964)
     Then the description renders correctly in cards view
 </pre>
 
-<p class="meta">Service Design &mdash; Cards &bull; Lifecycle + Gates + BDD &bull; Wren &bull; 2026-04-02</p>
+<!-- 7. DEPENDENCIES -->
+<h2>7. Dependencies</h2>
+
+<table>
+  <tr><th>Direction</th><th>Dependency</th><th>What breaks if it fails</th></tr>
+  <tr><td><strong>Upstream</strong></td><td>Vikunja (localhost:3456)</td><td>All board operations fail. Cards can't be created, moved, or viewed. Fatal.</td></tr>
+  <tr><td><strong>Upstream</strong></td><td>chorus-hooks (Rust binary)</td><td>Accept gate, demo gate, quality gate don't fire. Cards can be self-accepted. Integrity loss.</td></tr>
+  <tr><td><strong>Reads from</strong></td><td>Spine (chorus-log)</td><td>Demo evidence check fails. Accept gate can't verify demo happened.</td></tr>
+  <tr><td><strong>Writes to</strong></td><td>Spine events</td><td>Clearing goes dark. Pulse can't detect stalls. Observability loss.</td></tr>
+  <tr><td><strong>Writes to</strong></td><td>briefs/ directories</td><td>PM not notified of card completion. Jeff doesn't know work is done.</td></tr>
+  <tr><td><strong>Writes to</strong></td><td>workflows/ manifests</td><td>Builder/reviewer not assigned. Coordination gap.</td></tr>
+  <tr><td><strong>Depended on by</strong></td><td>All roles</td><td>Cards are the work unit. No cards = no coordinated work.</td></tr>
+  <tr><td><strong>Depended on by</strong></td><td>Clearing domain fold (#1963)</td><td>Fold view reads card labels for domain grouping. Missing labels = ungrouped cards.</td></tr>
+</table>
+
+<!-- 8. OPEN QUESTIONS -->
+<h2>8. Open Questions (for Jeff)</h2>
+<table>
+  <tr><td><strong>Q1</strong></td><td>Should <code>--quick</code> be removed entirely, or kept for description-only exemption? Current proposal: keep it but require type + chunk + domain + priority.</td></tr>
+  <tr><td><strong>Q2</strong></td><td>Should the Now gate check for <code>## Experience</code> and <code>## AC</code> headings specifically, or just non-empty description? Headings are stricter but enforce structure.</td></tr>
+  <tr><td><strong>Q3</strong></td><td>The 49 pre-existing test failures in board-client &mdash; should Silas fix these as part of #1966, or card separately? They're unrelated to the mandatory fields work.</td></tr>
+</table>
+
+<!-- 9. DESIGN GATE -->
+<h2>9. Design Gate</h2>
+<ul class="check">
+  <li><span class="cx done"></span>Experience statement written</li>
+  <li><span class="cx done"></span>Identity documented (port, language, owner, disposition)</li>
+  <li><span class="cx done"></span>Integration path mapped (2 paths: create-to-now, pull-to-accept)</li>
+  <li><span class="cx done"></span>Non-functionals specified (data quality, gate enforcement, WIP limits, latency, observability)</li>
+  <li><span class="cx done"></span>Failure modes enumerated (3 "never see" + 3 "handles")</li>
+  <li><span class="cx done"></span>Test contract written (21 BDD scenarios across 5 features)</li>
+  <li><span class="cx done"></span>Dependencies documented (upstream + downstream)</li>
+  <li><span class="cx"></span>Open questions resolved with Jeff</li>
+  <li><span class="cx"></span>#1966 shipped &mdash; mandatory fields enforced at create</li>
+  <li><span class="cx"></span>Now gate hardened from warn to block</li>
+  <li><span class="cx"></span>49 pre-existing test failures resolved or carded</li>
+</ul>
+
+<p class="meta">Wren (PM) &bull; Service Design for Cards &bull; 2026-04-02 &bull; #1965</p>
 
 </body>
 </html>
