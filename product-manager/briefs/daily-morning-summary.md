@@ -1,33 +1,34 @@
-# Daily Morning Summary — 2026-04-01
+# Daily Morning Summary — 2026-04-02
 
-**HEADLINE:** CI has been dark for 2+ days — all 4 platform packages lost `node_modules` and a chorus-sdk regression went undetected; restore test signal before anything new ships.
+**HEADLINE:** CI is dark for the 4th straight day and the fix is 10 minutes — `npm install` x4 must happen before any new code ships today.
 
 ---
 
-**OPS** 🟡 YELLOW (Silas review: 2026-03-29)
-- 4 yellows, 4 greens. No reds.
-- Top concern: 8 cargo warnings in chorus-hooks — 4 auto-fixable (`cargo fix --bin chorus-hooks`), 4 need manual review
-- /tmp usage in 7 scripts + 6 plists is known/accepted. bedroom-heartbeat state loss on reboot not yet carded.
-- `chorus-hooks/target/` (321 untracked) — confirm `.gitignore` covers build artifacts
+**OPS** 🔴 YELLOW/RED (Silas review: 2026-04-02)
+- 3 yellows, 1 red, 3 greens.
+- 🔴 **Top concern:** Card #1926 (gate integration test suite, 39/39 passing) stuck in WIP 54h awaiting `/acp`. Card #1865 also in WIP but never started — shouldn't be there.
+- 🟡 18 cargo warnings in chorus-hooks (4 auto-fixable with `cargo fix`); 36 plist files using `/tmp` (accepted risk, doc needed); `messages/claudemd/` fragment dir missing — confirm deprecated or path moved.
+- ✅ Repo clean, domain context fresh (#1956 + #1957 aligned), CSC compliance clean.
 
-**QUALITY** 🔴 RED (Kade review: 2026-03-31)
-- **0 tests running** — board-client, workflow-engine, chorus-sdk, slack-bridge all missing `node_modules`
-- **Regression:** chorus-sdk was GREEN (6/6) on 2026-03-29; now broken — day 3 of CI darkness
-- App suite (jeff-bridwell-personal-site): directory not found — no lint/build data, day 3 persistent
-- Fix: `npm install` in each of the 4 packages — 10 minutes, restores full signal
+**QUALITY** 🔴 RED (Kade review: 2026-04-01)
+- **0 tests running** — board-client, workflow-engine, chorus-sdk, slack-bridge all missing `node_modules`. Day 4.
+- chorus-sdk regressed from 6/6 green on 2026-03-29 and has not recovered.
+- `jeff-bridwell-personal-site` still not found — lint/build dark, day 4. Persistent noise.
+- Coverage: entirely absent across all 4 packages until `npm install` runs.
 
-**YESTERDAY** — 2026-03-31 (~26 cards shipped)
-- Silas: 7 cards — gate fixes, DEC-100 bash elimination (bash wrappers gone, Rust-only path locked)
-- Kade: 12 cards — domain API, seed fix; gate test 39/39, pulse test 6/6 verified
-- Wren: acp #1928 (pulse integration test fix, .sh wrappers removed from skills/callers); carded #1929, #1930
-- Key decision: DEC-100 locked — no more .sh wrappers, Rust-only ops path permanent
+**YESTERDAY** — 2026-04-01 (high-output session, ~9 cards shipped)
+- Silas: #1930 (BDD gate specs, TDD enforcement), #1936 (Clearing e2e Gherkin, e2e-responder hook), #1942 (seed probe permutations, real SMS 6/6 proven)
+- Kade: #1946 (Memory domain + conversation API, 6 BDD green), #1947 (card + domain story endpoints, 12 BDD green)
+- Wren: #1737 (/chat sequence + BDD), #1943 (Clearing/Pulse/Spine/Interactions domain pages), #1952 (Policy domain + team awareness design), #1937 (seed pipeline trust acceptance)
+- Also early today: Kade #1956 (domain crawler, 8 BDD, trust score); Wren #1957 (awareness actor diagrams) + card #1958 queued for BDD
 
 **TODAY** (recommended order)
-1. **Kade → `npm install` x4** — board-client, workflow-engine, chorus-sdk, slack-bridge. Nothing else before this.
-2. **Silas → `cargo fix --bin chorus-hooks`** — clear 4 auto-fixable warnings; schedule manual review for remaining 4
-3. **Silas → #1929** (gate smoke check on session boot) — carded and ready to pull
-4. **Wren/Kade → app path** — confirm or remove `jeff-bridwell-personal-site` from check matrix; 3 days stale is noise
+1. **Kade → `npm install` x4** — board-client, workflow-engine, chorus-sdk, slack-bridge. Nothing else first.
+2. **Silas → `/acp` #1926 or explicitly defer** — 54h stale blocks clean WIP signal.
+3. **Wren → move #1865 back to Queue** — never started, occupying a WIP slot.
+4. **Silas → `cargo fix --bin chorus-hooks`** — 4 auto-fixable warnings, low effort.
+5. **Kade → #1958 BDD** — domain crawler BDD scenarios ready to pull.
 
 **BLOCKERS** — needs Jeff's attention
-- 🔴 **CI dark 2+ days** — chorus-sdk regressed from GREEN and nobody caught it. `npm install` is the fix but it hasn't happened. If this persists past today, gate merges on test signal.
-- 🟡 **App suite path** — 3 days of missing-directory yellow is masking real signal. Confirm path or drop it from the matrix.
+- 🔴 **CI dark day 4** — identical fix to yesterday's summary. If it hasn't run by morning standup, it needs a direct ask to Kade with no other work until done.
+- 🔴 **#1926 decision** — 54h with no /acp or deferral is a process failure. Jeff should confirm: ship it or park it?
