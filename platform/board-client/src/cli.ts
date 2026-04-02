@@ -647,9 +647,18 @@ async function main() {
       break;
     }
 
-    case 'update':
-      die('Removed: use "board set <id> key=value" instead. Example: board set 1633 domain=photos chunk=memory');
+    case 'update': {
+      const u = parseUpdateArgs(cmdArgs);
+      const updatePairs: Record<string, string> = {};
+      if (u.title) updatePairs.title = u.title;
+      if (u.description !== undefined) updatePairs.desc = u.description;
+      if (u.domain) updatePairs.domain = u.domain;
+      if (u.chunk) updatePairs.chunk = u.chunk;
+      if (u.sequence) updatePairs.sequence = u.sequence;
+      if (u.owner) updatePairs.owner = u.owner;
+      await setCard(client, u.index, updatePairs);
       break;
+    }
 
     case 'comment': {
       if (!cmdArgs[0] || !cmdArgs[1]) die('Usage: cards comment <id> "text"');
