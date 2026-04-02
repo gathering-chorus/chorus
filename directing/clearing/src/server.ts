@@ -500,6 +500,8 @@ app.get('/api/flow', (_req, res) => {
         const ownerMatch = tags.match(/^(Wren|Silas|Kade)/i);
         const domains = (tags.match(/domain:(\w+)/g) || []).map((d: string) => d.replace('domain:', ''));
         const typeMatch = tags.match(/type:(\w+)/);
+        const priorityMatch = tags.match(/P([123])/);
+        const sequenceMatch = tags.match(/sequence:(\w+)/);
         cards.push({
           id: cardMatch[1],
           title: cardMatch[2].trim(),
@@ -507,6 +509,8 @@ app.get('/api/flow', (_req, res) => {
           owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
           domains: domains.length > 0 ? domains : ['uncategorized'],
           type: typeMatch ? typeMatch[1] : '',
+          priority: priorityMatch ? parseInt(priorityMatch[1]) : 9,
+          sequence: sequenceMatch ? sequenceMatch[1] : '',
         });
       }
     }

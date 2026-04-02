@@ -1024,8 +1024,13 @@ function filterDomains() {
   });
 }
 
-// Domain collapse state — persists across reloads
-const collapsedDomains = new Set(JSON.parse(localStorage.getItem('bridge-collapsed-domains') || '[]'));
+// Domain expand state — default is collapsed, track what user has expanded
+// Migrates from old collapsed-set to new expanded-set on first load
+const expandedDomains = new Set(JSON.parse(localStorage.getItem('bridge-expanded-domains') || '[]'));
+// Migration: clear old key if present
+if (localStorage.getItem('bridge-collapsed-domains') !== null) {
+  localStorage.removeItem('bridge-collapsed-domains');
+}
 let activeRoleFilter = 'all';
 
 function setRoleFilter(role) {
@@ -1045,12 +1050,12 @@ function setRoleFilter(role) {
 }
 
 function toggleDomain(domain) {
-  if (collapsedDomains.has(domain)) {
-    collapsedDomains.delete(domain);
+  if (expandedDomains.has(domain)) {
+    expandedDomains.delete(domain);
   } else {
-    collapsedDomains.add(domain);
+    expandedDomains.add(domain);
   }
-  localStorage.setItem('bridge-collapsed-domains', JSON.stringify([...collapsedDomains]));
+  localStorage.setItem('bridge-expanded-domains', JSON.stringify([...expandedDomains]));
   loadFlow();
 }
 
@@ -1080,30 +1085,60 @@ async function loadFlow() {
         cards = cards.filter(c => c.owner === activeRoleFilter);
         if (cards.length === 0) continue; // Hide empty domains when filtered
       }
-      // Sort cards: WIP/Blocked first, then oldest first (lowest ID = oldest)
+      // Skip empty domains
+      if (cards.length === 0) continue;
+      // Sort cards: WIP/Blocked first, then by priority (P1-P3), then card number ascending
       const statusPriority = { 'WIP': 0, 'Blocked': 1 };
       cards = [...cards].sort((a, b) => {
         const aPri = statusPriority[a.status] ?? 2;
         const bPri = statusPriority[b.status] ?? 2;
         if (aPri !== bPri) return aPri - bPri;
+        if ((a.priority || 9) !== (b.priority || 9)) return (a.priority || 9) - (b.priority || 9);
         return parseInt(a.id) - parseInt(b.id);
       });
       const counts = data.counts || {};
-      const isCollapsed = collapsedDomains.has(domain);
+      // Default collapsed — only expanded if user explicitly toggled
+      const isCollapsed = !expandedDomains.has(domain);
       const arrow = isCollapsed ? '▶' : '▼';
       const cardBadge = `${counts.activeCards || cards.length} cards`;
       const wfBadge = counts.activeWorkflows > 0 ? ` · ${counts.activeWorkflows} wf` : '';
       const totalBadge = `${counts.activeTotal || cards.length} total`;
-      const badges = `<span style="font-size:0.6rem;color:var(--text-muted);margin-left:4px;">${cardBadge}${wfBadge} · ${totalBadge}</span>`;
+      const wipIndicator = counts.wip > 0 ? `<span class="wip-indicator" style="font-size:0.6rem;color:var(--orange);margin-left:4px;">🔨 ${counts.wip} WIP</span>` : '';
+      const badges = `<span style="font-size:0.6rem;color:var(--text-muted);margin-left:4px;">${cardBadge}${wfBadge} · ${totalBadge}</span>${wipIndicator}`;
       html += `<div class="flow-section"><div class="flow-section-title" onclick="toggleDomain('${domain}')">${arrow} ${domain} ${badges}</div>`;
       html += `<div class="flow-section-cards${isCollapsed ? ' collapsed' : ''}">`;
+      // Group cards by sequence within domain
+      const bySequence = {};
       for (const c of cards) {
-        const cardId = parseInt(c.id);
-        const isAging = cardId < agingThreshold;
-        const statusDot = c.status === 'WIP' ? '🔨' : c.status === 'Blocked' ? '🔴' : c.status === 'Harvesting' ? '🌾' : '';
-        const agingStyle = isAging ? 'border-left:3px solid var(--orange);opacity:0.85;' : '';
-        const agingBadge = isAging ? ' <span style="font-size:0.55rem;color:var(--orange);">aging</span>' : '';
-        html += `<div class="flow-card flow-card-${c.owner}" style="${agingStyle}"><div class="flow-card-id"><span class="card-id-link" data-card-id="${c.id}" style="cursor:pointer;text-decoration:underline;color:var(--accent);">#${c.id}</span> ${statusDot}${agingBadge} <span class="flow-card-owner" style="color:var(--${c.owner})">${c.owner}</span></div><div class="flow-card-title">${escapeHtml(c.title)}</div><div class="card-detail" id="card-detail-${c.id}" style="display:none;"></div></div>`;
+        const seq = c.sequence || '';
+        if (!bySequence[seq]) bySequence[seq] = [];
+        bySequence[seq].push(c);
+      }
+      const seqKeys = Object.keys(bySequence).sort((a, b) => {
+        if (a === '' && b !== '') return 1; // unsequenced last
+        if (b === '' && a !== '') return -1;
+        return a.localeCompare(b);
+      });
+      for (const seq of seqKeys) {
+        const seqCards = bySequence[seq];
+        if (seq) {
+          const seqKey = domain + '/' + seq;
+          const seqCollapsed = !expandedDomains.has(seqKey);
+          const seqArrow = seqCollapsed ? '▸' : '▾';
+          const seqWip = seqCards.filter(c => c.status === 'WIP').length;
+          const seqWipBadge = seqWip > 0 ? ` <span class="wip-indicator" style="font-size:0.55rem;color:var(--orange);">🔨 ${seqWip}</span>` : '';
+          html += `<div style="margin-left:0.5rem;margin-bottom:0.3rem;"><div class="flow-section-title" style="font-size:0.65rem;padding:0.2rem 0;" onclick="toggleDomain('${seqKey}')">${seqArrow} ${seq} <span style="font-size:0.55rem;color:var(--text-muted);">${seqCards.length}</span>${seqWipBadge}</div>`;
+          html += `<div class="flow-section-cards${seqCollapsed ? ' collapsed' : ''}">`;
+        }
+        for (const c of seqCards) {
+          const cardId = parseInt(c.id);
+          const isAging = cardId < agingThreshold;
+          const statusDot = c.status === 'WIP' ? '🔨' : c.status === 'Blocked' ? '🔴' : c.status === 'Harvesting' ? '🌾' : '';
+          const agingStyle = isAging ? 'border-left:3px solid var(--orange);opacity:0.85;' : '';
+          const agingBadge = isAging ? ' <span style="font-size:0.55rem;color:var(--orange);">aging</span>' : '';
+          html += `<div class="flow-card flow-card-${c.owner}" style="${agingStyle}"><div class="flow-card-id"><span class="card-id-link" data-card-id="${c.id}" style="cursor:pointer;text-decoration:underline;color:var(--accent);">#${c.id}</span> ${statusDot}${agingBadge} <span class="flow-card-owner" style="color:var(--${c.owner})">${c.owner}</span></div><div class="flow-card-title">${escapeHtml(c.title)}</div><div class="card-detail" id="card-detail-${c.id}" style="display:none;"></div></div>`;
+        }
+        if (seq) html += '</div></div>';
       }
       html += '</div></div>';
     }
