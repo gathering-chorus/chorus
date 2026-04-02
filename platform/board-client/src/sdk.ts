@@ -171,13 +171,37 @@ export function warnShortTitle(title: string, board: string): void {
   }
 }
 
-export function warnEmptyDescription(index: number, title: string, description: string | undefined, board: string): void {
-  if (!description || description.trim().length === 0) {
-    console.log(`  WARN: #${index} has no description. Cards entering Now should have what/why + acceptance criteria.`);
-    emitSpineEvent('card.quality.warned', detectRole(), {
-      card_id: String(index), title, gate: 'description_empty', stage: 'directing', board,
+export function enforceNowDescriptionGate(index: number, title: string, description: string | undefined, board: string): boolean {
+  // SWAT cards are exempt (DEC-055)
+  if (/\[swat\]/i.test(title)) return true;
+
+  const desc = (description || '').trim();
+
+  if (!desc) {
+    console.error(`ERROR: Cards entering Now require Experience + AC in description. Card #${index} has no description.`);
+    emitSpineEvent('card.quality.blocked', detectRole(), {
+      card_id: String(index), title, gate: 'now_description_missing', stage: 'directing', board,
     });
+    return false;
   }
+
+  const hasExperience = /##\s*experience/i.test(desc);
+  const hasAC =
+    /acceptance\s*criteria/i.test(desc) ||
+    /##\s*(ac|criteria|what|acceptance)/i.test(desc) ||
+    /- \[[ x]\]/i.test(desc) ||
+    /\d+\.\s+\S/m.test(desc);
+
+  if (!hasExperience || !hasAC) {
+    const missing = [!hasExperience && '## Experience', !hasAC && '## AC'].filter(Boolean).join(' and ');
+    console.error(`ERROR: Cards entering Now require Experience + AC in description. Card #${index} is missing ${missing}.`);
+    emitSpineEvent('card.quality.blocked', detectRole(), {
+      card_id: String(index), title, gate: 'now_description_incomplete', stage: 'directing', board,
+    });
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -457,56 +481,73 @@ export async function addCard(
 ): Promise<BoardTask> {
   warnShortTitle(title, client.boardName);
 
-  // Chunk/domain gate: cards must have taxonomy unless --quick
-  if (!opts.quick) {
-    const DOMAIN_TO_CHUNK: Record<string, string> = {
-      photos: 'memory', music: 'music', stories: 'memory', notes: 'memory',
-      people: 'memory', social: 'memory', documents: 'memory', books: 'memory',
-      blog: 'app', property: 'app', cooking: 'app', reading: 'app',
-      watching: 'app', todo: 'app', seeds: 'app', glimmers: 'app',
-      ideas: 'app', projects: 'app', sexuality: 'sexuality', values: 'app',
-      practices: 'app', search: 'app', self: 'senses',
-      skills: 'spine', roles: 'spine', cards: 'ops', decisions: 'spine',
-      briefs: 'spine', sessions: 'spine', convergence: 'convergence',
-      infrastructure: 'ops',
-    };
+  // Classification gates: ALWAYS enforced, even with --quick (#1966)
+  // --quick only exempts description/AC requirement
 
-    if (!opts.chunk && opts.domain) {
-      const inferred = DOMAIN_TO_CHUNK[opts.domain.toLowerCase()];
-      if (inferred) {
-        opts.chunk = inferred;
-        console.log(`  Auto-tagged chunk:${inferred} from domain:${opts.domain}`);
-      }
-    }
+  // Domain gate
+  if (!opts.domain) {
+    console.error(`ERROR: Cards require a domain. Add --domain <name>.`);
+    emitSpineEvent('card.quality.blocked', detectRole(), {
+      title, gate: 'add_domain_missing', board: client.boardName,
+    });
+    process.exit(1);
+  }
 
-    if (!opts.chunk) {
-      const validChunks = Object.keys(LABELS.chunk).join(', ');
-      console.error(`ERROR: Cards require a chunk tag. Add --chunk <name> or provide --domain for auto-inference.`);
-      console.error(`  Valid chunks: ${validChunks}`);
-      emitSpineEvent('card.quality.blocked', detectRole(), {
-        title, gate: 'add_chunk_missing', board: client.boardName,
-      });
-      process.exit(1);
+  // Chunk gate (with auto-inference from domain)
+  const DOMAIN_TO_CHUNK: Record<string, string> = {
+    photos: 'memory', music: 'music', stories: 'memory', notes: 'memory',
+    people: 'memory', social: 'memory', documents: 'memory', books: 'memory',
+    blog: 'app', property: 'app', cooking: 'app', reading: 'app',
+    watching: 'app', todo: 'app', seeds: 'app', glimmers: 'app',
+    ideas: 'app', projects: 'app', sexuality: 'sexuality', values: 'app',
+    practices: 'app', search: 'app', self: 'senses',
+    skills: 'spine', roles: 'spine', cards: 'ops', decisions: 'spine',
+    briefs: 'spine', sessions: 'spine', convergence: 'convergence',
+    infrastructure: 'ops',
+  };
+
+  if (!opts.chunk && opts.domain) {
+    const inferred = DOMAIN_TO_CHUNK[opts.domain.toLowerCase()];
+    if (inferred) {
+      opts.chunk = inferred;
+      console.log(`  Auto-tagged chunk:${inferred} from domain:${opts.domain}`);
     }
   }
 
-  // Type gate: cards must have a type unless --quick
-  if (!opts.quick) {
-    const validTypes = Object.keys(LABELS.type).join(', ');
-    if (!opts.type) {
-      console.error(`ERROR: Cards require a type. Add --type <${validTypes}>.`);
-      emitSpineEvent('card.quality.blocked', detectRole(), {
-        title, gate: 'add_type_missing', board: client.boardName,
-      });
-      process.exit(1);
-    }
-    if (!LABELS.type[opts.type.toLowerCase()]) {
-      console.error(`ERROR: Unknown type "${opts.type}". Valid: ${validTypes}`);
-      process.exit(1);
-    }
+  if (!opts.chunk) {
+    const validChunks = Object.keys(LABELS.chunk).join(', ');
+    console.error(`ERROR: Cards require a chunk tag. Add --chunk <name> or provide --domain for auto-inference.`);
+    console.error(`  Valid chunks: ${validChunks}`);
+    emitSpineEvent('card.quality.blocked', detectRole(), {
+      title, gate: 'add_chunk_missing', board: client.boardName,
+    });
+    process.exit(1);
   }
 
-  // AC-at-creation gate: cards must have a description with AC unless --quick
+  // Type gate
+  const validTypes = Object.keys(LABELS.type).join(', ');
+  if (!opts.type) {
+    console.error(`ERROR: Cards require a type. Add --type <${validTypes}>.`);
+    emitSpineEvent('card.quality.blocked', detectRole(), {
+      title, gate: 'add_type_missing', board: client.boardName,
+    });
+    process.exit(1);
+  }
+  if (!LABELS.type[opts.type.toLowerCase()]) {
+    console.error(`ERROR: Unknown type "${opts.type}". Valid: ${validTypes}`);
+    process.exit(1);
+  }
+
+  // Priority gate
+  if (!opts.priority) {
+    console.error(`ERROR: Cards require a priority. Add --priority P1|P2|P3.`);
+    emitSpineEvent('card.quality.blocked', detectRole(), {
+      title, gate: 'add_priority_missing', board: client.boardName,
+    });
+    process.exit(1);
+  }
+
+  // AC-at-creation gate: description with AC required unless --quick
   if (!opts.quick) {
     const desc = (opts.description || '').trim();
     if (!desc) {
@@ -572,7 +613,9 @@ export async function moveCard(
     title = card.title;
     owner = card.owner;
     if (status.toLowerCase() === 'now') {
-      warnEmptyDescription(index, title, card.description, client.boardName);
+      if (!enforceNowDescriptionGate(index, title, card.description, client.boardName)) {
+        process.exit(1);
+      }
     }
     // Capture gate (#1085): block WIP entry if AC is missing
     if (/^wip$/i.test(status) && !enforceACGate(index, title, card.description, client.boardName)) {

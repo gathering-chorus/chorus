@@ -11,7 +11,7 @@ import { GATHERING } from '../src/config';
 import {
   enforceACGate,
   warnShortTitle,
-  warnEmptyDescription,
+  enforceNowDescriptionGate,
   warnNoComments,
 } from '../src/sdk';
 
@@ -336,22 +336,34 @@ describe('Flow: Quality warnings', () => {
     expect(emittedEvents.length).toBe(before); // no new events
   });
 
-  test('warnEmptyDescription flags cards entering Now without description', () => {
-    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-    warnEmptyDescription(99, 'Test card', '', 'gathering');
-    expect(consoleSpy).toHaveBeenCalled();
+  test('enforceNowDescriptionGate blocks cards entering Now without description', () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+    const result = enforceNowDescriptionGate(99, 'Test card', '', 'gathering');
+    expect(result).toBe(false);
     consoleSpy.mockRestore();
 
-    const warned = emittedEvents.find(e =>
-      e.event === 'card.quality.warned' && e.extra.gate === 'description_empty'
+    const blocked = emittedEvents.find(e =>
+      e.event === 'card.quality.blocked' && e.extra.gate === 'now_description_missing'
     );
-    expect(warned).toBeDefined();
+    expect(blocked).toBeDefined();
   });
 
-  test('warnEmptyDescription does not flag cards with description', () => {
+  test('enforceNowDescriptionGate passes cards with Experience + AC', () => {
     const before = emittedEvents.length;
-    warnEmptyDescription(10, 'Card in Now', '## AC\n- [ ] Test passes', 'gathering');
-    expect(emittedEvents.length).toBe(before);
+    const result = enforceNowDescriptionGate(10, 'Card in Now', '## Experience\nJeff sees it.\n\n## AC\n- [ ] Test passes', 'gathering');
+    expect(result).toBe(true);
+  });
+
+  test('enforceNowDescriptionGate blocks cards with AC but no Experience', () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+    const result = enforceNowDescriptionGate(11, 'Card missing exp', '## AC\n- [ ] Test passes', 'gathering');
+    expect(result).toBe(false);
+    consoleSpy.mockRestore();
+  });
+
+  test('enforceNowDescriptionGate allows SWAT cards without description', () => {
+    const result = enforceNowDescriptionGate(12, '[swat] Urgent fix', '', 'gathering');
+    expect(result).toBe(true);
   });
 });
 

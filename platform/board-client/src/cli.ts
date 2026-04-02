@@ -544,6 +544,8 @@ Commands:
   sequence [name]                Show sequence cards (no arg = summary of all sequences)
   sequence-tag <ids> <seq>       Bulk-tag cards with a sequence (comma-separated IDs)
   swat "description"             Create [swat]-tagged card in SWAT lane (outside WIP limit)
+  label create <title>            Create a Vikunja label, return its ID
+  label list                     List all Vikunja labels with IDs
   buckets                        Show buckets with WIP limits
   set-limit <bucket> <number>    Set WIP limit (0 = none)
   snapshot                       Save board state
@@ -561,7 +563,7 @@ Options:
   --chunk C                      Chunk label (spine/ops/memory/music/senses/strategy/app)
   --sequence S, --seq S          Sequence label (${Object.keys(LABELS.sequence).join('/')})
   --desc D                       Description text (required — must include AC)
-  --quick, -q                    Skip AC requirement (unplanned issues/quick fixes only)`);
+  --quick, -q                    Skip description/AC requirement only (type/chunk/domain/priority still required)`);
 }
 
 // ── Main dispatch ──
@@ -820,6 +822,26 @@ async function main() {
     case 'snapshot': await snapshotBoard(client); break;
     case 'audit-start': await auditStart(client, cmdArgs[0] || detectRole()); break;
     case 'audit-close': await auditClose(client, cmdArgs[0] || detectRole()); break;
+    case 'label': {
+      const sub = cmdArgs[0];
+      if (sub === 'create') {
+        const labelTitle = cmdArgs.slice(1).join(' ');
+        if (!labelTitle) die('Usage: cards label create <title>');
+        const result = await client.createLabel(labelTitle);
+        console.log(`Created label: "${result.title}" → id: ${result.id}`);
+        console.log(`  Add to config.ts LABELS as needed.`);
+      } else if (sub === 'list') {
+        const labels = await client.listLabels();
+        labels.sort((a, b) => a.id - b.id);
+        for (const l of labels) {
+          console.log(`  ${l.id}\t${l.title}`);
+        }
+        console.log(`\n${labels.length} labels total`);
+      } else {
+        die('Usage: cards label create <title> | cards label list');
+      }
+      break;
+    }
     case 'buckets': await cmdBuckets(client); break;
     case 'set-limit': await cmdSetLimit(client, cmdArgs, boardConfig); break;
     case 'fields': cmdFields(boardConfig); break;
