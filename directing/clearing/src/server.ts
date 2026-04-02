@@ -502,6 +502,13 @@ app.get('/api/flow', (_req, res) => {
         const typeMatch = tags.match(/type:(\w+)/);
         const priorityMatch = tags.match(/P([123])/);
         const sequenceMatch = tags.match(/sequence:(\w+)/);
+        // Bare tags (not prefixed with chunk:/domain:/type:/sequence:/P[123]/role) are sequence labels
+        let sequence = sequenceMatch ? sequenceMatch[1] : '';
+        if (!sequence) {
+          const parts = tags.split('|').map((s: string) => s.trim());
+          const bareTag = parts.find((p: string) => p && !/^(Wren|Silas|Kade|Jeff|P[123]$)/.test(p) && !p.includes(':'));
+          if (bareTag) sequence = bareTag;
+        }
         cards.push({
           id: cardMatch[1],
           title: cardMatch[2].trim(),
@@ -510,7 +517,7 @@ app.get('/api/flow', (_req, res) => {
           domains: domains.length > 0 ? domains : ['uncategorized'],
           type: typeMatch ? typeMatch[1] : '',
           priority: priorityMatch ? parseInt(priorityMatch[1]) : 9,
-          sequence: sequenceMatch ? sequenceMatch[1] : '',
+          sequence,
         });
       }
     }
