@@ -54,6 +54,37 @@ infer_domain() {
   echo "$title_lower" | grep -qE 'gathering.*phase|vision|product.*phil|roadmap|ux|user.*experience' && { echo "product"; return; }
   echo "$title_lower" | grep -qE 'css|theme|dark.*mode|navbar|layout|responsive|ui.*fix|page.*fix|sitemap|scrape' && { echo "app"; return; }
   echo "$title_lower" | grep -qE 'session|context.*cache|role.*state|team.*scan|cost|billing' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'borg|codebase.*graph|fastx|decompos' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'annotation|rating|collection.*view|incubat' && { echo "app"; return; }
+  echo "$title_lower" | grep -qE 'cloud.*readiness|compose|container|health.*probe|ops.*agent|exporter|defect.*poll|daemon|service.*miss' && { echo "infrastructure"; return; }
+  echo "$title_lower" | grep -qE 'claude.*md|fragment|manifest|generator|drift.*detect|compat' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'about.*page|walkthrough|landing.*page|page.*load|page.*fix|style.*guide|css.*var|margin|nav.*bar|action.*button|chrome.*gap' && { echo "app"; return; }
+  echo "$title_lower" | grep -qE 'demo.*skill|demo.*scroll|demo.*pattern|smoke.*check|proving' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'permission.*profile|auto.*allow|tcc|suppress.*popup' && { echo "infrastructure"; return; }
+  echo "$title_lower" | grep -qE 'cadence|calendar|rotation|capacity|weekly|attention.*signal' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'reflect|self.*domain|local.*ai|ollama|llm.*sentiment|whisper|voice.*input|transcri|posture|webcam' && { echo "self"; return; }
+  echo "$title_lower" | grep -qE '/look|screen.*capture|screenshot|chrome.*window|role.*window' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'git.*queue|commit.*queue|staging.*collis|git.*reliab' && { echo "infrastructure"; return; }
+  echo "$title_lower" | grep -qE 'context.*inject|context.*aware|context.*daemon' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE '/flow|funnel|flow.*page' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'cognitive.*load|re-prompt|analytics' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'wardley|product.*taxonomy|product.*phil|domain.*bound' && { echo "product"; return; }
+  echo "$title_lower" | grep -qE 'link.*inference|cross.*domain|cross.*source|dedup|reconcil' && { echo "convergence"; return; }
+  echo "$title_lower" | grep -qE 'retrospective|gemba|observation|gemba.*tick' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'ops.*assess|operations.*assess|log.*coher|script.*output|script.*path|stale.*path' && { echo "infrastructure"; return; }
+  echo "$title_lower" | grep -qE '/loom|team.*page|role.*page|role.*config|role.*manifest|role.*native' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'home.*cloud|bedroom|mac.*hygiene|reboot|boot.*order' && { echo "infrastructure"; return; }
+  echo "$title_lower" | grep -qE 'video|playback|media.*player|album.*play|navidrome' && { echo "music"; return; }
+  echo "$title_lower" | grep -qE 'privacy|security.*review|security.*scan' && { echo "infrastructure"; return; }
+  echo "$title_lower" | grep -qE 'spike.*chorus|chorus.*sdk|chorus.*landing|chorus.*index|chorus.*context' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'document.*rout|doc.*drift|doc.*audit|docs.*page|api.*docs' && { echo "app"; return; }
+  echo "$title_lower" | grep -qE '\bdefect\b|\bfix\b.*stale|\bfix\b.*broken|back.*link|broken.*link' && { echo "infrastructure"; return; }
+  echo "$title_lower" | grep -qE 'autonomous|automat|free.*pm|wren.*routine' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'parallel.*exec|contention|friction.*map' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'login.*flow|code.*walk|walkthrough.*capture' && { echo "app"; return; }
+  echo "$title_lower" | grep -qE 'headless|agent.*sdk' && { echo "chorus"; return; }
+  echo "$title_lower" | grep -qE 'notif|alertmanager' && { echo "infrastructure"; return; }
+  echo "$title_lower" | grep -qE 'mobile|responsive|viewport' && { echo "app"; return; }
 
   echo ""  # Can't infer
 }
