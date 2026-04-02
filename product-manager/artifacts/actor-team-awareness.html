@@ -52,39 +52,38 @@
        │                     │                    │                    │                      │
 </div>
 
-<h2>Actor Flow — Stall Detection</h2>
+<h2>Actor Flow — Stall Detection (Push-Based)</h2>
 <div class="actor-diagram">
-  Role A (stalled)         Spine                Pulse              Watchdog             Role B / Wren
-       │                     │                    │                    │                      │
-       │  (no actions)       │                    │                    │                      │
-       │  (no tool calls)    │                    │                    │                      │
-       │  (silence)          │                    │                    │                      │
-       │                     │  (no events        │                    │                      │
-       │                     │   from Role A)     │                    │                      │
-       │                     │                    │                    │                      │
-       │                     │                    ├── 2 min: no ──────▶│                      │
-       │                     │                    │   events from A    │                      │
-       │                     │                    │                    │                      │
-       │                     │                    │                    ├── nudge A ───────────▶│
-       │                     │                    │                    │  "[watchdog] A silent │
-       │                     │                    │                    │   2min on #N — status?"│
-       │                     │                    │                    │                      │
-       │                     │                    │                    │   IF no response:     │
-       │                     │                    │                    │                      │
-       │                     │                    ├── 3 min: ─────────▶│                      │
-       │                     │                    │   escalate         │                      │
-       │                     │                    │                    ├── nudge Wren ────────▶│
-       │                     │                    │                    │  "[stall] A dark 3min │
-       │                     │                    │                    │   on #N. May need     │
-       │                     │                    │                    │   restart."           │
-       │                     │                    │                    │                      │
-       │                     │                    │   IF 5+ min:       │                      │
-       │                     │                    │                    ├── nudge Jeff ────────▶│
-       │                     │                    │                    │  "[alert] A stalled   │
-       │                     │                    │                    │   5min. Sessions may  │
-       │                     │                    │                    │   need restart."      │
-       │                     │                    │                    │                      │
+  Role A (stalled)         role-state file       Watchdog LaunchAgent       Nudge (osascript)
+       │                     │                         │                        │
+       │  (no actions)       │                         │                        │
+       │  (no tool calls)    │  last_tool_ts aging     │                        │
+       │  (silence)          │                         │                        │
+       │                     │                         │                        │
+       │                     │◀── read every 60s ──────┤                        │
+       │                     │    (independent of       │                        │
+       │                     │     role sessions —      │                        │
+       │                     │     LaunchAgent cron)    │                        │
+       │                     │                         │                        │
+       │                     │    age > 2min:          │                        │
+       │                     │                         ├── nudge A ────────────▶│ → inject
+       │                     │                         │  "[watchdog] A silent  │
+       │                     │                         │   2min on #N — status?"│
+       │                     │                         │                        │
+       │                     │    age > 3min:          │                        │
+       │                     │    (no response)        │                        │
+       │                     │                         ├── nudge Wren ─────────▶│ → inject
+       │                     │                         │  "[stall] A dark 3min" │
+       │                     │                         │                        │
+       │                     │    age > 5min:          │                        │
+       │                     │                         ├── nudge Jeff ─────────▶│ → queue
+       │                     │                         │  "[alert] A stalled"   │
+       │                     │                         │                        │
 </div>
+
+<div class="dep"><strong>Key design decisions from team review:</strong><br>
+<strong>Silas:</strong> LaunchAgent, not hooks. A stalled role has no tool calls — hooks can't detect their own silence. Same pattern as clearing-probe heartbeat (#1933).<br>
+<strong>Kade:</strong> Push-based, not pull-based. team-scan only fires on prompt submit — during long builds, roles go blind. The watchdog must run outside all sessions.</div>
 
 <h2>Escalation Timeline</h2>
 <table>

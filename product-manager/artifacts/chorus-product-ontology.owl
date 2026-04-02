@@ -1166,6 +1166,71 @@
   
   
 
+  <!-- New Chorus domains — added 2026-04-01, reconciled with domain-index.html -->
+
+  <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#ChorusMetaDomain">
+    <rdfs:label>chorus</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:comment>The protocol itself — 3 roles, 9 patterns, 108 decisions, spine events, hooks, board</rdfs:comment>
+    <chorus:codebasePath>chorus/</chorus:codebasePath>
+    <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
+    <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Directing" />
+    <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
+  </chorus:ChorusDomain>
+
+  <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#ClearingDomain">
+    <rdfs:label>clearing</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:comment>Coordination surface — where roles meet, align, decide. Socket.IO :3470, 3 access paths</rdfs:comment>
+    <chorus:codebasePath>chorus/directing/clearing/</chorus:codebasePath>
+    <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
+    <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Proving" />
+    <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ClearingProduct" />
+  </chorus:ChorusDomain>
+
+  <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#PulseDomain">
+    <rdfs:label>pulse</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:comment>Circulation — heartbeat aggregating spine events into health signals. info/warn/critical levels</rdfs:comment>
+    <chorus:codebasePath>chorus/platform/api/</chorus:codebasePath>
+    <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
+    <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Building" />
+    <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
+  </chorus:ChorusDomain>
+
+  <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#SpineDomain">
+    <rdfs:label>spine</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:comment>Event bus — every action emits structured JSON via chorus-log. 8 event categories</rdfs:comment>
+    <chorus:codebasePath>chorus/platform/scripts/chorus-log</chorus:codebasePath>
+    <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
+    <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Building" />
+    <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
+  </chorus:ChorusDomain>
+
+  <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#InteractionsDomain">
+    <rdfs:label>interactions</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:comment>Communication patterns — nudge, pair, chat, demo, gemba, pipeline, clearing, brief, review</rdfs:comment>
+    <chorus:codebasePath>chorus/.claude/skills/</chorus:codebasePath>
+    <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
+    <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Designing" />
+    <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
+  </chorus:ChorusDomain>
+
+  <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#MemoryDomain">
+    <rdfs:label>memory</rdfs:label><chorus:layer>supporting</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:comment>Team recall — conversations, card stories, shared context. 97K indexed messages</rdfs:comment>
+    <chorus:codebasePath>chorus/platform/api/src/server.ts</chorus:codebasePath>
+    <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
+    <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Designing" />
+    <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#ChorusProduct" />
+  </chorus:ChorusDomain>
+
+  <chorus:ChorusDomain rdf:about="http://gathering.local/ontology/chorus#LoomDomain">
+    <rdfs:label>loom</rdfs:label><chorus:layer>core</chorus:layer><chorus:status>Active</chorus:status>
+    <rdfs:comment>How the team operates — decisions, cards, practices, dependencies, roles, skills, services</rdfs:comment>
+    <chorus:codebasePath>chorus/platform/</chorus:codebasePath>
+    <chorus:servesValueStream rdf:resource="http://gathering.local/ontology/chorus#ChorusStream" />
+    <chorus:primaryPhase rdf:resource="http://gathering.local/ontology/chorus#Directing" />
+    <chorus:belongsToProduct rdf:resource="http://gathering.local/ontology/chorus#LoomProduct" />
+  </chorus:ChorusDomain>
+
   <chorus:Service rdf:about="http://gathering.local/ontology/chorus#SeedPipeline">
     <rdfs:label>Seed Pipeline</rdfs:label>
     <chorus:language>TypeScript</chorus:language>
