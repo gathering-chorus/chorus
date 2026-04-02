@@ -23,6 +23,8 @@ export const LABELS = {
     convergence: 73,
     // Product domains
     chorus: 75, borg: 76,
+    // General domains
+    app: 102, product: 103,
     // Note: infrastructure moved from legacy ID 13 to domain:infrastructure ID 72
   } as Record<string, number>,
   product: {
