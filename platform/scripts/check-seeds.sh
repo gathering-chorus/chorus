@@ -144,11 +144,13 @@ for b in d['results']['bindings']:
             boston=dt.astimezone(timezone(timedelta(hours=-4)))
             ts=boston.strftime('%m/%d %H:%M')
         except: pass
-    # Show type prefix for media seeds where content is just a hashtag
+    # Show accessible content: URL for links, file path for media, text for text
     display = content
     if media and content.startswith('#'):
         label = {'PhotoCapture': 'Photo', 'AudioCapture': 'Audio', 'VideoCapture': 'Video'}.get(stype, stype)
-        display = f'{label} ({content})'
+        display = f'{label} {content} → pods/jeff/{media}'
+    elif stype == 'LinkCapture' and content.startswith('http'):
+        display = content[:70]
     tag = f' {hashtag}' if hashtag else ''
     print(f'  {ts}  [{status}]  {display}{tag}')
 " 2>/dev/null
