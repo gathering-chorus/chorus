@@ -541,7 +541,7 @@ fn heartbeat_cmd() -> ExitCode {
         ("app", "http://localhost:3000/health", "critical"),
         ("fuseki", "http://localhost:3030/$/ping", "warn"),
         ("clearing", "http://localhost:3470/", "warn"),
-        ("chorus-api", "http://localhost:3340/", "warn"),
+        ("chorus-api", "http://localhost:3340/health", "warn"),
         ("vikunja", "http://localhost:3456/", "warn"),
     ];
 
