@@ -509,7 +509,7 @@ When('they grep for card context {string}', function (pattern: string) {
 
 When('they grep in a session context path {string}', function (contextPath: string) {
   ctx.hookResult = callHook('Grep', {
-    pattern: 'something',
+    pattern: 'bdd-no-match-a1b2c3d4e5f6',
     path: contextPath,
   }, ctx.sessionId, ctx.cwd, ctx.role);
 });
@@ -523,7 +523,7 @@ When('they grep for a code pattern {string}', function (pattern: string) {
 
 When('they grep for a code pattern in {string}', function (codePath: string) {
   ctx.hookResult = callHook('Grep', {
-    pattern: 'something',
+    pattern: 'bdd-no-match-a1b2c3d4e5f6',
     path: codePath,
   }, ctx.sessionId, ctx.cwd, ctx.role);
 });
