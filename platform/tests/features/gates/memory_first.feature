@@ -32,7 +32,7 @@ Feature: Memory-first search gate (#1951)
   Scenario: Grep for card context after querying card-story — allowed
     Given a role is building a new card
     And they have queried card-story endpoint
-    When they grep for card context "#1951"
+    When they grep for card context "bdd-zxy-nomatch-99997"
     Then the gate allows the search
 
   Scenario: Grep in briefs after chorus search — allowed
@@ -46,7 +46,7 @@ Feature: Memory-first search gate (#1951)
   Scenario: Grep for code pattern without memory query — allowed
     Given a role is building a new card
     And they have not queried memory endpoints
-    When they grep for a code pattern "escapeSparql"
+    When they grep for a code pattern "bddZxyNomatch789"
     Then the gate allows the search
 
   Scenario: Grep in src directory without memory query — allowed

@@ -157,6 +157,75 @@ fn query_chorus(db_path: &std::path::Path, query: &str) -> Option<String> {
     Some(output)
 }
 
+/// Layer 2: Query recent log files for pattern matches
+fn query_logs(pattern: &str) -> Option<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    // Only ops logs — chorus.log and hooks.log are self-referential
+    let log_paths = [
+        format!("{}/Library/Logs/Gathering/daily-review-ops.log", home),
+        format!("{}/Library/Logs/Gathering/infra-alert.log", home),
+    ];
+
+    let mut results = Vec::new();
+    let pattern_lower = pattern.to_lowercase();
+
+    for log_path in &log_paths {
+        if let Ok(content) = std::fs::read_to_string(log_path) {
+            let lines: Vec<&str> = content.lines().collect();
+            let recent = if lines.len() > 200 { &lines[lines.len() - 200..] } else { &lines };
+            for line in recent {
+                if line.to_lowercase().contains(&pattern_lower)
+                    && !line.contains("search.hierarchy")
+                    && !line.contains("pre_tool_use")
+                {
+                    results.push(line.to_string());
+                    if results.len() >= 5 {
+                        break;
+                    }
+                }
+            }
+        }
+        if results.len() >= 5 {
+            break;
+        }
+    }
+
+    if results.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "Recent log entries ({}):\n{}",
+        results.len(),
+        results.iter().map(|l| format!("  {}", l.chars().take(200).collect::<String>())).collect::<Vec<_>>().join("\n")
+    ))
+}
+
+/// Layer 3: Query git log for recent commits related to the pattern
+fn query_git(pattern: &str) -> Option<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let repo = format!("{}/CascadeProjects/chorus", home);
+
+    let output = std::process::Command::new("git")
+        .args(["log", "--oneline", "--all", "-10", "--grep", pattern])
+        .current_dir(&repo)
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "Recent commits ({}):\n{}",
+        lines.len(),
+        lines.iter().map(|l| format!("  {}", l)).collect::<Vec<_>>().join("\n")
+    ))
+}
+
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let tool = input.tool_name_str();
     if tool != "Grep" && tool != "Glob" {
@@ -212,20 +281,45 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         .await;
     });
 
-    match chorus_results {
-        Some(results) => {
-            // Deny so context reaches the role as a system-reminder (#1951)
-            // stderr is invisible to roles — only deny messages surface
-            state.set_search_block(&block_key).await;
-            let msg = format!(
-                "Chorus context for your search \"{}\":\n\n{}\n\nRetry your search — this context is now loaded.",
-                pattern.chars().take(60).collect::<String>(),
-                results,
-            );
-            HookResponse::deny(&permission_deny_json(&msg))
-        }
-        None => HookResponse::allow(),
+    // Layer 2: Log context — recent log entries matching the pattern
+    let log_pattern = pattern.clone();
+    let log_context = tokio::task::spawn_blocking(move || query_logs(&log_pattern))
+        .await
+        .unwrap_or(None);
+
+    // Layer 3: Git context — recent commits related to the pattern
+    let git_pattern = pattern.clone();
+    let git_context = tokio::task::spawn_blocking(move || query_git(&git_pattern))
+        .await
+        .unwrap_or(None);
+
+    // Combine all layers that returned results
+    let mut layers = Vec::new();
+    if let Some(ref chorus) = chorus_results {
+        layers.push(format!("## Chorus (team memory)\n{}", chorus));
     }
+    if let Some(ref logs) = log_context {
+        layers.push(format!("## Logs (system state)\n{}", logs));
+    }
+    if let Some(ref git) = git_context {
+        layers.push(format!("## Git (change history)\n{}", git));
+    }
+
+    if layers.is_empty() {
+        return HookResponse::allow();
+    }
+
+    // Deny with compound context — role sees all layers before retrying
+    state.set_search_block(&block_key).await;
+    let short_pattern: String = pattern.chars().take(60).collect();
+    let msg = format!(
+        "Compound context for \"{}\" ({} layer{}):\n\n{}\n\nRetry your search — this context is now loaded.",
+        short_pattern,
+        layers.len(),
+        if layers.len() == 1 { "" } else { "s" },
+        layers.join("\n\n"),
+    );
+    HookResponse::deny(&permission_deny_json(&msg))
 }
 
 #[cfg(test)]

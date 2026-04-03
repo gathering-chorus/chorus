@@ -544,6 +544,41 @@ Then('the gate allows the search', function () {
   );
 });
 
+// --- Compound search steps (#2004) ---
+
+let lastGrepSession = '';
+
+When('they grep for a term with Chorus results {string}', function (pattern: string) {
+  lastGrepSession = ctx.sessionId;
+  ctx.hookResult = callHook('Grep', {
+    pattern,
+    path: '',
+  }, ctx.sessionId, ctx.cwd, ctx.role);
+});
+
+When('they grep for a term with no Chorus results {string}', function (pattern: string) {
+  ctx.hookResult = callHook('Grep', {
+    pattern,
+    path: '',
+  }, ctx.sessionId, ctx.cwd, ctx.role);
+});
+
+When('they retry the same grep {string}', function (pattern: string) {
+  ctx.hookResult = callHook('Grep', {
+    pattern,
+    path: '',
+  }, lastGrepSession, ctx.cwd, ctx.role);
+});
+
+Then('the deny message contains {string}', function (expectedFragment: string) {
+  assert.ok(ctx.hookResult, 'Hook was not called');
+  const output = ctx.hookResult.stdout + ctx.hookResult.stderr;
+  assert.ok(
+    output.includes(expectedFragment),
+    `Expected deny message to contain "${expectedFragment}" but got:\n${output.slice(0, 500)}`
+  );
+});
+
 // --- Then steps ---
 
 Then('the gate blocks with {string}', function (expectedFragment: string) {
