@@ -103,13 +103,14 @@ TOTAL=$(curl -sf --max-time "$TIMEOUT" \
 
 # ─── Last 3 received seeds ────────────────────────────────────
 RECENT_QUERY='PREFIX jb: <https://jeffbridwell.com/ontology#>
-SELECT ?content ?type ?status ?created ?hashtag WHERE {
+SELECT ?content ?type ?status ?created ?hashtag ?media WHERE {
   GRAPH <urn:jb:seeds/> {
     ?seed jb:seedContent ?content .
     ?seed jb:hasSeedType ?type .
     ?seed jb:hasSeedStatus ?status .
     OPTIONAL { ?seed jb:seededAt ?created }
     OPTIONAL { ?seed jb:seedHashtag ?hashtag }
+    OPTIONAL { ?seed jb:seedMediaPath ?media }
   }
 } ORDER BY DESC(?created) LIMIT 3'
 
@@ -133,7 +134,9 @@ d=json.load(sys.stdin)
 for b in d['results']['bindings']:
     content=b.get('content',{}).get('value','')[:50]
     status=b.get('status',{}).get('value','').split('#')[-1]
+    stype=b.get('type',{}).get('value','').split('#')[-1]
     hashtag=b.get('hashtag',{}).get('value','')
+    media=b.get('media',{}).get('value','')
     ts=b.get('created',{}).get('value','')
     if ts:
         try:
@@ -141,8 +144,13 @@ for b in d['results']['bindings']:
             boston=dt.astimezone(timezone(timedelta(hours=-4)))
             ts=boston.strftime('%m/%d %H:%M')
         except: pass
+    # Show type prefix for media seeds where content is just a hashtag
+    display = content
+    if media and content.startswith('#'):
+        label = {'PhotoCapture': 'Photo', 'AudioCapture': 'Audio', 'VideoCapture': 'Video'}.get(stype, stype)
+        display = f'{label} ({content})'
     tag = f' {hashtag}' if hashtag else ''
-    print(f'  {ts}  [{status}]  {content}{tag}')
+    print(f'  {ts}  [{status}]  {display}{tag}')
 " 2>/dev/null
 
 if [[ "$PIPELINE" == "DOWN" ]]; then
