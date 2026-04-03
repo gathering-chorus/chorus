@@ -13,10 +13,10 @@ severity: warning
 schedule: "30 6 * * *"  # 6:30am daily
 
 check: |
-  # Look for daily.review.completed in today's chorus log
+  # Look for ops.review.completed in today's chorus log
   TODAY=$(TZ=America/New_York date '+%Y-%m-%d')
-  LOG_DIR="$HOME/Library/Logs/Gathering"
-  if grep -q "daily.review.completed" "$LOG_DIR/chorus.log" 2>/dev/null | grep -q "$TODAY"; then
+  LOG="$HOME/Library/Logs/Chorus/chorus.log"
+  if grep "ops.review.completed" "$LOG" 2>/dev/null | grep -q "$TODAY"; then
     echo "ok"
     exit 0
   fi

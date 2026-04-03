@@ -1,7 +1,24 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T17:02:02.284Z",
+  "timestamp": "2026-04-03T17:32:12.384Z",
   "tasks": [
+    {
+      "index": 2001,
+      "apiId": 2084,
+      "title": "Remove brief-writing from seed handler — seeds live in Fuseki, visible via /cs, briefs are a redundant broken path",
+      "description": "## Experience\nJeff sends a seed via SMS. It appears in Fuseki and is visible through /cs. No brief file is created anywhere. One path, one store.\n\n## Acceptance Criteria\n- [ ] Delete writeBriefs() from seed.handler.ts\n- [ ] Delete all brief-writing code paths from seed capture/routing\n- [ ] Verify /cs still shows seeds correctly after removal\n- [ ] Verify no seed brief files are created when a real SMS arrives\n- [ ] No test seeds create brief files either",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T17:08:48Z",
+      "updated": "2026-04-03T17:24:39Z"
+    },
     {
       "index": 2000,
       "apiId": 2083,
