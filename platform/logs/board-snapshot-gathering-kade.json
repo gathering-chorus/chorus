@@ -1,7 +1,25 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T18:27:55.443Z",
+  "timestamp": "2026-04-03T18:43:02.275Z",
   "tasks": [
+    {
+      "index": 2004,
+      "apiId": 2087,
+      "title": "Four-layer compound search — Chorus + logs + git + code on every search, all errors not warns",
+      "description": "## Experience\nEvery search I run gets context from all four layers automatically: (1) Chorus — what has the team said about this, (2) Logs — what is the system reporting right now, (3) Git — what changed and when, (4) Code — what currently exists. Each layer compounds on the others. All must run. Every time. No exceptions.\n\n## Acceptance Criteria\n- [ ] Search gate runs all four layers on every Grep/Glob: Chorus query, log check, git history, then allow the code search\n- [ ] Each layer's results are injected into the deny message — the role sees all four before retrying\n- [ ] All failures are errors, not warns — dropped seeds, missing context, stale state\n- [ ] Retry after deny goes through clean (existing session-scoped dedupe)\n- [ ] Sub-500ms total for all four layers (Chorus SQLite, log tail, git log are all local)\n- [ ] Tests verify all four layers appear in deny message content\n\n## Files\n- platform/services/chorus-hooks/src/hooks/search_hierarchy.rs\n- platform/tests/features/gates/memory_first.feature",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:new",
+        "gates"
+      ],
+      "done": false,
+      "created": "2026-04-03T18:33:26Z",
+      "updated": "2026-04-03T18:35:52Z"
+    },
     {
       "index": 2000,
       "apiId": 2083,
@@ -37,24 +55,6 @@
       "done": false,
       "created": "2026-04-02T01:33:22Z",
       "updated": "2026-04-02T01:34:01Z"
-    },
-    {
-      "index": 1951,
-      "apiId": 2034,
-      "title": "Memory-first search gate — enforce conversation and card-story endpoints before filesystem grep",
-      "description": "## Experience\nI ask about a card and the role greps the filesystem instead of hitting card-story. I ask what we discussed and the role searches session files instead of the conversation endpoint. The endpoints exist but roles default to old habits.\n\n## AC\n1. PreToolUse gate detects search-pattern commands (grep, rg, find on session files, card-related queries)\n2. Gate checks whether the role has queried the Memory domain endpoints first (card-story, conversation)\n3. If no Memory query detected in session, gate blocks with: 'Check /api/chorus/card-story/:id or /api/chorus/conversation first — DEC-074'\n4. Gate skips if the search target is code files (not session/card context)\n5. BDD scenarios for the gate\n\n## Context\nDEC-074 says Chorus first for search. Kade built card-story (#1947) and conversation (#1946) endpoints today. Without a gate, roles will keep grepping. Same pattern as TDD gate — enforce the sequence, not just document it.\n\n## Files\n- platform/services/chorus-hooks/src/gates/memory_first.rs\n- platform/services/chorus-hooks/src/lib.rs\n- tests/bdd/memory-first-gate.feature",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new",
-        "gates"
-      ],
-      "done": false,
-      "created": "2026-04-01T21:57:51Z",
-      "updated": "2026-04-03T17:39:14Z"
     },
     {
       "index": 2001,
@@ -263,6 +263,24 @@
       "done": true,
       "created": "2026-04-01T22:02:15Z",
       "updated": "2026-04-02T01:27:17Z"
+    },
+    {
+      "index": 1951,
+      "apiId": 2034,
+      "title": "Memory-first search gate — enforce conversation and card-story endpoints before filesystem grep",
+      "description": "## Experience\nI ask about a card and the role greps the filesystem instead of hitting card-story. I ask what we discussed and the role searches session files instead of the conversation endpoint. The endpoints exist but roles default to old habits.\n\n## AC\n1. PreToolUse gate detects search-pattern commands (grep, rg, find on session files, card-related queries)\n2. Gate checks whether the role has queried the Memory domain endpoints first (card-story, conversation)\n3. If no Memory query detected in session, gate blocks with: 'Check /api/chorus/card-story/:id or /api/chorus/conversation first — DEC-074'\n4. Gate skips if the search target is code files (not session/card context)\n5. BDD scenarios for the gate\n\n## Context\nDEC-074 says Chorus first for search. Kade built card-story (#1947) and conversation (#1946) endpoints today. Without a gate, roles will keep grepping. Same pattern as TDD gate — enforce the sequence, not just document it.\n\n## Files\n- platform/services/chorus-hooks/src/gates/memory_first.rs\n- platform/services/chorus-hooks/src/lib.rs\n- tests/bdd/memory-first-gate.feature",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:new",
+        "gates"
+      ],
+      "done": true,
+      "created": "2026-04-01T21:57:51Z",
+      "updated": "2026-04-03T18:29:54Z"
     },
     {
       "index": 1950,
@@ -915,23 +933,6 @@
       "done": true,
       "created": "2026-03-30T22:22:50Z",
       "updated": "2026-03-31T17:30:10Z"
-    },
-    {
-      "index": 1882,
-      "apiId": 1965,
-      "title": "Doc-catalog filters — value stream stage and domain chips",
-      "description": "## Experience\n\nI open the doc catalog and see 147 documents across 13 groups. I want to narrow down to just the docs relevant to what I'm working on — filter by value stream stage (Capturing, Designing, Building, Proving, Reflecting) or by domain (chorus, photos, seeds, etc). Each doc shows small chips indicating its stage and domain so I can scan visually without clicking.\n\n## AC\n\n- [ ] Doc-catalog page shows value stream stage chip and domain chip on each document row\n- [ ] Clickable filter bar with stage buttons (Capturing, Designing, Building, Proving, Reflecting) — click to toggle, multiple allowed\n- [ ] Clickable filter bar with domain buttons populated from the data — click to toggle, multiple allowed\n- [ ] Filters compose: selecting Building + domain:chorus shows only docs matching both\n- [ ] Active filters visually highlighted; click again to deselect\n- [ ] Filter state preserved in URL query params so links are shareable\n- [ ] Existing search box works alongside filters (search within filtered results)\n- [ ] No backend changes — classification logic runs client-side from existing API response data\n\n## Files\n- `public/doc-catalog.html` — filter bar UI\n- `public/js/doc-catalog-search.js` — filter logic + chip rendering\n- `src/handlers/doc-catalog.handler.ts` — may need stage/domain fields in response",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-30T22:07:09Z",
-      "updated": "2026-03-31T00:26:16Z"
     },
     {
       "index": 1872,
