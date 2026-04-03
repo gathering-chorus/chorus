@@ -176,27 +176,9 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let hash = pattern_hash(&pattern);
     let block_key = format!("{}-{}", role_str, hash);
 
-    // Retry bypass: same pattern within 60s
+    // Dedupe: same pattern within 60s skips re-query
     if state.check_search_block(&block_key).await {
         state.clear_search_block(&block_key).await;
-        state.set_chorus_searched(role_str).await;
-
-        let r = role_str.to_string();
-        let t = tool.to_string();
-        let p: String = pattern.chars().take(80).collect();
-        tokio::spawn(async move {
-            chorus_log(
-                "search.hierarchy.enriched_retry",
-                &r,
-                &[("tool", &t), ("pattern", &p)],
-            )
-            .await;
-        });
-        return HookResponse::allow();
-    }
-
-    // Check if Chorus was used recently (90s) — skip enrichment
-    if state.chorus_searched_recently(role_str).await {
         return HookResponse::allow();
     }
 

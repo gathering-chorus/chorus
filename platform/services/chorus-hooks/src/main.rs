@@ -295,7 +295,7 @@ async fn pre_tool_use_inner(
                 return (last_module.clone(), r);
             }
             last_module = "search_hierarchy".into(); let r = hooks::search_hierarchy::check(&input, &state).await;
-            if r.stdout.is_some() || r.exit_code != 0 {
+            if r.stdout.is_some() || r.stderr.is_some() || r.exit_code != 0 {
                 return (last_module.clone(), r);
             }
         }
