@@ -1,25 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T13:51:10.635Z",
+  "timestamp": "2026-04-03T15:31:35.923Z",
   "tasks": [
-    {
-      "index": 1995,
-      "apiId": 2078,
-      "title": "Fix /cs skill — must hit seeds API, show pending seeds, verify pipeline health",
-      "description": "## Experience\nI say \"check seeds\" and get a real answer — how many pending, when the last one arrived, whether the pipeline is healthy. Not \"inbox clear\" while my texts evaporate.\n\n## AC\n- [ ] /cs hits the seeds API (localhost:3000/api/seeds or SPARQL) to get pending seed count\n- [ ] Shows each pending seed: type, content preview, timestamp, hashtag\n- [ ] Verifies pipeline health: webhook reachable, Fuseki writable\n- [ ] Reports last successful seed creation timestamp\n- [ ] If pipeline is broken, says so — doesn't say \"inbox clear\"\n\n## Files\n- skill/cs/SKILL.md\n- platform/scripts/seed-probe.sh",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:seeds",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T10:23:06Z",
-      "updated": "2026-04-03T10:25:01Z"
-    },
     {
       "index": 1958,
       "apiId": 2041,
@@ -37,6 +19,24 @@
       "done": false,
       "created": "2026-04-02T01:33:22Z",
       "updated": "2026-04-02T01:34:01Z"
+    },
+    {
+      "index": 1995,
+      "apiId": 2078,
+      "title": "Fix /cs skill — must hit seeds API, show pending seeds, verify pipeline health",
+      "description": "## Experience\nI say \"check seeds\" and get a real answer — how many pending, when the last one arrived, whether the pipeline is healthy. Not \"inbox clear\" while my texts evaporate.\n\n## AC\n- [ ] /cs hits the seeds API (localhost:3000/api/seeds or SPARQL) to get pending seed count\n- [ ] Shows each pending seed: type, content preview, timestamp, hashtag\n- [ ] Verifies pipeline health: webhook reachable, Fuseki writable\n- [ ] Reports last successful seed creation timestamp\n- [ ] If pipeline is broken, says so — doesn't say \"inbox clear\"\n\n## Files\n- skill/cs/SKILL.md\n- platform/scripts/seed-probe.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T10:23:06Z",
+      "updated": "2026-04-03T13:53:03Z"
     },
     {
       "index": 1991,
@@ -897,24 +897,6 @@
       "done": true,
       "created": "2026-03-30T22:01:29Z",
       "updated": "2026-03-31T17:00:53Z"
-    },
-    {
-      "index": 1879,
-      "apiId": 1962,
-      "title": "Log-first gate — require log inspection before coding a fix",
-      "description": "## Experience\nA role sees a bug and jumps straight to the code. They read 550 lines of Rust, form a theory, and code a fix — but the logs would have shown the real cause in 30 seconds. Today: Wren read observer.rs to understand stale card display, then checked logs and found the actual root cause was different (stale session state, not missing role-state call). Context synthesis gate catches missing search; this catches missing log inspection.\n\n## AC\n- [ ] PreToolUse gate: before editing code in a fix context, check for recent log/grep of chorus.log or hooks.log\n- [ ] Gate message: \"Check the logs before fixing. What do chorus.log and hooks.log say about this failure?\"\n- [ ] Ties into context synthesis gate — logs are part of the synthesis requirement\n- [ ] Does NOT block new feature work — only fix/debug contexts\n\n## Files\n- platform/services/chorus-hooks/src/hooks/log_first_gate.rs (new)\n- platform/services/chorus-hooks/src/hooks/mod.rs (register module)\n- platform/services/chorus-hooks/src/main.rs (wire into pre_tool_use_inner)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-30T21:08:59Z",
-      "updated": "2026-03-31T00:26:58Z"
     },
     {
       "index": 1872,
@@ -2853,6 +2835,23 @@
       "done": false,
       "created": "2026-03-25T22:54:24Z",
       "updated": "2026-03-31T17:14:50Z"
+    },
+    {
+      "index": 1999,
+      "apiId": 2082,
+      "title": "[defect] gathering-app: SMS seed creation failed",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: SMS seed creation failed\nSample: SMS seed creation failed\nFirst seen: 2026-04-03T15:25:09Z\nCount: 1\nHash: 28784b570a0c4734",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T15:25:09Z",
+      "updated": "2026-04-03T15:25:09Z"
     },
     {
       "index": 1997,
