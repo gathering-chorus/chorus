@@ -1,0 +1,36 @@
+# startup-sync-failure.yml — Alert when app startup SMS sync fails
+# Card #2000
+#
+# Every app restart triggers SMS seed sync. It has failed on every
+# boot today (2026-04-03) due to triple-quote escape bug in stored seeds.
+# This is logged as "non-fatal" but masks real data loss.
+
+name: startup-sync-failure
+description: App startup SMS sync failed — stored seeds not loading
+severity: warning
+schedule: "*/5 * * * *"  # every 5 minutes
+
+check: |
+  NOW=$(date +%s)
+  START=$(( NOW - 300 ))
+  RESULT=$(curl -sf --max-time 5 -G "http://localhost:3102/loki/api/v1/query_range" \
+    --data-urlencode 'query={job=~"gathering.*"} |~ "Startup SMS sync failed"' \
+    --data-urlencode "start=${START}000000000" \
+    --data-urlencode "end=${NOW}000000000" \
+    --data-urlencode "limit=1" 2>/dev/null)
+  COUNT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(len(r.get('values',[])) for r in d.get('data',{}).get('result',[])))" 2>/dev/null || echo "0")
+  if [[ "$COUNT" == "0" ]]; then
+    echo "ok"
+    exit 0
+  fi
+  echo "failed:$COUNT"
+  exit 1
+
+action: |
+  BRIDGE="http://localhost:3470/api/message"
+  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+  curl -sf -X POST "$BRIDGE" \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg text "**ALERT** — $TIMESTAMP\n\nApp restarted and SMS seed sync failed. Stored seeds with special characters are not loading.\nFix the startup sync escape path." \
+      --arg from "silas" '{from: $from, text: $text}')" \
+    &>/dev/null || true

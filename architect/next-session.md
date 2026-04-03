@@ -1,28 +1,24 @@
-# Silas Next Session — 2026-04-02
+# Silas Next Session — 2026-04-03
 
-## Session Summary (2026-04-01 evening)
-5 cards shipped, 2 navigated. BDD gate specs, TDD test-first enforcement, OWL ontology alignment. Big architectural session — gates are the operating contract, OWL is the single source of truth.
+## Session Summary
+#1995 shipped (seed pipeline fixes), #2000 in progress (alerting). Jeff flagged critical ops discipline failures — no proactive log checking, no crash detection, contradicted him based on one command. Hard session, deserved.
 
 ## Shipped
-- #1936 Clearing e2e Gherkin tests — 36/36, 3 access paths, e2e-responder hook
-- #1930 BDD gate specs — 55 scenarios, 8 gates × 5 card types, TDD test-first, role-state card_type
-- #1955 OWL aligned — 1,890 triples, 51 class-to-domain mappings, 3 value streams, Jeff's taxonomy
-- #1946 Navigated Kade — conversation endpoint
-- #1956 Navigated Kade — domain crawler
+- #1995 Fix /cs skill — graph URI fix, skill rewrite, triple-quote escape, probe cleanup, write probe
 
 ## WIP
-- #1958 Team awareness BDD — Wren pulled, design in actor-team-awareness.html. LaunchAgent watchdog.
+- #2000 Seed write failure alert — alert-runner.sh live with LaunchAgent, 3 rules deployed
+  - Remaining: BDD step defs, e2e test seed cleanup, startup sync escape fix
+- #1958 Team awareness BDD — untouched, pick up after #2000
 
-## Pick Up
-- #1958 ready to build
-- Blast radius gate doesn't exempt chore cards — needs fix
-- TDD gate can be gamed (touch any test file) — Jeff flagged
-- Fuseki ontology graph loaded but not auto-synced
-- cards CLI --json flag shipped but not committed separately
+## First Thing Next Session
+1. **Ops sweep before declaring ready** — check-seeds, Loki errors last 12h, process state, alert-runner log
+2. Check if alert runner caught anything overnight
+3. Finish #2000
 
-## Key Decisions (2026-04-01)
-- 3 value streams: Personal Long Loop (7 phases), Life Short Loop (5 phases), Chorus (4 phases)
-- 5 Chorus sub-products: Bridge, Clearing, Board, Loom, Convergence
-- Convergence = Product AND Practice
-- Gates = operating contract in executable form, not just build discipline
-- Nobody is doing BDD for AI agent behavioral governance — novel space
+## Critical Context
+- Machine crashed overnight Apr 2→3. App down 85min. No alerts. Jeff found it.
+- App restarted 7 times today (deploys). Startup SMS sync fails every boot.
+- 62 e2e test seeds polluting Fuseki — need cleanup mechanism
+- Alert runner: com.chorus.alert-runner LaunchAgent, every 60s, checks 4 rules
+- Feedback saved: research before responding, run 3+ diagnostics before any answer

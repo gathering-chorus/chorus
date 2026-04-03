@@ -1,0 +1,39 @@
+# seed-write-failure.yml — Alert when seed SPARQL writes fail
+# Card #2000 | AC1
+#
+# Seed creation failures are silent — Jeff sends a text, it vanishes.
+# This alert fires within 60 seconds of any seed write failure.
+#
+# Implementation: runs every 60s, checks Loki for seed creation errors
+# in the last 90 seconds. If found, posts to Bridge immediately.
+
+name: seed-write-failure
+description: SMS seed creation failed — Jeff's texts are not landing
+severity: critical
+schedule: "* * * * *"  # every minute
+
+check: |
+  # Query Loki for seed creation failures in the last 90 seconds
+  NOW=$(date +%s)
+  START=$(( NOW - 90 ))
+  RESULT=$(curl -sf --max-time 5 -G "http://localhost:3102/loki/api/v1/query_range" \
+    --data-urlencode 'query={job=~"gathering.*"} |~ "seed creation failed|SPARQL update failed|SPARQL update error"' \
+    --data-urlencode "start=${START}000000000" \
+    --data-urlencode "end=${NOW}000000000" \
+    --data-urlencode "limit=1" 2>/dev/null)
+  COUNT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(len(r.get('values',[])) for r in d.get('data',{}).get('result',[])))" 2>/dev/null || echo "0")
+  if [[ "$COUNT" == "0" ]]; then
+    echo "ok"
+    exit 0
+  fi
+  echo "failed:$COUNT"
+  exit 1
+
+action: |
+  BRIDGE="http://localhost:3470/api/message"
+  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+  curl -sf -X POST "$BRIDGE" \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg text "**ALERT** — $TIMESTAMP\n\nSeed write failure detected. Jeff's SMS seeds are not landing in Fuseki.\nCheck: Loki query {job=~\"gathering.*\"} |~ \"seed creation failed\"" \
+      --arg from "silas" '{from: $from, text: $text}')" \
+    &>/dev/null || true

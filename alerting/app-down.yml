@@ -1,0 +1,32 @@
+# app-down.yml — Alert when gathering-app is not responding
+# Card #2000
+#
+# The app has no LaunchAgent — if the machine crashes or the process
+# dies, nobody notices until Jeff sends a seed that vanishes.
+# This checks every 2 minutes.
+
+name: app-down
+description: Gathering app is not responding on localhost:3000
+severity: critical
+schedule: "*/2 * * * *"  # every 2 minutes
+
+check: |
+  # Health check the app
+  HTTP=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:3000/health 2>/dev/null || echo "000")
+  if [[ "$HTTP" == "200" ]]; then
+    echo "ok"
+    exit 0
+  fi
+  echo "down:$HTTP"
+  exit 1
+
+action: |
+  BRIDGE="http://localhost:3470/api/message"
+  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+  FUSEKI=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:3030/$/ping 2>/dev/null || echo "000")
+  TUNNEL=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 5 https://lightlifeurbangardens.com/health 2>/dev/null || echo "000")
+  curl -sf -X POST "$BRIDGE" \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg text "**ALERT** — $TIMESTAMP\n\nGathering app is DOWN. Seeds, pods, and all API endpoints are unreachable.\nApp: DOWN | Fuseki: $FUSEKI | Tunnel: $TUNNEL\n\nRestart: app-state.sh deploy gathering-app" \
+      --arg from "silas" '{from: $from, text: $text}')" \
+    &>/dev/null || true
