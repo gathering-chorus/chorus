@@ -258,6 +258,12 @@ async fn pre_tool_use_inner(
                 return (last_module.clone(), r);
             }
 
+            // Memory-first search gate (#1951) — block context grep without Chorus query
+            last_module = "memory_first".into(); let r = hooks::memory_first::check(&input, &state);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (last_module.clone(), r);
+            }
+
             // CSC guard (#1685) — block /tmp/ artifact writes, warn outside /Volumes/Gathering/
             last_module = "csc_guard".into(); let r = hooks::csc_guard::check(&input);
             if r.stdout.is_some() || r.stderr.is_some() {
@@ -284,6 +290,10 @@ async fn pre_tool_use_inner(
             }
         }
         "Grep" | "Glob" => {
+            last_module = "memory_first".into(); let r = hooks::memory_first::check(&input, &state);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (last_module.clone(), r);
+            }
             last_module = "search_hierarchy".into(); let r = hooks::search_hierarchy::check(&input, &state).await;
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (last_module.clone(), r);

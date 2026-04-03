@@ -475,6 +475,75 @@ When('they try to read a code file', function () {
   }, ctx.sessionId, ctx.cwd, ctx.role);
 });
 
+// --- Memory-first gate steps (#1951) ---
+
+Given('they have not queried memory endpoints', function () {
+  if (ctx.sessionLines.length === 0) {
+    ctx.sessionLines.push('{"type":"assistant","content":"Starting work on the card."}');
+  }
+  writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
+Given('they have queried card-story endpoint', function () {
+  ctx.sessionLines.push(
+    '{"type":"tool_use","name":"Bash","input":{"command":"curl -s http://localhost:3340/api/chorus/card-story/1951"}}',
+    '{"type":"tool_result","content":"{ \\"card\\": 1951, \\"timeline\\": [] }"}'
+  );
+  writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
+Given('they have run a chorus search', function () {
+  ctx.sessionLines.push(
+    '{"type":"tool_use","name":"Bash","input":{"command":"bash ~/.chorus/scripts/chorus-query.sh search \\"alert nudge\\""}}',
+    '{"type":"tool_result","content":"Found 20 results..."}'
+  );
+  writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
+});
+
+When('they grep for card context {string}', function (pattern: string) {
+  ctx.hookResult = callHook('Grep', {
+    pattern,
+    path: '',
+  }, ctx.sessionId, ctx.cwd, ctx.role);
+});
+
+When('they grep in a session context path {string}', function (contextPath: string) {
+  ctx.hookResult = callHook('Grep', {
+    pattern: 'something',
+    path: contextPath,
+  }, ctx.sessionId, ctx.cwd, ctx.role);
+});
+
+When('they grep for a code pattern {string}', function (pattern: string) {
+  ctx.hookResult = callHook('Grep', {
+    pattern,
+    path: '',
+  }, ctx.sessionId, ctx.cwd, ctx.role);
+});
+
+When('they grep for a code pattern in {string}', function (codePath: string) {
+  ctx.hookResult = callHook('Grep', {
+    pattern: 'something',
+    path: codePath,
+  }, ctx.sessionId, ctx.cwd, ctx.role);
+});
+
+When('they bash grep session context {string}', function (command: string) {
+  ctx.hookResult = callHook('Bash', {
+    command,
+  }, ctx.sessionId, ctx.cwd, ctx.role);
+});
+
+Then('the gate allows the search', function () {
+  assert.ok(ctx.hookResult, 'Hook was not called');
+  const hasDeny = ctx.hookResult.stdout.includes('"deny"');
+  const hasBlock = ctx.hookResult.exitCode === 2;
+  assert.ok(
+    !hasDeny && !hasBlock,
+    `Expected gate to allow search but got:\nstdout: ${ctx.hookResult.stdout}\nstderr: ${ctx.hookResult.stderr}\nexit: ${ctx.hookResult.exitCode}`
+  );
+});
+
 // --- Then steps ---
 
 Then('the gate blocks with {string}', function (expectedFragment: string) {

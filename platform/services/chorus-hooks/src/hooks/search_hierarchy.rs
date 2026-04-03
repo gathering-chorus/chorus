@@ -171,22 +171,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     let search_path = input.get_tool_input_str("path");
 
-    // Code lookup — always allow silently
-    if is_code_lookup(&pattern, &search_path) {
-        let role_str = role.as_str().to_string();
-        let tool_str = tool.to_string();
-        let pat_short: String = pattern.chars().take(80).collect();
-        tokio::spawn(async move {
-            chorus_log(
-                "search.hierarchy.code_lookup",
-                &role_str,
-                &[("tool", &tool_str), ("pattern", &pat_short)],
-            )
-            .await;
-        });
-        return HookResponse::allow();
-    }
-
+    // No code-lookup bypass — all searches get Chorus enrichment (#1951)
     let role_str = role.as_str();
     let hash = pattern_hash(&pattern);
     let block_key = format!("{}-{}", role_str, hash);
