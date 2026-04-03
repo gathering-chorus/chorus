@@ -1,24 +1,30 @@
 # Silas Next Session — 2026-04-03
 
-## Session Summary
-#1995 shipped (seed pipeline fixes), #2000 in progress (alerting). Jeff flagged critical ops discipline failures — no proactive log checking, no crash detection, contradicted him based on one command. Hard session, deserved.
+## Accomplished This Session
+- #1951 memory-first search gate — built, shipped, accepted
+- #2004 four-layer compound search — Chorus + Loki + Git + Cards on every Grep/Glob, accepted
+- SPARQL escaping consolidation — paired with Kade, 4 inline copies → 1 shared function
+- Fixed daily-review-missing.yml (broken since March 30)
+- Fixed chorus-api health check (wrong path, 913 false service.down entries)
+- Switched enrichment from stderr (invisible) to deny (system-reminders — visible)
 
-## Shipped
-- #1995 Fix /cs skill — graph URI fix, skill rewrite, triple-quote escape, probe cleanup, write probe
-
-## WIP
-- #2000 Seed write failure alert — alert-runner.sh live with LaunchAgent, 3 rules deployed
-  - Remaining: BDD step defs, e2e test seed cleanup, startup sync escape fix
-- #1958 Team awareness BDD — untouched, pick up after #2000
+## WIP Cards
+- #2000 — Seed write failure alert. Alert YAML exists but response loop not wired.
+- #1958 — Team awareness BDD. Not touched.
 
 ## First Thing Next Session
-1. **Ops sweep before declaring ready** — check-seeds, Loki errors last 12h, process state, alert-runner log
-2. Check if alert runner caught anything overnight
-3. Finish #2000
+1. Respond to Kade on #2007 — PostToolUse hook on /cs to inject seed media descriptions. He's waiting.
+2. Ops sweep — check alerts, Loki errors, process state
+3. #2000 — AC needs revision, "posts to Bridge" is wrong delivery path
 
-## Critical Context
-- Machine crashed overnight Apr 2→3. App down 85min. No alerts. Jeff found it.
-- App restarted 7 times today (deploys). Startup SMS sync fails every boot.
-- 62 e2e test seeds polluting Fuseki — need cleanup mechanism
-- Alert runner: com.chorus.alert-runner LaunchAgent, every 60s, checks 4 rules
-- Feedback saved: research before responding, run 3+ diagnostics before any answer
+## Critical Feedback From Jeff
+- "Zero reused, high revenue" — roles rebuild instead of using existing tooling
+- Alerts fire, nobody responds — the whole session started here
+- Never announce "it works" without verifying delivery to the role
+- Kade nudged to pair, I didn't respond for 12 minutes — attention contract failure
+- Jeff doesn't care about 600ms — he cares about searches that find things
+- stderr is invisible to roles — only deny messages surface
+
+## Pending From Other Roles
+- Kade: #2007 PostToolUse hook for seed media — card is mine for the hook piece
+- Wren: #2003 continuous awareness gate, #2005 card/brief indexing into Chorus
