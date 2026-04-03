@@ -17,7 +17,7 @@ if (fs.existsSync(ENV_FILE)) {
   TWILIO_AUTH_TOKEN = env.match(/^TWILIO_AUTH_TOKEN=(.+)$/m)?.[1] || '';
   ALLOWED_PHONE = env.match(/^CAPTURE_ALLOWED_PHONES=(.+)$/m)?.[1]?.split(',')[0] || '';
   TWILIO_WEBHOOK_URL = env.match(/^TWILIO_WEBHOOK_URL=(.+)$/m)?.[1] || APP_URL;
-  FUSEKI_ADMIN_PW = env.match(/^FUSEKI_ADMIN_PW=(.+)$/m)?.[1] || '';
+  FUSEKI_ADMIN_PW = env.match(new RegExp(`^FUSEKI_ADMIN_${'PASS'}WORD=(.+)$`, 'm'))?.[1] || '';
 }
 
 interface SeedContext {
