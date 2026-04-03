@@ -228,11 +228,19 @@ fn query_loki(pattern: &str) -> Option<String> {
         return None;
     }
 
-    // Target app and infra logs, exclude hook telemetry
-    let query = format!("{{job=~\"gathering-app|infra-alert|daily-review\"}} |= `{}`", safe_pat);
+    // Target app logs, use query_range with 24h lookback
+    let query = format!("{{job=~\"gathering-app|nifi\"}} |= `{}`", safe_pat);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let start = format!("{}", now - 86400); // 24 hours ago
+    let end = format!("{}", now);
 
-    let resp = ureq::get("http://localhost:3102/loki/api/v1/query")
+    let resp = ureq::get("http://localhost:3102/loki/api/v1/query_range")
         .query("query", &query)
+        .query("start", &start)
+        .query("end", &end)
         .query("limit", "5")
         .timeout(std::time::Duration::from_millis(2000))
         .call()
