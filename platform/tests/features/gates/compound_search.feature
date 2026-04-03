@@ -24,3 +24,9 @@ Feature: Four-layer compound search (#2004)
     Given a role is building a new card
     When they grep for a term with no Chorus results "bdd-unmatchable-z9x8w7"
     Then the gate allows the search
+
+  Scenario: Loki layer returns results from multi-day lookback
+    Given a role is building a new card
+    When they grep for a term with Chorus results "SPARQL"
+    Then the gate blocks with "Compound context"
+    And the deny message contains "Loki logs"

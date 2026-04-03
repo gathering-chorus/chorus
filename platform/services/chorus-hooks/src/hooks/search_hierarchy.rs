@@ -234,7 +234,7 @@ fn query_loki(pattern: &str) -> Option<String> {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let start = format!("{}", now - 86400); // 24 hours ago
+    let start = format!("{}", now - 604800); // 7 days — match Loki retention
     let end = format!("{}", now);
 
     let resp = ureq::get("http://localhost:3102/loki/api/v1/query_range")
