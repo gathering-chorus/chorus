@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T15:51:41.238Z",
+  "timestamp": "2026-04-03T16:16:48.547Z",
   "tasks": [
     {
       "index": 2000,
@@ -1021,23 +1021,6 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
-      "index": 1998,
-      "apiId": 2081,
-      "title": "BDD test runs trigger e2e probes that nudge roles as Jeff — tests must be isolated from real terminals",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T13:31:38Z",
-      "updated": "2026-04-03T13:31:38Z"
-    },
-    {
       "index": 1996,
       "apiId": 2079,
       "title": "Doc-catalog reclassification — group by document type, not source directory",
@@ -1916,6 +1899,24 @@
       "updated": "2026-03-30T13:03:59Z"
     },
     {
+      "index": 1763,
+      "apiId": 1846,
+      "title": "Werk Instruments tab — fix data accuracy, clean layout, real latency values",
+      "description": "## Experience\n\nI open the Werk Instruments tab expecting trustworthy numbers and the data doesn't match reality. Brief latency says \"unread\" instead of actual time. Card velocity shows only 5 cards when 24 shipped in one session. Weekly throughput claims 32 but that's wrong. I need instruments I can trust — accurate numbers, clean layout, data that matches what actually happened.\n\n## AC\n1. Brief Latency shows actual time-to-read, not just \"unread\" status\n2. Card Velocity shows all recent cards, not just 5\n3. Fitness Functions (weekly throughput, deploys) match actual numbers — 32/week is wrong when 24 shipped in one session\n4. Attention Cost signal rate validated against real message classification\n5. Visual hierarchy — sections organized by importance, not crammed two-column\n6. Extend existing /api/analytics endpoints\n\n## Why\nInstruments tab has the most useful data but numbers don't match reality and layout is dense. Brief latency shows \"unread\" not time. Fitness throughput at 32/week contradicts observed velocity. Jeff needs trustworthy instruments.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance",
+        "werk"
+      ],
+      "done": false,
+      "created": "2026-03-27T15:43:31Z",
+      "updated": "2026-03-30T13:04:10Z"
+    },
+    {
       "index": 1721,
       "apiId": 1804,
       "title": "PM-driven tab sharing — Wren navigates screen sharing during demos",
@@ -2006,6 +2007,23 @@
       "done": false,
       "created": "2026-03-09T15:26:04Z",
       "updated": "2026-03-09T15:26:04Z"
+    },
+    {
+      "index": 1998,
+      "apiId": 2081,
+      "title": "BDD test runs trigger e2e probes that nudge roles as Jeff — tests must be isolated from real terminals",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T13:31:38Z",
+      "updated": "2026-04-03T16:06:17Z"
     },
     {
       "index": 1990,
@@ -2836,23 +2854,6 @@
       "done": false,
       "created": "2026-03-27T12:12:19Z",
       "updated": "2026-03-31T17:28:09Z"
-    },
-    {
-      "index": 1703,
-      "apiId": 1786,
-      "title": "Wren holds the line — stop relaying role friction to Jeff, handle it",
-      "description": "## Experience\nI report a bug and the role pushes back — \"it's not a bug\" or \"that's expected behavior.\" Then I'm stuck relaying between the role and the problem, burning attention on coordination instead of creative work. I expect Wren to handle that friction. When a role explains away my bug report, Wren should reject the explanation and re-nudge, not bring the debate to me. I only want to hear about a problem when it's fixed or when Wren is genuinely stuck.\n\nWhen a role pushes back on a bug report or rejects feedback, Wren defers to Jeff instead of handling it. Jeff becomes the relay and escalation point for every friction. This is the highest-cost failure mode in the system.\n\n## AC\n- [ ] When a role says 'it's not a bug' or explains away a problem Jeff reported, Wren rejects and re-nudges — does not relay the explanation to Jeff\n- [ ] Roles nudge each other for help before escalating to Jeff — Wren enforces this\n- [ ] 'I fixed it' always gets 'show me' — no trust without evidence, Wren verifies before telling Jeff\n- [ ] Jeff only hears about a problem when it's actually fixed or Wren is genuinely blocked\n- [ ] When Jeff walks away, coordination continues — roles don't stop working because Jeff stopped watching",
-      "status": "Won't Do",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-03-25T22:54:24Z",
-      "updated": "2026-03-31T17:14:50Z"
     },
     {
       "index": 1999,
