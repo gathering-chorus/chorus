@@ -1,5 +1,5 @@
 use crate::state::{chorus_log, AppState};
-use crate::types::{decision_block_json, HookInput, HookResponse};
+use crate::types::{decision_block_json, permission_deny_json, HookInput, HookResponse};
 use regex::Regex;
 use rusqlite::Connection;
 use std::collections::hash_map::DefaultHasher;
@@ -213,13 +213,15 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     match chorus_results {
         Some(results) => {
-            // #1714: warn instead of block — emit Chorus context but allow the search
-            let escaped = results.replace('"', "\\\"").replace('\n', "\\n");
+            // Deny so context reaches the role as a system-reminder (#1951)
+            // stderr is invisible to roles — only deny messages surface
+            state.set_search_block(&block_key).await;
             let msg = format!(
-                "[DEC-074 context] Chorus found relevant results:\\n{}",
-                escaped
+                "Chorus context for your search \"{}\":\n\n{}\n\nRetry your search — this context is now loaded.",
+                pattern.chars().take(60).collect::<String>(),
+                results,
             );
-            HookResponse::warn_stderr(&msg)
+            HookResponse::deny(&permission_deny_json(&msg))
         }
         None => HookResponse::allow(),
     }
