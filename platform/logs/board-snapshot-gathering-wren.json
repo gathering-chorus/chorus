@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T19:03:09.542Z",
+  "timestamp": "2026-04-03T19:13:13.588Z",
   "tasks": [
     {
       "index": 2004,
@@ -1039,6 +1039,23 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2005,
+      "apiId": 2088,
+      "title": "Log level reclassification phase 2 — chorus-events, foaf prefix, bad URI graph loads",
+      "description": "## Experience\nJeff queries Loki for errors and sees real failures. The error count reflects reality, not a filtered subset.\n\n## Acceptance Criteria\n- chorus-events system.service.down: warn to error (913 in 7 days)\n- Add foaf prefix to COMMON_PREFIXES in sparql-constants.ts (4 SPARQL query errors)\n- Card the 1294 bad URI graph load errors as data quality (people/connections TTL filenames)\n- Verify Loki warn-level entries are actual warnings, not hidden failures",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T19:11:25Z",
+      "updated": "2026-04-03T19:11:25Z"
+    },
+    {
       "index": 2003,
       "apiId": 2086,
       "title": "Continuous awareness gate — surface unresolved state on every prompt cycle, not just boot",
@@ -1914,23 +1931,6 @@
       "done": false,
       "created": "2026-03-28T11:07:57Z",
       "updated": "2026-03-28T11:10:21Z"
-    },
-    {
-      "index": 1767,
-      "apiId": 1850,
-      "title": "Thumbnail gap — resolve final 1,375 missing (1.4%) via SQLite join + backup hash lookup",
-      "description": "## Experience\n\nI open the Photos page and see 98K+ thumbnails. I know there are 1,375 more that should be there — some missing extensions, some iPhone-only, some corrupt. I expect to see 100K+ when this is done, and the ones that truly can't render are marked as dead letters, not silently missing.\n\n## Files\n- architect/scripts/generate-thumbnails-v2.sh\n\n## AC\n- [ ] 475 no-extension records: join Apple SQLite to get actual extension, re-generate\n- [ ] 570 iPhone-only: per-file Manifest.db hash → backup file → ffmpeg/sips\n- [ ] 330 corrupt/missing: investigate, mark as dead-letter or exclude from canonical\n- [ ] Photos page shows 100K+ (Jeff sees it)",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "domain:photos",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-03-27T17:22:00Z",
-      "updated": "2026-03-30T13:03:59Z"
     },
     {
       "index": 1721,
