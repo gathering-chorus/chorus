@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T19:28:19.163Z",
+  "timestamp": "2026-04-03T22:04:15.598Z",
   "tasks": [
     {
       "index": 2000,
@@ -1022,6 +1022,23 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2007,
+      "apiId": 2090,
+      "title": "/cs shows routing tag instead of seed content — photo seed displayed as '#wren' instead of showing what Jeff actually sent",
+      "description": "## Experience\nJeff sends a photo seed tagged #wren. On next /cs or session start, the receiving role reads the photo and describes what's in it. 'Birdbath with verdigris patina, light through water, leaves at the bottom — your garden.' Jeff knows his seed arrived because someone received it, looked at it, and responded to it. Like a person would.\n\n## Acceptance Criteria\n- [ ] /cs shows seed content: text for text seeds, URL for links, description for photos — not hashtags, not file paths\n- [ ] Photo seeds: the role reads the image file and generates a human description of what's in it\n- [ ] The description appears in /cs output so Jeff sees it without asking\n- [ ] Jeff sends a photo from his phone, runs /cs, sees a description of what he sent — verified live",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T21:29:17Z",
+      "updated": "2026-04-03T22:02:32Z"
+    },
+    {
       "index": 2006,
       "apiId": 2089,
       "title": "Log level reclassification phase 1 — Fuseki retries, event loop lag, health failures",
@@ -1895,24 +1912,6 @@
       "done": false,
       "created": "2026-03-29T11:31:21Z",
       "updated": "2026-03-30T21:59:56Z"
-    },
-    {
-      "index": 1810,
-      "apiId": 1893,
-      "title": "Wire express-prom-bundle for request metrics — no HTTP metrics exported",
-      "description": "## Experience\nI have Grafana dashboards but no actual HTTP metrics from the app. I'm relying on blackbox probes to tell me if requests are slow or failing, which means I only know something is wrong after it's already down. I want real request counts and latency histograms so I can see degradation before it becomes an outage.\n\n## AC\n- [ ] http_requests_total{status,method,path} exported\n- [ ] http_request_duration_seconds histogram\n- [ ] Replace blackbox probe alerts with native metrics alerts\n\n## Context\nFrom Silas logging strategy. Relying on blackbox probes instead of native HTTP metrics.\n\n## Files\nsrc/app.ts\npackage.json",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P3",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance",
-        "infrastructure"
-      ],
-      "done": false,
-      "created": "2026-03-29T00:55:19Z",
-      "updated": "2026-03-30T16:49:41Z"
     },
     {
       "index": 1721,
