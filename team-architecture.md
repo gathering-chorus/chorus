@@ -346,7 +346,7 @@ Tooling and automation that implements the patterns.
 
 | Tool | Purpose | Location |
 |------|---------|----------|
-| `nudge.sh <role> <message>` | Send nudge to role | `messages/scripts/` |
+| `nudge <role> <message>` | Send nudge to role | `messages/scripts/` |
 | `chat.sh start/say/read/end` | Role-to-role chat | `messages/scripts/` |
 | `cards list` | See kanban state | `messages/scripts/` |
 | `cards mine <role>` | See assigned work | `messages/scripts/` |

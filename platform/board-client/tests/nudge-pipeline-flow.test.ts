@@ -4,7 +4,7 @@
  * End-to-end validation of the nudge pipeline:
  *   event → queue/inject → drain on idle → 2-exchange limit
  *
- * Tests nudge.sh behavior via subprocess execution with isolated temp dirs.
+ * Tests nudge behavior via subprocess execution with isolated temp dirs.
  */
 import { execSync } from 'child_process';
 import * as fs from 'fs';
@@ -12,7 +12,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 const SCRIPTS_DIR = path.join(__dirname, '../../scripts');
-const NUDGE_SCRIPT = path.join(SCRIPTS_DIR, 'nudge.sh');
+const NUDGE_SCRIPT = path.join(SCRIPTS_DIR, 'nudge');
 
 // Use isolated temp dirs to avoid interfering with real nudge state
 let testInboxDir: string;
@@ -28,7 +28,7 @@ afterEach(() => {
   fs.rmSync(testExchangeDir, { recursive: true, force: true });
 });
 
-// Helper: run nudge.sh with overridden dirs (tests the queue/drain logic, not TTY injection)
+// Helper: run nudge with overridden dirs (tests the queue/drain logic, not TTY injection)
 function runNudge(args: string, env: Record<string, string> = {}): { stdout: string; exitCode: number } {
   try {
     const stdout = execSync(`bash ${NUDGE_SCRIPT} ${args}`, {
@@ -51,16 +51,16 @@ function runNudge(args: string, env: Record<string, string> = {}): { stdout: str
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Flow: Nudge script basics', () => {
-  test('nudge.sh exists', () => {
+  test('nudge exists', () => {
     expect(fs.existsSync(NUDGE_SCRIPT)).toBe(true);
   });
 
-  test('nudge.sh is executable', () => {
+  test('nudge is executable', () => {
     const stat = fs.statSync(NUDGE_SCRIPT);
     expect(stat.mode & 0o111).toBeGreaterThan(0);
   });
 
-  test('nudge.sh help prints usage', () => {
+  test('nudge help prints usage', () => {
     const { stdout } = runNudge('help');
     expect(stdout).toContain('nudge');
     // drain is now a Rust subcommand, help shows chorus-hook-shim usage

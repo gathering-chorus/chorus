@@ -72,7 +72,7 @@ cmd_say() {
   else
     other="$role1"
   fi
-  bash "$SCRIPT_DIR/nudge.sh" "$other" "[chat] New message in $chat_id — check and reply." 2>/dev/null || true
+  bash "$SCRIPT_DIR/nudge" "$other" "[chat] New message in $chat_id — check and reply." 2>/dev/null || true
 
   # Return current line count so caller can track position
   wc -l < "$chat_file" | tr -d ' '

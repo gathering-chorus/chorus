@@ -2,7 +2,7 @@
  * Messaging Tier Service — REST API for persistent messaging (#1755)
  *
  * Replaces /tmp file queues. SQLite-backed, queryable, observable.
- * CLI wrappers (nudge.sh, chat.sh) call this API.
+ * CLI wrappers (nudge, chat.sh) call this API.
  */
 
 import express from 'express';

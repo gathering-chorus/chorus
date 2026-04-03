@@ -12,12 +12,12 @@ import * as http from 'http';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
 
 const CLEARING_URL = 'http://localhost:3470';
-const REAL_NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge.sh';
+const REAL_NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
 
 // Mock nudge script — writes to temp file instead of osascript injection.
 // Tests verify Clearing filters, not nudge delivery (that's nudge-integration.test.ts).
 const MOCK_NUDGE_DIR = '/tmp/clearing-test-nudges';
-const MOCK_NUDGE_SCRIPT = '/tmp/clearing-test-mock-nudge.sh';
+const MOCK_NUDGE_SCRIPT = '/tmp/clearing-test-mock-nudge';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -228,7 +228,7 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
   test('message posted via REST does not echo back as duplicate (no feedback loop)', async () => {
     const marker = `AC4-REST-ECHO-${Date.now()}`;
 
-    // Post via REST — this path does NOT trigger nudge.sh injection
+    // Post via REST — this path does NOT trigger nudge injection
     const status = await postMessage('jeff', `${marker} — REST echo test`);
     expect(status).toBe(200);
 
@@ -412,7 +412,7 @@ describe('AC1: Jeff sends message → role receives, response appears in stream'
     expect(match.from).toBe('wren');
   });
 
-  // KNOWN BUG: Socket.IO jeff-message with @mention triggers nudge.sh osascript
+  // KNOWN BUG: Socket.IO jeff-message with @mention triggers nudge osascript
   // injection which steals focus and creates feedback loops. Cannot test Socket.IO
   // message path without side effects. Tracked in #1802 / #1813.
   test.skip('jeff-message via Socket.IO triggers injection to correct role (BLOCKED: osascript side effects)', () => {});

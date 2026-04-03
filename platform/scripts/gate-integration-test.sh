@@ -151,7 +151,7 @@ if [ "$D" = "allow" ] || [ "$D" = "deny" ]; then pass "nifi_discipline: returns 
 
 # 20. nudge_blast_radius — checks cross-domain nudge
 log "--- 20. nudge_blast_radius ---"
-D=$(gate_test '{"tool_name":"Bash","tool_input":{"command":"bash nudge.sh silas test message"}}')
+D=$(gate_test '{"tool_name":"Bash","tool_input":{"command":"bash nudge silas test message"}}')
 if [ "$D" = "allow" ] || [ "$D" = "deny" ]; then pass "nudge_blast_radius: returns $D"; else fail "nudge_blast_radius: $D"; fi
 
 # 21. observer — heartbeat events

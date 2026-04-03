@@ -28,7 +28,7 @@ Minimize visual footprint. Narrate outcomes, not steps. Don't announce what you'
 
 **Two paths, both fire on every nudge. Stop cycling between approaches.**
 
-`nudge.sh` does two things:
+`nudge` does two things:
 1. **Persist** — POST to messaging API (localhost:3475) for history + team-scan drain
 2. **Deliver** — osascript injection to target role's terminal for immediacy
 

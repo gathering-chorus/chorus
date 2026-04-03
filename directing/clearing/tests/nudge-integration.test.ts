@@ -253,10 +253,10 @@ describe('AC #3.4: WIP state detection — blast radius warning', () => {
     expect(fs.existsSync(hookFile)).toBe(true);
   });
 
-  test('blast radius hook detects nudge.sh invocations', () => {
+  test('blast radius hook detects nudge invocations', () => {
     const hookFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
     const content = fs.readFileSync(hookFile, 'utf-8');
-    expect(content).toContain('nudge.sh');
+    expect(content).toContain('nudge');
     expect(content).toContain('/nudge ');
   });
 

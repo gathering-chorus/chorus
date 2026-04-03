@@ -55,7 +55,7 @@ No formal ICD yet. Chorus is coordination infrastructure, not a data domain. If 
 
 **Key scripts by function:**
 - Board: `cards`, `cards` (symlink)
-- Nudge: `nudge` (binary), `nudge.sh` (wrapper)
+- Nudge: `nudge` (binary), `nudge` (wrapper)
 - Spine: `chorus-log.sh` → chorus-hook-shim
 - Git: `git-queue.sh` (FIFO lock)
 - Ops: `chorus-ops.sh` (37K daemon), `daily-review-*.sh` (6am pipeline)

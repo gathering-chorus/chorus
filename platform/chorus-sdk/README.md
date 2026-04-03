@@ -84,7 +84,7 @@ unsub();
 ## Consumers
 
 - **cards** — the Kanban board CLI uses the SDK for spine event emission on every card mutation
-- **nudge.sh / clearing-reply.sh** — shell scripts emit via `chorus-log.sh`; the SDK is the TypeScript equivalent
+- **nudge / clearing-reply.sh** — shell scripts emit via `chorus-log.sh`; the SDK is the TypeScript equivalent
 
 ## Architecture
 

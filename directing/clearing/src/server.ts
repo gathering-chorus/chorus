@@ -9,7 +9,7 @@ import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
-const NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge.sh';
+const NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
 
 // Auth token for remote access (#1719)
 // Generate a stable token per machine — persists across restarts
@@ -429,7 +429,7 @@ app.get('/api/stream', (req, res) => {
           seen.add(key);
           const digest = obs.digest || '';
           // Filter nudge traffic and system plumbing from stream
-          if (digest.includes('nudge.sh') || digest.includes('nudge ') || digest.includes('chorus-log') ||
+          if (digest.includes('nudge') || digest.includes('nudge ') || digest.includes('chorus-log') ||
               digest.includes('role-state') || digest.includes('cards') || digest.includes('smoke-check')) continue;
           lines.push({
             ts: obs.ts,
