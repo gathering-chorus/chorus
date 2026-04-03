@@ -180,3 +180,44 @@ When('a role receives it', function () { /* nudge delivered */ });
 Then('the role does not batch it for later', function () { /* policy */ });
 Then('the role does not discard without reading', function () { /* policy */ });
 Then('the role engages in the same prompt cycle', function () { /* policy */ });
+
+
+// --- SEED MEDIA ---
+
+const CHORUS_API = 'http://localhost:3340';
+let mediaResponse: { status: number; contentType: string } = { status: 0, contentType: '' };
+
+Given('a photo seed exists with media file {string}', function (filename: string) {
+  const mediaDir = '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/pods/jeff/capture/media';
+  assert.ok(fs.existsSync(`${mediaDir}/${filename}`), `Media file ${filename} must exist on disk`);
+});
+
+When(/^I request GET \/api\/chorus\/seed-media\/(.+)$/, function (filename: string) {
+  try {
+    const result = execSync(
+      `curl -sf -o /dev/null -w "%{http_code} %{content_type}" --max-time 5 "${CHORUS_API}/api/chorus/seed-media/${filename}"`,
+      { encoding: 'utf-8', timeout: 10000 }
+    ).trim();
+    const [status, ...ctParts] = result.split(' ');
+    mediaResponse = { status: parseInt(status, 10), contentType: ctParts.join(' ') };
+  } catch {
+    // curl -sf exits non-zero on 4xx/5xx
+    try {
+      const result = execSync(
+        `curl -o /dev/null -w "%{http_code} %{content_type}" --max-time 5 "${CHORUS_API}/api/chorus/seed-media/${filename}"`,
+        { encoding: 'utf-8', timeout: 10000 }
+      ).trim();
+      const [status, ...ctParts] = result.split(' ');
+      mediaResponse = { status: parseInt(status, 10), contentType: ctParts.join(' ') };
+    } catch { mediaResponse = { status: 0, contentType: '' }; }
+  }
+});
+
+Then('the media response status is {int}', function (expected: number) {
+  assert.strictEqual(mediaResponse.status, expected, `Expected ${expected}, got ${mediaResponse.status}`);
+});
+
+Then('the media response content-type starts with {string}', function (prefix: string) {
+  assert.ok(mediaResponse.contentType.startsWith(prefix),
+    `Expected content-type starting with "${prefix}", got "${mediaResponse.contentType}"`);
+});

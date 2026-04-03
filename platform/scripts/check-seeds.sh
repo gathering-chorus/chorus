@@ -144,11 +144,12 @@ for b in d['results']['bindings']:
             boston=dt.astimezone(timezone(timedelta(hours=-4)))
             ts=boston.strftime('%m/%d %H:%M')
         except: pass
-    # Show accessible content: URL for links, file path for media, text for text
+    # Show accessible content: HTTP link for media, URL for links, text for text
     display = content
     if media and content.startswith('#'):
         label = {'PhotoCapture': 'Photo', 'AudioCapture': 'Audio', 'VideoCapture': 'Video'}.get(stype, stype)
-        display = f'{label} {content} → pods/jeff/{media}'
+        fname = media.rsplit('/', 1)[-1] if '/' in media else media
+        display = f'{label} {content} → http://localhost:3340/api/chorus/seed-media/{fname}'
     elif stype == 'LinkCapture' and content.startswith('http'):
         display = content[:70]
     tag = f' {hashtag}' if hashtag else ''
