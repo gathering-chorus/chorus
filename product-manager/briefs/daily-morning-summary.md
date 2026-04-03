@@ -1,34 +1,34 @@
-# Daily Morning Summary — 2026-04-02
+# Daily Morning Summary — 2026-04-03
 
-**HEADLINE:** CI is dark for the 4th straight day and the fix is 10 minutes — `npm install` x4 must happen before any new code ships today.
+**HEADLINE:** Both blockers from yesterday's summary remain unresolved — CI is dark for a 5th straight day and #1926 is still un-accepted; today they get fixed before anything else.
 
 ---
 
-**OPS** 🔴 YELLOW/RED (Silas review: 2026-04-02)
-- 3 yellows, 1 red, 3 greens.
-- 🔴 **Top concern:** Card #1926 (gate integration test suite, 39/39 passing) stuck in WIP 54h awaiting `/acp`. Card #1865 also in WIP but never started — shouldn't be there.
-- 🟡 18 cargo warnings in chorus-hooks (4 auto-fixable with `cargo fix`); 36 plist files using `/tmp` (accepted risk, doc needed); `messages/claudemd/` fragment dir missing — confirm deprecated or path moved.
-- ✅ Repo clean, domain context fresh (#1956 + #1957 aligned), CSC compliance clean.
+**OPS** 🟡 YELLOW/RED (Silas review: 2026-04-02)
+- 4 yellows, 1 red, 3 greens.
+- 🔴 **Top concern:** #1926 (gate integration test suite, 39/39 passing) now 78h+ stale in WIP awaiting `/acp`. #1865 (photo thumbnail) still in WIP slot, never started.
+- 🟡 18 cargo warnings in chorus-hooks (4 auto-fixable); 36 plist /tmp log refs (doc as accepted risk); `messages/claudemd/` fragment dir missing (confirm deprecated); disk baseline script emitting inconsistent `usedBytes`/`percentUsed`.
+- ✅ Repo clean, domain context fresh, CSC compliance clean.
 
-**QUALITY** 🔴 RED (Kade review: 2026-04-01)
-- **0 tests running** — board-client, workflow-engine, chorus-sdk, slack-bridge all missing `node_modules`. Day 4.
-- chorus-sdk regressed from 6/6 green on 2026-03-29 and has not recovered.
-- `jeff-bridwell-personal-site` still not found — lint/build dark, day 4. Persistent noise.
-- Coverage: entirely absent across all 4 packages until `npm install` runs.
+**QUALITY** 🔴 RED (Kade review: 2026-04-02)
+- **0 tests running** — board-client, workflow-engine, chorus-sdk, slack-bridge all missing `node_modules`. Day 5.
+- chorus-sdk regressed from 6/6 green (2026-03-29); was 91.7% coverage. Now entirely dark.
+- `jeff-bridwell-personal-site` still not found — lint/build dark, day 5. Persistent noise; remove from check matrix or fix the path.
+- Coverage: N/A across all 4 packages.
 
-**YESTERDAY** — 2026-04-01 (high-output session, ~9 cards shipped)
-- Silas: #1930 (BDD gate specs, TDD enforcement), #1936 (Clearing e2e Gherkin, e2e-responder hook), #1942 (seed probe permutations, real SMS 6/6 proven)
-- Kade: #1946 (Memory domain + conversation API, 6 BDD green), #1947 (card + domain story endpoints, 12 BDD green)
-- Wren: #1737 (/chat sequence + BDD), #1943 (Clearing/Pulse/Spine/Interactions domain pages), #1952 (Policy domain + team awareness design), #1937 (seed pipeline trust acceptance)
-- Also early today: Kade #1956 (domain crawler, 8 BDD, trust score); Wren #1957 (awareness actor diagrams) + card #1958 queued for BDD
+**YESTERDAY** — 2026-04-02 (7 cards shipped)
+- Kade: #1950 (backfill domain tags on 806 Done cards), #1954 (SMS seed Unicode quote fix), #1963 (Clearing domain fold with sequence sub-folds)
+- Silas: #1964 (restore cards update --desc), #1966 (cards CLI gate tightening + 10 new sequence labels)
+- Wren: #1961 (Mermaid diagrams on 8 domain pages, 14 actor flows), #1965 (cards domain page + service design)
+- Key decisions: actor-BDD method established, Policy domain defined, domain model crystallized.
 
 **TODAY** (recommended order)
-1. **Kade → `npm install` x4** — board-client, workflow-engine, chorus-sdk, slack-bridge. Nothing else first.
-2. **Silas → `/acp` #1926 or explicitly defer** — 54h stale blocks clean WIP signal.
-3. **Wren → move #1865 back to Queue** — never started, occupying a WIP slot.
-4. **Silas → `cargo fix --bin chorus-hooks`** — 4 auto-fixable warnings, low effort.
-5. **Kade → #1958 BDD** — domain crawler BDD scenarios ready to pull.
+1. **Kade → `npm install` x4** — board-client, workflow-engine, chorus-sdk, slack-bridge. Nothing else first. Day 5 is the line.
+2. **Silas → `/acp` #1926 or explicitly defer** — 78h+ stale, blocks clean WIP signal.
+3. **Wren → move #1865 to Queue** — never started, occupying a WIP slot.
+4. **Silas → `cargo fix --bin chorus-hooks`** — 4 auto-fixable warnings.
+5. **All → continue domain BDD work** — strong momentum from yesterday.
 
 **BLOCKERS** — needs Jeff's attention
-- 🔴 **CI dark day 4** — identical fix to yesterday's summary. If it hasn't run by morning standup, it needs a direct ask to Kade with no other work until done.
-- 🔴 **#1926 decision** — 54h with no /acp or deferral is a process failure. Jeff should confirm: ship it or park it?
+- 🔴 **CI dark day 5** — identical fix listed two days running. Direct ask to Kade needed: `npm install` x4 before any new code.
+- 🔴 **#1926 unaccepted 78h** — process failure. Jeff: ship it or park it, today.
