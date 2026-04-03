@@ -157,11 +157,11 @@ fn query_chorus(db_path: &std::path::Path, query: &str) -> Option<String> {
     Some(output)
 }
 
-/// Layer 2: Query recent log files for pattern matches
+/// Layer 2: Query local log files for operational signal
 fn query_logs(pattern: &str) -> Option<String> {
     let home = std::env::var("HOME").unwrap_or_default();
-    // Only ops logs — chorus.log and hooks.log are self-referential
     let log_paths = [
+        format!("{}/Library/Logs/Gathering/hooks.log", home),
         format!("{}/Library/Logs/Gathering/daily-review-ops.log", home),
         format!("{}/Library/Logs/Gathering/infra-alert.log", home),
     ];
@@ -172,11 +172,16 @@ fn query_logs(pattern: &str) -> Option<String> {
     for log_path in &log_paths {
         if let Ok(content) = std::fs::read_to_string(log_path) {
             let lines: Vec<&str> = content.lines().collect();
-            let recent = if lines.len() > 200 { &lines[lines.len() - 200..] } else { &lines };
+            let recent = if lines.len() > 500 { &lines[lines.len() - 500..] } else { &lines };
             for line in recent {
                 if line.to_lowercase().contains(&pattern_lower)
+                    && !line.contains("search_hierarchy")
                     && !line.contains("search.hierarchy")
-                    && !line.contains("pre_tool_use")
+                    && !line.contains("memory_first")
+                    && !line.contains("enrichment")
+                    && !line.contains("| enter |")
+                    && !line.contains("| allow |")
+                    && !line.contains("| DENY  |")
                 {
                     results.push(line.to_string());
                     if results.len() >= 5 {
@@ -195,11 +200,12 @@ fn query_logs(pattern: &str) -> Option<String> {
     }
 
     Some(format!(
-        "Recent log entries ({}):\n{}",
+        "Recent logs ({}):\n{}",
         results.len(),
         results.iter().map(|l| format!("  {}", l.chars().take(200).collect::<String>())).collect::<Vec<_>>().join("\n")
     ))
 }
+
 
 /// Layer 3: Query git log for recent commits related to the pattern
 fn query_git(pattern: &str) -> Option<String> {
