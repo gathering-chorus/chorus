@@ -157,8 +157,14 @@ fn query_chorus(db_path: &std::path::Path, query: &str) -> Option<String> {
     Some(output)
 }
 
-/// Layer 2: Query local log files for operational signal
+/// Layer 2: Query Loki for operational signal, fall back to local files
 fn query_logs(pattern: &str) -> Option<String> {
+    // Try Loki first — has app logs including seed errors
+    if let Some(loki_results) = query_loki(pattern) {
+        return Some(loki_results);
+    }
+
+    // Fall back to local files
     let home = std::env::var("HOME").unwrap_or_default();
     let log_paths = [
         format!("{}/Library/Logs/Gathering/hooks.log", home),
@@ -204,6 +210,63 @@ fn query_logs(pattern: &str) -> Option<String> {
         results.len(),
         results.iter().map(|l| format!("  {}", l.chars().take(200).collect::<String>())).collect::<Vec<_>>().join("\n")
     ))
+}
+
+/// Query Loki for log entries matching pattern
+fn query_loki(pattern: &str) -> Option<String> {
+    let safe_pat: String = pattern
+        .replace('"', "")
+        .replace('\\', "")
+        .replace('|', "")
+        .replace('{', "")
+        .replace('}', "")
+        .chars()
+        .take(40)
+        .collect();
+
+    if safe_pat.is_empty() {
+        return None;
+    }
+
+    // Target app and infra logs, exclude hook telemetry
+    let query = format!("{{job=~\"gathering-app|infra-alert|daily-review\"}} |= `{}`", safe_pat);
+
+    let resp = ureq::get("http://localhost:3102/loki/api/v1/query")
+        .query("query", &query)
+        .query("limit", "5")
+        .timeout(std::time::Duration::from_millis(2000))
+        .call()
+        .ok()?;
+
+    let body: serde_json::Value = resp.into_json().ok()?;
+    let results = body.get("data")?.get("result")?.as_array()?;
+
+    if results.is_empty() {
+        return None;
+    }
+
+    let mut lines = Vec::new();
+    for stream in results.iter().take(5) {
+        let job = stream
+            .get("stream")
+            .and_then(|s| s.get("job"))
+            .and_then(|j| j.as_str())
+            .unwrap_or("unknown");
+        if let Some(values) = stream.get("values").and_then(|v| v.as_array()) {
+            for val in values.iter().take(2) {
+                if let Some(msg) = val.as_array().and_then(|a| a.get(1)).and_then(|v| v.as_str()) {
+                    let short: String = msg.chars().take(200).collect();
+                    lines.push(format!("  [{}] {}", job, short));
+                }
+            }
+        }
+    }
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    Some(format!("Loki logs ({}):\n{}", lines.len(), lines.join("\n")))
 }
 
 
