@@ -1,25 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T19:13:14.033Z",
+  "timestamp": "2026-04-03T19:18:16.021Z",
   "tasks": [
-    {
-      "index": 2004,
-      "apiId": 2087,
-      "title": "Four-layer compound search — Chorus + logs + git + code on every search, all errors not warns",
-      "description": "## Experience\nEvery search I run gets context from all four layers automatically: (1) Chorus — what has the team said about this, (2) Logs — what is the system reporting right now, (3) Git — what changed and when, (4) Code — what currently exists. Each layer compounds on the others. All must run. Every time. No exceptions.\n\n## Acceptance Criteria\n- [ ] Search gate runs all four layers on every Grep/Glob: Chorus query, log check, git history, then allow the code search\n- [ ] Each layer's results are injected into the deny message — the role sees all four before retrying\n- [ ] All failures are errors, not warns — dropped seeds, missing context, stale state\n- [ ] Retry after deny goes through clean (existing session-scoped dedupe)\n- [ ] Sub-500ms total for all four layers (Chorus SQLite, log tail, git log are all local)\n- [ ] Tests verify all four layers appear in deny message content\n\n## Files\n- platform/services/chorus-hooks/src/hooks/search_hierarchy.rs\n- platform/tests/features/gates/memory_first.feature",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new",
-        "gates"
-      ],
-      "done": false,
-      "created": "2026-04-03T18:33:26Z",
-      "updated": "2026-04-03T18:35:52Z"
-    },
     {
       "index": 2000,
       "apiId": 2083,
@@ -55,6 +37,24 @@
       "done": false,
       "created": "2026-04-02T01:33:22Z",
       "updated": "2026-04-02T01:34:01Z"
+    },
+    {
+      "index": 2004,
+      "apiId": 2087,
+      "title": "Four-layer compound search — Chorus + logs + git + code on every search, all errors not warns",
+      "description": "## Experience\nEvery search I run gets context from all four layers automatically: (1) Chorus — what has the team said about this, (2) Logs — what is the system reporting right now, (3) Git — what changed and when, (4) Code — what currently exists. Each layer compounds on the others. All must run. Every time. No exceptions.\n\n## Acceptance Criteria\n- [ ] Search gate runs all four layers on every Grep/Glob: Chorus query, log check, git history, then allow the code search\n- [ ] Each layer's results are injected into the deny message — the role sees all four before retrying\n- [ ] All failures are errors, not warns — dropped seeds, missing context, stale state\n- [ ] Retry after deny goes through clean (existing session-scoped dedupe)\n- [ ] Sub-500ms total for all four layers (Chorus SQLite, log tail, git log are all local)\n- [ ] Tests verify all four layers appear in deny message content\n\n## Files\n- platform/services/chorus-hooks/src/hooks/search_hierarchy.rs\n- platform/tests/features/gates/memory_first.feature",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:new",
+        "gates"
+      ],
+      "done": true,
+      "created": "2026-04-03T18:33:26Z",
+      "updated": "2026-04-03T19:14:46Z"
     },
     {
       "index": 2001,
@@ -918,23 +918,6 @@
       "updated": "2026-03-31T10:28:12Z"
     },
     {
-      "index": 1883,
-      "apiId": 1966,
-      "title": "Domain pages — every domain gets a page showing UI, API, integration, data, and child service designs",
-      "description": "## Experience\nI click into the Photos domain and see everything: what pages render photos, what API endpoints serve them, what pipelines feed the data, what's in the graph, and the service designs for each service. Same for Seeds, Music, People, Chorus — every domain. I stop hunting across doc-catalog, the app, and the navbar. One page per domain, everything connected.\n\n## AC\n- [ ] Domain page template: UI section, API section, Integration section, Data section, Child Services section\n- [ ] Sourced from ontology — domain references in OWL drive the page content\n- [ ] Child service pages (service designs) linked from domain page\n- [ ] Domain pages accessible from doc-catalog and from the mind map\n- [ ] At least 3 domains populated: seeds, photos, chorus\n- [ ] Page updates when ontology changes — no manual maintenance\n\n## Design\n- [Chorus Product Ontology](/docs/pm/artifacts/chorus-product-ontology.html)\n- [Chorus Value Stream Deep Dive](/docs/pm/artifacts/chorus-value-stream-deep-dive.html)\n- [Chorus Domain Model Assessment v3](/docs/pm/artifacts/chorus-domain-model-assessment-v3.html)",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-03-30T22:22:50Z",
-      "updated": "2026-03-31T17:30:10Z"
-    },
-    {
       "index": 1872,
       "apiId": 1955,
       "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
@@ -1037,6 +1020,23 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
+    },
+    {
+      "index": 2006,
+      "apiId": 2089,
+      "title": "Log level reclassification phase 1 — Fuseki retries, event loop lag, health failures",
+      "description": "## Experience\nJeff queries Loki for errors and sees the real failure count — not 328 but 11,000+.\n\n## Acceptance Criteria\n- Fuseki retry attempts: warn to error (5,000+ in 7 days)\n- Event loop lag >5s: warn to error, >2s stays warn (160 entries, max 17min)\n- Health check failures: warn to error from first occurrence (4 entries)\n- Deployed and verified in Loki\n\n## Done\nShipped 2026-04-03. Committed as f25b47f.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T19:15:04Z",
+      "updated": "2026-04-03T19:15:04Z"
     },
     {
       "index": 2005,
@@ -1913,24 +1913,6 @@
       "done": false,
       "created": "2026-03-29T00:55:19Z",
       "updated": "2026-03-30T16:49:41Z"
-    },
-    {
-      "index": 1782,
-      "apiId": 1865,
-      "title": "Clearing voice capture — click mic, record, auto-transcribe and route to addressed role",
-      "description": "## Experience\nI tap the mic on the Clearing, talk, it shows up attributed to me and routed to the right role. No typing, no send button, no picking a recipient.\n\n## AC\n- [ ] Single click on mic button starts recording (no hold required)\n- [ ] Click again (or silence detection) stops recording\n- [ ] Audio transcribed automatically (Whisper or equivalent)\n- [ ] Transcription routed to addressed role (@kade, @silas, @wren) or Wren by default\n- [ ] Transcription appears in Clearing message stream attributed to Jeff\n- [ ] Audio file persisted for playback (not just transcript)\n- [ ] No manual send step — record → transcribe → route is one flow",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:enhance",
-        "clearing"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:07:57Z",
-      "updated": "2026-03-28T11:10:21Z"
     },
     {
       "index": 1721,
