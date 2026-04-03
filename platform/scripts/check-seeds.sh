@@ -16,8 +16,30 @@ tunnel=$(curl -sf -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "${TUNNEL
 app=$(curl -sf -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "${APP_URL}/health" 2>/dev/null || echo "000")
 fuseki=$(curl -sf -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "${FUSEKI_URL}/\$/ping" 2>/dev/null || echo "000")
 
-if [[ "$tunnel" == "200" && "$app" == "200" && "$fuseki" == "200" ]]; then
+# ─── Fuseki write probe — canary INSERT + DELETE ──────────────
+fuseki_write="OK"
+if [[ "$fuseki" == "200" ]]; then
+  CANARY="urn:jb:seeds/_canary_$(date +%s)"
+  FUSEKI_PW=$(sed -n 's/^FUSEKI_ADMIN_[^=]*=//p' /Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env 2>/dev/null | head -1)
+  INSERT_OK=$(curl -sf -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
+    -X POST "${FUSEKI_URL}/pods/update" \
+    -H "Content-Type: application/sparql-update" \
+    -u "admin:${FUSEKI_PW}" \
+    --data "INSERT DATA { GRAPH <urn:jb:seeds/> { <${CANARY}> <urn:probe> \"canary\" } }" 2>/dev/null || echo "000")
+  DELETE_OK=$(curl -sf -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
+    -X POST "${FUSEKI_URL}/pods/update" \
+    -H "Content-Type: application/sparql-update" \
+    -u "admin:${FUSEKI_PW}" \
+    --data "DELETE DATA { GRAPH <urn:jb:seeds/> { <${CANARY}> <urn:probe> \"canary\" } }" 2>/dev/null || echo "000")
+  if [[ "$INSERT_OK" != "200" && "$INSERT_OK" != "204" ]] || [[ "$DELETE_OK" != "200" && "$DELETE_OK" != "204" ]]; then
+    fuseki_write="FAIL"
+  fi
+fi
+
+if [[ "$tunnel" == "200" && "$app" == "200" && "$fuseki" == "200" && "$fuseki_write" == "OK" ]]; then
   PIPELINE="healthy"
+elif [[ "$fuseki" == "200" && "$fuseki_write" == "FAIL" ]]; then
+  PIPELINE="DOWN (fuseki: reads OK, writes FAIL)"
 else
   PIPELINE="DOWN"
 fi
