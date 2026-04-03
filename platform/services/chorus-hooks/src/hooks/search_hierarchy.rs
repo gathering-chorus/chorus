@@ -232,6 +232,37 @@ fn query_git(pattern: &str) -> Option<String> {
     ))
 }
 
+/// Layer 4: Query board for cards matching the pattern
+fn query_cards(pattern: &str) -> Option<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let script = format!("{}/CascadeProjects/chorus/platform/scripts/cards", home);
+
+    let output = std::process::Command::new("bash")
+        .args([&script, "list"])
+        .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))
+        .env("HOME", &home)
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let pattern_lower = pattern.to_lowercase();
+    let lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.to_lowercase().contains(&pattern_lower))
+        .take(8)
+        .collect();
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "Board cards ({}):\n{}",
+        lines.len(),
+        lines.iter().map(|l| format!("  {}", l.trim())).collect::<Vec<_>>().join("\n")
+    ))
+}
+
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let tool = input.tool_name_str();
     if tool != "Grep" && tool != "Glob" {
@@ -299,6 +330,12 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         .await
         .unwrap_or(None);
 
+    // Layer 4: Cards context — board state for the pattern
+    let card_pattern = pattern.clone();
+    let card_context = tokio::task::spawn_blocking(move || query_cards(&card_pattern))
+        .await
+        .unwrap_or(None);
+
     // Combine all layers that returned results
     let mut layers = Vec::new();
     if let Some(ref chorus) = chorus_results {
@@ -309,6 +346,9 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
     if let Some(ref git) = git_context {
         layers.push(format!("## Git (change history)\n{}", git));
+    }
+    if let Some(ref cards) = card_context {
+        layers.push(format!("## Cards (board state)\n{}", cards));
     }
 
     if layers.is_empty() {
