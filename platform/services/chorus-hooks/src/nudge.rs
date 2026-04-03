@@ -230,7 +230,11 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 
     let mut explicit_sender = None;
-    let mut force = false;
+    // DEC-107: --force is always on. No passive/queued-only path.
+    // Reverts #1898 level-based delivery — all role-to-role nudges inject via osascript.
+    // Log evidence: wren→silas at 11:37 delivered mode=queued despite wrapper --force.
+    // Git: #1898 (3a146863) introduced the passive path. This removes it.
+    let force = true;
     let mut reply_to: Option<String> = None;
     let mut level = "info".to_string();
 
@@ -241,7 +245,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 i += 1;
                 if i < args.len() { explicit_sender = Some(args[i].clone()); }
             }
-            "--force" => force = true,
+            "--force" => { /* DEC-107: force is always on, flag accepted but ignored */ }
             "--reply-to" => {
                 i += 1;
                 if i < args.len() { reply_to = Some(args[i].clone()); }
