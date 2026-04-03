@@ -1,0 +1,4 @@
+
+- [Wren] 2026-04-03 08:27–12:17 — Session dominated by seed pipeline trust crisis. Jeff spent 90+ minutes on seeds again. Diagnosed: Fuseki graph URI bug (relative URIs), /cs skill was checking files not SPARQL, test fixtures polluting real inboxes, BDD test stubs faking green, SPARQL write failures from smart apostrophe escaping. Accepted #1995 (Silas+Kade pair). Fixed nudge --force in Rust binary (DEC-107 enforced, test added). Routed 2 seeds to Silas (wifi bug, Kief Morris harness engineering). Carded skill contract standard. Kade deleted nudge.sh, consolidating to one binary path.
+
+- [Kade] 2026-04-03 08:28-12:17 — #1995 accepted (pair w/ Silas): /cs skill rewrite, fuseki-sync URI fix, check-seeds.sh write probe, triple-quote escaping, test seed isolation, BDD stub cleanup. Deleted nudge.sh, updated 32+ refs. Feedback: test what you change, don't report irrelevant failures, own the suite.
