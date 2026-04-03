@@ -1,24 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T17:32:12.384Z",
+  "timestamp": "2026-04-03T18:27:54.921Z",
   "tasks": [
-    {
-      "index": 2001,
-      "apiId": 2084,
-      "title": "Remove brief-writing from seed handler — seeds live in Fuseki, visible via /cs, briefs are a redundant broken path",
-      "description": "## Experience\nJeff sends a seed via SMS. It appears in Fuseki and is visible through /cs. No brief file is created anywhere. One path, one store.\n\n## Acceptance Criteria\n- [ ] Delete writeBriefs() from seed.handler.ts\n- [ ] Delete all brief-writing code paths from seed capture/routing\n- [ ] Verify /cs still shows seeds correctly after removal\n- [ ] Verify no seed brief files are created when a real SMS arrives\n- [ ] No test seeds create brief files either",
-      "status": "WIP",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:app",
-        "domain:seeds",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T17:08:48Z",
-      "updated": "2026-04-03T17:24:39Z"
-    },
     {
       "index": 2000,
       "apiId": 2083,
@@ -54,6 +37,41 @@
       "done": false,
       "created": "2026-04-02T01:33:22Z",
       "updated": "2026-04-02T01:34:01Z"
+    },
+    {
+      "index": 1951,
+      "apiId": 2034,
+      "title": "Memory-first search gate — enforce conversation and card-story endpoints before filesystem grep",
+      "description": "## Experience\nI ask about a card and the role greps the filesystem instead of hitting card-story. I ask what we discussed and the role searches session files instead of the conversation endpoint. The endpoints exist but roles default to old habits.\n\n## AC\n1. PreToolUse gate detects search-pattern commands (grep, rg, find on session files, card-related queries)\n2. Gate checks whether the role has queried the Memory domain endpoints first (card-story, conversation)\n3. If no Memory query detected in session, gate blocks with: 'Check /api/chorus/card-story/:id or /api/chorus/conversation first — DEC-074'\n4. Gate skips if the search target is code files (not session/card context)\n5. BDD scenarios for the gate\n\n## Context\nDEC-074 says Chorus first for search. Kade built card-story (#1947) and conversation (#1946) endpoints today. Without a gate, roles will keep grepping. Same pattern as TDD gate — enforce the sequence, not just document it.\n\n## Files\n- platform/services/chorus-hooks/src/gates/memory_first.rs\n- platform/services/chorus-hooks/src/lib.rs\n- tests/bdd/memory-first-gate.feature",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:new",
+        "gates"
+      ],
+      "done": false,
+      "created": "2026-04-01T21:57:51Z",
+      "updated": "2026-04-03T17:39:14Z"
+    },
+    {
+      "index": 2001,
+      "apiId": 2084,
+      "title": "Remove brief-writing from seed handler — seeds live in Fuseki, visible via /cs, briefs are a redundant broken path",
+      "description": "## Experience\nJeff sends a seed via SMS. It appears in Fuseki and is visible through /cs. No brief file is created anywhere. One path, one store.\n\n## Acceptance Criteria\n- [ ] Delete writeBriefs() from seed.handler.ts\n- [ ] Delete all brief-writing code paths from seed capture/routing\n- [ ] Verify /cs still shows seeds correctly after removal\n- [ ] Verify no seed brief files are created when a real SMS arrives\n- [ ] No test seeds create brief files either",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T17:08:48Z",
+      "updated": "2026-04-03T17:35:39Z"
     },
     {
       "index": 1995,
@@ -916,24 +934,6 @@
       "updated": "2026-03-31T00:26:16Z"
     },
     {
-      "index": 1881,
-      "apiId": 1964,
-      "title": "Demo skip for non-code cards — /demo skip or card tag exempts process cards from demo gate",
-      "description": "## Experience\nI finish a chore card — cleanup, migration, doc update — and the demo gate blocks acceptance. There's nothing to demo. I shouldn't have to fake a demo for a card that has no user-visible change. Chore and docs cards should skip the demo gate.\n\n## AC\n- [ ] Demo gate checks card type — type:chore and type:swat skip demo requirement\n- [ ] TDD gate checks card type — type:chore skips test requirement\n- [ ] Cards with no code files in blast radius skip both gates\n- [ ] Demo gate still enforces for type:new, type:enhance, type:fix\n\n## Files\n- platform/services/chorus-hooks/src/hooks/demo_gate.rs (card type check)\n- platform/services/chorus-hooks/src/hooks/tdd_gate.rs (card type check)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": true,
-      "created": "2026-03-30T22:01:29Z",
-      "updated": "2026-03-31T17:00:53Z"
-    },
-    {
       "index": 1872,
       "apiId": 1955,
       "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
@@ -1036,6 +1036,40 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
+    },
+    {
+      "index": 2003,
+      "apiId": 2086,
+      "title": "Continuous awareness gate — surface unresolved state on every prompt cycle, not just boot",
+      "description": "## Experience\nEvery prompt cycle, the role sees active system state: broken pipes, pending seeds, unresolved flags, ops alerts. Not once at boot — continuously. Context doesn't decay because it's refreshed every cycle. The compound loop: every interaction makes the system smarter.\n\n## Acceptance Criteria\n- [ ] PostToolUse hook checks active state on every tool call (ops alerts, pending seeds, pipeline health, unresolved flags from next-session.md)\n- [ ] Surfaces warnings via stderr injection — not blocking, surfacing. Role sees the state until they handle it\n- [ ] State checks are fast (sub-100ms) — cached, not live API calls on every prompt\n- [ ] Tests: unresolved flag persists across prompt cycles until acknowledged; resolved flag disappears; no flags = no injection\n- [ ] Replaces boot-only triage — this IS the compound loop closer",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": false,
+      "created": "2026-04-03T17:52:35Z",
+      "updated": "2026-04-03T17:57:22Z"
+    },
+    {
+      "index": 2002,
+      "apiId": 2085,
+      "title": "Memory gate missing search-order enforcement — only gates Edit/Write, not Grep/Bash searches",
+      "description": "## Experience\nI grep the filesystem without checking Chorus first. The memory gate doesn't block me because it only fires on Edit/Write (line 217 of memory_gate.rs). Grep and Bash searches pass through unchecked.\n\n## Acceptance Criteria\n- [ ] PreToolUse gate intercepts Grep and Bash search commands (grep, rg, find on session/card files)\n- [ ] Gate blocks if no prior chorus-query.sh call detected in the session\n- [ ] Gate allows if Chorus was already queried this session\n- [ ] Tests cover: grep without Chorus (blocked), grep after Chorus (allowed), non-search Bash (allowed)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T17:42:24Z",
+      "updated": "2026-04-03T17:42:24Z"
     },
     {
       "index": 1996,
@@ -1178,24 +1212,6 @@
       "done": false,
       "created": "2026-04-02T10:26:28Z",
       "updated": "2026-04-02T10:26:28Z"
-    },
-    {
-      "index": 1951,
-      "apiId": 2034,
-      "title": "Memory-first search gate — enforce conversation and card-story endpoints before filesystem grep",
-      "description": "## Experience\nI ask about a card and the role greps the filesystem instead of hitting card-story. I ask what we discussed and the role searches session files instead of the conversation endpoint. The endpoints exist but roles default to old habits.\n\n## AC\n1. PreToolUse gate detects search-pattern commands (grep, rg, find on session files, card-related queries)\n2. Gate checks whether the role has queried the Memory domain endpoints first (card-story, conversation)\n3. If no Memory query detected in session, gate blocks with: 'Check /api/chorus/card-story/:id or /api/chorus/conversation first — DEC-074'\n4. Gate skips if the search target is code files (not session/card context)\n5. BDD scenarios for the gate\n\n## Context\nDEC-074 says Chorus first for search. Kade built card-story (#1947) and conversation (#1946) endpoints today. Without a gate, roles will keep grepping. Same pattern as TDD gate — enforce the sequence, not just document it.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new",
-        "gates"
-      ],
-      "done": false,
-      "created": "2026-04-01T21:57:51Z",
-      "updated": "2026-04-01T21:57:51Z"
     },
     {
       "index": 1948,
@@ -1914,24 +1930,6 @@
       "done": false,
       "created": "2026-03-27T17:22:00Z",
       "updated": "2026-03-30T13:03:59Z"
-    },
-    {
-      "index": 1763,
-      "apiId": 1846,
-      "title": "Werk Instruments tab — fix data accuracy, clean layout, real latency values",
-      "description": "## Experience\n\nI open the Werk Instruments tab expecting trustworthy numbers and the data doesn't match reality. Brief latency says \"unread\" instead of actual time. Card velocity shows only 5 cards when 24 shipped in one session. Weekly throughput claims 32 but that's wrong. I need instruments I can trust — accurate numbers, clean layout, data that matches what actually happened.\n\n## AC\n1. Brief Latency shows actual time-to-read, not just \"unread\" status\n2. Card Velocity shows all recent cards, not just 5\n3. Fitness Functions (weekly throughput, deploys) match actual numbers — 32/week is wrong when 24 shipped in one session\n4. Attention Cost signal rate validated against real message classification\n5. Visual hierarchy — sections organized by importance, not crammed two-column\n6. Extend existing /api/analytics endpoints\n\n## Why\nInstruments tab has the most useful data but numbers don't match reality and layout is dense. Brief latency shows \"unread\" not time. Fitness throughput at 32/week contradicts observed velocity. Jeff needs trustworthy instruments.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance",
-        "werk"
-      ],
-      "done": false,
-      "created": "2026-03-27T15:43:31Z",
-      "updated": "2026-03-30T13:04:10Z"
     },
     {
       "index": 1721,
