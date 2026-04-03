@@ -86,7 +86,8 @@ pub async fn check(input: &HookInput) -> HookResponse {
     }
 
     // Allow service-lifecycle.sh (absorbed from app_state_guard #1862)
-    if cmd.contains("service-lifecycle.sh") || cmd.contains("app-state.sh") {
+    // Allow agent-state.sh for LaunchAgent lifecycle (#2009)
+    if cmd.contains("service-lifecycle.sh") || cmd.contains("app-state.sh") || cmd.contains("agent-state.sh") {
         return HookResponse::allow();
     }
 
@@ -126,7 +127,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if KILL_RE.is_match(&cmd) {
         log_guardrail("deny", "kill").await;
         return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: Manual process killing is prohibited. Use app-state.sh stop for graceful shutdown."
+            "BLOCKED: Manual process killing is prohibited. Use agent-state.sh for LaunchAgents or app-state.sh for Docker."
         ));
     }
 
