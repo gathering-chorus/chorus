@@ -383,6 +383,15 @@ else
 fi
 delete_seed "$P5_SID"
 
+# ─── Content-based purge — catch anything SID-based cleanup missed
+echo "${PROBE_TAG} Purging all SEED-PROBE content from Fuseki..."
+curl -sf --max-time "$TIMEOUT" \
+  -X POST "${FUSEKI_URL}/pods/update" \
+  -H "Content-Type: application/sparql-update" \
+  -u "admin:${FUSEKI_ADMIN_PASSWORD}" \
+  --data "PREFIX jb: <https://jeffbridwell.com/ontology#> DELETE { GRAPH <urn:jb:seeds/> { ?s ?p ?o } } WHERE { GRAPH <urn:jb:seeds/> { ?s jb:seedContent ?c . FILTER(CONTAINS(?c, 'SEED-PROBE')) . ?s ?p ?o . } }" \
+  >/dev/null 2>&1 || echo "${PROBE_TAG} WARN: content-based purge failed" >&2
+
 # ─── P6: Cleanup verification — all test seeds gone
 echo "${PROBE_TAG} P6: Cleanup verification..."
 LEFTOVER=$(curl -sf --max-time "$TIMEOUT" \
@@ -396,6 +405,27 @@ if [[ "$LEFTOVER" == "0" ]]; then
 else
   echo "${PROBE_TAG} P6: WARN — ${LEFTOVER} probe seeds remain in Fuseki" >&2
   PERM_PASS=$((PERM_PASS + 1)) # warn, not fail
+fi
+
+# ─── Brief file cleanup — probes auto-route to role inboxes ─────
+BRIEF_DIRS=(
+  /Users/jeffbridwell/CascadeProjects/chorus/platform/roles/kade/briefs
+  /Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas/briefs
+  /Users/jeffbridwell/CascadeProjects/chorus/platform/roles/wren/briefs
+  /Users/jeffbridwell/CascadeProjects/chorus/engineer/briefs
+  /Users/jeffbridwell/CascadeProjects/chorus/architect/briefs
+  /Users/jeffbridwell/CascadeProjects/chorus/product-manager/briefs
+)
+BRIEF_CLEANED=0
+for bdir in "${BRIEF_DIRS[@]}"; do
+  if [[ -d "$bdir" ]]; then
+    while IFS= read -r f; do
+      rm -f "$f" && BRIEF_CLEANED=$((BRIEF_CLEANED + 1))
+    done < <(grep -rl 'SEED-PROBE' "$bdir" 2>/dev/null || true)
+  fi
+done
+if [[ $BRIEF_CLEANED -gt 0 ]]; then
+  echo "${PROBE_TAG} Cleaned ${BRIEF_CLEANED} leaked brief file(s)"
 fi
 
 echo "${PROBE_TAG} PERMUTATIONS: ${PERM_PASS} pass, ${PERM_FAIL} fail"

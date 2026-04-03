@@ -1,7 +1,25 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-02T10:38:44.070Z",
+  "timestamp": "2026-04-03T13:51:09.646Z",
   "tasks": [
+    {
+      "index": 1995,
+      "apiId": 2078,
+      "title": "Fix /cs skill — must hit seeds API, show pending seeds, verify pipeline health",
+      "description": "## Experience\nI say \"check seeds\" and get a real answer — how many pending, when the last one arrived, whether the pipeline is healthy. Not \"inbox clear\" while my texts evaporate.\n\n## AC\n- [ ] /cs hits the seeds API (localhost:3000/api/seeds or SPARQL) to get pending seed count\n- [ ] Shows each pending seed: type, content preview, timestamp, hashtag\n- [ ] Verifies pipeline health: webhook reachable, Fuseki writable\n- [ ] Reports last successful seed creation timestamp\n- [ ] If pipeline is broken, says so — doesn't say \"inbox clear\"\n\n## Files\n- skill/cs/SKILL.md\n- platform/scripts/seed-probe.sh",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T10:23:06Z",
+      "updated": "2026-04-03T10:25:01Z"
+    },
     {
       "index": 1958,
       "apiId": 2041,
@@ -21,20 +39,91 @@
       "updated": "2026-04-02T01:34:01Z"
     },
     {
-      "index": 1872,
-      "apiId": 1955,
-      "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
-      "description": "## Experience\nI hand Silas the architecture manual and say \"red pen this.\" He marks what's wrong. Same with Kade on engineering. The manuals are written from existing docs as-is — stale parts included. The gaps ARE the value. This is how I find out what we actually know vs what we think we know.\n\n## AC\n- [ ] Product manual — Gathering (vision, domains, value streams, user experience)\n- [ ] Product manual — Chorus (vision, services, coordination model, team ops)\n- [ ] Architecture manual — Gathering (topology, data stores, integrations, infra)\n- [ ] Architecture manual — Chorus (hooks, scripts, messaging, observability)\n- [ ] Engineering manual — Gathering (codebase, conventions, test strategy, deploy)\n- [ ] Engineering manual — Chorus (codebase, hooks, gates, CLI tools)\n- [ ] All manuals as HTML artifacts in doc-catalog\n- [ ] Written from current docs state — no cleanup first\n- [ ] Briefed to Silas and Kade for red-pen review",
-      "status": "WIP",
+      "index": 1991,
+      "apiId": 2074,
+      "title": "Iterate on Actor-BDD research page with Jeff — layout, content, presentation feedback",
+      "description": "## Experience\nJeff opens the doc-catalog and sees 163 docs in a wall of expanded sections. He wants collapsible folds, role badges showing who authored what, and filters that work at the section level — not just individual docs.\n\n## AC\n- [x] Section headings are collapsible (details/summary), collapsed by default\n- [x] Role name badges on fold headers (green wren, yellow silas, blue kade)\n- [x] Value Stream Stage and Gathering Life Loop filters on same row\n- [x] Role filter row (Product/Architecture/Engineering) shows/hides entire fold sections\n- [x] Group ordering: Product → Architecture → Engineering with alphabetical within\n- [x] Research doc registered in catalog via API",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:enhance"
+      ],
+      "done": true,
+      "created": "2026-04-02T17:24:49Z",
+      "updated": "2026-04-02T17:46:58Z"
+    },
+    {
+      "index": 1966,
+      "apiId": 2049,
+      "title": "Tighten cards CLI — mandatory fields at create, hard block at Now without description",
+      "description": "## Experience\nJeff sees cards enter the board missing type, chunk, domain, or priority because --quick bypasses classification. Later, they hit hard blocks at WIP. The friction is deferred, not avoided. Jeff wants data quality enforced at creation.\n\n## AC\n- [ ] cards add requires type, chunk, domain, and priority on ALL cards (--quick no longer exempts classification)\n- [ ] --quick only exempts description requirement\n- [ ] cards move to Now hard-blocks if description is missing (currently warns)\n- [ ] Description gate checks for ## Experience and ## AC sections, not just non-empty\n- [ ] BDD scenarios from service-design-cards.html pass: creation (5), Now gate (3)\n- [ ] Existing tests updated for new mandatory fields\n\n## Files\n- platform/board-client/src/cli.ts\n- platform/board-client/src/sdk.ts\n- platform/board-client/tests/",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:enhance",
+        "gates"
+      ],
+      "done": true,
+      "created": "2026-04-02T11:38:03Z",
+      "updated": "2026-04-02T12:03:09Z"
+    },
+    {
+      "index": 1965,
+      "apiId": 2048,
+      "title": "Cards domain page + service design + BDD — mandatory fields, tighten --quick, block at Now not WIP",
+      "description": "## Experience\nJeff creates and grooms cards daily. Cards enter the system without type, chunk, domain, or priority via --quick, then hit hard blocks at WIP. The pain is deferred, not avoided. Jeff wants mandatory fields enforced at creation and description required before Now — not WIP.\n\n## AC\n- [ ] domain-cards.html published — actor diagram, who does what, spine events, services\n- [ ] service-design-cards.html published — lifecycle, gate matrix, mandatory fields, anti-patterns, BDD scenarios\n- [ ] actor-diagram-cards.html removed (split into above two)\n- [ ] BDD scenarios cover: creation (5), move to Now (3), pull to WIP (5), accept (5), desc update (2)\n- [ ] Mandatory fields proposal documented: type + chunk + domain + priority at create, description at Now\n- [ ] Card for Silas: tighten --quick to require classification, harden Now gate\n\n## Files\n- product-manager/artifacts/domain-cards.html\n- product-manager/artifacts/service-design-cards.html",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
         "chunk:strategy",
-        "domain:chorus"
+        "domain:chorus",
+        "type:new"
       ],
-      "done": false,
-      "created": "2026-03-30T16:39:38Z",
-      "updated": "2026-04-02T01:29:43Z"
+      "done": true,
+      "created": "2026-04-02T11:37:55Z",
+      "updated": "2026-04-02T11:51:48Z"
+    },
+    {
+      "index": 1963,
+      "apiId": 2046,
+      "title": "Clearing domain fold — expand/collapse card stack per domain, sorted by priority",
+      "description": "## Experience\nJeff expands a domain fold in the Clearing and sees all open cards for that domain, sorted by priority. Collapsing hides them. Default view: all domains collapsed with card count. This replaces scanning a flat list — Jeff sees work organized the way he thinks about it.\n\n## AC\n- Each domain with open cards renders as a collapsible section in the Clearing\n- Section header shows domain name and open card count\n- Expanding shows cards sorted by priority (P1-P3), then card number ascending\n- Collapsing hides the card list, header remains\n- Default state: all domains collapsed\n- Domains with WIP cards show visual indicator even when collapsed\n- Empty domains do not render",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance"
+      ],
+      "done": true,
+      "created": "2026-04-02T11:23:05Z",
+      "updated": "2026-04-02T11:45:39Z"
+    },
+    {
+      "index": 1961,
+      "apiId": 2044,
+      "title": "Mermaid diagrams on domain pages — replace ASCII actor flows with rendered Mermaid",
+      "description": "## Experience\nI open a domain page and the actor diagrams render as clean visual flowcharts, not ASCII art. I can read the flow at a glance. The diagrams are Mermaid source text — editable, versionable, renderable in the browser.\n\n## AC\n1. Mermaid.js loaded on domain pages (CDN or local)\n2. Existing ASCII actor flow diagrams converted to Mermaid sequence/flowchart syntax\n3. All domain pages updated: Clearing, Pulse, Spine, Interactions, Policy, Memory\n4. Mermaid source is inline in the HTML — editable without a build step\n5. Print-friendly rendering\n\n## Files\n- product-manager/artifacts/domain-clearing.html\n- product-manager/artifacts/domain-pulse.html\n- product-manager/artifacts/domain-spine.html\n- product-manager/artifacts/domain-interactions.html\n- product-manager/artifacts/domain-policy.html\n- product-manager/artifacts/domain-memory.html\n\n## Context\nCurrent diagrams are pre-formatted ASCII in monospace divs. Mermaid gives proper visual rendering from text source. When live domain pages land (#1960), Mermaid diagrams can be generated from crawler data.",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance",
+        "visibility"
+      ],
+      "done": true,
+      "created": "2026-04-02T10:36:17Z",
+      "updated": "2026-04-02T15:33:04Z"
     },
     {
       "index": 1957,
@@ -89,6 +178,23 @@
       "updated": "2026-04-02T10:35:22Z"
     },
     {
+      "index": 1954,
+      "apiId": 2037,
+      "title": "[defect] gathering-app: SMS seed creation failed",
+      "description": "## Experience\nJeff sends an SMS with a curly quote (like 'you're') and the seed silently drops. No error visible to Jeff — it just never appears.\n\n## AC\n- esc() in seed-sparql.service.ts normalizes Unicode quotes (U+2018, U+2019, U+201C, U+201D) to ASCII before SPARQL escaping\n- Seeds with curly quotes persist successfully\n- Existing escape behavior for backslash and double-quote preserved",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-01T22:40:13Z",
+      "updated": "2026-04-02T18:08:38Z"
+    },
+    {
       "index": 1952,
       "apiId": 2035,
       "title": "Policy domain — actor diagrams for Jeff behavioral contracts, conversation gates",
@@ -104,6 +210,24 @@
       "done": true,
       "created": "2026-04-01T22:02:15Z",
       "updated": "2026-04-02T01:27:17Z"
+    },
+    {
+      "index": 1950,
+      "apiId": 2033,
+      "title": "Backfill domain tags on Done cards — reverse-engineer from title, description, and file paths",
+      "description": "## Experience\nI ask Card Story for the seed pipeline history and get 6 cards. Jeff knows there are 40+. The gap: older cards were created before domain tags existed. Card Story joins on domain — no tag, no story.\n\n## AC\n1. Script scans Done cards without domain tags\n2. For each, infers domain from title keywords, description content, and file paths in comments\n3. Tags with inferred domain — human review for ambiguous cases\n4. Seeds domain gets full coverage first (Jeff asked for this specifically)\n5. Dry-run mode shows proposed tags before applying\n\n## Context\nKade tried to tag old seed cards by number from Chorus search — numbers were stale. The board is the source of truth for current card state. This card builds the bridge between historical knowledge and current board structure.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore",
+        "infrastructure"
+      ],
+      "done": true,
+      "created": "2026-04-01T21:54:40Z",
+      "updated": "2026-04-02T17:17:31Z"
     },
     {
       "index": 1947,
@@ -432,7 +556,8 @@
       "priority": "P3",
       "domains": [
         "chunk:app",
-        "domain:chorus"
+        "domain:chorus",
+        "type:fix"
       ],
       "done": true,
       "created": "2026-03-31T13:11:23Z",
@@ -448,7 +573,8 @@
       "priority": "P2",
       "domains": [
         "chunk:app",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": true,
       "created": "2026-03-31T13:10:16Z",
@@ -554,7 +680,8 @@
       "domains": [
         "chunk:spine",
         "sequence:hardening",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": true,
       "created": "2026-03-31T12:17:43Z",
@@ -571,7 +698,8 @@
       "domains": [
         "chunk:spine",
         "sequence:hardening",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": true,
       "created": "2026-03-31T12:15:59Z",
@@ -587,7 +715,8 @@
       "priority": "P2",
       "domains": [
         "chunk:app",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": true,
       "created": "2026-03-31T12:14:39Z",
@@ -604,7 +733,8 @@
       "domains": [
         "chunk:strategy",
         "sequence:hardening",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": true,
       "created": "2026-03-31T12:13:10Z",
@@ -621,7 +751,8 @@
       "domains": [
         "chunk:strategy",
         "sequence:hardening",
-        "domain:chorus"
+        "domain:chorus",
+        "type:chore"
       ],
       "done": true,
       "created": "2026-03-31T12:02:04Z",
@@ -638,7 +769,8 @@
       "domains": [
         "chunk:strategy",
         "sequence:hardening",
-        "domain:chorus"
+        "domain:chorus",
+        "type:fix"
       ],
       "done": true,
       "created": "2026-03-31T11:59:08Z",
@@ -654,7 +786,8 @@
       "priority": "P1",
       "domains": [
         "chunk:app",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": true,
       "created": "2026-03-31T11:57:06Z",
@@ -671,7 +804,8 @@
       "domains": [
         "chunk:spine",
         "sequence:hardening",
-        "domain:chorus"
+        "domain:chorus",
+        "type:fix"
       ],
       "done": true,
       "created": "2026-03-31T10:37:55Z",
@@ -687,7 +821,8 @@
       "priority": "P2",
       "domains": [
         "chunk:spine",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": true,
       "created": "2026-03-31T00:15:43Z",
@@ -704,7 +839,8 @@
       "domains": [
         "chunk:ops",
         "sequence:hardening",
-        "domain:chorus"
+        "domain:chorus",
+        "type:fix"
       ],
       "done": true,
       "created": "2026-03-30T22:56:40Z",
@@ -737,7 +873,8 @@
       "priority": "P2",
       "domains": [
         "chunk:app",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": true,
       "created": "2026-03-30T22:07:09Z",
@@ -772,128 +909,30 @@
       "domains": [
         "chunk:ops",
         "sequence:hardening",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": true,
       "created": "2026-03-30T21:08:59Z",
       "updated": "2026-03-31T00:26:58Z"
     },
     {
-      "index": 1878,
-      "apiId": 1961,
-      "title": "Observer reads andon state, not card events — card number stale when role skips /pull",
-      "description": "## Experience\nI look at team-scan and see 'kade: building #1866' but Kade actually pulled #1882 twenty minutes ago. The observer shows stale card numbers because it reads andon state, which only updates when a role calls role-state.sh. If a role moves a card via board-ts without /pull (which calls role-state.sh at step 5), the observer is blind.\n\n## AC\n- [ ] Observer reads card.pulled spine events from chorus.log instead of (or in addition to) andon state files\n- [ ] When a card is moved to WIP via board-ts, the card number in team-scan updates within 60 seconds\n- [ ] Fallback: if no recent card.pulled event, still read andon state (backwards compat)\n\n## Files\n- platform/services/chorus-hooks/src/hooks/observer.rs (read_role_card function ~L57)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-30T21:06:29Z",
-      "updated": "2026-03-31T14:33:51Z"
-    },
-    {
-      "index": 1877,
-      "apiId": 1960,
-      "title": "Doc-catalog as live service — scan directories at request time, no rebuild needed",
-      "description": "## Experience\nI write a new HTML artifact and want it in doc-catalog immediately. Right now I have to ask Kade to rebuild a static page. That's a manual step that breaks flow. I should write the file and it shows up — no rebuild, no nudge, no waiting.\n\n## AC\n- [ ] GET /api/doc-catalog returns live listing of all HTML from 5 source directories\n- [ ] doc-catalog.html becomes a client that calls the API instead of hardcoded entries\n- [ ] New artifacts appear immediately — no rebuild step\n- [ ] Search still works client-side from the API response\n- [ ] Existing section grouping and badges preserved\n\n## Files\nsrc/handlers/doc-catalog.handler.ts src/app.ts public/doc-catalog.html public/js/doc-catalog-search.js\n\n## Context\nFrom #1867 doc-catalog consolidation. Currently static HTML with hardcoded entries. Convert to live API endpoint that scans 5 source directories at request time.",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus"
-      ],
-      "done": true,
-      "created": "2026-03-30T21:02:32Z",
-      "updated": "2026-03-30T21:44:05Z"
-    },
-    {
-      "index": 1875,
-      "apiId": 1958,
-      "title": "Link design artifacts to cards — sequence diagrams, service designs, borg assessments",
-      "description": "## Experience\nI open a card and see AC and files. But I don't see the design that informed it. The pair-flow-sequence diagram drove the pair gate hook, but the card doesn't link to it. When a builder picks up the card, they implement from AC text, not the actual design. The design becomes invisible. Service designs, sequence diagrams, borg assessments — these are domain-level artifacts. They should travel with the card.\n\n## AC\n- [ ] Cards reference their design artifacts (service designs, sequence diagrams, assessments)\n- [ ] Design artifacts findable from doc-catalog AND from the card\n- [ ] Establish convention: ## Design section in card description linking to artifact\n\n## Files\n- product-manager/CLAUDE.md (convention documentation)\n- product-manager/decisions.md (DEC for the convention)",
-      "status": "Done",
+      "index": 1872,
+      "apiId": 1955,
+      "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
+      "description": "## Experience\nI hand Silas the architecture manual and say \"red pen this.\" He marks what's wrong. Same with Kade on engineering. The manuals are written from existing docs as-is — stale parts included. The gaps ARE the value. This is how I find out what we actually know vs what we think we know.\n\n## AC\n- [ ] Product manual — Gathering (vision, domains, value streams, user experience)\n- [ ] Product manual — Chorus (vision, services, coordination model, team ops)\n- [ ] Architecture manual — Gathering (topology, data stores, integrations, infra)\n- [ ] Architecture manual — Chorus (hooks, scripts, messaging, observability)\n- [ ] Engineering manual — Gathering (codebase, conventions, test strategy, deploy)\n- [ ] Engineering manual — Chorus (codebase, hooks, gates, CLI tools)\n- [ ] All manuals as HTML artifacts in doc-catalog\n- [ ] Written from current docs state — no cleanup first\n- [ ] Briefed to Silas and Kade for red-pen review",
+      "status": "Next",
       "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus"
-      ],
-      "done": true,
-      "created": "2026-03-30T19:35:35Z",
-      "updated": "2026-03-30T22:01:16Z"
-    },
-    {
-      "index": 1874,
-      "apiId": 1957,
-      "title": "Seed pipeline photo delivery broken — photos sent via SMS don't arrive",
-      "description": "## Experience\n\nI send photos via SMS and they don't arrive. The #wren hashtag works, the photos don't. I shouldn't have to wonder if my photos landed — the seed pipeline should handle media attachments reliably.\n\n## AC\n\n- [ ] Photos sent via SMS arrive in the seed pipeline and are persisted\n- [ ] Media attachments (image/jpeg, image/png) are extracted from Twilio webhook\n- [ ] Photo URL is stored alongside the seed text content\n- [ ] Existing text-only seed flow is not affected\n\n## Files\n- jeff-bridwell-personal-site/src/handlers/seed.handler.ts",
-      "status": "Done",
-      "owner": "Kade",
       "priority": "P1",
       "domains": [
-        "chunk:spine",
-        "domain:seeds",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-30T16:56:35Z",
-      "updated": "2026-03-31T16:03:24Z"
-    },
-    {
-      "index": 1808,
-      "apiId": 1891,
-      "title": "Add events to context cache pipeline — silent empty returns",
-      "description": "## Experience\nThe context cache pipeline silently returns empty strings when something fails. A role boots up, gets no context, and I don't find out until it makes a bad decision twenty minutes later. I need the pipeline to scream when it fails — emit events on success and error so I can see what data each session actually got.\n\n## AC\n- [ ] session.context.built event on success with data sources included\n- [ ] session.context.error event when any source fails (with which source)\n- [ ] Thread failures no longer silently return empty strings\n\n## Context\nFrom Silas logging strategy. Context cache generates markdown, no events on success or failure.",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
+        "chunk:strategy",
         "domain:chorus",
-        "type:fix"
+        "type:new",
+        "strategy"
       ],
-      "done": true,
-      "created": "2026-03-29T00:54:17Z",
-      "updated": "2026-03-31T14:30:11Z"
-    },
-    {
-      "index": 1871,
-      "apiId": 1954,
-      "title": "Deprecate formal /docs into doc-catalog — single docs surface",
-      "description": "## Experience\nI go to one place for docs — doc-catalog. Not two. The formal /docs section is retired. Everything lives in doc-catalog with search. I stop wondering which is current.\n\n## AC\n- [ ] All formal /docs content migrated or superseded by doc-catalog artifacts\n- [ ] /docs route redirects to doc-catalog (or removed)\n- [ ] No orphaned formal docs pages\n- [ ] Decision logged (DEC-xxx)",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus"
-      ],
-      "done": true,
+      "done": false,
       "created": "2026-03-30T16:39:38Z",
-      "updated": "2026-03-30T22:45:46Z"
-    },
-    {
-      "index": 1870,
-      "apiId": 1953,
-      "title": "Audit formal docs against doc-catalog — surface overlap and drift",
-      "description": "## Experience\nI open /docs on the site and see pages I'm not sure are current. I open doc-catalog and see artifacts I know are fresh. I can't tell which source of truth to trust. I need to see them side by side so I know what's real.\n\n## AC\n- [ ] List all formal /docs pages with last-modified dates\n- [ ] Map each to equivalent doc-catalog artifacts (if any)\n- [ ] Flag drift: formal doc says X, catalog artifact says Y\n- [ ] Produce a single comparison artifact (HTML)",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus"
-      ],
-      "done": true,
-      "created": "2026-03-30T16:39:25Z",
-      "updated": "2026-03-30T20:55:30Z"
+      "updated": "2026-04-02T15:16:47Z"
     },
     {
       "index": 1865,
@@ -982,21 +1021,127 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
-      "index": 1961,
-      "apiId": 2044,
-      "title": "Mermaid diagrams on domain pages — replace ASCII actor flows with rendered Mermaid",
-      "description": "## Experience\nI open a domain page and the actor diagrams render as clean visual flowcharts, not ASCII art. I can read the flow at a glance. The diagrams are Mermaid source text — editable, versionable, renderable in the browser.\n\n## AC\n1. Mermaid.js loaded on domain pages (CDN or local)\n2. Existing ASCII actor flow diagrams converted to Mermaid sequence/flowchart syntax\n3. All domain pages updated: Clearing, Pulse, Spine, Interactions, Policy, Memory\n4. Mermaid source is inline in the HTML — editable without a build step\n5. Print-friendly rendering\n\n## Files\n- product-manager/artifacts/domain-clearing.html\n- product-manager/artifacts/domain-pulse.html\n- product-manager/artifacts/domain-spine.html\n- product-manager/artifacts/domain-interactions.html\n- product-manager/artifacts/domain-policy.html\n- product-manager/artifacts/domain-memory.html\n\n## Context\nCurrent diagrams are pre-formatted ASCII in monospace divs. Mermaid gives proper visual rendering from text source. When live domain pages land (#1960), Mermaid diagrams can be generated from crawler data.",
+      "index": 1998,
+      "apiId": 2081,
+      "title": "BDD test runs trigger e2e probes that nudge roles as Jeff — tests must be isolated from real terminals",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T13:31:38Z",
+      "updated": "2026-04-03T13:31:38Z"
+    },
+    {
+      "index": 1996,
+      "apiId": 2079,
+      "title": "Doc-catalog reclassification — group by document type, not source directory",
+      "description": "## Experience\nJeff opens the doc-catalog and it doesn't read like a table of contents. Product Strategy has 40 docs including sequence diagrams, business plans, and a neighborhood poster. Docs land in groups based on which directory they came from, not what they are. Jeff wants to scan the catalog and find things by type — manuals, domain pages, service designs, sequence diagrams, architecture docs.\n\n## AC\n- [ ] Reclassify all 163 docs by document type, not source directory\n- [ ] New groups: Manuals, Sequence Diagrams, Actor Diagrams, Domain Pages, Service Designs, Research, Borg Assessments — derived from doc content\n- [ ] Product Strategy reduced from 40 to only actual strategy docs\n- [ ] Jeff reviews the new grouping live and confirms it reads like a table of contents\n- [ ] classifyGroup() in doc-catalog.handler.ts updated with better keyword matching\n\n## Files\n- jeff-bridwell-personal-site/src/handlers/doc-catalog.handler.ts\n- jeff-bridwell-personal-site/public/js/doc-catalog-search.js",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T10:27:21Z",
+      "updated": "2026-04-03T10:27:21Z"
+    },
+    {
+      "index": 1993,
+      "apiId": 2076,
+      "title": "Remove all background nudge polling — nudges are osascript-only",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T18:06:13Z",
+      "updated": "2026-04-02T18:06:13Z"
+    },
+    {
+      "index": 1988,
+      "apiId": 2071,
+      "title": "BDD quick card passes",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "ops"
+      ],
+      "done": false,
+      "created": "2026-04-02T12:02:21Z",
+      "updated": "2026-04-02T12:02:21Z"
+    },
+    {
+      "index": 1967,
+      "apiId": 2050,
+      "title": "Contracts API — CRUD for domains, service designs, and ICDs with mandatory section validation",
+      "description": "## Experience\nJeff reviews a domain page and finds missing sections because each page is hand-authored HTML. He catches format drift that should be caught by the system. The contracts API makes domains, service designs, and ICDs first-class objects with mandatory sections enforced on write — no more template drift.\n\n## AC\n- [ ] GET /api/chorus/contracts/domains — list all domains with status\n- [ ] GET /api/chorus/contracts/domains/:name — full domain data (policy, actor flow, UI, API, integration, data, active cards, blast radius)\n- [ ] PUT /api/chorus/contracts/domains/:name — create or update, mandatory sections validated\n- [ ] GET /api/chorus/contracts/services/:name — service design data (9 numbered sections)\n- [ ] PUT /api/chorus/contracts/services/:name — create or update, mandatory sections validated\n- [ ] GET /api/chorus/contracts/icds/:name — ICD instance data\n- [ ] PUT /api/chorus/contracts/icds/:name — create or update, mandatory sections validated\n- [ ] Validation rejects writes missing mandatory sections with clear error\n- [ ] HTML domain/service pages render from API data, not hand-authored files\n\n## Files\n- platform/board-client/src/ or new contracts service\n- Chorus API (localhost:3340)",
       "status": "Later",
       "owner": "Kade",
-      "priority": "P2",
+      "priority": "P1",
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "type:enhance"
+        "type:new",
+        "visibility"
       ],
       "done": false,
-      "created": "2026-04-02T10:36:17Z",
-      "updated": "2026-04-02T10:36:17Z"
+      "created": "2026-04-02T11:52:55Z",
+      "updated": "2026-04-02T11:58:14Z"
+    },
+    {
+      "index": 1964,
+      "apiId": 2047,
+      "title": "Cards CLI — update description and AC on existing cards",
+      "description": "## Experience\\n\\nTest description with **markdown**.\\n\\n## AC\\n- Item one\\n- Item two",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "ops"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:25:47Z",
+      "updated": "2026-04-02T12:02:21Z"
+    },
+    {
+      "index": 1962,
+      "apiId": 2045,
+      "title": "Handoff checker scans archive — 69 false stale alerts on session boot",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "ops"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:16:01Z",
+      "updated": "2026-04-02T11:16:01Z"
     },
     {
       "index": 1960,
@@ -1009,7 +1154,8 @@
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "visibility"
       ],
       "done": false,
       "created": "2026-04-02T10:28:02Z",
@@ -1026,7 +1172,8 @@
       "domains": [
         "chunk:memory",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "visibility"
       ],
       "done": false,
       "created": "2026-04-02T10:26:28Z",
@@ -1043,28 +1190,12 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "gates"
       ],
       "done": false,
       "created": "2026-04-01T21:57:51Z",
       "updated": "2026-04-01T21:57:51Z"
-    },
-    {
-      "index": 1950,
-      "apiId": 2033,
-      "title": "Backfill domain tags on Done cards — reverse-engineer from title, description, and file paths",
-      "description": "## Experience\nI ask Card Story for the seed pipeline history and get 6 cards. Jeff knows there are 40+. The gap: older cards were created before domain tags existed. Card Story joins on domain — no tag, no story.\n\n## AC\n1. Script scans Done cards without domain tags\n2. For each, infers domain from title keywords, description content, and file paths in comments\n3. Tags with inferred domain — human review for ambiguous cases\n4. Seeds domain gets full coverage first (Jeff asked for this specifically)\n5. Dry-run mode shows proposed tags before applying\n\n## Context\nKade tried to tag old seed cards by number from Chorus search — numbers were stale. The board is the source of truth for current card state. This card builds the bridge between historical knowledge and current board structure.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P3",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-04-01T21:54:40Z",
-      "updated": "2026-04-01T21:54:40Z"
     },
     {
       "index": 1948,
@@ -1077,7 +1208,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "gates"
       ],
       "done": false,
       "created": "2026-04-01T21:37:31Z",
@@ -1094,7 +1226,8 @@
       "domains": [
         "chunk:spine",
         "domain:chorus",
-        "type:fix"
+        "type:fix",
+        "spine"
       ],
       "done": false,
       "created": "2026-04-01T20:08:38Z",
@@ -1111,7 +1244,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "strategy"
       ],
       "done": false,
       "created": "2026-04-01T19:47:15Z",
@@ -1128,7 +1262,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "gates"
       ],
       "done": false,
       "created": "2026-04-01T14:47:27Z",
@@ -1145,7 +1280,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "strategy"
       ],
       "done": false,
       "created": "2026-04-01T14:33:13Z",
@@ -1162,7 +1298,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:fix"
+        "type:fix",
+        "ops"
       ],
       "done": false,
       "created": "2026-04-01T13:44:50Z",
@@ -1179,7 +1316,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "ops"
       ],
       "done": false,
       "created": "2026-04-01T13:27:32Z",
@@ -1196,7 +1334,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:fix"
+        "type:fix",
+        "ops"
       ],
       "done": false,
       "created": "2026-04-01T12:52:09Z",
@@ -1212,9 +1351,9 @@
       "priority": "P1",
       "domains": [
         "chunk:ops",
-        "sequence:hardening",
         "domain:chorus",
-        "type:fix"
+        "type:fix",
+        "ops"
       ],
       "done": false,
       "created": "2026-04-01T12:33:06Z",
@@ -1231,7 +1370,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "strategy"
       ],
       "done": false,
       "created": "2026-04-01T12:31:33Z",
@@ -1247,9 +1387,9 @@
       "priority": "P2",
       "domains": [
         "chunk:ops",
-        "sequence:hardening",
         "domain:chorus",
-        "type:fix"
+        "type:fix",
+        "ops"
       ],
       "done": false,
       "created": "2026-04-01T00:36:45Z",
@@ -1266,7 +1406,8 @@
       "domains": [
         "chunk:spine",
         "domain:chorus",
-        "type:fix"
+        "type:fix",
+        "spine"
       ],
       "done": false,
       "created": "2026-03-31T21:31:43Z",
@@ -1283,7 +1424,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-31T17:22:42Z",
@@ -1300,7 +1442,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-31T15:11:01Z",
@@ -1317,7 +1460,8 @@
       "domains": [
         "chunk:spine",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "clearing"
       ],
       "done": false,
       "created": "2026-03-31T15:00:52Z",
@@ -1334,7 +1478,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "visibility"
       ],
       "done": false,
       "created": "2026-03-31T14:40:55Z",
@@ -1351,7 +1496,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-31T13:57:21Z",
@@ -1368,7 +1514,8 @@
       "domains": [
         "chunk:ops",
         "domain:infrastructure",
-        "type:fix"
+        "type:fix",
+        "ops"
       ],
       "done": false,
       "created": "2026-03-31T13:47:54Z",
@@ -1385,7 +1532,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:chore"
+        "type:chore",
+        "icd"
       ],
       "done": false,
       "created": "2026-03-31T13:08:56Z",
@@ -1402,7 +1550,8 @@
       "domains": [
         "chunk:spine",
         "domain:chorus",
-        "type:chore"
+        "type:chore",
+        "icd"
       ],
       "done": false,
       "created": "2026-03-31T12:50:14Z",
@@ -1419,7 +1568,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:chore"
+        "type:chore",
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-31T12:46:26Z",
@@ -1436,7 +1586,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "spine"
       ],
       "done": false,
       "created": "2026-03-31T12:18:14Z",
@@ -1453,7 +1604,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "visibility"
       ],
       "done": false,
       "created": "2026-03-31T11:44:12Z",
@@ -1470,7 +1622,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:chore"
+        "type:chore",
+        "visibility"
       ],
       "done": false,
       "created": "2026-03-31T00:19:14Z",
@@ -1487,7 +1640,8 @@
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "infrastructure"
       ],
       "done": false,
       "created": "2026-03-30T21:11:38Z",
@@ -1504,7 +1658,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:chore"
+        "type:chore",
+        "infrastructure"
       ],
       "done": false,
       "created": "2026-03-30T16:41:35Z",
@@ -1520,9 +1675,9 @@
       "priority": "P1",
       "domains": [
         "chunk:ops",
-        "sequence:hardening",
         "domain:infrastructure",
-        "type:chore"
+        "type:chore",
+        "infrastructure"
       ],
       "done": false,
       "created": "2026-03-30T16:04:44Z",
@@ -1539,7 +1694,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-30T14:55:11Z",
@@ -1556,7 +1712,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:chore"
+        "type:chore",
+        "icd"
       ],
       "done": false,
       "created": "2026-03-30T13:28:46Z",
@@ -1590,7 +1747,8 @@
       "domains": [
         "chunk:spine",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "spine"
       ],
       "done": false,
       "created": "2026-03-30T10:27:29Z",
@@ -1607,7 +1765,8 @@
       "domains": [
         "chunk:spine",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "spine"
       ],
       "done": false,
       "created": "2026-03-30T10:27:25Z",
@@ -1624,7 +1783,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "spine"
       ],
       "done": false,
       "created": "2026-03-30T10:27:21Z",
@@ -1641,7 +1801,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:chore"
+        "type:chore",
+        "infrastructure"
       ],
       "done": false,
       "created": "2026-03-29T21:17:05Z",
@@ -1658,7 +1819,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "content"
       ],
       "done": false,
       "created": "2026-03-29T18:14:40Z",
@@ -1675,7 +1837,8 @@
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:fix"
+        "type:fix",
+        "ops"
       ],
       "done": false,
       "created": "2026-03-29T14:55:25Z",
@@ -1692,7 +1855,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new"
+        "type:new",
+        "gates"
       ],
       "done": false,
       "created": "2026-03-29T11:31:21Z",
@@ -1709,7 +1873,8 @@
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "infrastructure"
       ],
       "done": false,
       "created": "2026-03-29T00:55:19Z",
@@ -1726,7 +1891,8 @@
       "domains": [
         "chunk:spine",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "clearing"
       ],
       "done": false,
       "created": "2026-03-28T11:07:57Z",
@@ -1748,88 +1914,6 @@
       "done": false,
       "created": "2026-03-27T17:22:00Z",
       "updated": "2026-03-30T13:03:59Z"
-    },
-    {
-      "index": 1763,
-      "apiId": 1846,
-      "title": "Werk Instruments tab — fix data accuracy, clean layout, real latency values",
-      "description": "## Experience\n\nI open the Werk Instruments tab expecting trustworthy numbers and the data doesn't match reality. Brief latency says \"unread\" instead of actual time. Card velocity shows only 5 cards when 24 shipped in one session. Weekly throughput claims 32 but that's wrong. I need instruments I can trust — accurate numbers, clean layout, data that matches what actually happened.\n\n## AC\n1. Brief Latency shows actual time-to-read, not just \"unread\" status\n2. Card Velocity shows all recent cards, not just 5\n3. Fitness Functions (weekly throughput, deploys) match actual numbers — 32/week is wrong when 24 shipped in one session\n4. Attention Cost signal rate validated against real message classification\n5. Visual hierarchy — sections organized by importance, not crammed two-column\n6. Extend existing /api/analytics endpoints\n\n## Why\nInstruments tab has the most useful data but numbers don't match reality and layout is dense. Brief latency shows \"unread\" not time. Fitness throughput at 32/week contradicts observed velocity. Jeff needs trustworthy instruments.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": false,
-      "created": "2026-03-27T15:43:31Z",
-      "updated": "2026-03-30T13:04:10Z"
-    },
-    {
-      "index": 1762,
-      "apiId": 1845,
-      "title": "Werk Contract tab — load and render team operating contract",
-      "description": "## Experience\n\nI click the Contract tab on the Werk page and it says \"Click to load\" — then nothing happens. The team operating contract exists in decisions but I can't see it. I want to open that tab and immediately see which rules are being followed and which are being violated right now — WIP limits, attention contract, proving gates, role ownership.\n\n## AC\n1. Contract tab loads and renders — no empty placeholder\n2. Shows: WIP limits (DEC-051), attention contract (DEC-1571), proving gates (DEC-048), role ownership (DEC-058)\n3. Live contract status — which rules are being followed vs violated right now\n4. Data from existing decisions + board state, no new API needed\n5. Extend /api/analytics endpoints for contract compliance metrics\n\n## Why\nContract tab is broken — shows \"Click to load\" and never loads. The team operating contract exists in decisions but isn't visible. Jeff should see compliance at a glance.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": false,
-      "created": "2026-03-27T15:43:21Z",
-      "updated": "2026-03-30T13:04:13Z"
-    },
-    {
-      "index": 1761,
-      "apiId": 1844,
-      "title": "Werk Flow Metrics tab — validate data completeness, fix understated card counts",
-      "description": "## Experience\nI open the Werk Flow Metrics tab and the numbers don't match what I know. I've shipped 24 cards in a session and the dashboard says 98 total completed — that's way off. I need to trust these graphs the same way I trust the board itself, and right now the undercount makes the whole metrics tab feel unreliable.\n\n## AC\n1. Card count matches Vikunja reality — all cards, all statuses, not a subset\n2. Completed count includes Won't Do + Done\n3. Per-role lead times exclude parked/Later cards that skew averages\n4. Cumulative flow slopes match actual velocity (24 cards/session, not flat)\n5. Trace and fix data source — Vikunja pagination, workflow engine subset, or query filter causing undercount\n6. Extend existing /api/analytics/pipeline endpoint\n\n## Why\n212 cards / 98 completed massively understates reality. All graphs show lower throughput than actual. Jeff can't trust the dashboard if the numbers don't match what he sees.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-27T15:43:04Z",
-      "updated": "2026-03-30T13:03:15Z"
-    },
-    {
-      "index": 1747,
-      "apiId": 1830,
-      "title": "Fix photos date sort — Takeout upload dates and scan dates push old photos to page 1",
-      "description": "## Experience\nI open the Photos page and page 1 is full of old scanned photos from the 1960s and Takeout imports with harvest dates. I expect to see my most recent photos first — what I took last week, not a scan that happened to land in March 2026. The sort order should match my mental model of \"newest photos.\"\n\n## Files\n- src/handlers/photo.handler.ts\n\n## AC\n- [ ] Photos page sorts by actual capture date, not upload/scan date\n- [ ] Takeout records with dateTaken near harvest dates (2026-03-12) sorted to end or flagged\n- [ ] Page 1 shows most recent real photos (2025-2026), not 6-year-old or vintage scans\n- [ ] Sort order matches what Jeff expects when he opens the page",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-27T12:16:43Z",
-      "updated": "2026-03-30T13:03:20Z"
-    },
-    {
-      "index": 1739,
-      "apiId": 1822,
-      "title": "Scanned photo dating strategy — dateTaken vs dateDigitized for physical archive",
-      "description": "## Experience\nI have boxes of family photos going back to the 1880s. When I scan them, the scanner stamps today's date. So my grandmother's 1920 portrait sorts next to yesterday's iPhone shot. I need the system to know the difference between when a photo was taken and when it was digitized, and I need a way to say \"this folder is roughly 1960s Europe trip\" without dating every single print.\n\n## AC\n1. ICD extended with dateTaken (original, estimated) and dateDigitized (scan date) as separate fields\n2. Confidence level on dateTaken — exact, year, decade, unknown\n3. Batch scanning workflow: folder-level date ranges (e.g. '1960s Europe trip')\n4. Era 0 (pre-digital) authority rules in merge logic\n5. Decision: manual annotation vs AI vision vs context clues for date estimation\n\n## Why\n5K+ physical photos spanning 1880s-1985. Scanners write today's date. The real date is in Jeff's memory or context clues. Without separating dateTaken from dateDigitized, scanned photos sort to 2026 instead of 1920. The family archive needs both timestamps.",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-26T20:54:02Z",
-      "updated": "2026-03-30T13:03:39Z"
     },
     {
       "index": 1721,
@@ -1924,6 +2008,379 @@
       "updated": "2026-03-09T15:26:04Z"
     },
     {
+      "index": 1990,
+      "apiId": 2073,
+      "title": "BDD now-gate pass",
+      "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T12:02:22Z",
+      "updated": "2026-04-02T12:02:22Z"
+    },
+    {
+      "index": 1989,
+      "apiId": 2072,
+      "title": "BDD now-gate test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T12:02:21Z",
+      "updated": "2026-04-02T12:02:21Z"
+    },
+    {
+      "index": 1987,
+      "apiId": 2070,
+      "title": "BDD now-gate pass",
+      "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:56:40Z",
+      "updated": "2026-04-02T11:56:52Z"
+    },
+    {
+      "index": 1986,
+      "apiId": 2069,
+      "title": "BDD now-gate test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:56:40Z",
+      "updated": "2026-04-02T11:56:52Z"
+    },
+    {
+      "index": 1985,
+      "apiId": 2068,
+      "title": "BDD quick card passes",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:56:40Z",
+      "updated": "2026-04-02T11:56:51Z"
+    },
+    {
+      "index": 1984,
+      "apiId": 2067,
+      "title": "BDD now-gate pass",
+      "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:32Z",
+      "updated": "2026-04-02T11:56:52Z"
+    },
+    {
+      "index": 1983,
+      "apiId": 2066,
+      "title": "BDD now-gate test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:32Z",
+      "updated": "2026-04-02T11:56:51Z"
+    },
+    {
+      "index": 1982,
+      "apiId": 2065,
+      "title": "BDD quick card passes",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:31Z",
+      "updated": "2026-04-02T11:56:51Z"
+    },
+    {
+      "index": 1981,
+      "apiId": 2064,
+      "title": "BDD quick test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:31Z",
+      "updated": "2026-04-02T11:56:52Z"
+    },
+    {
+      "index": 1980,
+      "apiId": 2063,
+      "title": "BDD now-gate pass",
+      "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:17Z",
+      "updated": "2026-04-02T11:56:53Z"
+    },
+    {
+      "index": 1979,
+      "apiId": 2062,
+      "title": "BDD now-gate test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:17Z",
+      "updated": "2026-04-02T11:56:53Z"
+    },
+    {
+      "index": 1978,
+      "apiId": 2061,
+      "title": "BDD quick card passes",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:16Z",
+      "updated": "2026-04-02T11:56:52Z"
+    },
+    {
+      "index": 1977,
+      "apiId": 2060,
+      "title": "BDD now-gate pass",
+      "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:06Z",
+      "updated": "2026-04-02T11:56:53Z"
+    },
+    {
+      "index": 1976,
+      "apiId": 2059,
+      "title": "BDD now-gate test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:06Z",
+      "updated": "2026-04-02T11:56:53Z"
+    },
+    {
+      "index": 1975,
+      "apiId": 2058,
+      "title": "BDD quick card passes",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:55:05Z",
+      "updated": "2026-04-02T11:56:52Z"
+    },
+    {
+      "index": 1974,
+      "apiId": 2057,
+      "title": "BDD now-gate pass",
+      "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:54:58Z",
+      "updated": "2026-04-02T11:56:53Z"
+    },
+    {
+      "index": 1973,
+      "apiId": 2056,
+      "title": "BDD now-gate test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:54:57Z",
+      "updated": "2026-04-02T11:56:53Z"
+    },
+    {
+      "index": 1972,
+      "apiId": 2055,
+      "title": "BDD quick card passes",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:54:57Z",
+      "updated": "2026-04-02T11:56:52Z"
+    },
+    {
+      "index": 1971,
+      "apiId": 2054,
+      "title": "BDD now-gate pass",
+      "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:53:34Z",
+      "updated": "2026-04-02T11:53:44Z"
+    },
+    {
+      "index": 1970,
+      "apiId": 2053,
+      "title": "BDD now-gate test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:53:34Z",
+      "updated": "2026-04-02T11:53:44Z"
+    },
+    {
+      "index": 1969,
+      "apiId": 2052,
+      "title": "BDD quick card passes",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:53:33Z",
+      "updated": "2026-04-02T11:53:43Z"
+    },
+    {
+      "index": 1968,
+      "apiId": 2051,
+      "title": "BDD quick test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:53:33Z",
+      "updated": "2026-04-02T11:53:43Z"
+    },
+    {
       "index": 1921,
       "apiId": 2004,
       "title": "[defect] gathering-app: Graph load error",
@@ -1937,7 +2394,7 @@
       ],
       "done": false,
       "created": "2026-03-31T17:34:54Z",
-      "updated": "2026-03-31T17:36:19Z"
+      "updated": "2026-04-03T12:51:15Z"
     },
     {
       "index": 1920,
@@ -1953,7 +2410,7 @@
       ],
       "done": false,
       "created": "2026-03-31T17:34:54Z",
-      "updated": "2026-04-01T16:53:27Z"
+      "updated": "2026-04-03T12:51:15Z"
     },
     {
       "index": 1913,
@@ -2067,7 +2524,8 @@
       "priority": "P1",
       "domains": [
         "chunk:ops",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": false,
       "created": "2026-03-29T10:45:09Z",
@@ -2083,7 +2541,8 @@
       "priority": "P2",
       "domains": [
         "chunk:app",
-        "domain:seeds"
+        "domain:seeds",
+        "type:enhance"
       ],
       "done": false,
       "created": "2026-03-28T21:44:17Z",
@@ -2099,7 +2558,8 @@
       "priority": "P2",
       "domains": [
         "chunk:spine",
-        "domain:chorus"
+        "domain:chorus",
+        "type:new"
       ],
       "done": false,
       "created": "2026-03-28T12:44:18Z",
@@ -2115,7 +2575,8 @@
       "priority": "P1",
       "domains": [
         "chunk:ops",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": false,
       "created": "2026-03-28T11:34:22Z",
@@ -2131,7 +2592,8 @@
       "priority": "P2",
       "domains": [
         "chunk:spine",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": false,
       "created": "2026-03-28T11:34:22Z",
@@ -2266,7 +2728,8 @@
       "priority": "P1",
       "domains": [
         "chunk:spine",
-        "domain:chorus"
+        "domain:chorus",
+        "type:new"
       ],
       "done": false,
       "created": "2026-03-28T10:24:07Z",
@@ -2282,7 +2745,8 @@
       "priority": "P3",
       "domains": [
         "chunk:ops",
-        "domain:chorus"
+        "domain:chorus",
+        "type:chore"
       ],
       "done": false,
       "created": "2026-03-27T22:53:29Z",
@@ -2298,7 +2762,8 @@
       "priority": "P2",
       "domains": [
         "chunk:ops",
-        "domain:chorus"
+        "domain:chorus",
+        "type:chore"
       ],
       "done": false,
       "created": "2026-03-27T22:53:14Z",
@@ -2314,7 +2779,8 @@
       "priority": "P2",
       "domains": [
         "chunk:ops",
-        "domain:photos"
+        "domain:photos",
+        "type:chore"
       ],
       "done": false,
       "created": "2026-03-27T22:30:22Z",
@@ -2330,7 +2796,8 @@
       "priority": "P2",
       "domains": [
         "chunk:spine",
-        "domain:chorus"
+        "domain:chorus",
+        "type:new"
       ],
       "done": false,
       "created": "2026-03-27T13:51:20Z",
@@ -2346,7 +2813,8 @@
       "priority": "P2",
       "domains": [
         "chunk:ops",
-        "domain:chorus"
+        "domain:chorus",
+        "type:enhance"
       ],
       "done": false,
       "created": "2026-03-27T12:14:19Z",
@@ -2362,7 +2830,8 @@
       "priority": "P2",
       "domains": [
         "chunk:spine",
-        "domain:chorus"
+        "domain:chorus",
+        "type:new"
       ],
       "done": false,
       "created": "2026-03-27T12:12:19Z",
@@ -2378,376 +2847,63 @@
       "priority": "P1",
       "domains": [
         "chunk:ops",
-        "domain:chorus"
+        "domain:chorus",
+        "type:chore"
       ],
       "done": false,
       "created": "2026-03-25T22:54:24Z",
       "updated": "2026-03-31T17:14:50Z"
     },
     {
-      "index": 1702,
-      "apiId": 1785,
-      "title": "Repeatable photo pipeline — one command: extract → rebuild → thumbnails → verify",
-      "description": "AC:\n- [ ] Single script runs the full pipeline: extract iPhone → load to Fuseki → canonical rebuild → generate thumbnails → rebuild index → verify page renders\n- [ ] Thumbnail generation is part of the pipeline, not a separate manual step\n- [ ] UUIDs are stable across rebuilds (same filename+date = same UUID = same thumbnail file)\n- [ ] Pipeline verifies source counts against ICD baseline: iPhone 54,543, Apple 24,560, Takeout 102,490\n- [ ] Pipeline verifies page 1 renders thumbnails before declaring success\n- [ ] No manual steps — running twice produces the same result without breaking anything\n\nBaseline source counts (ICD verified):\n- iPhone: 54,543 (backup 2026-03-24)\n- Apple Photos: 24,560\n- Google Takeout: 102,490",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:app",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-25T22:30:23Z",
-      "updated": "2026-03-26T20:42:35Z"
-    },
-    {
-      "index": 1699,
-      "apiId": 1782,
-      "title": "Thumbnail service — single endpoint, one lookup, no fallback chains",
-      "description": "Replace the 4-strategy resolveThumbnail with a single service endpoint. Stop the regenerate-and-hope cycle.\n\n## AC\n- [ ] GET /api/photos/:uri/thumbnail returns image or 404 — no fallback chains\n- [ ] Backed by a UUID→path JSON map, rebuilt once when thumbnails are generated\n- [ ] 404s are logged — that log IS the real coverage metric\n- [ ] Existing resolveThumbnail strategies removed — one path, not four\n- [ ] Jeff sees thumbnails rendering on a photos page — browser verification, not database count",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:app",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-25T20:52:06Z",
-      "updated": "2026-03-26T10:30:59Z"
-    },
-    {
-      "index": 1695,
-      "apiId": 1778,
-      "title": "Fix nudge injection — broken again after hooks deploys",
-      "description": "",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-25T18:51:36Z",
-      "updated": "2026-03-25T23:24:50Z"
-    },
-    {
-      "index": 1670,
-      "apiId": 1753,
-      "title": "demo-provenance hook — auto-generate demo brief to Wren after demo completes",
-      "description": "Rust subcommand in chorus-hooks. PostToolUse hook after /demo skill completes.\n\n## Logic\n1. Capture: card ID, title, builder role, AC checklist, smoke result, timestamp\n2. Write structured brief to product-manager/briefs/YYYY-MM-DD-demo-{card}.md\n3. Emit spine event: card.demo.completed\n\nBuilder cannot skip the paper trail — the hook generates it automatically.\n\n## Files\n- messages/services/chorus-hooks/src/lib.rs\n- messages/services/chorus-hooks/src/demo_provenance.rs\n\n## AC\n- [ ] Brief auto-generated in Wren's inbox after every /demo\n- [ ] Brief contains: card ID, builder, smoke result, AC status, timestamp\n- [ ] spine event emitted\n- [ ] Builder doesn't need to manually write the brief",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus"
-      ],
-      "done": false,
-      "created": "2026-03-24T12:08:33Z",
-      "updated": "2026-03-24T18:18:12Z"
-    },
-    {
-      "index": 1653,
-      "apiId": 1736,
-      "title": "Enrich Takeout source graph — extract EXIF from image files for dimensions, fileSize, camera model",
-      "description": "Jeff's direction: enrich each source to its fullest BEFORE merge. Separation of concerns — merge picks the best across already-rich sources, not partially-enriched ones.\n\nTakeout source graph has 0% dimensions and 0% fileSize because JSON sidecars don't include them. The actual image files on Bedroom (/Volumes/Gathering/Photos) have EXIF with these fields.\n\nDepends on: #1645 (Takeout source loaded — done)\nBlocks: #1643 (merge logic should work from enriched sources)\n\n## AC\n- [ ] Read EXIF from Takeout image files on Bedroom via SSH\n- [ ] Extract: dimensions (width/height), fileSize, camera model where available\n- [ ] Update Takeout source graph triples with extracted fields\n- [ ] Validate: Takeout width coverage goes from 0% to near-100% for files on disk\n- [ ] Validate: Takeout fileSize coverage goes from 0% to near-100% for files on disk\n- [ ] Records without matching image file on disk documented (these stay at 0%)",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T20:06:02Z",
-      "updated": "2026-03-26T10:31:04Z"
-    },
-    {
-      "index": 1652,
-      "apiId": 1735,
-      "title": "Establish iPhone photo extraction path — repeatable governed pipeline from Jeff's phone to source graph",
-      "description": "iPhone is golden source for 2020+ but has no governed extraction path. source-iphone.json (54,479 records) exists with unknown provenance. Need a repeatable, documented method.\n\nDepends on: #1645 (Apple + Takeout loaded first)\nBlocks: #1643 (merge logic needs all 3 sources)\n\n## AC\n- [ ] Identify extraction tool (osxphotos CLI? direct SQLite? iCloud API? USB export?)\n- [ ] Document which machine runs it and access requirements\n- [ ] Run extraction, produce source JSON or TTL\n- [ ] Validate output matches ICD field inventory from #1648\n- [ ] Load to Fuseki as urn:jb:photos/source/iphone\n- [ ] Verify record count and field coverage against 3-way comparison (54,479 records, 89.3% GPS, 100% dimensions)\n- [ ] Document as repeatable — not a one-time snapshot",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T19:53:51Z",
-      "updated": "2026-03-26T20:42:35Z"
-    },
-    {
-      "index": 1648,
-      "apiId": 1731,
-      "title": "iPhone provider ICD — define source schema, field mappings, and interface for iPhone photo harvest",
-      "description": "iPhone is golden source for 2020+ (47K+ records, 7.8 avg fields, 89% GPS) but has no provider ICD. Can't harvest authoritatively without one. Blocks #1645 (authoritative source harvest).\n\nUse the source JSON (architect/docs/source-iphone.json) as reference for field inventory. Map against jb:Photo consumer ICD.\n\nFiles: src/ontology/icd-instance-photos.ttl\n\n## AC\n- [ ] Define iPhone provider section in icd-instance-photos.ttl\n- [ ] Field inventory: filename, dateTaken, width, height, lat, lng, fileSize, mediaType (+ any iPhone-specific fields)\n- [ ] Source-to-canonical field mappings (direct, transform, computed)\n- [ ] Interface definition: how to extract (osxphotos CLI, SQLite, direct export?)\n- [ ] Non-functionals: access method, machine location, expected record count\n- [ ] Source Authority section populated (golden Modern era, supplementary iPhone primary camera era)",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "sequence:hardening",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T19:12:33Z",
-      "updated": "2026-03-26T20:42:35Z"
-    },
-    {
-      "index": 1645,
-      "apiId": 1728,
-      "title": "Harvest Apple Photos + iPhone from authoritative sources — SQLite and direct export through ICD pipelines",
-      "description": "Scope: Apple Photos + Google Takeout only. iPhone descoped — no governed extraction path (agreed with Wren).\n\nCurrent Fuseki has zero Apple source graphs. Takeout source graph loaded (102,488 records) but needs ICD validation. The rebuild needs authoritative data from governed pipelines.\n\nDepends on: #1642 (era-scoped ICD — done)\n\n## AC\n- [ ] Harvest Apple Photos from Mac SQLite library through ICD-governed pipeline\n- [ ] Load as source graph: urn:gathering:photos/source/apple\n- [ ] Validate Apple record count against known library size (24,592)\n- [ ] All ICD-required fields populated where source supports them\n- [ ] Validate existing Takeout source graph (urn:gathering:photos/source/takeout) against ICD fields\n- [ ] Source graph field coverage matches 3-way comparison HTML (dims, GPS percentages)",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T18:28:16Z",
-      "updated": "2026-03-26T20:42:35Z"
-    },
-    {
-      "index": 1644,
-      "apiId": 1727,
-      "title": "Rebuild canonical photo graph — from-scratch rebuild using era-scoped golden source model",
-      "description": "Rebuild canonical photo graph — from-scratch rebuild using era-scoped golden source model.\n\n## Current State (2026-03-25)\nCanonical index has 80,090 records but is corrupt:\n- 52,887 iPhone records: ~87% wrong dates (extraction timestamps, not EXIF), wrong UUID→thumbnail mappings\n- 27,203 Apple Photos records: ~80% correct dates, trustworthy baseline\n- mapSource and merge bugs fixed in handler code\n\n## Fix Plan\n1. Verify apple-photos source is trustworthy (spot-check 50 records)\n2. Diagnose iPhone date source — find where pipeline reads wrong dates\n3. Diagnose UUID→thumbnail mismatch — trace one record end to end\n4. Rebuild canonical with correct EXIF dates\n5. Regenerate thumbnails with stable UUIDs\n6. Verify: Jeff opens page, sees correct photos sorted by date\n\nFull plan: architect/briefs/2026-03-25-photos-canonical-corruption-plan.md\n\n## Files\n- data/pods/jeff/photos/canonical-index.json\n- engineer/scripts/photo-pipeline.py\n- src/handlers/photo.handler.ts\n\n## AC\n- [ ] Apple Photos records verified as trustworthy baseline (50 records, 90%+ date match)\n- [ ] iPhone extraction bug identified and fixed — dates come from EXIF, not backup timestamp\n- [ ] UUID→thumbnail mapping verified — 50 random records, thumbnail content matches canonical record\n- [ ] Photos page shows correct thumbnails sorted by date on pages 1, 5, 10, 20\n- [ ] Jeff says it looks right",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T18:16:58Z",
-      "updated": "2026-03-26T10:31:04Z"
-    },
-    {
-      "index": 1643,
-      "apiId": 1726,
-      "title": "Design era-scoped merge logic — define per-era primary/supplementary source rules for canonical photo rebuild",
-      "description": "Jeff accepted the 4-era golden source model but doesn't trust the current canonical graph — it was built on Takeout-anchored assumptions. This card designs the merge rules before Kade rebuilds.\n\n## AC\n- [ ] Define merge rules per era: which source is primary, which are supplementary, how conflicts resolve\n- [ ] Document metadata ceiling per era — what fields are possible given source device capabilities\n- [ ] Define provenance tracing — every canonical record links back to source record + era authority\n- [ ] Wire era-scoped authority into ICD provider model (#1642)\n- [ ] Output: merge specification document that Kade can implement mechanically",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T18:16:48Z",
-      "updated": "2026-03-26T20:42:35Z"
-    },
-    {
-      "index": 1639,
-      "apiId": 1722,
-      "title": "Renamed by board set",
-      "description": "Temporary test card.\n\n## AC\n- [ ] Test board set",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T14:04:41Z",
-      "updated": "2026-03-26T20:42:36Z"
-    },
-    {
-      "index": 1632,
-      "apiId": 1715,
-      "title": "Fix unreliable photo dates — correct 1,033 photos using Google sidecar timestamps",
-      "description": "1,033 Google Takeout photos flagged dateUnreliable=true. Google export timestamp used instead of original date. Sidecar JSON has correct dates.\n\n## AC\n- [ ] Parse sidecar JSON for correct original dates on flagged photos\n- [ ] Update canonical graph dateTaken for corrected photos\n- [ ] Remove dateUnreliable flag after correction\n- [ ] Verify no date collisions in reconciliation after update",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P3",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T12:20:37Z",
-      "updated": "2026-03-26T10:31:12Z"
-    },
-    {
-      "index": 1629,
-      "apiId": 1712,
-      "title": "Unified photo serve endpoint — GET /api/photos/serve/:id with source fallback chain",
-      "description": "No unified serving endpoint. #1504 design approved but not built. Need Apple→Takeout→derivative→thumbnail fallback chain.\n\n## AC\n- [ ] GET /api/photos/serve/:canonicalId returns best available image\n- [ ] Fallback chain: Apple original → Google Takeout full-res (NFS) → derivative → thumbnail → 404\n- [ ] Response headers: X-Photo-Source, X-Photo-Resolution\n- [ ] HEIC served as-is or with Accept-based JPEG conversion\n- [ ] Album detail page uses unified endpoint",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T12:20:22Z",
-      "updated": "2026-03-26T10:31:04Z"
-    },
-    {
-      "index": 1628,
-      "apiId": 1711,
-      "title": "Generate thumbnails for all canonical photos — batch job on Bedroom Mac",
-      "description": "Zero thumbnails generated. /photos page can't render at scale. Batch generate 400px JPGs on Bedroom Mac (M2 Pro, proximity to source files).\n\nBlocks: #1644 acceptance (canonical without thumbnails isn't done)\n\n## Files\n- engineer/scripts/generate-thumbnails.sh (new)\n- data/pods/jeff/photos/thumbnails/ (output)\n\n## AC\n- [ ] Batch script runs on Bedroom via SSH, reads Apple originals + Takeout full-res\n- [ ] Output to public/thumbnails/photos/{YYYY-MM}/{uuid}.jpg\n- [ ] Progress emission to stderr (DEC batch-progress)\n- [ ] All 79K canonical photos have a thumbnail or documented skip reason\n- [ ] /photos page loads thumbnails — no NO PREVIEW tiles for photos with source files on disk\n- [ ] canonical-index.json updated with thumbnail paths",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T12:20:18Z",
-      "updated": "2026-03-26T10:31:04Z"
-    },
-    {
-      "index": 1627,
-      "apiId": 1710,
-      "title": "Complete Takeout album import — 1,271 remaining Google Takeout albums into canonical photo graph",
-      "description": "192 of 1,463 Takeout albums imported. 1,271 remain — structured metadata (album titles, dates, membership) sitting in sidecar JSON. Same parsing pattern as #1604.\n\nFiles: scripts/harvest-takeout-albums.sh, src/services/semantic-search.service.ts\n\n## AC\n- [ ] Parse remaining 1,271 Takeout album sidecar JSONs\n- [ ] Create album TTL files with photo membership links\n- [ ] SPARQL UPDATE to wire album titles into canonical photos\n- [ ] >60% of canonical photos have album membership after import\n- [ ] Embeddings rebuilt with album context",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "sequence:hardening",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-23T12:20:12Z",
-      "updated": "2026-03-23T12:39:08Z"
-    },
-    {
-      "index": 1603,
-      "apiId": 1686,
-      "title": "Verify iCloud→canonical photo coverage — match 24,494 iCloud items to canonical before disabling sync",
-      "description": "Gate for #1602 (disable Bedroom iCloud sync). Jeff wants all iCloud items accounted for in canonical before turning off sync.\n\n## AC\n1. Query Mac Apple Photos SQLite: get full item count and UUID list (24,592 items)\n2. Query canonical graph: get all Apple-sourced canonical photos (14,539 harvested)\n3. Diff: identify ~10K items in Mac library not yet in canonical\n4. Harvest missing items into source graph\n5. Re-run build-canonical-photos.py to update canonical layer\n6. Report: \"X/24,494 iCloud items are in canonical\" — target 100%\n7. Jeff accepts when count matches\n\n## Context\n- Mac library has 24,592 items, we harvested 14,539\n- ~10K gap may be videos, screenshots, or items the harvester filtered\n- Must complete before #1602 (disable Bedroom iCloud sync)\n\n## Files\nscripts/build-canonical-photos.py\nsrc/ontology/jb-ontology.ttl",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-22T11:57:26Z",
-      "updated": "2026-03-26T20:44:17Z"
-    },
-    {
-      "index": 1596,
-      "apiId": 1679,
-      "title": "Disk usage audit — 87% on Library, 1TB in media",
-      "description": "AC:\n1. Identify purgeable vs real disk usage (APFS-aware, not du)\n2. Assess Photos vs Pictures overlap — is 559GB across two dirs redundant with Bedroom?\n3. Check Parallels 29GB — still needed?\n4. Recommend what can move to Bedroom per DEC-089\n5. Get below 80% or document why not",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:infrastructure"
-      ],
-      "done": false,
-      "created": "2026-03-21T21:06:55Z",
-      "updated": "2026-03-22T21:15:28Z"
-    },
-    {
-      "index": 1591,
-      "apiId": 1674,
-      "title": "Nudge wake — background poller that wakes idle roles when nudged, not just drain-on-prompt",
-      "description": "Nudge delivery currently requires the target role to have an active session AND submit a prompt to drain the inbox. If the role is idle, nudges pile up unread.\n\n## AC\n1. A background process polls each role's nudge inbox on a short interval (≤10s)\n2. When a nudge arrives for an idle role, the poller wakes that role's terminal session automatically\n3. Nudge delivery works whether the target role is active, idle, or has no session — no silent drops\n4. Zero config for the sender — `/nudge <role> <message>` just works, like `ls`\n5. No focus steal, no clipboard injection — wake mechanism respects Jeff's foreground context\n6. Works across all three roles without per-role setup\n\n## Files\n- messages/scripts/nudge.sh\n- messages/services/chorus-hooks/src/ (Rust shim nudge mode)\n- LaunchAgents (new poller agent if needed)",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops"
-      ],
-      "done": false,
-      "created": "2026-03-21T17:21:02Z",
-      "updated": "2026-03-21T19:08:26Z"
-    },
-    {
-      "index": 1583,
-      "apiId": 1666,
-      "title": "Evaluate local LLM for Claude Code — Ollama on Bedroom for lightweight coding tasks",
-      "description": "XDA article: bash script runs Claude Code against local llama.cpp/Ollama instead of Anthropic API. Uses Qwen3 Coder for agentic coding workflows.\n\n## Why it matters\n- Ollama already runs on Bedroom for embeddings — same infra could host a coding model\n- Privacy: Self domain data stays entirely local\n- Cost: save API budget for Opus-level work, use local model for housekeeping (lint, simple edits, test runs)\n- Could enable a \"local-only\" tier for Gathering's concentric trust model (DEC: Chorus=cloud, Gathering=hybrid, Self=local)\n\n## AC\n1. Evaluate: run Qwen3 Coder (or similar) on Bedroom via Ollama for simple Claude Code tasks\n2. Test: can it run board-ts commands, lint fixes, simple file edits reliably?\n3. Compare: quality/speed vs Anthropic API for housekeeping tasks\n4. If viable: document setup, assess which tasks can route to local vs cloud\n5. Privacy assessment: which domains could benefit from local-only processing\n\n## Reference\nhttps://www.xda-developers.com/wrote-script-run-claude-code-local-llm-skipping-cloud/\n\n## Files\nscripts/lcc.sh (new), architect/docs/local-llm-assessment.md (new)",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P3",
-      "domains": [
-        "chunk:ops",
-        "domain:infrastructure"
-      ],
-      "done": false,
-      "created": "2026-03-21T14:13:19Z",
-      "updated": "2026-03-22T21:15:28Z"
-    },
-    {
-      "index": 1568,
-      "apiId": 1651,
-      "title": "Demo: SWAT quick card",
-      "description": "",
-      "status": "Won't Do",
-      "owner": "",
-      "priority": "",
-      "domains": [],
-      "done": false,
-      "created": "2026-03-20T13:49:42Z",
-      "updated": "2026-03-20T13:49:51Z"
-    },
-    {
-      "index": 1567,
-      "apiId": 1650,
-      "title": "Demo: domain auto-infers chunk",
-      "description": "## AC\n1. Test",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-20T13:49:41Z",
-      "updated": "2026-03-26T20:42:35Z"
-    },
-    {
-      "index": 1566,
-      "apiId": 1649,
-      "title": "Test card explicit chunk",
-      "description": "## AC\n1. Test item",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops"
-      ],
-      "done": false,
-      "created": "2026-03-20T13:46:14Z",
-      "updated": "2026-03-20T13:46:25Z"
-    },
-    {
-      "index": 1954,
-      "apiId": 2037,
-      "title": "[defect] gathering-app: SMS seed creation failed",
-      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: SMS seed creation failed\nSample: SMS seed creation failed\nFirst seen: 2026-04-01T22:40:13Z\nCount: 1\nHash: 28784b570a0c4734",
+      "index": 1997,
+      "apiId": 2080,
+      "title": "[defect] gathering-app: SPARQL update error",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: SPARQL update error\nSample: SPARQL update error\nFirst seen: 2026-04-03T12:56:16Z\nCount: 1\nHash: 4619041ddb4463fd",
       "status": "Ops",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
+        "chunk:ops",
         "domain:infrastructure",
         "type:fix"
       ],
       "done": false,
-      "created": "2026-04-01T22:40:13Z",
-      "updated": "2026-04-01T22:40:13Z"
+      "created": "2026-04-03T12:56:16Z",
+      "updated": "2026-04-03T12:56:16Z"
+    },
+    {
+      "index": 1994,
+      "apiId": 2077,
+      "title": "[ops-health] ServiceDown: nifi service offline",
+      "description": "Auto-detected by chorus-ops (health).\n\nAlertmanager reports nifi service down with critical severity. Nifi is not in the tracked Docker container fleet; may indicate external service failure or monitoring gap.\n\nFinding ID: alert-nifi-service-down\nSeverity: critical\nCategory: alert",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T03:28:45Z",
+      "updated": "2026-04-03T03:28:45Z"
+    },
+    {
+      "index": 1992,
+      "apiId": 2075,
+      "title": "[ops-health] gathering-app: 2270 sync errors in 30m (sustained storm)",
+      "description": "Auto-detected by chorus-ops (health).\n\ngathering-app reporting 2270 sync/fuseki errors over 30m. Well beyond post-restart thresholds; indicates sustained cascading sync failure requiring intervention.\n\nFinding ID: sync-storm-gathering-app\nSeverity: critical\nCategory: sync_storm",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-02T18:05:50Z",
+      "updated": "2026-04-02T18:05:50Z"
     },
     {
       "index": 1953,
@@ -2827,7 +2983,7 @@
       ],
       "done": false,
       "created": "2026-03-31T17:34:33Z",
-      "updated": "2026-04-01T21:09:21Z"
+      "updated": "2026-04-03T13:47:36Z"
     }
   ]
 }
