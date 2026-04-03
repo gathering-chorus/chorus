@@ -1,7 +1,25 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T22:04:15.598Z",
+  "timestamp": "2026-04-03T22:58:07.573Z",
   "tasks": [
+    {
+      "index": 2009,
+      "apiId": 2092,
+      "title": "LaunchAgent lifecycle tool — app-state.sh for native services",
+      "description": "LaunchAgent lifecycle is currently manual — roles kill PIDs, forget to use launchctl, leave orphans holding ports. Jeff has said repeatedly: no raw process killing. app-state.sh handles Docker containers but native LaunchAgents have no equivalent tool.\n\n## Experience\nWhen Jeff reboots a role or restarts a service, it should be one command that just works — like app-state.sh does for Docker. Today roles guess at launchctl syntax, leave orphan processes, and Jeff discovers hung ports. The experience: agent-state.sh restart chorus-hooks and it's done. No orphans, no port conflicts, no manual PID hunting.\n\n## AC\n- [ ] Script manages LaunchAgent start/stop/restart/status for all com.chorus.* and com.gathering.* agents\n- [ ] Detects and kills orphan processes holding ports (ppid=1, not managed by launchd)\n- [ ] Single command: agent-state.sh {start|stop|restart|status|orphans} [service-name]\n- [ ] Hook updated to allow agent-state.sh as approved kill path\n\n## Files\n- platform/scripts/agent-state.sh\n- platform/scripts/test-agent-state.sh\n- platform/tests/features/gates/agent_lifecycle.feature",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T22:46:36Z",
+      "updated": "2026-04-03T22:54:29Z"
+    },
     {
       "index": 2000,
       "apiId": 2083,
@@ -19,24 +37,6 @@
       "done": false,
       "created": "2026-04-03T15:45:28Z",
       "updated": "2026-04-03T15:45:52Z"
-    },
-    {
-      "index": 1958,
-      "apiId": 2041,
-      "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
-      "description": "## Experience\nA role stalls. Within 2 minutes the watchdog nudges them. Within 3 minutes Wren knows. Within 5 minutes Jeff knows.\n\n## AC\n1. Gherkin feature file with scenarios: role goes silent, 2min nudge, 3min escalate, 5min alert\n2. LaunchAgent spec: 60s cron, reads role-state timestamps, computes age\n3. Steps test real role-state files and real nudge delivery\n4. Scenario: role resumes after nudge, watchdog resets\n5. Scenario: all three roles silent, system-wide alert\n\n## Files\n- platform/tests/features/awareness/team-awareness.feature\n- platform/tests/features/step_definitions/awareness_steps.ts\n- platform/services/watchdog/com.chorus.watchdog.plist\n- platform/scripts/watchdog.sh",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-04-02T01:33:22Z",
-      "updated": "2026-04-02T01:34:01Z"
     },
     {
       "index": 2004,
@@ -375,7 +375,7 @@
       "index": 1937,
       "apiId": 2020,
       "title": "Seed pipeline trust — Jeff sends it, team picks it up, always arrives, never drops #tags as seeds",
-      "description": "## Experience\nI send a seed and the team picks it up with urgency and attention. I never wonder if it arrived. I never discover days later that a seed was silently dropped. When I use #wren or #silas, it routes to that role — the hashtag is correlation, not the seed itself. The content before the tag is the seed. The system treats both parts together, never the tag alone.\n\n## AC\n1. Seed delivery is confirmed — Jeff gets visible proof the seed arrived and who picked it up\n2. Seeds are processed with urgency — not batched, not queued for next session, not waiting for /cs\n3. #tags are NEVER treated as seeds — they are routing/correlation markers attached to the preceding content\n4. A seed is always two SMS messages: content first, #tag second. Both messages together form the seed. Never process them independently.\n5. End-to-end test: Jeff sends SMS seed → team receives → Jeff sees confirmation — no unit test fakes\n6. When seed arrives, the receiving role acts on it in the same prompt cycle — card it, route it, or discard with reason\n\n## Files\n- platform/roles/silas/scripts/seed-probe.sh\n- platform/board-client/tests/seed-pipeline-flow.test.ts\n- platform/api/src/server.ts\n- product-manager/docs/seed-pipeline-criteria.md",
+      "description": "## Experience\nI send a seed and the team picks it up with urgency and attention. I never wonder if it arrived. I never discover days later that a seed was silently dropped. When I use #wren or #silas, it routes to that role — the hashtag is correlation, not the seed itself. The content before the tag is the seed. The system treats both parts together, never the tag alone.\n\n## AC\n1. Seed delivery is confirmed — Jeff gets visible proof the seed arrived and who picked it up\n2. Seeds are processed with urgency — not batched, not queued for next session, not waiting for /cs\n3. #tags are NEVER treated as seeds — they are routing/correlation markers attached to the preceding content\n4. A seed is always two SMS messages: content first, #tag second. Both messages together form the seed. Never process them independently.\n5. End-to-end test: Jeff sends SMS seed → team receives ��� Jeff sees confirmation — no unit test fakes\n6. When seed arrives, the receiving role acts on it in the same prompt cycle — card it, route it, or discard with reason\n\n## Files\n- platform/roles/silas/scripts/seed-probe.sh\n- platform/board-client/tests/seed-pipeline-flow.test.ts\n- platform/api/src/server.ts\n- product-manager/docs/seed-pipeline-criteria.md",
       "status": "Done",
       "owner": "Wren",
       "priority": "P1",
@@ -918,6 +918,24 @@
       "updated": "2026-03-31T10:28:12Z"
     },
     {
+      "index": 1958,
+      "apiId": 2041,
+      "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
+      "description": "## Experience\nA role stalls. Within 2 minutes the watchdog nudges them. Within 3 minutes Wren knows. Within 5 minutes Jeff knows.\n\n## AC\n1. Gherkin feature file with scenarios: role goes silent, 2min nudge, 3min escalate, 5min alert\n2. LaunchAgent spec: 60s cron, reads role-state timestamps, computes age\n3. Steps test real role-state files and real nudge delivery\n4. Scenario: role resumes after nudge, watchdog resets\n5. Scenario: all three roles silent, system-wide alert\n\n## Files\n- platform/tests/features/awareness/team-awareness.feature\n- platform/tests/features/step_definitions/awareness_steps.ts\n- platform/services/watchdog/com.chorus.watchdog.plist\n- platform/scripts/watchdog.sh",
+      "status": "Next",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": false,
+      "created": "2026-04-02T01:33:22Z",
+      "updated": "2026-04-03T22:53:53Z"
+    },
+    {
       "index": 1872,
       "apiId": 1955,
       "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
@@ -1020,6 +1038,57 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
+    },
+    {
+      "index": 2011,
+      "apiId": 2094,
+      "title": "Chorus API health endpoint — /api/chorus/health for monitoring",
+      "description": "AC:\n- [ ] GET /api/chorus/health returns JSON with db status, uptime, vector count\n- [ ] Probes (seed-probe, clearing-probe) can use it as liveness check\n- [ ] Returns 503 if database unreachable",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T22:46:46Z",
+      "updated": "2026-04-03T22:46:46Z"
+    },
+    {
+      "index": 2010,
+      "apiId": 2093,
+      "title": "Deduplicate LaunchAgent namespaces — consolidate com.chorus and com.gathering",
+      "description": "AC:\n- [ ] Audit all 53 agents — map which are duplicated across namespaces\n- [ ] Retire com.gathering.* duplicates (context-cache, cruft-scan, perf-baseline) — one namespace owns each job\n- [ ] Remove retired plists from ~/Library/LaunchAgents/\n- [ ] Verify no double-firing after consolidation",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T22:46:40Z",
+      "updated": "2026-04-03T22:46:40Z"
+    },
+    {
+      "index": 2008,
+      "apiId": 2091,
+      "title": "Compound loop breaks on reboot — after-prompt context injection lost on session boundary",
+      "description": "After-prompt hooks built April 3 search Chorus, logs, cards on every prompt. Worked. Jeff rebooted Wren, context injection stopped. Hook server running but loop broken.\n\n## AC\n- [ ] After-prompt hooks fire on first prompt of new session — verified by log evidence\n- [ ] Chorus/logs/cards results injected into role context every prompt\n- [ ] Reboot test: restart role, send prompt, verify injected context appears\n- [ ] No session starts without compound loop active",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T22:19:19Z",
+      "updated": "2026-04-03T22:19:19Z"
     },
     {
       "index": 2007,
@@ -1858,60 +1927,6 @@
       "done": false,
       "created": "2026-03-29T21:17:05Z",
       "updated": "2026-03-29T21:17:05Z"
-    },
-    {
-      "index": 1834,
-      "apiId": 1917,
-      "title": "Reports from the Blockverse — blog about what it's actually like to coordinate AI agents",
-      "description": "## Experience\nNobody is writing honestly about what it's actually like to coordinate AI agents day-to-day. The seasick Clearing, the nudge that said nothing, the 710GB nobody asked for — these are real stories that would resonate with anyone trying to build with AI teams. I want to publish this because it's the authentic version of \"AI team coordination\" and it positions Chorus as a real product, not vaporware.\n\n## AC\n- [ ] First post drafted — pick from today's session stories (seasick Clearing, invisible elephant, 710GB nobody asked for, the nudge that said nothing)\n- [ ] Published on wordpress-blog or lightlifeurbangardens.com/blog (Jeff's call)\n- [ ] Connects to Chorus product positioning — this is the honest version of \"AI team coordination\"",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P3",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new",
-        "content"
-      ],
-      "done": false,
-      "created": "2026-03-29T18:14:40Z",
-      "updated": "2026-03-30T16:49:37Z"
-    },
-    {
-      "index": 1826,
-      "apiId": 1909,
-      "title": "Fix chorus folder structure — production code in gitignored directory",
-      "description": "## Experience\n\nI expect any role to be able to check out the repo and run the tests. Right now Clearing code lives in a gitignored directory — Silas sees 52 passing tests, Wren sees 41. That's not a test problem, that's a structure problem. Production code should never be invisible to the team.\n\n## AC\n- [ ] Clearing/Bridge code (chorus/bridge/) is committable and shared across roles\n- [ ] Tests run from committed code, not working tree only\n- [ ] Folder structure documented — what lives where, why\n- [ ] No production code in gitignored paths\n\n## Context\nchorus/ is gitignored from the team repo. The Clearing server, session tailer, test files — all trapped in one role's working tree. Roles can't verify each other's changes. #1818 tests pass for Silas (52/52) and fail for Wren (41/52) because the test file isn't committed. This is a structural problem, not a test problem.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "ops"
-      ],
-      "done": false,
-      "created": "2026-03-29T14:55:25Z",
-      "updated": "2026-03-30T13:03:12Z"
-    },
-    {
-      "index": 1816,
-      "apiId": 1899,
-      "title": "Development framework — gate suite for agent software development lifecycle",
-      "description": "## Experience\nRoles follow a structured development lifecycle — like the integration framework (ICD, mapper, validation) but for code changes. No guessing, no solo debugging, no declaring done without proof.\n\n## AC\n1. Memory-and-research gate (#1811) — check decisions, memory, git history before any code change\n2. Root cause gate (#1815) — cross-role consultation with data (logs, errors, code refs) before coding a fix\n3. Prove-it gate (#1812) — \"cant be done\" requires evidence, not assertion\n4. Definition-of-done gate (#1814) — verified working against the symptom, not just code written and built\n5. TDD enforced — unit, integration, and page-level tests on all code cards (DEC-1674)\n6. Service design updated — every shipped card updates its service design page if touched\n7. ICD updated — data flow changes update ICD\n8. Blast radius and domain radius checks pass\n9. Structured logging — product, value stream, domain, card, code object, datetime, version on every log line\n10. Use lc/lw/ls/lk/nudge/chat when stuck — tools before guesses\n11. All gates implemented as PreToolUse hooks that block, not reminders that suggest\n12. Framework documented as a single reference page roles can read at session start",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new",
-        "gates"
-      ],
-      "done": false,
-      "created": "2026-03-29T11:31:21Z",
-      "updated": "2026-03-30T21:59:56Z"
     },
     {
       "index": 1721,
