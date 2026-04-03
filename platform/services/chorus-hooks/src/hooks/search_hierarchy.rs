@@ -173,8 +173,9 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     // No code-lookup bypass — all searches get Chorus enrichment (#1951)
     let role_str = role.as_str();
+    let session_id = input.session_id.as_deref().unwrap_or("unknown");
     let hash = pattern_hash(&pattern);
-    let block_key = format!("{}-{}", role_str, hash);
+    let block_key = format!("{}-{}-{}", session_id, role_str, hash);
 
     // Dedupe: same pattern within 60s skips re-query
     if state.check_search_block(&block_key).await {
