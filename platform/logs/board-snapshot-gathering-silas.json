@@ -1,25 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T19:22:54.267Z",
+  "timestamp": "2026-04-04T19:27:56.342Z",
   "tasks": [
-    {
-      "index": 2036,
-      "apiId": 2119,
-      "title": "Clearing shows connected when tunnel is down — stale Socket.IO connection state on 5G",
-      "description": "## Experience\nJeff is at the pharmacy on 5G, connecting via clearing.lightlifeurbangardens.com. The Clearing shows 'connected' but messages don't land. Cloudflare tunnel was down. Socket.IO held a stale connected state instead of showing disconnected.\n\n## AC\n1. Socket.IO client detects tunnel/proxy failure and shows disconnected within 10 seconds\n2. Heartbeat ping to server — if no pong within timeout, status switches to disconnected\n3. Reconnect indicator shows when re-establishing after tunnel recovery\n4. Tests cover: simulated tunnel drop shows disconnected, recovery shows reconnecting then connected\n\n## Files\n- chorus/directing/clearing/public/index.html (Socket.IO client connection handling)",
-      "status": "WIP",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-04T17:17:02Z",
-      "updated": "2026-04-04T19:20:35Z"
-    },
     {
       "index": 2022,
       "apiId": 2105,
@@ -37,24 +19,6 @@
       "done": false,
       "created": "2026-04-04T13:50:50Z",
       "updated": "2026-04-04T13:54:06Z"
-    },
-    {
-      "index": 2000,
-      "apiId": 2083,
-      "title": "Seed write failure alert — fire on SPARQL update error, notify Bridge immediately",
-      "description": "## Experience\nJeff sends a seed. It fails silently. Nobody tells him. He finds out hours later when he checks.\n\n## AC\n- [ ] Loki alert rule fires within 60s of any SMS seed creation failed or SPARQL update failed log line\n- [ ] Alert posts to Bridge so Jeff sees it\n- [ ] check-seeds.sh write probe — INSERT+DELETE canary triple as 4th health hop\n- [ ] Seed probe frequency increased from daily to every 30 minutes\n\n## Files\n- alerting/seed-write-failure.yml\n- platform/scripts/check-seeds.sh\n- platform/scripts/seed-probe.sh\n\n## Why\nHealth checks that dont test writes are theater.",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:app",
-        "sequence:hardening",
-        "domain:seeds",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T15:45:28Z",
-      "updated": "2026-04-03T15:45:52Z"
     },
     {
       "index": 2043,
@@ -109,6 +73,24 @@
       "done": true,
       "created": "2026-04-04T18:05:27Z",
       "updated": "2026-04-04T18:11:55Z"
+    },
+    {
+      "index": 2036,
+      "apiId": 2119,
+      "title": "Clearing shows connected when tunnel is down — stale Socket.IO connection state on 5G",
+      "description": "## Experience\nJeff is at the pharmacy on 5G, connecting via clearing.lightlifeurbangardens.com. The Clearing shows 'connected' but messages don't land. Cloudflare tunnel was down. Socket.IO held a stale connected state instead of showing disconnected.\n\n## AC\n1. Socket.IO client detects tunnel/proxy failure and shows disconnected within 10 seconds\n2. Heartbeat ping to server — if no pong within timeout, status switches to disconnected\n3. Reconnect indicator shows when re-establishing after tunnel recovery\n4. Tests cover: simulated tunnel drop shows disconnected, recovery shows reconnecting then connected\n\n## Files\n- chorus/directing/clearing/public/index.html (Socket.IO client connection handling)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-04T17:17:02Z",
+      "updated": "2026-04-04T19:25:34Z"
     },
     {
       "index": 2035,
@@ -522,6 +504,24 @@
       "updated": "2026-04-03T17:35:39Z"
     },
     {
+      "index": 2000,
+      "apiId": 2083,
+      "title": "Seed write failure alert — fire on SPARQL update error, notify Bridge immediately",
+      "description": "## Experience\nJeff sends a seed. It fails silently. Nobody tells him. He finds out hours later when he checks.\n\n## AC\n- [ ] Loki alert rule fires within 60s of any SMS seed creation failed or SPARQL update failed log line\n- [ ] Alert posts to Bridge so Jeff sees it\n- [ ] check-seeds.sh write probe — INSERT+DELETE canary triple as 4th health hop\n- [ ] Seed probe frequency increased from daily to every 30 minutes\n\n## Files\n- alerting/seed-write-failure.yml\n- platform/scripts/check-seeds.sh\n- platform/scripts/seed-probe.sh\n\n## Why\nHealth checks that dont test writes are theater.",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "sequence:hardening",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T15:45:28Z",
+      "updated": "2026-04-04T19:26:00Z"
+    },
+    {
       "index": 1995,
       "apiId": 2078,
       "title": "Fix /cs skill — must hit seeds API, show pending seeds, verify pipeline health",
@@ -907,42 +907,6 @@
       "done": true,
       "created": "2026-04-01T13:13:35Z",
       "updated": "2026-04-01T22:04:30Z"
-    },
-    {
-      "index": 1936,
-      "apiId": 2019,
-      "title": "Clearing e2e Gherkin tests — 3 access paths, message round-trip verification",
-      "description": "## Experience\nI open the Clearing from my phone on wifi, my phone on 5G, and my Mac in Chrome. All three should just work — I type my name, send a message, and see it appear. When one path breaks I want the test to tell me which one and why.\n\n## AC\n1. Gherkin feature file with 3 scenarios: public URL (wifi+5G on iPhone), localhost on iPhone wifi, localhost on Library Mac Chrome\n2. Each scenario tests: page loads, auth succeeds (token cookie or local bypass), name entry works, message send round-trips, message appears in feed\n3. Steps use curl or playwright to simulate each access path — real HTTP, not mocked\n4. Can run as: npx cucumber-js features/clearing-access.feature\n5. Failure output names the path and step that broke\n\n## Files\n- platform/tests/features/clearing-access.feature\n- platform/tests/features/step_definitions/clearing_steps.ts",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-01T13:11:29Z",
-      "updated": "2026-04-01T20:21:17Z"
-    },
-    {
-      "index": 1934,
-      "apiId": 2017,
-      "title": "Clearing Socket.IO ack — client confirms message delivery or retries",
-      "description": "## Experience\nI type a message in the Clearing and it vanishes. No error, no feedback. I need the send button to tell me if my message landed or failed — and retry if it didnt.\n\n## AC\n1. socket.emit jeff-message uses ack callback — server confirms receipt\n2. If no ack within 3 seconds, client retries once then shows error indicator\n3. Send button shows delivery state: sending, sent, failed\n4. Failed messages stay in input so Jeff can retry manually\n\n## Files\n- directing/clearing/public/index.html\n- directing/clearing/src/server.ts",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-04-01T12:33:06Z",
-      "updated": "2026-04-04T15:24:39Z"
     },
     {
       "index": 1865,

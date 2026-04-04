@@ -47,6 +47,19 @@ run_check() {
     bash -c "$action_script" >> "$LOG" 2>&1 || true
     log "  ACTION $name fired"
   fi
+
+  # DEC-107: persist AND deliver. Action posts to Bridge (persist).
+  # Now also nudge --force to owning role's terminal (deliver). (#2037)
+  local owner
+  owner=$(grep '^owner:' "$rule_file" | head -1 | sed 's/owner: *//' || true)
+  owner="${owner:-silas}"
+  local severity
+  severity=$(grep '^severity:' "$rule_file" | head -1 | sed 's/severity: *//' || true)
+  local alert_ts
+  alert_ts=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+  local nudge_msg="Alert — $alert_ts | $name: $result"
+  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$owner" "$nudge_msg" --force >> "$LOG" 2>&1 || true
+  log "  NUDGE $owner ($name)"
 }
 
 RULE_FILTER=""
