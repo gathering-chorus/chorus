@@ -1,24 +1,42 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T13:53:20.550Z",
+  "timestamp": "2026-04-04T14:28:34.027Z",
   "tasks": [
     {
-      "index": 2021,
-      "apiId": 2104,
-      "title": "Gemba blind spot on reboot — session indexer doesn't detect new sessions for minutes",
-      "description": "Session indexer (chorus-watch-sessions.sh via fswatch) doesn't detect new sessions for 4+ minutes after a role reboots. Jeff watched Kade reboot and the gemba showed stale data the entire time. This makes observation useless during the most critical moment — when a role comes back up.\n\n## Experience\nJeff reboots a role and watches gemba. He should see the role boot, read its session-start file, and start working — in real time. Instead: 4 minutes of stale data from the previous session. Jeff is blind during the exact moment he most needs visibility.\n\n## AC\n- [ ] gemba-tick shows new session activity within 30 seconds of reboot\n- [ ] gemba-tick.sh reads session JSONL directly instead of depending on the index\n- [ ] Works for all three roles (wren, silas, kade)\n- [ ] No regression on indexed search — direct tail is supplementary, not replacement\n\n## Files\n- platform/scripts/gemba-tick.sh\n- platform/scripts/gemba-start.sh",
+      "index": 2023,
+      "apiId": 2106,
+      "title": "Board data quality audit — duplicate labels, missing sequences, orphan tags, position integrity",
+      "description": "## Experience\nI look at the board in the Clearing and the numbers don't add up. Sub-groups show 5 cards but the header says 46. Cards created during fast ops sessions have bare labels, missing sequences, or wrong tags. The board is team memory — if the tags are wrong, the team's awareness of its own work is wrong.\n\n## Files\n- platform/board-client/src/sdk.ts\n- platform/board-client/src/cli.ts\n\n## AC\n- [ ] Audit all cards for bare labels (not prefixed with chunk:/domain:/type:/sequence:) — report count\n- [ ] Remove or fix bare labels using cards untag/set\n- [ ] Verify all active cards (WIP/Next/Later) have: domain, chunk, type, sequence\n- [ ] Report cards missing required tags — fix or flag\n- [ ] Verify no duplicate labels on any card\n- [ ] Verify Done/Won't Do cards are excluded from active counts in Clearing domain panel",
+      "status": "WIP",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-04T13:53:10Z",
+      "updated": "2026-04-04T14:23:40Z"
+    },
+    {
+      "index": 2022,
+      "apiId": 2105,
+      "title": "L2 Awareness service design — as-is inventory of compound loop, ops awareness, gemba, alerts, health",
+      "description": "The team keeps being surprised by what's already built. L2 (Awareness) has shipped components scattered across hooks, scripts, alerts, and agents with no single view.\n\n## Experience\nJeff opens the Awareness domain page and sees everything: docs, UIs, APIs, data, tests, services. One page, one answer. No more 'do we have this?' — it's all there.\n\n## AC\n- [ ] Domain page rendered as HTML with sections: Docs, UIs, APIs, Data, Tests, Services\n- [ ] Each section lists concrete artifacts with file paths and descriptions\n- [ ] References protocol-stack.html L2 section as the architecture doc\n- [ ] Shows forcing functions, not just components\n\n## Files\n- designing/domain-context/domain-context-awareness.html\n- product-manager/artifacts/awareness-service-design.html",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
-        "chunk:ops",
-        "sequence:hardening",
+        "chunk:strategy",
         "domain:chorus",
-        "type:fix"
+        "type:new",
+        "sequence:visibility"
       ],
       "done": false,
-      "created": "2026-04-04T13:37:47Z",
-      "updated": "2026-04-04T13:39:52Z"
+      "created": "2026-04-04T13:50:50Z",
+      "updated": "2026-04-04T13:54:06Z"
     },
     {
       "index": 2000,
@@ -50,29 +68,47 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-30T16:39:38Z",
       "updated": "2026-04-04T13:11:31Z"
     },
     {
-      "index": 1866,
-      "apiId": 1949,
-      "title": "Remove stale Docker references — 275 refs across codebase for retired infrastructure",
-      "description": "## Experience\nI ask where Fuseki is and three roles say Docker. The code says Docker. The CLAUDE.md says Docker. The permission profiles allow Docker compose. But Docker has been retired for weeks — Fuseki runs natively. Every stale reference is a lie waiting to confuse the next role that reads it.\n\n## AC\n1. app-state.sh: remove all Docker Fuseki lifecycle commands, keep only native LaunchAgent management\n2. CLAUDE.md (jeff-bridwell-personal-site): remove Docker network, Docker log driver, Docker DNS references\n3. README.md: update from Terraform+Docker to LaunchAgent-based\n4. TEAM_PROTOCOL.md: remove Docker network references, update Fuseki entry\n5. Permission profiles (base.json, silas.json): remove Docker compose allows\n6. settings.local.json: remove Docker compose allow\n7. server.js line 1: remove Docker development message\n8. validate-ttl.sh: remove container name reference\n9. infra_guardrails.rs: evaluate which Docker guards are still needed (content matching vs command matching)\n10. Delete dead files: docker-compose.yml, Dockerfile, .dockerignore, docker/ directory, terraform/Dockerfile, terraform/app-state.sh\n11. Leave alone: archived workflows, ontology ServiceRuntimeType, the test that asserts Docker absence\n\n## Files\napp-state.sh, scripts/app-state.sh, CLAUDE.md, README.md, server.js, scripts/validate-ttl.sh, docker-compose.yml, Dockerfile, .dockerignore, terraform/Dockerfile (app repo)\nTEAM_PROTOCOL.md, proving/config/profiles/base.json, proving/config/profiles/silas.json, platform/services/chorus-hooks/src/hooks/infra_guardrails.rs, .claude/settings.local.json (chorus repo)\n\n## Context\nDocker scan found 275 refs. Fuseki moved to native LaunchAgent today (#1833, #1856). Three remaining Docker containers (Vikunja, Navidrome, webvowl) — check if those still need Docker before deleting compose file.",
-      "status": "WIP",
-      "owner": "Kade",
+      "index": 2024,
+      "apiId": 2107,
+      "title": "Cards CLI completeness — fix set command, add label removal, bulk ops, creation validation, eliminate Vikunja fallback",
+      "description": "## Experience\nJeff uses the Clearing domain panel and cards CLI for all board interaction. Vikunja UI is not used. But CLI gaps force fallback to Vikunja or create silent data corruption.\n\n## Files\n- platform/board-client/src/sdk.ts\n- platform/board-client/src/cli.ts\n\n## AC\n- [ ] `cards set` produces prefixed labels (sequence:X not bare X) — matches sequence-tag behavior\n- [ ] `cards tag` either works or gives a clear error pointing to the correct command\n- [ ] `cards untag <id> <label>` removes a specific label from a card\n- [ ] `cards bulk-move <ids> <status>` moves multiple cards at once\n- [ ] `cards add` requires --sequence or warns (soft gate, not hard block)\n- [ ] `cards list` output shows sequence: prefix on sequence labels for greppability\n- [ ] All 6 items verified with tests",
+      "status": "Done",
+      "owner": "Wren",
       "priority": "P1",
       "domains": [
         "chunk:ops",
-        "domain:infrastructure",
-        "type:chore",
-        "infrastructure"
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
       ],
-      "done": false,
-      "created": "2026-03-30T16:04:44Z",
-      "updated": "2026-04-04T13:41:55Z"
+      "done": true,
+      "created": "2026-04-04T14:03:36Z",
+      "updated": "2026-04-04T14:22:53Z"
+    },
+    {
+      "index": 2021,
+      "apiId": 2104,
+      "title": "Gemba blind spot on reboot — session indexer doesn't detect new sessions for minutes",
+      "description": "Session indexer (chorus-watch-sessions.sh via fswatch) doesn't detect new sessions for 4+ minutes after a role reboots. Jeff watched Kade reboot and the gemba showed stale data the entire time. This makes observation useless during the most critical moment — when a role comes back up.\n\n## Experience\nJeff reboots a role and watches gemba. He should see the role boot, read its session-start file, and start working — in real time. Instead: 4 minutes of stale data from the previous session. Jeff is blind during the exact moment he most needs visibility.\n\n## AC\n- [ ] gemba-tick shows new session activity within 30 seconds of reboot\n- [ ] gemba-tick.sh reads session JSONL directly instead of depending on the index\n- [ ] Works for all three roles (wren, silas, kade)\n- [ ] No regression on indexed search — direct tail is supplementary, not replacement\n\n## Files\n- platform/scripts/gemba-tick.sh\n- platform/scripts/gemba-start.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-04T13:37:47Z",
+      "updated": "2026-04-04T13:53:23Z"
     },
     {
       "index": 2019,
@@ -86,7 +122,7 @@
         "chunk:memory",
         "domain:chorus",
         "type:enhance",
-        "visibility"
+        "sequence:visibility"
       ],
       "done": true,
       "created": "2026-04-04T13:24:51Z",
@@ -300,7 +336,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:new",
-        "gates"
+        "sequence:gates"
       ],
       "done": true,
       "created": "2026-04-03T18:33:26Z",
@@ -405,7 +441,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:enhance",
-        "gates"
+        "sequence:gates"
       ],
       "done": true,
       "created": "2026-04-02T11:38:03Z",
@@ -457,7 +493,7 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "visibility"
+        "sequence:visibility"
       ],
       "done": true,
       "created": "2026-04-02T10:36:17Z",
@@ -475,7 +511,7 @@
         "chunk:memory",
         "domain:chorus",
         "type:enhance",
-        "visibility"
+        "sequence:visibility"
       ],
       "done": true,
       "created": "2026-04-02T10:26:28Z",
@@ -579,7 +615,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:new",
-        "gates"
+        "sequence:gates"
       ],
       "done": true,
       "created": "2026-04-01T21:57:51Z",
@@ -597,7 +633,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:chore",
-        "infrastructure"
+        "sequence:infrastructure"
       ],
       "done": true,
       "created": "2026-04-01T21:54:40Z",
@@ -812,7 +848,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "ops"
+        "sequence:ops"
       ],
       "done": true,
       "created": "2026-04-01T00:36:45Z",
@@ -921,41 +957,6 @@
       "updated": "2026-03-31T21:26:22Z"
     },
     {
-      "index": 1907,
-      "apiId": 1990,
-      "title": "Pulse event on artifact creation — auto-distribute design docs to relevant roles",
-      "description": "## Experience\nWren creates a service design doc and I don't know about it until she nudges me hours later. The artifact exists but no event fires, no role gets briefed. Design docs should announce themselves — when a new artifact lands, emit a pulse event and brief the relevant roles automatically.\n\n## AC\n- [ ] PostToolUse hook detects new file creation in artifacts/ directories\n- [ ] Emits artifact.created spine event with filename, author role, and domain\n- [ ] Auto-briefs relevant roles based on domain tags (e.g., ops artifact → brief Silas)\n- [ ] Event visible on Clearing as ambient message\n\n## Files\n- platform/services/chorus-hooks/src/hooks/observer.rs (detect artifact writes)\n- platform/services/chorus-hooks/src/main.rs (wire PostToolUse for artifact detection)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": true,
-      "created": "2026-03-31T13:14:11Z",
-      "updated": "2026-03-31T16:56:02Z"
-    },
-    {
-      "index": 1906,
-      "apiId": 1989,
-      "title": "Clearing domain tiles truncate card descriptions — show full text or expand on click",
-      "description": "## Experience\n\nI look at the Clearing domains panel and card titles are cut off. I can't tell what the card is about without clicking somewhere else. The full title should be visible, or I should be able to click to expand.\n\n## AC\n\n- [ ] Card titles in domain tiles show full text (no truncation)\n- [ ] If title is long, wrap rather than truncate with ellipsis\n\n## Files\n- chorus/directing/clearing/public/index.html",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P3",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-31T13:11:23Z",
-      "updated": "2026-03-31T13:20:47Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1060,41 +1061,6 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
-      "index": 2023,
-      "apiId": 2106,
-      "title": "Board data quality audit — duplicate labels, missing sequences, orphan tags, position integrity",
-      "description": "",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-04-04T13:53:10Z",
-      "updated": "2026-04-04T13:53:10Z"
-    },
-    {
-      "index": 2022,
-      "apiId": 2105,
-      "title": "L2 Awareness service design — as-is inventory of compound loop, ops awareness, gemba, alerts, health",
-      "description": "The team keeps being surprised by what's already built. L2 (Awareness) has shipped components scattered across hooks, scripts, alerts, and agents with no single view.\n\n## Experience\nJeff opens the Awareness domain page and sees everything: docs, UIs, APIs, data, tests, services. One page, one answer. No more 'do we have this?' — it's all there.\n\n## AC\n- [ ] Domain page rendered as HTML with sections: Docs, UIs, APIs, Data, Tests, Services\n- [ ] Each section lists concrete artifacts with file paths and descriptions\n- [ ] References protocol-stack.html L2 section as the architecture doc\n- [ ] Shows forcing functions, not just components\n\n## Files\n- designing/domain-context/domain-context-awareness.html\n- product-manager/artifacts/awareness-service-design.html",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new",
-        "visibility"
-      ],
-      "done": false,
-      "created": "2026-04-04T13:50:50Z",
-      "updated": "2026-04-04T13:52:38Z"
-    },
-    {
       "index": 2020,
       "apiId": 2103,
       "title": "Log reclassification phase 3 — 13 warn-to-error upgrades across middleware, seed processing, and query failures",
@@ -1106,7 +1072,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-04-04T13:31:07Z",
@@ -1124,7 +1090,7 @@
         "chunk:app",
         "domain:chorus",
         "type:fix",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-04-04T13:23:46Z",
@@ -1142,7 +1108,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:fix",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-04-03T10:27:21Z",
@@ -1160,7 +1126,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-04-02T12:02:21Z",
@@ -1178,7 +1144,7 @@
         "chunk:app",
         "domain:chorus",
         "type:new",
-        "visibility"
+        "sequence:visibility"
       ],
       "done": false,
       "created": "2026-04-02T11:52:55Z",
@@ -1196,7 +1162,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-04-02T11:25:47Z",
@@ -1214,7 +1180,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-04-02T11:16:01Z",
@@ -1232,7 +1198,7 @@
         "chunk:app",
         "domain:chorus",
         "type:new",
-        "visibility"
+        "sequence:visibility"
       ],
       "done": false,
       "created": "2026-04-02T10:28:02Z",
@@ -1250,7 +1216,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:new",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-04-01T21:37:31Z",
@@ -1268,7 +1234,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:fix",
-        "spine"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-04-01T20:08:38Z",
@@ -1286,7 +1252,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-04-01T19:47:15Z",
@@ -1304,7 +1270,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-04-01T14:47:27Z",
@@ -1322,7 +1288,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-04-01T14:33:13Z",
@@ -1340,7 +1306,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-04-01T13:44:50Z",
@@ -1358,7 +1324,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:new",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-04-01T13:27:32Z",
@@ -1376,7 +1342,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-04-01T12:52:09Z",
@@ -1412,7 +1378,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-04-01T12:31:33Z",
@@ -1430,7 +1396,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:fix",
-        "spine"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-31T21:31:43Z",
@@ -1448,7 +1414,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-31T17:22:42Z",
@@ -1466,7 +1432,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-31T15:11:01Z",
@@ -1484,7 +1450,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "spine"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-31T15:00:52Z",
@@ -1502,7 +1468,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-31T14:40:55Z",
@@ -1520,7 +1486,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-31T13:57:21Z",
@@ -1538,7 +1504,7 @@
         "chunk:ops",
         "domain:infrastructure",
         "type:fix",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-03-31T13:47:54Z",
@@ -1556,7 +1522,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:chore",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-03-31T13:08:56Z",
@@ -1574,7 +1540,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:chore",
-        "spine"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-31T12:50:14Z",
@@ -1592,7 +1558,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-31T12:46:26Z",
@@ -1610,7 +1576,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-31T12:18:14Z",
@@ -1628,7 +1594,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-31T11:44:12Z",
@@ -1646,7 +1612,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-31T00:19:14Z",
@@ -1664,7 +1630,7 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "infrastructure"
+        "sequence:infrastructure"
       ],
       "done": false,
       "created": "2026-03-30T21:11:38Z",
@@ -1682,7 +1648,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:chore",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-03-30T16:41:35Z",
@@ -1700,7 +1666,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-30T14:55:11Z",
@@ -1718,7 +1684,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:chore",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-03-30T13:28:46Z",
@@ -1753,7 +1719,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "spine"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-30T10:27:29Z",
@@ -1771,7 +1737,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "spine"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-30T10:27:25Z",
@@ -1789,7 +1755,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:enhance",
-        "ops"
+        "sequence:ops"
       ],
       "done": false,
       "created": "2026-03-30T10:27:21Z",
@@ -1807,7 +1773,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-29T18:14:40Z",
@@ -1825,7 +1791,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "strategy"
+        "sequence:strategy"
       ],
       "done": false,
       "created": "2026-03-29T11:31:21Z",
@@ -1843,7 +1809,7 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "infrastructure"
+        "sequence:infrastructure"
       ],
       "done": false,
       "created": "2026-03-29T00:55:19Z",
@@ -1861,7 +1827,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "spine"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-28T11:07:57Z",
@@ -1896,11 +1862,11 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "werk"
+        "sequence:werk"
       ],
       "done": false,
       "created": "2026-03-27T15:43:31Z",
-      "updated": "2026-03-30T13:04:10Z"
+      "updated": "2026-04-04T14:19:51Z"
     },
     {
       "index": 1762,
@@ -1914,11 +1880,11 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "werk"
+        "sequence:werk"
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
-      "updated": "2026-03-30T13:04:13Z"
+      "updated": "2026-04-04T14:19:51Z"
     },
     {
       "index": 1761,
@@ -1931,11 +1897,11 @@
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "werk"
+        "sequence:werk"
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
-      "updated": "2026-03-30T13:03:15Z"
+      "updated": "2026-04-04T14:19:51Z"
     },
     {
       "index": 1747,
@@ -1952,6 +1918,40 @@
       "done": false,
       "created": "2026-03-27T12:16:43Z",
       "updated": "2026-03-30T13:03:20Z"
+    },
+    {
+      "index": 1739,
+      "apiId": 1822,
+      "title": "Scanned photo dating strategy — dateTaken vs dateDigitized for physical archive",
+      "description": "## Experience\nI have boxes of family photos going back to the 1880s. When I scan them, the scanner stamps today's date. So my grandmother's 1920 portrait sorts next to yesterday's iPhone shot. I need the system to know the difference between when a photo was taken and when it was digitized, and I need a way to say \"this folder is roughly 1960s Europe trip\" without dating every single print.\n\n## AC\n1. ICD extended with dateTaken (original, estimated) and dateDigitized (scan date) as separate fields\n2. Confidence level on dateTaken — exact, year, decade, unknown\n3. Batch scanning workflow: folder-level date ranges (e.g. '1960s Europe trip')\n4. Era 0 (pre-digital) authority rules in merge logic\n5. Decision: manual annotation vs AI vision vs context clues for date estimation\n\n## Why\n5K+ physical photos spanning 1880s-1985. Scanners write today's date. The real date is in Jeff's memory or context clues. Without separating dateTaken from dateDigitized, scanned photos sort to 2026 instead of 1920. The family archive needs both timestamps.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-26T20:54:02Z",
+      "updated": "2026-03-30T13:03:39Z"
+    },
+    {
+      "index": 1736,
+      "apiId": 1819,
+      "title": "Sequence diagram — /pipeline flow",
+      "description": "## Experience\nI want to see how a multi-card pipeline flows — how Wren drives it, when roles get nudged, and where I come in for the demo at the end. A sequence diagram makes the orchestration legible at a glance. Same dark-theme HTML as the other Chorus skill diagrams so they form a complete visual reference.\n\n## Files\n- product-manager/artifacts/sequence-pipeline.html\n- jeff-bridwell-personal-site/public/gathering-docs/sequence-pipeline.html\n\n## AC\n1. /pipeline sequence diagram — multi-card pipeline flow (Wren drives, roles nudge on completion, Jeff sees demo at end)\n2. HTML dark theme matching pair-flow-sequence.html\n3. Added to doc-catalog\n\n## Why\nProduct documentation for Chorus interaction skills.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus",
+        "type:new",
+        "sequence:spine"
+      ],
+      "done": false,
+      "created": "2026-03-26T20:23:09Z",
+      "updated": "2026-04-01T00:39:34Z"
     },
     {
       "index": 1721,
@@ -2044,6 +2044,111 @@
       "done": false,
       "created": "2026-03-09T15:26:04Z",
       "updated": "2026-03-09T15:26:04Z"
+    },
+    {
+      "index": 2030,
+      "apiId": 2113,
+      "title": "CLI test card seq",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-04T14:19:51Z",
+      "updated": "2026-04-04T14:19:52Z"
+    },
+    {
+      "index": 2029,
+      "apiId": 2112,
+      "title": "CLI test card",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-04T14:19:51Z",
+      "updated": "2026-04-04T14:20:00Z"
+    },
+    {
+      "index": 2028,
+      "apiId": 2111,
+      "title": "CLI test card seq",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-04T14:19:31Z",
+      "updated": "2026-04-04T14:19:59Z"
+    },
+    {
+      "index": 2027,
+      "apiId": 2110,
+      "title": "CLI test card",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-04T14:19:31Z",
+      "updated": "2026-04-04T14:19:59Z"
+    },
+    {
+      "index": 2026,
+      "apiId": 2109,
+      "title": "Test card with seq",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-04T14:17:38Z",
+      "updated": "2026-04-04T14:17:49Z"
+    },
+    {
+      "index": 2025,
+      "apiId": 2108,
+      "title": "Test card no seq",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-04T14:17:34Z",
+      "updated": "2026-04-04T14:17:49Z"
     },
     {
       "index": 2002,
@@ -2789,108 +2894,6 @@
       "done": false,
       "created": "2026-03-28T10:42:40Z",
       "updated": "2026-03-31T17:20:56Z"
-    },
-    {
-      "index": 1779,
-      "apiId": 1862,
-      "title": "Bidirectional Clearing — role narration syncs both ways between Claude sessions and the Clearing",
-      "description": "## Experience\nI open the Clearing and see what all three roles are doing. I type in the Clearing and the right role responds. I never open a Claude terminal.\n\n## AC\n- [ ] All role text responses (not tool calls) in Claude sessions appear in the Clearing message stream in real time\n- [ ] All Clearing messages (Jeff input, role posts, scheduled reviews) appear in Claude session context\n- [ ] Jeff's Clearing input routes to the addressed role's Claude session as user input\n- [ ] @role mention targets a specific role; unaddressed input goes to Wren by default\n- [ ] Session tailer covers all three roles bidirectionally\n- [ ] No duplicate messages — dedup by content hash + timestamp\n- [ ] Jeff can operate entirely from the Clearing without opening Claude terminals",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-28T10:24:07Z",
-      "updated": "2026-03-30T20:46:21Z"
-    },
-    {
-      "index": 1778,
-      "apiId": 1861,
-      "title": "Document LaunchAgent namespace convention — com.chorus vs com.gathering",
-      "description": "## Experience\n\nI look at the 51 LaunchAgents and I can't tell which ones belong to Chorus and which belong to Gathering. The naming should make ownership obvious — com.chorus for team coordination, com.gathering for app infrastructure. I open the doc and know instantly.\n\n## AC\n- [ ] Write naming convention doc: com.chorus.* = team coordination, com.gathering.* = app infrastructure\n- [ ] Audit all 51 LaunchAgents against convention\n- [ ] List any misplaced agents (e.g., com.gathering.messaging should be com.chorus.*)\n- [ ] Add to infrastructure-constraints.md\n\n## Context\nFound in #1773 audit (F9). 51 LaunchAgents split across two namespaces with no documented boundary.",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P3",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-03-27T22:53:29Z",
-      "updated": "2026-03-30T13:03:33Z"
-    },
-    {
-      "index": 1774,
-      "apiId": 1857,
-      "title": "Remove 5 duplicate LaunchAgents — double-firing context-cache, cruft-scan, perf-baseline",
-      "description": "## Experience\n\nI run launchctl list and see the same job registered twice — once as com.gathering and once as com.chorus. Context-cache, cruft-scan, perf-baseline all fire double. I expect each job to run once on schedule, not twice because of leftover duplicate plists.\n\n## AC\n- [ ] Unload and remove com.gathering.context-cache-{5min,daily,hourly}.plist\n- [ ] Unload and remove com.gathering.cruft-scan.plist\n- [ ] Unload and remove com.gathering.perf-baseline.plist\n- [ ] Verify com.chorus.* versions still run on schedule\n- [ ] No double-firing in launchctl list after reboot\n\n## Context\nFound in #1773 audit (F1). Five LaunchAgents exist in both com.chorus.* and com.gathering.* with identical configs, causing every scheduled job to fire twice.",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-03-27T22:53:14Z",
-      "updated": "2026-03-30T13:03:50Z"
-    },
-    {
-      "index": 1771,
-      "apiId": 1854,
-      "title": "Demo all NiFi photo pipelines — walkthrough of each flow with Jeff",
-      "description": "## Experience\n\nI want to see all the NiFi photo pipelines running live. Apple Photos, iPhone, Takeout, the canonical merge — I want to watch data flow through each one. Show me what triggers them, how they connect, and what comes out the other end.\n\n## AC\n- [ ] Demo Apple Photos source ingest pipeline — show flow, processors, routing, output\n- [ ] Demo iPhone source ingest pipeline — show flow, dedup logic, SQLite extraction\n- [ ] Demo Takeout source ingest pipeline — show JSON sidecar date handling, flow\n- [ ] Demo canonical merge pipeline — show era-scoped authority, cross-source dedup, SHACL gate\n- [ ] Each pipeline: Jeff sees it running or sees the flow definition with sample data\n- [ ] Explain what triggers each pipeline and how they connect\n\n## Context\nJeff wants to see all NiFi photo pipelines live. Should be 3-4 flows: Apple Photos, iPhone, Takeout, and canonical merge. Cards #1705, #1710, #1711, #1712 shipped these.",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:photos",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-03-27T22:30:22Z",
-      "updated": "2026-03-30T13:03:55Z"
-    },
-    {
-      "index": 1753,
-      "apiId": 1836,
-      "title": "Add Haiku classification layer to The Clearing — tone, intent, routing",
-      "description": "## Experience\nWhen I'm in a Clearing session, the routing is dumb — it's regex matching on @mentions. So half the time messages go to the wrong role, or the tone chart on /jeff says 61% coordination when that's not what's actually happening. I want the system to understand what I'm saying — is this a question, a directive, a story — and route it to the right place without me tagging anyone. The tone data should actually mean something when I look at it.\n\n## AC\n1. Haiku classifies incoming messages: tone (directive, collaborative, question, corrective, narrative, etc.), intent (action request, status update, acknowledgment, routing)\n2. Classification drives message routing — replaces regex @mention parsing with intent-aware routing\n3. Feeds the tone analytics on /jeff page with richer signal than keyword waterfalls\n4. Latency budget: <500ms per message (Haiku is fast enough)\n5. Fallback to current regex if API unavailable — no hard dependency\n\n## Why\nThe Clearing currently uses regex for everything — routing, tailer filtering, message classification. The /jeff tone chart showed 61% coordination because keyword matching can't distinguish narrative from routing from acknowledgment. Haiku is $0.25/1M input tokens — cheap enough to classify every message. Richer classification improves the /jeff analytics, enables smarter routing, and powers the JDI intent detection (#1746).",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-27T13:51:20Z",
-      "updated": "2026-03-30T16:49:03Z"
-    },
-    {
-      "index": 1746,
-      "apiId": 1829,
-      "title": "JDI hook enhancement — detect intent-without-action and auto-continue",
-      "description": "## Experience\nI watch roles say 'I'll start on X now' and then nothing happens. They narrate what they're going to do instead of doing it. I've flagged this pattern multiple times — the announcement replaces the work. I want the system to catch it automatically so I don't have to be the one noticing every time a role goes idle after declaring intent.\n\n## AC\n1. Hook detects phrases that signal intent without execution ('I'll start on X now', 'Let me do X', 'Going to X next') in role output\n2. If the role's next action is NOT a tool call within 30 seconds of the intent statement, hook nudges the role: 'You said you'd do X — do it or retract'\n3. Works across all three roles — not just builders\n4. Does not fire on genuinely informational statements ('I'll brief Silas later' — that's a future commitment, not an immediate action)\n5. Configurable in settings — can be disabled per role if too aggressive\n\n## Why\nRoles announce intent ('I'll start on X now') and then either go idle, narrate more, or pivot without executing. The announcement replaces the work. DEC-025 says go is default. This hook enforces that — if you say you'll do it, the system expects you to do it. Directly addresses feedback_announce_is_not_execute and feedback_no_narrate_before_execute.",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": false,
-      "created": "2026-03-27T12:14:19Z",
-      "updated": "2026-03-30T16:49:18Z"
     },
     {
       "index": 2015,
