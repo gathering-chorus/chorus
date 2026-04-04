@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T12:42:53.398Z",
+  "timestamp": "2026-04-04T13:18:04.944Z",
   "tasks": [
     {
       "index": 2000,
@@ -19,6 +19,78 @@
       "done": false,
       "created": "2026-04-03T15:45:28Z",
       "updated": "2026-04-03T15:45:52Z"
+    },
+    {
+      "index": 1959,
+      "apiId": 2042,
+      "title": "Domain crawler v2 — add code, logs, and alerts to the crawl",
+      "description": "## Experience\nI crawl a domain and see everything — not just cards and conversations, but the actual code, the logs it emitted today, and the alerts configured for it. Full operational picture of any domain from one query.\n\n## AC\n1. Code facet: codebase scan by directory structure and imports, mapped to domain\n2. Logs facet: Loki query filtered by domain name, recent entries\n3. Alerts facet: Grafana alert rules tagged by domain\n4. All three integrated into existing crawl response alongside cards, conversations, OWL, spine\n5. BDD scenarios for each new facet\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/domain-crawler.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n\n## Context\nCurrent crawler (#1956) joins cards, conversations, OWL, and spine. Jeff wants the full operational picture: 7 data sources per domain. Code scan by directory, Loki for logs, Grafana for alerts.",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:chorus",
+        "type:enhance",
+        "visibility"
+      ],
+      "done": false,
+      "created": "2026-04-02T10:26:28Z",
+      "updated": "2026-04-04T13:16:12Z"
+    },
+    {
+      "index": 1872,
+      "apiId": 1955,
+      "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
+      "description": "## Experience\nI hand Silas the architecture manual and say \"red pen this.\" He marks what's wrong. Same with Kade on engineering. The manuals are written from existing docs as-is — stale parts included. The gaps ARE the value. This is how I find out what we actually know vs what we think we know.\n\n## AC\n- [ ] Product manual — Gathering (vision, domains, value streams, user experience)\n- [ ] Product manual — Chorus (vision, services, coordination model, team ops)\n- [ ] Architecture manual — Gathering (topology, data stores, integrations, infra)\n- [ ] Architecture manual — Chorus (hooks, scripts, messaging, observability)\n- [ ] Engineering manual — Gathering (codebase, conventions, test strategy, deploy)\n- [ ] Engineering manual — Chorus (codebase, hooks, gates, CLI tools)\n- [ ] All manuals as HTML artifacts in doc-catalog\n- [ ] Written from current docs state — no cleanup first\n- [ ] Briefed to Silas and Kade for red-pen review",
+      "status": "WIP",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new",
+        "strategy"
+      ],
+      "done": false,
+      "created": "2026-03-30T16:39:38Z",
+      "updated": "2026-04-04T13:11:31Z"
+    },
+    {
+      "index": 1840,
+      "apiId": 1923,
+      "title": "Repo-track all skills — ~/.claude/skills/ canonical source in chorus, symlinks out",
+      "description": "## Experience\nI edit a skill during a card and can't commit the change. Git can't see it, can't diff it, can't track it. 30+ skills live outside the repo in ~/.claude/skills/ with no version control. Edits vanish between sessions.\n\n## AC\n1. All skill SKILL.md files have canonical source inside the chorus repo\n2. ~/.claude/skills/ contains symlinks pointing to repo source, not standalone files\n3. Skill edits show up in git diff and can be committed normally\n4. Existing skill content preserved — no content loss during migration\n5. Document the convention so new skills get created in-repo first\n\n## Files\n- platform/skills/ (new canonical location)\n- ~/.claude/skills/ (symlinks)",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore",
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-29T21:17:05Z",
+      "updated": "2026-04-04T13:15:24Z"
+    },
+    {
+      "index": 2017,
+      "apiId": 2100,
+      "title": "Bad URI graph load errors — 1294 data quality issues in people/connections TTL filenames",
+      "description": "## Experience\nJeff queries Loki for errors and sees 1294 bad URI graph load failures from people/connections TTL files. The filenames contain characters that break URI parsing. These aren't app bugs — they're data quality issues in the source TTL files that need cleanup.\n\n## AC\n- [ ] Identify which TTL files in people/connections produce bad URI errors\n- [ ] Fix or regenerate the offending filenames to be URI-safe\n- [ ] Verify Loki error count drops to zero for bad URI graph loads after fix\n- [ ] No data loss — all people/connections records preserved\n\n## Files\n- data/people/ (TTL files with bad URIs)\n- src/services/fuseki-sync.service.ts (loads the TTL files)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-04T12:25:54Z",
+      "updated": "2026-04-04T12:49:25Z"
     },
     {
       "index": 2016,
@@ -144,6 +216,24 @@
       "done": true,
       "created": "2026-04-03T22:19:19Z",
       "updated": "2026-04-04T10:50:31Z"
+    },
+    {
+      "index": 2007,
+      "apiId": 2090,
+      "title": "/cs shows routing tag instead of seed content — photo seed displayed as '#wren' instead of showing what Jeff actually sent",
+      "description": "## Experience\nJeff sends a photo seed tagged #wren. On next /cs or session start, the receiving role reads the photo and describes what's in it. 'Birdbath with verdigris patina, light through water, leaves at the bottom — your garden.' Jeff knows his seed arrived because someone received it, looked at it, and responded to it. Like a person would.\n\n## Acceptance Criteria\n- [ ] /cs shows seed content: text for text seeds, URL for links, description for photos — not hashtags, not file paths\n- [ ] Photo seeds: the role reads the image file and generates a human description of what's in it\n- [ ] The description appears in /cs output so Jeff sees it without asking\n- [ ] Jeff sends a photo from his phone, runs /cs, sees a description of what he sent — verified live\n\n## Files\n- platform/scripts/check-seeds.sh\n- src/adapters/sms-seed.adapter.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "sequence:hardening",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T21:29:17Z",
+      "updated": "2026-04-04T13:14:27Z"
     },
     {
       "index": 2006,
@@ -675,6 +765,24 @@
       "updated": "2026-04-01T00:49:04Z"
     },
     {
+      "index": 1927,
+      "apiId": 2010,
+      "title": "Fix pulse integration test — calls bash on Rust binary, 3/6 layers fail",
+      "description": "## Experience\nI run the pulse integration test and 3 of 6 layers fail. The test calls bash on a Rust binary — that's the break from the .sh wrapper removal.\n\n## AC\n1. pulse-integration-test.sh invokes chorus-log directly, not via bash\n2. All 6 layers pass when run\n\n## Files\n- platform/scripts/pulse-integration-test.sh",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "ops"
+      ],
+      "done": true,
+      "created": "2026-04-01T00:36:45Z",
+      "updated": "2026-04-04T12:45:53Z"
+    },
+    {
       "index": 1926,
       "apiId": 2009,
       "title": "Gate integration test suite — verify card type drives gate behavior per spec matrix",
@@ -847,59 +955,6 @@
       "updated": "2026-03-31T15:48:33Z"
     },
     {
-      "index": 1899,
-      "apiId": 1982,
-      "title": "Two-layer heartbeat watchdog — launchd watches agents, Bedroom SSH watches Library",
-      "description": "## Experience\nA LaunchAgent dies and nobody notices until the next session boot. The daily review agents were exit 127 for two days before Wren caught it. I need two layers: launchd auto-restarts dead agents, and Bedroom cross-checks Library health so a machine-level failure gets caught too.\n\n## AC\n- [ ] Critical LaunchAgents have KeepAlive=true (auto-restart on crash)\n- [ ] Heartbeat agent emits a pulse event every 5 minutes via chorus-log.sh\n- [ ] Bedroom SSH health probe checks Library services hourly, alerts on failure\n- [ ] Alert emits as --level=critical nudge to Jeff when a monitored service is down\n\n## Files\n- Library/LaunchAgents/com.chorus.heartbeat.plist (new)\n- platform/scripts/heartbeat.sh (new)\n- platform/scripts/library-health-probe.sh (new — runs on Bedroom)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:18:13Z",
-      "updated": "2026-03-31T15:09:22Z"
-    },
-    {
-      "index": 1898,
-      "apiId": 1981,
-      "title": "nudge.sh respects pulse level — critical=osascript inject, info=persist-only",
-      "description": "## Experience\nI send a nudge and it always does the same thing — osascript inject regardless of urgency. A routine 'card pulled' notification steals Jeff's focus the same way a 'service down' alert does. The nudge system should respect the pulse level: critical = osascript inject (justified focus steal), info = persist only (ambient, drain on next prompt).\n\n## AC\n- [ ] Rust nudge subcommand in chorus-hooks: chorus-hook-shim nudge <target> '<message>' --level <level> [--from <sender>]\n- [ ] Level determines delivery: critical = osascript inject + persist, warn = persist + stderr hint, info = persist only\n- [ ] Persist writes to messaging tier SQLite (direct, no curl)\n- [ ] nudge.sh becomes a thin wrapper calling the Rust binary\n- [ ] DEC-107 still holds: persist AND deliver on every nudge — level controls the 'deliver' method\n\n## Files\n- platform/services/chorus-hooks/src/nudge.rs (existing — enhance with level support)\n- platform/scripts/nudge.sh (thin wrapper)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:18:13Z",
-      "updated": "2026-03-31T15:01:20Z"
-    },
-    {
-      "index": 1897,
-      "apiId": 1980,
-      "title": "Clearing highlights critical pulse events — visual distinction by level",
-      "description": "## Experience\n\nI'm watching the Clearing stream and a critical alert fires — service down, circuit break — but it looks the same as a routine card move. I can't tell what's urgent without reading every message. Critical events should jump out visually so I know instantly when something needs attention.\n\n## AC\n\n- [ ] Messages with level=critical get a red left border and bold treatment in the Clearing stream\n- [ ] Messages with level=warn get an orange left border\n- [ ] Messages with level=info (default) render normally — no visual change\n- [ ] Level parsed from chorus.log JSON events displayed in the stream\n- [ ] Works in both the unified stream and role-specific fold views\n\n## Files\n- chorus/directing/clearing/public/index.html (message rendering)",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:18:13Z",
-      "updated": "2026-03-31T14:54:04Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -916,24 +971,6 @@
       "done": false,
       "created": "2026-04-02T01:33:22Z",
       "updated": "2026-04-03T22:53:53Z"
-    },
-    {
-      "index": 1872,
-      "apiId": 1955,
-      "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
-      "description": "## Experience\nI hand Silas the architecture manual and say \"red pen this.\" He marks what's wrong. Same with Kade on engineering. The manuals are written from existing docs as-is — stale parts included. The gaps ARE the value. This is how I find out what we actually know vs what we think we know.\n\n## AC\n- [ ] Product manual — Gathering (vision, domains, value streams, user experience)\n- [ ] Product manual — Chorus (vision, services, coordination model, team ops)\n- [ ] Architecture manual — Gathering (topology, data stores, integrations, infra)\n- [ ] Architecture manual — Chorus (hooks, scripts, messaging, observability)\n- [ ] Engineering manual — Gathering (codebase, conventions, test strategy, deploy)\n- [ ] Engineering manual — Chorus (codebase, hooks, gates, CLI tools)\n- [ ] All manuals as HTML artifacts in doc-catalog\n- [ ] Written from current docs state — no cleanup first\n- [ ] Briefed to Silas and Kade for red-pen review",
-      "status": "Next",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new",
-        "strategy"
-      ],
-      "done": false,
-      "created": "2026-03-30T16:39:38Z",
-      "updated": "2026-04-02T15:16:47Z"
     },
     {
       "index": 1865,
@@ -1020,40 +1057,6 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
-    },
-    {
-      "index": 2017,
-      "apiId": 2100,
-      "title": "Bad URI graph load errors — 1294 data quality issues in people/connections TTL filenames",
-      "description": "",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:infrastructure",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-04T12:25:54Z",
-      "updated": "2026-04-04T12:25:54Z"
-    },
-    {
-      "index": 2007,
-      "apiId": 2090,
-      "title": "/cs shows routing tag instead of seed content — photo seed displayed as '#wren' instead of showing what Jeff actually sent",
-      "description": "## Experience\nJeff sends a photo seed tagged #wren. On next /cs or session start, the receiving role reads the photo and describes what's in it. 'Birdbath with verdigris patina, light through water, leaves at the bottom — your garden.' Jeff knows his seed arrived because someone received it, looked at it, and responded to it. Like a person would.\n\n## Acceptance Criteria\n- [ ] /cs shows seed content: text for text seeds, URL for links, description for photos — not hashtags, not file paths\n- [ ] Photo seeds: the role reads the image file and generates a human description of what's in it\n- [ ] The description appears in /cs output so Jeff sees it without asking\n- [ ] Jeff sends a photo from his phone, runs /cs, sees a description of what he sent — verified live",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:app",
-        "domain:seeds",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T21:29:17Z",
-      "updated": "2026-04-03T22:02:32Z"
     },
     {
       "index": 1996,
@@ -1161,24 +1164,6 @@
       "done": false,
       "created": "2026-04-02T10:28:02Z",
       "updated": "2026-04-02T10:28:02Z"
-    },
-    {
-      "index": 1959,
-      "apiId": 2042,
-      "title": "Domain crawler v2 — add code, logs, and alerts to the crawl",
-      "description": "## Experience\nI crawl a domain and see everything — not just cards and conversations, but the actual code, the logs it emitted today, and the alerts configured for it. Full operational picture of any domain from one query.\n\n## AC\n1. Code facet: codebase scan by directory structure and imports, mapped to domain\n2. Logs facet: Loki query filtered by domain name, recent entries\n3. Alerts facet: Grafana alert rules tagged by domain\n4. All three integrated into existing crawl response alongside cards, conversations, OWL, spine\n5. BDD scenarios for each new facet\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/domain-crawler.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n\n## Context\nCurrent crawler (#1956) joins cards, conversations, OWL, and spine. Jeff wants the full operational picture: 7 data sources per domain. Code scan by directory, Loki for logs, Grafana for alerts.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:chorus",
-        "type:enhance",
-        "visibility"
-      ],
-      "done": false,
-      "created": "2026-04-02T10:26:28Z",
-      "updated": "2026-04-02T10:26:28Z"
     },
     {
       "index": 1948,
@@ -1334,13 +1319,13 @@
       "priority": "P1",
       "domains": [
         "chunk:ops",
+        "sequence:hardening",
         "domain:chorus",
-        "type:fix",
-        "ops"
+        "type:fix"
       ],
       "done": false,
       "created": "2026-04-01T12:33:06Z",
-      "updated": "2026-04-01T12:33:06Z"
+      "updated": "2026-04-04T13:12:06Z"
     },
     {
       "index": 1932,
@@ -1359,24 +1344,6 @@
       "done": false,
       "created": "2026-04-01T12:31:33Z",
       "updated": "2026-04-01T12:31:33Z"
-    },
-    {
-      "index": 1927,
-      "apiId": 2010,
-      "title": "Fix pulse integration test — calls bash on Rust binary, 3/6 layers fail",
-      "description": "## Experience\nI run the pulse integration test and 3 of 6 layers fail. The test calls bash on a Rust binary — that's the break from the .sh wrapper removal.\n\n## AC\n1. pulse-integration-test.sh invokes chorus-log directly, not via bash\n2. All 6 layers pass when run",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "ops"
-      ],
-      "done": false,
-      "created": "2026-04-01T00:36:45Z",
-      "updated": "2026-04-01T00:37:22Z"
     },
     {
       "index": 1925,
@@ -1774,24 +1741,6 @@
       "updated": "2026-03-30T16:49:28Z"
     },
     {
-      "index": 1840,
-      "apiId": 1923,
-      "title": "Repo-track all skills — ~/.claude/skills/ canonical source in chorus, symlinks out",
-      "description": "## Experience\nI edit a skill during a card and can't commit the change. Git can't see it, can't diff it, can't track it. 30+ skills live outside the repo in ~/.claude/skills/ with no version control. Edits vanish between sessions.\n\n## AC\n1. All skill SKILL.md files have canonical source inside the chorus repo\n2. ~/.claude/skills/ contains symlinks pointing to repo source, not standalone files\n3. Skill edits show up in git diff and can be committed normally\n4. Existing skill content preserved — no content loss during migration\n5. Document the convention so new skills get created in-repo first",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore",
-        "infrastructure"
-      ],
-      "done": false,
-      "created": "2026-03-29T21:17:05Z",
-      "updated": "2026-03-29T21:17:05Z"
-    },
-    {
       "index": 1834,
       "apiId": 1917,
       "title": "Reports from the Blockverse — blog about what it's actually like to coordinate AI agents",
@@ -1808,24 +1757,6 @@
       "done": false,
       "created": "2026-03-29T18:14:40Z",
       "updated": "2026-03-30T16:49:37Z"
-    },
-    {
-      "index": 1826,
-      "apiId": 1909,
-      "title": "Fix chorus folder structure — production code in gitignored directory",
-      "description": "## Experience\n\nI expect any role to be able to check out the repo and run the tests. Right now Clearing code lives in a gitignored directory — Silas sees 52 passing tests, Wren sees 41. That's not a test problem, that's a structure problem. Production code should never be invisible to the team.\n\n## AC\n- [ ] Clearing/Bridge code (chorus/bridge/) is committable and shared across roles\n- [ ] Tests run from committed code, not working tree only\n- [ ] Folder structure documented — what lives where, why\n- [ ] No production code in gitignored paths\n\n## Context\nchorus/ is gitignored from the team repo. The Clearing server, session tailer, test files — all trapped in one role's working tree. Roles can't verify each other's changes. #1818 tests pass for Silas (52/52) and fail for Wren (41/52) because the test file isn't committed. This is a structural problem, not a test problem.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "ops"
-      ],
-      "done": false,
-      "created": "2026-03-29T14:55:25Z",
-      "updated": "2026-03-30T13:03:12Z"
     },
     {
       "index": 1816,
@@ -1915,6 +1846,104 @@
       "done": false,
       "created": "2026-03-27T15:43:31Z",
       "updated": "2026-03-30T13:04:10Z"
+    },
+    {
+      "index": 1762,
+      "apiId": 1845,
+      "title": "Werk Contract tab — load and render team operating contract",
+      "description": "## Experience\n\nI click the Contract tab on the Werk page and it says \"Click to load\" — then nothing happens. The team operating contract exists in decisions but I can't see it. I want to open that tab and immediately see which rules are being followed and which are being violated right now — WIP limits, attention contract, proving gates, role ownership.\n\n## AC\n1. Contract tab loads and renders — no empty placeholder\n2. Shows: WIP limits (DEC-051), attention contract (DEC-1571), proving gates (DEC-048), role ownership (DEC-058)\n3. Live contract status — which rules are being followed vs violated right now\n4. Data from existing decisions + board state, no new API needed\n5. Extend /api/analytics endpoints for contract compliance metrics\n\n## Why\nContract tab is broken — shows \"Click to load\" and never loads. The team operating contract exists in decisions but isn't visible. Jeff should see compliance at a glance.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance"
+      ],
+      "done": false,
+      "created": "2026-03-27T15:43:21Z",
+      "updated": "2026-03-30T13:04:13Z"
+    },
+    {
+      "index": 1761,
+      "apiId": 1844,
+      "title": "Werk Flow Metrics tab — validate data completeness, fix understated card counts",
+      "description": "## Experience\nI open the Werk Flow Metrics tab and the numbers don't match what I know. I've shipped 24 cards in a session and the dashboard says 98 total completed — that's way off. I need to trust these graphs the same way I trust the board itself, and right now the undercount makes the whole metrics tab feel unreliable.\n\n## AC\n1. Card count matches Vikunja reality — all cards, all statuses, not a subset\n2. Completed count includes Won't Do + Done\n3. Per-role lead times exclude parked/Later cards that skew averages\n4. Cumulative flow slopes match actual velocity (24 cards/session, not flat)\n5. Trace and fix data source — Vikunja pagination, workflow engine subset, or query filter causing undercount\n6. Extend existing /api/analytics/pipeline endpoint\n\n## Why\n212 cards / 98 completed massively understates reality. All graphs show lower throughput than actual. Jeff can't trust the dashboard if the numbers don't match what he sees.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus"
+      ],
+      "done": false,
+      "created": "2026-03-27T15:43:04Z",
+      "updated": "2026-03-30T13:03:15Z"
+    },
+    {
+      "index": 1747,
+      "apiId": 1830,
+      "title": "Fix photos date sort — Takeout upload dates and scan dates push old photos to page 1",
+      "description": "## Experience\nI open the Photos page and page 1 is full of old scanned photos from the 1960s and Takeout imports with harvest dates. I expect to see my most recent photos first — what I took last week, not a scan that happened to land in March 2026. The sort order should match my mental model of \"newest photos.\"\n\n## Files\n- src/handlers/photo.handler.ts\n\n## AC\n- [ ] Photos page sorts by actual capture date, not upload/scan date\n- [ ] Takeout records with dateTaken near harvest dates (2026-03-12) sorted to end or flagged\n- [ ] Page 1 shows most recent real photos (2025-2026), not 6-year-old or vintage scans\n- [ ] Sort order matches what Jeff expects when he opens the page",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-27T12:16:43Z",
+      "updated": "2026-03-30T13:03:20Z"
+    },
+    {
+      "index": 1739,
+      "apiId": 1822,
+      "title": "Scanned photo dating strategy — dateTaken vs dateDigitized for physical archive",
+      "description": "## Experience\nI have boxes of family photos going back to the 1880s. When I scan them, the scanner stamps today's date. So my grandmother's 1920 portrait sorts next to yesterday's iPhone shot. I need the system to know the difference between when a photo was taken and when it was digitized, and I need a way to say \"this folder is roughly 1960s Europe trip\" without dating every single print.\n\n## AC\n1. ICD extended with dateTaken (original, estimated) and dateDigitized (scan date) as separate fields\n2. Confidence level on dateTaken — exact, year, decade, unknown\n3. Batch scanning workflow: folder-level date ranges (e.g. '1960s Europe trip')\n4. Era 0 (pre-digital) authority rules in merge logic\n5. Decision: manual annotation vs AI vision vs context clues for date estimation\n\n## Why\n5K+ physical photos spanning 1880s-1985. Scanners write today's date. The real date is in Jeff's memory or context clues. Without separating dateTaken from dateDigitized, scanned photos sort to 2026 instead of 1920. The family archive needs both timestamps.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-26T20:54:02Z",
+      "updated": "2026-03-30T13:03:39Z"
+    },
+    {
+      "index": 1736,
+      "apiId": 1819,
+      "title": "Sequence diagram — /pipeline flow",
+      "description": "## Experience\nI want to see how a multi-card pipeline flows — how Wren drives it, when roles get nudged, and where I come in for the demo at the end. A sequence diagram makes the orchestration legible at a glance. Same dark-theme HTML as the other Chorus skill diagrams so they form a complete visual reference.\n\n## Files\n- product-manager/artifacts/sequence-pipeline.html\n- jeff-bridwell-personal-site/public/gathering-docs/sequence-pipeline.html\n\n## AC\n1. /pipeline sequence diagram — multi-card pipeline flow (Wren drives, roles nudge on completion, Jeff sees demo at end)\n2. HTML dark theme matching pair-flow-sequence.html\n3. Added to doc-catalog\n\n## Why\nProduct documentation for Chorus interaction skills.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": false,
+      "created": "2026-03-26T20:23:09Z",
+      "updated": "2026-04-01T00:39:34Z"
+    },
+    {
+      "index": 1731,
+      "apiId": 1814,
+      "title": "Diagnose AirPlay stale session — Library HomePod silent from Mac",
+      "description": "## Experience\nI tell Siri to play music on the HomePod and it works. Then I try to AirPlay from my Mac and nothing comes out — the Mac shows it's connected, HTTP 200s are flowing, but silence. The only fix is unplugging the HomePod and plugging it back in. I need this to either just work or have a software workaround that doesn't require me to physically touch the HomePod.\n\n## AC\n1. Identify root cause: HomePod plays via Siri but silent via Mac AirPlay. Transport shows HTTP 200s, Mac shows connected, no audio output.\n2. Music.app logs show 'Missing locationUrl to make a request' — stale discovery cache\n3. Document workaround (power cycle HomePod) and permanent fix if one exists\n4. Check if coreaudiod restart resolves without HomePod power cycle\n\n## Why\nAirPlay from Library Mac to Library HomePod fails frequently. Only fix is unplug/replug HomePod. Affects music playback for Jeff. Navidrome bypasses Apple Music but still needs AirPlay to reach HomePod.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:music"
+      ],
+      "done": false,
+      "created": "2026-03-26T19:28:54Z",
+      "updated": "2026-03-30T13:04:01Z"
     },
     {
       "index": 1721,
