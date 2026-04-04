@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chorus Operational Runbook</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; background: #fafafa; line-height: 1.6; }
+  h1 { font-size: 1.8rem; border-bottom: 3px solid #2563eb; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+  h2 { font-size: 1.3rem; color: #1e40af; margin-top: 2.5rem; border-bottom: 1px solid #cbd5e1; padding-bottom: 0.3rem; }
+  h3 { font-size: 1.1rem; color: #334155; margin-top: 1.5rem; }
+  pre { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; }
+  code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85em; }
+  p code { background: #f1f5f9; padding: 0.15rem 0.4rem; border-radius: 3px; }
+  .alert { background: #fef2f2; border-left: 4px solid #dc2626; padding: 0.75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; font-weight: 600; }
+  .rule { background: #eff6ff; border-left: 4px solid #2563eb; padding: 0.75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th { background: #e2e8f0; text-align: left; padding: 0.5rem 0.75rem; font-size: 0.85rem; }
+  td { border-bottom: 1px solid #e2e8f0; padding: 0.5rem 0.75rem; font-size: 0.85rem; }
+  tr:hover td { background: #f8fafc; }
+  ul { padding-left: 1.5rem; }
+  li { margin: 0.3rem 0; }
+  .error { color: #dc2626; font-weight: 600; }
+  .warn { color: #d97706; font-weight: 600; }
+  .info { color: #6b7280; }
+  ol li { margin: 0.5rem 0; }
+  .done-list { list-style: none; padding-left: 0; }
+  .done-list li { padding: 0.3rem 0; padding-left: 1.5rem; position: relative; }
+  .done-list li.yes::before { content: "\2713"; color: #16a34a; position: absolute; left: 0; font-weight: bold; }
+  .done-list li.no::before { content: "\2717"; color: #dc2626; position: absolute; left: 0; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Chorus Operational Runbook</h1>
+
+<div>
+<h2>Deploy Sequence</h2>
+<p>Every deploy follows this sequence. No exceptions. No shortcuts.</p>
+
+<h3>1. Pre-Deploy</h3>
+<pre><code># Run full test suite
+cd /Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site
+npm test
+
+# Run BDD gate tests
+cd /Users/jeffbridwell/CascadeProjects/chorus/platform
+npx cucumber-js
+
+# Verify current pipeline health BEFORE touching anything
+bash ~/.chorus/scripts/check-seeds.sh
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/agent-state.sh health
+
+# Check for deploy freeze
+# If merge freeze is active, STOP unless this is a SWAT card</code></pre>
+<div class="alert">If any check fails: STOP. Fix first. Do not deploy on red.</div>
+
+<h3>2. Deploy</h3>
+<pre><code># App changes (TypeScript)
+npm run build
+bash app-state.sh deploy
+
+# Hook binary changes (Rust)
+cd services/chorus-hooks && cargo build --release
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/agent-state.sh restart chorus-hooks</code></pre>
+
+<h3>3. Post-Deploy Verification</h3>
+<p>Run within 60 seconds of deploy:</p>
+<pre><code># Health checks
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/agent-state.sh health
+bash ~/.chorus/scripts/check-seeds.sh
+
+# Functional checks — not just "is it running" but "does it work"
+# Send a real seed and verify it arrives
+# Send a nudge and verify it delivers
+# Run /cs and verify output matches reality</code></pre>
+<div class="alert">If post-deploy checks fail: rollback immediately.</div>
+
+<h3>4. Rollback</h3>
+<pre><code># App rollback
+cd /Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site
+git revert HEAD
+bash scripts/app-state.sh deploy
+
+# Hook binary rollback
+cd /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks
+git revert HEAD
+cargo build --release
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/agent-state.sh restart chorus-hooks</code></pre>
+</div>
+
+<div>
+<h2>Service Inventory</h2>
+
+<h3>Native LaunchAgents <span class="info">(managed by agent-state.sh)</span></h3>
+<ul>
+<li><code>com.chorus.hooks</code> — Hook server (Rust binary, /tmp/chorus-hooks.sock)</li>
+<li><code>com.chorus.api</code> — Chorus API (localhost:3340)</li>
+<li><code>com.chorus.context-cache</code> — Daily context cache refresh</li>
+<li><code>com.chorus.session-watcher</code> — Session transcript indexing</li>
+<li><code>com.chorus.jeff-input-monitor</code> — Jeff input monitoring</li>
+<li><code>com.chorus.alert-runner</code> — Alert rule evaluation</li>
+<li><code>com.chorus.alert-notifier</code> — Alert delivery</li>
+<li><code>com.gathering.messaging</code> — Bridge messaging API (localhost:3475)</li>
+<li><code>com.gathering.mysql</code> — MySQL (localhost:3306)</li>
+<li>All other <code>com.chorus.*</code> and <code>com.gathering.*</code> agents</li>
+</ul>
+
+<h3>App Services <span class="info">(managed by app-state.sh)</span></h3>
+<ul>
+<li>Gathering app (localhost:3000)</li>
+<li>Fuseki (localhost:3030)</li>
+<li>NiFi, Loki, Grafana</li>
+</ul>
+
+<h3>Key Ports</h3>
+<table>
+<tr><th>Port</th><th>Service</th><th>Health Check</th></tr>
+<tr><td>3000</td><td>Gathering app</td><td><code>curl -s localhost:3000/health</code></td></tr>
+<tr><td>3030</td><td>Fuseki</td><td><code>curl -s localhost:3030/$/ping</code></td></tr>
+<tr><td>3100</td><td>Grafana</td><td><code>curl -s localhost:3100/api/health</code></td></tr>
+<tr><td>3102</td><td>Loki</td><td><code>curl -s localhost:3102/ready</code></td></tr>
+<tr><td>3340</td><td>Chorus API</td><td><code>curl -s localhost:3340/api/chorus/health</code></td></tr>
+<tr><td>3456</td><td>Vikunja</td><td><code>curl -s localhost:3456/api/v1/info</code></td></tr>
+<tr><td>3470</td><td>Bridge</td><td><code>curl -s localhost:3470/health</code></td></tr>
+<tr><td>3475</td><td>Messaging API</td><td><code>curl -s localhost:3475/health</code></td></tr>
+<tr><td>9090</td><td>Prometheus</td><td><code>curl -s localhost:9090/-/healthy</code></td></tr>
+</table>
+</div>
+
+<div>
+<h2>Error Classification</h2>
+
+<h3><span class="error">Errors</span> — must fix immediately</h3>
+<ul>
+<li>Seed write failures (SPARQL update failed)</li>
+<li>Nudge delivery failures (osascript not injecting)</li>
+<li>Hook server not responding on socket</li>
+<li>Any service returning non-200 on health check</li>
+<li>Fuseki graph load failures</li>
+</ul>
+
+<h3><span class="warn">Warnings</span> — investigate within session</h3>
+<ul>
+<li>Slow Chorus search (&gt;2s)</li>
+<li>Stale session index (&gt;1hr behind)</li>
+<li>LaunchAgent restart loops</li>
+</ul>
+
+<h3><span class="info">Info</span> — log only</h3>
+<ul>
+<li>Seed probe health checks</li>
+<li>Routine gemba ticks</li>
+<li>Session start/stop events</li>
+</ul>
+
+<div class="rule">Rule: If Jeff would notice it, it's an error. Not a warning. Not info.</div>
+</div>
+
+<div>
+<h2>Daily Health Check</h2>
+<p>Run at session start, every session:</p>
+<pre><code>bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/agent-state.sh health          # All agents running?
+bash ~/.chorus/scripts/check-seeds.sh  # Pipeline healthy?
+curl -s localhost:3340/api/chorus/health   # Chorus API up?</code></pre>
+<div class="alert">If any of these fail, that's the first card you work on. Not whatever was planned.</div>
+</div>
+
+<div>
+<h2>Incident Response</h2>
+<ol>
+<li><strong>Jeff reports something broken</strong> — believe him. Investigate immediately.</li>
+<li><strong>Check logs</strong> — Loki first (<code>localhost:3102</code>), then local files.</li>
+<li><strong>Find root cause</strong> — not symptoms. "Fuseki is down" is a symptom. Why is it down?</li>
+<li><strong>Fix and verify</strong> — the fix isn't done until Jeff's use case works, not until tests pass.</li>
+<li><strong>Post-incident</strong> — what monitoring should have caught this? Card it.</li>
+</ol>
+</div>
+
+<div>
+<h2>What "Done" Means</h2>
+
+<p>A deploy is done when:</p>
+<ul class="done-list">
+<li class="yes">Pre-checks passed</li>
+<li class="yes">Code deployed</li>
+<li class="yes">Post-checks passed</li>
+<li class="yes">Jeff's primary use cases verified (seeds arrive, nudges deliver, search returns results)</li>
+<li class="yes">No new errors in Loki for 5 minutes</li>
+</ul>
+
+<p>A deploy is <strong>NOT</strong> done when:</p>
+<ul class="done-list">
+<li class="no">Tests pass but you haven't sent a real seed</li>
+<li class="no">Health checks return 200 but you haven't verified functional behavior</li>
+<li class="no">You said "deployed" without running post-checks</li>
+</ul>
+</div>
+
+</body>
+</html>
