@@ -1,0 +1,142 @@
+#!/bin/bash
+# watchdog.sh — Team awareness stall detection (#1958)
+# Reads role-state timestamps, nudges stale roles, escalates to Wren then Jeff.
+#
+# Thresholds: 2min → nudge role, 3min → escalate to Wren, 5min → alert Jeff
+# Runs every 60s via LaunchAgent com.chorus.watchdog
+#
+# State tracking: /tmp/watchdog-{role}.state (last nudge time + escalation level)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+NUDGE="$SCRIPT_DIR/nudge"
+CHORUS_LOG="$SCRIPT_DIR/../logs/chorus.log"
+SCAN_DIR="/tmp/claude-team-scan"
+WATCHDOG_DIR="/tmp/watchdog"
+BRIDGE="http://localhost:3470/api/message"
+
+NUDGE_THRESHOLD=300    # 2 minutes
+ESCALATE_THRESHOLD=600 # 3 minutes
+ALERT_THRESHOLD=900    # 5 minutes
+
+mkdir -p "$WATCHDOG_DIR"
+
+now=$(date +%s)
+all_inactive=true
+inactive_count=0
+
+for role in wren silas kade; do
+  STATE_FILE="$SCAN_DIR/${role}-declared.json"
+  WATCHDOG_STATE="$WATCHDOG_DIR/${role}.state"
+
+  # Skip if no state file
+  if [ ! -f "$STATE_FILE" ]; then
+    continue
+  fi
+
+  # Read state timestamp and current state
+  STATE_TS=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('ts',0))" 2>/dev/null || echo "0")
+  STATE_VAL=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('state','unknown'))" 2>/dev/null || echo "unknown")
+  CARD=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('card',''))" 2>/dev/null || echo "")
+
+  # Skip idle/waiting roles — they're not expected to be active
+  if [ "$STATE_VAL" = "idle" ] || [ "$STATE_VAL" = "waiting" ]; then
+    continue
+  fi
+
+  age=$((now - STATE_TS))
+
+  # Check observation file for recent tool calls
+  OBS_FILE="$SCAN_DIR/${role}-observations.jsonl"
+  last_obs=0
+  if [ -f "$OBS_FILE" ]; then
+    last_obs=$(tail -1 "$OBS_FILE" 2>/dev/null | python3 -c "
+import sys,json
+from datetime import datetime,timezone
+try:
+  d=json.load(sys.stdin)
+  ts=d.get('ts','')
+  if ts.endswith('Z'):
+    dt=datetime.strptime(ts,'%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+  else:
+    dt=datetime.fromisoformat(ts)
+  import time
+  print(int(dt.timestamp()))
+except: print(0)" 2>/dev/null || echo "0")
+  fi
+
+  obs_age=$((now - last_obs))
+
+  # Use the more recent of state change or observation
+  effective_age=$age
+  if [ "$last_obs" -gt "$STATE_TS" ]; then
+    effective_age=$obs_age
+  fi
+
+  # Read watchdog state (last action)
+  last_action="none"
+  last_action_ts=0
+  if [ -f "$WATCHDOG_STATE" ]; then
+    last_action=$(head -1 "$WATCHDOG_STATE" 2>/dev/null || echo "none")
+    last_action_ts=$(tail -1 "$WATCHDOG_STATE" 2>/dev/null || echo "0")
+  fi
+
+  # Role is active recently — reset watchdog
+  if [ "$effective_age" -lt "$NUDGE_THRESHOLD" ]; then
+    if [ "$last_action" != "none" ]; then
+      echo "none" > "$WATCHDOG_STATE"
+      echo "$now" >> "$WATCHDOG_STATE"
+    fi
+    all_inactive=false
+    continue
+  fi
+
+  all_inactive=false
+  inactive_count=$((inactive_count + 1))
+
+  # Level 1: Nudge the role (2min)
+  if [ "$effective_age" -ge "$NUDGE_THRESHOLD" ] && [ "$last_action" = "none" ]; then
+    bash "$NUDGE" "$role" "watchdog: no activity in $((effective_age / 60))min, are you blocked?" --from system 2>/dev/null || true
+    echo "nudged" > "$WATCHDOG_STATE"
+    echo "$now" >> "$WATCHDOG_STATE"
+    echo "role.state.changed | system watchdog.nudge.sent role=$role age=${effective_age}s" >> "$CHORUS_LOG"
+    continue
+  fi
+
+  # Level 2: Escalate to Wren (3min)
+  if [ "$effective_age" -ge "$ESCALATE_THRESHOLD" ] && [ "$last_action" = "nudged" ]; then
+    bash "$NUDGE" "$role" "watchdog: still no response after $((effective_age / 60))min" --from system 2>/dev/null || true
+    bash "$NUDGE" wren "watchdog: $role unresponsive $((effective_age / 60))min on #${CARD}" --from system 2>/dev/null || true
+    echo "escalated" > "$WATCHDOG_STATE"
+    echo "$now" >> "$WATCHDOG_STATE"
+    echo "role.state.changed | system watchdog.escalated role=$role age=${effective_age}s" >> "$CHORUS_LOG"
+    continue
+  fi
+
+  # Level 3: Alert Jeff (5min)
+  if [ "$effective_age" -ge "$ALERT_THRESHOLD" ] && [ "$last_action" = "escalated" ]; then
+    MSG=$(printf 'watchdog: %s unresponsive %dmin on #%s. Nudged at 2min, escalated to Wren at 3min.' "$role" "$((effective_age / 60))" "$CARD")
+    curl -sf -X POST "$BRIDGE" \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg text "$MSG" --arg from "system" '{from: $from, text: $text}')" \
+      &>/dev/null || true
+    echo "alerted" > "$WATCHDOG_STATE"
+    echo "$now" >> "$WATCHDOG_STATE"
+    echo "role.state.changed | system watchdog.alert.jeff role=$role age=${effective_age}s" >> "$CHORUS_LOG"
+  fi
+done
+
+# System-wide alert: all roles inactive
+if [ "$inactive_count" -eq 3 ]; then
+  COOLDOWN="/tmp/watchdog-all-inactive-$(date '+%Y-%m-%d-%H')"
+  if [ ! -f "$COOLDOWN" ]; then
+    touch "$COOLDOWN"
+    MSG="watchdog: All roles inactive for 10+ minutes"
+    curl -sf -X POST "$BRIDGE" \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg text "$MSG" --arg from "system" '{from: $from, text: $text}')" \
+      &>/dev/null || true
+    echo "role.state.changed | system watchdog.all.inactive" >> "$CHORUS_LOG"
+  fi
+fi

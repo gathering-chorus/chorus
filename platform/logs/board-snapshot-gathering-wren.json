@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T15:39:03.125Z",
+  "timestamp": "2026-04-04T15:54:09.071Z",
   "tasks": [
     {
       "index": 2022,
@@ -19,6 +19,24 @@
       "done": false,
       "created": "2026-04-04T13:50:50Z",
       "updated": "2026-04-04T13:54:06Z"
+    },
+    {
+      "index": 2018,
+      "apiId": 2101,
+      "title": "Board domain total doesn't match sub-chunk sum — Chorus shows 46 total but sub-groups add to 5",
+      "description": "## Experience\nI open the Clearing domain panel and see 'Chorus: 46 cards' at the top. I expand the sub-groups and count: 5 cards total across all groups. The total doesn't match the parts. Either the total counts cards the groups don't show, or the grouping logic is dropping cards.\n\n## AC\n- [ ] Diagnose: identify which cards are counted in the total but missing from sub-groups\n- [ ] Fix: domain total matches the sum of sub-group counts\n- [ ] Test: verify total === sum of sub-groups for all domains with sub-chunks\n\n## Files\n- src/handlers/team.handler.ts (or wherever Clearing domain panel data is served)\n- platform/board-client/src/cli.ts (sequence/chunk display)",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-04T13:23:46Z",
+      "updated": "2026-04-04T15:39:47Z"
     },
     {
       "index": 2000,
@@ -55,24 +73,6 @@
       "done": false,
       "created": "2026-04-02T01:33:22Z",
       "updated": "2026-04-04T15:26:24Z"
-    },
-    {
-      "index": 1872,
-      "apiId": 1955,
-      "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
-      "description": "## Experience\nI hand Silas the architecture manual and say \"red pen this.\" He marks what's wrong. Same with Kade on engineering. The manuals are written from existing docs as-is — stale parts included. The gaps ARE the value. This is how I find out what we actually know vs what we think we know.\n\n## AC\n- [ ] Product manual — Gathering (vision, domains, value streams, user experience)\n- [ ] Product manual — Chorus (vision, services, coordination model, team ops)\n- [ ] Architecture manual — Gathering (topology, data stores, integrations, infra)\n- [ ] Architecture manual — Chorus (hooks, scripts, messaging, observability)\n- [ ] Engineering manual — Gathering (codebase, conventions, test strategy, deploy)\n- [ ] Engineering manual — Chorus (codebase, hooks, gates, CLI tools)\n- [ ] All manuals as HTML artifacts in doc-catalog\n- [ ] Written from current docs state — no cleanup first\n- [ ] Briefed to Silas and Kade for red-pen review",
-      "status": "WIP",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new",
-        "sequence:strategy"
-      ],
-      "done": false,
-      "created": "2026-03-30T16:39:38Z",
-      "updated": "2026-04-04T13:11:31Z"
     },
     {
       "index": 2031,
@@ -1048,6 +1048,23 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2034,
+      "apiId": 2117,
+      "title": "Clearing streams pane only fills half the screen on mobile",
+      "description": "",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T15:39:06Z",
+      "updated": "2026-04-04T15:39:06Z"
+    },
+    {
       "index": 2033,
       "apiId": 2116,
       "title": "Watchdog false alerts — reports stale cards already accepted, wrong card assignments for roles",
@@ -1082,24 +1099,6 @@
       "done": false,
       "created": "2026-04-04T14:53:01Z",
       "updated": "2026-04-04T14:53:01Z"
-    },
-    {
-      "index": 2018,
-      "apiId": 2101,
-      "title": "Board domain total doesn't match sub-chunk sum — Chorus shows 46 total but sub-groups add to 5",
-      "description": "## Experience\nI open the Clearing domain panel and see 'Chorus: 46 cards' at the top. I expand the sub-groups and count: 5 cards total across all groups. The total doesn't match the parts. Either the total counts cards the groups don't show, or the grouping logic is dropping cards.\n\n## AC\n- [ ] Diagnose: identify which cards are counted in the total but missing from sub-groups\n- [ ] Fix: domain total matches the sum of sub-group counts\n- [ ] Test: verify total === sum of sub-groups for all domains with sub-chunks\n\n## Files\n- src/handlers/team.handler.ts (or wherever Clearing domain panel data is served)\n- platform/board-client/src/cli.ts (sequence/chunk display)",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-04T13:23:46Z",
-      "updated": "2026-04-04T15:28:18Z"
     },
     {
       "index": 1996,
