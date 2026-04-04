@@ -57,6 +57,10 @@ function isLocal(req: express.Request): boolean {
   return false;
 }
 
+// Body parsers BEFORE auth — login form needs req.body parsed (#1782)
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
 app.use((req, res, next) => {
   // OG image always open (link previews need it without auth)
   if (req.path === '/bridge-og.jpg') return next();
@@ -191,8 +195,7 @@ app.use(express.static(path.join(__dirname, '../public'), {
     res.setHeader('Pragma', 'no-cache');
   }
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// Body parsers moved before auth middleware (#1782)
 
 // Guest logout (#1719)
 app.get('/logout', (_req, res) => {
