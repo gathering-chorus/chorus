@@ -1,7 +1,25 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T21:30:01.170Z",
+  "timestamp": "2026-04-04T22:28:56.641Z",
   "tasks": [
+    {
+      "index": 1939,
+      "apiId": 2022,
+      "title": "chorus-hooks exclusive socket bind — detect and replace orphan processes on startup",
+      "description": "## Experience\nAn orphan chorus-hooks process from a prior session held the unix socket. The new process started by launchctl competed with it. Jeff got stale hook responses until the orphan was manually stopped. I need the server to own the socket exclusively — detect a dead holder and take over, or fail loudly if another live process holds it.\n\n## AC\n1. On startup, chorus-hooks checks if /tmp/chorus-hooks.sock is held by another process\n2. If holder PID is dead, remove stale socket and bind\n3. If holder PID is alive, log error and exit with non-zero (launchd will retry)\n4. Write PID file at /tmp/chorus-hooks.pid for orphan detection\n\n## Files\n- platform/services/chorus-hooks/src/main.rs",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-01T13:44:50Z",
+      "updated": "2026-04-04T21:32:24Z"
+    },
     {
       "index": 2043,
       "apiId": 2126,
@@ -1212,24 +1230,6 @@
       "updated": "2026-04-01T14:33:13Z"
     },
     {
-      "index": 1939,
-      "apiId": 2022,
-      "title": "chorus-hooks exclusive socket bind — detect and replace orphan processes on startup",
-      "description": "## Experience\nAn orphan chorus-hooks process from a prior session held the unix socket. The new process started by launchctl competed with it. Jeff got stale hook responses until the orphan was manually stopped. I need the server to own the socket exclusively — detect a dead holder and take over, or fail loudly if another live process holds it.\n\n## AC\n1. On startup, chorus-hooks checks if /tmp/chorus-hooks.sock is held by another process\n2. If holder PID is dead, remove stale socket and bind\n3. If holder PID is alive, log error and exit with non-zero (launchd will retry)\n4. Write PID file at /tmp/chorus-hooks.pid for orphan detection\n\n## Files\n- platform/services/chorus-hooks/src/main.rs",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-01T13:44:50Z",
-      "updated": "2026-04-01T13:44:50Z"
-    },
-    {
       "index": 1938,
       "apiId": 2021,
       "title": "Hook to block /tmp usage — enforce CSC-scoped persistence",
@@ -1860,6 +1860,21 @@
       "done": false,
       "created": "2026-03-23T22:13:30Z",
       "updated": "2026-03-30T13:05:22Z"
+    },
+    {
+      "index": 1647,
+      "apiId": 1730,
+      "title": "Source registry service — runtime API for provider status, load state, and staleness",
+      "description": "## Experience\nI keep asking \"what sources do we have for photos?\" and \"when was Fuseki last loaded?\" and someone has to go dig through files and graphs to answer. I want a single API endpoint where I can ask those questions and get a straight answer — what's loaded, when, how many records, and what's stale. The ICD defines the rules; this service reads them at runtime so I don't have to keep rediscovering what we already know.\n\nJeff's direction: we keep rediscovering what sources exist, where they live, and what's loaded. The ICD (#1642) defines the rules. This service reads them at runtime.\n\nAPI endpoint that answers:\n- What source graphs exist in Fuseki per domain?\n- When was each last loaded/refreshed?\n- What's the record count vs expected count from provider?\n- Which sources are stale (schema hash changed since last load)?\n- For a given record (by date), which source is golden for each field?\n\nReads from: ICD provider model, Fuseki graph metadata, icd:schemaHash, icd:needsRevalidation.\n\nRelated: #1618 (cache version hashes), #1642 (era-scoped ICD)\n\n## AC\n- [ ] GET /api/registry/sources/:domain — list all providers with load status\n- [ ] GET /api/registry/authority/:domain?date=YYYY-MM-DD — which provider is golden per field for a given date\n- [ ] Staleness detection — flag source graphs where schema hash != current ICD version\n- [ ] Record count comparison — loaded vs expected per provider\n- [ ] Surfaced on a page or existing dashboard (not just API)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:34:16Z",
+      "updated": "2026-03-30T13:05:33Z"
     },
     {
       "index": 1721,

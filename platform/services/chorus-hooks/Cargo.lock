@@ -153,6 +153,7 @@ dependencies = [
  "chrono",
  "hyper",
  "hyper-util",
+ "libc",
  "regex",
  "rusqlite",
  "serde",
