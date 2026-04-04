@@ -1,7 +1,25 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T19:27:56.342Z",
+  "timestamp": "2026-04-04T19:37:59.927Z",
   "tasks": [
+    {
+      "index": 2033,
+      "apiId": 2116,
+      "title": "Watchdog false alerts — reports stale cards already accepted, wrong card assignments for roles",
+      "description": "## Experience\nJeff sees watchdog alerts saying Kade is unresponsive on #1718 (not his card) and Silas unresponsive on #2031 (already accepted). The alerts are noise — they erode trust in the system. Jeff should never see a false alert.\n\n## AC\n1. Watchdog reads current role-state declared JSON, not stale card assignments\n2. Watchdog checks card status before alerting — no alerts on Done/accepted cards\n3. State emission gap between acp and next card pull does not trigger false alert\n4. Tests cover: accepted card no-alert, wrong-card no-alert, real stall fires alert\n\n## Files\n- platform/scripts/watchdog.sh",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-04T15:33:59Z",
+      "updated": "2026-04-04T19:35:52Z"
+    },
     {
       "index": 2022,
       "apiId": 2105,
@@ -19,6 +37,24 @@
       "done": false,
       "created": "2026-04-04T13:50:50Z",
       "updated": "2026-04-04T13:54:06Z"
+    },
+    {
+      "index": 1782,
+      "apiId": 1865,
+      "title": "Clearing voice capture — click mic, record, auto-transcribe and route to addressed role",
+      "description": "## Experience\nI tap the mic on the Clearing, talk, it shows up attributed to me and routed to the right role. No typing, no send button, no picking a recipient.\n\n## AC\n- [ ] Single click on mic button starts recording (no hold required)\n- [ ] Click again (or silence detection) stops recording\n- [ ] Audio transcribed automatically (Whisper or equivalent)\n- [ ] Transcription routed to addressed role (@kade, @silas, @wren) or Wren by default\n- [ ] Transcription appears in Clearing message stream attributed to Jeff\n- [ ] Audio file persisted for playback (not just transcript)\n- [ ] No manual send step — record → transcribe → route is one flow\n\n## Files\n- chorus/directing/clearing/public/index.html (mic button, MediaRecorder, UI)\n- chorus/directing/clearing/src/server.ts (audio upload endpoint, Whisper call, message routing)",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance",
+        "sequence:clearing"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:07:57Z",
+      "updated": "2026-04-04T19:29:33Z"
     },
     {
       "index": 2043,
@@ -73,6 +109,24 @@
       "done": true,
       "created": "2026-04-04T18:05:27Z",
       "updated": "2026-04-04T18:11:55Z"
+    },
+    {
+      "index": 2037,
+      "apiId": 2120,
+      "title": "Alerts must inject to role terminal via nudge --force, not just Bridge POST",
+      "description": "## Experience\nCloudflare tunnel went down. Alert fired to Bridge — Jeff saw it on his phone. But Silas was idle and never saw it in his terminal. The fix command was right there in the alert text but Silas couldn't act because it never reached him.\n\n## AC\n1. All alerts (tunnel, pipeline, disk, service health) use nudge --force to inject into the owning role's terminal\n2. Alert still posts to Bridge for Jeff visibility (DEC-107: persist AND deliver)\n3. Role receiving alert can act on it in the same terminal session\n4. Tests cover: alert fires, nudge delivered to role terminal, Bridge also receives\n\n## Files\n- scripts/alert-runner.sh\n- alerting/tunnel-down.yml\n- alerting/seed-write-failure.yml\n- alerting/app-down.yml\n- alerting/hook-server-down.yml\n- alerting/startup-sync-failure.yml",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-04T17:19:05Z",
+      "updated": "2026-04-04T19:32:07Z"
     },
     {
       "index": 2036,
@@ -891,24 +945,6 @@
       "updated": "2026-04-01T17:53:33Z"
     },
     {
-      "index": 1937,
-      "apiId": 2020,
-      "title": "Seed pipeline trust — Jeff sends it, team picks it up, always arrives, never drops #tags as seeds",
-      "description": "## Experience\nI send a seed and the team picks it up with urgency and attention. I never wonder if it arrived. I never discover days later that a seed was silently dropped. When I use #wren or #silas, it routes to that role — the hashtag is correlation, not the seed itself. The content before the tag is the seed. The system treats both parts together, never the tag alone.\n\n## AC\n1. Seed delivery is confirmed — Jeff gets visible proof the seed arrived and who picked it up\n2. Seeds are processed with urgency — not batched, not queued for next session, not waiting for /cs\n3. #tags are NEVER treated as seeds — they are routing/correlation markers attached to the preceding content\n4. A seed is always two SMS messages: content first, #tag second. Both messages together form the seed. Never process them independently.\n5. End-to-end test: Jeff sends SMS seed → team receives → Jeff sees confirmation — no unit test fakes\n6. When seed arrives, the receiving role acts on it in the same prompt cycle — card it, route it, or discard with reason\n\n## Files\n- platform/roles/silas/scripts/seed-probe.sh\n- platform/board-client/tests/seed-pipeline-flow.test.ts\n- platform/api/src/server.ts\n- product-manager/docs/seed-pipeline-criteria.md",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "sequence:hardening",
-        "domain:seeds",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-04-01T13:13:35Z",
-      "updated": "2026-04-01T22:04:30Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1011,42 +1047,6 @@
       "done": false,
       "created": "2026-04-04T19:01:29Z",
       "updated": "2026-04-04T19:01:29Z"
-    },
-    {
-      "index": 2037,
-      "apiId": 2120,
-      "title": "Alerts must inject to role terminal via nudge --force, not just Bridge POST",
-      "description": "## Experience\nCloudflare tunnel went down. Alert fired to Bridge — Jeff saw it on his phone. But Silas was idle and never saw it in his terminal. The fix command was right there in the alert text but Silas couldn't act because it never reached him.\n\n## AC\n1. All alerts (tunnel, pipeline, disk, service health) use nudge --force to inject into the owning role's terminal\n2. Alert still posts to Bridge for Jeff visibility (DEC-107: persist AND deliver)\n3. Role receiving alert can act on it in the same terminal session\n4. Tests cover: alert fires, nudge delivered to role terminal, Bridge also receives",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-04T17:19:05Z",
-      "updated": "2026-04-04T17:19:05Z"
-    },
-    {
-      "index": 2033,
-      "apiId": 2116,
-      "title": "Watchdog false alerts — reports stale cards already accepted, wrong card assignments for roles",
-      "description": "## Experience\nJeff sees watchdog alerts saying Kade is unresponsive on #1718 (not his card) and Silas unresponsive on #2031 (already accepted). The alerts are noise — they erode trust in the system. Jeff should never see a false alert.\n\n## AC\n1. Watchdog reads current role-state declared JSON, not stale card assignments\n2. Watchdog checks card status before alerting — no alerts on Done/accepted cards\n3. State emission gap between acp and next card pull does not trigger false alert\n4. Tests cover: accepted card no-alert, wrong-card no-alert, real stall fires alert",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-04T15:33:59Z",
-      "updated": "2026-04-04T15:33:59Z"
     },
     {
       "index": 2032,
@@ -1714,24 +1714,6 @@
       "updated": "2026-03-30T16:49:41Z"
     },
     {
-      "index": 1782,
-      "apiId": 1865,
-      "title": "Clearing voice capture — click mic, record, auto-transcribe and route to addressed role",
-      "description": "## Experience\nI tap the mic on the Clearing, talk, it shows up attributed to me and routed to the right role. No typing, no send button, no picking a recipient.\n\n## AC\n- [ ] Single click on mic button starts recording (no hold required)\n- [ ] Click again (or silence detection) stops recording\n- [ ] Audio transcribed automatically (Whisper or equivalent)\n- [ ] Transcription routed to addressed role (@kade, @silas, @wren) or Wren by default\n- [ ] Transcription appears in Clearing message stream attributed to Jeff\n- [ ] Audio file persisted for playback (not just transcript)\n- [ ] No manual send step — record → transcribe → route is one flow",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:enhance",
-        "sequence:spine"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:07:57Z",
-      "updated": "2026-03-28T11:10:21Z"
-    },
-    {
       "index": 1767,
       "apiId": 1850,
       "title": "Thumbnail gap — resolve final 1,375 missing (1.4%) via SQLite join + backup hash lookup",
@@ -1882,6 +1864,52 @@
       "done": false,
       "created": "2026-03-26T10:40:03Z",
       "updated": "2026-03-30T13:04:45Z"
+    },
+    {
+      "index": 1677,
+      "apiId": 1760,
+      "title": "Borg calibration session — peer benchmark, scoring rubric, and self-assessment review with Jeff",
+      "description": "## Experience\nI open the Borg self-assessment and ontology comparison documents and I want to walk through them together with the team. I know we'll score ourselves wrong if we grade our own work — I need an external benchmark so the scores mean something. I want to pick a system I know well, score it on the same axes, and then compare. That calibration turns the Borg assessment from an opinion into a measurement.\n\nJeff wants to walk through both Borg HTML documents together.\n\n## Files\n- product-manager/data/borg/ontology-comparison.html\n- product-manager/data/borg/self-assessment.html\n\n## AC\n- [ ] Jeff reviews ontology comparison — TOSCA vs SOSA/SSN vs K8s matrix and hybrid recommendation\n- [ ] Jeff reviews self-assessment — 7 dimensions with real data, 4/4 decision validation\n- [ ] Capture Jeff's feedback, questions, and direction for Borg next steps\n- [ ] Update Borg product roadmap based on review",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:borg"
+      ],
+      "done": false,
+      "created": "2026-03-24T20:13:59Z",
+      "updated": "2026-03-30T13:05:17Z"
+    },
+    {
+      "index": 1660,
+      "apiId": 1743,
+      "title": "Fix harvest-manifests page — restore per-domain harvest status tiles with real data",
+      "description": "## Experience\nI open the harvest-manifests page and I expect to see per-domain tiles showing me the health of each harvest — what ran, when, how many records, any errors. Right now the page is broken or showing stale data. I need this page to be my at-a-glance view of whether the data pipeline is healthy across all domains.\n\n## AC\n- [ ] Harvest-manifests page renders per-domain harvest status tiles\n- [ ] Each tile shows last run timestamp, record count, and error state\n- [ ] Data comes from real harvest run metadata, not hardcoded or stale\n- [ ] All active domains represented (photos, music, books, garden)",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-23T22:13:30Z",
+      "updated": "2026-03-30T13:05:22Z"
+    },
+    {
+      "index": 1647,
+      "apiId": 1730,
+      "title": "Source registry service — runtime API for provider status, load state, and staleness",
+      "description": "## Experience\nI keep asking \"what sources do we have for photos?\" and \"when was Fuseki last loaded?\" and someone has to go dig through files and graphs to answer. I want a single API endpoint where I can ask those questions and get a straight answer — what's loaded, when, how many records, and what's stale. The ICD defines the rules; this service reads them at runtime so I don't have to keep rediscovering what we already know.\n\nJeff's direction: we keep rediscovering what sources exist, where they live, and what's loaded. The ICD (#1642) defines the rules. This service reads them at runtime.\n\nAPI endpoint that answers:\n- What source graphs exist in Fuseki per domain?\n- When was each last loaded/refreshed?\n- What's the record count vs expected count from provider?\n- Which sources are stale (schema hash changed since last load)?\n- For a given record (by date), which source is golden for each field?\n\nReads from: ICD provider model, Fuseki graph metadata, icd:schemaHash, icd:needsRevalidation.\n\nRelated: #1618 (cache version hashes), #1642 (era-scoped ICD)\n\n## AC\n- [ ] GET /api/registry/sources/:domain — list all providers with load status\n- [ ] GET /api/registry/authority/:domain?date=YYYY-MM-DD — which provider is golden per field for a given date\n- [ ] Staleness detection — flag source graphs where schema hash != current ICD version\n- [ ] Record count comparison — loaded vs expected per provider\n- [ ] Surfaced on a page or existing dashboard (not just API)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:34:16Z",
+      "updated": "2026-03-30T13:05:33Z"
     },
     {
       "index": 1721,

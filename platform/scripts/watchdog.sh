@@ -47,6 +47,22 @@ for role in wren silas kade; do
 
   age=$((now - STATE_TS))
 
+  # AC#2: Check if the card is Done/accepted — no alerts on finished work (#2033)
+  if [ -n "$CARD" ]; then
+    CARD_STATUS=$(bash "$SCRIPT_DIR/cards" view "$CARD" 2>/dev/null | grep -oE 'Status:\s+\S+' | awk '{print $2}' || echo "unknown")
+    if [ "$CARD_STATUS" = "Done" ] || [ "$CARD_STATUS" = "Won't" ]; then
+      # Card is done — role hasn't updated state yet. Skip, don't alert.
+      continue
+    fi
+  fi
+
+  # AC#3: State gap tolerance — if state is very recent (< 30s), skip.
+  # Covers the gap between /acp completing and next /pull declaring new state.
+  if [ "$age" -lt 30 ]; then
+    all_inactive=false
+    continue
+  fi
+
   # Check observation file for recent tool calls
   OBS_FILE="$SCAN_DIR/${role}-observations.jsonl"
   last_obs=0
