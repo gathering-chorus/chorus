@@ -38,6 +38,46 @@ fn is_defect_fix() -> bool {
     crate::types::is_fix_card()
 }
 
+/// Build/lint error markers — when the session contains these, the fix is for
+/// a build error (ESLint, tsc, cargo), not a runtime bug. Logs won't help. (#2042)
+const BUILD_ERROR_MARKERS: &[&str] = &[
+    "eslint",
+    "no-undef",
+    "tsc",
+    "typescript",
+    "ts(",           // tsc error format: TS(2304)
+    "cargo build",
+    "cargo test",
+    "pre-commit",
+    "lint error",
+    "lint failed",
+    "compile error",
+    "syntax error",
+];
+
+/// Check if the session contains evidence of a build/lint error being fixed.
+/// If so, the log-first gate is irrelevant — skip it.
+fn is_build_error_context(input: &HookInput, state: &AppState) -> bool {
+    let session_id = match &input.session_id {
+        Some(id) => id.clone(),
+        None => return false,
+    };
+
+    let cwd = input.cwd.as_deref().unwrap_or("");
+    let lines = state.session_cache.get_tail(&session_id, cwd, 100);
+
+    for line in &lines {
+        let lower = line.to_lowercase();
+        for marker in BUILD_ERROR_MARKERS {
+            if lower.contains(marker) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 /// Scan session JSONL for evidence of log inspection AND synthesis.
 /// Two checks (both required for fix cards):
 /// 1. Did the role read a log file? (motion check)
@@ -119,6 +159,18 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     // Only enforce on defect fixes — new features are exempt
     if !is_defect_fix() {
+        return HookResponse::allow();
+    }
+
+    // Skip for lint/build fixes — logs don't help with ESLint or tsc errors (#2042)
+    if is_build_error_context(input, state) {
+        info!(
+            gate = "log-first",
+            decision = "skip",
+            reason = "build/lint error context — logs not relevant",
+            role = %format!("{:?}", input.role()).to_lowercase(),
+            file = %file_path,
+        );
         return HookResponse::allow();
     }
 
@@ -207,6 +259,14 @@ mod tests {
         assert!(!is_code_file("README.md"));
         assert!(!is_code_file("config.toml"));
         assert!(!is_code_file("style.css"));
+    }
+
+    // Build error context detection (#2042)
+    #[test]
+    fn build_error_markers_present() {
+        assert!(BUILD_ERROR_MARKERS.contains(&"eslint"));
+        assert!(BUILD_ERROR_MARKERS.contains(&"pre-commit"));
+        assert!(BUILD_ERROR_MARKERS.contains(&"lint error"));
     }
 
     #[test]
