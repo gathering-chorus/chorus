@@ -1,24 +1,60 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T12:07:34.560Z",
+  "timestamp": "2026-04-04T12:32:48.889Z",
   "tasks": [
     {
-      "index": 2003,
-      "apiId": 2086,
-      "title": "Continuous awareness gate — surface unresolved state on every prompt cycle, not just boot",
-      "description": "## Experience\nEvery prompt cycle, the role sees active system state AND relevant context from prior sessions. Semantic + keyword search runs automatically against the Chorus index on every prompt. No role has to remember to check — the system brings the context to them. The compound loop: every interaction makes the system smarter.\n\n## AC\n- [ ] UserPromptSubmit hook extracts terms from Jeff's message, runs semantic + keyword search against Chorus index\n- [ ] Results injected into role context automatically — role sees relevant prior discussions, decisions, and patterns\n- [ ] PostToolUse hook checks active state on every tool call (ops alerts, pending seeds, pipeline health, unresolved flags)\n- [ ] Surfaces warnings via stderr injection — not blocking, surfacing\n- [ ] State checks are fast (sub-100ms) — cached, not live API calls on every prompt\n- [ ] Tests: semantic search returns relevant results for known topics; keyword search returns exact matches; both inject on every prompt\n- [ ] Replaces boot-only triage — this IS the compound loop closer\n\n## Files\n- platform/services/chorus-hooks/src/hooks/context_inject.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/scripts/test-continuous-awareness.sh",
+      "index": 2016,
+      "apiId": 2099,
+      "title": "Cloudflare tunnel monitoring — alert when tunnel dies, seeds silently stop",
+      "description": "The Cloudflare tunnel (lightlifeurbangardens.com → localhost:3000) is the public entry point for seeds. When it dies, SMS webhooks from Twilio can't reach the app. Seeds silently stop arriving — no error, no alert, no trace. Jeff discovers it by sending a seed and it not showing up.\n\nTunnel has failed silently at least twice (Feb 19, Mar 5). Each time Jeff was the monitoring.\n\n## Experience\nJeff sends a seed. It arrives. Always. If the tunnel is down, Jeff knows before he sends — not after. The system tells him, not the other way around.\n\n## AC\n- [ ] Periodic health check on tunnel endpoint (curl the public URL or cloudflared /ready)\n- [ ] Alert fires within 60 seconds of tunnel going down — notify Bridge immediately\n- [ ] check-seeds.sh includes tunnel status in its health output (already does tunnel=200)\n- [ ] Ops awareness gate (#2003) surfaces tunnel-down state on every prompt\n\n## Files\n- alerting/tunnel-down.yml\n- platform/services/chorus-hooks/src/hooks/ops_awareness.rs\n- platform/scripts/check-seeds.sh",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
         "chunk:ops",
         "sequence:hardening",
-        "domain:chorus",
-        "type:new"
+        "domain:seeds",
+        "type:fix"
       ],
       "done": false,
-      "created": "2026-04-03T17:52:35Z",
-      "updated": "2026-04-04T10:51:39Z"
+      "created": "2026-04-04T12:24:07Z",
+      "updated": "2026-04-04T12:24:50Z"
+    },
+    {
+      "index": 2014,
+      "apiId": 2097,
+      "title": "Ollama unreachable on Bedroom — hybrid search degrades to FTS-only, no semantic vectors",
+      "description": "Ollama on Bedroom (192.168.86.242:11434) is unreachable. The Chorus API hybrid search silently degrades to FTS-only — no semantic vectors. The compound loop (#2003) works but without the richness Jeff asked for.\n\n## Experience\nWhen the compound loop fires, Jeff should get the richest possible context — semantic similarity finding connections that keyword search misses. Right now it's keyword-only because Ollama is down on Bedroom. Fix it and the search gets smarter.\n\n## AC\n- [ ] Ollama service running on Bedroom (192.168.86.242:11434)\n- [ ] Chorus API hybrid search returns semantic results (mode: hybrid in response, not just fts)\n- [ ] Health endpoint shows vectors > 0 and hooks: active\n\n## Files\n- SSH to Bedroom: check Ollama service status\n- platform/api/src/server.ts (OLLAMA_URL env var)",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T11:03:03Z",
+      "updated": "2026-04-04T12:17:14Z"
+    },
+    {
+      "index": 2005,
+      "apiId": 2088,
+      "title": "Log level reclassification phase 2 — chorus-events, foaf prefix, bad URI graph loads",
+      "description": "## Experience\nJeff queries Loki for errors and sees real failures. The error count reflects reality, not a filtered subset.\n\n## Acceptance Criteria\n- chorus-events system.service.down: warn to error (913 in 7 days)\n- Add foaf prefix to COMMON_PREFIXES in sparql-constants.ts (4 SPARQL query errors)\n- Card the 1294 bad URI graph load errors as data quality (people/connections TTL filenames)\n- Verify Loki warn-level entries are actual warnings, not hidden failures\n\n## Files\n- src/config/sparql-constants.ts\n- src/config/namespaces.json\n- src/handlers/about-profile.handler.ts",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T19:11:25Z",
+      "updated": "2026-04-04T12:21:28Z"
     },
     {
       "index": 2000,
@@ -128,6 +164,23 @@
       "updated": "2026-04-04T10:50:31Z"
     },
     {
+      "index": 2006,
+      "apiId": 2089,
+      "title": "Log level reclassification phase 1 — Fuseki retries, event loop lag, health failures",
+      "description": "## Experience\nJeff queries Loki for errors and sees the real failure count — not 328 but 11,000+.\n\n## Acceptance Criteria\n- Fuseki retry attempts: warn to error (5,000+ in 7 days)\n- Event loop lag >5s: warn to error, >2s stays warn (160 entries, max 17min)\n- Health check failures: warn to error from first occurrence (4 entries)\n- Deployed and verified in Loki\n\n## Done\nShipped 2026-04-03. Committed as f25b47f.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T19:15:04Z",
+      "updated": "2026-04-04T12:20:12Z"
+    },
+    {
       "index": 2004,
       "apiId": 2087,
       "title": "Four-layer compound search — Chorus + logs + git + code on every search, all errors not warns",
@@ -144,6 +197,24 @@
       "done": true,
       "created": "2026-04-03T18:33:26Z",
       "updated": "2026-04-03T19:14:46Z"
+    },
+    {
+      "index": 2003,
+      "apiId": 2086,
+      "title": "Continuous awareness gate — surface unresolved state on every prompt cycle, not just boot",
+      "description": "## Experience\nEvery prompt cycle, the role sees active system state AND relevant context from prior sessions. Semantic + keyword search runs automatically against the Chorus index on every prompt. No role has to remember to check — the system brings the context to them. The compound loop: every interaction makes the system smarter.\n\n## AC\n- [ ] UserPromptSubmit hook extracts terms from Jeff's message, runs semantic + keyword search against Chorus index\n- [ ] Results injected into role context automatically — role sees relevant prior discussions, decisions, and patterns\n- [ ] PostToolUse hook checks active state on every tool call (ops alerts, pending seeds, pipeline health, unresolved flags)\n- [ ] Surfaces warnings via stderr injection — not blocking, surfacing\n- [ ] State checks are fast (sub-100ms) — cached, not live API calls on every prompt\n- [ ] Tests: semantic search returns relevant results for known topics; keyword search returns exact matches; both inject on every prompt\n- [ ] Replaces boot-only triage — this IS the compound loop closer\n\n## Files\n- platform/services/chorus-hooks/src/hooks/context_inject.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/scripts/test-continuous-awareness.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": true,
+      "created": "2026-04-03T17:52:35Z",
+      "updated": "2026-04-04T12:11:33Z"
     },
     {
       "index": 2001,
@@ -179,6 +250,23 @@
       "done": true,
       "created": "2026-04-03T10:23:06Z",
       "updated": "2026-04-03T13:53:03Z"
+    },
+    {
+      "index": 1993,
+      "apiId": 2076,
+      "title": "Remove all background nudge polling — nudges are osascript-only",
+      "description": "",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-02T18:06:13Z",
+      "updated": "2026-04-04T12:13:06Z"
     },
     {
       "index": 1991,
@@ -866,59 +954,6 @@
       "updated": "2026-03-31T12:51:01Z"
     },
     {
-      "index": 1893,
-      "apiId": 1976,
-      "title": "Convergence page filters — product and value stream step chips for ICD domains",
-      "description": "## Experience\n\nI open the convergence page and see 8 domains listed vertically. I want to quickly filter to just the Gathering domains or just the Chorus domains. I want to see which value stream step each domain belongs to — Sowing, Growing, Practicing, Harvesting, Reflecting — so I can reason about data flow across the life loop. Small chips on each domain tile and a filter bar at the top, same pattern as doc-catalog.\n\n## AC\n\n- [ ] Filter bar with product chips (Gathering, Chorus) — click to toggle, composable\n- [ ] Filter bar with value stream step chips (Sowing, Growing, Practicing, Harvesting, Reflecting) — from domain page metadata\n- [ ] Each domain tile shows product and step chips\n- [ ] Filters compose: selecting Gathering + Harvesting shows only matching domains\n- [ ] Filter state preserved in URL query params\n- [ ] Client-side only — classification from existing API data or domain page mappings\n\n## Files\n- views/icd.ejs — filter bar + chip rendering\n- public/js/ — if filter logic extracted (optional)",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:14:39Z",
-      "updated": "2026-03-31T13:11:38Z"
-    },
-    {
-      "index": 1892,
-      "apiId": 1975,
-      "title": "Link NiFi flow diagrams to ICD provider instances — data pipeline visibility",
-      "description": "## Experience\nI open the convergence page and see providers with integration contracts, but I can't see the actual NiFi flow that moves data. The flow exists — I built it — but the ICD doesn't link to it. I should be able to click from a provider to its NiFi pipeline diagram.\n\n## AC\n- [ ] Providers with NiFi flows have icd:nifiFlowId linking to the flow\n- [ ] Convergence page renders a 'Pipeline' link in the Integration Contract section when nifiFlowId exists\n- [ ] Photos domain: Apple Photos and Google Photos Export providers linked to their NiFi flows\n\n## Files\n- jeff-bridwell-personal-site/src/ontology/icd-ontology.ttl (nifiFlowId property)\n- jeff-bridwell-personal-site/src/ontology/icd-instance-photos.ttl (flow links)\n- jeff-bridwell-personal-site/views/icd.ejs (render link)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:strategy",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:13:10Z",
-      "updated": "2026-03-31T13:11:37Z"
-    },
-    {
-      "index": 1891,
-      "apiId": 1974,
-      "title": "ICD section structure must be invariant — Integration Contract as mandatory section for all providers",
-      "description": "## Experience\nI scan the convergence page across providers and the sections are different — some have Integration Contract, some don't. The structure should be predictable so I can compare providers at a glance. Every provider follows the same sections in the same order. Missing data shows as empty, not hidden.\n\n## AC\n- [ ] Integration Contract is an icd:Section with fixed sectionOrder (position 1, before Purpose & Scope)\n- [ ] Every provider across all 8 domain instance TTLs has the Integration Contract section\n- [ ] Empty Integration Contract sections render with 'Not yet defined' placeholder, not hidden\n- [ ] Section order is enforced by the ontology, not by render logic\n- [ ] All existing providers migrated — ~20 providers across 8 domains\n\n## Files\n- jeff-bridwell-personal-site/src/ontology/icd-ontology.ttl (section order constraint)\n- jeff-bridwell-personal-site/src/ontology/icd-instance-*.ttl (all 8 domain instances)\n- jeff-bridwell-personal-site/views/icd.ejs (render invariant sections)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:02:04Z",
-      "updated": "2026-03-31T12:16:47Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1041,12 +1076,12 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
-      "index": 2014,
-      "apiId": 2097,
-      "title": "Ollama unreachable on Bedroom — hybrid search degrades to FTS-only, no semantic vectors",
+      "index": 2017,
+      "apiId": 2100,
+      "title": "Bad URI graph load errors — 1294 data quality issues in people/connections TTL filenames",
       "description": "",
       "status": "Later",
-      "owner": "Silas",
+      "owner": "Kade",
       "priority": "P2",
       "domains": [
         "chunk:ops",
@@ -1054,8 +1089,8 @@
         "type:fix"
       ],
       "done": false,
-      "created": "2026-04-04T11:03:03Z",
-      "updated": "2026-04-04T11:03:03Z"
+      "created": "2026-04-04T12:25:54Z",
+      "updated": "2026-04-04T12:25:54Z"
     },
     {
       "index": 2007,
@@ -1075,57 +1110,6 @@
       "updated": "2026-04-03T22:02:32Z"
     },
     {
-      "index": 2006,
-      "apiId": 2089,
-      "title": "Log level reclassification phase 1 — Fuseki retries, event loop lag, health failures",
-      "description": "## Experience\nJeff queries Loki for errors and sees the real failure count — not 328 but 11,000+.\n\n## Acceptance Criteria\n- Fuseki retry attempts: warn to error (5,000+ in 7 days)\n- Event loop lag >5s: warn to error, >2s stays warn (160 entries, max 17min)\n- Health check failures: warn to error from first occurrence (4 entries)\n- Deployed and verified in Loki\n\n## Done\nShipped 2026-04-03. Committed as f25b47f.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T19:15:04Z",
-      "updated": "2026-04-03T19:15:04Z"
-    },
-    {
-      "index": 2005,
-      "apiId": 2088,
-      "title": "Log level reclassification phase 2 — chorus-events, foaf prefix, bad URI graph loads",
-      "description": "## Experience\nJeff queries Loki for errors and sees real failures. The error count reflects reality, not a filtered subset.\n\n## Acceptance Criteria\n- chorus-events system.service.down: warn to error (913 in 7 days)\n- Add foaf prefix to COMMON_PREFIXES in sparql-constants.ts (4 SPARQL query errors)\n- Card the 1294 bad URI graph load errors as data quality (people/connections TTL filenames)\n- Verify Loki warn-level entries are actual warnings, not hidden failures",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T19:11:25Z",
-      "updated": "2026-04-03T19:11:25Z"
-    },
-    {
-      "index": 2002,
-      "apiId": 2085,
-      "title": "Memory gate missing search-order enforcement — only gates Edit/Write, not Grep/Bash searches",
-      "description": "## Experience\nI grep the filesystem without checking Chorus first. The memory gate doesn't block me because it only fires on Edit/Write (line 217 of memory_gate.rs). Grep and Bash searches pass through unchecked.\n\n## Acceptance Criteria\n- [ ] PreToolUse gate intercepts Grep and Bash search commands (grep, rg, find on session/card files)\n- [ ] Gate blocks if no prior chorus-query.sh call detected in the session\n- [ ] Gate allows if Chorus was already queried this session\n- [ ] Tests cover: grep without Chorus (blocked), grep after Chorus (allowed), non-search Bash (allowed)",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T17:42:24Z",
-      "updated": "2026-04-03T17:42:24Z"
-    },
-    {
       "index": 1996,
       "apiId": 2079,
       "title": "Doc-catalog reclassification — group by document type, not source directory",
@@ -1141,23 +1125,6 @@
       "done": false,
       "created": "2026-04-03T10:27:21Z",
       "updated": "2026-04-03T10:27:21Z"
-    },
-    {
-      "index": 1993,
-      "apiId": 2076,
-      "title": "Remove all background nudge polling — nudges are osascript-only",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-02T18:06:13Z",
-      "updated": "2026-04-02T18:06:13Z"
     },
     {
       "index": 1988,
@@ -1933,6 +1900,77 @@
       "updated": "2026-03-30T21:59:56Z"
     },
     {
+      "index": 1810,
+      "apiId": 1893,
+      "title": "Wire express-prom-bundle for request metrics — no HTTP metrics exported",
+      "description": "## Experience\nI have Grafana dashboards but no actual HTTP metrics from the app. I'm relying on blackbox probes to tell me if requests are slow or failing, which means I only know something is wrong after it's already down. I want real request counts and latency histograms so I can see degradation before it becomes an outage.\n\n## AC\n- [ ] http_requests_total{status,method,path} exported\n- [ ] http_request_duration_seconds histogram\n- [ ] Replace blackbox probe alerts with native metrics alerts\n\n## Context\nFrom Silas logging strategy. Relying on blackbox probes instead of native HTTP metrics.\n\n## Files\nsrc/app.ts\npackage.json",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance",
+        "infrastructure"
+      ],
+      "done": false,
+      "created": "2026-03-29T00:55:19Z",
+      "updated": "2026-03-30T16:49:41Z"
+    },
+    {
+      "index": 1782,
+      "apiId": 1865,
+      "title": "Clearing voice capture — click mic, record, auto-transcribe and route to addressed role",
+      "description": "## Experience\nI tap the mic on the Clearing, talk, it shows up attributed to me and routed to the right role. No typing, no send button, no picking a recipient.\n\n## AC\n- [ ] Single click on mic button starts recording (no hold required)\n- [ ] Click again (or silence detection) stops recording\n- [ ] Audio transcribed automatically (Whisper or equivalent)\n- [ ] Transcription routed to addressed role (@kade, @silas, @wren) or Wren by default\n- [ ] Transcription appears in Clearing message stream attributed to Jeff\n- [ ] Audio file persisted for playback (not just transcript)\n- [ ] No manual send step — record → transcribe → route is one flow",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus",
+        "type:enhance",
+        "clearing"
+      ],
+      "done": false,
+      "created": "2026-03-28T11:07:57Z",
+      "updated": "2026-03-28T11:10:21Z"
+    },
+    {
+      "index": 1767,
+      "apiId": 1850,
+      "title": "Thumbnail gap — resolve final 1,375 missing (1.4%) via SQLite join + backup hash lookup",
+      "description": "## Experience\n\nI open the Photos page and see 98K+ thumbnails. I know there are 1,375 more that should be there — some missing extensions, some iPhone-only, some corrupt. I expect to see 100K+ when this is done, and the ones that truly can't render are marked as dead letters, not silently missing.\n\n## Files\n- architect/scripts/generate-thumbnails-v2.sh\n\n## AC\n- [ ] 475 no-extension records: join Apple SQLite to get actual extension, re-generate\n- [ ] 570 iPhone-only: per-file Manifest.db hash → backup file → ffmpeg/sips\n- [ ] 330 corrupt/missing: investigate, mark as dead-letter or exclude from canonical\n- [ ] Photos page shows 100K+ (Jeff sees it)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-03-27T17:22:00Z",
+      "updated": "2026-03-30T13:03:59Z"
+    },
+    {
+      "index": 1763,
+      "apiId": 1846,
+      "title": "Werk Instruments tab — fix data accuracy, clean layout, real latency values",
+      "description": "## Experience\n\nI open the Werk Instruments tab expecting trustworthy numbers and the data doesn't match reality. Brief latency says \"unread\" instead of actual time. Card velocity shows only 5 cards when 24 shipped in one session. Weekly throughput claims 32 but that's wrong. I need instruments I can trust — accurate numbers, clean layout, data that matches what actually happened.\n\n## AC\n1. Brief Latency shows actual time-to-read, not just \"unread\" status\n2. Card Velocity shows all recent cards, not just 5\n3. Fitness Functions (weekly throughput, deploys) match actual numbers — 32/week is wrong when 24 shipped in one session\n4. Attention Cost signal rate validated against real message classification\n5. Visual hierarchy — sections organized by importance, not crammed two-column\n6. Extend existing /api/analytics endpoints\n\n## Why\nInstruments tab has the most useful data but numbers don't match reality and layout is dense. Brief latency shows \"unread\" not time. Fitness throughput at 32/week contradicts observed velocity. Jeff needs trustworthy instruments.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance",
+        "werk"
+      ],
+      "done": false,
+      "created": "2026-03-27T15:43:31Z",
+      "updated": "2026-03-30T13:04:10Z"
+    },
+    {
       "index": 1721,
       "apiId": 1804,
       "title": "PM-driven tab sharing — Wren navigates screen sharing during demos",
@@ -2023,6 +2061,23 @@
       "done": false,
       "created": "2026-03-09T15:26:04Z",
       "updated": "2026-03-09T15:26:04Z"
+    },
+    {
+      "index": 2002,
+      "apiId": 2085,
+      "title": "Memory gate missing search-order enforcement — only gates Edit/Write, not Grep/Bash searches",
+      "description": "## Experience\nI grep the filesystem without checking Chorus first. The memory gate doesn't block me because it only fires on Edit/Write (line 217 of memory_gate.rs). Grep and Bash searches pass through unchecked.\n\n## Acceptance Criteria\n- [ ] PreToolUse gate intercepts Grep and Bash search commands (grep, rg, find on session/card files)\n- [ ] Gate blocks if no prior chorus-query.sh call detected in the session\n- [ ] Gate allows if Chorus was already queried this session\n- [ ] Tests cover: grep without Chorus (blocked), grep after Chorus (allowed), non-search Bash (allowed)",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-03T17:42:24Z",
+      "updated": "2026-04-04T12:21:12Z"
     },
     {
       "index": 1998,
@@ -2853,23 +2908,6 @@
       "done": false,
       "created": "2026-03-27T12:14:19Z",
       "updated": "2026-03-30T16:49:18Z"
-    },
-    {
-      "index": 1745,
-      "apiId": 1828,
-      "title": "Clearing record button — capture audio to session transcript, not send window",
-      "description": "## Experience\nI'm in a Clearing session with Deb and Allu and I want to just talk, not type. I press the record button and expect my voice to flow into the conversation like a walkie-talkie — press, talk, release, and my words appear in the stream. Instead, text dumps into the send box and I have to edit and click send. That kills the flow of a live conversation.\n\n## AC\n1. Record button captures audio and saves to /tmp/chorus-recordings/<session-id>-<timestamp>.webm\n2. Audio auto-transcribes (Whisper or browser SpeechRecognition API)\n3. Transcript appends to the Clearing message stream as a Jeff message — attributed, timestamped\n4. No text in the send input — the transcript flows directly into the conversation\n5. Recording indicator visible while active (red dot or similar)\n6. Works on mobile Safari (phone use case from demo night)\n\n## Why\nJeff tried to record during the demo with Deb and Allu. The button exists but dumps text into the send window instead of streaming into the conversation. Jeff wants press-and-talk, not press-transcribe-edit-send. The Clearing should feel like a walkie-talkie, not a dictation app.",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-27T12:12:19Z",
-      "updated": "2026-03-31T17:28:09Z"
     },
     {
       "index": 2015,

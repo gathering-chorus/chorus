@@ -2,22 +2,35 @@
 //!
 //! Checks: hook server health, API health, alert status, seeds pipeline.
 //! Surfaces degraded state via stderr — not blocking, surfacing.
-//! Fast: file checks + one HTTP call to localhost.
+//! Cooldown: checks at most once per 60 seconds to avoid noise.
 
 use crate::types::{HookInput, HookResponse};
+use std::sync::atomic::{AtomicI64, Ordering};
 use tracing::info;
+
+/// Last check timestamp (unix seconds) — cooldown prevents spam
+static LAST_CHECK: AtomicI64 = AtomicI64::new(0);
+const COOLDOWN_SECS: i64 = 60;
 
 /// Check ops state and surface any issues
 pub async fn check(input: &HookInput) -> HookResponse {
-    // Only check every Nth tool call to avoid noise — check on Bash and Read
+    // Only check on Bash and Read
     let tool = input.tool_name_str();
     if tool != "Bash" && tool != "Read" {
         return HookResponse::allow();
     }
 
+    // Cooldown — at most once per 60 seconds
+    let now = chrono::Utc::now().timestamp();
+    let last = LAST_CHECK.load(Ordering::Relaxed);
+    if now - last < COOLDOWN_SECS {
+        return HookResponse::allow();
+    }
+    LAST_CHECK.store(now, Ordering::Relaxed);
+
     let mut issues: Vec<String> = Vec::new();
 
-    // 1. Hook server — check PID file / launchctl (fast, no network)
+    // 1. Hook server — check PID via launchctl (fast, no network)
     let hooks_pid = std::process::Command::new("launchctl")
         .args(["list", "com.chorus.hooks"])
         .output()
@@ -28,9 +41,9 @@ pub async fn check(input: &HookInput) -> HookResponse {
         issues.push("Hook server (com.chorus.hooks) has no PID — may be crashed".to_string());
     }
 
-    // 2. API health — one HTTP call (sub-50ms to localhost)
+    // 2. API health — one HTTP call with generous timeout
     if let Ok(resp) = ureq::get("http://localhost:3340/api/chorus/health")
-        .timeout(std::time::Duration::from_millis(200))
+        .timeout(std::time::Duration::from_millis(1000))
         .call()
     {
         if let Ok(body) = resp.into_json::<serde_json::Value>() {
@@ -48,32 +61,11 @@ pub async fn check(input: &HookInput) -> HookResponse {
     let alert_patterns = [
         (format!("/tmp/alert-daily-review-{}", today), "Daily review alert fired"),
         (format!("/tmp/alert-hook-server-{}-", today), "Hook server alert fired"),
+        (format!("/tmp/alert-tunnel-{}-", today), "Tunnel alert fired — seeds may not arrive"),
     ];
     for (pattern, desc) in &alert_patterns {
-        // For hour-scoped cooldowns, check any matching file
         if std::path::Path::new(pattern).exists() {
             issues.push(desc.to_string());
-        }
-    }
-
-    // 4. Seeds pipeline — check via API (fast, localhost)
-    if let Ok(resp) = ureq::get("http://localhost:3340/api/chorus/search?q=seed+write+failure&mode=fts&limit=1")
-        .timeout(std::time::Duration::from_millis(200))
-        .call()
-    {
-        if let Ok(body) = resp.into_json::<serde_json::Value>() {
-            let total = body.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
-            if total > 0 {
-                // Check if the most recent hit is from today
-                if let Some(results) = body.get("results").and_then(|r| r.as_array()) {
-                    if let Some(first) = results.first() {
-                        let ts = first.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
-                        if ts.starts_with(&today) {
-                            issues.push("Seed write failure detected today".to_string());
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -95,6 +87,5 @@ pub async fn check(input: &HookInput) -> HookResponse {
     }
     msg.push_str("</ops-state>");
 
-    // Use block_with_stderr (exit 2) — PostToolUse exit 0 stderr is not surfaced to the role
     HookResponse::block_with_stderr(&msg)
 }

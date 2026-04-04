@@ -539,10 +539,10 @@ fn heartbeat_cmd() -> ExitCode {
     // Quick health checks
     let services: &[(&str, &str, &str)] = &[
         ("app", "http://localhost:3000/health", "critical"),
-        ("fuseki", "http://localhost:3030/$/ping", "warn"),
-        ("clearing", "http://localhost:3470/", "warn"),
-        ("chorus-api", "http://localhost:3340/health", "warn"),
-        ("vikunja", "http://localhost:3456/", "warn"),
+        ("fuseki", "http://localhost:3030/$/ping", "error"),
+        ("clearing", "http://localhost:3470/", "error"),
+        ("chorus-api", "http://localhost:3340/health", "error"),
+        ("vikunja", "http://localhost:3456/", "error"),
     ];
 
     for (name, url, level) in services {
