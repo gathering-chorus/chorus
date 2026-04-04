@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T12:32:49.804Z",
+  "timestamp": "2026-04-04T12:37:51.516Z",
   "tasks": [
     {
       "index": 2016,
@@ -19,24 +19,6 @@
       "done": false,
       "created": "2026-04-04T12:24:07Z",
       "updated": "2026-04-04T12:24:50Z"
-    },
-    {
-      "index": 2014,
-      "apiId": 2097,
-      "title": "Ollama unreachable on Bedroom — hybrid search degrades to FTS-only, no semantic vectors",
-      "description": "Ollama on Bedroom (192.168.86.242:11434) is unreachable. The Chorus API hybrid search silently degrades to FTS-only — no semantic vectors. The compound loop (#2003) works but without the richness Jeff asked for.\n\n## Experience\nWhen the compound loop fires, Jeff should get the richest possible context — semantic similarity finding connections that keyword search misses. Right now it's keyword-only because Ollama is down on Bedroom. Fix it and the search gets smarter.\n\n## AC\n- [ ] Ollama service running on Bedroom (192.168.86.242:11434)\n- [ ] Chorus API hybrid search returns semantic results (mode: hybrid in response, not just fts)\n- [ ] Health endpoint shows vectors > 0 and hooks: active\n\n## Files\n- SSH to Bedroom: check Ollama service status\n- platform/api/src/server.ts (OLLAMA_URL env var)",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:infrastructure",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-04T11:03:03Z",
-      "updated": "2026-04-04T12:17:14Z"
     },
     {
       "index": 2005,
@@ -73,6 +55,24 @@
       "done": false,
       "created": "2026-04-03T15:45:28Z",
       "updated": "2026-04-03T15:45:52Z"
+    },
+    {
+      "index": 2014,
+      "apiId": 2097,
+      "title": "Ollama unreachable on Bedroom — hybrid search degrades to FTS-only, no semantic vectors",
+      "description": "Ollama on Bedroom (192.168.86.242:11434) is unreachable. The Chorus API hybrid search silently degrades to FTS-only — no semantic vectors. The compound loop (#2003) works but without the richness Jeff asked for.\n\n## Experience\nWhen the compound loop fires, Jeff should get the richest possible context — semantic similarity finding connections that keyword search misses. Right now it's keyword-only because Ollama is down on Bedroom. Fix it and the search gets smarter.\n\n## AC\n- [ ] Ollama service running on Bedroom (192.168.86.242:11434)\n- [ ] Chorus API hybrid search returns semantic results (mode: hybrid in response, not just fts)\n- [ ] Health endpoint shows vectors > 0 and hooks: active\n\n## Files\n- SSH to Bedroom: check Ollama service status\n- platform/api/src/server.ts (OLLAMA_URL env var)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-04T11:03:03Z",
+      "updated": "2026-04-04T12:36:46Z"
     },
     {
       "index": 2012,
@@ -934,24 +934,6 @@
       "done": true,
       "created": "2026-03-31T12:17:43Z",
       "updated": "2026-03-31T13:54:31Z"
-    },
-    {
-      "index": 1894,
-      "apiId": 1977,
-      "title": "Instrument ICD process — spine events for TTL loads, provider validation, Fuseki reload",
-      "description": "## Experience\nI look at the Clearing and see cards being pulled and accepted, but the ICD loads are invisible. Silas loaded TTLs into Fuseki five times today and there's no trace — no spine event, no log entry, no way to know what changed or when. If something breaks after a reload, I can't correlate.\n\n## AC\n- [ ] chorus-log.sh emits icd.loaded event when TTLs are loaded into Fuseki\n- [ ] Event includes: domain, graph URI, triple count, loader role\n- [ ] ICD linter runs automatically after Fuseki reload and emits icd.lint.passed or icd.lint.failed\n- [ ] Events visible on Clearing as ambient messages\n\n## Files\n- platform/scripts/chorus-log.sh (new event types)\n- jeff-bridwell-personal-site/scripts/icd-reload.sh (new — wraps curl + emit)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:15:59Z",
-      "updated": "2026-03-31T12:51:01Z"
     },
     {
       "index": 1958,
