@@ -1376,7 +1376,26 @@ function switchMobileTab(panel) {
 
   flowPane.classList.toggle('mobile-active', panel === 'domains');
   msgPane.classList.toggle('mobile-hidden', panel !== 'messages');
-  mobileStream.style.display = panel === 'streams' ? 'block' : 'none';
+  if (panel === 'streams') {
+    // Calculate bottom offset: mobile-tabs height + input-area height
+    const tabsH = document.getElementById('mobile-tabs')?.offsetHeight || 40;
+    const inputH = document.querySelector('.input-area')?.offsetHeight || 50;
+    mobileStream.style.display = 'block';
+    mobileStream.style.position = 'fixed';
+    mobileStream.style.top = '0';
+    mobileStream.style.left = '0';
+    mobileStream.style.right = '0';
+    mobileStream.style.bottom = (tabsH + inputH) + 'px';
+    mobileStream.style.zIndex = '5';
+  } else {
+    mobileStream.style.display = 'none';
+    mobileStream.style.position = '';
+    mobileStream.style.top = '';
+    mobileStream.style.left = '';
+    mobileStream.style.right = '';
+    mobileStream.style.bottom = '';
+    mobileStream.style.zIndex = '';
+  }
 
   if (panel === 'streams') {
     loadMobileStream();

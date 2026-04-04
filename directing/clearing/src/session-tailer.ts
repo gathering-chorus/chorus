@@ -188,22 +188,13 @@ export class SessionTailer {
       if (!text) return;
       text = text.replace(/\n/g, ' ');
 
-      // Filter system noise — not Jeff's words
-      if (/<[a-z-]+>/i.test(text)) return;
-      if (text.includes('/Users/') || text.includes('/var/') || text.includes('/private/') || text.includes('/tmp/')) return;
+      // Filter system artifacts only — never filter Jeff's words by content (#2035)
+      // System-reminder and command expansions already filtered at line 180-183
+      if (/<system-reminder>/i.test(text)) return;
+      if (/<command-/i.test(text)) return;
       if (text.includes('[Image: source:')) return;
       if (text.includes('[Request interrupted')) return;
       if (text.startsWith('ARGUMENTS:') || text.startsWith('Base directory') || text.startsWith('Stop hook')) return;
-      // Filter role-to-role nudges injected into terminal
-      if (text.includes('[nudge from ')) return;
-      if (text.includes('role.nudge.consumed')) return;
-      if (text.match(/^\[(reply|ack|feedback|direction|correction)\]/i)) return;
-      // Filter hook echo — bridge events reflected back through session
-      if (text.includes('[bridge]')) return;
-      // Filter acceptance commit messages echoed back
-      if (text.match(/^Accepted #\d+\s*—/)) return;
-      // Filter slash commands (skill expansions)
-      if (text.startsWith('/') && text.length < 20) return;
 
       this.router.ingest({
         from: 'jeff',
@@ -235,35 +226,14 @@ export class SessionTailer {
       combined = combined.replace(/^---\s+\w+\s+\|[^]*?---\s*/g, '').trim();
       if (!combined) return;
 
-      // Filter role-to-role coordination from assistant output (#1675)
-      if (combined.includes('[nudge from ')) return;
-      if (combined.includes('role.nudge.consumed')) return;
-      if (combined.match(/^\[(reply|ack|feedback|direction|correction)\]/i)) return;
-      // Chat channel messages between roles
-      if (combined.includes('chat.sh')) return;
-      if (combined.match(/\[chat\]/i)) return;
-      if (combined.match(/chat (file|channel|nudge|delivery|silas-kade|kade-silas|wren-silas|silas-wren|wren-kade|kade-wren)/i)) return;
-      if (combined.match(/^nudge\.sh|^bash.*nudge\.sh/)) return;
-      // Messaging tier coordination
-      if (combined.match(/messaging (tier|API|api)/i) && !combined.includes('Jeff')) return;
-      // Role-to-role delivery confirmations
+      // Filter machine protocol only — let human-readable role thinking through (#2035)
+      // The router's pm-thinking classification handles visibility at display time
+      // Keep filtering: raw spine events, state declarations, delivery confirmations, script calls
       if (combined.match(/^DELIVERED to (wren|silas|kade)/i)) return;
-      // Hook echo — bridge events reflected back through session
-      if (combined.includes('[bridge]')) return;
-      // Nudge delivery confirmations and receipts
-      if (combined.match(/^(Delivered to|Nudged |Ack\b|Acknowledged\b|Test nudge|Copy\.|Copy,|Got it)/i)) return;
-      if (combined.match(/DELIVERED to (wren|silas|kade)/i)) return;
-      if (combined.match(/nudge(s|d)? (received|landed|confirmed|delivered|hit)/i)) return;
-      if (combined.match(/^(Wren|Silas|Kade)'s (nudge|test|exchange|drain)/i)) return;
-      if (combined.match(/^All (three|3) (directions|roles|nudges)/i)) return;
-      if (combined.match(/^(Draining nudges|Nudge(s)? drained)/i)) return;
-      if (combined.match(/reply expected/i)) return;
-      // Pure coordination — not Jeff-facing
-      if (combined.match(/^(Noted |Standing by|Test nudges|More test nudges|No action needed|Pipeline (solid|confirmed))/i)) return;
-      // Spine event echoes — filter raw event format, keep human-readable card lifecycle
       if (combined.match(/^card\.\w+/)) return;
-      // State declarations and board ops
-      if (combined.match(/^(bash .*scripts\/|role-state\.sh|chorus-log\.sh)/)) return;
+      if (combined.match(/^(bash .*scripts\/|role-state |chorus-log )/)) return;
+      if (combined.includes('[bridge]')) return;
+      if (combined.includes('role.nudge.consumed')) return;
 
       // Debounce: replace pending message, emit after 3s quiet (#1720)
       // This ensures only the final response in a tool-call burst reaches Bridge
