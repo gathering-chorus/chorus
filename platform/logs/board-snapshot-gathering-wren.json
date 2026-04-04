@@ -1,25 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T14:28:34.027Z",
+  "timestamp": "2026-04-04T14:38:38.432Z",
   "tasks": [
-    {
-      "index": 2023,
-      "apiId": 2106,
-      "title": "Board data quality audit — duplicate labels, missing sequences, orphan tags, position integrity",
-      "description": "## Experience\nI look at the board in the Clearing and the numbers don't add up. Sub-groups show 5 cards but the header says 46. Cards created during fast ops sessions have bare labels, missing sequences, or wrong tags. The board is team memory — if the tags are wrong, the team's awareness of its own work is wrong.\n\n## Files\n- platform/board-client/src/sdk.ts\n- platform/board-client/src/cli.ts\n\n## AC\n- [ ] Audit all cards for bare labels (not prefixed with chunk:/domain:/type:/sequence:) — report count\n- [ ] Remove or fix bare labels using cards untag/set\n- [ ] Verify all active cards (WIP/Next/Later) have: domain, chunk, type, sequence\n- [ ] Report cards missing required tags — fix or flag\n- [ ] Verify no duplicate labels on any card\n- [ ] Verify Done/Won't Do cards are excluded from active counts in Clearing domain panel",
-      "status": "WIP",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-04T13:53:10Z",
-      "updated": "2026-04-04T14:23:40Z"
-    },
     {
       "index": 2022,
       "apiId": 2105,
@@ -37,6 +19,24 @@
       "done": false,
       "created": "2026-04-04T13:50:50Z",
       "updated": "2026-04-04T13:54:06Z"
+    },
+    {
+      "index": 2020,
+      "apiId": 2103,
+      "title": "Log reclassification phase 3 — 13 warn-to-error upgrades across middleware, seed processing, and query failures",
+      "description": "Audit found 40+ warn-level logs that describe actual errors. Phase 3 covers the 13 highest-impact: auth/security rejections (7), seed media processing failures (4), content parse failures (2). Plus 2 error-to-warn downgrades for false errors.\n\n## Experience\nWhen Jeff checks Loki for errors, he sees the real count — not a filtered subset hiding behind warn level. Every failure that affects what he sees is classified as error. No more hunting through warnings to find actual problems.\n\n## AC\n- [ ] Upgrade to error: twilio-auth (sig validation), webhook-auth, csrf, cors, pod-storage (4 patterns), service-token\n- [ ] Upgrade to error: seed-pod.service (video transcode, WAV conversion, whisper transcription, audio extraction)\n- [ ] Upgrade to error: collection.handler (blog parse), docs.handler (slug validation)\n- [ ] Downgrade to warn: SemanticSearchService init, Fuseki retry\n- [ ] Loki error count reflects reality after reclassification\n\n## Files\n- src/middleware/twilio-auth.middleware.ts\n- src/middleware/pod-storage.middleware.ts\n- src/middleware/csrf.middleware.ts\n- src/middleware/cors.middleware.ts\n- src/services/seed-pod.service.ts\n- src/handlers/collection.handler.ts\n- src/handlers/docs.handler.ts\n- src/services/fuseki-sync.service.ts",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-04T13:31:07Z",
+      "updated": "2026-04-04T14:29:42Z"
     },
     {
       "index": 2000,
@@ -91,6 +91,24 @@
       "done": true,
       "created": "2026-04-04T14:03:36Z",
       "updated": "2026-04-04T14:22:53Z"
+    },
+    {
+      "index": 2023,
+      "apiId": 2106,
+      "title": "Board data quality audit — duplicate labels, missing sequences, orphan tags, position integrity",
+      "description": "## Experience\nI look at the board in the Clearing and the numbers don't add up. Sub-groups show 5 cards but the header says 46. Cards created during fast ops sessions have bare labels, missing sequences, or wrong tags. The board is team memory — if the tags are wrong, the team's awareness of its own work is wrong.\n\n## Files\n- platform/board-client/src/sdk.ts\n- platform/board-client/src/cli.ts\n\n## AC\n- [ ] Audit all cards for bare labels (not prefixed with chunk:/domain:/type:/sequence:) — report count\n- [ ] Remove or fix bare labels using cards untag/set\n- [ ] Verify all active cards (WIP/Next/Later) have: domain, chunk, type, sequence\n- [ ] Report cards missing required tags — fix or flag\n- [ ] Verify no duplicate labels on any card\n- [ ] Verify Done/Won't Do cards are excluded from active counts in Clearing domain panel",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore",
+        "sequence:ops"
+      ],
+      "done": true,
+      "created": "2026-04-04T13:53:10Z",
+      "updated": "2026-04-04T14:29:18Z"
     },
     {
       "index": 2021,
@@ -940,23 +958,6 @@
       "updated": "2026-03-31T17:34:36Z"
     },
     {
-      "index": 1908,
-      "apiId": 1991,
-      "title": "Domain service — GET /api/chorus/domain/:name returns full domain view",
-      "description": "## Experience\nI type domain/get photos and see everything: pages, endpoints, pipelines, data, service designs, ICD providers, health. One call. The domain pages exist as static HTML — this makes them live, queryable, and usable by every surface (Clearing, /chorus drill-down, doc-catalog, team-scan).\n\n## AC\n- [ ] GET /api/chorus/domain/:name returns full domain view as JSON\n- [ ] Includes: UI pages, API endpoints, integration pipelines, data stores, service designs, known issues\n- [ ] Includes ICD provider data from Fuseki (convergence page data)\n- [ ] Includes card count and WIP status for the domain\n- [ ] Works for all 21 domains (Gathering + Chorus)\n- [ ] Static domain page HTML can be generated from the API response\n\n## Design\n- [Domain Index](/docs/pm/artifacts/domain-index.html)\n- [Domain — Chorus](/docs/pm/artifacts/domain-chorus.html)\n- [Service Design — Pulse](/docs/pm/artifacts/service-design-pulse.html)\n\n## Files\n- chorus/platform/api/src/server.ts (new endpoint)\n- jeff-bridwell-personal-site/src/services/icd.service.ts (ICD data)",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-03-31T13:19:10Z",
-      "updated": "2026-03-31T21:26:22Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1059,24 +1060,6 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
-    },
-    {
-      "index": 2020,
-      "apiId": 2103,
-      "title": "Log reclassification phase 3 — 13 warn-to-error upgrades across middleware, seed processing, and query failures",
-      "description": "Audit found 40+ warn-level logs that describe actual errors. Phase 3 covers the 13 highest-impact: auth/security rejections (7), seed media processing failures (4), content parse failures (2). Plus 2 error-to-warn downgrades for false errors.\n\n## Experience\nWhen Jeff checks Loki for errors, he sees the real count — not a filtered subset hiding behind warn level. Every failure that affects what he sees is classified as error. No more hunting through warnings to find actual problems.\n\n## AC\n- [ ] Upgrade to error: twilio-auth (sig validation), webhook-auth, csrf, cors, pod-storage (4 patterns), service-token\n- [ ] Upgrade to error: seed-pod.service (video transcode, WAV conversion, whisper transcription, audio extraction)\n- [ ] Upgrade to error: collection.handler (blog parse), docs.handler (slug validation)\n- [ ] Downgrade to warn: SemanticSearchService init, Fuseki retry\n- [ ] Loki error count reflects reality after reclassification\n\n## Files\n- src/middleware/twilio-auth.middleware.ts\n- src/middleware/pod-storage.middleware.ts\n- src/middleware/csrf.middleware.ts\n- src/middleware/cors.middleware.ts\n- src/services/seed-pod.service.ts\n- src/handlers/collection.handler.ts\n- src/handlers/docs.handler.ts\n- src/services/fuseki-sync.service.ts",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-04T13:31:07Z",
-      "updated": "2026-04-04T13:31:07Z"
     },
     {
       "index": 2018,
@@ -1385,24 +1368,6 @@
       "updated": "2026-04-01T12:31:33Z"
     },
     {
-      "index": 1925,
-      "apiId": 2008,
-      "title": "Auto-nudge on card completion — cards done triggers nudge to orchestrator",
-      "description": "## Experience\nA role finishes a card and manually nudges Wren. Sometimes they forget. The pipeline stalls. Jeff sees silence and wonders what happened. The nudge-back should be automatic — when cards done runs, Wren gets notified. No manual step. The card move IS the notification.\n\n## AC\n- [ ] cards done auto-nudges Wren (or the card's orchestrating role) with completion summary\n- [ ] Nudge includes: card ID, title, AC status, builder\n- [ ] Works for both /acp (Jeff/Wren accepts) and builder-shipped flows\n- [ ] Spine event card.completed already fires — this adds the nudge delivery\n- [ ] No manual nudge needed from builder after shipping\n\n## Files\n- chorus/platform/board-client/src/cli.ts (done command)",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:fix",
-        "sequence:spine"
-      ],
-      "done": false,
-      "created": "2026-03-31T21:31:43Z",
-      "updated": "2026-03-31T21:31:43Z"
-    },
-    {
       "index": 1918,
       "apiId": 2001,
       "title": "Service design page — form-driven, model a new service through define → map → build",
@@ -1532,7 +1497,7 @@
       "index": 1902,
       "apiId": 1985,
       "title": "ICD events through NiFi — spine events as integration bus for TTL loads, lint, reload",
-      "description": "## Experience\nICD reload events go to chorus.log but they should flow through NiFi where they can trigger actions — dashboard refresh, cache invalidation, lint-failure alerts. NiFi is already the integration bus for harvest data. ICD lifecycle events should use the same bus.\n\n## AC\n- [ ] icd-reload.sh emits events to NiFi ListenHTTP processor (in addition to chorus-log)\n- [ ] NiFi flow routes icd.loaded events to Loki for observability\n- [ ] NiFi flow routes icd.lint.failed to alert channel\n- [ ] NiFi flow can trigger convergence page cache invalidation on reload\n\n## Files\n- jeff-bridwell-personal-site/scripts/icd-reload.sh (add NiFi emit)\n- NiFi flow definition (new processors)",
+      "description": "## Experience\nNiFi flows run silently on Bedroom. When a TTL load fails or a lint catches bad triples, nothing appears in Loki or the spine. Jeff finds out when data is wrong, not when the flow broke. Every NiFi flow should emit structured logs that land in the same observability stack as LaunchAgents and hooks.\n\n## AC\n- [ ] NiFi logging standard: every flow emits structured JSON on load, lint, and reload events\n- [ ] Events include: flow name, domain, record count, duration, success/failure, error detail\n- [ ] Logs land in Loki via the same path as LaunchAgent logs\n- [ ] Pattern documented so new flows conform automatically",
       "status": "Later",
       "owner": "Silas",
       "priority": "P2",
@@ -1544,7 +1509,7 @@
       ],
       "done": false,
       "created": "2026-03-31T12:50:14Z",
-      "updated": "2026-03-31T12:50:15Z"
+      "updated": "2026-04-04T14:37:52Z"
     },
     {
       "index": 1901,
@@ -1952,6 +1917,38 @@
       "done": false,
       "created": "2026-03-26T20:23:09Z",
       "updated": "2026-04-01T00:39:34Z"
+    },
+    {
+      "index": 1731,
+      "apiId": 1814,
+      "title": "Diagnose AirPlay stale session — Library HomePod silent from Mac",
+      "description": "## Experience\nI tell Siri to play music on the HomePod and it works. Then I try to AirPlay from my Mac and nothing comes out — the Mac shows it's connected, HTTP 200s are flowing, but silence. The only fix is unplugging the HomePod and plugging it back in. I need this to either just work or have a software workaround that doesn't require me to physically touch the HomePod.\n\n## AC\n1. Identify root cause: HomePod plays via Siri but silent via Mac AirPlay. Transport shows HTTP 200s, Mac shows connected, no audio output.\n2. Music.app logs show 'Missing locationUrl to make a request' — stale discovery cache\n3. Document workaround (power cycle HomePod) and permanent fix if one exists\n4. Check if coreaudiod restart resolves without HomePod power cycle\n\n## Why\nAirPlay from Library Mac to Library HomePod fails frequently. Only fix is unplug/replug HomePod. Affects music playback for Jeff. Navidrome bypasses Apple Music but still needs AirPlay to reach HomePod.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:music"
+      ],
+      "done": false,
+      "created": "2026-03-26T19:28:54Z",
+      "updated": "2026-03-30T13:04:01Z"
+    },
+    {
+      "index": 1707,
+      "apiId": 1790,
+      "title": "Extract inline SPARQL queries from handlers into Chorus API endpoints",
+      "description": "## Experience\nI look at the photo handler code and see SPARQL queries inlined as giant template strings. When I want to change how photos are queried, I'm digging through handler logic instead of hitting a clean API endpoint. I expect photo data access to go through Chorus API endpoints like every other domain — consistent, testable, and separated from the rendering logic.\n\n## Files\n- src/handlers/photo.handler.ts\n- src/services/sparql.service.ts\n- src/routes/api.routes.ts\n\n## AC\n- [ ] All SPARQL queries in photo handler moved to dedicated Chorus API endpoints\n- [ ] Handler calls endpoints, not inline SPARQL strings\n- [ ] Applies to getAllPhotosFromCanonical and any other Fuseki queries in the photo path\n- [ ] Pattern established for other domains to follow (music, books, garden)",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-26T10:40:03Z",
+      "updated": "2026-03-30T13:04:45Z"
     },
     {
       "index": 1721,
@@ -2558,6 +2555,24 @@
       "updated": "2026-04-02T11:53:43Z"
     },
     {
+      "index": 1925,
+      "apiId": 2008,
+      "title": "Auto-nudge on card completion — cards done triggers nudge to orchestrator",
+      "description": "## Experience\nA role finishes a card and manually nudges Wren. Sometimes they forget. The pipeline stalls. Jeff sees silence and wonders what happened. The nudge-back should be automatic — when cards done runs, Wren gets notified. No manual step. The card move IS the notification.\n\n## AC\n- [ ] cards done auto-nudges Wren (or the card's orchestrating role) with completion summary\n- [ ] Nudge includes: card ID, title, AC status, builder\n- [ ] Works for both /acp (Jeff/Wren accepts) and builder-shipped flows\n- [ ] Spine event card.completed already fires — this adds the nudge delivery\n- [ ] No manual nudge needed from builder after shipping\n\n## Files\n- chorus/platform/board-client/src/cli.ts (done command)",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus",
+        "type:fix",
+        "sequence:spine"
+      ],
+      "done": false,
+      "created": "2026-03-31T21:31:43Z",
+      "updated": "2026-04-04T14:38:25Z"
+    },
+    {
       "index": 1921,
       "apiId": 2004,
       "title": "[defect] gathering-app: Graph load error",
@@ -2877,23 +2892,6 @@
       "done": false,
       "created": "2026-03-28T11:00:33Z",
       "updated": "2026-03-31T20:48:18Z"
-    },
-    {
-      "index": 1780,
-      "apiId": 1863,
-      "title": "Product taxonomy sketch — Jeff's hand-drawn architecture mapping Phase/Werk/Loom to domain structure",
-      "description": "## Experience\n\nI drew this on graph paper — Phase, Werk, Loom mapped to the domain structure. I need to see it digitized and reconciled with what's already in PRODUCT_TAXONOMY.md. If the drawing and the docs disagree, I want to know where and decide which is right.\n\n## AC\n- [ ] Digitize Jeff's graph-paper sketch into structured product taxonomy\n- [ ] Reconcile with existing PRODUCT_TAXONOMY.md and team-architecture.md\n- [ ] Clarify new framing: Convergence = Practice, Corporation = Phase = Stance\n- [ ] Map the three bottom tiers (Knowledge/Practices/Services) to current system components\n- [ ] Present reconciled taxonomy to Jeff for validation",
-      "status": "Won't Do",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-28T10:42:40Z",
-      "updated": "2026-03-31T17:20:56Z"
     },
     {
       "index": 2015,
