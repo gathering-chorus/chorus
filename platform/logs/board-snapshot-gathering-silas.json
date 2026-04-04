@@ -1,25 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T17:37:11.019Z",
+  "timestamp": "2026-04-04T18:02:19.300Z",
   "tasks": [
-    {
-      "index": 2035,
-      "apiId": 2118,
-      "title": "Clearing visibility too restrictive — Jeff's terminal input and role thinking/ideation filtered out",
-      "description": "## Experience\nJeff types in Kade or Silas terminal — invisible in Clearing. Silas thinks and ideates — invisible in Clearing. The router whitelist (router.ts) only shows: jeff-input, demos, blocked, decisions, gemba, accept-requests. Everything else falls to hidden default. The Clearing is a conversation, not a filtered event stream. Participants should see each other.\n\n## AC\n1. Session tailer identifies Jeff's input and tags it as visible\n2. Role thinking and ideation (non-coordination) visible in message stream\n3. Role-to-role coordination noise (nudge delivery confirmations, state changes, tool calls) stays hidden\n4. The distinction is: human-readable commentary visible, machine protocol hidden\n5. Consistent experience across all surfaces — phone on public wifi, laptop in library, any device. Device identity changes, visibility behavior does not\n6. Tests cover: Jeff terminal input visible, role commentary visible, nudge plumbing hidden, multi-device identity parity",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-04T15:57:42Z",
-      "updated": "2026-04-04T16:01:14Z"
-    },
     {
       "index": 2022,
       "apiId": 2105,
@@ -55,6 +37,24 @@
       "done": false,
       "created": "2026-04-03T15:45:28Z",
       "updated": "2026-04-03T15:45:52Z"
+    },
+    {
+      "index": 2035,
+      "apiId": 2118,
+      "title": "Clearing visibility too restrictive — Jeff's terminal input and role thinking/ideation filtered out",
+      "description": "## Experience\nJeff types in Kade or Silas terminal — invisible in Clearing. Silas thinks and ideates — invisible in Clearing. The router whitelist (router.ts) only shows: jeff-input, demos, blocked, decisions, gemba, accept-requests. Everything else falls to hidden default. The Clearing is a conversation, not a filtered event stream. Participants should see each other.\n\n## AC\n1. Session tailer identifies Jeff's input and tags it as visible\n2. Role thinking and ideation (non-coordination) visible in message stream\n3. Role-to-role coordination noise (nudge delivery confirmations, state changes, tool calls) stays hidden\n4. The distinction is: human-readable commentary visible, machine protocol hidden\n5. Consistent experience across all surfaces — phone on public wifi, laptop in library, any device. Device identity changes, visibility behavior does not\n6. Tests cover: Jeff terminal input visible, role commentary visible, nudge plumbing hidden, multi-device identity parity",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-04T15:57:42Z",
+      "updated": "2026-04-04T17:38:09Z"
     },
     {
       "index": 2034,
@@ -927,24 +927,6 @@
       "updated": "2026-04-01T21:09:38Z"
     },
     {
-      "index": 1929,
-      "apiId": 2012,
-      "title": "Gate smoke check on session boot — refuse to start if gates are broken",
-      "description": "## Experience\nI start a session and within 3 seconds I know the gates work. If they dont the session tells me and wont proceed. I never discover broken gates by accident again.\n\n## AC\n1. SessionStart hook runs gate smoke: sets fix card state, sends Edit to hook binary with session_id, verifies deny response\n2. If gate does not block, session emits error and role must fix before working\n3. Checks log_first_gate and memory_gate at minimum — these are the two that silently broke\n4. Runs in under 3 seconds\n5. Prove it works by temporarily breaking a gate and showing the boot failure\n\n## Files\n- platform/services/chorus-hooks/src/hooks/session_init_gate.rs",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-01T00:46:40Z",
-      "updated": "2026-04-01T12:15:29Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1463,24 +1445,6 @@
       "updated": "2026-03-31T13:47:54Z"
     },
     {
-      "index": 1904,
-      "apiId": 1987,
-      "title": "Auto-sync ICD TTLs to Fuseki — add instance TTLs to fuseki-sync watch list",
-      "description": "## Experience\n\nSilas edits an ICD instance TTL and forgets to reload Fuseki. The convergence page shows stale data or missing domains. I shouldn't have to manually reload — the system should watch TTL files and sync them to Fuseki on change and on startup. And the convergence page shouldn't need 25 round trips and a client-side domain map — one API call should return everything.\n\n## AC\n\n- [ ] fuseki-sync service watches all src/ontology/icd-instance-*.ttl files\n- [ ] Changes to any ICD TTL auto-reload into urn:gathering:icd/current graph\n- [ ] On app startup, all ICD TTLs are loaded if graph is empty or stale\n- [ ] GET /api/convergence returns full domain taxonomy with ICD status, product, step, providers, compliance — one call\n- [ ] POST /api/icd/reload endpoint for manual trigger\n- [ ] Convergence page consumes single API instead of 25 round trips\n- [ ] No manual Fuseki reload needed after TTL edits\n- [ ] Client-side DOMAIN_META map replaced by server-side classification",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-03-31T13:08:56Z",
-      "updated": "2026-03-31T13:10:42Z"
-    },
-    {
       "index": 1902,
       "apiId": 1985,
       "title": "ICD events through NiFi — spine events as integration bus for TTL loads, lint, reload",
@@ -1920,6 +1884,22 @@
       "done": false,
       "created": "2026-03-26T19:28:54Z",
       "updated": "2026-03-30T13:04:01Z"
+    },
+    {
+      "index": 1707,
+      "apiId": 1790,
+      "title": "Extract inline SPARQL queries from handlers into Chorus API endpoints",
+      "description": "## Experience\nI look at the photo handler code and see SPARQL queries inlined as giant template strings. When I want to change how photos are queried, I'm digging through handler logic instead of hitting a clean API endpoint. I expect photo data access to go through Chorus API endpoints like every other domain — consistent, testable, and separated from the rendering logic.\n\n## Files\n- src/handlers/photo.handler.ts\n- src/services/sparql.service.ts\n- src/routes/api.routes.ts\n\n## AC\n- [ ] All SPARQL queries in photo handler moved to dedicated Chorus API endpoints\n- [ ] Handler calls endpoints, not inline SPARQL strings\n- [ ] Applies to getAllPhotosFromCanonical and any other Fuseki queries in the photo path\n- [ ] Pattern established for other domains to follow (music, books, garden)",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-26T10:40:03Z",
+      "updated": "2026-03-30T13:04:45Z"
     },
     {
       "index": 1721,
@@ -2863,6 +2843,57 @@
       "done": false,
       "created": "2026-03-28T11:00:33Z",
       "updated": "2026-03-31T20:48:18Z"
+    },
+    {
+      "index": 2040,
+      "apiId": 2123,
+      "title": "[defect] gathering-app: Event loop lag: 14.80s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 14.80s\nSample: Event loop lag: 14.80s\nFirst seen: 2026-04-04T18:01:13Z\nCount: 1\nHash: c3ac4681d9abb63f",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T18:01:14Z",
+      "updated": "2026-04-04T18:01:14Z"
+    },
+    {
+      "index": 2039,
+      "apiId": 2122,
+      "title": "[defect] gathering-app: Event loop lag: 14.06s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 14.06s\nSample: Event loop lag: 14.06s\nFirst seen: 2026-04-04T17:55:54Z\nCount: 1\nHash: 8ed16a71a4c026e4",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T17:55:54Z",
+      "updated": "2026-04-04T17:55:54Z"
+    },
+    {
+      "index": 2038,
+      "apiId": 2121,
+      "title": "[defect] gathering-app: Event loop lag: 12.19s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 12.19s\nSample: Event loop lag: 12.19s\nFirst seen: 2026-04-04T17:55:54Z\nCount: 1\nHash: 03a098368b358892",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T17:55:54Z",
+      "updated": "2026-04-04T17:55:54Z"
     },
     {
       "index": 2015,
