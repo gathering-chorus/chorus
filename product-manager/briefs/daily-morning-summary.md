@@ -1,34 +1,33 @@
-# Daily Morning Summary — 2026-04-03
+# Daily Morning Summary — 2026-04-04
 
-**HEADLINE:** Both blockers from yesterday's summary remain unresolved — CI is dark for a 5th straight day and #1926 is still un-accepted; today they get fixed before anything else.
+**HEADLINE:** Board-client is still RED on missing workflow-engine dist, chorus-sdk has a broken `value_stream_step` mapping, and #1926 remains un-accepted — fix these before pulling any new work.
 
 ---
 
-**OPS** 🟡 YELLOW/RED (Silas review: 2026-04-02)
-- 4 yellows, 1 red, 3 greens.
-- 🔴 **Top concern:** #1926 (gate integration test suite, 39/39 passing) now 78h+ stale in WIP awaiting `/acp`. #1865 (photo thumbnail) still in WIP slot, never started.
-- 🟡 18 cargo warnings in chorus-hooks (4 auto-fixable); 36 plist /tmp log refs (doc as accepted risk); `messages/claudemd/` fragment dir missing (confirm deprecated); disk baseline script emitting inconsistent `usedBytes`/`percentUsed`.
+**OPS** 🟡 YELLOW (Silas review: 2026-04-02)
+- 🔴 **Top concern:** #1926 (gate integration tests, 39/39 passing) now 78h+ stale in WIP, no `/acp`. Still unresolved from yesterday.
+- 🟡 18 cargo warnings in chorus-hooks (4 auto-fixable); 36 plist `/tmp` log refs (needs accepted-risk doc); `messages/claudemd/` fragment dir missing (deprecated or moved?); disk baseline script inconsistent `usedBytes`/`percentUsed`.
 - ✅ Repo clean, domain context fresh, CSC compliance clean.
 
-**QUALITY** 🔴 RED (Kade review: 2026-04-02)
-- **0 tests running** — board-client, workflow-engine, chorus-sdk, slack-bridge all missing `node_modules`. Day 5.
-- chorus-sdk regressed from 6/6 green (2026-03-29); was 91.7% coverage. Now entirely dark.
-- `jeff-bridwell-personal-site` still not found — lint/build dark, day 5. Persistent noise; remove from check matrix or fix the path.
-- Coverage: N/A across all 4 packages.
+**QUALITY** 🟡 YELLOW trending up (Kade review: 2026-04-03)
+- Tests: 363 total | 110 passing, 65 failing (board-client), 5 failing (chorus-sdk), 32 skipped
+- 🔴 **board-client:** 65 tests fail — `workflow-engine/dist` not built. Run `npm run build` in workflow-engine first.
+- 🟡 **chorus-sdk:** 5 failures — `value_stream_step` returning null instead of "Capturing" (`emit-metadata.test.ts:226`).
+- ✅ workflow-engine: 61/61. slack-bridge: 60/60. Both recovered from RED yesterday.
+- `jeff-bridwell-personal-site` not found — day 6. Remove from check matrix or fix the path.
 
-**YESTERDAY** — 2026-04-02 (7 cards shipped)
-- Kade: #1950 (backfill domain tags on 806 Done cards), #1954 (SMS seed Unicode quote fix), #1963 (Clearing domain fold with sequence sub-folds)
-- Silas: #1964 (restore cards update --desc), #1966 (cards CLI gate tightening + 10 new sequence labels)
-- Wren: #1961 (Mermaid diagrams on 8 domain pages, 14 actor flows), #1965 (cards domain page + service design)
-- Key decisions: actor-BDD method established, Policy domain defined, domain model crystallized.
+**YESTERDAY** — 2026-04-03 (19+ cards shipped, high-velocity)
+- Silas: 14 cards — awareness watchdog (#1958), staleness detection (#2031), Clearing ack (#1934), spine events (#1945), tunnel monitoring (#2016), Ollama (#2014), real-time gemba (#2021), compound loop (#2008), skills repo-tracked (#1840), folder structure (#1826), health endpoint (#2011), dedup (#2010), agent-state (#2009), awareness gate (#2003).
+- Kade: 5 cards — domain crawler v2 (#1959), crawler compound loop index (#2019), seed content display (#2007), foaf prefix + log reclassification (#2005), bad URI verification (#2017).
+- Key decisions: DEC-107 locked (nudge two-path, no reopening). Compound search loop now injects prior Chorus context on every query.
 
 **TODAY** (recommended order)
-1. **Kade → `npm install` x4** — board-client, workflow-engine, chorus-sdk, slack-bridge. Nothing else first. Day 5 is the line.
-2. **Silas → `/acp` #1926 or explicitly defer** — 78h+ stale, blocks clean WIP signal.
-3. **Wren → move #1865 to Queue** — never started, occupying a WIP slot.
+1. **Kade → `npm run build` in workflow-engine** — unblocks 65 board-client tests immediately.
+2. **Kade → fix `value_stream_step` null** in chorus-sdk emit layer — `emit-metadata.test.ts:226`.
+3. **Silas → `/acp` #1926 or explicitly defer** — 78h+ stale, 3rd day listed.
 4. **Silas → `cargo fix --bin chorus-hooks`** — 4 auto-fixable warnings.
-5. **All → continue domain BDD work** — strong momentum from yesterday.
+5. **Wren → clarify `messages/claudemd/` fragment path** — ops check needs updating.
 
 **BLOCKERS** — needs Jeff's attention
-- 🔴 **CI dark day 5** — identical fix listed two days running. Direct ask to Kade needed: `npm install` x4 before any new code.
-- 🔴 **#1926 unaccepted 78h** — process failure. Jeff: ship it or park it, today.
+- 🔴 **`jeff-bridwell-personal-site` missing — day 6.** App tests, lint, and build are completely dark. Is this path gone, moved, or intentionally dropped? Decision needed to stop noisy daily reporting.
+- 🔴 **#1926 un-accepted 78h+** — listed 3 days running. Jeff: call it.
