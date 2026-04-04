@@ -1,7 +1,25 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T15:54:09.071Z",
+  "timestamp": "2026-04-04T16:09:14.323Z",
   "tasks": [
+    {
+      "index": 2035,
+      "apiId": 2118,
+      "title": "Clearing visibility too restrictive — Jeff's terminal input and role thinking/ideation filtered out",
+      "description": "## Experience\nJeff types in Kade or Silas terminal — invisible in Clearing. Silas thinks and ideates — invisible in Clearing. The router whitelist (router.ts) only shows: jeff-input, demos, blocked, decisions, gemba, accept-requests. Everything else falls to hidden default. The Clearing is a conversation, not a filtered event stream. Participants should see each other.\n\n## AC\n1. Session tailer identifies Jeff's input and tags it as visible\n2. Role thinking and ideation (non-coordination) visible in message stream\n3. Role-to-role coordination noise (nudge delivery confirmations, state changes, tool calls) stays hidden\n4. The distinction is: human-readable commentary visible, machine protocol hidden\n5. Consistent experience across all surfaces — phone on public wifi, laptop in library, any device. Device identity changes, visibility behavior does not\n6. Tests cover: Jeff terminal input visible, role commentary visible, nudge plumbing hidden, multi-device identity parity",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T15:57:42Z",
+      "updated": "2026-04-04T16:01:14Z"
+    },
     {
       "index": 2022,
       "apiId": 2105,
@@ -19,24 +37,6 @@
       "done": false,
       "created": "2026-04-04T13:50:50Z",
       "updated": "2026-04-04T13:54:06Z"
-    },
-    {
-      "index": 2018,
-      "apiId": 2101,
-      "title": "Board domain total doesn't match sub-chunk sum — Chorus shows 46 total but sub-groups add to 5",
-      "description": "## Experience\nI open the Clearing domain panel and see 'Chorus: 46 cards' at the top. I expand the sub-groups and count: 5 cards total across all groups. The total doesn't match the parts. Either the total counts cards the groups don't show, or the grouping logic is dropping cards.\n\n## AC\n- [ ] Diagnose: identify which cards are counted in the total but missing from sub-groups\n- [ ] Fix: domain total matches the sum of sub-group counts\n- [ ] Test: verify total === sum of sub-groups for all domains with sub-chunks\n\n## Files\n- src/handlers/team.handler.ts (or wherever Clearing domain panel data is served)\n- platform/board-client/src/cli.ts (sequence/chunk display)",
-      "status": "WIP",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-04T13:23:46Z",
-      "updated": "2026-04-04T15:39:47Z"
     },
     {
       "index": 2000,
@@ -57,22 +57,22 @@
       "updated": "2026-04-03T15:45:52Z"
     },
     {
-      "index": 1958,
-      "apiId": 2041,
-      "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
-      "description": "## Experience\nA role stalls. Within 2 minutes the watchdog nudges them. Within 3 minutes Wren knows. Within 5 minutes Jeff knows.\n\n## AC\n1. Gherkin feature file with scenarios: role goes silent, 2min nudge, 3min escalate, 5min alert\n2. LaunchAgent spec: 60s cron, reads role-state timestamps, computes age\n3. Steps test real role-state files and real nudge delivery\n4. Scenario: role resumes after nudge, watchdog resets\n5. Scenario: all three roles silent, system-wide alert\n\n## Files\n- platform/tests/features/awareness/team-awareness.feature\n- platform/tests/features/step_definitions/awareness_steps.ts\n- platform/services/watchdog/com.chorus.watchdog.plist\n- platform/scripts/watchdog.sh",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P1",
+      "index": 2034,
+      "apiId": 2117,
+      "title": "Clearing streams pane only fills half the screen on mobile",
+      "description": "## Experience\nI open the Clearing on my phone and the streams pane — where I see role messages and team activity — only fills half the viewport. The bottom half is empty space. On desktop it's fine. On mobile, that wasted space means I'm scrolling more to see less.\n\n## AC\n- [ ] Streams pane fills available viewport height on mobile (<768px)\n- [ ] No layout regression on desktop\n- [ ] Test: verify CSS media query targets mobile viewport\n\n## Files\n- chorus/directing/clearing/public/index.html (CSS section)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
       "domains": [
-        "chunk:ops",
-        "sequence:hardening",
+        "chunk:app",
         "domain:chorus",
-        "type:new"
+        "type:fix",
+        "sequence:clearing"
       ],
-      "done": false,
-      "created": "2026-04-02T01:33:22Z",
-      "updated": "2026-04-04T15:26:24Z"
+      "done": true,
+      "created": "2026-04-04T15:39:06Z",
+      "updated": "2026-04-04T16:08:30Z"
     },
     {
       "index": 2031,
@@ -181,6 +181,24 @@
       "done": true,
       "created": "2026-04-04T13:24:51Z",
       "updated": "2026-04-04T13:30:49Z"
+    },
+    {
+      "index": 2018,
+      "apiId": 2101,
+      "title": "Board domain total doesn't match sub-chunk sum — Chorus shows 46 total but sub-groups add to 5",
+      "description": "## Experience\nI open the Clearing domain panel and see 'Chorus: 46 cards' at the top. I expand the sub-groups and count: 5 cards total across all groups. The total doesn't match the parts. Either the total counts cards the groups don't show, or the grouping logic is dropping cards.\n\n## AC\n- [ ] Diagnose: identify which cards are counted in the total but missing from sub-groups\n- [ ] Fix: domain total matches the sum of sub-group counts\n- [ ] Test: verify total === sum of sub-groups for all domains with sub-chunks\n\n## Files\n- src/handlers/team.handler.ts (or wherever Clearing domain panel data is served)\n- platform/board-client/src/cli.ts (sequence/chunk display)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": true,
+      "created": "2026-04-04T13:23:46Z",
+      "updated": "2026-04-04T15:56:40Z"
     },
     {
       "index": 2017,
@@ -572,6 +590,24 @@
       "updated": "2026-04-04T13:25:36Z"
     },
     {
+      "index": 1958,
+      "apiId": 2041,
+      "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
+      "description": "## Experience\nA role stalls. Within 2 minutes the watchdog nudges them. Within 3 minutes Wren knows. Within 5 minutes Jeff knows.\n\n## AC\n1. Gherkin feature file with scenarios: role goes silent, 2min nudge, 3min escalate, 5min alert\n2. LaunchAgent spec: 60s cron, reads role-state timestamps, computes age\n3. Steps test real role-state files and real nudge delivery\n4. Scenario: role resumes after nudge, watchdog resets\n5. Scenario: all three roles silent, system-wide alert\n\n## Files\n- platform/tests/features/awareness/team-awareness.feature\n- platform/tests/features/step_definitions/awareness_steps.ts\n- platform/services/watchdog/com.chorus.watchdog.plist\n- platform/scripts/watchdog.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:new"
+      ],
+      "done": true,
+      "created": "2026-04-02T01:33:22Z",
+      "updated": "2026-04-04T15:58:32Z"
+    },
+    {
       "index": 1957,
       "apiId": 2040,
       "title": "Team awareness actor diagram + BDD — spine and pulse detect stalled roles before Jeff does",
@@ -909,59 +945,6 @@
       "updated": "2026-04-01T12:15:29Z"
     },
     {
-      "index": 1928,
-      "apiId": 2011,
-      "title": "Fix pulse integration test — bash on Rust binary breaks 3/6 layers",
-      "description": "## Experience\nI run the pulse integration test and 3 of 6 layers fail because it calls bash on a Rust binary.\n\n## AC\n1. platform/scripts/pulse-integration-test.sh invokes chorus-log directly not via bash\n2. All 6 layers pass when run\n\n## Files\n- platform/scripts/pulse-integration-test.sh",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-04-01T00:39:25Z",
-      "updated": "2026-04-01T00:49:04Z"
-    },
-    {
-      "index": 1927,
-      "apiId": 2010,
-      "title": "Fix pulse integration test — calls bash on Rust binary, 3/6 layers fail",
-      "description": "## Experience\nI run the pulse integration test and 3 of 6 layers fail. The test calls bash on a Rust binary — that's the break from the .sh wrapper removal.\n\n## AC\n1. pulse-integration-test.sh invokes chorus-log directly, not via bash\n2. All 6 layers pass when run\n\n## Files\n- platform/scripts/pulse-integration-test.sh",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": true,
-      "created": "2026-04-01T00:36:45Z",
-      "updated": "2026-04-04T12:45:53Z"
-    },
-    {
-      "index": 1926,
-      "apiId": 2009,
-      "title": "Gate integration test suite — verify card type drives gate behavior per spec matrix",
-      "description": "## Experience\n\nSilas ships a gate. We say it works because we tested it once by hand. Next session it's broken and nobody knows. I need an automated test that proves every gate fires correctly for every card type — same confidence as the pulse integration test.\n\n## AC\n\n- [ ] Test script creates temporary test cards for each type (fix/enhance/new/chore/swat)\n- [ ] Simulates edit attempts and verifies gate response per card type spec matrix\n- [ ] fix → requires git log evidence before edit (blocks without it)\n- [ ] enhance → requires Chorus search before edit\n- [ ] new → own-domain passthrough (no extra gates)\n- [ ] chore → minimal gates\n- [ ] swat → bypass all non-critical gates\n- [ ] Reports PASS/FAIL per gate × type combination\n- [ ] Cleans up test cards after run\n- [ ] Can run as: bash gate-integration-test.sh\n\n## Files\n- chorus/platform/scripts/gate-integration-test.sh",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-03-31T21:34:58Z",
-      "updated": "2026-04-01T12:15:12Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1046,23 +1029,6 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
-    },
-    {
-      "index": 2034,
-      "apiId": 2117,
-      "title": "Clearing streams pane only fills half the screen on mobile",
-      "description": "",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-04T15:39:06Z",
-      "updated": "2026-04-04T15:39:06Z"
     },
     {
       "index": 2033,
@@ -1934,6 +1900,22 @@
       "done": false,
       "created": "2026-03-26T10:40:03Z",
       "updated": "2026-03-30T13:04:45Z"
+    },
+    {
+      "index": 1677,
+      "apiId": 1760,
+      "title": "Borg calibration session — peer benchmark, scoring rubric, and self-assessment review with Jeff",
+      "description": "## Experience\nI open the Borg self-assessment and ontology comparison documents and I want to walk through them together with the team. I know we'll score ourselves wrong if we grade our own work — I need an external benchmark so the scores mean something. I want to pick a system I know well, score it on the same axes, and then compare. That calibration turns the Borg assessment from an opinion into a measurement.\n\nJeff wants to walk through both Borg HTML documents together.\n\n## Files\n- product-manager/data/borg/ontology-comparison.html\n- product-manager/data/borg/self-assessment.html\n\n## AC\n- [ ] Jeff reviews ontology comparison — TOSCA vs SOSA/SSN vs K8s matrix and hybrid recommendation\n- [ ] Jeff reviews self-assessment — 7 dimensions with real data, 4/4 decision validation\n- [ ] Capture Jeff's feedback, questions, and direction for Borg next steps\n- [ ] Update Borg product roadmap based on review",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:borg"
+      ],
+      "done": false,
+      "created": "2026-03-24T20:13:59Z",
+      "updated": "2026-03-30T13:05:17Z"
     },
     {
       "index": 1721,
