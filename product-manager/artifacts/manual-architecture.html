@@ -45,7 +45,7 @@
 <body>
 
 <h1>Architecture Manual — Gathering &amp; Chorus</h1>
-<p class="subtitle">Written from existing docs as-is &bull; KM exercise &bull; Wren &bull; 2026-03-30 &bull; Red-pen this.</p>
+<p class="subtitle">Written from existing docs as-is &bull; KM exercise &bull; Wren &bull; 2026-03-30 &bull; v2 — counts reconciled, Docker corrected, current work added 2026-04-04</p>
 
 <div class="toc">
 <strong>Contents</strong>
@@ -72,14 +72,14 @@
   <div class="machine">
     <h4>Library (Primary)</h4>
     <div class="spec">Mac mini M1 &bull; 16GB RAM &bull; 2TB SSD &bull; 192.168.86.36</div>
-    <p><strong>Runs everything:</strong> App, Fuseki, Prometheus, Grafana, Loki, MySQL, WordPress, CSS (SOLID), Vikunja, Chorus API, messaging tier, all hooks.</p>
-    <p>All services native LaunchAgents. Docker fully retired Mar 14 — 3 containers remain (WordPress, MySQL, SOLID).</p>
+    <p><strong>Runs everything:</strong> App, Fuseki, Prometheus, Grafana, Loki, Vikunja, Chorus API, messaging tier, all hooks, watchdog service.</p>
+    <p>49 LaunchAgents tracked via <code>agent-state.sh</code>. Docker fully retired Mar 14 — 3 container images remain (Navidrome, CSS, webvowl), zero currently running. All services native LaunchAgents.</p>
     <div class="stale"><b>DRIFT:</b> Session-start reports 96% disk — false positive due to APFS purgeable space. df/du lie on this machine. (#1868)</div>
   </div>
   <div class="machine">
     <h4>Bedroom (Storage &amp; AI)</h4>
     <div class="spec">Mac mini M2 Pro &bull; 32GB RAM &bull; ~178TB external &bull; 192.168.86.242</div>
-    <p><strong>Media + AI:</strong> images-api, Ollama (Mistral, nomic-embed-text), Whisper, LLaVA, thumbnail generation.</p>
+    <p><strong>Media + AI:</strong> images-api, Ollama (Mistral, nomic-embed-text for semantic search), Whisper, LLaVA, thumbnail generation.</p>
     <p>Bulk ops run via SSH, not NFS (DEC-089). NFS mount at <code>/Volumes/Gathering/</code> for read-only single-file access.</p>
   </div>
 </div>
@@ -107,7 +107,7 @@
 <table>
   <tr><th>Component</th><th>Role</th><th>Details</th></tr>
   <tr><td>SOLID Pods</td><td>Filesystem source of truth</td><td>Turtle files per resource/collection. <code>/pods/jeff/&lt;domain&gt;/</code></td></tr>
-  <tr><td>Fuseki (TDB2)</td><td>SPARQL query engine</td><td>Port 3030. Dataset: <code>/pods</code>. 16M+ triples, 33K+ named graphs.</td></tr>
+  <tr><td>Fuseki (TDB2)</td><td>SPARQL query engine</td><td>Port 3030. Dataset: <code>/pods</code>. 30.9M triples, 33K+ named graphs.</td></tr>
   <tr><td>Ontology (jb:)</td><td>Type system</td><td>v1.1.0. <code>https://jeffbridwell.com/ontology#</code></td></tr>
 </table>
 
@@ -135,13 +135,15 @@
   <tr><td>D</td><td>External</td><td>Catalog with harvest bridge. WordPress harvester template.</td></tr>
 </table>
 
-<h3>Search (Three Layers)</h3>
+<h3>Search (Three Layers + Compound Loop)</h3>
 <table>
   <tr><th>Layer</th><th>Tech</th><th>Items</th><th>Purpose</th></tr>
   <tr><td>Full-text</td><td>SQLite FTS5</td><td>154K</td><td>BM25, prefix matching, collection boosting</td></tr>
-  <tr><td>Semantic</td><td>LanceDB + nomic-embed-text</td><td>15K</td><td>Vector similarity, resonance</td></tr>
-  <tr><td>Structured</td><td>Fuseki SPARQL</td><td>16M+ triples</td><td>Precise graph queries</td></tr>
+  <tr><td>Semantic</td><td>LanceDB + Ollama nomic-embed-text (Bedroom)</td><td>15K</td><td>Vector similarity, resonance</td></tr>
+  <tr><td>Structured</td><td>Fuseki SPARQL</td><td>30.9M triples</td><td>Precise graph queries</td></tr>
 </table>
+
+<p><strong>Compound loop:</strong> Multi-source search combines all three layers — FTS for recall, Ollama semantic (on Bedroom) for discovery, SPARQL for precision. App's <code>/search</code> runs hybrid mode across sources.</p>
 
 <div class="question"><b>RED PEN:</b> 154K FTS vs 15K semantic — 10:1 gap. Is embedding pipeline running? When was it last verified?</div>
 
@@ -154,16 +156,18 @@
 
 <table>
   <tr><th>Domain</th><th>Source</th><th>Volume</th><th>Status</th></tr>
-  <tr><td>Music</td><td>Apple Music (JXA)</td><td>108K tracks</td><td>Functional</td></tr>
-  <tr><td>Photos</td><td>Google Takeout + Apple Photos</td><td>63K canonical</td><td>Functional (gaps)</td></tr>
+  <tr><td>Music</td><td>Apple Music (JXA)</td><td>115,112 tracks</td><td>Functional</td></tr>
+  <tr><td>Photos</td><td>Google Takeout + Apple Photos</td><td>100,399 canonical</td><td>Functional (gaps)</td></tr>
   <tr><td>Notes</td><td>Apple Notes</td><td>823</td><td>Functional</td></tr>
   <tr><td>Blog</td><td>WordPress webhook</td><td>43 posts</td><td>Functional</td></tr>
   <tr><td>Books</td><td>Upload + Claude Vision</td><td>141+</td><td>Functional</td></tr>
-  <tr><td>Stories</td><td>Session extraction</td><td>135+</td><td>Functional</td></tr>
-  <tr><td>People</td><td>Contacts + Takeout + face clusters</td><td>2,942</td><td>Functional</td></tr>
+  <tr><td>Stories</td><td>Session extraction</td><td>145</td><td>Functional</td></tr>
+  <tr><td>People</td><td>Contacts + Takeout + face clusters</td><td>2,841</td><td>Functional</td></tr>
   <tr><td>Sexuality</td><td>Galleries</td><td>1.86M</td><td>Functional</td></tr>
   <tr><td>Social</td><td>Facebook/LinkedIn exports</td><td>?</td><td>Not built (Won't Do)</td></tr>
 </table>
+
+<div class="current"><b>COUNTS RECONCILED (2026-04-04):</b> All domain volumes verified against live system. Previous counts (63K photos, 108K music, 2,942 people, 135 stories) were from initial 2026-03-30 write and were stale.</div>
 
 <div class="principle"><b>PRINCIPLE (DEC-095):</b> Mapper before harvest. No data loading without validated ICDs and semantic mapping. Define → map → build.</div>
 
@@ -176,12 +180,13 @@
 
 <table>
   <tr><th>Component</th><th>Port</th><th>Role</th></tr>
-  <tr><td>Prometheus</td><td>9090</td><td>Metrics scraping — containers, Node Exporter, MySQL, Blackbox</td></tr>
+  <tr><td>Prometheus</td><td>9090</td><td>Metrics scraping — LaunchAgents, Node Exporter, MySQL, Blackbox</td></tr>
   <tr><td>Grafana</td><td>3100</td><td>Dashboards (10+). Disk, SPARQL latency, harvest state, cost.</td></tr>
   <tr><td>Loki</td><td>3102</td><td>Log aggregation. All daemon/service logs. Structured queries.</td></tr>
   <tr><td>Alertmanager</td><td>9093</td><td>34 alert rules. Routes by severity.</td></tr>
   <tr><td>Ops Agent</td><td>—</td><td>Every 15min. AI-powered triage of health, alerts, errors, disk.</td></tr>
   <tr><td>Defect Poller</td><td>—</td><td>Every 5min. Pattern-based error detection, hash dedup.</td></tr>
+  <tr><td>Watchdog Service</td><td>—</td><td>LaunchAgent health monitoring. Detects stale/crashed agents, auto-restarts.</td></tr>
 </table>
 
 <div class="stale"><b>KNOWN ISSUE:</b> Grafana port documented as 3100 in MEMORY.md but also "Loki 3102 (NOT 3100)" — verify these are correct.</div>
@@ -194,38 +199,44 @@
 <table>
   <tr><th>Service</th><th>Port</th><th>Tech</th><th>Description</th></tr>
   <tr><td>Gathering App</td><td>3000</td><td>Express + TS</td><td>Main application. 50+ pages. SOLID auth.</td></tr>
-  <tr><td>Fuseki</td><td>3030</td><td>Java (TDB2)</td><td>SPARQL endpoint. 16M+ triples.</td></tr>
+  <tr><td>Fuseki</td><td>3030</td><td>Java (TDB2)</td><td>SPARQL endpoint. 30.9M triples.</td></tr>
   <tr><td>CSS (SOLID)</td><td>3333</td><td>Node.js</td><td>Community Solid Server. Pod storage.</td></tr>
-  <tr><td>MySQL</td><td>3306</td><td>Docker</td><td>WordPress database.</td></tr>
-  <tr><td>WordPress</td><td>8080</td><td>Docker</td><td>Blog CMS. Webhook to app.</td></tr>
+  <tr><td>MySQL</td><td>3306</td><td>Native</td><td>WordPress database.</td></tr>
+  <tr><td>WordPress</td><td>8080</td><td>Native</td><td>Blog CMS. Webhook to app.</td></tr>
   <tr><td>Navidrome</td><td>4533</td><td>Go</td><td>Music streaming server.</td></tr>
   <tr><td>images-api</td><td>3001/8082</td><td>Node.js</td><td>Bedroom. Gallery UI + media serving.</td></tr>
 </table>
+
+<div class="current"><b>CORRECTED (2026-04-04):</b> MySQL and WordPress are native LaunchAgents, not Docker containers. Docker container images remain for Navidrome, CSS, webvowl — zero currently running.</div>
 
 <!-- 7. CHORUS SERVICES -->
 <h2 id="services-chorus">7. Chorus Services</h2>
 
 <table>
   <tr><th>Service</th><th>Port</th><th>Tech</th><th>Description</th></tr>
-  <tr><td>Chorus API</td><td>3340</td><td>TypeScript</td><td>Context index + team state API. SQLite FTS5 + LanceDB.</td></tr>
+  <tr><td>Chorus API</td><td>3340</td><td>TypeScript</td><td>Context index + team state API. SQLite FTS5 + LanceDB. Includes <code>/api/chorus/health</code> endpoint.</td></tr>
   <tr><td>Vikunja</td><td>3456</td><td>Go</td><td>Kanban board.</td></tr>
   <tr><td>Messaging Tier</td><td>3475</td><td>TypeScript</td><td>Persistent message store. Nudge history.</td></tr>
   <tr><td>The Clearing</td><td>3470</td><td>TypeScript</td><td>Bridge UI. Real-time coordination.</td></tr>
-  <tr><td>Chorus Hooks</td><td>—</td><td>Rust</td><td>PreToolUse/PostToolUse gate binary. 236 tests.</td></tr>
+  <tr><td>Chorus Hooks</td><td>—</td><td>Rust</td><td>PreToolUse/PostToolUse gate binary. 37 modules, 308 tests.</td></tr>
   <tr><td>Board CLI (cards)</td><td>—</td><td>TypeScript</td><td>CLI wrapping Vikunja API.</td></tr>
 </table>
 
-<h3>LaunchAgents (Library)</h3>
+<h3>LaunchAgents (Library) — 49 Total Tracked</h3>
+<p>Managed via <code>agent-state.sh</code> — the single lifecycle tool for all LaunchAgents. Never kill PIDs manually.</p>
 <table>
   <tr><th>Agent</th><th>Type</th><th>Description</th></tr>
-  <tr><td>com.chorus.api</td><td>KeepAlive</td><td>Chorus context index HTTP API</td></tr>
+  <tr><td>com.chorus.api</td><td>KeepAlive</td><td>Chorus context index HTTP API (includes /api/chorus/health)</td></tr>
   <tr><td>com.chorus.alert-notifier</td><td>KeepAlive</td><td>Alert notifications</td></tr>
   <tr><td>com.chorus.session-watcher</td><td>KeepAlive</td><td>Ambient index daemon</td></tr>
   <tr><td>com.chorus.defect-poller</td><td>KeepAlive</td><td>Error polling</td></tr>
   <tr><td>com.chorus.fuseki-perf</td><td>KeepAlive</td><td>RDF store monitoring</td></tr>
   <tr><td>com.chorus.fuseki-compact</td><td>Calendar</td><td>TDB2 weekly compact, Saturday 1am</td></tr>
   <tr><td>com.chorus.ops-agent</td><td>KeepAlive</td><td>Operational health</td></tr>
+  <tr><td>com.chorus.watchdog</td><td>KeepAlive</td><td>LaunchAgent health monitoring and auto-restart</td></tr>
 </table>
+
+<div class="current"><b>UPDATED (2026-04-04):</b> 49 LaunchAgents total tracked via <code>agent-state.sh</code>. Table above shows representative Chorus agents — full inventory via <code>agent-state.sh list</code>.</div>
 
 <div class="question"><b>RED PEN:</b> Is this the complete LaunchAgent inventory? #1774 flagged 5 duplicates. #1832 flagged path drift. How many are actually running?</div>
 
@@ -300,7 +311,7 @@
 <table>
   <tr><th>ID</th><th>Constraint</th><th>Description</th></tr>
   <tr><td>C1-C2</td><td>Disk budget</td><td>Primary SSD stay &lt;95%. At 100%, metadata DB corrupts.</td></tr>
-  <tr><td>C3</td><td>Service budget</td><td>All services native LaunchAgents. New services justify runtime cost.</td></tr>
+  <tr><td>C3</td><td>Service budget</td><td>All services native LaunchAgents (49 tracked). New services justify runtime cost.</td></tr>
   <tr><td>C4-C7</td><td>—</td><td>Referenced in infrastructure-constraints.md but not fully documented here.</td></tr>
 </table>
 
@@ -330,7 +341,7 @@
 
 <div class="stale"><b>DRIFT WARNING:</b> C4-ARCHITECTURE exists at 31K and 30K in two locations. INFRASTRUCTURE.md exists at 8.8K and 9.8K. Same pattern as product docs — no canonical location.</div>
 
-<p class="meta">Architecture Manual &bull; Written from existing docs as-is &bull; Wren &bull; 2026-03-30 &bull; KM sequence #1872</p>
+<p class="meta">Architecture Manual &bull; v2 — counts reconciled, Docker corrected, current work added &bull; Wren &bull; 2026-04-04 &bull; KM sequence #1872</p>
 
 </body>
 </html>
