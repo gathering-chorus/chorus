@@ -1,12 +1,12 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T10:50:03.897Z",
+  "timestamp": "2026-04-04T12:07:35.273Z",
   "tasks": [
     {
-      "index": 2008,
-      "apiId": 2091,
-      "title": "Compound loop breaks on reboot — after-prompt context injection lost on session boundary",
-      "description": "After-prompt hooks built April 3 search Chorus, logs, cards on every prompt. Worked. Jeff rebooted Wren, context injection stopped. Hook server running but loop broken.\n\n## Experience\nWhen Jeff reboots a role, the compound loop should just keep working. The role boots, Jeff types something, and the after-prompt hook fires — searching Chorus, tailing logs, checking cards. No manual restart. No lost context. The loop survives the session boundary.\n\n## AC\n- [ ] After-prompt hooks fire on first prompt of new session — verified by log evidence\n- [ ] Chorus/logs/cards results injected into role context every prompt\n- [ ] Reboot test: restart role, send prompt, verify injected context appears\n- [ ] No session starts without compound loop active\n\n## Files\n- platform/services/chorus-hooks/src/hooks/context_inject.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/scripts/test-compound-loop.sh",
+      "index": 2003,
+      "apiId": 2086,
+      "title": "Continuous awareness gate — surface unresolved state on every prompt cycle, not just boot",
+      "description": "## Experience\nEvery prompt cycle, the role sees active system state AND relevant context from prior sessions. Semantic + keyword search runs automatically against the Chorus index on every prompt. No role has to remember to check — the system brings the context to them. The compound loop: every interaction makes the system smarter.\n\n## AC\n- [ ] UserPromptSubmit hook extracts terms from Jeff's message, runs semantic + keyword search against Chorus index\n- [ ] Results injected into role context automatically — role sees relevant prior discussions, decisions, and patterns\n- [ ] PostToolUse hook checks active state on every tool call (ops alerts, pending seeds, pipeline health, unresolved flags)\n- [ ] Surfaces warnings via stderr injection — not blocking, surfacing\n- [ ] State checks are fast (sub-100ms) — cached, not live API calls on every prompt\n- [ ] Tests: semantic search returns relevant results for known topics; keyword search returns exact matches; both inject on every prompt\n- [ ] Replaces boot-only triage — this IS the compound loop closer\n\n## Files\n- platform/services/chorus-hooks/src/hooks/context_inject.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/scripts/test-continuous-awareness.sh",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
@@ -14,11 +14,11 @@
         "chunk:ops",
         "sequence:hardening",
         "domain:chorus",
-        "type:fix"
+        "type:new"
       ],
       "done": false,
-      "created": "2026-04-03T22:19:19Z",
-      "updated": "2026-04-04T10:45:31Z"
+      "created": "2026-04-03T17:52:35Z",
+      "updated": "2026-04-04T10:51:39Z"
     },
     {
       "index": 2000,
@@ -108,6 +108,24 @@
       "done": true,
       "created": "2026-04-03T22:46:36Z",
       "updated": "2026-04-03T23:01:48Z"
+    },
+    {
+      "index": 2008,
+      "apiId": 2091,
+      "title": "Compound loop breaks on reboot — after-prompt context injection lost on session boundary",
+      "description": "After-prompt hooks built April 3 search Chorus, logs, cards on every prompt. Worked. Jeff rebooted Wren, context injection stopped. Hook server running but loop broken.\n\n## Experience\nWhen Jeff reboots a role, the compound loop should just keep working. The role boots, Jeff types something, and the after-prompt hook fires — searching Chorus, tailing logs, checking cards. No manual restart. No lost context. The loop survives the session boundary.\n\n## AC\n- [ ] After-prompt hooks fire on first prompt of new session — verified by log evidence\n- [ ] Chorus/logs/cards results injected into role context every prompt\n- [ ] Reboot test: restart role, send prompt, verify injected context appears\n- [ ] No session starts without compound loop active\n\n## Files\n- platform/services/chorus-hooks/src/hooks/context_inject.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/scripts/test-compound-loop.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T22:19:19Z",
+      "updated": "2026-04-04T10:50:31Z"
     },
     {
       "index": 2004,
@@ -901,24 +919,6 @@
       "updated": "2026-03-31T12:16:47Z"
     },
     {
-      "index": 1890,
-      "apiId": 1973,
-      "title": "iPhone provider ICD is empty — built pipeline but ICD doesn't reflect it",
-      "description": "## Experience\nI open the convergence page, expand the iPhone provider, and it's a stub — just a status note saying 'Not yet synced.' But we built extraction scripts, inventory tooling, and a sync pipeline for 54K items. The map doesn't match the territory. If I'm making decisions about the photos domain, the ICD is lying by omission.\n\n## AC\n- [ ] iPhone provider ICD populated with actual schema from built pipeline\n- [ ] Field mappings reflect what the extraction scripts produce\n- [ ] Endpoints reference the actual scripts and paths used\n- [ ] Integration contract matches the built pipeline (TriggeredExtraction)\n\n## Files\n- jeff-bridwell-personal-site/src/ontology/icd-instance-photos.ttl (iPhone provider section)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:strategy",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-31T11:59:08Z",
-      "updated": "2026-03-31T12:44:45Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1041,6 +1041,23 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2014,
+      "apiId": 2097,
+      "title": "Ollama unreachable on Bedroom — hybrid search degrades to FTS-only, no semantic vectors",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T11:03:03Z",
+      "updated": "2026-04-04T11:03:03Z"
+    },
+    {
       "index": 2007,
       "apiId": 2090,
       "title": "/cs shows routing tag instead of seed content — photo seed displayed as '#wren' instead of showing what Jeff actually sent",
@@ -1090,23 +1107,6 @@
       "done": false,
       "created": "2026-04-03T19:11:25Z",
       "updated": "2026-04-03T19:11:25Z"
-    },
-    {
-      "index": 2003,
-      "apiId": 2086,
-      "title": "Continuous awareness gate — surface unresolved state on every prompt cycle, not just boot",
-      "description": "## Experience\nEvery prompt cycle, the role sees active system state AND relevant context from prior sessions. Semantic + keyword search runs automatically against the Chorus index on every prompt. No role has to remember to check — the system brings the context to them. The compound loop: every interaction makes the system smarter.\n\n## AC\n- [ ] UserPromptSubmit hook extracts terms from Jeff's message, runs semantic + keyword search against Chorus index\n- [ ] Results injected into role context automatically — role sees relevant prior discussions, decisions, and patterns\n- [ ] PostToolUse hook checks active state on every tool call (ops alerts, pending seeds, pipeline health, unresolved flags)\n- [ ] Surfaces warnings via stderr injection — not blocking, surfacing\n- [ ] State checks are fast (sub-100ms) — cached, not live API calls on every prompt\n- [ ] Tests: semantic search returns relevant results for known topics; keyword search returns exact matches; both inject on every prompt\n- [ ] Replaces boot-only triage — this IS the compound loop closer",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-04-03T17:52:35Z",
-      "updated": "2026-04-04T10:46:23Z"
     },
     {
       "index": 2002,
@@ -2870,6 +2870,40 @@
       "done": false,
       "created": "2026-03-27T12:12:19Z",
       "updated": "2026-03-31T17:28:09Z"
+    },
+    {
+      "index": 2015,
+      "apiId": 2098,
+      "title": "[ops-health] Harvest photos domain gaps detected",
+      "description": "Auto-detected by chorus-ops (health).\n\nHarvest photos dataset has 6 gaps. May indicate incomplete or missing data in photo ingestion pipeline.\n\nFinding ID: harvest-domain-gaps\nSeverity: warning\nCategory: error_spike",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T11:12:18Z",
+      "updated": "2026-04-04T11:12:18Z"
+    },
+    {
+      "index": 2013,
+      "apiId": 2096,
+      "title": "[ops-health] Critical: Service nifi is down",
+      "description": "Auto-detected by chorus-ops (health).\n\nnifi service reported down in Alertmanager. Unknown if cascading from Docker outage or separate failure.\n\nFinding ID: alert-nifi-down\nSeverity: critical\nCategory: alert",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T10:56:46Z",
+      "updated": "2026-04-04T10:56:46Z"
     },
     {
       "index": 1999,

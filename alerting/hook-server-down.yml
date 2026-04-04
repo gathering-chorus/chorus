@@ -1,0 +1,40 @@
+# hook-server-down.yml — Alert when chorus-hooks server is not running
+# Card #2008 follow-up | Wren requested JDI
+#
+# The hook server (com.chorus.hooks) is the compound loop engine.
+# If it's down, no context injection, no gates, no guards.
+# Jeff discovers it when a role stops working correctly.
+
+name: hook-server-down
+description: Chorus hook server is not running — compound loop broken
+severity: critical
+schedule: "* * * * *"  # every cycle
+
+check: |
+  # Check if hook server has a PID in launchctl
+  PID=$(launchctl list com.chorus.hooks 2>/dev/null | grep '"PID"' | grep -o '[0-9]*')
+  if [ -n "$PID" ]; then
+    # Also verify socket exists
+    if [ -S /tmp/chorus-hooks.sock ]; then
+      echo "ok"
+      exit 0
+    fi
+  fi
+  echo "down"
+  exit 1
+
+action: |
+  # Cooldown: max once per hour
+  COOLDOWN_FILE="/tmp/alert-hook-server-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN_FILE" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN_FILE"
+  # Post alert to Bridge
+  BRIDGE="http://localhost:3470/api/message"
+  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+  MSG=$(printf '🔴 **Alert** — %s\n\nHook server (com.chorus.hooks) is down. Compound loop broken — no context injection, no gates.\n\nFix: agent-state.sh restart hooks' "$TIMESTAMP")
+  curl -sf -X POST "$BRIDGE" \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg text "$MSG" --arg from "silas" '{from: $from, text: $text}')" \
+    &>/dev/null || true

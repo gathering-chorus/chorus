@@ -33,3 +33,4 @@ pub mod log_first_gate;
 pub mod quality_gate;
 pub mod memory_first;
 pub mod e2e_responder;
+pub mod ops_awareness;

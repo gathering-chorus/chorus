@@ -9,7 +9,6 @@
 //! The role sees accumulated context before they start thinking.
 
 use crate::types::{HookInput, HookResponse};
-use rusqlite::Connection;
 use tracing::info;
 
 /// Stop words — don't search for these alone
@@ -23,7 +22,7 @@ const STOP_WORDS: &[&str] = &[
     "can", "could", "will", "would", "should", "shall",
     "just", "now", "still", "also", "too", "very", "really",
     "help", "find", "figure", "out", "show", "tell", "let",
-    "fix", "check", "look", "make", "get", "see", "try",
+    "look", "make", "get", "see", "try",
 ];
 
 /// Extract meaningful keywords from Jeff's message
@@ -45,34 +44,46 @@ fn extract_keywords(prompt: &str) -> Vec<String> {
     keywords
 }
 
-/// Query Chorus SQLite FTS — reuses the pattern from search_hierarchy.rs
-fn query_chorus_fts(db_path: &std::path::Path, query: &str) -> Vec<(String, String, String)> {
-    let conn = match Connection::open(db_path) {
-        Ok(c) => c,
+/// Query Chorus API hybrid search — FTS + semantic + SPARQL via RRF (#2003)
+/// Replaces direct SQLite FTS with API call for richer context (233ms measured)
+fn query_chorus_hybrid(query: &str) -> Vec<(String, String, String)> {
+    let encoded: String = query
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c.to_string()
+            } else {
+                format!("%{:02X}", c as u32)
+            }
+        })
+        .collect();
+
+    let url = format!(
+        "http://localhost:3340/api/chorus/search?q={}&mode=hybrid&limit=5",
+        encoded
+    );
+
+    let resp = match ureq::get(&url)
+        .timeout(std::time::Duration::from_millis(500))
+        .call()
+    {
+        Ok(r) => r,
         Err(_) => return vec![],
     };
-    let _ = conn.execute_batch("PRAGMA query_timeout = 500;");
 
-    let fts_query = query.replace('-', " ");
+    let body: serde_json::Value = match resp.into_json() {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
     let mut results = Vec::new();
-
-    if let Ok(mut stmt) = conn.prepare(
-        "SELECT m.role, m.content, m.timestamp
-         FROM messages_fts f
-         JOIN messages m ON f.rowid = m.id
-         WHERE messages_fts MATCH ?1
-         ORDER BY m.timestamp DESC
-         LIMIT 5",
-    ) {
-        if let Ok(rows) = stmt.query_map([&fts_query], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        }) {
-            for row in rows.flatten() {
-                results.push(row);
+    if let Some(items) = body.get("results").and_then(|r| r.as_array()) {
+        for item in items.iter().take(5) {
+            let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let ts = item.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if !content.is_empty() {
+                results.push((role, content, ts));
             }
         }
     }
@@ -143,10 +154,8 @@ pub async fn check(input: &HookInput) -> HookResponse {
     let role_name = format!("{:?}", input.role()).to_lowercase();
     let query = keywords.join(" ");
 
-    // Search Chorus FTS
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let db_path = std::path::PathBuf::from(&home).join(".chorus/index.db");
-    let chorus_results = query_chorus_fts(&db_path, &query);
+    // Search Chorus API — hybrid mode (FTS + semantic + SPARQL)
+    let chorus_results = query_chorus_hybrid(&query);
 
     // Scan memory files
     let memory_hits = scan_memory(&keywords);
@@ -167,7 +176,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     context.push_str(&format!("Keywords: {}\n", query));
 
     if !chorus_results.is_empty() {
-        context.push_str(&format!("\nChorus ({} hits):\n", chorus_results.len()));
+        context.push_str(&format!("\nChorus hybrid ({} hits):\n", chorus_results.len()));
         for (role, content, ts) in &chorus_results {
             let short: String = content.replace('\n', " ").chars().take(200).collect();
             let ts_short: String = ts.chars().take(16).collect();
@@ -231,5 +240,18 @@ mod tests {
     fn limits_to_six_keywords() {
         let kw = extract_keywords("seeds pipeline broken webhook twilio adapter fuseki persistence routing defaults correlation");
         assert!(kw.len() <= 6);
+    }
+
+    #[test]
+    fn keeps_action_verbs_fix_and_check() {
+        let kw = extract_keywords("fix the seed pipeline");
+        assert!(kw.contains(&"fix".to_string()), "fix should be kept");
+        assert!(kw.contains(&"seed".to_string()));
+        assert!(kw.contains(&"pipeline".to_string()));
+
+        let kw2 = extract_keywords("check if nudges are working");
+        assert!(kw2.contains(&"check".to_string()), "check should be kept");
+        assert!(kw2.contains(&"nudges".to_string()));
+        assert!(kw2.contains(&"working".to_string()));
     }
 }

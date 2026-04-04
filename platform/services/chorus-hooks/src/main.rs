@@ -518,6 +518,12 @@ async fn post_tool_use(
         hooks::observer::observe(&input_clone, &state_clone).await;
     });
 
+    // Ops awareness (#2003 AC3) — surface degraded system state
+    let ops_result = hooks::ops_awareness::check(&input).await;
+    if ops_result.stderr.is_some() {
+        return Json(ops_result);
+    }
+
     // L3: nudge drain happens on UserPromptSubmit (werk-init.sh --scan), not PostToolUse
     // PostToolUse stderr only surfaces on exit code 2, which signals error — wrong hook for drain
 
