@@ -1148,15 +1148,15 @@ async function loadFlow() {
       });
       for (const seq of seqKeys) {
         const seqCards = bySequence[seq];
-        if (seq) {
-          const seqKey = domain + '/' + seq;
-          const seqCollapsed = !expandedDomains.has(seqKey);
-          const seqArrow = seqCollapsed ? '▸' : '▾';
-          const seqWip = seqCards.filter(c => c.status === 'WIP').length;
-          const seqWipBadge = seqWip > 0 ? ` <span class="wip-indicator" style="font-size:0.55rem;color:var(--orange);">🔨 ${seqWip}</span>` : '';
-          html += `<div style="margin-left:0.5rem;margin-bottom:0.3rem;"><div class="flow-section-title" style="font-size:0.65rem;padding:0.2rem 0;" onclick="toggleDomain('${seqKey}')">${seqArrow} ${seq} <span style="font-size:0.55rem;color:var(--text-muted);">${seqCards.length}</span>${seqWipBadge}</div>`;
-          html += `<div class="flow-section-cards${seqCollapsed ? ' collapsed' : ''}">`;
-        }
+        const seqLabel = seq || 'unsequenced';
+        const seqKey = domain + '/' + seqLabel;
+        const seqCollapsed = !expandedDomains.has(seqKey);
+        const seqArrow = seqCollapsed ? '▸' : '▾';
+        const seqWip = seqCards.filter(c => c.status === 'WIP').length;
+        const seqWipBadge = seqWip > 0 ? ` <span class="wip-indicator" style="font-size:0.55rem;color:var(--orange);">🔨 ${seqWip}</span>` : '';
+        html += `<div style="margin-left:0.5rem;margin-bottom:0.3rem;"><div class="flow-section-title" style="font-size:0.65rem;padding:0.2rem 0;" onclick="toggleDomain('${seqKey}')">${seqArrow} ${seqLabel} <span style="font-size:0.55rem;color:var(--text-muted);">${seqCards.length}</span>${seqWipBadge}</div>`;
+        html += `<div class="flow-section-cards${seqCollapsed ? ' collapsed' : ''}">`;
+
         for (const c of seqCards) {
           const cardId = parseInt(c.id);
           const isAging = cardId < agingThreshold;
@@ -1165,7 +1165,7 @@ async function loadFlow() {
           const agingBadge = isAging ? ' <span style="font-size:0.55rem;color:var(--orange);">aging</span>' : '';
           html += `<div class="flow-card flow-card-${c.owner}" style="${agingStyle}"><div class="flow-card-id"><span class="card-id-link" data-card-id="${c.id}" style="cursor:pointer;text-decoration:underline;color:var(--accent);">#${c.id}</span> ${statusDot}${agingBadge} <span class="flow-card-owner" style="color:var(--${c.owner})">${c.owner}</span></div><div class="flow-card-title">${escapeHtml(c.title)}</div><div class="card-detail" id="card-detail-${c.id}" style="display:none;"></div></div>`;
         }
-        if (seq) html += '</div></div>';
+        html += '</div></div>';
       }
       html += '</div></div>';
     }
