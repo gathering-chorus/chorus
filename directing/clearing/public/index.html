@@ -375,6 +375,9 @@
     cursor: pointer;
   }
   .send-btn:hover { opacity: 0.9; }
+  .send-btn.sending { opacity: 0.6; cursor: wait; }
+  .send-btn.delivered { background: #16a34a; }
+  .send-btn.delivery-failed { background: #dc2626; }
   .input-hint { color: var(--text-muted); font-size: 0.7rem; margin-top: 0.4rem; }
 
   /* Mobile tab bar */
@@ -586,17 +589,41 @@ const bridgeUser = window.BRIDGE_USER || 'jeff';
 const isGuest = bridgeUser !== 'jeff';
 
 function sendMessage() {
-  let text = input.value.trim();
+  var text = input.value.trim();
   if (!text) return;
-  // If roles selected and no explicit @mention, send to each selected role
+  var savedText = text;
+  sendBtn.textContent = 'Sending...';
+  sendBtn.classList.add('sending');
+  input.value = '';
+  function onAck(result) {
+    sendBtn.classList.remove('sending');
+    if (result && result.ok) {
+      sendBtn.textContent = 'Sent';
+      sendBtn.classList.add('delivered');
+      setTimeout(function() { sendBtn.textContent = 'Send'; sendBtn.classList.remove('delivered'); }, 1500);
+    } else {
+      sendBtn.textContent = 'Failed';
+      sendBtn.classList.add('delivery-failed');
+      input.value = savedText;
+      setTimeout(function() { sendBtn.textContent = 'Send'; sendBtn.classList.remove('delivery-failed'); }, 3000);
+    }
+  }
+  var ackTimer = setTimeout(function() {
+    onAck({ ok: false, error: 'timeout' });
+  }, 3000);
+  function emitOne(payload) {
+    socket.emit('jeff-message', payload, function(result) {
+      clearTimeout(ackTimer);
+      onAck(result || { ok: false, error: 'no response' });
+    });
+  }
   if (selectedRoles.size > 0 && !text.match(/^@(wren|silas|kade)\b/i)) {
-    for (const role of selectedRoles) {
-      socket.emit('jeff-message', { text: `@${role} ${text}`, from: bridgeUser });
+    for (var role of selectedRoles) {
+      emitOne({ text: '@' + role + ' ' + text, from: bridgeUser });
     }
   } else {
-    socket.emit('jeff-message', { text, from: bridgeUser });
+    emitOne({ text: text, from: bridgeUser });
   }
-  input.value = '';
 }
 
 sendBtn.addEventListener('click', sendMessage);

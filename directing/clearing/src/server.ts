@@ -710,9 +710,9 @@ io.on('connection', (socket) => {
   socket.emit('messages', messageRouter.getRecent(50));
 
   // Message from The Clearing UI — Jeff or guest (#1719, #1802 reverted to working state)
-  socket.on('jeff-message', (data: { text: string; from?: string }) => {
+  socket.on('jeff-message', (data: { text: string; from?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
     const { text } = data;
-    if (!text?.trim()) return;
+    if (!text?.trim()) { ack?.({ ok: false, error: 'empty' }); return; }
 
     // Determine sender — cookie or explicit from field
     const cookieHeader = socket.handshake.headers?.cookie || '';
@@ -752,8 +752,11 @@ io.on('connection', (socket) => {
       } catch (err) {
         const errMsg = err instanceof Error ? (err as any).stderr || err.message : String(err);
         console.error(`[clearing] delivery to ${target} failed: ${errMsg}`);
+        ack?.({ ok: false, error: errMsg });
+        return;
       }
     }
+    ack?.({ ok: true });
   });
 });
 

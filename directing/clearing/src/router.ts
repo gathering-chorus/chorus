@@ -100,8 +100,14 @@ export class MessageRouter extends EventEmitter {
       return { from, text: cleanText, ts, type: 'accept-request', visible: true };
     }
 
+    // Clearing input — any message tagged jeff-input at source is always visible (#1934)
+    if (raw.type === 'jeff-input') {
+      const cleanText = stripSpineMetadata(text);
+      return { from, text: cleanText, ts, type: 'jeff-input', visible: true };
+    }
+
     // Jeff's input is always visible — strip spine metadata suffix
-    if (from === 'jeff') {
+    if (from === 'jeff' || from.toLowerCase().startsWith('jeff')) {
       const cleanText = stripSpineMetadata(text);
       return { from, text: cleanText, ts, type: 'jeff-input', visible: true };
     }
