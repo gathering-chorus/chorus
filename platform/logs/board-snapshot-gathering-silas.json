@@ -1,7 +1,25 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T18:02:19.300Z",
+  "timestamp": "2026-04-04T19:22:54.267Z",
   "tasks": [
+    {
+      "index": 2036,
+      "apiId": 2119,
+      "title": "Clearing shows connected when tunnel is down — stale Socket.IO connection state on 5G",
+      "description": "## Experience\nJeff is at the pharmacy on 5G, connecting via clearing.lightlifeurbangardens.com. The Clearing shows 'connected' but messages don't land. Cloudflare tunnel was down. Socket.IO held a stale connected state instead of showing disconnected.\n\n## AC\n1. Socket.IO client detects tunnel/proxy failure and shows disconnected within 10 seconds\n2. Heartbeat ping to server — if no pong within timeout, status switches to disconnected\n3. Reconnect indicator shows when re-establishing after tunnel recovery\n4. Tests cover: simulated tunnel drop shows disconnected, recovery shows reconnecting then connected\n\n## Files\n- chorus/directing/clearing/public/index.html (Socket.IO client connection handling)",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T17:17:02Z",
+      "updated": "2026-04-04T19:20:35Z"
+    },
     {
       "index": 2022,
       "apiId": 2105,
@@ -37,6 +55,60 @@
       "done": false,
       "created": "2026-04-03T15:45:28Z",
       "updated": "2026-04-03T15:45:52Z"
+    },
+    {
+      "index": 2043,
+      "apiId": 2126,
+      "title": "App repo dirty file accumulation — cross-role changes block git rebase for every role",
+      "description": "## Experience\nI ship a card and try to push. Git says 'cannot pull with rebase: unstaged changes.' The unstaged changes aren't mine — they're from other roles' prior work that nobody committed. Every role hits this wall. Silas spent 10 minutes just getting past it on #1904.\n\n## AC\n- [ ] Commit all current dirty files in the app repo as a sync commit\n- [ ] Verify git status is clean after\n- [ ] Push succeeds without rebase conflicts\n\n## Files\n- jeff-bridwell-personal-site (app repo — multiple dirty files)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-04T18:05:38Z",
+      "updated": "2026-04-04T18:37:40Z"
+    },
+    {
+      "index": 2042,
+      "apiId": 2125,
+      "title": "Log-first gate fires on lint/build errors — should only trigger for runtime bugs",
+      "description": "## Experience\nI fix a lint error — ESLint says NodeJS.Timeout is undefined. I change the type annotation. The log-first gate blocks me: 'check the logs first.' There are no runtime logs for a lint error. I have to fabricate a log statement to satisfy the gate before I can save a one-line type fix.\n\n## AC\n- [ ] Log-first gate skips when the edit is fixing a lint/build error (not a runtime bug)\n- [ ] Runtime bug fixes still require log inspection (no regression)\n- [ ] Test: lint fix edit passes gate, runtime fix edit requires logs\n\n## Files\n- platform/services/chorus-hooks/src/hooks/log_first_gate.rs",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:gates"
+      ],
+      "done": true,
+      "created": "2026-04-04T18:05:34Z",
+      "updated": "2026-04-04T18:17:20Z"
+    },
+    {
+      "index": 2041,
+      "apiId": 2124,
+      "title": "Context synthesis gate fires on new files with no git history — false positive blocks every new test file",
+      "description": "## Experience\nI write a new test file, save it, and get blocked: 'Context synthesis gate: no git history on file.test.ts. Run git log first.' But the file is new — there IS no git history. I have to run a meaningless git log that returns nothing, then retry. Every new test file hits this wall.\n\n## AC\n- [ ] Context synthesis gate skips files with no git history (git log returns empty)\n- [ ] Files with git history still trigger the gate (no regression)\n- [ ] Test: new file write passes, existing file write requires git log\n\n## Files\n- platform/services/chorus-hooks/src/hooks/memory_gate.rs",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:gates"
+      ],
+      "done": true,
+      "created": "2026-04-04T18:05:27Z",
+      "updated": "2026-04-04T18:11:55Z"
     },
     {
       "index": 2035,
@@ -873,60 +945,6 @@
       "updated": "2026-04-04T15:24:39Z"
     },
     {
-      "index": 1933,
-      "apiId": 2016,
-      "title": "Clearing synthetic monitor — 60s heartbeat proves message channel alive",
-      "description": "## Experience\nI open the Clearing and type a message. Sometimes it sends, sometimes it vanishes silently. I need proof every 60 seconds that the channel is alive — and an alert when it isnt.\n\n## AC\n1. LaunchAgent runs every 60 seconds, POSTs a probe message to localhost:3470/api/message\n2. Verifies probe appears in GET /api/messages within 5 seconds\n3. Emits spine event on success, alerts on failure\n4. Socket.IO emit gets ack callback — client knows if send succeeded or failed\n5. Dashboard or log shows uptime percentage over rolling 1 hour\n\n## Files\n- platform/scripts/clearing-probe.sh\n- platform/launchagents/com.chorus.clearing-probe.plist",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-01T12:32:20Z",
-      "updated": "2026-04-01T12:41:27Z"
-    },
-    {
-      "index": 1931,
-      "apiId": 2014,
-      "title": "Fix acp push race — git pull --rebase before push, no stash improvisation",
-      "description": "## Experience\nI commit and push from two roles within seconds of each other. One push fails, the role improvises a stash-rebase-push recovery, and my changes vanish. I have lost work twice in 12 hours. I need commits to never silently disappear.\n\n## AC\n1. acp skill Step 4 uses git pull --rebase and git push, single step, no stash\n2. If working tree is dirty at push time, acp refuses and tells role to commit first\n3. Remove old git-queue.sh role-name syntax from acp skill (currently broken)\n4. Prove: two roles commit within 5 seconds, both land in history, no lost changes\n\n## Files\n- platform/scripts/git-queue.sh\n- .claude/skills/acp/SKILL.md",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-04-01T12:19:48Z",
-      "updated": "2026-04-01T12:27:08Z"
-    },
-    {
-      "index": 1930,
-      "apiId": 2013,
-      "title": "BDD gate specs in Gherkin — cucumber-js tests for all 8 gates × card types",
-      "description": "## Experience\nI read the gate spec and it tells me exactly what each gate does in plain English. When a gate breaks, the test tells me which scenario failed — not which line of Rust. I trust the gates because they have behavioral tests I can read.\n\n## AC\n1. Gherkin feature files for log_first, tdd, demo, accept, quality, memory, stop_on_error, pair gates\n2. Each gate has scenarios for fix/enhance/new/chore/swat card types\n3. Steps set up real file state and call the hook binary — no CHORUS_HOOK_RAW synthetic mode\n4. cucumber-js runner executes all scenarios, reports pass/fail per gate × type\n5. Can run as: npx cucumber-js\n\n## Files\n- platform/tests/features/gates/log_first.feature\n- platform/tests/features/gates/memory.feature\n- platform/tests/features/gates/demo.feature\n- platform/tests/features/gates/accept.feature\n- platform/tests/features/gates/quality.feature\n- platform/tests/features/gates/tdd.feature\n- platform/tests/features/gates/stop_on_error.feature\n- platform/tests/features/gates/pair.feature\n- platform/tests/features/step_definitions/gate_steps.ts\n- platform/tests/cucumber.js",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-01T00:56:40Z",
-      "updated": "2026-04-01T21:09:38Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1013,6 +1031,24 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2045,
+      "apiId": 2128,
+      "title": "Chorus domain decomposition — establish ownership before building",
+      "description": "## Experience\nJeff looks at the board and sees 46 cards tagged domain:chorus, 22 owned by Silas. The work is jammed because everything is one domain with one owner. Jeff drew the decomposition, Silas and Kade validated it in chat — some domains are real, some conceptual, some incoherent. Ownership must be established before any building.\n\n## AC\n1. HTML artifact: Chorus domain decomposition synthesis — layers, domains, REAL/PARTIAL/CONCEPTUAL ratings, ownership map\n2. Each real domain has a named owner (not all Silas)\n3. Board cards re-tagged from domain:chorus to specific sub-domains\n4. DEC recorded: domain ownership map with rationale\n5. Structural move carded: flow.handler.ts into chorus repo (Clearing coherence)",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:chore",
+        "sequence:strategy"
+      ],
+      "done": false,
+      "created": "2026-04-04T19:01:29Z",
+      "updated": "2026-04-04T19:01:29Z"
+    },
+    {
       "index": 2037,
       "apiId": 2120,
       "title": "Alerts must inject to role terminal via nudge --force, not just Bridge POST",
@@ -1029,24 +1065,6 @@
       "done": false,
       "created": "2026-04-04T17:19:05Z",
       "updated": "2026-04-04T17:19:05Z"
-    },
-    {
-      "index": 2036,
-      "apiId": 2119,
-      "title": "Clearing shows connected when tunnel is down — stale Socket.IO connection state on 5G",
-      "description": "## Experience\nJeff is at the pharmacy on 5G, connecting via clearing.lightlifeurbangardens.com. The Clearing shows 'connected' but messages don't land. Cloudflare tunnel was down. Socket.IO held a stale connected state instead of showing disconnected.\n\n## AC\n1. Socket.IO client detects tunnel/proxy failure and shows disconnected within 10 seconds\n2. Heartbeat ping to server — if no pong within timeout, status switches to disconnected\n3. Reconnect indicator shows when re-establishing after tunnel recovery\n4. Tests cover: simulated tunnel drop shows disconnected, recovery shows reconnecting then connected",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-04T17:17:02Z",
-      "updated": "2026-04-04T17:17:02Z"
     },
     {
       "index": 2033,
@@ -2843,6 +2861,23 @@
       "done": false,
       "created": "2026-03-28T11:00:33Z",
       "updated": "2026-03-31T20:48:18Z"
+    },
+    {
+      "index": 2044,
+      "apiId": 2127,
+      "title": "[defect] gathering-app: Twilio signature validation failed",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Twilio signature validation failed\nSample: Twilio signature validation failed\nFirst seen: 2026-04-04T18:11:14Z\nCount: 1\nHash: e56709e1d81c9897",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T18:11:15Z",
+      "updated": "2026-04-04T18:11:15Z"
     },
     {
       "index": 2040,
