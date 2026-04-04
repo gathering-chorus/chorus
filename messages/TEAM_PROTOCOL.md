@@ -7,14 +7,14 @@ See each role's CLAUDE.md for behavioral rules and identity.
 
 ## Fuseki & SPARQL Reference
 
-**Fuseki port is 3030 everywhere.** Host, container, scripts — always `http://localhost:3030`. Inside Docker network: `http://fuseki:3030`. One port, no translation.
+**Fuseki port is 3030 everywhere.** Host, scripts — always `http://localhost:3030`. Fuseki runs as a native LaunchAgent, not Docker. One port, no translation.
 
 **Graph URIs use `http://localhost:3000/pods/jeff/<domain>/` prefix. Never `https://jeffbridwell.com/`.** All domains — music, photos, media, stories, notes, blog, ontology — use the localhost scheme. `graph-lint.sh` check #1 enforces this.
 
 **SPARQL working pattern:**
 - **Dataset**: `/pods` — NOT `/jeff`, NOT `/ds`, NOT `/dataset`
 - **Query endpoint**: `http://localhost:3030/pods/query` (GET with URL-encoded `query` param)
-- **Inside Docker**: `http://fuseki:3030/pods/query`
+- **Always**: `http://localhost:3030/pods/query` (Fuseki is native, no Docker network)
 
 ```bash
 curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \

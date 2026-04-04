@@ -95,7 +95,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if DOCKER_EXEC_RE.is_match(&cmd) {
         log_guardrail("deny", "docker-exec").await;
         return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: docker exec is prohibited (ADR-011). Fix the code and redeploy using app-state.sh deploy. If you need read-only inspection for debugging, ask Jeff for permission first."
+            "BLOCKED: docker exec is prohibited (ADR-011). Remaining containers (Vikunja, Navidrome, webvowl) are managed via docker-compose, not exec. If you need read-only inspection for debugging, ask Jeff for permission first."
         ));
     }
 
@@ -194,7 +194,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if TERRAFORM_RE.is_match(&cmd) {
         log_guardrail("ask", "terraform-direct").await;
         return HookResponse::deny(&permission_ask_json(
-            "Direct terraform apply/destroy detected. App+Fuseki are native LaunchAgents now. Terraform is only used for remaining Docker services (Vikunja, Navidrome, webvowl)."
+            "Direct terraform apply/destroy detected. App+Fuseki are native LaunchAgents. Remaining Docker services (Vikunja, Navidrome, webvowl) use docker-compose, not Terraform."
         ));
     }
 
@@ -498,6 +498,26 @@ mod tests {
         let r = check(&input).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);
+    }
+
+    // === #1866: Updated Docker messages reference docker-compose, not app-state.sh ===
+
+    #[tokio::test]
+    async fn test_docker_exec_message_no_app_state_deploy() {
+        let input = kade_bash("docker exec -it mycontainer bash");
+        let r = check(&input).await;
+        let msg = r.stdout.unwrap();
+        assert!(!msg.contains("redeploy using app-state.sh"), "should not reference app-state.sh deploy");
+        assert!(msg.contains("docker-compose"), "should reference docker-compose for remaining containers");
+    }
+
+    #[tokio::test]
+    async fn test_terraform_message_no_terraform_manages_docker() {
+        let input = kade_bash("terraform apply");
+        let r = check(&input).await;
+        let msg = r.stdout.unwrap();
+        assert!(!msg.contains("Terraform is only used for"), "should not suggest Terraform manages remaining services");
+        assert!(msg.contains("docker-compose"), "should reference docker-compose");
     }
 
     // === Non-Bash tool bypass ===
