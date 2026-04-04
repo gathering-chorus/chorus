@@ -1,20 +1,29 @@
 # Next Session — Silas
 
-## Accomplished
-14 cards shipped in one session. Operations overhaul: agent-state.sh, namespace dedup, API health endpoint, compound loop (hybrid search + ops awareness), real-time gemba (132ms), tunnel monitoring, skills repo-tracked (31), role-state spine events, staleness detection, watchdog (5/10/15min), Clearing ack + visibility fix. Shared Awareness domain page with context diagram.
+## Accomplished (2026-04-04)
+Eight cards shipped — Observability branch complete, Protocol branch started:
+1. #2035 — Clearing visibility fix (findSessionFile multi-dir bug)
+2. #1904 — ICD TTL auto-sync to Fuseki + convergence API + file watcher
+3. #2000 — Seed write failure alert, probe frequency to 30min
+4. #2037 — Alerts inject to role terminal via nudge --force
+5. #2033 — Watchdog false alerts (card status check + acp gap tolerance)
+6. #2022 — L2 Awareness service design (pair with Wren)
+7. #1939 — chorus-hooks exclusive socket bind (PID + orphan detection)
+8. #1938 — Block /tmp Write/Edit in CSC guard (bridge paths allowlisted per Kade)
+
+Domain decomposition deep dive with Wren — REAL/PARTIAL/CONCEPTUAL assessment of all 7 Chorus layers.
 
 ## WIP
-- #2022 — L2 Awareness service design (domain page built, needs accept)
-- #2000 — Seed write failure alert (stale, needs review)
+None — all cleared.
+
+## Next Session: Protocol Branch
+Sequence from Wren: #1935 → #1948 → #1988 → #1848 → #1847 → #1902 → #1915
+Start with #1935 (accept_gate chore/swat exemption).
+
+## Soak Overnight
+#1939 (socket bind) and #1938 (/tmp guard) deployed. Monitor for false positives. Check /tmp/chorus-hooks.pid exists after restart.
 
 ## Carry Forward
-- Clearing noise tuning — ATTR/RENDER events leaking through after #2035 filter cleanup
-- Ollama on Bedroom — verify survives reboot (plist bootstrap had I/O errors)
-- Watchdog threshold tuning — 5min may be aggressive for investigate/pair mode
-- OWL/board/Fuseki domain coherence — product vs domain conflation (#1886)
-- Manual count conflicts from red-pen (photos 63K vs 100K, music 108K vs 115K)
-
-## Key Insights from Jeff
-- Time + Attention + Awareness are cross-cutting qualities, not domains
-- Shared Awareness = 5 components: Time, Pulse, Memory, Knowledge, System Context
-- Role performance variation partly caused by untracked skills and infrastructure drift
+- Tunnel intermittent drops all day — network instability, not service. Monitor.
+- Chorus API unreachable (localhost:3340) — investigate if persists.
+- Clearing ATTR/RENDER test events still in message history from #2035 test run.
