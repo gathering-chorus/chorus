@@ -545,3 +545,15 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [2026-03-30 06:24–08:27] [Kade] Fixed broken gemba skill (paths + missing tail mode). Gemba'd Silas on #1833. Investigated photos page blank — root cause: Fuseki rebuild lost ~18K photos and left predicate variants unnormalized. Jeff identified data loss as the real issue. Pair gate now blocks handler edits.
 
 - [2026-03-30 12:06–12:14] [Kade] Short session. Committed 116 untracked files (briefs, seed SMS routing, scripts, workflows, handoff log) and pushed. Tested Silas's #1859 hook tracing — DENY entries show module name, duration, session ID, full reason. Confirmed working, nudged Silas.
+
+## 2026-04-04 Wren session (08:49–10:40)
+- [Wren] Hulk smash conversation — Jeff shared anger/trust concerns about system failure modes. Stories saved (hulk_smash, outage_feeling).
+- [Wren] Seed check: pipeline healthy, 3 seeds read and assessed (Raschka coding agents, Fowler team standards, Mehta knowledge graphs). All three validate Chorus product category.
+- [Wren] #1872 manuals v2→v3: 5 HTML manuals rewritten from live system queries. Kade red-penned (308 hook tests not 11, 37 modules not 36, Docker containers wrong). v3 applied.
+- [Wren] #2018 root cause: board domain totals didn't match sub-groups — 112 of 128 Chorus cards had no sequence tag. Fixed with bulk sequence-tag (43 cards).
+- [Wren] #2024 paired with Kade (16 min): Cards CLI completeness — set command, untag, bulk-move, creation validation, list prefix. 7/7 AC, 8 tests.
+- [Wren] #2023 board data quality audit: 0 bare labels, 0 missing tags, 0 duplicates. Board is clean.
+- [Wren] SPINE sequence review: Won't Do #1925 (auto-nudge solved by demo/acp flow). Updated #1902 AC (NiFi logging standard). Recommended #1945 and #1847 as highest priority.
+- [Wren] Reviewed Silas #1934 (Clearing ack), #1840 (skills version control), #2021 (gemba blind spot), Kade #1866 (Docker cleanup), #2019 (crawler snapshots), #2020 (log reclassification). Recommended accept on all reviewed.
+- [Wren] Domain research for v1 Chorus stabilization — 49 OWL instances, 8 merged April 1, 9 primary Chorus domains identified. Reviewed Awareness context diagram with Silas.
+- Demos queued: #1872 (manuals, pending Silas red pen), #1959 (crawler v2, pending full review)
