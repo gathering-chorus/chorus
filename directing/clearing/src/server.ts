@@ -284,6 +284,52 @@ app.post('/api/upload', (req, res) => {
   });
 });
 
+// API: voice capture — receive audio, transcribe with whisper-cli, return transcript (#1782)
+app.post('/api/voice', (req, res) => {
+  const fs = require('fs');
+  const { execSync } = require('child_process');
+  const chunks: Buffer[] = [];
+  req.on('data', (chunk: Buffer) => chunks.push(chunk));
+  req.on('end', () => {
+    const body = Buffer.concat(chunks);
+    if (body.length === 0) { res.json({ error: 'empty audio' }); return; }
+
+    const ts = Date.now();
+    const uploadDir = '/tmp/bridge-audio-uploads';
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const webmPath = `${uploadDir}/${ts}.webm`;
+    const wavPath = `${uploadDir}/${ts}.wav`;
+    fs.writeFileSync(webmPath, body);
+
+    try {
+      // Convert webm to wav (whisper-cli needs wav)
+      execSync(`ffmpeg -i "${webmPath}" -ar 16000 -ac 1 -y "${wavPath}" 2>/dev/null`, { timeout: 15000 });
+
+      // Transcribe with whisper-cli
+      const model = '/opt/homebrew/share/whisper/ggml-base.en.bin';
+      const output = execSync(
+        `whisper-cli -m "${model}" -f "${wavPath}" --no-timestamps -t 4 2>/dev/null`,
+        { encoding: 'utf-8', timeout: 30000 }
+      ).trim();
+
+      // Clean up wav (keep webm in audio-uploads for playback persistence)
+      try { fs.unlinkSync(wavPath); } catch {}
+
+      const transcript = output.replace(/^\[.*?\]\s*/gm, '').trim();
+      console.log(`[voice] transcribed ${body.length} bytes → "${transcript.substring(0, 100)}"`);
+
+      res.json({ transcript, audioFile: `/audio-uploads/${ts}.webm` });
+    } catch (err: any) {
+      console.error('[voice] transcription failed:', err.message || err);
+      try { fs.unlinkSync(wavPath); } catch {}
+      res.json({ error: 'Transcription failed: ' + (err.message || 'unknown') });
+    }
+  });
+});
+
+// Serve persisted audio files for playback (#1782)
+app.use('/audio-uploads', express.static('/tmp/bridge-audio-uploads'));
+
 // API: get commands-only view from observations JSONL
 app.get('/api/commands/:role', (req, res) => {
   const role = req.params.role;

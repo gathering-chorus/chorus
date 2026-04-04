@@ -730,7 +730,11 @@ micBtn.addEventListener('click', async () => {
     isRecording = true;
   } catch (err) {
     console.warn('Microphone access denied:', err);
-    micBtn.style.display = 'none';
+    // Don't hide — show why it failed. getUserMedia needs HTTPS on mobile.
+    if (location.protocol === 'http:' && !location.hostname.match(/^(localhost|127\.)/)) {
+      micBtn.title = 'Mic requires HTTPS — use clearing.lightlifeurbangardens.com';
+      micBtn.style.opacity = '0.4';
+    }
   }
 });
 
