@@ -673,51 +673,61 @@ let audioChunks = [];
 let isRecording = false;
 
 micBtn.addEventListener('click', async () => {
+  console.log('[voice] mic clicked, isRecording:', isRecording, 'protocol:', location.protocol, 'host:', location.hostname);
+
   if (isRecording) {
-    // Stop recording — MediaRecorder.onstop handles the rest
+    console.log('[voice] stopping recording');
     mediaRecorder.stop();
     return;
   }
 
   try {
+    console.log('[voice] requesting getUserMedia...');
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+    console.log('[voice] getUserMedia granted, tracks:', stream.getAudioTracks().length);
+
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    console.log('[voice] MediaRecorder mimeType:', mimeType);
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
     audioChunks = [];
 
-    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.ondataavailable = (e) => {
+      console.log('[voice] data chunk:', e.data.size, 'bytes');
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
 
     mediaRecorder.onstop = async () => {
+      console.log('[voice] recording stopped, chunks:', audioChunks.length);
       micBtn.classList.remove('recording');
       isRecording = false;
       stream.getTracks().forEach(t => t.stop());
 
-      if (audioChunks.length === 0) return;
+      if (audioChunks.length === 0) { console.log('[voice] no audio data'); return; }
 
-      // Show processing state
       micBtn.textContent = '⏳';
       input.placeholder = 'Transcribing...';
 
-      const blob = new Blob(audioChunks, { type: 'audio/webm' });
-      const formData = new FormData();
-      formData.append('audio', blob, 'voice-' + Date.now() + '.webm');
+      const blob = new Blob(audioChunks, { type: mimeType });
+      console.log('[voice] uploading', blob.size, 'bytes to /api/voice');
 
       try {
-        // auto-send: POST to server, get transcript, route as message
-        const resp = await fetch('/api/voice', { method: 'POST', body: formData });
+        const resp = await fetch('/api/voice', { method: 'POST', body: blob, headers: { 'Content-Type': mimeType } });
         const result = await resp.json();
+        console.log('[voice] server response:', JSON.stringify(result));
 
         if (result.transcript) {
-          // Auto-send the transcript as a jeff-message (no manual send step)
+          console.log('[voice] auto-sending transcript:', result.transcript.substring(0, 80));
           socket.emit('jeff-message', { text: result.transcript, from: 'jeff' }, (ack) => {
-            if (ack?.ok) {
-              input.placeholder = 'Type a message... (@wren @silas @kade or just type)';
-            }
+            console.log('[voice] jeff-message ack:', JSON.stringify(ack));
+            input.placeholder = 'Type a message... (@wren @silas @kade or just type)';
           });
         } else {
+          console.warn('[voice] transcription failed:', result.error);
           input.placeholder = result.error || 'Transcription failed';
           setTimeout(() => { input.placeholder = 'Type a message... (@wren @silas @kade or just type)'; }, 3000);
         }
       } catch (err) {
+        console.error('[voice] upload failed:', err);
         input.placeholder = 'Voice upload failed';
         setTimeout(() => { input.placeholder = 'Type a message... (@wren @silas @kade or just type)'; }, 3000);
       }
@@ -728,12 +738,13 @@ micBtn.addEventListener('click', async () => {
     mediaRecorder.start();
     micBtn.classList.add('recording');
     isRecording = true;
+    console.log('[voice] recording started');
   } catch (err) {
-    console.warn('Microphone access denied:', err);
-    // Don't hide — show why it failed. getUserMedia needs HTTPS on mobile.
+    console.warn('[voice] getUserMedia failed:', err.name, err.message);
     if (location.protocol === 'http:' && !location.hostname.match(/^(localhost|127\.)/)) {
-      micBtn.title = 'Mic requires HTTPS — use clearing.lightlifeurbangardens.com';
-      micBtn.style.opacity = '0.4';
+      console.log('[voice] HTTP on non-localhost — redirecting to HTTPS port for mic');
+      // Redirect to HTTPS on port 3471 where getUserMedia works
+      location.href = 'https://' + location.hostname + ':3471' + location.pathname + location.search;
     }
   }
 });

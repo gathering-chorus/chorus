@@ -1,5 +1,6 @@
 import express from 'express';
 import { createServer } from 'http';
+import { createServer as createHttpsServer } from 'https';
 import { Server } from 'socket.io';
 import path from 'path';
 import { TilePoller } from './tiles';
@@ -913,6 +914,24 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
   console.log(`The Clearing listening on http://localhost:${PORT}`);
 });
+
+// HTTPS server for LAN mic access — getUserMedia requires secure context (#1782)
+// Shares the same express app — all routes and Socket.IO handlers work on both.
+const HTTPS_PORT = parseInt(process.env.CLEARING_HTTPS_PORT || '3471');
+const certDir = `${require('os').homedir()}/.chorus/certs`;
+try {
+  const fs = require('fs');
+  const key = fs.readFileSync(`${certDir}/clearing-key.pem`);
+  const cert = fs.readFileSync(`${certDir}/clearing-cert.pem`);
+  const httpsServer = createHttpsServer({ key, cert }, app);
+  // Attach Socket.IO to HTTPS server too — same handlers via shared app
+  io.attach(httpsServer);
+  httpsServer.listen(HTTPS_PORT, () => {
+    console.log(`The Clearing HTTPS listening on https://192.168.86.36:${HTTPS_PORT} (mic-enabled)`);
+  });
+} catch (err: any) {
+  console.log(`[clearing] HTTPS not available: ${err.message} — mic requires tunnel URL`);
+}
 
 /** Parse @mention to determine target role. Default: wren */
 function parseTarget(text: string): string {
