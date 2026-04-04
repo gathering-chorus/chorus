@@ -125,7 +125,7 @@
   <span class="step">Harvesting</span><span class="arrow">→</span>
   <span class="step">Reflecting</span><span class="arrow">↩</span>
 </div>
-<p>Coherence and learning over time. Music across 40 years. 200K photos. 2K contacts. 135 stories.</p>
+<p>Coherence and learning over time. Music across 40 years. 200K photos. 2K contacts. 145 stories.</p>
 
 <h3>Chorus Loop (hours to sessions)</h3>
 <div class="loop">
@@ -177,14 +177,14 @@
 <h3>Harvesting</h3>
 <div class="domain-card">
   <h4>Music</h4>
-  <p>40+ years, 108K+ tracks. Apple Music via JXA extraction. Navidrome streaming. 30K songs on phone.</p>
-  <span class="tag">108K tracks</span><span class="tag">JXA harvest</span><span class="tag">Navidrome</span>
+  <p>40+ years, 115,112 tracks. Apple Music via JXA extraction. Navidrome streaming. 30K songs on phone.</p>
+  <span class="tag">115K tracks</span><span class="tag">JXA harvest</span><span class="tag">Navidrome</span>
 </div>
 <div class="domain-card">
   <h4>Photos</h4>
-  <p>63K canonical from 83K source. Three eras: pre-2006 (no digital), 2006-07 (camera), iPhone since Dec 2007. Apple Photos is authoritative.</p>
-  <span class="tag">63K canonical</span><span class="tag">Google Takeout</span><span class="tag">face clusters</span>
-  <div class="question"><b>RED PEN:</b> Is 63K canonical still accurate after Fuseki rebuild? 20K records may have been lost (#1852).</div>
+  <p>100,399 canonical from source. Three eras: pre-2006 (no digital), 2006-07 (camera), iPhone since Dec 2007. Apple Photos is authoritative.</p>
+  <span class="tag">100K canonical</span><span class="tag">Google Takeout</span><span class="tag">face clusters</span>
+  <div class="question"><b>RED PEN:</b> Is 100K canonical still accurate after Fuseki rebuild? 20K records may have been lost (#1852).</div>
 </div>
 <div class="domain-card">
   <h4>Books</h4>
@@ -193,8 +193,8 @@
 </div>
 <div class="domain-card">
   <h4>Stories</h4>
-  <p>135+ personal stories in TTL. Jeff's experiences — persistent product inputs, not ephemera.</p>
-  <span class="tag">135+ stories</span><span class="tag">jb:Story</span>
+  <p>145 personal stories in TTL. Jeff's experiences — persistent product inputs, not ephemera.</p>
+  <span class="tag">145 stories</span><span class="tag">jb:Story</span>
 </div>
 <div class="domain-card">
   <h4>Notes</h4>
@@ -224,8 +224,8 @@
 </div>
 <div class="domain-card">
   <h4>People</h4>
-  <p>2,942 contacts + 48 face clusters + 23 Google Takeout exports.</p>
-  <span class="tag">2,942 contacts</span><span class="tag">face clusters</span>
+  <p>2,841 contacts + 48 face clusters + 23 Google Takeout exports.</p>
+  <span class="tag">2,841 contacts</span><span class="tag">face clusters</span>
 </div>
 
 <h3>Reflecting</h3>
@@ -289,11 +289,11 @@
 <table>
   <tr><th>Layer</th><th>Technology</th><th>Purpose</th></tr>
   <tr><td>Full-text</td><td>SQLite FTS5</td><td>BM25 ranking, prefix matching, collection boosting. Fast, familiar.</td></tr>
-  <tr><td>Semantic</td><td>LanceDB + nomic-embed-text (Ollama on Bedroom)</td><td>Vector embeddings. Finding resonance, not keywords.</td></tr>
+  <tr><td>Semantic</td><td>LanceDB + Ollama nomic-embed-text (Bedroom)</td><td>Vector embeddings. Finding resonance, not keywords.</td></tr>
   <tr><td>Structured</td><td>Fuseki SPARQL</td><td>Precise graph queries across named graphs.</td></tr>
 </table>
 
-<p>154K items in FTS. 15K docs embedded. App's <code>/search</code> runs hybrid — FTS for recall, semantic for discovery, SPARQL for precision.</p>
+<p>154K items in FTS. 15K docs embedded. App's <code>/search</code> runs compound loop (multi-source hybrid) — FTS for recall, semantic for discovery, SPARQL for precision.</p>
 
 <div class="question"><b>RED PEN:</b> Is 154K FTS / 15K semantic still accurate? That's a 10:1 gap — is the embedding pipeline keeping up?</div>
 

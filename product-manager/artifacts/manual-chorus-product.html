@@ -184,7 +184,7 @@
 
 <div class="service">
   <h4>Chorus API (localhost:3340)</h4>
-  <p>Read-only API for team state. Cards, roles, perf, services, disk, harvest, cost. No auth. DEC-093 compliant.</p>
+  <p>Read-only API for team state. Cards, roles, perf, services, disk, harvest, cost. No auth. DEC-093 compliant. Includes <code>/api/chorus/health</code> endpoint.</p>
   <span class="tag">no auth</span><span class="tag">read-only</span><span class="tag">DEC-093</span>
   <div class="stale"><b>GAP:</b> Seeds endpoint missing from API table until today (#1869). Photo delivery still broken.</div>
 </div>
@@ -197,9 +197,9 @@
 
 <div class="service">
   <h4>Chorus Hooks (Rust binary)</h4>
-  <p>PreToolUse + PostToolUse hooks. 12 shell scripts consolidated into compiled binary. Gates: TDD, write-scrubber, ICD, blast radius, search hierarchy, memory-research.</p>
+  <p>PreToolUse + PostToolUse hooks. 37 modules consolidated into compiled binary. Gates: TDD, write-scrubber, ICD, blast radius, search hierarchy, memory-research, continuous awareness, nudge validation.</p>
   <span class="tag">Rust</span><span class="tag">circuit breaker (#1858)</span>
-  <div class="current"><b>RECENT:</b> Circuit breaker shipped today — 3 failures in 5min auto-disables. 236 tests.</div>
+  <div class="current"><b>RECENT:</b> Circuit breaker shipped today — 3 failures in 5min auto-disables. 308 tests.</div>
 </div>
 
 <div class="service">
@@ -219,6 +219,12 @@
   <p>SMS (Twilio) → Capture → Classify → Route → Brief. Two-message pattern (content then hashtag). 106+ tests.</p>
   <span class="tag">TypeScript</span><span class="tag">Twilio</span>
   <div class="stale"><b>BROKEN:</b> Photo seeds don't arrive. Fixed 3 times, same bug recurs. Foundational service still unreliable.</div>
+</div>
+
+<div class="service">
+  <h4>Infrastructure Tooling</h4>
+  <p><code>agent-state.sh</code> manages 49 LaunchAgents (not containers). Watchdog service monitors agent health and auto-restarts. Ollama on Bedroom provides semantic search via nomic-embed-text embeddings. 31+ tracked skills provide DSL commands for team coordination.</p>
+  <span class="tag">49 LaunchAgents</span><span class="tag">agent-state.sh</span><span class="tag">watchdog</span><span class="tag">31+ skills</span><span class="tag">Ollama semantic</span>
 </div>
 
 <div class="question"><b>RED PEN:</b> Are there services not listed here? What about the daily review agents (#1766), ops agent, defect poller, session watcher? Full service inventory needed.</div>

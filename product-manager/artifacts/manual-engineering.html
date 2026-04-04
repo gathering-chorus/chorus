@@ -106,6 +106,7 @@
   <tr><th>Property</th><th>Value</th></tr>
   <tr><td>Repo</td><td><code>gathering-team</code> (chorus/)</td></tr>
   <tr><td>Languages</td><td>TypeScript (services, CLI) + Rust (hooks) + Bash (scripts)</td></tr>
+  <tr><td>Skills</td><td>31+ tracked skills (DSL commands for team coordination)</td></tr>
   <tr><td>DEC-100</td><td>No bash APIs — TypeScript or Rust for infrastructure</td></tr>
 </table>
 
@@ -206,8 +207,8 @@
 <!-- 5. DEPLOY -->
 <h2 id="deploy">5. Deploy &amp; Lifecycle</h2>
 
-<h3>app-state.sh</h3>
-<p>All service lifecycle through <code>app-state.sh</code>. Never kill PIDs manually.</p>
+<h3>agent-state.sh + app-state.sh</h3>
+<p>All service lifecycle through <code>app-state.sh</code> (Docker-era) and <code>agent-state.sh</code> (LaunchAgent lifecycle). Never kill PIDs manually. 49 LaunchAgents tracked.</p>
 
 <table>
   <tr><th>Change Type</th><th>Deploy Needed?</th><th>Method</th></tr>
@@ -219,7 +220,7 @@
 
 <p><strong>Performance:</strong> Deploy 90s → 19s after Docker retirement.</p>
 
-<div class="current"><b>CURRENT:</b> Docker fully retired Mar 14. Three containers remain: Navidrome, CSS, webvowl. Zero currently running. All others native LaunchAgents.</div>
+<div class="current"><b>CURRENT (2026-04-04):</b> Docker fully retired Mar 14. Three container images remain: Navidrome, CSS, webvowl. Zero currently running. All services native LaunchAgents (49 tracked via <code>agent-state.sh</code>). Watchdog service monitors agent health and auto-restarts crashed agents.</div>
 
 <!-- 6. HOOKS -->
 <h2 id="hooks">6. Hooks &amp; Gates</h2>
@@ -260,10 +261,11 @@
   <tr><td><code>git-queue</code></td><td>platform/scripts/git-queue</td><td>Serialized git commits across roles. (Rust symlink)</td></tr>
   <tr><td><code>werk-init</code></td><td>platform/scripts/werk-init</td><td>Session start/close verification.</td></tr>
   <tr><td><code>app-state.sh</code></td><td>platform/scripts/app-state.sh</td><td>Service lifecycle management (all Docker/LaunchAgent ops).</td></tr>
+  <tr><td><code>agent-state.sh</code></td><td>platform/scripts/agent-state.sh</td><td>LaunchAgent lifecycle management. List, start, stop, restart all 49 tracked agents.</td></tr>
   <tr><td><code>wall-clock</code></td><td>platform/scripts/wall-clock</td><td>Boston time for chorus prompts.</td></tr>
 </table>
 
-<h3>Skills (DSL Commands)</h3>
+<h3>Skills (31+ Tracked DSL Commands)</h3>
 <table>
   <tr><th>Skill</th><th>Description</th></tr>
   <tr><td><code>/pull</code></td><td>Pull next card from board</td></tr>
@@ -276,6 +278,15 @@
   <tr><td><code>/reboot</code></td><td>Session close-out</td></tr>
   <tr><td><code>/lc</code></td><td>Screenshot for visual validation</td></tr>
   <tr><td><code>/cost</code></td><td>Cost tracking</td></tr>
+  <tr><td><code>/flow</code></td><td>Board sweep and work proposal</td></tr>
+  <tr><td><code>/sb</code></td><td>Scan board â quick state summary</td></tr>
+  <tr><td><code>/ab</code></td><td>Analyze board â shape, flow, patterns</td></tr>
+  <tr><td><code>/jdi</code></td><td>Just do it â execute obvious next thing</td></tr>
+  <tr><td><code>/nudge</code></td><td>Send message to another role's terminal</td></tr>
+  <tr><td><code>/look</code></td><td>Capture Jeff's screen for visual context</td></tr>
+  <tr><td><code>/listen</code></td><td>Voice input</td></tr>
+  <tr><td><code>/werk</code></td><td>Work state dashboard</td></tr>
+  <tr><td>+ 13 more</td><td>See skill directory for full inventory</td></tr>
 </table>
 
 <!-- 8. SCRIPTS -->
@@ -295,7 +306,7 @@
 <h3>Known Debt (from board + memory)</h3>
 <table>
   <tr><th>Item</th><th>Card</th><th>Severity</th></tr>
-  <tr><td>chorus-ops.sh <del>37K</del> <strong>1,095 lines</strong> bash</td><td>#1777</td><td><del>High</del> Medium — already shrunk, card not updated</td></tr>
+  <tr><td>chorus-ops.sh 1,095 lines bash</td><td>#1777</td><td><del>High</del> Medium — already shrunk, card not updated</td></tr>
   <tr><td>275 stale Docker references</td><td>#1866</td><td>Medium — confusion risk</td></tr>
   <tr><td>Production code in gitignored dir</td><td>#1826</td><td>High — invisible code</td></tr>
   <tr><td>5 duplicate LaunchAgents</td><td>#1774</td><td>Medium — double-firing</td></tr>
