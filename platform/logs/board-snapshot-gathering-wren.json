@@ -1,12 +1,12 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-03T22:58:07.573Z",
+  "timestamp": "2026-04-04T00:11:39.087Z",
   "tasks": [
     {
-      "index": 2009,
-      "apiId": 2092,
-      "title": "LaunchAgent lifecycle tool — app-state.sh for native services",
-      "description": "LaunchAgent lifecycle is currently manual — roles kill PIDs, forget to use launchctl, leave orphans holding ports. Jeff has said repeatedly: no raw process killing. app-state.sh handles Docker containers but native LaunchAgents have no equivalent tool.\n\n## Experience\nWhen Jeff reboots a role or restarts a service, it should be one command that just works — like app-state.sh does for Docker. Today roles guess at launchctl syntax, leave orphan processes, and Jeff discovers hung ports. The experience: agent-state.sh restart chorus-hooks and it's done. No orphans, no port conflicts, no manual PID hunting.\n\n## AC\n- [ ] Script manages LaunchAgent start/stop/restart/status for all com.chorus.* and com.gathering.* agents\n- [ ] Detects and kills orphan processes holding ports (ppid=1, not managed by launchd)\n- [ ] Single command: agent-state.sh {start|stop|restart|status|orphans} [service-name]\n- [ ] Hook updated to allow agent-state.sh as approved kill path\n\n## Files\n- platform/scripts/agent-state.sh\n- platform/scripts/test-agent-state.sh\n- platform/tests/features/gates/agent_lifecycle.feature",
+      "index": 2010,
+      "apiId": 2093,
+      "title": "Deduplicate LaunchAgent namespaces — consolidate com.chorus and com.gathering",
+      "description": "53 LaunchAgents across two namespaces — com.chorus.* and com.gathering.* — with duplicates doing the same job (context-cache, cruft-scan, perf-baseline). Confusing, wasteful, and makes agent-state.sh health report misleading.\n\n## Experience\nWhen Jeff runs agent-state.sh health, every agent should be there once with a clear name. Not two context-cache agents in different namespaces both firing on the same schedule. One namespace per job, no confusion.\n\n## AC\n- [ ] Audit all 53 agents — map which are duplicated across namespaces\n- [ ] Retire com.gathering.* duplicates (context-cache, cruft-scan, perf-baseline) — one namespace owns each job\n- [ ] Remove retired plists from ~/Library/LaunchAgents/\n- [ ] Verify no double-firing after consolidation\n\n## Files\n- ~/Library/LaunchAgents/com.gathering.context-cache-*.plist\n- ~/Library/LaunchAgents/com.gathering.cruft-scan.plist\n- ~/Library/LaunchAgents/com.gathering.perf-baseline.plist",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
@@ -17,8 +17,8 @@
         "type:fix"
       ],
       "done": false,
-      "created": "2026-04-03T22:46:36Z",
-      "updated": "2026-04-03T22:54:29Z"
+      "created": "2026-04-03T22:46:40Z",
+      "updated": "2026-04-03T23:53:04Z"
     },
     {
       "index": 2000,
@@ -37,6 +37,24 @@
       "done": false,
       "created": "2026-04-03T15:45:28Z",
       "updated": "2026-04-03T15:45:52Z"
+    },
+    {
+      "index": 2009,
+      "apiId": 2092,
+      "title": "LaunchAgent lifecycle tool — app-state.sh for native services",
+      "description": "LaunchAgent lifecycle is currently manual — roles kill PIDs, forget to use launchctl, leave orphans holding ports. Jeff has said repeatedly: no raw process killing. app-state.sh handles Docker containers but native LaunchAgents have no equivalent tool.\n\n## Experience\nWhen Jeff reboots a role or restarts a service, it should be one command that just works — like app-state.sh does for Docker. Today roles guess at launchctl syntax, leave orphan processes, and Jeff discovers hung ports. The experience: agent-state.sh restart chorus-hooks and it's done. No orphans, no port conflicts, no manual PID hunting.\n\n## AC\n- [ ] Script manages LaunchAgent start/stop/restart/status for all com.chorus.* and com.gathering.* agents\n- [ ] Detects and kills orphan processes holding ports (ppid=1, not managed by launchd)\n- [ ] Single command: agent-state.sh {start|stop|restart|status|orphans} [service-name]\n- [ ] Hook updated to allow agent-state.sh as approved kill path\n\n## Files\n- platform/scripts/agent-state.sh\n- platform/scripts/test-agent-state.sh\n- platform/tests/features/gates/agent_lifecycle.feature",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T22:46:36Z",
+      "updated": "2026-04-03T23:01:48Z"
     },
     {
       "index": 2004,
@@ -375,7 +393,7 @@
       "index": 1937,
       "apiId": 2020,
       "title": "Seed pipeline trust — Jeff sends it, team picks it up, always arrives, never drops #tags as seeds",
-      "description": "## Experience\nI send a seed and the team picks it up with urgency and attention. I never wonder if it arrived. I never discover days later that a seed was silently dropped. When I use #wren or #silas, it routes to that role — the hashtag is correlation, not the seed itself. The content before the tag is the seed. The system treats both parts together, never the tag alone.\n\n## AC\n1. Seed delivery is confirmed — Jeff gets visible proof the seed arrived and who picked it up\n2. Seeds are processed with urgency — not batched, not queued for next session, not waiting for /cs\n3. #tags are NEVER treated as seeds — they are routing/correlation markers attached to the preceding content\n4. A seed is always two SMS messages: content first, #tag second. Both messages together form the seed. Never process them independently.\n5. End-to-end test: Jeff sends SMS seed → team receives ��� Jeff sees confirmation — no unit test fakes\n6. When seed arrives, the receiving role acts on it in the same prompt cycle — card it, route it, or discard with reason\n\n## Files\n- platform/roles/silas/scripts/seed-probe.sh\n- platform/board-client/tests/seed-pipeline-flow.test.ts\n- platform/api/src/server.ts\n- product-manager/docs/seed-pipeline-criteria.md",
+      "description": "## Experience\nI send a seed and the team picks it up with urgency and attention. I never wonder if it arrived. I never discover days later that a seed was silently dropped. When I use #wren or #silas, it routes to that role — the hashtag is correlation, not the seed itself. The content before the tag is the seed. The system treats both parts together, never the tag alone.\n\n## AC\n1. Seed delivery is confirmed — Jeff gets visible proof the seed arrived and who picked it up\n2. Seeds are processed with urgency — not batched, not queued for next session, not waiting for /cs\n3. #tags are NEVER treated as seeds — they are routing/correlation markers attached to the preceding content\n4. A seed is always two SMS messages: content first, #tag second. Both messages together form the seed. Never process them independently.\n5. End-to-end test: Jeff sends SMS seed → team receives → Jeff sees confirmation — no unit test fakes\n6. When seed arrives, the receiving role acts on it in the same prompt cycle — card it, route it, or discard with reason\n\n## Files\n- platform/roles/silas/scripts/seed-probe.sh\n- platform/board-client/tests/seed-pipeline-flow.test.ts\n- platform/api/src/server.ts\n- product-manager/docs/seed-pipeline-criteria.md",
       "status": "Done",
       "owner": "Wren",
       "priority": "P1",
@@ -900,24 +918,6 @@
       "updated": "2026-03-31T10:18:16Z"
     },
     {
-      "index": 1884,
-      "apiId": 1967,
-      "title": "Chorus API disk endpoint uses df — same false positive as session-start",
-      "description": "## Experience\nI check the API disk endpoint and it says 94% — same false alarm as session-start. Every surface that shows disk usage should agree with what Finder shows. Right now the API uses Container Free Space which ignores purgeable. Finder says ~48%.\n\n## AC\n- [ ] GET /api/chorus/disk uses Finder free space (osascript) instead of Container Free Space\n- [ ] MonitoringService health check uses Finder free space instead of df\n- [ ] Both report the same percentage as Finder\n- [ ] API response includes finder_free_bytes field for transparency\n\n## Files\n- platform/api/src/server.ts (GET /api/chorus/disk ~L1808)\n- jeff-bridwell-personal-site/src/services/MonitoringService.ts (~L313)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-30T22:56:40Z",
-      "updated": "2026-03-31T10:28:12Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1043,7 +1043,7 @@
       "index": 2011,
       "apiId": 2094,
       "title": "Chorus API health endpoint — /api/chorus/health for monitoring",
-      "description": "AC:\n- [ ] GET /api/chorus/health returns JSON with db status, uptime, vector count\n- [ ] Probes (seed-probe, clearing-probe) can use it as liveness check\n- [ ] Returns 503 if database unreachable",
+      "description": "Chorus API has no health endpoint — probes and agent-state.sh can only check PID, not functional status.\n\n## Experience\nWhen Jeff or a role checks if the API is healthy, they should get real answers: is the database reachable, are vectors loaded, is the hook server injecting context. Not just 'process has a PID.'\n\n## AC\n- [ ] GET /api/chorus/health returns JSON with db status, uptime, vector count\n- [ ] Probes (seed-probe, clearing-probe) can use it as liveness check\n- [ ] Returns 503 if database unreachable\n- [ ] Hook server functional status — confirms context injection is active, not just PID alive (#2008 connection, per Wren feedback on #2009)\n\n## Files\n- platform/api/src/server.ts",
       "status": "Later",
       "owner": "Silas",
       "priority": "P2",
@@ -1054,24 +1054,7 @@
       ],
       "done": false,
       "created": "2026-04-03T22:46:46Z",
-      "updated": "2026-04-03T22:46:46Z"
-    },
-    {
-      "index": 2010,
-      "apiId": 2093,
-      "title": "Deduplicate LaunchAgent namespaces — consolidate com.chorus and com.gathering",
-      "description": "AC:\n- [ ] Audit all 53 agents — map which are duplicated across namespaces\n- [ ] Retire com.gathering.* duplicates (context-cache, cruft-scan, perf-baseline) — one namespace owns each job\n- [ ] Remove retired plists from ~/Library/LaunchAgents/\n- [ ] Verify no double-firing after consolidation",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:infrastructure",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T22:46:40Z",
-      "updated": "2026-04-03T22:46:40Z"
+      "updated": "2026-04-03T23:00:35Z"
     },
     {
       "index": 2008,
@@ -1927,6 +1910,24 @@
       "done": false,
       "created": "2026-03-29T21:17:05Z",
       "updated": "2026-03-29T21:17:05Z"
+    },
+    {
+      "index": 1834,
+      "apiId": 1917,
+      "title": "Reports from the Blockverse — blog about what it's actually like to coordinate AI agents",
+      "description": "## Experience\nNobody is writing honestly about what it's actually like to coordinate AI agents day-to-day. The seasick Clearing, the nudge that said nothing, the 710GB nobody asked for — these are real stories that would resonate with anyone trying to build with AI teams. I want to publish this because it's the authentic version of \"AI team coordination\" and it positions Chorus as a real product, not vaporware.\n\n## AC\n- [ ] First post drafted — pick from today's session stories (seasick Clearing, invisible elephant, 710GB nobody asked for, the nudge that said nothing)\n- [ ] Published on wordpress-blog or lightlifeurbangardens.com/blog (Jeff's call)\n- [ ] Connects to Chorus product positioning — this is the honest version of \"AI team coordination\"",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new",
+        "content"
+      ],
+      "done": false,
+      "created": "2026-03-29T18:14:40Z",
+      "updated": "2026-03-30T16:49:37Z"
     },
     {
       "index": 1721,
