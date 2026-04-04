@@ -50,10 +50,11 @@ SELECT ?seed ?content ?type ?created ?hashtag WHERE {
   GRAPH <urn:jb:seeds/> {
     ?seed jb:hasSeedStatus ?status .
     FILTER(?status NOT IN (jb:Routed, jb:Discarded))
-    ?seed jb:seedContent ?content .
     ?seed jb:hasSeedType ?type .
+    OPTIONAL { ?seed jb:seedContent ?content }
     OPTIONAL { ?seed jb:seededAt ?created }
     OPTIONAL { ?seed jb:seedHashtag ?hashtag }
+    OPTIONAL { ?seed jb:seedMediaPath ?media }
   }
 } ORDER BY DESC(?created)'
 
@@ -105,14 +106,14 @@ TOTAL=$(curl -sf --max-time "$TIMEOUT" \
 RECENT_QUERY='PREFIX jb: <https://jeffbridwell.com/ontology#>
 SELECT ?content ?type ?status ?created ?hashtag ?media WHERE {
   GRAPH <urn:jb:seeds/> {
-    ?seed jb:seedContent ?content .
     ?seed jb:hasSeedType ?type .
     ?seed jb:hasSeedStatus ?status .
+    OPTIONAL { ?seed jb:seedContent ?content }
     OPTIONAL { ?seed jb:seededAt ?created }
     OPTIONAL { ?seed jb:seedHashtag ?hashtag }
     OPTIONAL { ?seed jb:seedMediaPath ?media }
   }
-} ORDER BY DESC(?created) LIMIT 3'
+} ORDER BY DESC(?created) LIMIT 5'
 
 RECENT_JSON=$(curl -sf --max-time "$TIMEOUT" \
   -H "Accept: application/sparql-results+json" \
@@ -144,14 +145,17 @@ for b in d['results']['bindings']:
             boston=dt.astimezone(timezone(timedelta(hours=-4)))
             ts=boston.strftime('%m/%d %H:%M')
         except: pass
-    # Show accessible content: HTTP link for media, URL for links, text for text
+    # Show accessible content: media URL for photos, URL for links, text for text
     display = content
-    if media and content.startswith('#'):
+    if media:
         label = {'PhotoCapture': 'Photo', 'AudioCapture': 'Audio', 'VideoCapture': 'Video'}.get(stype, stype)
         fname = media.rsplit('/', 1)[-1] if '/' in media else media
-        display = f'{label} {content} → http://localhost:3340/api/chorus/seed-media/{fname}'
+        url = f'http://localhost:3340/api/chorus/seed-media/{fname}'
+        display = f'{label} → {url}'
     elif stype == 'LinkCapture' and content.startswith('http'):
         display = content[:70]
+    elif not content:
+        display = f'({stype})'
     tag = f' {hashtag}' if hashtag else ''
     print(f'  {ts}  [{status}]  {display}{tag}')
 " 2>/dev/null
@@ -174,6 +178,11 @@ print(f'  --+------------+------------------------------------------+----------+
 for i,b in enumerate(bindings):
     stype=b.get('type',{}).get('value','').split('#')[-1][:10]
     content=b.get('content',{}).get('value','')[:40]
+    media=b.get('media',{}).get('value','')
+    if media and (not content or content.startswith('#')):
+        label = {'PhotoCaptu': 'Photo', 'AudioCaptu': 'Audio', 'VideoCaptu': 'Video'}.get(stype, stype)
+        fname = media.rsplit('/', 1)[-1] if '/' in media else media
+        content = f'{label} → {fname}'[:40]
     hashtag=b.get('hashtag',{}).get('value','')[:8]
     ts=b.get('created',{}).get('value','')
     if ts:
