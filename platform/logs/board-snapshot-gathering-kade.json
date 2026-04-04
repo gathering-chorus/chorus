@@ -1,25 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T14:58:45.668Z",
+  "timestamp": "2026-04-04T15:23:56.586Z",
   "tasks": [
-    {
-      "index": 2031,
-      "apiId": 2114,
-      "title": "Team-scan staleness detection — consume role.state.changed events, flag roles with no state transition in 45min",
-      "description": "team-scan shows role activity but can't tell Jeff if a role has gone dark. A role that hasn't changed state in 45 minutes could be stuck, crashed, or just thinking — but Jeff can't tell without checking each screen.\n\n## Experience\nJeff glances at team-scan and sees [STALE] next to Kade. He knows immediately: Kade hasn't transitioned state in 45 minutes. Something needs attention. No screen-checking required.\n\n## AC\n- [ ] team-scan reads last role.state.changed timestamp from chorus.log for each role\n- [ ] If no state change in 45min, scan output includes STALE flag next to role\n- [ ] Threshold configurable\n- [ ] Tests cover fresh, stale, and missing-event cases\n\n## Files\n- platform/services/chorus-hooks/src/hooks/observer.rs\n- platform/scripts/session-start-thin.sh",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:enhance",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-04T14:48:27Z",
-      "updated": "2026-04-04T14:53:39Z"
-    },
     {
       "index": 2022,
       "apiId": 2105,
@@ -57,6 +39,24 @@
       "updated": "2026-04-03T15:45:52Z"
     },
     {
+      "index": 1934,
+      "apiId": 2017,
+      "title": "Clearing Socket.IO ack — client confirms message delivery or retries",
+      "description": "## Experience\nI type a message in the Clearing and it vanishes. No error, no feedback. I need the send button to tell me if my message landed or failed — and retry if it didnt.\n\n## AC\n1. socket.emit jeff-message uses ack callback — server confirms receipt\n2. If no ack within 3 seconds, client retries once then shows error indicator\n3. Send button shows delivery state: sending, sent, failed\n4. Failed messages stay in input so Jeff can retry manually\n\n## Files\n- directing/clearing/public/index.html\n- directing/clearing/src/server.ts",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-01T12:33:06Z",
+      "updated": "2026-04-04T15:01:17Z"
+    },
+    {
       "index": 1872,
       "apiId": 1955,
       "title": "Write product, architecture, and engineering manuals — Gathering and Chorus",
@@ -73,6 +73,24 @@
       "done": false,
       "created": "2026-03-30T16:39:38Z",
       "updated": "2026-04-04T13:11:31Z"
+    },
+    {
+      "index": 2031,
+      "apiId": 2114,
+      "title": "Team-scan staleness detection — consume role.state.changed events, flag roles with no state transition in 45min",
+      "description": "team-scan shows role activity but can't tell Jeff if a role has gone dark. A role that hasn't changed state in 45 minutes could be stuck, crashed, or just thinking — but Jeff can't tell without checking each screen.\n\n## Experience\nJeff glances at team-scan and sees [STALE] next to Kade. He knows immediately: Kade hasn't transitioned state in 45 minutes. Something needs attention. No screen-checking required.\n\n## AC\n- [ ] team-scan reads last role.state.changed timestamp from chorus.log for each role\n- [ ] If no state change in 45min, scan output includes STALE flag next to role\n- [ ] Threshold configurable\n- [ ] Tests cover fresh, stale, and missing-event cases\n\n## Files\n- platform/services/chorus-hooks/src/hooks/observer.rs\n- platform/scripts/session-start-thin.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:enhance",
+        "sequence:ops"
+      ],
+      "done": true,
+      "created": "2026-04-04T14:48:27Z",
+      "updated": "2026-04-04T15:00:52Z"
     },
     {
       "index": 2024,
@@ -943,23 +961,6 @@
       "updated": "2026-03-31T17:59:24Z"
     },
     {
-      "index": 1917,
-      "apiId": 2000,
-      "title": "Migrate pulse scripts to API — eliminate shell scripts from the signal path",
-      "description": "## Experience\nEvery pulse event goes through a shell script before reaching the API. chorus-log.sh, role-state.sh, nudge.sh, heartbeat.sh — 49 scripts in the path. They're an obfuscation layer. I can't tell what they do without reading them. Errors get swallowed. Arguments get mangled. DEC-100 says no bash APIs.\n\n## AC\n- [ ] chorus-log.sh → POST /api/chorus/pulse (event, role, level, card, domain)\n- [ ] role-state.sh → POST /api/chorus/role-state (role, state, card)\n- [ ] heartbeat.sh → internal to the heartbeat LaunchAgent, calls API directly\n- [ ] wall-clock.sh → absorbed into Rust hooks binary\n- [ ] All callers updated to use API instead of scripts\n- [ ] Scripts deleted after migration verified\n\n## Files\n- platform/scripts/chorus-log.sh (delete)\n- platform/scripts/role-state.sh (delete)\n- platform/scripts/heartbeat.sh (delete)\n- platform/scripts/wall-clock.sh (delete)\n- platform/api/ (new endpoints)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": true,
-      "created": "2026-03-31T15:30:01Z",
-      "updated": "2026-03-31T18:23:36Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1332,24 +1333,6 @@
       "done": false,
       "created": "2026-04-01T12:52:09Z",
       "updated": "2026-04-01T20:47:47Z"
-    },
-    {
-      "index": 1934,
-      "apiId": 2017,
-      "title": "Clearing Socket.IO ack — client confirms message delivery or retries",
-      "description": "## Experience\nI type a message in the Clearing and it vanishes. No error, no feedback. I need the send button to tell me if my message landed or failed — and retry if it didnt.\n\n## AC\n1. socket.emit jeff-message uses ack callback — server confirms receipt\n2. If no ack within 3 seconds, client retries once then shows error indicator\n3. Send button shows delivery state: sending, sent, failed\n4. Failed messages stay in input so Jeff can retry manually\n\n## Files\n- directing/clearing/public/index.html\n- directing/clearing/src/server.ts",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-01T12:33:06Z",
-      "updated": "2026-04-04T13:12:06Z"
     },
     {
       "index": 1932,
@@ -1951,6 +1934,22 @@
       "done": false,
       "created": "2026-03-26T10:40:03Z",
       "updated": "2026-03-30T13:04:45Z"
+    },
+    {
+      "index": 1677,
+      "apiId": 1760,
+      "title": "Borg calibration session — peer benchmark, scoring rubric, and self-assessment review with Jeff",
+      "description": "## Experience\nI open the Borg self-assessment and ontology comparison documents and I want to walk through them together with the team. I know we'll score ourselves wrong if we grade our own work — I need an external benchmark so the scores mean something. I want to pick a system I know well, score it on the same axes, and then compare. That calibration turns the Borg assessment from an opinion into a measurement.\n\nJeff wants to walk through both Borg HTML documents together.\n\n## Files\n- product-manager/data/borg/ontology-comparison.html\n- product-manager/data/borg/self-assessment.html\n\n## AC\n- [ ] Jeff reviews ontology comparison — TOSCA vs SOSA/SSN vs K8s matrix and hybrid recommendation\n- [ ] Jeff reviews self-assessment — 7 dimensions with real data, 4/4 decision validation\n- [ ] Capture Jeff's feedback, questions, and direction for Borg next steps\n- [ ] Update Borg product roadmap based on review",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:borg"
+      ],
+      "done": false,
+      "created": "2026-03-24T20:13:59Z",
+      "updated": "2026-03-30T13:05:17Z"
     },
     {
       "index": 1721,
