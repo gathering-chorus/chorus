@@ -36,9 +36,9 @@
 <body>
 
 <h1>Engineering Manual — Gathering &amp; Chorus</h1>
-<p class="subtitle">Written from existing docs as-is &bull; KM exercise &bull; Wren &bull; 2026-03-30 &bull; <strong>Red-penned by Kade 2026-03-30 14:11</strong></p>
+<p class="subtitle">Written from existing docs as-is &bull; KM exercise &bull; Wren &bull; 2026-03-30 &bull; <strong>Red-penned by Kade 2026-03-30 14:11</strong> &bull; <strong>v3 — Kade red pen corrections applied 2026-04-04</strong></p>
 
-<div class="stale"><b>KADE RED PEN (2026-03-30):</b> Hooks inventory gap goes both directions — manual listed 9 gates, actual codebase has 33 modules. 24 undocumented. 2 claimed gates (Experience, general Blast Radius) don't exist as described. Test counts stale: app is 4,385 not 3,938, hooks is 11 not 236. chorus-ops.sh is 1,095 lines not 37K. tech-debt.md hasn't absorbed Docker retirement.</div>
+<div class="stale"><b>KADE RED PEN (2026-03-30, corrected 2026-04-04):</b> Hooks inventory gap goes both directions — manual listed 9 gates, actual codebase has 37 modules. 28 undocumented. 2 claimed gates (Experience, general Blast Radius) don't exist as described. Test counts stale: app is 4,410 not 3,938, hooks is 308 (255+53 across 2 binaries, 3 failing) not 236. chorus-ops.sh is 1,095 lines not 37K. tech-debt.md hasn't absorbed Docker retirement. Docker containers are Navidrome, CSS, webvowl — not WordPress, MySQL, SOLID. Zero currently running.</div>
 
 <div class="toc">
 <strong>Contents</strong>
@@ -66,7 +66,7 @@
   <tr><td>Language</td><td>TypeScript (Express)</td></tr>
   <tr><td>Views</td><td>EJS templates (bind-mounted — changes live without deploy)</td></tr>
   <tr><td>Static</td><td>CSS, JS, images (bind-mounted)</td></tr>
-  <tr><td>Tests</td><td><del>3,938+</del> <strong>4,385</strong> (Jest) — corrected by Kade</td></tr>
+  <tr><td>Tests</td><td><del>3,938+</del> <strong>4,410</strong> (Jest) — corrected by Kade</td></tr>
   <tr><td>Lint ceiling</td><td>10 max-warnings (ratchet — only moves down, DEC-085)</td></tr>
   <tr><td>Pages</td><td>50+</td></tr>
   <tr><td>Auth</td><td>SOLID (CSS as OIDC provider, #685)</td></tr>
@@ -112,8 +112,8 @@
 <h3>Key Directories</h3>
 <table>
   <tr><th>Path</th><th>Contents</th></tr>
-  <tr><td><code>platform/scripts/</code></td><td>Operational scripts (cards, nudge.sh, chorus-log.sh, role-state.sh, git-queue.sh)</td></tr>
-  <tr><td><code>platform/services/chorus-hooks/</code></td><td>Rust binary — PreToolUse/PostToolUse gates. 236 tests.</td></tr>
+  <tr><td><code>platform/scripts/</code></td><td>Operational scripts (cards, nudge, chorus-log, role-state, git-queue — some are Rust symlinks, not .sh)</td></tr>
+  <tr><td><code>platform/services/chorus-hooks/</code></td><td>Rust binary — PreToolUse/PostToolUse gates. 37 modules, 308 tests (255+53 across 2 binaries, 3 failing).</td></tr>
   <tr><td><code>platform/api/</code></td><td>Chorus API (TypeScript) — context index, team state endpoints</td></tr>
   <tr><td><code>platform/roles/</code></td><td>Role-specific state, artifacts, briefs</td></tr>
   <tr><td><code>product-manager/</code></td><td>Wren's state — decisions, backlog, projects, artifacts</td></tr>
@@ -185,13 +185,13 @@
 <h3>Test Counts</h3>
 <table>
   <tr><th>Suite</th><th>Count</th><th>Framework</th></tr>
-  <tr><td>Gathering App</td><td><del>3,938+</del> <strong>4,385</strong></td><td>Jest — corrected by Kade</td></tr>
-  <tr><td>Chorus Hooks</td><td><del>236</del> <strong>11</strong></td><td>Rust (cargo test) — corrected by Kade. 33 modules, 11 tests.</td></tr>
+  <tr><td>Gathering App</td><td><del>3,938+</del> <strong>4,410</strong></td><td>Jest — corrected by Kade</td></tr>
+  <tr><td>Chorus Hooks</td><td><del>236</del> <strong>308</strong></td><td>Rust (cargo test) — 255+53 across 2 binaries, 37 modules, 3 currently failing</td></tr>
   <tr><td>Seed Pipeline</td><td>106+</td><td>Jest (4 test files)</td></tr>
   <tr><td>E2E Smoke</td><td>—</td><td>Playwright</td></tr>
 </table>
 
-<div class="question"><b>RED PEN:</b> Are these test counts current? When was the last full suite run? Are there tests that are silently skipped or always-passing?</div>
+<div class="current"><b>CORRECTED (2026-04-04):</b> Test counts verified by Kade. Hook coverage: 308 tests / 37 modules. 3 tests currently failing. Previous "94% coverage gap" claim was based on stale data — actual coverage is substantial.</div>
 
 <h3>Anti-patterns (from CLAUDE.md)</h3>
 <ul>
@@ -219,7 +219,7 @@
 
 <p><strong>Performance:</strong> Deploy 90s → 19s after Docker retirement.</p>
 
-<div class="current"><b>CURRENT:</b> Docker fully retired Mar 14. Three containers remain: WordPress, MySQL, SOLID. All others native LaunchAgents.</div>
+<div class="current"><b>CURRENT:</b> Docker fully retired Mar 14. Three containers remain: Navidrome, CSS, webvowl. Zero currently running. All others native LaunchAgents.</div>
 
 <!-- 6. HOOKS -->
 <h2 id="hooks">6. Hooks &amp; Gates</h2>
@@ -237,10 +237,13 @@
   <tr><td>Memory-Research Gate</td><td>PreToolUse</td><td>Writes without prior memory/git check</td></tr>
   <tr><td>Git Queue</td><td>PreToolUse</td><td>Direct <code>git commit</code> in team repo</td></tr>
   <tr><td>Experience Gate</td><td>PreToolUse</td><td>WIP entry without Experience section</td></tr>
+  <tr><td>Continuous Awareness</td><td>PreToolUse</td><td>Cross-role observation and attention enforcement</td></tr>
+  <tr><td>Nudge Blast Radius</td><td>PreToolUse</td><td>Nudge validation — rejects malformed calls, checks target role</td></tr>
+  <tr><td>Memory First</td><td>PreToolUse</td><td>Blocks action without prior memory/decision check</td></tr>
   <tr><td>Circuit Breaker (#1858)</td><td>Meta</td><td>Auto-disables hook after 3 failures in 5min. Fail-open.</td></tr>
 </table>
 
-<div class="question"><b>RED PEN:</b> Is this the complete gate inventory? Are there gates in the CLAUDE.md that aren't implemented as hooks? Gap between documented and enforced?</div>
+<div class="current"><b>CORRECTED (2026-04-04):</b> 37 hook modules total, 12 gates listed above. 25 additional modules handle routing, classification, logging, and support functions. 308 tests across 2 binaries (3 failing).</div>
 
 <h3>Hook Log</h3>
 <p><code>~/Library/Logs/Gathering/hooks.log</code> — structured: timestamp, hook_type, tool, role, decision, latency, session_id.</p>
@@ -251,13 +254,13 @@
 <table>
   <tr><th>Tool</th><th>Path</th><th>Description</th></tr>
   <tr><td><code>cards</code></td><td>platform/scripts/cards</td><td>Board CLI. add, move, done, demo, reject, view, mine, set, comment.</td></tr>
-  <tr><td><code>nudge.sh</code></td><td>platform/scripts/nudge.sh</td><td>Persist + deliver nudges. Two paths always fire.</td></tr>
-  <tr><td><code>chorus-log.sh</code></td><td>platform/scripts/chorus-log.sh</td><td>Emit spine events to Loki.</td></tr>
-  <tr><td><code>role-state.sh</code></td><td>platform/scripts/role-state.sh</td><td>Declare andon state (building, blocked, idle, etc.)</td></tr>
-  <tr><td><code>git-queue.sh</code></td><td>platform/scripts/git-queue.sh</td><td>Serialized git commits across roles.</td></tr>
-  <tr><td><code>werk-init.sh</code></td><td>platform/scripts/werk-init.sh</td><td>Session start/close verification.</td></tr>
-  <tr><td><code>app-state.sh</code></td><td>platform/scripts/app-state.sh</td><td>Service lifecycle management.</td></tr>
-  <tr><td><code>wall-clock.sh</code></td><td>platform/scripts/wall-clock.sh</td><td>Boston time for chorus prompts.</td></tr>
+  <tr><td><code>nudge</code></td><td>platform/scripts/nudge</td><td>Persist + deliver nudges. Two paths always fire. (Rust symlink)</td></tr>
+  <tr><td><code>chorus-log</code></td><td>platform/scripts/chorus-log</td><td>Emit spine events to Loki. (Rust symlink)</td></tr>
+  <tr><td><code>role-state</code></td><td>platform/scripts/role-state</td><td>Declare andon state (building, blocked, idle, etc.) (Rust symlink)</td></tr>
+  <tr><td><code>git-queue</code></td><td>platform/scripts/git-queue</td><td>Serialized git commits across roles. (Rust symlink)</td></tr>
+  <tr><td><code>werk-init</code></td><td>platform/scripts/werk-init</td><td>Session start/close verification.</td></tr>
+  <tr><td><code>app-state.sh</code></td><td>platform/scripts/app-state.sh</td><td>Service lifecycle management (all Docker/LaunchAgent ops).</td></tr>
+  <tr><td><code>wall-clock</code></td><td>platform/scripts/wall-clock</td><td>Boston time for chorus prompts.</td></tr>
 </table>
 
 <h3>Skills (DSL Commands)</h3>
@@ -336,7 +339,7 @@
 
 <div class="stale"><b>KEY FINDING:</b> The biggest gap in engineering documentation is not "what do we have" but "what's actually enforced." Gates documented in CLAUDE.md, implemented in Rust hooks, and tested in engineer/quality-guide.md are three separate sources with unknown drift between them.</div>
 
-<p class="meta">Engineering Manual &bull; Written from existing docs as-is &bull; Wren &bull; 2026-03-30 &bull; KM sequence #1872</p>
+<p class="meta">Engineering Manual &bull; Written from existing docs as-is &bull; Wren &bull; 2026-03-30 &bull; KM sequence #1872 &bull; v3 — Kade red pen corrections applied 2026-04-04</p>
 
 </body>
 </html>

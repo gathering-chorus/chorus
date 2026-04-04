@@ -44,7 +44,7 @@
 <body>
 
 <h1>Gathering — Product Manual</h1>
-<p class="subtitle">Written from existing docs as-is &bull; KM exercise &bull; Wren &bull; 2026-03-30 &bull; Red-pen this.</p>
+<p class="subtitle">Written from existing docs as-is &bull; KM exercise &bull; Wren &bull; 2026-03-30 &bull; v3 — Kade red pen corrections applied 2026-04-04</p>
 
 <div class="vision">A living model of your world that you can think with. Not a website. Not an app. A personal knowledge graph with agency.</div>
 
@@ -76,13 +76,13 @@
   <tr><td>Type</td><td>Personal knowledge graph — privacy-first, publish-when-ready</td></tr>
   <tr><td>Stack</td><td>Express + TypeScript + SOLID Pods + Fuseki SPARQL + RDF/OWL</td></tr>
   <tr><td>URL</td><td><code>localhost:3000</code> (local) / <code>lightlifeurbangardens.com</code> (public)</td></tr>
-  <tr><td>Test count</td><td>3,938+ tests passing</td></tr>
+  <tr><td>Test count</td><td>4,410+ tests passing</td></tr>
   <tr><td>Ontology</td><td>v1.1.0 — <code>jb:</code> namespace</td></tr>
-  <tr><td>Scale</td><td>16M+ triples, 33K+ named graphs, 16 domains</td></tr>
+  <tr><td>Scale</td><td>30.9M triples, 33K+ named graphs, 16 domains</td></tr>
   <tr><td>Machine</td><td>Library (Mac mini M1, 16GB, 2TB SSD)</td></tr>
 </table>
 
-<div class="question"><b>RED PEN:</b> Is 3,938 tests still accurate? Is ontology still v1.1.0? When was 16M triples last verified?</div>
+<div class="current"><b>VERIFIED:</b> 4,410 tests, 30.9M triples confirmed by Kade 2026-04-04. Ontology version needs separate check.</div>
 
 <!-- 2. PHILOSOPHY -->
 <h2 id="philosophy">2. Philosophical Frame</h2>
@@ -146,7 +146,7 @@
   <h4>Seeds</h4>
   <p>SMS, voice, quick thoughts via CaptureItem. Entry point for all personal signal.</p>
   <span class="tag">SMS webhook</span><span class="tag">Twilio</span><span class="tag">CaptureItem</span>
-  <div class="stale"><b>KNOWN ISSUE:</b> Photo seeds don't arrive (2026-03-30). Pipeline "fixed" 3 times, same bug recurs.</div>
+  <div class="current"><b>FIXED:</b> Photo seed delivery resolved (#2007, 2026-04-04). Pipeline now delivering photo seeds.</div>
 </div>
 
 <h3>Growing</h3>
