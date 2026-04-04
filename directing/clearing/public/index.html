@@ -538,15 +538,46 @@ const sendBtn = document.getElementById('send-btn');
 const tilesContainer = document.getElementById('tiles');
 const statusEl = document.getElementById('connection-status');
 
-// Connection status + reconnect handling
+// Connection status + reconnect handling + client heartbeat (#2036)
+let heartbeatTimeout = null;
+let heartbeatInterval = null;
+const HEARTBEAT_INTERVAL_MS = 8000;  // Ping every 8s
+const HEARTBEAT_TIMEOUT_MS = 10000;  // Disconnect after 10s no pong
+
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatInterval = setInterval(() => {
+    if (socket.connected) {
+      socket.emit('ping');
+      if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+      heartbeatTimeout = setTimeout(() => {
+        statusEl.innerHTML = '<span class="dot dot-disconnected"></span> connection lost';
+      }, HEARTBEAT_TIMEOUT_MS);
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+function stopHeartbeat() {
+  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+  if (heartbeatTimeout) { clearTimeout(heartbeatTimeout); heartbeatTimeout = null; }
+}
+
+socket.on('pong', () => {
+  if (heartbeatTimeout) { clearTimeout(heartbeatTimeout); heartbeatTimeout = null; }
+  statusEl.innerHTML = '<span class="dot dot-connected"></span> connected';
+});
+
 socket.on('connect', () => {
   statusEl.innerHTML = '<span class="dot dot-connected"></span> connected';
+  startHeartbeat();
 });
 socket.on('disconnect', () => {
   statusEl.innerHTML = '<span class="dot dot-disconnected"></span> reconnecting...';
+  stopHeartbeat();
 });
 socket.io.on('reconnect', () => {
   statusEl.innerHTML = '<span class="dot dot-connected"></span> connected';
+  startHeartbeat();
 });
 
 // Tiles
