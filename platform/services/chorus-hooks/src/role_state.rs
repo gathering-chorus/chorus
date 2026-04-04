@@ -144,6 +144,25 @@ pub fn run(args: &[String]) -> ExitCode {
     }
     let _ = fs::rename(&tmp, &out);
 
+    // Emit spine event to chorus.log (#1945)
+    let mut event_kv = format!("role={} state={}", role, state);
+    if !card.is_empty() {
+        event_kv.push_str(&format!(" card={}", card));
+    }
+    if !card_type.is_empty() {
+        event_kv.push_str(&format!(" type={}", card_type));
+    }
+    if !gemba.is_empty() {
+        event_kv.push_str(&format!(" gemba={}", gemba));
+    }
+    if let Ok(mut log_file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(CHORUS_LOG)
+    {
+        let _ = writeln!(log_file, "role.state.changed | {} {}", role, event_kv);
+    }
+
     // Auto-drain nudge inbox on idle/waiting transition (atomic rename to prevent race)
     if state == "waiting" || state == "idle" {
         let inbox_path = format!("/tmp/voice-inbox/{}/pending-inject.txt", role);

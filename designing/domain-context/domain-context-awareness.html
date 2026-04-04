@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shared Awareness — Chorus Capability</title>
+<style>
+  body { font-family: Georgia, serif; margin: 40px 1in; padding: 0; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.8em; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  h2 { font-size: 1.3em; margin-top: 2em; color: #444; }
+  h3 { font-size: 1.1em; color: #555; margin-top: 1.5em; }
+  .policy { background: #e8f0fe; padding: 12px 16px; margin: 20px 0; border-radius: 4px; font-style: italic; }
+  .forcing { background: #fef3cd; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #d4a017; }
+  .forcing strong { color: #856404; }
+  .gap { background: #f8d7da; padding: 12px 16px; margin: 16px 0; border-radius: 4px; }
+  .gap strong { color: #721c24; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; font-size: 0.9em; }
+  th { background: #f0f0f0; }
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+  .date { color: #999; font-size: 0.85em; }
+  .flow { background: #f8f8f8; padding: 16px 20px; margin: 16px 0; font-family: monospace; font-size: 0.9em; white-space: pre-line; line-height: 1.8; }
+  .flow .actor { font-weight: bold; color: #2d5fa1; }
+  .flow .action { color: #444; margin-left: 24px; }
+</style>
+</head>
+<body>
+
+<h1>Shared Awareness</h1>
+<p class="date">2026-04-04 — Silas (#2022), built with Jeff. Source: Jeff's graph-paper sketch.</p>
+
+<div class="policy">
+Shared Awareness is the system's ability to know its own state. When it breaks, Jeff becomes the monitoring system. Five components from Jeff's sketch: Time, Pulse, Memory, Knowledge, System Context.
+</div>
+
+<h2>Purpose</h2>
+<p>L2 in the <a href="/gathering-docs/protocol-stack.html">Protocol Stack</a>. Not a domain — a <strong>capability</strong> that spans Observability, Spine, Search, and Memory domains. Provides the guarantee: <strong>any role can answer "who is active, what are they doing, and when did they last emit?" without asking Jeff.</strong></p>
+
+<h2>Five Components (from Jeff's sketch)</h2>
+<table>
+<tr><th>Component</th><th>What it provides</th><th>What ships it today</th></tr>
+<tr><td><strong>Time</strong></td><td>Accurate clock on every event and transition</td><td>Clock sync hook (#1559), wall-clock.sh, chorus prompt refresh</td></tr>
+<tr><td><strong>Pulse</strong></td><td>Heartbeat of system activity — events flowing</td><td>Spine events (chorus-log), alert-runner (60s cycle), session-watcher</td></tr>
+<tr><td><strong>Memory</strong></td><td>Prior context available without re-searching</td><td>Compound loop (context_inject.rs), Chorus index (252K rows), memory files</td></tr>
+<tr><td><strong>Knowledge</strong></td><td>Semantic understanding, not just keyword match</td><td>Hybrid search (FTS + semantic via Ollama), LanceDB (33K vectors)</td></tr>
+<tr><td><strong>System Context</strong></td><td>Infrastructure state + code + tests visible without checking</td><td>ops_awareness hook, agent-state.sh health, API health endpoint, alerts, domain crawler snapshots (code + logs + alert rules indexed hourly via com.chorus.crawler-index)</td></tr>
+</table>
+
+<h2>Context Diagram</h2>
+<p>Two products. Shared Awareness sits between them — consumed by both, owned by Chorus.</p>
+
+<div class="mermaid">
+graph TD
+    jeff(("Jeff"))
+    gathering["Gathering (24 domains)"]
+    loom["Loom"]
+
+    subgraph chorus["Chorus (product)"]
+        subgraph sa["Shared Awareness"]
+            sa_time["Time"] ~~~ sa_pulse["Pulse"] ~~~ sa_memory["Memory"]
+            sa_knowledge["Knowledge"] ~~~ sa_context["System Context"]
+        end
+        subgraph obs["Observability"]
+            obs_alerts["Alerts"] ~~~ obs_logs["Logs"]
+            obs_code["Code"] ~~~ obs_cards["Cards"]
+        end
+        subgraph coord["Coordination"]
+            c_clearing["Clearing"]
+            c_nudge["Nudge"]
+            c_interactions["Interactions"]
+        end
+        subgraph protocol["Protocol"]
+            c_spine["Spine"]
+            c_gates["Gates"]
+            c_skills["Skills"]
+            c_policy["Policy"]
+        end
+        subgraph data["Data"]
+            c_search["Search"]
+            c_memory_dom["Memory"]
+            c_kg["Knowledge Graph"]
+            c_convergence["Convergence"]
+        end
+        subgraph infra["Infrastructure"]
+            c_infra["Infra"]
+            c_toolchain["Tool Chain"]
+            c_codebase["Codebase"]
+            c_roles["Roles"]
+        end
+    end
+
+    jeff -->|"seeds, direction"| gathering
+    jeff -->|"watches"| loom
+    jeff -->|"coordinates via"| chorus
+
+    gathering -->|"depends on"| sa
+    loom -->|"depends on"| sa
+    loom -->|"reads"| protocol
+
+    c_spine -->|"feeds"| sa_pulse
+    obs -->|"feeds"| sa_context
+    c_search -->|"feeds"| sa_knowledge
+    c_memory_dom -->|"feeds"| sa_memory
+
+    coord -->|"uses"| protocol
+    coord -->|"uses"| sa
+    c_nudge -->|"delivers via"| c_infra
+    c_clearing -->|"routes via"| c_nudge
+    c_interactions -->|"gated by"| c_gates
+
+    obs_alerts -->|"checks"| c_infra
+    obs_logs -->|"indexes"| c_search
+    obs_cards -->|"reads"| protocol
+
+    c_convergence -->|"validates"| gathering
+    c_kg -->|"links"| gathering
+    sa_memory -->|"searches"| gathering
+
+    c_skills -->|"repo-tracked"| c_codebase
+    c_roles -->|"state via"| sa
+
+    style jeff fill:#fbbf24,stroke:#d97706,color:#000
+    style gathering fill:#fef3c7,stroke:#d97706,color:#000
+    style loom fill:#dbeafe,stroke:#1d4ed8,color:#000
+    style chorus fill:#ede9fe,stroke:#7c3aed,color:#000
+    style sa fill:#d1fae5,stroke:#059669,color:#000
+    style obs fill:#fee2e2,stroke:#dc2626,color:#000
+    style coord fill:#fef9c3,stroke:#ca8a04,color:#000
+    style protocol fill:#ede9fe,stroke:#6d28d9,color:#000
+    style data fill:#dbeafe,stroke:#2563eb,color:#000
+    style infra fill:#f3f4f6,stroke:#6b7280,color:#000
+</div>
+
+<p><em>Source: Jeff's graph-paper sketch + <code>chorus-product-ontology.owl</code> (64 classes, 45 domain instances)</em></p>
+
+<h2>Actor Flow</h2>
+<p>Jeff works. The system watches itself. Jeff sees state without checking.</p>
+
+<div class="mermaid">
+graph TB
+    subgraph prompt["Every Prompt - UserPromptSubmit"]
+        P1["Jeff types message"] --> P2["Extract keywords"]
+        P2 --> P3["Hybrid search: FTS + Semantic + Memory"]
+        P3 --> P4["Inject context via stderr"]
+        P4 --> P5["Role sees prior discussions"]
+    end
+
+    subgraph tool["Every Tool Call - PostToolUse"]
+        T1["Role runs Bash or Read"] --> T2["Check hook server PID"]
+        T2 --> T3["Check API health"]
+        T3 --> T4{"Degraded?"}
+        T4 -->|"Yes"| T5["Surface ops-state block"]
+        T4 -->|"No"| T6["Silent, no noise"]
+    end
+
+    subgraph alert["Every 60s - alert-runner"]
+        A1["LaunchAgent fires"] --> A2["Check tunnel URL"]
+        A2 --> A3["Check daily review"]
+        A3 --> A4["Check hook server"]
+        A4 --> A5{"Any failure?"}
+        A5 -->|"Yes, no cooldown"| A6["Fire to Bridge"]
+        A5 -->|"No"| A7["Log OK"]
+    end
+
+    subgraph demand["On Demand"]
+        D1["agent-state.sh health"] --> D2["49 agents: status"]
+        D3["gemba-tick.sh"] --> D4["Direct JSONL tail, 132ms"]
+        D5["/cs skill"] --> D6["Pipeline: tunnel + app + Fuseki"]
+    end
+
+    style P5 fill:#d4edda,stroke:#28a745
+    style T5 fill:#f8d7da,stroke:#dc3545
+    style T6 fill:#d4edda,stroke:#28a745
+    style A6 fill:#f8d7da,stroke:#dc3545
+    style A7 fill:#d4edda,stroke:#28a745
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad: true, theme: 'neutral'});</script>
+
+<h2>Services</h2>
+<table>
+<tr><th>Service</th><th>File</th><th>Hook</th><th>Owner</th><th>What it does</th></tr>
+<tr><td>Compound Loop</td><td><code>chorus-hooks/src/hooks/context_inject.rs</code></td><td>UserPromptSubmit</td><td>Silas</td><td>Hybrid search + memory scan, inject into every prompt</td></tr>
+<tr><td>Ops Awareness</td><td><code>chorus-hooks/src/hooks/ops_awareness.rs</code></td><td>PostToolUse</td><td>Silas</td><td>Surface degraded infrastructure on every tool call</td></tr>
+<tr><td>Alert Runner</td><td><code>alerting/*.yml</code> + <code>scripts/alert-runner.sh</code></td><td>LaunchAgent (60s)</td><td>Silas</td><td>Check tunnel, daily review, hook server; fire to Bridge</td></tr>
+<tr><td>Agent State</td><td><code>scripts/agent-state.sh</code></td><td>CLI</td><td>Silas</td><td>LaunchAgent lifecycle: health/status/start/stop/restart/orphans</td></tr>
+<tr><td>Health Endpoint</td><td><code>api/src/server.ts</code> (L3118)</td><td>HTTP GET</td><td>Silas</td><td>DB status, vectors, uptime, hook server functional status</td></tr>
+<tr><td>Gemba (real-time)</td><td><code>scripts/gemba-tick.sh</code></td><td>Cron (1min)</td><td>Silas</td><td>Direct JSONL tailing of observed role's session, 132ms</td></tr>
+<tr><td>Session Watcher</td><td><code>~/.chorus/scripts/chorus-watch-sessions.sh</code></td><td>LaunchAgent (fswatch)</td><td>Silas</td><td>Index new session content into Chorus SQLite</td></tr>
+<tr><td>Check Seeds</td><td><code>scripts/check-seeds.sh</code></td><td>CLI / skill</td><td>Silas</td><td>Pipeline health: tunnel + app + Fuseki + pending count</td></tr>
+</table>
+
+<h2>Forcing Functions</h2>
+<p>Components don't help if roles forget to use them. These are mechanical — no opt-in required.</p>
+
+<div class="forcing">
+<strong>Compound loop:</strong> fires on every UserPromptSubmit. The role doesn't choose to search — the hook does it for them. Zero discretion.
+</div>
+
+<div class="forcing">
+<strong>Ops awareness:</strong> fires on every PostToolUse (Bash/Read). If the API is down or alerts fired, the role sees it. 60-second cooldown prevents spam. Exit code 2 ensures visibility.
+</div>
+
+<div class="forcing">
+<strong>Alert rules:</strong> run every 60 seconds via LaunchAgent. Time-gated (don't fire before deadline), cooldown-gated (don't spam). Fire to Bridge so Jeff sees it without checking.
+</div>
+
+<div class="forcing">
+<strong>Skills in git:</strong> all 31 skills symlinked from <code>platform/skills/</code>. Edits are committable, diffable, shared. No invisible drift between sessions.
+</div>
+
+<h2>UIs</h2>
+<table>
+<tr><th>Surface</th><th>URL / Command</th><th>What Jeff sees</th></tr>
+<tr><td>Bridge</td><td><code>localhost:3470</code></td><td>Team-scan panel, alert messages, role activity</td></tr>
+<tr><td>Grafana</td><td><code>localhost:3100</code></td><td>Dashboards: Loki logs, alert history, perf baselines</td></tr>
+<tr><td>agent-state health</td><td><code>agent-state.sh health</code></td><td>49 agents: running/crashed/stopped, critical services, duplicates</td></tr>
+<tr><td>API health</td><td><code>curl localhost:3340/api/chorus/health</code></td><td>DB rows, vector count, hook status, uptime</td></tr>
+<tr><td>check-seeds</td><td><code>/cs</code></td><td>Pipeline: tunnel=200 app=200 fuseki=200, pending count</td></tr>
+</table>
+
+<h2>APIs</h2>
+<table>
+<tr><th>Endpoint</th><th>Method</th><th>Returns</th></tr>
+<tr><td><code>/api/chorus/health</code></td><td>GET</td><td>JSON: status, uptime, db.rows, vectors, hooks.status</td></tr>
+<tr><td><code>/api/chorus/search?mode=hybrid</code></td><td>GET</td><td>FTS + semantic results (compound loop source)</td></tr>
+<tr><td><code>/api/chorus/stats</code></td><td>GET</td><td>Index totals: 252K rows, source breakdown</td></tr>
+</table>
+
+<h2>Data</h2>
+<table>
+<tr><th>Artifact</th><th>Location</th><th>Updated</th></tr>
+<tr><td>Chorus index</td><td><code>~/.chorus/index.db</code> (SQLite)</td><td>Continuous (session watcher)</td></tr>
+<tr><td>LanceDB vectors</td><td><code>~/.chorus/lance/</code></td><td>On index (embed-delta)</td></tr>
+<tr><td>Role state files</td><td><code>/tmp/role-state-{role}.json</code></td><td>Every state transition</td></tr>
+<tr><td>Alert cooldown files</td><td><code>/tmp/alert-*</code></td><td>On alert fire</td></tr>
+<tr><td>Session JSONL</td><td><code>~/.claude/projects/*/sessions/*.jsonl</code></td><td>Every tool call (Claude Code)</td></tr>
+<tr><td>Observer JSONL</td><td><code>/tmp/claude-team-scan/{role}-observations.jsonl</code></td><td>PostToolUse hook</td></tr>
+<tr><td>Spine events</td><td><code>~/Library/Logs/Chorus/chorus.log</code></td><td>Every chorus-log emission</td></tr>
+</table>
+
+<h2>Tests</h2>
+<table>
+<tr><th>Test</th><th>File</th><th>What it verifies</th></tr>
+<tr><td>Continuous awareness</td><td><code>scripts/test-continuous-awareness.sh</code></td><td>Context injection firing, hybrid search, multi-role coverage, ops awareness compiled</td></tr>
+<tr><td>Compound loop</td><td><code>scripts/test-compound-loop.sh</code></td><td>Hook server running, KeepAlive, socket alive, injection across roles</td></tr>
+<tr><td>Agent state</td><td><code>scripts/test-agent-state.sh</code></td><td>Health output, status filtering, name resolution, orphan scan</td></tr>
+<tr><td>API health</td><td><code>scripts/test-api-health.sh</code></td><td>Health endpoint returns JSON with db/vectors/hooks/uptime</td></tr>
+<tr><td>Keyword extraction</td><td><code>chorus-hooks context_inject::tests</code></td><td>Stop words filtered, action verbs kept, 6-keyword limit</td></tr>
+<tr><td>BDD: agent lifecycle</td><td><code>tests/features/gates/agent_lifecycle.feature</code></td><td>7 Gherkin scenarios for agent-state.sh</td></tr>
+<tr><td>BDD: API health</td><td><code>tests/features/gates/api_health.feature</code></td><td>4 Gherkin scenarios for health endpoint</td></tr>
+</table>
+
+<h2>Alert Rules</h2>
+<table>
+<tr><th>Rule</th><th>File</th><th>Checks</th><th>Cooldown</th></tr>
+<tr><td>Hook server down</td><td><code>alerting/hook-server-down.yml</code></td><td>PID + socket</td><td>1/hour</td></tr>
+<tr><td>Tunnel down</td><td><code>alerting/tunnel-down.yml</code></td><td>Public URL + cloudflared PID</td><td>1/10min</td></tr>
+<tr><td>Daily review missing</td><td><code>alerting/daily-review-missing.yml</code></td><td>Spine event after 6:30am</td><td>1/day</td></tr>
+</table>
+
+<h2>Docs</h2>
+<ul>
+<li><a href="/gathering-docs/protocol-stack.html">Protocol Stack</a> — L2 definition, dependency model, TCP/IP analogy (Wren, 2026-03-21)</li>
+<li><code>RUNBOOK.html</code> — Deploy sequence, rollback, error classification (Wren, 2026-04-04)</li>
+<li><code>feedback_no_browser_cache.md</code> — When Jeff says broken, it's broken. Diagnose, don't blame cache.</li>
+<li><code>story_lobotomy_reversed.md</code> — Broken tooling masquerades as role performance degradation.</li>
+<li><code>feedback_idle_is_failure.md</code> — Roles should never be idle. Continuous cross-role attention.</li>
+</ul>
+
+<h2>Open Questions</h2>
+<ul>
+<li><strong>Session watcher latency (#2021):</strong> fswatch misses new session creation for up to 4 minutes. Direct JSONL tailing in gemba-tick works around it, but the indexer still lags for Chorus search.</li>
+<li><strong>Heartbeat/liveness:</strong> No mechanism to distinguish "idle" from "session crashed." Role state file says "waiting" but doesn't confirm the session is alive.</li>
+<li><strong>Desk freedom test:</strong> L2 passes when roles can detect each other's presence without Jeff. Not there yet — roles still can't reliably answer "is Kade's session alive?"</li>
+</ul>
+
+<h2>Cards Shipped (Awareness domain, this session)</h2>
+<table>
+<tr><th>#</th><th>Title</th><th>Layer contribution</th></tr>
+<tr><td>2009</td><td>LaunchAgent lifecycle tool</td><td>agent-state.sh — "who's alive?" in one command</td></tr>
+<tr><td>2010</td><td>Namespace dedup</td><td>53→49 agents, zero duplicates, clean health output</td></tr>
+<tr><td>2011</td><td>API health endpoint</td><td>Functional health, not just PID</td></tr>
+<tr><td>2008</td><td>Compound loop reboot survival</td><td>Context injection survives session boundaries</td></tr>
+<tr><td>2003</td><td>Continuous awareness gate</td><td>Hybrid search + ops surfacing on every prompt/tool</td></tr>
+<tr><td>2014</td><td>Ollama restored</td><td>Semantic search active in compound loop</td></tr>
+<tr><td>2016</td><td>Tunnel monitoring</td><td>Three-layer alert for seed delivery</td></tr>
+<tr><td>1840</td><td>Skills repo-tracked</td><td>31 skills version-controlled, no drift</td></tr>
+<tr><td>2021</td><td>Real-time gemba</td><td>Direct JSONL tailing, 132ms latency</td></tr>
+</table>
+
+</body>
+</html>

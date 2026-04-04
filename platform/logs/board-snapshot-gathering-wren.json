@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T14:38:38.432Z",
+  "timestamp": "2026-04-04T14:48:42.300Z",
   "tasks": [
     {
       "index": 2022,
@@ -19,24 +19,6 @@
       "done": false,
       "created": "2026-04-04T13:50:50Z",
       "updated": "2026-04-04T13:54:06Z"
-    },
-    {
-      "index": 2020,
-      "apiId": 2103,
-      "title": "Log reclassification phase 3 — 13 warn-to-error upgrades across middleware, seed processing, and query failures",
-      "description": "Audit found 40+ warn-level logs that describe actual errors. Phase 3 covers the 13 highest-impact: auth/security rejections (7), seed media processing failures (4), content parse failures (2). Plus 2 error-to-warn downgrades for false errors.\n\n## Experience\nWhen Jeff checks Loki for errors, he sees the real count — not a filtered subset hiding behind warn level. Every failure that affects what he sees is classified as error. No more hunting through warnings to find actual problems.\n\n## AC\n- [ ] Upgrade to error: twilio-auth (sig validation), webhook-auth, csrf, cors, pod-storage (4 patterns), service-token\n- [ ] Upgrade to error: seed-pod.service (video transcode, WAV conversion, whisper transcription, audio extraction)\n- [ ] Upgrade to error: collection.handler (blog parse), docs.handler (slug validation)\n- [ ] Downgrade to warn: SemanticSearchService init, Fuseki retry\n- [ ] Loki error count reflects reality after reclassification\n\n## Files\n- src/middleware/twilio-auth.middleware.ts\n- src/middleware/pod-storage.middleware.ts\n- src/middleware/csrf.middleware.ts\n- src/middleware/cors.middleware.ts\n- src/services/seed-pod.service.ts\n- src/handlers/collection.handler.ts\n- src/handlers/docs.handler.ts\n- src/services/fuseki-sync.service.ts",
-      "status": "WIP",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-04T13:31:07Z",
-      "updated": "2026-04-04T14:29:42Z"
     },
     {
       "index": 2000,
@@ -127,6 +109,24 @@
       "done": true,
       "created": "2026-04-04T13:37:47Z",
       "updated": "2026-04-04T13:53:23Z"
+    },
+    {
+      "index": 2020,
+      "apiId": 2103,
+      "title": "Log reclassification phase 3 — 13 warn-to-error upgrades across middleware, seed processing, and query failures",
+      "description": "Audit found 40+ warn-level logs that describe actual errors. Phase 3 covers the 13 highest-impact: auth/security rejections (7), seed media processing failures (4), content parse failures (2). Plus 2 error-to-warn downgrades for false errors.\n\n## Experience\nWhen Jeff checks Loki for errors, he sees the real count — not a filtered subset hiding behind warn level. Every failure that affects what he sees is classified as error. No more hunting through warnings to find actual problems.\n\n## AC\n- [ ] Upgrade to error: twilio-auth (sig validation), webhook-auth, csrf, cors, pod-storage (4 patterns), service-token\n- [ ] Upgrade to error: seed-pod.service (video transcode, WAV conversion, whisper transcription, audio extraction)\n- [ ] Upgrade to error: collection.handler (blog parse), docs.handler (slug validation)\n- [ ] Downgrade to warn: SemanticSearchService init, Fuseki retry\n- [ ] Loki error count reflects reality after reclassification\n\n## Files\n- src/middleware/twilio-auth.middleware.ts\n- src/middleware/pod-storage.middleware.ts\n- src/middleware/csrf.middleware.ts\n- src/middleware/cors.middleware.ts\n- src/services/seed-pod.service.ts\n- src/handlers/collection.handler.ts\n- src/handlers/docs.handler.ts\n- src/services/fuseki-sync.service.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": true,
+      "created": "2026-04-04T13:31:07Z",
+      "updated": "2026-04-04T14:39:34Z"
     },
     {
       "index": 2019,
@@ -694,6 +694,24 @@
       "updated": "2026-04-01T21:16:50Z"
     },
     {
+      "index": 1945,
+      "apiId": 2028,
+      "title": "role-state must emit spine event on every state transition — Clearing tiles go stale",
+      "description": "## Experience\nI look at the Clearing and the tiles show stale card numbers. Silas finished #2003 ten minutes ago but the tile still says #2000. The state changed but the Clearing never heard about it — because role-state writes a file but doesn't emit to the spine.\n\n## AC\n- [ ] role-state binary emits role.state.changed to chorus.log on every state transition (building, idle, blocked, observing)\n- [ ] Clearing tailer picks up the event and updates tile card number within 5s\n- [ ] No silent state changes — if the state file updates, the spine event fires\n- [ ] Integration test: set role-state, verify role.state.changed in chorus.log, verify Clearing tile updates via Socket.IO\n\nRoot cause: role-state updates /tmp/role-state-<role> but never writes to chorus.log, breaking the Clearing tile subscription chain.\n\n## Files\n- platform/scripts/role-state\n- directing/clearing/src/tailer.ts",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus",
+        "type:fix",
+        "sequence:spine"
+      ],
+      "done": true,
+      "created": "2026-04-01T20:08:38Z",
+      "updated": "2026-04-04T14:48:36Z"
+    },
+    {
       "index": 1943,
       "apiId": 2026,
       "title": "Three Chorus domains — Clearing/Pulse/Spine domain pages + actor diagrams",
@@ -924,40 +942,6 @@
       "updated": "2026-03-31T18:23:36Z"
     },
     {
-      "index": 1911,
-      "apiId": 1994,
-      "title": "Card type drives interaction pattern — fix=SWAT, new=ideation, enhance=demo, chore=direction",
-      "description": "## Experience\n\nI pull a fix card and the system shifts to SWAT mode — tighter gates, git history required, log inspection before code edits. I pull a new feature card and it shifts to ideation mode — more room to explore, lighter gates. The card type automatically sets the interaction pattern so I don't have to think about which mode I'm in.\n\n## AC\n\n- [ ] When a card is pulled to WIP, detect its type: label and set interaction pattern\n- [ ] fix → SWAT pattern: require git log + Loki search before edits (feed to #1903 gate)\n- [ ] new → ideation pattern: own-domain passthrough, lighter gates\n- [ ] enhance → demo pattern: Chorus search required before edits\n- [ ] chore → direction pattern: minimal gates\n- [ ] swat → bypass: skip all non-critical gates\n- [ ] Pattern stored in session state so hooks can read it\n\n## Files\n- chorus/platform/services/chorus-hooks/src/state.rs (read card type, set pattern)\n- chorus/platform/scripts/cards (emit pattern on pull)",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T13:55:30Z",
-      "updated": "2026-03-31T16:41:49Z"
-    },
-    {
-      "index": 1909,
-      "apiId": 1992,
-      "title": "Card type field — new/enhance/fix/chore/swat drives gate behavior",
-      "description": "## Experience\nI create a fix card and the system automatically requires git history and log inspection before anyone edits the files. I create a new feature card and the builder can go straight to building. The card type IS the gate trigger — not keyword matching on titles, not fragile heuristics.\n\n## AC\n- [ ] Card type field on every card: new, enhance, fix, chore, swat\n- [ ] cards CLI: --type flag on add (required)\n- [ ] Gate behavior driven by type: fix → git log + Loki + synthesis required; enhance → Chorus search required; new → own-domain passthrough; chore → minimal; swat → bypass\n- [ ] is_defect_fix() in hooks replaced by card type check\n- [ ] Clearing shows card type badge on detail view\n- [ ] Flow metrics can report fix:feature ratio\n\n## Design\n- [Card Type Specification](/docs/pm/artifacts/card-type-spec.html)\n- [Service Design — Pulse](/docs/pm/artifacts/service-design-pulse.html)\n- [Definition of Done](/docs/pm/artifacts/definition-of-done.html)\n\n## Files\n- chorus/platform/scripts/cards (CLI --type flag)\n- chorus/platform/services/chorus-hooks/src/hooks/memory_gate.rs (replace is_defect_fix)\n- chorus/platform/services/chorus-hooks/src/state.rs (card type from board)",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": true,
-      "created": "2026-03-31T13:34:25Z",
-      "updated": "2026-03-31T17:34:36Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1060,6 +1044,24 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
+    },
+    {
+      "index": 2031,
+      "apiId": 2114,
+      "title": "Team-scan staleness detection — consume role.state.changed events, flag roles with no state transition in 45min",
+      "description": "AC: 1. team-scan hook reads last role.state.changed timestamp from chorus.log for each role. 2. If no state change in 45min, scan output includes [STALE] flag next to role. 3. Threshold configurable. 4. Tests cover fresh, stale, and missing-event cases.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:enhance",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-04T14:48:27Z",
+      "updated": "2026-04-04T14:48:27Z"
     },
     {
       "index": 2018,
@@ -1204,24 +1206,6 @@
       "done": false,
       "created": "2026-04-01T21:37:31Z",
       "updated": "2026-04-01T21:37:31Z"
-    },
-    {
-      "index": 1945,
-      "apiId": 2028,
-      "title": "role-state must emit spine event on every state transition — Clearing tiles go stale",
-      "description": "## AC\n- [ ] role-state binary emits role.state.changed to chorus.log on every state transition (building, idle, blocked, observing)\n- [ ] Clearing tailer picks up the event and updates tile card number within 5s\n- [ ] No silent state changes — if the state file updates, the spine event fires\nRoot cause: role-state updates /tmp/role-state-<role> but never writes to chorus.log, breaking the Clearing tile subscription chain.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:fix",
-        "sequence:spine"
-      ],
-      "done": false,
-      "created": "2026-04-01T20:08:38Z",
-      "updated": "2026-04-01T20:11:00Z"
     },
     {
       "index": 1944,
