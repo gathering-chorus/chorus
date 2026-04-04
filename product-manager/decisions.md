@@ -1,5 +1,14 @@
 # Decision Log
 
+## DEC-110: Clearing is a data integration problem, not a rendering problem
+- **Date**: 2026-04-04
+- **Context**: Jeff tested the Clearing from three connection modes — localhost at desk, wifi on phone in garden, 5G at pharmacy via clearing.lightlifeurbangardens.com. Every bug found was data/integration, not UI: identity mismatch ("Jeff on public" ≠ "jeff"), session tailer not detecting sessions, router whitelist hiding human commentary, tunnel drop showing stale "connected" state, alerts not reaching role terminals. The Clearing looks fine on both form factors. The pipes are the problem.
+- **Decision**: The Clearing's quality bar is data and integration consistency across all three connection modes (localhost, wifi, 5G/public). Same messages, same visibility, same ack, same seeds — regardless of device or network. Rendering adapts to form factor, but the integration layer is identical. No feature gaps between modes.
+- **Rationale**: "The bugs feel like a lack of consistency on the data and integration mostly." Jeff's observation after a morning of live testing. Fix the pipes, the experience follows.
+- **Cards**: #1934 (ack), #2035 (visibility), #2036 (stale connection), #2037 (alert delivery)
+- **Consequences**: Every Clearing card must be tested across all three connection modes before acceptance. Integration bugs are P1, rendering bugs are P2.
+- **Status**: Active
+
 ## DEC-109: Design artifacts link to cards — ## Design section convention
 - **Date**: 2026-03-30
 - **Context**: The pair-flow-sequence diagram drove the pair gate hook (#1814), but the card didn't link to it. When Kade picked up the card, he implemented from AC text, not the design. The design was invisible — in an artifacts directory nobody searched. Service designs, sequence diagrams, borg assessments are domain-level artifacts that should travel with the work.

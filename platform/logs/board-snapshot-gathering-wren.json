@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T16:09:14.323Z",
+  "timestamp": "2026-04-04T17:37:12.235Z",
   "tasks": [
     {
       "index": 2035,
@@ -1031,6 +1031,42 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2037,
+      "apiId": 2120,
+      "title": "Alerts must inject to role terminal via nudge --force, not just Bridge POST",
+      "description": "## Experience\nCloudflare tunnel went down. Alert fired to Bridge — Jeff saw it on his phone. But Silas was idle and never saw it in his terminal. The fix command was right there in the alert text but Silas couldn't act because it never reached him.\n\n## AC\n1. All alerts (tunnel, pipeline, disk, service health) use nudge --force to inject into the owning role's terminal\n2. Alert still posts to Bridge for Jeff visibility (DEC-107: persist AND deliver)\n3. Role receiving alert can act on it in the same terminal session\n4. Tests cover: alert fires, nudge delivered to role terminal, Bridge also receives",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T17:19:05Z",
+      "updated": "2026-04-04T17:19:05Z"
+    },
+    {
+      "index": 2036,
+      "apiId": 2119,
+      "title": "Clearing shows connected when tunnel is down — stale Socket.IO connection state on 5G",
+      "description": "## Experience\nJeff is at the pharmacy on 5G, connecting via clearing.lightlifeurbangardens.com. The Clearing shows 'connected' but messages don't land. Cloudflare tunnel was down. Socket.IO held a stale connected state instead of showing disconnected.\n\n## AC\n1. Socket.IO client detects tunnel/proxy failure and shows disconnected within 10 seconds\n2. Heartbeat ping to server — if no pong within timeout, status switches to disconnected\n3. Reconnect indicator shows when re-establishing after tunnel recovery\n4. Tests cover: simulated tunnel drop shows disconnected, recovery shows reconnecting then connected",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T17:17:02Z",
+      "updated": "2026-04-04T17:17:02Z"
+    },
+    {
       "index": 2033,
       "apiId": 2116,
       "title": "Watchdog false alerts — reports stale cards already accepted, wrong card assignments for roles",
@@ -1884,38 +1920,6 @@
       "done": false,
       "created": "2026-03-26T19:28:54Z",
       "updated": "2026-03-30T13:04:01Z"
-    },
-    {
-      "index": 1707,
-      "apiId": 1790,
-      "title": "Extract inline SPARQL queries from handlers into Chorus API endpoints",
-      "description": "## Experience\nI look at the photo handler code and see SPARQL queries inlined as giant template strings. When I want to change how photos are queried, I'm digging through handler logic instead of hitting a clean API endpoint. I expect photo data access to go through Chorus API endpoints like every other domain — consistent, testable, and separated from the rendering logic.\n\n## Files\n- src/handlers/photo.handler.ts\n- src/services/sparql.service.ts\n- src/routes/api.routes.ts\n\n## AC\n- [ ] All SPARQL queries in photo handler moved to dedicated Chorus API endpoints\n- [ ] Handler calls endpoints, not inline SPARQL strings\n- [ ] Applies to getAllPhotosFromCanonical and any other Fuseki queries in the photo path\n- [ ] Pattern established for other domains to follow (music, books, garden)",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-26T10:40:03Z",
-      "updated": "2026-03-30T13:04:45Z"
-    },
-    {
-      "index": 1677,
-      "apiId": 1760,
-      "title": "Borg calibration session — peer benchmark, scoring rubric, and self-assessment review with Jeff",
-      "description": "## Experience\nI open the Borg self-assessment and ontology comparison documents and I want to walk through them together with the team. I know we'll score ourselves wrong if we grade our own work — I need an external benchmark so the scores mean something. I want to pick a system I know well, score it on the same axes, and then compare. That calibration turns the Borg assessment from an opinion into a measurement.\n\nJeff wants to walk through both Borg HTML documents together.\n\n## Files\n- product-manager/data/borg/ontology-comparison.html\n- product-manager/data/borg/self-assessment.html\n\n## AC\n- [ ] Jeff reviews ontology comparison — TOSCA vs SOSA/SSN vs K8s matrix and hybrid recommendation\n- [ ] Jeff reviews self-assessment — 7 dimensions with real data, 4/4 decision validation\n- [ ] Capture Jeff's feedback, questions, and direction for Borg next steps\n- [ ] Update Borg product roadmap based on review",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:borg"
-      ],
-      "done": false,
-      "created": "2026-03-24T20:13:59Z",
-      "updated": "2026-03-30T13:05:17Z"
     },
     {
       "index": 1721,
