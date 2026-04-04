@@ -666,57 +666,73 @@ input.addEventListener('keydown', (e) => {
 });
 
 // Voice input — Web Speech API
+// Voice capture via MediaRecorder + server-side whisper-cli (#1782)
 const micBtn = document.getElementById('mic-btn');
-let recognition = null;
-if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
 
-  let isRecording = false;
+micBtn.addEventListener('click', async () => {
+  if (isRecording) {
+    // Stop recording — MediaRecorder.onstop handles the rest
+    mediaRecorder.stop();
+    return;
+  }
 
-  micBtn.addEventListener('click', () => {
-    if (isRecording) {
-      recognition.stop();
-    } else {
-      recognition.start();
-      micBtn.classList.add('recording');
-      isRecording = true;
-    }
-  });
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+    audioChunks = [];
 
-  recognition.onresult = (event) => {
-    let transcript = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript;
-    }
-    const existing = input.value.trim();
-    if (event.results[event.results.length - 1].isFinal) {
-      input.value = existing ? existing + ' ' + transcript : transcript;
-    } else {
-      input.placeholder = transcript + '...';
-    }
-  };
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
 
-  recognition.onend = () => {
-    micBtn.classList.remove('recording');
-    isRecording = false;
-    input.placeholder = 'Type a message... (@wren @silas @kade or just type)';
-    input.focus();
-  };
+    mediaRecorder.onstop = async () => {
+      micBtn.classList.remove('recording');
+      isRecording = false;
+      stream.getTracks().forEach(t => t.stop());
 
-  recognition.onerror = (event) => {
-    micBtn.classList.remove('recording');
-    isRecording = false;
-    if (event.error !== 'no-speech') {
-      console.warn('Speech recognition error:', event.error);
-    }
-  };
-} else {
-  micBtn.style.display = 'none'; // Hide on unsupported browsers
-}
+      if (audioChunks.length === 0) return;
+
+      // Show processing state
+      micBtn.textContent = '⏳';
+      input.placeholder = 'Transcribing...';
+
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      const formData = new FormData();
+      formData.append('audio', blob, 'voice-' + Date.now() + '.webm');
+
+      try {
+        // auto-send: POST to server, get transcript, route as message
+        const resp = await fetch('/api/voice', { method: 'POST', body: formData });
+        const result = await resp.json();
+
+        if (result.transcript) {
+          // Auto-send the transcript as a jeff-message (no manual send step)
+          socket.emit('jeff-message', { text: result.transcript, from: 'jeff' }, (ack) => {
+            if (ack?.ok) {
+              input.placeholder = 'Type a message... (@wren @silas @kade or just type)';
+            }
+          });
+        } else {
+          input.placeholder = result.error || 'Transcription failed';
+          setTimeout(() => { input.placeholder = 'Type a message... (@wren @silas @kade or just type)'; }, 3000);
+        }
+      } catch (err) {
+        input.placeholder = 'Voice upload failed';
+        setTimeout(() => { input.placeholder = 'Type a message... (@wren @silas @kade or just type)'; }, 3000);
+      }
+
+      micBtn.textContent = '🎙';
+    };
+
+    mediaRecorder.start();
+    micBtn.classList.add('recording');
+    isRecording = true;
+  } catch (err) {
+    console.warn('Microphone access denied:', err);
+    micBtn.style.display = 'none';
+  }
+});
 
 function renderTiles(tiles) {
   tilesContainer.innerHTML = tiles.map(t => {
