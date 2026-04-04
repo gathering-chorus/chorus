@@ -1,37 +1,37 @@
-# Daily Ops Review — 2026-04-02
+# Daily Ops Review — 2026-04-04
 
 > Feeds Wren's morning summary. Each section: status · finding · action.
 
 ---
 
 ## 1. Hooks Health
-**YELLOW** — `cargo check` passes (no errors), 18 warnings. 4 auto-fixable; `decision_block_json` unused fn at `src/types.rs:175`.
-**Action:** Run `cargo fix --bin "chorus-hooks" -p chorus-hooks`; review remaining warnings this sprint.
+**YELLOW** — `cargo check` passes, 30 warnings (up from 18 on 04-02). 9 auto-fixable. Dead code: `decision_block_json` at `src/types.rs:175` still unresolved.
+**Action:** Run `cargo fix --bin "chorus-hooks" -p chorus-hooks`; wire or remove `decision_block_json`.
 
 ## 2. LaunchAgent /tmp Refs
-**YELLOW** — 36 plist files reference `/tmp/` for stdout/stderr logs across `proving/` and `platform/` launchagents. Pattern is systemic and pre-existing.
-**Action:** Confirm log rotation covers key agents; document as accepted risk if /tmp log loss on reboot is OK per prior review.
+**YELLOW** — 13+ plists route stdout/stderr to `/tmp/` (alert-notifier, api, clearing, context-cache ×3, cruft-scan, fuseki ×2, others). Pattern systemic and pre-existing.
+**Action:** Migrate log paths to `~/Library/Logs/chorus/` — `/tmp` is volatile and purged on reboot.
 
 ## 3. CLAUDE.md Conflicts
-**YELLOW** — `messages/claudemd/` fragment directory does not exist at the expected path. All 7 role `CLAUDE.md` files last touched 2026-04-01 — fresh individually, but no fragment diffing is possible.
-**Action:** Clarify whether claudemd fragment system was deprecated or path moved; update ops check accordingly.
+**GREEN** — All 6 role CLAUDE.md files updated 2026-04-03 or 2026-04-04. `messages/claudemd/` fragment dir in ops spec does not exist — spec path is stale.
+**Action:** Update ops spec to reference `chorus/*/CLAUDE.md`; no content conflicts detected.
 
 ## 4. CSC Compliance
-**GREEN** — No `/tmp/` hits in `chorus/messages/scripts/` or `chorus/architect/scripts/`. Clean.
-**Action:** None.
+**YELLOW** — 15+ `/tmp/` refs in `chorus/platform/scripts/`: `look.sh`, `werk-init.sh`, `bridge-subscriber.js`, `bedroom-heartbeat.sh`, `chorus-ops.sh`, `chorus-query.sh`, `listen.sh`, others.
+**Action:** Audit each for boot-persistence risk; replace with `$TMPDIR` or `~/Library/Caches/chorus/`.
 
 ## 5. Git Dirty State
 **GREEN** — Repo fully clean. `git status --short` returns empty.
 **Action:** None.
 
 ## 6. Stale WIP Cards (>48h)
-**RED** — Card `#1926` (Silas — gate integration test suite, 39/39 passing, awaiting `/acp`) last updated 2026-03-31 18:24. Age: ~54h, over threshold. Card `#1865` (photo thumbnail) also in WIP but not started.
-**Action:** Issue `/acp` for #1926 or explicitly defer. Move #1865 back to Queue — it has no active work.
+**RED** — 4 WIP cards last touched 2026-03-29 (6 days stale, >48h threshold): "Unify Chorus repo", "Clearing UI validation tests", "Wire express-prom-bundle for request metrics", "Add structured logging to messaging tier".
+**Action:** Wren to triage — assign owner or move to backlog before next session.
 
 ## 7. Domain Context Freshness
-**GREEN** — All 5 domain-context files updated 2026-04-01 or 2026-04-02. Latest shipped cards (#1956 domain crawler, #1957 awareness diagrams) align with seeds/chorus context updates.
+**GREEN** — All 5 domain-context files updated 2026-04-03 or 2026-04-04. No stale contexts.
 **Action:** None.
 
 ## 8. Disk Delta
-**YELLOW** — Baseline data anomaly: `usedBytes` decreased 464 GB → 257 GB (Mar 28→29) while `percentUsed` increased 3%→5%. Values are mutually inconsistent — likely a reporting bug in `perf-baseline.sh`.
-**Action:** Fix baseline script to emit consistent `usedBytes`/`percentUsed`; delta comparison is unreliable until corrected.
+**RED** — Week-over-week growth: 432 GB → 957 GB (+121% in 7 days). `percentUsed` field in perf-baseline JSON is corrupt (shows 2/3%; actual ~23%/~52% of 1.86 TB). Also: `errors.lastHour` bare `00` breaks JSON parser.
+**Action:** Immediate — identify what grew ~525 GB (suspect Fuseki, logs, model artifacts). Fix perf-baseline.sh JSON encoding bug.
