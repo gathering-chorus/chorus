@@ -46,9 +46,59 @@ fi
 echo "## New Activity"
 RESULTS=""
 
-# Primary: observer JSONL (written by PostToolUse hook — always current)
+# Direct session JSONL — fastest path, no indexer dependency (#2021)
+SESSION_DIR=""
+case "$ROLE" in
+  silas) SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-architect" ;;
+  kade)  SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-engineer" ;;
+  wren)  SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-product-manager" ;;
+esac
+
+if [ -n "$SESSION_DIR" ] && [ -d "$SESSION_DIR" ]; then
+  LATEST_JSONL=$(ls -t "$SESSION_DIR"/*.jsonl 2>/dev/null | head -1)
+  if [ -n "$LATEST_JSONL" ]; then
+    RESULTS=$(tail -20 "$LATEST_JSONL" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        d = json.loads(line.strip())
+        msg_type = d.get('type','')
+        ts = d.get('timestamp','')[:16] or '?'
+        if msg_type == 'assistant':
+            for block in d.get('message',{}).get('content',[]):
+                if block.get('type') == 'tool_use':
+                    name = block.get('name','?')
+                    inp = block.get('input',{})
+                    if name == 'Bash':
+                        cmd = inp.get('command','')[:100]
+                        desc = inp.get('description','')
+                        label = desc if desc else f'bash: {cmd}'
+                        # Detect board ops
+                        if 'cards ' in cmd or 'board-ts ' in cmd:
+                            label = f'board op: {cmd[:90]}'
+                        print(f'{ts}|{label}')
+                    elif name == 'Read':
+                        path = inp.get('file_path','')
+                        print(f'{ts}|reading {path.split("/")[-1]}')
+                    elif name == 'Edit' or name == 'Write':
+                        path = inp.get('file_path','')
+                        print(f'{ts}|editing {path.split("/")[-1]}')
+                    elif name == 'Grep':
+                        print(f'{ts}|searching: {inp.get("pattern","")}')
+                    else:
+                        print(f'{ts}|{name}')
+        elif msg_type == 'human':
+            content = d.get('message',{}).get('content','')
+            if isinstance(content, str) and len(content) > 5 and not content.startswith('<'):
+                print(f'{ts}|user: {content[:100]}')
+    except: pass
+" 2>/dev/null || true)
+  fi
+fi
+
+# Fallback 1: observer JSONL (written by PostToolUse hook)
 OBS_FILE="/tmp/claude-team-scan/${ROLE}-observations.jsonl"
-if [ -f "$OBS_FILE" ]; then
+if [ -z "$RESULTS" ] && [ -f "$OBS_FILE" ]; then
   RESULTS=$(tail -10 "$OBS_FILE" | python3 -c "
 import sys, json
 for line in sys.stdin:

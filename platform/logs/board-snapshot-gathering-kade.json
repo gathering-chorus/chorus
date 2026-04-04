@@ -1,7 +1,25 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T13:18:04.431Z",
+  "timestamp": "2026-04-04T13:53:19.896Z",
   "tasks": [
+    {
+      "index": 2021,
+      "apiId": 2104,
+      "title": "Gemba blind spot on reboot — session indexer doesn't detect new sessions for minutes",
+      "description": "Session indexer (chorus-watch-sessions.sh via fswatch) doesn't detect new sessions for 4+ minutes after a role reboots. Jeff watched Kade reboot and the gemba showed stale data the entire time. This makes observation useless during the most critical moment — when a role comes back up.\n\n## Experience\nJeff reboots a role and watches gemba. He should see the role boot, read its session-start file, and start working — in real time. Instead: 4 minutes of stale data from the previous session. Jeff is blind during the exact moment he most needs visibility.\n\n## AC\n- [ ] gemba-tick shows new session activity within 30 seconds of reboot\n- [ ] gemba-tick.sh reads session JSONL directly instead of depending on the index\n- [ ] Works for all three roles (wren, silas, kade)\n- [ ] No regression on indexed search — direct tail is supplementary, not replacement\n\n## Files\n- platform/scripts/gemba-tick.sh\n- platform/scripts/gemba-start.sh",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T13:37:47Z",
+      "updated": "2026-04-04T13:39:52Z"
+    },
     {
       "index": 2000,
       "apiId": 2083,
@@ -19,24 +37,6 @@
       "done": false,
       "created": "2026-04-03T15:45:28Z",
       "updated": "2026-04-03T15:45:52Z"
-    },
-    {
-      "index": 1959,
-      "apiId": 2042,
-      "title": "Domain crawler v2 — add code, logs, and alerts to the crawl",
-      "description": "## Experience\nI crawl a domain and see everything — not just cards and conversations, but the actual code, the logs it emitted today, and the alerts configured for it. Full operational picture of any domain from one query.\n\n## AC\n1. Code facet: codebase scan by directory structure and imports, mapped to domain\n2. Logs facet: Loki query filtered by domain name, recent entries\n3. Alerts facet: Grafana alert rules tagged by domain\n4. All three integrated into existing crawl response alongside cards, conversations, OWL, spine\n5. BDD scenarios for each new facet\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/domain-crawler.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n\n## Context\nCurrent crawler (#1956) joins cards, conversations, OWL, and spine. Jeff wants the full operational picture: 7 data sources per domain. Code scan by directory, Loki for logs, Grafana for alerts.",
-      "status": "WIP",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:chorus",
-        "type:enhance",
-        "visibility"
-      ],
-      "done": false,
-      "created": "2026-04-02T10:26:28Z",
-      "updated": "2026-04-04T13:16:12Z"
     },
     {
       "index": 1872,
@@ -57,22 +57,40 @@
       "updated": "2026-04-04T13:11:31Z"
     },
     {
-      "index": 1840,
-      "apiId": 1923,
-      "title": "Repo-track all skills — ~/.claude/skills/ canonical source in chorus, symlinks out",
-      "description": "## Experience\nI edit a skill during a card and can't commit the change. Git can't see it, can't diff it, can't track it. 30+ skills live outside the repo in ~/.claude/skills/ with no version control. Edits vanish between sessions.\n\n## AC\n1. All skill SKILL.md files have canonical source inside the chorus repo\n2. ~/.claude/skills/ contains symlinks pointing to repo source, not standalone files\n3. Skill edits show up in git diff and can be committed normally\n4. Existing skill content preserved — no content loss during migration\n5. Document the convention so new skills get created in-repo first\n\n## Files\n- platform/skills/ (new canonical location)\n- ~/.claude/skills/ (symlinks)",
+      "index": 1866,
+      "apiId": 1949,
+      "title": "Remove stale Docker references — 275 refs across codebase for retired infrastructure",
+      "description": "## Experience\nI ask where Fuseki is and three roles say Docker. The code says Docker. The CLAUDE.md says Docker. The permission profiles allow Docker compose. But Docker has been retired for weeks — Fuseki runs natively. Every stale reference is a lie waiting to confuse the next role that reads it.\n\n## AC\n1. app-state.sh: remove all Docker Fuseki lifecycle commands, keep only native LaunchAgent management\n2. CLAUDE.md (jeff-bridwell-personal-site): remove Docker network, Docker log driver, Docker DNS references\n3. README.md: update from Terraform+Docker to LaunchAgent-based\n4. TEAM_PROTOCOL.md: remove Docker network references, update Fuseki entry\n5. Permission profiles (base.json, silas.json): remove Docker compose allows\n6. settings.local.json: remove Docker compose allow\n7. server.js line 1: remove Docker development message\n8. validate-ttl.sh: remove container name reference\n9. infra_guardrails.rs: evaluate which Docker guards are still needed (content matching vs command matching)\n10. Delete dead files: docker-compose.yml, Dockerfile, .dockerignore, docker/ directory, terraform/Dockerfile, terraform/app-state.sh\n11. Leave alone: archived workflows, ontology ServiceRuntimeType, the test that asserts Docker absence\n\n## Files\napp-state.sh, scripts/app-state.sh, CLAUDE.md, README.md, server.js, scripts/validate-ttl.sh, docker-compose.yml, Dockerfile, .dockerignore, terraform/Dockerfile (app repo)\nTEAM_PROTOCOL.md, proving/config/profiles/base.json, proving/config/profiles/silas.json, platform/services/chorus-hooks/src/hooks/infra_guardrails.rs, .claude/settings.local.json (chorus repo)\n\n## Context\nDocker scan found 275 refs. Fuseki moved to native LaunchAgent today (#1833, #1856). Three remaining Docker containers (Vikunja, Navidrome, webvowl) — check if those still need Docker before deleting compose file.",
       "status": "WIP",
-      "owner": "Silas",
+      "owner": "Kade",
       "priority": "P1",
       "domains": [
         "chunk:ops",
-        "domain:chorus",
+        "domain:infrastructure",
         "type:chore",
         "infrastructure"
       ],
       "done": false,
-      "created": "2026-03-29T21:17:05Z",
-      "updated": "2026-04-04T13:15:24Z"
+      "created": "2026-03-30T16:04:44Z",
+      "updated": "2026-04-04T13:41:55Z"
+    },
+    {
+      "index": 2019,
+      "apiId": 2102,
+      "title": "Index domain crawler snapshots into Chorus search — periodic crawl writes to SQLite/LanceDB for compound loop discovery",
+      "description": "## Experience\nJeff says 'seeds are broken' and the compound loop automatically surfaces not just prior conversations about seeds, but today's Loki errors, the alert rules watching it, and the code files that implement it. Operational context compounds alongside conversation context — no manual crawl needed.\n\n## AC\n- [ ] Periodic crawler runs on schedule (LaunchAgent or cron) for each active domain\n- [ ] Crawler results written as indexed messages into Chorus SQLite — same format as session messages\n- [ ] Hybrid search returns crawler snapshots alongside conversation results\n- [ ] Snapshot freshness: code/alerts refresh daily, logs refresh hourly\n- [ ] Existing compound loop (context_inject.rs) finds crawler data with zero code changes\n\n## Files\n- platform/api/src/server.ts (crawler endpoint — source data)\n- platform/scripts/index-crawler-snapshots.sh (new — periodic indexer)\n- platform/services/chorus-hooks/src/hooks/context_inject.rs (verify — no changes needed)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:chorus",
+        "type:enhance",
+        "visibility"
+      ],
+      "done": true,
+      "created": "2026-04-04T13:24:51Z",
+      "updated": "2026-04-04T13:30:49Z"
     },
     {
       "index": 2017,
@@ -444,6 +462,24 @@
       "done": true,
       "created": "2026-04-02T10:36:17Z",
       "updated": "2026-04-02T15:33:04Z"
+    },
+    {
+      "index": 1959,
+      "apiId": 2042,
+      "title": "Domain crawler v2 — add code, logs, and alerts to the crawl",
+      "description": "## Experience\nI crawl a domain and see everything — not just cards and conversations, but the actual code, the logs it emitted today, and the alerts configured for it. Full operational picture of any domain from one query.\n\n## AC\n1. Code facet: codebase scan by directory structure and imports, mapped to domain\n2. Logs facet: Loki query filtered by domain name, recent entries\n3. Alerts facet: Grafana alert rules tagged by domain\n4. All three integrated into existing crawl response alongside cards, conversations, OWL, spine\n5. BDD scenarios for each new facet\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/domain-crawler.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n\n## Context\nCurrent crawler (#1956) joins cards, conversations, OWL, and spine. Jeff wants the full operational picture: 7 data sources per domain. Code scan by directory, Loki for logs, Grafana for alerts.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:memory",
+        "domain:chorus",
+        "type:enhance",
+        "visibility"
+      ],
+      "done": true,
+      "created": "2026-04-02T10:26:28Z",
+      "updated": "2026-04-04T13:25:36Z"
     },
     {
       "index": 1957,
@@ -920,41 +956,6 @@
       "updated": "2026-03-31T13:20:47Z"
     },
     {
-      "index": 1905,
-      "apiId": 1988,
-      "title": "Clearing card detail — click a card event to see full card view inline",
-      "description": "## Experience\n\nI see a card event on the Clearing — '#1885 pulled by kade' — but I can't see what that card is about without switching to the board. I click the card reference and the full card expands inline: title, AC, owner, status, blast radius. I stay in the Clearing and get the context I need.\n\n## AC\n\n- [ ] Clicking a card ID (#1234) in the domains panel expands an inline detail view below the card row\n- [ ] Detail shows: full title, owner, status, AC items (if available)\n- [ ] Click again to collapse\n- [ ] Detail fetched from board-ts view API or cached card data\n- [ ] No page navigation — stays in the Clearing\n\n## Files\n- chorus/directing/clearing/public/index.html\n- chorus/directing/clearing/src/server.ts (card detail API if needed)",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T13:10:16Z",
-      "updated": "2026-03-31T13:40:56Z"
-    },
-    {
-      "index": 1903,
-      "apiId": 1986,
-      "title": "Context synthesis gate must check git history — require git log on edited file before fix-context writes",
-      "description": "## Experience\nI fix seed.handler.ts for the 18th time and nobody reads the git history first. The same mistakes repeat because nobody checks what was tried before. The synthesis gate catches missing Chorus search, but doesn't check if you read the commit history of the file you're about to edit. Fix cards should require git log evidence.\n\n## AC\n- [ ] Synthesis gate checks for git log/blame on the target file in session history (fix cards only)\n- [ ] Gate reads card type label (type:fix) — only enforces git history for fix/swat cards\n- [ ] Gate message tells the role to run git log on the specific file\n- [ ] Existing Chorus search + synthesis checks still apply (additive, not replacement)\n\n## Files\n- platform/services/chorus-hooks/src/hooks/memory_gate.rs (add git history check)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:56:03Z",
-      "updated": "2026-03-31T15:48:33Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1059,6 +1060,77 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2023,
+      "apiId": 2106,
+      "title": "Board data quality audit — duplicate labels, missing sequences, orphan tags, position integrity",
+      "description": "",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-04T13:53:10Z",
+      "updated": "2026-04-04T13:53:10Z"
+    },
+    {
+      "index": 2022,
+      "apiId": 2105,
+      "title": "L2 Awareness service design — as-is inventory of compound loop, ops awareness, gemba, alerts, health",
+      "description": "The team keeps being surprised by what's already built. L2 (Awareness) has shipped components scattered across hooks, scripts, alerts, and agents with no single view.\n\n## Experience\nJeff opens the Awareness domain page and sees everything: docs, UIs, APIs, data, tests, services. One page, one answer. No more 'do we have this?' — it's all there.\n\n## AC\n- [ ] Domain page rendered as HTML with sections: Docs, UIs, APIs, Data, Tests, Services\n- [ ] Each section lists concrete artifacts with file paths and descriptions\n- [ ] References protocol-stack.html L2 section as the architecture doc\n- [ ] Shows forcing functions, not just components\n\n## Files\n- designing/domain-context/domain-context-awareness.html\n- product-manager/artifacts/awareness-service-design.html",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new",
+        "visibility"
+      ],
+      "done": false,
+      "created": "2026-04-04T13:50:50Z",
+      "updated": "2026-04-04T13:52:38Z"
+    },
+    {
+      "index": 2020,
+      "apiId": 2103,
+      "title": "Log reclassification phase 3 — 13 warn-to-error upgrades across middleware, seed processing, and query failures",
+      "description": "Audit found 40+ warn-level logs that describe actual errors. Phase 3 covers the 13 highest-impact: auth/security rejections (7), seed media processing failures (4), content parse failures (2). Plus 2 error-to-warn downgrades for false errors.\n\n## Experience\nWhen Jeff checks Loki for errors, he sees the real count — not a filtered subset hiding behind warn level. Every failure that affects what he sees is classified as error. No more hunting through warnings to find actual problems.\n\n## AC\n- [ ] Upgrade to error: twilio-auth (sig validation), webhook-auth, csrf, cors, pod-storage (4 patterns), service-token\n- [ ] Upgrade to error: seed-pod.service (video transcode, WAV conversion, whisper transcription, audio extraction)\n- [ ] Upgrade to error: collection.handler (blog parse), docs.handler (slug validation)\n- [ ] Downgrade to warn: SemanticSearchService init, Fuseki retry\n- [ ] Loki error count reflects reality after reclassification\n\n## Files\n- src/middleware/twilio-auth.middleware.ts\n- src/middleware/pod-storage.middleware.ts\n- src/middleware/csrf.middleware.ts\n- src/middleware/cors.middleware.ts\n- src/services/seed-pod.service.ts\n- src/handlers/collection.handler.ts\n- src/handlers/docs.handler.ts\n- src/services/fuseki-sync.service.ts",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "ops"
+      ],
+      "done": false,
+      "created": "2026-04-04T13:31:07Z",
+      "updated": "2026-04-04T13:31:07Z"
+    },
+    {
+      "index": 2018,
+      "apiId": 2101,
+      "title": "Board domain total doesn't match sub-chunk sum — Chorus shows 46 total but sub-groups add to 5",
+      "description": "",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:fix",
+        "ops"
+      ],
+      "done": false,
+      "created": "2026-04-04T13:23:46Z",
+      "updated": "2026-04-04T13:23:46Z"
+    },
+    {
       "index": 1996,
       "apiId": 2079,
       "title": "Doc-catalog reclassification — group by document type, not source directory",
@@ -1069,7 +1141,8 @@
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:fix"
+        "type:fix",
+        "strategy"
       ],
       "done": false,
       "created": "2026-04-03T10:27:21Z",
@@ -1177,7 +1250,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:new",
-        "gates"
+        "ops"
       ],
       "done": false,
       "created": "2026-04-01T21:37:31Z",
@@ -1231,7 +1304,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "gates"
+        "strategy"
       ],
       "done": false,
       "created": "2026-04-01T14:47:27Z",
@@ -1411,7 +1484,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "clearing"
+        "spine"
       ],
       "done": false,
       "created": "2026-03-31T15:00:52Z",
@@ -1429,7 +1502,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "visibility"
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-31T14:40:55Z",
@@ -1483,7 +1556,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:chore",
-        "icd"
+        "ops"
       ],
       "done": false,
       "created": "2026-03-31T13:08:56Z",
@@ -1501,7 +1574,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:chore",
-        "icd"
+        "spine"
       ],
       "done": false,
       "created": "2026-03-31T12:50:14Z",
@@ -1537,7 +1610,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "spine"
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-31T12:18:14Z",
@@ -1555,7 +1628,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "visibility"
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-31T11:44:12Z",
@@ -1573,7 +1646,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "visibility"
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-31T00:19:14Z",
@@ -1609,29 +1682,11 @@
         "chunk:ops",
         "domain:chorus",
         "type:chore",
-        "infrastructure"
+        "ops"
       ],
       "done": false,
       "created": "2026-03-30T16:41:35Z",
       "updated": "2026-03-30T16:49:21Z"
-    },
-    {
-      "index": 1866,
-      "apiId": 1949,
-      "title": "Remove stale Docker references — 275 refs across codebase for retired infrastructure",
-      "description": "## Experience\nI ask where Fuseki is and three roles say Docker. The code says Docker. The CLAUDE.md says Docker. The permission profiles allow Docker compose. But Docker has been retired for weeks — Fuseki runs natively. Every stale reference is a lie waiting to confuse the next role that reads it.\n\n## AC\n1. app-state.sh: remove all Docker Fuseki lifecycle commands, keep only native LaunchAgent management\n2. CLAUDE.md (jeff-bridwell-personal-site): remove Docker network, Docker log driver, Docker DNS references\n3. README.md: update from Terraform+Docker to LaunchAgent-based\n4. TEAM_PROTOCOL.md: remove Docker network references, update Fuseki entry\n5. Permission profiles (base.json, silas.json): remove Docker compose allows\n6. settings.local.json: remove Docker compose allow\n7. server.js line 1: remove Docker development message\n8. validate-ttl.sh: remove container name reference\n9. infra_guardrails.rs: evaluate which Docker guards are still needed (content matching vs command matching)\n10. Delete dead files: docker-compose.yml, Dockerfile, .dockerignore, docker/ directory, terraform/Dockerfile, terraform/app-state.sh\n11. Leave alone: archived workflows, ontology ServiceRuntimeType, the test that asserts Docker absence\n\n## Context\nDocker scan found 275 refs. Fuseki moved to native LaunchAgent today (#1833, #1856). Three remaining Docker containers (Vikunja, Navidrome, webvowl) — check if those still need Docker before deleting compose file.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:infrastructure",
-        "type:chore",
-        "infrastructure"
-      ],
-      "done": false,
-      "created": "2026-03-30T16:04:44Z",
-      "updated": "2026-03-30T20:54:45Z"
     },
     {
       "index": 1863,
@@ -1663,7 +1718,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:chore",
-        "icd"
+        "ops"
       ],
       "done": false,
       "created": "2026-03-30T13:28:46Z",
@@ -1734,7 +1789,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:enhance",
-        "spine"
+        "ops"
       ],
       "done": false,
       "created": "2026-03-30T10:27:21Z",
@@ -1752,7 +1807,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "content"
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-29T18:14:40Z",
@@ -1770,7 +1825,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "gates"
+        "strategy"
       ],
       "done": false,
       "created": "2026-03-29T11:31:21Z",
@@ -1806,7 +1861,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "clearing"
+        "spine"
       ],
       "done": false,
       "created": "2026-03-28T11:07:57Z",
@@ -1858,7 +1913,8 @@
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "werk"
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
@@ -1874,7 +1930,8 @@
       "priority": "P2",
       "domains": [
         "chunk:app",
-        "domain:chorus"
+        "domain:chorus",
+        "werk"
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
@@ -1895,55 +1952,6 @@
       "done": false,
       "created": "2026-03-27T12:16:43Z",
       "updated": "2026-03-30T13:03:20Z"
-    },
-    {
-      "index": 1739,
-      "apiId": 1822,
-      "title": "Scanned photo dating strategy — dateTaken vs dateDigitized for physical archive",
-      "description": "## Experience\nI have boxes of family photos going back to the 1880s. When I scan them, the scanner stamps today's date. So my grandmother's 1920 portrait sorts next to yesterday's iPhone shot. I need the system to know the difference between when a photo was taken and when it was digitized, and I need a way to say \"this folder is roughly 1960s Europe trip\" without dating every single print.\n\n## AC\n1. ICD extended with dateTaken (original, estimated) and dateDigitized (scan date) as separate fields\n2. Confidence level on dateTaken — exact, year, decade, unknown\n3. Batch scanning workflow: folder-level date ranges (e.g. '1960s Europe trip')\n4. Era 0 (pre-digital) authority rules in merge logic\n5. Decision: manual annotation vs AI vision vs context clues for date estimation\n\n## Why\n5K+ physical photos spanning 1880s-1985. Scanners write today's date. The real date is in Jeff's memory or context clues. Without separating dateTaken from dateDigitized, scanned photos sort to 2026 instead of 1920. The family archive needs both timestamps.",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-26T20:54:02Z",
-      "updated": "2026-03-30T13:03:39Z"
-    },
-    {
-      "index": 1736,
-      "apiId": 1819,
-      "title": "Sequence diagram — /pipeline flow",
-      "description": "## Experience\nI want to see how a multi-card pipeline flows — how Wren drives it, when roles get nudged, and where I come in for the demo at the end. A sequence diagram makes the orchestration legible at a glance. Same dark-theme HTML as the other Chorus skill diagrams so they form a complete visual reference.\n\n## Files\n- product-manager/artifacts/sequence-pipeline.html\n- jeff-bridwell-personal-site/public/gathering-docs/sequence-pipeline.html\n\n## AC\n1. /pipeline sequence diagram — multi-card pipeline flow (Wren drives, roles nudge on completion, Jeff sees demo at end)\n2. HTML dark theme matching pair-flow-sequence.html\n3. Added to doc-catalog\n\n## Why\nProduct documentation for Chorus interaction skills.",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P3",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-26T20:23:09Z",
-      "updated": "2026-04-01T00:39:34Z"
-    },
-    {
-      "index": 1731,
-      "apiId": 1814,
-      "title": "Diagnose AirPlay stale session — Library HomePod silent from Mac",
-      "description": "## Experience\nI tell Siri to play music on the HomePod and it works. Then I try to AirPlay from my Mac and nothing comes out — the Mac shows it's connected, HTTP 200s are flowing, but silence. The only fix is unplugging the HomePod and plugging it back in. I need this to either just work or have a software workaround that doesn't require me to physically touch the HomePod.\n\n## AC\n1. Identify root cause: HomePod plays via Siri but silent via Mac AirPlay. Transport shows HTTP 200s, Mac shows connected, no audio output.\n2. Music.app logs show 'Missing locationUrl to make a request' — stale discovery cache\n3. Document workaround (power cycle HomePod) and permanent fix if one exists\n4. Check if coreaudiod restart resolves without HomePod power cycle\n\n## Why\nAirPlay from Library Mac to Library HomePod fails frequently. Only fix is unplug/replug HomePod. Affects music playback for Jeff. Navidrome bypasses Apple Music but still needs AirPlay to reach HomePod.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P3",
-      "domains": [
-        "chunk:ops",
-        "domain:music"
-      ],
-      "done": false,
-      "created": "2026-03-26T19:28:54Z",
-      "updated": "2026-03-30T13:04:01Z"
     },
     {
       "index": 1721,
