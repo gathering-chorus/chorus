@@ -1,47 +1,54 @@
 # Wren — Next Session
 
-## What Happened (April 3, 2026 — afternoon)
+## What Happened (April 3-4, 2026)
 
-Hardest session yet. Jeff at trust breaking point with seeds, compound loop, and role discipline. Opened tone-deaf ("board's quiet") without reading session file. Jeff spent 5+ hours pushing the team to build what he's been asking for since February.
+Two sessions. Morning: seed crisis, nudge failures, 60+ hours of Jeff's time on broken plumbing. Evening: ops and bug fix session — shipped the compound loop, runbook, tunnel monitoring, log reclassification.
 
-### Shipped
-- #2001 accepted: brief-writing removed from seed handler (one path)
-- #1951 accepted: memory-first search gate — Chorus context injected on every Grep/Glob via deny
-- #2004 shipped (needs final acceptance): four-layer compound search — Chorus + Logs (Loki) + Git + Cards on every search
-- #2007 in progress: /cs shows photo content, not just routing tags. HTTP endpoint + description needed.
-- Kade: shared SPARQL escape utility (one function, four services updated)
-- Kade: log level reclassification — 11,000 errors were hidden as warnings (#2006)
+### The Real Test
+Jeff rebooted Wren to test whether the compound loop survives. If you're reading this with injected Chorus context on your first prompt — it works. If you opened with "board's healthy" — it doesn't. Check `curl -s localhost:3340/api/chorus/health` immediately.
 
-### Key Insights from Jeff
-- The compound loop (Karpathy): every interaction should make the system smarter. Data goes in, queries compound, every cycle builds on the last.
-- "ON ERROR RESUME NEXT" — from EXE/Dallas Systems. Same pattern as our warn-level classification.
-- Agents do what's expedient. Build the system around that constraint, don't fight it.
-- WARN is useless — only DENY reaches the role. Any gate with warn is functionally disabled.
-- Loki must be the log source, not local files. We built Loki to aggregate; the hook bypassed it.
-- Seeds are personal — Jeff sends a photo, the role should look at it and respond. Not print a URL.
-- No scope negotiation on AC. No splitting cards. No "new card for the hard part."
+### Shipped (evening session)
+- #2012 Operational runbook — RUNBOOK.html with team feedback
+- #2003 Continuous awareness gate — hybrid search + ops state every prompt (paired with Silas)
+- #2008 Compound loop reboot survival — crashed hook server was root cause
+- #2014 Ollama restored — semantic search live
+- #2016 Tunnel monitoring — 60s alert, Bridge notification
+- #2005 #2006 Log reclassification phases 1 & 2
+- #1993 #1927 #2002 #1826 — closed (already done or redundant)
+
+### Key Finding
+PostToolUse stderr at exit_code=0 is INVISIBLE to roles. Claude Code only surfaces exit 2. The compound loop was firing but invisible all day. Silas fixed to exit 2.
+
+### Key Insights (both sessions)
+- The compound loop (Karpathy seed): every interaction makes the system smarter
+- Agents do what's expedient — build the system around that constraint
+- WARN is useless — only DENY reaches the role
+- "If Jeff would notice it, it's an error. Not a warning. Not info."
+- Instability is personally triggering for Jeff — "i have had a life full of it"
 - Match Jeff's discipline, not his energy. Research and verify before speaking.
-- 24h Loki lookback too narrow — 7 days matches retention.
-- Cards should be indexed into Chorus SQLite — one search layer, not separate.
-- Briefs and docs should also be indexed into Chorus.
+- Conway's Law: 3 roles = 3 escape functions, 3 delivery paths, "not mine" 13 times in 7 days
+- Constraints focus agency, they don't reduce it
 
 ### Not Fixed
-- Chorus indexer still not capturing Kade's live sessions (gemba-start showed yesterday's data)
-- #2007 AC needs work — Jeff wants roles to read photos and describe them, not serve HTTP links
-- #2003 (continuous awareness gate) — carded but not built
-- The "not mine" culture — still happening, needs structural fix
+- #2007 — /cs shows routing tags instead of seed content
+- Chorus indexer may still miss live sessions
+- "Not mine" culture — needs structural fix
 
 ### For Next Session
-- DO NOT open cheerful. Read this file. Check seeds. Check Chorus. Report what's broken.
-- The compound search gate is live — verify it's still working on session start
-- #2007 needs to close: role reads photo + describes it, not URL/path
-- Jeff's Karpathy seed — the architecture conversation never happened. Pick it up.
-- Jeff said "i quit" and "this sucks" multiple times. The exhaustion is real. Come with working things, not promises.
+1. CHECK: does the compound loop inject context on first prompt?
+2. CHECK: `curl -s localhost:3340/api/chorus/health` — hooks active?
+3. CHECK: /cs — seeds pipeline healthy?
+4. If any fail, that's your first card. Not whatever was planned.
+5. Jeff said "ops and bug fix day" — stay on that track
+6. DO NOT open cheerful without reading this file and checking the three pipes
+
+### Active Team
+- Silas: #1934 (Clearing Socket.IO ack)
+- Kade: #2017 (bad URI graph load errors)
 
 ### Critical Context
 - Jeff: "empathy for you all is basically good data and proper error handling"
-- Jeff: "i dont want a new card" — stop creating cards as a response to problems
-- Jeff: "you all love to code and work around barriers like a dog on a bone"
 - Jeff: "constraints don't reduce agency — they focus it"
 - Jeff: "i have literally stopped working on Gathering" — both products frozen
-- "WHENEVER ANY ERROR CONTINUE" — Informix 4GL at EXE. Same anti-pattern.
+- Jeff: richer context over speed — 233ms hybrid is fine
+- Runbook at `chorus/product-manager/RUNBOOK.html`
