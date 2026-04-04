@@ -1,32 +1,41 @@
 # Kade — Next Session
 
 ## Accomplished 2026-04-04
-- #2005: foaf prefix added to COMMON_PREFIXES, service.down warn→error in shim.rs
-- #2017: Bad URI graph load errors verified resolved by #1995
-- #2007: /cs shows photo seeds with media URLs, roles read and describe images
-- #1959: Domain crawler v2 — code scan + Loki logs + alerting rules per domain
-- #2019: Crawler snapshots indexed into Chorus search for compound loop discovery
-- Gemba on Silas: #2009, #2010, #2011, #2008, #2003 — caught perf-baseline false positive, binary path leak, stop word issue
-- Reviewed Wren's RUNBOOK.html — 7 corrections sent
+- #1866: Docker refs cleanup — 5 dead files deleted, guardrails messages updated, TEAM_PROTOCOL Fuseki refs fixed
+- #2024: Cards CLI completeness (pair w/ Wren) — sequence label prefix fix, untag, bulk-move, add --sequence warn
+- #2020: Log reclassification phase 3 — 13 warn→error, 1 error→warn across 8 files
+- #2018: Clearing domain subtotals — unsequenced cards get sub-group header
+- #2034: Mobile streams pane — fixed positioning with bottom offset
+- #2041: Context synthesis gate — skip new files with no git history
+- #2042: Log-first gate — skip lint/build error context
+- #2043: App repo dirty file accumulation — committed cross-role changes
+- #2036: Clearing connection heartbeat — 8s ping/10s timeout detects tunnel failure
+- #1782: Voice capture — MediaRecorder + whisper-cli + HTTPS for LAN mic + body parser fix
+- Red-penned Wren's engineering + product manuals (v2)
+- Reviewed Silas's Chorus context diagram (7 findings)
+- Domain decomposition chat with Wren — coherence = colocation
+- Feedback on 7 Silas cards (#1945, #2031, #2035, #2037, #2033, #1939, #1938)
 
 ## WIP
 None.
 
-## Next cards (my queue)
-- #1865 Photo detail shows thumbnail instead of full image (P2)
-- #1631 Name face clusters (P3)
-- #1630 Rebuild semantic embeddings (P2)
-- #1619 Stamp records with source-chain provenance (P2)
+## Next cards (Clearing sequence per Wren)
+- #1763 Werk Instruments tab (P2)
+- #1762 Werk Contract tab (P2)
+- #1761 Werk Flow Metrics tab (P2)
 
 ## Pending
-- Verify com.chorus.crawler-index LaunchAgent is running (Silas set up hourly at :15)
-- Verify crawler snapshots appear in context_inject results after first hourly run
-- 3 pre-existing Rust test failures in search_hierarchy — not mine but worth investigating
+- Silas #1938 CSC guard: verify /tmp/bridge-audio-uploads/ is on allowlist (flagged in feedback)
+- Clearing server restart needed after any chorus-hooks rebuild (service uses old binary until restart)
+- 3 pre-existing Rust test failures in search_hierarchy — still unresolved
 
 ## Notes
-- shim.rs service health checks now error-level (was warn) — monitor for false positives
-- /cs skill updated to instruct roles to read photo images and describe them
-- agent-state.sh is the new tool for LaunchAgent lifecycle (replaces raw launchctl)
+- Voice capture works on all 3 connection modes (localhost, LAN HTTPS :3471, 5G tunnel)
+- Self-signed cert at ~/.chorus/certs/ for LAN HTTPS — Jeff accepted it on phone
+- Jeff connecting domain decomposition to Staples experience — 40 domain teams, repos as org chart for agents
+- Pair gate blocked a critical bugfix (body parser ordering) — Jeff overrode. Gate needs a swat/critical escape hatch.
 
 ## Session feedback
-- Jeff was mad about #2007 — seeds showing routing tags instead of content. That's the system failing to receive what he gave it. Treat seed content with the same care as a person receiving a message.
+- Jeff: "it does not feel clean" about gate error accumulation — led to #2041/#2042/#2043 fixes
+- Jeff: "i dont want to have a token that expires" — body parser bug prevented login, not token expiry
+- Jeff: "i want to use it like a real microphone" — full MediaRecorder pipeline, not browser Speech API
