@@ -1,7 +1,25 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T14:48:41.992Z",
+  "timestamp": "2026-04-04T14:58:45.668Z",
   "tasks": [
+    {
+      "index": 2031,
+      "apiId": 2114,
+      "title": "Team-scan staleness detection — consume role.state.changed events, flag roles with no state transition in 45min",
+      "description": "team-scan shows role activity but can't tell Jeff if a role has gone dark. A role that hasn't changed state in 45 minutes could be stuck, crashed, or just thinking — but Jeff can't tell without checking each screen.\n\n## Experience\nJeff glances at team-scan and sees [STALE] next to Kade. He knows immediately: Kade hasn't transitioned state in 45 minutes. Something needs attention. No screen-checking required.\n\n## AC\n- [ ] team-scan reads last role.state.changed timestamp from chorus.log for each role\n- [ ] If no state change in 45min, scan output includes STALE flag next to role\n- [ ] Threshold configurable\n- [ ] Tests cover fresh, stale, and missing-event cases\n\n## Files\n- platform/services/chorus-hooks/src/hooks/observer.rs\n- platform/scripts/session-start-thin.sh",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:enhance",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-04T14:48:27Z",
+      "updated": "2026-04-04T14:53:39Z"
+    },
     {
       "index": 2022,
       "apiId": 2105,
@@ -1046,22 +1064,22 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
-      "index": 2031,
-      "apiId": 2114,
-      "title": "Team-scan staleness detection — consume role.state.changed events, flag roles with no state transition in 45min",
-      "description": "AC: 1. team-scan hook reads last role.state.changed timestamp from chorus.log for each role. 2. If no state change in 45min, scan output includes [STALE] flag next to role. 3. Threshold configurable. 4. Tests cover fresh, stale, and missing-event cases.",
+      "index": 2032,
+      "apiId": 2115,
+      "title": "Cards CLI must block creation without Experience section — warn is not a gate",
+      "description": "",
       "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:enhance",
+        "type:fix",
         "sequence:ops"
       ],
       "done": false,
-      "created": "2026-04-04T14:48:27Z",
-      "updated": "2026-04-04T14:48:27Z"
+      "created": "2026-04-04T14:53:01Z",
+      "updated": "2026-04-04T14:53:01Z"
     },
     {
       "index": 2018,

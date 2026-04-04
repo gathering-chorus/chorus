@@ -205,6 +205,8 @@ print('\n'.join(events))
     if [ -f "$STATE_FILE" ]; then
       OTHER_STATE=$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); print(d.get('state','?'))" 2>/dev/null || echo "?")
       OTHER_CARD=$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); c=d.get('card',''); print(f'#{c}' if c else '')" 2>/dev/null || true)
+      # Staleness detection (#2031) — flag if no state change in 45min
+      OTHER_STALE=$(python3 -c "import json,time; d=json.load(open('$STATE_FILE')); ts=d.get('ts',0); age=int(time.time())-int(ts); print('[STALE]' if age>2700 else '')" 2>/dev/null || true)
     fi
     # Get last observation
     LAST_OBS=""
@@ -237,7 +239,7 @@ except: pass" 2>/dev/null || true)
       fi
     fi
     if [ -n "$OTHER_STATE" ] && [ "$OTHER_STATE" != "?" ]; then
-      LINE="${OTHER_ROLE}: ${OTHER_STATE}${OTHER_CARD:+ ${OTHER_CARD}}"
+      LINE="${OTHER_ROLE}: ${OTHER_STALE:+${OTHER_STALE} }${OTHER_STATE}${OTHER_CARD:+ ${OTHER_CARD}}"
       if [ -n "$LAST_OBS" ]; then
         LINE="${LINE} — ${LAST_OBS}"
       else
