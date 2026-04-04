@@ -36,7 +36,7 @@ import {
   addCard, moveCard, doneCard, demoCard, rejectCard,
   blockCard, unblockCard, updateCard, commentCard, tagCard, untagCard,
   reassignCard, setCard, swatCard, snapshotBoard, auditStart, auditClose,
-  bulkSequenceTag,
+  bulkSequenceTag, bulkMove,
 } from './sdk';
 
 function die(msg: string): never {
@@ -539,10 +539,12 @@ Commands:
   update <id> [--title T] [--desc D] [--domain D] [--chunk C] [--seq S] [--owner O]  Update task fields + metadata
   reassign <id> <role>            Change card owner (wren/silas/kade/jeff)
   comment <id> "text"            Add a comment
+  untag <id> <category:value>     Remove a label (e.g. untag 1866 sequence:infrastructure)
   tag <id> <chunk>               Tag card with chunk label
   chunk [name]                   Show chunk context + cards (no arg = summary of all chunks)
   sequence [name]                Show sequence cards (no arg = summary of all sequences)
   sequence-tag <ids> <seq>       Bulk-tag cards with a sequence (comma-separated IDs)
+  bulk-move <ids> <status>       Move multiple cards at once (e.g. bulk-move 1761,1762,1763 Next)
   swat "description"             Create [swat]-tagged card in SWAT lane (outside WIP limit)
   label create <title>            Create a Vikunja label, return its ID
   label list                     List all Vikunja labels with IDs
@@ -587,6 +589,9 @@ async function main() {
     case 'add': {
       const opts = parseAddArgs(cmdArgs);
       if (productFilter && !opts.product) opts.product = productFilter;
+      if (!opts.sequence) {
+        console.error('  WARN: No --sequence on new card. Use --sequence <seq> for board visibility.');
+      }
       await addCard(client, opts.title, opts);
       break;
     }
@@ -675,12 +680,21 @@ async function main() {
     }
 
     case 'tag':
-      die('Removed: use "board set <id> domain=X" or "board set <id> chunk=X" instead');
+      die('Removed: use "cards set <id> domain=X", "cards set <id> sequence=X", or "cards sequence-tag <ids> <seq>"');
       break;
 
-    case 'untag':
-      die('Removed: use "board set <id> domain=none" to remove tags');
+    case 'untag': {
+      if (cmdArgs.length < 2) die('Usage: cards untag <id> <category:value> (e.g. cards untag 1866 sequence:infrastructure)');
+      const untagId = parseInt(cmdArgs[0], 10);
+      if (isNaN(untagId)) die(`Invalid card ID: ${cmdArgs[0]}`);
+      const label = cmdArgs[1];
+      const colonIdx = label.indexOf(':');
+      if (colonIdx === -1) die(`Label must be category:value (e.g. domain:photos, sequence:hardening). Got: "${label}"`);
+      const category = label.substring(0, colonIdx);
+      const value = label.substring(colonIdx + 1);
+      await untagCard(client, untagId, value, category);
       break;
+    }
 
     case 'deps': {
       if (!cmdArgs[0]) die('Usage: cards deps <id>');
@@ -810,6 +824,15 @@ async function main() {
       const ids = cmdArgs.slice(0, -1).join(',').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
       if (ids.length === 0) die('No valid card IDs provided');
       await bulkSequenceTag(client, ids, seqName);
+      break;
+    }
+
+    case 'bulk-move': {
+      if (cmdArgs.length < 2) die('Usage: cards bulk-move <id>[,<id>,...] <status>');
+      const targetStatus = cmdArgs[cmdArgs.length - 1];
+      const moveIds = cmdArgs.slice(0, -1).join(',').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+      if (moveIds.length === 0) die('No valid card IDs provided');
+      await bulkMove(client, moveIds, targetStatus);
       break;
     }
 

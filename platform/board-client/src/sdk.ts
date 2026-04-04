@@ -1056,6 +1056,31 @@ export async function bulkSequenceTag(
   });
 }
 
+export async function bulkMove(
+  client: BoardClient, ids: number[], status: string
+): Promise<void> {
+  const role = detectRole();
+  let moved = 0;
+  let failed = 0;
+
+  for (const id of ids) {
+    try {
+      await client.move(id, status);
+      console.log(`  #${id} → ${status}`);
+      moved++;
+    } catch (err: any) {
+      console.error(`  #${id}: ${err?.message || err}`);
+      failed++;
+    }
+  }
+
+  console.log(`Moved ${moved} card(s) to ${status}${failed > 0 ? ` (${failed} failed)` : ''}`);
+  emitSpineEvent('card.bulk.moved', role, {
+    status, count: String(moved), failed: String(failed),
+    board: client.boardName,
+  });
+}
+
 export async function snapshotBoard(client: BoardClient): Promise<string> {
   const snap = await client.snapshot();
   const file = path.join(SNAPSHOT_DIR, `board-snapshot-${client.boardName}.json`);
