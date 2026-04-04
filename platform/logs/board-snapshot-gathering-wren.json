@@ -1,43 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T21:14:56.876Z",
+  "timestamp": "2026-04-04T21:30:01.170Z",
   "tasks": [
-    {
-      "index": 2022,
-      "apiId": 2105,
-      "title": "L2 Awareness service design — as-is inventory of compound loop, ops awareness, gemba, alerts, health",
-      "description": "The team keeps being surprised by what's already built. L2 (Awareness) has shipped components scattered across hooks, scripts, alerts, and agents with no single view.\n\n## Experience\nJeff opens the Awareness domain page and sees everything: docs, UIs, APIs, data, tests, services. One page, one answer. No more 'do we have this?' — it's all there.\n\n## AC\n- [ ] Domain page rendered as HTML with sections: Docs, UIs, APIs, Data, Tests, Services\n- [ ] Each section lists concrete artifacts with file paths and descriptions\n- [ ] References protocol-stack.html L2 section as the architecture doc\n- [ ] Shows forcing functions, not just components\n\n## Files\n- designing/domain-context/domain-context-awareness.html\n- product-manager/artifacts/awareness-service-design.html",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new",
-        "sequence:visibility"
-      ],
-      "done": false,
-      "created": "2026-04-04T13:50:50Z",
-      "updated": "2026-04-04T13:54:06Z"
-    },
-    {
-      "index": 1782,
-      "apiId": 1865,
-      "title": "Clearing voice capture — click mic, record, auto-transcribe and route to addressed role",
-      "description": "## Experience\nI tap the mic on the Clearing, talk, it shows up attributed to me and routed to the right role. No typing, no send button, no picking a recipient.\n\n## AC\n- [ ] Single click on mic button starts recording (no hold required)\n- [ ] Click again (or silence detection) stops recording\n- [ ] Audio transcribed automatically (Whisper or equivalent)\n- [ ] Transcription routed to addressed role (@kade, @silas, @wren) or Wren by default\n- [ ] Transcription appears in Clearing message stream attributed to Jeff\n- [ ] Audio file persisted for playback (not just transcript)\n- [ ] No manual send step — record → transcribe → route is one flow\n\n## Files\n- chorus/directing/clearing/public/index.html (mic button, MediaRecorder, UI)\n- chorus/directing/clearing/src/server.ts (audio upload endpoint, Whisper call, message routing)",
-      "status": "WIP",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance",
-        "sequence:clearing"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:07:57Z",
-      "updated": "2026-04-04T19:29:33Z"
-    },
     {
       "index": 2043,
       "apiId": 2126,
@@ -235,6 +199,24 @@
       "done": true,
       "created": "2026-04-04T13:53:10Z",
       "updated": "2026-04-04T14:29:18Z"
+    },
+    {
+      "index": 2022,
+      "apiId": 2105,
+      "title": "L2 Awareness service design — as-is inventory of compound loop, ops awareness, gemba, alerts, health",
+      "description": "The team keeps being surprised by what's already built. L2 (Awareness) has shipped components scattered across hooks, scripts, alerts, and agents with no single view.\n\n## Experience\nJeff opens the Awareness domain page and sees everything: docs, UIs, APIs, data, tests, services. One page, one answer. No more 'do we have this?' — it's all there.\n\n## AC\n- [ ] Domain page rendered as HTML with sections: Docs, UIs, APIs, Data, Tests, Services\n- [ ] Each section lists concrete artifacts with file paths and descriptions\n- [ ] References protocol-stack.html L2 section as the architecture doc\n- [ ] Shows forcing functions, not just components\n\n## Files\n- designing/domain-context/domain-context-awareness.html\n- product-manager/artifacts/awareness-service-design.html",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new",
+        "sequence:visibility"
+      ],
+      "done": true,
+      "created": "2026-04-04T13:50:50Z",
+      "updated": "2026-04-04T21:14:57Z"
     },
     {
       "index": 2021,
@@ -908,23 +890,6 @@
       "done": true,
       "created": "2026-04-01T20:08:38Z",
       "updated": "2026-04-04T14:48:36Z"
-    },
-    {
-      "index": 1943,
-      "apiId": 2026,
-      "title": "Three Chorus domains — Clearing/Pulse/Spine domain pages + actor diagrams",
-      "description": "## Experience\nJeff clicks into the Chorus section of the domain index and sees three distinct domain tiles: Clearing (coordination), Pulse (circulation), Spine (events). Each links to its own domain page with roles, UI, API, and an actor flow diagram showing who does what.\n\n## AC\n1. Domain page for Clearing — coordination domain. Actor diagram: roles → Clearing UI → message round-trip → decision capture\n2. Domain page for Pulse — circulation domain. Actor diagram: Claude sessions → spine events → pulse aggregation → health signals → dashboards\n3. Domain page for Spine — events domain. Actor diagram: role actions → chorus-log → event bus → consumers (Pulse, Clearing, context-cache)\n4. Domain index Chorus section updated — three new tiles with descriptions and stats\n5. Dependency chain documented: Clearing depends on Pulse depends on Claude (spine underneath both)",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-01T18:26:42Z",
-      "updated": "2026-04-01T19:55:38Z"
     },
     {
       "index": 1865,
