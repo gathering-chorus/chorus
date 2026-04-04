@@ -18,6 +18,8 @@
   .page img { width: 100%; border-radius: 6px; margin: 10px 0 6px; border: 1px solid #e5e7eb; }
   .warn { background: #fef2f2; border-left: 3px solid #dc2626; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
   .warn b { color: #dc2626; }
+  .ok { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 6px 0; font-size: 0.82rem; }
+  .ok b { color: #16a34a; }
   .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
   @media print { body { padding: 20px; } .page { break-inside: avoid; } }
 </style>
@@ -25,7 +27,7 @@
 <body>
 
 <h1>Gathering — User Manual</h1>
-<p class="subtitle">What you see when you use your system &bull; For Jeff &bull; Wren &bull; 2026-03-30 &bull; With screenshots from live pages</p>
+<p class="subtitle">v2 — numbers verified against live system 2026-04-04 &bull; For Jeff &bull; Wren &bull; With screenshots from live pages</p>
 
 <div class="exp">Everything you've collected, created, and cared about — music, photos, stories, books, people, ideas, notes — lives here and connects to everything else. You log in and see a mind map of your entire world. Click into any branch and you're browsing that part of your life.</div>
 
@@ -34,7 +36,7 @@
 
 <div class="page">
   <h3>The Mind Map</h3>
-  <p>You log in and land on a dark screen with the Miró fence moon behind it. In the center is a glowing node labeled "Gathering" with your photo and a mood ring that pulses based on your current posture and sentiment. Six branches radiate outward — <strong>Sowing</strong>, <strong>Growing</strong>, <strong>Practicing</strong>, <strong>Harvesting</strong>, <strong>Reflecting</strong>, and <strong>Chorus</strong>. Each branch is a circle with a photo background.</p>
+  <p>You log in and land on a dark screen with the Mir&oacute; fence moon behind it. In the center is a glowing node labeled "Gathering" with your photo and a mood ring that pulses based on your current posture and sentiment. Six branches radiate outward — <strong>Sowing</strong>, <strong>Growing</strong>, <strong>Practicing</strong>, <strong>Harvesting</strong>, <strong>Reflecting</strong>, and <strong>Chorus</strong>. Each branch is a circle with a photo background.</p>
   <p>Click a branch and leaf nodes fan out — each one links to a collection page. Photos, Music, People, Stories — they're all one click from center. You can drag branches around on desktop to arrange them how you think about them.</p>
   <p>This is the front door to everything. You don't navigate a menu — you navigate a map of your life.</p>
   <img src="screenshots/01-home.png" alt="Home — mind map">
@@ -46,9 +48,10 @@
 
 <div class="page">
   <h3>Seeds — Your Inbox</h3>
-  <p>You open Seeds and see everything you've texted in from your phone. Each seed is a card with a colored status badge — blue for pending, green for routed, gray for discarded. Type badges show what it is: SMS in purple, links in blue, photos in pink, audio in orange.</p>
+  <p>You open Seeds and see everything you've texted in from your phone. 62 seeds total. Each seed is a card with a colored status badge — blue for pending, green for routed, gray for discarded. Type badges show what it is: <strong>Photo</strong> and <strong>Audio</strong> types now display instead of bare hashtags (#2007 in progress).</p>
   <p>You scan the list, decide what matters. Route a seed to a role or a collection. Discard the noise. Cards fade out when you act on them. This is triage — fast, decisive, nothing lingers unless you want it to.</p>
   <p><strong>To send a seed:</strong> Text your Twilio number. Content first (a link, photo, thought), then a hashtag second (<code>#wren</code>, <code>#idea</code>, <code>#read</code>). Two messages, any order, 60-second window. It lands here.</p>
+  <div class="ok"><b>PIPELINE HEALTHY:</b> Rebuilt after the April 3 crisis. Health check is now 3-hop: tunnel (200) → app (200) → Fuseki (200). Last seed received 2026-04-04 08:02.</div>
   <img src="screenshots/33-seeds.png" alt="Seeds — triage inbox">
   <span class="url">localhost:3000/seeds</span>
 </div>
@@ -100,7 +103,7 @@
 <div class="page">
   <h3>Photos</h3>
   <p>Dark theme. A grid of your photos spanning three eras of your life — scanned prints from before 2006, camera shots from 2006-07, and iPhone photos since December 2007. Sort by date or name. Filter by album, source (Apple Photos, Google Photos, Google Drive), or person. Each photo card shows a source badge and hover metadata — title, dates, dimensions.</p>
-  <p>63K photos in canonical. Face clusters let you click a person and see every photo of them across decades.</p>
+  <p>100,399 photos in canonical. Face clusters let you click a person and see every photo of them across decades.</p>
   <img src="screenshots/55-photos.png" alt="Photos">
   <span class="url">localhost:3000/photos</span>
   <div class="warn"><b>KNOWN ISSUE:</b> Date sort shows upload/scan dates instead of taken dates (#1747). Old photos push to page 1. Browse by album as a workaround.</div>
@@ -108,7 +111,7 @@
 
 <div class="page">
   <h3>Music</h3>
-  <p>108K tracks. 40+ years of listening. You see an album grid with cover art (or generated letter placeholders when art is missing). Sort by artist, year, or recent plays. Filter by genre. Search by anything.</p>
+  <p>115,112 tracks. 40+ years of listening. You see an album grid with cover art (or generated letter placeholders when art is missing). Sort by artist, year, or recent plays. Filter by genre. Search by anything.</p>
   <p>At the top, the <strong>Shuffle</strong> section — three algorithm versions. V3 is time-aware (favors music you haven't heard recently), V2 is genre-threaded (maintains flow between songs), V1 is pure random. Hit "Send to Navidrome" and the playlist exports to your streaming server. 30K songs on your phone via Subsonic.</p>
   <p>Click an album to see its tracks, play counts, and metadata.</p>
   <img src="screenshots/53-music.png" alt="Music">
@@ -117,7 +120,7 @@
 
 <div class="page">
   <h3>People</h3>
-  <p>2,942 contacts. A stats bar at the top shows totals by source — Personal, LinkedIn, Facebook, Apple. Alphabetical navigation bar across the top for jumping to a letter. Search by name, company, or position.</p>
+  <p>2,841 contacts. A stats bar at the top shows totals by source — Personal, LinkedIn, Facebook, Apple. Alphabetical navigation bar across the top for jumping to a letter. Search by name, company, or position.</p>
   <p>Each person shows as a row with their name (linked to a detail page), their company and position, and color-coded source tags — LinkedIn blue, Facebook blue, Personal amber, Apple purple. Relationship tags (Family, Friend, Colleague, Team Member) show alongside. Click through to see everything connected to that person — photos, stories, mentions.</p>
   <img src="screenshots/07-people.png" alt="People">
   <span class="url">localhost:3000/people</span>
@@ -125,7 +128,7 @@
 
 <div class="page">
   <h3>Stories</h3>
-  <p>135+ personal stories. Each one has a title, date, period tag, theme tags, and an excerpt. Filter by theme — click a theme button and the list narrows. Search by keyword. Click through to read the full story.</p>
+  <p>145 personal stories. Each one has a title, date, period tag, theme tags, and an excerpt. Filter by theme — click a theme button and the list narrows. Search by keyword. Click through to read the full story.</p>
   <p>These are your experiences as persistent product inputs. The arc of your life told in first person — Dallas Systems, Staples, your sister Crissy, the dog walks, the garden blueprint your dad drew. They feed the Self ontology and connect to everything else in the graph.</p>
   <img src="screenshots/08-stories.png" alt="Stories">
   <span class="url">localhost:3000/stories</span>
@@ -205,6 +208,24 @@
   <span class="url">localhost:3000/doc-catalog.html</span>
 </div>
 
+<!-- SYSTEM -->
+<h2>System at a Glance</h2>
+
+<div class="page">
+  <h3>By the Numbers</h3>
+  <p>66 handler pages serving your data across all domains. The collections behind them:</p>
+  <ul style="margin: 8px 0 12px 20px; font-size: 0.84rem;">
+    <li><strong>Photos:</strong> 100,399 canonical</li>
+    <li><strong>Music:</strong> 115,112 tracks</li>
+    <li><strong>People:</strong> 2,841 contacts</li>
+    <li><strong>Stories:</strong> 145</li>
+    <li><strong>Seeds:</strong> 62 total</li>
+    <li><strong>Notes:</strong> 823</li>
+    <li><strong>Books:</strong> 141+</li>
+    <li><strong>Blog:</strong> 43 posts</li>
+  </ul>
+</div>
+
 <!-- PRIVACY -->
 <h2>Privacy</h2>
 
@@ -217,7 +238,7 @@
 
 <p>The Self AI runs on a physically separate machine (Bedroom Mac). Your most private conversations never touch the machine serving the web. The trust boundary is the network cable, not a setting.</p>
 
-<p class="meta">Gathering User Manual &bull; For Jeff &bull; Wren &bull; 2026-03-30 &bull; Written from actual page inspection, not docs</p>
+<p class="meta">Gathering User Manual v2 &bull; For Jeff &bull; Wren &bull; 2026-04-04 &bull; Numbers verified against live system &bull; Written from actual page inspection</p>
 
 </body>
 </html>

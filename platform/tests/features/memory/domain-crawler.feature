@@ -61,6 +61,28 @@ Feature: Domain crawler
     And related domains are ranked by connection strength
     And "photos" appears as a related domain — seed photo delivery
 
+  @crawler @code-scan
+  Scenario: Crawler scans actual codebase for domain files
+    When a role crawls the "seeds" domain
+    Then the response includes code files found by directory scan
+    And the code files are real paths — not just extracted from card descriptions
+    And the code section distinguishes card-referenced files from scan-discovered files
+
+  @crawler @logs
+  Scenario: Crawler includes recent Loki log entries for the domain
+    When a role crawls the "seeds" domain
+    Then the response includes recent log entries from Loki
+    And logs are filtered by domain-relevant component or keyword
+    And each log entry includes timestamp, level, and message
+    And error-level logs appear before info-level logs
+
+  @crawler @alerts
+  Scenario: Crawler includes Grafana alert rules for the domain
+    When a role crawls the "seeds" domain
+    Then the response includes alert rules from alerting/ directory
+    And alert rules are matched by domain keyword in the YAML filename or content
+    And each alert includes name, severity, and current state
+
   @crawler @history
   Scenario: Crawler shows the institutional memory
     When a role crawls the "seeds" domain

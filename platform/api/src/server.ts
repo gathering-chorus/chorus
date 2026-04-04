@@ -1080,6 +1080,93 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
     }
   } catch { /* memory dir not readable */ }
 
+  // Source 8: Code scan — actual codebase directories mapped to domain (#1959)
+  const codeScan: { scanned: string[]; discovered: string[] } = { scanned: [], discovered: [] };
+  try {
+    const { execSync } = require('child_process');
+    const domainDirs: Record<string, string[]> = {
+      seeds: ['src/adapters/sms-seed.adapter.ts', 'src/services/seed-capture.service.ts', 'src/services/seed-sparql.service.ts', 'src/services/seed-pod.service.ts', 'src/handlers/hooks.handler.ts'],
+      photos: ['src/handlers/photos.handler.ts', 'src/services/photo-pod.service.ts'],
+      music: ['src/handlers/music.handler.ts', 'src/services/music-query.service.ts'],
+      people: ['src/handlers/people.handler.ts', 'src/services/people-query.service.ts'],
+      chorus: ['platform/api/src/server.ts', 'platform/services/chorus-hooks/src/'],
+      infrastructure: ['platform/scripts/agent-state.sh', 'platform/scripts/app-state.sh'],
+    };
+    // Find files by grep for domain keyword in src/
+    const appRoot = '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site';
+    const grepResult = execSync(
+      `grep -rlw "${domain}" ${appRoot}/src/ --include="*.ts" 2>/dev/null | head -20 || true`,
+      { encoding: 'utf-8', timeout: 10000 }
+    );
+    codeScan.discovered = grepResult.split('\n')
+      .filter((l: string) => l.trim())
+      .map((l: string) => l.replace(appRoot + '/', ''));
+
+    // Add known directory mappings
+    if (domainDirs[domain]) {
+      codeScan.scanned = domainDirs[domain];
+    }
+  } catch { /* code scan failed */ }
+
+  // Source 9: Loki logs — recent domain-related entries (#1959)
+  const logs: Array<{ timestamp: string; level: string; message: string; component: string }> = [];
+  try {
+    const domainStem = domain.replace(/s$/, '');
+    const lokiQuery = encodeURIComponent(`{job="gathering-app"} |~ "${domain}|${domainStem}" | json`);
+    const now = Math.floor(Date.now() / 1000);
+    const start = now - 86400; // last 24h
+    const lokiResp = await fetch(
+      `http://localhost:3102/loki/api/v1/query_range?query=${lokiQuery}&start=${start}&end=${now}&limit=20`
+    );
+    if (lokiResp.ok) {
+      const lokiData = await lokiResp.json() as any;
+      for (const stream of lokiData.data?.result || []) {
+        for (const [_ts, line] of stream.values || []) {
+          try {
+            const entry = JSON.parse(line);
+            logs.push({
+              timestamp: entry.timestamp || '',
+              level: entry.level || 'info',
+              message: (entry.message || '').slice(0, 200),
+              component: entry.component || '',
+            });
+          } catch { /* skip non-JSON lines */ }
+        }
+      }
+      // Sort: errors first, then by timestamp desc
+      logs.sort((a, b) => {
+        const levelOrder: Record<string, number> = { error: 0, warn: 1, info: 2 };
+        const la = levelOrder[a.level] ?? 3;
+        const lb = levelOrder[b.level] ?? 3;
+        if (la !== lb) return la - lb;
+        return b.timestamp.localeCompare(a.timestamp);
+      });
+    }
+  } catch { /* loki not available */ }
+
+  // Source 10: Alerting rules from alerting/ directory (#1959)
+  const alerts: Array<{ name: string; severity: string; file: string }> = [];
+  try {
+    const alertDir = path.resolve(__dirname, '../../../alerting');
+    if (fs.existsSync(alertDir)) {
+      const domainStem = domain.replace(/s$/, '');
+      const files = fs.readdirSync(alertDir).filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+      for (const file of files) {
+        const content = fs.readFileSync(path.join(alertDir, file), 'utf-8');
+        const lower = content.toLowerCase();
+        if (lower.includes(domain) || lower.includes(domainStem) || file.toLowerCase().includes(domain) || file.toLowerCase().includes(domainStem)) {
+          const nameMatch = content.match(/alert:\s*(.+)/);
+          const sevMatch = content.match(/severity:\s*(.+)/);
+          alerts.push({
+            name: nameMatch ? nameMatch[1].trim() : file.replace(/\.ya?ml$/, ''),
+            severity: sevMatch ? sevMatch[1].trim() : 'unknown',
+            file,
+          });
+        }
+      }
+    }
+  } catch { /* alerting dir not readable */ }
+
   // Calculate trust score: balance unresolved issues against completed work and activity
   const unresolvedCount = history.unresolved.length;
   const feedbackCount = history.feedback.length;
@@ -1100,7 +1187,10 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
     mentions,
     spine,
     code,
+    codeScan,
     infra,
+    logs,
+    alerts,
     links,
     related,
     history,
