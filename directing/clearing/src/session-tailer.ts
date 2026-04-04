@@ -108,24 +108,32 @@ export class SessionTailer {
     const roleDir = ROLE_DIRS[role];
     if (!roleDir) return null;
 
-    // Find the project dir matching this role
+    // Find the newest .jsonl across ALL matching project dirs (#2035)
+    // Multiple dirs can match (e.g. "architect" and "chorus-architect")
     try {
       const entries = fs.readdirSync(PROJECTS_DIR);
+      let newest: { path: string; mtime: number } | null = null;
+
       for (const entry of entries) {
         if (entry.includes(roleDir)) {
           const projDir = path.join(PROJECTS_DIR, entry);
-          // Find newest .jsonl file
-          const files = fs.readdirSync(projDir)
-            .filter(f => f.endsWith('.jsonl'))
-            .map(f => ({
-              name: f,
-              path: path.join(projDir, f),
-              mtime: fs.statSync(path.join(projDir, f)).mtimeMs,
-            }))
-            .sort((a, b) => b.mtime - a.mtime);
-          if (files.length > 0) return files[0].path;
+          try {
+            const files = fs.readdirSync(projDir)
+              .filter(f => f.endsWith('.jsonl'))
+              .map(f => {
+                const fullPath = path.join(projDir, f);
+                return { path: fullPath, mtime: fs.statSync(fullPath).mtimeMs };
+              });
+            for (const file of files) {
+              if (!newest || file.mtime > newest.mtime) {
+                newest = file;
+              }
+            }
+          } catch {}
         }
       }
+
+      return newest ? newest.path : null;
     } catch {}
     return null;
   }
