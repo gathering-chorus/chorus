@@ -1,30 +1,20 @@
-# Silas Next Session — 2026-04-03
+# Next Session — Silas
 
-## Accomplished This Session
-- #1951 memory-first search gate — built, shipped, accepted
-- #2004 four-layer compound search — Chorus + Loki + Git + Cards on every Grep/Glob, accepted
-- SPARQL escaping consolidation — paired with Kade, 4 inline copies → 1 shared function
-- Fixed daily-review-missing.yml (broken since March 30)
-- Fixed chorus-api health check (wrong path, 913 false service.down entries)
-- Switched enrichment from stderr (invisible) to deny (system-reminders — visible)
+## Accomplished
+14 cards shipped in one session. Operations overhaul: agent-state.sh, namespace dedup, API health endpoint, compound loop (hybrid search + ops awareness), real-time gemba (132ms), tunnel monitoring, skills repo-tracked (31), role-state spine events, staleness detection, watchdog (5/10/15min), Clearing ack + visibility fix. Shared Awareness domain page with context diagram.
 
-## WIP Cards
-- #2000 — Seed write failure alert. Alert YAML exists but response loop not wired.
-- #1958 — Team awareness BDD. Not touched.
+## WIP
+- #2022 — L2 Awareness service design (domain page built, needs accept)
+- #2000 — Seed write failure alert (stale, needs review)
 
-## First Thing Next Session
-1. Respond to Kade on #2007 — PostToolUse hook on /cs to inject seed media descriptions. He's waiting.
-2. Ops sweep — check alerts, Loki errors, process state
-3. #2000 — AC needs revision, "posts to Bridge" is wrong delivery path
+## Carry Forward
+- Clearing noise tuning — ATTR/RENDER events leaking through after #2035 filter cleanup
+- Ollama on Bedroom — verify survives reboot (plist bootstrap had I/O errors)
+- Watchdog threshold tuning — 5min may be aggressive for investigate/pair mode
+- OWL/board/Fuseki domain coherence — product vs domain conflation (#1886)
+- Manual count conflicts from red-pen (photos 63K vs 100K, music 108K vs 115K)
 
-## Critical Feedback From Jeff
-- "Zero reused, high revenue" — roles rebuild instead of using existing tooling
-- Alerts fire, nobody responds — the whole session started here
-- Never announce "it works" without verifying delivery to the role
-- Kade nudged to pair, I didn't respond for 12 minutes — attention contract failure
-- Jeff doesn't care about 600ms — he cares about searches that find things
-- stderr is invisible to roles — only deny messages surface
-
-## Pending From Other Roles
-- Kade: #2007 PostToolUse hook for seed media — card is mine for the hook piece
-- Wren: #2003 continuous awareness gate, #2005 card/brief indexing into Chorus
+## Key Insights from Jeff
+- Time + Attention + Awareness are cross-cutting qualities, not domains
+- Shared Awareness = 5 components: Time, Pulse, Memory, Knowledge, System Context
+- Role performance variation partly caused by untracked skills and infrastructure drift
