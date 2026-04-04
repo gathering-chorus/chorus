@@ -1,24 +1,24 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T22:28:56.326Z",
+  "timestamp": "2026-04-04T23:12:17.549Z",
   "tasks": [
     {
-      "index": 1939,
-      "apiId": 2022,
-      "title": "chorus-hooks exclusive socket bind — detect and replace orphan processes on startup",
-      "description": "## Experience\nAn orphan chorus-hooks process from a prior session held the unix socket. The new process started by launchctl competed with it. Jeff got stale hook responses until the orphan was manually stopped. I need the server to own the socket exclusively — detect a dead holder and take over, or fail loudly if another live process holds it.\n\n## AC\n1. On startup, chorus-hooks checks if /tmp/chorus-hooks.sock is held by another process\n2. If holder PID is dead, remove stale socket and bind\n3. If holder PID is alive, log error and exit with non-zero (launchd will retry)\n4. Write PID file at /tmp/chorus-hooks.pid for orphan detection\n\n## Files\n- platform/services/chorus-hooks/src/main.rs",
+      "index": 1938,
+      "apiId": 2021,
+      "title": "Hook to block /tmp usage — enforce CSC-scoped persistence",
+      "description": "## Experience\nA role writes state to /tmp and it works until reboot or launchd cleanup. Then state is gone silently. /tmp is not persistence — CSC-scoped paths are.\n\n## AC\n- [ ] PreToolUse hook on Write/Edit blocks file paths under /tmp/ except allowlisted patterns (session-start-*.md, pair-*.md, claude-team-scan/)\n- [ ] Hook message tells the role where to write instead — maps common /tmp patterns to CSC equivalents\n- [ ] Audit existing /tmp usage in scripts and migrate to CSC paths\n- [ ] Reference CSC decision (DEC-095, card 1856)\n\n## Files\n- platform/services/chorus-hooks/src/hooks/guards.rs",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:fix",
+        "type:new",
         "sequence:ops"
       ],
       "done": false,
-      "created": "2026-04-01T13:44:50Z",
-      "updated": "2026-04-04T21:32:24Z"
+      "created": "2026-04-01T13:27:32Z",
+      "updated": "2026-04-04T22:33:59Z"
     },
     {
       "index": 2043,
@@ -996,6 +996,24 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2047,
+      "apiId": 2130,
+      "title": "Infra guardrail false positive — blocks nudges discussing signal-0 liveness checks",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-04T22:33:02Z",
+      "updated": "2026-04-04T22:33:02Z"
+    },
+    {
       "index": 2046,
       "apiId": 2129,
       "title": "Clearing mobile UX — Enter sends instead of newline, focus stolen by re-renders",
@@ -1228,24 +1246,6 @@
       "done": false,
       "created": "2026-04-01T14:33:13Z",
       "updated": "2026-04-01T14:33:13Z"
-    },
-    {
-      "index": 1938,
-      "apiId": 2021,
-      "title": "Hook to block /tmp usage — enforce CSC-scoped persistence",
-      "description": "## Experience\nA role writes state to /tmp and it works until reboot or launchd cleanup. Then state is gone silently. /tmp is not persistence — CSC-scoped paths are.\n\n## AC\n- [ ] PreToolUse hook on Write/Edit blocks file paths under /tmp/ except allowlisted patterns (session-start-*.md, pair-*.md, claude-team-scan/)\n- [ ] Hook message tells the role where to write instead — maps common /tmp patterns to CSC equivalents\n- [ ] Audit existing /tmp usage in scripts and migrate to CSC paths\n- [ ] Reference CSC decision (DEC-095, card 1856)",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-01T13:27:32Z",
-      "updated": "2026-04-01T13:27:32Z"
     },
     {
       "index": 1935,
@@ -2818,6 +2818,74 @@
       "done": false,
       "created": "2026-03-28T11:00:33Z",
       "updated": "2026-03-31T20:48:18Z"
+    },
+    {
+      "index": 2051,
+      "apiId": 2134,
+      "title": "[defect] gathering-app: Event loop lag: 16.88s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 16.88s\nSample: Event loop lag: 16.88s\nFirst seen: 2026-04-04T23:10:26Z\nCount: 1\nHash: 7fc3248d5907d120",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T23:10:27Z",
+      "updated": "2026-04-04T23:10:27Z"
+    },
+    {
+      "index": 2050,
+      "apiId": 2133,
+      "title": "[defect] gathering-app: Event loop lag: 10.11s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 10.11s\nSample: Event loop lag: 10.11s\nFirst seen: 2026-04-04T23:10:26Z\nCount: 1\nHash: 7619b4be6894a27b",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T23:10:26Z",
+      "updated": "2026-04-04T23:10:26Z"
+    },
+    {
+      "index": 2049,
+      "apiId": 2132,
+      "title": "[defect] gathering-app: Event loop lag: 26.35s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 26.35s\nSample: Event loop lag: 26.35s\nFirst seen: 2026-04-04T22:53:42Z\nCount: 1\nHash: 8f39f7262d0eb260",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T22:53:43Z",
+      "updated": "2026-04-04T22:53:43Z"
+    },
+    {
+      "index": 2048,
+      "apiId": 2131,
+      "title": "[defect] gathering-app: Event loop lag: 10.71s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 10.71s\nSample: Event loop lag: 10.71s\nFirst seen: 2026-04-04T22:53:42Z\nCount: 1\nHash: 6d7a0059d22ae160",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T22:53:43Z",
+      "updated": "2026-04-04T22:53:43Z"
     },
     {
       "index": 2044,

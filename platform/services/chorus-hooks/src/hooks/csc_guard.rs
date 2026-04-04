@@ -31,8 +31,48 @@ static DOMAIN_KEYWORDS: LazyLock<Regex> = LazyLock::new(|| {
 // Note: Rust regex crate does not support look-ahead (?!...).
 // Instead we check for write-to-path and then exclude Gathering/dev/null in code.
 
+/// Allowlisted /tmp/ paths — these are ephemeral by design, not persistence mistakes
+fn is_tmp_allowlisted(path: &str) -> bool {
+    // Session context files — regenerated every session start
+    if path.contains("session-start-") || path.contains("session-context-") { return true; }
+    // Pair session files
+    if path.contains("pair-") { return true; }
+    // Team scan state — polling state, not persistence
+    if path.contains("claude-team-scan") { return true; }
+    // Watchdog state
+    if path.contains("watchdog") { return true; }
+    // Chorus hooks PID/socket — runtime, not data
+    if path.contains("chorus-hooks") { return true; }
+    // Cruft scan output
+    if path.contains("cruft-scan") { return true; }
+    // Bridge uploads — audio, images, messages (#1782, #1938)
+    if path.contains("bridge-audio") || path.contains("bridge-uploads") || path.contains("bridge-messages") { return true; }
+    false
+}
+
 pub fn check(input: &HookInput) -> HookResponse {
     let tool = input.tool_name_str();
+
+    // AC#1: Block Write/Edit to /tmp/ unless allowlisted (#1938)
+    if tool == "Write" || tool == "Edit" {
+        let file_path = input.get_tool_input_str("file_path");
+        if file_path.starts_with("/tmp/") && !is_tmp_allowlisted(&file_path) {
+            let suggestion = if file_path.contains(".json") {
+                "Use ~/.chorus/ or data/ for JSON state files."
+            } else if file_path.contains(".md") {
+                "Use your role's directory (architect/, product-manager/, engineer/) for markdown."
+            } else if file_path.contains(".sh") {
+                "Use platform/scripts/ for shell scripts."
+            } else {
+                "Use a project-scoped path. /tmp/ is cleaned on reboot."
+            };
+            return HookResponse::deny(&permission_deny_json(
+                &format!("CSC violation: writing to /tmp/ is not persistence. {suggestion} \
+                          Allowlisted: session-start-*, pair-*, claude-team-scan/, watchdog/, chorus-hooks*.")
+            ));
+        }
+    }
+
     if tool != "Bash" {
         return HookResponse::allow();
     }
@@ -136,6 +176,80 @@ mod tests {
             deploy_role: Some("silas".to_string()),
         }
     }
+
+    fn make_write(path: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Write".to_string()),
+            tool_input: Some(json!({"file_path": path, "content": "test"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    fn make_edit(path: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Edit".to_string()),
+            tool_input: Some(json!({"file_path": path, "old_string": "a", "new_string": "b"})),
+            tool_response: None,
+            session_id: Some("test".to_string()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+        }
+    }
+
+    // === Write/Edit /tmp blocking (#1938) ===
+
+    #[test]
+    fn blocks_write_to_tmp_random_file() {
+        let r = check(&make_write("/tmp/my-state.json"));
+        assert!(r.stdout.is_some(), "Should block Write to /tmp/my-state.json");
+    }
+
+    #[test]
+    fn blocks_edit_to_tmp_random_file() {
+        let r = check(&make_edit("/tmp/some-script.sh"));
+        assert!(r.stdout.is_some(), "Should block Edit to /tmp/some-script.sh");
+    }
+
+    #[test]
+    fn allows_write_to_session_start() {
+        let r = check(&make_write("/tmp/session-start-silas.md"));
+        assert_eq!(r.exit_code, 0, "session-start files are allowlisted");
+    }
+
+    #[test]
+    fn allows_write_to_pair_file() {
+        let r = check(&make_write("/tmp/pair-2022.md"));
+        assert_eq!(r.exit_code, 0, "pair files are allowlisted");
+    }
+
+    #[test]
+    fn allows_write_to_team_scan() {
+        let r = check(&make_write("/tmp/claude-team-scan/silas-declared.json"));
+        assert_eq!(r.exit_code, 0, "team-scan files are allowlisted");
+    }
+
+    #[test]
+    fn allows_write_to_watchdog() {
+        let r = check(&make_write("/tmp/watchdog/silas.state"));
+        assert_eq!(r.exit_code, 0, "watchdog files are allowlisted");
+    }
+
+    #[test]
+    fn allows_write_outside_tmp() {
+        let r = check(&make_write("/Users/jeffbridwell/CascadeProjects/chorus/architect/test.md"));
+        assert_eq!(r.exit_code, 0, "Non-/tmp writes should pass");
+    }
+
+    // === Existing Bash tests ===
 
     #[test]
     fn allows_normal_bash_commands() {
