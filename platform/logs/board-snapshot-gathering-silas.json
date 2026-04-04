@@ -1,25 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T19:37:59.927Z",
+  "timestamp": "2026-04-04T21:14:55.849Z",
   "tasks": [
-    {
-      "index": 2033,
-      "apiId": 2116,
-      "title": "Watchdog false alerts — reports stale cards already accepted, wrong card assignments for roles",
-      "description": "## Experience\nJeff sees watchdog alerts saying Kade is unresponsive on #1718 (not his card) and Silas unresponsive on #2031 (already accepted). The alerts are noise — they erode trust in the system. Jeff should never see a false alert.\n\n## AC\n1. Watchdog reads current role-state declared JSON, not stale card assignments\n2. Watchdog checks card status before alerting — no alerts on Done/accepted cards\n3. State emission gap between acp and next card pull does not trigger false alert\n4. Tests cover: accepted card no-alert, wrong-card no-alert, real stall fires alert\n\n## Files\n- platform/scripts/watchdog.sh",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-04T15:33:59Z",
-      "updated": "2026-04-04T19:35:52Z"
-    },
     {
       "index": 2022,
       "apiId": 2105,
@@ -181,6 +163,24 @@
       "done": true,
       "created": "2026-04-04T15:39:06Z",
       "updated": "2026-04-04T16:08:30Z"
+    },
+    {
+      "index": 2033,
+      "apiId": 2116,
+      "title": "Watchdog false alerts — reports stale cards already accepted, wrong card assignments for roles",
+      "description": "## Experience\nJeff sees watchdog alerts saying Kade is unresponsive on #1718 (not his card) and Silas unresponsive on #2031 (already accepted). The alerts are noise — they erode trust in the system. Jeff should never see a false alert.\n\n## AC\n1. Watchdog reads current role-state declared JSON, not stale card assignments\n2. Watchdog checks card status before alerting — no alerts on Done/accepted cards\n3. State emission gap between acp and next card pull does not trigger false alert\n4. Tests cover: accepted card no-alert, wrong-card no-alert, real stall fires alert\n\n## Files\n- platform/scripts/watchdog.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": true,
+      "created": "2026-04-04T15:33:59Z",
+      "updated": "2026-04-04T19:38:15Z"
     },
     {
       "index": 2031,
@@ -927,24 +927,6 @@
       "updated": "2026-04-01T19:55:38Z"
     },
     {
-      "index": 1942,
-      "apiId": 2025,
-      "title": "Update seeds domain context — actor flow, seed policy, Chorus routing, no briefs",
-      "description": "## Experience\nI open the seeds domain page and it matches how seeds actually work — actor flow from my phone to Chorus to Bridge to the role that acts. No mention of briefs. The correlation window is correct. The routing destinations include Bridge and nudge. The domain data is the design document.\n\n## AC\n1. Domain context updated: actor flow matches value-stream-design.html seed section\n2. Integration section: routing goes to Chorus (team memory), not briefs\n3. Correlation window corrected to 120s\n4. Bridge notification and role nudge documented in integration path\n5. Seed policy included: seeds deserve attention, not batch processing\n6. #1937 linked as active card\n\n## Files\n- platform/api/src/server.ts (domain registry)\n- designing/domain-context/domain-context-seeds.md",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "sequence:hardening",
-        "domain:seeds",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-04-01T15:36:07Z",
-      "updated": "2026-04-01T17:53:33Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1029,6 +1011,24 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
+    },
+    {
+      "index": 2046,
+      "apiId": 2129,
+      "title": "Clearing mobile UX — Enter sends instead of newline, focus stolen by re-renders",
+      "description": "## Experience\nJeff is typing in the Clearing on his phone. Enter sends the message instead of adding a newline — messages get cut off mid-thought. Focus also gets stolen, probably by tile refresh or Socket.IO event re-render. Jeff can't compose a multi-line message on mobile.\n\n## AC\n1. Shift+Enter or mobile-friendly mechanism for newlines on phone\n2. Focus not stolen from input field during tile/message refreshes\n3. Send only on explicit Send button tap on mobile (Enter = newline)\n4. Tests cover: mobile input retains focus after refresh, newline insertion works",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T19:40:51Z",
+      "updated": "2026-04-04T19:40:51Z"
     },
     {
       "index": 2045,
@@ -1895,21 +1895,6 @@
       "done": false,
       "created": "2026-03-23T22:13:30Z",
       "updated": "2026-03-30T13:05:22Z"
-    },
-    {
-      "index": 1647,
-      "apiId": 1730,
-      "title": "Source registry service — runtime API for provider status, load state, and staleness",
-      "description": "## Experience\nI keep asking \"what sources do we have for photos?\" and \"when was Fuseki last loaded?\" and someone has to go dig through files and graphs to answer. I want a single API endpoint where I can ask those questions and get a straight answer — what's loaded, when, how many records, and what's stale. The ICD defines the rules; this service reads them at runtime so I don't have to keep rediscovering what we already know.\n\nJeff's direction: we keep rediscovering what sources exist, where they live, and what's loaded. The ICD (#1642) defines the rules. This service reads them at runtime.\n\nAPI endpoint that answers:\n- What source graphs exist in Fuseki per domain?\n- When was each last loaded/refreshed?\n- What's the record count vs expected count from provider?\n- Which sources are stale (schema hash changed since last load)?\n- For a given record (by date), which source is golden for each field?\n\nReads from: ICD provider model, Fuseki graph metadata, icd:schemaHash, icd:needsRevalidation.\n\nRelated: #1618 (cache version hashes), #1642 (era-scoped ICD)\n\n## AC\n- [ ] GET /api/registry/sources/:domain — list all providers with load status\n- [ ] GET /api/registry/authority/:domain?date=YYYY-MM-DD — which provider is golden per field for a given date\n- [ ] Staleness detection — flag source graphs where schema hash != current ICD version\n- [ ] Record count comparison — loaded vs expected per provider\n- [ ] Surfaced on a page or existing dashboard (not just API)",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "domain:convergence"
-      ],
-      "done": false,
-      "created": "2026-03-23T18:34:16Z",
-      "updated": "2026-03-30T13:05:33Z"
     },
     {
       "index": 1721,
