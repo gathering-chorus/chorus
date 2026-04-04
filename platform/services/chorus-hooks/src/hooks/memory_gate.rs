@@ -84,6 +84,25 @@ fn is_code_file(path: &str) -> bool {
     code_exts.iter().any(|ext| path.ends_with(ext))
 }
 
+/// Check if a file has any git commits (#2041).
+/// New files (never committed) skip the git history gate.
+fn file_has_git_history(file_path: &str) -> bool {
+    use std::process::Command;
+    // Find the git repo root from the file path
+    let dir = std::path::Path::new(file_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string());
+    let output = Command::new("git")
+        .args(["log", "--oneline", "-1", "--", file_path])
+        .current_dir(&dir)
+        .output();
+    match output {
+        Ok(o) => !o.stdout.is_empty(),
+        Err(_) => true, // Can't run git = assume history exists (fail closed)
+    }
+}
+
 /// Check if the card context is a fix — reads type: label from board (#1909)
 fn is_defect_fix() -> bool {
     crate::types::is_fix_card()
@@ -253,25 +272,37 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     // Fix cards: require git log on the target file (#1903)
+    // Skip for new files that have no git history (#2041)
     if is_defect_fix() {
-        let has_git_history = scan_for_git_history(input, state, &file_path);
-        if !has_git_history {
-            let fname = file_path.rsplit('/').next().unwrap_or(&file_path);
+        let file_has_commits = file_has_git_history(&file_path);
+        if file_has_commits {
+            let has_git_history = scan_for_git_history(input, state, &file_path);
+            if !has_git_history {
+                let fname = file_path.rsplit('/').next().unwrap_or(&file_path);
+                info!(
+                    gate = "context-synthesis",
+                    decision = "deny",
+                    reason = "fix card without git history on target file",
+                    role = %format!("{:?}", role).to_lowercase(),
+                    file = %file_path,
+                );
+                return HookResponse::deny(&permission_deny_json(
+                    &format!(
+                        "Context synthesis gate: fix card but no git history on {}. \
+                         Run `git log {}` or `git blame {}` first — this file has prior commits \
+                         that explain what was tried before. Don't repeat the same fix.",
+                        fname, fname, fname
+                    )
+                ));
+            }
+        } else {
             info!(
                 gate = "context-synthesis",
-                decision = "deny",
-                reason = "fix card without git history on target file",
+                decision = "skip",
+                reason = "new file — no prior commits",
                 role = %format!("{:?}", role).to_lowercase(),
                 file = %file_path,
             );
-            return HookResponse::deny(&permission_deny_json(
-                &format!(
-                    "Context synthesis gate: fix card but no git history on {}. \
-                     Run `git log {}` or `git blame {}` first — this file has prior commits \
-                     that explain what was tried before. Don't repeat the same fix.",
-                    fname, fname, fname
-                )
-            ));
         }
     }
 
@@ -508,6 +539,23 @@ mod tests {
         let (input, _tmp) = make_input_with_session("Edit", "/cross/domain/file.ts", &lines);
         let (_, has_synthesis) = scan_session_for_synthesis(&input, &s);
         assert!(has_synthesis);
+    }
+
+    // New files with no git history skip the gate (#2041)
+    #[test]
+    fn new_file_has_no_git_history() {
+        // A path that definitely has no git commits
+        let has = file_has_git_history("/tmp/nonexistent-test-file-2041.ts");
+        assert!(!has, "nonexistent file should have no git history");
+    }
+
+    #[test]
+    fn existing_file_has_git_history() {
+        // memory_gate.rs itself has commits
+        let has = file_has_git_history(
+            "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/memory_gate.rs"
+        );
+        assert!(has, "memory_gate.rs should have git history");
     }
 
     // No session ID — allow (can't check)
