@@ -1,43 +1,7 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T12:37:52.015Z",
+  "timestamp": "2026-04-04T12:42:53.398Z",
   "tasks": [
-    {
-      "index": 2016,
-      "apiId": 2099,
-      "title": "Cloudflare tunnel monitoring — alert when tunnel dies, seeds silently stop",
-      "description": "The Cloudflare tunnel (lightlifeurbangardens.com → localhost:3000) is the public entry point for seeds. When it dies, SMS webhooks from Twilio can't reach the app. Seeds silently stop arriving — no error, no alert, no trace. Jeff discovers it by sending a seed and it not showing up.\n\nTunnel has failed silently at least twice (Feb 19, Mar 5). Each time Jeff was the monitoring.\n\n## Experience\nJeff sends a seed. It arrives. Always. If the tunnel is down, Jeff knows before he sends — not after. The system tells him, not the other way around.\n\n## AC\n- [ ] Periodic health check on tunnel endpoint (curl the public URL or cloudflared /ready)\n- [ ] Alert fires within 60 seconds of tunnel going down — notify Bridge immediately\n- [ ] check-seeds.sh includes tunnel status in its health output (already does tunnel=200)\n- [ ] Ops awareness gate (#2003) surfaces tunnel-down state on every prompt\n\n## Files\n- alerting/tunnel-down.yml\n- platform/services/chorus-hooks/src/hooks/ops_awareness.rs\n- platform/scripts/check-seeds.sh",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:seeds",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-04T12:24:07Z",
-      "updated": "2026-04-04T12:24:50Z"
-    },
-    {
-      "index": 2005,
-      "apiId": 2088,
-      "title": "Log level reclassification phase 2 — chorus-events, foaf prefix, bad URI graph loads",
-      "description": "## Experience\nJeff queries Loki for errors and sees real failures. The error count reflects reality, not a filtered subset.\n\n## Acceptance Criteria\n- chorus-events system.service.down: warn to error (913 in 7 days)\n- Add foaf prefix to COMMON_PREFIXES in sparql-constants.ts (4 SPARQL query errors)\n- Card the 1294 bad URI graph load errors as data quality (people/connections TTL filenames)\n- Verify Loki warn-level entries are actual warnings, not hidden failures\n\n## Files\n- src/config/sparql-constants.ts\n- src/config/namespaces.json\n- src/handlers/about-profile.handler.ts",
-      "status": "WIP",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T19:11:25Z",
-      "updated": "2026-04-04T12:21:28Z"
-    },
     {
       "index": 2000,
       "apiId": 2083,
@@ -55,6 +19,24 @@
       "done": false,
       "created": "2026-04-03T15:45:28Z",
       "updated": "2026-04-03T15:45:52Z"
+    },
+    {
+      "index": 2016,
+      "apiId": 2099,
+      "title": "Cloudflare tunnel monitoring — alert when tunnel dies, seeds silently stop",
+      "description": "The Cloudflare tunnel (lightlifeurbangardens.com → localhost:3000) is the public entry point for seeds. When it dies, SMS webhooks from Twilio can't reach the app. Seeds silently stop arriving — no error, no alert, no trace. Jeff discovers it by sending a seed and it not showing up.\n\nTunnel has failed silently at least twice (Feb 19, Mar 5). Each time Jeff was the monitoring.\n\n## Experience\nJeff sends a seed. It arrives. Always. If the tunnel is down, Jeff knows before he sends — not after. The system tells him, not the other way around.\n\n## AC\n- [ ] Periodic health check on tunnel endpoint (curl the public URL or cloudflared /ready)\n- [ ] Alert fires within 60 seconds of tunnel going down — notify Bridge immediately\n- [ ] check-seeds.sh includes tunnel status in its health output (already does tunnel=200)\n- [ ] Ops awareness gate (#2003) surfaces tunnel-down state on every prompt\n\n## Files\n- alerting/tunnel-down.yml\n- platform/services/chorus-hooks/src/hooks/ops_awareness.rs\n- platform/scripts/check-seeds.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:seeds",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-04T12:24:07Z",
+      "updated": "2026-04-04T12:38:28Z"
     },
     {
       "index": 2014,
@@ -179,6 +161,24 @@
       "done": true,
       "created": "2026-04-03T19:15:04Z",
       "updated": "2026-04-04T12:20:12Z"
+    },
+    {
+      "index": 2005,
+      "apiId": 2088,
+      "title": "Log level reclassification phase 2 — chorus-events, foaf prefix, bad URI graph loads",
+      "description": "## Experience\nJeff queries Loki for errors and sees real failures. The error count reflects reality, not a filtered subset.\n\n## Acceptance Criteria\n- chorus-events system.service.down: warn to error (913 in 7 days)\n- Add foaf prefix to COMMON_PREFIXES in sparql-constants.ts (4 SPARQL query errors)\n- Card the 1294 bad URI graph load errors as data quality (people/connections TTL filenames)\n- Verify Loki warn-level entries are actual warnings, not hidden failures\n\n## Files\n- src/config/sparql-constants.ts\n- src/config/namespaces.json\n- src/handlers/about-profile.handler.ts",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T19:11:25Z",
+      "updated": "2026-04-04T12:39:40Z"
     },
     {
       "index": 2004,
@@ -898,42 +898,6 @@
       "done": true,
       "created": "2026-03-31T12:18:13Z",
       "updated": "2026-03-31T14:54:04Z"
-    },
-    {
-      "index": 1896,
-      "apiId": 1979,
-      "title": "team-scan shows card events filtered by pulse level",
-      "description": "## Experience\nI glance at team-scan and see card events mixed in with tool calls — pulled, accepted, demo started. But they all look the same. A critical alert should punch through. A routine card.pulled should be ambient. The --level flag is on the events; team-scan just needs to read it.\n\n## AC\n- [ ] team-scan output includes recent card events from chorus.log (card.pulled, card.accepted, card.demo.started)\n- [ ] Critical events shown prominently (prefixed or highlighted)\n- [ ] Info events shown passively (one-line, after tool activity)\n- [ ] Events read the level field from chorus.log JSON\n\n## Files\n- platform/services/chorus-hooks/src/shim.rs (team-scan generation)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:18:12Z",
-      "updated": "2026-03-31T14:41:36Z"
-    },
-    {
-      "index": 1895,
-      "apiId": 1978,
-      "title": "chorus-log.sh --level flag — classify pulse events at emit time (info/warn/critical)",
-      "description": "## Experience\nI look at the Clearing and see events flowing but I can't tell what's urgent. A card.pulled and a circuit_break look the same. I want critical signals to punch through and informational ones to stay ambient. The classification has to happen at the source — when the event is emitted — not at the consumer.\n\n## AC\n- [ ] chorus-log.sh accepts --level flag (info|warn|critical)\n- [ ] Default level is info if not specified\n- [ ] Level field included in every structured JSON event in Loki\n- [ ] team-scan filters by level — critical shown prominently, info shown passively\n- [ ] Clearing filters by level — critical gets highlight treatment\n- [ ] Nudge delivery respects level — critical justifies osascript inject, info is persist-only\n\n## Design\n- [Service Design — Pulse](/docs/pm/artifacts/service-design-pulse.html)\n- [/nudge Sequence Diagram](/docs/pm/artifacts/sequence-nudge.html)\n\n## Context\nFrom /chat pulse review (2026-03-31): Q2 resolved — classify at emit time, not query time. Kade: \"Build the classification, not the plumbing.\" Silas: \"chorus-log.sh --level is the right primitive.\"",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T12:17:43Z",
-      "updated": "2026-03-31T13:54:31Z"
     },
     {
       "index": 1958,
