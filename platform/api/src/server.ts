@@ -3114,6 +3114,63 @@ app.get('/api/chorus/domains', (_req: Request, res: Response) => {
   res.json({ domains, total: domains.length });
 });
 
+// --- GET /api/chorus/health (#2011) ---
+
+const startTime = Date.now();
+
+app.get('/api/chorus/health', async (_req: Request, res: Response) => {
+  const uptime = Math.floor((Date.now() - startTime) / 1000);
+
+  // DB check
+  let dbStatus = 'ok';
+  let dbRows = 0;
+  try {
+    const db = new Database(DB_PATH, { readonly: true });
+    const row = db.prepare('SELECT COUNT(*) as cnt FROM messages').get() as { cnt: number };
+    dbRows = row.cnt;
+    db.close();
+  } catch {
+    dbStatus = 'error';
+  }
+
+  // Vector check
+  let vectors = 0;
+  try {
+    if (lanceTable) {
+      vectors = await lanceTable.countRows();
+    }
+  } catch {
+    // non-fatal
+  }
+
+  // Hook server check — see if the shim binary exists and is recent
+  let hooksStatus = 'unknown';
+  const hookBinary = path.resolve(__dirname, '../../services/chorus-hooks/target/release/chorus-hooks');
+  try {
+    if (fs.existsSync(hookBinary)) {
+      const stat = fs.statSync(hookBinary);
+      const ageHours = (Date.now() - stat.mtimeMs) / 3600000;
+      hooksStatus = ageHours < 24 ? 'active' : 'stale';
+    } else {
+      hooksStatus = 'missing';
+    }
+  } catch {
+    hooksStatus = 'error';
+  }
+
+  const status = dbStatus === 'ok' ? 'healthy' : 'degraded';
+  const code = dbStatus === 'ok' ? 200 : 503;
+
+  res.status(code).json({
+    status,
+    uptime,
+    db: { status: dbStatus, rows: dbRows },
+    vectors,
+    hooks: { status: hooksStatus },
+    timestamp: new Date().toISOString(),
+  });
+});
+
 const BIND_HOST = process.env.CHORUS_BIND || '0.0.0.0';
 app.listen(PORT, BIND_HOST, () => {
   console.log(`[chorus-api] Listening on ${BIND_HOST}:${PORT}`);

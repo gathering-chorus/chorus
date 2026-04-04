@@ -1,24 +1,24 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T00:11:38.764Z",
+  "timestamp": "2026-04-04T10:40:00.929Z",
   "tasks": [
     {
-      "index": 2010,
-      "apiId": 2093,
-      "title": "Deduplicate LaunchAgent namespaces — consolidate com.chorus and com.gathering",
-      "description": "53 LaunchAgents across two namespaces — com.chorus.* and com.gathering.* — with duplicates doing the same job (context-cache, cruft-scan, perf-baseline). Confusing, wasteful, and makes agent-state.sh health report misleading.\n\n## Experience\nWhen Jeff runs agent-state.sh health, every agent should be there once with a clear name. Not two context-cache agents in different namespaces both firing on the same schedule. One namespace per job, no confusion.\n\n## AC\n- [ ] Audit all 53 agents — map which are duplicated across namespaces\n- [ ] Retire com.gathering.* duplicates (context-cache, cruft-scan, perf-baseline) — one namespace owns each job\n- [ ] Remove retired plists from ~/Library/LaunchAgents/\n- [ ] Verify no double-firing after consolidation\n\n## Files\n- ~/Library/LaunchAgents/com.gathering.context-cache-*.plist\n- ~/Library/LaunchAgents/com.gathering.cruft-scan.plist\n- ~/Library/LaunchAgents/com.gathering.perf-baseline.plist",
+      "index": 2011,
+      "apiId": 2094,
+      "title": "Chorus API health endpoint — /api/chorus/health for monitoring",
+      "description": "Chorus API has no health endpoint — probes and agent-state.sh can only check PID, not functional status.\n\n## Experience\nWhen Jeff or a role checks if the API is healthy, they should get real answers: is the database reachable, are vectors loaded, is the hook server injecting context. Not just 'process has a PID.'\n\n## AC\n- [ ] GET /api/chorus/health returns JSON with db status, uptime, vector count\n- [ ] Probes (seed-probe, clearing-probe) can use it as liveness check\n- [ ] Returns 503 if database unreachable\n- [ ] Hook server functional status — confirms context injection is active, not just PID alive (#2008 connection, per Wren feedback on #2009)\n\n## Files\n- platform/api/src/server.ts",
       "status": "WIP",
       "owner": "Silas",
-      "priority": "P1",
+      "priority": "P2",
       "domains": [
         "chunk:ops",
         "sequence:hardening",
-        "domain:infrastructure",
+        "domain:chorus",
         "type:fix"
       ],
       "done": false,
-      "created": "2026-04-03T22:46:40Z",
-      "updated": "2026-04-03T23:53:04Z"
+      "created": "2026-04-03T22:46:46Z",
+      "updated": "2026-04-04T00:12:37Z"
     },
     {
       "index": 2000,
@@ -37,6 +37,41 @@
       "done": false,
       "created": "2026-04-03T15:45:28Z",
       "updated": "2026-04-03T15:45:52Z"
+    },
+    {
+      "index": 2012,
+      "apiId": 2095,
+      "title": "Operational deploy governance — runbook, pre/post checks, rollback discipline",
+      "description": "Deploys are ungoverned. Roles run app-state.sh deploy without pre-checks, post-verification, or rollback plans. Today's seed failures came from deploys that broke write paths while reads passed. No deploy checklist, no smoke test after deploy, no ownership of deploy verification.\n\n## Experience\nWhen a role deploys, Jeff should never discover the breakage. The deploy process itself should catch it — pre-deploy smoke, post-deploy verification, automatic rollback if health degrades. One command, one runbook, zero surprises.\n\n## AC\n- [ ] Operational runbook document covering: deploy sequence, pre-checks, post-verification, rollback\n- [ ] Pre-deploy gate: smoke tests must pass before app-state.sh deploy proceeds\n- [ ] Post-deploy verification: health + functional checks run automatically after deploy\n- [ ] Rollback procedure documented and tested\n- [ ] All roles follow the same deploy process — no ad-hoc deploys",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:new"
+      ],
+      "done": true,
+      "created": "2026-04-04T00:14:20Z",
+      "updated": "2026-04-04T10:36:04Z"
+    },
+    {
+      "index": 2010,
+      "apiId": 2093,
+      "title": "Deduplicate LaunchAgent namespaces — consolidate com.chorus and com.gathering",
+      "description": "53 LaunchAgents across two namespaces — com.chorus.* and com.gathering.* — with duplicates doing the same job (context-cache, cruft-scan, perf-baseline). Confusing, wasteful, and makes agent-state.sh health report misleading.\n\n## Experience\nWhen Jeff runs agent-state.sh health, every agent should be there once with a clear name. Not two context-cache agents in different namespaces both firing on the same schedule. One namespace per job, no confusion.\n\n## AC\n- [ ] Audit all 53 agents — map which are duplicated across namespaces\n- [ ] Retire com.gathering.* duplicates (context-cache, cruft-scan, perf-baseline) — one namespace owns each job\n- [ ] Remove retired plists from ~/Library/LaunchAgents/\n- [ ] Verify no double-firing after consolidation\n\n## Files\n- ~/Library/LaunchAgents/com.gathering.context-cache-*.plist\n- ~/Library/LaunchAgents/com.gathering.cruft-scan.plist\n- ~/Library/LaunchAgents/com.gathering.perf-baseline.plist",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T22:46:40Z",
+      "updated": "2026-04-04T00:11:39Z"
     },
     {
       "index": 2009,
@@ -883,41 +918,6 @@
       "updated": "2026-03-31T12:51:02Z"
     },
     {
-      "index": 1887,
-      "apiId": 1970,
-      "title": "Session-tailer filters card lifecycle events — Clearing goes dark on pulls/accepts",
-      "description": "## Experience\nI'm watching the Clearing and a role pulls a card — nothing appears. Another role accepts a card — silence. The ambient heartbeat of the team is gone. I have to switch to terminals to know what's happening. Yesterday these events showed up; today they don't.\n\n## AC\n- [ ] session-tailer.ts line 264 regex no longer filters card lifecycle events (Pulled #, Moved #, Accepted #, Demo ready:)\n- [ ] Card events appear on the Clearing as ambient messages when roles pull, demo, or accept\n- [ ] Spine event echoes (card.pulled, card.accepted) still filtered to avoid double-display\n\n## Files\n- directing/clearing/src/session-tailer.ts (line 264 filter regex)",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-03-31T10:37:55Z",
-      "updated": "2026-03-31T10:43:13Z"
-    },
-    {
-      "index": 1885,
-      "apiId": 1968,
-      "title": "Clearing domain sort — most active domain at top, not alphabetical",
-      "description": "## Experience\nI open the Clearing and see domains listed alphabetically. The domain with 3 stale cards from two weeks ago is buried below one I just touched. The thing that needs attention is hidden by the thing that's fine. I want the Clearing to show me what matters — oldest and most stuck at the top, not alpha order.\n\n## AC\n- [ ] Domains sorted by most active first (most WIP/recent card moves)\n- [ ] Within each domain, oldest cards at top — the card waiting longest surfaces first\n- [ ] Stuck or forgotten cards are visually distinct from active ones\n- [ ] Sort updates live as card state changes — no manual refresh\n- [ ] Works across all domain views in the Clearing\n\n## Design\n- [Domain — Loom](/docs/pm/artifacts/domain-loom.html) — Cards sub-domain\n\n## Files\n- chorus/directing/clearing/public/index.html\n- chorus/directing/clearing/src/ (if server-side sort)",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T00:15:43Z",
-      "updated": "2026-03-31T10:18:16Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1038,23 +1038,6 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
-    },
-    {
-      "index": 2011,
-      "apiId": 2094,
-      "title": "Chorus API health endpoint — /api/chorus/health for monitoring",
-      "description": "Chorus API has no health endpoint — probes and agent-state.sh can only check PID, not functional status.\n\n## Experience\nWhen Jeff or a role checks if the API is healthy, they should get real answers: is the database reachable, are vectors loaded, is the hook server injecting context. Not just 'process has a PID.'\n\n## AC\n- [ ] GET /api/chorus/health returns JSON with db status, uptime, vector count\n- [ ] Probes (seed-probe, clearing-probe) can use it as liveness check\n- [ ] Returns 503 if database unreachable\n- [ ] Hook server functional status — confirms context injection is active, not just PID alive (#2008 connection, per Wren feedback on #2009)\n\n## Files\n- platform/api/src/server.ts",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T22:46:46Z",
-      "updated": "2026-04-03T23:00:35Z"
     },
     {
       "index": 2008,
@@ -1928,6 +1911,24 @@
       "done": false,
       "created": "2026-03-29T18:14:40Z",
       "updated": "2026-03-30T16:49:37Z"
+    },
+    {
+      "index": 1826,
+      "apiId": 1909,
+      "title": "Fix chorus folder structure — production code in gitignored directory",
+      "description": "## Experience\n\nI expect any role to be able to check out the repo and run the tests. Right now Clearing code lives in a gitignored directory — Silas sees 52 passing tests, Wren sees 41. That's not a test problem, that's a structure problem. Production code should never be invisible to the team.\n\n## AC\n- [ ] Clearing/Bridge code (chorus/bridge/) is committable and shared across roles\n- [ ] Tests run from committed code, not working tree only\n- [ ] Folder structure documented — what lives where, why\n- [ ] No production code in gitignored paths\n\n## Context\nchorus/ is gitignored from the team repo. The Clearing server, session tailer, test files — all trapped in one role's working tree. Roles can't verify each other's changes. #1818 tests pass for Silas (52/52) and fail for Wren (41/52) because the test file isn't committed. This is a structural problem, not a test problem.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "ops"
+      ],
+      "done": false,
+      "created": "2026-03-29T14:55:25Z",
+      "updated": "2026-03-30T13:03:12Z"
     },
     {
       "index": 1721,
@@ -3014,7 +3015,7 @@
       ],
       "done": false,
       "created": "2026-03-31T17:34:33Z",
-      "updated": "2026-04-03T13:47:36Z"
+      "updated": "2026-04-04T10:10:00Z"
     }
   ]
 }

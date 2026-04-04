@@ -13,6 +13,13 @@ severity: warning
 schedule: "30 6 * * *"  # 6:30am daily
 
 check: |
+  # Only check after 6:30am Eastern — before that, the review hasn't had time to run
+  HOUR=$(TZ=America/New_York date '+%-H')
+  MINUTE=$(TZ=America/New_York date '+%-M')
+  if [ "$HOUR" -lt 6 ] || { [ "$HOUR" -eq 6 ] && [ "$MINUTE" -lt 30 ]; }; then
+    echo "ok"
+    exit 0
+  fi
   # Look for ops.review.completed in today's chorus log
   TODAY=$(TZ=America/New_York date '+%Y-%m-%d')
   LOG="$HOME/Library/Logs/Chorus/chorus.log"
@@ -24,11 +31,17 @@ check: |
   exit 1
 
 action: |
-  # Post alert to Bridge
+  # Cooldown: only fire once per day
+  COOLDOWN_FILE="/tmp/alert-daily-review-$(TZ=America/New_York date '+%Y-%m-%d')"
+  if [ -f "$COOLDOWN_FILE" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN_FILE"
+  # Post alert to Bridge — use printf for real newlines
   BRIDGE="http://localhost:3470/api/message"
   TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+  MSG=$(printf '🔴 **Alert** — %s\n\nDaily review did not fire by 6:30am. Check LaunchAgents and logs.' "$TIMESTAMP")
   curl -sf -X POST "$BRIDGE" \
     -H 'Content-Type: application/json' \
-    -d "$(jq -n --arg text "🔴 **Alert** — $TIMESTAMP\n\nDaily review did not fire by 6:30am. Check LaunchAgents and logs." \
-      --arg from "silas" '{from: $from, text: $text}')" \
+    -d "$(jq -n --arg text "$MSG" --arg from "silas" '{from: $from, text: $text}')" \
     &>/dev/null || true
