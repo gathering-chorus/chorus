@@ -1,15 +1,15 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T10:40:01.239Z",
+  "timestamp": "2026-04-04T10:50:04.217Z",
   "tasks": [
     {
-      "index": 2011,
-      "apiId": 2094,
-      "title": "Chorus API health endpoint — /api/chorus/health for monitoring",
-      "description": "Chorus API has no health endpoint — probes and agent-state.sh can only check PID, not functional status.\n\n## Experience\nWhen Jeff or a role checks if the API is healthy, they should get real answers: is the database reachable, are vectors loaded, is the hook server injecting context. Not just 'process has a PID.'\n\n## AC\n- [ ] GET /api/chorus/health returns JSON with db status, uptime, vector count\n- [ ] Probes (seed-probe, clearing-probe) can use it as liveness check\n- [ ] Returns 503 if database unreachable\n- [ ] Hook server functional status — confirms context injection is active, not just PID alive (#2008 connection, per Wren feedback on #2009)\n\n## Files\n- platform/api/src/server.ts",
+      "index": 2008,
+      "apiId": 2091,
+      "title": "Compound loop breaks on reboot — after-prompt context injection lost on session boundary",
+      "description": "After-prompt hooks built April 3 search Chorus, logs, cards on every prompt. Worked. Jeff rebooted Wren, context injection stopped. Hook server running but loop broken.\n\n## Experience\nWhen Jeff reboots a role, the compound loop should just keep working. The role boots, Jeff types something, and the after-prompt hook fires — searching Chorus, tailing logs, checking cards. No manual restart. No lost context. The loop survives the session boundary.\n\n## AC\n- [ ] After-prompt hooks fire on first prompt of new session — verified by log evidence\n- [ ] Chorus/logs/cards results injected into role context every prompt\n- [ ] Reboot test: restart role, send prompt, verify injected context appears\n- [ ] No session starts without compound loop active\n\n## Files\n- platform/services/chorus-hooks/src/hooks/context_inject.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/scripts/test-compound-loop.sh",
       "status": "WIP",
       "owner": "Silas",
-      "priority": "P2",
+      "priority": "P1",
       "domains": [
         "chunk:ops",
         "sequence:hardening",
@@ -17,8 +17,8 @@
         "type:fix"
       ],
       "done": false,
-      "created": "2026-04-03T22:46:46Z",
-      "updated": "2026-04-04T00:12:37Z"
+      "created": "2026-04-03T22:19:19Z",
+      "updated": "2026-04-04T10:45:31Z"
     },
     {
       "index": 2000,
@@ -54,6 +54,24 @@
       "done": true,
       "created": "2026-04-04T00:14:20Z",
       "updated": "2026-04-04T10:36:04Z"
+    },
+    {
+      "index": 2011,
+      "apiId": 2094,
+      "title": "Chorus API health endpoint — /api/chorus/health for monitoring",
+      "description": "Chorus API has no health endpoint — probes and agent-state.sh can only check PID, not functional status.\n\n## Experience\nWhen Jeff or a role checks if the API is healthy, they should get real answers: is the database reachable, are vectors loaded, is the hook server injecting context. Not just 'process has a PID.'\n\n## AC\n- [ ] GET /api/chorus/health returns JSON with db status, uptime, vector count\n- [ ] Probes (seed-probe, clearing-probe) can use it as liveness check\n- [ ] Returns 503 if database unreachable\n- [ ] Hook server functional status — confirms context injection is active, not just PID alive (#2008 connection, per Wren feedback on #2009)\n\n## Files\n- platform/api/src/server.ts",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-03T22:46:46Z",
+      "updated": "2026-04-04T10:44:26Z"
     },
     {
       "index": 2010,
@@ -901,23 +919,6 @@
       "updated": "2026-03-31T12:44:45Z"
     },
     {
-      "index": 1889,
-      "apiId": 1972,
-      "title": "Convergence page permutation tests — comprehensive coverage for complex ICD UI",
-      "description": "## Experience\nThe convergence page has grown complex — domains, providers, fields, mappings, integration contracts, sections, risks, diagrams. Any graph change can silently break the render. I shouldn't discover a blank page after a Fuseki reload. The page needs comprehensive tests that exercise every permutation: domain with providers, domain without, provider with integration contract, without, fields with mappings, empty states.\n\n## AC\n- [ ] Page-level tests for convergence page covering: domain list, provider expansion, field table, mapping table, integration contract section\n- [ ] Empty state tests: no domains, domain with no providers, provider with no fields\n- [ ] Integration contract permutations: provider with all 4 fields, partial fields, no fields (hidden section)\n- [ ] Tests run against real Fuseki graph data (not mocked) per DEC-1674\n- [ ] All tests green before any future ICD TTL change ships\n\n## Files\n- jeff-bridwell-personal-site/tests/ (new test file)\n- jeff-bridwell-personal-site/src/handlers/icd.handler.ts\n- jeff-bridwell-personal-site/src/services/icd.service.ts",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-03-31T11:57:06Z",
-      "updated": "2026-03-31T12:51:02Z"
-    },
-    {
       "index": 1958,
       "apiId": 2041,
       "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
@@ -1040,23 +1041,6 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
-      "index": 2008,
-      "apiId": 2091,
-      "title": "Compound loop breaks on reboot — after-prompt context injection lost on session boundary",
-      "description": "After-prompt hooks built April 3 search Chorus, logs, cards on every prompt. Worked. Jeff rebooted Wren, context injection stopped. Hook server running but loop broken.\n\n## AC\n- [ ] After-prompt hooks fire on first prompt of new session — verified by log evidence\n- [ ] Chorus/logs/cards results injected into role context every prompt\n- [ ] Reboot test: restart role, send prompt, verify injected context appears\n- [ ] No session starts without compound loop active",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-03T22:19:19Z",
-      "updated": "2026-04-03T22:19:19Z"
-    },
-    {
       "index": 2007,
       "apiId": 2090,
       "title": "/cs shows routing tag instead of seed content — photo seed displayed as '#wren' instead of showing what Jeff actually sent",
@@ -1111,7 +1095,7 @@
       "index": 2003,
       "apiId": 2086,
       "title": "Continuous awareness gate — surface unresolved state on every prompt cycle, not just boot",
-      "description": "## Experience\nEvery prompt cycle, the role sees active system state: broken pipes, pending seeds, unresolved flags, ops alerts. Not once at boot — continuously. Context doesn't decay because it's refreshed every cycle. The compound loop: every interaction makes the system smarter.\n\n## Acceptance Criteria\n- [ ] PostToolUse hook checks active state on every tool call (ops alerts, pending seeds, pipeline health, unresolved flags from next-session.md)\n- [ ] Surfaces warnings via stderr injection — not blocking, surfacing. Role sees the state until they handle it\n- [ ] State checks are fast (sub-100ms) — cached, not live API calls on every prompt\n- [ ] Tests: unresolved flag persists across prompt cycles until acknowledged; resolved flag disappears; no flags = no injection\n- [ ] Replaces boot-only triage — this IS the compound loop closer",
+      "description": "## Experience\nEvery prompt cycle, the role sees active system state AND relevant context from prior sessions. Semantic + keyword search runs automatically against the Chorus index on every prompt. No role has to remember to check — the system brings the context to them. The compound loop: every interaction makes the system smarter.\n\n## AC\n- [ ] UserPromptSubmit hook extracts terms from Jeff's message, runs semantic + keyword search against Chorus index\n- [ ] Results injected into role context automatically — role sees relevant prior discussions, decisions, and patterns\n- [ ] PostToolUse hook checks active state on every tool call (ops alerts, pending seeds, pipeline health, unresolved flags)\n- [ ] Surfaces warnings via stderr injection — not blocking, surfacing\n- [ ] State checks are fast (sub-100ms) — cached, not live API calls on every prompt\n- [ ] Tests: semantic search returns relevant results for known topics; keyword search returns exact matches; both inject on every prompt\n- [ ] Replaces boot-only triage — this IS the compound loop closer",
       "status": "Later",
       "owner": "Silas",
       "priority": "P1",
@@ -1122,7 +1106,7 @@
       ],
       "done": false,
       "created": "2026-04-03T17:52:35Z",
-      "updated": "2026-04-03T17:57:22Z"
+      "updated": "2026-04-04T10:46:23Z"
     },
     {
       "index": 2002,
@@ -1929,6 +1913,24 @@
       "done": false,
       "created": "2026-03-29T14:55:25Z",
       "updated": "2026-03-30T13:03:12Z"
+    },
+    {
+      "index": 1816,
+      "apiId": 1899,
+      "title": "Development framework — gate suite for agent software development lifecycle",
+      "description": "## Experience\nRoles follow a structured development lifecycle — like the integration framework (ICD, mapper, validation) but for code changes. No guessing, no solo debugging, no declaring done without proof.\n\n## AC\n1. Memory-and-research gate (#1811) — check decisions, memory, git history before any code change\n2. Root cause gate (#1815) — cross-role consultation with data (logs, errors, code refs) before coding a fix\n3. Prove-it gate (#1812) — \"cant be done\" requires evidence, not assertion\n4. Definition-of-done gate (#1814) — verified working against the symptom, not just code written and built\n5. TDD enforced — unit, integration, and page-level tests on all code cards (DEC-1674)\n6. Service design updated — every shipped card updates its service design page if touched\n7. ICD updated — data flow changes update ICD\n8. Blast radius and domain radius checks pass\n9. Structured logging — product, value stream, domain, card, code object, datetime, version on every log line\n10. Use lc/lw/ls/lk/nudge/chat when stuck — tools before guesses\n11. All gates implemented as PreToolUse hooks that block, not reminders that suggest\n12. Framework documented as a single reference page roles can read at session start",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new",
+        "gates"
+      ],
+      "done": false,
+      "created": "2026-03-29T11:31:21Z",
+      "updated": "2026-03-30T21:59:56Z"
     },
     {
       "index": 1721,
