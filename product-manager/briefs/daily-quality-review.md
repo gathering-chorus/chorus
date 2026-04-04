@@ -1,8 +1,8 @@
-# Daily Quality Review — 2026-04-03
+# Daily Quality Review — 2026-04-04
 
 ## App Tests
 **YELLOW** — `jeff-bridwell-personal-site` directory not found. Suite cannot run.
-Action: Remove from check matrix or confirm correct path. (Persistent — 6th consecutive day.)
+Action: Remove from check matrix or confirm correct path. (Persistent — 7th consecutive day.)
 
 ## Lint
 **YELLOW** — Cannot run; app directory missing. No lint data.
@@ -11,22 +11,22 @@ Action: Remove from check matrix or confirm correct path. (Persistent — 6th co
 **YELLOW** — Cannot run; app directory missing. No TypeScript build data.
 
 ## Board-Client
-**RED** — 9 suites failed, 5 passed | 65 failed, 32 skipped, 110 passed (207 total). Coverage: 35.9% stmts / 23.9% branch.
-Root cause: tests require `workflow-engine/dist/engine` (compiled dist missing). Run `npm run build` in workflow-engine first.
-Delta: Previously dark (no node_modules). Now has test signal — 110 tests passing, 65 failing on dist import.
+**RED** — 11 suites failed, 5 passed | 72 failed, 32 skipped, 111 passed (215 total). Coverage: 35.9% stmts / 23.9% branch.
+Root cause: hardcoded Mac path `/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards` unreachable in CI; also missing `workflow-engine/dist`.
+Delta: WORSE vs. 2026-04-03 — +2 failing suites, +7 failing tests, +8 total tests.
 
 ## Workflow-Engine
 **GREEN** — 3 suites passed | 61/61 tests passed. Coverage: 94.2% stmts / 86.5% branch.
-Delta: RED→GREEN. Recovered after `npm install`. No action needed.
+Delta: No change. Stable.
 
 ## Chorus-SDK
 **YELLOW** — 1 suite failed, 2 passed | 5 failed, 30 passed (35 total). Coverage: 86.8% stmts / 75.6% branch.
 Root cause: `value_stream_step` returning null instead of "Capturing" (`emit-metadata.test.ts:226`).
-Delta: RED→YELLOW. Recovered partially. Action: fix `value_stream_step` mapping in SDK emit layer.
+Delta: No change vs. 2026-04-03. Same 5 failures, unresolved.
 
 ## Slack-Bridge
 **GREEN** — 6 suites passed | 60/60 tests passed. Coverage: 65.8% stmts / 45.3% branch.
-Delta: RED→GREEN. Recovered after `npm install`. Branch coverage low — no blocking action.
+Delta: No change. Stable. Branch coverage low but not blocking.
 
 ## Coverage
 | Package | Stmts | Branch | Status |
@@ -34,12 +34,12 @@ Delta: RED→GREEN. Recovered after `npm install`. Branch coverage low — no bl
 | workflow-engine | 94.2% | 86.5% | GREEN |
 | chorus-sdk | 86.8% | 75.6% | YELLOW |
 | slack-bridge | 65.8% | 45.3% | OK |
-| board-client | 35.9% | 23.9% | RED (dist missing) |
+| board-client | 35.9% | 23.9% | RED |
 
 ## Failure Delta
-**Major improvement vs. 2026-04-02** — all packages now have `node_modules` and test signal.
-- workflow-engine: RED→GREEN (61 tests passing)
-- slack-bridge: RED→GREEN (60 tests passing)
-- chorus-sdk: RED→YELLOW (5 new failures, `value_stream_step` null)
-- board-client: RED→RED (different failure — 65 tests fail on missing dist, not missing deps)
-Priority: (1) build workflow-engine dist to unblock board-client, (2) fix chorus-sdk `value_stream_step`.
+**Board-client regressions vs. 2026-04-03**: +7 test failures, +2 failing suites.
+- board-client: RED, worsening. New failures: hardcoded Mac path in `cli-completeness.test.ts:78`.
+- chorus-sdk: YELLOW, unchanged (5 failures, `value_stream_step` null — 2nd day unresolved).
+- workflow-engine: GREEN, stable.
+- slack-bridge: GREEN, stable.
+Priority: (1) fix `cli-completeness.test.ts` Mac path hardcode, (2) build workflow-engine dist, (3) fix chorus-sdk `value_stream_step`.
