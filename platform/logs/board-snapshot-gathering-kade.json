@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T21:51:18.569Z",
+  "timestamp": "2026-04-05T21:56:22.970Z",
   "tasks": [
     {
       "index": 3,
@@ -20143,7 +20143,7 @@
       "apiId": 1903,
       "title": "Board state validation tests — card numbers, state cards, stream/domain accuracy",
       "description": "## Experience\nI look at the board and the numbers shift between refreshes. I move a card to Won't Do and it stays visible. I ask for WIP count and get cards from Done. I can't trust what I see, so I can't plan. The board is how I manage — if it's wrong, I'm managing blind.\n\n## Files\n- platform/board-client/src/client.ts\n- platform/board-client/src/sdk.ts\n- platform/board-client/tests/\n\n## AC\n1. Tests verify card numbers returned by board-ts match Vikunja source\n2. Tests verify state cards (WIP per role) show correct current card for each role\n3. Tests verify stream and domain tags display correctly on card views\n4. Tests verify card move operations update state immediately — no stale cache\n5. Tests verify board-ts list output matches actual Vikunja state\n6. Tests verify view() shows correct bucket for all cards (not just first 50)\n7. Tests verify move reports success only when Vikunja confirms persistence\n8. All tests run in CI\n\n## What we learned (2026-04-05 session)\n- fetchBuckets() caps at 50 per bucket, no pagination\n- fetchAllTasks() had page<30 cap hiding 232 cards\n- list() and view() use different status paths — list was fixed, view wasn't\n- CLI reports 'Moved' without verifying API response\n- Test suite was creating production cards via cards add\n\nJeff directive: automate the WHOLE board page, not just state cards.",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -20152,9 +20152,9 @@
         "type:chore",
         "sequence:framework"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-29T12:53:24Z",
-      "updated": "2026-04-05T21:34:04Z"
+      "updated": "2026-04-05T21:52:33Z"
     },
     {
       "index": 1821,
