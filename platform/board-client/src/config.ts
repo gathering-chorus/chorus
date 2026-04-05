@@ -38,6 +38,7 @@ export const LABELS = {
     v1: 25, hardening: 26, style: 27, sparql: 28, 'flow-tests': 29,
     visibility: 92, gates: 93, spine: 94, ops: 95, strategy: 96,
     icd: 97, werk: 98, infrastructure: 99, clearing: 100, content: 101,
+    framework: 104, awareness: 105, coordination: 106, surfaces: 107, loom: 108,
   } as Record<string, number>,
   type: {
     new: 87, enhance: 88, fix: 89, chore: 90, swat: 91,
