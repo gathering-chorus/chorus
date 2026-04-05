@@ -347,6 +347,11 @@
     font-size: 0.9rem;
     font-family: inherit;
     outline: none;
+    resize: none;
+    overflow-y: hidden;
+    min-height: 2.5rem;
+    max-height: 8rem;
+    line-height: 1.4;
   }
   .input-field:focus { border-color: var(--accent); }
   .input-field::placeholder { color: var(--text-muted); }
@@ -379,6 +384,7 @@
   .send-btn.delivered { background: #16a34a; }
   .send-btn.delivery-failed { background: #dc2626; }
   .input-hint { color: var(--text-muted); font-size: 0.7rem; margin-top: 0.4rem; }
+  .input-hint .mobile-hint { display: none; }
 
   /* Mobile tab bar */
   .mobile-tabs {
@@ -414,7 +420,9 @@
     .tile-action, .tile-fold-btn { display: none; }
     .mobile-tabs { display: flex; }
     .resize-handle { display: none; }
-    .input-hint { display: none; }
+    .input-hint { display: block; font-size: 0.65rem; }
+    .input-hint .desktop-hint { display: none; }
+    .input-hint .mobile-hint { display: inline; }
     .main-area { display: flex; flex-direction: column; position: relative; overflow: hidden; }
     .msg-pane { flex: 1; min-height: 0; }
     .flow-pane { display: none !important; width: 0 !important; min-width: 0 !important; max-width: 0 !important; overflow: hidden !important; }
@@ -509,13 +517,13 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
 
 <div class="input-area">
   <div class="input-row">
-    <input class="input-field" id="input" type="text"
+    <textarea class="input-field" id="input" rows="1"
       placeholder="Type a message... (@wren @silas @kade or just type)"
-      autocomplete="off" />
+      autocomplete="off"></textarea>
     <button class="mic-btn" id="mic-btn" title="Voice input (hold to talk)">🎙</button>
     <button class="send-btn" id="send-btn">Send</button>
   </div>
-  <div class="input-hint">@role to direct • no @ = Wren gets it • Enter to send</div>
+  <div class="input-hint">@role to direct • no @ = Wren gets it • <span class="desktop-hint">Enter to send</span><span class="mobile-hint">tap Send</span></div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -626,6 +634,7 @@ function sendMessage() {
   sendBtn.textContent = 'Sending...';
   sendBtn.classList.add('sending');
   input.value = '';
+  input.style.height = 'auto'; // Reset textarea height after send
   function onAck(result) {
     sendBtn.classList.remove('sending');
     if (result && result.ok) {
@@ -658,11 +667,24 @@ function sendMessage() {
 }
 
 sendBtn.addEventListener('click', sendMessage);
+const isMobile = () => window.innerWidth <= 768;
 input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
+  if (e.key === 'Enter') {
+    if (isMobile()) {
+      // Mobile: Enter = newline (default textarea behavior), send via button only
+      return;
+    }
+    // Desktop: Enter = send, Shift+Enter = newline
+    if (!e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
   }
+});
+// Auto-resize textarea as content grows
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 128) + 'px';
 });
 
 // Voice input — Web Speech API
@@ -800,7 +822,8 @@ function toggleLock(role) {
       el.classList.remove('tile-locked');
     }
   });
-  input.focus();
+  // Only refocus on desktop — mobile focus steal pulls up keyboard unexpectedly
+  if (!isMobile()) input.focus();
 }
 
 function toggleFold(role) {
@@ -1482,8 +1505,8 @@ async function loadMobileStream() {
   } catch(err) {}
 }
 
-// Focus input on load
-input.focus();
+// Focus input on load — skip on mobile to avoid pulling up keyboard
+if (!isMobile()) input.focus();
 </script>
 </body>
 </html>
