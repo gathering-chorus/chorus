@@ -940,10 +940,5 @@ try {
 function parseTarget(text: string): string {
   const match = text.match(/^@(wren|silas|kade)\b/i);
   if (match) return match[1].toLowerCase();
-
-  // Context-based routing: if text mentions a role's domain keywords
-  const lower = text.toLowerCase();
-  if (lower.includes('deploy') || lower.includes('infra') || lower.includes('hook') || lower.includes('launchagent')) return 'silas';
-  if (lower.includes('build') || lower.includes('test') || lower.includes('handler') || lower.includes('page')) return 'kade';
-  return 'wren'; // PM is default
+  return 'wren'; // No @ = Wren gets it
 }
