@@ -1,24 +1,24 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T14:42:24.381Z",
+  "timestamp": "2026-04-05T15:07:32.146Z",
   "tasks": [
     {
-      "index": 2078,
-      "apiId": 2161,
-      "title": "Fix AppleScript single-quote escaping in process.rs and git detection heuristic in infra_guardrails.rs",
-      "description": "## Problem\nTwo active bugs found in code review: (1) chorus-inject AppleScript payload breaks on single quotes — nudge text with apostrophes causes syntax error (-2741). Confirmed live: Kade's feedback nudge failed on \"doesn't\". (2) infra_guardrails git detection heuristic at line 170 assumes team repo if no cd command — wrong when Claude Code runs from any directory.\n\n## Experience\nI nudge a message with an apostrophe and it delivers. I run a git command from a non-team directory and the guardrail doesn't block it.\n\n## AC\n- [ ] Single quotes in nudge text properly escaped in AppleScript payload\n- [ ] Nudge with apostrophe delivers via inject (not just queue)\n- [ ] Git detection checks actual CWD, not absence of cd command\n- [ ] Tests cover both fixes\n\n## Files\n- platform/services/chorus-hooks/src/inject.rs\n- platform/services/chorus-hooks/src/hooks/infra_guardrails.rs",
+      "index": 2077,
+      "apiId": 2160,
+      "title": "Split shim.rs into command submodules — 1776 lines to src/commands/",
+      "description": "## Problem\nshim.rs is 1776 lines with 22+ commands — session management, health checks, context cache, log rotation, nudge delivery, database init all in one file. Role-to-directory mapping duplicated 3 times. Unmaintainable — every edit risks breaking unrelated functionality.\n\n## Experience\nI open shim.rs to fix a nudge bug and I only see nudge code. Each command lives in its own file under src/commands/. Changes are isolated, testable, and reviewable.\n\n## AC\n- [ ] Create src/commands/ directory with submodules for major command groups\n- [ ] Session commands (start, close) in commands/session.rs\n- [ ] Health/ops commands in commands/health.rs\n- [ ] Context cache in commands/context_cache.rs\n- [ ] shim.rs reduced to dispatch + shared utilities (< 400 lines)\n- [ ] Role-to-dir mapping extracted to one location (shared/state_paths.rs already has role_dir)\n- [ ] All existing tests pass after refactor\n\n## Files\n- platform/services/chorus-hooks/src/shim.rs\n- platform/services/chorus-hooks/src/commands/mod.rs\n- platform/services/chorus-hooks/src/commands/session.rs\n- platform/services/chorus-hooks/src/commands/health.rs\n- platform/services/chorus-hooks/src/commands/context_cache.rs",
       "status": "WIP",
       "owner": "Silas",
-      "priority": "P1",
+      "priority": "P2",
       "domains": [
         "domain:chorus",
-        "type:fix",
+        "type:chore",
         "sequence:framework",
-        "origin:reactive"
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-05T13:38:40Z",
-      "updated": "2026-04-05T14:33:57Z"
+      "updated": "2026-04-05T14:44:25Z"
     },
     {
       "index": 1932,
@@ -38,6 +38,24 @@
       "done": false,
       "created": "2026-04-01T12:31:33Z",
       "updated": "2026-04-05T12:08:46Z"
+    },
+    {
+      "index": 2078,
+      "apiId": 2161,
+      "title": "Fix AppleScript single-quote escaping in process.rs and git detection heuristic in infra_guardrails.rs",
+      "description": "## Problem\nTwo active bugs found in code review: (1) chorus-inject AppleScript payload breaks on single quotes — nudge text with apostrophes causes syntax error (-2741). Confirmed live: Kade's feedback nudge failed on \"doesn't\". (2) infra_guardrails git detection heuristic at line 170 assumes team repo if no cd command — wrong when Claude Code runs from any directory.\n\n## Experience\nI nudge a message with an apostrophe and it delivers. I run a git command from a non-team directory and the guardrail doesn't block it.\n\n## AC\n- [ ] Single quotes in nudge text properly escaped in AppleScript payload\n- [ ] Nudge with apostrophe delivers via inject (not just queue)\n- [ ] Git detection checks actual CWD, not absence of cd command\n- [ ] Tests cover both fixes\n\n## Files\n- platform/services/chorus-hooks/src/inject.rs\n- platform/services/chorus-hooks/src/hooks/infra_guardrails.rs",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework",
+        "origin:reactive"
+      ],
+      "done": true,
+      "created": "2026-04-05T13:38:40Z",
+      "updated": "2026-04-05T14:43:06Z"
     },
     {
       "index": 2076,
@@ -915,23 +933,6 @@
       "updated": "2026-04-02T12:03:09Z"
     },
     {
-      "index": 1965,
-      "apiId": 2048,
-      "title": "Cards domain page + service design + BDD — mandatory fields, tighten --quick, block at Now not WIP",
-      "description": "## Experience\nJeff creates and grooms cards daily. Cards enter the system without type, chunk, domain, or priority via --quick, then hit hard blocks at WIP. The pain is deferred, not avoided. Jeff wants mandatory fields enforced at creation and description required before Now — not WIP.\n\n## AC\n- [ ] domain-cards.html published — actor diagram, who does what, spine events, services\n- [ ] service-design-cards.html published — lifecycle, gate matrix, mandatory fields, anti-patterns, BDD scenarios\n- [ ] actor-diagram-cards.html removed (split into above two)\n- [ ] BDD scenarios cover: creation (5), move to Now (3), pull to WIP (5), accept (5), desc update (2)\n- [ ] Mandatory fields proposal documented: type + chunk + domain + priority at create, description at Now\n- [ ] Card for Silas: tighten --quick to require classification, harden Now gate\n\n## Files\n- product-manager/artifacts/domain-cards.html\n- product-manager/artifacts/service-design-cards.html",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-02T11:37:55Z",
-      "updated": "2026-04-02T11:51:48Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1123,24 +1124,6 @@
       "domains": [
         "domain:chorus",
         "type:enhance",
-        "sequence:framework",
-        "origin:reflective"
-      ],
-      "done": false,
-      "created": "2026-04-05T13:38:40Z",
-      "updated": "2026-04-05T13:38:40Z"
-    },
-    {
-      "index": 2077,
-      "apiId": 2160,
-      "title": "Split shim.rs into command submodules — 1776 lines to src/commands/",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "domain:chorus",
-        "type:chore",
         "sequence:framework",
         "origin:reflective"
       ],
@@ -1938,6 +1921,22 @@
       "done": false,
       "created": "2026-03-22T00:47:11Z",
       "updated": "2026-03-22T11:55:57Z"
+    },
+    {
+      "index": 1581,
+      "apiId": 1664,
+      "title": "Complete doc-catalog page — fix links, add to navbar, make all docs browseable",
+      "description": "Doc catalog at /doc-catalog.html inventories 88 HTML docs across 7 projects. Started yesterday, partially working. Needs finishing.\n\n## What's done\n- Catalog page exists with 88 docs grouped by topic\n- NAV / NOT IN NAV badges showing which docs are in navbar\n- Dates on every doc\n- /docs/pm/, /docs/architect/, /docs/engineer/ static routes added to app.ts (working with auth)\n\n## What's left\n1. Links to role docs (/docs/pm/*, /docs/architect/*, /docs/engineer/*) need verification — some paths may be wrong (e.g. /docs/pm/docs/wren-role.html has double \"docs\")\n2. Add doc-catalog to navbar (under Chorus or a new Documentation section)\n3. Remove stale convergence domain tag on cards that were already fixed\n4. Consider: auto-generate catalog from filesystem scan instead of static HTML\n\n## AC\n1. Every link on /doc-catalog.html is clickable and loads the correct doc (no 404s)\n2. Doc catalog accessible from navbar\n3. Role doc routes (/docs/pm/, /docs/architect/, /docs/engineer/) verified working for all listed files\n4. Path corrections for any double-directory issues (e.g. /docs/pm/docs/ → /docs/pm/)\n\n## Files\npublic/doc-catalog.html, src/app.ts, config/nav-tree.json",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:documents"
+      ],
+      "done": false,
+      "created": "2026-03-21T12:53:03Z",
+      "updated": "2026-03-21T12:53:03Z"
     },
     {
       "index": 1721,

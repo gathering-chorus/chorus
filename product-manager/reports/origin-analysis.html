@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reflective vs Reactive — Card Origin Analysis</title>
+<style>
+  :root { --bg: #1a1a2e; --card: #16213e; --accent: #e94560; --calm: #0f3460; --text: #eee; --dim: #888; --green: #4ecca3; --red: #e94560; --amber: #f0a500; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'SF Mono', 'Fira Code', monospace; background: var(--bg); color: var(--text); padding: 2rem; max-width: 900px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; color: var(--green); }
+  h2 { font-size: 1.1rem; margin: 2rem 0 0.75rem; color: var(--amber); border-bottom: 1px solid #333; padding-bottom: 0.3rem; }
+  h3 { font-size: 0.95rem; margin: 1.2rem 0 0.5rem; color: var(--dim); }
+  p, li { font-size: 0.85rem; }
+  .subtitle { color: var(--dim); font-size: 0.8rem; margin-bottom: 2rem; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1rem 0; }
+  .stat { background: var(--card); border-radius: 8px; padding: 1.2rem; text-align: center; }
+  .stat .number { font-size: 2rem; font-weight: bold; }
+  .stat .label { font-size: 0.75rem; color: var(--dim); margin-top: 0.3rem; }
+  .stat.reactive .number { color: var(--red); }
+  .stat.reflective .number { color: var(--green); }
+  .stat.neutral .number { color: var(--amber); }
+  table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.8rem; }
+  th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid #222; }
+  th { color: var(--dim); font-weight: normal; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-row { display: flex; height: 28px; border-radius: 4px; overflow: hidden; margin: 0.5rem 0; }
+  .bar-reactive { background: var(--red); }
+  .bar-reflective { background: var(--green); }
+  .bar-noise { background: #333; }
+  .bar-label { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--dim); }
+  .method { background: var(--card); border-radius: 8px; padding: 1rem; margin: 1rem 0; font-size: 0.8rem; }
+  .method h3 { margin-top: 0; }
+  .method ol { padding-left: 1.5rem; }
+  .method li { margin: 0.3rem 0; }
+  .callout { border-left: 3px solid var(--amber); padding: 0.75rem 1rem; margin: 1rem 0; background: rgba(240,165,0,0.08); font-size: 0.8rem; }
+  .callout.red { border-color: var(--red); background: rgba(233,69,96,0.08); }
+  .trend-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.25rem 0; font-size: 0.8rem; }
+  .trend-bar { height: 20px; border-radius: 3px; display: flex; overflow: hidden; flex: 1; }
+  .trend-week { width: 50px; color: var(--dim); font-size: 0.75rem; }
+  .trend-pct { width: 45px; text-align: right; font-size: 0.75rem; }
+  .legend { display: flex; gap: 1.5rem; font-size: 0.75rem; margin: 0.5rem 0; }
+  .legend span { display: flex; align-items: center; gap: 0.3rem; }
+  .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .dot.reactive { background: var(--red); }
+  .dot.reflective { background: var(--green); }
+  .dot.noise { background: #333; }
+</style>
+</head>
+<body>
+
+<h1>Reflective vs Reactive</h1>
+<p class="subtitle">Card origin analysis across all Vikunja projects | 1,604 cards | April 5, 2026</p>
+
+<h2>All Time</h2>
+<div class="grid">
+  <div class="stat reflective"><div class="number">65%</div><div class="label">Reflective<br>1,025 cards</div></div>
+  <div class="stat reactive"><div class="number">34%</div><div class="label">Reactive<br>530 cards</div></div>
+  <div class="stat neutral"><div class="number">48</div><div class="label">Noise<br>(test artifacts)</div></div>
+</div>
+
+<div class="bar-row">
+  <div class="bar-reflective" style="width:65%"></div>
+  <div class="bar-reactive" style="width:34%"></div>
+  <div class="bar-noise" style="width:3%"></div>
+</div>
+<div class="bar-label"><span>Reflective 65%</span><span>Reactive 34%</span></div>
+
+<h2>Last 30 Days (Mar 6 - Apr 5)</h2>
+<div class="grid">
+  <div class="stat reflective"><div class="number">61%</div><div class="label">Reflective<br>700 cards</div></div>
+  <div class="stat reactive"><div class="number">38%</div><div class="label">Reactive<br>439 cards</div></div>
+  <div class="stat neutral"><div class="number">1,139</div><div class="label">Real cards<br>(48 noise excluded)</div></div>
+</div>
+
+<h2>Last 7 Days (Mar 29 - Apr 5)</h2>
+<div class="grid">
+  <div class="stat reflective"><div class="number">50%</div><div class="label">Reflective<br>131 cards</div></div>
+  <div class="stat reactive"><div class="number">49%</div><div class="label">Reactive<br>126 cards</div></div>
+  <div class="stat neutral"><div class="number">257</div><div class="label">Real cards<br>(43 noise excluded)</div></div>
+</div>
+
+<div class="callout red">
+  Last 7 days: nearly 1:1 reactive to reflective. Half the team's output was responding to things that broke. This is the stabilization week — the system demanding its maintenance debt.
+</div>
+
+<h2>Weekly Trend</h2>
+<div class="legend">
+  <span><span class="dot reflective"></span> Reflective</span>
+  <span><span class="dot reactive"></span> Reactive</span>
+  <span><span class="dot noise"></span> Noise</span>
+</div>
+
+<div class="trend-row"><span class="trend-week">Feb 16</span><div class="trend-bar"><div class="bar-reflective" style="width:83%"></div><div class="bar-reactive" style="width:17%"></div></div><span class="trend-pct">17%</span></div>
+<div class="trend-row"><span class="trend-week">Feb 23</span><div class="trend-bar"><div class="bar-reflective" style="width:76%"></div><div class="bar-reactive" style="width:24%"></div></div><span class="trend-pct">24%</span></div>
+<div class="trend-row"><span class="trend-week">Mar 2</span><div class="trend-bar"><div class="bar-reflective" style="width:70%"></div><div class="bar-reactive" style="width:30%"></div></div><span class="trend-pct">30%</span></div>
+<div class="trend-row"><span class="trend-week">Mar 9</span><div class="trend-bar"><div class="bar-reflective" style="width:51%"></div><div class="bar-reactive" style="width:48%"></div><div class="bar-noise" style="width:1%"></div></div><span class="trend-pct">48%</span></div>
+<div class="trend-row"><span class="trend-week">Mar 16</span><div class="trend-bar"><div class="bar-reflective" style="width:85%"></div><div class="bar-reactive" style="width:14%"></div><div class="bar-noise" style="width:1%"></div></div><span class="trend-pct">14%</span></div>
+<div class="trend-row"><span class="trend-week">Mar 23</span><div class="trend-bar"><div class="bar-reflective" style="width:75%"></div><div class="bar-reactive" style="width:25%"></div></div><span class="trend-pct">25%</span></div>
+<div class="trend-row"><span class="trend-week">Mar 30</span><div class="trend-bar"><div class="bar-reflective" style="width:41%"></div><div class="bar-reactive" style="width:43%"></div><div class="bar-noise" style="width:16%"></div></div><span class="trend-pct">51%</span></div>
+
+<div class="callout">
+  Two reactive spikes: Mar 9 (48%) and Mar 30 (51%). Mar 9 was the post-lobotomy recovery. Mar 30 is the current stabilization push. Both weeks: high volume, high fix rate. The system generates reactive work in bursts.
+</div>
+
+<h2>Raw Numbers</h2>
+<table>
+  <tr><th>Week</th><th class="num">Reactive</th><th class="num">Reflective</th><th class="num">Noise</th><th class="num">Total</th><th class="num">React %</th></tr>
+  <tr><td>Feb 16</td><td class="num">13</td><td class="num">63</td><td class="num">0</td><td class="num">76</td><td class="num">17%</td></tr>
+  <tr><td>Feb 23</td><td class="num">59</td><td class="num">189</td><td class="num">0</td><td class="num">248</td><td class="num">24%</td></tr>
+  <tr><td>Mar 2</td><td class="num">56</td><td class="num">133</td><td class="num">0</td><td class="num">189</td><td class="num">30%</td></tr>
+  <tr><td>Mar 9</td><td class="num">213</td><td class="num">225</td><td class="num">2</td><td class="num">440</td><td class="num">48%</td></tr>
+  <tr><td>Mar 16</td><td class="num">24</td><td class="num">150</td><td class="num">2</td><td class="num">176</td><td class="num">14%</td></tr>
+  <tr><td>Mar 23</td><td class="num">52</td><td class="num">157</td><td class="num">1</td><td class="num">210</td><td class="num">25%</td></tr>
+  <tr><td>Mar 30</td><td class="num">113</td><td class="num">108</td><td class="num">43</td><td class="num">264</td><td class="num">51%</td></tr>
+</table>
+
+<h2>How This Was Built</h2>
+<div class="method">
+  <h3>Data Source</h3>
+  <p>All 1,604 tasks from Vikunja API across 3 projects (Gathering: 1,542, Chorus: 48, Self: 14). Fetched via paginated REST calls.</p>
+
+  <h3>Classification Method</h3>
+  <ol>
+    <li><strong>type: label (ground truth)</strong> — Cards with <code>type:fix</code> or <code>type:swat</code> → reactive. Cards with <code>type:new</code> or <code>type:enhance</code> → reflective. 316 cards have type labels.</li>
+    <li><strong>type:chore → title inspection</strong> — Chores are ambiguous. Classified by scanning title for reactive keywords (fix, broken, stale, missing, error, etc.). 55 cards.</li>
+    <li><strong>Untagged → title classification</strong> — 1,226 cards with no type label. Classified by title keyword matching against a broad reactive pattern set.</li>
+    <li><strong>Noise filter</strong> — Cards with titles matching test artifact patterns (BDD, CLI test, Test card) excluded from ratios. 48 cards.</li>
+    <li><strong>Date bucketing</strong> — Used <code>done_at</code> when available, else <code>created</code> date.</li>
+  </ol>
+
+  <h3>Known Limitations</h3>
+  <ol>
+    <li><strong>Title-based classification undercounts reactive by ~30%.</strong> Validated against 7-day ground truth: cards with <code>type:fix</code> often describe the solution ("Cloudflare tunnel monitoring") not the problem. Title pattern sees "monitoring" and calls it reflective.</li>
+    <li><strong>1,226 of 1,604 cards (76%) have no type: label.</strong> These are older cards from before the type taxonomy was enforced. All classification for these cards is inferred.</li>
+    <li><strong>Chore is a judgment call.</strong> "Extract shared hook utilities" is reflective (planned refactor). "Remove all background nudge polling" is reactive (it was broken). Both are type:chore.</li>
+  </ol>
+
+  <h3>Confidence</h3>
+  <p>The <strong>direction</strong> is reliable: reactive work is trending up. The <strong>exact percentages</strong> should be read as ±5-8% for recent data (type-labeled) and ±10-15% for older data (title-only).</p>
+  <p>The <code>origin:reflective</code> / <code>origin:reactive</code> labels added today will make future analysis exact — no inference needed.</p>
+</div>
+
+<h2>What This Means</h2>
+<div class="callout">
+  <strong>The system is demanding stabilization.</strong> Reactive work rose from 17% (Feb) to 51% (this week). Half the team's capacity is going to things that broke. The "stop starting, start finishing" directive is the right call — the framework sequence Silas is running targets the root causes (duplicated code, gate false positives, broken nudges) that spawn fix cards.
+</div>
+
+<p style="color:var(--dim); font-size:0.7rem; margin-top:2rem; text-align:center;">
+  Generated by Wren | April 5, 2026 | Data: Vikunja API, 1,604 cards, 3 projects
+</p>
+
+</body>
+</html>

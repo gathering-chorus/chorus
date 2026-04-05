@@ -66,13 +66,10 @@ pub fn role_pattern(role: &str) -> Option<&'static str> {
 /// from chorus-hook-shim, so rebuilding the shim doesn't revoke TCC.
 /// Returns Ok if injection succeeds, Err with reason if not.
 pub fn inject_by_tab_name(role: &str, text: &str) -> Result<(), String> {
-    // Locate chorus-inject next to this binary
-    let inject_bin = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("chorus-inject")))
-        .unwrap_or_else(|| std::path::PathBuf::from(
-            "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-inject"
-        ));
+    // chorus-inject lives in its own crate — independent build lifecycle (#2075)
+    let inject_bin = std::path::PathBuf::from(
+        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/target/release/chorus-inject"
+    );
 
     let output = Command::new(&inject_bin)
         .args([role, text])

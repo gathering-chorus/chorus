@@ -29,9 +29,8 @@ path = "src/main.rs"
 name = "chorus-hook-shim"
 path = "src/shim.rs"
 
-[[bin]]
-name = "chorus-inject"
-path = "src/inject.rs"
+## chorus-inject moved to its own crate (../chorus-inject/) so it has
+## an independent build lifecycle and TCC permissions survive hooks rebuilds.
 
 [dev-dependencies]
 tempfile = "3"
