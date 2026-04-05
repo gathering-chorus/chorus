@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T18:38:56.063Z",
+  "timestamp": "2026-04-05T18:59:08.471Z",
   "tasks": [
     {
       "index": 3,
@@ -19164,7 +19164,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
-      "updated": "2026-04-05T18:21:31Z"
+      "updated": "2026-04-05T18:41:52Z"
     },
     {
       "index": 1762,
@@ -19183,7 +19183,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
-      "updated": "2026-04-05T18:21:31Z"
+      "updated": "2026-04-05T18:41:52Z"
     },
     {
       "index": 1763,
@@ -19202,7 +19202,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:31Z",
-      "updated": "2026-04-05T18:21:31Z"
+      "updated": "2026-04-05T18:41:52Z"
     },
     {
       "index": 1764,
@@ -22686,7 +22686,7 @@
       ],
       "done": false,
       "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-05T18:21:27Z"
+      "updated": "2026-04-05T18:41:49Z"
     },
     {
       "index": 1965,
@@ -23261,7 +23261,7 @@
       "apiId": 2081,
       "title": "BDD test runs trigger e2e probes that nudge roles as Jeff — tests must be isolated from real terminals",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -23330,7 +23330,7 @@
       "apiId": 2085,
       "title": "Memory gate missing search-order enforcement — only gates Edit/Write, not Grep/Bash searches",
       "description": "## Experience\nI grep the filesystem without checking Chorus first. The memory gate doesn't block me because it only fires on Edit/Write (line 217 of memory_gate.rs). Grep and Bash searches pass through unchecked.\n\n## Acceptance Criteria\n- [ ] PreToolUse gate intercepts Grep and Bash search commands (grep, rg, find on session/card files)\n- [ ] Gate blocks if no prior chorus-query.sh call detected in the session\n- [ ] Gate allows if Chorus was already queried this session\n- [ ] Tests cover: grep without Chorus (blocked), grep after Chorus (allowed), non-search Bash (allowed)",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -23739,7 +23739,7 @@
       "apiId": 2108,
       "title": "Test card no seq",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23756,7 +23756,7 @@
       "apiId": 2109,
       "title": "Test card with seq",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23774,7 +23774,7 @@
       "apiId": 2110,
       "title": "CLI test card",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23791,7 +23791,7 @@
       "apiId": 2111,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23809,7 +23809,7 @@
       "apiId": 2112,
       "title": "CLI test card",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23826,7 +23826,7 @@
       "apiId": 2113,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -24443,7 +24443,7 @@
       "apiId": 2148,
       "title": "test-chunk-removal-1873",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24460,7 +24460,7 @@
       "apiId": 2149,
       "title": "test-chunk-auto-infer",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24478,7 +24478,7 @@
       "apiId": 2150,
       "title": "test-wip-no-chunk",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24488,14 +24488,14 @@
       ],
       "done": false,
       "created": "2026-04-05T11:28:23Z",
-      "updated": "2026-04-05T11:28:30Z"
+      "updated": "2026-04-05T18:38:56Z"
     },
     {
       "index": 2068,
       "apiId": 2151,
       "title": "fix broken nudge",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24511,7 +24511,7 @@
       "apiId": 2152,
       "title": "test quick card",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24521,14 +24521,14 @@
       ],
       "done": false,
       "created": "2026-04-05T11:43:22Z",
-      "updated": "2026-04-05T11:43:22Z"
+      "updated": "2026-04-05T18:38:56Z"
     },
     {
       "index": 2070,
       "apiId": 2153,
       "title": "test well-formed",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24538,7 +24538,7 @@
       ],
       "done": false,
       "created": "2026-04-05T11:43:22Z",
-      "updated": "2026-04-05T11:43:23Z"
+      "updated": "2026-04-05T18:38:56Z"
     },
     {
       "index": 2071,
@@ -24749,7 +24749,7 @@
       ],
       "done": false,
       "created": "2026-04-05T14:13:01Z",
-      "updated": "2026-04-05T14:13:01Z"
+      "updated": "2026-04-05T18:38:57Z"
     },
     {
       "index": 2083,
@@ -24767,14 +24767,14 @@
       ],
       "done": false,
       "created": "2026-04-05T14:13:02Z",
-      "updated": "2026-04-05T14:13:02Z"
+      "updated": "2026-04-05T18:38:57Z"
     },
     {
       "index": 2084,
       "apiId": 2167,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24784,14 +24784,14 @@
       ],
       "done": false,
       "created": "2026-04-05T14:13:02Z",
-      "updated": "2026-04-05T14:13:03Z"
+      "updated": "2026-04-05T18:38:57Z"
     },
     {
       "index": 2085,
       "apiId": 2168,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24801,14 +24801,14 @@
       ],
       "done": false,
       "created": "2026-04-05T14:13:03Z",
-      "updated": "2026-04-05T14:13:04Z"
+      "updated": "2026-04-05T18:38:58Z"
     },
     {
       "index": 2086,
       "apiId": 2169,
       "title": "CLI test card",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -24818,14 +24818,14 @@
       ],
       "done": false,
       "created": "2026-04-05T14:13:06Z",
-      "updated": "2026-04-05T14:13:06Z"
+      "updated": "2026-04-05T18:38:58Z"
     },
     {
       "index": 2087,
       "apiId": 2170,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -24837,7 +24837,7 @@
       ],
       "done": false,
       "created": "2026-04-05T14:13:06Z",
-      "updated": "2026-04-05T14:13:07Z"
+      "updated": "2026-04-05T18:38:59Z"
     },
     {
       "index": 2088,
@@ -24961,7 +24961,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:14:15Z",
-      "updated": "2026-04-05T17:14:15Z"
+      "updated": "2026-04-05T18:39:00Z"
     },
     {
       "index": 2095,
@@ -24978,14 +24978,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:14:15Z",
-      "updated": "2026-04-05T17:14:15Z"
+      "updated": "2026-04-05T18:39:00Z"
     },
     {
       "index": 2096,
       "apiId": 2179,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24995,14 +24995,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:14:16Z",
-      "updated": "2026-04-05T17:14:17Z"
+      "updated": "2026-04-05T18:39:00Z"
     },
     {
       "index": 2097,
       "apiId": 2180,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25012,14 +25012,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:14:17Z",
-      "updated": "2026-04-05T17:14:18Z"
+      "updated": "2026-04-05T18:39:00Z"
     },
     {
       "index": 2098,
       "apiId": 2181,
       "title": "CLI test card",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -25029,14 +25029,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:14:19Z",
-      "updated": "2026-04-05T17:14:20Z"
+      "updated": "2026-04-05T18:39:01Z"
     },
     {
       "index": 2099,
       "apiId": 2182,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -25047,7 +25047,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:14:20Z",
-      "updated": "2026-04-05T17:14:20Z"
+      "updated": "2026-04-05T18:39:01Z"
     },
     {
       "index": 2100,
@@ -25098,7 +25098,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:53:41Z",
-      "updated": "2026-04-05T17:53:41Z"
+      "updated": "2026-04-05T18:39:01Z"
     },
     {
       "index": 2103,
@@ -25114,14 +25114,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:53:41Z",
-      "updated": "2026-04-05T17:53:41Z"
+      "updated": "2026-04-05T18:39:02Z"
     },
     {
       "index": 2104,
       "apiId": 2187,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25130,7 +25130,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:53:41Z",
-      "updated": "2026-04-05T18:33:09Z"
+      "updated": "2026-04-05T18:39:02Z"
     },
     {
       "index": 2105,
@@ -25146,7 +25146,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:53:41Z",
-      "updated": "2026-04-05T17:53:41Z"
+      "updated": "2026-04-05T18:39:02Z"
     },
     {
       "index": 2106,
@@ -25162,7 +25162,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:53:41Z",
-      "updated": "2026-04-05T17:53:41Z"
+      "updated": "2026-04-05T18:39:02Z"
     },
     {
       "index": 2107,
@@ -25178,7 +25178,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:54:24Z",
-      "updated": "2026-04-05T17:54:24Z"
+      "updated": "2026-04-05T18:39:03Z"
     },
     {
       "index": 2108,
@@ -25194,14 +25194,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:54:24Z",
-      "updated": "2026-04-05T17:54:24Z"
+      "updated": "2026-04-05T18:39:03Z"
     },
     {
       "index": 2109,
       "apiId": 2192,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25210,7 +25210,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:54:25Z",
-      "updated": "2026-04-05T18:33:09Z"
+      "updated": "2026-04-05T18:39:03Z"
     },
     {
       "index": 2110,
@@ -25226,7 +25226,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:54:25Z",
-      "updated": "2026-04-05T17:54:25Z"
+      "updated": "2026-04-05T18:39:03Z"
     },
     {
       "index": 2111,
@@ -25242,7 +25242,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:54:25Z",
-      "updated": "2026-04-05T17:54:25Z"
+      "updated": "2026-04-05T18:39:04Z"
     },
     {
       "index": 2112,
@@ -25259,7 +25259,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:55:05Z",
-      "updated": "2026-04-05T17:55:05Z"
+      "updated": "2026-04-05T18:39:04Z"
     },
     {
       "index": 2113,
@@ -25276,14 +25276,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:55:05Z",
-      "updated": "2026-04-05T17:55:05Z"
+      "updated": "2026-04-05T18:39:04Z"
     },
     {
       "index": 2114,
       "apiId": 2197,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25293,7 +25293,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:55:05Z",
-      "updated": "2026-04-05T18:33:10Z"
+      "updated": "2026-04-05T18:39:04Z"
     },
     {
       "index": 2115,
@@ -25310,7 +25310,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:55:05Z",
-      "updated": "2026-04-05T17:55:05Z"
+      "updated": "2026-04-05T18:39:05Z"
     },
     {
       "index": 2116,
@@ -25327,7 +25327,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:55:05Z",
-      "updated": "2026-04-05T17:55:05Z"
+      "updated": "2026-04-05T18:39:09Z"
     },
     {
       "index": 2117,
@@ -25344,7 +25344,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:55:05Z",
-      "updated": "2026-04-05T17:55:05Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2118,
@@ -25451,7 +25451,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:05Z",
-      "updated": "2026-04-05T17:58:05Z"
+      "updated": "2026-04-05T18:39:11Z"
     },
     {
       "index": 2124,
@@ -25468,7 +25468,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:05Z",
-      "updated": "2026-04-05T17:58:05Z"
+      "updated": "2026-04-05T18:39:11Z"
     },
     {
       "index": 2125,
@@ -25486,7 +25486,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:05Z",
-      "updated": "2026-04-05T17:58:05Z"
+      "updated": "2026-04-05T18:39:12Z"
     },
     {
       "index": 2126,
@@ -25503,14 +25503,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:05Z",
-      "updated": "2026-04-05T17:58:06Z"
+      "updated": "2026-04-05T18:39:12Z"
     },
     {
       "index": 2127,
       "apiId": 2210,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25521,14 +25521,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:06Z",
-      "updated": "2026-04-05T17:58:07Z"
+      "updated": "2026-04-05T18:39:12Z"
     },
     {
       "index": 2128,
       "apiId": 2211,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25538,7 +25538,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:06Z",
-      "updated": "2026-04-05T18:33:10Z"
+      "updated": "2026-04-05T18:39:13Z"
     },
     {
       "index": 2129,
@@ -25555,7 +25555,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:06Z",
-      "updated": "2026-04-05T17:58:06Z"
+      "updated": "2026-04-05T18:39:13Z"
     },
     {
       "index": 2130,
@@ -25572,14 +25572,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:07Z",
-      "updated": "2026-04-05T17:58:07Z"
+      "updated": "2026-04-05T18:39:13Z"
     },
     {
       "index": 2131,
       "apiId": 2214,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25590,7 +25590,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:07Z",
-      "updated": "2026-04-05T17:58:08Z"
+      "updated": "2026-04-05T18:39:14Z"
     },
     {
       "index": 2132,
@@ -25607,7 +25607,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:58:07Z",
-      "updated": "2026-04-05T17:58:07Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2133,
@@ -25624,7 +25624,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:13Z",
-      "updated": "2026-04-05T17:59:13Z"
+      "updated": "2026-04-05T18:39:14Z"
     },
     {
       "index": 2134,
@@ -25641,7 +25641,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:13Z",
-      "updated": "2026-04-05T17:59:13Z"
+      "updated": "2026-04-05T18:39:14Z"
     },
     {
       "index": 2135,
@@ -25659,7 +25659,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:14Z",
-      "updated": "2026-04-05T17:59:14Z"
+      "updated": "2026-04-05T18:39:14Z"
     },
     {
       "index": 2136,
@@ -25676,14 +25676,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:14Z",
-      "updated": "2026-04-05T17:59:14Z"
+      "updated": "2026-04-05T18:39:15Z"
     },
     {
       "index": 2137,
       "apiId": 2220,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25694,7 +25694,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:14Z",
-      "updated": "2026-04-05T17:59:15Z"
+      "updated": "2026-04-05T18:39:15Z"
     },
     {
       "index": 2138,
@@ -25711,7 +25711,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:14Z",
-      "updated": "2026-04-05T17:59:14Z"
+      "updated": "2026-04-05T18:39:15Z"
     },
     {
       "index": 2139,
@@ -25728,7 +25728,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:14Z",
-      "updated": "2026-04-05T17:59:14Z"
+      "updated": "2026-04-05T18:39:16Z"
     },
     {
       "index": 2140,
@@ -25745,7 +25745,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:15Z",
-      "updated": "2026-04-05T17:59:15Z"
+      "updated": "2026-04-05T18:39:16Z"
     },
     {
       "index": 2141,
@@ -25762,14 +25762,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:15Z",
-      "updated": "2026-04-05T17:59:15Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2142,
       "apiId": 2225,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25780,7 +25780,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:15Z",
-      "updated": "2026-04-05T17:59:16Z"
+      "updated": "2026-04-05T18:39:16Z"
     },
     {
       "index": 2143,
@@ -25797,7 +25797,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:49Z",
-      "updated": "2026-04-05T17:59:50Z"
+      "updated": "2026-04-05T18:39:16Z"
     },
     {
       "index": 2144,
@@ -25815,14 +25815,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:50Z",
-      "updated": "2026-04-05T17:59:50Z"
+      "updated": "2026-04-05T18:39:17Z"
     },
     {
       "index": 2145,
       "apiId": 2228,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25833,14 +25833,14 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:50Z",
-      "updated": "2026-04-05T17:59:50Z"
+      "updated": "2026-04-05T18:39:17Z"
     },
     {
       "index": 2146,
       "apiId": 2229,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25851,7 +25851,7 @@
       ],
       "done": false,
       "created": "2026-04-05T17:59:50Z",
-      "updated": "2026-04-05T17:59:51Z"
+      "updated": "2026-04-05T18:39:17Z"
     },
     {
       "index": 2147,
@@ -25868,7 +25868,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:04:38Z",
-      "updated": "2026-04-05T18:04:38Z"
+      "updated": "2026-04-05T18:39:17Z"
     },
     {
       "index": 2148,
@@ -25886,14 +25886,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:04:38Z",
-      "updated": "2026-04-05T18:04:39Z"
+      "updated": "2026-04-05T18:39:18Z"
     },
     {
       "index": 2149,
       "apiId": 2232,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25904,14 +25904,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:04:39Z",
-      "updated": "2026-04-05T18:04:39Z"
+      "updated": "2026-04-05T18:39:18Z"
     },
     {
       "index": 2150,
       "apiId": 2233,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25922,7 +25922,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:04:39Z",
-      "updated": "2026-04-05T18:04:39Z"
+      "updated": "2026-04-05T18:39:18Z"
     },
     {
       "index": 2151,
@@ -25939,7 +25939,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:47Z",
-      "updated": "2026-04-05T18:05:47Z"
+      "updated": "2026-04-05T18:39:18Z"
     },
     {
       "index": 2152,
@@ -25956,7 +25956,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:48Z",
-      "updated": "2026-04-05T18:05:48Z"
+      "updated": "2026-04-05T18:39:19Z"
     },
     {
       "index": 2153,
@@ -25973,7 +25973,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:48Z",
-      "updated": "2026-04-05T18:05:48Z"
+      "updated": "2026-04-05T18:39:19Z"
     },
     {
       "index": 2154,
@@ -25990,7 +25990,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:48Z",
-      "updated": "2026-04-05T18:05:48Z"
+      "updated": "2026-04-05T18:39:19Z"
     },
     {
       "index": 2155,
@@ -26007,7 +26007,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:48Z",
-      "updated": "2026-04-05T18:05:48Z"
+      "updated": "2026-04-05T18:39:23Z"
     },
     {
       "index": 2156,
@@ -26025,7 +26025,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:48Z",
-      "updated": "2026-04-05T18:05:49Z"
+      "updated": "2026-04-05T18:39:24Z"
     },
     {
       "index": 2157,
@@ -26042,14 +26042,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:49Z",
-      "updated": "2026-04-05T18:05:49Z"
+      "updated": "2026-04-05T18:39:25Z"
     },
     {
       "index": 2158,
       "apiId": 2241,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26060,7 +26060,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:49Z",
-      "updated": "2026-04-05T18:05:50Z"
+      "updated": "2026-04-05T18:39:25Z"
     },
     {
       "index": 2159,
@@ -26077,14 +26077,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:49Z",
-      "updated": "2026-04-05T18:05:49Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2160,
       "apiId": 2243,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26095,7 +26095,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:05:50Z",
-      "updated": "2026-04-05T18:05:50Z"
+      "updated": "2026-04-05T18:39:25Z"
     },
     {
       "index": 2161,
@@ -26112,7 +26112,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:00Z",
-      "updated": "2026-04-05T18:06:00Z"
+      "updated": "2026-04-05T18:39:26Z"
     },
     {
       "index": 2162,
@@ -26129,7 +26129,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:00Z",
-      "updated": "2026-04-05T18:06:00Z"
+      "updated": "2026-04-05T18:39:26Z"
     },
     {
       "index": 2163,
@@ -26146,7 +26146,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:00Z",
-      "updated": "2026-04-05T18:06:00Z"
+      "updated": "2026-04-05T18:39:26Z"
     },
     {
       "index": 2164,
@@ -26164,7 +26164,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:00Z",
-      "updated": "2026-04-05T18:06:00Z"
+      "updated": "2026-04-05T18:39:27Z"
     },
     {
       "index": 2165,
@@ -26181,14 +26181,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:00Z",
-      "updated": "2026-04-05T18:06:01Z"
+      "updated": "2026-04-05T18:39:27Z"
     },
     {
       "index": 2166,
       "apiId": 2249,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26199,7 +26199,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:01Z",
-      "updated": "2026-04-05T18:06:02Z"
+      "updated": "2026-04-05T18:39:27Z"
     },
     {
       "index": 2167,
@@ -26216,7 +26216,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:01Z",
-      "updated": "2026-04-05T18:06:01Z"
+      "updated": "2026-04-05T18:39:28Z"
     },
     {
       "index": 2168,
@@ -26233,7 +26233,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:01Z",
-      "updated": "2026-04-05T18:06:01Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2169,
@@ -26250,14 +26250,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:02Z",
-      "updated": "2026-04-05T18:06:02Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2170,
       "apiId": 2253,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Won't Do",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26268,7 +26268,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:06:02Z",
-      "updated": "2026-04-05T18:06:03Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2171,
@@ -26319,7 +26319,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:09:04Z",
-      "updated": "2026-04-05T18:09:04Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2173,
@@ -26336,7 +26336,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:09:05Z",
-      "updated": "2026-04-05T18:09:05Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2174,
@@ -26354,14 +26354,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:09:05Z",
-      "updated": "2026-04-05T18:09:05Z"
+      "updated": "2026-04-05T18:44:58Z"
     },
     {
       "index": 2175,
       "apiId": 2259,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -26371,7 +26371,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:09:05Z",
-      "updated": "2026-04-05T18:09:05Z"
+      "updated": "2026-04-05T18:45:45Z"
     },
     {
       "index": 2176,
@@ -26388,14 +26388,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:09:05Z",
-      "updated": "2026-04-05T18:09:07Z"
+      "updated": "2026-04-05T18:45:46Z"
     },
     {
       "index": 2176,
       "apiId": 2261,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26405,14 +26405,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:09:05Z",
-      "updated": "2026-04-05T18:09:06Z"
+      "updated": "2026-04-05T18:39:29Z"
     },
     {
       "index": 2177,
       "apiId": 2262,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26422,14 +26422,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:09:06Z",
-      "updated": "2026-04-05T18:09:06Z"
+      "updated": "2026-04-05T18:45:46Z"
     },
     {
       "index": 2178,
       "apiId": 2263,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26439,7 +26439,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:09:07Z",
-      "updated": "2026-04-05T18:09:07Z"
+      "updated": "2026-04-05T18:45:46Z"
     },
     {
       "index": 2179,
@@ -26457,7 +26457,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:09:07Z",
-      "updated": "2026-04-05T18:09:08Z"
+      "updated": "2026-04-05T18:45:46Z"
     },
     {
       "index": 2180,
@@ -26477,20 +26477,20 @@
       "apiId": 2266,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "",
       "priority": "",
       "domains": [],
       "done": false,
       "created": "2026-04-05T18:09:18Z",
-      "updated": "2026-04-05T18:09:18Z"
+      "updated": "2026-04-05T18:45:46Z"
     },
     {
       "index": 2181,
       "apiId": 2267,
       "title": "BDD test card",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26500,14 +26500,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:38Z",
-      "updated": "2026-04-05T18:14:38Z"
+      "updated": "2026-04-05T18:45:46Z"
     },
     {
       "index": 2182,
       "apiId": 2268,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26517,14 +26517,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:38Z",
-      "updated": "2026-04-05T18:14:39Z"
+      "updated": "2026-04-05T18:44:59Z"
     },
     {
       "index": 2183,
       "apiId": 2269,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26534,14 +26534,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:39Z",
-      "updated": "2026-04-05T18:14:39Z"
+      "updated": "2026-04-05T18:45:46Z"
     },
     {
       "index": 2184,
       "apiId": 2270,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26552,14 +26552,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:39Z",
-      "updated": "2026-04-05T18:14:39Z"
+      "updated": "2026-04-05T18:45:47Z"
     },
     {
       "index": 2185,
       "apiId": 2271,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -26569,7 +26569,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:39Z",
-      "updated": "2026-04-05T18:14:39Z"
+      "updated": "2026-04-05T18:45:47Z"
     },
     {
       "index": 2186,
@@ -26587,14 +26587,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:39Z",
-      "updated": "2026-04-05T18:14:40Z"
+      "updated": "2026-04-05T18:45:47Z"
     },
     {
       "index": 2187,
       "apiId": 2273,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26604,14 +26604,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:39Z",
-      "updated": "2026-04-05T18:14:39Z"
+      "updated": "2026-04-05T18:45:47Z"
     },
     {
       "index": 2188,
       "apiId": 2274,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26621,14 +26621,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:40Z",
-      "updated": "2026-04-05T18:14:40Z"
+      "updated": "2026-04-05T18:45:47Z"
     },
     {
       "index": 2189,
       "apiId": 2275,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26638,7 +26638,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:40Z",
-      "updated": "2026-04-05T18:14:40Z"
+      "updated": "2026-04-05T18:45:47Z"
     },
     {
       "index": 2190,
@@ -26656,7 +26656,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:41Z",
-      "updated": "2026-04-05T18:14:47Z"
+      "updated": "2026-04-05T18:45:47Z"
     },
     {
       "index": 2191,
@@ -26679,7 +26679,7 @@
       "apiId": 2278,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26690,14 +26690,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:44Z",
-      "updated": "2026-04-05T18:14:44Z"
+      "updated": "2026-04-05T18:45:48Z"
     },
     {
       "index": 2192,
       "apiId": 2279,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26707,14 +26707,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:45Z",
-      "updated": "2026-04-05T18:14:45Z"
+      "updated": "2026-04-05T18:45:48Z"
     },
     {
       "index": 2193,
       "apiId": 2280,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26725,14 +26725,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:45Z",
-      "updated": "2026-04-05T18:14:45Z"
+      "updated": "2026-04-05T18:45:48Z"
     },
     {
       "index": 2194,
       "apiId": 2281,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -26742,7 +26742,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:46Z",
-      "updated": "2026-04-05T18:14:46Z"
+      "updated": "2026-04-05T18:45:48Z"
     },
     {
       "index": 2195,
@@ -26760,14 +26760,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:46Z",
-      "updated": "2026-04-05T18:14:47Z"
+      "updated": "2026-04-05T18:45:48Z"
     },
     {
       "index": 2196,
       "apiId": 2283,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26777,14 +26777,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:46Z",
-      "updated": "2026-04-05T18:14:46Z"
+      "updated": "2026-04-05T18:45:48Z"
     },
     {
       "index": 2197,
       "apiId": 2284,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26794,14 +26794,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:47Z",
-      "updated": "2026-04-05T18:14:47Z"
+      "updated": "2026-04-05T18:45:48Z"
     },
     {
       "index": 2198,
       "apiId": 2285,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26811,7 +26811,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:47Z",
-      "updated": "2026-04-05T18:14:47Z"
+      "updated": "2026-04-05T18:45:49Z"
     },
     {
       "index": 2199,
@@ -26829,14 +26829,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:47Z",
-      "updated": "2026-04-05T18:14:49Z"
+      "updated": "2026-04-05T18:45:49Z"
     },
     {
       "index": 2200,
       "apiId": 2287,
       "title": "BDD test card",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26846,14 +26846,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:59Z",
-      "updated": "2026-04-05T18:14:59Z"
+      "updated": "2026-04-05T18:45:49Z"
     },
     {
       "index": 2201,
       "apiId": 2288,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26863,14 +26863,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:59Z",
-      "updated": "2026-04-05T18:14:59Z"
+      "updated": "2026-04-05T18:44:59Z"
     },
     {
       "index": 2202,
       "apiId": 2289,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26880,14 +26880,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:14:59Z",
-      "updated": "2026-04-05T18:14:59Z"
+      "updated": "2026-04-05T18:45:49Z"
     },
     {
       "index": 2203,
       "apiId": 2290,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26898,14 +26898,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:15:00Z",
-      "updated": "2026-04-05T18:15:00Z"
+      "updated": "2026-04-05T18:45:49Z"
     },
     {
       "index": 2204,
       "apiId": 2291,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -26915,7 +26915,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:15:00Z",
-      "updated": "2026-04-05T18:15:00Z"
+      "updated": "2026-04-05T18:45:49Z"
     },
     {
       "index": 2205,
@@ -26933,14 +26933,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:15:00Z",
-      "updated": "2026-04-05T18:15:01Z"
+      "updated": "2026-04-05T18:45:49Z"
     },
     {
       "index": 2206,
       "apiId": 2293,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26950,14 +26950,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:15:00Z",
-      "updated": "2026-04-05T18:15:01Z"
+      "updated": "2026-04-05T18:45:49Z"
     },
     {
       "index": 2207,
       "apiId": 2294,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26967,14 +26967,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:15:01Z",
-      "updated": "2026-04-05T18:15:01Z"
+      "updated": "2026-04-05T18:45:50Z"
     },
     {
       "index": 2208,
       "apiId": 2295,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26984,7 +26984,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:15:01Z",
-      "updated": "2026-04-05T18:15:01Z"
+      "updated": "2026-04-05T18:45:50Z"
     },
     {
       "index": 2209,
@@ -27002,14 +27002,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:15:01Z",
-      "updated": "2026-04-05T18:15:02Z"
+      "updated": "2026-04-05T18:45:50Z"
     },
     {
       "index": 2210,
       "apiId": 2297,
       "title": "BDD test card",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27019,14 +27019,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:16Z",
-      "updated": "2026-04-05T18:21:17Z"
+      "updated": "2026-04-05T18:45:50Z"
     },
     {
       "index": 2211,
       "apiId": 2298,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27037,7 +27037,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:17Z",
-      "updated": "2026-04-05T18:21:17Z"
+      "updated": "2026-04-05T18:45:50Z"
     },
     {
       "index": 2212,
@@ -27055,7 +27055,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:17Z",
-      "updated": "2026-04-05T18:21:17Z"
+      "updated": "2026-04-05T18:45:50Z"
     },
     {
       "index": 2213,
@@ -27073,14 +27073,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:17Z",
-      "updated": "2026-04-05T18:21:18Z"
+      "updated": "2026-04-05T18:45:50Z"
     },
     {
       "index": 2214,
       "apiId": 2301,
       "title": "BDD test card",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27090,14 +27090,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:25Z",
-      "updated": "2026-04-05T18:21:25Z"
+      "updated": "2026-04-05T18:45:51Z"
     },
     {
       "index": 2215,
       "apiId": 2302,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27107,14 +27107,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:26Z",
-      "updated": "2026-04-05T18:21:26Z"
+      "updated": "2026-04-05T18:45:00Z"
     },
     {
       "index": 2216,
       "apiId": 2303,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27124,14 +27124,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:26Z",
-      "updated": "2026-04-05T18:21:26Z"
+      "updated": "2026-04-05T18:45:51Z"
     },
     {
       "index": 2217,
       "apiId": 2304,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27142,14 +27142,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:26Z",
-      "updated": "2026-04-05T18:21:26Z"
+      "updated": "2026-04-05T18:45:51Z"
     },
     {
       "index": 2218,
       "apiId": 2305,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27159,7 +27159,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:26Z",
-      "updated": "2026-04-05T18:21:27Z"
+      "updated": "2026-04-05T18:45:51Z"
     },
     {
       "index": 2219,
@@ -27177,14 +27177,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:27Z",
-      "updated": "2026-04-05T18:21:28Z"
+      "updated": "2026-04-05T18:45:51Z"
     },
     {
       "index": 2220,
       "apiId": 2307,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27194,14 +27194,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:27Z",
-      "updated": "2026-04-05T18:21:27Z"
+      "updated": "2026-04-05T18:45:51Z"
     },
     {
       "index": 2221,
       "apiId": 2308,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27211,14 +27211,14 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:27Z",
-      "updated": "2026-04-05T18:21:27Z"
+      "updated": "2026-04-05T18:45:51Z"
     },
     {
       "index": 2222,
       "apiId": 2309,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27228,7 +27228,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:28Z",
-      "updated": "2026-04-05T18:21:28Z"
+      "updated": "2026-04-05T18:45:52Z"
     },
     {
       "index": 2223,
@@ -27246,7 +27246,7 @@
       ],
       "done": false,
       "created": "2026-04-05T18:21:28Z",
-      "updated": "2026-04-05T18:21:29Z"
+      "updated": "2026-04-05T18:45:52Z"
     },
     {
       "index": 2224,
