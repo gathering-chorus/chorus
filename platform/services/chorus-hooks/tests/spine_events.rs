@@ -1,0 +1,78 @@
+//! #1846 + #1847 — Spine event tests for context cache failures and nudge acknowledgment
+//!
+//! #1846: session.context.error emitted when cache is empty/failed at boot
+//! #1847: nudge.acknowledged emitted when role processes a nudge
+
+use std::fs;
+use std::process::Command;
+
+const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
+
+fn log_tail(n: usize) -> String {
+    let content = fs::read_to_string(CHORUS_LOG).unwrap_or_default();
+    content.lines().rev().take(n).collect::<Vec<_>>().join("\n")
+}
+
+// === #1846: context cache failure events ===
+
+#[test]
+fn session_start_emits_context_error_on_empty_cache() {
+    // Remove the cache file so session-start gets empty content
+    let cache_file = "/tmp/session-context-kade.md";
+    let cache_backup = fs::read_to_string(cache_file).ok();
+    let _ = fs::remove_file(cache_file);
+
+    // Also ensure the context-cache won't regenerate successfully in time
+    // by creating an empty cache file (simulates failed generation)
+    let _ = fs::write(cache_file, "");
+
+    let output = Command::new(SHIM)
+        .args(["session-start", "kade"])
+        .output()
+        .expect("session-start should run");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let log = log_tail(5);
+
+    // Should emit session.context.error
+    assert!(
+        log.contains("session.context.error") || stdout.contains("context.error"),
+        "should emit session.context.error when cache is empty, log tail: {}, stdout: {}",
+        log, stdout
+    );
+
+    // Restore cache
+    match cache_backup {
+        Some(content) => { let _ = fs::write(cache_file, content); }
+        None => { let _ = fs::remove_file(cache_file); }
+    }
+}
+
+// === #1847: nudge acknowledgment ===
+
+#[test]
+fn role_state_drain_emits_nudge_acknowledged() {
+    let test_role = "kade";
+    let inbox_dir = format!("/tmp/voice-inbox/{}", test_role);
+    let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
+
+    let _ = fs::create_dir_all(&inbox_dir);
+    fs::write(&inbox_file, "test nudge for ack tracking\n").expect("write test nudge");
+
+    // Transition to waiting — triggers drain
+    let output = Command::new(SHIM)
+        .args(["role-state", test_role, "waiting"])
+        .output()
+        .expect("role-state should run");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let log = log_tail(5);
+
+    // Should emit nudge.acknowledged
+    assert!(
+        log.contains("nudge.acknowledged") || stdout.contains("nudge.acknowledged"),
+        "should emit nudge.acknowledged when draining nudges, log tail: {}, stdout: {}",
+        log, stdout
+    );
+}

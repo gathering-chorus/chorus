@@ -170,14 +170,26 @@ pub fn run(args: &[String]) -> ExitCode {
         let inbox_path = format!("/tmp/voice-inbox/{}/pending-inject.txt", role);
         let drain_path = format!("/tmp/voice-inbox/{}/draining-rs-{}.txt", role, std::process::id());
         if fs::rename(&inbox_path, &drain_path).is_ok() {
+            let mut nudge_count = 0u32;
             if let Ok(content) = fs::read_to_string(&drain_path) {
                 for line in content.lines() {
                     if !line.trim().is_empty() {
                         println!("{}", line);
+                        nudge_count += 1;
                     }
                 }
             }
             let _ = fs::remove_file(&drain_path);
+            // Emit nudge.acknowledged for tracking (#1847)
+            if nudge_count > 0 {
+                if let Ok(mut log_file) = fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(CHORUS_LOG)
+                {
+                    let _ = writeln!(log_file, "nudge.acknowledged | {} role={} count={}", role, role, nudge_count);
+                }
+            }
         }
     }
 

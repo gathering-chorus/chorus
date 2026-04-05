@@ -458,6 +458,16 @@ fn session_start_cmd(args: &[String]) -> ExitCode {
     }
 
     let lines = content.lines().count();
+    if lines < 10 {
+        // Empty or near-empty cache = something failed (#1846)
+        let _ = chorus_log::run(&[
+            "session.context.error".to_string(),
+            role.to_string(),
+            format!("error_type=cache_empty"),
+            format!("lines={}", lines),
+        ]);
+        eprintln!("⚠ Context cache empty or failed ({} lines) — role booting with partial context", lines);
+    }
     println!("Boot: cached context ({} lines)", lines);
     ExitCode::SUCCESS
 }
