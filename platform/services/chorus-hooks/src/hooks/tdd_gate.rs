@@ -11,25 +11,14 @@
 use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 
-/// Test file patterns — files that count as "writing tests"
+/// Test file patterns — delegated to shared module (#2076)
 fn is_test_file(path: &str) -> bool {
-    let lower = path.to_lowercase();
-    lower.contains(".test.") || lower.contains(".spec.")
-        || lower.contains("/tests/") || lower.contains("/test/")
-        || lower.starts_with("tests/") || lower.starts_with("test/")
-        || lower.contains("_test.") || lower.contains("test_")
-        || lower.ends_with("_test.rs") || lower.ends_with("_test.ts")
-        || lower.contains(".feature")
+    crate::shared::file_classification::is_test_file(path)
 }
 
-/// Production code — files that should have tests first
+/// Production code — delegated to shared module (#2076)
 fn is_production_code(path: &str) -> bool {
-    let code_exts = [".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".sh"];
-    let is_code = code_exts.iter().any(|ext| path.ends_with(ext));
-    let lower = path.to_lowercase();
-    is_code && !is_test_file(path)
-        && !lower.contains("/target/") && !lower.starts_with("target/")
-        && !lower.contains("/node_modules/") && !lower.starts_with("node_modules/")
+    crate::shared::file_classification::is_production_code(path)
 }
 
 /// Check if the current tool call is a demo or done action

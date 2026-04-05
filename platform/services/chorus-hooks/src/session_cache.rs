@@ -120,10 +120,16 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
     }
 
     // Fallback: search all project dirs for this session UUID
+    // Skip overly broad dirs like -Users-jeffbridwell (home root) — triggers macOS TCC prompts
     let projects_dir = format!("{}/.claude/projects", home);
     if let Ok(entries) = std::fs::read_dir(&projects_dir) {
         for entry in entries.flatten() {
             if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            // Skip dirs with fewer than 3 path segments — too broad (e.g. home dir)
+            let dir_name = entry.file_name().to_string_lossy().to_string();
+            if dir_name.matches('-').count() < 3 {
                 continue;
             }
             let candidate = entry.path().join(format!("{}.jsonl", session_id));

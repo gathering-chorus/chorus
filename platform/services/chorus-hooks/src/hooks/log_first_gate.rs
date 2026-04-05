@@ -29,8 +29,7 @@ const LOG_INSPECTION_MARKERS: &[&str] = &[
 
 /// File extensions that count as code (same as memory_gate)
 fn is_code_file(path: &str) -> bool {
-    let code_exts = [".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".sh"];
-    code_exts.iter().any(|ext| path.ends_with(ext))
+    crate::shared::file_classification::is_source_code(path)
 }
 
 /// Check if the card context is a fix — reads type: label from board (#1909)

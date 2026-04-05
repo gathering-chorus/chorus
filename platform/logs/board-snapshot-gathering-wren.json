@@ -1,23 +1,24 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T14:12:15.365Z",
+  "timestamp": "2026-04-05T14:27:19.938Z",
   "tasks": [
     {
-      "index": 2075,
-      "apiId": 2158,
-      "title": "Stable inject binary — extract osascript injection from chorus-hook-shim to avoid TCC permission revocation on rebuild",
-      "description": "## Problem\nEvery cargo build --release changes chorus-hook-shim binary hash. macOS TCC revokes both Accessibility AND Full Disk Access permissions. Jeff must manually toggle both off/on in System Settings after every rebuild. This session had 3 rebuilds = 6 potential manual toggles. Overnight, alerts couldn't wake roles because permissions were silently revoked.\n\n## Experience\nI rebuild chorus-hooks and nudge injection keeps working. No manual permission toggling needed. The privileged operations use a stable binary that never changes during normal development.\n\n## AC\n- [ ] Extract osascript injection into chorus-inject binary (tiny, stable, single-purpose)\n- [ ] chorus-hook-shim delegates to chorus-inject for keystroke injection\n- [ ] Only chorus-inject needs Accessibility permission — chorus-hook-shim doesn't\n- [ ] Full Disk Access operations similarly isolated if needed\n- [ ] cargo build --release of chorus-hooks does NOT invalidate any TCC permissions\n- [ ] Test: rebuild chorus-hook-shim, verify nudge inject still works without toggling\n\n## Files\n- platform/services/chorus-hooks/src/process.rs\n- platform/services/chorus-hooks/src/inject.rs (new)\n- platform/services/chorus-hooks/Cargo.toml",
+      "index": 2076,
+      "apiId": 2159,
+      "title": "Extract shared hook utilities — file_classification.rs, session_scanning.rs, state_paths.rs",
+      "description": "## Problem\nCode review found: is_code_file() defined 4 times with different extension lists, session JSONL scanning in 6 hooks with varied patterns, /Users/jeffbridwell and /tmp paths hardcoded 20+ times. Every hook author copies logic instead of importing it. Bugs get fixed in one copy but not the others.\n\n## Experience\nI add a new file type exemption and it works everywhere — one change, one place. Hardcoded paths come from constants, not scattered string literals. Session scanning follows one pattern across all hooks.\n\n## AC\n- [ ] file_classification.rs: single is_code_file() with complete extension list, used by pair_gate, tdd_gate, log_first_gate, memory_gate\n- [ ] session_scanning.rs: shared session JSONL reader, used by 6+ hooks\n- [ ] state_paths.rs: constants for /tmp/claude-team-scan, /tmp/voice-inbox, chorus log path, repo root\n- [ ] All 4 is_code_file call sites updated to use shared version\n- [ ] Existing tests pass after refactor\n\n## Files\n- platform/services/chorus-hooks/src/shared/file_classification.rs\n- platform/services/chorus-hooks/src/shared/session_scanning.rs\n- platform/services/chorus-hooks/src/shared/state_paths.rs\n- platform/services/chorus-hooks/src/shared/mod.rs\n- platform/services/chorus-hooks/src/hooks/pair_gate.rs\n- platform/services/chorus-hooks/src/hooks/tdd_gate.rs\n- platform/services/chorus-hooks/src/hooks/log_first_gate.rs\n- platform/services/chorus-hooks/src/hooks/memory_gate.rs",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
         "domain:chorus",
-        "type:fix",
-        "sequence:framework"
+        "type:chore",
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
-      "created": "2026-04-05T13:34:01Z",
-      "updated": "2026-04-05T14:00:37Z"
+      "created": "2026-04-05T13:38:39Z",
+      "updated": "2026-04-05T14:15:18Z"
     },
     {
       "index": 1932,
@@ -31,11 +32,29 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:loom"
+        "sequence:loom",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-01T12:31:33Z",
       "updated": "2026-04-05T12:08:46Z"
+    },
+    {
+      "index": 2075,
+      "apiId": 2158,
+      "title": "Stable inject binary — extract osascript injection from chorus-hook-shim to avoid TCC permission revocation on rebuild",
+      "description": "## Problem\nEvery cargo build --release changes chorus-hook-shim binary hash. macOS TCC revokes both Accessibility AND Full Disk Access permissions. Jeff must manually toggle both off/on in System Settings after every rebuild. This session had 3 rebuilds = 6 potential manual toggles. Overnight, alerts couldn't wake roles because permissions were silently revoked.\n\n## Experience\nI rebuild chorus-hooks and nudge injection keeps working. No manual permission toggling needed. The privileged operations use a stable binary that never changes during normal development.\n\n## AC\n- [ ] Extract osascript injection into chorus-inject binary (tiny, stable, single-purpose)\n- [ ] chorus-hook-shim delegates to chorus-inject for keystroke injection\n- [ ] Only chorus-inject needs Accessibility permission — chorus-hook-shim doesn't\n- [ ] Full Disk Access operations similarly isolated if needed\n- [ ] cargo build --release of chorus-hooks does NOT invalidate any TCC permissions\n- [ ] Test: rebuild chorus-hook-shim, verify nudge inject still works without toggling\n\n## Files\n- platform/services/chorus-hooks/src/process.rs\n- platform/services/chorus-hooks/src/inject.rs (new)\n- platform/services/chorus-hooks/Cargo.toml",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework"
+      ],
+      "done": true,
+      "created": "2026-04-05T13:34:01Z",
+      "updated": "2026-04-05T14:13:16Z"
     },
     {
       "index": 2072,
@@ -860,24 +879,6 @@
       "updated": "2026-04-02T17:46:58Z"
     },
     {
-      "index": 1964,
-      "apiId": 2047,
-      "title": "Cards CLI — update description and AC on existing cards",
-      "description": "## Problem\nThe cards CLI can create cards and set fields, but can't update the description or AC on existing cards. Roles work around this by using raw `cards set <id> desc=...` which mangles markdown (escaped newlines, lost formatting).\n\n## Experience\nI need to fix a card's description after it's created — add AC I missed, update the experience section, correct a typo. I run `cards update 1964 --desc '...'` and the markdown comes through clean — headings, checkboxes, lists all preserved. No raw Vikunja API calls needed.\n\n## AC\n- [x] `cards update <id> --desc 'text'` writes the description field via Vikunja API\n- [x] Markdown content preserved (headings, checkboxes, lists)\n- [x] `cards view <id>` renders the updated description\n- [x] No direct Vikunja API calls from roles — all through cards CLI\n\n## Files\n- chorus/platform/scripts/cards",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:coordination"
-      ],
-      "done": true,
-      "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-05T11:18:24Z"
-    },
-    {
       "index": 1966,
       "apiId": 2049,
       "title": "Tighten cards CLI — mandatory fields at create, hard block at Now without description",
@@ -940,7 +941,8 @@
       "domains": [
         "chunk:app",
         "domain:photos",
-        "type:fix"
+        "type:fix",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-03-30T15:41:51Z",
@@ -957,7 +959,8 @@
       "domains": [
         "chunk:memory",
         "domain:people",
-        "type:enhance"
+        "type:enhance",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-23T12:20:33Z",
@@ -974,7 +977,8 @@
       "domains": [
         "chunk:app",
         "domain:search",
-        "type:enhance"
+        "type:enhance",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-23T12:20:29Z",
@@ -992,7 +996,8 @@
         "chunk:memory",
         "sequence:hardening",
         "domain:convergence",
-        "type:chore"
+        "type:chore",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-22T21:43:12Z",
@@ -1009,11 +1014,66 @@
       "domains": [
         "chunk:app",
         "domain:property",
-        "type:new"
+        "type:new",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
+    },
+    {
+      "index": 1964,
+      "apiId": 2047,
+      "title": "Cards CLI — update description and AC on existing cards",
+      "description": "## Experience\\n\\nTest description with **markdown**.\\n\\n## AC\\n- Item one\\n- Item two",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:25:47Z",
+      "updated": "2026-04-05T14:13:03Z"
+    },
+    {
+      "index": 2083,
+      "apiId": 2166,
+      "title": "BDD quick card passes",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-05T14:13:02Z",
+      "updated": "2026-04-05T14:13:02Z"
+    },
+    {
+      "index": 2082,
+      "apiId": 2165,
+      "title": "BDD quick test",
+      "description": "",
+      "status": "Later",
+      "owner": "",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-05T14:13:01Z",
+      "updated": "2026-04-05T14:13:01Z"
     },
     {
       "index": 2081,
@@ -1026,7 +1086,8 @@
       "domains": [
         "domain:chorus",
         "type:chore",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-05T13:38:40Z",
@@ -1043,7 +1104,8 @@
       "domains": [
         "domain:chorus",
         "type:chore",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-05T13:38:40Z",
@@ -1060,7 +1122,8 @@
       "domains": [
         "domain:chorus",
         "type:enhance",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-05T13:38:40Z",
@@ -1077,7 +1140,8 @@
       "domains": [
         "domain:chorus",
         "type:fix",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-04-05T13:38:40Z",
@@ -1094,28 +1158,12 @@
       "domains": [
         "domain:chorus",
         "type:chore",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-05T13:38:40Z",
       "updated": "2026-04-05T13:38:40Z"
-    },
-    {
-      "index": 2076,
-      "apiId": 2159,
-      "title": "Extract shared hook utilities — file_classification.rs, session_scanning.rs, state_paths.rs",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "domain:chorus",
-        "type:chore",
-        "sequence:framework"
-      ],
-      "done": false,
-      "created": "2026-04-05T13:38:39Z",
-      "updated": "2026-04-05T13:38:39Z"
     },
     {
       "index": 2045,
@@ -1129,7 +1177,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "sequence:awareness"
+        "sequence:awareness",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-04T19:01:29Z",
@@ -1147,7 +1196,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:fix",
-        "sequence:loom"
+        "sequence:loom",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-03T10:27:21Z",
@@ -1165,7 +1215,8 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-04-02T12:02:21Z",
@@ -1183,7 +1234,8 @@
         "chunk:app",
         "domain:chorus",
         "type:new",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-02T11:52:55Z",
@@ -1201,7 +1253,8 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-04-02T11:16:01Z",
@@ -1219,7 +1272,8 @@
         "chunk:app",
         "domain:chorus",
         "type:new",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-02T10:28:02Z",
@@ -1237,7 +1291,8 @@
         "chunk:ops",
         "domain:chorus",
         "type:new",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-01T21:37:31Z",
@@ -1255,7 +1310,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "sequence:spine"
+        "sequence:spine",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-01T19:47:15Z",
@@ -1273,7 +1329,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-01T14:47:27Z",
@@ -1291,7 +1348,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:awareness"
+        "sequence:awareness",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-04-01T14:33:13Z",
@@ -1309,7 +1367,8 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-04-01T12:52:09Z",
@@ -1327,7 +1386,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:loom"
+        "sequence:loom",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T17:22:42Z",
@@ -1345,7 +1405,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:strategy"
+        "sequence:strategy",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T15:11:01Z",
@@ -1363,7 +1424,8 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "sequence:loom"
+        "sequence:loom",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T15:00:52Z",
@@ -1381,7 +1443,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:loom"
+        "sequence:loom",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T14:40:55Z",
@@ -1399,7 +1462,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "sequence:spine"
+        "sequence:spine",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T13:57:21Z",
@@ -1417,7 +1481,8 @@
         "chunk:ops",
         "domain:infrastructure",
         "type:fix",
-        "sequence:ops"
+        "sequence:ops",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-03-31T13:47:54Z",
@@ -1435,7 +1500,8 @@
         "chunk:spine",
         "domain:chorus",
         "type:chore",
-        "sequence:spine"
+        "sequence:spine",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T12:50:14Z",
@@ -1453,7 +1519,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T12:46:26Z",
@@ -1471,7 +1538,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "sequence:spine"
+        "sequence:spine",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T12:18:14Z",
@@ -1489,7 +1557,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:awareness"
+        "sequence:awareness",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T11:44:12Z",
@@ -1507,7 +1576,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "sequence:awareness"
+        "sequence:awareness",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T00:19:14Z",
@@ -1525,7 +1595,8 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-30T21:11:38Z",
@@ -1543,7 +1614,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-30T14:55:11Z",
@@ -1561,7 +1633,8 @@
         "chunk:ops",
         "domain:chorus",
         "type:chore",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-30T13:28:46Z",
@@ -1578,7 +1651,8 @@
       "domains": [
         "chunk:memory",
         "domain:photos",
-        "type:fix"
+        "type:fix",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-03-30T12:31:36Z",
@@ -1596,7 +1670,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:loom"
+        "sequence:loom",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-29T18:14:40Z",
@@ -1614,7 +1689,8 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:framework"
+        "sequence:framework",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-29T11:31:21Z",
@@ -1631,7 +1707,8 @@
       "domains": [
         "chunk:memory",
         "domain:photos",
-        "type:chore"
+        "type:chore",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-03-27T17:22:00Z",
@@ -1649,11 +1726,12 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "sequence:loom"
+        "sequence:loom",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-03-27T15:43:31Z",
-      "updated": "2026-04-04T14:19:51Z"
+      "updated": "2026-04-05T14:13:06Z"
     },
     {
       "index": 1762,
@@ -1667,11 +1745,12 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "sequence:loom"
+        "sequence:loom",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
-      "updated": "2026-04-04T14:19:51Z"
+      "updated": "2026-04-05T14:13:06Z"
     },
     {
       "index": 1761,
@@ -1684,11 +1763,12 @@
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "sequence:loom"
+        "sequence:loom",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
-      "updated": "2026-04-04T14:19:51Z"
+      "updated": "2026-04-05T14:13:06Z"
     },
     {
       "index": 1747,
@@ -1700,7 +1780,8 @@
       "priority": "P2",
       "domains": [
         "chunk:app",
-        "domain:photos"
+        "domain:photos",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-03-27T12:16:43Z",
@@ -1716,7 +1797,8 @@
       "priority": "P2",
       "domains": [
         "chunk:memory",
-        "domain:photos"
+        "domain:photos",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-26T20:54:02Z",
@@ -1732,7 +1814,8 @@
       "priority": "P3",
       "domains": [
         "chunk:ops",
-        "domain:music"
+        "domain:music",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-03-26T19:28:54Z",
@@ -1748,7 +1831,8 @@
       "priority": "P2",
       "domains": [
         "chunk:app",
-        "domain:photos"
+        "domain:photos",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-26T10:40:03Z",
@@ -1764,7 +1848,8 @@
       "priority": "P1",
       "domains": [
         "chunk:strategy",
-        "domain:borg"
+        "domain:borg",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-24T20:13:59Z",
@@ -1779,7 +1864,8 @@
       "owner": "Kade",
       "priority": "P2",
       "domains": [
-        "domain:convergence"
+        "domain:convergence",
+        "origin:reactive"
       ],
       "done": false,
       "created": "2026-03-23T22:13:30Z",
@@ -1794,7 +1880,8 @@
       "owner": "Silas",
       "priority": "P2",
       "domains": [
-        "domain:convergence"
+        "domain:convergence",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-23T18:34:16Z",
@@ -1810,7 +1897,8 @@
       "priority": "P2",
       "domains": [
         "chunk:memory",
-        "domain:photos"
+        "domain:photos",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-23T18:28:22Z",
@@ -1827,7 +1915,8 @@
       "domains": [
         "chunk:ops",
         "sequence:hardening",
-        "domain:convergence"
+        "domain:convergence",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-22T21:43:21Z",
@@ -1844,43 +1933,12 @@
       "domains": [
         "chunk:ops",
         "sequence:hardening",
-        "domain:convergence"
+        "domain:convergence",
+        "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-22T21:43:04Z",
       "updated": "2026-03-22T21:43:04Z"
-    },
-    {
-      "index": 1602,
-      "apiId": 1685,
-      "title": "Turn off iCloud Photos sync on Bedroom Mac — per #1580 strategy",
-      "description": "Per #1580 analysis: Bedroom iCloud Photos sync is thumbnails-only (16GB), burning 40% CPU via ecosystemd, for data that exists in 3 other places.\n\nPREREQUISITE: Before disabling, verify all 24,494 iCloud items are reconciled into the canonical photo layer (#1502). Mac library has 24,592 items but only 14,539 were harvested. ~10K may be unharvested. Match iCloud inventory to canonical first.\n\n## AC\n1. Verify all iCloud items are accounted for in canonical graph (query Mac SQLite vs canonical)\n2. Harvest any missing Mac library items into source graph\n3. Re-run reconciler to update canonical count\n4. Disable iCloud Photos on Bedroom Mac (Settings → Apple ID → iCloud → Photos → off)\n5. Verify ecosystemd CPU drops after disable\n6. Verify harvest pipeline still reads from Library Mac (no Bedroom dependency)\n7. Verify Kade's face clustering still accesses Takeout files on Bedroom disk (unaffected)\n\n## Context\n- #1580 mapped the full photo backup strategy\n- Camera roll is 4x redundant without Bedroom sync\n- Jeff wants iCloud inventory matched to canonical before turning off\n- Jeff does the toggle, Silas verifies\n\n## Files\narchitect/infrastructure-constraints.md",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-22T00:47:11Z",
-      "updated": "2026-03-22T11:55:57Z"
-    },
-    {
-      "index": 1581,
-      "apiId": 1664,
-      "title": "Complete doc-catalog page — fix links, add to navbar, make all docs browseable",
-      "description": "Doc catalog at /doc-catalog.html inventories 88 HTML docs across 7 projects. Started yesterday, partially working. Needs finishing.\n\n## What's done\n- Catalog page exists with 88 docs grouped by topic\n- NAV / NOT IN NAV badges showing which docs are in navbar\n- Dates on every doc\n- /docs/pm/, /docs/architect/, /docs/engineer/ static routes added to app.ts (working with auth)\n\n## What's left\n1. Links to role docs (/docs/pm/*, /docs/architect/*, /docs/engineer/*) need verification — some paths may be wrong (e.g. /docs/pm/docs/wren-role.html has double \"docs\")\n2. Add doc-catalog to navbar (under Chorus or a new Documentation section)\n3. Remove stale convergence domain tag on cards that were already fixed\n4. Consider: auto-generate catalog from filesystem scan instead of static HTML\n\n## AC\n1. Every link on /doc-catalog.html is clickable and loads the correct doc (no 404s)\n2. Doc catalog accessible from navbar\n3. Role doc routes (/docs/pm/, /docs/architect/, /docs/engineer/) verified working for all listed files\n4. Path corrections for any double-directory issues (e.g. /docs/pm/docs/ → /docs/pm/)\n\n## Files\npublic/doc-catalog.html, src/app.ts, config/nav-tree.json",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:documents"
-      ],
-      "done": false,
-      "created": "2026-03-21T12:53:03Z",
-      "updated": "2026-03-21T12:53:03Z"
     },
     {
       "index": 1721,
@@ -1973,6 +2031,76 @@
       "done": false,
       "created": "2026-03-09T15:26:04Z",
       "updated": "2026-03-09T15:26:04Z"
+    },
+    {
+      "index": 2087,
+      "apiId": 2170,
+      "title": "CLI test card seq",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:chore",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T14:13:06Z",
+      "updated": "2026-04-05T14:13:07Z"
+    },
+    {
+      "index": 2086,
+      "apiId": 2169,
+      "title": "CLI test card",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-05T14:13:06Z",
+      "updated": "2026-04-05T14:13:06Z"
+    },
+    {
+      "index": 2085,
+      "apiId": 2168,
+      "title": "BDD now-gate pass",
+      "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T14:13:03Z",
+      "updated": "2026-04-05T14:13:04Z"
+    },
+    {
+      "index": 2084,
+      "apiId": 2167,
+      "title": "BDD now-gate test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T14:13:02Z",
+      "updated": "2026-04-05T14:13:03Z"
     },
     {
       "index": 2070,
@@ -2756,74 +2884,6 @@
       "done": false,
       "created": "2026-03-29T10:45:09Z",
       "updated": "2026-03-30T13:03:23Z"
-    },
-    {
-      "index": 1801,
-      "apiId": 1884,
-      "title": "Seed media persistence — SMS image and audio attachments must land on disk, not just metadata references",
-      "description": "## AC\n- [ ] capture/media/ directory created and writable\n- [ ] SMS image attachments (jpg, png) saved to capture/media/ with seed ID filename\n- [ ] SMS audio attachments (amr, m4a) saved to capture/media/ with seed ID filename\n- [ ] Seed brief media paths resolve to actual files on disk\n- [ ] Regression: text and link seeds still route correctly",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:seeds",
-        "type:enhance"
-      ],
-      "done": false,
-      "created": "2026-03-28T21:44:17Z",
-      "updated": "2026-03-28T21:45:31Z"
-    },
-    {
-      "index": 1792,
-      "apiId": 1875,
-      "title": "Design meeting skill — Wren-led collaborative design session with role input",
-      "description": "## Experience\nJeff says /design-meeting and the team assembles around a whiteboard topic. Wren drives, roles contribute from their domain expertise via nudges, Jeff moderates and redirects. Artifacts get built in real time.\n\n## AC\n- [ ] Skill definition: /design-meeting <topic> [card-id]\n- [ ] Wren drives (produces artifact), Silas and Kade observe and respond to nudges\n- [ ] Structured input rounds — Wren nudges specific questions to each role\n- [ ] Artifacts produced inline (HTML, OWL, service design pages)\n- [ ] Decisions captured with DECISION: prefix\n- [ ] Session produces a design artifact, not just discussion\n- [ ] Pattern: Designing stance, not Building or Proving",
-      "status": "Won't Do",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-28T12:44:18Z",
-      "updated": "2026-03-30T01:09:56Z"
-    },
-    {
-      "index": 1791,
-      "apiId": 1874,
-      "title": "Designing stage gate hook — block Building without design artifact",
-      "description": "## Experience\nA role tries to move a card to WIP without a service design artifact or experience statement. The system blocks them and says what's missing.\n\n## AC\n- [ ] PreToolUse hook checks for experience statement before card moves to WIP\n- [ ] Hook checks for service design artifact (or --quick exemption for housekeeping cards)\n- [ ] Blocked message tells the role exactly what's missing\n- [ ] After: #1781",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:34:22Z",
-      "updated": "2026-03-30T01:08:01Z"
-    },
-    {
-      "index": 1790,
-      "apiId": 1873,
-      "title": "Experience tag in card schema — first-class field on every card",
-      "description": "## Experience\nEvery card has an experience statement visible when pulled, demoed, and accepted. It's the test that matters.\n\n## AC\n- [ ] experience field added to board-ts schema (board-ts set <id> experience='...')\n- [ ] experience displayed in board-ts view output\n- [ ] experience required on card creation (or --quick exemption)\n- [ ] After: #1781",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:34:22Z",
-      "updated": "2026-03-30T01:08:01Z"
     },
     {
       "index": 2074,

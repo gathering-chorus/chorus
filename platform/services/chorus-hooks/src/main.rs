@@ -1,5 +1,6 @@
 mod hooks;
 mod session_cache;
+pub mod shared;
 mod state;
 mod types;
 

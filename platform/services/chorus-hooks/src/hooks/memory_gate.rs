@@ -77,11 +77,7 @@ pub fn post_check(input: &HookInput) {
 
 /// File extensions that count as "code files" — the gate only fires for these
 fn is_code_file(path: &str) -> bool {
-    let code_exts = [
-        ".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".sh", ".ejs", ".html",
-        ".css", ".scss", ".json", ".toml", ".yaml", ".yml",
-    ];
-    code_exts.iter().any(|ext| path.ends_with(ext))
+    crate::shared::file_classification::is_project_file(path)
 }
 
 /// Check if a file has any git commits (#2041).
