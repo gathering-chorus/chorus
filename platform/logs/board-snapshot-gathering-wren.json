@@ -1,12 +1,12 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T11:33:04.786Z",
+  "timestamp": "2026-04-05T11:43:07.884Z",
   "tasks": [
     {
-      "index": 2059,
-      "apiId": 2142,
-      "title": "Post-build hook: re-register chorus-hook-shim Accessibility after cargo rebuild",
-      "description": "## Problem\nEvery `cargo build --release` of chorus-hooks changes the binary hash of chorus-hook-shim. macOS invalidates the Accessibility permission for the old hash, so osascript keystroke injection silently fails until Jeff manually toggles the permission off/on in System Settings.\n\n## Experience\nI rebuild chorus-hooks and nudges keep working — no manual step needed. The post-build script handles Accessibility re-registration automatically, or at minimum warns me that the permission needs re-toggling.\n\n## AC\n- [ ] After `cargo build --release`, chorus-hook-shim retains or re-acquires Accessibility permission\n- [ ] Nudge --force inject works immediately after rebuild without manual intervention\n- [ ] If auto-registration is not possible (SIP blocks TCC writes), emit a clear warning with the exact fix step\n\n## Files\n- platform/services/chorus-hooks/build.rs\n- scripts/post-build-hook.sh",
+      "index": 2032,
+      "apiId": 2115,
+      "title": "Cards CLI single-pass validation — all fields validated at once, infer defaults from context",
+      "description": "Cards CLI single-pass validation with inference — stop the 5-retry card creation loop.\n\nAC:\n1. `cards add` validates ALL required fields in one pass and reports every missing field in a single error message, not one at a time.\n2. Inference: sequence inferred from domain when unambiguous (e.g. domain:chorus + context → sequence:framework). Chunk inferred from domain. Type inferred from title verb (fix→fix, add→new, update→enhance).\n3. `--quick` bypasses desc/experience/blast-radius gates for unplanned work (already exists, verify it works).\n4. Experience section warning remains a warning, not a blocker — it's a PM concern, not a creation gate.\n5. Zero sequential gate failures on a well-formed `cards add` call.\n\n## Experience\nI tell a role to card something and they do it in one command, not five retries. The CLI helps them get it right, not punishes them for missing fields one at a time.\n\n## Blast Radius\n- platform/board-client/src/cli.ts\n- platform/board-client/src/sdk.ts",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
@@ -14,11 +14,11 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:ops"
+        "sequence:framework"
       ],
       "done": false,
-      "created": "2026-04-05T10:48:46Z",
-      "updated": "2026-04-05T11:32:02Z"
+      "created": "2026-04-04T14:53:01Z",
+      "updated": "2026-04-05T11:41:15Z"
     },
     {
       "index": 2063,
@@ -55,6 +55,24 @@
       "done": true,
       "created": "2026-04-05T10:56:32Z",
       "updated": "2026-04-05T11:02:29Z"
+    },
+    {
+      "index": 2059,
+      "apiId": 2142,
+      "title": "Post-build hook: re-register chorus-hook-shim Accessibility after cargo rebuild",
+      "description": "## Problem\nEvery `cargo build --release` of chorus-hooks changes the binary hash of chorus-hook-shim. macOS invalidates the Accessibility permission for the old hash, so osascript keystroke injection silently fails until Jeff manually toggles the permission off/on in System Settings.\n\n## Experience\nI rebuild chorus-hooks and nudges keep working — no manual step needed. The post-build script handles Accessibility re-registration automatically, or at minimum warns me that the permission needs re-toggling.\n\n## AC\n- [ ] After `cargo build --release`, chorus-hook-shim retains or re-acquires Accessibility permission\n- [ ] Nudge --force inject works immediately after rebuild without manual intervention\n- [ ] If auto-registration is not possible (SIP blocks TCC writes), emit a clear warning with the exact fix step\n\n## Files\n- platform/services/chorus-hooks/build.rs\n- scripts/post-build-hook.sh",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": true,
+      "created": "2026-04-05T10:48:46Z",
+      "updated": "2026-04-05T11:34:41Z"
     },
     {
       "index": 2058,
@@ -895,23 +913,6 @@
       "updated": "2026-04-02T01:28:21Z"
     },
     {
-      "index": 1955,
-      "apiId": 2038,
-      "title": "Align OWL ontology with domain class diagram — enumerate 26 domains as chorus:Domain instances, map Gathering data classes to domain boundaries",
-      "description": "## Experience\nI look at the class diagram and the OWL and they describe the same system in the same language. Every domain box in the diagram has a corresponding chorus:Domain instance in the ontology. Every Gathering data class (Track, Photo, Person) is mapped to its domain boundary. The OWL IS the class diagram, queryable.\n\n## AC\n1. Enumerate all 26 domains as chorus:Domain instances in chorus-product-ontology.owl with rdfs:label, phase, product\n2. Map Gathering data classes (v1.5.2 ontology) to their domain boundaries — Track→Music, Photo→Photos, Person→People etc\n3. Map Chorus operational classes (Gate, SpineEvent, Interaction) to their domain boundaries\n4. Verify with SPARQL: SELECT ?domain ?class WHERE { ?class chorus:inDomain ?domain } returns complete mapping\n5. Class diagram HTML can be generated from the OWL query — diagram and ontology are one source of truth",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": true,
-      "created": "2026-04-01T23:33:06Z",
-      "updated": "2026-04-02T10:35:22Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1050,24 +1051,6 @@
       "done": false,
       "created": "2026-04-04T19:01:29Z",
       "updated": "2026-04-04T19:01:29Z"
-    },
-    {
-      "index": 2032,
-      "apiId": 2115,
-      "title": "Cards CLI single-pass validation — all fields validated at once, infer defaults from context",
-      "description": "Cards CLI single-pass validation with inference — stop the 5-retry card creation loop.\n\nAC:\n1. `cards add` validates ALL required fields in one pass and reports every missing field in a single error message, not one at a time.\n2. Inference: sequence inferred from domain when unambiguous (e.g. domain:chorus + context → sequence:framework). Chunk inferred from domain. Type inferred from title verb (fix→fix, add→new, update→enhance).\n3. `--quick` bypasses desc/experience/blast-radius gates for unplanned work (already exists, verify it works).\n4. Experience section warning remains a warning, not a blocker — it's a PM concern, not a creation gate.\n5. Zero sequential gate failures on a well-formed `cards add` call.\n\n## Experience\nI tell a role to card something and they do it in one command, not five retries. The CLI helps them get it right, not punishes them for missing fields one at a time.\n\n## Blast Radius\n- platform/board-client/src/cli.ts\n- platform/board-client/src/sdk.ts",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:framework"
-      ],
-      "done": false,
-      "created": "2026-04-04T14:53:01Z",
-      "updated": "2026-04-05T11:30:13Z"
     },
     {
       "index": 1996,
@@ -1873,6 +1856,22 @@
       "done": false,
       "created": "2026-03-22T21:43:04Z",
       "updated": "2026-03-22T21:43:04Z"
+    },
+    {
+      "index": 1602,
+      "apiId": 1685,
+      "title": "Turn off iCloud Photos sync on Bedroom Mac — per #1580 strategy",
+      "description": "Per #1580 analysis: Bedroom iCloud Photos sync is thumbnails-only (16GB), burning 40% CPU via ecosystemd, for data that exists in 3 other places.\n\nPREREQUISITE: Before disabling, verify all 24,494 iCloud items are reconciled into the canonical photo layer (#1502). Mac library has 24,592 items but only 14,539 were harvested. ~10K may be unharvested. Match iCloud inventory to canonical first.\n\n## AC\n1. Verify all iCloud items are accounted for in canonical graph (query Mac SQLite vs canonical)\n2. Harvest any missing Mac library items into source graph\n3. Re-run reconciler to update canonical count\n4. Disable iCloud Photos on Bedroom Mac (Settings → Apple ID → iCloud → Photos → off)\n5. Verify ecosystemd CPU drops after disable\n6. Verify harvest pipeline still reads from Library Mac (no Bedroom dependency)\n7. Verify Kade's face clustering still accesses Takeout files on Bedroom disk (unaffected)\n\n## Context\n- #1580 mapped the full photo backup strategy\n- Camera roll is 4x redundant without Bedroom sync\n- Jeff wants iCloud inventory matched to canonical before turning off\n- Jeff does the toggle, Silas verifies\n\n## Files\narchitect/infrastructure-constraints.md",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-22T00:47:11Z",
+      "updated": "2026-03-22T11:55:57Z"
     },
     {
       "index": 1721,

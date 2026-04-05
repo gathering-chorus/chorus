@@ -474,17 +474,27 @@ export async function addCard(
   // Classification gates: ALWAYS enforced, even with --quick (#1966)
   // --quick only exempts description/AC requirement
 
-  // Domain gate
-  if (!opts.domain) {
-    console.error(`ERROR: Cards require a domain. Add --domain <name>.`);
-    emitSpineEvent('card.quality.blocked', detectRole(), {
-      title, gate: 'add_domain_missing', board: client.boardName,
-    });
-    process.exit(1);
+  // --- Single-pass validation (#2032) ---
+  // Collect all errors and infer defaults before failing.
+  const errors: string[] = [];
+
+  // Inference: type from title verb
+  const TITLE_TO_TYPE: Record<string, string> = {
+    fix: 'fix', repair: 'fix', broken: 'fix', bug: 'fix',
+    add: 'new', create: 'new', build: 'new', implement: 'new',
+    update: 'enhance', improve: 'enhance', enhance: 'enhance', upgrade: 'enhance',
+    remove: 'chore', clean: 'chore', refactor: 'chore', migrate: 'chore',
+  };
+  if (!opts.type) {
+    const firstWord = title.split(/\s+/)[0]?.toLowerCase() || '';
+    const inferred = TITLE_TO_TYPE[firstWord];
+    if (inferred) {
+      opts.type = inferred;
+      console.log(`  Auto-tagged type:${inferred} from title verb "${firstWord}"`);
+    }
   }
 
-  // Chunk is optional (#1873) — domain is the primary taxonomy.
-  // Auto-infer chunk from domain if provided, but don't gate on it.
+  // Chunk auto-inference from domain (optional, #1873)
   const DOMAIN_TO_CHUNK: Record<string, string> = {
     photos: 'memory', music: 'music', stories: 'memory', notes: 'memory',
     people: 'memory', social: 'memory', documents: 'memory', books: 'memory',
@@ -505,56 +515,59 @@ export async function addCard(
     }
   }
 
-  // Type gate
+  // Validate all required fields
+  if (!opts.domain) {
+    errors.push('Missing --domain <name>');
+  }
+
   const validTypes = Object.keys(LABELS.type).join(', ');
   if (!opts.type) {
-    console.error(`ERROR: Cards require a type. Add --type <${validTypes}>.`);
-    emitSpineEvent('card.quality.blocked', detectRole(), {
-      title, gate: 'add_type_missing', board: client.boardName,
-    });
-    process.exit(1);
-  }
-  if (!LABELS.type[opts.type.toLowerCase()]) {
-    console.error(`ERROR: Unknown type "${opts.type}". Valid: ${validTypes}`);
-    process.exit(1);
+    errors.push(`Missing --type <${validTypes}>`);
+  } else if (!LABELS.type[opts.type.toLowerCase()]) {
+    errors.push(`Unknown type "${opts.type}". Valid: ${validTypes}`);
   }
 
-  // Priority gate
   if (!opts.priority) {
-    console.error(`ERROR: Cards require a priority. Add --priority P1|P2|P3.`);
-    emitSpineEvent('card.quality.blocked', detectRole(), {
-      title, gate: 'add_priority_missing', board: client.boardName,
-    });
-    process.exit(1);
+    errors.push('Missing --priority P1|P2|P3');
   }
 
-  // AC-at-creation gate: description with AC required unless --quick
   if (!opts.quick) {
     const desc = (opts.description || '').trim();
     if (!desc) {
-      console.error(`ERROR: Cards require --desc with acceptance criteria.`);
-      console.error(`  Use --quick (-q) for unplanned issues and quick fixes only.`);
-      process.exit(1);
-    }
-    const hasAC =
-      /acceptance\s*criteria/i.test(desc) ||
-      /##\s*(ac|criteria|what|acceptance)/i.test(desc) ||
-      /- \[[ x]\]/i.test(desc) ||
-      /\d+\.\s+\S/m.test(desc);
-    if (!hasAC) {
-      console.error(`ERROR: Description missing acceptance criteria (need ## AC heading, checkboxes, or numbered items).`);
-      console.error(`  Use --quick (-q) for unplanned issues and quick fixes only.`);
-      process.exit(1);
+      errors.push('Missing --desc with acceptance criteria (use --quick/-q to skip)');
+    } else {
+      const hasAC =
+        /acceptance\s*criteria/i.test(desc) ||
+        /##\s*(ac|criteria|what|acceptance)/i.test(desc) ||
+        /- \[[ x]\]/i.test(desc) ||
+        /\d+\.\s+\S/m.test(desc);
+      if (!hasAC) {
+        errors.push('Description missing acceptance criteria (need ## AC heading, checkboxes, or numbered items). Use --quick/-q to skip');
+      }
     }
     // Experience section check (#1839): warn if missing, Wren adds before WIP
-    const hasExperience = /##\s*experience/i.test(desc);
+    const hasExperience = /##\s*experience/i.test((opts.description || ''));
     if (!hasExperience) {
       console.log(`  WARN: No Experience section. Wren should add "## Experience" before this card enters WIP.`);
       emitSpineEvent('card.quality.warned', detectRole(), {
         title, gate: 'experience_missing_at_creation', board: client.boardName,
       });
     }
-  } else {
+  }
+
+  if (errors.length > 0) {
+    console.error(`ERROR: Card creation failed (${errors.length} issue${errors.length > 1 ? 's' : ''}):`);
+    for (const err of errors) {
+      console.error(`  • ${err}`);
+    }
+    emitSpineEvent('card.quality.blocked', detectRole(), {
+      title, gate: 'add_validation_failed', board: client.boardName,
+      errors: errors.join('; '),
+    });
+    process.exit(1);
+  }
+
+  if (opts.quick) {
     emitSpineEvent('card.quick.created', detectRole(), {
       title, board: client.boardName,
     });
