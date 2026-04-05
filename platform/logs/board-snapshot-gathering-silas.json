@@ -1,13 +1,49 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T10:47:50.981Z",
+  "timestamp": "2026-04-05T11:02:55.283Z",
   "tasks": [
+    {
+      "index": 2046,
+      "apiId": 2129,
+      "title": "Clearing mobile UX — Enter sends instead of newline, focus stolen by re-renders",
+      "description": "## Experience\nJeff is typing in the Clearing on his phone. Enter sends the message instead of adding a newline — messages get cut off mid-thought. Focus also gets stolen, probably by tile refresh or Socket.IO event re-render. Jeff can't compose a multi-line message on mobile.\n\n## AC\n1. Shift+Enter or mobile-friendly mechanism for newlines on phone\n2. Focus not stolen from input field during tile/message refreshes\n3. Send only on explicit Send button tap on mobile (Enter = newline)\n4. Tests cover: mobile input retains focus after refresh, newline insertion works",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-04T19:40:51Z",
+      "updated": "2026-04-05T10:54:13Z"
+    },
+    {
+      "index": 2061,
+      "apiId": 2144,
+      "title": "Mobile-friendly doc rendering — shared responsive CSS for all gathering-docs and chorus-docs",
+      "description": "AC: 1. Shared responsive stylesheet (e.g. doc-responsive.css) added to public/. 2. All gathering-docs and chorus-docs HTML files include the stylesheet. 3. On mobile (max-width 768px): headings scale down, tables scroll horizontally, code blocks don't overflow, body text is readable without pinch-zoom. 4. Viewport meta tag present in all docs. 5. Jeff verifies on phone — doc-catalog child pages render cleanly.\n\n## Experience\nI open doc-catalog on my phone from the couch and tap into a service design doc. The text is readable without pinch-zooming, tables scroll instead of running off the edge, headings fit the screen. I can actually read my own architecture docs on mobile without fighting the layout.\n\n## Blast Radius\n- public/css/doc-responsive.css (new)\n- public/gathering-docs/*.html\n- public/chorus-docs/*.html\n- public/doc-catalog.html",
+      "status": "Done",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance",
+        "sequence:strategy"
+      ],
+      "done": true,
+      "created": "2026-04-05T10:56:32Z",
+      "updated": "2026-04-05T11:02:29Z"
+    },
     {
       "index": 2058,
       "apiId": 2141,
       "title": "role-state preserves stale card ID on non-building transitions — waiting/idle should clear card field",
       "description": "## Problem\nWhen `role-state` transitions to `waiting` or `idle`, the `card=` field from the previous `building` state persists. Clearing tiles show stale card IDs for roles that have finished their work.\n\n## Root Cause\nThe `role-state` Rust binary only sets `card=` when explicitly passed. Transitions like `role-state silas waiting` preserve the previous card value instead of clearing it.\n\n## Acceptance Criteria\n- [ ] `role-state <role> waiting` clears the card field (sets to null/empty)\n- [ ] `role-state <role> idle` clears the card field\n- [ ] `role-state <role> building card=<id>` still sets the card field correctly\n- [ ] Clearing tiles show no card ID for waiting/idle roles\n\n## Experience\nJeff sees the Clearing tiles and each role shows its actual state — building with a card number, or waiting/idle with no card. No stale card IDs lingering from previous work.",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -16,9 +52,27 @@
         "type:fix",
         "sequence:ops"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T10:41:20Z",
-      "updated": "2026-04-05T10:41:59Z"
+      "updated": "2026-04-05T10:49:39Z"
+    },
+    {
+      "index": 2055,
+      "apiId": 2138,
+      "title": "WiFi access to doc-catalog — extensionless route, gathering-docs accessible after WiFi login",
+      "description": "AC: 1. /doc-catalog serves the page without .html extension. 2. Doc-catalog and all gathering-docs children load over WiFi (192.168.86.36:3000) after login. 3. No auth changes — login still required for admin pages.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:fix",
+        "sequence:strategy"
+      ],
+      "done": true,
+      "created": "2026-04-05T10:33:42Z",
+      "updated": "2026-04-05T10:53:16Z"
     },
     {
       "index": 2052,
@@ -856,60 +910,6 @@
       "updated": "2026-04-03T18:29:54Z"
     },
     {
-      "index": 1950,
-      "apiId": 2033,
-      "title": "Backfill domain tags on Done cards — reverse-engineer from title, description, and file paths",
-      "description": "## Experience\nI ask Card Story for the seed pipeline history and get 6 cards. Jeff knows there are 40+. The gap: older cards were created before domain tags existed. Card Story joins on domain — no tag, no story.\n\n## AC\n1. Script scans Done cards without domain tags\n2. For each, infers domain from title keywords, description content, and file paths in comments\n3. Tags with inferred domain — human review for ambiguous cases\n4. Seeds domain gets full coverage first (Jeff asked for this specifically)\n5. Dry-run mode shows proposed tags before applying\n\n## Context\nKade tried to tag old seed cards by number from Chorus search — numbers were stale. The board is the source of truth for current card state. This card builds the bridge between historical knowledge and current board structure.",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P3",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore",
-        "sequence:infrastructure"
-      ],
-      "done": true,
-      "created": "2026-04-01T21:54:40Z",
-      "updated": "2026-04-02T17:17:31Z"
-    },
-    {
-      "index": 1947,
-      "apiId": 2030,
-      "title": "Card story endpoint — what happened on card #N, six sources joined into a timeline",
-      "description": "## AC\n- [ ] GET /api/chorus/card-story/:id returns a timeline from all 6 sources ordered by timestamp\n- [ ] Sources: Vikunja metadata, Vikunja comments, Chorus index mentions, spine events, nudges, domain context\n- [ ] Timeline entries have timestamp, source, speaker/role, and text\n- [ ] Related cards linked by card number mentions in comments and transcripts\n\n## Experience\nJeff asked 'what happened on card #1930?' — the answer is scattered across Vikunja comments, session transcripts, spine events, nudges, and domain pages. All six sources have APIs. No new infrastructure — just a join on card number.\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/card-story.feature",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-01T21:33:59Z",
-      "updated": "2026-04-01T21:56:58Z"
-    },
-    {
-      "index": 1946,
-      "apiId": 2029,
-      "title": "Chorus search returns readable conversations — one query, Boston time, Jeff's words included",
-      "description": "## Experience\nI search Chorus for something Jeff and I discussed this morning. I get a readable conversation — timestamps in Boston time, Jeff's words included, not just assistant responses. One query, complete picture.\n\n## AC\n1. Chorus search returns conversation threads with Jeff messages included\n2. Timestamps display in Boston time, not UTC\n3. Results group by session with clear conversation flow\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/conversation-recall.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n- product-manager/artifacts/domain-memory.html\n- product-manager/artifacts/domain-chorus.html\n- product-manager/artifacts/domain-index.html",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-04-01T20:32:49Z",
-      "updated": "2026-04-01T21:16:50Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -996,22 +996,58 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
-      "index": 2055,
-      "apiId": 2138,
-      "title": "WiFi access to doc-catalog — extensionless route, gathering-docs accessible after WiFi login",
-      "description": "AC: 1. /doc-catalog serves the page without .html extension. 2. Doc-catalog and all gathering-docs children load over WiFi (192.168.86.36:3000) after login. 3. No auth changes — login still required for admin pages.",
+      "index": 2063,
+      "apiId": 2146,
+      "title": "Clearing routes un-addressed messages to all roles — should go to Wren only per hint text",
+      "description": "",
       "status": "Later",
       "owner": "Kade",
-      "priority": "P1",
+      "priority": "P2",
       "domains": [
         "chunk:app",
         "domain:chorus",
         "type:fix",
-        "sequence:strategy"
+        "sequence:clearing"
       ],
       "done": false,
-      "created": "2026-04-05T10:33:42Z",
-      "updated": "2026-04-05T10:33:42Z"
+      "created": "2026-04-05T11:02:02Z",
+      "updated": "2026-04-05T11:02:02Z"
+    },
+    {
+      "index": 2062,
+      "apiId": 2145,
+      "title": "Pair gate blocks non-code files — CSS, HTML docs, static assets shouldn't require /pair",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T10:58:52Z",
+      "updated": "2026-04-05T10:58:52Z"
+    },
+    {
+      "index": 2059,
+      "apiId": 2142,
+      "title": "Post-build hook: re-register chorus-hook-shim Accessibility after cargo rebuild",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T10:48:46Z",
+      "updated": "2026-04-05T10:48:46Z"
     },
     {
       "index": 2047,
@@ -1030,24 +1066,6 @@
       "done": false,
       "created": "2026-04-04T22:33:02Z",
       "updated": "2026-04-04T22:33:02Z"
-    },
-    {
-      "index": 2046,
-      "apiId": 2129,
-      "title": "Clearing mobile UX — Enter sends instead of newline, focus stolen by re-renders",
-      "description": "## Experience\nJeff is typing in the Clearing on his phone. Enter sends the message instead of adding a newline — messages get cut off mid-thought. Focus also gets stolen, probably by tile refresh or Socket.IO event re-render. Jeff can't compose a multi-line message on mobile.\n\n## AC\n1. Shift+Enter or mobile-friendly mechanism for newlines on phone\n2. Focus not stolen from input field during tile/message refreshes\n3. Send only on explicit Send button tap on mobile (Enter = newline)\n4. Tests cover: mobile input retains focus after refresh, newline insertion works",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-04-04T19:40:51Z",
-      "updated": "2026-04-04T19:40:51Z"
     },
     {
       "index": 2045,
@@ -1677,24 +1695,6 @@
       "done": false,
       "created": "2026-03-29T11:31:21Z",
       "updated": "2026-03-30T21:59:56Z"
-    },
-    {
-      "index": 1810,
-      "apiId": 1893,
-      "title": "Wire express-prom-bundle for request metrics — no HTTP metrics exported",
-      "description": "## Experience\nI have Grafana dashboards but no actual HTTP metrics from the app. I'm relying on blackbox probes to tell me if requests are slow or failing, which means I only know something is wrong after it's already down. I want real request counts and latency histograms so I can see degradation before it becomes an outage.\n\n## AC\n- [ ] http_requests_total{status,method,path} exported\n- [ ] http_request_duration_seconds histogram\n- [ ] Replace blackbox probe alerts with native metrics alerts\n\n## Context\nFrom Silas logging strategy. Relying on blackbox probes instead of native HTTP metrics.\n\n## Files\nsrc/app.ts\npackage.json",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P3",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance",
-        "sequence:infrastructure"
-      ],
-      "done": false,
-      "created": "2026-03-29T00:55:19Z",
-      "updated": "2026-03-30T16:49:41Z"
     },
     {
       "index": 1767,
@@ -2821,6 +2821,23 @@
       "done": false,
       "created": "2026-03-28T11:00:33Z",
       "updated": "2026-03-31T20:48:18Z"
+    },
+    {
+      "index": 2060,
+      "apiId": 2143,
+      "title": "[defect] gathering-app: Event loop lag: 11.91s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 11.91s\nSample: Event loop lag: 11.91s\nFirst seen: 2026-04-05T10:50:30Z\nCount: 1\nHash: 0d278e795923f7cc",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T10:50:31Z",
+      "updated": "2026-04-05T10:50:31Z"
     },
     {
       "index": 2057,
