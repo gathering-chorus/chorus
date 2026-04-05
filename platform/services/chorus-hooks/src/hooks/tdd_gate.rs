@@ -12,6 +12,7 @@ use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 
 /// Test file patterns — delegated to shared module (#2076)
+#[cfg(test)]
 fn is_test_file(path: &str) -> bool {
     crate::shared::file_classification::is_test_file(path)
 }

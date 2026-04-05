@@ -1,5 +1,5 @@
 use crate::state::chorus_log;
-use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookResponse, Role};
+use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookResponse};
 use regex::Regex;
 use std::sync::LazyLock;
 

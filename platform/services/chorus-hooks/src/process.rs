@@ -51,16 +51,6 @@ pub fn get_cwd(pid: u32) -> Option<String> {
         })
 }
 
-/// Role directory pattern for window matching.
-pub fn role_pattern(role: &str) -> Option<&'static str> {
-    match role {
-        "wren" => Some("product-manager"),
-        "silas" => Some("architect"),
-        "kade" => Some("engineer"),
-        _ => None,
-    }
-}
-
 /// Inject by delegating to the stable `chorus-inject` binary (#2075).
 /// chorus-inject owns osascript Accessibility permission independently
 /// from chorus-hook-shim, so rebuilding the shim doesn't revoke TCC.

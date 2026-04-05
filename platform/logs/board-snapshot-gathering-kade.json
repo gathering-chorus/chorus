@@ -1,12 +1,30 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T15:07:32.705Z",
+  "timestamp": "2026-04-05T16:53:09.330Z",
   "tasks": [
     {
-      "index": 2077,
-      "apiId": 2160,
-      "title": "Split shim.rs into command submodules — 1776 lines to src/commands/",
-      "description": "## Problem\nshim.rs is 1776 lines with 22+ commands — session management, health checks, context cache, log rotation, nudge delivery, database init all in one file. Role-to-directory mapping duplicated 3 times. Unmaintainable — every edit risks breaking unrelated functionality.\n\n## Experience\nI open shim.rs to fix a nudge bug and I only see nudge code. Each command lives in its own file under src/commands/. Changes are isolated, testable, and reviewable.\n\n## AC\n- [ ] Create src/commands/ directory with submodules for major command groups\n- [ ] Session commands (start, close) in commands/session.rs\n- [ ] Health/ops commands in commands/health.rs\n- [ ] Context cache in commands/context_cache.rs\n- [ ] shim.rs reduced to dispatch + shared utilities (< 400 lines)\n- [ ] Role-to-dir mapping extracted to one location (shared/state_paths.rs already has role_dir)\n- [ ] All existing tests pass after refactor\n\n## Files\n- platform/services/chorus-hooks/src/shim.rs\n- platform/services/chorus-hooks/src/commands/mod.rs\n- platform/services/chorus-hooks/src/commands/session.rs\n- platform/services/chorus-hooks/src/commands/health.rs\n- platform/services/chorus-hooks/src/commands/context_cache.rs",
+      "index": 2093,
+      "apiId": 2176,
+      "title": "Service design — Loom layer",
+      "description": "Inventory and gap analysis for the Loom layer (team coordination).\n\n## Experience\nSee every Loom component: roles, Clearing, interactions, briefs, cards CLI, skills, policy, decisions, ADRs.\n\n## AC\n- [ ] HTML page at /gathering-docs/loom-service-design.html\n- [ ] Components: role system, Clearing, interaction patterns, briefs pipeline, cards CLI, skills, decisions/ADRs, practices\n- [ ] Each component: services, APIs, data, tests, docs, UIs, gap\n- [ ] Status tags: REAL / PARTIAL / NONE\n- [ ] Deployed to gathering-docs\n\n## Files\n- product-manager/artifacts/loom-service-design.html\n- jeff-bridwell-personal-site/public/gathering-docs/loom-service-design.html",
+      "status": "WIP",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:loom",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T15:38:57Z",
+      "updated": "2026-04-05T16:46:31Z"
+    },
+    {
+      "index": 2080,
+      "apiId": 2163,
+      "title": "Delete dead code — guarded_hook wrappers, unused type functions, stale regex statics",
+      "description": "## Problem\nCode review identified ~10 unused functions/statics across the codebase. shim.rs has ~1000 lines of dead functions (now extracted to commands/ but originals not deleted). Compiler warnings flag delivery_mode(), role_pattern(), guarded_hook wrappers, and unused regex statics.\n\n## Experience\nI build chorus-hooks and get zero compiler warnings. The codebase has no dead code — every function is called, every static is used.\n\n## AC\n- [ ] Remove dead functions from shim.rs (session_start_cmd, session_close_cmd, context_cache_cmd, health_hourly_cmd, health_daily_cmd, log_rotate_cmd, cruft_scan_cmd, fetch_memory_context, check_handoffs, chrono_parse_approx, chrono_lite_ts, decode_chunked)\n- [ ] Remove guarded_hook/guarded_hook_sync from main.rs\n- [ ] Remove unused functions from types.rs (permission_deny_json, decision_block_json)\n- [ ] Remove delivery_mode from nudge.rs\n- [ ] Remove role_pattern from process.rs\n- [ ] Remove unused regex statics from search_hierarchy\n- [ ] Remove unused state.rs methods\n- [ ] shim.rs under 800 lines after cleanup\n- [ ] Zero dead_code compiler warnings (excluding pre-existing search_hierarchy test failures)\n- [ ] All tests pass\n\n## Files\n- platform/services/chorus-hooks/src/shim.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/services/chorus-hooks/src/types.rs\n- platform/services/chorus-hooks/src/nudge.rs\n- platform/services/chorus-hooks/src/process.rs\n- platform/services/chorus-hooks/src/state.rs\n- platform/services/chorus-hooks/src/hooks/search_hierarchy.rs",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
@@ -18,7 +36,7 @@
       ],
       "done": false,
       "created": "2026-04-05T13:38:40Z",
-      "updated": "2026-04-05T14:44:25Z"
+      "updated": "2026-04-05T15:12:19Z"
     },
     {
       "index": 1932,
@@ -56,6 +74,24 @@
       "done": true,
       "created": "2026-04-05T13:38:40Z",
       "updated": "2026-04-05T14:43:06Z"
+    },
+    {
+      "index": 2077,
+      "apiId": 2160,
+      "title": "Split shim.rs into command submodules — 1776 lines to src/commands/",
+      "description": "## Problem\nshim.rs is 1776 lines with 22+ commands — session management, health checks, context cache, log rotation, nudge delivery, database init all in one file. Role-to-directory mapping duplicated 3 times. Unmaintainable — every edit risks breaking unrelated functionality.\n\n## Experience\nI open shim.rs to fix a nudge bug and I only see nudge code. Each command lives in its own file under src/commands/. Changes are isolated, testable, and reviewable.\n\n## AC\n- [ ] Create src/commands/ directory with submodules for major command groups\n- [ ] Session commands (start, close) in commands/session.rs\n- [ ] Health/ops commands in commands/health.rs\n- [ ] Context cache in commands/context_cache.rs\n- [ ] shim.rs reduced to dispatch + shared utilities (< 400 lines)\n- [ ] Role-to-dir mapping extracted to one location (shared/state_paths.rs already has role_dir)\n- [ ] All existing tests pass after refactor\n\n## Files\n- platform/services/chorus-hooks/src/shim.rs\n- platform/services/chorus-hooks/src/commands/mod.rs\n- platform/services/chorus-hooks/src/commands/session.rs\n- platform/services/chorus-hooks/src/commands/health.rs\n- platform/services/chorus-hooks/src/commands/context_cache.rs",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": true,
+      "created": "2026-04-05T13:38:40Z",
+      "updated": "2026-04-05T15:10:53Z"
     },
     {
       "index": 2076,
@@ -915,24 +951,6 @@
       "updated": "2026-04-02T17:46:58Z"
     },
     {
-      "index": 1966,
-      "apiId": 2049,
-      "title": "Tighten cards CLI — mandatory fields at create, hard block at Now without description",
-      "description": "## Experience\nJeff sees cards enter the board missing type, chunk, domain, or priority because --quick bypasses classification. Later, they hit hard blocks at WIP. The friction is deferred, not avoided. Jeff wants data quality enforced at creation.\n\n## AC\n- [ ] cards add requires type, chunk, domain, and priority on ALL cards (--quick no longer exempts classification)\n- [ ] --quick only exempts description requirement\n- [ ] cards move to Now hard-blocks if description is missing (currently warns)\n- [ ] Description gate checks for ## Experience and ## AC sections, not just non-empty\n- [ ] BDD scenarios from service-design-cards.html pass: creation (5), Now gate (3)\n- [ ] Existing tests updated for new mandatory fields\n\n## Files\n- platform/board-client/src/cli.ts\n- platform/board-client/src/sdk.ts\n- platform/board-client/tests/",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:enhance",
-        "sequence:gates"
-      ],
-      "done": true,
-      "created": "2026-04-02T11:38:03Z",
-      "updated": "2026-04-02T12:03:09Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1024,6 +1042,96 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2092,
+      "apiId": 2175,
+      "title": "Service design — Protocol layer",
+      "description": "Inventory and gap analysis for the Protocol layer (Spine + Gates).\n\n## Experience\nSee every gate and spine component. Which gates are real, which fire false positives, which have tests.\n\n## AC\n- [ ] HTML page at /gathering-docs/protocol-service-design.html\n- [ ] Components: chorus.log spine, all gates (TDD, memory, pair, demo, accept, etc.), nudge delivery, role-state\n- [ ] Each component: services, APIs, data, tests, docs, UIs, gap\n- [ ] Status tags: REAL / PARTIAL / NONE\n- [ ] Deployed to gathering-docs",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:loom",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T15:38:57Z",
+      "updated": "2026-04-05T15:38:57Z"
+    },
+    {
+      "index": 2091,
+      "apiId": 2174,
+      "title": "Service design — Observability layer",
+      "description": "Inventory and gap analysis for the Observability layer.\n\n## Experience\nSee every component: alerts, logs, health checks, metrics. Status, gaps, what's tested.\n\n## AC\n- [ ] HTML page at /gathering-docs/observability-service-design.html\n- [ ] Components: alerting rules, Loki/log pipeline, health checks (hourly/daily), Grafana dashboards, watchdog, probes\n- [ ] Each component: services, APIs, data, tests, docs, UIs, gap\n- [ ] Status tags: REAL / PARTIAL / NONE\n- [ ] Deployed to gathering-docs",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:loom",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T15:38:57Z",
+      "updated": "2026-04-05T15:38:57Z"
+    },
+    {
+      "index": 2090,
+      "apiId": 2173,
+      "title": "Service design — Infrastructure layer",
+      "description": "Inventory and gap analysis for the Infrastructure layer of the dependency stack.\n\n## Experience\nOpen the page and see every component in the Infrastructure layer: machines, agents, tunnel, deploy, codebase, toolchain. Each tagged REAL/PARTIAL/NONE with services, APIs, data, tests, docs, UIs listed. Gaps called out.\n\n## AC\n- [ ] HTML page at /gathering-docs/infra-service-design.html\n- [ ] Components: Library Mac, Bedroom Mac, LaunchAgents, Cloudflare tunnel, app-state.sh, codebase (git), toolchain (Rust, Node, cargo, npm)\n- [ ] Each component: services, APIs, data, tests, docs, UIs, gap\n- [ ] Status tags: REAL / PARTIAL / NONE per component\n- [ ] Deployed to gathering-docs",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:loom",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T15:38:44Z",
+      "updated": "2026-04-05T15:38:44Z"
+    },
+    {
+      "index": 2089,
+      "apiId": 2172,
+      "title": "Weekly climate report — reactive ratio, card durability, debt trajectory, coverage slopes",
+      "description": "Scheduled autonomous agent run (cron, Sunday 5am ET weekly). The climate report — trends, not snapshots.\n\n## What it does\n1. Reactive ratio by layer — pull the full origin:reactive vs origin:reflective breakdown per dependency layer (Apps, Infrastructure, Protocol, Loom, etc). Is each layer getting more or less stable? Compare to prior week.\n2. Test coverage direction — not a number, a slope. Are we adding tests or losing them? Which modules have coverage gaps growing?\n3. Tech debt trajectory — dead code accumulating, TODOs aging, file sizes growing (another 1776-line shim forming?). Debt growing or shrinking.\n4. Card durability — cards shipped this week that generated fix cards. The \"shipped and held\" vs \"shipped and broke\" ratio. Direct measure of proving gate quality.\n5. Error rate slopes — are error fingerprints trending up or down across the week? New recurring patterns?\n6. Codebase hotspots — files touched by 3+ commits this week. Churn = instability signal.\n7. Role work distribution — is one role carrying disproportionate reactive load? Early warning for burnout patterns.\n\n## The weekly question\nIs the system getting better or worse? Not today — over the arc of a week. The daily is weather. This is climate.\n\n## AC\n- [ ] Cron fires Sunday 5am ET autonomously\n- [ ] Reactive ratio by layer with week-over-week delta (from Wren origin analysis data)\n- [ ] Card durability metric — shipped cards that held vs generated follow-up fixes\n- [ ] Test coverage slope per module\n- [ ] Tech debt trajectory with specific hotspots named\n- [ ] Codebase churn map — files with highest commit frequency\n- [ ] Produces HTML report (Jeff engages with HTML, not markdown logs)\n- [ ] Output to Bridge + /tmp/weekly-climate-YYYY-MM-DD.html\n- [ ] Includes week-over-week comparison — this week vs last, trend arrows",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:new",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T15:24:35Z",
+      "updated": "2026-04-05T15:31:13Z"
+    },
+    {
+      "index": 2088,
+      "apiId": 2171,
+      "title": "Daily signal integrity scan — codebase weather, trust verification, signal-to-noise",
+      "description": "Scheduled autonomous agent run (cron, 6am ET daily). Not a status dashboard — a developing judgment about system health.\n\n## What it does\n1. Signal integrity — smoke tests that exercise actual paths. Did nudge deliver? Did seed pipeline write to Fuseki? Does board CLI match Vikunja? Can chorus search find yesterdays index?\n2. Codebase weather — git log analysis: what shifted overnight, which areas got touched by multiple roles, whats accumulating\n3. Trust verification — are health checks lying? The lobotomy pattern: system says green but is broken. End-to-end probes, not process checks\n4. Log signal-to-noise — new error fingerprints vs retry noise, gate blocks that are real vs false positives, pattern formation\n5. Drift detection — stale handoffs, uncommitted files accumulating, WIP without commits in 24h\n6. Reactive ratio check — are yesterdays completed cards still holding? Track origin:reactive vs origin:reflective trend. If reactive percentage is climbing, surface it as the top signal. Building features while reactive ratio rises = building on sand.\n\n## Learning over time\nThe scan gets smarter daily. Builds a model of normal — known noise patterns get suppressed, new signals get surfaced. Not static checks — developing situational awareness.\n\n## AC\n- [ ] Cron fires at 6am ET autonomously, no Jeff interaction\n- [ ] Exercises real paths (nudge delivery, Fuseki query, board CLI, chorus search) not just process status\n- [ ] Produces weather report: what shifted, whats drifting, what needs attention\n- [ ] Distinguishes signal from noise — known patterns suppressed, new patterns surfaced\n- [ ] Checks yesterdays completed cards still hold — no regressions post-demo\n- [ ] Surfaces reactive ratio trend (daily delta from Wren origin analysis)\n- [ ] Output to Bridge + /tmp/daily-signal-YYYY-MM-DD.md\n- [ ] Composes existing checks (cruft scan, health-hourly) where useful, adds trust verification layer",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:new",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T15:24:34Z",
+      "updated": "2026-04-05T15:30:57Z"
+    },
+    {
       "index": 1964,
       "apiId": 2047,
       "title": "Cards CLI — update description and AC on existing cards",
@@ -1081,24 +1189,6 @@
       "index": 2081,
       "apiId": 2164,
       "title": "Standardize gate semantics — async/sync policy, session-absent behavior, consistent deny patterns",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "domain:chorus",
-        "type:chore",
-        "sequence:framework",
-        "origin:reflective"
-      ],
-      "done": false,
-      "created": "2026-04-05T13:38:40Z",
-      "updated": "2026-04-05T13:38:40Z"
-    },
-    {
-      "index": 2080,
-      "apiId": 2163,
-      "title": "Delete dead code — guarded_hook wrappers, unused type functions, stale regex statics",
       "description": "",
       "status": "Later",
       "owner": "Silas",
@@ -1869,74 +1959,6 @@
       "done": false,
       "created": "2026-03-23T18:28:22Z",
       "updated": "2026-03-30T13:05:39Z"
-    },
-    {
-      "index": 1620,
-      "apiId": 1703,
-      "title": "Revalidation workflow — flag stale instances when schema hash changes",
-      "description": "When a schema hash changes (field added, severity reclassified), existing instances harvested under the old hash need revalidation. This card wires the detection and flagging.\n\nDepends on #1619 (records must carry provenance before you can detect staleness).\n\n## AC\n- [ ] On upsertField: compare new schema hash to previous — if changed, set icd:needsRevalidation true on domain\n- [ ] API endpoint: GET /api/icd/domains/:id/stale — returns count of instances with old schema hash\n- [ ] icd-consistency-test.py --hashes reports stale instance count per domain\n- [ ] Revalidation clears when all instances match current hash (post re-harvest)\n\n## Files\n- src/services/icd.service.ts — stale detection query + revalidation flag\n- src/handlers/icd.handler.ts — stale endpoint\n- scripts/icd-consistency-test.py — stale reporting",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:convergence",
-        "origin:reflective"
-      ],
-      "done": false,
-      "created": "2026-03-22T21:43:21Z",
-      "updated": "2026-03-23T15:33:10Z"
-    },
-    {
-      "index": 1618,
-      "apiId": 1701,
-      "title": "Cache version hashes — invalidate on ICD write",
-      "description": "computeSchemaHash and computeMappingHash fire live SPARQL on every API response. Cache the result per domain and invalidate when upsertField or upsertMapping writes to the ICD graph.\n\n## AC\n- [ ] In-memory cache of schema + mapping hashes per domain\n- [ ] Cache invalidated on upsertField, upsertMapping, updateSection\n- [ ] getAllVersionHashes uses cache — 0 SPARQL queries when warm\n- [ ] Cache miss falls through to live computation (current behavior)\n\n## Files\n- src/services/icd.service.ts — add cache Map + invalidation in write methods",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:convergence",
-        "origin:reflective"
-      ],
-      "done": false,
-      "created": "2026-03-22T21:43:04Z",
-      "updated": "2026-03-22T21:43:04Z"
-    },
-    {
-      "index": 1602,
-      "apiId": 1685,
-      "title": "Turn off iCloud Photos sync on Bedroom Mac — per #1580 strategy",
-      "description": "Per #1580 analysis: Bedroom iCloud Photos sync is thumbnails-only (16GB), burning 40% CPU via ecosystemd, for data that exists in 3 other places.\n\nPREREQUISITE: Before disabling, verify all 24,494 iCloud items are reconciled into the canonical photo layer (#1502). Mac library has 24,592 items but only 14,539 were harvested. ~10K may be unharvested. Match iCloud inventory to canonical first.\n\n## AC\n1. Verify all iCloud items are accounted for in canonical graph (query Mac SQLite vs canonical)\n2. Harvest any missing Mac library items into source graph\n3. Re-run reconciler to update canonical count\n4. Disable iCloud Photos on Bedroom Mac (Settings → Apple ID → iCloud → Photos → off)\n5. Verify ecosystemd CPU drops after disable\n6. Verify harvest pipeline still reads from Library Mac (no Bedroom dependency)\n7. Verify Kade's face clustering still accesses Takeout files on Bedroom disk (unaffected)\n\n## Context\n- #1580 mapped the full photo backup strategy\n- Camera roll is 4x redundant without Bedroom sync\n- Jeff wants iCloud inventory matched to canonical before turning off\n- Jeff does the toggle, Silas verifies\n\n## Files\narchitect/infrastructure-constraints.md",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:photos"
-      ],
-      "done": false,
-      "created": "2026-03-22T00:47:11Z",
-      "updated": "2026-03-22T11:55:57Z"
-    },
-    {
-      "index": 1581,
-      "apiId": 1664,
-      "title": "Complete doc-catalog page — fix links, add to navbar, make all docs browseable",
-      "description": "Doc catalog at /doc-catalog.html inventories 88 HTML docs across 7 projects. Started yesterday, partially working. Needs finishing.\n\n## What's done\n- Catalog page exists with 88 docs grouped by topic\n- NAV / NOT IN NAV badges showing which docs are in navbar\n- Dates on every doc\n- /docs/pm/, /docs/architect/, /docs/engineer/ static routes added to app.ts (working with auth)\n\n## What's left\n1. Links to role docs (/docs/pm/*, /docs/architect/*, /docs/engineer/*) need verification — some paths may be wrong (e.g. /docs/pm/docs/wren-role.html has double \"docs\")\n2. Add doc-catalog to navbar (under Chorus or a new Documentation section)\n3. Remove stale convergence domain tag on cards that were already fixed\n4. Consider: auto-generate catalog from filesystem scan instead of static HTML\n\n## AC\n1. Every link on /doc-catalog.html is clickable and loads the correct doc (no 404s)\n2. Doc catalog accessible from navbar\n3. Role doc routes (/docs/pm/, /docs/architect/, /docs/engineer/) verified working for all listed files\n4. Path corrections for any double-directory issues (e.g. /docs/pm/docs/ → /docs/pm/)\n\n## Files\npublic/doc-catalog.html, src/app.ts, config/nav-tree.json",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:documents"
-      ],
-      "done": false,
-      "created": "2026-03-21T12:53:03Z",
-      "updated": "2026-03-21T12:53:03Z"
     },
     {
       "index": 1721,

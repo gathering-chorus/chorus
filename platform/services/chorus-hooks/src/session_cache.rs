@@ -155,21 +155,6 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
     Vec::new()
 }
 
-/// Construct JSONL path from session ID and cwd (for hooks that need the path)
-pub fn jsonl_path(session_id: &str, cwd: &str) -> String {
-    let project_key = cwd.replace('/', "-");
-    let project_key = if project_key.starts_with('-') {
-        &project_key[1..]
-    } else {
-        &project_key
-    };
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    format!(
-        "{}/.claude/projects/-{}/{}.jsonl",
-        home, project_key, session_id
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

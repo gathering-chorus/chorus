@@ -4,12 +4,9 @@
 //! PostToolUse on Edit/Write: lightweight pattern check for common issues.
 //! Blocks demo if AC gaps found. Warns on risky edits.
 
-use crate::state::{chorus_log as emit_event, AppState};
-use crate::types::{permission_deny_json, HookInput, HookResponse};
-use std::process::Command;
+use crate::state::chorus_log as emit_event;
+use crate::types::{HookInput, HookResponse};
 use tracing::{info, warn};
-
-const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards";
 
 // --- PreToolUse: Agent review before /demo ---
 

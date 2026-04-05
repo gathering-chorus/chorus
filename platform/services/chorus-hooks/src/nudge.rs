@@ -385,14 +385,6 @@ fn deliver_to_url(sender: &str, message: &str, url: &str) {
     chorus_log("role.nudge.reply", sender, &format!("url={}", url));
 }
 
-/// Determine delivery mode for a target role.
-/// Returns "bridge" for jeff, "inject" for other roles.
-/// This encodes the routing rule: Jeff gets Bridge-only (no terminal injection),
-/// roles get osascript inject.
-pub fn delivery_mode(target: &str) -> &'static str {
-    if target == "jeff" { "bridge" } else { "inject" }
-}
-
 /// Deliver a message to Jeff via the Bridge API (localhost:3470)
 fn deliver_to_bridge(sender: &str, message: &str) -> ExitCode {
     let body = serde_json::json!({
@@ -569,50 +561,6 @@ mod tests {
     fn role_dir_rejects_unknown() {
         assert_eq!(role_dir("jeff"), None);
         assert_eq!(role_dir("unknown"), None);
-    }
-
-    // --- AC7: nudge routing — Jeff gets Bridge, roles get inject ---
-
-    #[test]
-    fn jeff_nudges_route_to_bridge_not_terminal() {
-        assert_eq!(delivery_mode("jeff"), "bridge");
-    }
-
-    #[test]
-    fn role_nudges_route_to_inject() {
-        assert_eq!(delivery_mode("wren"), "inject");
-        assert_eq!(delivery_mode("silas"), "inject");
-        assert_eq!(delivery_mode("kade"), "inject");
-    }
-
-    // --- AC7: role-to-role nudges must NOT leak to Bridge ---
-
-    #[test]
-    fn role_to_role_does_not_echo_to_bridge() {
-        // After AC7 fix, role-to-role nudges do NOT post to Bridge.
-        // The removed line was:
-        //   let _ = deliver_to_bridge(&sender, &format!("→ {} {}", target, message));
-        //
-        // Verify: delivery_mode confirms routing logic.
-        // Jeff → Bridge only. Roles → inject only (no Bridge echo).
-        assert_eq!(delivery_mode("jeff"), "bridge");
-        assert_eq!(delivery_mode("wren"), "inject");
-        assert_eq!(delivery_mode("silas"), "inject");
-        assert_eq!(delivery_mode("kade"), "inject");
-
-        // Verify queue works for role targets (the remaining delivery path)
-        let test_role = "test-no-bridge-echo";
-        let inbox_dir = format!("{}/{}", INBOX_DIR, test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-
-        queue_message(test_role, "AC7 verify");
-        let content = fs::read_to_string(&inbox_file).unwrap_or_default();
-        assert!(content.contains("AC7 verify"), "message should be in queue");
-
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
     }
 
     // --- AC1: queue_message writes to inbox ---

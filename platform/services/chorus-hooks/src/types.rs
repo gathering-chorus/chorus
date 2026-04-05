@@ -172,13 +172,6 @@ pub fn decision_allow_json(message: &str) -> String {
     .to_string()
 }
 
-pub fn decision_block_json(message: &str) -> String {
-    serde_json::json!({
-        "decision": "block",
-        "message": message
-    })
-    .to_string()
-}
 
 /// Card type from board labels — replaces is_defect_fix() keyword matching (#1909).
 /// Reads card ID from role-state JSON, then checks board labels for type: prefix.

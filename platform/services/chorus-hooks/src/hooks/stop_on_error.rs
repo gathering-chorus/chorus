@@ -75,7 +75,7 @@ fn extract_error_text(input: &HookInput) -> String {
 }
 
 /// Check if a Bash tool call resulted in an error that should stop the role
-pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
+pub async fn check(input: &HookInput, _state: &AppState) -> HookResponse {
     if input.tool_name_str() != "Bash" {
         return HookResponse::allow();
     }

@@ -6,7 +6,7 @@
 
 use crate::types::{HookInput, HookResponse};
 use std::process::Command;
-use tracing::{info, warn};
+use tracing::warn;
 
 const ROLE_STATE: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state";
 const ROLES: &[&str] = &["wren", "silas", "kade"];

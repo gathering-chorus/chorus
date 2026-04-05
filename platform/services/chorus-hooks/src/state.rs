@@ -23,14 +23,8 @@ struct StateInner {
     recent_errors: HashMap<String, Vec<i64>>,
     /// Search block timestamps (pattern_hash -> timestamp) for retry bypass
     search_blocks: HashMap<String, i64>,
-    /// Last Chorus search timestamp per role
-    chorus_last_search: HashMap<String, i64>,
     /// Session init done markers per role
     session_init_done: HashMap<String, bool>,
-    /// Circuit breaker: per-module failure timestamps (#1858)
-    hook_failures: HashMap<String, Vec<i64>>,
-    /// Circuit breaker: disabled modules (#1858)
-    disabled_hooks: HashMap<String, i64>,
     /// Interaction pattern per role (#1911): fix→swat, new→ideation, enhance→demo, chore→direction, swat→bypass
     interaction_pattern: HashMap<String, String>,
 }
@@ -54,10 +48,7 @@ impl AppState {
                 last_human_msg: HashMap::new(),
                 recent_errors: HashMap::new(),
                 search_blocks: HashMap::new(),
-                chorus_last_search: HashMap::new(),
                 session_init_done: HashMap::new(),
-                hook_failures: HashMap::new(),
-                disabled_hooks: HashMap::new(),
                 interaction_pattern: HashMap::new(),
             })),
             session_cache: SessionCache::new(),
@@ -68,28 +59,6 @@ impl AppState {
                 repo_root,
                 home_dir: PathBuf::from(home),
             }),
-        }
-    }
-
-    /// Circuit breaker: check if a hook module is disabled (#1858)
-    pub async fn is_hook_disabled(&self, module: &str) -> bool {
-        let inner = self.inner.lock().await;
-        inner.disabled_hooks.contains_key(module)
-    }
-
-    /// Circuit breaker: record a hook failure, auto-disable after 3 in 5 min (#1858)
-    pub async fn record_hook_failure(&self, module: &str) -> bool {
-        let mut inner = self.inner.lock().await;
-        let now = Utc::now().timestamp();
-        let failures = inner.hook_failures.entry(module.to_string()).or_default();
-        failures.push(now);
-        // Keep only last 5 minutes
-        failures.retain(|&ts| now - ts < 300);
-        if failures.len() >= 3 {
-            inner.disabled_hooks.insert(module.to_string(), now);
-            true // circuit broke
-        } else {
-            false
         }
     }
 
@@ -144,24 +113,6 @@ impl AppState {
 
     pub async fn clear_search_block(&self, key: &str) {
         self.inner.lock().await.search_blocks.remove(key);
-    }
-
-    pub async fn set_chorus_searched(&self, role: &str) {
-        let now = Utc::now().timestamp();
-        self.inner
-            .lock()
-            .await
-            .chorus_last_search
-            .insert(role.to_string(), now);
-    }
-
-    pub async fn chorus_searched_recently(&self, role: &str) -> bool {
-        let inner = self.inner.lock().await;
-        if let Some(&ts) = inner.chorus_last_search.get(role) {
-            Utc::now().timestamp() - ts < 90
-        } else {
-            false
-        }
     }
 
     pub async fn mark_session_init_done(&self, role: &str) {
@@ -250,42 +201,3 @@ pub async fn chorus_log(event: &str, role: &str, kvs: &[(&str, &str)]) {
     append_log(&log_path, &obj.to_string()).await;
 }
 
-#[cfg(test)]
-mod circuit_breaker_tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn hook_not_disabled_initially() {
-        let state = AppState::new();
-        assert!(!state.is_hook_disabled("test_module").await);
-    }
-
-    #[tokio::test]
-    async fn single_failure_does_not_disable() {
-        let state = AppState::new();
-        let broke = state.record_hook_failure("test_module").await;
-        assert!(!broke);
-        assert!(!state.is_hook_disabled("test_module").await);
-    }
-
-    #[tokio::test]
-    async fn three_failures_disables_hook() {
-        let state = AppState::new();
-        state.record_hook_failure("flaky_hook").await;
-        state.record_hook_failure("flaky_hook").await;
-        let broke = state.record_hook_failure("flaky_hook").await;
-        assert!(broke, "should circuit-break after 3 failures");
-        assert!(state.is_hook_disabled("flaky_hook").await);
-    }
-
-    #[tokio::test]
-    async fn different_modules_independent() {
-        let state = AppState::new();
-        state.record_hook_failure("hook_a").await;
-        state.record_hook_failure("hook_a").await;
-        state.record_hook_failure("hook_a").await;
-        assert!(state.is_hook_disabled("hook_a").await);
-        assert!(!state.is_hook_disabled("hook_b").await);
-    }
-
-}

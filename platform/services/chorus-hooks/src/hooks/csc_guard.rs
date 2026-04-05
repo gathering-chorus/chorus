@@ -7,20 +7,9 @@ use crate::types::{permission_deny_json, HookInput, HookResponse};
 use regex::Regex;
 use std::sync::LazyLock;
 
-/// Pipeline artifact commands — require proximity to a file path or /tmp.
-/// "extract" and "convert" alone are too broad (e.g. `npm run convert`).
-static ARTIFACT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(sips|thumbnail|harvest|canonical)\s+\S|(?i)(extract|convert)\s+\S*[/.]").unwrap()
-});
-
 // File extensions that are pipeline artifacts
 static ARTIFACT_EXT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\.(jpg|jpeg|png|json|ttl|nt|nq|rdf|csv)").unwrap()
-});
-
-// Write-to-tmp patterns: --out /tmp/, > /tmp/, cp/scp ... /tmp/
-static TMP_WRITE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:--out\s+|>\s*|>>\s*|cp\s+\S+\s+|scp\s+\S+\s+|mv\s+\S+\s+)/tmp/").unwrap()
 });
 
 // Domain data paths that should be under /Volumes/Gathering/

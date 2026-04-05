@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Observing Value — Session Notes</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.7; }
+  h1 { font-size: 1.5em; border-bottom: 2px solid #333; padding-bottom: 6px; margin-bottom: 4px; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 20px; }
+  h2 { font-size: 1.15em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 12px; font-size: 0.88em; }
+  .quote { background: #f0f7ff; border-left: 4px solid #3b82f6; padding: 10px 16px; margin: 14px 0; font-style: italic; font-size: 0.88em; }
+  .insight { background: #fefce8; border-left: 4px solid #ca8a04; padding: 10px 16px; margin: 14px 0; font-size: 0.88em; }
+  .number { background: #f0fdf4; border-left: 4px solid #16a34a; padding: 10px 16px; margin: 14px 0; font-size: 0.88em; }
+  .concern { background: #fef2f2; border-left: 4px solid #dc2626; padding: 10px 16px; margin: 14px 0; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { height: 14px; border-radius: 2px; display: inline-block; vertical-align: middle; }
+  .bar-r { background: #fca5a5; }
+  .bar-g { background: #86efac; }
+  strong { font-weight: 600; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Observing Value</h1>
+<p class="date">April 5, 2026 — Wren + Jeff, Sunday reflection session</p>
+
+<h2>The Question</h2>
+<p>Jeff proposed a new card tag: <strong>origin:reflective</strong> vs <strong>origin:reactive</strong>. Not "planned vs unplanned" — that's logistics. Reflective vs reactive captures <em>posture</em>: did we step back and choose this work, or did something break and we responded?</p>
+
+<p>This led to pulling the full board history — 1,604 cards across all Vikunja projects — and classifying every one.</p>
+
+<h2>What We Found</h2>
+
+<div class="number">
+<strong>All time:</strong> 65% reflective, 34% reactive. One third of all work ever done was responding to breakage.
+</div>
+
+<div class="concern">
+<strong>Last 7 days:</strong> 49% reactive. Nearly half. The system is demanding stabilization.
+</div>
+
+<h2>The Weekly Trend</h2>
+<table>
+<tr><th>Week</th><th>Event</th><th class="num">React%</th><th>Trend</th></tr>
+<tr><td>Feb 16</td><td>Early building</td><td class="num">17%</td><td><span class="bar bar-r" style="width:34px"></span><span class="bar bar-g" style="width:166px"></span></td></tr>
+<tr><td>Feb 23</td><td>Building</td><td class="num">24%</td><td><span class="bar bar-r" style="width:48px"></span><span class="bar bar-g" style="width:152px"></span></td></tr>
+<tr><td>Mar 2</td><td>First hardening attempt</td><td class="num">30%</td><td><span class="bar bar-r" style="width:60px"></span><span class="bar bar-g" style="width:140px"></span></td></tr>
+<tr><td>Mar 9</td><td>Docker retirement</td><td class="num">48%</td><td><span class="bar bar-r" style="width:96px"></span><span class="bar bar-g" style="width:104px"></span></td></tr>
+<tr><td>Mar 16</td><td>Post-Docker calm</td><td class="num">14%</td><td><span class="bar bar-r" style="width:28px"></span><span class="bar bar-g" style="width:172px"></span></td></tr>
+<tr><td>Mar 23</td><td>First lobotomy</td><td class="num">25%</td><td><span class="bar bar-r" style="width:50px"></span><span class="bar bar-g" style="width:150px"></span></td></tr>
+<tr><td>Mar 30</td><td>2nd/3rd lobotomy + restructuring</td><td class="num">51%</td><td><span class="bar bar-r" style="width:102px"></span><span class="bar bar-g" style="width:98px"></span></td></tr>
+</table>
+
+<p>Every infrastructure change generates a reactive spike. Docker, hooks, lobotomies — each one costs a week of fix cards. The pattern is clear: infrastructure changes need cool-down weeks, not stacking.</p>
+
+<h2>By Layer</h2>
+<p>Jeff's dependency stack has 7 layers. The origin data maps to each one:</p>
+
+<table>
+<tr><th>Layer</th><th class="num">Reactive</th><th class="num">Reflective</th><th class="num">Total</th><th class="num">React%</th></tr>
+<tr><td><strong>Apps</strong></td><td class="num">215</td><td class="num">148</td><td class="num">363</td><td class="num" style="color:#dc2626"><strong>59%</strong></td></tr>
+<tr><td>Infrastructure</td><td class="num">36</td><td class="num">61</td><td class="num">97</td><td class="num">37%</td></tr>
+<tr><td>Observability</td><td class="num">21</td><td class="num">38</td><td class="num">59</td><td class="num">35%</td></tr>
+<tr><td>Protocol</td><td class="num">97</td><td class="num">196</td><td class="num">293</td><td class="num">33%</td></tr>
+<tr><td>Loom</td><td class="num">68</td><td class="num">219</td><td class="num">288</td><td class="num">23%</td></tr>
+<tr><td>Shared Awareness</td><td class="num">8</td><td class="num">45</td><td class="num">53</td><td class="num">15%</td></tr>
+<tr><td>Framework</td><td class="num">5</td><td class="num">60</td><td class="num">65</td><td class="num">7%</td></tr>
+</table>
+
+<div class="insight">
+<strong>Apps is the most reactive layer.</strong> More than half of all app cards are fixing things Jeff reported. That's the layer where the user lives — the layer where broken things are visible.
+</div>
+
+<h2>What Jeff Said</h2>
+
+<div class="quote">"I didn't know about a lot of our deeper issues."</div>
+<p>The reactive work was invisible because roles fixed things fast enough that Jeff never saw the board-level trend. He felt the friction — the re-nudges, the "why is this broken again" — but the system never showed him the receipt.</p>
+
+<div class="quote">"We did a lot of hand waving and saying it works."</div>
+<p>"It works" meant "it compiled" or "the test passed." Not "Jeff used it and it held up." The 51% reactive week is the receipt for that gap — every card titled "fix X" is a card that passed its demo and broke later.</p>
+
+<div class="quote">"I just chose to do more stuff."</div>
+<p>Instead of stopping and saying "this isn't working." The storm maker pattern — pushing through friction by adding more work on top. 440 cards in the week of March 9th. That's not a team building. That's a team running.</p>
+
+<div class="quote">"I thought our operations and logging and code structure were much better than they were."</div>
+<p>Because demos said "tests pass, AC complete." The code review Kade did found 14 issues. Four copies of the same function. A 1,776-line shim file. Shipped as "done" through the proving gate. Nobody looked until someone looked.</p>
+
+<h2>The Insight</h2>
+
+<p>This session produced a new measurement instrument: <strong>reflective vs reactive ratio by layer</strong>. It answers a question the board couldn't answer before: <em>where is our work going, and is it chosen or forced?</em></p>
+
+<p>The dependency stack says top depends on bottom. The data confirms it: when bottom layers break (Infrastructure, Protocol), reactive cards cascade upward into Apps and Loom. Building at the top while the bottom is unstable generates the 51% reactive weeks.</p>
+
+<p>The framework sequence Silas is running is the right response — stabilize the middle of the stack so the layers above stop generating reactive work from structural drift.</p>
+
+<div class="insight">
+<strong>Stabilization priority reads directly from the data:</strong> Apps first (59% reactive), then Infrastructure and Protocol (mid-30s%), then the rest holds. Shared Awareness and Framework are already stable — low reactive ratios, mostly chosen work.
+</div>
+
+<h2>What Was Built</h2>
+<ul style="font-size:0.88em; margin: 10px 0 10px 20px;">
+<li><code>origin:reflective</code> and <code>origin:reactive</code> labels created in Vikunja</li>
+<li>Cards CLI extended to support <code>cards set &lt;id&gt; origin=reflective</code></li>
+<li>57 live cards back-tagged (41 reflective, 16 reactive)</li>
+<li>Full board analysis: 1,604 cards classified, weekly trend, per-layer breakdown</li>
+<li>Origin analysis report: <code>product-manager/reports/origin-analysis.html</code></li>
+</ul>
+
+<p class="footer">Generated by Wren | April 5, 2026 | Session: reflection on value observation</p>
+
+</body>
+</html>

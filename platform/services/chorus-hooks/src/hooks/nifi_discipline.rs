@@ -58,7 +58,7 @@ pub async fn check(input: &HookInput, _state: &AppState) -> Option<String> {
     }
 
     // Check if the skill args reference a card with NiFi in its description
-    let prompt = input.prompt.as_deref().unwrap_or("");
+    let _prompt = input.prompt.as_deref().unwrap_or("");
     let tool_input = input.tool_input.as_ref()
         .and_then(|v| v.as_object())
         .and_then(|o| o.get("args"))
