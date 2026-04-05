@@ -1,24 +1,24 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-04T23:12:17.549Z",
+  "timestamp": "2026-04-05T10:32:47.194Z",
   "tasks": [
     {
-      "index": 1938,
-      "apiId": 2021,
-      "title": "Hook to block /tmp usage — enforce CSC-scoped persistence",
-      "description": "## Experience\nA role writes state to /tmp and it works until reboot or launchd cleanup. Then state is gone silently. /tmp is not persistence — CSC-scoped paths are.\n\n## AC\n- [ ] PreToolUse hook on Write/Edit blocks file paths under /tmp/ except allowlisted patterns (session-start-*.md, pair-*.md, claude-team-scan/)\n- [ ] Hook message tells the role where to write instead — maps common /tmp patterns to CSC equivalents\n- [ ] Audit existing /tmp usage in scripts and migrate to CSC paths\n- [ ] Reference CSC decision (DEC-095, card 1856)\n\n## Files\n- platform/services/chorus-hooks/src/hooks/guards.rs",
+      "index": 2052,
+      "apiId": 2135,
+      "title": "Clearing domain badge counts ignore role filter — header shows all-role total while sub-groups show filtered cards",
+      "description": "## Problem\nWhen a role filter is active on the Clearing domain panel, the header badge shows unfiltered counts (e.g. 40 CARDS · 40 TOTAL) while sub-groups only render the filtered role's cards (e.g. 7). The numbers don't match.\n\n## Root Cause\n`clearing/public/index.html:1192-1194` uses `counts.activeCards` from the API (unfiltered) even when `activeRoleFilter !== 'all'` has already filtered the `cards` array.\n\n## Acceptance Criteria\n- [ ] When role filter is active, domain header badge reflects filtered card count\n- [ ] When role filter is 'all', badge shows full API counts as before\n- [ ] Sub-group counts sum to domain header count\n\n## Experience\nJeff sees matching numbers between domain header and sub-group totals regardless of filter state.",
       "status": "WIP",
-      "owner": "Silas",
+      "owner": "Kade",
       "priority": "P2",
       "domains": [
-        "chunk:ops",
+        "chunk:app",
         "domain:chorus",
-        "type:new",
-        "sequence:ops"
+        "type:fix",
+        "sequence:clearing"
       ],
       "done": false,
-      "created": "2026-04-01T13:27:32Z",
-      "updated": "2026-04-04T22:33:59Z"
+      "created": "2026-04-04T23:44:58Z",
+      "updated": "2026-04-04T23:45:15Z"
     },
     {
       "index": 2043,
@@ -2818,6 +2818,40 @@
       "done": false,
       "created": "2026-03-28T11:00:33Z",
       "updated": "2026-03-31T20:48:18Z"
+    },
+    {
+      "index": 2054,
+      "apiId": 2137,
+      "title": "[defect] gathering-app: Event loop lag: 6.12s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 6.12s\nSample: Event loop lag: 6.12s\nFirst seen: 2026-04-05T03:55:47Z\nCount: 1\nHash: 5ce6c5ef84a37874",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T03:55:47Z",
+      "updated": "2026-04-05T03:55:47Z"
+    },
+    {
+      "index": 2053,
+      "apiId": 2136,
+      "title": "[defect] gathering-app: Event loop lag: 72.87s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 72.87s\nSample: Event loop lag: 72.87s\nFirst seen: 2026-04-05T00:10:26Z\nCount: 1\nHash: ea888ec5c3bbdc58",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T00:10:27Z",
+      "updated": "2026-04-05T00:10:27Z"
     },
     {
       "index": 2051,
