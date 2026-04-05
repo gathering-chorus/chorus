@@ -1,24 +1,42 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T11:02:55.283Z",
+  "timestamp": "2026-04-05T11:18:00.282Z",
   "tasks": [
     {
-      "index": 2046,
-      "apiId": 2129,
-      "title": "Clearing mobile UX — Enter sends instead of newline, focus stolen by re-renders",
-      "description": "## Experience\nJeff is typing in the Clearing on his phone. Enter sends the message instead of adding a newline — messages get cut off mid-thought. Focus also gets stolen, probably by tile refresh or Socket.IO event re-render. Jeff can't compose a multi-line message on mobile.\n\n## AC\n1. Shift+Enter or mobile-friendly mechanism for newlines on phone\n2. Focus not stolen from input field during tile/message refreshes\n3. Send only on explicit Send button tap on mobile (Enter = newline)\n4. Tests cover: mobile input retains focus after refresh, newline insertion works",
+      "index": 1964,
+      "apiId": 2047,
+      "title": "Cards CLI — update description and AC on existing cards",
+      "description": "## Problem\nThe cards CLI can create cards and set fields, but can't update the description or AC on existing cards. Roles work around this by using raw `cards set <id> desc=...` which mangles markdown (escaped newlines, lost formatting).\n\n## Experience\nI need to fix a card's description after it's created — add AC I missed, update the experience section, correct a typo. I run `cards update 1964 --desc '...'` and the markdown comes through clean — headings, checkboxes, lists all preserved. No raw Vikunja API calls needed.\n\n## AC\n- [x] `cards update <id> --desc 'text'` writes the description field via Vikunja API\n- [x] Markdown content preserved (headings, checkboxes, lists)\n- [x] `cards view <id>` renders the updated description\n- [x] No direct Vikunja API calls from roles — all through cards CLI\n\n## Files\n- chorus/platform/scripts/cards",
       "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination"
+      ],
+      "done": false,
+      "created": "2026-04-02T11:25:47Z",
+      "updated": "2026-04-05T11:11:10Z"
+    },
+    {
+      "index": 2063,
+      "apiId": 2146,
+      "title": "Clearing routes un-addressed messages to all roles — should go to Wren only per hint text",
+      "description": "",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
         "chunk:app",
-        "sequence:hardening",
         "domain:chorus",
-        "type:fix"
+        "type:fix",
+        "sequence:clearing"
       ],
-      "done": false,
-      "created": "2026-04-04T19:40:51Z",
-      "updated": "2026-04-05T10:54:13Z"
+      "done": true,
+      "created": "2026-04-05T11:02:02Z",
+      "updated": "2026-04-05T11:06:59Z"
     },
     {
       "index": 2061,
@@ -91,6 +109,24 @@
       "done": true,
       "created": "2026-04-04T23:44:58Z",
       "updated": "2026-04-05T10:35:34Z"
+    },
+    {
+      "index": 2046,
+      "apiId": 2129,
+      "title": "Clearing mobile UX — Enter sends instead of newline, focus stolen by re-renders",
+      "description": "## Experience\nJeff is typing in the Clearing on his phone. Enter sends the message instead of adding a newline — messages get cut off mid-thought. Focus also gets stolen, probably by tile refresh or Socket.IO event re-render. Jeff can't compose a multi-line message on mobile.\n\n## AC\n1. Shift+Enter or mobile-friendly mechanism for newlines on phone\n2. Focus not stolen from input field during tile/message refreshes\n3. Send only on explicit Send button tap on mobile (Enter = newline)\n4. Tests cover: mobile input retains focus after refresh, newline insertion works",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": true,
+      "created": "2026-04-04T19:40:51Z",
+      "updated": "2026-04-05T11:06:59Z"
     },
     {
       "index": 2043,
@@ -875,41 +911,6 @@
       "updated": "2026-04-02T18:08:38Z"
     },
     {
-      "index": 1952,
-      "apiId": 2035,
-      "title": "Policy domain — actor diagrams for Jeff behavioral contracts, conversation gates",
-      "description": "## Experience\nJeff stops a role, asks a question, gives feedback, reports a problem. Each has a known right response — codified in decisions and memory. But roles drift. The contract makes expectations structural: actor diagrams showing Jeff's action → expected role response sequence, backed by BDD scenarios that verify the behavior.\n\n## AC\n1. Actor diagram for each Jeff interaction type: stop, question, feedback, problem report, direction, story, reflection\n2. Each diagram shows: Jeff's action → role lookup (memory/decisions/Chorus) → expected response sequence\n3. Gherkin scenarios for each type — 'Given Jeff says stop / Then the role stops immediately, no explain'\n4. Linked from domain-interactions.html as 'Jeff Experience Contract'\n5. Silas builds conversation gates that enforce the sequences\n\n## Context\nThe nine interaction patterns exist (detected by Wren). The feedback memories exist (120+ entries). This card connects them — the patterns trigger the lookup, the memories define the contract, the BDD proves it, the gates enforce it. Principles/patterns/practices as an actor diagram.",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-01T22:02:15Z",
-      "updated": "2026-04-02T01:27:17Z"
-    },
-    {
-      "index": 1951,
-      "apiId": 2034,
-      "title": "Memory-first search gate — enforce conversation and card-story endpoints before filesystem grep",
-      "description": "## Experience\nI ask about a card and the role greps the filesystem instead of hitting card-story. I ask what we discussed and the role searches session files instead of the conversation endpoint. The endpoints exist but roles default to old habits.\n\n## AC\n1. PreToolUse gate detects search-pattern commands (grep, rg, find on session files, card-related queries)\n2. Gate checks whether the role has queried the Memory domain endpoints first (card-story, conversation)\n3. If no Memory query detected in session, gate blocks with: 'Check /api/chorus/card-story/:id or /api/chorus/conversation first — DEC-074'\n4. Gate skips if the search target is code files (not session/card context)\n5. BDD scenarios for the gate\n\n## Context\nDEC-074 says Chorus first for search. Kade built card-story (#1947) and conversation (#1946) endpoints today. Without a gate, roles will keep grepping. Same pattern as TDD gate — enforce the sequence, not just document it.\n\n## Files\n- platform/services/chorus-hooks/src/gates/memory_first.rs\n- platform/services/chorus-hooks/src/lib.rs\n- tests/bdd/memory-first-gate.feature",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:new",
-        "sequence:gates"
-      ],
-      "done": true,
-      "created": "2026-04-01T21:57:51Z",
-      "updated": "2026-04-03T18:29:54Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -996,24 +997,6 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
-      "index": 2063,
-      "apiId": 2146,
-      "title": "Clearing routes un-addressed messages to all roles — should go to Wren only per hint text",
-      "description": "",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:fix",
-        "sequence:clearing"
-      ],
-      "done": false,
-      "created": "2026-04-05T11:02:02Z",
-      "updated": "2026-04-05T11:02:02Z"
-    },
-    {
       "index": 2062,
       "apiId": 2145,
       "title": "Pair gate blocks non-code files — CSS, HTML docs, static assets shouldn't require /pair",
@@ -1025,7 +1008,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:ops"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-05T10:58:52Z",
@@ -1061,7 +1044,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:ops"
+        "sequence:coordination"
       ],
       "done": false,
       "created": "2026-04-04T22:33:02Z",
@@ -1079,7 +1062,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "sequence:strategy"
+        "sequence:awareness"
       ],
       "done": false,
       "created": "2026-04-04T19:01:29Z",
@@ -1097,7 +1080,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:ops"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-04T14:53:01Z",
@@ -1115,7 +1098,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:fix",
-        "sequence:strategy"
+        "sequence:surfaces"
       ],
       "done": false,
       "created": "2026-04-03T10:27:21Z",
@@ -1133,7 +1116,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:ops"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-02T12:02:21Z",
@@ -1151,29 +1134,11 @@
         "chunk:app",
         "domain:chorus",
         "type:new",
-        "sequence:visibility"
+        "sequence:awareness"
       ],
       "done": false,
       "created": "2026-04-02T11:52:55Z",
       "updated": "2026-04-02T11:58:14Z"
-    },
-    {
-      "index": 1964,
-      "apiId": 2047,
-      "title": "Cards CLI — update description and AC on existing cards",
-      "description": "## Experience\\n\\nTest description with **markdown**.\\n\\n## AC\\n- Item one\\n- Item two",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-02T12:02:21Z"
     },
     {
       "index": 1962,
@@ -1187,7 +1152,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:ops"
+        "sequence:coordination"
       ],
       "done": false,
       "created": "2026-04-02T11:16:01Z",
@@ -1205,7 +1170,7 @@
         "chunk:app",
         "domain:chorus",
         "type:new",
-        "sequence:visibility"
+        "sequence:awareness"
       ],
       "done": false,
       "created": "2026-04-02T10:28:02Z",
@@ -1223,7 +1188,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:new",
-        "sequence:ops"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-01T21:37:31Z",
@@ -1241,7 +1206,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "sequence:strategy"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-04-01T19:47:15Z",
@@ -1259,7 +1224,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:strategy"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-01T14:47:27Z",
@@ -1277,7 +1242,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:strategy"
+        "sequence:coordination"
       ],
       "done": false,
       "created": "2026-04-01T14:33:13Z",
@@ -1295,7 +1260,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:ops"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-01T12:52:09Z",
@@ -1313,7 +1278,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:strategy"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-01T12:31:33Z",
@@ -1331,7 +1296,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:strategy"
+        "sequence:awareness"
       ],
       "done": false,
       "created": "2026-03-31T17:22:42Z",
@@ -1367,7 +1332,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "sequence:spine"
+        "sequence:coordination"
       ],
       "done": false,
       "created": "2026-03-31T15:00:52Z",
@@ -1385,7 +1350,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:strategy"
+        "sequence:awareness"
       ],
       "done": false,
       "created": "2026-03-31T14:40:55Z",
@@ -1403,7 +1368,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "sequence:strategy"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-31T13:57:21Z",
@@ -1457,7 +1422,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "sequence:strategy"
+        "sequence:awareness"
       ],
       "done": false,
       "created": "2026-03-31T12:46:26Z",
@@ -1475,7 +1440,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "sequence:strategy"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-31T12:18:14Z",
@@ -1493,7 +1458,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:strategy"
+        "sequence:awareness"
       ],
       "done": false,
       "created": "2026-03-31T11:44:12Z",
@@ -1511,7 +1476,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "sequence:strategy"
+        "sequence:awareness"
       ],
       "done": false,
       "created": "2026-03-31T00:19:14Z",
@@ -1529,7 +1494,7 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "sequence:infrastructure"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-03-30T21:11:38Z",
@@ -1565,7 +1530,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:enhance",
-        "sequence:strategy"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-03-30T14:55:11Z",
@@ -1618,7 +1583,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "sequence:spine"
+        "sequence:coordination"
       ],
       "done": false,
       "created": "2026-03-30T10:27:29Z",
@@ -1636,7 +1601,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "sequence:spine"
+        "sequence:coordination"
       ],
       "done": false,
       "created": "2026-03-30T10:27:25Z",
@@ -1654,7 +1619,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:enhance",
-        "sequence:ops"
+        "sequence:coordination"
       ],
       "done": false,
       "created": "2026-03-30T10:27:21Z",
@@ -1672,7 +1637,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:strategy"
+        "sequence:surfaces"
       ],
       "done": false,
       "created": "2026-03-29T18:14:40Z",
@@ -1690,7 +1655,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:strategy"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-03-29T11:31:21Z",
@@ -1725,7 +1690,7 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "sequence:werk"
+        "sequence:surfaces"
       ],
       "done": false,
       "created": "2026-03-27T15:43:31Z",
@@ -1743,7 +1708,7 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "sequence:werk"
+        "sequence:surfaces"
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
@@ -1760,7 +1725,7 @@
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "sequence:werk"
+        "sequence:surfaces"
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
@@ -1878,6 +1843,37 @@
       "done": false,
       "created": "2026-03-23T22:13:30Z",
       "updated": "2026-03-30T13:05:22Z"
+    },
+    {
+      "index": 1647,
+      "apiId": 1730,
+      "title": "Source registry service — runtime API for provider status, load state, and staleness",
+      "description": "## Experience\nI keep asking \"what sources do we have for photos?\" and \"when was Fuseki last loaded?\" and someone has to go dig through files and graphs to answer. I want a single API endpoint where I can ask those questions and get a straight answer — what's loaded, when, how many records, and what's stale. The ICD defines the rules; this service reads them at runtime so I don't have to keep rediscovering what we already know.\n\nJeff's direction: we keep rediscovering what sources exist, where they live, and what's loaded. The ICD (#1642) defines the rules. This service reads them at runtime.\n\nAPI endpoint that answers:\n- What source graphs exist in Fuseki per domain?\n- When was each last loaded/refreshed?\n- What's the record count vs expected count from provider?\n- Which sources are stale (schema hash changed since last load)?\n- For a given record (by date), which source is golden for each field?\n\nReads from: ICD provider model, Fuseki graph metadata, icd:schemaHash, icd:needsRevalidation.\n\nRelated: #1618 (cache version hashes), #1642 (era-scoped ICD)\n\n## AC\n- [ ] GET /api/registry/sources/:domain — list all providers with load status\n- [ ] GET /api/registry/authority/:domain?date=YYYY-MM-DD — which provider is golden per field for a given date\n- [ ] Staleness detection — flag source graphs where schema hash != current ICD version\n- [ ] Record count comparison — loaded vs expected per provider\n- [ ] Surfaced on a page or existing dashboard (not just API)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:34:16Z",
+      "updated": "2026-03-30T13:05:33Z"
+    },
+    {
+      "index": 1646,
+      "apiId": 1729,
+      "title": "Rebuild search index from new canonical photo graph",
+      "description": "## Experience\nI search for a photo by date or location and get results based on the old inflated 63K count with missing fields. After the canonical graph rebuild, I expect search to reflect the real data — correct record counts, full field coverage for dimensions and GPS and dates. When I search for \"photos from 2024,\" the results should come from the new canonical, not the stale index.\n\nAfter canonical photo graph is rebuilt (#1644), the search index (FTS + semantic embeddings) needs to reflect the new data.\n\nDepends on: #1644 (canonical rebuild complete)\n\n## AC\n- [ ] Rebuild FTS index from new canonical photo graph\n- [ ] Rebuild semantic embeddings for photos from new canonical\n- [ ] Verify photo search returns results with correct field coverage (dimensions, GPS, dates)\n- [ ] Search result count reflects new canonical count, not old 63K inflated count",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos"
+      ],
+      "done": false,
+      "created": "2026-03-23T18:28:22Z",
+      "updated": "2026-03-30T13:05:39Z"
     },
     {
       "index": 1721,
@@ -2821,6 +2817,23 @@
       "done": false,
       "created": "2026-03-28T11:00:33Z",
       "updated": "2026-03-31T20:48:18Z"
+    },
+    {
+      "index": 2064,
+      "apiId": 2147,
+      "title": "[defect] gathering-app: Event loop lag: 7.43s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 7.43s\nSample: Event loop lag: 7.43s\nFirst seen: 2026-04-05T11:10:57Z\nCount: 1\nHash: c414aaf559a020b1",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T11:10:57Z",
+      "updated": "2026-04-05T11:10:57Z"
     },
     {
       "index": 2060,
