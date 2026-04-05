@@ -1,7 +1,24 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T16:53:09.330Z",
+  "timestamp": "2026-04-05T17:48:33.014Z",
   "tasks": [
+    {
+      "index": 2100,
+      "apiId": 2183,
+      "title": "Revert inject crate — inline osascript, nudge survives rebuild",
+      "description": "## Experience\nNudge injection breaks silently when macOS revokes TCC Accessibility permission after a chorus-hooks rebuild. Jeff said: take the simpler working thing over the more complex broken thing. The inject crate separation was solving a problem that shouldn't exist — osascript from Terminal just works.\n\n## AC\n- [x] Revert inject_by_tab_name to inline osascript (no external binary)\n- [x] Delete chorus-inject crate\n- [x] Delete inject.rs from chorus-hooks (dead code)\n- [x] Update inject-watcher.sh to use inline osascript\n- [x] Delete stable_inject.rs integration tests (tested deleted binary)\n- [x] Verify nudge works after shim rebuild\n- [x] All tests pass (351 tests, 0 failures)\n- [x] Team consensus: Wren ack, Kade ack\n\n## Files changed\n- platform/services/chorus-hooks/src/process.rs — inline osascript\n- scripts/inject-watcher.sh — inline osascript\n- DELETED: platform/services/chorus-inject/ (entire crate)\n- DELETED: platform/services/chorus-hooks/src/inject.rs\n- DELETED: platform/services/chorus-hooks/tests/stable_inject.rs",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T17:16:40Z",
+      "updated": "2026-04-05T17:48:30Z"
+    },
     {
       "index": 2093,
       "apiId": 2176,
@@ -21,24 +38,6 @@
       "updated": "2026-04-05T16:46:31Z"
     },
     {
-      "index": 2080,
-      "apiId": 2163,
-      "title": "Delete dead code — guarded_hook wrappers, unused type functions, stale regex statics",
-      "description": "## Problem\nCode review identified ~10 unused functions/statics across the codebase. shim.rs has ~1000 lines of dead functions (now extracted to commands/ but originals not deleted). Compiler warnings flag delivery_mode(), role_pattern(), guarded_hook wrappers, and unused regex statics.\n\n## Experience\nI build chorus-hooks and get zero compiler warnings. The codebase has no dead code — every function is called, every static is used.\n\n## AC\n- [ ] Remove dead functions from shim.rs (session_start_cmd, session_close_cmd, context_cache_cmd, health_hourly_cmd, health_daily_cmd, log_rotate_cmd, cruft_scan_cmd, fetch_memory_context, check_handoffs, chrono_parse_approx, chrono_lite_ts, decode_chunked)\n- [ ] Remove guarded_hook/guarded_hook_sync from main.rs\n- [ ] Remove unused functions from types.rs (permission_deny_json, decision_block_json)\n- [ ] Remove delivery_mode from nudge.rs\n- [ ] Remove role_pattern from process.rs\n- [ ] Remove unused regex statics from search_hierarchy\n- [ ] Remove unused state.rs methods\n- [ ] shim.rs under 800 lines after cleanup\n- [ ] Zero dead_code compiler warnings (excluding pre-existing search_hierarchy test failures)\n- [ ] All tests pass\n\n## Files\n- platform/services/chorus-hooks/src/shim.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/services/chorus-hooks/src/types.rs\n- platform/services/chorus-hooks/src/nudge.rs\n- platform/services/chorus-hooks/src/process.rs\n- platform/services/chorus-hooks/src/state.rs\n- platform/services/chorus-hooks/src/hooks/search_hierarchy.rs",
-      "status": "WIP",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "domain:chorus",
-        "type:chore",
-        "sequence:framework",
-        "origin:reflective"
-      ],
-      "done": false,
-      "created": "2026-04-05T13:38:40Z",
-      "updated": "2026-04-05T15:12:19Z"
-    },
-    {
       "index": 1932,
       "apiId": 2015,
       "title": "Standards surface + pulse instrumentation — single page of team policies with pulse measurement",
@@ -56,6 +55,24 @@
       "done": false,
       "created": "2026-04-01T12:31:33Z",
       "updated": "2026-04-05T12:08:46Z"
+    },
+    {
+      "index": 2080,
+      "apiId": 2163,
+      "title": "Delete dead code — guarded_hook wrappers, unused type functions, stale regex statics",
+      "description": "## Problem\nCode review identified ~10 unused functions/statics across the codebase. shim.rs has ~1000 lines of dead functions (now extracted to commands/ but originals not deleted). Compiler warnings flag delivery_mode(), role_pattern(), guarded_hook wrappers, and unused regex statics.\n\n## Experience\nI build chorus-hooks and get zero compiler warnings. The codebase has no dead code — every function is called, every static is used.\n\n## AC\n- [ ] Remove dead functions from shim.rs (session_start_cmd, session_close_cmd, context_cache_cmd, health_hourly_cmd, health_daily_cmd, log_rotate_cmd, cruft_scan_cmd, fetch_memory_context, check_handoffs, chrono_parse_approx, chrono_lite_ts, decode_chunked)\n- [ ] Remove guarded_hook/guarded_hook_sync from main.rs\n- [ ] Remove unused functions from types.rs (permission_deny_json, decision_block_json)\n- [ ] Remove delivery_mode from nudge.rs\n- [ ] Remove role_pattern from process.rs\n- [ ] Remove unused regex statics from search_hierarchy\n- [ ] Remove unused state.rs methods\n- [ ] shim.rs under 800 lines after cleanup\n- [ ] Zero dead_code compiler warnings (excluding pre-existing search_hierarchy test failures)\n- [ ] All tests pass\n\n## Files\n- platform/services/chorus-hooks/src/shim.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/services/chorus-hooks/src/types.rs\n- platform/services/chorus-hooks/src/nudge.rs\n- platform/services/chorus-hooks/src/process.rs\n- platform/services/chorus-hooks/src/state.rs\n- platform/services/chorus-hooks/src/hooks/search_hierarchy.rs",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": true,
+      "created": "2026-04-05T13:38:40Z",
+      "updated": "2026-04-05T16:53:35Z"
     },
     {
       "index": 2078,
@@ -934,23 +951,6 @@
       "updated": "2026-04-04T12:13:06Z"
     },
     {
-      "index": 1991,
-      "apiId": 2074,
-      "title": "Iterate on Actor-BDD research page with Jeff — layout, content, presentation feedback",
-      "description": "## Experience\nJeff opens the doc-catalog and sees 163 docs in a wall of expanded sections. He wants collapsible folds, role badges showing who authored what, and filters that work at the section level — not just individual docs.\n\n## AC\n- [x] Section headings are collapsible (details/summary), collapsed by default\n- [x] Role name badges on fold headers (green wren, yellow silas, blue kade)\n- [x] Value Stream Stage and Gathering Life Loop filters on same row\n- [x] Role filter row (Product/Architecture/Engineering) shows/hides entire fold sections\n- [x] Group ordering: Product → Architecture → Engineering with alphabetical within\n- [x] Research doc registered in catalog via API",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": true,
-      "created": "2026-04-02T17:24:49Z",
-      "updated": "2026-04-02T17:46:58Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1040,6 +1040,39 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
+    },
+    {
+      "index": 2095,
+      "apiId": 2178,
+      "title": "BDD quick card passes",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T17:14:15Z",
+      "updated": "2026-04-05T17:14:15Z"
+    },
+    {
+      "index": 2094,
+      "apiId": 2177,
+      "title": "BDD quick test",
+      "description": "",
+      "status": "Later",
+      "owner": "",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T17:14:15Z",
+      "updated": "2026-04-05T17:14:15Z"
     },
     {
       "index": 2092,
@@ -1148,7 +1181,7 @@
       ],
       "done": false,
       "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-05T14:13:03Z"
+      "updated": "2026-04-05T17:14:16Z"
     },
     {
       "index": 2083,
@@ -1787,7 +1820,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:31Z",
-      "updated": "2026-04-05T14:13:06Z"
+      "updated": "2026-04-05T17:14:19Z"
     },
     {
       "index": 1762,
@@ -1806,7 +1839,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
-      "updated": "2026-04-05T14:13:06Z"
+      "updated": "2026-04-05T17:14:19Z"
     },
     {
       "index": 1761,
@@ -1824,7 +1857,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
-      "updated": "2026-04-05T14:13:06Z"
+      "updated": "2026-04-05T17:14:19Z"
     },
     {
       "index": 1747,
@@ -1928,39 +1961,6 @@
       "updated": "2026-03-30T13:05:22Z"
     },
     {
-      "index": 1647,
-      "apiId": 1730,
-      "title": "Source registry service — runtime API for provider status, load state, and staleness",
-      "description": "## Experience\nI keep asking \"what sources do we have for photos?\" and \"when was Fuseki last loaded?\" and someone has to go dig through files and graphs to answer. I want a single API endpoint where I can ask those questions and get a straight answer — what's loaded, when, how many records, and what's stale. The ICD defines the rules; this service reads them at runtime so I don't have to keep rediscovering what we already know.\n\nJeff's direction: we keep rediscovering what sources exist, where they live, and what's loaded. The ICD (#1642) defines the rules. This service reads them at runtime.\n\nAPI endpoint that answers:\n- What source graphs exist in Fuseki per domain?\n- When was each last loaded/refreshed?\n- What's the record count vs expected count from provider?\n- Which sources are stale (schema hash changed since last load)?\n- For a given record (by date), which source is golden for each field?\n\nReads from: ICD provider model, Fuseki graph metadata, icd:schemaHash, icd:needsRevalidation.\n\nRelated: #1618 (cache version hashes), #1642 (era-scoped ICD)\n\n## AC\n- [ ] GET /api/registry/sources/:domain — list all providers with load status\n- [ ] GET /api/registry/authority/:domain?date=YYYY-MM-DD — which provider is golden per field for a given date\n- [ ] Staleness detection — flag source graphs where schema hash != current ICD version\n- [ ] Record count comparison — loaded vs expected per provider\n- [ ] Surfaced on a page or existing dashboard (not just API)",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "domain:convergence",
-        "origin:reflective"
-      ],
-      "done": false,
-      "created": "2026-03-23T18:34:16Z",
-      "updated": "2026-03-30T13:05:33Z"
-    },
-    {
-      "index": 1646,
-      "apiId": 1729,
-      "title": "Rebuild search index from new canonical photo graph",
-      "description": "## Experience\nI search for a photo by date or location and get results based on the old inflated 63K count with missing fields. After the canonical graph rebuild, I expect search to reflect the real data — correct record counts, full field coverage for dimensions and GPS and dates. When I search for \"photos from 2024,\" the results should come from the new canonical, not the stale index.\n\nAfter canonical photo graph is rebuilt (#1644), the search index (FTS + semantic embeddings) needs to reflect the new data.\n\nDepends on: #1644 (canonical rebuild complete)\n\n## AC\n- [ ] Rebuild FTS index from new canonical photo graph\n- [ ] Rebuild semantic embeddings for photos from new canonical\n- [ ] Verify photo search returns results with correct field coverage (dimensions, GPS, dates)\n- [ ] Search result count reflects new canonical count, not old 63K inflated count",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "domain:photos",
-        "origin:reflective"
-      ],
-      "done": false,
-      "created": "2026-03-23T18:28:22Z",
-      "updated": "2026-03-30T13:05:39Z"
-    },
-    {
       "index": 1721,
       "apiId": 1804,
       "title": "PM-driven tab sharing — Wren navigates screen sharing during demos",
@@ -2051,6 +2051,75 @@
       "done": false,
       "created": "2026-03-09T15:26:04Z",
       "updated": "2026-03-09T15:26:04Z"
+    },
+    {
+      "index": 2099,
+      "apiId": 2182,
+      "title": "CLI test card seq",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-05T17:14:20Z",
+      "updated": "2026-04-05T17:14:20Z"
+    },
+    {
+      "index": 2098,
+      "apiId": 2181,
+      "title": "CLI test card",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Kade",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:chore"
+      ],
+      "done": false,
+      "created": "2026-04-05T17:14:19Z",
+      "updated": "2026-04-05T17:14:20Z"
+    },
+    {
+      "index": 2097,
+      "apiId": 2180,
+      "title": "BDD now-gate pass",
+      "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T17:14:17Z",
+      "updated": "2026-04-05T17:14:18Z"
+    },
+    {
+      "index": 2096,
+      "apiId": 2179,
+      "title": "BDD now-gate test",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T17:14:16Z",
+      "updated": "2026-04-05T17:14:17Z"
     },
     {
       "index": 2087,
@@ -2836,74 +2905,6 @@
       "done": false,
       "created": "2026-03-30T13:57:50Z",
       "updated": "2026-03-31T14:28:37Z"
-    },
-    {
-      "index": 1845,
-      "apiId": 1928,
-      "title": "Recover 4.6M missing triples — individual file loads for concatenation gap",
-      "description": "",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:infrastructure",
-        "type:fix"
-      ],
-      "done": false,
-      "created": "2026-03-30T01:52:00Z",
-      "updated": "2026-03-30T01:53:51Z"
-    },
-    {
-      "index": 1820,
-      "apiId": 1903,
-      "title": "Board state validation tests — card numbers, state cards, stream/domain accuracy",
-      "description": "## AC\n1. Tests verify card numbers returned by board-ts match Vikunja source\n2. Tests verify state cards (WIP per role) show correct current card for each role\n3. Tests verify stream and domain tags display correctly on card views\n4. Tests verify card move operations update state immediately — no stale cache\n5. Tests verify board-ts list output matches actual Vikunja state\n6. All tests run in CI",
-      "status": "Won't Do",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-03-29T12:53:24Z",
-      "updated": "2026-03-29T12:54:54Z"
-    },
-    {
-      "index": 1815,
-      "apiId": 1898,
-      "title": "Root cause gate hook — require cross-role consultation with data before coding a fix",
-      "description": "## Experience\n\nI see a role jump straight to coding a fix without talking to anyone. The system catches it and says: \"discuss root cause with another role first — bring data, not guesses.\" No more solo debugging spirals that waste hours chasing the wrong cause.\n\n## AC\n1. PreToolUse hook detects when a role begins editing code to fix a defect\n2. Hook checks session history for a /chat or brief exchange with at least one other role about the problem\n3. The exchange must include data — logs, error output, code references — not just description of symptoms\n4. If no cross-role consultation with data found, hook blocks with message: discuss root cause with another role first, bring data not guesses\n5. Tests cover: block solo fix attempt, block consultation without data, pass with data-backed cross-role discussion",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-03-29T10:56:45Z",
-      "updated": "2026-03-30T13:03:19Z"
-    },
-    {
-      "index": 1812,
-      "apiId": 1895,
-      "title": "Prove-it gate hook — block 'cant be done' assertions without evidence",
-      "description": "## Experience\n\nA role says \"that can't be done\" and the system says: prove it. Show the constraint, the error, the code path. I stop hearing \"impossible\" without evidence — every limitation comes with a receipt.\n\n## AC\n1. PreToolUse hook detects when a role asserts something is impossible or cant be done\n2. Hook blocks with message: prove it — show the constraint, the error, or the code path\n3. Assertion without evidence is not accepted — role must demonstrate the limitation\n4. Hook passes when evidence (error output, code reference, platform constraint) is provided\n5. Tests cover: block bare assertion, pass with evidence attached",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:enhance"
-      ],
-      "done": false,
-      "created": "2026-03-29T10:45:09Z",
-      "updated": "2026-03-30T13:03:23Z"
     },
     {
       "index": 2074,

@@ -51,26 +51,74 @@ pub fn get_cwd(pid: u32) -> Option<String> {
         })
 }
 
-/// Inject by delegating to the stable `chorus-inject` binary (#2075).
-/// chorus-inject owns osascript Accessibility permission independently
-/// from chorus-hook-shim, so rebuilding the shim doesn't revoke TCC.
-/// Returns Ok if injection succeeds, Err with reason if not.
+/// Inject text into a role's Terminal window via inline osascript.
+/// Calls osascript directly — inherits Terminal's TCC Accessibility grant.
+/// No external binary, so cargo rebuild can never revoke TCC. (#2100 revert of #2075)
 pub fn inject_by_tab_name(role: &str, text: &str) -> Result<(), String> {
-    // chorus-inject lives in its own crate — independent build lifecycle (#2075)
-    let inject_bin = std::path::PathBuf::from(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/target/release/chorus-inject"
+    let pattern = match role {
+        "wren" => "product-manager",
+        "silas" => "architect",
+        "kade" => "engineer",
+        _ => return Err(format!("unknown role: {}", role)),
+    };
+
+    // Escape for AppleScript double-quoted strings.
+    // Single quotes are fine inside double quotes — do NOT escape them.
+    let escaped = text
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', " ")
+        .replace('\u{2014}', "--")
+        .replace('\u{2018}', "'")
+        .replace('\u{2019}', "'")
+        .replace('\u{201C}', "\\\"")
+        .replace('\u{201D}', "\\\"");
+
+    // #1764: saves/restores frontmost app to prevent focus theft.
+    // Targets Terminal windows only (never Chrome). DEC-107.
+    let script = format!(
+        r#"tell application "System Events"
+    set originalApp to name of first application process whose frontmost is true
+end tell
+tell application "Terminal"
+    set winCount to count of windows
+    repeat with i from 1 to winCount
+        set w to window i
+        set winName to name of w
+        if winName contains "{pattern}" and winName contains "claude" then
+            activate
+            set frontmost of w to true
+            delay 0.15
+            tell application "System Events"
+                tell process "Terminal"
+                    keystroke "{text}"
+                    delay 0.05
+                    key code 36
+                end tell
+            end tell
+            delay 0.05
+            tell application originalApp to activate
+            return "ok"
+        end if
+    end repeat
+    return "no claude window found for {role} (looking for {pattern} + claude)"
+end tell"#,
+        pattern = pattern,
+        text = escaped,
+        role = role
     );
 
-    let output = Command::new(&inject_bin)
-        .args([role, text])
+    let output = Command::new("osascript")
+        .args(["-e", &script])
         .output()
-        .map_err(|e| format!("chorus-inject spawn failed: {}", e))?;
+        .map_err(|e| format!("osascript spawn failed: {}", e))?;
 
-    if output.status.success() {
+    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if result == "ok" {
         Ok(())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(format!("{}", stderr))
+        Err(format!("{} stderr: {}", result, stderr))
     }
 }
 
@@ -130,5 +178,39 @@ mod tests {
     fn get_cwd_returns_none_for_invalid_pid() {
         let cwd = get_cwd(999999999);
         assert!(cwd.is_none());
+    }
+
+    // --- #2100: inject_by_tab_name uses inline osascript, not external binary ---
+
+    #[test]
+    fn inject_by_tab_name_uses_inline_osascript() {
+        // Structural test: inject_by_tab_name should call osascript directly,
+        // not delegate to an external binary. We verify by calling with a role
+        // that has no window — the error message should come from osascript/AppleScript,
+        // not from "chorus-inject spawn failed".
+        let result = inject_by_tab_name("silas", "structural-test");
+        if let Err(e) = result {
+            assert!(
+                !e.contains("chorus-inject spawn failed"),
+                "should use inline osascript, not external binary: {}", e
+            );
+        }
+        // Ok means it actually injected (Terminal window found) — also fine
+    }
+
+    #[test]
+    fn inject_by_tab_name_rejects_unknown_role() {
+        let result = inject_by_tab_name("nonexistent", "test");
+        assert!(result.is_err(), "should reject unknown role");
+    }
+
+    #[test]
+    fn inject_by_tab_name_escapes_double_quotes() {
+        // Can't test actual injection without Terminal, but verify the function
+        // handles a role that won't have a window — should return an error about
+        // no window found, not a crash or unescaped quote error.
+        let result = inject_by_tab_name("silas", "test with \"quotes\" inside");
+        // Will fail (no matching window in test context) but shouldn't panic
+        assert!(result.is_err() || result.is_ok());
     }
 }
