@@ -47,16 +47,18 @@ fn inject(role: &str, text: &str) -> Result<(), String> {
     let pattern = role_pattern(role)
         .ok_or_else(|| format!("unknown role: {}", role))?;
 
+    // AppleScript uses double-quoted strings: keystroke "text"
+    // Single quotes are fine inside double quotes — do NOT escape them.
+    // Only escape: backslash, double quote, newline, smart quotes/dashes.
     let escaped = text
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
-        .replace('\'', "\\'")
         .replace('\n', " ")
         .replace('\u{2014}', "--")
         .replace('\u{2018}', "'")
         .replace('\u{2019}', "'")
-        .replace('\u{201C}', "\"")
-        .replace('\u{201D}', "\"");
+        .replace('\u{201C}', "\\\"")
+        .replace('\u{201D}', "\\\"");
 
     // #1764: saves/restores frontmost app to prevent focus theft.
     // Targets Terminal windows only (never Chrome). DEC-107.

@@ -67,6 +67,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     }
 
     let cmd = input.get_tool_input_str("command");
+    let cwd = input.cwd.as_deref().unwrap_or("");
     if cmd.is_empty() {
         return HookResponse::allow();
     }
@@ -165,9 +166,9 @@ pub async fn check(input: &HookInput) -> HookResponse {
         if HEREDOC_RE.is_match(&cmd) {
             log_guardrail("allow", "git-in-heredoc").await;
         } else {
-            // Check if we're in the team repo
-            // Simple heuristic: if the command doesn't cd elsewhere, assume team repo for Kade
-            let in_team_repo = !cmd.contains("cd ") || cmd.contains(TEAM_REPO_ROOT);
+            // Check if we're in the team repo using actual CWD (#2078)
+            let in_team_repo = cwd.starts_with(TEAM_REPO_ROOT)
+                || cmd.contains(TEAM_REPO_ROOT);
 
             if in_team_repo {
                 if GIT_COMMIT_RE.is_match(&cmd) {

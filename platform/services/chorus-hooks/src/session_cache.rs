@@ -127,9 +127,12 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
             if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 continue;
             }
-            // Skip dirs with fewer than 3 path segments — too broad (e.g. home dir)
+            // Skip broad dirs that trigger macOS TCC prompts (Downloads, Documents).
+            // -Users-jeffbridwell (2 dashes) = home root
+            // -Users-jeffbridwell-CascadeProjects (3 dashes) = repo root
+            // Need 4+ dashes to be a specific project dir.
             let dir_name = entry.file_name().to_string_lossy().to_string();
-            if dir_name.matches('-').count() < 3 {
+            if dir_name.matches('-').count() < 4 {
                 continue;
             }
             let candidate = entry.path().join(format!("{}.jsonl", session_id));
