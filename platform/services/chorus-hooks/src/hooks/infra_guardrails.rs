@@ -123,12 +123,16 @@ pub async fn check(input: &HookInput) -> HookResponse {
         ));
     }
 
-    // kill/pkill/killall
+    // kill/pkill/killall — exempt signal-0 (liveness check, read-only) (#2047)
     if KILL_RE.is_match(&cmd) {
-        log_guardrail("deny", "kill").await;
-        return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: Manual process killing is prohibited. Use agent-state.sh for LaunchAgents or app-state.sh for Docker."
-        ));
+        let is_signal_0 = cmd.contains("kill -0 ") || cmd.contains("kill --signal 0 ");
+        if !is_signal_0 {
+            log_guardrail("deny", "kill").await;
+            return HookResponse::deny(&permission_deny_json(
+                "BLOCKED: Manual process killing is prohibited. Use agent-state.sh for LaunchAgents or app-state.sh for Docker."
+            ));
+        }
+        log_guardrail("allow", "kill-signal-0").await;
     }
 
     // docker stop/rm/restart/kill
@@ -480,6 +484,32 @@ mod tests {
         let r = check(&input).await;
         assert!(r.stdout.is_some());
         assert!(r.stdout.unwrap().contains("terraform"));
+    }
+
+    // === #2047: signal-0 liveness check exemption ===
+
+    #[tokio::test]
+    async fn test_allow_kill_signal_0() {
+        let input = silas_bash("kill -0 12345");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "kill -0 should be allowed (liveness check)");
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_allow_kill_signal_0_flag() {
+        let input = silas_bash("kill --signal 0 12345");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "kill --signal 0 should be allowed");
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_deny_kill_9_still_blocked() {
+        let input = silas_bash("kill -9 12345");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "kill -9 should still be blocked");
+        assert!(r.stdout.unwrap().contains("Manual process killing"));
     }
 
     // === Safe commands pass ===

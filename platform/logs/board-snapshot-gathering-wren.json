@@ -1,12 +1,12 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T11:43:07.884Z",
+  "timestamp": "2026-04-05T11:58:14.535Z",
   "tasks": [
     {
-      "index": 2032,
-      "apiId": 2115,
-      "title": "Cards CLI single-pass validation — all fields validated at once, infer defaults from context",
-      "description": "Cards CLI single-pass validation with inference — stop the 5-retry card creation loop.\n\nAC:\n1. `cards add` validates ALL required fields in one pass and reports every missing field in a single error message, not one at a time.\n2. Inference: sequence inferred from domain when unambiguous (e.g. domain:chorus + context → sequence:framework). Chunk inferred from domain. Type inferred from title verb (fix→fix, add→new, update→enhance).\n3. `--quick` bypasses desc/experience/blast-radius gates for unplanned work (already exists, verify it works).\n4. Experience section warning remains a warning, not a blocker — it's a PM concern, not a creation gate.\n5. Zero sequential gate failures on a well-formed `cards add` call.\n\n## Experience\nI tell a role to card something and they do it in one command, not five retries. The CLI helps them get it right, not punishes them for missing fields one at a time.\n\n## Blast Radius\n- platform/board-client/src/cli.ts\n- platform/board-client/src/sdk.ts",
+      "index": 2062,
+      "apiId": 2145,
+      "title": "Pair gate blocks non-code files — CSS, HTML docs, static assets shouldn't require /pair",
+      "description": "## Problem\nThe pair gate hook requires /pair for cross-domain file edits, but it triggers on CSS, HTML docs, and static assets that don't need pair coordination. Editing clearing/public/index.html or a stylesheet shouldn't require loading the full pair protocol.\n\n## Experience\nI edit a CSS file or static HTML page and the build isn't blocked by a pair gate. The gate only fires for source code files where cross-domain risk is real.\n\n## AC\n- [ ] CSS files (.css) exempt from pair gate\n- [ ] Static HTML files in public/ directories exempt from pair gate\n- [ ] Source code files (.ts, .rs, .py, .sh) still trigger pair gate when cross-domain\n- [ ] Test covers exempted file types\n\n## Files\n- platform/services/chorus-hooks/src/hooks/pair_gate.rs",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
@@ -17,8 +17,26 @@
         "sequence:framework"
       ],
       "done": false,
-      "created": "2026-04-04T14:53:01Z",
-      "updated": "2026-04-05T11:41:15Z"
+      "created": "2026-04-05T10:58:52Z",
+      "updated": "2026-04-05T11:46:29Z"
+    },
+    {
+      "index": 2047,
+      "apiId": 2130,
+      "title": "Infra guardrail false positive — blocks nudges discussing signal-0 liveness checks",
+      "description": "## Problem\nThe infra guardrail hook blocks nudge messages that discuss signal-0 liveness checks (e.g. mentioning `kill -0` or process signals). The hook pattern-matches infrastructure keywords too broadly, catching legitimate coordination messages.\n\n## Experience\nI nudge another role about a liveness check design and it goes through without being blocked. The guardrail catches actual infra mutations, not conversations about infra patterns.\n\n## AC\n- [ ] Nudge messages discussing signal-0 / kill -0 / liveness checks are not blocked\n- [ ] Actual infra mutation commands (kill, rm, shutdown) remain blocked\n- [ ] Test covers the false positive case\n\n## Files\n- platform/services/chorus-hooks/src/hooks/infra_guardrails.rs",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework"
+      ],
+      "done": false,
+      "created": "2026-04-04T22:33:02Z",
+      "updated": "2026-04-05T11:46:28Z"
     },
     {
       "index": 2063,
@@ -289,6 +307,24 @@
       "done": true,
       "created": "2026-04-04T15:33:59Z",
       "updated": "2026-04-04T19:38:15Z"
+    },
+    {
+      "index": 2032,
+      "apiId": 2115,
+      "title": "Cards CLI single-pass validation — all fields validated at once, infer defaults from context",
+      "description": "Cards CLI single-pass validation with inference — stop the 5-retry card creation loop.\n\nAC:\n1. `cards add` validates ALL required fields in one pass and reports every missing field in a single error message, not one at a time.\n2. Inference: sequence inferred from domain when unambiguous (e.g. domain:chorus + context → sequence:framework). Chunk inferred from domain. Type inferred from title verb (fix→fix, add→new, update→enhance).\n3. `--quick` bypasses desc/experience/blast-radius gates for unplanned work (already exists, verify it works).\n4. Experience section warning remains a warning, not a blocker — it's a PM concern, not a creation gate.\n5. Zero sequential gate failures on a well-formed `cards add` call.\n\n## Experience\nI tell a role to card something and they do it in one command, not five retries. The CLI helps them get it right, not punishes them for missing fields one at a time.\n\n## Blast Radius\n- platform/board-client/src/cli.ts\n- platform/board-client/src/sdk.ts",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework"
+      ],
+      "done": true,
+      "created": "2026-04-04T14:53:01Z",
+      "updated": "2026-04-05T11:45:29Z"
     },
     {
       "index": 2031,
@@ -895,24 +931,6 @@
       "updated": "2026-04-02T01:33:02Z"
     },
     {
-      "index": 1956,
-      "apiId": 2039,
-      "title": "Domain crawler — traverse OWL + cards + conversations + spine into connected subgraph",
-      "description": "## AC\n- [ ] GET /api/chorus/crawl/:domain returns a connected subgraph from 6 sources\n- [ ] Sources: cards (via cards --json), Fuseki RDF triples, Chorus index mentions, spine events, domain page, OWL classes\n- [ ] Link phase connects entities across layers — cards to code, code to OWL classes, conversations to cards\n- [ ] Related domains surfaced by shared cards and conversations\n- [ ] Institutional history — unresolved cards, Jeff's recurring feedback, trust indicators\n\n## Experience\nJeff asks 'tell me about the seeds domain.' Instead of 20 minutes searching 6 systems, one query returns the full picture: 6 cards, 99 conversations, infrastructure, code, OWL relationships, and the trust deficit Jeff has raised 30 times.\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/domain-crawler.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n\n## Prerequisites\n- OWL class definitions stable (Silas confirms ready)\n- Fuseki named graph pattern: GRAPH ?g FILTER(CONTAINS(STR(?g), 'domain'))",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-01T23:51:07Z",
-      "updated": "2026-04-02T01:28:21Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -997,42 +1015,6 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
-    },
-    {
-      "index": 2062,
-      "apiId": 2145,
-      "title": "Pair gate blocks non-code files — CSS, HTML docs, static assets shouldn't require /pair",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:framework"
-      ],
-      "done": false,
-      "created": "2026-04-05T10:58:52Z",
-      "updated": "2026-04-05T10:58:52Z"
-    },
-    {
-      "index": 2047,
-      "apiId": 2130,
-      "title": "Infra guardrail false positive — blocks nudges discussing signal-0 liveness checks",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:framework"
-      ],
-      "done": false,
-      "created": "2026-04-04T22:33:02Z",
-      "updated": "2026-04-04T22:33:02Z"
     },
     {
       "index": 2045,
@@ -1874,6 +1856,38 @@
       "updated": "2026-03-22T11:55:57Z"
     },
     {
+      "index": 1581,
+      "apiId": 1664,
+      "title": "Complete doc-catalog page — fix links, add to navbar, make all docs browseable",
+      "description": "Doc catalog at /doc-catalog.html inventories 88 HTML docs across 7 projects. Started yesterday, partially working. Needs finishing.\n\n## What's done\n- Catalog page exists with 88 docs grouped by topic\n- NAV / NOT IN NAV badges showing which docs are in navbar\n- Dates on every doc\n- /docs/pm/, /docs/architect/, /docs/engineer/ static routes added to app.ts (working with auth)\n\n## What's left\n1. Links to role docs (/docs/pm/*, /docs/architect/*, /docs/engineer/*) need verification — some paths may be wrong (e.g. /docs/pm/docs/wren-role.html has double \"docs\")\n2. Add doc-catalog to navbar (under Chorus or a new Documentation section)\n3. Remove stale convergence domain tag on cards that were already fixed\n4. Consider: auto-generate catalog from filesystem scan instead of static HTML\n\n## AC\n1. Every link on /doc-catalog.html is clickable and loads the correct doc (no 404s)\n2. Doc catalog accessible from navbar\n3. Role doc routes (/docs/pm/, /docs/architect/, /docs/engineer/) verified working for all listed files\n4. Path corrections for any double-directory issues (e.g. /docs/pm/docs/ → /docs/pm/)\n\n## Files\npublic/doc-catalog.html, src/app.ts, config/nav-tree.json",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:documents"
+      ],
+      "done": false,
+      "created": "2026-03-21T12:53:03Z",
+      "updated": "2026-03-21T12:53:03Z"
+    },
+    {
+      "index": 1473,
+      "apiId": 1556,
+      "title": "Reclaim Drive storage — deprecate Computers backups after harvest verification",
+      "description": "## Acceptance Criteria\n1. Verify all Computers backup content (My Mac mini × 2, USB Devices) is harvested into Gathering graph\n2. Verify source files exist on Bedroom storage (not just graph metadata)\n3. Produce a manifest: what's safe to delete from Drive, estimated GB reclaimed\n4. Jeff reviews and approves the delete list before any removal\n5. Drive storage drops meaningfully from 91% (1.83TB/2TB)\n\n## Context\nDrive at 91%. Computers backups contain photos, videos, music that are being harvested into Gathering domains. Once harvested and verified on Bedroom, the Drive copies are redundant. Depends on #1472 (route Drive docs to correct domains) completing first. Jeff approves deletions — no autonomous removal.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "chunk:ops",
+        "domain:documents"
+      ],
+      "done": false,
+      "created": "2026-03-16T19:41:30Z",
+      "updated": "2026-03-16T19:41:30Z"
+    },
+    {
       "index": 1721,
       "apiId": 1804,
       "title": "PM-driven tab sharing — Wren navigates screen sharing during demos",
@@ -1964,6 +1978,56 @@
       "done": false,
       "created": "2026-03-09T15:26:04Z",
       "updated": "2026-03-09T15:26:04Z"
+    },
+    {
+      "index": 2070,
+      "apiId": 2153,
+      "title": "test well-formed",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T11:43:22Z",
+      "updated": "2026-04-05T11:43:23Z"
+    },
+    {
+      "index": 2069,
+      "apiId": 2152,
+      "title": "test quick card",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T11:43:22Z",
+      "updated": "2026-04-05T11:43:22Z"
+    },
+    {
+      "index": 2068,
+      "apiId": 2151,
+      "title": "fix broken nudge",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T11:43:22Z",
+      "updated": "2026-04-05T11:43:22Z"
     },
     {
       "index": 2067,
@@ -2765,57 +2829,6 @@
       "done": false,
       "created": "2026-03-28T11:34:22Z",
       "updated": "2026-03-30T01:08:01Z"
-    },
-    {
-      "index": 1789,
-      "apiId": 1872,
-      "title": "Acceptance events service design — single clean event per acceptance",
-      "description": "## Experience\nJeff accepts a card. One event appears on the Bridge, attributed correctly. No echoes, no duplicates.\n\n## AC\n- [ ] Service design page filled in: experience, identity, integration path with spine events, non-functionals, test contract\n- [ ] Root cause of 4x echo (#1769) and 2x echo (#1766) documented\n- [ ] Dedup contract: one acceptance event per card per actor\n- [ ] Integration test: card.accepted emitted → one Bridge message with correct attribution\n- [ ] After: #1781",
-      "status": "Won't Do",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:34:22Z",
-      "updated": "2026-03-31T17:05:14Z"
-    },
-    {
-      "index": 1788,
-      "apiId": 1871,
-      "title": "Clearing/Bridge service design — bidirectional sync contract",
-      "description": "## Experience\nI open the Clearing and see what all three roles are doing. I type and the right role responds. No echoes, no duplicates, no dropped messages.\n\n## AC\n- [ ] Service design page filled in: experience, identity, integration path with spine events, non-functionals, test contract\n- [ ] Bidirectional contract defined: Claude → Clearing and Clearing → Claude\n- [ ] Dedup contract: content hash + timestamp, no echo\n- [ ] Integration test: role emits text → appears in Clearing stream; Jeff types in Clearing → arrives in role session\n- [ ] After: #1781",
-      "status": "Won't Do",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:34:21Z",
-      "updated": "2026-03-31T17:05:14Z"
-    },
-    {
-      "index": 1787,
-      "apiId": 1870,
-      "title": "Nudge delivery service design — fill in service design page, lock the contract",
-      "description": "## Experience\nI nudge a role and it arrives instantly in their terminal. I never wonder if it landed.\n\n## AC\n- [ ] Service design page filled in: experience, identity, integration path with spine events, non-functionals, test contract\n- [ ] DEC-107 dual-path (persist + osascript) documented as the locked design\n- [ ] Integration test: nudge.sh → messaging API POST + osascript inject → verify delivery\n- [ ] Synthetic monitoring: periodic nudge health check\n- [ ] After: #1781",
-      "status": "Won't Do",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:34:05Z",
-      "updated": "2026-03-31T17:05:13Z"
     },
     {
       "index": 2064,

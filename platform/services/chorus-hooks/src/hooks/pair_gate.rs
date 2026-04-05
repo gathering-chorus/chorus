@@ -6,11 +6,21 @@
 use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 
-/// File extensions that count as code files
+/// File extensions that count as source code (require pair for cross-domain).
+/// CSS, HTML in public dirs, and static assets are exempt (#2062).
 fn is_code_file(path: &str) -> bool {
+    // Exempt: CSS/SCSS, static HTML in public dirs, EJS templates
+    if path.ends_with(".css") || path.ends_with(".scss") {
+        return false;
+    }
+    if path.ends_with(".html") && path.contains("/public/") {
+        return false;
+    }
+    if path.ends_with(".ejs") {
+        return false;
+    }
     let code_exts = [
-        ".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".sh", ".ejs", ".html",
-        ".css", ".scss",
+        ".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".sh", ".html",
     ];
     code_exts.iter().any(|ext| path.ends_with(ext))
 }
