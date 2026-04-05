@@ -11,3 +11,5 @@
 
 - [Silas] → 14 cards shipped (#2009 agent-state, #2010 dedup, #2011 health endpoint, #2008 compound loop, #2003 awareness gate, #2014 Ollama, #2016 tunnel monitoring, #1826 folder structure, #1840 skills repo-tracked, #2021 real-time gemba, #1945 spine events, #2031 staleness detection, #1934 Clearing ack, #1958 watchdog) + #2035 Clearing visibility (Wren pair) + #2022 awareness domain page + manual red-pen review for #1872 → 2026-04-04
 - [Silas] 2026-04-04 — 8 cards shipped: #2035 (Clearing visibility), #1904 (ICD auto-sync), #2000 (seed alert), #2037 (alerts to terminal), #2033 (watchdog false alerts), #2022 (L2 Awareness design, pair w/ Wren), #1939 (hooks socket bind), #1938 (/tmp guard). Domain decomposition chat with Wren. Observability branch complete. Protocol branch started (2/9).
+
+- [Wren] 2026-04-05 — Session: WiFi doc-catalog access (#2055, #2061), sequence taxonomy overhaul (DEC-111), standards surface started (#1932), accepted 12 cards from Silas/Kade. Key reflection: stop starting/start finishing, stabilize before growing, PM acceptance requires Jeff's explicit go.

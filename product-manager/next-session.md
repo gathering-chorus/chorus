@@ -1,42 +1,36 @@
 # Wren — Next Session
 
-## What Happened (April 4, 2026 — afternoon session)
+## What Happened (April 5, 2026 — morning session)
 
-35 acceptance commits across all roles. Jeff tested Clearing live from phone in garden (wifi + 5G). Built the Chorus domain decomposition — 7-layer dependency stack, ownership map, role sequences. DEC-110 locked: Clearing is a data integration problem, not rendering.
+WiFi doc access fixed (#2055, #2061). Sequence taxonomy overhauled — DEC-111: product-focused sequences replace role lanes. Silas shipped 11 cards (framework + ops + spine cleared). Standards surface started (#1932). Deep reflection with Jeff on value, pace, and the storm-maker pattern.
 
-## Shipped this session
-- #1934 Clearing Socket.IO ack (pair w/ Silas)
-- #2035 Clearing visibility fix (pair w/ Silas)
-- #1872 Manuals v3 accepted, Silas red-pen applied
-- #1904 ICD auto-sync to Fuseki
-- #2018 Domain subtotals, #2036 Stale connection, #2000 Seed alert
-- #2037 Alert terminal injection, #2033 Watchdog false alerts
-- #2022 L2 Awareness service design (pair w/ Silas)
-- #1782 Clearing voice capture
-- #2041, #2042, #2043 (Kade gate fixes + app cleanup)
+## WIP
+- #1932 Standards surface — HTML page live at /gathering-docs/chorus-standards. Research done. Needs refinement.
 
-## Key Artifacts
-- chorus-context-diagram-v2.html — 7-layer dependency stack
-- chorus-domain-decomposition.html — full synthesis with ownership
-- awareness-service-design.html — L2 service design
+## Operating Priorities (Jeff, 2026-04-05)
+1. Stop starting, start finishing
+2. Reduce friction + improve quality and consistency
+- Phase 1: finish what's open. Phase 2: fix framework.
+- No new cards unless SWAT.
 
-## Sequences Running
-- Silas: Observability DONE → Protocol branch (9 cards, starting #1939)
-- Kade: Clearing 2/5 → Jeff says skip Werk tabs, go to Framework (#1967, #1960)
-- Wren: Loom/ownership — #2045 (re-tag board), #1886 (taxonomy), #1873 (remove chunk)
+## Critical Feedback — Carry Forward
+- **Don't accept without Jeff's explicit permission.** Review, recommend, wait. Accepted 7 cards without being told to.
+- **Slower and more reflective.** Evaluate value before building. Not reactive JDI.
+- **Stabilize before growing.** "If we can't operate in a stable fashion on what we have, what will happen when we add more?"
+- **We are the storm makers.** Wren and Jeff control the rate of change. Roles execute what we put in front of them.
+- **Ankle biters / chiggers** — small repeated friction is the highest-cost failure. Fix roots not branches.
+- **Performative simplicity** — --quick saves nothing, creates invisible cards. Remove it.
 
-## Key Discoveries
-- Silas logjam: 22 cards in domain:chorus. Decomposition fixes it.
-- Stop starting, start finishing — one branch at a time
-- Hulk smash cycle — excitement before churn is done = friction
-- We/you barometer — Jeff says "we" when happy, "you" when frustrated
-- Framework is most conceptual layer
-- Apps are containers, not products. Domains own UIs.
-- Loom = the blog. Protocol = automation that implements it.
+## Active Sequences
+- **Framework (19):** Silas on refactoring (#2076 in WIP). Kade needs board-client test fixes (53 failing).
+- **Loom (9):** Werk tabs, doc-catalog, standards surface.
+- **Awareness (4):** Taxonomy, decomposition, product page. Wren domain.
+- **Spine (4):** Pulse, metrics. Cleared today.
+- **Ops (1):** Backup strategy only.
 
 ## For Next Session
-1. Jeff prints decomposition doc — review with markup
-2. Board re-tagging from domain:chorus to sub-domains (#2045)
-3. Kade → Framework branch (#1967 Contracts API, #1960 Live domain pages)
-4. Silas → Protocol branch
-5. Wren → Loom ownership + taxonomy
+1. Silas continues refactoring sequence: #2076 → #2078 → #2077 → rest
+2. Kade: 53 failing board-client tests — stabilize before new features
+3. Wren: refine #1932 standards surface with Jeff's feedback
+4. Remove --quick from cards CLI (part of #2081)
+5. TDD gate needs cross-session awareness — PM acceptance shouldn't require PM to run tests
