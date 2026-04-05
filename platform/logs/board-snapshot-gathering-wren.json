@@ -1,24 +1,24 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T11:28:03.499Z",
+  "timestamp": "2026-04-05T11:33:04.786Z",
   "tasks": [
     {
-      "index": 1873,
-      "apiId": 1956,
-      "title": "Remove chunk taxonomy — redundant with domain",
-      "description": "## Experience\nI have two labels on every card that mean the same thing — chunk and domain both tell me \"what area.\" Domain maps to real things I care about (photos, seeds, chorus). Chunk is abstract and has no consumer. Worse, the mandatory chunk gate on card creation is friction every time I add a card. I want domain only, and I want the gate gone.\n\n## AC\n- [ ] Remove mandatory chunk gate from cards CLI (add command no longer requires --chunk)\n- [ ] cards CLI accepts cards without chunk tag — no error, no warning\n- [ ] Existing chunk labels on cards left in place (no bulk removal — that's a separate sweep)\n- [ ] Sequence tag remains unchanged — it's cross-cutting, not redundant\n- [ ] Document the decision (DEC needed per Jeff's comment)\n\n## Files\n- platform/board-client/src/cli.ts\n- platform/services/chorus-hooks/src/hooks/quality_gate.rs",
+      "index": 2059,
+      "apiId": 2142,
+      "title": "Post-build hook: re-register chorus-hook-shim Accessibility after cargo rebuild",
+      "description": "## Problem\nEvery `cargo build --release` of chorus-hooks changes the binary hash of chorus-hook-shim. macOS invalidates the Accessibility permission for the old hash, so osascript keystroke injection silently fails until Jeff manually toggles the permission off/on in System Settings.\n\n## Experience\nI rebuild chorus-hooks and nudges keep working — no manual step needed. The post-build script handles Accessibility re-registration automatically, or at minimum warns me that the permission needs re-toggling.\n\n## AC\n- [ ] After `cargo build --release`, chorus-hook-shim retains or re-acquires Accessibility permission\n- [ ] Nudge --force inject works immediately after rebuild without manual intervention\n- [ ] If auto-registration is not possible (SIP blocks TCC writes), emit a clear warning with the exact fix step\n\n## Files\n- platform/services/chorus-hooks/build.rs\n- scripts/post-build-hook.sh",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:chore",
+        "type:fix",
         "sequence:ops"
       ],
       "done": false,
-      "created": "2026-03-30T16:41:35Z",
-      "updated": "2026-04-05T11:25:29Z"
+      "created": "2026-04-05T10:48:46Z",
+      "updated": "2026-04-05T11:32:02Z"
     },
     {
       "index": 2063,
@@ -1016,24 +1016,6 @@
       "updated": "2026-04-05T10:58:52Z"
     },
     {
-      "index": 2059,
-      "apiId": 2142,
-      "title": "Post-build hook: re-register chorus-hook-shim Accessibility after cargo rebuild",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-04-05T10:48:46Z",
-      "updated": "2026-04-05T10:48:46Z"
-    },
-    {
       "index": 2047,
       "apiId": 2130,
       "title": "Infra guardrail false positive — blocks nudges discussing signal-0 liveness checks",
@@ -1072,8 +1054,8 @@
     {
       "index": 2032,
       "apiId": 2115,
-      "title": "Cards CLI must block creation without Experience section — warn is not a gate",
-      "description": "",
+      "title": "Cards CLI single-pass validation — all fields validated at once, infer defaults from context",
+      "description": "Cards CLI single-pass validation with inference — stop the 5-retry card creation loop.\n\nAC:\n1. `cards add` validates ALL required fields in one pass and reports every missing field in a single error message, not one at a time.\n2. Inference: sequence inferred from domain when unambiguous (e.g. domain:chorus + context → sequence:framework). Chunk inferred from domain. Type inferred from title verb (fix→fix, add→new, update→enhance).\n3. `--quick` bypasses desc/experience/blast-radius gates for unplanned work (already exists, verify it works).\n4. Experience section warning remains a warning, not a blocker — it's a PM concern, not a creation gate.\n5. Zero sequential gate failures on a well-formed `cards add` call.\n\n## Experience\nI tell a role to card something and they do it in one command, not five retries. The CLI helps them get it right, not punishes them for missing fields one at a time.\n\n## Blast Radius\n- platform/board-client/src/cli.ts\n- platform/board-client/src/sdk.ts",
       "status": "Later",
       "owner": "Silas",
       "priority": "P2",
@@ -1085,7 +1067,7 @@
       ],
       "done": false,
       "created": "2026-04-04T14:53:01Z",
-      "updated": "2026-04-04T14:53:01Z"
+      "updated": "2026-04-05T11:30:13Z"
     },
     {
       "index": 1996,
@@ -1876,6 +1858,23 @@
       "updated": "2026-03-23T15:33:10Z"
     },
     {
+      "index": 1618,
+      "apiId": 1701,
+      "title": "Cache version hashes — invalidate on ICD write",
+      "description": "computeSchemaHash and computeMappingHash fire live SPARQL on every API response. Cache the result per domain and invalidate when upsertField or upsertMapping writes to the ICD graph.\n\n## AC\n- [ ] In-memory cache of schema + mapping hashes per domain\n- [ ] Cache invalidated on upsertField, upsertMapping, updateSection\n- [ ] getAllVersionHashes uses cache — 0 SPARQL queries when warm\n- [ ] Cache miss falls through to live computation (current behavior)\n\n## Files\n- src/services/icd.service.ts — add cache Map + invalidation in write methods",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-22T21:43:04Z",
+      "updated": "2026-03-22T21:43:04Z"
+    },
+    {
       "index": 1721,
       "apiId": 1804,
       "title": "PM-driven tab sharing — Wren navigates screen sharing during demos",
@@ -1966,6 +1965,58 @@
       "done": false,
       "created": "2026-03-09T15:26:04Z",
       "updated": "2026-03-09T15:26:04Z"
+    },
+    {
+      "index": 2067,
+      "apiId": 2150,
+      "title": "test-wip-no-chunk",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T11:28:23Z",
+      "updated": "2026-04-05T11:28:30Z"
+    },
+    {
+      "index": 2066,
+      "apiId": 2149,
+      "title": "test-chunk-auto-infer",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos",
+        "type:chore",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T11:28:16Z",
+      "updated": "2026-04-05T11:28:21Z"
+    },
+    {
+      "index": 2065,
+      "apiId": 2148,
+      "title": "test-chunk-removal-1873",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T11:28:13Z",
+      "updated": "2026-04-05T11:28:20Z"
     },
     {
       "index": 2030,
@@ -2766,57 +2817,6 @@
       "done": false,
       "created": "2026-03-28T11:34:05Z",
       "updated": "2026-03-31T17:05:13Z"
-    },
-    {
-      "index": 1784,
-      "apiId": 1867,
-      "title": "Seed pipeline synthetic monitoring — hourly live-path test, alert on failure",
-      "description": "## Experience\nThe system detects seed pipeline failures before Jeff does. Jeff never sends a text into the void.\n\n## AC\n- [ ] Cron job sends synthetic SMS payload through full pipeline every hour (webhook → adapter → handler → brief file)\n- [ ] Verifies brief file appears within 60 seconds\n- [ ] Posts red alert to Bridge if brief does not arrive\n- [ ] Cleans up synthetic seeds after verification (no pollution in Jeff's inbox)\n- [ ] Covers all three seed types: plain URL, rich link (Apple Music), photo + hashtag",
-      "status": "Won't Do",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "domain:seeds",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:26:32Z",
-      "updated": "2026-04-01T21:23:37Z"
-    },
-    {
-      "index": 1783,
-      "apiId": 1866,
-      "title": "Model-driven Chorus — revise value stream and domain taxonomy from Jeff's drawing, design service design page",
-      "description": "## Experience\nI open a service design page on Gathering and see my value streams, domains, and services laid out the way I drew them. I can model a new service like convergence — define its language, data, non-functionals, integration contracts — before anyone writes code.\n\n## AC\n- [ ] Revise PRODUCT_TAXONOMY.md incorporating Jeff's hand-drawn taxonomy (Phase as spine, Gathering left, Werk/Loom right, Knowledge/Practices/Services tiers)\n- [ ] Reconcile Corporation = Phase = Stance and Convergence = Practice framing\n- [ ] Map current services to the three bottom tiers: Knowledge (Harvest), Practices (TDD, Demo, Chat), Services\n- [ ] Design service design page wireframe — form-driven, models a service through define → map → build\n- [ ] Service design page shows: language choice, data model, non-functionals, integration contracts, experience statement\n- [ ] Use convergence as the reference service to validate the page design\n- [ ] Produce HTML artifact for Jeff to review",
-      "status": "Won't Do",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:chore"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:12:59Z",
-      "updated": "2026-03-31T17:22:31Z"
-    },
-    {
-      "index": 1781,
-      "apiId": 1864,
-      "title": "Borg Chorus — systematic service design audit and formalization",
-      "description": "## Experience\nEvery integration path in Chorus has a service design artifact. When something breaks, we trace it. When something ships, it works the first time. The snake stops eating its tail.\n\n## AC\n- [ ] All 4 chronic integration paths assessed: seed pipeline, nudge delivery, Clearing/Bridge, acceptance events\n- [ ] Service design page filled in for each: experience, identity, integration path, non-functionals, test contract, dependencies\n- [ ] Designing stage gate enforced — no card moves to Building without design artifact\n- [ ] Experience tag added to card schema\n- [ ] Decision documented (DEC-next) locking the service design process\n- [ ] PRODUCT_TAXONOMY.md updated with Loom decomposition and three tiers\n\n## Decomposition\n- #1784 Seed pipeline synthetic monitoring (Silas)\n- #1785 Seed pipeline integration tests (Kade)\n- #1786 Seed pipeline observability (Kade)\n- #1787 Nudge delivery service design (Wren)\n- #1788 Clearing/Bridge service design (Wren)\n- #1789 Acceptance events service design (Wren)\n- #1790 Experience tag in card schema (Silas)\n- #1791 Designing stage gate hook (Silas)",
-      "status": "Won't Do",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": false,
-      "created": "2026-03-28T11:00:33Z",
-      "updated": "2026-03-31T20:48:18Z"
     },
     {
       "index": 2064,

@@ -1,5 +1,14 @@
 # Decision Log
 
+## DEC-111: Product-focused sequences, not role lanes
+- **Date**: 2026-04-05
+- **Context**: Chorus cards had sequences named after role functions — `strategy` (Wren's job), `ops` (Silas's job). This created invisible role lanes: Silas only pulled ops, Wren only pulled strategy. Cards couldn't cross roles without feeling misplaced. Jeff identified the pattern: "role-based prioritization is a trap."
+- **Decision**: Sequences describe product capabilities, not who builds them. Any role can pull from any sequence. The five chorus sequences are: **framework** (gates, hooks, quality enforcement), **awareness** (Shared Awareness service, domains, contracts), **spine** (events, metrics, instrumentation), **loom** (Werk, Bridge, doc-catalog, team surfaces), **ops** (infrastructure, backup, deploys). `coordination` dissolved — cards absorbed into framework, spine, and awareness. `strategy` retired.
+- **Rationale**: "Role-based prioritization is a trap." When sequences map to roles, WSJF happens within a role's lane, not across the product. The highest-value card might be in another role's sequence but nobody sees it. Product-focused sequences make the real priorities visible regardless of who builds them.
+- **Card**: #2045
+- **Consequences**: Existing cards retagged. New card creation uses product sequences. Roles pull by value, not by lane. `cards sequence` shows product capability health, not role workload.
+- **Status**: Active
+
 ## DEC-110: Clearing is a data integration problem, not a rendering problem
 - **Date**: 2026-04-04
 - **Context**: Jeff tested the Clearing from three connection modes — localhost at desk, wifi on phone in garden, 5G at pharmacy via clearing.lightlifeurbangardens.com. Every bug found was data/integration, not UI: identity mismatch ("Jeff on public" ≠ "jeff"), session tailer not detecting sessions, router whitelist hiding human commentary, tunnel drop showing stale "connected" state, alerts not reaching role terminals. The Clearing looks fine on both form factors. The pipes are the problem.
