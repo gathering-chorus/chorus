@@ -66,11 +66,12 @@ export class BoardClient {
 
   async buildTaskMap(): Promise<Map<number, number>> {
     if (this.taskMap) return this.taskMap;
-    // Use paginated endpoint to get ALL tasks, not bucket view (50-cap) (#2171)
-    const allTasks = await this.fetchAllTasks();
+    const buckets = await this.fetchBuckets();
     this.taskMap = new Map();
-    for (const task of allTasks) {
-      this.taskMap.set(task.index ?? task.id, task.id);
+    for (const bucket of buckets) {
+      for (const task of bucket.tasks || []) {
+        this.taskMap.set(task.index ?? task.id, task.id);
+      }
     }
     return this.taskMap;
   }
@@ -113,7 +114,7 @@ export class BoardClient {
   /** Fetch all tasks via paginated project endpoint (no per-bucket cap) */
   async fetchAllTasks(): Promise<VikunjaTask[]> {
     const all: VikunjaTask[] = [];
-    for (let page = 1; ; page++) {
+    for (let page = 1; page < 30; page++) {
       const tasks = await this.api<VikunjaTask[]>(
         'GET',
         `/projects/${this.board.projectId}/tasks?per_page=50&page=${page}`
@@ -124,45 +125,29 @@ export class BoardClient {
     return all;
   }
 
-  /** List all tasks, parsed with metadata.
-   *  Uses paginated project endpoint + bucket view for status assignment.
-   *  Vikunja's view endpoint caps at 50 tasks per bucket — this method
-   *  fetches all tasks to avoid non-deterministic truncation. (#2171) */
+  /** List all tasks, parsed with metadata */
   async list(): Promise<BoardTask[]> {
-    const [allTasks, buckets] = await Promise.all([
-      this.fetchAllTasks(),
-      this.fetchBuckets(),
-    ]);
+    const buckets = await this.fetchBuckets();
+    const tasks: BoardTask[] = [];
 
-    // Build taskId → bucketName map from view endpoint (accurate for buckets <50)
-    const taskBucket = new Map<number, string>();
     for (const bucket of buckets) {
       for (const task of bucket.tasks || []) {
-        taskBucket.set(task.id, bucket.title);
+        tasks.push(this.parseTask(task, bucket.title));
       }
-    }
-
-    const tasks: BoardTask[] = [];
-    for (const task of allTasks) {
-      let status = taskBucket.get(task.id);
-      if (!status) {
-        // Task overflowed a bucket's 50-cap — determine status from done field
-        status = (task as any).done ? 'Done' : 'Later';
-      }
-      tasks.push(this.parseTask(task, status));
     }
     return tasks;
   }
 
   /** List tasks grouped by status */
   async listGrouped(): Promise<Map<string, BoardTask[]>> {
-    const all = await this.list();
+    const buckets = await this.fetchBuckets();
     const grouped = new Map<string, BoardTask[]>();
 
-    for (const task of all) {
-      const list = grouped.get(task.status) || [];
-      list.push(task);
-      grouped.set(task.status, list);
+    for (const bucket of buckets) {
+      const tasks = (bucket.tasks || []).map(t => this.parseTask(t, bucket.title));
+      if (tasks.length > 0) {
+        grouped.set(bucket.title, tasks);
+      }
     }
     return grouped;
   }

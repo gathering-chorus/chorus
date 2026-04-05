@@ -127,12 +127,11 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
             if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 continue;
             }
-            // Skip broad dirs that trigger macOS TCC prompts (Downloads, Documents).
-            // -Users-jeffbridwell (2 dashes) = home root
-            // -Users-jeffbridwell-CascadeProjects (3 dashes) = repo root
-            // Need 4+ dashes to be a specific project dir.
+            // Only scan chorus project dirs — anything else may resolve to
+            // protected folders (Documents, Downloads) and trigger macOS TCC dialogs.
+            // Those dialogs interrupt Jeff ~20x/day. Be strict.
             let dir_name = entry.file_name().to_string_lossy().to_string();
-            if dir_name.matches('-').count() < 4 {
+            if !dir_name.contains("chorus") {
                 continue;
             }
             let candidate = entry.path().join(format!("{}.jsonl", session_id));
