@@ -1,42 +1,60 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T11:58:13.536Z",
+  "timestamp": "2026-04-05T12:18:19.291Z",
   "tasks": [
     {
-      "index": 2062,
-      "apiId": 2145,
-      "title": "Pair gate blocks non-code files — CSS, HTML docs, static assets shouldn't require /pair",
-      "description": "## Problem\nThe pair gate hook requires /pair for cross-domain file edits, but it triggers on CSS, HTML docs, and static assets that don't need pair coordination. Editing clearing/public/index.html or a stylesheet shouldn't require loading the full pair protocol.\n\n## Experience\nI edit a CSS file or static HTML page and the build isn't blocked by a pair gate. The gate only fires for source code files where cross-domain risk is real.\n\n## AC\n- [ ] CSS files (.css) exempt from pair gate\n- [ ] Static HTML files in public/ directories exempt from pair gate\n- [ ] Source code files (.ts, .rs, .py, .sh) still trigger pair gate when cross-domain\n- [ ] Test covers exempted file types\n\n## Files\n- platform/services/chorus-hooks/src/hooks/pair_gate.rs",
+      "index": 1932,
+      "apiId": 2015,
+      "title": "Standards surface + pulse instrumentation — single page of team policies with pulse measurement",
+      "description": "## Experience\nI open one page and see every team standard — definition of done, code standards, process rules, communication rules, ops rules. Each one shows whether it's documented only, instrumented in a gate, or measured in pulse. The gaps are visible. Pulse checks the ones that aren't gate-enforced.\n\n## AC\n1. Single HTML standards page at /chorus/standards — lists all team policies grouped by category\n2. Each standard shows status: documented | instrumented (which hook) | measured (which metric)\n3. Pulse checks added for: TDD compliance, WIP limit violations, re-nudge frequency, commit-before-accept, brief response latency, Jeff touches per card\n4. Standards page links to the source (DEC, ADR, feedback memory, hook file) for each standard\n5. Page updates automatically from decisions.md, CLAUDE.md fragments, and hook registry",
       "status": "WIP",
-      "owner": "Silas",
-      "priority": "P2",
+      "owner": "Wren",
+      "priority": "P1",
       "domains": [
-        "chunk:ops",
+        "chunk:strategy",
         "domain:chorus",
-        "type:fix",
-        "sequence:framework"
+        "type:new",
+        "sequence:loom"
       ],
       "done": false,
-      "created": "2026-04-05T10:58:52Z",
-      "updated": "2026-04-05T11:46:29Z"
+      "created": "2026-04-01T12:31:33Z",
+      "updated": "2026-04-05T12:08:46Z"
     },
     {
-      "index": 2047,
-      "apiId": 2130,
-      "title": "Infra guardrail false positive — blocks nudges discussing signal-0 liveness checks",
-      "description": "## Problem\nThe infra guardrail hook blocks nudge messages that discuss signal-0 liveness checks (e.g. mentioning `kill -0` or process signals). The hook pattern-matches infrastructure keywords too broadly, catching legitimate coordination messages.\n\n## Experience\nI nudge another role about a liveness check design and it goes through without being blocked. The guardrail catches actual infra mutations, not conversations about infra patterns.\n\n## AC\n- [ ] Nudge messages discussing signal-0 / kill -0 / liveness checks are not blocked\n- [ ] Actual infra mutation commands (kill, rm, shutdown) remain blocked\n- [ ] Test covers the false positive case\n\n## Files\n- platform/services/chorus-hooks/src/hooks/infra_guardrails.rs",
+      "index": 1847,
+      "apiId": 1930,
+      "title": "Nudge acknowledgment event — track whether role acted on nudge, not just drained it",
+      "description": "## Experience\nI send a nudge and it gets drained from the queue, but I have no idea if the role actually did anything with it. \"Drained\" and \"acted on\" are two completely different things. Right now nudge delivery looks successful even when the recipient ignored it, which means I can't tell if my coordination is working or just disappearing into a void.\n\n## AC\n- [ ] Emit nudge.acknowledged spine event when a role processes a nudge (not just drains it)\n- [ ] Event includes: sender, recipient, nudge content hash, time between delivery and acknowledgment\n- [ ] Nudges older than 10 minutes without acknowledgment emit nudge.stale warning\n- [ ] Events visible in chorus.log for monitoring\n\n## Files\n- platform/services/chorus-hooks/src/nudge.rs\n- platform/services/chorus-hooks/src/role_state.rs",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus",
+        "type:enhance",
+        "sequence:spine"
+      ],
+      "done": false,
+      "created": "2026-03-30T10:27:25Z",
+      "updated": "2026-04-05T12:09:45Z"
+    },
+    {
+      "index": 1846,
+      "apiId": 1929,
+      "title": "Context cache failure events — emit session.context.error when board or API unreachable at boot",
+      "description": "## Experience\nWhen a role boots and the board API or context cache is unreachable, nothing tells me. The role just starts with empty or partial context and I find out later when it makes a wrong decision. I need to see a clear event that says \"Kade booted without board data\" so I can catch it before it cascades into bad work.\n\n## AC\n- [ ] Emit session.context.error spine event when board API is unreachable at boot\n- [ ] Emit session.context.error when context cache (session-start file) fails to generate\n- [ ] Event includes: role, error type (board_unreachable, cache_failed), timestamp\n- [ ] Events visible in chorus.log for monitoring\n\n## Files\n- platform/services/chorus-hooks/src/hooks/session_init_gate.rs\n- platform/scripts/werk-init.sh",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:fix",
-        "sequence:framework"
+        "type:enhance",
+        "sequence:spine"
       ],
       "done": false,
-      "created": "2026-04-04T22:33:02Z",
-      "updated": "2026-04-05T11:46:28Z"
+      "created": "2026-03-30T10:27:21Z",
+      "updated": "2026-04-05T12:09:45Z"
     },
     {
       "index": 2063,
@@ -55,6 +73,24 @@
       "done": true,
       "created": "2026-04-05T11:02:02Z",
       "updated": "2026-04-05T11:06:59Z"
+    },
+    {
+      "index": 2062,
+      "apiId": 2145,
+      "title": "Pair gate blocks non-code files — CSS, HTML docs, static assets shouldn't require /pair",
+      "description": "## Problem\nThe pair gate hook requires /pair for cross-domain file edits, but it triggers on CSS, HTML docs, and static assets that don't need pair coordination. Editing clearing/public/index.html or a stylesheet shouldn't require loading the full pair protocol.\n\n## Experience\nI edit a CSS file or static HTML page and the build isn't blocked by a pair gate. The gate only fires for source code files where cross-domain risk is real.\n\n## AC\n- [ ] CSS files (.css) exempt from pair gate\n- [ ] Static HTML files in public/ directories exempt from pair gate\n- [ ] Source code files (.ts, .rs, .py, .sh) still trigger pair gate when cross-domain\n- [ ] Test covers exempted file types\n\n## Files\n- platform/services/chorus-hooks/src/hooks/pair_gate.rs",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework"
+      ],
+      "done": true,
+      "created": "2026-04-05T10:58:52Z",
+      "updated": "2026-04-05T11:58:28Z"
     },
     {
       "index": 2061,
@@ -145,6 +181,24 @@
       "done": true,
       "created": "2026-04-04T23:44:58Z",
       "updated": "2026-04-05T10:35:34Z"
+    },
+    {
+      "index": 2047,
+      "apiId": 2130,
+      "title": "Infra guardrail false positive — blocks nudges discussing signal-0 liveness checks",
+      "description": "## Problem\nThe infra guardrail hook blocks nudge messages that discuss signal-0 liveness checks (e.g. mentioning `kill -0` or process signals). The hook pattern-matches infrastructure keywords too broadly, catching legitimate coordination messages.\n\n## Experience\nI nudge another role about a liveness check design and it goes through without being blocked. The guardrail catches actual infra mutations, not conversations about infra patterns.\n\n## AC\n- [ ] Nudge messages discussing signal-0 / kill -0 / liveness checks are not blocked\n- [ ] Actual infra mutation commands (kill, rm, shutdown) remain blocked\n- [ ] Test covers the false positive case\n\n## Files\n- platform/services/chorus-hooks/src/hooks/infra_guardrails.rs",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework"
+      ],
+      "done": true,
+      "created": "2026-04-04T22:33:02Z",
+      "updated": "2026-04-05T11:58:28Z"
     },
     {
       "index": 2046,
@@ -896,41 +950,6 @@
       "updated": "2026-04-04T13:25:36Z"
     },
     {
-      "index": 1958,
-      "apiId": 2041,
-      "title": "Team awareness BDD — Gherkin scenarios for stall detection watchdog",
-      "description": "## Experience\nA role stalls. Within 2 minutes the watchdog nudges them. Within 3 minutes Wren knows. Within 5 minutes Jeff knows.\n\n## AC\n1. Gherkin feature file with scenarios: role goes silent, 2min nudge, 3min escalate, 5min alert\n2. LaunchAgent spec: 60s cron, reads role-state timestamps, computes age\n3. Steps test real role-state files and real nudge delivery\n4. Scenario: role resumes after nudge, watchdog resets\n5. Scenario: all three roles silent, system-wide alert\n\n## Files\n- platform/tests/features/awareness/team-awareness.feature\n- platform/tests/features/step_definitions/awareness_steps.ts\n- platform/services/watchdog/com.chorus.watchdog.plist\n- platform/scripts/watchdog.sh",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "chunk:ops",
-        "sequence:hardening",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-02T01:33:22Z",
-      "updated": "2026-04-04T15:58:32Z"
-    },
-    {
-      "index": 1957,
-      "apiId": 2040,
-      "title": "Team awareness actor diagram + BDD — spine and pulse detect stalled roles before Jeff does",
-      "description": "## Experience\nA role stalls for 20 minutes. Jeff notices before the system does. The other roles should detect it — not Jeff. Team awareness means: when a role goes dark, the spine stops emitting, Pulse flags the gap, and the observing role re-nudges or escalates.\n\n## AC\n1. Actor diagram for team awareness flow: role action → spine event → Pulse aggregation → team-scan → other roles aware\n2. Actor diagram for stall detection: no spine events for N minutes → Pulse flags → observing role nudges → escalation if no response\n3. BDD scenarios: role goes silent → system detects → nudge sent → escalation at 3 minutes\n4. Domain page section added to Pulse or Spine (whichever owns detection)\n5. Linked from domain-interactions.html\n\n## Context\nApril 1 session: both Kade and Silas stalled for 20+ minutes on #1956. Wren nudged at 8 minutes but only because Jeff was watching. The system should catch this automatically. DEC-1571 attention contract says roles poll each other — this is the infrastructure that makes that possible.",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new"
-      ],
-      "done": true,
-      "created": "2026-04-02T01:01:17Z",
-      "updated": "2026-04-02T01:33:02Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1213,24 +1232,6 @@
       "done": false,
       "created": "2026-04-01T12:52:09Z",
       "updated": "2026-04-01T20:47:47Z"
-    },
-    {
-      "index": 1932,
-      "apiId": 2015,
-      "title": "Standards surface + pulse instrumentation — single page of team policies with pulse measurement",
-      "description": "## Experience\nI open one page and see every team standard — definition of done, code standards, process rules, communication rules, ops rules. Each one shows whether it's documented only, instrumented in a gate, or measured in pulse. The gaps are visible. Pulse checks the ones that aren't gate-enforced.\n\n## AC\n1. Single HTML standards page at /chorus/standards — lists all team policies grouped by category\n2. Each standard shows status: documented | instrumented (which hook) | measured (which metric)\n3. Pulse checks added for: TDD compliance, WIP limit violations, re-nudge frequency, commit-before-accept, brief response latency, Jeff touches per card\n4. Standards page links to the source (DEC, ADR, feedback memory, hook file) for each standard\n5. Page updates automatically from decisions.md, CLAUDE.md fragments, and hook registry",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P1",
-      "domains": [
-        "chunk:strategy",
-        "domain:chorus",
-        "type:new",
-        "sequence:loom"
-      ],
-      "done": false,
-      "created": "2026-04-01T12:31:33Z",
-      "updated": "2026-04-01T12:31:33Z"
     },
     {
       "index": 1918,
@@ -1518,42 +1519,6 @@
       "done": false,
       "created": "2026-03-30T10:27:29Z",
       "updated": "2026-03-30T16:49:02Z"
-    },
-    {
-      "index": 1847,
-      "apiId": 1930,
-      "title": "Nudge acknowledgment event — track whether role acted on nudge, not just drained it",
-      "description": "## Experience\nI send a nudge and it gets drained from the queue, but I have no idea if the role actually did anything with it. \"Drained\" and \"acted on\" are two completely different things. Right now nudge delivery looks successful even when the recipient ignored it, which means I can't tell if my coordination is working or just disappearing into a void.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:enhance",
-        "sequence:spine"
-      ],
-      "done": false,
-      "created": "2026-03-30T10:27:25Z",
-      "updated": "2026-03-30T16:49:24Z"
-    },
-    {
-      "index": 1846,
-      "apiId": 1929,
-      "title": "Context cache failure events — emit session.context.error when board or API unreachable at boot",
-      "description": "## Experience\nWhen a role boots and the board API or context cache is unreachable, nothing tells me. The role just starts with empty or partial context and I find out later when it makes a wrong decision. I need to see a clear event that says \"Kade booted without board data\" so I can catch it before it cascades into bad work.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:enhance",
-        "sequence:spine"
-      ],
-      "done": false,
-      "created": "2026-03-30T10:27:21Z",
-      "updated": "2026-03-30T16:49:28Z"
     },
     {
       "index": 1834,
@@ -1886,6 +1851,59 @@
       "done": false,
       "created": "2026-03-16T19:41:30Z",
       "updated": "2026-03-16T19:41:30Z"
+    },
+    {
+      "index": 1472,
+      "apiId": 1555,
+      "title": "Route Drive documents to correct domains — photos, music, video out of Documents into their domains",
+      "description": "## Acceptance Criteria\n1. Identify Drive documents that are actually photos (201K), music (6.3K), video (28.8K) by MIME type or file extension\n2. Re-run routing logic (#1422/#1423 pattern) to move these into Photos, Music, and Video domains in the graph\n3. Source: Computers backups (Mac mini × 2, USB devices), Google Photos folder, and scattered media in My Drive\n4. Documents collection count drops by the routed items — only true documents remain\n5. Photos/Music/Video collection counts increase accordingly\n6. No data loss — graph edges updated, source files untouched on Drive\n\n## Context\nGoogle Drive harvest dumped everything into Documents (495K items). ~236K of those are photos/video/music from Computers backups, not documents. Routing logic exists (#1422, #1423) but linkages were removed. Drive is at 91% (1.83TB/2TB). DEC-092 says Video is its own domain.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "domain:photos",
+        "domain:documents"
+      ],
+      "done": false,
+      "created": "2026-03-16T19:40:09Z",
+      "updated": "2026-03-16T19:40:09Z"
+    },
+    {
+      "index": 1296,
+      "apiId": 1379,
+      "title": "Scan book collection — box-by-box catalog from library shelves",
+      "description": "Three triage categories from #534:\n- Books to shelve\n- Books that might shelve if space allows (most likely not)\n- Books to keep but not shelve\n\nWork one box at a time from the library. No deadline. Photos/OCR feed the books domain in Gathering (141+ and growing).",
+      "status": "Later",
+      "owner": "Jeff",
+      "priority": "P3",
+      "domains": [
+        "chunk:memory",
+        "chunk:app",
+        "domain:books",
+        "stream:harvesting"
+      ],
+      "done": false,
+      "created": "2026-03-11T17:35:12Z",
+      "updated": "2026-03-15T19:01:23Z"
+    },
+    {
+      "index": 1331,
+      "apiId": 1414,
+      "title": "Harvest iCloud documents — import document metadata into Fuseki knowledge graph",
+      "description": "## What\n\nHarvest iCloud Drive / iCloud Documents metadata into the knowledge graph. Files stay in iCloud — metadata (filename, type, folder, dates, size) enters the graph. Follows the established harvest pattern.\n\n## Context\n\n- No existing iCloud harvester — needs research on access method\n- iCloud Drive files are synced to ~/Library/Mobile Documents/ on macOS\n- Unlike Google APIs, there's no official iCloud API — harvester will likely use filesystem scan of the local sync folder\n- Scale: depends on what Jeff stores in iCloud. Likely moderate.\n- Part of a unified document harvest vision: Google + iCloud + local → single searchable index across both Macs\n- Both Macs have iCloud sync — Library and Bedroom. Harvest once, search everywhere.\n\n## AC\n\n- [ ] Research access method — filesystem scan of ~/Library/Mobile Documents/ vs CloudKit API vs other\n- [ ] Adapter extracts document metadata (filename, type, path, dates, size, iCloud container/app)\n- [ ] Metadata mapped to document ontology (shared with #1330 Google Docs)\n- [ ] Turtle files written to pod\n- [ ] Fuseki indexed via standard sync pipeline\n- [ ] Harvest manifest entry created for iCloud source\n- [ ] Documents searchable via /search and viewable in a Documents collection page\n- [ ] Cross-machine: index covers documents synced to both Library and Bedroom Macs\n- [ ] Incremental sync — only re-scan changed files",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:memory",
+        "sequence:sparql",
+        "domain:documents",
+        "stream:harvesting"
+      ],
+      "done": false,
+      "created": "2026-03-12T11:39:00Z",
+      "updated": "2026-03-12T11:39:49Z"
     },
     {
       "index": 1721,
