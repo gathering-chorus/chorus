@@ -1,33 +1,36 @@
-# Daily Morning Summary — 2026-04-04
+# Daily Morning Summary — 2026-04-05
 
-**HEADLINE:** Board-client is still RED on missing workflow-engine dist, chorus-sdk has a broken `value_stream_step` mapping, and #1926 remains un-accepted — fix these before pulling any new work.
+**HEADLINE:** Disk jumped 770 GB in 6 days — source unknown, baseline corrupt — investigate before anything else.
 
 ---
 
-**OPS** 🟡 YELLOW (Silas review: 2026-04-02)
-- 🔴 **Top concern:** #1926 (gate integration tests, 39/39 passing) now 78h+ stale in WIP, no `/acp`. Still unresolved from yesterday.
-- 🟡 18 cargo warnings in chorus-hooks (4 auto-fixable); 36 plist `/tmp` log refs (needs accepted-risk doc); `messages/claudemd/` fragment dir missing (deprecated or moved?); disk baseline script inconsistent `usedBytes`/`percentUsed`.
-- ✅ Repo clean, domain context fresh, CSC compliance clean.
+**OPS** 🔴 RED (Silas review: 2026-04-05)
+- 🔴 **Disk spike:** 257 GB → 1,027 GB (+299%) since 2026-03-29. Suspect: Fuseki journal, log accumulation, or model artifacts. `percentUsed` in perf-baseline.sh is reporting 2% (actual ~51%) — calculation broken. Restore nightly cadence.
+- 🔴 **Stale WIP:** card-1865 stuck 5 days; Kade's backlog has 10 cards aged 20+ days (since 2026-03-14). WIP limit violated. Wren/Kade to triage today — close, defer, or re-estimate.
+- 🟡 chorus-hooks: 30 warnings (9 auto-fixable); 10+ LaunchAgent plists logging to `/tmp/` (lost on reboot); CLAUDE.md root stale (fragments updated 2026-04-05, last assembly 2026-04-03).
+- ✅ CSC compliance clean. Repo fully committed. All 5 domain-context files fresh.
 
-**QUALITY** 🟡 YELLOW trending up (Kade review: 2026-04-03)
-- Tests: 363 total | 110 passing, 65 failing (board-client), 5 failing (chorus-sdk), 32 skipped
-- 🔴 **board-client:** 65 tests fail — `workflow-engine/dist` not built. Run `npm run build` in workflow-engine first.
-- 🟡 **chorus-sdk:** 5 failures — `value_stream_step` returning null instead of "Capturing" (`emit-metadata.test.ts:226`).
-- ✅ workflow-engine: 61/61. slack-bridge: 60/60. Both recovered from RED yesterday.
-- `jeff-bridwell-personal-site` not found — day 6. Remove from check matrix or fix the path.
+**QUALITY** 🔴 RED (Kade review: 2026-04-05)
+- Tests: 371 total | 215 board-client, 35 chorus-sdk, 61 workflow-engine, 60 slack-bridge
+- Failures: **77** (72 board-client + 5 chorus-sdk). No improvement vs yesterday.
+- 🔴 **board-client:** 72 failures — hardcoded Mac path + missing `workflow-engine/dist`. Stale 2+ days. Needs a ticket.
+- 🟡 **chorus-sdk:** 5 failures — `value_stream_step` returning null ("Capturing" expected), `emit-metadata.test.ts:226`. Day 3.
+- 🟡 **App/lint/build:** `jeff-bridwell-personal-site` not found — day 8. Remove from matrix or fix path.
+- ✅ workflow-engine 61/61. slack-bridge 60/60. Both stable.
 
-**YESTERDAY** — 2026-04-03 (19+ cards shipped, high-velocity)
-- Silas: 14 cards — awareness watchdog (#1958), staleness detection (#2031), Clearing ack (#1934), spine events (#1945), tunnel monitoring (#2016), Ollama (#2014), real-time gemba (#2021), compound loop (#2008), skills repo-tracked (#1840), folder structure (#1826), health endpoint (#2011), dedup (#2010), agent-state (#2009), awareness gate (#2003).
-- Kade: 5 cards — domain crawler v2 (#1959), crawler compound loop index (#2019), seed content display (#2007), foaf prefix + log reclassification (#2005), bad URI verification (#2017).
-- Key decisions: DEC-107 locked (nudge two-path, no reopening). Compound search loop now injects prior Chorus context on every query.
+**YESTERDAY** — 2026-04-04 (~35 cards shipped, largest day on record)
+- Silas: 14+ cards — Observability branch complete; Protocol branch started (2/9); watchdog, tunnel monitoring, socket bind, hooks /tmp guard, seed alert, ICD auto-sync.
+- Kade: 5 cards — voice capture live (MediaRecorder + whisper-cli + HTTPS), foaf prefix, bad URI verification, crawler v2, heartbeat.
+- Wren: domain decomposition shipped (7-layer diagram, domain-ownership sequences locked). DEC-110: Clearing = data integration. Ownership: Silas→Observability, Kade→Clearing, Wren→Loom.
 
 **TODAY** (recommended order)
-1. **Kade → `npm run build` in workflow-engine** — unblocks 65 board-client tests immediately.
-2. **Kade → fix `value_stream_step` null** in chorus-sdk emit layer — `emit-metadata.test.ts:226`.
-3. **Silas → `/acp` #1926 or explicitly defer** — 78h+ stale, 3rd day listed.
-4. **Silas → `cargo fix --bin chorus-hooks`** — 4 auto-fixable warnings.
-5. **Wren → clarify `messages/claudemd/` fragment path** — ops check needs updating.
+1. **Jeff + Silas → disk spike triage** — 770 GB unaccounted, can't wait.
+2. **Wren → stale WIP audit** — card-1865 + Kade's 10 aged cards, one session to close or defer all.
+3. **Kade → file ticket for board-client Mac path hardcode** — fix or descope from CI.
+4. **Kade → fix `value_stream_step` null** — day 3, chorus-sdk coverage suffering.
+5. **Silas → `cargo fix --bin chorus-hooks` + regenerate CLAUDE.md root.**
 
 **BLOCKERS** — needs Jeff's attention
-- 🔴 **`jeff-bridwell-personal-site` missing — day 6.** App tests, lint, and build are completely dark. Is this path gone, moved, or intentionally dropped? Decision needed to stop noisy daily reporting.
-- 🔴 **#1926 un-accepted 78h+** — listed 3 days running. Jeff: call it.
+- 🔴 **Disk: +770 GB in 6 days.** Unknown source. Data loss risk if Fuseki journal unbounded.
+- 🔴 **Stale WIP.** 10 cards 20+ days in WIP with no daily touch. Team is accumulating invisible drag.
+- 🔴 **board-client hardcoded path** — 72 test failures, zero movement in 2+ days. File a ticket or accept the red.
