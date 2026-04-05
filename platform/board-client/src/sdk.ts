@@ -276,18 +276,8 @@ export function enforceTaxonomyGate(
   // SWAT cards exempt
   if (/\[swat\]/i.test(title)) return true;
 
-  const hasChunk = domains.some(d => d.startsWith('chunk:'));
+  // Chunk is optional (#1873) — domain is the primary taxonomy
   const hasSequence = domains.some(d => d.startsWith('sequence:'));
-
-  if (!hasChunk) {
-    const validChunks = Object.keys(LABELS.chunk).join(', ');
-    console.error(`ERROR: Card #${index} missing chunk label. Use: cards tag ${index} <chunk>  (or: cards tag ${index} domain <domain>)`);
-    console.error(`  Valid chunks: ${validChunks}`);
-    emitSpineEvent('card.quality.blocked', detectRole(), {
-      card_id: String(index), title, gate: 'taxonomy_chunk_missing', board,
-    });
-    process.exit(1);
-  }
 
   if (!hasSequence) {
     const validSeqs = Object.keys(LABELS.sequence).join(', ');
@@ -493,7 +483,8 @@ export async function addCard(
     process.exit(1);
   }
 
-  // Chunk gate (with auto-inference from domain)
+  // Chunk is optional (#1873) — domain is the primary taxonomy.
+  // Auto-infer chunk from domain if provided, but don't gate on it.
   const DOMAIN_TO_CHUNK: Record<string, string> = {
     photos: 'memory', music: 'music', stories: 'memory', notes: 'memory',
     people: 'memory', social: 'memory', documents: 'memory', books: 'memory',
@@ -512,16 +503,6 @@ export async function addCard(
       opts.chunk = inferred;
       console.log(`  Auto-tagged chunk:${inferred} from domain:${opts.domain}`);
     }
-  }
-
-  if (!opts.chunk) {
-    const validChunks = Object.keys(LABELS.chunk).join(', ');
-    console.error(`ERROR: Cards require a chunk tag. Add --chunk <name> or provide --domain for auto-inference.`);
-    console.error(`  Valid chunks: ${validChunks}`);
-    emitSpineEvent('card.quality.blocked', detectRole(), {
-      title, gate: 'add_chunk_missing', board: client.boardName,
-    });
-    process.exit(1);
   }
 
   // Type gate

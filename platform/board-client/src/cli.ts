@@ -565,7 +565,7 @@ Options:
   --chunk C                      Chunk label (spine/ops/memory/music/senses/strategy/app)
   --sequence S, --seq S          Sequence label (${Object.keys(LABELS.sequence).join('/')})
   --desc D                       Description text (required — must include AC)
-  --quick, -q                    Skip description/AC requirement only (type/chunk/domain/priority still required)`);
+  --quick, -q                    Skip description/AC requirement only (type/domain/priority still required)`);
 }
 
 // ── Main dispatch ──

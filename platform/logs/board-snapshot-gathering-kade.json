@@ -1,24 +1,24 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T11:18:00.789Z",
+  "timestamp": "2026-04-05T11:28:03.148Z",
   "tasks": [
     {
-      "index": 1964,
-      "apiId": 2047,
-      "title": "Cards CLI — update description and AC on existing cards",
-      "description": "## Problem\nThe cards CLI can create cards and set fields, but can't update the description or AC on existing cards. Roles work around this by using raw `cards set <id> desc=...` which mangles markdown (escaped newlines, lost formatting).\n\n## Experience\nI need to fix a card's description after it's created — add AC I missed, update the experience section, correct a typo. I run `cards update 1964 --desc '...'` and the markdown comes through clean — headings, checkboxes, lists all preserved. No raw Vikunja API calls needed.\n\n## AC\n- [x] `cards update <id> --desc 'text'` writes the description field via Vikunja API\n- [x] Markdown content preserved (headings, checkboxes, lists)\n- [x] `cards view <id>` renders the updated description\n- [x] No direct Vikunja API calls from roles — all through cards CLI\n\n## Files\n- chorus/platform/scripts/cards",
+      "index": 1873,
+      "apiId": 1956,
+      "title": "Remove chunk taxonomy — redundant with domain",
+      "description": "## Experience\nI have two labels on every card that mean the same thing — chunk and domain both tell me \"what area.\" Domain maps to real things I care about (photos, seeds, chorus). Chunk is abstract and has no consumer. Worse, the mandatory chunk gate on card creation is friction every time I add a card. I want domain only, and I want the gate gone.\n\n## AC\n- [ ] Remove mandatory chunk gate from cards CLI (add command no longer requires --chunk)\n- [ ] cards CLI accepts cards without chunk tag — no error, no warning\n- [ ] Existing chunk labels on cards left in place (no bulk removal — that's a separate sweep)\n- [ ] Sequence tag remains unchanged — it's cross-cutting, not redundant\n- [ ] Document the decision (DEC needed per Jeff's comment)\n\n## Files\n- platform/board-client/src/cli.ts\n- platform/services/chorus-hooks/src/hooks/quality_gate.rs",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:fix",
-        "sequence:coordination"
+        "type:chore",
+        "sequence:ops"
       ],
       "done": false,
-      "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-05T11:11:10Z"
+      "created": "2026-03-30T16:41:35Z",
+      "updated": "2026-04-05T11:25:29Z"
     },
     {
       "index": 2063,
@@ -736,6 +736,24 @@
       "updated": "2026-04-02T17:46:58Z"
     },
     {
+      "index": 1964,
+      "apiId": 2047,
+      "title": "Cards CLI — update description and AC on existing cards",
+      "description": "## Problem\nThe cards CLI can create cards and set fields, but can't update the description or AC on existing cards. Roles work around this by using raw `cards set <id> desc=...` which mangles markdown (escaped newlines, lost formatting).\n\n## Experience\nI need to fix a card's description after it's created — add AC I missed, update the experience section, correct a typo. I run `cards update 1964 --desc '...'` and the markdown comes through clean — headings, checkboxes, lists all preserved. No raw Vikunja API calls needed.\n\n## AC\n- [x] `cards update <id> --desc 'text'` writes the description field via Vikunja API\n- [x] Markdown content preserved (headings, checkboxes, lists)\n- [x] `cards view <id>` renders the updated description\n- [x] No direct Vikunja API calls from roles — all through cards CLI\n\n## Files\n- chorus/platform/scripts/cards",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination"
+      ],
+      "done": true,
+      "created": "2026-04-02T11:25:47Z",
+      "updated": "2026-04-05T11:18:24Z"
+    },
+    {
       "index": 1966,
       "apiId": 2049,
       "title": "Tighten cards CLI — mandatory fields at create, hard block at Now without description",
@@ -894,23 +912,6 @@
       "updated": "2026-04-02T10:35:22Z"
     },
     {
-      "index": 1954,
-      "apiId": 2037,
-      "title": "[defect] gathering-app: SMS seed creation failed",
-      "description": "## Experience\nJeff sends an SMS with a curly quote (like 'you're') and the seed silently drops. No error visible to Jeff — it just never appears.\n\n## AC\n- esc() in seed-sparql.service.ts normalizes Unicode quotes (U+2018, U+2019, U+201C, U+201D) to ASCII before SPARQL escaping\n- Seeds with curly quotes persist successfully\n- Existing escape behavior for backslash and double-quote preserved",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:seeds",
-        "type:fix"
-      ],
-      "done": true,
-      "created": "2026-04-01T22:40:13Z",
-      "updated": "2026-04-02T18:08:38Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1044,7 +1045,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:coordination"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-04T22:33:02Z",
@@ -1098,7 +1099,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:fix",
-        "sequence:surfaces"
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-04-03T10:27:21Z",
@@ -1152,7 +1153,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:fix",
-        "sequence:coordination"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-02T11:16:01Z",
@@ -1242,7 +1243,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:coordination"
+        "sequence:awareness"
       ],
       "done": false,
       "created": "2026-04-01T14:33:13Z",
@@ -1278,7 +1279,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:framework"
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-04-01T12:31:33Z",
@@ -1332,7 +1333,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "sequence:coordination"
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-03-31T15:00:52Z",
@@ -1501,24 +1502,6 @@
       "updated": "2026-03-30T21:11:38Z"
     },
     {
-      "index": 1873,
-      "apiId": 1956,
-      "title": "Remove chunk taxonomy — redundant with domain",
-      "description": "## Experience\nI have two labels on every card that mean the same thing — chunk and domain both tell me \"what area.\" Domain maps to real things I care about (photos, seeds, chorus). Chunk is abstract and has no consumer. Worse, the mandatory chunk gate on card creation is friction every time I add a card. I want domain only, and I want the gate gone.",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:ops",
-        "domain:chorus",
-        "type:chore",
-        "sequence:ops"
-      ],
-      "done": false,
-      "created": "2026-03-30T16:41:35Z",
-      "updated": "2026-03-30T16:49:21Z"
-    },
-    {
       "index": 1863,
       "apiId": 1946,
       "title": "Context-aware hooks — interaction pattern feeds into hook urgency",
@@ -1548,7 +1531,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:chore",
-        "sequence:ops"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-03-30T13:28:46Z",
@@ -1583,7 +1566,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "sequence:coordination"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-30T10:27:29Z",
@@ -1601,7 +1584,7 @@
         "chunk:spine",
         "domain:chorus",
         "type:enhance",
-        "sequence:coordination"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-30T10:27:25Z",
@@ -1619,7 +1602,7 @@
         "chunk:ops",
         "domain:chorus",
         "type:enhance",
-        "sequence:coordination"
+        "sequence:spine"
       ],
       "done": false,
       "created": "2026-03-30T10:27:21Z",
@@ -1637,7 +1620,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:surfaces"
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-03-29T18:14:40Z",
@@ -1690,7 +1673,7 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "sequence:surfaces"
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-03-27T15:43:31Z",
@@ -1708,7 +1691,7 @@
         "chunk:app",
         "domain:chorus",
         "type:enhance",
-        "sequence:surfaces"
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
@@ -1725,7 +1708,7 @@
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "sequence:surfaces"
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
@@ -1874,6 +1857,23 @@
       "done": false,
       "created": "2026-03-23T18:28:22Z",
       "updated": "2026-03-30T13:05:39Z"
+    },
+    {
+      "index": 1620,
+      "apiId": 1703,
+      "title": "Revalidation workflow — flag stale instances when schema hash changes",
+      "description": "When a schema hash changes (field added, severity reclassified), existing instances harvested under the old hash need revalidation. This card wires the detection and flagging.\n\nDepends on #1619 (records must carry provenance before you can detect staleness).\n\n## AC\n- [ ] On upsertField: compare new schema hash to previous — if changed, set icd:needsRevalidation true on domain\n- [ ] API endpoint: GET /api/icd/domains/:id/stale — returns count of instances with old schema hash\n- [ ] icd-consistency-test.py --hashes reports stale instance count per domain\n- [ ] Revalidation clears when all instances match current hash (post re-harvest)\n\n## Files\n- src/services/icd.service.ts — stale detection query + revalidation flag\n- src/handlers/icd.handler.ts — stale endpoint\n- scripts/icd-consistency-test.py — stale reporting",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:convergence"
+      ],
+      "done": false,
+      "created": "2026-03-22T21:43:21Z",
+      "updated": "2026-03-23T15:33:10Z"
     },
     {
       "index": 1721,
