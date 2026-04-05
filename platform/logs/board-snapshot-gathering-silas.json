@@ -1,41 +1,23 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T12:28:23.215Z",
+  "timestamp": "2026-04-05T14:12:14.482Z",
   "tasks": [
     {
-      "index": 2072,
-      "apiId": 2155,
-      "title": "Integrate sexuality-player into Gathering app — Express route with auth, shared layout, Bedroom proxy for media",
-      "description": "## Experience\nJeff opens Gathering on his phone or laptop, taps Sexuality in the nav. The player loads behind the same login as everything else. Photos and videos stream from Bedroom — no separate port to remember, no separate app to manage.\n\n## AC\n- [ ] /sexuality route in Gathering Express app, behind auth\n- [ ] Player UI served as EJS view with Gathering layout/nav\n- [ ] API endpoints proxied to Bedroom:8090 (photos, videos, playlists, media)\n- [ ] Photo strip, resizable divider, and all current features preserved\n- [ ] Works on mobile (WiFi to Gathering, Gathering proxies to Bedroom)\n- [ ] Standalone sexuality-player on Bedroom still runs for direct access\n\n## Files\n- src/routes/sexuality.ts — new route\n- src/views/sexuality.ejs — player view\n- server.js — register route",
-      "status": "WIP",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:sexuality",
-        "type:new",
-        "sequence:infrastructure"
-      ],
-      "done": false,
-      "created": "2026-04-05T12:26:56Z",
-      "updated": "2026-04-05T12:27:40Z"
-    },
-    {
-      "index": 2071,
-      "apiId": 2154,
-      "title": "Stale nudge warning — emit nudge.stale when nudges sit unacknowledged 10+ minutes",
-      "description": "## Experience\nNudges get drained but I can't tell if they sat in the queue for 30 minutes before anyone processed them. A nudge that ages 10+ minutes without acknowledgment is a coordination failure — the sender is waiting and the recipient didn't notice. I want a stale nudge warning so I can see when the coordination loop is broken.\n\n## AC\n- [ ] Alert-runner checks nudge inbox files for age > 10 minutes\n- [ ] Emit nudge.stale spine event with: recipient role, age in minutes, nudge content preview\n- [ ] Warning appears in chorus.log for monitoring\n\n## Files\n- scripts/alert-runner.sh\n- alerting/nudge-stale.yml",
+      "index": 2075,
+      "apiId": 2158,
+      "title": "Stable inject binary — extract osascript injection from chorus-hook-shim to avoid TCC permission revocation on rebuild",
+      "description": "## Problem\nEvery cargo build --release changes chorus-hook-shim binary hash. macOS TCC revokes both Accessibility AND Full Disk Access permissions. Jeff must manually toggle both off/on in System Settings after every rebuild. This session had 3 rebuilds = 6 potential manual toggles. Overnight, alerts couldn't wake roles because permissions were silently revoked.\n\n## Experience\nI rebuild chorus-hooks and nudge injection keeps working. No manual permission toggling needed. The privileged operations use a stable binary that never changes during normal development.\n\n## AC\n- [ ] Extract osascript injection into chorus-inject binary (tiny, stable, single-purpose)\n- [ ] chorus-hook-shim delegates to chorus-inject for keystroke injection\n- [ ] Only chorus-inject needs Accessibility permission — chorus-hook-shim doesn't\n- [ ] Full Disk Access operations similarly isolated if needed\n- [ ] cargo build --release of chorus-hooks does NOT invalidate any TCC permissions\n- [ ] Test: rebuild chorus-hook-shim, verify nudge inject still works without toggling\n\n## Files\n- platform/services/chorus-hooks/src/process.rs\n- platform/services/chorus-hooks/src/inject.rs (new)\n- platform/services/chorus-hooks/Cargo.toml",
       "status": "WIP",
       "owner": "Silas",
-      "priority": "P2",
+      "priority": "P1",
       "domains": [
         "domain:chorus",
-        "type:enhance",
-        "sequence:spine"
+        "type:fix",
+        "sequence:framework"
       ],
       "done": false,
-      "created": "2026-04-05T12:24:20Z",
-      "updated": "2026-04-05T12:28:20Z"
+      "created": "2026-04-05T13:34:01Z",
+      "updated": "2026-04-05T14:00:37Z"
     },
     {
       "index": 1932,
@@ -56,22 +38,39 @@
       "updated": "2026-04-05T12:08:46Z"
     },
     {
-      "index": 1848,
-      "apiId": 1931,
-      "title": "Session close event — emit session.role.ended with duration at session exit",
-      "description": "## Experience\nWhen a role's session ends, I have no idea it happened until I notice silence. There's no event, no duration, no signal that says \"Silas worked for 47 minutes and closed.\" I'm flying blind on session boundaries — I can't tell if a role crashed or cleanly exited, and I can't see how long sessions actually run.\n\n## AC\n- [ ] Emit session.role.ended spine event when session-close runs\n- [ ] Event includes: role, duration (seconds since session.role.started), clean/crash indicator\n- [ ] Events visible in chorus.log\n\n## Files\n- platform/services/chorus-hooks/src/shim.rs",
-      "status": "WIP",
+      "index": 2072,
+      "apiId": 2155,
+      "title": "Integrate sexuality-player into Gathering app — Express route with auth, shared layout, Bedroom proxy for media",
+      "description": "## Experience\nJeff opens Gathering on his phone or laptop, taps Sexuality in the nav. The player loads behind the same login as everything else. Photos and videos stream from Bedroom — no separate port to remember, no separate app to manage.\n\n## AC\n- [ ] /sexuality route in Gathering Express app, behind auth\n- [ ] Player UI served as EJS view with Gathering layout/nav\n- [ ] API endpoints proxied to Bedroom:8090 (photos, videos, playlists, media)\n- [ ] Photo strip, resizable divider, and all current features preserved\n- [ ] Works on mobile (WiFi to Gathering, Gathering proxies to Bedroom)\n- [ ] Standalone sexuality-player on Bedroom still runs for direct access\n\n## Files\n- src/routes/sexuality.ts — new route\n- src/views/sexuality.ejs — player view\n- server.js — register route",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:sexuality",
+        "type:new",
+        "sequence:infrastructure"
+      ],
+      "done": true,
+      "created": "2026-04-05T12:26:56Z",
+      "updated": "2026-04-05T14:12:12Z"
+    },
+    {
+      "index": 2071,
+      "apiId": 2154,
+      "title": "Stale nudge warning — emit nudge.stale when nudges sit unacknowledged 10+ minutes",
+      "description": "## Experience\nNudges get drained but I can't tell if they sat in the queue for 30 minutes before anyone processed them. A nudge that ages 10+ minutes without acknowledgment is a coordination failure — the sender is waiting and the recipient didn't notice. I want a stale nudge warning so I can see when the coordination loop is broken.\n\n## AC\n- [ ] Alert-runner checks nudge inbox files for age > 10 minutes\n- [ ] Emit nudge.stale spine event with: recipient role, age in minutes, nudge content preview\n- [ ] Warning appears in chorus.log for monitoring\n\n## Files\n- scripts/alert-runner.sh\n- alerting/nudge-stale.yml",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
-        "chunk:spine",
         "domain:chorus",
         "type:enhance",
         "sequence:spine"
       ],
-      "done": false,
-      "created": "2026-03-30T10:27:29Z",
-      "updated": "2026-04-05T12:28:19Z"
+      "done": true,
+      "created": "2026-04-05T12:24:20Z",
+      "updated": "2026-04-05T12:31:52Z"
     },
     {
       "index": 2063,
@@ -931,42 +930,6 @@
       "updated": "2026-04-02T11:45:39Z"
     },
     {
-      "index": 1961,
-      "apiId": 2044,
-      "title": "Mermaid diagrams on domain pages — replace ASCII actor flows with rendered Mermaid",
-      "description": "## Experience\nI open a domain page and the actor diagrams render as clean visual flowcharts, not ASCII art. I can read the flow at a glance. The diagrams are Mermaid source text — editable, versionable, renderable in the browser.\n\n## AC\n1. Mermaid.js loaded on domain pages (CDN or local)\n2. Existing ASCII actor flow diagrams converted to Mermaid sequence/flowchart syntax\n3. All domain pages updated: Clearing, Pulse, Spine, Interactions, Policy, Memory\n4. Mermaid source is inline in the HTML — editable without a build step\n5. Print-friendly rendering\n\n## Files\n- product-manager/artifacts/domain-clearing.html\n- product-manager/artifacts/domain-pulse.html\n- product-manager/artifacts/domain-spine.html\n- product-manager/artifacts/domain-interactions.html\n- product-manager/artifacts/domain-policy.html\n- product-manager/artifacts/domain-memory.html\n\n## Context\nCurrent diagrams are pre-formatted ASCII in monospace divs. Mermaid gives proper visual rendering from text source. When live domain pages land (#1960), Mermaid diagrams can be generated from crawler data.",
-      "status": "Done",
-      "owner": "Wren",
-      "priority": "P2",
-      "domains": [
-        "chunk:app",
-        "domain:chorus",
-        "type:enhance",
-        "sequence:visibility"
-      ],
-      "done": true,
-      "created": "2026-04-02T10:36:17Z",
-      "updated": "2026-04-02T15:33:04Z"
-    },
-    {
-      "index": 1959,
-      "apiId": 2042,
-      "title": "Domain crawler v2 — add code, logs, and alerts to the crawl",
-      "description": "## Experience\nI crawl a domain and see everything — not just cards and conversations, but the actual code, the logs it emitted today, and the alerts configured for it. Full operational picture of any domain from one query.\n\n## AC\n1. Code facet: codebase scan by directory structure and imports, mapped to domain\n2. Logs facet: Loki query filtered by domain name, recent entries\n3. Alerts facet: Grafana alert rules tagged by domain\n4. All three integrated into existing crawl response alongside cards, conversations, OWL, spine\n5. BDD scenarios for each new facet\n\n## Files\n- platform/api/src/server.ts\n- platform/tests/features/memory/domain-crawler.feature\n- platform/tests/features/step_definitions/memory_steps.ts\n\n## Context\nCurrent crawler (#1956) joins cards, conversations, OWL, and spine. Jeff wants the full operational picture: 7 data sources per domain. Code scan by directory, Loki for logs, Grafana for alerts.",
-      "status": "Done",
-      "owner": "Kade",
-      "priority": "P1",
-      "domains": [
-        "chunk:memory",
-        "domain:chorus",
-        "type:enhance",
-        "sequence:visibility"
-      ],
-      "done": true,
-      "created": "2026-04-02T10:26:28Z",
-      "updated": "2026-04-04T13:25:36Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -1053,6 +1016,108 @@
       "updated": "2026-03-30T13:02:26Z"
     },
     {
+      "index": 2081,
+      "apiId": 2164,
+      "title": "Standardize gate semantics — async/sync policy, session-absent behavior, consistent deny patterns",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:framework"
+      ],
+      "done": false,
+      "created": "2026-04-05T13:38:40Z",
+      "updated": "2026-04-05T13:38:40Z"
+    },
+    {
+      "index": 2080,
+      "apiId": 2163,
+      "title": "Delete dead code — guarded_hook wrappers, unused type functions, stale regex statics",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:framework"
+      ],
+      "done": false,
+      "created": "2026-04-05T13:38:40Z",
+      "updated": "2026-04-05T13:38:40Z"
+    },
+    {
+      "index": 2079,
+      "apiId": 2162,
+      "title": "Cache expensive hook operations — git log spawns, preference lookups per edit",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:enhance",
+        "sequence:framework"
+      ],
+      "done": false,
+      "created": "2026-04-05T13:38:40Z",
+      "updated": "2026-04-05T13:38:40Z"
+    },
+    {
+      "index": 2078,
+      "apiId": 2161,
+      "title": "Fix AppleScript single-quote escaping in process.rs and git detection heuristic in infra_guardrails.rs",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework"
+      ],
+      "done": false,
+      "created": "2026-04-05T13:38:40Z",
+      "updated": "2026-04-05T13:38:40Z"
+    },
+    {
+      "index": 2077,
+      "apiId": 2160,
+      "title": "Split shim.rs into command submodules — 1776 lines to src/commands/",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:framework"
+      ],
+      "done": false,
+      "created": "2026-04-05T13:38:40Z",
+      "updated": "2026-04-05T13:38:40Z"
+    },
+    {
+      "index": 2076,
+      "apiId": 2159,
+      "title": "Extract shared hook utilities — file_classification.rs, session_scanning.rs, state_paths.rs",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:framework"
+      ],
+      "done": false,
+      "created": "2026-04-05T13:38:39Z",
+      "updated": "2026-04-05T13:38:39Z"
+    },
+    {
       "index": 2045,
       "apiId": 2128,
       "title": "Chorus domain decomposition — establish ownership before building",
@@ -1118,7 +1183,7 @@
         "chunk:app",
         "domain:chorus",
         "type:new",
-        "sequence:awareness"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-02T11:52:55Z",
@@ -1154,7 +1219,7 @@
         "chunk:app",
         "domain:chorus",
         "type:new",
-        "sequence:awareness"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-04-02T10:28:02Z",
@@ -1262,7 +1327,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:awareness"
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-03-31T17:22:42Z",
@@ -1316,7 +1381,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:new",
-        "sequence:awareness"
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-03-31T14:40:55Z",
@@ -1388,7 +1453,7 @@
         "chunk:strategy",
         "domain:chorus",
         "type:chore",
-        "sequence:awareness"
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-03-31T12:46:26Z",
@@ -1658,24 +1723,6 @@
       "updated": "2026-03-30T13:03:39Z"
     },
     {
-      "index": 1736,
-      "apiId": 1819,
-      "title": "Sequence diagram — /pipeline flow",
-      "description": "## Experience\nI want to see how a multi-card pipeline flows — how Wren drives it, when roles get nudged, and where I come in for the demo at the end. A sequence diagram makes the orchestration legible at a glance. Same dark-theme HTML as the other Chorus skill diagrams so they form a complete visual reference.\n\n## Files\n- product-manager/artifacts/sequence-pipeline.html\n- jeff-bridwell-personal-site/public/gathering-docs/sequence-pipeline.html\n\n## AC\n1. /pipeline sequence diagram — multi-card pipeline flow (Wren drives, roles nudge on completion, Jeff sees demo at end)\n2. HTML dark theme matching pair-flow-sequence.html\n3. Added to doc-catalog\n\n## Why\nProduct documentation for Chorus interaction skills.",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P3",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:new",
-        "sequence:spine"
-      ],
-      "done": false,
-      "created": "2026-03-26T20:23:09Z",
-      "updated": "2026-04-01T00:39:34Z"
-    },
-    {
       "index": 1731,
       "apiId": 1814,
       "title": "Diagnose AirPlay stale session — Library HomePod silent from Mac",
@@ -1834,91 +1881,6 @@
       "done": false,
       "created": "2026-03-21T12:53:03Z",
       "updated": "2026-03-21T12:53:03Z"
-    },
-    {
-      "index": 1473,
-      "apiId": 1556,
-      "title": "Reclaim Drive storage — deprecate Computers backups after harvest verification",
-      "description": "## Acceptance Criteria\n1. Verify all Computers backup content (My Mac mini × 2, USB Devices) is harvested into Gathering graph\n2. Verify source files exist on Bedroom storage (not just graph metadata)\n3. Produce a manifest: what's safe to delete from Drive, estimated GB reclaimed\n4. Jeff reviews and approves the delete list before any removal\n5. Drive storage drops meaningfully from 91% (1.83TB/2TB)\n\n## Context\nDrive at 91%. Computers backups contain photos, videos, music that are being harvested into Gathering domains. Once harvested and verified on Bedroom, the Drive copies are redundant. Depends on #1472 (route Drive docs to correct domains) completing first. Jeff approves deletions — no autonomous removal.",
-      "status": "Later",
-      "owner": "Wren",
-      "priority": "P3",
-      "domains": [
-        "chunk:ops",
-        "domain:documents"
-      ],
-      "done": false,
-      "created": "2026-03-16T19:41:30Z",
-      "updated": "2026-03-16T19:41:30Z"
-    },
-    {
-      "index": 1472,
-      "apiId": 1555,
-      "title": "Route Drive documents to correct domains — photos, music, video out of Documents into their domains",
-      "description": "## Acceptance Criteria\n1. Identify Drive documents that are actually photos (201K), music (6.3K), video (28.8K) by MIME type or file extension\n2. Re-run routing logic (#1422/#1423 pattern) to move these into Photos, Music, and Video domains in the graph\n3. Source: Computers backups (Mac mini × 2, USB devices), Google Photos folder, and scattered media in My Drive\n4. Documents collection count drops by the routed items — only true documents remain\n5. Photos/Music/Video collection counts increase accordingly\n6. No data loss — graph edges updated, source files untouched on Drive\n\n## Context\nGoogle Drive harvest dumped everything into Documents (495K items). ~236K of those are photos/video/music from Computers backups, not documents. Routing logic exists (#1422, #1423) but linkages were removed. Drive is at 91% (1.83TB/2TB). DEC-092 says Video is its own domain.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "domain:photos",
-        "domain:documents"
-      ],
-      "done": false,
-      "created": "2026-03-16T19:40:09Z",
-      "updated": "2026-03-16T19:40:09Z"
-    },
-    {
-      "index": 1296,
-      "apiId": 1379,
-      "title": "Scan book collection — box-by-box catalog from library shelves",
-      "description": "Three triage categories from #534:\n- Books to shelve\n- Books that might shelve if space allows (most likely not)\n- Books to keep but not shelve\n\nWork one box at a time from the library. No deadline. Photos/OCR feed the books domain in Gathering (141+ and growing).",
-      "status": "Later",
-      "owner": "Jeff",
-      "priority": "P3",
-      "domains": [
-        "chunk:memory",
-        "chunk:app",
-        "domain:books",
-        "stream:harvesting"
-      ],
-      "done": false,
-      "created": "2026-03-11T17:35:12Z",
-      "updated": "2026-03-15T19:01:23Z"
-    },
-    {
-      "index": 1331,
-      "apiId": 1414,
-      "title": "Harvest iCloud documents — import document metadata into Fuseki knowledge graph",
-      "description": "## What\n\nHarvest iCloud Drive / iCloud Documents metadata into the knowledge graph. Files stay in iCloud — metadata (filename, type, folder, dates, size) enters the graph. Follows the established harvest pattern.\n\n## Context\n\n- No existing iCloud harvester — needs research on access method\n- iCloud Drive files are synced to ~/Library/Mobile Documents/ on macOS\n- Unlike Google APIs, there's no official iCloud API — harvester will likely use filesystem scan of the local sync folder\n- Scale: depends on what Jeff stores in iCloud. Likely moderate.\n- Part of a unified document harvest vision: Google + iCloud + local → single searchable index across both Macs\n- Both Macs have iCloud sync — Library and Bedroom. Harvest once, search everywhere.\n\n## AC\n\n- [ ] Research access method — filesystem scan of ~/Library/Mobile Documents/ vs CloudKit API vs other\n- [ ] Adapter extracts document metadata (filename, type, path, dates, size, iCloud container/app)\n- [ ] Metadata mapped to document ontology (shared with #1330 Google Docs)\n- [ ] Turtle files written to pod\n- [ ] Fuseki indexed via standard sync pipeline\n- [ ] Harvest manifest entry created for iCloud source\n- [ ] Documents searchable via /search and viewable in a Documents collection page\n- [ ] Cross-machine: index covers documents synced to both Library and Bedroom Macs\n- [ ] Incremental sync — only re-scan changed files",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "chunk:memory",
-        "sequence:sparql",
-        "domain:documents",
-        "stream:harvesting"
-      ],
-      "done": false,
-      "created": "2026-03-12T11:39:00Z",
-      "updated": "2026-03-12T11:39:49Z"
-    },
-    {
-      "index": 1342,
-      "apiId": 1425,
-      "title": "Add photo overlay mode to garden map — layer hand-drawn annotations on digital beds",
-      "description": "## AC\n- Garden map supports a photo overlay mode — toggle between digital bed layout and hand-drawn annotation layer\n- Jeff can upload photos of hand-drawn garden plans (cabinet maps, notebook sketches)\n- Photos are positioned and scaled to align with the digital zone grid (#1341)\n- Toggle control: 'Show annotations' switches between clean digital view and photo overlay\n- Photos stored as garden domain assets, referenced in RDF\n\n## Context\nJeff has hand-drawn garden maps on kitchen cabinet doors — years of seasonal planting notes. These physical artifacts are the richest garden data source. This feature bridges physical and digital.\n\n## Dependencies\n- #1341 (zone grouping) must ship first — overlay aligns to zones",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P3",
-      "domains": [
-        "chunk:app",
-        "domain:property"
-      ],
-      "done": false,
-      "created": "2026-03-12T13:36:51Z",
-      "updated": "2026-03-15T19:01:24Z"
     },
     {
       "index": 1721,
@@ -2862,6 +2824,40 @@
       "done": false,
       "created": "2026-03-28T11:34:22Z",
       "updated": "2026-03-30T01:08:01Z"
+    },
+    {
+      "index": 2074,
+      "apiId": 2157,
+      "title": "[ops-health] Critical endpoint down — http://192.168.86.242:4533/ offline",
+      "description": "Auto-detected by chorus-ops (health).\n\nEndpoint http://192.168.86.242:4533/ is reporting as down. This is a critical alert, likely correlated with Docker infrastructure outage.\n\nFinding ID: endpoint-down-4533\nSeverity: critical\nCategory: alert",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T13:32:39Z",
+      "updated": "2026-04-05T13:32:39Z"
+    },
+    {
+      "index": 2073,
+      "apiId": 2156,
+      "title": "[defect] gathering-app: Event loop lag: 15.17s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 15.17s\nSample: Event loop lag: 15.17s\nFirst seen: 2026-04-05T12:38:02Z\nCount: 1\nHash: 244b0423c74b730c",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T12:38:02Z",
+      "updated": "2026-04-05T12:38:02Z"
     },
     {
       "index": 2064,
