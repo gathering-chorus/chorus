@@ -910,7 +910,7 @@ export async function reassignCard(client: BoardClient, index: number, newOwner:
 
 /** Unified set — apply multiple key=value mutations and print resulting state (#1635) */
 export async function setCard(client: BoardClient, index: number, pairs: Record<string, string>): Promise<void> {
-  const VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates']);
+  const VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates']);
   const changes: string[] = [];
 
   // Validate all keys first
@@ -921,7 +921,7 @@ export async function setCard(client: BoardClient, index: number, pairs: Record<
   }
 
   // Apply tag-category changes
-  for (const cat of ['domain', 'chunk', 'sequence', 'stream', 'type']) {
+  for (const cat of ['domain', 'chunk', 'sequence', 'stream', 'type', 'origin']) {
     if (pairs[cat]) {
       await client.tag(index, cat, pairs[cat]);
       changes.push(`${cat}=${pairs[cat]}`);

@@ -43,6 +43,9 @@ export const LABELS = {
   type: {
     new: 87, enhance: 88, fix: 89, chore: 90, swat: 91,
   } as Record<string, number>,
+  origin: {
+    reflective: 109, reactive: 110,
+  } as Record<string, number>,
   stream: {
     sowing: 54, growing: 55, practicing: 56,
     harvesting: 57, reflecting: 58, connecting: 59,
