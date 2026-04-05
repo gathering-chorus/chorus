@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T19:19:27.699Z",
+  "timestamp": "2026-04-05T21:05:40.696Z",
   "tasks": [
     {
       "index": 3,
@@ -17678,7 +17678,7 @@
       ],
       "done": true,
       "created": "2026-03-24T12:08:33Z",
-      "updated": "2026-04-05T19:15:42Z"
+      "updated": "2026-04-05T19:33:21Z"
     },
     {
       "index": 1671,
@@ -18213,7 +18213,7 @@
       ],
       "done": false,
       "created": "2026-03-25T22:54:24Z",
-      "updated": "2026-03-31T17:14:50Z"
+      "updated": "2026-04-05T19:33:24Z"
     },
     {
       "index": 1704,
@@ -18893,7 +18893,7 @@
       "apiId": 1828,
       "title": "Clearing record button — capture audio to session transcript, not send window",
       "description": "## Experience\nI'm in a Clearing session with Deb and Allu and I want to just talk, not type. I press the record button and expect my voice to flow into the conversation like a walkie-talkie — press, talk, release, and my words appear in the stream. Instead, text dumps into the send box and I have to edit and click send. That kills the flow of a live conversation.\n\n## AC\n1. Record button captures audio and saves to /tmp/chorus-recordings/<session-id>-<timestamp>.webm\n2. Audio auto-transcribes (Whisper or browser SpeechRecognition API)\n3. Transcript appends to the Clearing message stream as a Jeff message — attributed, timestamped\n4. No text in the send input — the transcript flows directly into the conversation\n5. Recording indicator visible while active (red dot or similar)\n6. Works on mobile Safari (phone use case from demo night)\n\n## Why\nJeff tried to record during the demo with Deb and Allu. The button exists but dumps text into the send window instead of streaming into the conversation. Jeff wants press-and-talk, not press-transcribe-edit-send. The Clearing should feel like a walkie-talkie, not a dictation app.",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -18901,9 +18901,9 @@
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-27T12:12:19Z",
-      "updated": "2026-03-31T17:28:09Z"
+      "updated": "2026-04-05T19:33:21Z"
     },
     {
       "index": 1746,
@@ -19486,14 +19486,14 @@
       ],
       "done": true,
       "created": "2026-03-28T10:42:40Z",
-      "updated": "2026-04-05T19:15:44Z"
+      "updated": "2026-04-05T19:33:23Z"
     },
     {
       "index": 1781,
       "apiId": 1864,
       "title": "Borg Chorus — systematic service design audit and formalization",
       "description": "## Experience\nEvery integration path in Chorus has a service design artifact. When something breaks, we trace it. When something ships, it works the first time. The snake stops eating its tail.\n\n## AC\n- [ ] All 4 chronic integration paths assessed: seed pipeline, nudge delivery, Clearing/Bridge, acceptance events\n- [ ] Service design page filled in for each: experience, identity, integration path, non-functionals, test contract, dependencies\n- [ ] Designing stage gate enforced — no card moves to Building without design artifact\n- [ ] Experience tag added to card schema\n- [ ] Decision documented (DEC-next) locking the service design process\n- [ ] PRODUCT_TAXONOMY.md updated with Loom decomposition and three tiers\n\n## Decomposition\n- #1784 Seed pipeline synthetic monitoring (Silas)\n- #1785 Seed pipeline integration tests (Kade)\n- #1786 Seed pipeline observability (Kade)\n- #1787 Nudge delivery service design (Wren)\n- #1788 Clearing/Bridge service design (Wren)\n- #1789 Acceptance events service design (Wren)\n- #1790 Experience tag in card schema (Silas)\n- #1791 Designing stage gate hook (Silas)",
-      "status": "Later",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -19501,9 +19501,9 @@
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-28T11:00:33Z",
-      "updated": "2026-03-31T20:48:18Z"
+      "updated": "2026-04-05T19:33:18Z"
     },
     {
       "index": 1782,
@@ -19594,7 +19594,7 @@
       "apiId": 1870,
       "title": "Nudge delivery service design — fill in service design page, lock the contract",
       "description": "## Experience\nI nudge a role and it arrives instantly in their terminal. I never wonder if it landed.\n\n## AC\n- [ ] Service design page filled in: experience, identity, integration path with spine events, non-functionals, test contract\n- [ ] DEC-107 dual-path (persist + osascript) documented as the locked design\n- [ ] Integration test: nudge.sh → messaging API POST + osascript inject → verify delivery\n- [ ] Synthetic monitoring: periodic nudge health check\n- [ ] After: #1781",
-      "status": "Later",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -19602,16 +19602,16 @@
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-28T11:34:05Z",
-      "updated": "2026-03-31T17:05:13Z"
+      "updated": "2026-04-05T19:33:19Z"
     },
     {
       "index": 1788,
       "apiId": 1871,
       "title": "Clearing/Bridge service design — bidirectional sync contract",
       "description": "## Experience\nI open the Clearing and see what all three roles are doing. I type and the right role responds. No echoes, no duplicates, no dropped messages.\n\n## AC\n- [ ] Service design page filled in: experience, identity, integration path with spine events, non-functionals, test contract\n- [ ] Bidirectional contract defined: Claude → Clearing and Clearing → Claude\n- [ ] Dedup contract: content hash + timestamp, no echo\n- [ ] Integration test: role emits text → appears in Clearing stream; Jeff types in Clearing → arrives in role session\n- [ ] After: #1781",
-      "status": "Later",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -19619,16 +19619,16 @@
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-28T11:34:21Z",
-      "updated": "2026-03-31T17:05:14Z"
+      "updated": "2026-04-05T19:33:19Z"
     },
     {
       "index": 1789,
       "apiId": 1872,
       "title": "Acceptance events service design — single clean event per acceptance",
       "description": "## Experience\nJeff accepts a card. One event appears on the Bridge, attributed correctly. No echoes, no duplicates.\n\n## AC\n- [ ] Service design page filled in: experience, identity, integration path with spine events, non-functionals, test contract\n- [ ] Root cause of 4x echo (#1769) and 2x echo (#1766) documented\n- [ ] Dedup contract: one acceptance event per card per actor\n- [ ] Integration test: card.accepted emitted → one Bridge message with correct attribution\n- [ ] After: #1781",
-      "status": "Later",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -19636,9 +19636,9 @@
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-28T11:34:22Z",
-      "updated": "2026-03-31T17:05:14Z"
+      "updated": "2026-04-05T19:33:20Z"
     },
     {
       "index": 1790,
@@ -19655,7 +19655,7 @@
       ],
       "done": true,
       "created": "2026-03-28T11:34:22Z",
-      "updated": "2026-04-05T19:15:46Z"
+      "updated": "2026-04-05T19:33:23Z"
     },
     {
       "index": 1791,
@@ -20745,7 +20745,7 @@
       "apiId": 1938,
       "title": "Hook pulse logging — every invocation emits structured telemetry",
       "description": "## Experience\nI watch a role hit a hook error and have no idea what just happened. Was it PreToolUse? Which module? Did it block or warn? I can't see into the hooks — they're a black box. When they break, the whole team operates on fiction and nobody knows until I notice something wrong.\n\n## AC\n1. Every hook invocation emits one structured log line — no silent passes\n2. Fields: timestamp, role, hook_type, tool, module, decision (allow/block/warn), reason, duration_ms, source line\n3. Log destination is readable by all roles (Loki or shared log file)\n4. Blocked hooks include the reason in the log line\n5. Hook duration tracked — catches silent hangs\n6. Wren can tail the log and commentate on what's firing in real time\n\n## Context\nLobotomy pattern: grep hook broke all 3 roles for 2 days, nobody reported it. Docker fiction: hooks returned success output but Docker was off. Jeff's Fund That Flip operational excellence framework — Auditability pillar.",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -20753,9 +20753,9 @@
         "domain:chorus",
         "type:enhance"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-30T13:57:50Z",
-      "updated": "2026-04-05T19:15:57Z"
+      "updated": "2026-04-05T19:33:22Z"
     },
     {
       "index": 1856,
@@ -26275,7 +26275,7 @@
       "apiId": 2254,
       "title": "Clearing domain card counts non-deterministic — vary between renders",
       "description": "## Experience\nOpen Clearing, look at Chorus domain panel. Refresh or send a message. The card counts change — LOOM shows 7 one turn, different the next. Jeff can't trust what he's reading.\n\n## AC\n- [ ] Card counts are stable across renders — same data, same number\n- [ ] Root cause identified and fixed (pagination? cache? label filter race?)\n- [ ] Verify: open Clearing, wait 30 seconds, counts don't change\n\n## Files\n- directing/clearing/src/tiles.ts (likely)\n- board-client query path",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -26284,9 +26284,9 @@
         "sequence:clearing",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:36Z",
-      "updated": "2026-04-05T18:09:14Z"
+      "updated": "2026-04-05T19:19:32Z"
     },
     {
       "index": 2172,
@@ -27264,6 +27264,42 @@
       "done": false,
       "created": "2026-04-05T18:29:01Z",
       "updated": "2026-04-05T18:29:01Z"
+    },
+    {
+      "index": 2225,
+      "apiId": 2312,
+      "title": "Consolidate 5 search hooks into 1 — one Chorus search per prompt, shared state, delete redundant paths",
+      "description": "## Experience\nWhen I hit enter, I expect Chorus to surface what the team already knows. Instead, roles ignore the injected context and fall back to git log. I had to demand Wren search Chorus. The system makes the wrong thing easy. One search, one path.\n\n## Files\n- platform/services/chorus-hooks/src/hooks/context_inject.rs\n- platform/services/chorus-hooks/src/hooks/search_hierarchy.rs\n- platform/services/chorus-hooks/src/state.rs\n\n## AC\n- [ ] context_inject stores search results in AppState after running on UserPromptSubmit\n- [ ] search_hierarchy reads from AppState instead of querying Chorus DB independently\n- [ ] memory_gate, memory_first, log_first_gate recognize when context_inject already ran (check AppState, not session JSONL)\n- [ ] All tests pass\n- [ ] No new hooks added\n\n## What we learned (after reading all 5 files)\n- Only 2 hooks actually search Chorus: context_inject and search_hierarchy\n- memory_gate, memory_first, log_first_gate are behavior gates — they check session JSONL for evidence, not Chorus\n- The real redundancy is 2 independent Chorus queries, not 5\n- The behavior gates have a separate problem: they scan JSONL for markers but don't know context_inject already provided results",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "sequence:hardening",
+        "domain:chorus",
+        "type:chore",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-05T19:57:01Z",
+      "updated": "2026-04-05T20:01:01Z"
+    },
+    {
+      "index": 2226,
+      "apiId": 2313,
+      "title": "Alert injection to role terminals broken — only shows on Clearing, not nudge --force to active sessions",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-05T20:41:31Z",
+      "updated": "2026-04-05T20:41:31Z"
     }
   ]
 }
