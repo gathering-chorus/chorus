@@ -1,41 +1,28 @@
 # Kade — Next Session
 
-## Accomplished 2026-04-04
-- #1866: Docker refs cleanup — 5 dead files deleted, guardrails messages updated, TEAM_PROTOCOL Fuseki refs fixed
-- #2024: Cards CLI completeness (pair w/ Wren) — sequence label prefix fix, untag, bulk-move, add --sequence warn
-- #2020: Log reclassification phase 3 — 13 warn→error, 1 error→warn across 8 files
-- #2018: Clearing domain subtotals — unsequenced cards get sub-group header
-- #2034: Mobile streams pane — fixed positioning with bottom offset
-- #2041: Context synthesis gate — skip new files with no git history
-- #2042: Log-first gate — skip lint/build error context
-- #2043: App repo dirty file accumulation — committed cross-role changes
-- #2036: Clearing connection heartbeat — 8s ping/10s timeout detects tunnel failure
-- #1782: Voice capture — MediaRecorder + whisper-cli + HTTPS for LAN mic + body parser fix
-- Red-penned Wren's engineering + product manuals (v2)
-- Reviewed Silas's Chorus context diagram (7 findings)
-- Domain decomposition chat with Wren — coherence = colocation
-- Feedback on 7 Silas cards (#1945, #2031, #2035, #2037, #2033, #1939, #1938)
+## Accomplished 2026-04-05
+- #2052: Clearing domain badge counts respect role filter — header uses filtered count when role filter active
+- #2046: Clearing mobile UX — textarea, Enter=newline on mobile, focus not stolen by re-renders
+- #2063: Clearing message routing — removed keyword routing, un-addressed messages go to Wren only
+- #2058: Carded role-state stale card bug → Silas fixed and shipped same session
+- #2072: Sexuality player integrated into Gathering at /sexuality/player, behind auth, LAN-direct media
+- Sexuality player: added resizable divider + photo strip thumbnails, restarted on Bedroom after reboot
+- Deep code review of chorus-hooks Rust with Silas — 37 gate hooks reviewed, joint report filed
+- Feedback on 4 Silas cards (#1964, #1873, #2059, #2032, #2075)
 
 ## WIP
 None.
 
-## Next cards (Clearing sequence per Wren)
-- #1763 Werk Instruments tab (P2)
-- #1762 Werk Contract tab (P2)
-- #1761 Werk Flow Metrics tab (P2)
+## Next cards
+- #1865 Photo detail shows thumbnail instead of full image (P2)
+- #1631 Name face clusters (P3)
+- #1630 Rebuild semantic embeddings (P2)
 
 ## Pending
-- Silas #1938 CSC guard: verify /tmp/bridge-audio-uploads/ is on allowlist (flagged in feedback)
-- Clearing server restart needed after any chorus-hooks rebuild (service uses old binary until restart)
-- 3 pre-existing Rust test failures in search_hierarchy — still unresolved
+- LaunchAgent brief for sexuality-player sent to Silas (architect/briefs/2026-04-05-sexuality-player-launchagent.md)
+- Chorus-hooks code review — top fixes: shared utils for duplicated logic, state_paths.rs, fix infra_guardrails git detection
 
 ## Notes
-- Voice capture works on all 3 connection modes (localhost, LAN HTTPS :3471, 5G tunnel)
-- Self-signed cert at ~/.chorus/certs/ for LAN HTTPS — Jeff accepted it on phone
-- Jeff connecting domain decomposition to Staples experience — 40 domain teams, repos as org chart for agents
-- Pair gate blocked a critical bugfix (body parser ordering) — Jeff overrode. Gate needs a swat/critical escape hatch.
-
-## Session feedback
-- Jeff: "it does not feel clean" about gate error accumulation — led to #2041/#2042/#2043 fixes
-- Jeff: "i dont want to have a token that expires" — body parser bug prevented login, not token expiry
-- Jeff: "i want to use it like a real microphone" — full MediaRecorder pipeline, not browser Speech API
+- Sexuality player on Bedroom:8090 via nohup — dies on reboot until LaunchAgent is set up
+- Gathering /sexuality/player makes direct LAN calls to Bedroom:8090 (no proxy for media streaming)
+- parseTarget keyword routing was silently misrouting messages — "test" → kade instead of wren. Deleted.
