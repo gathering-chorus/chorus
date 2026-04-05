@@ -48,7 +48,7 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 <tr><th>Component</th><th>Status</th><th>Services</th><th>Tests</th><th>Gap</th></tr>
 <tr><td>Roles</td><td><span class="tag-real">REAL</span></td><td>3 role dirs, session hooks, role-state CLI</td><td>Integration + 1 BDD</td><td>No role health dashboard</td></tr>
 <tr><td>Clearing</td><td><span class="tag-real">REAL</span></td><td>Socket.IO server (port 3460), LaunchAgent</td><td>3 unit + 1 BDD</td><td>Mobile UX issues persist</td></tr>
-<tr><td>Interactions</td><td><span class="tag-partial">PARTIAL</span></td><td>Heuristic detector in Wren CLAUDE.md</td><td>1 BDD</td><td>No input classifier hook — detection is prompt-only</td></tr>
+<tr><td>Interactions</td><td><span class="tag-real">REAL</span></td><td>Heuristic detector + input_classifier.rs hook</td><td>1 BDD</td><td>No pattern history dashboard</td></tr>
 <tr><td>Briefs</td><td><span class="tag-real">REAL</span></td><td>1,391 briefs, handoff logger, pipeline</td><td>BDD gate tests</td><td>Stale brief accumulation</td></tr>
 <tr><td>Cards</td><td><span class="tag-real">REAL</span></td><td>board-ts CLI (2,986 LOC), Vikunja backend</td><td>17 test files</td><td>53 failing board-client tests</td></tr>
 <tr><td>Skills</td><td><span class="tag-real">REAL</span></td><td>26 skill definitions, CLI-driven</td><td>Integration via BDD</td><td>No skill registry API</td></tr>
@@ -138,13 +138,13 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 
 <!-- ==================== INTERACTIONS ==================== -->
 <div class="component">
-<h3>Interactions <span class="tag-partial">PARTIAL</span></h3>
+<h3>Interactions <span class="tag-real">REAL</span></h3>
 <p>Nine interaction patterns detected from Jeff's intent — Direction, Ideation, Demo, Triage, SWAT, Gemba, Clearing, Story, Reflection. Detection feeds spine events for Borg.</p>
 <div class="section-grid">
   <div class="section-box"><strong>Services</strong>
     Heuristic detector in Wren CLAUDE.md<br/>
-    Spine event emission per pattern<br/>
-    Input classifier hook (chorus-hooks)
+    <code>input_classifier.rs</code> hook (chorus-hooks)<br/>
+    Spine event emission per pattern
   </div>
   <div class="section-box"><strong>APIs</strong>
     <code>chorus-log interaction.pattern.detected</code><br/>
@@ -167,7 +167,7 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
     <span class="tag-none">NONE</span> — no pattern history dashboard
   </div>
 </div>
-<div class="gap"><strong>Gap:</strong> Detection is prompt-heuristic only — no structured classifier. Pattern history not queryable. Context-aware hooks (#1863) would let pattern feed into gate urgency.</div>
+<div class="gap"><strong>Gap:</strong> Pattern history not queryable — no aggregated metrics or dashboard. Context-aware hooks (#1863) would let pattern feed into gate urgency.</div>
 </div>
 
 <!-- ==================== BRIEFS ==================== -->
@@ -257,7 +257,7 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 <p>Repeatable actions encoded as skill definitions. CLI-driven, symlinked to <code>~/.claude/skills/</code>. Any role can invoke.</p>
 <div class="section-grid">
   <div class="section-box"><strong>Services</strong>
-    26 skill definitions (SKILL.md)<br/>
+    30 skill definitions (SKILL.md), 27 skill dirs<br/>
     Shell scripts + CLI interfaces<br/>
     Symlinked to ~/.claude/skills/
   </div>
@@ -280,7 +280,7 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
     Skill list in CLAUDE.md
   </div>
   <div class="section-box"><strong>UIs</strong>
-    <span class="tag-none">NONE</span> — no skill catalog page
+    <span class="tag-none">NONE</span> — no skill catalog UI
   </div>
 </div>
 <div class="gap"><strong>Gap:</strong> No skill registry API — skills are file-based, not queryable. No catalog UI for Jeff to browse available skills. Skill invocation not validated (malformed calls pass through).</div>
@@ -329,10 +329,10 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 <p>TDD discipline, pair programming, demo/proving gate. The behaviors that make building reliable — encoded as gates, skills, and decisions.</p>
 <div class="section-grid">
   <div class="section-box"><strong>Services</strong>
-    TDD gate (chorus-hooks, Rust)<br/>
-    Pair gate + pair skill<br/>
-    Demo gate + demo skill<br/>
-    Accept gate + /acp skill
+    TDD gate, pair gate, demo gate, accept gate<br/>
+    Autonomy guard, session init gate, log-first gate<br/>
+    Memory gate, search hierarchy gate<br/>
+    /pair, /demo, /acp skills
   </div>
   <div class="section-box"><strong>APIs</strong>
     Gates fire via PreToolUse hook<br/>
@@ -347,7 +347,7 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 </div>
 <div class="section-grid">
   <div class="section-box"><strong>Tests</strong>
-    9 gate BDD features<br/>
+    13 gate BDD features (22 total BDD across all domains)<br/>
     6 step definition files<br/>
     331 test files across codebase
   </div>
@@ -371,10 +371,12 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 <p>Access control and governance encoded as PreToolUse hooks. Blocks prohibited commands, enforces app-state.sh, scrubs credentials from shared files.</p>
 <div class="section-grid">
   <div class="section-box"><strong>Services</strong>
-    chorus-hooks (Rust, ~20 hook modules)<br/>
+    chorus-hooks (Rust, 36 hook modules)<br/>
     Permission profiles (base, per-role)<br/>
-    Write scrubber (credential detection)<br/>
-    Sensitive paths blocker
+    Write scrubber, sensitive paths blocker<br/>
+    infra_guardrails, sparql_guard, csc_guard<br/>
+    bedroom_nfs_guard, nifi_discipline<br/>
+    memory_first, nudge_blast_radius, icd_write_gate
   </div>
   <div class="section-box"><strong>APIs</strong>
     Unix socket: <code>/tmp/chorus-hooks.sock</code><br/>
@@ -389,7 +391,8 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 <div class="section-grid">
   <div class="section-box"><strong>Tests</strong>
     BDD: <code>jeff-contracts.feature</code><br/>
-    259 Rust tests in chorus-hooks
+    186 Rust tests in chorus-hooks<br/>
+    Circuit breaker pattern (fail-open, 3-strike disable)
   </div>
   <div class="section-box"><strong>Docs</strong>
     Data classification policy<br/>

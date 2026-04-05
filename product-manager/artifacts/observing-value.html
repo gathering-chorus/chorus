@@ -105,6 +105,35 @@
 <strong>Stabilization priority reads directly from the data:</strong> Apps first (59% reactive), then Infrastructure and Protocol (mid-30s%), then the rest holds. Shared Awareness and Framework are already stable — low reactive ratios, mostly chosen work.
 </div>
 
+<h2>The Backlog Problem</h2>
+
+<p>The service design exercise exposed a second layer to the reactive/reflective story: <strong>even the reflective work wasn't planned from understanding.</strong></p>
+
+<p>Comparing the Loom service design gaps to the existing Loom card backlog:</p>
+
+<table>
+<tr><th>Service design found</th><th>Existing backlog had</th></tr>
+<tr><td>53 failing board-client tests</td><td>Werk visualization tabs</td></tr>
+<tr><td>Decision enforcement gap (DEC-107 broken for weeks)</td><td>Chorus product page</td></tr>
+<tr><td>Brief inbox has no UI, 1,391 files accumulating</td><td>DNA/Expression genome model</td></tr>
+<tr><td>Gate false positives eroding trust</td><td>Reports from the Blockverse blog</td></tr>
+<tr><td>Interaction patterns have no classifier hook</td><td>Doc-catalog reclassification</td></tr>
+</table>
+
+<p>Left column: what's actually broken or absent, discovered by inventorying what's deployed. Right column: what we chose to card instead — aspirational features chosen from enthusiasm, not understanding.</p>
+
+<div class="insight">
+<strong>The backlog was underplanned and reactive in disguise.</strong> Cards tagged "reflective" because they weren't bug fixes — but they weren't planned from inventory either. "Build a cool visualization" isn't a plan. It's a wish list item that happened to not be a bug. Real planning starts with: here's what's deployed, here's what's missing, here's the order.
+</div>
+
+<p>This reframes the reactive/reflective ratio. Two kinds of reflective work exist:</p>
+<ul style="font-size:0.88em; margin: 10px 0 10px 20px;">
+<li><strong>Reflective from ambition</strong> — "what if we built X?" Chosen, not forced, but not connected to a gap.</li>
+<li><strong>Reflective from understanding</strong> — "the service design shows X is missing, and that's why Y keeps breaking." Chosen AND gap-closing.</li>
+</ul>
+
+<p>The service design exercise converts the first into the second. It doesn't kill ambition — it grounds it. The four layer-level service designs (Infrastructure, Observability, Protocol, Loom) are the first truly planned work on the board.</p>
+
 <h2>What Was Built</h2>
 <ul style="font-size:0.88em; margin: 10px 0 10px 20px;">
 <li><code>origin:reflective</code> and <code>origin:reactive</code> labels created in Vikunja</li>
