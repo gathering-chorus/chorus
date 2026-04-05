@@ -61,80 +61,29 @@ pub fn role_pattern(role: &str) -> Option<&'static str> {
     }
 }
 
-/// Inject by matching Terminal WINDOW name containing the role's directory + "claude".
-/// Uses osascript keystroke to type text into the target role's Terminal window.
-/// KEY FIX (#1764): saves and restores frontmost app so Jeff's focus isn't stolen.
-/// The keystroke must go to Terminal (only way to reach Claude's stdin), but we
-/// give focus back immediately after injection.
-/// Returns Ok if osascript confirms "ok", Err with reason if not.
+/// Inject by delegating to the stable `chorus-inject` binary (#2075).
+/// chorus-inject owns osascript Accessibility permission independently
+/// from chorus-hook-shim, so rebuilding the shim doesn't revoke TCC.
+/// Returns Ok if injection succeeds, Err with reason if not.
 pub fn inject_by_tab_name(role: &str, text: &str) -> Result<(), String> {
-    let pattern = role_pattern(role)
-        .ok_or_else(|| format!("unknown role: {}", role))?;
+    // Locate chorus-inject next to this binary
+    let inject_bin = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("chorus-inject")))
+        .unwrap_or_else(|| std::path::PathBuf::from(
+            "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-inject"
+        ));
 
-    let escaped = text
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', " ")
-        .replace('\u{2014}', "--")
-        .replace('\u{2018}', "'")
-        .replace('\u{2019}', "'")
-        .replace('\u{201C}', "\"")
-        .replace('\u{201D}', "\"");
-
-    // #1764: osascript keystroke into Terminal ONLY. Never Chrome.
-    // DEC-107: osascript is the path. The fix is proper app targeting:
-    // 1. Save what Jeff is using
-    // 2. Activate TERMINAL (not just set window frontmost — activate the APP)
-    // 3. Find the role's window and make it frontmost within Terminal
-    // 4. Keystroke the text + Enter
-    // 5. Restore Jeff's app
-    //
-    // Step 2 is what was missing — `set frontmost of w` only works within Terminal,
-    // it doesn't make Terminal the active app. Without `activate`, keystroke goes
-    // to whatever app has focus (Chrome/Clearing).
-    let script = format!(
-        r#"tell application "System Events"
-    set originalApp to name of first application process whose frontmost is true
-end tell
-tell application "Terminal"
-    set winCount to count of windows
-    repeat with i from 1 to winCount
-        set w to window i
-        set winName to name of w
-        if winName contains "{pattern}" and winName contains "claude" then
-            activate
-            set frontmost of w to true
-            delay 0.15
-            tell application "System Events"
-                tell process "Terminal"
-                    keystroke "{text}"
-                    delay 0.05
-                    key code 36
-                end tell
-            end tell
-            delay 0.05
-            tell application originalApp to activate
-            return "ok"
-        end if
-    end repeat
-    return "no claude window found for {role} (looking for {pattern} + claude)"
-end tell"#,
-        pattern = pattern,
-        text = escaped,
-        role = role
-    );
-
-    let output = Command::new("osascript")
-        .args(["-e", &script])
+    let output = Command::new(&inject_bin)
+        .args([role, text])
         .output()
-        .map_err(|e| format!("osascript failed: {}", e))?;
+        .map_err(|e| format!("chorus-inject spawn failed: {}", e))?;
 
-    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if result == "ok" {
+    if output.status.success() {
         Ok(())
     } else {
-        Err(format!("{} stderr: {}", result, stderr))
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(format!("{}", stderr))
     }
 }
 

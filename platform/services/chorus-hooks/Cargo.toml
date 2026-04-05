@@ -29,6 +29,10 @@ path = "src/main.rs"
 name = "chorus-hook-shim"
 path = "src/shim.rs"
 
+[[bin]]
+name = "chorus-inject"
+path = "src/inject.rs"
+
 [dev-dependencies]
 tempfile = "3"
 

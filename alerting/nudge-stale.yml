@@ -34,7 +34,7 @@ check: |
 
 action: |
   # Cooldown: max once per 10 minutes
-  COOLDOWN_FILE="/tmp/alert-nudge-stale-$(date '+%Y-%m-%d-%H')-$(( $(date '+%M') / 10 ))"
+  COOLDOWN_FILE="/tmp/alert-nudge-stale-$(date '+%Y-%m-%d-%H')-$(( 10#$(date '+%M') / 10 ))"
   if [ -f "$COOLDOWN_FILE" ]; then
     exit 0
   fi

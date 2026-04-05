@@ -50,16 +50,21 @@ run_check() {
 
   # DEC-107: persist AND deliver. Action posts to Bridge (persist).
   # Now also nudge --force to owning role's terminal (deliver). (#2037)
-  local owner
-  owner=$(grep '^owner:' "$rule_file" | head -1 | sed 's/owner: *//' || true)
-  owner="${owner:-silas}"
-  local severity
-  severity=$(grep '^severity:' "$rule_file" | head -1 | sed 's/severity: *//' || true)
-  local alert_ts
-  alert_ts=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
-  local nudge_msg="Alert — $alert_ts | $name: $result"
-  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$owner" "$nudge_msg" --force >> "$LOG" 2>&1 || true
-  log "  NUDGE $owner ($name)"
+  # Nudge cooldown: max once per 10 minutes per alert, same as action (#2071 fix)
+  local nudge_cooldown="/tmp/alert-nudge-${name}-$(date '+%Y-%m-%d-%H')-$(( 10#$(date '+%M') / 10 ))"
+  if [[ -f "$nudge_cooldown" ]]; then
+    log "  NUDGE $name cooldown (skipped)"
+  else
+    touch "$nudge_cooldown"
+    local owner
+    owner=$(grep '^owner:' "$rule_file" | head -1 | sed 's/owner: *//' || true)
+    owner="${owner:-silas}"
+    local alert_ts
+    alert_ts=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+    local nudge_msg="Alert — $alert_ts | $name: $result"
+    bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$owner" "$nudge_msg" --force >> "$LOG" 2>&1 || true
+    log "  NUDGE $owner ($name)"
+  fi
 }
 
 RULE_FILTER=""
