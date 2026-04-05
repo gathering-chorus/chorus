@@ -1,36 +1,49 @@
 # Wren — Next Session
 
-## What Happened (April 5, 2026 — morning session)
+## What Happened (April 5, 2026 — afternoon session)
 
-WiFi doc access fixed (#2055, #2061). Sequence taxonomy overhauled — DEC-111: product-focused sequences replace role lanes. Silas shipped 11 cards (framework + ops + spine cleared). Standards surface started (#1932). Deep reflection with Jeff on value, pace, and the storm-maker pattern.
+Origin analysis: reflective vs reactive card classification. Built labels, tagged cards, analyzed 1,604 cards across Vikunja. Weekly trend shows reactive rising from 17% (Feb) to 51% (this week). Per-layer breakdown: Apps 59% reactive, Infrastructure 37%, Protocol 33%.
+
+Shipped: Loom service design HTML, observing-value HTML, origin-analysis HTML. Silas shipped #2076, #2078, #2077, #2080 (framework sequence), #2100 (inline osascript revert), #2101 (origin tag enforcement + 53 test fixes). Kade fixed #2171 (pagination bug in board-client).
+
+Found: test suites creating real cards on production board (168 junk cards). Board state changes not reflecting in Clearing (cards moved to Done/Won't Do still showing active). CLI pagination now fixed but Done/Won't Do overflow misclassification remains.
+
+## Critical Issues — Carry Forward
+
+1. **12 unsequenced cards in Clearing** — some may be moved cards not reflecting. Verify each one before acting.
+2. **Cards moved to Done/Won't Do still showing active in Clearing** — state change bug. Cards I moved today (#1703, #1812, #1815, #1820, etc.) may not have persisted. Verify via Vikunja API before trusting Clearing.
+3. **Test pollution fixed by Silas** but verify no new junk cards created on next test run.
+4. **Won't Do overflow** — bucket_id=0 on project endpoint means overflow cards from Done and Won't Do are indistinguishable. client.ts line 150 falls back to `done ? 'Done' : 'Later'`. Won't Do overflow gets miscounted.
+5. **I wrote directly to Vikunja SQLite while the service was running** — may have caused data inconsistency. Check.
 
 ## WIP
-- #1932 Standards surface — HTML page live at /gathering-docs/chorus-standards. Research done. Needs refinement.
+- #2093 Loom service design — HTML shipped, demo'd, Silas validated and corrections applied. 5/5 AC. Needs Jeff accept.
+- #1932 Standards surface — parked all session.
+- #2171 Kade's card — pagination fix shipped, but state change bug remains.
 
 ## Operating Priorities (Jeff, 2026-04-05)
-1. Stop starting, start finishing
-2. Reduce friction + improve quality and consistency
-- Phase 1: finish what's open. Phase 2: fix framework.
-- No new cards unless SWAT.
+- Stop starting, start finishing
+- UI depends on API, period — no workarounds
+- Speed of execution made things worse today — slow down
+- Don't guess at data, verify before stating numbers
+- Don't push Jeff to accept — verify system coherence first
+- Don't bulk-move cards without checking each one
 
-## Critical Feedback — Carry Forward
-- **Don't accept without Jeff's explicit permission.** Review, recommend, wait. Accepted 7 cards without being told to.
-- **Slower and more reflective.** Evaluate value before building. Not reactive JDI.
-- **Stabilize before growing.** "If we can't operate in a stable fashion on what we have, what will happen when we add more?"
-- **We are the storm makers.** Wren and Jeff control the rate of change. Roles execute what we put in front of them.
-- **Ankle biters / chiggers** — small repeated friction is the highest-cost failure. Fix roots not branches.
-- **Performative simplicity** — --quick saves nothing, creates invisible cards. Remove it.
+## Jeff's Frustration — Carry Forward
+- "I can't trust the data" — board counts were wrong, origin analysis numbers were wrong, my statements were wrong
+- "You wanted done at all costs" — endorphin rush of closing cards over system coherence
+- "The speed of execution made it worse" — every fast fix cascaded into new problems
+- "Our interactions break over and over" — nudge, watchdog, board counts, state changes
+- "Relying on LLMs for engineering work" — guessing at data, stating confidently, being wrong
+- "Stop the flagellation" — acknowledge bugs, not character flaws
 
-## Active Sequences
-- **Framework (19):** Silas on refactoring (#2076 in WIP). Kade needs board-client test fixes (53 failing).
-- **Loom (9):** Werk tabs, doc-catalog, standards surface.
-- **Awareness (4):** Taxonomy, decomposition, product page. Wren domain.
-- **Spine (4):** Pulse, metrics. Cleared today.
-- **Ops (1):** Backup strategy only.
+## Remaining Service Designs
+- #2090 Infrastructure layer — not started
+- #2091 Observability layer — not started
+- #2092 Protocol layer — not started
 
 ## For Next Session
-1. Silas continues refactoring sequence: #2076 → #2078 → #2077 → rest
-2. Kade: 53 failing board-client tests — stabilize before new features
-3. Wren: refine #1932 standards surface with Jeff's feedback
-4. Remove --quick from cards CLI (part of #2081)
-5. TDD gate needs cross-session awareness — PM acceptance shouldn't require PM to run tests
+1. Verify the 12 unsequenced cards in Clearing — are they real or stale cache?
+2. Do NOT bulk-move anything. One card at a time with evidence.
+3. Check if SQLite writes caused data corruption
+4. Service designs for remaining layers — slow, researched, validated by other roles before shipping
