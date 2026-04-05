@@ -1,0 +1,49 @@
+# nudge-stale.yml — Alert when nudges sit unacknowledged for 10+ minutes
+# Card #2071 | Silas
+#
+# Nudges that age without acknowledgment mean the coordination loop is broken.
+# The sender is waiting, the recipient didn't notice.
+
+name: nudge-stale
+description: Nudges unacknowledged for 10+ minutes
+severity: warning
+owner: silas
+schedule: "* * * * *"  # every cycle
+
+check: |
+  # Check each role's nudge inbox for stale messages
+  STALE=0
+  NOW=$(date +%s)
+  for ROLE in wren silas kade; do
+    INBOX="/tmp/voice-inbox/$ROLE/pending-inject.txt"
+    if [ -f "$INBOX" ]; then
+      # File modification time = when last nudge was written
+      MTIME=$(stat -f %m "$INBOX" 2>/dev/null || echo "$NOW")
+      AGE=$(( NOW - MTIME ))
+      if [ "$AGE" -gt 600 ]; then
+        STALE=$((STALE + 1))
+        echo "stale-nudge-${ROLE}-${AGE}s"
+      fi
+    fi
+  done
+  if [ "$STALE" -eq 0 ]; then
+    echo "ok"
+    exit 0
+  fi
+  exit 1
+
+action: |
+  # Cooldown: max once per 10 minutes
+  COOLDOWN_FILE="/tmp/alert-nudge-stale-$(date '+%Y-%m-%d-%H')-$(( $(date '+%M') / 10 ))"
+  if [ -f "$COOLDOWN_FILE" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN_FILE"
+  # Post alert to Bridge
+  BRIDGE="http://localhost:3470/api/message"
+  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
+  MSG=$(printf '⚠ **Stale Nudge** — %s\n\nOne or more roles have unprocessed nudges older than 10 minutes.\nCoordination may be broken — check role sessions.' "$TIMESTAMP")
+  curl -sf -X POST "$BRIDGE" \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg text "$MSG" --arg from "silas" '{from: $from, text: $text}')" \
+    &>/dev/null || true

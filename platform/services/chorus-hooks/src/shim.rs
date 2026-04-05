@@ -512,10 +512,53 @@ fn session_close_cmd(args: &[String]) -> ExitCode {
 
     let _ = chorus_log::run(&["protocol.close.completed".to_string(), role.to_string()]);
 
+    // Emit session.role.ended with duration (#1848)
+    // Find session.role.started timestamp for this role in chorus.log
+    let duration_secs = {
+        let log_content = fs::read_to_string(
+            "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log"
+        ).unwrap_or_default();
+        let mut start_ts = 0u64;
+        for line in log_content.lines().rev() {
+            if line.contains("session.role.started") && line.contains(&format!("\"role\":\"{}\"", role)) {
+                // Extract timestamp from JSON
+                if let Some(ts_start) = line.find("\"timestamp\":\"") {
+                    let after = &line[ts_start + 13..];
+                    if let Some(ts_end) = after.find('"') {
+                        let ts_str = &after[..ts_end];
+                        // Parse ISO timestamp to epoch
+                        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(
+                            &ts_str.replace(' ', "T")
+                        ) {
+                            start_ts = dt.timestamp() as u64;
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(
+                            &ts_str[..19], "%Y-%m-%dT%H:%M:%S"
+                        ) {
+                            start_ts = dt.and_utc().timestamp() as u64;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if start_ts > 0 { now - start_ts } else { 0 }
+    };
+
+    let _ = chorus_log::run(&[
+        "session.role.ended".to_string(),
+        role.to_string(),
+        format!("duration={}", duration_secs),
+        format!("exit=clean"),
+    ]);
+
     if issues.is_empty() {
-        println!("Close: ✓ next-session ✓ board-audit ✓ clean");
+        println!("Close: ✓ next-session ✓ board-audit ✓ clean ({}s)", duration_secs);
     } else {
-        println!("Close: {} issue(s)", issues.len());
+        println!("Close: {} issue(s) ({}s)", issues.len(), duration_secs);
         for issue in &issues { println!("  ⚠ {}", issue); }
     }
     ExitCode::SUCCESS
