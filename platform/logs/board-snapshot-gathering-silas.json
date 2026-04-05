@@ -1,13 +1,31 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T10:32:46.015Z",
+  "timestamp": "2026-04-05T10:47:50.981Z",
   "tasks": [
+    {
+      "index": 2058,
+      "apiId": 2141,
+      "title": "role-state preserves stale card ID on non-building transitions — waiting/idle should clear card field",
+      "description": "## Problem\nWhen `role-state` transitions to `waiting` or `idle`, the `card=` field from the previous `building` state persists. Clearing tiles show stale card IDs for roles that have finished their work.\n\n## Root Cause\nThe `role-state` Rust binary only sets `card=` when explicitly passed. Transitions like `role-state silas waiting` preserve the previous card value instead of clearing it.\n\n## Acceptance Criteria\n- [ ] `role-state <role> waiting` clears the card field (sets to null/empty)\n- [ ] `role-state <role> idle` clears the card field\n- [ ] `role-state <role> building card=<id>` still sets the card field correctly\n- [ ] Clearing tiles show no card ID for waiting/idle roles\n\n## Experience\nJeff sees the Clearing tiles and each role shows its actual state — building with a card number, or waiting/idle with no card. No stale card IDs lingering from previous work.",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops"
+      ],
+      "done": false,
+      "created": "2026-04-05T10:41:20Z",
+      "updated": "2026-04-05T10:41:59Z"
+    },
     {
       "index": 2052,
       "apiId": 2135,
       "title": "Clearing domain badge counts ignore role filter — header shows all-role total while sub-groups show filtered cards",
       "description": "## Problem\nWhen a role filter is active on the Clearing domain panel, the header badge shows unfiltered counts (e.g. 40 CARDS · 40 TOTAL) while sub-groups only render the filtered role's cards (e.g. 7). The numbers don't match.\n\n## Root Cause\n`clearing/public/index.html:1192-1194` uses `counts.activeCards` from the API (unfiltered) even when `activeRoleFilter !== 'all'` has already filtered the `cards` array.\n\n## Acceptance Criteria\n- [ ] When role filter is active, domain header badge reflects filtered card count\n- [ ] When role filter is 'all', badge shows full API counts as before\n- [ ] Sub-group counts sum to domain header count\n\n## Experience\nJeff sees matching numbers between domain header and sub-group totals regardless of filter state.",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -16,9 +34,9 @@
         "type:fix",
         "sequence:clearing"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-04T23:44:58Z",
-      "updated": "2026-04-04T23:45:15Z"
+      "updated": "2026-04-05T10:35:34Z"
     },
     {
       "index": 2043,
@@ -892,24 +910,6 @@
       "updated": "2026-04-01T21:16:50Z"
     },
     {
-      "index": 1945,
-      "apiId": 2028,
-      "title": "role-state must emit spine event on every state transition — Clearing tiles go stale",
-      "description": "## Experience\nI look at the Clearing and the tiles show stale card numbers. Silas finished #2003 ten minutes ago but the tile still says #2000. The state changed but the Clearing never heard about it — because role-state writes a file but doesn't emit to the spine.\n\n## AC\n- [ ] role-state binary emits role.state.changed to chorus.log on every state transition (building, idle, blocked, observing)\n- [ ] Clearing tailer picks up the event and updates tile card number within 5s\n- [ ] No silent state changes — if the state file updates, the spine event fires\n- [ ] Integration test: set role-state, verify role.state.changed in chorus.log, verify Clearing tile updates via Socket.IO\n\nRoot cause: role-state updates /tmp/role-state-<role> but never writes to chorus.log, breaking the Clearing tile subscription chain.\n\n## Files\n- platform/scripts/role-state\n- directing/clearing/src/tailer.ts",
-      "status": "Done",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "chunk:spine",
-        "domain:chorus",
-        "type:fix",
-        "sequence:spine"
-      ],
-      "done": true,
-      "created": "2026-04-01T20:08:38Z",
-      "updated": "2026-04-04T14:48:36Z"
-    },
-    {
       "index": 1865,
       "apiId": 1948,
       "title": "Photo detail shows thumbnail instead of full image",
@@ -994,6 +994,24 @@
       "done": false,
       "created": "2026-03-17T13:38:47Z",
       "updated": "2026-03-30T13:02:26Z"
+    },
+    {
+      "index": 2055,
+      "apiId": 2138,
+      "title": "WiFi access to doc-catalog — extensionless route, gathering-docs accessible after WiFi login",
+      "description": "AC: 1. /doc-catalog serves the page without .html extension. 2. Doc-catalog and all gathering-docs children load over WiFi (192.168.86.36:3000) after login. 3. No auth changes — login still required for admin pages.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:fix",
+        "sequence:strategy"
+      ],
+      "done": false,
+      "created": "2026-04-05T10:33:42Z",
+      "updated": "2026-04-05T10:33:42Z"
     },
     {
       "index": 2047,
@@ -1860,21 +1878,6 @@
       "done": false,
       "created": "2026-03-23T22:13:30Z",
       "updated": "2026-03-30T13:05:22Z"
-    },
-    {
-      "index": 1647,
-      "apiId": 1730,
-      "title": "Source registry service — runtime API for provider status, load state, and staleness",
-      "description": "## Experience\nI keep asking \"what sources do we have for photos?\" and \"when was Fuseki last loaded?\" and someone has to go dig through files and graphs to answer. I want a single API endpoint where I can ask those questions and get a straight answer — what's loaded, when, how many records, and what's stale. The ICD defines the rules; this service reads them at runtime so I don't have to keep rediscovering what we already know.\n\nJeff's direction: we keep rediscovering what sources exist, where they live, and what's loaded. The ICD (#1642) defines the rules. This service reads them at runtime.\n\nAPI endpoint that answers:\n- What source graphs exist in Fuseki per domain?\n- When was each last loaded/refreshed?\n- What's the record count vs expected count from provider?\n- Which sources are stale (schema hash changed since last load)?\n- For a given record (by date), which source is golden for each field?\n\nReads from: ICD provider model, Fuseki graph metadata, icd:schemaHash, icd:needsRevalidation.\n\nRelated: #1618 (cache version hashes), #1642 (era-scoped ICD)\n\n## AC\n- [ ] GET /api/registry/sources/:domain — list all providers with load status\n- [ ] GET /api/registry/authority/:domain?date=YYYY-MM-DD — which provider is golden per field for a given date\n- [ ] Staleness detection — flag source graphs where schema hash != current ICD version\n- [ ] Record count comparison — loaded vs expected per provider\n- [ ] Surfaced on a page or existing dashboard (not just API)",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P2",
-      "domains": [
-        "domain:convergence"
-      ],
-      "done": false,
-      "created": "2026-03-23T18:34:16Z",
-      "updated": "2026-03-30T13:05:33Z"
     },
     {
       "index": 1721,
@@ -2818,6 +2821,40 @@
       "done": false,
       "created": "2026-03-28T11:00:33Z",
       "updated": "2026-03-31T20:48:18Z"
+    },
+    {
+      "index": 2057,
+      "apiId": 2140,
+      "title": "[defect] gathering-app: Event loop lag: 15.33s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 15.33s\nSample: Event loop lag: 15.33s\nFirst seen: 2026-04-05T10:40:30Z\nCount: 1\nHash: 0a74f7d21efd9823",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T10:40:30Z",
+      "updated": "2026-04-05T10:40:30Z"
+    },
+    {
+      "index": 2056,
+      "apiId": 2139,
+      "title": "[defect] gathering-app: Event loop lag: 10.63s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 10.63s\nSample: Event loop lag: 10.63s\nFirst seen: 2026-04-05T10:40:30Z\nCount: 1\nHash: 905fa06c0d143d8a",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix"
+      ],
+      "done": false,
+      "created": "2026-04-05T10:40:30Z",
+      "updated": "2026-04-05T10:40:30Z"
     },
     {
       "index": 2054,

@@ -86,8 +86,10 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 
-    // Carry forward card from previous state if not explicitly provided
-    if card.is_empty() {
+    // Carry forward card from previous state only for building/blocked
+    // (states where the role is still working on a card).
+    // waiting/idle/observing = no active card — clear it. (#2058)
+    if card.is_empty() && (state == "building" || state == "blocked") {
         let prev_file = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));
         if let Ok(content) = fs::read_to_string(&prev_file) {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
