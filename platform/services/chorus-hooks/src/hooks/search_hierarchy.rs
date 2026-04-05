@@ -264,19 +264,77 @@ fn query_cards(pattern: &str) -> Option<String> {
     ))
 }
 
+/// Extract search term from git command (--grep value or filename for blame)
+fn extract_git_search_term(cmd: &str) -> String {
+    if let Some(pos) = cmd.find("--grep") {
+        let after = &cmd[pos + 6..];
+        let after = after.trim_start_matches('=').trim_start();
+        if after.starts_with('"') || after.starts_with('\'') {
+            let quote = after.chars().next().unwrap();
+            if let Some(end) = after[1..].find(quote) {
+                return after[1..1 + end].to_string();
+            }
+        }
+        return after.split_whitespace().next().unwrap_or("").to_string();
+    }
+    let trimmed = cmd.trim();
+    if trimmed.to_lowercase().starts_with("git blame") {
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        for part in parts.iter().skip(2) {
+            if !part.starts_with('-') {
+                return part.to_string();
+            }
+        }
+    }
+    // Fallback: use last non-flag argument
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    for part in parts.iter().rev() {
+        if !part.starts_with('-') && *part != "git" && *part != "log" && *part != "show" {
+            return part.to_string();
+        }
+    }
+    String::new()
+}
+
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let tool = input.tool_name_str();
-    if tool != "Grep" && tool != "Glob" {
+
+    // Detect git-as-search via Bash — same gate as Grep/Glob
+    let (is_search, pattern) = if tool == "Grep" || tool == "Glob" {
+        (true, input.get_tool_input_str("pattern"))
+    } else if tool == "Bash" {
+        let cmd = input.get_tool_input_str("command");
+        let cmd_lower = cmd.to_lowercase();
+        let trimmed = cmd_lower.trim_start();
+        if trimmed.starts_with("git log")
+            || trimmed.starts_with("git blame")
+            || trimmed.starts_with("git show")
+            || trimmed.contains("| git log")
+            || trimmed.contains("&& git log")
+        {
+            let search_term = extract_git_search_term(&cmd);
+            (true, search_term)
+        } else {
+            (false, String::new())
+        }
+    } else {
+        (false, String::new())
+    };
+
+    if !is_search {
         return HookResponse::allow();
     }
 
     let role = input.role();
-    let pattern = input.get_tool_input_str("pattern");
     if pattern.is_empty() {
         return HookResponse::allow();
     }
 
-    let _search_path = input.get_tool_input_str("path");
+    let _search_path = if tool == "Grep" || tool == "Glob" {
+        input.get_tool_input_str("path")
+    } else {
+        String::new()
+    };
 
     // No code-lookup bypass — all searches get Chorus enrichment (#1951)
     let role_str = role.as_str();
@@ -290,19 +348,39 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         return HookResponse::allow();
     }
 
-    // Query Chorus DB
-    let db_path = state.config.chorus_db.clone();
-    if !db_path.exists() {
-        return HookResponse::allow();
-    }
-
-    let pattern_clone = pattern.clone();
-    let chorus_results = tokio::task::spawn_blocking(move || query_chorus(&db_path, &pattern_clone))
-        .await
-        .unwrap_or(None);
+    // Check shared state from context_inject first (#2225)
+    // If context_inject already ran this prompt cycle, use its results
+    let cached = state.get_context_results(session_id).await;
+    let chorus_results = if let Some(ref cached) = cached {
+        // Reformat cached results to match expected format
+        let formatted = format!(
+            "Chorus found {} results (from context-inject cache):\n\n{}",
+            cached.chorus_hits.len(),
+            cached.chorus_hits.iter()
+                .map(|(role, content, ts)| {
+                    let short: String = content.replace('\n', " ").chars().take(200).collect();
+                    let ts_short: String = ts.chars().take(16).collect();
+                    format!("  [{}] {} — {}\n", ts_short, role, short)
+                })
+                .collect::<String>()
+        );
+        if cached.chorus_hits.is_empty() { None } else { Some(formatted) }
+    } else {
+        // No cached results — query Chorus DB directly (fallback)
+        let db_path = state.config.chorus_db.clone();
+        if !db_path.exists() {
+            None
+        } else {
+            let pattern_clone = pattern.clone();
+            tokio::task::spawn_blocking(move || query_chorus(&db_path, &pattern_clone))
+                .await
+                .unwrap_or(None)
+        }
+    };
 
     // Telemetry
     let has_results = chorus_results.is_some();
+    let used_cache = cached.is_some();
     let r = role_str.to_string();
     let t = tool.to_string();
     let p: String = pattern.chars().take(80).collect();
@@ -313,6 +391,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             &[
                 ("tool", &t),
                 ("has_chorus_results", if has_results { "true" } else { "false" }),
+                ("used_cache", if used_cache { "true" } else { "false" }),
                 ("pattern", &p),
             ],
         )

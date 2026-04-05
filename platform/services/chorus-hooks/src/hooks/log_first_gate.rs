@@ -97,7 +97,14 @@ fn has_log_evidence(input: &HookInput, state: &AppState) -> bool {
         return false;
     }
 
-    let mut has_log_read = false;
+    // If context_inject already ran and found log-related hits, count as log_read (#2225)
+    let mut has_log_read = if state.has_context_results_sync(&session_id) {
+        // Context inject ran — Chorus may have surfaced log-related context
+        // Still require synthesis, but credit the search
+        true
+    } else {
+        false
+    };
     let mut has_log_synthesis = false;
 
     for line in &lines {

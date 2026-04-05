@@ -509,7 +509,7 @@ async fn user_prompt_submit(
     }
 
     // Context injection (#1838) — search Chorus + memory, inject before role thinks
-    let context_result = hooks::context_inject::check(&input).await;
+    let context_result = hooks::context_inject::check(&input, &state).await;
 
     // JDI detector — fire-and-forget (#1598)
     let state_clone = state.clone();
@@ -527,14 +527,15 @@ async fn user_prompt_submit(
     // Merge all stderr signals: classifier + context injection + autonomy guard
     let guard_result = hooks::autonomy_guard::check(&input, &state).await;
 
+    // Context synthesis goes FIRST so it's visible, not buried (#2225)
     let mut stderr_parts: Vec<String> = Vec::new();
+    if let Some(ref msg) = context_result.stderr {
+        stderr_parts.push(msg.clone());
+    }
     if let Some(ref msg) = clock_result.stderr {
         stderr_parts.push(msg.clone());
     }
     if let Some(ref msg) = classifier_result.stderr {
-        stderr_parts.push(msg.clone());
-    }
-    if let Some(ref msg) = context_result.stderr {
         stderr_parts.push(msg.clone());
     }
     if let Some(ref msg) = guard_result.stderr {

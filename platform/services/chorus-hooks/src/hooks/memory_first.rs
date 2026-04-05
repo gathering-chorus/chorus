@@ -87,8 +87,19 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let role = input.role();
     let role_str = role.as_str();
 
-    // Check session history for memory API usage
+    // Check if context_inject already ran (#2225) — shared state counts as memory query
     let session_id = input.session_id.as_deref().unwrap_or("");
+    if state.has_context_results_sync(session_id) {
+        info!(
+            gate = "memory-first",
+            event = "allowed",
+            role = %role_str,
+            reason = "context_inject already ran (shared state)",
+        );
+        return HookResponse::allow();
+    }
+
+    // Fall back to session JSONL scan
     let cwd = input.cwd.as_deref().unwrap_or("");
     let tail = state.session_cache.get_tail(session_id, cwd, 200);
 

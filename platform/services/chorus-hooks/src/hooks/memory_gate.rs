@@ -183,7 +183,10 @@ fn scan_session_for_synthesis(input: &HookInput, state: &AppState) -> (bool, boo
         return (true, true); // Can't read JSONL = allow
     }
 
-    let mut has_search = false;
+    // Check if context_inject already ran this prompt cycle (#2225)
+    // If AppState has cached results, search is already done
+    // Use try_lock to avoid blocking — if locked, fall through to JSONL scan
+    let mut has_search = state.has_context_results_sync(&session_id);
     let mut has_synthesis = false;
 
     for line in &lines {

@@ -8,6 +8,7 @@
 //! This replaces the "search and throw away results" failure mode.
 //! The role sees accumulated context before they start thinking.
 
+use crate::state::{AppState, ContextSearchResults};
 use crate::types::{HookInput, HookResponse};
 use tracing::info;
 
@@ -138,7 +139,8 @@ fn scan_memory(keywords: &[String]) -> Vec<String> {
 }
 
 /// Main hook: extract keywords, search, synthesize, inject
-pub async fn check(input: &HookInput) -> HookResponse {
+/// Stores results in AppState so other hooks can read them (#2225)
+pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let prompt = input.prompt.as_deref().unwrap_or("");
 
     // Skip very short messages (continuations, "yes", "no", etc.)
@@ -191,8 +193,17 @@ pub async fn check(input: &HookInput) -> HookResponse {
         }
     }
 
-    context.push_str("\nUse this context. Don't search for what's already here.\n");
+    context.push_str("\nMANDATORY: You MUST reference this context before responding. Do not search filesystem or git for information already provided here. If Chorus returned results, cite them. Ignoring injected context is a protocol violation.\n");
     context.push_str("</context-synthesis>");
+
+    // Store results in AppState for other hooks to read (#2225)
+    let session_id = input.session_id.as_deref().unwrap_or("unknown");
+    state.store_context_results(session_id, ContextSearchResults {
+        chorus_hits: chorus_results.clone(),
+        memory_hits: memory_hits.clone(),
+        query: query.clone(),
+        stored_at: chrono::Utc::now().timestamp(),
+    }).await;
 
     info!(
         gate = "context-inject",

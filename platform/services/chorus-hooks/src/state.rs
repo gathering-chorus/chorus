@@ -16,6 +16,15 @@ pub struct AppState {
     pub session_cache: SessionCache,
 }
 
+/// Chorus search results cached from context_inject (#2225)
+#[derive(Clone, Debug)]
+pub struct ContextSearchResults {
+    pub chorus_hits: Vec<(String, String, String)>, // (role, content, timestamp)
+    pub memory_hits: Vec<String>,
+    pub query: String,
+    pub stored_at: i64,
+}
+
 struct StateInner {
     /// Last human message per session (for autonomy-guard Stop hook)
     last_human_msg: HashMap<String, String>,
@@ -27,6 +36,9 @@ struct StateInner {
     session_init_done: HashMap<String, bool>,
     /// Interaction pattern per role (#1911): fix→swat, new→ideation, enhance→demo, chore→direction, swat→bypass
     interaction_pattern: HashMap<String, String>,
+    /// Shared Chorus search results from context_inject (#2225)
+    /// Key: session_id, expires after 30s
+    context_results: HashMap<String, ContextSearchResults>,
 }
 
 /// Static configuration
@@ -50,6 +62,7 @@ impl AppState {
                 search_blocks: HashMap::new(),
                 session_init_done: HashMap::new(),
                 interaction_pattern: HashMap::new(),
+                context_results: HashMap::new(),
             })),
             session_cache: SessionCache::new(),
             config: Arc::new(Config {
@@ -160,6 +173,43 @@ impl AppState {
             .get(role)
             .cloned()
             .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    /// Store Chorus search results from context_inject (#2225)
+    pub async fn store_context_results(&self, session_id: &str, results: ContextSearchResults) {
+        self.inner
+            .lock()
+            .await
+            .context_results
+            .insert(session_id.to_string(), results);
+    }
+
+    /// Get cached Chorus search results — returns None if expired (>30s)
+    pub async fn get_context_results(&self, session_id: &str) -> Option<ContextSearchResults> {
+        let inner = self.inner.lock().await;
+        let result = inner.context_results.get(session_id)?;
+        let now = Utc::now().timestamp();
+        if now - result.stored_at > 30 {
+            return None;
+        }
+        Some(result.clone())
+    }
+
+    /// Sync check: does context_inject have cached results for this session? (#2225)
+    /// Used by sync hooks (memory_gate, memory_first, log_first_gate) that can't await.
+    /// Returns false if lock is contended rather than blocking.
+    pub fn has_context_results_sync(&self, session_id: &str) -> bool {
+        match self.inner.try_lock() {
+            Ok(inner) => {
+                if let Some(result) = inner.context_results.get(session_id) {
+                    let now = Utc::now().timestamp();
+                    now - result.stored_at <= 30
+                } else {
+                    false
+                }
+            }
+            Err(_) => false, // Lock contended — don't block, fall through
+        }
     }
 }
 
