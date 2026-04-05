@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T21:56:21.724Z",
+  "timestamp": "2026-04-05T22:46:40.638Z",
   "tasks": [
     {
       "index": 3,
@@ -19661,8 +19661,8 @@
       "index": 1791,
       "apiId": 1874,
       "title": "Designing stage gate hook — block Building without design artifact",
-      "description": "## Experience\nA role tries to move a card to WIP without a service design artifact or experience statement. The system blocks them and says what's missing.\n\n## AC\n- [ ] PreToolUse hook checks for experience statement before card moves to WIP\n- [ ] Hook checks for service design artifact (or --quick exemption for housekeeping cards)\n- [ ] Blocked message tells the role exactly what's missing\n- [ ] After: #1781",
-      "status": "Won't Do",
+      "description": "## Experience\nA role tries to move a card to WIP without a service design artifact or experience statement. The system blocks them and says what's missing.\n\n## Files\n- platform/services/chorus-hooks/src/hooks/design_gate.rs\n- platform/services/chorus-hooks/src/main.rs\n\n## AC\n- [ ] PreToolUse hook checks for experience statement before card moves to WIP\n- [ ] Hook checks for service design artifact (or --quick exemption for housekeeping cards)\n- [ ] Blocked message tells the role exactly what's missing\n- [ ] After: #1781",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -19671,9 +19671,9 @@
         "type:enhance",
         "sequence:loom"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-28T11:34:22Z",
-      "updated": "2026-03-30T01:08:01Z"
+      "updated": "2026-04-05T22:40:15Z"
     },
     {
       "index": 1792,
@@ -27254,18 +27254,19 @@
       "index": 2224,
       "apiId": 2311,
       "title": "Watchdog fires on active roles — check team-scan activity, not just role-state",
-      "description": "",
-      "status": "Later",
+      "description": "## Experience\nThe watchdog tells me a role is stale when I can see them actively working. It checks role-state declarations but roles forget to declare. Team-scan shows live tool calls — that's the real signal. I shouldn't have to tell the system what I can see.\n\n## Files\n- platform/services/chorus-hooks/src/hooks/ops_awareness.rs\n- platform/scripts/deep-health.sh\n\n## AC\n- [ ] Watchdog checks team-scan JSONL for recent tool calls, not just role-state file timestamp\n- [ ] Role with tool activity in last 5 minutes is never reported as stale\n- [ ] Role with no tool activity AND no role-state update in 45 minutes triggers stale alert\n- [ ] False positive rate drops to zero for actively building roles",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
+        "sequence:hardening",
         "domain:chorus",
         "type:fix",
         "origin:reactive"
       ],
       "done": false,
       "created": "2026-04-05T18:29:01Z",
-      "updated": "2026-04-05T18:29:01Z"
+      "updated": "2026-04-05T22:34:06Z"
     },
     {
       "index": 2225,
@@ -27326,7 +27327,7 @@
       "apiId": 2315,
       "title": "Deep health checks — subprocess liveness, not wrapper alive. Alert on silent failures.",
       "description": "## Experience\nI open the audit and every failure is the same: subprocess dead, wrapper alive, monitoring says healthy. Session indexer blind 2 days, hooks rebuilt but not restarted, alerts only on Clearing not terminals, zero-byte logs, SSH tunnel crash-looping. Jeff discovers every one.\n\n## Files\n- platform/services/chorus-hooks/src/hooks/ops_awareness.rs\n- platform/scripts/deep-health.sh (new)\n\n## AC\n- [ ] Health check verifies subprocess liveness for: session-watcher (fswatch PID), hooks (binary matches disk), alert-notifier (last alert delivered), loki-tunnel (SSH connection alive), log-sync (volume mounted)\n- [ ] Log freshness check: alert if any agent log is 0 bytes or >2h stale\n- [ ] Alerts inject to role terminal via nudge --force, not just Clearing\n- [ ] Runs on 5-minute cron\n- [ ] All 5 audit gaps covered",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27336,9 +27337,27 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T21:42:54Z",
-      "updated": "2026-04-05T21:43:00Z"
+      "updated": "2026-04-05T21:57:56Z"
+    },
+    {
+      "index": 2229,
+      "apiId": 2316,
+      "title": "Separate osascript inject from chorus-hooks binary — every rebuild revokes TCC",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-05T22:46:37Z",
+      "updated": "2026-04-05T22:46:37Z"
     }
   ]
 }
