@@ -467,7 +467,7 @@ export async function auditClose(client: BoardClient, role: string): Promise<{
 export async function addCard(
   client: BoardClient,
   title: string,
-  opts: { status?: string; owner?: string; priority?: string; domain?: string; description?: string; product?: string; chunk?: string; sequence?: string; type?: string; quick?: boolean }
+  opts: { status?: string; owner?: string; priority?: string; domain?: string; description?: string; product?: string; chunk?: string; sequence?: string; type?: string; origin?: string; quick?: boolean }
 ): Promise<BoardTask> {
   warnShortTitle(title, client.boardName);
 
@@ -531,6 +531,25 @@ export async function addCard(
     errors.push('Missing --priority P1|P2|P3');
   }
 
+  // Origin inference from type (#2101)
+  if (!opts.origin && opts.type) {
+    const TYPE_TO_ORIGIN: Record<string, string> = {
+      fix: 'reactive', swat: 'reactive',
+      new: 'reflective', enhance: 'reflective',
+    };
+    const inferred = TYPE_TO_ORIGIN[opts.type.toLowerCase()];
+    if (inferred) {
+      opts.origin = inferred;
+      console.log(`  Auto-tagged origin:${inferred} from type:${opts.type}`);
+    }
+  }
+
+  if (!opts.origin) {
+    errors.push('Missing origin. Is this reactive (responding to breakage) or reflective (chosen work)? Use --origin reflective|reactive');
+  } else if (!['reflective', 'reactive'].includes(opts.origin.toLowerCase())) {
+    errors.push(`Unknown origin "${opts.origin}". Valid: reflective, reactive`);
+  }
+
   if (!opts.quick) {
     const desc = (opts.description || '').trim();
     if (!desc) {
@@ -585,6 +604,14 @@ export async function addCard(
       await client.tag(task.index, 'sequence', opts.sequence);
     } catch (err: any) {
       console.error(`  (sequence tag: ${err.message || err})`);
+    }
+  }
+
+  if (opts.origin) {
+    try {
+      await client.tag(task.index, 'origin', opts.origin.toLowerCase());
+    } catch (err: any) {
+      console.error(`  (origin tag: ${err.message || err})`);
     }
   }
 

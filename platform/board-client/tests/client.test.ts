@@ -60,6 +60,14 @@ function createMockClient(): BoardClient {
         }
       }
     }
+    // fetchAllTasks paginated endpoint (added in db060872 for old Done tasks fallback)
+    if (endpoint.includes('/tasks?per_page=')) {
+      const page = parseInt(endpoint.match(/page=(\d+)/)?.[1] || '1');
+      if (page === 1) {
+        return Promise.resolve(mockBuckets.flatMap(b => b.tasks || []));
+      }
+      return Promise.resolve([]);
+    }
     return Promise.resolve({});
   });
   return client;
@@ -158,7 +166,7 @@ describe('BoardClient.resolveIndex', () => {
 
   test('throws for unknown index', async () => {
     const client = createMockClient();
-    await expect(client.resolveIndex(999)).rejects.toThrow('No task #999');
+    await expect(client.resolveIndex(999)).rejects.toThrow(/No task #999/);
   });
 });
 

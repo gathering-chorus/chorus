@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const APP_ROOT = path.join(__dirname, '../../../jeff-bridwell-personal-site');
+const APP_ROOT = path.join(process.env.HOME || '/Users/jeffbridwell', 'CascadeProjects/jeff-bridwell-personal-site');
 const SRC_DIR = path.join(APP_ROOT, 'src');
 const VIEWS_DIR = path.join(APP_ROOT, 'views');
 const DATA_DIR = path.join(APP_ROOT, 'data/pods/jeff/capture');

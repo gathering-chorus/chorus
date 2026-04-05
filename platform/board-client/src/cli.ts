@@ -74,10 +74,10 @@ function parseGlobalFlags(args: string[]): {
 function parseAddArgs(args: string[]): {
   title: string; status: string; owner: string; priority: string;
   domain: string; description: string; product: string; chunk: string; sequence: string;
-  type: string; quick: boolean;
+  type: string; origin: string; quick: boolean;
 } {
   let title = '', status = 'later', owner = '', priority = '';
-  let domain = '', description = '', product = '', chunk = '', sequence = '', type = '';
+  let domain = '', description = '', product = '', chunk = '', sequence = '', type = '', origin = '';
   let quick = false;
 
   let i = 0;
@@ -92,6 +92,7 @@ function parseAddArgs(args: string[]): {
       case '--chunk': chunk = args[++i]; break;
       case '--sequence': case '--seq': sequence = args[++i]; break;
       case '--type': case '-t': type = args[++i]; break;
+      case '--origin': origin = args[++i]; break;
       case '--quick': case '-q': quick = true; break;
       default:
         if (!title) title = args[i];
@@ -100,8 +101,8 @@ function parseAddArgs(args: string[]): {
     i++;
   }
 
-  if (!title) die('Usage: cards add "title" [--status S] [--owner O] [--priority P] [--domain D] [--product P] [--chunk C] [--sequence S] [--type T] [--desc D] [--quick]');
-  return { title, status, owner, priority, domain, description, product, chunk, sequence, type, quick };
+  if (!title) die('Usage: cards add "title" [--status S] [--owner O] [--priority P] [--domain D] [--product P] [--chunk C] [--sequence S] [--type T] [--origin O] [--desc D] [--quick]');
+  return { title, status, owner, priority, domain, description, product, chunk, sequence, type, origin, quick };
 }
 
 function parseUpdateArgs(args: string[]): { index: number; title?: string; description?: string; domain?: string; chunk?: string; sequence?: string; owner?: string } {

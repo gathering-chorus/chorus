@@ -37,16 +37,18 @@ describe('Card creation enforces mandatory fields', () => {
 
   test('Create card without type is rejected', () => {
     if (skip()) return console.log(skipMsg);
-    const result = run('add "BDD test card" --owner silas --priority P2 --chunk ops --domain chorus');
+    const result = run('add "BDD test card" --owner silas --priority P2 --domain chorus');
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('Cards require a type');
+    expect(result.stderr + result.stdout).toMatch(/type/i);
   });
 
-  test('Create card without chunk is rejected', () => {
+  test('Chunk is auto-inferred from domain — not a hard gate', () => {
     if (skip()) return console.log(skipMsg);
-    const result = run('add "BDD test card" --owner silas --priority P2 --type fix --domain chorus');
-    expect(result.exitCode).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('chunk');
+    // #1873 removed chunk as mandatory — domain auto-infers chunk
+    const result = run('add "BDD test card" --owner silas --priority P2 --type fix --domain chorus --quick');
+    const output = result.stderr + result.stdout;
+    // Should not fail on missing chunk
+    expect(output).not.toMatch(/Missing.*chunk/i);
   });
 
   test('Create card without domain is rejected', () => {
@@ -63,21 +65,21 @@ describe('Card creation enforces mandatory fields', () => {
     expect(result.stderr + result.stdout).toContain('priority');
   });
 
-  test('Quick card still requires type, chunk, domain, priority', () => {
+  test('Quick card still requires type, domain, priority', () => {
     if (skip()) return console.log(skipMsg);
     // --quick without classification should still fail
-    const noType = run('add "BDD quick test" -q --chunk ops --domain chorus --priority P2');
+    // #1873: chunk no longer required (auto-inferred from domain)
+    const noType = run('add "BDD quick test" -q --domain chorus --priority P2');
     expect(noType.exitCode).not.toBe(0);
-    expect(noType.stderr + noType.stdout).toContain('type');
+    expect(noType.stderr + noType.stdout).toMatch(/type/i);
 
-    const noChunk = run('add "BDD quick test" -q --type fix --domain chorus --priority P2');
-    expect(noChunk.exitCode).not.toBe(0);
-
-    const noDomain = run('add "BDD quick test" -q --type fix --chunk ops --priority P2');
+    const noDomain = run('add "BDD quick test" -q --type fix --priority P2');
     expect(noDomain.exitCode).not.toBe(0);
+    expect(noDomain.stderr + noDomain.stdout).toMatch(/domain/i);
 
-    const noPriority = run('add "BDD quick test" -q --type fix --chunk ops --domain chorus');
+    const noPriority = run('add "BDD quick test" -q --type fix --domain chorus');
     expect(noPriority.exitCode).not.toBe(0);
+    expect(noPriority.stderr + noPriority.stdout).toMatch(/priority/i);
   });
 
   test('Quick card with all classification but no description succeeds', () => {

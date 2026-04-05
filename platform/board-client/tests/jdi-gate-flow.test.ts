@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const SCRIPTS_DIR = path.join(__dirname, '../../scripts');
-const PREFS_FILE = '/Users/jeffbridwell/CascadeProjects/chorus/platform/jeff-preferences.json';
+const PREFS_FILE = '/Users/jeffbridwell/CascadeProjects/chorus/jeff-preferences.json';
 
 // Helper: run the seeking-pattern Python detector against sample text
 function detectSeeking(responseText: string, humanMsg: string = 'build 1189'): string {

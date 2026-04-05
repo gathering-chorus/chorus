@@ -42,7 +42,7 @@ const mockBuckets = [
     id: 7, title: 'Next', limit: 0, tasks: [
       {
         id: 501, index: 1805, title: 'Wire 7 missing spine events',
-        description: '## AC\n- [ ] All 15 card lifecycle events emitted\n- [ ] session.role.ended emitted at close\n- [ ] brief.handoff.acknowledged emitted on read\n- [ ] Schema updated to include seed events',
+        description: '## Experience\nJeff sees spine events fire for every card lifecycle transition — no silent gaps.\n\n## AC\n- [ ] All 15 card lifecycle events emitted\n- [ ] session.role.ended emitted at close\n- [ ] brief.handoff.acknowledged emitted on read\n- [ ] Schema updated to include seed events',
         done: false, created: '2026-03-29T00:50:56Z', updated: '2026-03-29T10:22:25Z',
         labels: [
           { id: 4, title: 'owner:kade' },
@@ -85,6 +85,13 @@ function createMockClient(): BoardClient {
     }
     if (endpoint.match(/\/tasks\/\d+\/labels/)) {
       return Promise.resolve({ id: 1 });
+    }
+    if (endpoint.includes('/tasks?per_page=')) {
+      const page = parseInt(endpoint.match(/page=(\d+)/)?.[1] || '1');
+      if (page === 1) {
+        return Promise.resolve(mockBuckets.flatMap(b => b.tasks || []));
+      }
+      return Promise.resolve([]);
     }
     return Promise.resolve({});
   });
@@ -176,7 +183,7 @@ describe('card.pulled spine event', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('spine-events.json schema completeness', () => {
-  const schemaPath = path.join(__dirname, '../../schemas/spine-events.json');
+  const schemaPath = path.join(__dirname, '../../../designing/schemas/spine-events.json');
   let schema: any;
 
   beforeAll(() => {

@@ -12,9 +12,9 @@ import { execSync } from 'child_process';
 
 const CLEARING_DIR = path.join(
   process.env.HOME || '/Users/jeffbridwell',
-  'CascadeProjects/chorus/clearing'
+  'CascadeProjects/chorus/directing/clearing'
 );
-const CLEARING_BIN = path.join(CLEARING_DIR, 'bin/clearing');
+const CLEARING_SERVER = path.join(CLEARING_DIR, 'src/server.ts');
 const SCRIPTS_DIR = path.join(__dirname, '../../scripts');
 const CHORUS_SCRIPTS = path.join(
   process.env.HOME || '/Users/jeffbridwell',
@@ -26,35 +26,24 @@ const CHORUS_SCRIPTS = path.join(
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Flow: Clearing infrastructure', () => {
-  test('clearing binary exists and is executable', () => {
-    expect(fs.existsSync(CLEARING_BIN)).toBe(true);
-    const stat = fs.statSync(CLEARING_BIN);
-    expect(stat.mode & 0o111).toBeGreaterThan(0);
+  test('clearing server source exists', () => {
+    expect(fs.existsSync(CLEARING_SERVER)).toBe(true);
   });
 
-  test('clearing binary accepts --help', () => {
-    try {
-      const output = execSync(`bash ${CLEARING_BIN} --help 2>&1`, {
-        encoding: 'utf-8',
-        timeout: 5000,
-      });
-      expect(output).toContain('Clearing');
-    } catch (err: any) {
-      // --help may exit non-zero in some scripts
-      expect(err.stdout || err.stderr || '').toContain('Clearing');
-    }
+  test('clearing server defines port 3470', () => {
+    const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
+    expect(content).toContain('3470');
   });
 
-  test('clearing accepts --port flag', () => {
-    const content = fs.readFileSync(CLEARING_BIN, 'utf-8');
-    expect(content).toContain('--port');
-    expect(content).toContain('CLEARING_PORT');
+  test('clearing server has Express + Socket.IO', () => {
+    const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
+    expect(content).toContain('express');
+    expect(content).toContain('socket.io');
   });
 
-  test('clearing accepts --context flag for pre-seeding', () => {
-    const content = fs.readFileSync(CLEARING_BIN, 'utf-8');
-    expect(content).toContain('--context');
-    expect(content).toContain('CLEARING_CONTEXT');
+  test('clearing server has /api/message endpoint', () => {
+    const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
+    expect(content).toContain('/api/message');
   });
 
   test('clearing public assets directory exists', () => {
@@ -129,12 +118,11 @@ describe('Flow: Decision capture from Clearing', () => {
     expect(decisions[1]).toContain('Silas owns');
   });
 
-  test('clearing-reply.sh exists for round-trip nudge responses', () => {
-    const replyScript = path.join(
-      process.env.HOME || '/Users/jeffbridwell',
-      'CascadeProjects/chorus/scripts/clearing-reply.sh'
-    );
-    expect(fs.existsSync(replyScript)).toBe(true);
+  test('roles respond to nudges via /api/message endpoint (no script needed)', () => {
+    // clearing-reply.sh was replaced by direct POST to /api/message
+    const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
+    expect(content).toContain('/api/message');
+    expect(content).toContain('POST');
   });
 });
 
@@ -195,24 +183,28 @@ describe('Flow: Transcript indexing', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Flow: Clearing session cleanup', () => {
-  test.skip('clearing binary handles --guest mode — binary needs Silas update', () => {
-    const content = fs.readFileSync(CLEARING_BIN, 'utf-8');
-    expect(content).toContain('--guest');
-    expect(content).toContain('GUEST_MODE');
+  test.skip('clearing server handles guest mode — not yet implemented', () => {
+    const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
+    expect(content).toContain('guest');
   });
 
-  test('clearing binary uses set -euo pipefail for safety', () => {
-    const content = fs.readFileSync(CLEARING_BIN, 'utf-8');
-    expect(content).toContain('set -euo pipefail');
+  test('clearing server has health endpoint', () => {
+    const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
+    expect(content).toContain('/health');
   });
 
-  test('clearing supports --ops-check flag', () => {
-    const content = fs.readFileSync(CLEARING_BIN, 'utf-8');
-    expect(content).toContain('--ops-check');
+  test('clearing LaunchAgent keeps service alive', () => {
+    const plistPath = path.join(
+      process.env.HOME || '/Users/jeffbridwell',
+      'Library/LaunchAgents/com.chorus.clearing.plist'
+    );
+    expect(fs.existsSync(plistPath)).toBe(true);
+    const content = fs.readFileSync(plistPath, 'utf-8');
+    expect(content).toContain('KeepAlive');
   });
 
-  test.skip('clearing supports --chorus context injection — binary needs Silas update', () => {
-    const content = fs.readFileSync(CLEARING_BIN, 'utf-8');
-    expect(content).toContain('--chorus');
+  test.skip('clearing server supports context injection — not yet implemented', () => {
+    const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
+    expect(content).toContain('context');
   });
 });
