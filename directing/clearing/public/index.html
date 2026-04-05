@@ -1189,9 +1189,10 @@ async function loadFlow() {
       // Default collapsed — only expanded if user explicitly toggled
       const isCollapsed = !expandedDomains.has(domain);
       const arrow = isCollapsed ? '▶' : '▼';
-      const cardBadge = `${counts.activeCards || cards.length} cards`;
-      const wfBadge = counts.activeWorkflows > 0 ? ` · ${counts.activeWorkflows} wf` : '';
-      const totalBadge = `${counts.activeTotal || cards.length} total`;
+      const filtered = activeRoleFilter !== 'all';
+      const cardBadge = `${filtered ? cards.length : (counts.activeCards || cards.length)} cards`;
+      const wfBadge = counts.activeWorkflows > 0 && !filtered ? ` · ${counts.activeWorkflows} wf` : '';
+      const totalBadge = `${filtered ? cards.length : (counts.activeTotal || cards.length)} total`;
       const wipIndicator = counts.wip > 0 ? `<span class="wip-indicator" style="font-size:0.6rem;color:var(--orange);margin-left:4px;">🔨 ${counts.wip} WIP</span>` : '';
       const badges = `<span style="font-size:0.6rem;color:var(--text-muted);margin-left:4px;">${cardBadge}${wfBadge} · ${totalBadge}</span>${wipIndicator}`;
       html += `<div class="flow-section"><div class="flow-section-title" onclick="toggleDomain('${domain}')">${arrow} ${domain} ${badges}</div>`;
