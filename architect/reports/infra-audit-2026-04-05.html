@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Infrastructure Audit — 2026-04-05</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.7; }
+  h1 { font-size: 1.5em; border-bottom: 2px solid #333; padding-bottom: 6px; margin-bottom: 4px; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 20px; }
+  h2 { font-size: 1.15em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 12px; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; }
+  .up { color: #16a34a; font-weight: 600; }
+  .down { color: #dc2626; font-weight: 600; }
+  .warn { color: #ca8a04; font-weight: 600; }
+  .stale { color: #dc2626; }
+  .fresh { color: #16a34a; }
+  .gap { background: #fef2f2; border-left: 4px solid #dc2626; padding: 10px 16px; margin: 14px 0; font-size: 0.88em; }
+  .ok { background: #f0fdf4; border-left: 4px solid #16a34a; padding: 10px 16px; margin: 14px 0; font-size: 0.88em; }
+  .insight { background: #fefce8; border-left: 4px solid #ca8a04; padding: 10px 16px; margin: 14px 0; font-size: 0.88em; }
+  .summary { font-size: 1.1em; margin: 16px 0; padding: 12px 16px; background: #f8fafc; border-radius: 4px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+</style>
+</head>
+<body>
+<h1>Infrastructure Audit</h1>
+<p class="date">April 5, 2026 &mdash; Silas, triggered by session indexer outage</p>
+<div class="summary">
+<strong>51 LaunchAgents.</strong> 20 running, 27 scheduled/idle, 4 in error state.<br>
+<strong>6 services healthy.</strong> All endpoints respond.<br>
+<strong>6 alerts firing.</strong> HighLatency, EndpointDown (x2), EntertainmentDeviceDown (x2), FusekiQuerySlow, HarvestDomainGaps, DeployStale.<br>
+<strong>5 silent failures found.</strong> Infrastructure reports healthy while subsystems are dead.
+</div>
+
+<h2>Service Health</h2>
+<table>
+<tr><th>Service</th><th>Port</th><th>Status</th><th>Detail</th></tr>
+<tr><td>Chorus API</td><td>3340</td><td class="up">UP</td><td>259K rows, 33K vectors, 32h uptime</td></tr>
+<tr><td>Gathering App</td><td>3000</td><td class="up">UP</td><td>Fuseki ok, pods ok, 9h uptime</td></tr>
+<tr><td>Grafana</td><td>3100</td><td class="up">UP</td><td></td></tr>
+<tr><td>Loki</td><td>3102</td><td class="up">UP</td><td></td></tr>
+<tr><td>Prometheus</td><td>9090</td><td class="up">UP</td><td></td></tr>
+<tr><td>Alertmanager</td><td>9093</td><td class="up">UP</td><td>6 active alerts</td></tr>
+</table>
+
+<h2>Error State Agents</h2>
+<table>
+<tr><th>Agent</th><th>Exit</th><th>Issue</th></tr>
+<tr><td>com.gathering.loki-tunnel-bedroom</td><td class="down">255</td><td>SSH tunnel crash-looping. Remote log ingestion broken.</td></tr>
+<tr><td>com.chorus.posture-capture</td><td class="down">1</td><td>App launch failure. Not running.</td></tr>
+<tr><td>com.gathering.log-sync</td><td class="down">11</td><td>rsync to /Volumes/Gathering-1/ &mdash; volume unmounted.</td></tr>
+<tr><td>com.chorus.session-watcher</td><td class="down">-9</td><td>SIGKILL recovery. fswatch currently alive but 37 prior segfaults.</td></tr>
+</table>
+
+<h2>Log Freshness</h2>
+<table>
+<tr><th>Log</th><th>Last Modified</th><th>Status</th></tr>
+<tr><td>chorus.log</td><td>17:39 today</td><td class="fresh">Fresh</td></tr>
+<tr><td>chorus-hooks.stdout.log</td><td>17:39 today</td><td class="fresh">Fresh</td></tr>
+<tr><td>alert-runner.log</td><td>17:38 today</td><td class="fresh">Fresh</td></tr>
+<tr><td>chorus-ops.log</td><td>17:38 today</td><td class="fresh">Fresh</td></tr>
+<tr><td>watcher.log</td><td>17:35 today</td><td class="fresh">Fresh</td></tr>
+<tr><td>chorus-bridge.stdout.log</td><td>16:23 today</td><td class="warn">1h stale</td></tr>
+<tr><td>chorus-api.log</td><td>Apr 4 09:18</td><td class="stale">32h stale</td></tr>
+<tr><td>jeff-input-monitor.log</td><td>Apr 3 08:25</td><td class="stale">2 days, 0 bytes</td></tr>
+<tr><td>launchagent-metrics.log</td><td>Apr 3 08:25</td><td class="stale">2 days, 0 bytes</td></tr>
+</table>
+
+<h2>Firing Alerts (6)</h2>
+<table>
+<tr><th>Alert</th><th>State</th><th>Assessment</th></tr>
+<tr><td>HighLatency</td><td class="down">Active</td><td>App response time elevated</td></tr>
+<tr><td>EndpointDown (x2)</td><td class="down">Active</td><td>Two endpoints unreachable</td></tr>
+<tr><td>EntertainmentDeviceDown (x2)</td><td class="warn">Active</td><td>Bedroom speakers &mdash; low priority</td></tr>
+<tr><td>FusekiQuerySlow</td><td class="warn">Active</td><td>Query performance degraded</td></tr>
+<tr><td>HarvestDomainGaps</td><td class="warn">Active</td><td>Photo harvest incomplete</td></tr>
+<tr><td>DeployStale</td><td class="warn">Active</td><td>Deploy age threshold exceeded</td></tr>
+</table>
+
+<h2>Silent Failures Found Today</h2>
+
+<div class="gap">
+<strong>1. Session indexer blind for 2+ days.</strong> fswatch segfaulted, no sessions indexed since April 3. LaunchAgent reported "running" because the outer bash wrapper stayed alive. No staleness alert exists. Jeff discovered it during gemba.
+</div>
+
+<div class="gap">
+<strong>2. chorus-hooks rebuilt 3x without restart.</strong> cargo build produces a new binary but the running process serves the old one. Silas reported changes as "deployed" three times &mdash; none were live. Fixed: Makefile with build+restart+verify.
+</div>
+
+<div class="gap">
+<strong>3. Alert injection to terminals broken.</strong> Cloudflare tunnel alert posted to the Clearing but never nudged the active role session. Jeff had to screenshot it. Alert-to-nudge wiring missing.
+</div>
+
+<div class="gap">
+<strong>4. Zero-byte log files.</strong> jeff-input-monitor and launchagent-metrics agents have PIDs but produce no output. Running but not working.
+</div>
+
+<div class="gap">
+<strong>5. Bedroom SSH tunnel crash-looping.</strong> loki-tunnel-bedroom exits 255 repeatedly. Remote log ingestion broken. No alert.
+</div>
+
+<h2>The Pattern</h2>
+
+<div class="insight">
+<strong>Every gap is the same shape:</strong> a subprocess dies inside a wrapper that stays alive. LaunchAgent says "running." Monitoring says "healthy." The actual work isn't happening. Health checks verify the wrapper, not the work.
+</div>
+
+<p>This matches the observing-value data: 59% reactive in Apps, infrastructure changes generating fix cascades. The infrastructure <em>looks</em> healthy. The work it's supposed to do &mdash; indexing sessions, delivering alerts, syncing logs &mdash; silently stops. Jeff discovers the failure, not the system.</p>
+
+<h2>Disk</h2>
+<div class="ok"><strong>1.0 TB free</strong> on Library root volume. Healthy.</div>
+
+<p class="footer">Generated by Silas | April 5, 2026 | Post-mortem triggered by session indexer outage</p>
+</body>
+</html>

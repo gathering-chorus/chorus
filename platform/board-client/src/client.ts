@@ -1,6 +1,9 @@
 import * as https from 'http';
+import { execSync } from 'child_process';
 import { VikunjaTask, VikunjaBucket, BoardConfig, BoardTask } from './types';
 import { LABELS, resolveBucket } from './config';
+
+const VIKUNJA_DB = '/Users/jeffbridwell/CascadeProjects/chorus/directing/vikunja/db/vikunja.db';
 
 export class BoardClient {
   private url: string;
@@ -125,28 +128,16 @@ export class BoardClient {
   }
 
   /** List all tasks, parsed with metadata.
-   *  Uses paginated project endpoint + bucket view for status assignment.
-   *  Vikunja's view endpoint caps at 50 tasks per bucket — this method
-   *  fetches all tasks to avoid non-deterministic truncation. (#2171) */
+   *  Queries Vikunja DB directly for bucket assignments — no 50-cap. (#2171/#1820) */
   async list(): Promise<BoardTask[]> {
-    const [allTasks, buckets] = await Promise.all([
-      this.fetchAllTasks(),
-      this.fetchBuckets(),
-    ]);
-
-    // Build taskId → bucketName map from view endpoint (accurate for buckets <50)
-    const taskBucket = new Map<number, string>();
-    for (const bucket of buckets) {
-      for (const task of bucket.tasks || []) {
-        taskBucket.set(task.id, bucket.title);
-      }
-    }
+    const allTasks = await this.fetchAllTasks();
+    const dbMap = this.fetchBucketMapFromDB();
 
     const tasks: BoardTask[] = [];
     for (const task of allTasks) {
-      let status = taskBucket.get(task.id);
+      let status = dbMap.get(task.id);
       if (!status) {
-        // Task overflowed a bucket's 50-cap — determine status from done field
+        // Not in DB map — fallback to done field
         status = (task as any).done ? 'Done' : 'Later';
       }
       tasks.push(this.parseTask(task, status));
@@ -177,8 +168,16 @@ export class BoardClient {
   async view(index: number): Promise<BoardTask> {
     const apiId = await this.resolveIndex(index);
     const task = await this.fetchTask(apiId);
-    const buckets = await this.fetchBuckets();
-    const status = this.findTaskBucket(task.id, buckets);
+    const dbMap = this.fetchBucketMapFromDB();
+    let status = dbMap.get(task.id);
+    if (!status) {
+      // Fallback: try bucket view, then done field
+      const buckets = await this.fetchBuckets();
+      status = this.findTaskBucket(task.id, buckets);
+      if (status === 'Unknown') {
+        status = (task as any).done ? 'Done' : 'Later';
+      }
+    }
     return this.parseTask(task, status);
   }
 
@@ -539,6 +538,23 @@ export class BoardClient {
       }
     }
     return 'Unknown';
+  }
+
+  /** Query Vikunja SQLite DB for task→bucket mapping.
+   *  Bypasses the API's 50-per-bucket cap. Returns bucketName→Set<taskId>. (#1820) */
+  private fetchBucketMapFromDB(): Map<number, string> {
+    const map = new Map<number, string>();
+    try {
+      const sql = `SELECT tb.task_id, b.title FROM task_buckets tb JOIN buckets b ON b.id = tb.bucket_id WHERE b.project_view_id = ${this.board.viewId}`;
+      const output = execSync(`sqlite3 "${VIKUNJA_DB}" "${sql}"`, { encoding: 'utf-8', timeout: 5000 });
+      for (const line of output.trim().split('\n')) {
+        const [taskId, title] = line.split('|');
+        if (taskId && title) {
+          map.set(parseInt(taskId), title);
+        }
+      }
+    } catch { /* DB unavailable — fall through to API-based fallback */ }
+    return map;
   }
 
   private parseTask(task: VikunjaTask, status: string): BoardTask {

@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T21:05:40.039Z",
+  "timestamp": "2026-04-05T21:51:18.569Z",
   "tasks": [
     {
       "index": 3,
@@ -1221,16 +1221,16 @@
       "apiId": 191,
       "title": "Test suite gaps — unit, E2E, security, performance",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
         "infrastructure",
         "domain:infrastructure"
       ],
-      "done": true,
+      "done": false,
       "created": "2026-02-22T16:22:47Z",
-      "updated": "2026-03-15T20:56:58Z"
+      "updated": "2026-04-05T21:47:15Z"
     },
     {
       "index": 129,
@@ -9527,7 +9527,7 @@
       "apiId": 1226,
       "title": "Test capture gate — no AC",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P3",
       "domains": [
@@ -9543,7 +9543,7 @@
       "apiId": 1227,
       "title": "Demo test — no AC, should be blocked",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P3",
       "domains": [
@@ -9869,7 +9869,7 @@
       "apiId": 1254,
       "title": "V1 acceptance walkthrough — compare criteria against site screenshots, close gaps",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P2",
       "domains": [
@@ -10297,7 +10297,7 @@
       "apiId": 1287,
       "title": "Fix Kade demo pattern — align with team demo tuning (DEC-048)",
       "description": "## What\nTwo issues with Kade's demo pattern:\n1. **No invitation** — Kade demos directly to Jeff without notifying Wren or Silas. Breaks DEC-048 proving gate (Wren accepts, not the builder). Wren only learns about acceptance when Jeff relays it.\n2. **Style drift** — demos are verbose/procedural instead of visual-first (show it, wait for Jeff, Wren accepts).\n\n## AC\n- Kade's /demo skill sends a nudge to Wren (and Silas if infra-touching) BEFORE presenting to Jeff\n- Demo output matches team pattern: frame → /look evidence → wait for Jeff → Wren accepts\n- No verbose narration — visual evidence first, words second\n- Verify nudge delivery so Wren can observe the demo live\n\n## Context\nJeff observed both gaps during #1197 acceptance. Compare to Silas #537 demo (nudged Wren, followed tuned pattern). The demo skill fragment in Kade's CLAUDE.md needs to enforce the routing, not just the format.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -10358,7 +10358,7 @@
       "apiId": 1292,
       "title": "--help",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "",
       "priority": "",
       "domains": [],
@@ -10555,7 +10555,7 @@
       "apiId": 1305,
       "title": "Add text search filter to Seeds page — match collection pattern baseline",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -10571,7 +10571,7 @@
       "apiId": 1306,
       "title": "Fix photo import for book catalog — errors on batch import, improve UX for 12+ photos",
       "description": "## What\nJeff photographed a box of books (50 photos). Import flow had issues:\n- 50 photos at once didn't work well (too many? error? timeout?)\n- Scaled down to 12 — worked but had errors during import\n- Was able to tag cover + publisher after import\n- Relates to #534 (physical catalog capture)\n\n## AC\n- Batch import of 50+ photos completes without errors\n- Progress indicator during import (not a silent spinner)\n- Clear error messages when individual photos fail (don't abort the whole batch)\n- Import UX handles Jeff's actual workflow: phone photos → bulk upload → tag",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -10633,7 +10633,7 @@
       "apiId": 1310,
       "title": "Flow tests — multi-hop end-to-end validation (seed pipeline, demo pipeline, harvest pipeline, deploy pipeline)",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -11179,7 +11179,7 @@
       "apiId": 1348,
       "title": "Site walkthrough — desktop then mobile, verify all SPARQL-backed pages render with data post-refactor",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P2",
       "domains": [
@@ -11350,7 +11350,7 @@
       "apiId": 1358,
       "title": "Test blast radius gate — zero file code card",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -11366,7 +11366,7 @@
       "apiId": 1359,
       "title": "Test: Refactor frobnicator service — zero blast radius demo",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P3",
       "domains": [
@@ -11382,7 +11382,7 @@
       "apiId": 1360,
       "title": "[docs] Test blast radius exempt",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -11398,7 +11398,7 @@
       "apiId": 1361,
       "title": "Test taxonomy gate",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P3",
       "domains": [
@@ -12072,7 +12072,7 @@
       "apiId": 1404,
       "title": "[ops-health] node-exporter-host service down",
       "description": "Auto-detected by chorus-ops (health).\n\nAlertmanager reports node-exporter-host is down (critical alert). Host-level metrics collection is unavailable. All 17 containers are running.\n\nFinding ID: alert-node-exporter-host-down\nSeverity: critical\nCategory: alert",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -12119,7 +12119,7 @@
       "apiId": 1410,
       "title": "Fix seed brief routing — path off by one level, briefs never reach role directories",
       "description": "## What\n\nbriefsDir() in seed.handler.ts resolves __dirname (dist/handlers/) up 3 levels, landing in jeff-bridwell-personal-site/ instead of CascadeProjects/. Briefs route to a nonexistent path and silently fail. Seeds marked Routed in pod but .md files never written.\n\n## AC\n\n- [ ] briefsDir() resolves to correct workspace root (CascadeProjects/)\n- [ ] SMS seeds with #wren hashtag produce .md files in product-manager/briefs/\n- [ ] Same fix applies to #silas (architect/briefs/) and #kade (engineer/briefs/)\n- [ ] Silent failure replaced with visible error if briefs dir doesn't exist",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -12223,7 +12223,7 @@
       "apiId": 1417,
       "title": "Automate doc-drift sweeps — continuous garbage collection for constraint violations and stale docs",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -12591,7 +12591,7 @@
       "apiId": 1441,
       "title": "[ops-health] Primary app container stopped",
       "description": "Auto-detected by chorus-ops (health).\n\njeff-bridwell-personal-site-app is stopped (1 of 17 containers down). System is non-functional without this core service. Stoppage may have been triggered by the ongoing sync storm or other error condition.\n\nFinding ID: container-app-stopped\nSeverity: critical\nCategory: container_health",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -12625,7 +12625,7 @@
       "apiId": 1443,
       "title": "[ops-health] Photo harvest domain has 4 gaps",
       "description": "Auto-detected by chorus-ops (health).\n\nHarvestDomainGaps alert firing: photo harvesting pipeline has detected 4 gaps in domain coverage. Check harvesting workflow for incomplete metadata imports.\n\nFinding ID: alert-harvest-domain-gaps\nSeverity: warning\nCategory: alert",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -12980,7 +12980,7 @@
       "apiId": 1466,
       "title": "[ops-health] Cloudflare tunnel down — public domain unreachable",
       "description": "Auto-detected by chorus-ops (health).\n\nCloudflareTunnelDown alert firing. lightlifeurbangardens.com unreachable. Consequence of app container being stopped.\n\nFinding ID: cloudflare-tunnel-down\nSeverity: critical\nCategory: alert",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -13029,7 +13029,7 @@
       "apiId": 1470,
       "title": "Test quick fix",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P3",
       "domains": [
@@ -13045,7 +13045,7 @@
       "apiId": 1471,
       "title": "Test card with proper AC",
       "description": "## AC\n1. First criterion\n2. Second criterion",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P3",
       "domains": [
@@ -14050,7 +14050,7 @@
       "apiId": 1533,
       "title": "Add progress emission to all long-running pipeline operations — no more black boxes",
       "description": "Every long-running operation (Fuseki sync, thumbnail gen, reconciliation, harvest) runs silent for minutes. Jeff can't tell progress from hung. \n\nFiles: scripts/harvest-sync-fuseki.sh, scripts/drive-routing-cli.sh, scripts/gen-google-thumbnails.sh\n\n## AC\n- [ ] Fuseki sync emits progress every 1000 files: [HH:MM] N / total synced (X%)\n- [ ] Reconciliation emits per-month progress: [HH:MM] month YYYY-MM, N matches, N merged\n- [ ] Thumbnail generation emits per-batch: [HH:MM] N / total generated\n- [ ] All progress goes to stdout (visible in session) AND to a progress file (tailable by gemba/navigator)\n- [ ] Progress file at /tmp/pipeline-progress-<operation>.log — overwritten each run\n- [ ] Jeff can tail progress from any terminal without asking a role",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -14262,7 +14262,7 @@
       "apiId": 1546,
       "title": "Move active workflows and recently completed into domain tiles on /flow — no orphaned sections",
       "description": "## Acceptance Criteria\n1. Active Workflows cards appear inside their domain tile, not in a separate section below the grid\n2. Recently Completed cards appear inside their domain tile, not in a separate section below the grid\n3. Visual distinction within the tile (e.g. workflow badge, completed state) so they don't blend with active cards\n4. Remove the standalone Active Workflows and Recently Completed sections from the page\n5. Each tile tells the full story of its domain: active cards, in-flight workflows, recent completions\n\n## Context\nJeff looked at /flow and noticed Active Workflows (#1448) and Recently Completed are detached from their domain tiles. You have to mentally map them back. They should live inside the tile where they belong — Photos workflow in the Photos tile, etc.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -14457,7 +14457,7 @@
       "apiId": 1558,
       "title": "Harvest Google Photos videos into Video domain — 28K+ items from Drive",
       "description": "## Acceptance Criteria\n1. Identify all video files from Google Photos/Drive export (28K+ per /documents page)\n2. Route to Video domain per DEC-092 — separate collection, separate ontology type (jb:Video)\n3. Video metadata in Fuseki: duration, resolution, dateTaken, source, thumbnail\n4. Videos browsable on a Video collection page (separate from Photos)\n5. Depends on #1472 (Drive document routing) for the source data identification\n\n## Context\nDEC-092: Video is its own domain. 28K videos sitting in Documents from Google Photos/Drive export. Same harvest contract pattern as Photos (#1456/#1457). Paused per DEC-094 until operations discipline work completes.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -14473,7 +14473,7 @@
       "apiId": 1559,
       "title": "Harvest Apple Photos videos into Video domain — separate from photo harvest",
       "description": "## Acceptance Criteria\n1. Identify video files in Apple Photos Library (MOV, MP4, M4V by extension or UTI type)\n2. Route to Video domain per DEC-092 — separate from Photos harvest\n3. Video metadata in Fuseki: duration, resolution, dateTaken, source (Apple Photos), thumbnail\n4. Existing Photos harvest excludes videos going forward (filter on ingest, not post-hoc)\n5. Count: determine how many Apple Photos items are actually videos\n\n## Context\nApple Photos Library mixes photos and videos. Current Photos harvest doesn't distinguish. DEC-092 says Video is its own domain. Same pattern as #1475 (Google Photos videos). Paused per DEC-094.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -14489,7 +14489,7 @@
       "apiId": 1560,
       "title": "Reclassify videos from existing graph into Video domain — SPARQL-based, no pipeline changes",
       "description": "Videos are already in the graph from existing harvests — just classified as photos or documents. Reclassify via SPARQL instead of refactoring stable harvest pipelines. DEC-092 (Video is own domain). Paused per DEC-094.\n\n## AC\n1. SPARQL query identifies all items with video MIME types across Photos, Documents, and any other domain\n2. Reclassify those items to jb:Video type in the graph\n3. Create urn:jb:video/ graph namespace (per canonical namespace registry)\n4. No changes to existing harvest pipelines — stable pipelines stay stable\n5. Video collection page can query the reclassified items\n6. Report: count of videos found per source (Google Photos, Apple Photos, Drive)\n7. Add Video domain ICD (icd-instance-video.ttl) — define before reclassifying per DEC-095\n\n## Dependencies\n- #1502 (canonical photos) should be done first — reclassifying videos out of photos needs the canonical layer in place\n- Namespace must be registered in canonical-namespaces.md\n\n## Files\nsrc/ontology/icd-instance-video.ttl (new), scripts/reclassify-videos.sh (new), architect/canonical-namespaces.md",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -14585,7 +14585,7 @@
       "apiId": 1566,
       "title": "Fix Attention Cost counters on /werk — re-prompts, approval overhead, corrections all showing 0",
       "description": "## Acceptance Criteria\n1. Attention Cost section on /werk shows same data as /jeff page (re-prompts, approval overhead, corrections)\n2. Per-role breakdown matches (Wren 147/150, Silas 70/87, Kade 86/86 — or current values)\n3. Data source aligned — /jeff and /werk reading from same counters\n4. Verify after fix with Jeff on both pages side by side\n\n## Context\n/jeff page shows real numbers (303/239/306). /werk shows all zeros. Same data, different rendering paths. The counters are the team's self-awareness — if /werk lies, roles can't self-correct.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -14697,7 +14697,7 @@
       "apiId": 1573,
       "title": "iPhone photo/video inventory — 55K items, people data extraction, delta with canonical home cloud",
       "description": "## Acceptance Criteria\n1. Inventory Jeff's iPhone library: count of photos, videos, Live Photos, screenshots (55K total)\n2. Extract people/face data from iPhone library — Apple Photos has richer face recognition than what we harvested from the Mac library (2.7K items vs 55K)\n3. Compute delta: what's on iPhone/iCloud that ISN'T in the canonical home cloud (Fuseki graph + Bedroom storage)\n4. Report: N new photos, N new videos, N new people/faces, N already harvested\n5. Assess: is the iPhone library a superset of what we have, or are there gaps both ways?\n\n## Context\nJeff has 55K photos + videos on iPhone. Current harvest sources are Google Takeout (68K) and Mac Apple Photos Library (2.7K). The iPhone/iCloud library is likely much larger and has richer face/people data. This is the next major ingest source after Drive routing (#1472). Paused per DEC-094 until operations discipline work completes.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -14877,7 +14877,7 @@
       "apiId": 1584,
       "title": "Harvest full LinkedIn data export — profile, recommendations, connections, not just posts",
       "description": "## Acceptance Criteria\n1. Unzip Complete_LinkedInDataExport_03-01-2026.zip.zip from ~/Desktop/Gathering/\n2. Harvest ALL CSVs in one pass — canonical JSON dump first, then load:\n   - Recommendations_Received.csv (22KB) — who said what about Jeff\n   - Recommendations_Given.csv (20KB) — what Jeff said about others\n   - Connections.csv (243KB) — full network with dates\n   - Positions.csv (7.5KB) — career history timeline\n   - Skills.csv — skills list\n   - Endorsement_Received_Info.csv (30KB) — who endorsed what\n   - Endorsement_Given_Info.csv (16KB)\n   - ImportedContacts.csv (552KB) — all contacts\n   - Shares.csv (22KB) — posts\n   - Inferences_about_you.csv — LinkedIn's ML inferences about Jeff\n3. Reconcile with existing 57 LinkedIn posts in graph before loading\n4. Connections feed People domain — create jb:Person nodes with connection dates\n5. Recommendations link to People nodes — who recommended whom\n6. One extraction, one reconciliation, one load (DEC-093, feedback_reconcile_before_load)\n\n## Context\nFull export at ~/Desktop/Gathering/Complete_LinkedInDataExport_03-01-2026.zip.zip (1MB, dated March 1). Currently only 57 posts harvested. Recommendations, connections, endorsements, career history, skills all unharvested. Same anti-pattern as photos — grabbed the obvious, missed the rich data.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -14910,7 +14910,7 @@
       "apiId": 1586,
       "title": "Harvest full Facebook data export — friends, profile, messages, posts, comments, places",
       "description": "## Acceptance Criteria\n1. Source: ~/Downloads/facebook-jeffbridwell169465-2026-03-03-34FwtHTO/ (March 3 export)\n2. Harvest ALL in one pass — canonical JSON first, reconcile, load:\n   - your_friends.json — full friend list, feeds People domain\n   - profile_information.json — bio, experience, contacts\n   - messages/inbox/ — conversation history (private, Self domain trust)\n   - your_posts__check_ins__photos_and_videos_1.json — posts with locations\n   - comments.json + likes_and_reactions (12 files) — engagement history\n   - places_you_have_been_tagged_in.json — location data\n   - your_experiences.json — life events\n3. Reconcile friends with existing People domain and LinkedIn Connections\n4. Reconcile posts with existing 2,030 Facebook SocialPosts in graph\n5. One extraction, one reconciliation, one load\n\n## Context\nFull export on disk (March 3 2026). Currently 2,030 Facebook posts harvested — friends, profile, messages, comments, places all unharvested. Same pattern as LinkedIn — grabbed posts, missed everything else. Friends + LinkedIn connections = Jeff's full social graph for People domain.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -15056,7 +15056,7 @@
       "apiId": 1595,
       "title": "Extract shared validateFromICD pattern — reusable validation before domain #2",
       "description": "## Acceptance Criteria\n1. validateFromICD() extracted from stories-pod.service.ts:22-39 into shared module (e.g. src/services/icd-validation.service.ts)\n2. StoriesPodService imports and uses shared function — no behavior change\n3. Function signature accepts field definitions (required/warning) so each domain can declare its own schema\n4. Existing 78 story tests pass unchanged\n5. Lint clean\n\n## Context\nKade flagged in #1509 feedback: inline validation will copy-paste-diverge across domains. Extract before wiring domain #2. DEC-094 harvest pause respected — gates only.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -15073,7 +15073,7 @@
       "apiId": 1596,
       "title": "Wire Photos ICD validation gate into write path — domain #2",
       "description": "## Acceptance Criteria\n1. Photos ICD field definitions declared (required: dateTaken, filePath, dimensions; warning: camera, location)\n2. validateFromICD() from #1512 wired into Photos write path\n3. Violations reject, warnings log — same pattern as Stories\n4. Existing photo TTL files pass validation\n5. /photos page unchanged — zero read-path impact\n6. Tests pass, lint clean\n\n## Context\nSecond domain wired after Stories (#1509). Depends on #1512 (shared pattern extraction). Photos chosen because most data + most prior pain. DEC-094 harvest pause respected — validation gates only, no new harvesting.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -15177,7 +15177,7 @@
       "apiId": 1602,
       "title": "Consolidate mapper — serve SEMANTIC_MAPPER.html as canonical /harvesting/mapper",
       "description": "## Acceptance Criteria\n1. /harvesting/mapper serves data/about/SEMANTIC_MAPPER.html directly (wrapped in app layout)\n2. harvest-mapper.ejs deleted — one canonical source, no drift\n3. /harvesting/icd redirect updated if needed\n4. Nav link unchanged — user sees same menu item, gets the real ICD\n5. Tests pass, lint clean\n\n## Context\nTwo mapper pages exist: SEMANTIC_MAPPER.html (source of truth, Wren maintains) and harvest-mapper.ejs (derivative visualization). They drift. Jeff likes the HTML file better — it has the full ICD structure. Serve the canonical source directly. No compensation layers, no duplication.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -15243,7 +15243,7 @@
       "apiId": 1606,
       "title": "Fix People page sourceNetwork badge — GROUP_CONCAT all sources per person",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -15921,7 +15921,7 @@
       "apiId": 1647,
       "title": "Test card with domain",
       "description": "## AC\n1. Test item",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -15937,7 +15937,7 @@
       "apiId": 1648,
       "title": "Quick SWAT fix",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "",
       "priority": "",
       "domains": [],
@@ -15950,7 +15950,7 @@
       "apiId": 1649,
       "title": "Test card explicit chunk",
       "description": "## AC\n1. Test item",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -15965,7 +15965,7 @@
       "apiId": 1650,
       "title": "Demo: domain auto-infers chunk",
       "description": "## AC\n1. Test",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -15981,7 +15981,7 @@
       "apiId": 1651,
       "title": "Demo: SWAT quick card",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "",
       "priority": "",
       "domains": [],
@@ -16222,7 +16222,7 @@
       "apiId": 1666,
       "title": "Evaluate local LLM for Claude Code — Ollama on Bedroom for lightweight coding tasks",
       "description": "XDA article: bash script runs Claude Code against local llama.cpp/Ollama instead of Anthropic API. Uses Qwen3 Coder for agentic coding workflows.\n\n## Why it matters\n- Ollama already runs on Bedroom for embeddings — same infra could host a coding model\n- Privacy: Self domain data stays entirely local\n- Cost: save API budget for Opus-level work, use local model for housekeeping (lint, simple edits, test runs)\n- Could enable a \"local-only\" tier for Gathering's concentric trust model (DEC: Chorus=cloud, Gathering=hybrid, Self=local)\n\n## AC\n1. Evaluate: run Qwen3 Coder (or similar) on Bedroom via Ollama for simple Claude Code tasks\n2. Test: can it run board-ts commands, lint fixes, simple file edits reliably?\n3. Compare: quality/speed vs Anthropic API for housekeeping tasks\n4. If viable: document setup, assess which tasks can route to local vs cloud\n5. Privacy assessment: which domains could benefit from local-only processing\n\n## Reference\nhttps://www.xda-developers.com/wrote-script-run-claude-code-local-llm-skipping-cloud/\n\n## Files\nscripts/lcc.sh (new), architect/docs/local-llm-assessment.md (new)",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P3",
       "domains": [
@@ -16351,7 +16351,7 @@
       "apiId": 1674,
       "title": "Nudge wake — background poller that wakes idle roles when nudged, not just drain-on-prompt",
       "description": "Nudge delivery currently requires the target role to have an active session AND submit a prompt to drain the inbox. If the role is idle, nudges pile up unread.\n\n## AC\n1. A background process polls each role's nudge inbox on a short interval (≤10s)\n2. When a nudge arrives for an idle role, the poller wakes that role's terminal session automatically\n3. Nudge delivery works whether the target role is active, idle, or has no session — no silent drops\n4. Zero config for the sender — `/nudge <role> <message>` just works, like `ls`\n5. No focus steal, no clipboard injection — wake mechanism respects Jeff's foreground context\n6. Works across all three roles without per-role setup\n\n## Files\n- messages/scripts/nudge.sh\n- messages/services/chorus-hooks/src/ (Rust shim nudge mode)\n- LaunchAgents (new poller agent if needed)",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -16433,7 +16433,7 @@
       "apiId": 1679,
       "title": "Disk usage audit — 87% on Library, 1TB in media",
       "description": "AC:\n1. Identify purgeable vs real disk usage (APFS-aware, not du)\n2. Assess Photos vs Pictures overlap — is 559GB across two dirs redundant with Bedroom?\n3. Check Parallels 29GB — still needed?\n4. Recommend what can move to Bedroom per DEC-089\n5. Get below 80% or document why not",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -16550,7 +16550,7 @@
       "apiId": 1686,
       "title": "Verify iCloud→canonical photo coverage — match 24,494 iCloud items to canonical before disabling sync",
       "description": "Gate for #1602 (disable Bedroom iCloud sync). Jeff wants all iCloud items accounted for in canonical before turning off sync.\n\n## AC\n1. Query Mac Apple Photos SQLite: get full item count and UUID list (24,592 items)\n2. Query canonical graph: get all Apple-sourced canonical photos (14,539 harvested)\n3. Diff: identify ~10K items in Mac library not yet in canonical\n4. Harvest missing items into source graph\n5. Re-run build-canonical-photos.py to update canonical layer\n6. Report: \"X/24,494 iCloud items are in canonical\" — target 100%\n7. Jeff accepts when count matches\n\n## Context\n- Mac library has 24,592 items, we harvested 14,539\n- ~10K gap may be videos, screenshots, or items the harvester filtered\n- Must complete before #1602 (disable Bedroom iCloud sync)\n\n## Files\nscripts/build-canonical-photos.py\nsrc/ontology/jb-ontology.ttl",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -16955,7 +16955,7 @@
       "apiId": 1710,
       "title": "Complete Takeout album import — 1,271 remaining Google Takeout albums into canonical photo graph",
       "description": "192 of 1,463 Takeout albums imported. 1,271 remain — structured metadata (album titles, dates, membership) sitting in sidecar JSON. Same parsing pattern as #1604.\n\nFiles: scripts/harvest-takeout-albums.sh, src/services/semantic-search.service.ts\n\n## AC\n- [ ] Parse remaining 1,271 Takeout album sidecar JSONs\n- [ ] Create album TTL files with photo membership links\n- [ ] SPARQL UPDATE to wire album titles into canonical photos\n- [ ] >60% of canonical photos have album membership after import\n- [ ] Embeddings rebuilt with album context",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -16973,7 +16973,7 @@
       "apiId": 1711,
       "title": "Generate thumbnails for all canonical photos — batch job on Bedroom Mac",
       "description": "Zero thumbnails generated. /photos page can't render at scale. Batch generate 400px JPGs on Bedroom Mac (M2 Pro, proximity to source files).\n\nBlocks: #1644 acceptance (canonical without thumbnails isn't done)\n\n## Files\n- engineer/scripts/generate-thumbnails.sh (new)\n- data/pods/jeff/photos/thumbnails/ (output)\n\n## AC\n- [ ] Batch script runs on Bedroom via SSH, reads Apple originals + Takeout full-res\n- [ ] Output to public/thumbnails/photos/{YYYY-MM}/{uuid}.jpg\n- [ ] Progress emission to stderr (DEC batch-progress)\n- [ ] All 79K canonical photos have a thumbnail or documented skip reason\n- [ ] /photos page loads thumbnails — no NO PREVIEW tiles for photos with source files on disk\n- [ ] canonical-index.json updated with thumbnail paths",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -16990,7 +16990,7 @@
       "apiId": 1712,
       "title": "Unified photo serve endpoint — GET /api/photos/serve/:id with source fallback chain",
       "description": "No unified serving endpoint. #1504 design approved but not built. Need Apple→Takeout→derivative→thumbnail fallback chain.\n\n## AC\n- [ ] GET /api/photos/serve/:canonicalId returns best available image\n- [ ] Fallback chain: Apple original → Google Takeout full-res (NFS) → derivative → thumbnail → 404\n- [ ] Response headers: X-Photo-Source, X-Photo-Resolution\n- [ ] HEIC served as-is or with Accept-based JPEG conversion\n- [ ] Album detail page uses unified endpoint",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -17043,7 +17043,7 @@
       "apiId": 1715,
       "title": "Fix unreliable photo dates — correct 1,033 photos using Google sidecar timestamps",
       "description": "1,033 Google Takeout photos flagged dateUnreliable=true. Google export timestamp used instead of original date. Sidecar JSON has correct dates.\n\n## AC\n- [ ] Parse sidecar JSON for correct original dates on flagged photos\n- [ ] Update canonical graph dateTaken for corrected photos\n- [ ] Remove dateUnreliable flag after correction\n- [ ] Verify no date collisions in reconciliation after update",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -17162,7 +17162,7 @@
       "apiId": 1722,
       "title": "Renamed by board set",
       "description": "Temporary test card.\n\n## AC\n- [ ] Test board set",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -17229,7 +17229,7 @@
       "apiId": 1726,
       "title": "Design era-scoped merge logic — define per-era primary/supplementary source rules for canonical photo rebuild",
       "description": "Jeff accepted the 4-era golden source model but doesn't trust the current canonical graph — it was built on Takeout-anchored assumptions. This card designs the merge rules before Kade rebuilds.\n\n## AC\n- [ ] Define merge rules per era: which source is primary, which are supplementary, how conflicts resolve\n- [ ] Document metadata ceiling per era — what fields are possible given source device capabilities\n- [ ] Define provenance tracing — every canonical record links back to source record + era authority\n- [ ] Wire era-scoped authority into ICD provider model (#1642)\n- [ ] Output: merge specification document that Kade can implement mechanically",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -17246,7 +17246,7 @@
       "apiId": 1727,
       "title": "Rebuild canonical photo graph — from-scratch rebuild using era-scoped golden source model",
       "description": "Rebuild canonical photo graph — from-scratch rebuild using era-scoped golden source model.\n\n## Current State (2026-03-25)\nCanonical index has 80,090 records but is corrupt:\n- 52,887 iPhone records: ~87% wrong dates (extraction timestamps, not EXIF), wrong UUID→thumbnail mappings\n- 27,203 Apple Photos records: ~80% correct dates, trustworthy baseline\n- mapSource and merge bugs fixed in handler code\n\n## Fix Plan\n1. Verify apple-photos source is trustworthy (spot-check 50 records)\n2. Diagnose iPhone date source — find where pipeline reads wrong dates\n3. Diagnose UUID→thumbnail mismatch — trace one record end to end\n4. Rebuild canonical with correct EXIF dates\n5. Regenerate thumbnails with stable UUIDs\n6. Verify: Jeff opens page, sees correct photos sorted by date\n\nFull plan: architect/briefs/2026-03-25-photos-canonical-corruption-plan.md\n\n## Files\n- data/pods/jeff/photos/canonical-index.json\n- engineer/scripts/photo-pipeline.py\n- src/handlers/photo.handler.ts\n\n## AC\n- [ ] Apple Photos records verified as trustworthy baseline (50 records, 90%+ date match)\n- [ ] iPhone extraction bug identified and fixed — dates come from EXIF, not backup timestamp\n- [ ] UUID→thumbnail mapping verified — 50 random records, thumbnail content matches canonical record\n- [ ] Photos page shows correct thumbnails sorted by date on pages 1, 5, 10, 20\n- [ ] Jeff says it looks right",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -17263,7 +17263,7 @@
       "apiId": 1728,
       "title": "Harvest Apple Photos + iPhone from authoritative sources — SQLite and direct export through ICD pipelines",
       "description": "Scope: Apple Photos + Google Takeout only. iPhone descoped — no governed extraction path (agreed with Wren).\n\nCurrent Fuseki has zero Apple source graphs. Takeout source graph loaded (102,488 records) but needs ICD validation. The rebuild needs authoritative data from governed pipelines.\n\nDepends on: #1642 (era-scoped ICD — done)\n\n## AC\n- [ ] Harvest Apple Photos from Mac SQLite library through ICD-governed pipeline\n- [ ] Load as source graph: urn:gathering:photos/source/apple\n- [ ] Validate Apple record count against known library size (24,592)\n- [ ] All ICD-required fields populated where source supports them\n- [ ] Validate existing Takeout source graph (urn:gathering:photos/source/takeout) against ICD fields\n- [ ] Source graph field coverage matches 3-way comparison HTML (dims, GPS percentages)",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -17313,7 +17313,7 @@
       "apiId": 1731,
       "title": "iPhone provider ICD — define source schema, field mappings, and interface for iPhone photo harvest",
       "description": "iPhone is golden source for 2020+ (47K+ records, 7.8 avg fields, 89% GPS) but has no provider ICD. Can't harvest authoritatively without one. Blocks #1645 (authoritative source harvest).\n\nUse the source JSON (architect/docs/source-iphone.json) as reference for field inventory. Map against jb:Photo consumer ICD.\n\nFiles: src/ontology/icd-instance-photos.ttl\n\n## AC\n- [ ] Define iPhone provider section in icd-instance-photos.ttl\n- [ ] Field inventory: filename, dateTaken, width, height, lat, lng, fileSize, mediaType (+ any iPhone-specific fields)\n- [ ] Source-to-canonical field mappings (direct, transform, computed)\n- [ ] Interface definition: how to extract (osxphotos CLI, SQLite, direct export?)\n- [ ] Non-functionals: access method, machine location, expected record count\n- [ ] Source Authority section populated (golden Modern era, supplementary iPhone primary camera era)",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -17378,7 +17378,7 @@
       "apiId": 1735,
       "title": "Establish iPhone photo extraction path — repeatable governed pipeline from Jeff's phone to source graph",
       "description": "iPhone is golden source for 2020+ but has no governed extraction path. source-iphone.json (54,479 records) exists with unknown provenance. Need a repeatable, documented method.\n\nDepends on: #1645 (Apple + Takeout loaded first)\nBlocks: #1643 (merge logic needs all 3 sources)\n\n## AC\n- [ ] Identify extraction tool (osxphotos CLI? direct SQLite? iCloud API? USB export?)\n- [ ] Document which machine runs it and access requirements\n- [ ] Run extraction, produce source JSON or TTL\n- [ ] Validate output matches ICD field inventory from #1648\n- [ ] Load to Fuseki as urn:jb:photos/source/iphone\n- [ ] Verify record count and field coverage against 3-way comparison (54,479 records, 89.3% GPS, 100% dimensions)\n- [ ] Document as repeatable — not a one-time snapshot",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -17395,7 +17395,7 @@
       "apiId": 1736,
       "title": "Enrich Takeout source graph — extract EXIF from image files for dimensions, fileSize, camera model",
       "description": "Jeff's direction: enrich each source to its fullest BEFORE merge. Separation of concerns — merge picks the best across already-rich sources, not partially-enriched ones.\n\nTakeout source graph has 0% dimensions and 0% fileSize because JSON sidecars don't include them. The actual image files on Bedroom (/Volumes/Gathering/Photos) have EXIF with these fields.\n\nDepends on: #1645 (Takeout source loaded — done)\nBlocks: #1643 (merge logic should work from enriched sources)\n\n## AC\n- [ ] Read EXIF from Takeout image files on Bedroom via SSH\n- [ ] Extract: dimensions (width/height), fileSize, camera model where available\n- [ ] Update Takeout source graph triples with extracted fields\n- [ ] Validate: Takeout width coverage goes from 0% to near-100% for files on disk\n- [ ] Validate: Takeout fileSize coverage goes from 0% to near-100% for files on disk\n- [ ] Records without matching image file on disk documented (these stay at 0%)",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -18137,7 +18137,7 @@
       "apiId": 1782,
       "title": "Thumbnail service — single endpoint, one lookup, no fallback chains",
       "description": "Replace the 4-strategy resolveThumbnail with a single service endpoint. Stop the regenerate-and-hope cycle.\n\n## AC\n- [ ] GET /api/photos/:uri/thumbnail returns image or 404 — no fallback chains\n- [ ] Backed by a UUID→path JSON map, rebuilt once when thumbnails are generated\n- [ ] 404s are logged — that log IS the real coverage metric\n- [ ] Existing resolveThumbnail strategies removed — one path, not four\n- [ ] Jeff sees thumbnails rendering on a photos page — browser verification, not database count",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -18186,7 +18186,7 @@
       "apiId": 1785,
       "title": "Repeatable photo pipeline — one command: extract → rebuild → thumbnails → verify",
       "description": "AC:\n- [ ] Single script runs the full pipeline: extract iPhone → load to Fuseki → canonical rebuild → generate thumbnails → rebuild index → verify page renders\n- [ ] Thumbnail generation is part of the pipeline, not a separate manual step\n- [ ] UUIDs are stable across rebuilds (same filename+date = same UUID = same thumbnail file)\n- [ ] Pipeline verifies source counts against ICD baseline: iPhone 54,543, Apple 24,560, Takeout 102,490\n- [ ] Pipeline verifies page 1 renders thumbnails before declaring success\n- [ ] No manual steps — running twice produces the same result without breaking anything\n\nBaseline source counts (ICD verified):\n- iPhone: 54,543 (backup 2026-03-24)\n- Apple Photos: 24,560\n- Google Takeout: 102,490",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -18203,7 +18203,7 @@
       "apiId": 1786,
       "title": "Wren holds the line — stop relaying role friction to Jeff, handle it",
       "description": "## Experience\nI report a bug and the role pushes back — \"it's not a bug\" or \"that's expected behavior.\" Then I'm stuck relaying between the role and the problem, burning attention on coordination instead of creative work. I expect Wren to handle that friction. When a role explains away my bug report, Wren should reject the explanation and re-nudge, not bring the debate to me. I only want to hear about a problem when it's fixed or when Wren is genuinely stuck.\n\nWhen a role pushes back on a bug report or rejects feedback, Wren defers to Jeff instead of handling it. Jeff becomes the relay and escalation point for every friction. This is the highest-cost failure mode in the system.\n\n## AC\n- [ ] When a role says 'it's not a bug' or explains away a problem Jeff reported, Wren rejects and re-nudges — does not relay the explanation to Jeff\n- [ ] Roles nudge each other for help before escalating to Jeff — Wren enforces this\n- [ ] 'I fixed it' always gets 'show me' — no trust without evidence, Wren verifies before telling Jeff\n- [ ] Jeff only hears about a problem when it's actually fixed or Wren is genuinely blocked\n- [ ] When Jeff walks away, coordination continues — roles don't stop working because Jeff stopped watching",
-      "status": "Later",
+      "status": "Ideas",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -18213,7 +18213,7 @@
       ],
       "done": false,
       "created": "2026-03-25T22:54:24Z",
-      "updated": "2026-04-05T19:33:24Z"
+      "updated": "2026-04-05T21:15:03Z"
     },
     {
       "index": 1704,
@@ -18910,7 +18910,7 @@
       "apiId": 1829,
       "title": "JDI hook enhancement — detect intent-without-action and auto-continue",
       "description": "## Experience\nI watch roles say 'I'll start on X now' and then nothing happens. They narrate what they're going to do instead of doing it. I've flagged this pattern multiple times — the announcement replaces the work. I want the system to catch it automatically so I don't have to be the one noticing every time a role goes idle after declaring intent.\n\n## AC\n1. Hook detects phrases that signal intent without execution ('I'll start on X now', 'Let me do X', 'Going to X next') in role output\n2. If the role's next action is NOT a tool call within 30 seconds of the intent statement, hook nudges the role: 'You said you'd do X — do it or retract'\n3. Works across all three roles — not just builders\n4. Does not fire on genuinely informational statements ('I'll brief Silas later' — that's a future commitment, not an immediate action)\n5. Configurable in settings — can be disabled per role if too aggressive\n\n## Why\nRoles announce intent ('I'll start on X now') and then either go idle, narrate more, or pivot without executing. The announcement replaces the work. DEC-025 says go is default. This hook enforces that — if you say you'll do it, the system expects you to do it. Directly addresses feedback_announce_is_not_execute and feedback_no_narrate_before_execute.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -19024,7 +19024,7 @@
       "apiId": 1836,
       "title": "Add Haiku classification layer to The Clearing — tone, intent, routing",
       "description": "## Experience\nWhen I'm in a Clearing session, the routing is dumb — it's regex matching on @mentions. So half the time messages go to the wrong role, or the tone chart on /jeff says 61% coordination when that's not what's actually happening. I want the system to understand what I'm saying — is this a question, a directive, a story — and route it to the right place without me tagging anyone. The tone data should actually mean something when I look at it.\n\n## AC\n1. Haiku classifies incoming messages: tone (directive, collaborative, question, corrective, narrative, etc.), intent (action request, status update, acknowledgment, routing)\n2. Classification drives message routing — replaces regex @mention parsing with intent-aware routing\n3. Feeds the tone analytics on /jeff page with richer signal than keyword waterfalls\n4. Latency budget: <500ms per message (Haiku is fast enough)\n5. Fallback to current regex if API unavailable — no hard dependency\n\n## Why\nThe Clearing currently uses regex for everything — routing, tailer filtering, message classification. The /jeff tone chart showed 61% coordination because keyword matching can't distinguish narrative from routing from acknowledgment. Haiku is $0.25/1M input tokens — cheap enough to classify every message. Richer classification improves the /jeff analytics, enables smarter routing, and powers the JDI intent detection (#1746).",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -19324,7 +19324,7 @@
       "apiId": 1854,
       "title": "Demo all NiFi photo pipelines — walkthrough of each flow with Jeff",
       "description": "## Experience\n\nI want to see all the NiFi photo pipelines running live. Apple Photos, iPhone, Takeout, the canonical merge — I want to watch data flow through each one. Show me what triggers them, how they connect, and what comes out the other end.\n\n## AC\n- [ ] Demo Apple Photos source ingest pipeline — show flow, processors, routing, output\n- [ ] Demo iPhone source ingest pipeline — show flow, dedup logic, SQLite extraction\n- [ ] Demo Takeout source ingest pipeline — show JSON sidecar date handling, flow\n- [ ] Demo canonical merge pipeline — show era-scoped authority, cross-source dedup, SHACL gate\n- [ ] Each pipeline: Jeff sees it running or sees the flow definition with sample data\n- [ ] Explain what triggers each pipeline and how they connect\n\n## Context\nJeff wants to see all NiFi photo pipelines live. Should be 3-4 flows: Apple Photos, iPhone, Takeout, and canonical merge. Cards #1705, #1710, #1711, #1712 shipped these.",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -19459,7 +19459,7 @@
       "apiId": 1862,
       "title": "Bidirectional Clearing — role narration syncs both ways between Claude sessions and the Clearing",
       "description": "## Experience\nI open the Clearing and see what all three roles are doing. I type in the Clearing and the right role responds. I never open a Claude terminal.\n\n## AC\n- [ ] All role text responses (not tool calls) in Claude sessions appear in the Clearing message stream in real time\n- [ ] All Clearing messages (Jeff input, role posts, scheduled reviews) appear in Claude session context\n- [ ] Jeff's Clearing input routes to the addressed role's Claude session as user input\n- [ ] @role mention targets a specific role; unaddressed input goes to Wren by default\n- [ ] Session tailer covers all three roles bidirectionally\n- [ ] No duplicate messages — dedup by content hash + timestamp\n- [ ] Jeff can operate entirely from the Clearing without opening Claude terminals",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -19545,7 +19545,7 @@
       "apiId": 1867,
       "title": "Seed pipeline synthetic monitoring — hourly live-path test, alert on failure",
       "description": "## Experience\nThe system detects seed pipeline failures before Jeff does. Jeff never sends a text into the void.\n\n## AC\n- [ ] Cron job sends synthetic SMS payload through full pipeline every hour (webhook → adapter → handler → brief file)\n- [ ] Verifies brief file appears within 60 seconds\n- [ ] Posts red alert to Bridge if brief does not arrive\n- [ ] Cleans up synthetic seeds after verification (no pollution in Jeff's inbox)\n- [ ] Covers all three seed types: plain URL, rich link (Apple Music), photo + hashtag",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -19662,13 +19662,14 @@
       "apiId": 1874,
       "title": "Designing stage gate hook — block Building without design artifact",
       "description": "## Experience\nA role tries to move a card to WIP without a service design artifact or experience statement. The system blocks them and says what's missing.\n\n## AC\n- [ ] PreToolUse hook checks for experience statement before card moves to WIP\n- [ ] Hook checks for service design artifact (or --quick exemption for housekeeping cards)\n- [ ] Blocked message tells the role exactly what's missing\n- [ ] After: #1781",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
         "chunk:ops",
         "domain:chorus",
-        "type:enhance"
+        "type:enhance",
+        "sequence:loom"
       ],
       "done": false,
       "created": "2026-03-28T11:34:22Z",
@@ -19679,7 +19680,7 @@
       "apiId": 1875,
       "title": "Design meeting skill — Wren-led collaborative design session with role input",
       "description": "## Experience\nJeff says /design-meeting and the team assembles around a whiteboard topic. Wren drives, roles contribute from their domain expertise via nudges, Jeff moderates and redirects. Artifacts get built in real time.\n\n## AC\n- [ ] Skill definition: /design-meeting <topic> [card-id]\n- [ ] Wren drives (produces artifact), Silas and Kade observe and respond to nudges\n- [ ] Structured input rounds — Wren nudges specific questions to each role\n- [ ] Artifacts produced inline (HTML, OWL, service design pages)\n- [ ] Decisions captured with DECISION: prefix\n- [ ] Session produces a design artifact, not just discussion\n- [ ] Pattern: Designing stance, not Building or Proving",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P2",
       "domains": [
@@ -19828,7 +19829,7 @@
       "apiId": 1884,
       "title": "Seed media persistence — SMS image and audio attachments must land on disk, not just metadata references",
       "description": "## AC\n- [ ] capture/media/ directory created and writable\n- [ ] SMS image attachments (jpg, png) saved to capture/media/ with seed ID filename\n- [ ] SMS audio attachments (amr, m4a) saved to capture/media/ with seed ID filename\n- [ ] Seed brief media paths resolve to actual files on disk\n- [ ] Regression: text and link seeds still route correctly",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -20009,7 +20010,7 @@
       "apiId": 1895,
       "title": "Prove-it gate hook — block 'cant be done' assertions without evidence",
       "description": "## Experience\n\nA role says \"that can't be done\" and the system says: prove it. Show the constraint, the error, the code path. I stop hearing \"impossible\" without evidence — every limitation comes with a receipt.\n\n## AC\n1. PreToolUse hook detects when a role asserts something is impossible or cant be done\n2. Hook blocks with message: prove it — show the constraint, the error, or the code path\n3. Assertion without evidence is not accepted — role must demonstrate the limitation\n4. Hook passes when evidence (error output, code reference, platform constraint) is provided\n5. Tests cover: block bare assertion, pass with evidence attached",
-      "status": "Later",
+      "status": "Ideas",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -20019,7 +20020,7 @@
       ],
       "done": false,
       "created": "2026-03-29T10:45:09Z",
-      "updated": "2026-04-05T19:15:56Z"
+      "updated": "2026-04-05T21:16:25Z"
     },
     {
       "index": 1813,
@@ -20058,7 +20059,7 @@
       "apiId": 1898,
       "title": "Root cause gate hook — require cross-role consultation with data before coding a fix",
       "description": "## Experience\n\nI see a role jump straight to coding a fix without talking to anyone. The system catches it and says: \"discuss root cause with another role first — bring data, not guesses.\" No more solo debugging spirals that waste hours chasing the wrong cause.\n\n## AC\n1. PreToolUse hook detects when a role begins editing code to fix a defect\n2. Hook checks session history for a /chat or brief exchange with at least one other role about the problem\n3. The exchange must include data — logs, error output, code references — not just description of symptoms\n4. If no cross-role consultation with data found, hook blocks with message: discuss root cause with another role first, bring data not guesses\n5. Tests cover: block solo fix attempt, block consultation without data, pass with data-backed cross-role discussion",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -20068,7 +20069,7 @@
       ],
       "done": false,
       "created": "2026-03-29T10:56:45Z",
-      "updated": "2026-04-05T19:15:56Z"
+      "updated": "2026-04-05T21:21:35Z"
     },
     {
       "index": 1816,
@@ -20141,18 +20142,19 @@
       "index": 1820,
       "apiId": 1903,
       "title": "Board state validation tests — card numbers, state cards, stream/domain accuracy",
-      "description": "## AC\n1. Tests verify card numbers returned by board-ts match Vikunja source\n2. Tests verify state cards (WIP per role) show correct current card for each role\n3. Tests verify stream and domain tags display correctly on card views\n4. Tests verify card move operations update state immediately — no stale cache\n5. Tests verify board-ts list output matches actual Vikunja state\n6. All tests run in CI",
-      "status": "Later",
+      "description": "## Experience\nI look at the board and the numbers shift between refreshes. I move a card to Won't Do and it stays visible. I ask for WIP count and get cards from Done. I can't trust what I see, so I can't plan. The board is how I manage — if it's wrong, I'm managing blind.\n\n## Files\n- platform/board-client/src/client.ts\n- platform/board-client/src/sdk.ts\n- platform/board-client/tests/\n\n## AC\n1. Tests verify card numbers returned by board-ts match Vikunja source\n2. Tests verify state cards (WIP per role) show correct current card for each role\n3. Tests verify stream and domain tags display correctly on card views\n4. Tests verify card move operations update state immediately — no stale cache\n5. Tests verify board-ts list output matches actual Vikunja state\n6. Tests verify view() shows correct bucket for all cards (not just first 50)\n7. Tests verify move reports success only when Vikunja confirms persistence\n8. All tests run in CI\n\n## What we learned (2026-04-05 session)\n- fetchBuckets() caps at 50 per bucket, no pagination\n- fetchAllTasks() had page<30 cap hiding 232 cards\n- list() and view() use different status paths — list was fixed, view wasn't\n- CLI reports 'Moved' without verifying API response\n- Test suite was creating production cards via cards add\n\nJeff directive: automate the WHOLE board page, not just state cards.",
+      "status": "WIP",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
         "chunk:app",
         "domain:chorus",
-        "type:chore"
+        "type:chore",
+        "sequence:framework"
       ],
       "done": false,
       "created": "2026-03-29T12:53:24Z",
-      "updated": "2026-04-05T19:15:56Z"
+      "updated": "2026-04-05T21:34:04Z"
     },
     {
       "index": 1821,
@@ -20569,7 +20571,7 @@
       "apiId": 1928,
       "title": "Recover 4.6M missing triples — individual file loads for concatenation gap",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -21107,7 +21109,7 @@
       "apiId": 1959,
       "title": "Bridge subscriber LaunchAgent — managed lifecycle instead of session-spawned",
       "description": "## Experience\nBridge subscribers die and nobody restarts them. They need managed lifecycle.\n\n## AC\n1. Each bridge-subscriber gets its own LaunchAgent plist\n2. KeepAlive ensures respawn on crash\n3. app-state.sh subscribers-reload command\n4. Logs to ~/Library/Logs/Chorus/\n\n## Files\n- chorus/platform/scripts/bridge-subscriber.js",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -21894,7 +21896,7 @@
       "apiId": 2003,
       "title": "[defect] gathering-app: Failed to sync resource",
       "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Failed to sync resource\nSample: Failed to sync resource\nFirst seen: 2026-03-31T17:27:47Z\nCount: 108\nHash: 0f0d85aa11597039",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -21910,7 +21912,7 @@
       "apiId": 2004,
       "title": "[defect] gathering-app: Graph load error",
       "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Graph load error\nSample: Graph load error\nFirst seen: 2026-03-31T17:27:47Z\nCount: 286\nHash: b9368479022f72ea",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -21975,7 +21977,7 @@
       "apiId": 2008,
       "title": "Auto-nudge on card completion — cards done triggers nudge to orchestrator",
       "description": "## Experience\nA role finishes a card and manually nudges Wren. Sometimes they forget. The pipeline stalls. Jeff sees silence and wonders what happened. The nudge-back should be automatic — when cards done runs, Wren gets notified. No manual step. The card move IS the notification.\n\n## AC\n- [ ] cards done auto-nudges Wren (or the card's orchestrating role) with completion summary\n- [ ] Nudge includes: card ID, title, AC status, builder\n- [ ] Works for both /acp (Jeff/Wren accepts) and builder-shipped flows\n- [ ] Spine event card.completed already fires — this adds the nudge delivery\n- [ ] No manual nudge needed from builder after shipping\n\n## Files\n- chorus/platform/board-client/src/cli.ts (done command)",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -22747,7 +22749,7 @@
       "apiId": 2051,
       "title": "BDD quick test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -22764,7 +22766,7 @@
       "apiId": 2052,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22781,7 +22783,7 @@
       "apiId": 2053,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22798,7 +22800,7 @@
       "apiId": 2054,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22815,7 +22817,7 @@
       "apiId": 2055,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22832,7 +22834,7 @@
       "apiId": 2056,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22849,7 +22851,7 @@
       "apiId": 2057,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22866,7 +22868,7 @@
       "apiId": 2058,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22883,7 +22885,7 @@
       "apiId": 2059,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22900,7 +22902,7 @@
       "apiId": 2060,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22917,7 +22919,7 @@
       "apiId": 2061,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22934,7 +22936,7 @@
       "apiId": 2062,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22951,7 +22953,7 @@
       "apiId": 2063,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22968,7 +22970,7 @@
       "apiId": 2064,
       "title": "BDD quick test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -22984,7 +22986,7 @@
       "apiId": 2065,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23001,7 +23003,7 @@
       "apiId": 2066,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23018,7 +23020,7 @@
       "apiId": 2067,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23035,7 +23037,7 @@
       "apiId": 2068,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23052,7 +23054,7 @@
       "apiId": 2069,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23069,7 +23071,7 @@
       "apiId": 2070,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23086,7 +23088,7 @@
       "apiId": 2071,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23105,7 +23107,7 @@
       "apiId": 2072,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23122,7 +23124,7 @@
       "apiId": 2073,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23261,7 +23263,7 @@
       "apiId": 2081,
       "title": "BDD test runs trigger e2e probes that nudge roles as Jeff — tests must be isolated from real terminals",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -23330,7 +23332,7 @@
       "apiId": 2085,
       "title": "Memory gate missing search-order enforcement — only gates Edit/Write, not Grep/Bash searches",
       "description": "## Experience\nI grep the filesystem without checking Chorus first. The memory gate doesn't block me because it only fires on Edit/Write (line 217 of memory_gate.rs). Grep and Bash searches pass through unchecked.\n\n## Acceptance Criteria\n- [ ] PreToolUse gate intercepts Grep and Bash search commands (grep, rg, find on session/card files)\n- [ ] Gate blocks if no prior chorus-query.sh call detected in the session\n- [ ] Gate allows if Chorus was already queried this session\n- [ ] Tests cover: grep without Chorus (blocked), grep after Chorus (allowed), non-search Bash (allowed)",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -23739,7 +23741,7 @@
       "apiId": 2108,
       "title": "Test card no seq",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23756,7 +23758,7 @@
       "apiId": 2109,
       "title": "Test card with seq",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23774,7 +23776,7 @@
       "apiId": 2110,
       "title": "CLI test card",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23791,7 +23793,7 @@
       "apiId": 2111,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23809,7 +23811,7 @@
       "apiId": 2112,
       "title": "CLI test card",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23826,7 +23828,7 @@
       "apiId": 2113,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -24443,7 +24445,7 @@
       "apiId": 2148,
       "title": "test-chunk-removal-1873",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24460,7 +24462,7 @@
       "apiId": 2149,
       "title": "test-chunk-auto-infer",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24478,7 +24480,7 @@
       "apiId": 2150,
       "title": "test-wip-no-chunk",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24511,7 +24513,7 @@
       "apiId": 2152,
       "title": "test quick card",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24528,7 +24530,7 @@
       "apiId": 2153,
       "title": "test well-formed",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24739,7 +24741,7 @@
       "apiId": 2165,
       "title": "BDD quick test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -24756,7 +24758,7 @@
       "apiId": 2166,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24774,7 +24776,7 @@
       "apiId": 2167,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24791,7 +24793,7 @@
       "apiId": 2168,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24808,7 +24810,7 @@
       "apiId": 2169,
       "title": "CLI test card",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -24825,7 +24827,7 @@
       "apiId": 2170,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -24952,7 +24954,7 @@
       "apiId": 2177,
       "title": "BDD quick test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -24968,7 +24970,7 @@
       "apiId": 2178,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24985,7 +24987,7 @@
       "apiId": 2179,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25002,7 +25004,7 @@
       "apiId": 2180,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25019,7 +25021,7 @@
       "apiId": 2181,
       "title": "CLI test card",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -25036,7 +25038,7 @@
       "apiId": 2182,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -25089,7 +25091,7 @@
       "apiId": 2185,
       "title": "Clean up test artifacts",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25105,7 +25107,7 @@
       "apiId": 2186,
       "title": "Fix broken test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25121,7 +25123,7 @@
       "apiId": 2187,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25137,7 +25139,7 @@
       "apiId": 2188,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25153,7 +25155,7 @@
       "apiId": 2189,
       "title": "Improve search speed",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25169,7 +25171,7 @@
       "apiId": 2190,
       "title": "Clean up test artifacts",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25185,7 +25187,7 @@
       "apiId": 2191,
       "title": "Fix broken test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25201,7 +25203,7 @@
       "apiId": 2192,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25217,7 +25219,7 @@
       "apiId": 2193,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25233,7 +25235,7 @@
       "apiId": 2194,
       "title": "Improve search speed",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25249,7 +25251,7 @@
       "apiId": 2195,
       "title": "Test origin flag",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25266,7 +25268,7 @@
       "apiId": 2196,
       "title": "Fix broken test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25283,7 +25285,7 @@
       "apiId": 2197,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25300,7 +25302,7 @@
       "apiId": 2198,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25317,7 +25319,7 @@
       "apiId": 2199,
       "title": "Improve search speed",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25334,7 +25336,7 @@
       "apiId": 2200,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25441,7 +25443,7 @@
       "apiId": 2206,
       "title": "Test origin flag",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25458,7 +25460,7 @@
       "apiId": 2207,
       "title": "BDD quick test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -25475,7 +25477,7 @@
       "apiId": 2208,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25493,7 +25495,7 @@
       "apiId": 2209,
       "title": "Fix broken test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25510,7 +25512,7 @@
       "apiId": 2210,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25528,7 +25530,7 @@
       "apiId": 2211,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25545,7 +25547,7 @@
       "apiId": 2212,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25562,7 +25564,7 @@
       "apiId": 2213,
       "title": "Improve search speed",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25579,7 +25581,7 @@
       "apiId": 2214,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25597,7 +25599,7 @@
       "apiId": 2215,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25614,7 +25616,7 @@
       "apiId": 2216,
       "title": "Test origin flag",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25631,7 +25633,7 @@
       "apiId": 2217,
       "title": "BDD quick test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -25648,7 +25650,7 @@
       "apiId": 2218,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25666,7 +25668,7 @@
       "apiId": 2219,
       "title": "Fix broken test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25683,7 +25685,7 @@
       "apiId": 2220,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25701,7 +25703,7 @@
       "apiId": 2221,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25718,7 +25720,7 @@
       "apiId": 2222,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25735,7 +25737,7 @@
       "apiId": 2223,
       "title": "Improve search speed",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25752,7 +25754,7 @@
       "apiId": 2224,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25769,7 +25771,7 @@
       "apiId": 2225,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25787,7 +25789,7 @@
       "apiId": 2226,
       "title": "BDD quick test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -25804,7 +25806,7 @@
       "apiId": 2227,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25822,7 +25824,7 @@
       "apiId": 2228,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25840,7 +25842,7 @@
       "apiId": 2229,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25858,7 +25860,7 @@
       "apiId": 2230,
       "title": "BDD quick test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -25875,7 +25877,7 @@
       "apiId": 2231,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25893,7 +25895,7 @@
       "apiId": 2232,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25911,7 +25913,7 @@
       "apiId": 2233,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25929,7 +25931,7 @@
       "apiId": 2234,
       "title": "Test origin flag",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25946,7 +25948,7 @@
       "apiId": 2235,
       "title": "Fix broken test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25963,7 +25965,7 @@
       "apiId": 2236,
       "title": "BDD test card",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25980,7 +25982,7 @@
       "apiId": 2237,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25997,7 +25999,7 @@
       "apiId": 2238,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26014,7 +26016,7 @@
       "apiId": 2239,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26032,7 +26034,7 @@
       "apiId": 2240,
       "title": "Improve search speed",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26049,7 +26051,7 @@
       "apiId": 2241,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26067,7 +26069,7 @@
       "apiId": 2242,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26084,7 +26086,7 @@
       "apiId": 2243,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26102,7 +26104,7 @@
       "apiId": 2244,
       "title": "BDD test card",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26119,7 +26121,7 @@
       "apiId": 2245,
       "title": "Test origin flag",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26136,7 +26138,7 @@
       "apiId": 2246,
       "title": "Fix broken test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26153,7 +26155,7 @@
       "apiId": 2247,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26171,7 +26173,7 @@
       "apiId": 2248,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -26188,7 +26190,7 @@
       "apiId": 2249,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26206,7 +26208,7 @@
       "apiId": 2250,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26223,7 +26225,7 @@
       "apiId": 2251,
       "title": "Improve search speed",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26240,7 +26242,7 @@
       "apiId": 2252,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26257,7 +26259,7 @@
       "apiId": 2253,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26293,7 +26295,7 @@
       "apiId": 2255,
       "title": "Test origin flag",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26309,7 +26311,7 @@
       "apiId": 2256,
       "title": "BDD test card",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26326,7 +26328,7 @@
       "apiId": 2257,
       "title": "Fix broken test",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26343,7 +26345,7 @@
       "apiId": 2258,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26361,7 +26363,7 @@
       "apiId": 2259,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27270,7 +27272,7 @@
       "apiId": 2312,
       "title": "Consolidate 5 search hooks into 1 — one Chorus search per prompt, shared state, delete redundant paths",
       "description": "## Experience\nWhen I hit enter, I expect Chorus to surface what the team already knows. Instead, roles ignore the injected context and fall back to git log. I had to demand Wren search Chorus. The system makes the wrong thing easy. One search, one path.\n\n## Files\n- platform/services/chorus-hooks/src/hooks/context_inject.rs\n- platform/services/chorus-hooks/src/hooks/search_hierarchy.rs\n- platform/services/chorus-hooks/src/state.rs\n\n## AC\n- [ ] context_inject stores search results in AppState after running on UserPromptSubmit\n- [ ] search_hierarchy reads from AppState instead of querying Chorus DB independently\n- [ ] memory_gate, memory_first, log_first_gate recognize when context_inject already ran (check AppState, not session JSONL)\n- [ ] All tests pass\n- [ ] No new hooks added\n\n## What we learned (after reading all 5 files)\n- Only 2 hooks actually search Chorus: context_inject and search_hierarchy\n- memory_gate, memory_first, log_first_gate are behavior gates — they check session JSONL for evidence, not Chorus\n- The real redundancy is 2 independent Chorus queries, not 5\n- The behavior gates have a separate problem: they scan JSONL for markers but don't know context_inject already provided results",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27279,9 +27281,9 @@
         "type:chore",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T19:57:01Z",
-      "updated": "2026-04-05T20:01:01Z"
+      "updated": "2026-04-05T21:07:28Z"
     },
     {
       "index": 2226,
@@ -27300,6 +27302,43 @@
       "done": false,
       "created": "2026-04-05T20:41:31Z",
       "updated": "2026-04-05T20:41:31Z"
+    },
+    {
+      "index": 2227,
+      "apiId": 2314,
+      "title": "Session indexer not indexing today's sessions — gemba shows 2-day-old data",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-05T21:22:55Z",
+      "updated": "2026-04-05T21:22:55Z"
+    },
+    {
+      "index": 2228,
+      "apiId": 2315,
+      "title": "Deep health checks — subprocess liveness, not wrapper alive. Alert on silent failures.",
+      "description": "## Experience\nI open the audit and every failure is the same: subprocess dead, wrapper alive, monitoring says healthy. Session indexer blind 2 days, hooks rebuilt but not restarted, alerts only on Clearing not terminals, zero-byte logs, SSH tunnel crash-looping. Jeff discovers every one.\n\n## Files\n- platform/services/chorus-hooks/src/hooks/ops_awareness.rs\n- platform/scripts/deep-health.sh (new)\n\n## AC\n- [ ] Health check verifies subprocess liveness for: session-watcher (fswatch PID), hooks (binary matches disk), alert-notifier (last alert delivered), loki-tunnel (SSH connection alive), log-sync (volume mounted)\n- [ ] Log freshness check: alert if any agent log is 0 bytes or >2h stale\n- [ ] Alerts inject to role terminal via nudge --force, not just Clearing\n- [ ] Runs on 5-minute cron\n- [ ] All 5 audit gaps covered",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "sequence:hardening",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-05T21:42:54Z",
+      "updated": "2026-04-05T21:43:00Z"
     }
   ]
 }
