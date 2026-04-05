@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T18:59:07.667Z",
+  "timestamp": "2026-04-05T19:19:22.525Z",
   "tasks": [
     {
       "index": 3,
@@ -17668,7 +17668,7 @@
       "apiId": 1753,
       "title": "demo-provenance hook — auto-generate demo brief to Wren after demo completes",
       "description": "Rust subcommand in chorus-hooks. PostToolUse hook after /demo skill completes.\n\n## Logic\n1. Capture: card ID, title, builder role, AC checklist, smoke result, timestamp\n2. Write structured brief to product-manager/briefs/YYYY-MM-DD-demo-{card}.md\n3. Emit spine event: card.demo.completed\n\nBuilder cannot skip the paper trail — the hook generates it automatically.\n\n## Files\n- messages/services/chorus-hooks/src/lib.rs\n- messages/services/chorus-hooks/src/demo_provenance.rs\n\n## AC\n- [ ] Brief auto-generated in Wren's inbox after every /demo\n- [ ] Brief contains: card ID, builder, smoke result, AC status, timestamp\n- [ ] spine event emitted\n- [ ] Builder doesn't need to manually write the brief",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -17676,9 +17676,9 @@
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-24T12:08:33Z",
-      "updated": "2026-03-24T18:18:12Z"
+      "updated": "2026-04-05T19:15:42Z"
     },
     {
       "index": 1671,
@@ -18072,7 +18072,7 @@
       "apiId": 1778,
       "title": "Fix nudge injection — broken again after hooks deploys",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -18080,9 +18080,9 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-25T18:51:36Z",
-      "updated": "2026-03-25T23:24:50Z"
+      "updated": "2026-04-05T19:15:42Z"
     },
     {
       "index": 1696,
@@ -19373,7 +19373,7 @@
       "apiId": 1857,
       "title": "Remove 5 duplicate LaunchAgents — double-firing context-cache, cruft-scan, perf-baseline",
       "description": "## Experience\n\nI run launchctl list and see the same job registered twice — once as com.gathering and once as com.chorus. Context-cache, cruft-scan, perf-baseline all fire double. I expect each job to run once on schedule, not twice because of leftover duplicate plists.\n\n## AC\n- [ ] Unload and remove com.gathering.context-cache-{5min,daily,hourly}.plist\n- [ ] Unload and remove com.gathering.cruft-scan.plist\n- [ ] Unload and remove com.gathering.perf-baseline.plist\n- [ ] Verify com.chorus.* versions still run on schedule\n- [ ] No double-firing in launchctl list after reboot\n\n## Context\nFound in #1773 audit (F1). Five LaunchAgents exist in both com.chorus.* and com.gathering.* with identical configs, causing every scheduled job to fire twice.",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -19381,9 +19381,9 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-27T22:53:14Z",
-      "updated": "2026-03-30T13:03:50Z"
+      "updated": "2026-04-05T19:15:43Z"
     },
     {
       "index": 1775,
@@ -19442,7 +19442,7 @@
       "apiId": 1861,
       "title": "Document LaunchAgent namespace convention — com.chorus vs com.gathering",
       "description": "## Experience\n\nI look at the 51 LaunchAgents and I can't tell which ones belong to Chorus and which belong to Gathering. The naming should make ownership obvious — com.chorus for team coordination, com.gathering for app infrastructure. I open the doc and know instantly.\n\n## AC\n- [ ] Write naming convention doc: com.chorus.* = team coordination, com.gathering.* = app infrastructure\n- [ ] Audit all 51 LaunchAgents against convention\n- [ ] List any misplaced agents (e.g., com.gathering.messaging should be com.chorus.*)\n- [ ] Add to infrastructure-constraints.md\n\n## Context\nFound in #1773 audit (F9). 51 LaunchAgents split across two namespaces with no documented boundary.",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P3",
       "domains": [
@@ -19450,9 +19450,9 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-27T22:53:29Z",
-      "updated": "2026-03-30T13:03:33Z"
+      "updated": "2026-04-05T19:15:44Z"
     },
     {
       "index": 1779,
@@ -19476,7 +19476,7 @@
       "apiId": 1863,
       "title": "Product taxonomy sketch — Jeff's hand-drawn architecture mapping Phase/Werk/Loom to domain structure",
       "description": "## Experience\n\nI drew this on graph paper — Phase, Werk, Loom mapped to the domain structure. I need to see it digitized and reconciled with what's already in PRODUCT_TAXONOMY.md. If the drawing and the docs disagree, I want to know where and decide which is right.\n\n## AC\n- [ ] Digitize Jeff's graph-paper sketch into structured product taxonomy\n- [ ] Reconcile with existing PRODUCT_TAXONOMY.md and team-architecture.md\n- [ ] Clarify new framing: Convergence = Practice, Corporation = Phase = Stance\n- [ ] Map the three bottom tiers (Knowledge/Practices/Services) to current system components\n- [ ] Present reconciled taxonomy to Jeff for validation",
-      "status": "Later",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P2",
       "domains": [
@@ -19484,9 +19484,9 @@
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-28T10:42:40Z",
-      "updated": "2026-03-31T17:20:56Z"
+      "updated": "2026-04-05T19:15:44Z"
     },
     {
       "index": 1781,
@@ -19528,7 +19528,7 @@
       "apiId": 1866,
       "title": "Model-driven Chorus — revise value stream and domain taxonomy from Jeff's drawing, design service design page",
       "description": "## Experience\nI open a service design page on Gathering and see my value streams, domains, and services laid out the way I drew them. I can model a new service like convergence — define its language, data, non-functionals, integration contracts — before anyone writes code.\n\n## AC\n- [ ] Revise PRODUCT_TAXONOMY.md incorporating Jeff's hand-drawn taxonomy (Phase as spine, Gathering left, Werk/Loom right, Knowledge/Practices/Services tiers)\n- [ ] Reconcile Corporation = Phase = Stance and Convergence = Practice framing\n- [ ] Map current services to the three bottom tiers: Knowledge (Harvest), Practices (TDD, Demo, Chat), Services\n- [ ] Design service design page wireframe — form-driven, models a service through define → map → build\n- [ ] Service design page shows: language choice, data model, non-functionals, integration contracts, experience statement\n- [ ] Use convergence as the reference service to validate the page design\n- [ ] Produce HTML artifact for Jeff to review",
-      "status": "Later",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -19536,9 +19536,9 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-28T11:12:59Z",
-      "updated": "2026-03-31T17:22:31Z"
+      "updated": "2026-04-05T19:15:45Z"
     },
     {
       "index": 1784,
@@ -19645,7 +19645,7 @@
       "apiId": 1873,
       "title": "Experience tag in card schema — first-class field on every card",
       "description": "## Experience\nEvery card has an experience statement visible when pulled, demoed, and accepted. It's the test that matters.\n\n## AC\n- [ ] experience field added to board-ts schema (board-ts set <id> experience='...')\n- [ ] experience displayed in board-ts view output\n- [ ] experience required on card creation (or --quick exemption)\n- [ ] After: #1781",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -19653,9 +19653,9 @@
         "domain:chorus",
         "type:enhance"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-28T11:34:22Z",
-      "updated": "2026-03-30T01:08:01Z"
+      "updated": "2026-04-05T19:15:46Z"
     },
     {
       "index": 1791,
@@ -20019,7 +20019,7 @@
       ],
       "done": false,
       "created": "2026-03-29T10:45:09Z",
-      "updated": "2026-03-30T13:03:23Z"
+      "updated": "2026-04-05T19:15:56Z"
     },
     {
       "index": 1813,
@@ -20068,7 +20068,7 @@
       ],
       "done": false,
       "created": "2026-03-29T10:56:45Z",
-      "updated": "2026-03-30T13:03:19Z"
+      "updated": "2026-04-05T19:15:56Z"
     },
     {
       "index": 1816,
@@ -20152,7 +20152,7 @@
       ],
       "done": false,
       "created": "2026-03-29T12:53:24Z",
-      "updated": "2026-03-29T12:54:54Z"
+      "updated": "2026-04-05T19:15:56Z"
     },
     {
       "index": 1821,
@@ -20755,7 +20755,7 @@
       ],
       "done": false,
       "created": "2026-03-30T13:57:50Z",
-      "updated": "2026-03-31T14:28:37Z"
+      "updated": "2026-04-05T19:15:57Z"
     },
     {
       "index": 1856,
@@ -21117,7 +21117,7 @@
       ],
       "done": false,
       "created": "2026-03-30T20:32:07Z",
-      "updated": "2026-03-30T20:32:19Z"
+      "updated": "2026-04-05T19:15:57Z"
     },
     {
       "index": 1877,
@@ -21768,7 +21768,7 @@
       "apiId": 1996,
       "title": "Test type flag",
       "description": "## AC\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -21776,9 +21776,9 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-31T13:57:41Z",
-      "updated": "2026-03-31T13:58:01Z"
+      "updated": "2026-04-05T19:15:46Z"
     },
     {
       "index": 1914,
@@ -22747,7 +22747,7 @@
       "apiId": 2051,
       "title": "BDD quick test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -22755,7 +22755,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:53:33Z",
       "updated": "2026-04-05T18:38:47Z"
     },
@@ -22764,7 +22764,7 @@
       "apiId": 2052,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22772,7 +22772,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:53:33Z",
       "updated": "2026-04-05T18:38:47Z"
     },
@@ -22781,7 +22781,7 @@
       "apiId": 2053,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22789,7 +22789,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:53:34Z",
       "updated": "2026-04-05T18:38:47Z"
     },
@@ -22798,7 +22798,7 @@
       "apiId": 2054,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22806,7 +22806,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:53:34Z",
       "updated": "2026-04-05T18:38:47Z"
     },
@@ -22815,7 +22815,7 @@
       "apiId": 2055,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22823,7 +22823,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:54:57Z",
       "updated": "2026-04-05T18:38:48Z"
     },
@@ -22832,7 +22832,7 @@
       "apiId": 2056,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22840,7 +22840,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:54:57Z",
       "updated": "2026-04-05T18:38:48Z"
     },
@@ -22849,7 +22849,7 @@
       "apiId": 2057,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22857,7 +22857,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:54:58Z",
       "updated": "2026-04-05T18:38:48Z"
     },
@@ -22866,7 +22866,7 @@
       "apiId": 2058,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22874,7 +22874,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:05Z",
       "updated": "2026-04-05T18:38:49Z"
     },
@@ -22883,7 +22883,7 @@
       "apiId": 2059,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22891,7 +22891,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:06Z",
       "updated": "2026-04-05T18:38:49Z"
     },
@@ -22900,7 +22900,7 @@
       "apiId": 2060,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22908,7 +22908,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:06Z",
       "updated": "2026-04-05T18:38:49Z"
     },
@@ -22917,7 +22917,7 @@
       "apiId": 2061,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22925,7 +22925,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:16Z",
       "updated": "2026-04-05T18:38:49Z"
     },
@@ -22934,7 +22934,7 @@
       "apiId": 2062,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22942,7 +22942,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:17Z",
       "updated": "2026-04-05T18:38:50Z"
     },
@@ -22951,7 +22951,7 @@
       "apiId": 2063,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22959,7 +22959,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:17Z",
       "updated": "2026-04-05T18:38:50Z"
     },
@@ -22968,14 +22968,14 @@
       "apiId": 2064,
       "title": "BDD quick test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "",
       "priority": "P2",
       "domains": [
         "chunk:ops",
         "domain:chorus"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:31Z",
       "updated": "2026-04-05T18:38:50Z"
     },
@@ -22984,7 +22984,7 @@
       "apiId": 2065,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22992,7 +22992,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:31Z",
       "updated": "2026-04-05T18:38:50Z"
     },
@@ -23001,7 +23001,7 @@
       "apiId": 2066,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23009,7 +23009,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:32Z",
       "updated": "2026-04-05T18:38:51Z"
     },
@@ -23018,7 +23018,7 @@
       "apiId": 2067,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23026,7 +23026,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:55:32Z",
       "updated": "2026-04-05T18:38:51Z"
     },
@@ -23035,7 +23035,7 @@
       "apiId": 2068,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23043,7 +23043,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:56:40Z",
       "updated": "2026-04-05T18:38:51Z"
     },
@@ -23052,7 +23052,7 @@
       "apiId": 2069,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23060,7 +23060,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:56:40Z",
       "updated": "2026-04-05T18:38:51Z"
     },
@@ -23069,7 +23069,7 @@
       "apiId": 2070,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23077,7 +23077,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:56:40Z",
       "updated": "2026-04-05T18:38:52Z"
     },
@@ -23086,7 +23086,7 @@
       "apiId": 2071,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23096,7 +23096,7 @@
         "sequence:framework",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T12:02:21Z",
       "updated": "2026-04-05T18:38:52Z"
     },
@@ -23105,7 +23105,7 @@
       "apiId": 2072,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23113,7 +23113,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T12:02:21Z",
       "updated": "2026-04-05T18:38:52Z"
     },
@@ -23122,7 +23122,7 @@
       "apiId": 2073,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -23130,7 +23130,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T12:02:22Z",
       "updated": "2026-04-05T18:38:53Z"
     },
@@ -23261,7 +23261,7 @@
       "apiId": 2081,
       "title": "BDD test runs trigger e2e probes that nudge roles as Jeff — tests must be isolated from real terminals",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -23269,7 +23269,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-03T13:31:38Z",
       "updated": "2026-04-03T16:06:17Z"
     },
@@ -23340,7 +23340,7 @@
       ],
       "done": false,
       "created": "2026-04-03T17:42:24Z",
-      "updated": "2026-04-04T12:21:12Z"
+      "updated": "2026-04-05T19:15:57Z"
     },
     {
       "index": 2003,
@@ -23739,7 +23739,7 @@
       "apiId": 2108,
       "title": "Test card no seq",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23747,7 +23747,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-04T14:17:34Z",
       "updated": "2026-04-05T18:38:53Z"
     },
@@ -23756,7 +23756,7 @@
       "apiId": 2109,
       "title": "Test card with seq",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23765,7 +23765,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-04T14:17:38Z",
       "updated": "2026-04-05T18:38:53Z"
     },
@@ -23774,7 +23774,7 @@
       "apiId": 2110,
       "title": "CLI test card",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23782,7 +23782,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-04T14:19:31Z",
       "updated": "2026-04-05T18:38:53Z"
     },
@@ -23791,7 +23791,7 @@
       "apiId": 2111,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23800,7 +23800,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-04T14:19:31Z",
       "updated": "2026-04-05T18:38:54Z"
     },
@@ -23809,7 +23809,7 @@
       "apiId": 2112,
       "title": "CLI test card",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23817,7 +23817,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-04T14:19:51Z",
       "updated": "2026-04-05T18:38:54Z"
     },
@@ -23826,7 +23826,7 @@
       "apiId": 2113,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -23835,7 +23835,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-04T14:19:51Z",
       "updated": "2026-04-05T18:38:54Z"
     },
@@ -24495,16 +24495,16 @@
       "apiId": 2151,
       "title": "fix broken nudge",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T11:43:22Z",
-      "updated": "2026-04-05T11:43:22Z"
+      "updated": "2026-04-05T19:15:47Z"
     },
     {
       "index": 2069,
@@ -24739,7 +24739,7 @@
       "apiId": 2165,
       "title": "BDD quick test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -24747,7 +24747,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T14:13:01Z",
       "updated": "2026-04-05T18:38:57Z"
     },
@@ -24756,7 +24756,7 @@
       "apiId": 2166,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24765,7 +24765,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T14:13:02Z",
       "updated": "2026-04-05T18:38:57Z"
     },
@@ -24774,7 +24774,7 @@
       "apiId": 2167,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24782,7 +24782,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T14:13:02Z",
       "updated": "2026-04-05T18:38:57Z"
     },
@@ -24791,7 +24791,7 @@
       "apiId": 2168,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24799,7 +24799,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T14:13:03Z",
       "updated": "2026-04-05T18:38:58Z"
     },
@@ -24808,7 +24808,7 @@
       "apiId": 2169,
       "title": "CLI test card",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -24816,7 +24816,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T14:13:06Z",
       "updated": "2026-04-05T18:38:58Z"
     },
@@ -24825,7 +24825,7 @@
       "apiId": 2170,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -24835,7 +24835,7 @@
         "type:chore",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T14:13:06Z",
       "updated": "2026-04-05T18:38:59Z"
     },
@@ -24952,14 +24952,14 @@
       "apiId": 2177,
       "title": "BDD quick test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:14:15Z",
       "updated": "2026-04-05T18:39:00Z"
     },
@@ -24968,7 +24968,7 @@
       "apiId": 2178,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24976,7 +24976,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:14:15Z",
       "updated": "2026-04-05T18:39:00Z"
     },
@@ -24985,7 +24985,7 @@
       "apiId": 2179,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -24993,7 +24993,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:14:16Z",
       "updated": "2026-04-05T18:39:00Z"
     },
@@ -25002,7 +25002,7 @@
       "apiId": 2180,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25010,7 +25010,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:14:17Z",
       "updated": "2026-04-05T18:39:00Z"
     },
@@ -25019,7 +25019,7 @@
       "apiId": 2181,
       "title": "CLI test card",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -25027,7 +25027,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:14:19Z",
       "updated": "2026-04-05T18:39:01Z"
     },
@@ -25036,7 +25036,7 @@
       "apiId": 2182,
       "title": "CLI test card seq",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -25045,7 +25045,7 @@
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:14:20Z",
       "updated": "2026-04-05T18:39:01Z"
     },
@@ -25089,14 +25089,14 @@
       "apiId": 2185,
       "title": "Clean up test artifacts",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:53:41Z",
       "updated": "2026-04-05T18:39:01Z"
     },
@@ -25105,14 +25105,14 @@
       "apiId": 2186,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:53:41Z",
       "updated": "2026-04-05T18:39:02Z"
     },
@@ -25121,14 +25121,14 @@
       "apiId": 2187,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
         "domain:chorus",
         "type:swat"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:53:41Z",
       "updated": "2026-04-05T18:39:02Z"
     },
@@ -25137,14 +25137,14 @@
       "apiId": 2188,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:53:41Z",
       "updated": "2026-04-05T18:39:02Z"
     },
@@ -25153,14 +25153,14 @@
       "apiId": 2189,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:enhance"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:53:41Z",
       "updated": "2026-04-05T18:39:02Z"
     },
@@ -25169,14 +25169,14 @@
       "apiId": 2190,
       "title": "Clean up test artifacts",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:chore"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:54:24Z",
       "updated": "2026-04-05T18:39:03Z"
     },
@@ -25185,14 +25185,14 @@
       "apiId": 2191,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:54:24Z",
       "updated": "2026-04-05T18:39:03Z"
     },
@@ -25201,14 +25201,14 @@
       "apiId": 2192,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
         "domain:chorus",
         "type:swat"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:54:25Z",
       "updated": "2026-04-05T18:39:03Z"
     },
@@ -25217,14 +25217,14 @@
       "apiId": 2193,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:54:25Z",
       "updated": "2026-04-05T18:39:03Z"
     },
@@ -25233,14 +25233,14 @@
       "apiId": 2194,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:enhance"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:54:25Z",
       "updated": "2026-04-05T18:39:04Z"
     },
@@ -25249,7 +25249,7 @@
       "apiId": 2195,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25257,7 +25257,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:55:05Z",
       "updated": "2026-04-05T18:39:04Z"
     },
@@ -25266,7 +25266,7 @@
       "apiId": 2196,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25274,7 +25274,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:55:05Z",
       "updated": "2026-04-05T18:39:04Z"
     },
@@ -25283,7 +25283,7 @@
       "apiId": 2197,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25291,7 +25291,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:55:05Z",
       "updated": "2026-04-05T18:39:04Z"
     },
@@ -25300,7 +25300,7 @@
       "apiId": 2198,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25308,7 +25308,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:55:05Z",
       "updated": "2026-04-05T18:39:05Z"
     },
@@ -25317,7 +25317,7 @@
       "apiId": 2199,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25325,7 +25325,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:55:05Z",
       "updated": "2026-04-05T18:39:09Z"
     },
@@ -25334,7 +25334,7 @@
       "apiId": 2200,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25342,7 +25342,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:55:05Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -25441,7 +25441,7 @@
       "apiId": 2206,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25449,7 +25449,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:05Z",
       "updated": "2026-04-05T18:39:11Z"
     },
@@ -25458,7 +25458,7 @@
       "apiId": 2207,
       "title": "BDD quick test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -25466,7 +25466,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:05Z",
       "updated": "2026-04-05T18:39:11Z"
     },
@@ -25475,7 +25475,7 @@
       "apiId": 2208,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25484,7 +25484,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:05Z",
       "updated": "2026-04-05T18:39:12Z"
     },
@@ -25493,7 +25493,7 @@
       "apiId": 2209,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25501,7 +25501,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:05Z",
       "updated": "2026-04-05T18:39:12Z"
     },
@@ -25510,7 +25510,7 @@
       "apiId": 2210,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25519,7 +25519,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:06Z",
       "updated": "2026-04-05T18:39:12Z"
     },
@@ -25528,7 +25528,7 @@
       "apiId": 2211,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25536,7 +25536,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:06Z",
       "updated": "2026-04-05T18:39:13Z"
     },
@@ -25545,7 +25545,7 @@
       "apiId": 2212,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25553,7 +25553,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:06Z",
       "updated": "2026-04-05T18:39:13Z"
     },
@@ -25562,7 +25562,7 @@
       "apiId": 2213,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25570,7 +25570,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:07Z",
       "updated": "2026-04-05T18:39:13Z"
     },
@@ -25579,7 +25579,7 @@
       "apiId": 2214,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25588,7 +25588,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:07Z",
       "updated": "2026-04-05T18:39:14Z"
     },
@@ -25597,7 +25597,7 @@
       "apiId": 2215,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25605,7 +25605,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:58:07Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -25614,7 +25614,7 @@
       "apiId": 2216,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25622,7 +25622,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:13Z",
       "updated": "2026-04-05T18:39:14Z"
     },
@@ -25631,7 +25631,7 @@
       "apiId": 2217,
       "title": "BDD quick test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -25639,7 +25639,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:13Z",
       "updated": "2026-04-05T18:39:14Z"
     },
@@ -25648,7 +25648,7 @@
       "apiId": 2218,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25657,7 +25657,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:14Z",
       "updated": "2026-04-05T18:39:14Z"
     },
@@ -25666,7 +25666,7 @@
       "apiId": 2219,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25674,7 +25674,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:14Z",
       "updated": "2026-04-05T18:39:15Z"
     },
@@ -25683,7 +25683,7 @@
       "apiId": 2220,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25692,7 +25692,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:14Z",
       "updated": "2026-04-05T18:39:15Z"
     },
@@ -25701,7 +25701,7 @@
       "apiId": 2221,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25709,7 +25709,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:14Z",
       "updated": "2026-04-05T18:39:15Z"
     },
@@ -25718,7 +25718,7 @@
       "apiId": 2222,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25726,7 +25726,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:14Z",
       "updated": "2026-04-05T18:39:16Z"
     },
@@ -25735,7 +25735,7 @@
       "apiId": 2223,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25743,7 +25743,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:15Z",
       "updated": "2026-04-05T18:39:16Z"
     },
@@ -25752,7 +25752,7 @@
       "apiId": 2224,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25760,7 +25760,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:15Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -25769,7 +25769,7 @@
       "apiId": 2225,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25778,7 +25778,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:15Z",
       "updated": "2026-04-05T18:39:16Z"
     },
@@ -25787,7 +25787,7 @@
       "apiId": 2226,
       "title": "BDD quick test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -25795,7 +25795,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:49Z",
       "updated": "2026-04-05T18:39:16Z"
     },
@@ -25804,7 +25804,7 @@
       "apiId": 2227,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25813,7 +25813,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:50Z",
       "updated": "2026-04-05T18:39:17Z"
     },
@@ -25822,7 +25822,7 @@
       "apiId": 2228,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25831,7 +25831,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:50Z",
       "updated": "2026-04-05T18:39:17Z"
     },
@@ -25840,7 +25840,7 @@
       "apiId": 2229,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25849,7 +25849,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T17:59:50Z",
       "updated": "2026-04-05T18:39:17Z"
     },
@@ -25858,7 +25858,7 @@
       "apiId": 2230,
       "title": "BDD quick test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "",
       "priority": "P2",
       "domains": [
@@ -25866,7 +25866,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:04:38Z",
       "updated": "2026-04-05T18:39:17Z"
     },
@@ -25875,7 +25875,7 @@
       "apiId": 2231,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25884,7 +25884,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:04:38Z",
       "updated": "2026-04-05T18:39:18Z"
     },
@@ -25893,7 +25893,7 @@
       "apiId": 2232,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25902,7 +25902,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:04:39Z",
       "updated": "2026-04-05T18:39:18Z"
     },
@@ -25911,7 +25911,7 @@
       "apiId": 2233,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25920,7 +25920,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:04:39Z",
       "updated": "2026-04-05T18:39:18Z"
     },
@@ -25929,7 +25929,7 @@
       "apiId": 2234,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25937,7 +25937,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:47Z",
       "updated": "2026-04-05T18:39:18Z"
     },
@@ -25946,7 +25946,7 @@
       "apiId": 2235,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25954,7 +25954,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:48Z",
       "updated": "2026-04-05T18:39:19Z"
     },
@@ -25963,7 +25963,7 @@
       "apiId": 2236,
       "title": "BDD test card",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -25971,7 +25971,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:48Z",
       "updated": "2026-04-05T18:39:19Z"
     },
@@ -25980,7 +25980,7 @@
       "apiId": 2237,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -25988,7 +25988,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:48Z",
       "updated": "2026-04-05T18:39:19Z"
     },
@@ -25997,7 +25997,7 @@
       "apiId": 2238,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26005,7 +26005,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:48Z",
       "updated": "2026-04-05T18:39:23Z"
     },
@@ -26014,7 +26014,7 @@
       "apiId": 2239,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26023,7 +26023,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:48Z",
       "updated": "2026-04-05T18:39:24Z"
     },
@@ -26032,7 +26032,7 @@
       "apiId": 2240,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26040,7 +26040,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:49Z",
       "updated": "2026-04-05T18:39:25Z"
     },
@@ -26049,7 +26049,7 @@
       "apiId": 2241,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26058,7 +26058,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:49Z",
       "updated": "2026-04-05T18:39:25Z"
     },
@@ -26067,7 +26067,7 @@
       "apiId": 2242,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26075,7 +26075,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:49Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -26084,7 +26084,7 @@
       "apiId": 2243,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26093,7 +26093,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:05:50Z",
       "updated": "2026-04-05T18:39:25Z"
     },
@@ -26102,7 +26102,7 @@
       "apiId": 2244,
       "title": "BDD test card",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26110,7 +26110,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:00Z",
       "updated": "2026-04-05T18:39:26Z"
     },
@@ -26119,7 +26119,7 @@
       "apiId": 2245,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26127,7 +26127,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:00Z",
       "updated": "2026-04-05T18:39:26Z"
     },
@@ -26136,7 +26136,7 @@
       "apiId": 2246,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26144,7 +26144,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:00Z",
       "updated": "2026-04-05T18:39:26Z"
     },
@@ -26153,7 +26153,7 @@
       "apiId": 2247,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26162,7 +26162,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:00Z",
       "updated": "2026-04-05T18:39:27Z"
     },
@@ -26171,7 +26171,7 @@
       "apiId": 2248,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -26179,7 +26179,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:00Z",
       "updated": "2026-04-05T18:39:27Z"
     },
@@ -26188,7 +26188,7 @@
       "apiId": 2249,
       "title": "BDD now-gate test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26197,7 +26197,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:01Z",
       "updated": "2026-04-05T18:39:27Z"
     },
@@ -26206,7 +26206,7 @@
       "apiId": 2250,
       "title": "Build new dashboard",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26214,7 +26214,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:01Z",
       "updated": "2026-04-05T18:39:28Z"
     },
@@ -26223,7 +26223,7 @@
       "apiId": 2251,
       "title": "Improve search speed",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26231,7 +26231,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:01Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -26240,7 +26240,7 @@
       "apiId": 2252,
       "title": "Fix stale comments",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26248,7 +26248,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:02Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -26257,7 +26257,7 @@
       "apiId": 2253,
       "title": "BDD now-gate pass",
       "description": "## Experience\\nJeff sees the test pass.\\n\\n## AC\\n- [ ] Test passes",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26266,7 +26266,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:06:02Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -26293,14 +26293,14 @@
       "apiId": 2255,
       "title": "Test origin flag",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:new"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:04Z",
       "updated": "2026-04-05T18:09:04Z"
     },
@@ -26309,7 +26309,7 @@
       "apiId": 2256,
       "title": "BDD test card",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26317,7 +26317,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:04Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -26326,7 +26326,7 @@
       "apiId": 2257,
       "title": "Fix broken test",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26334,7 +26334,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:05Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -26343,7 +26343,7 @@
       "apiId": 2258,
       "title": "BDD quick card passes",
       "description": "",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -26352,7 +26352,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:05Z",
       "updated": "2026-04-05T18:44:58Z"
     },
@@ -26361,7 +26361,7 @@
       "apiId": 2259,
       "title": "Emergency deploy fix",
       "description": "",
-      "status": "Won't Do",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -26369,7 +26369,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:05Z",
       "updated": "2026-04-05T18:45:45Z"
     },
@@ -26386,7 +26386,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:05Z",
       "updated": "2026-04-05T18:45:46Z"
     },
@@ -26403,7 +26403,7 @@
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:05Z",
       "updated": "2026-04-05T18:39:29Z"
     },
@@ -26420,7 +26420,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:06Z",
       "updated": "2026-04-05T18:45:46Z"
     },
@@ -26437,7 +26437,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:07Z",
       "updated": "2026-04-05T18:45:46Z"
     },
@@ -26455,7 +26455,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:09:07Z",
       "updated": "2026-04-05T18:45:46Z"
     },
@@ -26498,7 +26498,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:38Z",
       "updated": "2026-04-05T18:45:46Z"
     },
@@ -26515,7 +26515,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:38Z",
       "updated": "2026-04-05T18:44:59Z"
     },
@@ -26532,7 +26532,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:39Z",
       "updated": "2026-04-05T18:45:46Z"
     },
@@ -26550,7 +26550,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:39Z",
       "updated": "2026-04-05T18:45:47Z"
     },
@@ -26567,7 +26567,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:39Z",
       "updated": "2026-04-05T18:45:47Z"
     },
@@ -26585,7 +26585,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:39Z",
       "updated": "2026-04-05T18:45:47Z"
     },
@@ -26602,7 +26602,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:39Z",
       "updated": "2026-04-05T18:45:47Z"
     },
@@ -26619,7 +26619,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:40Z",
       "updated": "2026-04-05T18:45:47Z"
     },
@@ -26636,7 +26636,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:40Z",
       "updated": "2026-04-05T18:45:47Z"
     },
@@ -26654,7 +26654,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:41Z",
       "updated": "2026-04-05T18:45:47Z"
     },
@@ -26663,14 +26663,14 @@
       "apiId": 2277,
       "title": "BDD test card",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "domain:chorus",
         "type:fix"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:44Z",
       "updated": "2026-04-05T18:14:44Z"
     },
@@ -26688,7 +26688,7 @@
         "origin:reflective",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:44Z",
       "updated": "2026-04-05T18:45:48Z"
     },
@@ -26705,7 +26705,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:45Z",
       "updated": "2026-04-05T18:45:48Z"
     },
@@ -26723,7 +26723,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:45Z",
       "updated": "2026-04-05T18:45:48Z"
     },
@@ -26740,7 +26740,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:46Z",
       "updated": "2026-04-05T18:45:48Z"
     },
@@ -26758,7 +26758,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:46Z",
       "updated": "2026-04-05T18:45:48Z"
     },
@@ -26775,7 +26775,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:46Z",
       "updated": "2026-04-05T18:45:48Z"
     },
@@ -26792,7 +26792,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:47Z",
       "updated": "2026-04-05T18:45:48Z"
     },
@@ -26809,7 +26809,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:47Z",
       "updated": "2026-04-05T18:45:49Z"
     },
@@ -26827,7 +26827,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:47Z",
       "updated": "2026-04-05T18:45:49Z"
     },
@@ -26844,7 +26844,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:59Z",
       "updated": "2026-04-05T18:45:49Z"
     },
@@ -26861,7 +26861,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:59Z",
       "updated": "2026-04-05T18:44:59Z"
     },
@@ -26878,7 +26878,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:14:59Z",
       "updated": "2026-04-05T18:45:49Z"
     },
@@ -26896,7 +26896,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:15:00Z",
       "updated": "2026-04-05T18:45:49Z"
     },
@@ -26913,7 +26913,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:15:00Z",
       "updated": "2026-04-05T18:45:49Z"
     },
@@ -26931,7 +26931,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:15:00Z",
       "updated": "2026-04-05T18:45:49Z"
     },
@@ -26948,7 +26948,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:15:00Z",
       "updated": "2026-04-05T18:45:49Z"
     },
@@ -26965,7 +26965,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:15:01Z",
       "updated": "2026-04-05T18:45:50Z"
     },
@@ -26982,7 +26982,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:15:01Z",
       "updated": "2026-04-05T18:45:50Z"
     },
@@ -27000,7 +27000,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:15:01Z",
       "updated": "2026-04-05T18:45:50Z"
     },
@@ -27017,7 +27017,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:16Z",
       "updated": "2026-04-05T18:45:50Z"
     },
@@ -27035,7 +27035,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:17Z",
       "updated": "2026-04-05T18:45:50Z"
     },
@@ -27053,7 +27053,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:17Z",
       "updated": "2026-04-05T18:45:50Z"
     },
@@ -27071,7 +27071,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:17Z",
       "updated": "2026-04-05T18:45:50Z"
     },
@@ -27088,7 +27088,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:25Z",
       "updated": "2026-04-05T18:45:51Z"
     },
@@ -27105,7 +27105,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:26Z",
       "updated": "2026-04-05T18:45:00Z"
     },
@@ -27122,7 +27122,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:26Z",
       "updated": "2026-04-05T18:45:51Z"
     },
@@ -27140,7 +27140,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:26Z",
       "updated": "2026-04-05T18:45:51Z"
     },
@@ -27157,7 +27157,7 @@
         "type:swat",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:26Z",
       "updated": "2026-04-05T18:45:51Z"
     },
@@ -27175,7 +27175,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:27Z",
       "updated": "2026-04-05T18:45:51Z"
     },
@@ -27192,7 +27192,7 @@
         "type:new",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:27Z",
       "updated": "2026-04-05T18:45:51Z"
     },
@@ -27209,7 +27209,7 @@
         "type:enhance",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:27Z",
       "updated": "2026-04-05T18:45:51Z"
     },
@@ -27226,7 +27226,7 @@
         "type:fix",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:28Z",
       "updated": "2026-04-05T18:45:52Z"
     },
@@ -27244,7 +27244,7 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:21:28Z",
       "updated": "2026-04-05T18:45:52Z"
     },
