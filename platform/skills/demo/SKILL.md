@@ -184,7 +184,7 @@ Then **auto-nudge for feedback** — don't wait for Jeff to ask.
 for ROLE in wren silas kade; do
   [ "$ROLE" = "<your-role>" ] && continue
   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$ROLE" \
-    "[feedback] #${CARD_ID} — <1-line what changed>. <specific question for this role's domain>. detailed review, validation and feedback." 2>/dev/null || true
+    "[feedback] #${CARD_ID} — <1-line what changed>. <specific question for this role's domain>." 2>/dev/null || true
 done
 ```
 
@@ -211,7 +211,7 @@ When you receive a `[feedback]` nudge, **reply with substance.** Share your actu
 
 1. **Check your domain** — look at your work, run relevant checks, think about implications from your expertise
 2. **Reply with your real take** — what you noticed, what questions it raises, how it connects to your work. If it's clean, say so briefly and add anything useful. If there's an issue, name it.
-3. **Do NOT** just say "got it" or "acknowledged" — that's not feedback, it's noise
+3. **Do NOT** just say "got it", "acknowledged", or "LGTM" — that's not feedback, it's noise
 4. **Do NOT** mirror the sender's framing — form your own opinion before responding. "AC looks met" without checking is performative, not substantive.
 
 The builder is blocked on acceptance until team feedback lands. Silence forces Jeff to chase replies — that's failure demand.
