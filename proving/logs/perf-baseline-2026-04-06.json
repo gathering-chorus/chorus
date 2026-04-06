@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-04-06T17:40:04",
+  "type": "overnight-baseline",
+  "disk": {
+    "usedBytes": 972666839040,
+    "totalBytes": 1995218165760,
+    "percentUsed": 48
+  },
+  "memory": {
+    "freePercent": 58,
+    "activePagesK": 287536,
+    "freePagesK": 9634
+  },
+  "cpu": {
+    "loadAvg1m": 6.46
+  },
+  "processes": {
+    "total": 742,
+    "claude": 16
+  },
+  "fuseki": {
+    "status": "200",
+    "latencyMs": 16
+  },
+  "nifi": {
+    "totalQueued": -1
+  },
+  "errors": {
+    "lastHour": 0
+  }
+}

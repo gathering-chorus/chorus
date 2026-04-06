@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T22:10:29.308Z",
+  "timestamp": "2026-04-06T22:37:04.288Z",
   "tasks": [
     {
       "index": 3,
@@ -28258,10 +28258,11 @@
       "apiId": 2366,
       "title": "Per-alert runbooks — remediation docs linked from each alert rule",
       "description": "## Experience\n\nAn alert fires: \"ServiceDown — gathering-app.\" What do I do? Right now I know because I built it, but that's tribal knowledge. If Kade or Wren see this alert, they need to know: what it means, what's probably broken, and what to do. The alert should link to the answer.\n\n## Context\n\n14 alert rules across two mechanisms:\n- 7 Prometheus rules in shared-observability/config/prometheus/rules/ — no runbook links\n- 7 shell rules in chorus/alerting/ — some have inline fix hints (deep-health does this well)\n\ndeep-health.sh already includes diagnostic context in failure messages: \"session-index: last indexed 3h ago. fswatch: alive, lockfile: LOCKED. Fix: check fswatch, check lock file, run chorus-index.sh sessions.\" That's the pattern to follow.\n\nPrometheus alert rules support an `annotations.runbook_url` field. Standard practice: each alert links to a runbook page.\n\nshared-observability already has docs/FAILURE-PLAYBOOK.md but it's general, not per-alert.\n\n## AC\n\n1. Each Prometheus alert rule has an annotations.runbook_url pointing to a remediation section\n2. Each shell alert rule includes a one-line fix hint in the alert message (deep-health pattern)\n3. Runbook content lives in shared-observability/docs/RUNBOOKS.md — one section per alert\n4. Each section covers: what fired, what's probably broken, how to diagnose, how to fix, escalation path\n5. Link from observability service design doc to the runbooks\n\n## Files\n\n- shared-observability/config/prometheus/rules/*.yml (add runbook_url annotations)\n- shared-observability/docs/RUNBOOKS.md (new)\n- chorus/alerting/*.yml (add fix hints where missing)\n- jeff-bridwell-personal-site/public/gathering-docs/observability-service-design.html (link)",
-      "status": "Later",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:new",
         "sequence:ops",
@@ -28269,7 +28270,7 @@
       ],
       "done": false,
       "created": "2026-04-06T19:05:58Z",
-      "updated": "2026-04-06T19:05:58Z"
+      "updated": "2026-04-06T22:23:21Z"
     },
     {
       "index": 2280,
@@ -28479,7 +28480,7 @@
       "apiId": 2378,
       "title": "Chorus E2E — Bridge and Clearing user journey tests",
       "description": "## Experience\nBridge and Clearing have zero end-to-end tests. I use them daily — send messages, start clearings, watch roles work. Nobody tests the full path.\n\n## AC\n- [ ] 10 Playwright specs for Chorus surfaces\n- [ ] Bridge: send message → message appears for role\n- [ ] Clearing: start session → roles join → decisions captured\n- [ ] Werk: page loads with live card data",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -28488,16 +28489,16 @@
         "origin:reflective",
         "sequence:quality"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T21:10:41Z",
-      "updated": "2026-04-06T22:08:39Z"
+      "updated": "2026-04-06T22:23:14Z"
     },
     {
       "index": 2292,
       "apiId": 2379,
       "title": "Close 17 uncovered services — unit test coverage floor",
-      "description": "## Experience\n19% of services have no unit tests. When one of these breaks, I find out in production.\n\n## AC\n- [ ] Identify 17 uncovered services by name\n- [ ] Write unit tests for each, prioritized by git churn (last 30 days)\n- [ ] 100% service test coverage",
-      "status": "Later",
+      "description": "## Experience\n19% of services have no unit tests. When one of these breaks, I find out in production.\n\n## Files\n- tests/unit/services/drive-analysis.service.test.ts\n- tests/unit/services/git-churn.service.test.ts\n- tests/unit/services/google-drive.service.test.ts\n- tests/unit/services/google-photos-library.service.test.ts\n- tests/unit/services/group.service.test.ts\n- tests/unit/services/icd.service.test.ts\n- tests/unit/services/nifi.service.test.ts\n- tests/unit/services/oidc-storage.service.test.ts\n- tests/unit/services/roles.service.test.ts\n- tests/unit/services/self-ai.service.test.ts\n- tests/unit/services/self-domain-pod.service.test.ts\n- tests/unit/services/shape-matching.service.test.ts\n- tests/unit/services/skills.service.test.ts\n- tests/unit/services/voice-analytics.service.test.ts\n\n## AC\n- [ ] Identify 17 uncovered services by name\n- [ ] Write unit tests for each, prioritized by git churn (last 30 days)\n- [ ] 100% service test coverage",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -28506,9 +28507,9 @@
         "origin:reflective",
         "sequence:quality"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T21:10:41Z",
-      "updated": "2026-04-06T21:10:41Z"
+      "updated": "2026-04-06T22:31:45Z"
     },
     {
       "index": 2293,
