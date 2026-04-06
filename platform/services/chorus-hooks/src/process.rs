@@ -62,16 +62,63 @@ pub fn inject_by_tab_name(role: &str, text: &str) -> Result<(), String> {
         _ => return Err(format!("unknown role: {}", role)),
     };
 
-    let output = Command::new("bash")
-        .args(["/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/inject-keystroke.sh", role, text])
-        .output()
-        .map_err(|e| format!("inject-keystroke.sh spawn failed: {}", e))?;
+    // Escape for AppleScript double-quoted strings.
+    // Single quotes are fine inside double quotes — do NOT escape them.
+    let escaped = text
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', " ")
+        .replace('\u{2014}', "--")
+        .replace('\u{2018}', "'")
+        .replace('\u{2019}', "'")
+        .replace('\u{201C}', "\\\"")
+        .replace('\u{201D}', "\\\"");
 
-    let stderr_out = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if output.status.success() {
-        return Ok(());
+    // #1764: saves/restores frontmost app to prevent focus theft.
+    // Targets Terminal windows only (never Chrome). DEC-107.
+    let script = format!(
+        r#"tell application "System Events"
+    set originalApp to name of first application process whose frontmost is true
+end tell
+tell application "Terminal"
+    set winCount to count of windows
+    repeat with i from 1 to winCount
+        set w to window i
+        set winName to name of w
+        if winName contains "{pattern}" and winName contains "claude" then
+            activate
+            set frontmost of w to true
+            delay 0.15
+            tell application "System Events"
+                tell process "Terminal"
+                    keystroke "{text}"
+                    delay 0.05
+                    key code 36
+                end tell
+            end tell
+            delay 0.05
+            tell application originalApp to activate
+            return "ok"
+        end if
+    end repeat
+    return "no claude window found for {role} (looking for {pattern} + claude)"
+end tell"#,
+        pattern = pattern,
+        text = escaped,
+        role = role
+    );
+
+    let output = Command::new("osascript")
+        .args(["-e", &script])
+        .output()
+        .map_err(|e| format!("osascript spawn failed: {}", e))?;
+
+    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if result == "ok" {
+        Ok(())
     } else {
-        return Err(format!("inject failed: {}", stderr_out));
+        Err(format!("{} stderr: {}", result, stderr))
     }
 }
 
