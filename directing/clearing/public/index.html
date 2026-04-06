@@ -492,6 +492,13 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
 <div class="resize-handle" id="resize-right"></div>
   <div class="fold-container">
     <div class="fold-panel" id="fold-panel">
+      <div id="alerts-panel" style="display:none;border-bottom:2px solid var(--red);padding:0.5rem 0.75rem;background:rgba(248,81,73,0.08);flex-shrink:0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
+          <span style="font-size:0.7rem;font-weight:700;color:var(--red);">ALERTS</span>
+          <button onclick="document.getElementById('alerts-content').innerHTML='';document.getElementById('alerts-panel').style.display='none';" style="font-size:0.6rem;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:3px;padding:1px 6px;cursor:pointer;">clear</button>
+        </div>
+        <div id="alerts-content" style="font-size:0.72rem;max-height:180px;overflow-y:auto;"></div>
+      </div>
       <div class="flow-header">
         <span class="flow-title">Streams</span>
       </div>
@@ -499,10 +506,6 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
         <input class="filter-input" id="stream-filter" type="text" placeholder="🔍 filter stream..." oninput="filterStream()" />
       </div>
       <div class="fold-content" id="fold-content"></div>
-      <div id="alerts-panel" style="display:none;border-top:2px solid var(--red);padding:0.5rem 0.75rem;background:rgba(248,81,73,0.08);flex-shrink:0;">
-        <div style="font-size:0.7rem;font-weight:700;color:var(--red);margin-bottom:0.3rem;">ALERTS</div>
-        <div id="alerts-content" style="font-size:0.72rem;max-height:150px;overflow-y:auto;"></div>
-      </div>
     </div>
   </div>
 </div>
@@ -1377,7 +1380,13 @@ function checkAlerts(messages) {
     if (alertsSeen.has(key)) continue;
     const level = msg.level
       || (msg.type === 'blocked' ? 'critical' : '')
+      || (msg.type === 'system-error' ? 'critical' : '')
       || (/^\[critical\]/i.test(text) ? 'critical' : '')
+      || (/\bDOWN\b/.test(text) ? 'critical' : '')
+      || (/\bfailure\b/i.test(text) ? 'warn' : '')
+      || (/\balert\b/i.test(text) ? 'warn' : '')
+      || (/session-health:/i.test(text) ? 'warn' : '')
+      || (/deep-health:/i.test(text) ? 'warn' : '')
       || (/^\[warn\]/i.test(text) ? 'warn' : '');
     if (!level) continue;
     alertsSeen.add(key);
