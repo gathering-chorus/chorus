@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T18:27:40.819Z",
+  "timestamp": "2026-04-06T18:32:45.048Z",
   "tasks": [
     {
       "index": 3,
@@ -28085,7 +28085,7 @@
       "apiId": 2357,
       "title": "Alert on session indexer death — detect stale index before gemba goes blind",
       "description": "## Experience\nThe session indexer died on April 3 and nobody knew until April 6. Gemba showed 2-day-old data. Three days of sessions invisible to the team. I don't want to discover blindness — I want the system to detect it.\n\n## Context\n#2227 fixed the stale lock and added recovery. But nothing alerts if the indexer stops producing output. Deep-health checks services but not the session watcher subprocess or its output freshness. The index DB (index.db) has timestamps — if the newest message is >1 hour old during working hours, the indexer is probably dead.\n\n## AC\n1. Deep-health checks session index freshness — newest message timestamp in index.db\n2. If newest indexed message is >2 hours old during working hours (8am-10pm), alert fires to Silas\n3. Alert includes: last indexed timestamp, gap duration, suggested fix (check fswatch, check lock file)\n4. Integrates with existing deep-health.sh — not a separate monitoring path\n\n## Files\n- platform/scripts/deep-health.sh\n- ~/.chorus/scripts/chorus-watch-sessions.sh",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -28095,9 +28095,9 @@
         "sequence:awareness",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T18:16:10Z",
-      "updated": "2026-04-06T18:26:58Z"
+      "updated": "2026-04-06T18:31:11Z"
     },
     {
       "index": 2271,
