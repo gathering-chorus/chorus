@@ -84,7 +84,7 @@ for rule in "$ALERT_DIR"/*.yml; do
     [[ "$name" == "$RULE_FILTER" ]] || continue
   fi
   # Skip manual-only rules unless explicitly requested via --rule
-  schedule=$(grep '^schedule:' "$rule" | head -1 | sed 's/schedule: *//')
+  schedule=$(grep '^schedule:' "$rule" | head -1 | sed 's/schedule: *//' | sed 's/ *#.*//')
   if [[ "$schedule" == "manual" ]] && [[ -z "$RULE_FILTER" ]]; then
     log "SKIP $name — manual schedule (use --rule $name to run)"
     continue

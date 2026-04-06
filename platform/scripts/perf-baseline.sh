@@ -11,9 +11,15 @@ OUTDIR="/Users/jeffbridwell/CascadeProjects/chorus/proving/logs"
 OUTFILE="$OUTDIR/perf-baseline-${DATE}.json"
 
 # --- Disk ---
-DISK_USED=$(diskutil info / | grep 'Container Free Space' | awk -F'(' '{print $2}' | awk '{print $1}')
+DISK_FREE=$(diskutil info / | grep 'Container Free Space' | awk -F'(' '{print $2}' | awk '{print $1}')
 DISK_TOTAL=$(diskutil info / | grep 'Container Total Space' | awk -F'(' '{print $2}' | awk '{print $1}')
-DISK_PCT=$(df -h / | tail -1 | awk '{print $5}' | tr -d '%')
+DISK_USED=$(( DISK_TOTAL - DISK_FREE ))
+# Compute percentage from diskutil bytes, not df (APFS purgeable space breaks df — #1868, #1884)
+if [ "${DISK_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
+  DISK_PCT=$(( DISK_USED * 100 / DISK_TOTAL ))
+else
+  DISK_PCT=0
+fi
 
 # --- Memory ---
 MEM_PRESSURE=$(memory_pressure 2>/dev/null | grep 'System-wide memory free percentage' | awk '{print $NF}' | tr -d '%')
@@ -52,9 +58,8 @@ except:
 " 2>/dev/null || echo -1)
 
 # --- Error rate (last hour of chorus.log) ---
-ERRORS=$(tail -1000 "$OUTDIR/chorus.log" 2>/dev/null | grep -c '"level":"error"' 2>/dev/null || echo 0)
-ERRORS=${ERRORS:-0}
-ERRORS=$(echo "$ERRORS" | tr -d '[:space:]')
+ERRORS=$(tail -1000 "$OUTDIR/chorus.log" 2>/dev/null | grep -c '"level":"error"' 2>/dev/null || true)
+ERRORS=$(( ${ERRORS:-0} + 0 ))  # force integer
 
 # --- Write JSON ---
 cat > "$OUTFILE" << JSONEOF
