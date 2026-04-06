@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T15:55:38.539Z",
+  "timestamp": "2026-04-06T16:05:45.685Z",
   "tasks": [
     {
       "index": 3,
@@ -27740,6 +27740,24 @@
       "apiId": 2338,
       "title": "Async: knowledge-graph + document handlers — replace 31 sync calls in directory traversal",
       "description": "## Problem\n\nknowledge-graph.handler.ts (17 sync calls) and document.handler.ts (14 sync calls) both do complex directory traversal and cache I/O synchronously per request. Graph construction and doc catalog requests freeze the event loop.\n\n## Files\n- src/handlers/knowledge-graph.handler.ts\n- src/handlers/document.handler.ts\n\n## Experience\nWhen I open the knowledge graph or browse documents, the app hesitates while it reads directories and files synchronously. Every other request queues behind the directory scan.\n\n## AC\n\n- [ ] AC1: knowledge-graph.handler — replace readdirSync, readFileSync, statSync with fs.promises. Zero sync calls in request path.\n- [ ] AC2: document.handler — replace all sync cache reads/writes with fs.promises. Zero sync calls in request path.\n- [ ] AC3: All existing knowledge-graph and document tests green. No regressions.\n\n## Reference\nPattern proven in #2250 (pod-storage) and #2249 (photo.handler). fileExists() helper + readJsonFile() + fsp.readdir/readFile/mkdir.",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "gathering",
+        "sequence:hardening",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": true,
+      "created": "2026-04-06T13:19:48Z",
+      "updated": "2026-04-06T15:57:17Z"
+    },
+    {
+      "index": 2252,
+      "apiId": 2339,
+      "title": "Async: team.handler + cards.service — replace execSync node script calls",
+      "description": "## Experience\n\nWhen I open the team page or anything that reads card state, the app hangs while it shells out to node scripts synchronously. I can feel the pause — other requests queue behind it. Same pattern we already fixed in photos, pod-storage, and knowledge-graph handlers.\n\n## Problem\n\nteam.handler.ts has execSync('node script.js') at lines 177 and 198 that block the event loop for entire script execution. cards.service.ts has 3 additional execSync calls for board operations.\n\n## Files\n- src/handlers/team.handler.ts\n- src/services/cards.service.ts\n\n## AC\n\n- [ ] AC1: team.handler — replace execSync with async child process for metric script calls\n- [ ] AC2: cards.service — replace execSync with promisify(exec) for board CLI calls\n- [ ] AC3: Zero sync calls in team.handler.ts and cards.service.ts request paths\n- [ ] AC4: All existing team/cards tests green. No regressions.\n\n## Reference\nPattern proven in #2249 (photo.handler), #2250 (pod-storage), #2251 (knowledge-graph + document), #2256 (MonitoringService).",
       "status": "WIP",
       "owner": "Kade",
       "priority": "P2",
@@ -27751,25 +27769,7 @@
       ],
       "done": false,
       "created": "2026-04-06T13:19:48Z",
-      "updated": "2026-04-06T15:40:12Z"
-    },
-    {
-      "index": 2252,
-      "apiId": 2339,
-      "title": "Async: team.handler + cards.service — replace execSync node script calls",
-      "description": "## Problem\n\nteam.handler.ts has execSync('node script.js') at lines 177 and 198 that block the event loop for entire script execution. cards.service.ts has 3 additional execSync calls for board operations.\n\n## AC\n\n- [ ] AC1: team.handler — replace execSync with async child process for metric script calls\n- [ ] AC2: cards.service — replace execSync with promisify(exec) for board CLI calls\n- [ ] AC3: Zero sync calls in team.handler.ts and cards.service.ts request paths\n- [ ] AC4: All existing team/cards tests green. No regressions.",
-      "status": "Later",
-      "owner": "Kade",
-      "priority": "P2",
-      "domains": [
-        "gathering",
-        "sequence:hardening",
-        "type:fix",
-        "origin:reactive"
-      ],
-      "done": false,
-      "created": "2026-04-06T13:19:48Z",
-      "updated": "2026-04-06T13:19:48Z"
+      "updated": "2026-04-06T16:05:12Z"
     },
     {
       "index": 2253,
@@ -27902,7 +27902,7 @@
       "apiId": 2347,
       "title": "Node health instrumentation — event loop lag, memory, queue depth alerts to owning roles",
       "description": "## Experience\nWhen the app freezes, I don't know until I feel it. Pages hang, requests timeout, and I'm the one who notices. The monitoring service was itself causing 136K blocking ops/day — fixed now, but there's still no signal that tells a role 'the event loop is lagging' before I feel it. I want the system to detect and act on its own health problems without me being the sensor.\n\n## Context\nNode.js has built-in primitives for health instrumentation. express-prom-bundle is already wired (#1810). Prometheus collects HTTP metrics. The gap: no event loop lag detection, no memory pressure alerts, no queue depth monitoring, and no routing of health signals to owning roles.\n\nJeff has deep JVM debugging experience (years at Staples with Deb Majumdar). JVM thread blocking and Node event loop blocking are the same class of problem — the tooling patterns are well-established.\n\n## Research Required\n- Node perf_hooks monitorEventLoopDelay() — histogram API, sampling interval, percentile thresholds\n- process.memoryUsage() — heap used vs total, RSS growth, external buffer pressure\n- libuv metrics — active handles/requests as load signal\n- express-prom-bundle integration — custom metrics registration for event loop lag, memory, queue depth\n- Alert thresholds from production Node apps (not just defaults) — what lag values actually indicate problems vs normal GC pauses\n- Backpressure patterns in Node — how to signal 'slow down' when the event loop is saturated\n\n## AC\n1. Event loop lag monitoring via monitorEventLoopDelay() — p99 latency exposed as Prometheus metric\n2. Memory pressure metric — heap used percentage, RSS growth rate\n3. Alert rules: event loop lag >500ms nudges Kade, >2s nudges Kade+Silas. Memory >85% nudges Silas.\n4. Alerts route to owning role via nudge --force, not Bridge, not dashboard\n5. No new dashboard — metrics exist for post-mortem, alerts exist for prevention\n6. Document the thresholds chosen and why (research output)",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27911,9 +27911,9 @@
         "type:new",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T15:34:31Z",
-      "updated": "2026-04-06T15:36:37Z"
+      "updated": "2026-04-06T15:59:41Z"
     },
     {
       "index": 2261,
@@ -27932,6 +27932,42 @@
       "done": false,
       "created": "2026-04-06T15:46:59Z",
       "updated": "2026-04-06T15:46:59Z"
+    },
+    {
+      "index": 2262,
+      "apiId": 2349,
+      "title": "Restore alerts panel on Clearing streams — alert POSTs feed a filterable section",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T15:57:05Z",
+      "updated": "2026-04-06T15:57:05Z"
+    },
+    {
+      "index": 2263,
+      "apiId": 2350,
+      "title": "Daily PM deep scan — doc freshness, backlog coherence, sequence health",
+      "description": "## Experience\nI start each session trying to figure out what's stale, what's stuck, and what sequence to push. That's PM work that should happen overnight so I wake up to a brief, not a research project.\n\n## AC\n1. Doc freshness scan — flag decisions.md, projects.md, backlog.md, CLAUDE.md fragments older than 3 days since last meaningful update\n2. Backlog coherence — identify duplicate intent, cards without owners, Later cards with no sequence, Won't Do cards that might be real Done\n3. Sequence health — for each active sequence, count cards by status, flag sequences with no movement in 3+ days\n4. Golfball detection — find fix/swat cards lurking in domains that have active new/enhance cards (the thing /golfball would do)\n5. Output: one brief in product-manager/briefs/daily-pm-scan.md, ready by 6am\n6. Scheduled via cron, runs overnight, no session required",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:ops",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T16:04:33Z",
+      "updated": "2026-04-06T16:04:33Z"
     }
   ]
 }
