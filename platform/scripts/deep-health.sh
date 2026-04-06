@@ -241,7 +241,20 @@ else
   FAILURES+=("alert-delivery: test never run — run platform/scripts/alert-delivery-test.sh to baseline")
 fi
 
-# --- 14. Standards surface freshness (#2268) ---
+# --- 14. Dashboard content validation (#2278) — weekly ---
+DASH_HEALTH_LOG="$HOME/Library/Logs/Chorus/dashboard-health.log"
+if [ -f "$DASH_HEALTH_LOG" ]; then
+  dash_mtime=$(stat -f %m "$DASH_HEALTH_LOG" 2>/dev/null || echo 0)
+  if [ "$dash_mtime" -lt "$STALE_8D" ]; then
+    dash_age_d=$(( (now - dash_mtime) / 86400 ))
+    FAILURES+=("dashboard-health: last run ${dash_age_d}d ago — weekly check may be dead")
+  elif grep -q "FAIL" "$DASH_HEALTH_LOG" 2>/dev/null; then
+    last_fail=$(grep "FAIL" "$DASH_HEALTH_LOG" | tail -1)
+    FAILURES+=("dashboard-health: $last_fail")
+  fi
+fi
+
+# --- 15. Standards surface freshness (#2268) ---
 STANDARDS_HTML="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-standards.html"
 STALE_48H=$((now - 172800))
 if [ -f "$STANDARDS_HTML" ]; then
