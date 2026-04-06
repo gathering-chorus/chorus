@@ -98,9 +98,21 @@ fi
 INDEX_DB="$HOME/.chorus/index.db"
 current_hour=$(date +%H)
 if [ -f "$INDEX_DB" ] && [ "$current_hour" -ge 8 ] && [ "$current_hour" -lt 22 ]; then
-  # Get newest message timestamp from the database
+  # Get newest message timestamp from the database (retry once if locked)
   last_ts=$(sqlite3 "$INDEX_DB" "SELECT timestamp FROM messages ORDER BY timestamp DESC LIMIT 1;" 2>/dev/null || echo "")
-  if [ -n "$last_ts" ]; then
+  if [ -z "$last_ts" ]; then
+    sleep 2
+    last_ts=$(sqlite3 "$INDEX_DB" "SELECT timestamp FROM messages ORDER BY timestamp DESC LIMIT 1;" 2>/dev/null || echo "")
+  fi
+  if [ -z "$last_ts" ]; then
+    # DB still locked or empty — fall back to file mtime
+    idx_mtime=$(stat -f %m "$INDEX_DB" 2>/dev/null || echo 0)
+    idx_age=$((now - idx_mtime))
+    if [ "$idx_age" -gt 7200 ]; then
+      age_h=$((idx_age / 3600))
+      FAILURES+=("session-index: DB locked/empty, file ${age_h}h stale. Fix: check fswatch, check lock file")
+    fi
+  elif [ -n "$last_ts" ]; then
     # Convert ISO timestamp to epoch
     last_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${last_ts%%.*}" +%s 2>/dev/null || echo 0)
     idx_age=$((now - last_epoch))
