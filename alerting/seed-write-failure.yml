@@ -33,3 +33,7 @@ action: |
   # Nudge Silas — alerts go to roles, not the Clearing
   NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
   "$NUDGE" silas "seed-write: FAILURE — Jeff's SMS seeds are not landing in Fuseki" --force 2>/dev/null || true
+  curl -sf -X POST http://localhost:3470/api/message \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg text '[alert] seed write FAILED' --arg from 'system' '{from: $from, text: $text}')" \
+    &>/dev/null || true
