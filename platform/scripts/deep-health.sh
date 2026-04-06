@@ -72,6 +72,8 @@ if launchctl list 2>/dev/null | grep -q "loki-tunnel-bedroom"; then
   if [ "$tunnel_exit" != "0" ] && [ "$tunnel_exit" != "-" ]; then
     FAILURES+=("loki-tunnel-bedroom: exit code $tunnel_exit — remote log ingestion broken")
   fi
+else
+  FAILURES+=("loki-tunnel-bedroom: not loaded — remote log ingestion broken")
 fi
 
 # --- 5. Chorus index freshness ---
@@ -105,6 +107,82 @@ if [ ! -x "$NUDGE" ]; then
   FAILURES+=("nudge: binary not found or not executable at $NUDGE")
 fi
 
+# --- 10. Critical services: must be loaded and running ---
+CRITICAL_SERVICES=(
+  # Library — core
+  "com.gathering.app:gathering-app:main application"
+  "com.gathering.fuseki:fuseki:knowledge graph"
+  "com.gathering.vikunja:vikunja:board"
+  "com.gathering.css:css:SOLID CSS server"
+  "com.gathering.wordpress:wordpress:blog"
+  "com.gathering.mysql:mysql:database"
+  "com.gathering.messaging:messaging:team messaging"
+  # Library — observability
+  "com.gathering.loki:loki:log storage"
+  "com.gathering.grafana:grafana:dashboards"
+  "com.gathering.promtail:promtail:log shipping"
+  "com.gathering.prometheus:prometheus:metrics"
+  "com.gathering.alertmanager:alertmanager:alert routing"
+  "com.gathering.blackbox-exporter:blackbox:endpoint probing"
+  "com.gathering.node-exporter:node-exporter:host metrics"
+  "com.gathering.mysqld-exporter:mysqld-exporter:mysql metrics"
+  # Library — chorus
+  "com.chorus.api:chorus-api:team search and context"
+  "com.chorus.clearing:clearing:team chat"
+  "com.chorus.hooks:chorus-hooks:session hooks"
+  "com.chorus.session-watcher:session-watcher:session indexing"
+  "com.chorus.alert-notifier:alert-notifier:alert delivery"
+  "com.gathering.codebase-graph-watcher:graph-watcher:codebase graph"
+)
+
+for entry in "${CRITICAL_SERVICES[@]}"; do
+  IFS=: read -r label name desc <<< "$entry"
+  line=$(launchctl list 2>/dev/null | grep "$label" || true)
+  if [ -z "$line" ]; then
+    FAILURES+=("$name: not loaded — $desc down")
+  else
+    pid=$(echo "$line" | awk '{print $1}')
+    exit_code=$(echo "$line" | awk '{print $2}')
+    if [ "$pid" = "-" ]; then
+      # No PID = not running. Exit 0 means cron that ran fine, skip those.
+      if [ "$exit_code" != "0" ]; then
+        FAILURES+=("$name: not running (exit $exit_code) — $desc down")
+      fi
+    fi
+  fi
+done
+
+# --- 11. HTTP health endpoints ---
+# Format: url|name|desc (pipe-delimited to avoid colon collision with URLs)
+HEALTH_ENDPOINTS=(
+  # Library — core
+  "http://localhost:3000/health|gathering-app-http|main app"
+  "http://localhost:3340/api/chorus/health|chorus-api-http|team search"
+  "http://localhost:3030/$/ping|fuseki-http|SPARQL"
+  "http://localhost:3456/api/v1/info|vikunja-http|board API"
+  "http://localhost:3470/health|clearing-http|team chat"
+  "http://localhost:3475/health|messaging-http|team messaging"
+  # Library — observability
+  "http://localhost:3102/ready|loki-http|log queries"
+  "http://localhost:3100/api/health|grafana-http|dashboards"
+  "http://localhost:9090/-/healthy|prometheus-http|metrics queries"
+  "http://localhost:9093/-/healthy|alertmanager-http|alert routing"
+  "http://localhost:9115/metrics|blackbox-http|endpoint probing"
+  "http://localhost:9101/metrics|node-exporter-http|host metrics"
+  # Bedroom
+  "http://192.168.86.242:3001/|images-api-http|Bedroom photos"
+  "http://192.168.86.242:11434/api/tags|ollama-http|semantic search"
+)
+
+for entry in "${HEALTH_ENDPOINTS[@]}"; do
+  IFS='|' read -r url name desc <<< "$entry"
+  if ! curl -sf --max-time 5 "$url" > /dev/null 2>&1; then
+    FAILURES+=("$name: unreachable — $desc broken")
+  fi
+done
+
+# --- 12. (Bedroom endpoints folded into check 11 above) ---
+
 # --- Report ---
 if [ ${#FAILURES[@]} -eq 0 ]; then
   echo "deep-health: all checks passed"
@@ -118,6 +196,7 @@ for f in "${FAILURES[@]}"; do
 done
 
 echo "$MSG"
+echo "$(date '+%Y-%m-%d %H:%M') $MSG" >> "$HOME/Library/Logs/Chorus/deep-health.log"
 "$NUDGE" "$ALERT_ROLE" "$MSG" --force 2>/dev/null || true
 "$CHORUS_LOG" ops.health.deep_check_failed "$ALERT_ROLE" failures="${#FAILURES[@]}" 2>/dev/null || true
 exit 1

@@ -1,10 +1,13 @@
 import express, { Request, Response, NextFunction } from 'express';
 import Database from 'better-sqlite3';
-import { execFile } from 'child_process';
+import { execFile, exec } from 'child_process';
+import { promisify } from 'util';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import * as lancedb from '@lancedb/lancedb';
+
+const execAsync = promisify(exec);
 
 const app = express();
 app.use(express.json());
@@ -598,9 +601,8 @@ app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
 
   // 1. Card metadata + comments via cards CLI (boundary: never bypass to Vikunja)
   try {
-    const { execSync } = require('child_process');
     const cardsScript = path.resolve(__dirname, '../../scripts/cards');
-    const cardJson = execSync(
+    const { stdout: cardJson } = await execAsync(
       `bash ${cardsScript} view ${cardId} --json 2>/dev/null`,
       { encoding: 'utf-8', timeout: 10000, env: { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
     );
@@ -728,9 +730,8 @@ app.get('/api/chorus/domain-story/:domain', async (req: Request, res: Response) 
 
   // 1. Cards tagged with this domain via cards CLI
   try {
-    const { execSync } = require('child_process');
     const cardsScript = path.resolve(__dirname, '../../scripts/cards');
-    const listOutput = execSync(
+    const { stdout: listOutput } = await execAsync(
       `bash ${cardsScript} list 2>/dev/null`,
       { encoding: 'utf-8', timeout: 15000, env: { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
     );
@@ -858,9 +859,8 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
 
   // Source 1: Cards tagged with this domain (via cards CLI --json boundary)
   try {
-    const { execSync } = require('child_process');
     const cardsScript = path.resolve(__dirname, '../../scripts/cards');
-    const listOutput = execSync(
+    const { stdout: listOutput } = await execAsync(
       `bash ${cardsScript} list 2>/dev/null`,
       { encoding: 'utf-8', timeout: 15000, env: { ...process.env, PATH: `${NODE_PATH}:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
     );
@@ -887,7 +887,7 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
       let cardStatus = '';
       let cardOwner = ownerMatch ? ownerMatch[1].toLowerCase() : '';
       try {
-        const cardJson = execSync(
+        const { stdout: cardJson } = await execAsync(
           `bash ${cardsScript} view ${cardIndex} --json 2>/dev/null`,
           { encoding: 'utf-8', timeout: 10000, env: { ...process.env, PATH: `${NODE_PATH}:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
         );
@@ -1048,11 +1048,10 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
 
   // Source 6: Infrastructure — LaunchAgents, endpoints, monitoring
   try {
-    const { execSync } = require('child_process');
     // LaunchAgents matching domain
     // Match domain stem without plural (e.g. "seed" not "seeds") to catch com.chorus.seed-probe
     const domainStem = domain.replace(/s$/, '');
-    const agents = execSync(`launchctl list 2>/dev/null | grep -iE "${domain}|${domainStem}" | grep "com.chorus" || true`, { encoding: 'utf-8', timeout: 5000 });
+    const { stdout: agents } = await execAsync(`launchctl list 2>/dev/null | grep -iE "${domain}|${domainStem}" | grep "com.chorus" || true`, { encoding: 'utf-8', timeout: 5000 });
     infra.launchagents = agents.split('\n').filter((l: string) => l.trim()).map((l: string) => l.trim());
 
     // Known endpoints for this domain (from domain page or hardcoded registry)
@@ -1083,7 +1082,6 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
   // Source 8: Code scan — actual codebase directories mapped to domain (#1959)
   const codeScan: { scanned: string[]; discovered: string[] } = { scanned: [], discovered: [] };
   try {
-    const { execSync } = require('child_process');
     const domainDirs: Record<string, string[]> = {
       seeds: ['src/adapters/sms-seed.adapter.ts', 'src/services/seed-capture.service.ts', 'src/services/seed-sparql.service.ts', 'src/services/seed-pod.service.ts', 'src/handlers/hooks.handler.ts'],
       photos: ['src/handlers/photos.handler.ts', 'src/services/photo-pod.service.ts'],
@@ -1094,7 +1092,7 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
     };
     // Find files by grep for domain keyword in src/
     const appRoot = '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site';
-    const grepResult = execSync(
+    const { stdout: grepResult } = await execAsync(
       `grep -rlw "${domain}" ${appRoot}/src/ --include="*.ts" 2>/dev/null | head -20 || true`,
       { encoding: 'utf-8', timeout: 10000 }
     );
@@ -3102,7 +3100,6 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
   }
 
   try {
-    const { execSync } = require('child_process');
     const boardTs = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards';
     const envOpts = {
       encoding: 'utf-8' as const, timeout: 15000,
@@ -3111,7 +3108,8 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
 
     let cards: { id: string; title: string; status: string; owner: string; type: string }[] = [];
     try {
-      const output = execSync(`bash ${boardTs} list 2>/dev/null`, envOpts).trim();
+      const { stdout } = await execAsync(`bash ${boardTs} list 2>/dev/null`, envOpts);
+      const output = stdout.trim();
       let currentStatus = '';
       for (const line of output.split('\n')) {
         const statusMatch = line.match(/^(WIP|Blocked|Next|Later|Done|Won't Do)\s*\(\d+\)/);
@@ -3265,11 +3263,8 @@ app.get('/api/chorus/health', async (_req: Request, res: Response) => {
 const NUDGE_PATH = path.resolve(__dirname, '../../scripts/nudge');
 
 function crashAlert(reason: string): void {
-  const msg = `chorus-api CRASHED: ${reason}`;
-  // macOS notification — doesn't depend on any service
-  try { require('child_process').execFileSync('osascript', ['-e', `display notification "${msg.replace(/"/g, '\\"')}" with title "Chorus API Down"`], { timeout: 5000 }); } catch { /* dying */ }
-  // Also nudge Silas for next session context
-  try { require('child_process').execFileSync(NUDGE_PATH, ['silas', msg, '--force'], { timeout: 5000 }); } catch { /* dying */ }
+  // Log only — no nudges, no notifications. Silas checks the log at session start.
+  console.error(`[chorus-api] CRASH LOGGED: ${reason}`);
 }
 
 process.on('uncaughtException', (err) => {
