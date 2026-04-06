@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T18:32:45.770Z",
+  "timestamp": "2026-04-06T18:42:52.856Z",
   "tasks": [
     {
       "index": 3,
@@ -28048,7 +28048,7 @@
       "apiId": 2355,
       "title": "Auto-regeneration trigger for standards surface — post-commit or nightly cron",
       "description": "## Experience\nI don't want to remember to run the generation script. When a decision changes or a hook is added, the surface should update automatically by next morning.\n\n## Context\nDepends on generation script and pulse bar cards. Trigger options: PostCommit hook on decisions.md or hook source changes, or nightly cron (simpler, good enough for daily freshness).\n\n## AC\n1. Standards surface regenerates automatically — either post-commit or nightly cron\n2. Trigger fires only when relevant sources change (decisions.md, hook source, hook logs)\n3. LaunchAgent or cron job registered and verified\n4. Stale surface detected: if generation hasn't run in 48h, deep-health flags it",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -28058,9 +28058,9 @@
         "sequence:loom",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T16:51:04Z",
-      "updated": "2026-04-06T18:25:06Z"
+      "updated": "2026-04-06T18:35:07Z"
     },
     {
       "index": 2269,
@@ -28116,6 +28116,24 @@
       "done": false,
       "created": "2026-04-06T18:26:24Z",
       "updated": "2026-04-06T18:26:24Z"
+    },
+    {
+      "index": 2272,
+      "apiId": 2359,
+      "title": "Reconcile awareness domain docs — align domain page, service design, and #1932 standards artifacts",
+      "description": "## Experience\nI have 5 docs that should tell a coherent story about the awareness domain, but they were written at different times by different sessions. I want to open the domain page and see a clean picture — what awareness is, how it works, where the gaps are — without contradictions or stale content.\n\n## Context\nFive artifacts in gathering-docs:\n1. domain-context-awareness.html — awareness domain page (when created?)\n2. awareness-service-design.html — service design for awareness layer\n3. chorus-standards.html — standards inventory with live pulse bar (#1932, updated 2026-04-06)\n4. chorus-hook-architecture.html — 36-hook 6-phase model with gap tracking (#1932, updated 2026-04-06)\n5. harness-engineering-chorus.html — Birgitta mapping (#1932, created 2026-04-06)\n\nAlso loom-service-design.html which may overlap since awareness is part of Loom.\n\n## AC\n1. Read all 5 docs + loom-service-design.html — catalog what each covers, where they overlap, where they contradict\n2. Domain page (domain-context-awareness.html) links to the #1932 artifacts as authoritative sources\n3. Service design (awareness-service-design.html) reflects current reality — services that exist, not aspirational architecture\n4. No duplicate content — each doc has a clear purpose, cross-references the others\n5. All docs use 1-inch margins and consistent styling\n6. Stale content updated or removed — no references to pre-2026-04-06 state that's now fixed",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T18:36:56Z",
+      "updated": "2026-04-06T18:36:56Z"
     }
   ]
 }
