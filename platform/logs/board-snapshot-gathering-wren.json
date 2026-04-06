@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T21:29:59.743Z",
+  "timestamp": "2026-04-06T21:35:03.231Z",
   "tasks": [
     {
       "index": 3,
@@ -27686,18 +27686,18 @@
       "apiId": 2335,
       "title": "Async migration — eliminate event loop blocking in hot-path handlers",
       "description": "## Problem\n\n300+ synchronous blocking calls across 95 files in the Gathering app. This card is the parent tracker. Work split into focused cards below.\n\n## Split Cards\n\n- #TBD-A: photo.handler async migration (35 sync calls, includes execSync sips — worst offender, 10s blocks)\n- #TBD-B: pod-storage middleware async migration (9 sync calls — runs on EVERY pod request)\n- #TBD-C: knowledge-graph + document handler async migration (31 sync calls — complex directory traversal)\n- #TBD-D: team.handler + service-layer async migration (5+3 sync calls — execSync node scripts)\n- #TBD-E: event loop lag detection sensor (proves the fixes work)\n\n## Reference\n\nSilas's Chorus API fix (commit 9afc12bf, card #2241): const execAsync = promisify(exec)\n\n## Long Tail\n\n70+ additional files with sync calls in background harvesters and lower-traffic handlers. Separate P2 after hot path is clean.",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
         "sequence:hardening",
         "domain:chorus",
-        "type:fix",
+        "type:chore",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T13:04:56Z",
-      "updated": "2026-04-06T13:19:19Z"
+      "updated": "2026-04-06T21:30:18Z"
     },
     {
       "index": 2249,
@@ -28182,10 +28182,11 @@
       "apiId": 2362,
       "title": "Repo sync — one canonical path for observability configs, delete stale chorus copies",
       "description": "## Experience\n\nI open chorus/proving/alerting/ and see alert configs from March 29. I open shared-observability/ and see 13 uncommitted changes. Which is real? I shouldn't have to ask. There should be one canonical source with no stale copies to confuse anyone.\n\n## Context\n\nCurrent state:\n- shared-observability/ — canonical deployment source. 13 uncommitted changes (new dashboards, new configs, native variants).\n- chorus/proving/alerting/chorus-alerts.yaml — copy from March 29, 750 lines. shared-observability version is 467 lines with additional NiFi alerts.\n- chorus/proving/dashboards/chorus-activity.json — partial copy, March 29.\n\nNo automated sync. Manual copy-paste is the current method. Roles have already been confused about which configs are real.\n\nOptions:\nA. Delete chorus copies, document that shared-observability is canonical. Simplest.\nB. Symlink from chorus to shared-observability. Preserves paths but adds coupling.\nC. Automated sync script. Most complex, most maintainable long-term.\n\nRecommendation: Option A for now. shared-observability is a separate repo with its own CLAUDE.md. Chorus shouldn't duplicate it.\n\n## AC\n\n1. Commit 13 uncommitted changes in shared-observability with proper commit messages\n2. Delete chorus/proving/alerting/chorus-alerts.yaml — stale copy\n3. Delete chorus/proving/dashboards/chorus-activity.json — stale copy\n4. Add a README or pointer in chorus/proving/ explaining that observability configs live in shared-observability\n5. Update domain-context-observability.html to reflect the cleanup\n6. Verify Grafana still loads dashboards after cleanup (they're provisioned from shared-observability, not chorus)\n\n## Files\n\n- shared-observability/ (13 uncommitted files)\n- chorus/proving/alerting/chorus-alerts.yaml (delete)\n- chorus/proving/dashboards/chorus-activity.json (delete)\n- chorus/proving/README.md (add pointer)\n- jeff-bridwell-personal-site/public/gathering-docs/domain-context-observability.html (update)",
-      "status": "Later",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:fix",
         "sequence:ops",
@@ -28193,7 +28194,7 @@
       ],
       "done": false,
       "created": "2026-04-06T19:04:55Z",
-      "updated": "2026-04-06T19:04:55Z"
+      "updated": "2026-04-06T21:31:46Z"
     },
     {
       "index": 2276,
