@@ -41,31 +41,36 @@ HOOK_COUNT=$(ls "$HOOKS_DIR"/*.rs 2>/dev/null | grep -v mod.rs | wc -l | tr -d '
 FEEDBACK_COUNT=$(ls "$MEMORY_DIR"/feedback_*.md 2>/dev/null | wc -l | tr -d ' ')
 STORY_COUNT=$(ls "$MEMORY_DIR"/story_*.md 2>/dev/null | wc -l | tr -d ' ')
 
-# 4. Gate enforcement rates from pulse log (trailing 7 days)
-SEVEN_DAYS_AGO=$(date -v-7d '+%Y-%m-%d')
+# 4. Gate enforcement rates from hooks metrics API (#2277)
+# Replaces direct awk parsing of pulse log — API has 60s cache and structured JSON
+METRICS_JSON=$(curl -sf --max-time 5 "http://localhost:3340/api/chorus/hooks/metrics" 2>/dev/null || echo "")
 
-# Parse enriched pulse log format:
-# timestamp | hook_type | tool | role | module | decision | duration | session_id | context
-# Decisions: allow, block, deny (skip 'enter' — that's pre-check)
-if [ -f "$PULSE_LOG" ]; then
-  # Get trailing 7 days of entries
-  RECENT_LOG=$(awk -v cutoff="$SEVEN_DAYS_AGO" '$1 >= cutoff' "$PULSE_LOG")
+if [ -n "$METRICS_JSON" ]; then
+  eval "$(echo "$METRICS_JSON" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+modules = d.get('modules', {})
+allow = sum(m['allow'] for m in modules.values())
+deny = sum(m['deny'] for m in modules.values())
+warn = sum(m['warn'] for m in modules.values())
+enforced = d.get('enforcedModules', 0)
+active = d.get('totalModules', 0)
+print(f'ALLOW_COUNT={allow}')
+print(f'BLOCK_COUNT=0')
+print(f'DENY_COUNT={deny}')
+print(f'TOTAL_DECISIONS={d.get(\"totalDecisions\", 0)}')
+print(f'ENFORCED_MODULES={enforced}')
+all_active = active
+partial = all_active - enforced
+print(f'PARTIAL_MODULES={partial}')
+# Per-module deny counts for tooltips
+denies = [(m, v['deny']) for m, v in modules.items() if v['deny'] > 0]
+denies.sort(key=lambda x: -x[1])
+print(f'MODULE_DENIES={chr(44).join(f\"{m}:{c}\" for m, c in denies)}')
+" 2>/dev/null)"
 
-  # Count decisions by type
-  ALLOW_COUNT=$(echo "$RECENT_LOG" | awk -F' \\| ' '{gsub(/^ +| +$/, "", $6)} tolower($6) == "allow"' | wc -l | tr -d ' ')
-  BLOCK_COUNT=$(echo "$RECENT_LOG" | awk -F' \\| ' '{gsub(/^ +| +$/, "", $6)} tolower($6) == "block"' | wc -l | tr -d ' ')
-  DENY_COUNT=$(echo "$RECENT_LOG" | awk -F' \\| ' '{gsub(/^ +| +$/, "", $6)} tolower($6) == "deny"' | wc -l | tr -d ' ')
-
-  TOTAL_DECISIONS=$(( ALLOW_COUNT + BLOCK_COUNT + DENY_COUNT ))
-
-  # Modules with at least one block or deny = gate-enforced
-  ENFORCED_MODULES=$(echo "$RECENT_LOG" | awk -F' \\| ' '{gsub(/^ +| +$/, "", $5); gsub(/^ +| +$/, "", $6)} tolower($6) == "block" || tolower($6) == "deny" {print $5}' | sort -u | wc -l | tr -d ' ')
-
-  # Modules with only allow = partial (they run but never block)
-  ALL_ACTIVE_MODULES=$(echo "$RECENT_LOG" | awk -F' \\| ' '{gsub(/^ +| +$/, "", $5); gsub(/^ +| +$/, "", $6)} tolower($6) == "allow" || tolower($6) == "block" || tolower($6) == "deny" {print $5}' | sort -u | wc -l | tr -d ' ')
-  PARTIAL_MODULES=$(( ALL_ACTIVE_MODULES - ENFORCED_MODULES ))
-
-  # Doc-only = total hook modules minus active modules
+  # Doc-only = total hook modules minus active modules from API
+  ALL_ACTIVE_MODULES=$(echo "$METRICS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('totalModules',0))" 2>/dev/null || echo 0)
   DOC_ONLY_MODULES=$(( HOOK_COUNT - ALL_ACTIVE_MODULES ))
   [ "$DOC_ONLY_MODULES" -lt 0 ] && DOC_ONLY_MODULES=0
 
@@ -77,14 +82,13 @@ if [ -f "$PULSE_LOG" ]; then
   else
     PCT_ENFORCED=0; PCT_PARTIAL=0; PCT_DOC=100
   fi
-
-  # 5. Per-module deny counts for tooltip data
-  MODULE_DENIES=$(echo "$RECENT_LOG" | awk -F' \\| ' '{gsub(/^ +| +$/, "", $5); gsub(/^ +| +$/, "", $6)} tolower($6) == "deny" {print $5}' | sort | uniq -c | sort -rn | awk '{print $2 ":" $1}' | tr '\n' ',' | sed 's/,$//')
 else
+  # Fallback: API unreachable
   ALLOW_COUNT=0; BLOCK_COUNT=0; DENY_COUNT=0; TOTAL_DECISIONS=0
   ENFORCED_MODULES=0; PARTIAL_MODULES=0; DOC_ONLY_MODULES="$HOOK_COUNT"
   PCT_ENFORCED=0; PCT_PARTIAL=0; PCT_DOC=100
   MODULE_DENIES=""
+  echo "Warning: hooks metrics API unreachable, using zero values" >&2
 fi
 
 GENERATED_DATE=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
