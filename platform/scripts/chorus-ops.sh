@@ -42,6 +42,7 @@ BUDGET="0.05"
 MAX_CARDS=2
 PATTERN_THRESHOLD=3
 DEDUP_WINDOW_HOURS=24
+STALE_CLOSE_DAYS=7  # Auto-close defect cards when error stops recurring for 7 days (#2285 AC3)
 HEALTH_THROTTLE_EVERY=3  # Run health every Nth "all" invocation (~15min at 5min interval)
 
 # Critical keywords — escalate to P1
@@ -367,7 +368,7 @@ do_errors() {
 
     # Process errors (python)
     export DEFECT_TMPDIR="$tmpdir"
-    export DEDUP_WINDOW_HOURS PATTERN_THRESHOLD CRITICAL_PATTERN
+    export DEDUP_WINDOW_HOURS PATTERN_THRESHOLD CRITICAL_PATTERN STALE_CLOSE_DAYS
     export DRY_RUN="$dry_run_flag"
     export BOARD_TS CHORUS_LOG
     export FALSE_POSITIVES="$fp_joined"
@@ -516,6 +517,9 @@ for filename, env_var in [("structured.json", "STRUCTURED"), ("unstructured.json
 # Decide what to card
 actions = {}
 
+# Severity filter (#2285 AC2): Warnings wait for pattern threshold before carding.
+# Only critical errors card on first occurrence. Single warnings are tracked in state
+# but don't create cards — stops every ERROR log line from becoming a card.
 seen_new = set()
 for d in new_defects:
     h = d["hash"]
@@ -524,8 +528,7 @@ for d in new_defects:
     seen_new.add(h)
     if d["tier"] == "critical":
         actions[h] = {"action": "card", "defect": d, "priority": "P1", "reason": "new critical"}
-    elif d["tier"] == "warning":
-        actions[h] = {"action": "card", "defect": d, "priority": "P2", "reason": "new warning"}
+    # Warnings: wait for pattern threshold before carding — no more single-occurrence cards
 
 for d in updated_defects:
     h = d["hash"]
@@ -551,9 +554,7 @@ for act in actions:
             continue
 
         owner = "Silas"
-        if "personal-site-app" in d["source"]:
-            owner = "Kade"
-        elif "wordpress" in d["source"]:
+        if any(app in d["source"] for app in ("personal-site-app", "gathering-app", "wordpress")):
             owner = "Kade"
 
         try:
@@ -601,6 +602,29 @@ for act in actions:
         except Exception as e:
             print(f"ERROR: Failed to comment: {e}", file=sys.stderr)
 
+# Auto-close stale defect cards (#2285 AC3)
+# If a tracked defect has a card but hasn't recurred in STALE_CLOSE_DAYS, close the card.
+STALE_CLOSE_DAYS_VAL = int(os.environ.get("STALE_CLOSE_DAYS", "7"))
+stale_cutoff = (datetime.now(timezone.utc) - timedelta(days=STALE_CLOSE_DAYS_VAL)).isoformat()
+stale_closed = 0
+for h, d in list(defects.items()):
+    card_id = d.get("card_id")
+    last_seen = d.get("last_seen", "")
+    if card_id and last_seen and last_seen < stale_cutoff:
+        if not DRY_RUN:
+            try:
+                subprocess.run(
+                    [BOARD_TS, "done", str(card_id)],
+                    capture_output=True, text=True, timeout=15
+                )
+                print(f"AUTO-CLOSED: #{card_id} (no recurrence in {STALE_CLOSE_DAYS_VAL}d)")
+                stale_closed += 1
+                del defects[h]
+            except Exception as e:
+                print(f"ERROR: Failed to auto-close #{card_id}: {e}", file=sys.stderr)
+        else:
+            print(f"DRY-RUN: would auto-close #{card_id} (stale {STALE_CLOSE_DAYS_VAL}d)")
+
 # Save state (errors subsystem only)
 state["defects"] = defects
 state["last_errors_poll"] = now_iso
@@ -610,8 +634,11 @@ with open(STATE_FILE, "w") as f:
 # Summary
 total = len(new_defects) + len(updated_defects)
 carded = sum(1 for a in actions if a["action"] == "card" and not DRY_RUN)
-if total > 0 or carded > 0:
-    print(f"[errors] Poll: {total} errors, {len(new_defects)} new patterns, {carded} carded")
+parts = [f"{total} errors", f"{len(new_defects)} new patterns", f"{carded} carded"]
+if stale_closed > 0:
+    parts.append(f"{stale_closed} auto-closed")
+if total > 0 or carded > 0 or stale_closed > 0:
+    print(f"[errors] Poll: {', '.join(parts)}")
 else:
     print("[errors] Poll: clean")
 PYEOF
