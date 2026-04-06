@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T21:19:52.177Z",
+  "timestamp": "2026-04-06T21:24:56.390Z",
   "tasks": [
     {
       "index": 3,
@@ -27994,7 +27994,7 @@
       "apiId": 2352,
       "title": "Fix demo feedback nudges — substantive not performative",
       "description": "## Experience\n\nWhen I say /demo <card#>, the builder announces the demo, nudges the team, and I get to ask questions and refine. But the nudges frame feedback as \"Jeff wants your review\" or \"ready for acceptance\" — which primes roles to rubber-stamp instead of actually looking at the work. I get compliance back, not perspective.\n\n## Problem\n\nThe /demo skill's feedback nudge template invokes Jeff's authority and pre-frames the expected outcome (acceptance). Roles mirror the framing — they respond with \"AC looks met, ready for Jeff's acceptance\" without substantive review.\n\n## AC\n\n- [ ] AC1: Demo feedback nudges present the work in terms of the recipient's domain — not \"Jeff wants your review\"\n- [ ] AC2: Nudges ask for the role's actual perspective — questions, concerns, connections from their domain\n- [ ] AC3: No pre-framing of acceptance or expected outcome in the nudge text\n- [ ] AC4: Nudge framing is substantive, not performative — roles should engage with the work, not perform a ceremony\n\n## Files\n- ~/.claude/skills/demo\n\n## Reference\nJeff's observation: \"the way you frame things to them shapes a lot in terms of how they respond\" — if you ask them to accept, they will almost without looking.",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -28004,9 +28004,9 @@
         "sequence:loom",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T16:33:25Z",
-      "updated": "2026-04-06T21:18:36Z"
+      "updated": "2026-04-06T21:22:12Z"
     },
     {
       "index": 2266,
@@ -28574,6 +28574,25 @@
       "done": false,
       "created": "2026-04-06T21:10:43Z",
       "updated": "2026-04-06T21:10:43Z"
+    },
+    {
+      "index": 2297,
+      "apiId": 2384,
+      "title": "TDD gate blocks non-code cards — missing bats detection and no doc-only exemption",
+      "description": "## Experience\n\nI hit 'cards done' on a card that only changed SKILL.md and the TDD gate blocked me, demanding jest/cargo test. The card had no production code changes — it was a process doc rewrite. I shouldn't need to run a test suite to accept a markdown edit.\n\n## Context\n\nTwo bugs in tdd_gate.rs:\n1. has_test_run() only detects cargo test, npx jest, npm test, npx cucumber, vitest. Misses bats — our BATS test suite (12+ files, 76+ cases) is invisible to the gate. Silas hit this on #2274.\n2. Gate 2 (demo/done) enforces test runs for ALL non-chore/swat cards, even when the session only touched non-code files (markdown, YAML, plist). A fix card that only edits SKILL.md shouldn't require running jest.\n\nThe chore/swat skip at line 121 is the right pattern but too narrow. Card type alone isn't sufficient — a type:fix card can still be docs-only.\n\n## AC\n\n1. has_test_run() detects bats test runs (pattern: \"bats \" in Bash tool calls)\n2. Gate 2 exempts sessions where no production code was edited — if only markdown/YAML/config/docs were touched, tests aren't required\n3. Existing chore/swat skip preserved\n4. Tests: add test cases for bats detection and doc-only exemption\n5. Existing tests still pass\n\n## Files\n\n- platform/services/chorus-hooks/src/hooks/tdd_gate.rs",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:24:30Z",
+      "updated": "2026-04-06T21:24:36Z"
     }
   ]
 }
