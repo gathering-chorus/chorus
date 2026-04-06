@@ -3261,6 +3261,37 @@ app.get('/api/chorus/health', async (_req: Request, res: Response) => {
   });
 });
 
+// --- Crash handlers: log + alert before dying ---
+const NUDGE_PATH = path.resolve(__dirname, '../../scripts/nudge');
+
+function crashAlert(reason: string): void {
+  const msg = `chorus-api CRASHED: ${reason}`;
+  // macOS notification — doesn't depend on any service
+  try { require('child_process').execFileSync('osascript', ['-e', `display notification "${msg.replace(/"/g, '\\"')}" with title "Chorus API Down"`], { timeout: 5000 }); } catch { /* dying */ }
+  // Also nudge Silas for next session context
+  try { require('child_process').execFileSync(NUDGE_PATH, ['silas', msg, '--force'], { timeout: 5000 }); } catch { /* dying */ }
+}
+
+process.on('uncaughtException', (err) => {
+  console.error(`[chorus-api] FATAL uncaughtException: ${err.message}`);
+  console.error(err.stack);
+  crashAlert(err.message);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  console.error(`[chorus-api] FATAL unhandledRejection: ${msg}`);
+  if (reason instanceof Error) console.error(reason.stack);
+  crashAlert(msg);
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  console.log(`[chorus-api] Received SIGTERM — shutting down`);
+  process.exit(0);
+});
+
 const BIND_HOST = process.env.CHORUS_BIND || '0.0.0.0';
 app.listen(PORT, BIND_HOST, () => {
   console.log(`[chorus-api] Listening on ${BIND_HOST}:${PORT}`);

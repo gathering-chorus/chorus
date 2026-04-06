@@ -90,6 +90,21 @@ if ! pgrep -f "cloudflared tunnel run" > /dev/null 2>&1; then
   FAILURES+=("cloudflare-tunnel: not running — seeds cannot arrive via SMS")
 fi
 
+# --- 7. Chorus API reachable ---
+if ! curl -sf --max-time 5 http://localhost:3340/api/chorus/health > /dev/null 2>&1; then
+  FAILURES+=("chorus-api: localhost:3340 unreachable — team search, seeds, and context broken")
+fi
+
+# --- 8. Gathering app reachable ---
+if ! curl -sf --max-time 5 http://localhost:3000/health > /dev/null 2>&1; then
+  FAILURES+=("gathering-app: localhost:3000 unreachable — app down")
+fi
+
+# --- 9. Nudge delivery ---
+if [ ! -x "$NUDGE" ]; then
+  FAILURES+=("nudge: binary not found or not executable at $NUDGE")
+fi
+
 # --- Report ---
 if [ ${#FAILURES[@]} -eq 0 ]; then
   echo "deep-health: all checks passed"

@@ -1,17 +1,17 @@
 # Next Session — Kade
 
-## What happened
-- Reviewed Silas #2076 (shared file classification) — found CHORUS_LOG naming collision, Silas fixed it
-- Deep reviewed Silas #2077 (shim.rs split into commands/ + chorus-inject crate) — clean extraction, both crates compile
-- Discussed deep work concept with Jeff — daily weather report, weekly climate report
-- Created #2088 (daily signal integrity scan) and #2089 (weekly climate report) — shaped by Wren origin analysis showing 59% reactive in Apps layer
-- Paired with Silas on #2080 root cause — macOS responsible process check causes TCC Accessibility failures. Fix: inject-watcher LaunchAgent
-- Deep reviewed #2080 (dead code cleanup) — shim.rs 1776 to 789 lines, 9/9 tests pass. Jeff accepted.
+## What happened (2026-04-05)
+- **#2171** — Fixed non-deterministic Clearing domain card counts. Two bugs: fetchAllTasks() capped at page 29 (missed 232 cards), list() used Vikunja bucket view (50/bucket cap). Fixed with unlimited pagination + SQLite DB bypass for bucket assignments.
+- **#1820** — Board validation test suite. 14 tests against live Vikunja: move persistence, view accuracy, list determinism, label parsing, addCard validation. Fixed view() overflow bug.
+- **Loom service design review** — Validated Cards + Clearing for Wren's #2093. Port wrong (3460→3470), test count understated (4→13), API route wrong.
+- **Silas reviews** — #2100 (inject crate revert), #2101 (origin tags), #2225 (hook consolidation), #2228 (deep health checks).
 
 ## Pick up
-- #2088 and #2089 in Later — ready to pull when Jeff wants scheduled autonomous runs
-- Next queue: #1865 (photo detail thumbnail), #1631 (name face clusters)
-- 3 compiler warnings in commands/health.rs — Silas follow-up
+- Next queue: #1865 (photo detail thumbnail), #1631 (name face clusters), #1630 (semantic embeddings), #1619 (provenance)
+- Wren wants server.ts→SDK migration for Clearing /api/flow (separate card)
+- 192 orphan tasks in Vikunja with no task_buckets rows (old defects, cosmetic)
+- board-client dist/ is gitignored — must rebuild after client.ts changes
 
 ## Context
-- Wren origin analysis at /gathering-docs/observing-value — reactive ratio data drives daily/weekly card design
+- Vikunja DB path: chorus/directing/vikunja/db/vikunja.db — task_buckets table is the source of truth for bucket assignments
+- fetchBucketMapFromDB() in client.ts bypasses API 50-cap

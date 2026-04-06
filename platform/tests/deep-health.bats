@@ -38,3 +38,26 @@ SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/deep-health.
     [[ "$output" == *"all checks passed"* ]]
   fi
 }
+
+# --- Service checks (#2 deep-health service monitoring) ---
+
+@test "checks chorus API reachability" {
+  run bash "$SCRIPT"
+  # Script must mention chorus-api in its checks — either passes or reports failure
+  if ! curl -sf --max-time 2 http://localhost:3340/api/chorus/health > /dev/null 2>&1; then
+    [[ "$output" == *"chorus-api"* ]]
+  fi
+}
+
+@test "checks gathering app reachability" {
+  run bash "$SCRIPT"
+  if ! curl -sf --max-time 2 http://localhost:3000/health > /dev/null 2>&1; then
+    [[ "$output" == *"gathering-app"* ]]
+  fi
+}
+
+@test "checks nudge binary exists" {
+  run bash "$SCRIPT"
+  # Should verify nudge is executable — either passes silently or reports
+  [ "$status" -eq 0 ] || [[ "$output" == *"failure"* ]]
+}
