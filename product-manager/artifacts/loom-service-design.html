@@ -125,7 +125,8 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
   </div>
   <div class="section-box"><strong>Docs</strong>
     SKILL.md (clearing skill)<br/>
-    DEC-107 (nudge delivery)
+    DEC-107 (nudge delivery)<br/>
+    Clearing service design (#2287)
   </div>
   <div class="section-box"><strong>UIs</strong>
     <code>localhost:3460</code> — browser chat<br/>
@@ -133,7 +134,7 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
     Domain card panels with fold
   </div>
 </div>
-<div class="gap"><strong>Gap:</strong> Mobile UX still has friction — Enter sends instead of newline (#2046 fixed but pattern recurs). Tunnel disconnect detection is stale Socket.IO state.</div>
+<div class="gap"><strong>Gap:</strong> Mobile UX still has friction — Enter sends instead of newline. Role-state tiles were stale after acceptance (#2286, fixed). Bridge echo noise (#2284, fixed).</div>
 </div>
 
 <!-- ==================== INTERACTIONS ==================== -->
@@ -148,26 +149,27 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
   </div>
   <div class="section-box"><strong>APIs</strong>
     <code>chorus-log interaction.pattern.detected</code><br/>
-    No query API for pattern history
+    <code>/api/chorus/interaction-patterns</code> (Loki query)
   </div>
   <div class="section-box"><strong>Data</strong>
     Spine events in chorus.log<br/>
-    No aggregated pattern metrics
+    Pattern history page (#2122) queries Loki
   </div>
 </div>
 <div class="section-grid">
   <div class="section-box"><strong>Tests</strong>
-    BDD: <code>team-awareness.feature</code>
+    BDD: <code>team-awareness.feature</code><br/>
+    <code>interaction-patterns-api.test.ts</code>
   </div>
   <div class="section-box"><strong>Docs</strong>
     INTERACTION_PATTERNS.md<br/>
     9 patterns documented in CLAUDE.md
   </div>
   <div class="section-box"><strong>UIs</strong>
-    <span class="tag-none">NONE</span> — no pattern history dashboard
+    <code>interaction-pattern-history.html</code> (#2122)
   </div>
 </div>
-<div class="gap"><strong>Gap:</strong> Pattern history not queryable — no aggregated metrics or dashboard. Context-aware hooks (#1863) would let pattern feed into gate urgency.</div>
+<div class="gap"><strong>Gap:</strong> Pattern emission is manual — only 8 events in 7 days. Auto-emit hook carded (#2282). Context-aware hooks (#1863) would let pattern feed into gate urgency.</div>
 </div>
 
 <!-- ==================== BRIEFS ==================== -->
