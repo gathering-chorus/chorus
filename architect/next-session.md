@@ -1,24 +1,18 @@
 # Next Session — Silas
 
-## Shipped This Session (8 cards)
-- #2274 E2E alert delivery test — synthetic probe, weekly LaunchAgent, deep-health integration
-- #2297 TDD gate — bats detection + doc-only session exemption
-- #2275 Repo sync — deleted stale chorus copies, committed 25 files to shared-observability
-- #2276 Fix perf-baseline disk metric — df→diskutil (2% → 48%)
-- #2298 Stop bridge event injection into Jeff's terminal — [bridge] events filtered at queue level
-- #2277 Hooks telemetry API — /api/chorus/hooks/metrics endpoint, 60s cache, standards surface switched to API
-- #2282 Interaction pattern detection — 9 modes, shift-only emission, all roles emit
-- #2278 Dashboard content validation — 13 dashboards checked via Grafana API, Data Center gap found
+## Shipped This Session (3 cards — ops sequence)
+- #2279 Per-alert runbooks — 46 sections in RUNBOOKS.md, runbook_url on all 39 Prometheus alerts, fix hints on 7 shell alerts
+- #2285 Defect card triage gate — 60 noise cards closed, severity filter (warnings wait for threshold), auto-close after 7d, ownership routing
+- #2280 Event correlation timeline — CLI merges spine/hooks/alerts/git, --last shorthand, 8/8 tests
 
 ## Other Fixes
-- alert-runner.sh YAML comment parsing — synthetic-test schedule field had trailing comment
-- perf-baseline.sh JSON errors field — `00` → `0` (invalid JSON)
+- gathering-app transient 503 — self-recovered
+- Fuseki restarted on port 3030 after kickstart
 
 ## No WIP Cards
 
 ## Pending / Next Session
-- #2289 (Later): Broader terminal noise suppression beyond bridge events
-- Data Center dashboard returns no data — node-exporter `machine` label mismatch. Investigate or card.
-- Wren suggested `pair` as 10th interaction pattern mode — card when needed
-- 18 stale briefs in inbox — triage next session
-- Kade building integration tests (#2290, #2291)
+- Fuseki compact endpoint blocked by Shiro auth on `/$` paths — compact LaunchAgent may target wrong port (3031 vs 3030)
+- 8 real defect cards remain (5 Later app defects for Kade, 3 Ops for Silas: #1919, #2044, #2281)
+- #1910 (Later): local backup reconciliation — deferred by Wren, next in ops sequence
+- 18 stale briefs in inbox — triage for relevance
