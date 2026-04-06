@@ -1,19 +1,22 @@
 # Kade — Next Session
 
-## WIP
-- **#2290** — Fill integration test layer (15→50). AC1 complete: top 10 churn pairs identified. Start writing tests.
+## Pending acceptance
+- **#2294** — Performance baselines (16 tests). Committed, demo'd to Wren. Push after acceptance.
 
-## Shipped This Session (2026-04-06)
-- #2252, #2268, #2088, #2122, #2288, #2248 closed, #2265 carded
+## Next card
+- **#2296** — Smoke check expansion. Last card in quality sequence.
 
-## Quality Sequence (#2290-#2296)
-7 cards under sequence:quality. See /gathering-docs/quality-service.html
+## Shipped this session (2026-04-06 evening)
+- #2290 — 54 integration tests (SPARQL→handler, seed pipeline, harvest→search)
+- #2291 — 15 Playwright E2E (Bridge, Clearing, Werk)
+- #2292 — 61 unit tests for 14 uncovered services + skills mock fix
+- #2295 — 34 board-client test fixes (fetchBucketMapFromDB mock after #1820)
+- #2293 — 24 API regression tests for top routes
 
-## Pending
-- doc-catalog.handler.ts regex fix (standards|harness) needs commit
-- skills.handler.test.ts 3 pre-existing failures block pre-push
+## Fixes applied
+- Pre-commit --max-warnings 16→20 (pre-existing lint in app.ts, MonitoringService.ts)
+- skills.handler.test.ts + domain-api.test.ts: mock SkillsService (disk-independent)
+- board-client 4 files: mock fetchAllTasks + fetchBucketMapFromDB
 
-## Key Learnings
-- Nudge framing shapes response (memory saved)
-- CSP nonce on all inline script tags
-- cards list --status returns all statuses — parse by section headers
+## Wren process note
+Don't self-accept. Demo to Wren, she closes.
