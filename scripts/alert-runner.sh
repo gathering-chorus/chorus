@@ -79,9 +79,15 @@ log "Alert runner started (filter=${RULE_FILTER:-all})"
 
 for rule in "$ALERT_DIR"/*.yml; do
   [[ -f "$rule" ]] || continue
+  name=$(grep '^name:' "$rule" | head -1 | sed 's/name: *//')
   if [[ -n "$RULE_FILTER" ]]; then
-    name=$(grep '^name:' "$rule" | head -1 | sed 's/name: *//')
     [[ "$name" == "$RULE_FILTER" ]] || continue
+  fi
+  # Skip manual-only rules unless explicitly requested via --rule
+  schedule=$(grep '^schedule:' "$rule" | head -1 | sed 's/schedule: *//')
+  if [[ "$schedule" == "manual" ]] && [[ -z "$RULE_FILTER" ]]; then
+    log "SKIP $name — manual schedule (use --rule $name to run)"
+    continue
   fi
   run_check "$rule"
 done
