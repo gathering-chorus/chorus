@@ -27,10 +27,6 @@ check: |
   exit 1
 
 action: |
-  BRIDGE="http://localhost:3470/api/message"
-  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
-  curl -sf -X POST "$BRIDGE" \
-    -H 'Content-Type: application/json' \
-    -d "$(jq -n --arg text "**ALERT** — $TIMESTAMP\n\nApp restarted and SMS seed sync failed. Stored seeds with special characters are not loading.\nFix the startup sync escape path." \
-      --arg from "silas" '{from: $from, text: $text}')" \
-    &>/dev/null || true
+  # Nudge Silas — alerts go to roles, not the Clearing
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "startup-sync: FAILED — stored seeds not loading after app restart" --force 2>/dev/null || true

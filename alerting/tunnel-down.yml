@@ -34,11 +34,6 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN_FILE"
-  # Post alert to Bridge
-  BRIDGE="http://localhost:3470/api/message"
-  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
-  MSG=$(printf '🔴 **Alert** — %s\n\nCloudflare tunnel is DOWN. Seeds cannot arrive via SMS.\n\nCheck: cloudflared service status\nFix: launchctl kickstart gui/$(id -u)/com.cloudflare.tunnel' "$TIMESTAMP")
-  curl -sf -X POST "$BRIDGE" \
-    -H 'Content-Type: application/json' \
-    -d "$(jq -n --arg text "$MSG" --arg from "silas" '{from: $from, text: $text}')" \
-    &>/dev/null || true
+  # Nudge Silas — alerts go to roles, not the Clearing
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "cloudflare-tunnel: DOWN — seeds cannot arrive via SMS" --force 2>/dev/null || true

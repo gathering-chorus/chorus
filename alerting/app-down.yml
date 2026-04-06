@@ -21,12 +21,6 @@ check: |
   exit 1
 
 action: |
-  BRIDGE="http://localhost:3470/api/message"
-  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
-  FUSEKI=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:3030/$/ping 2>/dev/null || echo "000")
-  TUNNEL=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 5 https://lightlifeurbangardens.com/health 2>/dev/null || echo "000")
-  curl -sf -X POST "$BRIDGE" \
-    -H 'Content-Type: application/json' \
-    -d "$(jq -n --arg text "**ALERT** — $TIMESTAMP\n\nGathering app is DOWN. Seeds, pods, and all API endpoints are unreachable.\nApp: DOWN | Fuseki: $FUSEKI | Tunnel: $TUNNEL\n\nRestart: app-state.sh deploy gathering-app" \
-      --arg from "silas" '{from: $from, text: $text}')" \
-    &>/dev/null || true
+  # Nudge Silas — alerts go to roles, not the Clearing
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "gathering-app: DOWN — seeds, pods, API all unreachable" --force 2>/dev/null || true

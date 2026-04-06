@@ -11,6 +11,16 @@ const execAsync = promisify(exec);
 
 const app = express();
 app.use(express.json());
+
+// Request logging — every request writes to stdout so the log stays fresh
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    console.log(`[chorus-api] ${req.method} ${req.path} ${res.statusCode} ${ms}ms`);
+  });
+  next();
+});
 const PORT = parseInt(process.env.CHORUS_API_PORT || '3340', 10);
 const DB_PATH = path.join(os.homedir(), '.chorus', 'index.db');
 const LANCE_DIR = path.join(os.homedir(), '.chorus', 'lance');

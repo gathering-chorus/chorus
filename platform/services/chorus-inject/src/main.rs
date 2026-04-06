@@ -47,9 +47,7 @@ fn inject(role: &str, text: &str) -> Result<(), String> {
     let pattern = role_pattern(role)
         .ok_or_else(|| format!("unknown role: {}", role))?;
 
-    // AppleScript uses double-quoted strings: keystroke "text"
-    // Single quotes are fine inside double quotes — do NOT escape them.
-    // Only escape: backslash, double quote, newline, smart quotes/dashes.
+    // Escape for AppleScript double-quoted strings
     let escaped = text
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -60,30 +58,19 @@ fn inject(role: &str, text: &str) -> Result<(), String> {
         .replace('\u{201C}', "\\\"")
         .replace('\u{201D}', "\\\"");
 
-    // #1764: saves/restores frontmost app to prevent focus theft.
-    // Targets Terminal windows only (never Chrome). DEC-107.
+    // #2245: use "do script" instead of activate + keystroke.
+    // Prior approach (#2100) used activate + keystroke which required:
+    //   - TCC Accessibility grant (broke on every rebuild until #2075 split the crate)
+    //   - Display awake (activate/frontmost fail when display sleeps)
+    //   - Focus theft (steals window focus, disrupts Jeff)
+    // "do script" is a Terminal.app command — targets a specific tab directly.
+    // No TCC, no display, no focus theft. Works from LaunchAgent context overnight.
     let script = format!(
-        r#"tell application "System Events"
-    set originalApp to name of first application process whose frontmost is true
-end tell
-tell application "Terminal"
-    set winCount to count of windows
-    repeat with i from 1 to winCount
-        set w to window i
+        r#"tell application "Terminal"
+    repeat with w in windows
         set winName to name of w
         if winName contains "{pattern}" and winName contains "claude" then
-            activate
-            set frontmost of w to true
-            delay 0.15
-            tell application "System Events"
-                tell process "Terminal"
-                    keystroke "{text}"
-                    delay 0.05
-                    key code 36
-                end tell
-            end tell
-            delay 0.05
-            tell application originalApp to activate
+            do script "{text}" in (selected tab of w)
             return "ok"
         end if
     end repeat

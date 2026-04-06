@@ -30,11 +30,6 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN_FILE"
-  # Post alert to Bridge
-  BRIDGE="http://localhost:3470/api/message"
-  TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
-  MSG=$(printf '🔴 **Alert** — %s\n\nHook server (com.chorus.hooks) is down. Compound loop broken — no context injection, no gates.\n\nFix: agent-state.sh restart hooks' "$TIMESTAMP")
-  curl -sf -X POST "$BRIDGE" \
-    -H 'Content-Type: application/json' \
-    -d "$(jq -n --arg text "$MSG" --arg from "silas" '{from: $from, text: $text}')" \
-    &>/dev/null || true
+  # Nudge Silas — alerts go to roles, not the Clearing
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "hook-server: DOWN — compound loop broken, no context injection, no gates" --force 2>/dev/null || true
