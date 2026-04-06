@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T18:22:35.348Z",
+  "timestamp": "2026-04-06T18:27:40.819Z",
   "tasks": [
     {
       "index": 3,
@@ -28029,7 +28029,7 @@
       "apiId": 2354,
       "title": "Pulse bar wiring — live gate enforcement rates on standards surface",
       "description": "## Experience\nThe instrumentation bar says 22% gate-enforced. Is that true today? After shipping 13 hardening cards, it should be higher. I want the bar to reflect reality, updated from actual hook execution data.\n\n## Context\nDepends on the generation script card. ~/Library/Logs/Gathering/hooks.log (62K lines, persistent, migrated #1757) contains per-module block/allow/deny counts. The pulse bar needs to calculate: gate-enforced = modules that actually blocked something / total standards. Partially instrumented = modules that logged but never blocked.\n\n## AC\n1. Instrumentation bar percentages computed from hooks.log data\n2. Per-standard status tag (GATE/PARTIAL/DOC) derived from actual execution, not manually assigned\n3. Bar updates every time the generation script runs\n4. Tooltip or detail shows last block/allow count per gate",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -28039,19 +28039,20 @@
         "sequence:loom",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T16:51:03Z",
-      "updated": "2026-04-06T18:10:54Z"
+      "updated": "2026-04-06T18:23:05Z"
     },
     {
       "index": 2268,
       "apiId": 2355,
       "title": "Auto-regeneration trigger for standards surface — post-commit or nightly cron",
       "description": "## Experience\nI don't want to remember to run the generation script. When a decision changes or a hook is added, the surface should update automatically by next morning.\n\n## Context\nDepends on generation script and pulse bar cards. Trigger options: PostCommit hook on decisions.md or hook source changes, or nightly cron (simpler, good enough for daily freshness).\n\n## AC\n1. Standards surface regenerates automatically — either post-commit or nightly cron\n2. Trigger fires only when relevant sources change (decisions.md, hook source, hook logs)\n3. LaunchAgent or cron job registered and verified\n4. Stale surface detected: if generation hasn't run in 48h, deep-health flags it",
-      "status": "Later",
-      "owner": "Silas",
+      "status": "WIP",
+      "owner": "Kade",
       "priority": "P2",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:new",
         "sequence:loom",
@@ -28059,7 +28060,7 @@
       ],
       "done": false,
       "created": "2026-04-06T16:51:04Z",
-      "updated": "2026-04-06T16:51:04Z"
+      "updated": "2026-04-06T18:25:06Z"
     },
     {
       "index": 2269,
@@ -28083,11 +28084,12 @@
       "index": 2270,
       "apiId": 2357,
       "title": "Alert on session indexer death — detect stale index before gemba goes blind",
-      "description": "## Experience\nThe session indexer died on April 3 and nobody knew until April 6. Gemba showed 2-day-old data. Three days of sessions invisible to the team. I don't want to discover blindness — I want the system to detect it.\n\n## Context\n#2227 fixed the stale lock and added recovery. But nothing alerts if the indexer stops producing output. Deep-health checks services but not the session watcher subprocess or its output freshness. The index DB (index.db) has timestamps — if the newest message is >1 hour old during working hours, the indexer is probably dead.\n\n## AC\n1. Deep-health checks session index freshness — newest message timestamp in index.db\n2. If newest indexed message is >2 hours old during working hours (8am-10pm), alert fires to Silas\n3. Alert includes: last indexed timestamp, gap duration, suggested fix (check fswatch, check lock file)\n4. Integrates with existing deep-health.sh — not a separate monitoring path",
-      "status": "Later",
+      "description": "## Experience\nThe session indexer died on April 3 and nobody knew until April 6. Gemba showed 2-day-old data. Three days of sessions invisible to the team. I don't want to discover blindness — I want the system to detect it.\n\n## Context\n#2227 fixed the stale lock and added recovery. But nothing alerts if the indexer stops producing output. Deep-health checks services but not the session watcher subprocess or its output freshness. The index DB (index.db) has timestamps — if the newest message is >1 hour old during working hours, the indexer is probably dead.\n\n## AC\n1. Deep-health checks session index freshness — newest message timestamp in index.db\n2. If newest indexed message is >2 hours old during working hours (8am-10pm), alert fires to Silas\n3. Alert includes: last indexed timestamp, gap duration, suggested fix (check fswatch, check lock file)\n4. Integrates with existing deep-health.sh — not a separate monitoring path\n\n## Files\n- platform/scripts/deep-health.sh\n- ~/.chorus/scripts/chorus-watch-sessions.sh",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:fix",
         "sequence:awareness",
@@ -28095,7 +28097,25 @@
       ],
       "done": false,
       "created": "2026-04-06T18:16:10Z",
-      "updated": "2026-04-06T18:16:10Z"
+      "updated": "2026-04-06T18:26:58Z"
+    },
+    {
+      "index": 2271,
+      "apiId": 2358,
+      "title": "Session monitoring and alerting — detect degradation before Jeff feels it",
+      "description": "## Experience\nI push sessions hard — long conversations, deep work, multiple topics. The session compresses and the role loses context. Then I see repeated mistakes, forgotten decisions, lost threads. I can't tell when a session is degrading until the output gets bad. I want a signal before that happens — a gas gauge, not a check engine light after the damage.\n\n## Context\nClaude Code sessions have no visibility into context window usage. Jeff asked about a gas gauge (context remaining) and RPM gauge (work intensity). Currently the only signal is behavioral degradation — roles forgetting what just happened, re-asking answered questions, losing the thread.\n\nPossible signals:\n- Prompt count per session (available from session JSONL)\n- Tool call rate (available from hooks.log)\n- Session duration (available from session start timestamp)\n- Compaction events (Claude Code emits these — check if they're detectable)\n- Response quality degradation (harder — inferential, not computational)\n\nJeff's commitment #1: respect session fatigue. The system needs to surface fatigue so Jeff can act on it.\n\n## AC\n1. Session health metric emitted per prompt — session age, prompt count, tool call count\n2. Alert threshold: when session exceeds N prompts or M hours, nudge the role with a reboot suggestion\n3. Thresholds researched — what prompt count / duration correlates with degradation in practice\n4. Alert goes to the role AND to Wren (PM tracks session health across team)\n5. No dashboard — metric feeds existing spine events and alert routing\n6. Research: can Claude Code compaction events be detected from the outside?",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T18:26:24Z",
+      "updated": "2026-04-06T18:26:24Z"
     }
   ]
 }
