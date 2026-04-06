@@ -33,12 +33,15 @@ fi
 LOG_DIR="$HOME/Library/Logs/Chorus"
 STALE_2H=$((now - 7200))
 STALE_25H=$((now - 90000))
+STALE_8D=$((now - 691200))
 
 # Skip: stderr-only logs, own log, orphaned logs, agents that don't use stdout
 SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log"
 STDERR_LOGS="clearing-probe-stderr.log chorus-bridge.stderr.log chorus-hooks.stderr.log"
 # Daily jobs — 25h threshold instead of 2h
 DAILY_LOGS="context-cache-daily.log fuseki-compact.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log"
+# Weekly jobs — 8 day threshold
+WEEKLY_LOGS="context-cache-weekly.log disk-trend.log"
 
 for log in "$LOG_DIR"/*.log; do
   [ -f "$log" ] || continue
@@ -52,7 +55,9 @@ for log in "$LOG_DIR"/*.log; do
   mtime=$(stat -f %m "$log" 2>/dev/null || echo 0)
 
   # Pick threshold based on job type
-  if [[ " $DAILY_LOGS " == *" $name "* ]]; then
+  if [[ " $WEEKLY_LOGS " == *" $name "* ]]; then
+    threshold=$STALE_8D
+  elif [[ " $DAILY_LOGS " == *" $name "* ]]; then
     threshold=$STALE_25H
   else
     threshold=$STALE_2H
@@ -66,11 +71,23 @@ for log in "$LOG_DIR"/*.log; do
   fi
 done
 
-# --- 4. Loki tunnel: SSH exit code ---
+# --- 4. Loki tunnel: SSH exit code — auto-heal stale port on Bedroom ---
 if launchctl list 2>/dev/null | grep -q "loki-tunnel-bedroom"; then
   tunnel_exit=$(launchctl list | grep loki-tunnel-bedroom | awk '{print $2}')
   if [ "$tunnel_exit" != "0" ] && [ "$tunnel_exit" != "-" ]; then
-    FAILURES+=("loki-tunnel-bedroom: exit code $tunnel_exit — remote log ingestion broken")
+    # Auto-heal: kill stale sshd on Bedroom holding port 3102, then restart tunnel
+    stale_pid=$(ssh -o ConnectTimeout=5 jeffbridwell@192.168.86.242 "lsof -t -i :3102 -sTCP:LISTEN" 2>/dev/null || true)
+    if [ -n "$stale_pid" ]; then
+      ssh -o ConnectTimeout=5 jeffbridwell@192.168.86.242 "kill $stale_pid" 2>/dev/null || true
+      sleep 2
+    fi
+    launchctl kickstart -k gui/$(id -u)/com.gathering.loki-tunnel-bedroom 2>/dev/null || true
+    sleep 3
+    # Re-check after heal attempt
+    tunnel_exit2=$(launchctl list | grep loki-tunnel-bedroom | awk '{print $2}')
+    if [ "$tunnel_exit2" != "0" ] && [ "$tunnel_exit2" != "-" ]; then
+      FAILURES+=("loki-tunnel-bedroom: exit code $tunnel_exit2 — auto-heal failed")
+    fi
   fi
 else
   FAILURES+=("loki-tunnel-bedroom: not loaded — remote log ingestion broken")
