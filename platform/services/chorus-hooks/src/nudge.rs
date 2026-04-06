@@ -284,12 +284,18 @@ pub fn run(args: &[String]) -> ExitCode {
     let clock = process::wall_clock();
     // Use short format for nudge prefix
     let clock_short: String = clock.chars().take(16).collect();
-    let prefix = format!("[nudge from {} | {} Boston]", sender, clock_short);
-    let reply_expected = needs_reply(message);
-    let full_text = if reply_expected {
-        format!("{} {} [REPLY EXPECTED — nudge {} back]", prefix, message, sender)
+
+    // Jeff's messages pass through verbatim — no wrapping, no mutation (#2255)
+    let full_text = if sender == "jeff" {
+        message.to_string()
     } else {
-        format!("{} {}", prefix, message)
+        let prefix = format!("[nudge from {} | {} Boston]", sender, clock_short);
+        let reply_expected = needs_reply(message);
+        if reply_expected {
+            format!("{} {} [REPLY EXPECTED — nudge {} back]", prefix, message, sender)
+        } else {
+            format!("{} {}", prefix, message)
+        }
     };
 
     track_exchange(&sender, target);
