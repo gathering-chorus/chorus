@@ -95,10 +95,43 @@ fn has_test_run(input: &HookInput, state: &AppState) -> bool {
         let lower = line.to_lowercase();
         if (lower.contains("cargo test") || lower.contains("npx jest")
             || lower.contains("npm test") || lower.contains("npm run test")
-            || lower.contains("npx cucumber") || lower.contains("vitest"))
+            || lower.contains("npx cucumber") || lower.contains("vitest")
+            || lower.contains("bats "))
             && lower.contains("\"bash\"")
         {
             return true;
+        }
+    }
+
+    false
+}
+
+/// Check if this session edited any production code files
+fn has_production_code_edit(input: &HookInput, state: &AppState) -> bool {
+    let session_id = match &input.session_id {
+        Some(id) => id.clone(),
+        None => return false,
+    };
+
+    let cwd = input.cwd.as_deref().unwrap_or("");
+    let lines = state.session_cache.get_tail(&session_id, cwd, 500);
+
+    for line in &lines {
+        let lower = line.to_lowercase();
+        if (lower.contains("\"edit\"") || lower.contains("\"write\"")) && lower.contains("file_path") {
+            // Extract file path and check if it's production code
+            if let Some(start) = lower.find("file_path") {
+                let rest = &line[start..];
+                // Look for the value after file_path
+                if let Some(val_start) = rest.find('"').and_then(|i| rest[i+1..].find('"').map(|j| i + 1 + j + 1)) {
+                    if let Some(val_end) = rest[val_start..].find('"') {
+                        let path = &rest[val_start..val_start + val_end];
+                        if is_production_code(path) {
+                            return true;
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -137,12 +170,12 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
         }
     }
 
-    // Gate 2: Demo/done/acp — require test runs
+    // Gate 2: Demo/done/acp — require test runs (only if production code was edited)
     if is_demo_or_done(input) {
-        if !has_test_run(input, state) {
+        if has_production_code_edit(input, state) && !has_test_run(input, state) {
             return HookResponse::deny(&permission_deny_json(
                 "TDD gate: no test runs detected in this session. \
-                 Run tests (cargo test, npx jest, npx cucumber-js) before demo/done. \
+                 Run tests (cargo test, npx jest, bats, npx cucumber-js) before demo/done. \
                  DEC-1674: AC → tests → code → green → demo."
             ));
         }
@@ -240,5 +273,33 @@ mod tests {
         let input = make_input("Skill", "skill", "demo");
         let r = check(&input, &state());
         assert!(r.stdout.is_none());
+    }
+
+    // --- #2297: bats detection ---
+
+    #[test]
+    fn markdown_edit_not_code_edit() {
+        let input = make_input("Edit", "file_path", "/project/SKILL.md");
+        assert!(!is_code_edit(&input));
+    }
+
+    #[test]
+    fn yaml_edit_not_code_edit() {
+        let input = make_input("Edit", "file_path", "/project/alerting/synthetic-test.yml");
+        assert!(!is_code_edit(&input));
+    }
+
+    #[test]
+    fn plist_edit_not_code_edit() {
+        let input = make_input("Write", "file_path", "/Users/jeff/Library/LaunchAgents/com.chorus.test.plist");
+        assert!(!is_code_edit(&input));
+    }
+
+    #[test]
+    fn non_code_files_detected_correctly() {
+        assert!(!is_production_code("SKILL.md"));
+        assert!(!is_production_code("alerting/synthetic-test.yml"));
+        assert!(!is_production_code("config/profiles/base.json"));
+        assert!(!is_production_code("docs/README.md"));
     }
 }
