@@ -93,14 +93,27 @@ else
   FAILURES+=("loki-tunnel-bedroom: not loaded — remote log ingestion broken")
 fi
 
-# --- 5. Chorus index freshness ---
+# --- 5. Session index freshness (#2270) ---
+# Query actual message timestamps, not file mtime. Only alert during working hours.
 INDEX_DB="$HOME/.chorus/index.db"
-if [ -f "$INDEX_DB" ]; then
-  idx_mtime=$(stat -f %m "$INDEX_DB" 2>/dev/null || echo 0)
-  idx_age=$((now - idx_mtime))
-  if [ "$idx_age" -gt 3600 ]; then
-    age_h=$((idx_age / 3600))
-    FAILURES+=("chorus-index: database ${age_h}h stale — session indexer may be dead")
+current_hour=$(date +%H)
+if [ -f "$INDEX_DB" ] && [ "$current_hour" -ge 8 ] && [ "$current_hour" -lt 22 ]; then
+  # Get newest message timestamp from the database
+  last_ts=$(sqlite3 "$INDEX_DB" "SELECT timestamp FROM messages ORDER BY timestamp DESC LIMIT 1;" 2>/dev/null || echo "")
+  if [ -n "$last_ts" ]; then
+    # Convert ISO timestamp to epoch
+    last_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${last_ts%%.*}" +%s 2>/dev/null || echo 0)
+    idx_age=$((now - last_epoch))
+    if [ "$idx_age" -gt 7200 ]; then
+      age_h=$((idx_age / 3600))
+      lockfile_status="no lock"
+      [ -f "$HOME/.chorus/watcher.lock" ] && lockfile_status="LOCKED ($(( (now - $(stat -f %m "$HOME/.chorus/watcher.lock")) ))s)"
+      fswatch_status="dead"
+      pgrep -f "fswatch.*\.jsonl" > /dev/null 2>&1 && fswatch_status="alive"
+      FAILURES+=("session-index: last indexed ${age_h}h ago (${last_ts}). fswatch: ${fswatch_status}, lockfile: ${lockfile_status}. Fix: check fswatch, check lock file, run chorus-index.sh sessions")
+    fi
+  else
+    FAILURES+=("session-index: no messages in index.db — indexer never ran or DB corrupt")
   fi
 fi
 
