@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T18:42:52.115Z",
+  "timestamp": "2026-04-06T18:47:55.466Z",
   "tasks": [
     {
       "index": 3,
@@ -12335,7 +12335,7 @@
       "apiId": 1425,
       "title": "Add photo overlay mode to garden map — layer hand-drawn annotations on digital beds",
       "description": "## AC\n- Garden map supports a photo overlay mode — toggle between digital bed layout and hand-drawn annotation layer\n- Jeff can upload photos of hand-drawn garden plans (cabinet maps, notebook sketches)\n- Photos are positioned and scaled to align with the digital zone grid (#1341)\n- Toggle control: 'Show annotations' switches between clean digital view and photo overlay\n- Photos stored as garden domain assets, referenced in RDF\n\n## Context\nJeff has hand-drawn garden maps on kitchen cabinet doors — years of seasonal planting notes. These physical artifacts are the richest garden data source. This feature bridges physical and digital.\n\n## Dependencies\n- #1341 (zone grouping) must ship first — overlay aligns to zones",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -12344,14 +12344,14 @@
       ],
       "done": false,
       "created": "2026-03-12T13:36:51Z",
-      "updated": "2026-03-15T19:01:24Z"
+      "updated": "2026-04-06T18:47:05Z"
     },
     {
       "index": 1343,
       "apiId": 1426,
       "title": "Add seasonal layer toggle to garden map — what's planted now vs. last year",
       "description": "## AC\n- Garden map supports seasonal view: toggle between current season and previous year(s)\n- Each bed shows what's planted now vs what was planted in the same season last year\n- Data source: manual entry initially, PictureThis harvest later\n- Season definitions: Spring (Mar-May), Summer (Jun-Aug), Fall (Sep-Nov), Winter (Dec-Feb)\n- Visual diff: current plantings in solid color, last year in ghost/outline\n- Supports the garden lifecycle: seeds → ideas → projects → beds → seasons\n\n## Context\nJeff wants to see what's working seasonally — which beds produce, which plantings repeat, what changes year over year. This is the temporal layer of the garden domain (zones are spatial, #1341).\n\n## Dependencies\n- #1341 (zone grouping) must ship first — seasons are per-bed, beds are per-zone\n- Garden ontology needs Season and Planting classes",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -12360,7 +12360,7 @@
       ],
       "done": false,
       "created": "2026-03-12T13:36:52Z",
-      "updated": "2026-03-15T18:57:58Z"
+      "updated": "2026-04-06T18:47:18Z"
     },
     {
       "index": 1344,
@@ -16190,7 +16190,7 @@
       "apiId": 1664,
       "title": "Complete doc-catalog page — fix links, add to navbar, make all docs browseable",
       "description": "Doc catalog at /doc-catalog.html inventories 88 HTML docs across 7 projects. Started yesterday, partially working. Needs finishing.\n\n## What's done\n- Catalog page exists with 88 docs grouped by topic\n- NAV / NOT IN NAV badges showing which docs are in navbar\n- Dates on every doc\n- /docs/pm/, /docs/architect/, /docs/engineer/ static routes added to app.ts (working with auth)\n\n## What's left\n1. Links to role docs (/docs/pm/*, /docs/architect/*, /docs/engineer/*) need verification — some paths may be wrong (e.g. /docs/pm/docs/wren-role.html has double \"docs\")\n2. Add doc-catalog to navbar (under Chorus or a new Documentation section)\n3. Remove stale convergence domain tag on cards that were already fixed\n4. Consider: auto-generate catalog from filesystem scan instead of static HTML\n\n## AC\n1. Every link on /doc-catalog.html is clickable and loads the correct doc (no 404s)\n2. Doc catalog accessible from navbar\n3. Role doc routes (/docs/pm/, /docs/architect/, /docs/engineer/) verified working for all listed files\n4. Path corrections for any double-directory issues (e.g. /docs/pm/docs/ → /docs/pm/)\n\n## Files\npublic/doc-catalog.html, src/app.ts, config/nav-tree.json",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -16199,7 +16199,7 @@
       ],
       "done": false,
       "created": "2026-03-21T12:53:03Z",
-      "updated": "2026-03-21T12:53:03Z"
+      "updated": "2026-04-06T18:47:05Z"
     },
     {
       "index": 1582,
@@ -17025,7 +17025,7 @@
       "apiId": 1714,
       "title": "Name face clusters — Jeff reviews 48 clusters, system persists names to Person nodes",
       "description": "## Experience\nI open the face cluster browser and see 48 unnamed groups. I know these people — family, friends, neighbors. I click a cluster, see the sample photos, type 'Mom', and it sticks. The name flows through to every photo she's in. 48 clusters, one sitting, and suddenly my photos know who's in them.\n\n## AC\n- [ ] Face cluster review UI shows representative sample per cluster\n- [ ] Jeff can assign a name, system writes to Person node\n- [ ] Named clusters propagate to canonical photo enrichment (jb:depictsPerson)\n- [ ] Progress tracking: N of 48 clusters named",
-      "status": "Next",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P3",
       "domains": [
@@ -17036,7 +17036,7 @@
       ],
       "done": false,
       "created": "2026-03-23T12:20:33Z",
-      "updated": "2026-03-30T13:02:05Z"
+      "updated": "2026-04-06T18:47:07Z"
     },
     {
       "index": 1632,
@@ -21285,7 +21285,7 @@
       "apiId": 1969,
       "title": "Chorus domain taxonomy — decompose monolithic Chorus into sub-domains from Jeff's drawing",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -21297,7 +21297,7 @@
       ],
       "done": false,
       "created": "2026-03-31T00:19:14Z",
-      "updated": "2026-03-31T00:22:07Z"
+      "updated": "2026-04-06T18:47:18Z"
     },
     {
       "index": 1887,
@@ -22676,7 +22676,7 @@
       "apiId": 2047,
       "title": "Cards CLI — update description and AC on existing cards",
       "description": "## Experience\\n\\nTest description with **markdown**.\\n\\n## AC\\n- Item one\\n- Item two",
-      "status": "Done",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22686,9 +22686,9 @@
         "sequence:coordination",
         "origin:reactive"
       ],
-      "done": true,
+      "done": false,
       "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-06T02:32:37Z"
+      "updated": "2026-04-06T18:47:06Z"
     },
     {
       "index": 1965,
@@ -24845,7 +24845,7 @@
       "index": 2088,
       "apiId": 2171,
       "title": "Daily signal integrity scan — codebase weather, trust verification, signal-to-noise",
-      "description": "Scheduled autonomous agent run (cron, 6am ET daily). Not a status dashboard — a developing judgment about system health.\n\n## What it does\n1. Signal integrity — smoke tests that exercise actual paths. Did nudge deliver? Did seed pipeline write to Fuseki? Does board CLI match Vikunja? Can chorus search find yesterdays index?\n2. Codebase weather — git log analysis: what shifted overnight, which areas got touched by multiple roles, whats accumulating\n3. Trust verification — are health checks lying? The lobotomy pattern: system says green but is broken. End-to-end probes, not process checks\n4. Log signal-to-noise — new error fingerprints vs retry noise, gate blocks that are real vs false positives, pattern formation\n5. Drift detection — stale handoffs, uncommitted files accumulating, WIP without commits in 24h\n6. Reactive ratio check — are yesterdays completed cards still holding? Track origin:reactive vs origin:reflective trend. If reactive percentage is climbing, surface it as the top signal. Building features while reactive ratio rises = building on sand.\n\n## Learning over time\nThe scan gets smarter daily. Builds a model of normal — known noise patterns get suppressed, new signals get surfaced. Not static checks — developing situational awareness.\n\n## AC\n- [ ] Cron fires at 6am ET autonomously, no Jeff interaction\n- [ ] Exercises real paths (nudge delivery, Fuseki query, board CLI, chorus search) not just process status\n- [ ] Produces weather report: what shifted, whats drifting, what needs attention\n- [ ] Distinguishes signal from noise — known patterns suppressed, new patterns surfaced\n- [ ] Checks yesterdays completed cards still hold — no regressions post-demo\n- [ ] Surfaces reactive ratio trend (daily delta from Wren origin analysis)\n- [ ] Output to Bridge + /tmp/daily-signal-YYYY-MM-DD.md\n- [ ] Composes existing checks (cruft scan, health-hourly) where useful, adds trust verification layer",
+      "description": "## Experience\nI want to know the health of the codebase and the backlog every morning without doing the research myself. Codebase weather, trust verification, signal-to-noise — plus doc freshness, backlog coherence, sequence health, golfball detection.\n\n## Context\nMerges #2263 (daily PM deep scan). One daily scan covers both engineering signal integrity AND product backlog health. Runs overnight via cron, brief ready by 6am.\n\n## AC\n1. Codebase weather — test trends, lint trends, coverage slopes\n2. Trust verification — are gates firing? Are hooks healthy?\n3. Signal-to-noise — false alert rate, stolen prompt percentage\n4. Doc freshness — flag decisions.md, projects.md, backlog.md older than 3 days\n5. Backlog coherence — duplicate intent, cards without owners, Later with no sequence\n6. Sequence health — per active sequence, cards by status, flag 3+ day stalls\n7. Golfball detection — fix/swat cards lurking in domains with active new/enhance cards\n8. Output: one brief, ready by 6am, no session required",
       "status": "Later",
       "owner": "Kade",
       "priority": "P1",
@@ -24857,13 +24857,13 @@
       ],
       "done": false,
       "created": "2026-04-05T15:24:34Z",
-      "updated": "2026-04-05T15:30:57Z"
+      "updated": "2026-04-06T18:47:38Z"
     },
     {
       "index": 2089,
       "apiId": 2172,
       "title": "Weekly climate report — reactive ratio, card durability, debt trajectory, coverage slopes",
-      "description": "Scheduled autonomous agent run (cron, Sunday 5am ET weekly). The climate report — trends, not snapshots.\n\n## What it does\n1. Reactive ratio by layer — pull the full origin:reactive vs origin:reflective breakdown per dependency layer (Apps, Infrastructure, Protocol, Loom, etc). Is each layer getting more or less stable? Compare to prior week.\n2. Test coverage direction — not a number, a slope. Are we adding tests or losing them? Which modules have coverage gaps growing?\n3. Tech debt trajectory — dead code accumulating, TODOs aging, file sizes growing (another 1776-line shim forming?). Debt growing or shrinking.\n4. Card durability — cards shipped this week that generated fix cards. The \"shipped and held\" vs \"shipped and broke\" ratio. Direct measure of proving gate quality.\n5. Error rate slopes — are error fingerprints trending up or down across the week? New recurring patterns?\n6. Codebase hotspots — files touched by 3+ commits this week. Churn = instability signal.\n7. Role work distribution — is one role carrying disproportionate reactive load? Early warning for burnout patterns.\n\n## The weekly question\nIs the system getting better or worse? Not today — over the arc of a week. The daily is weather. This is climate.\n\n## AC\n- [ ] Cron fires Sunday 5am ET autonomously\n- [ ] Reactive ratio by layer with week-over-week delta (from Wren origin analysis data)\n- [ ] Card durability metric — shipped cards that held vs generated follow-up fixes\n- [ ] Test coverage slope per module\n- [ ] Tech debt trajectory with specific hotspots named\n- [ ] Codebase churn map — files with highest commit frequency\n- [ ] Produces HTML report (Jeff engages with HTML, not markdown logs)\n- [ ] Output to Bridge + /tmp/weekly-climate-YYYY-MM-DD.html\n- [ ] Includes week-over-week comparison — this week vs last, trend arrows",
+      "description": "## Experience\nI need a weekly view of whether we're getting healthier or just busier. Not just card count — are we building more than repairing? Are decisions holding or drifting?\n\n## Context\nMerges #2264 (weekly PM climate report). One weekly report covers engineering climate AND product health.\n\n## AC\n1. Reactive ratio — fix/swat vs new/enhance, trailing 7 days\n2. Card durability — reverted, reopened, or re-carded within 7 days\n3. Debt trajectory — coverage slopes, test failure trends\n4. Decision drift — DECs violated or worked around in past week\n5. Product health — status of v1 definition, quiet mode, tooling ROI, external touchability\n6. Output: one brief, Sunday night cron, ready Monday morning",
       "status": "Later",
       "owner": "Kade",
       "priority": "P1",
@@ -24875,7 +24875,7 @@
       ],
       "done": false,
       "created": "2026-04-05T15:24:35Z",
-      "updated": "2026-04-05T15:31:13Z"
+      "updated": "2026-04-06T18:47:39Z"
     },
     {
       "index": 2090,
@@ -26485,7 +26485,7 @@
       "domains": [],
       "done": false,
       "created": "2026-04-05T18:09:18Z",
-      "updated": "2026-04-05T18:45:46Z"
+      "updated": "2026-04-06T18:47:06Z"
     },
     {
       "index": 2181,
@@ -27291,7 +27291,7 @@
       "apiId": 2313,
       "title": "Alert injection to role terminals broken — only shows on Clearing, not nudge --force to active sessions",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27302,7 +27302,7 @@
       ],
       "done": false,
       "created": "2026-04-05T20:41:31Z",
-      "updated": "2026-04-05T20:41:31Z"
+      "updated": "2026-04-06T18:47:06Z"
     },
     {
       "index": 2227,
@@ -27453,7 +27453,7 @@
       "apiId": 2322,
       "title": "Consolidate Phase 2 and 3 — untangle memory_first block and search_hierarchy enrich on same tool call",
       "description": "",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27464,7 +27464,7 @@
       ],
       "done": false,
       "created": "2026-04-05T23:22:43Z",
-      "updated": "2026-04-05T23:22:43Z"
+      "updated": "2026-04-06T18:47:07Z"
     },
     {
       "index": 2236,
@@ -27956,7 +27956,7 @@
       "apiId": 2350,
       "title": "Daily PM deep scan — doc freshness, backlog coherence, sequence health",
       "description": "## Experience\nI start each session trying to figure out what's stale, what's stuck, and what sequence to push. That's PM work that should happen overnight so I wake up to a brief, not a research project.\n\n## AC\n1. Doc freshness scan — flag decisions.md, projects.md, backlog.md, CLAUDE.md fragments older than 3 days since last meaningful update\n2. Backlog coherence — identify duplicate intent, cards without owners, Later cards with no sequence, Won't Do cards that might be real Done\n3. Sequence health — for each active sequence, count cards by status, flag sequences with no movement in 3+ days\n4. Golfball detection — find fix/swat cards lurking in domains that have active new/enhance cards (the thing /golfball would do)\n5. Output: one brief in product-manager/briefs/daily-pm-scan.md, ready by 6am\n6. Scheduled via cron, runs overnight, no session required",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -27967,14 +27967,14 @@
       ],
       "done": false,
       "created": "2026-04-06T16:04:33Z",
-      "updated": "2026-04-06T16:04:33Z"
+      "updated": "2026-04-06T18:47:17Z"
     },
     {
       "index": 2264,
       "apiId": 2351,
       "title": "Weekly PM climate report — reactive ratio, card durability, decision drift, product health",
       "description": "## Experience\nI need a weekly view of whether we're getting healthier or just busier. Card velocity means nothing if half are reactive fixes. I want to see: are we building more than we're repairing? Are decisions holding or drifting? Are the four questions from the distribution assessment (v1 scope, quiet mode, tooling ROI, external touchability) improving?\n\n## AC\n1. Reactive ratio — fix/swat cards vs new/enhance cards, trailing 7 days. Trend line.\n2. Card durability — cards reverted, reopened, or re-carded within 7 days of acceptance. Lower is better.\n3. Decision drift — DECs referenced in code/hooks that were violated or worked around in the past week\n4. Coverage slopes — test count trend, test failure trend, doc freshness trend\n5. Product health — status of the four assessment questions: v1 definition, quiet mode progress, tooling ROI, external touchability\n6. Output: one brief in product-manager/briefs/weekly-pm-climate.md, scheduled Sunday night\n7. Runs via cron overnight, no session required",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -27985,7 +27985,7 @@
       ],
       "done": false,
       "created": "2026-04-06T16:06:09Z",
-      "updated": "2026-04-06T16:06:09Z"
+      "updated": "2026-04-06T18:47:18Z"
     },
     {
       "index": 2265,
@@ -28122,7 +28122,7 @@
       "apiId": 2359,
       "title": "Reconcile awareness domain docs — align domain page, service design, and #1932 standards artifacts",
       "description": "## Experience\nI have 5 docs that should tell a coherent story about the awareness domain, but they were written at different times by different sessions. I want to open the domain page and see a clean picture — what awareness is, how it works, where the gaps are — without contradictions or stale content.\n\n## Context\nFive artifacts in gathering-docs:\n1. domain-context-awareness.html — awareness domain page (when created?)\n2. awareness-service-design.html — service design for awareness layer\n3. chorus-standards.html — standards inventory with live pulse bar (#1932, updated 2026-04-06)\n4. chorus-hook-architecture.html — 36-hook 6-phase model with gap tracking (#1932, updated 2026-04-06)\n5. harness-engineering-chorus.html — Birgitta mapping (#1932, created 2026-04-06)\n\nAlso loom-service-design.html which may overlap since awareness is part of Loom.\n\n## AC\n1. Read all 5 docs + loom-service-design.html — catalog what each covers, where they overlap, where they contradict\n2. Domain page (domain-context-awareness.html) links to the #1932 artifacts as authoritative sources\n3. Service design (awareness-service-design.html) reflects current reality — services that exist, not aspirational architecture\n4. No duplicate content — each doc has a clear purpose, cross-references the others\n5. All docs use 1-inch margins and consistent styling\n6. Stale content updated or removed — no references to pre-2026-04-06 state that's now fixed",
-      "status": "Later",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -28131,9 +28131,9 @@
         "sequence:awareness",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T18:36:56Z",
-      "updated": "2026-04-06T18:36:56Z"
+      "updated": "2026-04-06T18:44:14Z"
     }
   ]
 }
