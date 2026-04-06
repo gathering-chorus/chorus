@@ -1,23 +1,24 @@
 # Next Session — Silas
 
-## Shipped This Session (6 cards)
-- #2271 Session health monitor — compaction detection from JSONL queue-operation events, 5min cron, dedup alerts, informational only (no reboot suggestion)
-- #2269 Session indexer — Jeff's messages indexed as role=jeff, 37K backfilled
-- #2255 Bridge message mutation — Jeff's words delivered verbatim (no nudge wrapper), input classifier extracts inner message from nudge prefix
-- #2262 Alerts panel on Clearing — above Streams, filterable, resizable, tighter detection (system-only)
-- #2284 Bridge notification filtering — suppress Jeff echoes, audience-route acceptances, blocked-only state changes
-- #2286 Clearing tile staleness — card clears from role state within 5s of acceptance via tailer→tilePoller.clearCard
+## Shipped This Session (8 cards)
+- #2274 E2E alert delivery test — synthetic probe, weekly LaunchAgent, deep-health integration
+- #2297 TDD gate — bats detection + doc-only session exemption
+- #2275 Repo sync — deleted stale chorus copies, committed 25 files to shared-observability
+- #2276 Fix perf-baseline disk metric — df→diskutil (2% → 48%)
+- #2298 Stop bridge event injection into Jeff's terminal — [bridge] events filtered at queue level
+- #2277 Hooks telemetry API — /api/chorus/hooks/metrics endpoint, 60s cache, standards surface switched to API
+- #2282 Interaction pattern detection — 9 modes, shift-only emission, all roles emit
+- #2278 Dashboard content validation — 13 dashboards checked via Grafana API, Data Center gap found
 
 ## Other Fixes
-- git-queue pre-commit hook pipefail bug — grep for --max-warnings crashed on new files (added || true)
-- Session watcher crash loop — stale PID + KeepAlive respawn collision
-- Bridge subscribers now LaunchAgent-managed (com.chorus.bridge-subscriber-{role})
-- chorus-log.sh path in pre-commit hook updated (messages/scripts → chorus/platform/scripts)
+- alert-runner.sh YAML comment parsing — synthetic-test schedule field had trailing comment
+- perf-baseline.sh JSON errors field — `00` → `0` (invalid JSON)
 
 ## No WIP Cards
 
 ## Pending / Next Session
-- Session health thresholds may need further tuning — boot-heavy sessions inflate early compaction rate
-- chorus-index.sh lives at ~/.chorus/scripts/ (not repo-tracked) — #2269 fix is only there
-- 7 observability stabilization cards in Later (#2274-#2280)
-- Wren on #2093 + #2287, Kade idle
+- #2289 (Later): Broader terminal noise suppression beyond bridge events
+- Data Center dashboard returns no data — node-exporter `machine` label mismatch. Investigate or card.
+- Wren suggested `pair` as 10th interaction pattern mode — card when needed
+- 18 stale briefs in inbox — triage next session
+- Kade building integration tests (#2290, #2291)
