@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T21:35:01.344Z",
+  "timestamp": "2026-04-06T21:40:05.182Z",
   "tasks": [
     {
       "index": 3,
@@ -1230,7 +1230,7 @@
       ],
       "done": false,
       "created": "2026-02-22T16:22:47Z",
-      "updated": "2026-04-06T21:19:31Z"
+      "updated": "2026-04-06T21:37:16Z"
     },
     {
       "index": 129,
@@ -19164,7 +19164,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
-      "updated": "2026-04-06T21:19:32Z"
+      "updated": "2026-04-06T21:37:16Z"
     },
     {
       "index": 1762,
@@ -19183,7 +19183,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
-      "updated": "2026-04-06T21:19:32Z"
+      "updated": "2026-04-06T21:37:17Z"
     },
     {
       "index": 1763,
@@ -19202,7 +19202,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:31Z",
-      "updated": "2026-04-06T21:19:32Z"
+      "updated": "2026-04-06T21:37:17Z"
     },
     {
       "index": 1764,
@@ -22688,7 +22688,7 @@
       ],
       "done": false,
       "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-06T21:19:27Z"
+      "updated": "2026-04-06T21:37:12Z"
     },
     {
       "index": 1965,
@@ -24936,7 +24936,7 @@
       "apiId": 2176,
       "title": "Service design — Loom layer",
       "description": "Inventory and gap analysis for the Loom layer (team coordination).\n\n## Experience\nSee every Loom component: roles, Clearing, interactions, briefs, cards CLI, skills, policy, decisions, ADRs.\n\n## AC\n- [ ] HTML page at /gathering-docs/loom-service-design.html\n- [ ] Components: role system, Clearing, interaction patterns, briefs pipeline, cards CLI, skills, decisions/ADRs, practices\n- [ ] Each component: services, APIs, data, tests, docs, UIs, gap\n- [ ] Status tags: REAL / PARTIAL / NONE\n- [ ] Deployed to gathering-docs\n\n## Files\n- product-manager/artifacts/loom-service-design.html\n- jeff-bridwell-personal-site/public/gathering-docs/loom-service-design.html",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P2",
       "domains": [
@@ -24945,9 +24945,9 @@
         "sequence:loom",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T15:38:57Z",
-      "updated": "2026-04-05T16:46:31Z"
+      "updated": "2026-04-06T21:38:23Z"
     },
     {
       "index": 2094,
@@ -28182,6 +28182,25 @@
       "apiId": 2362,
       "title": "Repo sync — one canonical path for observability configs, delete stale chorus copies",
       "description": "## Experience\n\nI open chorus/proving/alerting/ and see alert configs from March 29. I open shared-observability/ and see 13 uncommitted changes. Which is real? I shouldn't have to ask. There should be one canonical source with no stale copies to confuse anyone.\n\n## Context\n\nCurrent state:\n- shared-observability/ — canonical deployment source. 13 uncommitted changes (new dashboards, new configs, native variants).\n- chorus/proving/alerting/chorus-alerts.yaml — copy from March 29, 750 lines. shared-observability version is 467 lines with additional NiFi alerts.\n- chorus/proving/dashboards/chorus-activity.json — partial copy, March 29.\n\nNo automated sync. Manual copy-paste is the current method. Roles have already been confused about which configs are real.\n\nOptions:\nA. Delete chorus copies, document that shared-observability is canonical. Simplest.\nB. Symlink from chorus to shared-observability. Preserves paths but adds coupling.\nC. Automated sync script. Most complex, most maintainable long-term.\n\nRecommendation: Option A for now. shared-observability is a separate repo with its own CLAUDE.md. Chorus shouldn't duplicate it.\n\n## AC\n\n1. Commit 13 uncommitted changes in shared-observability with proper commit messages\n2. Delete chorus/proving/alerting/chorus-alerts.yaml — stale copy\n3. Delete chorus/proving/dashboards/chorus-activity.json — stale copy\n4. Add a README or pointer in chorus/proving/ explaining that observability configs live in shared-observability\n5. Update domain-context-observability.html to reflect the cleanup\n6. Verify Grafana still loads dashboards after cleanup (they're provisioned from shared-observability, not chorus)\n\n## Files\n\n- shared-observability/ (13 uncommitted files)\n- chorus/proving/alerting/chorus-alerts.yaml (delete)\n- chorus/proving/dashboards/chorus-activity.json (delete)\n- chorus/proving/README.md (add pointer)\n- jeff-bridwell-personal-site/public/gathering-docs/domain-context-observability.html (update)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:ops",
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": true,
+      "created": "2026-04-06T19:04:55Z",
+      "updated": "2026-04-06T21:36:09Z"
+    },
+    {
+      "index": 2276,
+      "apiId": 2363,
+      "title": "Fix perf-baseline disk metric — reports 2%, actual ~51%",
+      "description": "## Experience\n\nI run the perf baseline and it says disk is 2% used. I look in Finder and it's 51%. The number is wrong in the direction that hides problems — it makes the disk look empty when it's half full. Any automated decision based on this metric will be wrong.\n\n## Context\n\nperf-baseline.sh uses a disk calculation that's broken on APFS. Known issue — APFS purgeable space and iCloud stubs confuse df/du (see feedback_apfs_reporting.md). Node exporter reports correctly via diskutil.\n\nThe fix should use diskutil info / or the node exporter metric, not df. This is the same lesson from #1384 (standardize disk/memory reporting) and #1868 (fix session-start disk check).\n\nPrior fixes:\n- #1868 fixed session-start to not use df\n- #1384 standardized reporting to match Finder\n- #1884 fixed Chorus API disk endpoint\n\nperf-baseline.sh is the last holdout still using the broken method.\n\n## AC\n\n1. perf-baseline.sh disk percentage matches what Finder shows (within 2%)\n2. Uses diskutil info / or equivalent APFS-aware method, not df\n3. Consistent with other disk reporting (#1868, #1884 patterns)\n4. Nightly baseline log shows correct disk values\n5. deep-health doesn't false-alert on disk based on corrected values\n\n## Files\n\n- platform/scripts/perf-baseline.sh (or wherever the nightly baseline runs)\n- ~/Library/Logs/Chorus/perf-baseline-nightly.log (verify output)",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
@@ -28193,26 +28212,8 @@
         "origin:reactive"
       ],
       "done": false,
-      "created": "2026-04-06T19:04:55Z",
-      "updated": "2026-04-06T21:31:46Z"
-    },
-    {
-      "index": 2276,
-      "apiId": 2363,
-      "title": "Fix perf-baseline disk metric — reports 2%, actual ~51%",
-      "description": "## Experience\n\nI run the perf baseline and it says disk is 2% used. I look in Finder and it's 51%. The number is wrong in the direction that hides problems — it makes the disk look empty when it's half full. Any automated decision based on this metric will be wrong.\n\n## Context\n\nperf-baseline.sh uses a disk calculation that's broken on APFS. Known issue — APFS purgeable space and iCloud stubs confuse df/du (see feedback_apfs_reporting.md). Node exporter reports correctly via diskutil.\n\nThe fix should use diskutil info / or the node exporter metric, not df. This is the same lesson from #1384 (standardize disk/memory reporting) and #1868 (fix session-start disk check).\n\nPrior fixes:\n- #1868 fixed session-start to not use df\n- #1384 standardized reporting to match Finder\n- #1884 fixed Chorus API disk endpoint\n\nperf-baseline.sh is the last holdout still using the broken method.\n\n## AC\n\n1. perf-baseline.sh disk percentage matches what Finder shows (within 2%)\n2. Uses diskutil info / or equivalent APFS-aware method, not df\n3. Consistent with other disk reporting (#1868, #1884 patterns)\n4. Nightly baseline log shows correct disk values\n5. deep-health doesn't false-alert on disk based on corrected values\n\n## Files\n\n- platform/scripts/perf-baseline.sh (or wherever the nightly baseline runs)\n- ~/Library/Logs/Chorus/perf-baseline-nightly.log (verify output)",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "domain:chorus",
-        "type:fix",
-        "sequence:ops",
-        "origin:reactive"
-      ],
-      "done": false,
       "created": "2026-04-06T19:05:11Z",
-      "updated": "2026-04-06T19:05:11Z"
+      "updated": "2026-04-06T21:38:52Z"
     },
     {
       "index": 2277,
@@ -28594,6 +28595,24 @@
       "done": true,
       "created": "2026-04-06T21:24:30Z",
       "updated": "2026-04-06T21:29:28Z"
+    },
+    {
+      "index": 2298,
+      "apiId": 2385,
+      "title": "Bridge notifications still inject into Jeff's terminal — #2284 only filtered role terminals",
+      "description": "## Experience\nI accepted #2284 to stop bridge echo noise. It's still happening — '[bridge] silas pulled #2275 to WIP' injected mid-sentence while I was typing. The fix filtered role terminals but my terminal still gets injected.\n\n## Context\n#2284 added filtering in bridge-subscriber.js for role terminals. Jeff's terminal may not be identified by the subscriber — it may not have a role classification, or the subscriber may be queueing to all terminals including Jeff's.\n\n## AC\n1. Bridge notifications do not inject into Jeff's terminal — ever\n2. Jeff's terminal identified correctly in bridge-subscriber (not classified as a role)\n3. Verify: accept a card, no '[bridge]' text appears in Jeff's active terminal\n4. card.pulled events do not inject into any terminal Jeff is watching\n\n## Files\n- platform/scripts/bridge-subscriber.js",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:35:50Z",
+      "updated": "2026-04-06T21:35:50Z"
     }
   ]
 }

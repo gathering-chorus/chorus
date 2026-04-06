@@ -1,15 +1,18 @@
 # Current Work
 
-Last updated: 2026-04-06 12:01 Boston
+Last updated: 2026-04-06 17:40 Boston
 
 ## WIP
-None.
+- #2290 — Fill integration test layer (15→50). AC1 done: top 10 churn pairs identified. Tests not yet written.
 
-## Shipped Last Session
-- #2249 — Async: photo.handler (35 sync calls)
-- #2250 — Async: pod-storage middleware (9 sync calls)
-- #2251 — Async: knowledge-graph + document handlers (31 sync calls)
-- #2256 — Async: MonitoringService (cache disk checks)
+## Shipped This Session
+- #2252 — Async: team.handler + cards.service (9 sync calls eliminated)
+- #2268 — Standards surface auto-regen cron (LaunchAgent + source-change detection)
+- #2088 — Daily signal integrity scan (6am cron, flow health, trust verification)
+- #2122 — Interaction patterns page (built for Wren, EJS + Loki API)
+- #2288 — Quality service page (test pyramid inventory, HTML)
+- #2248 — Async migration parent tracker (closed)
+- #2265 — Demo nudge fix (carded, Wren shipped)
 
 ## Next Queue
 - #1865 — Photo detail thumbnail (P2)

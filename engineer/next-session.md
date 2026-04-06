@@ -1,23 +1,19 @@
 # Kade — Next Session
 
-## Accomplished (2026-04-06)
-- 3 async migration cards shipped: #2250 (pod-storage 9), #2249 (photo.handler 35), #2251 (KG+document 31) = 75 sync calls eliminated
-- Strategic conversation with Jeff: system complexity, distribution to Mark Nakib + Deb Majumdar, Loki-as-data-store concern, seasick feeling from system noise
-- HTML assessment: /tmp/chorus-distribution-assessment.html
-- Carded async migration sequence: #2248 parent, #2249-#2253 split cards
-
-## Remaining Async Cards
-- #2252 — team.handler + cards.service (8 sync calls, P2) — next in sequence
-
-## Key Context
-- Jeff has two friends (Mark Nakib, Deb Majumdar) willing to help technically with Chorus. Distribution readiness is strategic priority.
-- Jeff described the system as seasick — too much motion, no quiet mode. Coordination substrate interrupts reflection.
-- Harness engineering mapping: localhost:3000/gathering-docs/harness-engineering-chorus.html
-- 7-layer context diagram: localhost:3000/gathering-docs/chorus-context-diagram-v2.html
-- Always fix test failures before pushing. No --no-verify.
-
 ## WIP
-None.
+- **#2290** — Fill integration test layer (15→50). AC1 complete: top 10 churn pairs identified. Start writing tests.
+
+## Shipped This Session (2026-04-06)
+- #2252, #2268, #2088, #2122, #2288, #2248 closed, #2265 carded
+
+## Quality Sequence (#2290-#2296)
+7 cards under sequence:quality. See /gathering-docs/quality-service.html
 
 ## Pending
-- Update current-work.md and tech-debt.md (both stale)
+- doc-catalog.handler.ts regex fix (standards|harness) needs commit
+- skills.handler.test.ts 3 pre-existing failures block pre-push
+
+## Key Learnings
+- Nudge framing shapes response (memory saved)
+- CSP nonce on all inline script tags
+- cards list --status returns all statuses — parse by section headers
