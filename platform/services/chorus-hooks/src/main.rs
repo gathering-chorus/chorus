@@ -529,6 +529,9 @@ async fn user_prompt_submit(
         hooks::e2e_responder::check(&input_e2e);
     });
 
+    // Interaction pattern detection (#2282) — fire-and-forget, emits on shift only
+    let pattern_signal = hooks::interaction_pattern::check(&input, &state).await;
+
     // Merge all stderr signals: classifier + context injection + autonomy guard
     let guard_result = hooks::autonomy_guard::check(&input, &state).await;
 
@@ -544,6 +547,9 @@ async fn user_prompt_submit(
         stderr_parts.push(msg.clone());
     }
     if let Some(ref msg) = guard_result.stderr {
+        stderr_parts.push(msg.clone());
+    }
+    if let Some(ref msg) = pattern_signal {
         stderr_parts.push(msg.clone());
     }
 

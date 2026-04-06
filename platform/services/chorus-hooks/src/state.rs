@@ -168,6 +168,15 @@ impl AppState {
             .insert(role.to_string(), pattern.to_string());
     }
 
+    /// Set interaction pattern directly from detected prompt (#2282)
+    pub async fn set_interaction_pattern_direct(&self, role: &str, pattern: &str) {
+        self.inner
+            .lock()
+            .await
+            .interaction_pattern
+            .insert(role.to_string(), pattern.to_string());
+    }
+
     /// Get current interaction pattern for a role
     pub async fn get_interaction_pattern(&self, role: &str) -> String {
         self.inner
