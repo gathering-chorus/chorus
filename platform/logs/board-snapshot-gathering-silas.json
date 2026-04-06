@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T19:53:43.982Z",
+  "timestamp": "2026-04-06T20:03:53.166Z",
   "tasks": [
     {
       "index": 3,
@@ -28067,18 +28067,19 @@
       "apiId": 2356,
       "title": "Session indexer — Jeff's messages indexed as role instead of jeff",
       "description": "## Experience\nI searched for how many times I said 'slow down' on April 5. Got zero results for role=jeff because my messages are indexed under the session role (wren, silas, kade). My voice is invisible in my own system.\n\n## Context\nSession JSONL has author='user' vs author='assistant'. The indexer should use author to set role='jeff' for user messages. Currently it uses the session role for all messages.\n\n## AC\n1. User messages (author='user') indexed with role='jeff'\n2. Assistant messages keep the session role (wren/silas/kade)\n3. Backfill existing index — re-tag user messages as jeff\n4. Chorus search for role=jeff returns Jeff's actual words across all sessions",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:fix",
         "sequence:awareness",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T16:58:33Z",
-      "updated": "2026-04-06T16:58:34Z"
+      "updated": "2026-04-06T20:00:29Z"
     },
     {
       "index": 2270,
@@ -28272,6 +28273,41 @@
       "done": false,
       "created": "2026-04-06T19:06:12Z",
       "updated": "2026-04-06T19:06:12Z"
+    },
+    {
+      "index": 2281,
+      "apiId": 2368,
+      "title": "[defect] gathering-app: CSRF validation failed",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: CSRF validation failed\nSample: CSRF validation failed\nFirst seen: 2026-04-06T19:54:08Z\nCount: 1\nHash: 79e5ac8199f81cef",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T19:54:08Z",
+      "updated": "2026-04-06T19:54:08Z"
+    },
+    {
+      "index": 2282,
+      "apiId": 2369,
+      "title": "Hook: auto-emit interaction pattern events on UserPromptSubmit",
+      "description": "AC: 1. UserPromptSubmit hook classifies Jeff's message into one of 9 interaction patterns (direction, ideation, demo, triage, swat, gemba, clearing, story, reflection). 2. Emits chorus-log interaction.pattern.detected on pattern shift, not every message. 3. All roles emit, not just Wren. 4. Current card-type-to-pattern mapping in state.rs feeds as fallback, not primary.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:enhance",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T20:02:58Z",
+      "updated": "2026-04-06T20:02:58Z"
     }
   ]
 }
