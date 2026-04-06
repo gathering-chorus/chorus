@@ -1,8 +1,8 @@
-# Daily Quality Review — 2026-04-05
+# Daily Quality Review — 2026-04-06
 
 ## App Tests
 **YELLOW** — `jeff-bridwell-personal-site` directory not found. Suite cannot run.
-Action: Remove from check matrix or confirm correct path. (Persistent — 8th consecutive day.)
+Action: Remove from check matrix or confirm correct path. (Persistent — 9th consecutive day.)
 
 ## Lint
 **YELLOW** — Cannot run; app directory missing. No lint data.
@@ -11,35 +11,35 @@ Action: Remove from check matrix or confirm correct path. (Persistent — 8th co
 **YELLOW** — Cannot run; app directory missing. No TypeScript build data.
 
 ## Board-Client
-**RED** — 11 suites failed, 5 passed | 72 failed, 32 skipped, 111 passed (215 total). Coverage: 35.9% stmts / 23.9% branch.
-Root cause: hardcoded Mac path `/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards` unreachable in CI; also missing `workflow-engine/dist`.
-Delta: NO CHANGE vs 2026-04-04 — counts identical. Unresolved for 2+ days.
+**RED** — 13 suites failed, 6 passed | 91 failed, 32 skipped, 121 passed (244 total). Coverage: 12.94% stmts / 4.1% branch.
+Root cause: hardcoded Mac path + missing `workflow-engine/dist`. New tests added but failing.
+Delta: REGRESSION vs 2026-04-05 — +2 failing suites, +19 failing tests, +29 total tests. Coverage collapsed (was 35.9% / 23.9%).
 
 ## Workflow-Engine
-**GREEN** — 3 suites passed | 61/61 tests passed. Coverage: 94.2% stmts / 86.5% branch.
+**GREEN** — 3 suites passed | 61/61 tests passed.
 Delta: No change. Stable.
 
 ## Chorus-SDK
-**YELLOW** — 1 suite failed, 2 passed | 5 failed, 30 passed (35 total). Coverage: 86.8% stmts / 75.6% branch.
+**YELLOW** — 1 suite failed, 2 passed | 5 failed, 30 passed (35 total).
 Root cause: `value_stream_step` returning null instead of "Capturing" (`emit-metadata.test.ts:226`).
-Delta: NO CHANGE vs 2026-04-04 — same 5 failures, now unresolved 3rd consecutive day.
+Delta: NO CHANGE vs 2026-04-05 — same 5 failures, now 4th consecutive day unresolved.
 
 ## Slack-Bridge
-**GREEN** — 6 suites passed | 60/60 tests passed. Coverage: 65.8% stmts / 45.3% branch.
-Delta: No change. Stable. Branch coverage low but not blocking.
+**GREEN** — 6 suites passed | 60/60 tests passed.
+Delta: No change. Stable.
 
 ## Coverage
 | Package | Stmts | Branch | Status |
 |---|---|---|---|
-| workflow-engine | 94.2% | 86.5% | GREEN |
-| chorus-sdk | 86.8% | 75.6% | YELLOW |
-| slack-bridge | 65.8% | 45.3% | OK |
-| board-client | 35.9% | 23.9% | RED |
+| workflow-engine | stable (61/61 pass) | — | GREEN |
+| chorus-sdk | stable (30/35 pass) | — | YELLOW |
+| slack-bridge | stable (60/60 pass) | — | GREEN |
+| board-client | 12.94% | 4.1% | RED ↓ (was 35.9% / 23.9%) |
 
 ## Failure Delta
-No new regressions vs 2026-04-04. All failures are carry-overs — nothing improved either.
-- board-client: RED, stale (72 failures, 2+ days unresolved). Ticket needed.
-- chorus-sdk: YELLOW, stale (5 failures, 3rd day). `value_stream_step` null bug.
+**NEW REGRESSION: board-client worsened overnight.** +19 failing tests, +2 failing suites. Coverage collapsed — likely new tests added without implementation.
+- board-client: RED ↑ (91 failures, up from 72). New tests are being added while root cause (Mac path hardcode + missing dist) stays unresolved.
+- chorus-sdk: YELLOW stale (5 failures, 4th day). `value_stream_step` null — needs a card.
 - workflow-engine: GREEN, stable.
 - slack-bridge: GREEN, stable.
-Priority: (1) file ticket for board-client Mac path hardcode + missing dist, (2) fix chorus-sdk `value_stream_step`.
+Priority: (1) Investigate board-client regression — what new tests landed?, (2) card `value_stream_step` null fix in chorus-sdk, (3) remove `jeff-bridwell-personal-site` from check matrix (9 days dead).
