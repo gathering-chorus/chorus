@@ -28,6 +28,12 @@ const INBOX_FILE = path.join(INBOX_DIR, 'pending-inject.txt');
 fs.mkdirSync(INBOX_DIR, { recursive: true });
 
 function queueEvent(text) {
+  // Bridge events are informational — visible on Bridge UI already.
+  // Don't inject into terminal sessions where they become noise for Jeff (#2298).
+  // Only queue events that require role action (blocked, rejected).
+  if (text.startsWith('[bridge]') && !text.includes('BLOCKED') && !text.includes('rejected')) {
+    return;
+  }
   fs.appendFileSync(INBOX_FILE, text + '\n');
 }
 

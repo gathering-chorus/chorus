@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T21:40:06.523Z",
+  "timestamp": "2026-04-06T21:45:09.144Z",
   "tasks": [
     {
       "index": 3,
@@ -28201,7 +28201,7 @@
       "apiId": 2363,
       "title": "Fix perf-baseline disk metric — reports 2%, actual ~51%",
       "description": "## Experience\n\nI run the perf baseline and it says disk is 2% used. I look in Finder and it's 51%. The number is wrong in the direction that hides problems — it makes the disk look empty when it's half full. Any automated decision based on this metric will be wrong.\n\n## Context\n\nperf-baseline.sh uses a disk calculation that's broken on APFS. Known issue — APFS purgeable space and iCloud stubs confuse df/du (see feedback_apfs_reporting.md). Node exporter reports correctly via diskutil.\n\nThe fix should use diskutil info / or the node exporter metric, not df. This is the same lesson from #1384 (standardize disk/memory reporting) and #1868 (fix session-start disk check).\n\nPrior fixes:\n- #1868 fixed session-start to not use df\n- #1384 standardized reporting to match Finder\n- #1884 fixed Chorus API disk endpoint\n\nperf-baseline.sh is the last holdout still using the broken method.\n\n## AC\n\n1. perf-baseline.sh disk percentage matches what Finder shows (within 2%)\n2. Uses diskutil info / or equivalent APFS-aware method, not df\n3. Consistent with other disk reporting (#1868, #1884 patterns)\n4. Nightly baseline log shows correct disk values\n5. deep-health doesn't false-alert on disk based on corrected values\n\n## Files\n\n- platform/scripts/perf-baseline.sh (or wherever the nightly baseline runs)\n- ~/Library/Logs/Chorus/perf-baseline-nightly.log (verify output)",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -28211,9 +28211,9 @@
         "sequence:ops",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T19:05:11Z",
-      "updated": "2026-04-06T21:38:52Z"
+      "updated": "2026-04-06T21:43:08Z"
     },
     {
       "index": 2277,
@@ -28455,19 +28455,20 @@
       "index": 2290,
       "apiId": 2377,
       "title": "Fill integration test layer — 15 to 50 tests on high-churn service pairs",
-      "description": "## Experience\nThe integration layer is hollow — 15 tests for 83 services. Cross-service bugs slip through here. I want confidence that service A calling service B actually works, not just that each passes unit tests alone.\n\n## AC\n- [ ] Identify top 10 highest-churn service pairs from git log\n- [ ] Write integration tests for SPARQL → handler → view path\n- [ ] Write integration tests for seed pipeline end-to-end\n- [ ] Write integration tests for harvest → sync → search index\n- [ ] 50+ integration tests total",
-      "status": "Later",
+      "description": "## Experience\nThe integration layer is hollow — 15 tests for 83 services. Cross-service bugs slip through here. I want confidence that service A calling service B actually works, not just that each passes unit tests alone.\n\n## Files\n- tests/integration/sparql-handler-flow.test.ts\n- tests/integration/seed-pipeline-flow.test.ts\n- tests/integration/harvest-sync-search.test.ts\n\n## AC\n- [ ] Identify top 10 highest-churn service pairs from git log\n- [ ] Write integration tests for SPARQL → handler → view path\n- [ ] Write integration tests for seed pipeline end-to-end\n- [ ] Write integration tests for harvest → sync → search index\n- [ ] 50+ integration tests total",
+      "status": "WIP",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
-        "domain:chorus",
+        "gathering",
+        "chunk:app",
         "type:new",
         "origin:reflective",
         "sequence:quality"
       ],
       "done": false,
       "created": "2026-04-06T21:10:15Z",
-      "updated": "2026-04-06T21:10:15Z"
+      "updated": "2026-04-06T21:41:02Z"
     },
     {
       "index": 2291,
