@@ -38,7 +38,7 @@ STALE_25H=$((now - 90000))
 SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log"
 STDERR_LOGS="clearing-probe-stderr.log chorus-bridge.stderr.log chorus-hooks.stderr.log"
 # Daily jobs — 25h threshold instead of 2h
-DAILY_LOGS="context-cache-daily.log fuseki-compact.log perf-baseline-nightly.log alert-notifier.log alert-runner.log"
+DAILY_LOGS="context-cache-daily.log fuseki-compact.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log"
 
 for log in "$LOG_DIR"/*.log; do
   [ -f "$log" ] || continue

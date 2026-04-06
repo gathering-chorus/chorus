@@ -498,6 +498,11 @@ async fn user_prompt_submit(
     State(state): State<AppState>,
     Json(input): Json<HookInput>,
 ) -> Json<HookResponse> {
+    // Generate prompt cycle ID (#2231) — correlates this prompt with all subsequent tool calls
+    let session_id = input.session_id.as_deref().unwrap_or("unknown");
+    let cycle_id = format!("{}-{:x}", chrono::Utc::now().timestamp_millis(), std::process::id());
+    state.set_cycle_id(session_id, cycle_id.clone()).await;
+
     // Clock sync on every prompt (#1559, #1849)
     let clock_result = hooks::clock_sync::tick(&input).await;
 

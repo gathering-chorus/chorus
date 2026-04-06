@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-05T22:46:41.739Z",
+  "timestamp": "2026-04-06T00:13:59.559Z",
   "tasks": [
     {
       "index": 3,
@@ -27255,7 +27255,7 @@
       "apiId": 2311,
       "title": "Watchdog fires on active roles — check team-scan activity, not just role-state",
       "description": "## Experience\nThe watchdog tells me a role is stale when I can see them actively working. It checks role-state declarations but roles forget to declare. Team-scan shows live tool calls — that's the real signal. I shouldn't have to tell the system what I can see.\n\n## Files\n- platform/services/chorus-hooks/src/hooks/ops_awareness.rs\n- platform/scripts/deep-health.sh\n\n## AC\n- [ ] Watchdog checks team-scan JSONL for recent tool calls, not just role-state file timestamp\n- [ ] Role with tool activity in last 5 minutes is never reported as stale\n- [ ] Role with no tool activity AND no role-state update in 45 minutes triggers stale alert\n- [ ] False positive rate drops to zero for actively building roles",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27264,9 +27264,9 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T18:29:01Z",
-      "updated": "2026-04-05T22:34:06Z"
+      "updated": "2026-04-05T22:48:09Z"
     },
     {
       "index": 2225,
@@ -27345,8 +27345,8 @@
       "index": 2229,
       "apiId": 2316,
       "title": "Separate osascript inject from chorus-hooks binary — every rebuild revokes TCC",
-      "description": "",
-      "status": "Later",
+      "description": "## Experience\nNudge broke 3 times today. Every cargo build on chorus-hooks produces a new binary, macOS revokes TCC accessibility, osascript inject fails. I have to re-grant permission in System Settings every time. This is the #1 recurring breakage.\n\n## Files\n- platform/scripts/nudge\n- platform/scripts/inject-keystroke.sh (already created)\n- platform/services/chorus-hooks/src/shim.rs\n\n## AC\n- [ ] osascript inject calls a stable bash script, not the Rust binary\n- [ ] nudge script routes injection through inject-keystroke.sh\n- [ ] cargo build + make deploy does NOT break nudge delivery\n- [ ] Test: rebuild hooks, verify nudge still works without re-granting TCC",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27357,7 +27357,132 @@
       ],
       "done": false,
       "created": "2026-04-05T22:46:37Z",
-      "updated": "2026-04-05T22:46:37Z"
+      "updated": "2026-04-05T22:49:20Z"
+    },
+    {
+      "index": 2230,
+      "apiId": 2317,
+      "title": "test card creation",
+      "description": "",
+      "status": "Won't Do",
+      "owner": "Wren",
+      "priority": "P3",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T23:19:43Z",
+      "updated": "2026-04-05T23:19:52Z"
+    },
+    {
+      "index": 2231,
+      "apiId": 2318,
+      "title": "Prompt cycle ID — correlate UserPromptSubmit with PreToolUse via shared cycle_id in AppState",
+      "description": "## Experience\nWhen I look at hook logs, I can't tell which hooks fired for which prompt. context_inject stores results with a 30s TTL — that's a hack because there's no cycle ID tying the UserPromptSubmit to the PreToolUse calls that follow. Hooks can't tell if cached results are from this prompt or the last one.\n\n## Files\n- platform/services/chorus-hooks/src/state.rs\n- platform/services/chorus-hooks/src/main.rs\n- platform/services/chorus-hooks/src/hooks/context_inject.rs\n- platform/services/chorus-hooks/src/hooks/search_hierarchy.rs\n\n## AC\n- [ ] UserPromptSubmit generates a unique cycle_id, stored in AppState keyed by session_id\n- [ ] PreToolUse hooks read cycle_id to correlate with the prompt that triggered them\n- [ ] context_inject results keyed by cycle_id instead of session_id with TTL\n- [ ] Hook log entries include cycle_id for traceability\n- [ ] Tests verify cycle_id propagation across prompt→tool sequences",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T23:22:42Z",
+      "updated": "2026-04-05T23:24:45Z"
+    },
+    {
+      "index": 2232,
+      "apiId": 2319,
+      "title": "Accepted-by attribution — card.accepted spine event records who invoked acp",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T23:22:42Z",
+      "updated": "2026-04-05T23:22:42Z"
+    },
+    {
+      "index": 2233,
+      "apiId": 2320,
+      "title": "Nudge input separation — split Jeff text from injected nudges at nudge-from prefix",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T23:22:43Z",
+      "updated": "2026-04-05T23:22:43Z"
+    },
+    {
+      "index": 2234,
+      "apiId": 2321,
+      "title": "Bulk-move verification — verify each card move against API response before reporting success",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T23:22:43Z",
+      "updated": "2026-04-05T23:22:43Z"
+    },
+    {
+      "index": 2235,
+      "apiId": 2322,
+      "title": "Consolidate Phase 2 and 3 — untangle memory_first block and search_hierarchy enrich on same tool call",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T23:22:43Z",
+      "updated": "2026-04-05T23:22:43Z"
+    },
+    {
+      "index": 2236,
+      "apiId": 2323,
+      "title": "TDD gate HTML exclusion — is_production_code excludes gathering-docs HTML",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-05T23:22:44Z",
+      "updated": "2026-04-05T23:22:44Z"
     }
   ]
 }

@@ -205,11 +205,13 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         stored_at: chrono::Utc::now().timestamp(),
     }).await;
 
+    let cycle_id = state.get_cycle_id(session_id).await.unwrap_or_default();
     info!(
         gate = "context-inject",
         event = "injected",
         role = %role_name,
         query = %query,
+        cycle_id = %cycle_id,
         chorus_hits = chorus_results.len(),
         memory_hits = memory_hits.len(),
     );

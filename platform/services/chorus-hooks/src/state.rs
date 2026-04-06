@@ -39,6 +39,9 @@ struct StateInner {
     /// Shared Chorus search results from context_inject (#2225)
     /// Key: session_id, expires after 30s
     context_results: HashMap<String, ContextSearchResults>,
+    /// Prompt cycle ID (#2231) — correlates UserPromptSubmit with PreToolUse
+    /// Key: session_id, Value: cycle_id (UUID)
+    cycle_id: HashMap<String, String>,
 }
 
 /// Static configuration
@@ -63,6 +66,7 @@ impl AppState {
                 session_init_done: HashMap::new(),
                 interaction_pattern: HashMap::new(),
                 context_results: HashMap::new(),
+                cycle_id: HashMap::new(),
             })),
             session_cache: SessionCache::new(),
             config: Arc::new(Config {
@@ -193,6 +197,16 @@ impl AppState {
             return None;
         }
         Some(result.clone())
+    }
+
+    /// Set prompt cycle ID for a session (#2231)
+    pub async fn set_cycle_id(&self, session_id: &str, cycle_id: String) {
+        self.inner.lock().await.cycle_id.insert(session_id.to_string(), cycle_id);
+    }
+
+    /// Get current prompt cycle ID for a session (#2231)
+    pub async fn get_cycle_id(&self, session_id: &str) -> Option<String> {
+        self.inner.lock().await.cycle_id.get(session_id).cloned()
     }
 
     /// Sync check: does context_inject have cached results for this session? (#2225)
