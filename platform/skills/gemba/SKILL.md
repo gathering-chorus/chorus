@@ -26,7 +26,7 @@ Read the output. Print your read — 2-3 sentences: what the role is doing, how 
 
 Declare state:
 ```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state.sh <your-role> observing gemba=${ROLE}
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <your-role> observing gemba=${ROLE}
 ```
 
 ### Step 2: Start the cron loop
@@ -60,4 +60,4 @@ Exit sequence:
 1. CronDelete the loop
 2. Compute elapsed: `echo $(( $(date +%s) - START_EPOCH ))`
 3. Debrief: one paragraph, include elapsed seconds
-4. `role-state.sh <your-role> waiting`
+4. `role-state <your-role> waiting`

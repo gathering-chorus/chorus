@@ -416,3 +416,117 @@ pub fn log_rotate() -> ExitCode {
     println!("=== Done ===");
     ExitCode::SUCCESS
 }
+
+/// Weekly health checks — replaces context-cache-weekly.sh (#1590, #2246)
+/// Runs cruft scan, stale card audit, disk trend logging.
+pub fn health_weekly(args: &[String]) -> ExitCode {
+    let role = args.first().map(|s| s.as_str()).unwrap_or("");
+    if !matches!(role, "wren" | "silas" | "kade") {
+        eprintln!("Usage: chorus-hook-shim health-weekly <role>");
+        return ExitCode::from(1);
+    }
+
+    println!("=== Weekly check for {} — {} ===", role, process::wall_clock());
+
+    // 1. Cruft scan (reuse existing function)
+    println!("\n--- Cruft Scan ---");
+    let _ = cruft_scan();
+
+    // 2. Stale card audit — cards in WIP/Next >7 days
+    println!("\n--- Stale Card Audit ---");
+    let board_ts = format!("{}/chorus/platform/scripts/cards", REPO_ROOT);
+    let list_output = Cmd::new("zsh")
+        .arg("-lc")
+        .arg(format!("{} list", board_ts))
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .unwrap_or_default();
+
+    let mut current_status = String::new();
+    let mut stale_count = 0u32;
+    for line in list_output.lines() {
+        let trimmed = line.trim();
+        // Status headers like "WIP (3):" or "Next (5):"
+        if trimmed.starts_with("WIP") || trimmed.starts_with("Next") || trimmed.starts_with("Later")
+            || trimmed.starts_with("Done") || trimmed.starts_with("Won't") || trimmed.starts_with("Blocked") {
+            current_status = trimmed.split_whitespace().next().unwrap_or("").to_string();
+            continue;
+        }
+        // Only audit WIP and Next
+        if current_status != "WIP" && current_status != "Next" { continue; }
+        // Parse card number
+        let card_num = trimmed.split_whitespace().next()
+            .and_then(|s| s.parse::<u32>().ok());
+        if let Some(num) = card_num {
+            // Check card age via view --json
+            let card_json = Cmd::new("zsh")
+                .arg("-lc")
+                .arg(format!("{} view {} --json 2>/dev/null", board_ts, num))
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok());
+            if let Some(json_str) = card_json {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                    if let Some(updated) = v.get("updated").and_then(|u| u.as_str()) {
+                        // Parse ISO date and check age
+                        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(updated) {
+                            let age_days = (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days();
+                            if age_days > 7 {
+                                let title = v.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+                                let owner = v.get("owner").and_then(|o| o.as_str()).unwrap_or("?");
+                                println!("  STALE: #{} [{}] {} — {}d in {} (owner: {})",
+                                    num, current_status, title, age_days, current_status, owner);
+                                stale_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if stale_count == 0 {
+        println!("  No stale cards found");
+    } else {
+        println!("  {} stale card(s) in WIP/Next", stale_count);
+    }
+
+    // 3. Disk trend
+    println!("\n--- Disk Trend ---");
+    let trend_file = "/Users/jeffbridwell/Library/Logs/Chorus/disk-trend.log";
+    let finder_free = Cmd::new("osascript")
+        .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
+        .output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().parse::<f64>().ok());
+    let container_total = Cmd::new("diskutil").args(["info", "/"])
+        .output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|text| {
+            text.lines()
+                .find(|l| l.contains("Container Total Space"))
+                .and_then(|l| l.split('(').nth(1))
+                .and_then(|s| s.split_whitespace().next())
+                .and_then(|n| n.parse::<u64>().ok())
+        });
+    let disk_pct = match (container_total, finder_free) {
+        (Some(total), Some(free)) if total > 0 => {
+            ((total as f64 - free) / total as f64 * 100.0) as u32
+        }
+        _ => 0,
+    };
+    let today: String = process::wall_clock().chars().take(10).collect();
+    let trend_line = format!("{},{}\n", today, disk_pct);
+    let _ = fs::OpenOptions::new().create(true).append(true).open(trend_file)
+        .and_then(|mut f| { use std::io::Write; f.write_all(trend_line.as_bytes()) });
+    println!("  Disk: {}%", disk_pct);
+    if let Ok(content) = fs::read_to_string(trend_file) {
+        let recent: Vec<&str> = content.lines().rev().take(5).collect();
+        for line in recent.into_iter().rev() {
+            println!("  {}", line);
+        }
+    }
+
+    println!("\n=== Weekly check complete for {} ===", role);
+    ExitCode::SUCCESS
+}

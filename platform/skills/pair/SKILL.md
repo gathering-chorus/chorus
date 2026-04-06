@@ -52,7 +52,7 @@ Two roles working one problem. The **navigator's scope loop** is the pair. When 
 
 2. **Declare state for both roles**:
    ```bash
-   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state.sh <your-role> building card=<card-id>
+   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <your-role> building card=<card-id>
    ```
 
 3. **Emit spine event**:
@@ -219,7 +219,7 @@ If any answer is no, the card stays open. Don't declare victory against internal
    ```
 4. Declare state back:
    ```bash
-   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state.sh <your-role> waiting
+   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <your-role> waiting
    ```
 5. **Write the Jeff summary** in the scratch file — required, not optional:
    ```

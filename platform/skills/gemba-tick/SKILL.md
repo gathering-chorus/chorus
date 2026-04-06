@@ -35,7 +35,7 @@ If script says "TTL EXPIRED": run exit sequence.
 1. CronDelete the loop
 2. Compute elapsed: `echo $(( $(date +%s) - START_EPOCH ))`
 3. Debrief: one paragraph with elapsed seconds
-4. `role-state.sh <your-role> waiting`
+4. `role-state <your-role> waiting`
 
 ## Rules
 

@@ -86,6 +86,7 @@ fn main() -> ExitCode {
         // --- Scheduled tasks (extracted to commands/) ---
         "health-hourly" | "context-cache-hourly" => return commands::health::health_hourly(&args),
         "health-daily" | "context-cache-daily" => return commands::health::health_daily(&args),
+        "health-weekly" | "context-cache-weekly" => return commands::health::health_weekly(&args),
         "context-cache" | "context-cache-5min" => return commands::context_cache::run(&args),
         "session-start" | "session-start-thin" => return commands::session::session_start_cmd(&args),
         "session-close" | "session-close-thin" | "session-end-hook" => return commands::session::session_close_cmd(&args),

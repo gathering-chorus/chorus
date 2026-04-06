@@ -78,7 +78,7 @@ This automatically generates a blast radius comment on the card (DEC-072) via th
 ```bash
 # Extract card type from board-ts view output (type:fix, type:new, etc.)
 CARD_TYPE=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view ${CARD_ID} | grep -oE 'type:\w+' | head -1 | sed 's/type://')
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state.sh <role> building card=${CARD_ID} type=${CARD_TYPE:-unknown}
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <role> building card=${CARD_ID} type=${CARD_TYPE:-unknown}
 ```
 
 ## Step 6: Emit signal
