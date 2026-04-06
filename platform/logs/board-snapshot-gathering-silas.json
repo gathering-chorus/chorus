@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T18:07:22.975Z",
+  "timestamp": "2026-04-06T18:22:35.348Z",
   "tasks": [
     {
       "index": 3,
@@ -28010,6 +28010,25 @@
       "apiId": 2353,
       "title": "Standards generation script — produce live HTML from decisions, hooks, and gate logs",
       "description": "## Experience\nThe standards surface looks live but the numbers are hardcoded. I want to open the page and know the counts are real — not from yesterday's guess.\n\n## Context\nThree data sources: decisions.md (count + list), Rust hook modules (chorus-hooks/src/hooks/), and gate logs (~/Library/Logs/Gathering/hooks.log — 62K lines, persistent, pipe-delimited: timestamp|hook_type|tool|role|gate_name|decision|duration|session_id|context).\n\nPrior art: claudemd-gen.py reads a manifest + fragments and generates output. Same harvest-then-template pattern. gathering-roadmap-gen.sh is another example.\n\nLog decisions to parse: allow, block, deny (skip 'enter' — that's the pre-check). Gate enforcement = modules with at least one block or deny in trailing 7 days.\n\n## AC\n1. Script reads decisions.md and produces accurate decision count\n2. Script counts hook modules from Rust source directory (currently 14 in src/hooks/)\n3. Script parses ~/Library/Logs/Gathering/hooks.log for gate enforcement rates — block/deny/allow per module, trailing 7 days\n4. Output: regenerated chorus-standards.html with real counts in header and real percentages in instrumentation bar\n5. Output: regenerated chorus-hook-architecture.html with current gap status (check card status via cards CLI)\n6. Runs cleanly from command line: bash generate-standards-surface.sh\n7. Follow claudemd-gen pattern: read sources, template output, idempotent",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new",
+        "sequence:loom",
+        "origin:reflective"
+      ],
+      "done": true,
+      "created": "2026-04-06T16:51:03Z",
+      "updated": "2026-04-06T18:09:08Z"
+    },
+    {
+      "index": 2267,
+      "apiId": 2354,
+      "title": "Pulse bar wiring — live gate enforcement rates on standards surface",
+      "description": "## Experience\nThe instrumentation bar says 22% gate-enforced. Is that true today? After shipping 13 hardening cards, it should be higher. I want the bar to reflect reality, updated from actual hook execution data.\n\n## Context\nDepends on the generation script card. ~/Library/Logs/Gathering/hooks.log (62K lines, persistent, migrated #1757) contains per-module block/allow/deny counts. The pulse bar needs to calculate: gate-enforced = modules that actually blocked something / total standards. Partially instrumented = modules that logged but never blocked.\n\n## AC\n1. Instrumentation bar percentages computed from hooks.log data\n2. Per-standard status tag (GATE/PARTIAL/DOC) derived from actual execution, not manually assigned\n3. Bar updates every time the generation script runs\n4. Tooltip or detail shows last block/allow count per gate",
       "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
@@ -28022,25 +28041,7 @@
       ],
       "done": false,
       "created": "2026-04-06T16:51:03Z",
-      "updated": "2026-04-06T16:56:36Z"
-    },
-    {
-      "index": 2267,
-      "apiId": 2354,
-      "title": "Pulse bar wiring — live gate enforcement rates on standards surface",
-      "description": "## Experience\nThe instrumentation bar says 22% gate-enforced. Is that true today? After shipping 13 hardening cards, it should be higher. I want the bar to reflect reality, updated from actual hook execution data.\n\n## Context\nDepends on the generation script card. ~/Library/Logs/Gathering/hooks.log (62K lines, persistent, migrated #1757) contains per-module block/allow/deny counts. The pulse bar needs to calculate: gate-enforced = modules that actually blocked something / total standards. Partially instrumented = modules that logged but never blocked.\n\n## AC\n1. Instrumentation bar percentages computed from hooks.log data\n2. Per-standard status tag (GATE/PARTIAL/DOC) derived from actual execution, not manually assigned\n3. Bar updates every time the generation script runs\n4. Tooltip or detail shows last block/allow count per gate",
-      "status": "Later",
-      "owner": "Silas",
-      "priority": "P1",
-      "domains": [
-        "domain:chorus",
-        "type:new",
-        "sequence:loom",
-        "origin:reflective"
-      ],
-      "done": false,
-      "created": "2026-04-06T16:51:03Z",
-      "updated": "2026-04-06T16:52:24Z"
+      "updated": "2026-04-06T18:10:54Z"
     },
     {
       "index": 2268,
@@ -28077,6 +28078,24 @@
       "done": false,
       "created": "2026-04-06T16:58:33Z",
       "updated": "2026-04-06T16:58:34Z"
+    },
+    {
+      "index": 2270,
+      "apiId": 2357,
+      "title": "Alert on session indexer death — detect stale index before gemba goes blind",
+      "description": "## Experience\nThe session indexer died on April 3 and nobody knew until April 6. Gemba showed 2-day-old data. Three days of sessions invisible to the team. I don't want to discover blindness — I want the system to detect it.\n\n## Context\n#2227 fixed the stale lock and added recovery. But nothing alerts if the indexer stops producing output. Deep-health checks services but not the session watcher subprocess or its output freshness. The index DB (index.db) has timestamps — if the newest message is >1 hour old during working hours, the indexer is probably dead.\n\n## AC\n1. Deep-health checks session index freshness — newest message timestamp in index.db\n2. If newest indexed message is >2 hours old during working hours (8am-10pm), alert fires to Silas\n3. Alert includes: last indexed timestamp, gap duration, suggested fix (check fswatch, check lock file)\n4. Integrates with existing deep-health.sh — not a separate monitoring path",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:awareness",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T18:16:10Z",
+      "updated": "2026-04-06T18:16:10Z"
     }
   ]
 }
