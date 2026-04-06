@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T15:24:57.242Z",
+  "timestamp": "2026-04-06T15:30:07.886Z",
   "tasks": [
     {
       "index": 3,
@@ -27704,7 +27704,7 @@
       "apiId": 2336,
       "title": "Async: photo.handler — replace 35 sync calls including execSync sips (10s event loop blocks)",
       "description": "## Problem\n\nphoto.handler.ts has 35 synchronous calls in request handlers. The worst: execSync('sips -s format jpeg -Z 800 ...') at line 573 blocks the entire Node event loop for up to 10 seconds during HEIC-to-JPEG conversion. Every other request waits.\n\n## Files\n- src/handlers/photo.handler.ts\n\n## Experience\nWhen I'm browsing photos — especially recent ones from my iPhone in HEIC format — the whole app freezes. Not just the photo page. Everything. Other tabs, other people browsing, all waiting for one image conversion to finish. It's the worst choppiness I feel in the app.\n\n## AC\n\n- [ ] AC1: Replace execSync('sips ...') in serveFullres() with async child process (execFileAsync or worker thread)\n- [ ] AC2: Replace all readFileSync calls (index, manifests, photo data) with fs.promises.readFile\n- [ ] AC3: Replace all existsSync calls with fs.promises.access wrapped in try/catch\n- [ ] AC4: Replace writeFileSync, mkdirSync, readdirSync with fs.promises equivalents\n- [ ] AC5: Zero sync calls remaining in photo.handler.ts request paths\n- [ ] AC6: All existing photo tests green. No regressions.\n\n## Reference\n\nPattern: const execAsync = promisify(exec) — see Silas commit 9afc12bf (#2241)\nProven in #2250 (pod-storage middleware) — same session.",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -27713,9 +27713,9 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T13:19:47Z",
-      "updated": "2026-04-06T13:42:35Z"
+      "updated": "2026-04-06T15:28:17Z"
     },
     {
       "index": 2250,
