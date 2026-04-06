@@ -213,6 +213,19 @@ done
 
 # --- 12. (Bedroom endpoints folded into check 11 above) ---
 
+# --- 13. Standards surface freshness (#2268) ---
+STANDARDS_HTML="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-standards.html"
+STALE_48H=$((now - 172800))
+if [ -f "$STANDARDS_HTML" ]; then
+  standards_mtime=$(stat -f %m "$STANDARDS_HTML" 2>/dev/null || echo 0)
+  if [ "$standards_mtime" -lt "$STALE_48H" ]; then
+    standards_age_h=$(( (now - standards_mtime) / 3600 ))
+    FAILURES+=("standards-surface: chorus-standards.html is ${standards_age_h}h stale — cron may be dead. Fix: bash platform/scripts/standards-surface-cron.sh --force")
+  fi
+else
+  FAILURES+=("standards-surface: chorus-standards.html not found — run generate-standards-surface.sh first")
+fi
+
 # --- Report ---
 if [ ${#FAILURES[@]} -eq 0 ]; then
   echo "deep-health: all checks passed"
