@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T20:54:31.585Z",
+  "timestamp": "2026-04-06T21:09:43.864Z",
   "tasks": [
     {
       "index": 3,
@@ -28162,10 +28162,11 @@
       "apiId": 2361,
       "title": "E2E alert delivery test — synthetic alert fires, verify arrival at Bridge + nudge",
       "description": "## Experience\n\nI want to know that when an alert fires, it actually reaches the people who need to see it. Right now I trust the routing works but can't prove it. If Alertmanager routing breaks or the nudge path dies, I find out when something fails and nobody notices — the worst kind of failure.\n\n## Context\n\nTwo alert delivery paths:\n1. Prometheus → Alertmanager → Slack channels (critical→#all-gathering, warning→#silas). Config: shared-observability/config/alertmanager/alertmanager.yml\n2. Shell rules (chorus/alerting/) → nudge Silas + post to Bridge (localhost:3470/api/message)\n\ndeep-health.sh checks that services are alive but never verifies the full delivery chain: fire alert → route → deliver → visible to role. The 3-day indexer blind spot (#2227) proved that \"service alive\" ≠ \"service producing output.\"\n\nNo test environment — every deploy is production. A broken alert path in production means flying blind.\n\n## AC\n\n1. Synthetic alert fires through Prometheus path — test alert rule triggers Alertmanager, message arrives at configured channel\n2. Synthetic alert fires through shell path — test nudge delivers to Silas, message posts to Bridge\n3. Both paths tested by a single script: alert-delivery-test.sh\n4. Script runs as a scheduled health check (weekly cron via LaunchAgent)\n5. Failure to deliver = deep-health failure with diagnostic context\n6. No false alerts — synthetic alerts are clearly labeled and filtered from real alert streams\n\n## Files\n\n- platform/scripts/alert-delivery-test.sh\n- platform/scripts/deep-health.sh (integration point)\n- shared-observability/config/alertmanager/alertmanager.yml (reference)\n- chorus/alerting/ (reference)",
-      "status": "Later",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:new",
         "sequence:ops",
@@ -28173,7 +28174,7 @@
       ],
       "done": false,
       "created": "2026-04-06T19:04:38Z",
-      "updated": "2026-04-06T19:04:38Z"
+      "updated": "2026-04-06T21:09:04Z"
     },
     {
       "index": 2275,
@@ -28378,7 +28379,7 @@
       "apiId": 2373,
       "title": "Clearing role-state cards show stale data — card numbers and states not updating on acceptance",
       "description": "## Experience\nLooking at the Clearing, Wren shows 'idle' with no card (should be active). Kade shows 'waiting' with no card (just shipped #2088). Silas shows #2271 but just accepted #2262. The role-state display doesn't update when cards move through acceptance.\n\n## Context\nScreenshot from Jeff at 4:39pm shows stale state for all three roles. Role-state events fire on card.accepted but the Clearing UI doesn't consume them to update the card display.\n\n## AC\n1. Role-state card number clears when a card is accepted (moved to Done)\n2. Role-state updates within 5s of card.accepted spine event\n3. If role has no active WIP card, display reflects that (no stale card number)\n4. Verify: accept a card, check Clearing within 5s — card number gone\n\n## Files\n- directing/clearing/public/index.html (role state display)\n- directing/clearing/src/server.ts (event consumption)",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -28388,9 +28389,9 @@
         "sequence:coordination",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T20:40:49Z",
-      "updated": "2026-04-06T20:52:56Z"
+      "updated": "2026-04-06T20:56:59Z"
     },
     {
       "index": 2287,
@@ -28410,6 +28411,42 @@
       "done": false,
       "created": "2026-04-06T20:40:56Z",
       "updated": "2026-04-06T20:41:50Z"
+    },
+    {
+      "index": 2288,
+      "apiId": 2375,
+      "title": "Quality service page — test pyramid inventory with foldable details and next steps",
+      "description": "## Experience\n\nI want to open one page and see the health of our test suite — how many tests, what layers are strong, where the gaps are. Not a coverage number — the shape of the pyramid and whether it's healthy.\n\n## AC\n\n- [x] AC1: Research complete — full inventory across both repos (8,465 tests, 5 languages)\n- [x] AC2: HTML page at /gathering-docs/quality-service.html with visual pyramid\n- [x] AC3: Foldable test details per repo layer — click to see test files and cases\n- [x] AC4: Deep verdict — bimodal shape analysis, findings with evidence\n- [x] AC5: Prioritized next steps — P1/P2/P3 with goals and metrics\n\n## Files\n- public/gathering-docs/quality-service.html",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:00:03Z",
+      "updated": "2026-04-06T21:04:26Z"
+    },
+    {
+      "index": 2289,
+      "apiId": 2376,
+      "title": "Suppress bridge event echo in Jeff terminal",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:loom",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:05:05Z",
+      "updated": "2026-04-06T21:05:05Z"
     }
   ]
 }
