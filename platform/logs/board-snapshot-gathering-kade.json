@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T15:30:08.609Z",
+  "timestamp": "2026-04-06T15:55:39.752Z",
   "tasks": [
     {
       "index": 3,
@@ -24087,7 +24087,7 @@
       ],
       "done": false,
       "created": "2026-04-04T18:11:15Z",
-      "updated": "2026-04-06T10:47:21Z"
+      "updated": "2026-04-06T15:53:12Z"
     },
     {
       "index": 2045,
@@ -27739,8 +27739,8 @@
       "index": 2251,
       "apiId": 2338,
       "title": "Async: knowledge-graph + document handlers — replace 31 sync calls in directory traversal",
-      "description": "## Problem\n\nknowledge-graph.handler.ts (17 sync calls) and document.handler.ts (14 sync calls) both do complex directory traversal and cache I/O synchronously per request. Graph construction and doc catalog requests freeze the event loop.\n\n## AC\n\n- [ ] AC1: knowledge-graph.handler — replace readdirSync, readFileSync, statSync with fs.promises. Zero sync calls in request path.\n- [ ] AC2: document.handler — replace all sync cache reads/writes with fs.promises. Zero sync calls in request path.\n- [ ] AC3: All existing knowledge-graph and document tests green. No regressions.",
-      "status": "Later",
+      "description": "## Problem\n\nknowledge-graph.handler.ts (17 sync calls) and document.handler.ts (14 sync calls) both do complex directory traversal and cache I/O synchronously per request. Graph construction and doc catalog requests freeze the event loop.\n\n## Files\n- src/handlers/knowledge-graph.handler.ts\n- src/handlers/document.handler.ts\n\n## Experience\nWhen I open the knowledge graph or browse documents, the app hesitates while it reads directories and files synchronously. Every other request queues behind the directory scan.\n\n## AC\n\n- [ ] AC1: knowledge-graph.handler — replace readdirSync, readFileSync, statSync with fs.promises. Zero sync calls in request path.\n- [ ] AC2: document.handler — replace all sync cache reads/writes with fs.promises. Zero sync calls in request path.\n- [ ] AC3: All existing knowledge-graph and document tests green. No regressions.\n\n## Reference\nPattern proven in #2250 (pod-storage) and #2249 (photo.handler). fileExists() helper + readJsonFile() + fsp.readdir/readFile/mkdir.",
+      "status": "WIP",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -27751,7 +27751,7 @@
       ],
       "done": false,
       "created": "2026-04-06T13:19:48Z",
-      "updated": "2026-04-06T13:19:48Z"
+      "updated": "2026-04-06T15:40:12Z"
     },
     {
       "index": 2252,
@@ -27776,7 +27776,7 @@
       "apiId": 2340,
       "title": "Event loop lag detection — log warnings when blocked >100ms",
       "description": "## Problem\n\nNo sensor exists to detect event loop blocking. The async migration cards fix the cause — this card adds the sensor that proves they worked and catches future regressions.\n\n## AC\n\n- [ ] AC1: Add event loop lag monitor (monitorEventLoopDelay or setInterval drift detection)\n- [ ] AC2: Log structured warning when event loop blocked >100ms with stack context\n- [ ] AC3: Emit spine event on sustained lag (>500ms) for Loki alerting\n- [ ] AC4: Verify sensor fires against a synthetic blocking call in tests, stays silent after async migration",
-      "status": "Later",
+      "status": "Won't Do",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -27787,7 +27787,7 @@
       ],
       "done": false,
       "created": "2026-04-06T13:19:49Z",
-      "updated": "2026-04-06T13:19:49Z"
+      "updated": "2026-04-06T15:44:29Z"
     },
     {
       "index": 2254,
@@ -27830,7 +27830,7 @@
       "apiId": 2343,
       "title": "Async: MonitoringService — cache disk checks, eliminate execSync from /health path",
       "description": "## Experience\nThe app freezes 2-22 seconds multiple times per day. I see pages hang, requests timeout, and event loop lag alerts fire. The monitoring system that checks app health is itself causing the freezes — every 15 seconds, Prometheus hits /health, which spawns two synchronous subprocesses (diskutil + osascript) and does 2 synchronous filesystem checks. That's 136K blocking operations per day from the health check alone.\n\n## Files\n- src/services/MonitoringService.ts (primary — 4 hot-path sync calls)\n- tests/unit/services/monitoring.service.test.ts (add /health endpoint tests)\n\n## AC\n1. execSync('diskutil info /') replaced with cached async — disk usage cached 60 seconds, not checked every request\n2. execSync('osascript') for Finder free space replaced with cached async — same 60-second cache\n3. fs.existsSync(podsDir) cached on startup — pod directory doesn't move\n4. fs.existsSync(photosDb) cached on startup — same\n5. /health endpoint responds in <50ms under load (currently 150-3000ms due to subprocess spawns)\n6. Event loop lag events in Loki drop measurably after deploy (query last 24h before vs after)\n7. Tests cover /health response time and cache behavior — currently zero /health tests exist\n8. Git version resolution already cached (no change needed, verify preserved)",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -27839,9 +27839,9 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T13:47:25Z",
-      "updated": "2026-04-06T13:49:23Z"
+      "updated": "2026-04-06T15:33:34Z"
     },
     {
       "index": 2257,
@@ -27878,6 +27878,60 @@
       "done": false,
       "created": "2026-04-06T15:15:59Z",
       "updated": "2026-04-06T15:15:59Z"
+    },
+    {
+      "index": 2259,
+      "apiId": 2346,
+      "title": "[defect] gathering-app: Event loop lag: 15.80s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 15.80s\nSample: Event loop lag: 15.80s\nFirst seen: 2026-04-06T15:32:12Z\nCount: 1\nHash: e87ce44cf6444b43",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T15:32:12Z",
+      "updated": "2026-04-06T15:32:12Z"
+    },
+    {
+      "index": 2260,
+      "apiId": 2347,
+      "title": "Node health instrumentation — event loop lag, memory, queue depth alerts to owning roles",
+      "description": "## Experience\nWhen the app freezes, I don't know until I feel it. Pages hang, requests timeout, and I'm the one who notices. The monitoring service was itself causing 136K blocking ops/day — fixed now, but there's still no signal that tells a role 'the event loop is lagging' before I feel it. I want the system to detect and act on its own health problems without me being the sensor.\n\n## Context\nNode.js has built-in primitives for health instrumentation. express-prom-bundle is already wired (#1810). Prometheus collects HTTP metrics. The gap: no event loop lag detection, no memory pressure alerts, no queue depth monitoring, and no routing of health signals to owning roles.\n\nJeff has deep JVM debugging experience (years at Staples with Deb Majumdar). JVM thread blocking and Node event loop blocking are the same class of problem — the tooling patterns are well-established.\n\n## Research Required\n- Node perf_hooks monitorEventLoopDelay() — histogram API, sampling interval, percentile thresholds\n- process.memoryUsage() — heap used vs total, RSS growth, external buffer pressure\n- libuv metrics — active handles/requests as load signal\n- express-prom-bundle integration — custom metrics registration for event loop lag, memory, queue depth\n- Alert thresholds from production Node apps (not just defaults) — what lag values actually indicate problems vs normal GC pauses\n- Backpressure patterns in Node — how to signal 'slow down' when the event loop is saturated\n\n## AC\n1. Event loop lag monitoring via monitorEventLoopDelay() — p99 latency exposed as Prometheus metric\n2. Memory pressure metric — heap used percentage, RSS growth rate\n3. Alert rules: event loop lag >500ms nudges Kade, >2s nudges Kade+Silas. Memory >85% nudges Silas.\n4. Alerts route to owning role via nudge --force, not Bridge, not dashboard\n5. No new dashboard — metrics exist for post-mortem, alerts exist for prevention\n6. Document the thresholds chosen and why (research output)",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "sequence:hardening",
+        "domain:chorus",
+        "type:new",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T15:34:31Z",
+      "updated": "2026-04-06T15:36:37Z"
+    },
+    {
+      "index": 2261,
+      "apiId": 2348,
+      "title": "Extract board-client as versioned package — isolation boundary for card operations",
+      "description": "## Experience\nYesterday a necessary refactor on cards (origin-required, #2101) broke six card creations silently — exit code 1, no error message. Tests were creating real cards on the production board. A change to the board client rippled into every script, hook, and test that touches cards. I had no isolation boundary. I want to upgrade deliberately, not discover breakage.\n\n## Context\nboard-client is already a standalone TypeScript package with its own tests (14 passing as of #1820). It wraps Vikunja. It lives inside gathering-team/chorus/platform/board-client/ but has no version contract — every change is live everywhere immediately. The monorepo gives context (one tree, one git log) but zero blast radius protection.\n\nExtraction as a versioned npm package (workspace or standalone repo) means: pin a version, upgrade deliberately, test the upgrade, roll back if broken. External consumers (Mark, Deb) could also npm install it.\n\n## Research Required\n- npm workspaces vs separate repo — tradeoffs for monorepo context preservation\n- Which scripts and hooks depend on board-client directly vs via cards CLI\n- Test isolation — how to run board-client tests without hitting production Vikunja\n\n## AC\n1. board-client has its own package.json with semver version\n2. Consumers (cards CLI, hooks, scripts) depend on the package, not the source tree\n3. A breaking change to board-client requires a version bump — downstream callers pin and upgrade explicitly\n4. board-client tests run against a mock/test Vikunja instance, not production\n5. Existing cards CLI behavior unchanged after extraction",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "sequence:hardening",
+        "domain:chorus",
+        "type:chore",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T15:46:59Z",
+      "updated": "2026-04-06T15:46:59Z"
     }
   ]
 }
