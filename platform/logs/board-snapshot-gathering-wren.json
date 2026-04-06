@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T21:24:56.390Z",
+  "timestamp": "2026-04-06T21:29:59.743Z",
   "tasks": [
     {
       "index": 3,
@@ -28399,7 +28399,7 @@
       "apiId": 2374,
       "title": "Clearing service design page — product surface backed by 5+ domains",
       "description": "## Experience\nThe Clearing has grown into a real product surface — multi-role chat, alerts panel, role-state cards, stream tailing, board event feed. It deserves a service design page like the other Chorus services (nudge, pulse, awareness).\n\n## Context\nClearing is supported by 5+ domains: coordination, nudge, observability, awareness, loom. No service design exists yet. Template: product-manager/artifacts/service-design-*.html\n\n## AC\n1. Service design HTML page following existing template (service-design-pulse.html, loom-service-design.html)\n2. Maps the Clearing's domain dependencies (coordination, nudge, observability, awareness, loom, spine)\n3. Identifies consumers (Jeff, all three roles), producers (Bridge, role-state, alerts, streams)\n4. Registered in doc-catalog\n5. Rendered at gathering-docs/clearing-service-design.html\n\n## Files\n- product-manager/artifacts/clearing-service-design.html (new)\n- public/gathering-docs/clearing-service-design.html (deployed)",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P2",
       "domains": [
@@ -28409,9 +28409,9 @@
         "sequence:loom",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T20:40:56Z",
-      "updated": "2026-04-06T20:41:50Z"
+      "updated": "2026-04-06T21:25:41Z"
     },
     {
       "index": 2288,
@@ -28580,7 +28580,7 @@
       "apiId": 2384,
       "title": "TDD gate blocks non-code cards — missing bats detection and no doc-only exemption",
       "description": "## Experience\n\nI hit 'cards done' on a card that only changed SKILL.md and the TDD gate blocked me, demanding jest/cargo test. The card had no production code changes — it was a process doc rewrite. I shouldn't need to run a test suite to accept a markdown edit.\n\n## Context\n\nTwo bugs in tdd_gate.rs:\n1. has_test_run() only detects cargo test, npx jest, npm test, npx cucumber, vitest. Misses bats — our BATS test suite (12+ files, 76+ cases) is invisible to the gate. Silas hit this on #2274.\n2. Gate 2 (demo/done) enforces test runs for ALL non-chore/swat cards, even when the session only touched non-code files (markdown, YAML, plist). A fix card that only edits SKILL.md shouldn't require running jest.\n\nThe chore/swat skip at line 121 is the right pattern but too narrow. Card type alone isn't sufficient — a type:fix card can still be docs-only.\n\n## AC\n\n1. has_test_run() detects bats test runs (pattern: \"bats \" in Bash tool calls)\n2. Gate 2 exempts sessions where no production code was edited — if only markdown/YAML/config/docs were touched, tests aren't required\n3. Existing chore/swat skip preserved\n4. Tests: add test cases for bats detection and doc-only exemption\n5. Existing tests still pass\n\n## Files\n\n- platform/services/chorus-hooks/src/hooks/tdd_gate.rs",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -28590,9 +28590,9 @@
         "sequence:ops",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T21:24:30Z",
-      "updated": "2026-04-06T21:24:36Z"
+      "updated": "2026-04-06T21:29:28Z"
     }
   ]
 }
