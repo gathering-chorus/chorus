@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T20:39:18.908Z",
+  "timestamp": "2026-04-06T20:49:26.326Z",
   "tasks": [
     {
       "index": 3,
@@ -27690,8 +27690,8 @@
       "owner": "Kade",
       "priority": "P1",
       "domains": [
-        "gathering",
         "sequence:hardening",
+        "domain:chorus",
         "type:fix",
         "origin:reactive"
       ],
@@ -28166,8 +28166,9 @@
       "owner": "Silas",
       "priority": "P1",
       "domains": [
+        "domain:chorus",
         "type:new",
-        "sequence:awareness",
+        "sequence:ops",
         "origin:reflective"
       ],
       "done": false,
@@ -28183,8 +28184,9 @@
       "owner": "Silas",
       "priority": "P1",
       "domains": [
+        "domain:chorus",
         "type:fix",
-        "sequence:awareness",
+        "sequence:ops",
         "origin:reactive"
       ],
       "done": false,
@@ -28200,8 +28202,9 @@
       "owner": "Silas",
       "priority": "P1",
       "domains": [
+        "domain:chorus",
         "type:fix",
-        "sequence:awareness",
+        "sequence:ops",
         "origin:reactive"
       ],
       "done": false,
@@ -28217,8 +28220,9 @@
       "owner": "Silas",
       "priority": "P2",
       "domains": [
+        "domain:chorus",
         "type:new",
-        "sequence:awareness",
+        "sequence:ops",
         "origin:reflective"
       ],
       "done": false,
@@ -28234,8 +28238,9 @@
       "owner": "Silas",
       "priority": "P2",
       "domains": [
+        "domain:chorus",
         "type:new",
-        "sequence:awareness",
+        "sequence:ops",
         "origin:reflective"
       ],
       "done": false,
@@ -28251,8 +28256,9 @@
       "owner": "Silas",
       "priority": "P2",
       "domains": [
+        "domain:chorus",
         "type:new",
-        "sequence:awareness",
+        "sequence:ops",
         "origin:reflective"
       ],
       "done": false,
@@ -28268,8 +28274,9 @@
       "owner": "Silas",
       "priority": "P3",
       "domains": [
+        "domain:chorus",
         "type:new",
-        "sequence:awareness",
+        "sequence:ops",
         "origin:reflective"
       ],
       "done": false,
@@ -28334,10 +28341,11 @@
       "apiId": 2371,
       "title": "Bridge notification filtering — stop echoing Jeff's own actions, add audience routing",
       "description": "## Experience\nJeff accepted #2255 and got '[bridge] #2255 accepted by jeff' echoed back to his terminal. His own action reflected as a notification. This is noise — intrusive and redundant. It happened twice in one session.\n\n## Context\nbridge-subscriber.js (platform/scripts/) listens to Bridge event bus (localhost:3470) and queues formatted events to /tmp/voice-inbox/{role}/pending-inject.txt. Events surface in <team-scan> on next UserPromptSubmit.\n\nCurrent filtering: skips events where eventRole === role (don't notify a role of its own actions). But NO filtering for:\n- Jeff-initiated actions echoed back to Jeff's view (acceptance, card pulls he triggers)\n- Audience relevance (all roles get all events regardless of domain)\n- Event volume (every card.pulled, card.accepted, role.state.changed broadcasts to everyone)\n\nThe bridge-subscriber was previously disabled entirely (#1700) to stop echo loops, then re-enabled for board-state visibility. The real fix is intelligent filtering, not on/off.\n\n## AC\n1. Jeff's own actions are not echoed back — if event actor is jeff, suppress from role terminals Jeff is watching\n2. Role self-events already filtered (keep existing eventRole === role check)\n3. Card acceptance events only go to the card owner and building role, not all roles\n4. card.pulled events go to the pulling role's observers, not everyone\n5. role.state.changed only surfaces for blocked state (not routine building/waiting transitions)\n6. Filtering logic lives in bridge-subscriber.js, not scattered across hooks\n7. Existing bridge→session-tailer filter (line 243) preserved\n\n## Files\n- platform/scripts/bridge-subscriber.js (primary — event filtering)\n- platform/services/chorus-hooks/src/nudge.rs (drain logic, [bridge] prefix handling)",
-      "status": "Later",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:fix",
         "sequence:coordination",
@@ -28345,7 +28353,7 @@
       ],
       "done": false,
       "created": "2026-04-06T20:28:26Z",
-      "updated": "2026-04-06T20:28:26Z"
+      "updated": "2026-04-06T20:44:51Z"
     },
     {
       "index": 2285,
@@ -28364,6 +28372,43 @@
       "done": false,
       "created": "2026-04-06T20:34:23Z",
       "updated": "2026-04-06T20:34:23Z"
+    },
+    {
+      "index": 2286,
+      "apiId": 2373,
+      "title": "Clearing role-state cards show stale data — card numbers and states not updating on acceptance",
+      "description": "## Experience\nLooking at the Clearing, Wren shows 'idle' with no card (should be active). Kade shows 'waiting' with no card (just shipped #2088). Silas shows #2271 but just accepted #2262. The role-state display doesn't update when cards move through acceptance.\n\n## Context\nScreenshot from Jeff at 4:39pm shows stale state for all three roles. Role-state events fire on card.accepted but the Clearing UI doesn't consume them to update the card display.\n\n## AC\n1. Role-state card number clears when a card is accepted (moved to Done)\n2. Role-state updates within 5s of card.accepted spine event\n3. If role has no active WIP card, display reflects that (no stale card number)\n4. Verify: accept a card, check Clearing within 5s — card number gone\n\n## Files\n- directing/clearing/public/index.html (role state display)\n- directing/clearing/src/server.ts (event consumption)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T20:40:49Z",
+      "updated": "2026-04-06T20:40:49Z"
+    },
+    {
+      "index": 2287,
+      "apiId": 2374,
+      "title": "Clearing service design page — product surface backed by 5+ domains",
+      "description": "## Experience\nThe Clearing has grown into a real product surface — multi-role chat, alerts panel, role-state cards, stream tailing, board event feed. It deserves a service design page like the other Chorus services (nudge, pulse, awareness).\n\n## Context\nClearing is supported by 5+ domains: coordination, nudge, observability, awareness, loom. No service design exists yet. Template: product-manager/artifacts/service-design-*.html\n\n## AC\n1. Service design HTML page following existing template (service-design-pulse.html, loom-service-design.html)\n2. Maps the Clearing's domain dependencies (coordination, nudge, observability, awareness, loom, spine)\n3. Identifies consumers (Jeff, all three roles), producers (Bridge, role-state, alerts, streams)\n4. Registered in doc-catalog\n5. Rendered at gathering-docs/clearing-service-design.html\n\n## Files\n- product-manager/artifacts/clearing-service-design.html (new)\n- public/gathering-docs/clearing-service-design.html (deployed)",
+      "status": "WIP",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new",
+        "sequence:loom",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T20:40:56Z",
+      "updated": "2026-04-06T20:41:50Z"
     }
   ]
 }
