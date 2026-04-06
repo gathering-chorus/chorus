@@ -44,32 +44,38 @@ const mockBuckets: VikunjaBucket[] = [
   { id: 8, title: 'Blocked', limit: 0, tasks: [] },
 ];
 
-// Create a client and override fetchBuckets to use mock data
+// Build task→bucket map from mock data (mirrors what fetchBucketMapFromDB reads from SQLite)
+// Added after #1820 changed list() to use fetchBucketMapFromDB instead of bucket-view API
+const mockBucketMap = new Map<number, string>();
+for (const b of mockBuckets) {
+  for (const t of b.tasks || []) {
+    mockBucketMap.set(t.id, b.title);
+  }
+}
+
+// All mock tasks flat (used by fetchAllTasks mock)
+const allMockTasks = mockBuckets.flatMap(b => b.tasks || []);
+
+// Create a client with mocked data layer (API + DB)
 function createMockClient(): BoardClient {
   const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
-  // Override the private fetchBuckets method
-  (client as any).api = jest.fn().mockImplementation((method: string, endpoint: string) => {
-    if (endpoint.includes('/views/') && endpoint.includes('/tasks')) {
-      return Promise.resolve(mockBuckets);
-    }
-    if (endpoint.match(/^\/tasks\/\d+$/) && method === 'GET') {
-      const id = parseInt(endpoint.split('/').pop()!);
-      for (const b of mockBuckets) {
-        for (const t of b.tasks || []) {
-          if (t.id === id) return Promise.resolve(t);
-        }
-      }
-    }
-    // fetchAllTasks paginated endpoint (added in db060872 for old Done tasks fallback)
-    if (endpoint.includes('/tasks?per_page=')) {
-      const page = parseInt(endpoint.match(/page=(\d+)/)?.[1] || '1');
-      if (page === 1) {
-        return Promise.resolve(mockBuckets.flatMap(b => b.tasks || []));
-      }
-      return Promise.resolve([]);
-    }
-    return Promise.resolve({});
+
+  // Mock fetchAllTasks — returns all tasks from mock buckets
+  (client as any).fetchAllTasks = jest.fn().mockResolvedValue(allMockTasks);
+
+  // Mock fetchBuckets — used by view() fallback and fetchBucketsWithLimits
+  (client as any).fetchBuckets = jest.fn().mockResolvedValue(mockBuckets);
+
+  // Mock fetchTask — used by view() for single task lookup
+  (client as any).fetchTask = jest.fn().mockImplementation((apiId: number) => {
+    const task = allMockTasks.find(t => t.id === apiId);
+    if (!task) return Promise.reject(new Error(`No task ${apiId}`));
+    return Promise.resolve(task);
   });
+
+  // Mock fetchBucketMapFromDB — list() and view() use this since #1820
+  (client as any).fetchBucketMapFromDB = jest.fn().mockReturnValue(mockBucketMap);
+
   return client;
 }
 
@@ -200,19 +206,19 @@ describe('BoardClient.snapshot', () => {
 describe('BoardClient cache', () => {
   test('clearCache forces re-fetch on next resolveIndex', async () => {
     const client = createMockClient();
-    const api = (client as any).api as jest.Mock;
+    const fetchAll = (client as any).fetchAllTasks as jest.Mock;
 
     await client.resolveIndex(1);
-    const callCount = api.mock.calls.length;
+    const callCount = fetchAll.mock.calls.length;
 
     // Same call should use cache
     await client.resolveIndex(2);
-    expect(api.mock.calls.length).toBe(callCount);
+    expect(fetchAll.mock.calls.length).toBe(callCount);
 
     // After clear, should re-fetch
     client.clearCache();
     await client.resolveIndex(1);
-    expect(api.mock.calls.length).toBeGreaterThan(callCount);
+    expect(fetchAll.mock.calls.length).toBeGreaterThan(callCount);
   });
 });
 

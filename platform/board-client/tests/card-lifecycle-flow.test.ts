@@ -114,33 +114,36 @@ const mockBuckets = [
   { id: 11, title: 'Harvesting', limit: 2, tasks: [] },
 ];
 
+// Build task→bucket map + flat task list from mock data
+// Required after #1820 changed list()/view() to use fetchAllTasks + fetchBucketMapFromDB
+const allMockTasks = mockBuckets.flatMap(b => (b.tasks || []) as any[]);
+const mockBucketMap = new Map<number, string>();
+for (const b of mockBuckets) {
+  for (const t of b.tasks || []) {
+    mockBucketMap.set(t.id, b.title);
+  }
+}
+
 function createMockClient(): BoardClient {
   const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
+  // Mock data layer (#1820: list()/view() use fetchAllTasks + fetchBucketMapFromDB)
+  (client as any).fetchAllTasks = jest.fn().mockResolvedValue(allMockTasks);
+  (client as any).fetchBuckets = jest.fn().mockResolvedValue(mockBuckets);
+  (client as any).fetchBucketMapFromDB = jest.fn().mockReturnValue(mockBucketMap);
+  (client as any).fetchTask = jest.fn().mockImplementation((apiId: number) => {
+    const task = allMockTasks.find((t: any) => t.id === apiId);
+    if (!task) return Promise.reject(new Error(`Task ${apiId} not found`));
+    return Promise.resolve(task);
+  });
+  // Mock mutation APIs (move, comment, label)
   (client as any).api = jest.fn().mockImplementation((method: string, endpoint: string, body?: any) => {
-    // Bucket list
-    if (endpoint.includes('/views/') && endpoint.includes('/tasks')) {
-      return Promise.resolve(mockBuckets);
-    }
-    // Single task GET
-    if (endpoint.match(/^\/tasks\/\d+$/) && method === 'GET') {
-      const id = parseInt(endpoint.split('/').pop()!);
-      for (const b of mockBuckets) {
-        for (const t of b.tasks || []) {
-          if (t.id === id) return Promise.resolve(t);
-        }
-      }
-      return Promise.reject(new Error(`Task ${id} not found`));
-    }
-    // Task update (move)
     if (endpoint.match(/^\/tasks\/\d+$/) && method === 'POST') {
       return Promise.resolve({ ...body, id: parseInt(endpoint.split('/').pop()!) });
     }
-    // Comments
     if (endpoint.match(/\/tasks\/\d+\/comments$/)) {
       if (method === 'GET') return Promise.resolve([]);
       return Promise.resolve({ id: 1, comment: body?.comment || '' });
     }
-    // Labels
     if (endpoint.match(/\/tasks\/\d+\/labels$/)) {
       return Promise.resolve({ id: 1 });
     }
