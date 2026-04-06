@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T19:08:10.494Z",
+  "timestamp": "2026-04-06T19:13:14.032Z",
   "tasks": [
     {
       "index": 3,
@@ -28140,7 +28140,7 @@
       "apiId": 2360,
       "title": "Observability domain page + service design — document the full stack across shared-observability and chorus",
       "description": "## Experience\n\nI want to open one page and see the full observability picture — what services run, what they monitor, what alerts fire, what dashboards exist, and where the gaps are. Right now this is spread across two repos (shared-observability and chorus), two alert mechanisms (Prometheus rules and shell-based cron), with no sync between them and 13 uncommitted changes.\n\n## Context\n\nTwo repos own observability:\n- shared-observability/ — canonical deployment source. Prometheus, Grafana, Loki, Alertmanager configs. 13 dashboards, 7 Prometheus alert rule files, Grafana-native alerts. Docker Compose stack. 13 uncommitted changes.\n- chorus/alerting/ — 7 shell-based alert rules (cron jobs, different mechanism). chorus/proving/ has stale copies of Grafana alerts and dashboards.\n\nTemplate: awareness-service-design.html + domain-context-awareness.html (shipped #2022, reconciled #2272).\n\n## AC\n\n1. Create domain-context-observability.html — domain page with Key Documents table, context diagram, services inventory, forcing functions, UIs, APIs, data, tests, alert rules, open questions\n2. Create observability-service-design.html — component breakdown (Metrics, Logs, Alerts, Health Checks, Dashboards, Instrumentation) with status tags (REAL/PARTIAL/NONE), services, tests, gaps per component\n3. Document the two-repo architecture — what's canonical where, what's a stale copy, what needs sync\n4. Document both alert mechanisms — Prometheus rules (shared-observability) vs shell-based cron (chorus/alerting) with coverage map\n5. Catalog all 13 dashboards with purpose and freshness\n6. Identify gaps: missing endpoints (hooks telemetry, pulse metrics), missing playbooks, dark spots (correlation, testimony)\n7. Both docs use 1-inch margins, consistent styling with awareness docs\n8. Domain page links to service design and shared-observability README\n\n## Files\n\n- jeff-bridwell-personal-site/public/gathering-docs/domain-context-observability.html\n- jeff-bridwell-personal-site/public/gathering-docs/observability-service-design.html",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -28149,9 +28149,9 @@
         "sequence:awareness",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T18:50:41Z",
-      "updated": "2026-04-06T18:51:31Z"
+      "updated": "2026-04-06T19:09:14Z"
     },
     {
       "index": 2274,
