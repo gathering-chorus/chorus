@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T21:55:14.384Z",
+  "timestamp": "2026-04-06T22:00:19.240Z",
   "tasks": [
     {
       "index": 3,
@@ -21824,20 +21824,20 @@
       "index": 1916,
       "apiId": 1999,
       "title": "/golfball skill — pre-sequence scan for fix cards in target domain before building new features",
-      "description": "## Experience\nBefore I start building something new in a domain, I want to know if there are unresolved problems hiding in the grass. Fix cards and SWAT cards in the same domain as my new feature are golfballs in the fairway — small, hard impediments that can block flow or invalidate new work. I don't want to discover them mid-build. I want a one-command scan: are there golfballs here?\n\n## AC\n1. /golfball <domain> scans for type:fix and type:swat cards in the specified domain across WIP, Now, Next, and Later\n2. /golfball with no argument scans all domains that have type:new or type:enhance cards in WIP or Next\n3. Output: list each golfball card (id, title, status, owner) grouped by domain\n4. If no golfballs: 'Fairway clear — <domain> has no fix/swat cards'\n5. Recommendation line: 'N golfballs in <domain> — consider addressing before new feature work'\n6. Emit spine event: golfball.scan.completed with domain and count\n7. Skill definition at ~/.claude/skills/golfball/SKILL.md\n\n## Files\n- ~/.claude/skills/golfball/SKILL.md (new)",
-      "status": "Later",
+      "description": "## Experience\nBefore I start building something new in a domain, I want to know if there are unresolved problems hiding in the grass. Fix cards and SWAT cards in the same domain as my new feature are golfballs in the fairway — small, hard impediments that can block flow or invalidate new work. I don't want to discover them mid-build. I want a one-command scan: are there golfballs here?\n\n## AC\n1. /golfball <domain> scans for type:fix and type:swat cards in the specified domain across WIP, Now, Next, and Later\n2. /golfball with no argument scans all domains that have type:new or type:enhance cards in WIP or Next\n3. Output: list each golfball card (id, title, status, owner) grouped by domain\n4. If no golfballs: 'Fairway clear — no fix/swat cards'\n5. Recommendation line: 'N golfballs in domain — consider addressing before new feature work'\n6. Emit spine event: golfball.scan.completed with domain and count\n7. Skill definition installed and invocable\n\n## Files\n- platform/skills/golfball/SKILL.md",
+      "status": "WIP",
       "owner": "Wren",
       "priority": "P2",
       "domains": [
         "chunk:strategy",
         "domain:chorus",
-        "type:new",
+        "type:chore",
         "sequence:strategy",
         "origin:reflective"
       ],
       "done": false,
       "created": "2026-03-31T15:11:01Z",
-      "updated": "2026-04-06T21:55:08Z"
+      "updated": "2026-04-06T21:55:49Z"
     },
     {
       "index": 1917,
@@ -28220,7 +28220,7 @@
       "apiId": 2364,
       "title": "Hooks telemetry API — queryable endpoint for gate enforcement metrics",
       "description": "## Experience\n\nThe compliance metric (38% gate-enforced) is real and valuable, but it's built on parsing a log file with awk. If the log format changes or the file moves, the metric breaks silently. I want to query an endpoint and get enforcement data back — same way I query /api/chorus/health for system status.\n\n## Context\n\nCurrent state:\n- ~/Library/Logs/Gathering/hooks.log — 62K+ lines, enriched format (#1859): timestamp | hook_type | tool | role | module | decision | duration | session_id | context\n- generate-standards-surface.sh parses this with awk for deny/allow/block counts per module\n- No API endpoint exposes this data\n- Chorus API (localhost:3340) already has /health, /search, /stats — adding a /hooks/metrics endpoint follows the pattern\n\nThe hooks binary (chorus-hooks, Rust) writes the log. The Chorus API (TypeScript) would serve the endpoint. The data flow: hooks binary → log file → API reads log → serves JSON.\n\nAlternative: hooks binary writes metrics directly to Prometheus (push gateway or textfile collector). More native to the observability stack but requires Rust changes.\n\nRecommendation: API endpoint first (simpler, follows existing pattern), Prometheus integration later.\n\n## AC\n\n1. GET /api/chorus/hooks/metrics returns JSON with per-module deny/allow counts (trailing 7 days)\n2. Response includes: total decisions, enforced modules count, enforcement percentage\n3. generate-standards-surface.sh can optionally use the API instead of direct file parsing\n4. Endpoint responds in <500ms (log is 62K lines, may need caching or pre-aggregation)\n5. Endpoint is documented in the observability service design\n\n## Files\n\n- jeff-bridwell-personal-site/src/api/ or chorus API source (add endpoint)\n- platform/scripts/generate-standards-surface.sh (optional: switch to API)\n- jeff-bridwell-personal-site/public/gathering-docs/observability-service-design.html (update)",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -28230,9 +28230,9 @@
         "sequence:ops",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T19:05:29Z",
-      "updated": "2026-04-06T21:49:32Z"
+      "updated": "2026-04-06T21:58:52Z"
     },
     {
       "index": 2278,
@@ -28310,18 +28310,20 @@
       "index": 2282,
       "apiId": 2369,
       "title": "Hook: auto-emit interaction pattern events on UserPromptSubmit",
-      "description": "AC: 1. UserPromptSubmit hook classifies Jeff's message into one of 9 interaction patterns (direction, ideation, demo, triage, swat, gemba, clearing, story, reflection). 2. Emits chorus-log interaction.pattern.detected on pattern shift, not every message. 3. All roles emit, not just Wren. 4. Current card-type-to-pattern mapping in state.rs feeds as fallback, not primary.",
-      "status": "Later",
+      "description": "## Experience\n\nI want to see what mode I'm in without asking. When I shift from directing to ideation to triage, the system should notice and emit it — not wait for a role to manually classify. Right now interaction patterns are only tracked when Wren detects them, and only for card-type-based fallback. The pattern should surface from what I'm actually saying.\n\n## AC\n\n1. UserPromptSubmit hook classifies Jeff's message into one of 9 interaction patterns (direction, ideation, demo, triage, swat, gemba, clearing, story, reflection)\n2. Emits chorus-log interaction.pattern.detected on pattern shift, not every message\n3. All roles emit, not just Wren\n4. Current card-type-to-pattern mapping in state.rs feeds as fallback, not primary\n\n## Files\n\n- platform/services/chorus-hooks/src/hooks/ (new module or extend existing)\n- platform/services/chorus-hooks/src/shim.rs (wire into UserPromptSubmit)",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:enhance",
+        "sequence:ops",
         "origin:reactive"
       ],
       "done": false,
       "created": "2026-04-06T20:02:58Z",
-      "updated": "2026-04-06T20:02:58Z"
+      "updated": "2026-04-06T22:00:01Z"
     },
     {
       "index": 2283,
