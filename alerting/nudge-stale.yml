@@ -41,7 +41,7 @@ action: |
   touch "$COOLDOWN_FILE"
   # Nudge Silas — alerts go to roles, not the Clearing
   NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "nudge-stale: unprocessed nudges >10min — coordination may be broken" --force 2>/dev/null || true
+  "$NUDGE" silas "nudge-stale: unprocessed nudges >10min — coordination may be broken. Fix: check /tmp/voice-inbox/{role}/pending-inject.txt, clear stale files or restart target role session" --force 2>/dev/null || true
   curl -sf -X POST http://localhost:3470/api/message \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg text '[alert] nudges unprocessed >10min' --arg from 'system' '{from: $from, text: $text}')" \
