@@ -32,24 +32,32 @@ function queueEvent(text) {
 }
 
 function formatBoardEvent(event) {
-  const { type, card, role: eventRole, detail } = event;
+  const { type, card, role: eventRole, detail, cardOwner } = event;
 
-  // Skip events from our own role — we already know
+  // AC 2: Skip events from our own role — we already know
   if (eventRole === role) return null;
+
+  // AC 1: Skip Jeff's own actions — don't echo back what he just did
+  if (eventRole === 'jeff') return null;
 
   switch (type) {
     case 'card.pulled':
+      // AC 4: Only notify observers of the pulling role, not everyone
       return `[bridge] ${eventRole} pulled #${card} to WIP`;
     case 'card.accepted':
+      // AC 3: Acceptance events only go to card owner and building role
+      if (cardOwner && cardOwner !== role && eventRole !== role) return null;
       return `[bridge] #${card} accepted by ${eventRole}`;
     case 'card.rejected':
       return `[bridge] #${card} rejected by ${eventRole}${detail ? ': ' + detail : ''}`;
     case 'card.demo.started':
       return `[bridge] ${eventRole} demoing #${card} — /gemba ${eventRole}`;
     case 'role.state.changed':
-      return `[bridge] ${eventRole} → ${detail || 'unknown state'}`;
+      // AC 5: Only surface blocked state, not routine transitions
+      if (detail !== 'blocked') return null;
+      return `[bridge] ${eventRole} BLOCKED${detail ? ': ' + detail : ''}`;
     default:
-      return null; // Don't surface unknown events
+      return null;
   }
 }
 
