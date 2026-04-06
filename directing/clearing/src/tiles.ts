@@ -41,6 +41,22 @@ export class TilePoller {
     return ROLES.map((r) => this.tiles.get(r)!);
   }
 
+  /** Clear card from role state on acceptance (#2286) */
+  clearCard(role: string): void {
+    const stateFile = path.join(SCAN_DIR, `${role}-declared.json`);
+    try {
+      const content = fs.readFileSync(stateFile, 'utf-8');
+      const data = JSON.parse(content);
+      data.state = 'idle';
+      delete data.card;
+      delete data.card_type;
+      data.ts = Math.floor(Date.now() / 1000);
+      fs.writeFileSync(stateFile, JSON.stringify(data));
+    } catch {
+      // State file doesn't exist — nothing to clear
+    }
+  }
+
   private readRoleTile(role: string): RoleTile {
     const tile: RoleTile = {
       role,

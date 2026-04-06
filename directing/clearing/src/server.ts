@@ -831,6 +831,10 @@ tailer.start();
 tailer.on('board-event', (event) => {
   io.emit('board-event', event);
   // Also refresh tiles immediately on state changes
+  // Clear stale card from builder's state on acceptance (#2286)
+  if (event.type === 'card.accepted' && (event.builder || event.role)) {
+    tilePoller.clearCard(event.builder || event.role);
+  }
   if (event.type === 'role.state.changed' || event.type === 'card.accepted' || event.type === 'card.pulled') {
     tilePoller.poll();
     io.emit('tiles', tilePoller.getTiles());

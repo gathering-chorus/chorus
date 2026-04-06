@@ -94,7 +94,7 @@ export class ChorusLogTailer extends EventEmitter {
         ts: parsed.timestamp || new Date().toISOString(),
         type: 'accept-request',
       });
-      this.emit('board-event', { type: 'card.accepted', card, role: acceptor, ts: parsed.timestamp });
+      this.emit('board-event', { type: 'card.accepted', card, role: acceptor, builder: role, ts: parsed.timestamp });
       return;
     }
 
