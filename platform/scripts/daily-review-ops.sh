@@ -116,4 +116,11 @@ HEALTH_STATUS=$( [ "$STATUS" = "green" ] && echo "pass" || echo "fail" )
 # --- Emit completion event (no Bridge post — summary script handles that) ---
 "$CHORUS_LOG" ops.review.completed silas status=$STATUS >/dev/null 2>&1 || true
 
+
+# --- Nudge Silas on ops failures ---
+NUDGE="$SCRIPT_DIR/nudge"
+if [ "$STATUS" = "red" ]; then
+  "$NUDGE" silas "[ops] $TIMESTAMP — $( echo -e "$ISSUES" | head -3 )" --force >/dev/null 2>&1 || true
+fi
+
 echo -e "$BODY"

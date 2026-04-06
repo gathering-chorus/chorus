@@ -56,4 +56,11 @@ fi
 # --- Emit completion event (no Bridge post — summary script handles that) ---
 "$CHORUS_LOG" quality.review.completed silas status=$STATUS >/dev/null 2>&1 || true
 
+
+# --- Nudge Kade on quality failures ---
+NUDGE="$SCRIPT_DIR/nudge"
+if [ "$STATUS" = "red" ]; then
+  "$NUDGE" kade "[quality] $TIMESTAMP — $( echo -e "$ISSUES" | head -3 )" --force >/dev/null 2>&1 || true
+fi
+
 echo -e "$BODY"
