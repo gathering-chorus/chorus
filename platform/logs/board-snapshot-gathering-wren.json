@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T13:34:12.595Z",
+  "timestamp": "2026-04-06T15:24:59.323Z",
   "tasks": [
     {
       "index": 3,
@@ -27650,7 +27650,7 @@
       "apiId": 2333,
       "title": "Implement context-cache-weekly Rust subcommand — cruft scan, stale card audit, disk trend",
       "description": "## Experience\nThe weekly context-cache tier was defined in #1590 as part of the cron decomposition. During DEC-100 migration (bash→Rust), the 5min, hourly, and daily tiers were ported but weekly was missed. The LaunchAgent fires every Monday at 7:30am but the shim exits silently — no subcommand match. Deep-health correctly flags the 0-byte log.\n\n## Files\n- platform/services/chorus-hooks/src/commands/health.rs (add health_weekly fn)\n- platform/services/chorus-hooks/src/shim.rs (add subcommand match)\n\n## AC\n1. context-cache-weekly subcommand exists in Rust shim\n2. Cruft scan runs and writes results to /tmp/cruft-scan-latest.md\n3. Stale card audit — cards in WIP/Next >7 days flagged\n4. Disk trend logged (APFS-aware, not df)\n5. LaunchAgent produces non-empty stdout on success\n6. Deep-health log-freshness check passes after weekly run",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27659,9 +27659,9 @@
         "sequence:coordination",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T12:48:49Z",
-      "updated": "2026-04-06T13:11:02Z"
+      "updated": "2026-04-06T13:38:03Z"
     },
     {
       "index": 2247,
@@ -27703,8 +27703,8 @@
       "index": 2249,
       "apiId": 2336,
       "title": "Async: photo.handler — replace 35 sync calls including execSync sips (10s event loop blocks)",
-      "description": "## Problem\n\nphoto.handler.ts has 35 synchronous calls in request handlers. The worst: execSync('sips -s format jpeg -Z 800 ...') at line 573 blocks the entire Node event loop for up to 10 seconds during HEIC-to-JPEG conversion. Every other request waits.\n\n## AC\n\n- [ ] AC1: Replace execSync('sips ...') in serveFullres() with async child process (execFileAsync or worker thread)\n- [ ] AC2: Replace all readFileSync calls (index, manifests, photo data) with fs.promises.readFile\n- [ ] AC3: Replace all existsSync calls with fs.promises.access wrapped in try/catch\n- [ ] AC4: Replace writeFileSync, mkdirSync, readdirSync with fs.promises equivalents\n- [ ] AC5: Zero sync calls remaining in photo.handler.ts request paths\n- [ ] AC6: All existing photo tests green. No regressions.\n\n## Reference\n\nPattern: const execAsync = promisify(exec) — see Silas commit 9afc12bf (#2241)",
-      "status": "Later",
+      "description": "## Problem\n\nphoto.handler.ts has 35 synchronous calls in request handlers. The worst: execSync('sips -s format jpeg -Z 800 ...') at line 573 blocks the entire Node event loop for up to 10 seconds during HEIC-to-JPEG conversion. Every other request waits.\n\n## Files\n- src/handlers/photo.handler.ts\n\n## Experience\nWhen I'm browsing photos — especially recent ones from my iPhone in HEIC format — the whole app freezes. Not just the photo page. Everything. Other tabs, other people browsing, all waiting for one image conversion to finish. It's the worst choppiness I feel in the app.\n\n## AC\n\n- [ ] AC1: Replace execSync('sips ...') in serveFullres() with async child process (execFileAsync or worker thread)\n- [ ] AC2: Replace all readFileSync calls (index, manifests, photo data) with fs.promises.readFile\n- [ ] AC3: Replace all existsSync calls with fs.promises.access wrapped in try/catch\n- [ ] AC4: Replace writeFileSync, mkdirSync, readdirSync with fs.promises equivalents\n- [ ] AC5: Zero sync calls remaining in photo.handler.ts request paths\n- [ ] AC6: All existing photo tests green. No regressions.\n\n## Reference\n\nPattern: const execAsync = promisify(exec) — see Silas commit 9afc12bf (#2241)\nProven in #2250 (pod-storage middleware) — same session.",
+      "status": "WIP",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -27715,7 +27715,7 @@
       ],
       "done": false,
       "created": "2026-04-06T13:19:47Z",
-      "updated": "2026-04-06T13:19:47Z"
+      "updated": "2026-04-06T13:42:35Z"
     },
     {
       "index": 2250,
@@ -27794,7 +27794,25 @@
       "apiId": 2341,
       "title": "Fix /pull skill — role-state.sh path broken, state never declared on pull",
       "description": "## Experience\nI can't see what any role is doing. Team-scan shows stale state from yesterday for every role. When I ask what's happening, the system has no answer because state declarations silently fail on every pull, pair, and gemba.\n\n## Files\n- platform/skills/pull/SKILL.md\n- platform/skills/pair/SKILL.md\n- platform/skills/gemba/SKILL.md\n- platform/skills/gemba-tick/SKILL.md\n\n## AC\n1. All role-state.sh references in skills replaced with role-state (no .sh)\n2. /pull declares building state after moving card to WIP\n3. /pair declares building state on pair start and waiting on pair end\n4. /gemba declares observing state on start and waiting on exit\n5. Verified: zero remaining role-state.sh references in any skill",
-      "status": "WIP",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination",
+        "origin:reactive"
+      ],
+      "done": true,
+      "created": "2026-04-06T13:27:23Z",
+      "updated": "2026-04-06T13:35:44Z"
+    },
+    {
+      "index": 2255,
+      "apiId": 2342,
+      "title": "Bridge message mutation — Jeff's question delivered as acceptance directive to role",
+      "description": "## Experience\nI typed 'did we do 2246?' on the Bridge. Silas received something that looked like an acceptance directive and ran /acp. My question got turned into an action. I can't trust the Bridge to deliver what I actually said.\n\n## AC\n1. Bridge delivers Jeff's exact text to role terminals — no translation, no reformatting\n2. Reproduce: send a question via Bridge, verify the role receives the identical text\n3. Root cause identified and fixed",
+      "status": "Later",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27804,8 +27822,62 @@
         "origin:reactive"
       ],
       "done": false,
-      "created": "2026-04-06T13:27:23Z",
-      "updated": "2026-04-06T13:34:06Z"
+      "created": "2026-04-06T13:42:09Z",
+      "updated": "2026-04-06T13:42:09Z"
+    },
+    {
+      "index": 2256,
+      "apiId": 2343,
+      "title": "Async: MonitoringService — cache disk checks, eliminate execSync from /health path",
+      "description": "## Experience\nThe app freezes 2-22 seconds multiple times per day. I see pages hang, requests timeout, and event loop lag alerts fire. The monitoring system that checks app health is itself causing the freezes — every 15 seconds, Prometheus hits /health, which spawns two synchronous subprocesses (diskutil + osascript) and does 2 synchronous filesystem checks. That's 136K blocking operations per day from the health check alone.\n\n## Files\n- src/services/MonitoringService.ts (primary — 4 hot-path sync calls)\n- tests/unit/services/monitoring.service.test.ts (add /health endpoint tests)\n\n## AC\n1. execSync('diskutil info /') replaced with cached async — disk usage cached 60 seconds, not checked every request\n2. execSync('osascript') for Finder free space replaced with cached async — same 60-second cache\n3. fs.existsSync(podsDir) cached on startup — pod directory doesn't move\n4. fs.existsSync(photosDb) cached on startup — same\n5. /health endpoint responds in <50ms under load (currently 150-3000ms due to subprocess spawns)\n6. Event loop lag events in Loki drop measurably after deploy (query last 24h before vs after)\n7. Tests cover /health response time and cache behavior — currently zero /health tests exist\n8. Git version resolution already cached (no change needed, verify preserved)",
+      "status": "WIP",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "sequence:hardening",
+        "domain:chorus",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T13:47:25Z",
+      "updated": "2026-04-06T13:49:23Z"
+    },
+    {
+      "index": 2257,
+      "apiId": 2344,
+      "title": "[defect] gathering-app: Event loop lag: 273.01s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 273.01s\nSample: Event loop lag: 273.01s\nFirst seen: 2026-04-06T15:15:37Z\nCount: 1\nHash: 949b7dfdf4b831c4",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T15:15:38Z",
+      "updated": "2026-04-06T15:15:38Z"
+    },
+    {
+      "index": 2258,
+      "apiId": 2345,
+      "title": "[ops-health] EntertainmentDeviceDown alert — Speaker (bedroom) offline",
+      "description": "Auto-detected by chorus-ops (health).\n\nBedroom speaker is currently offline. Non-critical but indicates network/device issue.\n\nFinding ID: alert-entertainment-device-down\nSeverity: warning\nCategory: alert",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T15:15:59Z",
+      "updated": "2026-04-06T15:15:59Z"
     }
   ]
 }
