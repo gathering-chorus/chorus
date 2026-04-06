@@ -139,14 +139,20 @@ if [ "$REMOVE_RATE" -gt "$REMOVE_RATE_THRESHOLD" ]; then
   ALERT=true
 fi
 
+# Dedup: only alert once per session — write marker file
+ALERT_MARKER="/tmp/session-health-alerted-${ROLE}-${SESSION_ID}"
+
 if [ "$ALERT" = true ]; then
   echo "WARN: ${ALERTS}Context pressure rising."
-  # Suppress nudges during test runs
-  if [ -z "$TEST_MODE" ]; then
-    "$NUDGE" "$ROLE" "session-health: ${ALERTS}Consider /reboot." --from system 2>/dev/null || true
-    "$NUDGE" wren "session-health: ${ROLE} session at ${PROMPT_COUNT} prompts, ${AGE_HOURS}h, ${REMOVE_RATE} removes/50. Context pressure rising." --from system 2>/dev/null || true
+  # Suppress nudges during test runs or if already alerted this session
+  if [ -z "$TEST_MODE" ] && [ ! -f "$ALERT_MARKER" ]; then
+    "$NUDGE" "$ROLE" "session-health: ${ALERTS}Context pressure rising." --from system 2>/dev/null || true
+    "$NUDGE" wren "session-health: ${ROLE} at ${PROMPT_COUNT} prompts, ${REMOVE_RATE} removes/50. Context pressure rising." --from system 2>/dev/null || true
+    touch "$ALERT_MARKER"
   fi
   "$CHORUS_LOG" session.health.warning "$ROLE" prompts="$PROMPT_COUNT" age_hours="$AGE_HOURS" tools="$TOOL_COUNT" removes="$QUEUE_REMOVES" remove_rate="$REMOVE_RATE" 2>/dev/null || true
 else
   echo "OK: session healthy"
+  # Clear marker if session is healthy (new session)
+  rm -f "$ALERT_MARKER" 2>/dev/null
 fi
