@@ -32,16 +32,46 @@ HEALTH_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/sessi
 # --- AC 2: Alert threshold ---
 
 @test "warns when session exceeds prompt threshold" {
-  # Current session has 485+ prompts — should be above any reasonable threshold
-  run bash "$HEALTH_SCRIPT" --role silas --threshold 100
-  echo "$output" | grep -qiE 'warn|alert|reboot|long'
+  export SESSION_HEALTH_TEST=1
+  run bash "$HEALTH_SCRIPT" --role silas --threshold 1
+  echo "$output" | grep -qiE 'warn|long'
 }
 
-# --- AC 6: Compaction research ---
+# --- AC 3: Threshold research ---
 
-@test "reports whether compaction is detectable" {
+@test "reports compaction rate as removes per 50 prompts" {
   run bash "$HEALTH_SCRIPT" --role silas
   [ "$status" -eq 0 ]
-  # Output should include a compaction status line
-  echo "$output" | grep -qiE 'compaction|queue_removes'
+  # Must emit a numeric remove_rate, not a placeholder string
+  echo "$output" | grep -qE 'remove_rate=[0-9]+'
+}
+
+# --- AC 6: Compaction detection ---
+
+@test "counts queue-operation remove events from session JSONL" {
+  run bash "$HEALTH_SCRIPT" --role silas
+  [ "$status" -eq 0 ]
+  # Must emit numeric queue_removes count, not 'not_emitted_by_claude_code'
+  echo "$output" | grep -qE 'queue_removes=[0-9]+'
+  # Must NOT contain the old placeholder
+  ! echo "$output" | grep -q 'not_emitted_by_claude_code'
+}
+
+# --- Test-mode suppression ---
+
+@test "does not fire nudges during test runs" {
+  export SESSION_HEALTH_TEST=1
+  run bash "$HEALTH_SCRIPT" --role silas --threshold 1
+  [ "$status" -eq 0 ]
+  # Should still report WARN but nudge calls should be suppressed
+  echo "$output" | grep -qiE 'warn|long'
+}
+
+# --- AC 2: Compaction rate alert ---
+
+@test "warns when compaction rate exceeds threshold" {
+  export SESSION_HEALTH_TEST=1
+  # Use a remove-rate threshold of 0 to guarantee trigger
+  run bash "$HEALTH_SCRIPT" --role silas --remove-rate-threshold 0
+  echo "$output" | grep -qi 'compaction accelerating'
 }

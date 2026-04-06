@@ -13,13 +13,16 @@ CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-l
 ROLE=""
 PROMPT_THRESHOLD=400
 HOUR_THRESHOLD=4
+REMOVE_RATE_THRESHOLD=5  # removes per 50-prompt bucket — acceleration = compaction pressure
 ALERT=false
+TEST_MODE="${BATS_TEST_RUNNING:-${SESSION_HEALTH_TEST:-}}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --role) ROLE="$2"; shift 2 ;;
     --threshold) PROMPT_THRESHOLD="$2"; shift 2 ;;
     --hour-threshold) HOUR_THRESHOLD="$2"; shift 2 ;;
+    --remove-rate-threshold) REMOVE_RATE_THRESHOLD="$2"; shift 2 ;;
     *) echo "Usage: session-health.sh --role <role> [--threshold N] [--hour-threshold H]" >&2; exit 1 ;;
   esac
 done
@@ -56,9 +59,18 @@ PROMPT_COUNT=$(grep -c '"type":"user"' "$LATEST_SESSION" 2>/dev/null || echo 0)
 # Count assistant responses
 RESPONSE_COUNT=$(grep -c '"type":"assistant"' "$LATEST_SESSION" 2>/dev/null || echo 0)
 
-# Count queue remove operations (compaction proxy)
-QUEUE_REMOVES=$(grep -c '"queue-operation".*"remove"' "$LATEST_SESSION" 2>/dev/null || \
-                grep -c 'queue-operation' "$LATEST_SESSION" 2>/dev/null || echo 0)
+# Count queue-operation remove events (compaction = context window trimming)
+QUEUE_REMOVES=$(python3 -c "
+import json, sys
+count = 0
+for line in open(sys.argv[1]):
+    try:
+        d = json.loads(line)
+        if d.get('type') == 'queue-operation' and d.get('operation') == 'remove':
+            count += 1
+    except: pass
+print(count)
+" "$LATEST_SESSION" 2>/dev/null || echo 0)
 
 # Session age from first timestamp
 FIRST_TS=$(head -1 "$LATEST_SESSION" | python3 -c "import sys,json; print(json.load(sys.stdin).get('timestamp',''))" 2>/dev/null || echo "")
@@ -74,7 +86,8 @@ fi
 # Tool call count from hooks log (this session only)
 TOOL_COUNT=0
 if [ -f "$HOOKS_LOG" ]; then
-  TOOL_COUNT=$(grep "$SESSION_ID" "$HOOKS_LOG" 2>/dev/null | grep -c "allow" || echo 0)
+  TOOL_COUNT=$(grep -c "$SESSION_ID.*allow" "$HOOKS_LOG" 2>/dev/null || true)
+  TOOL_COUNT="${TOOL_COUNT:-0}"
 fi
 
 # Tool call rate (calls per minute)
@@ -84,11 +97,32 @@ else
   TOOL_RATE=0
 fi
 
+# Compaction rate: removes in latest 50-prompt bucket vs first bucket
+# Higher rate in recent buckets = context window under pressure
+if [ "$PROMPT_COUNT" -gt 0 ]; then
+  REMOVE_RATE=$(python3 -c "
+import json, sys
+prompts = 0; recent_removes = 0; total = int(sys.argv[2])
+for line in open(sys.argv[1]):
+    try:
+        d = json.loads(line)
+        if d.get('type') == 'user': prompts += 1
+        if d.get('type') == 'queue-operation' and d.get('operation') == 'remove':
+            bucket_start = max(0, total - 50)
+            if prompts >= bucket_start:
+                recent_removes += 1
+    except: pass
+print(recent_removes)
+" "$LATEST_SESSION" "$PROMPT_COUNT" 2>/dev/null || echo 0)
+else
+  REMOVE_RATE=0
+fi
+
 # Output metrics
 echo "session=$SESSION_ID role=$ROLE"
 echo "prompts=$PROMPT_COUNT responses=$RESPONSE_COUNT tools=$TOOL_COUNT"
 echo "age_min=$AGE_MIN age_hours=$AGE_HOURS tool_rate=${TOOL_RATE}/min"
-echo "queue_removes=$QUEUE_REMOVES compaction=not_emitted_by_claude_code"
+echo "queue_removes=$QUEUE_REMOVES remove_rate=$REMOVE_RATE"
 
 # Alert evaluation
 ALERTS=""
@@ -100,13 +134,19 @@ if [ "$AGE_HOURS" -gt "$HOUR_THRESHOLD" ]; then
   ALERTS="${ALERTS}Session is old (${AGE_HOURS}h, threshold ${HOUR_THRESHOLD}h). "
   ALERT=true
 fi
+if [ "$REMOVE_RATE" -gt "$REMOVE_RATE_THRESHOLD" ]; then
+  ALERTS="${ALERTS}Compaction accelerating (${REMOVE_RATE} removes in last 50 prompts, threshold ${REMOVE_RATE_THRESHOLD}). "
+  ALERT=true
+fi
 
 if [ "$ALERT" = true ]; then
   echo "WARN: ${ALERTS}Consider /reboot for fresh context."
-  # Nudge the role and Wren
-  "$NUDGE" "$ROLE" "session-health: ${ALERTS}Consider /reboot." 2>/dev/null || true
-  "$NUDGE" wren "session-health: ${ROLE} session at ${PROMPT_COUNT} prompts, ${AGE_HOURS}h. May need reboot." 2>/dev/null || true
-  "$CHORUS_LOG" session.health.warning "$ROLE" prompts="$PROMPT_COUNT" age_hours="$AGE_HOURS" tools="$TOOL_COUNT" 2>/dev/null || true
+  # Suppress nudges during test runs
+  if [ -z "$TEST_MODE" ]; then
+    "$NUDGE" "$ROLE" "session-health: ${ALERTS}Consider /reboot." 2>/dev/null || true
+    "$NUDGE" wren "session-health: ${ROLE} session at ${PROMPT_COUNT} prompts, ${AGE_HOURS}h, ${REMOVE_RATE} removes/50. May need reboot." 2>/dev/null || true
+  fi
+  "$CHORUS_LOG" session.health.warning "$ROLE" prompts="$PROMPT_COUNT" age_hours="$AGE_HOURS" tools="$TOOL_COUNT" removes="$QUEUE_REMOVES" remove_rate="$REMOVE_RATE" 2>/dev/null || true
 else
   echo "OK: session healthy"
 fi
