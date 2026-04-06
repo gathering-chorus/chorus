@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T22:57:17.914Z",
+  "timestamp": "2026-04-06T23:02:20.498Z",
   "tasks": [
     {
       "index": 3,
@@ -1230,7 +1230,7 @@
       ],
       "done": false,
       "created": "2026-02-22T16:22:47Z",
-      "updated": "2026-04-06T22:57:16Z"
+      "updated": "2026-04-06T22:58:54Z"
     },
     {
       "index": 129,
@@ -11711,7 +11711,10 @@
       "status": "Later",
       "owner": "",
       "priority": "",
-      "domains": [],
+      "domains": [
+        "domain:photos",
+        "type:fix"
+      ],
       "done": false,
       "created": "2026-03-11T18:24:06Z",
       "updated": "2026-03-14T18:41:45Z"
@@ -11724,7 +11727,10 @@
       "status": "Later",
       "owner": "",
       "priority": "",
-      "domains": [],
+      "domains": [
+        "domain:photos",
+        "type:fix"
+      ],
       "done": false,
       "created": "2026-03-11T18:24:07Z",
       "updated": "2026-03-14T18:41:44Z"
@@ -19173,7 +19179,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
-      "updated": "2026-04-06T22:56:55Z"
+      "updated": "2026-04-06T22:58:25Z"
     },
     {
       "index": 1762,
@@ -19192,7 +19198,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
-      "updated": "2026-04-06T22:56:55Z"
+      "updated": "2026-04-06T22:58:25Z"
     },
     {
       "index": 1763,
@@ -19211,7 +19217,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:31Z",
-      "updated": "2026-04-06T22:56:56Z"
+      "updated": "2026-04-06T22:58:26Z"
     },
     {
       "index": 1764,
@@ -21736,7 +21742,7 @@
       ],
       "done": false,
       "created": "2026-03-31T13:47:54Z",
-      "updated": "2026-03-31T13:47:54Z"
+      "updated": "2026-04-06T22:59:34Z"
     },
     {
       "index": 1911,
@@ -22697,7 +22703,7 @@
       ],
       "done": false,
       "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-06T22:56:50Z"
+      "updated": "2026-04-06T22:58:21Z"
     },
     {
       "index": 1965,
@@ -28286,10 +28292,11 @@
       "apiId": 2367,
       "title": "Event correlation — trace cause-to-effect across services",
       "description": "## Experience\n\nAn alert fires. I fix it. But I can't answer: what caused it? Was it a deploy, a config change, a disk issue? Right now I investigate manually — check git log, check spine events, check Loki. I want to query \"what happened around this alert?\" and get a timeline.\n\n## Context\n\nEvents exist in multiple stores:\n- Spine events in ~/Library/Logs/Chorus/chorus.log (card.pulled, card.accepted, pair.started, etc.)\n- Hook decisions in ~/Library/Logs/Gathering/hooks.log\n- Alert fires in Alertmanager history\n- Deploys in git log\n- Service state changes in LaunchAgent logs\n\nCorrelation IDs were added in #1809 for seed and nudge traces but don't span across alert → root cause.\n\nThis is the most complex gap — it's essentially a distributed tracing problem for a single-machine system. Simplest approach: a timeline API that queries multiple sources by time range and merges the results.\n\n## AC\n\n1. Script or API that takes a time range and returns a merged timeline of events from: spine, hooks, alerts, deploys\n2. Events sorted by timestamp, labeled by source\n3. Query: \"what happened between 14:00 and 14:30?\" returns all system events in that window\n4. Usable from CLI: correlation-timeline.sh --from \"2026-04-06 14:00\" --to \"2026-04-06 14:30\"\n5. Output is human-readable (not raw JSON) — one line per event\n\n## Files\n\n- platform/scripts/correlation-timeline.sh (new)\n- Sources: chorus.log, hooks.log, git log, Alertmanager API",
-      "status": "Later",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P3",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:new",
         "sequence:ops",
@@ -28297,7 +28304,7 @@
       ],
       "done": false,
       "created": "2026-04-06T19:06:12Z",
-      "updated": "2026-04-06T19:06:12Z"
+      "updated": "2026-04-06T22:59:41Z"
     },
     {
       "index": 2281,
@@ -28525,8 +28532,8 @@
       "index": 2293,
       "apiId": 2380,
       "title": "API regression tests — top 30 routes with response shape validation",
-      "description": "## Experience\n310 API routes, ~10 tested. 3% coverage. When an API response shape changes, nothing catches it until the page breaks.\n\n## AC\n- [ ] Identify top 30 API routes by traffic/usage\n- [ ] Write response shape + status code tests for each\n- [ ] Run as part of pre-push gate",
-      "status": "Later",
+      "description": "## Experience\n310 API routes, ~10 tested. 3% coverage. When an API response shape changes, nothing catches it until the page breaks.\n\n## Files\n- tests/integration/api-regression.test.ts\n\n## AC\n- [ ] Identify top 30 API routes by traffic/usage\n- [ ] Write response shape + status code tests for each\n- [ ] Run as part of pre-push gate",
+      "status": "WIP",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -28537,7 +28544,7 @@
       ],
       "done": false,
       "created": "2026-04-06T21:10:41Z",
-      "updated": "2026-04-06T21:10:41Z"
+      "updated": "2026-04-06T23:00:04Z"
     },
     {
       "index": 2294,
@@ -28573,7 +28580,7 @@
       ],
       "done": true,
       "created": "2026-04-06T21:10:42Z",
-      "updated": "2026-04-06T22:55:13Z"
+      "updated": "2026-04-06T22:59:17Z"
     },
     {
       "index": 2296,
