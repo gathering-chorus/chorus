@@ -44,7 +44,15 @@ pub async fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
 
-    let classification = classify(prompt);
+    // Extract inner message from nudge prefix (#2255)
+    // "[nudge from jeff | ...] actual message [REPLY EXPECTED...]" → "actual message"
+    let classify_text = if prompt.starts_with("[nudge from") {
+        extract_nudge_body(prompt)
+    } else {
+        prompt.to_string()
+    };
+
+    let classification = classify(&classify_text);
 
     info!(
         input_type = classification.as_str(),
@@ -69,6 +77,24 @@ pub async fn check(input: &HookInput) -> HookResponse {
         // Commands and continuations flow through normally
         _ => HookResponse::allow(),
     }
+}
+
+/// Extract the actual message body from a nudge-prefixed prompt.
+/// "[nudge from jeff | 2026-04-06 16:11 Boston] did we do 2246? [REPLY EXPECTED...]"
+/// → "did we do 2246?"
+fn extract_nudge_body(prompt: &str) -> String {
+    // Find first ']' — end of nudge prefix
+    let after_prefix = match prompt.find(']') {
+        Some(i) => prompt[i + 1..].trim(),
+        None => return prompt.to_string(),
+    };
+    // Strip trailing "[REPLY EXPECTED..." suffix if present
+    let body = if let Some(i) = after_prefix.find("[REPLY EXPECTED") {
+        after_prefix[..i].trim()
+    } else {
+        after_prefix
+    };
+    body.to_string()
 }
 
 fn classify(prompt: &str) -> InputType {
@@ -184,6 +210,24 @@ mod tests {
         assert_eq!(classify("do it"), InputType::Continuation);
         assert_eq!(classify("ship it"), InputType::Continuation);
         assert_eq!(classify("looks good"), InputType::Continuation);
+    }
+
+    #[test]
+    fn test_nudge_body_extraction() {
+        assert_eq!(
+            extract_nudge_body("[nudge from jeff | 2026-04-06 16:11 Boston] did we do 2246? [REPLY EXPECTED — nudge jeff back]"),
+            "did we do 2246?"
+        );
+        assert_eq!(
+            extract_nudge_body("[nudge from jeff | 2026-04-06 16:11 Boston] show me the board"),
+            "show me the board"
+        );
+    }
+
+    #[test]
+    fn test_nudge_wrapped_question_classified_correctly() {
+        // Root cause of #2255: "did we do 2246?" via Bridge arrived as command
+        assert_eq!(classify("did we do 2246?"), InputType::Question);
     }
 
     #[test]
