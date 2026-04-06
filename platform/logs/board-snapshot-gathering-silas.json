@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T16:05:45.685Z",
+  "timestamp": "2026-04-06T16:41:15.595Z",
   "tasks": [
     {
       "index": 3,
@@ -22101,7 +22101,7 @@
       "index": 1932,
       "apiId": 2015,
       "title": "Standards surface + pulse instrumentation — single page of team policies with pulse measurement",
-      "description": "## Experience\nI open one page and see every team standard — definition of done, code standards, process rules, communication rules, ops rules. Each one shows whether it's documented only, instrumented in a gate, or measured in pulse. The gaps are visible. Pulse checks the ones that aren't gate-enforced.\n\n## AC\n1. Single HTML standards page at /chorus/standards — lists all team policies grouped by category\n2. Each standard shows status: documented | instrumented (which hook) | measured (which metric)\n3. Pulse checks added for: TDD compliance, WIP limit violations, re-nudge frequency, commit-before-accept, brief response latency, Jeff touches per card\n4. Standards page links to the source (DEC, ADR, feedback memory, hook file) for each standard\n5. Page updates automatically from decisions.md, CLAUDE.md fragments, and hook registry",
+      "description": "## Experience\nI open one page and see every team standard — definition of done, code standards, process rules, communication rules, ops rules. Each one shows whether it's documented only, instrumented in a gate, or measured in pulse. The gaps are visible. The numbers are real, not hardcoded.\n\n## Current State (2026-04-06)\nThree artifacts deployed: chorus-standards.html (standards inventory), chorus-hook-architecture.html (36-hook 6-phase model), harness-engineering-chorus.html (Birgitta mapping). Hook count verified accurate (36). Standards page exists with status tags. But: pulse bar is static HTML (22/28/50 hardcoded), no generation script, counts stale (claims 109 decisions, actual 105). Page looks live but lies about it.\n\n## AC\n1. Single HTML standards page at /chorus/standards — DONE, exists\n2. Each standard shows status: documented | instrumented | measured — DONE, 2 standards missing tags (fix)\n3. Generation script — reads decisions.md, counts hooks from Rust source, parses hook logs for actual gate-enforcement rates. Replaces hardcoded percentages with real data.\n4. Pulse bar wired to hook execution logs — actual block/deny/pass rates from /tmp/chorus-hooks.log, not static numbers\n5. Standards page links to source (DEC, ADR, feedback memory, hook file) — DONE\n6. Auto-regeneration trigger — runs after decisions.md or hook source changes (post-commit or nightly cron)\n7. Count accuracy — decision count, feedback count, story count verified against actual sources on each generation",
       "status": "WIP",
       "owner": "Wren",
       "priority": "P1",
@@ -22114,7 +22114,7 @@
       ],
       "done": false,
       "created": "2026-04-01T12:31:33Z",
-      "updated": "2026-04-05T12:08:46Z"
+      "updated": "2026-04-06T16:31:09Z"
     },
     {
       "index": 1933,
@@ -27308,8 +27308,8 @@
       "index": 2227,
       "apiId": 2314,
       "title": "Session indexer not indexing today's sessions — gemba shows 2-day-old data",
-      "description": "",
-      "status": "Later",
+      "description": "## Experience\n\nWhen I check gemba or search Chorus for recent sessions, the data is days stale. I can't tell what the team has been doing today — it looks like everyone stopped working two days ago. The session index should always reflect what's happening now.\n\n## AC\n\n- [ ] Root-cause the indexer stall (stuck lockfile from April 3 crash)\n- [ ] Recover missing session data (backfill gap from April 3–6)\n- [ ] Harden watcher lockfile — add trap or stale-lock timeout so a failed index run can't permanently block future indexing\n- [ ] Verify: gemba and /chorus search return today's session data after fix\n\n## Files\n\n- ~/.chorus/scripts/chorus-watch-sessions.sh\n- ~/.chorus/scripts/chorus-index.sh\n- ~/Library/LaunchAgents/com.chorus.session-watcher.plist",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27320,7 +27320,7 @@
       ],
       "done": false,
       "created": "2026-04-05T21:22:55Z",
-      "updated": "2026-04-05T21:22:55Z"
+      "updated": "2026-04-06T16:31:35Z"
     },
     {
       "index": 2228,
@@ -27968,6 +27968,42 @@
       "done": false,
       "created": "2026-04-06T16:04:33Z",
       "updated": "2026-04-06T16:04:33Z"
+    },
+    {
+      "index": 2264,
+      "apiId": 2351,
+      "title": "Weekly PM climate report — reactive ratio, card durability, decision drift, product health",
+      "description": "## Experience\nI need a weekly view of whether we're getting healthier or just busier. Card velocity means nothing if half are reactive fixes. I want to see: are we building more than we're repairing? Are decisions holding or drifting? Are the four questions from the distribution assessment (v1 scope, quiet mode, tooling ROI, external touchability) improving?\n\n## AC\n1. Reactive ratio — fix/swat cards vs new/enhance cards, trailing 7 days. Trend line.\n2. Card durability — cards reverted, reopened, or re-carded within 7 days of acceptance. Lower is better.\n3. Decision drift — DECs referenced in code/hooks that were violated or worked around in the past week\n4. Coverage slopes — test count trend, test failure trend, doc freshness trend\n5. Product health — status of the four assessment questions: v1 definition, quiet mode progress, tooling ROI, external touchability\n6. Output: one brief in product-manager/briefs/weekly-pm-climate.md, scheduled Sunday night\n7. Runs via cron overnight, no session required",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:ops",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T16:06:09Z",
+      "updated": "2026-04-06T16:06:09Z"
+    },
+    {
+      "index": 2265,
+      "apiId": 2352,
+      "title": "Fix demo feedback nudges — substantive not performative",
+      "description": "## Experience\n\nWhen I say /demo <card#>, the builder announces the demo, nudges the team, and I get to ask questions and refine. But the nudges frame feedback as \"Jeff wants your review\" or \"ready for acceptance\" — which primes roles to rubber-stamp instead of actually looking at the work. I get compliance back, not perspective.\n\n## Problem\n\nThe /demo skill's feedback nudge template invokes Jeff's authority and pre-frames the expected outcome (acceptance). Roles mirror the framing — they respond with \"AC looks met, ready for Jeff's acceptance\" without substantive review.\n\n## AC\n\n- [ ] AC1: Demo feedback nudges present the work in terms of the recipient's domain — not \"Jeff wants your review\"\n- [ ] AC2: Nudges ask for the role's actual perspective — questions, concerns, connections from their domain\n- [ ] AC3: No pre-framing of acceptance or expected outcome in the nudge text\n- [ ] AC4: Nudge framing is substantive, not performative — roles should engage with the work, not perform a ceremony\n\n## Files\n- ~/.claude/skills/demo\n\n## Reference\nJeff's observation: \"the way you frame things to them shapes a lot in terms of how they respond\" — if you ask them to accept, they will almost without looking.",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:loom",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T16:33:25Z",
+      "updated": "2026-04-06T16:33:25Z"
     }
   ]
 }
