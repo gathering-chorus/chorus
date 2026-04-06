@@ -225,7 +225,23 @@ done
 
 # --- 12. (Bedroom endpoints folded into check 11 above) ---
 
-# --- 13. Standards surface freshness (#2268) ---
+# --- 13. Alert delivery test freshness (#2274) ---
+DELIVERY_LOG="$HOME/Library/Logs/Chorus/alert-delivery-test.log"
+STALE_8D=$((now - 691200))
+if [ -f "$DELIVERY_LOG" ]; then
+  delivery_mtime=$(stat -f %m "$DELIVERY_LOG" 2>/dev/null || echo 0)
+  if [ "$delivery_mtime" -lt "$STALE_8D" ]; then
+    delivery_age_d=$(( (now - delivery_mtime) / 86400 ))
+    FAILURES+=("alert-delivery: last run ${delivery_age_d}d ago — weekly cron may be dead. Fix: bash platform/scripts/alert-delivery-test.sh")
+  elif grep -q "FAIL" "$DELIVERY_LOG" 2>/dev/null; then
+    last_fail=$(grep "FAIL" "$DELIVERY_LOG" | tail -1)
+    FAILURES+=("alert-delivery: last run had failures — $last_fail")
+  fi
+else
+  FAILURES+=("alert-delivery: test never run — run platform/scripts/alert-delivery-test.sh to baseline")
+fi
+
+# --- 14. Standards surface freshness (#2268) ---
 STANDARDS_HTML="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-standards.html"
 STALE_48H=$((now - 172800))
 if [ -f "$STANDARDS_HTML" ]; then

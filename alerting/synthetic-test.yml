@@ -1,0 +1,26 @@
+# synthetic-test.yml — Synthetic alert for delivery verification
+# Card #2274
+#
+# This rule always "fires" — it exists only to test the alert delivery chain.
+# The action posts a clearly-labeled synthetic message to Bridge and logs it.
+# alert-delivery-test.sh runs this via --rule synthetic-test, then verifies arrival.
+#
+# Filtered from real alerts: type=probe, text prefixed [synthetic].
+
+name: synthetic-test
+description: Synthetic alert for delivery chain verification — not a real alert
+severity: info
+owner: silas
+schedule: manual  # never runs on cron — only via alert-delivery-test.sh
+
+check: |
+  # Always fail — this triggers the action block for delivery testing
+  echo "synthetic-probe"
+  exit 1
+
+action: |
+  # Post to Bridge as a probe — clearly labeled synthetic
+  curl -sf -X POST http://localhost:3470/api/message \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg text '[synthetic] Alert delivery test probe' --arg from 'system' --arg type 'probe' '{from: $from, text: $text, type: $type}')" \
+    &>/dev/null || true
