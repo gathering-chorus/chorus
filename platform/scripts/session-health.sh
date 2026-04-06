@@ -140,11 +140,11 @@ if [ "$REMOVE_RATE" -gt "$REMOVE_RATE_THRESHOLD" ]; then
 fi
 
 if [ "$ALERT" = true ]; then
-  echo "WARN: ${ALERTS}Consider /reboot for fresh context."
+  echo "WARN: ${ALERTS}Context pressure rising."
   # Suppress nudges during test runs
   if [ -z "$TEST_MODE" ]; then
     "$NUDGE" "$ROLE" "session-health: ${ALERTS}Consider /reboot." --from system 2>/dev/null || true
-    "$NUDGE" wren "session-health: ${ROLE} session at ${PROMPT_COUNT} prompts, ${AGE_HOURS}h, ${REMOVE_RATE} removes/50. May need reboot." --from system 2>/dev/null || true
+    "$NUDGE" wren "session-health: ${ROLE} session at ${PROMPT_COUNT} prompts, ${AGE_HOURS}h, ${REMOVE_RATE} removes/50. Context pressure rising." --from system 2>/dev/null || true
   fi
   "$CHORUS_LOG" session.health.warning "$ROLE" prompts="$PROMPT_COUNT" age_hours="$AGE_HOURS" tools="$TOOL_COUNT" removes="$QUEUE_REMOVES" remove_rate="$REMOVE_RATE" 2>/dev/null || true
 else

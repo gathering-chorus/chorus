@@ -34,7 +34,7 @@ HEALTH_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/sessi
 @test "warns when session exceeds prompt threshold" {
   export SESSION_HEALTH_TEST=1
   run bash "$HEALTH_SCRIPT" --role silas --threshold 1
-  echo "$output" | grep -qiE 'warn|long'
+  echo "$output" | grep -qiE 'warn|long|pressure'
 }
 
 # --- AC 3: Threshold research ---
@@ -64,7 +64,7 @@ HEALTH_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/sessi
   run bash "$HEALTH_SCRIPT" --role silas --threshold 1
   [ "$status" -eq 0 ]
   # Should still report WARN but nudge calls should be suppressed
-  echo "$output" | grep -qiE 'warn|long'
+  echo "$output" | grep -qiE 'warn|long|pressure'
 }
 
 # --- AC 2: Compaction rate alert ---
