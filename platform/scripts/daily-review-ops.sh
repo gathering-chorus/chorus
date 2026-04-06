@@ -4,9 +4,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/lib/bridge-post.sh"
-
-BRIDGE="http://localhost:3470/api/message"
 CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
 STATUS="green"
@@ -69,6 +66,40 @@ elif [ "${DISK_PCT:-0}" -gt 85 ]; then
   ISSUES+="**Disk:** ${DISK_PCT}% used (>85% threshold)\n"
 fi
 
+# --- Alert state (check if alerts fired overnight) ---
+ALERT_STATE_DIR="$HOME/Library/Logs/Gathering/alert-state"
+ALERT_COOLDOWN_DIR="/tmp"
+ACTIVE_ALERTS=""
+# Check alert-runner cooldown files (nudge-stale, etc.)
+for f in "$ALERT_COOLDOWN_DIR"/alert-nudge-*; do
+  [ -f "$f" ] || continue
+  if find "$f" -mmin -1440 -print -quit 2>/dev/null | grep -q .; then
+    component=$(basename "$f" | sed 's/^alert-nudge-//;s/-[0-9].*$//')
+    # Deduplicate — only report each component once
+    echo "$ACTIVE_ALERTS" | grep -q "$component" && continue
+    ACTIVE_ALERTS+="  - $component (alert-runner)\n"
+  fi
+done
+# Check infra-alert daily fire state
+for f in "$ALERT_STATE_DIR"/*-"$(date +%Y-%m-%d)".fired; do
+  [ -f "$f" ] || continue
+  component=$(basename "$f" | sed "s/-$(date +%Y-%m-%d).fired$//")
+  ACTIVE_ALERTS+="  - $component (infra-alert)\n"
+done
+# Check strike counts > 0
+for f in "$ALERT_STATE_DIR"/*.strikes; do
+  [ -f "$f" ] || continue
+  strikes=$(cat "$f" 2>/dev/null || echo "0")
+  if [ "$strikes" -gt 0 ] 2>/dev/null; then
+    component=$(basename "$f" .strikes)
+    ACTIVE_ALERTS+="  - $component ($strikes consecutive failures)\n"
+  fi
+done
+if [ -n "$ACTIVE_ALERTS" ]; then
+  STATUS="red"
+  ISSUES+="**Alerts fired overnight:**\n$ACTIVE_ALERTS\n"
+fi
+
 # --- Build summary ---
 if [ "$STATUS" = "green" ]; then
   BODY="🟢 **Ops Review** — $TIMESTAMP\n\nAll systems healthy. Disk: ${DISK_PCT:-?}%."
@@ -80,12 +111,9 @@ fi
 
 # --- Emit health check event ---
 HEALTH_STATUS=$( [ "$STATUS" = "green" ] && echo "pass" || echo "fail" )
-"$CHORUS_LOG" ops.health.checked silas status=$HEALTH_STATUS disk=${DISK_PCT:-0} 2>/dev/null || true
+"$CHORUS_LOG" ops.health.checked silas status=$HEALTH_STATUS disk=${DISK_PCT:-0} >/dev/null 2>&1 || true
 
-# --- Post to Bridge (with retry) ---
-bridge_post "$BRIDGE" "wren" "$(echo -e "$BODY")" || true
-
-# --- Emit completion event ---
-"$CHORUS_LOG" ops.review.completed silas status=$STATUS 2>/dev/null || true
+# --- Emit completion event (no Bridge post — summary script handles that) ---
+"$CHORUS_LOG" ops.review.completed silas status=$STATUS >/dev/null 2>&1 || true
 
 echo -e "$BODY"

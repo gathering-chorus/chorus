@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-CLEARING_API="http://localhost:3470/api/message"
+NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
 STATE_DIR="$HOME/Library/Logs/Gathering/alert-state"
 mkdir -p "$STATE_DIR"
 
@@ -15,9 +15,16 @@ alert() {
   local icon="⚠"
   [ "$level" = "critical" ] && icon="🔴"
 
-  # Post to The Clearing
-  curl -s -X POST "$CLEARING_API" -H 'Content-Type: application/json' \
-    -d "{\"from\":\"silas\",\"text\":\"${icon} ALERT: ${component} — ${message}\"}" > /dev/null 2>&1 || true
+  # Daily suppression — one alert per component per day
+  local fired_file="$STATE_DIR/${component}-$(date +%Y-%m-%d).fired"
+  if [ -f "$fired_file" ]; then
+    echo "[$(date '+%H:%M:%S')] $level: $component — suppressed (already fired today)"
+    return 0
+  fi
+  touch "$fired_file"
+
+  # Nudge owning role directly — not the Bridge
+  "$NUDGE" silas "${icon} ALERT: ${component} — ${message}" --force 2>/dev/null || true
 
   echo "[$(date '+%H:%M:%S')] $level: $component — $message"
 }
@@ -33,6 +40,7 @@ check_strikes() {
 clear_strikes() {
   local component=$1
   echo 0 > "$STATE_DIR/${component}.strikes"
+  rm -f "$STATE_DIR/${component}-$(date +%Y-%m-%d).fired"
 }
 
 MAX_STRIKES=3

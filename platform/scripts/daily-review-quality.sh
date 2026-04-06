@@ -4,9 +4,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/lib/bridge-post.sh"
-
-BRIDGE="http://localhost:3470/api/message"
 CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
 APP_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
@@ -56,10 +53,7 @@ else
   BODY="🔴 **Quality Review** — $TIMESTAMP\n\n$ISSUES"
 fi
 
-# --- Post to Bridge (with retry) ---
-bridge_post "$BRIDGE" "wren" "$(echo -e "$BODY")" || true
-
-# --- Emit completion event ---
-"$CHORUS_LOG" quality.review.completed silas status=$STATUS 2>/dev/null || true
+# --- Emit completion event (no Bridge post — summary script handles that) ---
+"$CHORUS_LOG" quality.review.completed silas status=$STATUS >/dev/null 2>&1 || true
 
 echo -e "$BODY"

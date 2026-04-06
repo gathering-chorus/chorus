@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T02:28:01.116Z",
+  "timestamp": "2026-04-06T12:48:39.095Z",
   "tasks": [
     {
       "index": 3,
@@ -1230,7 +1230,7 @@
       ],
       "done": false,
       "created": "2026-02-22T16:22:47Z",
-      "updated": "2026-04-05T21:47:15Z"
+      "updated": "2026-04-06T02:31:03Z"
     },
     {
       "index": 129,
@@ -22676,7 +22676,7 @@
       "apiId": 2047,
       "title": "Cards CLI — update description and AC on existing cards",
       "description": "## Experience\\n\\nTest description with **markdown**.\\n\\n## AC\\n- Item one\\n- Item two",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -22686,9 +22686,9 @@
         "sequence:coordination",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-05T18:41:49Z"
+      "updated": "2026-04-06T02:32:37Z"
     },
     {
       "index": 1965,
@@ -24087,7 +24087,7 @@
       ],
       "done": false,
       "created": "2026-04-04T18:11:15Z",
-      "updated": "2026-04-04T18:11:15Z"
+      "updated": "2026-04-06T10:47:21Z"
     },
     {
       "index": 2045,
@@ -27572,6 +27572,78 @@
       "done": true,
       "created": "2026-04-06T02:27:05Z",
       "updated": "2026-04-06T02:27:39Z"
+    },
+    {
+      "index": 2242,
+      "apiId": 2329,
+      "title": "[defect] gathering-app: Event loop lag: 22.44s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 22.44s\nSample: Event loop lag: 22.44s\nFirst seen: 2026-04-06T06:16:42Z\nCount: 1\nHash: 2a8288a9e7a6a38e",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T06:16:42Z",
+      "updated": "2026-04-06T06:16:42Z"
+    },
+    {
+      "index": 2243,
+      "apiId": 2330,
+      "title": "Fix daily review and alert routing — one summary to Bridge, alerts to roles, no overnight spam",
+      "description": "## Experience\nI wake up, check the Bridge on my phone, and see 7 red tunnel-down alerts that fired overnight while nobody could act. Then two quality messages with different test counts. Then ops saying all healthy — while the tunnel is down. I can't tell what's real. The morning signal should be one clear message that tells me the truth.\n\n## Context\nJeff wakes up to: 7 duplicate tunnel-down alerts on Bridge (nobody can act overnight), two separate quality review messages with different test counts, and ops review saying healthy while tunnel is down.\n\n## AC\n1. Daily review posts ONE consolidated message to Bridge — ops health + test results in a single message\n2. Ops review checks alert state — if alerts fired since last review, the summary includes them (no all healthy while tunnel is down)\n3. Quality review aggregates all test suites into one result line (total failed / total passed / total), not separate messages per suite\n4. Infrastructure alerts (tunnel-down, API crash) nudge the owning role directly — not the Bridge\n5. Alerts suppress after first fire until the condition resolves — no repeat alerts to the Bridge overnight\n6. Verify: run the review, confirm one Bridge message, confirm alert routing goes to role",
+      "status": "WIP",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T10:34:46Z",
+      "updated": "2026-04-06T10:46:13Z"
+    },
+    {
+      "index": 2244,
+      "apiId": 2331,
+      "title": "[defect] gathering-app: Event loop lag: 5.11s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 5.11s\nSample: Event loop lag: 5.11s\nFirst seen: 2026-04-06T12:18:10Z\nCount: 1\nHash: 7e42a43a39aada87",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T12:18:10Z",
+      "updated": "2026-04-06T12:18:10Z"
+    },
+    {
+      "index": 2245,
+      "apiId": 2332,
+      "title": "Fix overnight nudge inject — replace keystroke with do script for display-sleep compatibility",
+      "description": "## Experience\nJeff leaves all three Claude Code sessions open overnight. Alert LaunchAgents (deep-health, tunnel-down, etc.) fire nudges via osascript inject, but inject fails because it calls activate + set frontmost which requires the display to be awake. Nudges queue but never reach the live sessions. Jeff wakes up to Clearing spam instead of roles that already handled it.\n\n## Files\n- platform/services/chorus-inject/src/main.rs\n\n## AC\n1. chorus-inject uses do script instead of activate + keystroke — no display dependency\n2. Inject works when display is asleep (overnight test)\n3. Inject still works during the day — same behavior as before\n4. All three roles receive inject correctly (targeted, not broadcast to focused window)\n5. All nudge integration tests validated and updated for do script path — alert nudges, role-to-role nudges, chat nudges\n6. Regression test: intra-team nudges and /chat exchanges still deliver correctly after the change",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T12:25:53Z",
+      "updated": "2026-04-06T12:28:11Z"
     }
   ]
 }

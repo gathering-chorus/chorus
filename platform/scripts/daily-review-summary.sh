@@ -11,8 +11,8 @@ CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
 
 # Run both reviews and capture output
-OPS_OUTPUT=$(bash "$SCRIPT_DIR/daily-review-ops.sh" 2>&1 || echo "⚠ Ops review failed")
-QUALITY_OUTPUT=$(bash "$SCRIPT_DIR/daily-review-quality.sh" 2>&1 || echo "⚠ Quality review failed")
+OPS_OUTPUT=$(bash "$SCRIPT_DIR/daily-review-ops.sh" 2>/dev/null || echo "⚠ Ops review failed")
+QUALITY_OUTPUT=$(bash "$SCRIPT_DIR/daily-review-quality.sh" 2>/dev/null || echo "⚠ Quality review failed")
 
 # Determine overall status from component outputs
 OVERALL="🟢"
