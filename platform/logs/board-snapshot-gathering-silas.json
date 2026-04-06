@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T16:41:15.595Z",
+  "timestamp": "2026-04-06T18:07:22.975Z",
   "tasks": [
     {
       "index": 3,
@@ -27309,7 +27309,7 @@
       "apiId": 2314,
       "title": "Session indexer not indexing today's sessions — gemba shows 2-day-old data",
       "description": "## Experience\n\nWhen I check gemba or search Chorus for recent sessions, the data is days stale. I can't tell what the team has been doing today — it looks like everyone stopped working two days ago. The session index should always reflect what's happening now.\n\n## AC\n\n- [ ] Root-cause the indexer stall (stuck lockfile from April 3 crash)\n- [ ] Recover missing session data (backfill gap from April 3–6)\n- [ ] Harden watcher lockfile — add trap or stale-lock timeout so a failed index run can't permanently block future indexing\n- [ ] Verify: gemba and /chorus search return today's session data after fix\n\n## Files\n\n- ~/.chorus/scripts/chorus-watch-sessions.sh\n- ~/.chorus/scripts/chorus-index.sh\n- ~/Library/LaunchAgents/com.chorus.session-watcher.plist",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27318,9 +27318,9 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T21:22:55Z",
-      "updated": "2026-04-06T16:31:35Z"
+      "updated": "2026-04-06T16:42:22Z"
     },
     {
       "index": 2228,
@@ -27470,7 +27470,7 @@
       "index": 2236,
       "apiId": 2323,
       "title": "TDD gate HTML exclusion — is_production_code excludes gathering-docs HTML",
-      "description": "",
+      "description": "## Experience\nI run my tests, they pass, then the TDD gate blocks my acceptance because it only recognizes cargo test, npx jest, and npx cucumber-js. I have to fake a jest run to get past the gate. The gate is supposed to enforce quality — instead it's teaching roles to work around it.\n\n## Context\nTwo separate issues:\n1. Gate doesn't recognize bats test runner — Silas blocked on #2227, Wren worked around on #2243\n2. Gate flags gathering-docs HTML as production code — triggers TDD requirement for doc-only cards\n\n## AC\n1. TDD gate recognizes bats as a valid test runner (session JSONL records bats runs)\n2. TDD gate recognizes shell test scripts (bash tests/*.sh patterns) as valid test runs\n3. is_production_code excludes gathering-docs HTML and chorus-docs HTML\n4. Gate still enforces TDD for actual production code (no regression)\n5. No more npx jest --passWithNoTests workarounds needed",
       "status": "Later",
       "owner": "Silas",
       "priority": "P2",
@@ -27482,7 +27482,7 @@
       ],
       "done": false,
       "created": "2026-04-05T23:22:44Z",
-      "updated": "2026-04-05T23:22:44Z"
+      "updated": "2026-04-06T16:41:31Z"
     },
     {
       "index": 2237,
@@ -27758,7 +27758,7 @@
       "apiId": 2339,
       "title": "Async: team.handler + cards.service — replace execSync node script calls",
       "description": "## Experience\n\nWhen I open the team page or anything that reads card state, the app hangs while it shells out to node scripts synchronously. I can feel the pause — other requests queue behind it. Same pattern we already fixed in photos, pod-storage, and knowledge-graph handlers.\n\n## Problem\n\nteam.handler.ts has execSync('node script.js') at lines 177 and 198 that block the event loop for entire script execution. cards.service.ts has 3 additional execSync calls for board operations.\n\n## Files\n- src/handlers/team.handler.ts\n- src/services/cards.service.ts\n\n## AC\n\n- [ ] AC1: team.handler — replace execSync with async child process for metric script calls\n- [ ] AC2: cards.service — replace execSync with promisify(exec) for board CLI calls\n- [ ] AC3: Zero sync calls in team.handler.ts and cards.service.ts request paths\n- [ ] AC4: All existing team/cards tests green. No regressions.\n\n## Reference\nPattern proven in #2249 (photo.handler), #2250 (pod-storage), #2251 (knowledge-graph + document), #2256 (MonitoringService).",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -27767,9 +27767,9 @@
         "type:fix",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T13:19:48Z",
-      "updated": "2026-04-06T16:05:12Z"
+      "updated": "2026-04-06T16:44:13Z"
     },
     {
       "index": 2253,
@@ -28004,6 +28004,79 @@
       "done": false,
       "created": "2026-04-06T16:33:25Z",
       "updated": "2026-04-06T16:33:25Z"
+    },
+    {
+      "index": 2266,
+      "apiId": 2353,
+      "title": "Standards generation script — produce live HTML from decisions, hooks, and gate logs",
+      "description": "## Experience\nThe standards surface looks live but the numbers are hardcoded. I want to open the page and know the counts are real — not from yesterday's guess.\n\n## Context\nThree data sources: decisions.md (count + list), Rust hook modules (chorus-hooks/src/hooks/), and gate logs (~/Library/Logs/Gathering/hooks.log — 62K lines, persistent, pipe-delimited: timestamp|hook_type|tool|role|gate_name|decision|duration|session_id|context).\n\nPrior art: claudemd-gen.py reads a manifest + fragments and generates output. Same harvest-then-template pattern. gathering-roadmap-gen.sh is another example.\n\nLog decisions to parse: allow, block, deny (skip 'enter' — that's the pre-check). Gate enforcement = modules with at least one block or deny in trailing 7 days.\n\n## AC\n1. Script reads decisions.md and produces accurate decision count\n2. Script counts hook modules from Rust source directory (currently 14 in src/hooks/)\n3. Script parses ~/Library/Logs/Gathering/hooks.log for gate enforcement rates — block/deny/allow per module, trailing 7 days\n4. Output: regenerated chorus-standards.html with real counts in header and real percentages in instrumentation bar\n5. Output: regenerated chorus-hook-architecture.html with current gap status (check card status via cards CLI)\n6. Runs cleanly from command line: bash generate-standards-surface.sh\n7. Follow claudemd-gen pattern: read sources, template output, idempotent",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "domain:chorus",
+        "type:new",
+        "sequence:loom",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T16:51:03Z",
+      "updated": "2026-04-06T16:56:36Z"
+    },
+    {
+      "index": 2267,
+      "apiId": 2354,
+      "title": "Pulse bar wiring — live gate enforcement rates on standards surface",
+      "description": "## Experience\nThe instrumentation bar says 22% gate-enforced. Is that true today? After shipping 13 hardening cards, it should be higher. I want the bar to reflect reality, updated from actual hook execution data.\n\n## Context\nDepends on the generation script card. ~/Library/Logs/Gathering/hooks.log (62K lines, persistent, migrated #1757) contains per-module block/allow/deny counts. The pulse bar needs to calculate: gate-enforced = modules that actually blocked something / total standards. Partially instrumented = modules that logged but never blocked.\n\n## AC\n1. Instrumentation bar percentages computed from hooks.log data\n2. Per-standard status tag (GATE/PARTIAL/DOC) derived from actual execution, not manually assigned\n3. Bar updates every time the generation script runs\n4. Tooltip or detail shows last block/allow count per gate",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:loom",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T16:51:03Z",
+      "updated": "2026-04-06T16:52:24Z"
+    },
+    {
+      "index": 2268,
+      "apiId": 2355,
+      "title": "Auto-regeneration trigger for standards surface — post-commit or nightly cron",
+      "description": "## Experience\nI don't want to remember to run the generation script. When a decision changes or a hook is added, the surface should update automatically by next morning.\n\n## Context\nDepends on generation script and pulse bar cards. Trigger options: PostCommit hook on decisions.md or hook source changes, or nightly cron (simpler, good enough for daily freshness).\n\n## AC\n1. Standards surface regenerates automatically — either post-commit or nightly cron\n2. Trigger fires only when relevant sources change (decisions.md, hook source, hook logs)\n3. LaunchAgent or cron job registered and verified\n4. Stale surface detected: if generation hasn't run in 48h, deep-health flags it",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:loom",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T16:51:04Z",
+      "updated": "2026-04-06T16:51:04Z"
+    },
+    {
+      "index": 2269,
+      "apiId": 2356,
+      "title": "Session indexer — Jeff's messages indexed as role instead of jeff",
+      "description": "## Experience\nI searched for how many times I said 'slow down' on April 5. Got zero results for role=jeff because my messages are indexed under the session role (wren, silas, kade). My voice is invisible in my own system.\n\n## Context\nSession JSONL has author='user' vs author='assistant'. The indexer should use author to set role='jeff' for user messages. Currently it uses the session role for all messages.\n\n## AC\n1. User messages (author='user') indexed with role='jeff'\n2. Assistant messages keep the session role (wren/silas/kade)\n3. Backfill existing index — re-tag user messages as jeff\n4. Chorus search for role=jeff returns Jeff's actual words across all sessions",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:awareness",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T16:58:33Z",
+      "updated": "2026-04-06T16:58:34Z"
     }
   ]
 }
