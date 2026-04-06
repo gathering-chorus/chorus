@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T22:05:27.454Z",
+  "timestamp": "2026-04-06T22:10:30.510Z",
   "tasks": [
     {
       "index": 3,
@@ -28239,18 +28239,19 @@
       "apiId": 2365,
       "title": "Dashboard content validation — verify Grafana panels render data, not empty",
       "description": "## Experience\n\nI have 13 dashboards in Grafana. Any one of them could be rendering empty panels right now and I wouldn't know unless I opened each one. An empty dashboard looks like \"everything is fine\" when it actually means \"the data source is broken.\" I want a check that tells me when a dashboard stops showing data.\n\n## Context\n\n13 dashboards provisioned from shared-observability/dashboards/. Grafana auto-loads them on startup. Data sources: Prometheus (metrics), Loki (logs). If a data source goes down, panels show \"No data\" but no alert fires.\n\nGrafana has an API for dashboard/panel state:\n- GET /api/dashboards/uid/{uid} — dashboard definition\n- GET /api/datasources/proxy/{id}/api/v1/query — Prometheus query proxy\n- Panel query results can be tested via API\n\nA simple approach: for each dashboard, pick one representative panel query, run it via Grafana API, verify non-empty result. This catches \"data source broken\" and \"query broken\" without testing every panel.\n\n## AC\n\n1. Script checks each of the 13 dashboards has at least one panel returning data\n2. Uses Grafana API (localhost:3100) to query representative panels\n3. Reports which dashboards have empty/broken panels\n4. Runs as a weekly deep-health extension (daily is too noisy for slow-moving dashboards)\n5. Failure adds to deep-health FAILURES array with dashboard name and failing panel\n\n## Files\n\n- platform/scripts/dashboard-health.sh (new)\n- platform/scripts/deep-health.sh (integration: weekly check)\n- shared-observability/dashboards/ (reference: 13 JSON files)",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
+        "chunk:ops",
         "domain:chorus",
         "type:new",
         "sequence:ops",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T19:05:43Z",
-      "updated": "2026-04-06T19:05:43Z"
+      "updated": "2026-04-06T22:08:47Z"
     },
     {
       "index": 2279,
@@ -28478,7 +28479,7 @@
       "apiId": 2378,
       "title": "Chorus E2E — Bridge and Clearing user journey tests",
       "description": "## Experience\nBridge and Clearing have zero end-to-end tests. I use them daily — send messages, start clearings, watch roles work. Nobody tests the full path.\n\n## AC\n- [ ] 10 Playwright specs for Chorus surfaces\n- [ ] Bridge: send message → message appears for role\n- [ ] Clearing: start session → roles join → decisions captured\n- [ ] Werk: page loads with live card data",
-      "status": "Later",
+      "status": "WIP",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -28489,7 +28490,7 @@
       ],
       "done": false,
       "created": "2026-04-06T21:10:41Z",
-      "updated": "2026-04-06T21:10:41Z"
+      "updated": "2026-04-06T22:08:39Z"
     },
     {
       "index": 2292,
