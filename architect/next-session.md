@@ -1,30 +1,27 @@
 # Next Session — Silas
 
-## Accomplished (2026-04-05 afternoon)
-3 cards shipped (#2100, #2101, plus uncarted cleanup), 53→2 test failures fixed.
+## Open issues (priority order)
+1. **Clearing delivery broken** — calls `nudge.sh` (doesn't exist), needs `nudge`. Find the reference in Clearing source and fix. Jeff's Clearing messages to @silas don't arrive.
+2. **Deep-health doesn't check services** — monitors logs/processes but not Chorus API, nudge delivery, or Cloudflare routing. The things that actually break aren't monitored.
+3. **Chorus API goes down intermittently** — happened 3+ times during session. No root cause. No alert fires.
+4. **#2229 Won't Do** — TCC problem was self-inflicted (tccutil reset). Inline osascript is correct. NEVER run tccutil reset Accessibility.
 
-### Key Outcomes
-- #2100: Reverted inject crate — osascript inline in process.rs, nudge survives rebuild
-- #2101: Origin tag required at card creation, type inference (fix→reactive, new→reflective)
-- Test suite: 53→2 failures. Fixes: wrong paths (seed, jdi-gate, clearing), missing mocks (client, spine-events), tests creating real cards on production board (rewrote to structural tests)
-- Reverted accidental commit of Kade's #2171 client.ts changes
-- Cleaned 46 junk cards from board (test pollution)
-- Disabled watchdog (false alerts interrupting Jeff ~20x/day, #2224 carded)
-- TCC Documents fix: session_cache only scans chorus project dirs
+## Shipped
+- #2225 — search hook consolidation, shared AppState
+- #2228 — deep-health LaunchAgent (5min cron, subprocess liveness)
+- #2224 — watchdog checks tool activity before labeling stale
+- #2231 — prompt cycle ID for hook correlation
+- Makefile for chorus-hooks build+restart+verify
+- fswatch root cause: 518 BDD test dirs cleaned, watch narrowed to 4 dirs
+- SSH keepalive added for Bedroom tunnel
+- Firewall: added node v20.11.1 to allow list for phone access
 
-### Lessons This Session
-- "Pre-existing, not mine" is not acceptable — trace and fix
-- Tests that hit production APIs create real data — structural tests or error-path tests only
-- `git add` by directory sweeps in other roles' in-progress work — be specific
-- Don't declare things dead (Clearing) without checking if they're running
-- The Clearing is at localhost:3470, NOT Bridge. Renamed weeks ago.
-- Don't card things to skip them — fix them now
+## What went wrong
+- Rebuilt hooks 3x without restarting the process
+- Ran tccutil reset which nuked all TCC grants
+- Wrote inject-keystroke.sh with wrong window matching, broke nudge, had to revert
+- Dismissed deep-health alerts instead of investigating
+- Created problems faster than fixing them
 
-## Next Session
-- #2224: Watchdog fires on active roles (disabled, needs team-scan activity check)
-- origin-labels.test.ts: 1 test depends on card #2087 existing on board (fragile)
-- Kade's #2171 client.ts changes need proper landing with matching test updates
-
-## Carry Forward
-- Wren flagged 132 unsequenced aging cards, post-accept sweep gap
-- Documents TCC prompt may still fire from other code paths — audit needed
+## Jeff's state
+Frustrated. Trust is low. "I can't rely on any of you to help me." Every fix broke something else. Stop building, stabilize.
