@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T20:34:15.642Z",
+  "timestamp": "2026-04-06T20:39:18.908Z",
   "tasks": [
     {
       "index": 3,
@@ -24846,7 +24846,7 @@
       "apiId": 2171,
       "title": "Daily signal integrity scan — codebase weather, trust verification, signal-to-noise",
       "description": "## Experience\nI want to know the health of the codebase and the backlog every morning without doing the research myself. Codebase weather, trust verification, signal-to-noise — plus doc freshness, backlog coherence, sequence health, golfball detection.\n\n## Context\nMerges #2263 (daily PM deep scan). One daily scan covers both engineering signal integrity AND product backlog health. Runs overnight via cron, brief ready by 6am.\n\n## AC\n1. Codebase weather — test trends, lint trends, coverage slopes\n2. Trust verification — are gates firing? Are hooks healthy?\n3. Signal-to-noise — false alert rate, stolen prompt percentage\n4. Doc freshness — flag decisions.md, projects.md, backlog.md older than 3 days\n5. Backlog coherence — duplicate intent, cards without owners, Later with no sequence\n6. Sequence health — per active sequence, cards by status, flag 3+ day stalls\n7. Golfball detection — fix/swat cards lurking in domains with active new/enhance cards\n8. Output: one brief, ready by 6am, no session required",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -24855,9 +24855,9 @@
         "type:new",
         "sequence:ops"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-05T15:24:34Z",
-      "updated": "2026-04-06T20:13:11Z"
+      "updated": "2026-04-06T20:37:37Z"
     },
     {
       "index": 2089,
@@ -27939,7 +27939,7 @@
       "apiId": 2349,
       "title": "Restore alerts panel on Clearing streams — alert POSTs feed a filterable section",
       "description": "## Experience\nI used to see alerts on the Clearing — service down, disk warnings, health failures. Now that panel is gone. Alerts fire but I only see them as nudges in terminal. I want them back on the Clearing where I can scan them at a glance.\n\n## AC\n1. Alert POSTs to Bridge /api/message render in a visible alerts section on the Clearing\n2. Alerts section is filterable — show/hide by severity or source\n3. Existing alert routing (nudge to role terminal) still works — Clearing is additive\n4. Verify with a live alert: trigger a health check failure and confirm it appears on both Clearing and terminal\n\n## Files\n- directing/clearing/src/server.ts\n- directing/clearing/src/router.ts\n- directing/clearing/public/index.html",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27949,9 +27949,9 @@
         "sequence:coordination",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T15:57:05Z",
-      "updated": "2026-04-06T20:26:00Z"
+      "updated": "2026-04-06T20:38:52Z"
     },
     {
       "index": 2263,
@@ -28346,6 +28346,24 @@
       "done": false,
       "created": "2026-04-06T20:28:26Z",
       "updated": "2026-04-06T20:28:26Z"
+    },
+    {
+      "index": 2285,
+      "apiId": 2372,
+      "title": "Defect card triage gate — severity filter, auto-close stale, bulk clean 195 ignored cards",
+      "description": "## Experience\n195 auto-detected defect cards on the board, zero resolved. Every log ERROR becomes a card with no triage — Fuseki PUT info logs sit next to real photo processing failures. Nobody owns them, nobody closes them. Board pollution that hides real signal.\n\n## Context\nAlert-to-card pipeline creates cards from log errors without severity filtering. Cards accumulate in WIP/Later with no owner. The daily scan (#2088) shows them in the WIP section alongside real pulled work, making Jeff's morning read noisy.\n\n## AC\n1. Triage existing 195 defect cards — bulk close Fuseki log noise and errors already resolved. Target: under 30 real issues remaining.\n2. Severity filter on alert-to-card pipeline — only create cards for patterns (N errors in M minutes) or known-critical error types, not every ERROR log line\n3. Auto-close defect cards when the underlying error stops recurring for 7 days\n4. Defect cards created with owner=silas (infra) or owner=kade (app) based on source service, never ownerless\n5. Existing real defects that survive triage get proper type:fix tags and domain attribution\n\n## Files\n- Platform alert-to-card pipeline (wherever defect cards are auto-created)\n- board-ts bulk operations for triage",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T20:34:23Z",
+      "updated": "2026-04-06T20:34:23Z"
     }
   ]
 }
