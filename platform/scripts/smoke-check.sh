@@ -26,6 +26,7 @@ PUBLIC_PAGES=(
 )
 
 AUTH_PAGES=(
+  # Collections — core domains Jeff uses daily
   /music
   /music/artists
   /photos
@@ -34,16 +35,47 @@ AUTH_PAGES=(
   /reading
   /cooking
   /todo
-  /blog
-  /seeds
-  /ideas
   /stories
   /notes
   /glimmers
+  /ideas
+  /projects
+  /intentions
+  /socialposts
+  /watching
   /sexuality
-  /practice-spine
+  /documents
+  /gardening
+  /values
+  /practices
+  /seeds
+  # Chorus surfaces — team coordination
+  /chorus
+  /loom
+  /werk
   /flow
+  /jeff
   /cost
+  /hooks
+  /decisions
+  /experience
+  /interaction-patterns
+  # Knowledge & ontology
+  /model-data
+  /chorus-model-data
+  /search
+  /dashboard
+  /practice-spine
+  /fitness-functions
+  # Admin & system
+  /profile
+  /blog
+  /property
+  /gallery
+  /harvest-manifests
+  /docs
+  /self
+  /borg-assessment
 )
 
 # Color output
@@ -98,6 +130,10 @@ check_page() {
   elif [ "$raw_status" = "302" ]; then
     # Auth redirect — route exists, auth gate working
     printf "${GREEN}PASS${NC}  %-25s  302 → login (auth gate)\n" "$path"
+    pass=$((pass + 1))
+  elif [ "$raw_status" = "301" ]; then
+    # Permanent redirect — route exists, redirecting to canonical URL
+    printf "${GREEN}PASS${NC}  %-25s  301 → redirect (canonical)\n" "$path"
     pass=$((pass + 1))
   elif [ "$raw_status" = "200" ] && [ "$body_size" -gt "$min_size" ] && [ -z "$has_error" ]; then
     printf "${GREEN}PASS${NC}  %-25s  %s %s bytes\n" "$path" "$raw_status" "$body_size"
