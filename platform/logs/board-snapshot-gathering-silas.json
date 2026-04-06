@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T12:48:37.137Z",
+  "timestamp": "2026-04-06T12:58:45.525Z",
   "tasks": [
     {
       "index": 3,
@@ -27632,7 +27632,7 @@
       "apiId": 2332,
       "title": "Fix overnight nudge inject — replace keystroke with do script for display-sleep compatibility",
       "description": "## Experience\nJeff leaves all three Claude Code sessions open overnight. Alert LaunchAgents (deep-health, tunnel-down, etc.) fire nudges via osascript inject, but inject fails because it calls activate + set frontmost which requires the display to be awake. Nudges queue but never reach the live sessions. Jeff wakes up to Clearing spam instead of roles that already handled it.\n\n## Files\n- platform/services/chorus-inject/src/main.rs\n\n## AC\n1. chorus-inject uses do script instead of activate + keystroke — no display dependency\n2. Inject works when display is asleep (overnight test)\n3. Inject still works during the day — same behavior as before\n4. All three roles receive inject correctly (targeted, not broadcast to focused window)\n5. All nudge integration tests validated and updated for do script path — alert nudges, role-to-role nudges, chat nudges\n6. Regression test: intra-team nudges and /chat exchanges still deliver correctly after the change",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -27641,9 +27641,27 @@
         "sequence:coordination",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T12:25:53Z",
-      "updated": "2026-04-06T12:28:11Z"
+      "updated": "2026-04-06T12:52:44Z"
+    },
+    {
+      "index": 2246,
+      "apiId": 2333,
+      "title": "Implement context-cache-weekly Rust subcommand — cruft scan, stale card audit, disk trend",
+      "description": "## Experience\nThe weekly context-cache tier was defined in #1590 as part of the cron decomposition. During DEC-100 migration (bash→Rust), the 5min, hourly, and daily tiers were ported but weekly was missed. The LaunchAgent fires every Monday at 7:30am but the shim exits silently — no subcommand match. Deep-health correctly flags the 0-byte log.\n\n## Files\n- platform/services/chorus-hooks/src/commands/health.rs (add health_weekly fn)\n- platform/services/chorus-hooks/src/shim.rs (add subcommand match)\n\n## AC\n1. context-cache-weekly subcommand exists in Rust shim\n2. Cruft scan runs and writes results to /tmp/cruft-scan-latest.md\n3. Stale card audit — cards in WIP/Next >7 days flagged\n4. Disk trend logged (APFS-aware, not df)\n5. LaunchAgent produces non-empty stdout on success\n6. Deep-health log-freshness check passes after weekly run",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T12:48:49Z",
+      "updated": "2026-04-06T12:48:49Z"
     }
   ]
 }
