@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T12:58:46.156Z",
+  "timestamp": "2026-04-06T13:34:11.797Z",
   "tasks": [
     {
       "index": 3,
@@ -27596,7 +27596,7 @@
       "apiId": 2330,
       "title": "Fix daily review and alert routing — one summary to Bridge, alerts to roles, no overnight spam",
       "description": "## Experience\nI wake up, check the Bridge on my phone, and see 7 red tunnel-down alerts that fired overnight while nobody could act. Then two quality messages with different test counts. Then ops saying all healthy — while the tunnel is down. I can't tell what's real. The morning signal should be one clear message that tells me the truth.\n\n## Context\nJeff wakes up to: 7 duplicate tunnel-down alerts on Bridge (nobody can act overnight), two separate quality review messages with different test counts, and ops review saying healthy while tunnel is down.\n\n## AC\n1. Daily review posts ONE consolidated message to Bridge — ops health + test results in a single message\n2. Ops review checks alert state — if alerts fired since last review, the summary includes them (no all healthy while tunnel is down)\n3. Quality review aggregates all test suites into one result line (total failed / total passed / total), not separate messages per suite\n4. Infrastructure alerts (tunnel-down, API crash) nudge the owning role directly — not the Bridge\n5. Alerts suppress after first fire until the condition resolves — no repeat alerts to the Bridge overnight\n6. Verify: run the review, confirm one Bridge message, confirm alert routing goes to role",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -27605,9 +27605,9 @@
         "sequence:ops",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T10:34:46Z",
-      "updated": "2026-04-06T10:46:13Z"
+      "updated": "2026-04-06T13:03:01Z"
     },
     {
       "index": 2244,
@@ -27650,7 +27650,7 @@
       "apiId": 2333,
       "title": "Implement context-cache-weekly Rust subcommand — cruft scan, stale card audit, disk trend",
       "description": "## Experience\nThe weekly context-cache tier was defined in #1590 as part of the cron decomposition. During DEC-100 migration (bash→Rust), the 5min, hourly, and daily tiers were ported but weekly was missed. The LaunchAgent fires every Monday at 7:30am but the shim exits silently — no subcommand match. Deep-health correctly flags the 0-byte log.\n\n## Files\n- platform/services/chorus-hooks/src/commands/health.rs (add health_weekly fn)\n- platform/services/chorus-hooks/src/shim.rs (add subcommand match)\n\n## AC\n1. context-cache-weekly subcommand exists in Rust shim\n2. Cruft scan runs and writes results to /tmp/cruft-scan-latest.md\n3. Stale card audit — cards in WIP/Next >7 days flagged\n4. Disk trend logged (APFS-aware, not df)\n5. LaunchAgent produces non-empty stdout on success\n6. Deep-health log-freshness check passes after weekly run",
-      "status": "Later",
+      "status": "WIP",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -27661,7 +27661,151 @@
       ],
       "done": false,
       "created": "2026-04-06T12:48:49Z",
-      "updated": "2026-04-06T12:48:49Z"
+      "updated": "2026-04-06T13:11:02Z"
+    },
+    {
+      "index": 2247,
+      "apiId": 2334,
+      "title": "[defect] gathering-app: Event loop lag: 5.50s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 5.50s\nSample: Event loop lag: 5.50s\nFirst seen: 2026-04-06T13:04:29Z\nCount: 1\nHash: a44f02c2e2b05c63",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T13:04:29Z",
+      "updated": "2026-04-06T13:04:30Z"
+    },
+    {
+      "index": 2248,
+      "apiId": 2335,
+      "title": "Async migration — eliminate event loop blocking in hot-path handlers",
+      "description": "## Problem\n\n300+ synchronous blocking calls across 95 files in the Gathering app. This card is the parent tracker. Work split into focused cards below.\n\n## Split Cards\n\n- #TBD-A: photo.handler async migration (35 sync calls, includes execSync sips — worst offender, 10s blocks)\n- #TBD-B: pod-storage middleware async migration (9 sync calls — runs on EVERY pod request)\n- #TBD-C: knowledge-graph + document handler async migration (31 sync calls — complex directory traversal)\n- #TBD-D: team.handler + service-layer async migration (5+3 sync calls — execSync node scripts)\n- #TBD-E: event loop lag detection sensor (proves the fixes work)\n\n## Reference\n\nSilas's Chorus API fix (commit 9afc12bf, card #2241): const execAsync = promisify(exec)\n\n## Long Tail\n\n70+ additional files with sync calls in background harvesters and lower-traffic handlers. Separate P2 after hot path is clean.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "gathering",
+        "sequence:hardening",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T13:04:56Z",
+      "updated": "2026-04-06T13:19:19Z"
+    },
+    {
+      "index": 2249,
+      "apiId": 2336,
+      "title": "Async: photo.handler — replace 35 sync calls including execSync sips (10s event loop blocks)",
+      "description": "## Problem\n\nphoto.handler.ts has 35 synchronous calls in request handlers. The worst: execSync('sips -s format jpeg -Z 800 ...') at line 573 blocks the entire Node event loop for up to 10 seconds during HEIC-to-JPEG conversion. Every other request waits.\n\n## AC\n\n- [ ] AC1: Replace execSync('sips ...') in serveFullres() with async child process (execFileAsync or worker thread)\n- [ ] AC2: Replace all readFileSync calls (index, manifests, photo data) with fs.promises.readFile\n- [ ] AC3: Replace all existsSync calls with fs.promises.access wrapped in try/catch\n- [ ] AC4: Replace writeFileSync, mkdirSync, readdirSync with fs.promises equivalents\n- [ ] AC5: Zero sync calls remaining in photo.handler.ts request paths\n- [ ] AC6: All existing photo tests green. No regressions.\n\n## Reference\n\nPattern: const execAsync = promisify(exec) — see Silas commit 9afc12bf (#2241)",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "gathering",
+        "sequence:hardening",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T13:19:47Z",
+      "updated": "2026-04-06T13:19:47Z"
+    },
+    {
+      "index": 2250,
+      "apiId": 2337,
+      "title": "Async: pod-storage middleware — replace 9 sync calls on every pod request",
+      "description": "## Problem\n\npod-storage.middleware.ts has 9 synchronous file operations (existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync) that execute on EVERY pod storage request. This middleware is in the critical path for all pod reads and writes.\n\n## Files\n- src/middleware/pod-storage.middleware.ts\n\n## Experience\nWhen I'm browsing my pod data — books, photos, notes — the app hesitates. Page loads stutter. It's small but cumulative. Every pod read and write waits for synchronous file I/O to complete before anything else can happen.\n\n## AC\n\n- [ ] AC1: Convert middleware to async — all fs operations use fs.promises\n- [ ] AC2: Zero sync calls in pod-storage.middleware.ts\n- [ ] AC3: All existing pod/storage tests green. No regressions.\n\n## Reference\n\nPattern: const execAsync = promisify(exec), fs.promises.* — see Silas commit 9afc12bf (#2241)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "gathering",
+        "sequence:hardening",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": true,
+      "created": "2026-04-06T13:19:48Z",
+      "updated": "2026-04-06T13:32:47Z"
+    },
+    {
+      "index": 2251,
+      "apiId": 2338,
+      "title": "Async: knowledge-graph + document handlers — replace 31 sync calls in directory traversal",
+      "description": "## Problem\n\nknowledge-graph.handler.ts (17 sync calls) and document.handler.ts (14 sync calls) both do complex directory traversal and cache I/O synchronously per request. Graph construction and doc catalog requests freeze the event loop.\n\n## AC\n\n- [ ] AC1: knowledge-graph.handler — replace readdirSync, readFileSync, statSync with fs.promises. Zero sync calls in request path.\n- [ ] AC2: document.handler — replace all sync cache reads/writes with fs.promises. Zero sync calls in request path.\n- [ ] AC3: All existing knowledge-graph and document tests green. No regressions.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "gathering",
+        "sequence:hardening",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T13:19:48Z",
+      "updated": "2026-04-06T13:19:48Z"
+    },
+    {
+      "index": 2252,
+      "apiId": 2339,
+      "title": "Async: team.handler + cards.service — replace execSync node script calls",
+      "description": "## Problem\n\nteam.handler.ts has execSync('node script.js') at lines 177 and 198 that block the event loop for entire script execution. cards.service.ts has 3 additional execSync calls for board operations.\n\n## AC\n\n- [ ] AC1: team.handler — replace execSync with async child process for metric script calls\n- [ ] AC2: cards.service — replace execSync with promisify(exec) for board CLI calls\n- [ ] AC3: Zero sync calls in team.handler.ts and cards.service.ts request paths\n- [ ] AC4: All existing team/cards tests green. No regressions.",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "gathering",
+        "sequence:hardening",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T13:19:48Z",
+      "updated": "2026-04-06T13:19:48Z"
+    },
+    {
+      "index": 2253,
+      "apiId": 2340,
+      "title": "Event loop lag detection — log warnings when blocked >100ms",
+      "description": "## Problem\n\nNo sensor exists to detect event loop blocking. The async migration cards fix the cause — this card adds the sensor that proves they worked and catches future regressions.\n\n## AC\n\n- [ ] AC1: Add event loop lag monitor (monitorEventLoopDelay or setInterval drift detection)\n- [ ] AC2: Log structured warning when event loop blocked >100ms with stack context\n- [ ] AC3: Emit spine event on sustained lag (>500ms) for Loki alerting\n- [ ] AC4: Verify sensor fires against a synthetic blocking call in tests, stays silent after async migration",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "gathering",
+        "sequence:hardening",
+        "type:enhance",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T13:19:49Z",
+      "updated": "2026-04-06T13:19:49Z"
+    },
+    {
+      "index": 2254,
+      "apiId": 2341,
+      "title": "Fix /pull skill — role-state.sh path broken, state never declared on pull",
+      "description": "## Experience\nI can't see what any role is doing. Team-scan shows stale state from yesterday for every role. When I ask what's happening, the system has no answer because state declarations silently fail on every pull, pair, and gemba.\n\n## Files\n- platform/skills/pull/SKILL.md\n- platform/skills/pair/SKILL.md\n- platform/skills/gemba/SKILL.md\n- platform/skills/gemba-tick/SKILL.md\n\n## AC\n1. All role-state.sh references in skills replaced with role-state (no .sh)\n2. /pull declares building state after moving card to WIP\n3. /pair declares building state on pair start and waiting on pair end\n4. /gemba declares observing state on start and waiting on exit\n5. Verified: zero remaining role-state.sh references in any skill",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:coordination",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T13:27:23Z",
+      "updated": "2026-04-06T13:34:06Z"
     }
   ]
 }
