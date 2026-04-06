@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T18:47:55.466Z",
+  "timestamp": "2026-04-06T19:08:09.345Z",
   "tasks": [
     {
       "index": 3,
@@ -21321,8 +21321,8 @@
       "index": 1888,
       "apiId": 1971,
       "title": "Chorus product page — Shared Awareness with drill-down into domains and services",
-      "description": "## Experience\nI open /chorus and see the Shared Awareness map — Time, Pulse, Memory, Knowledge, System Context. I click a node and drill into its detail: the service design, the API endpoints, the data, the known issues. I don't navigate away — the map is the product page, the nodes are the doors. Everything the team has built is reachable from this one surface.\n\n## AC\n- [ ] /chorus page nodes are clickable — drill into domain/service detail\n- [ ] Detail view shows: UI surface, API endpoints, data stores, service designs, known issues\n- [ ] Organized by Shared Awareness layers (Time, Pulse, Memory, Knowledge, System Context), not flat tables\n- [ ] Each layer binds: Layer → Node → UI → API → Data\n- [ ] Service design artifacts linked from each node (DEC-109)\n- [ ] Chorus is a standalone product page — linked from Gathering, not nested inside it\n- [ ] No separate domain page needed — /chorus IS the domain page with depth\n\n## Design\n- [Service Design — Pulse](/docs/pm/artifacts/service-design-pulse.html)\n- [/nudge Sequence Diagram](/docs/pm/artifacts/sequence-nudge.html)\n- [Domain — Chorus](/docs/pm/artifacts/domain-chorus.html) (current flat version — to be replaced)\n- [Domain — Observability](/docs/pm/artifacts/domain-observability.html)\n- [Domain — Loom](/docs/pm/artifacts/domain-loom.html)\n\n## Context\nJeff's handwritten Shared Awareness model (2026-03-31): Time, Pulse, Memory, Knowledge, System Context. The /chorus page already has the visual architecture — nodes, clusters, connections. This card adds the drill-down depth and reorganizes by the five layers.",
-      "status": "Later",
+      "description": "## Experience\nI open /chorus and see the Shared Awareness map — Time, Pulse, Memory, Knowledge, System Context. I click a node and drill into its detail: the service design, the API endpoints, the data, the known issues. I don't navigate away — the map is the product page, the nodes are the doors. Everything the team has built is reachable from this one surface.\n\n## Files\n- public/gathering-docs/chorus-context-diagram-v2.html (existing — evolve into product page)\n- public/gathering-docs/domain-context-awareness.html (link target)\n- public/gathering-docs/chorus-standards.html (link target)\n- public/gathering-docs/chorus-hook-architecture.html (link target)\n- public/gathering-docs/harness-engineering-chorus.html (link target)\n\n## AC\n- [ ] /chorus page nodes are clickable — drill into domain/service detail\n- [ ] Detail view shows: UI surface, API endpoints, data stores, service designs, known issues\n- [ ] Organized by Shared Awareness layers (Time, Pulse, Memory, Knowledge, System Context)\n- [ ] Each layer binds: Layer → Node → UI → API → Data\n- [ ] Service design artifacts linked from each node\n- [ ] Links to the #1932 artifacts (standards surface, hook architecture, harness engineering)\n- [ ] Chorus is a standalone product page — linked from Gathering, not nested inside it",
+      "status": "WIP",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -21334,7 +21334,7 @@
       ],
       "done": false,
       "created": "2026-03-31T11:44:12Z",
-      "updated": "2026-03-31T11:44:12Z"
+      "updated": "2026-04-06T18:55:38Z"
     },
     {
       "index": 1889,
@@ -22102,7 +22102,7 @@
       "apiId": 2015,
       "title": "Standards surface + pulse instrumentation — single page of team policies with pulse measurement",
       "description": "## Experience\nI open one page and see every team standard — definition of done, code standards, process rules, communication rules, ops rules. Each one shows whether it's documented only, instrumented in a gate, or measured in pulse. The gaps are visible. The numbers are real, not hardcoded.\n\n## Current State (2026-04-06)\nThree artifacts deployed: chorus-standards.html (standards inventory), chorus-hook-architecture.html (36-hook 6-phase model), harness-engineering-chorus.html (Birgitta mapping). Hook count verified accurate (36). Standards page exists with status tags. But: pulse bar is static HTML (22/28/50 hardcoded), no generation script, counts stale (claims 109 decisions, actual 105). Page looks live but lies about it.\n\n## AC\n1. Single HTML standards page at /chorus/standards — DONE, exists\n2. Each standard shows status: documented | instrumented | measured — DONE, 2 standards missing tags (fix)\n3. Generation script — reads decisions.md, counts hooks from Rust source, parses hook logs for actual gate-enforcement rates. Replaces hardcoded percentages with real data.\n4. Pulse bar wired to hook execution logs — actual block/deny/pass rates from /tmp/chorus-hooks.log, not static numbers\n5. Standards page links to source (DEC, ADR, feedback memory, hook file) — DONE\n6. Auto-regeneration trigger — runs after decisions.md or hook source changes (post-commit or nightly cron)\n7. Count accuracy — decision count, feedback count, story count verified against actual sources on each generation",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -22112,9 +22112,9 @@
         "sequence:loom",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-01T12:31:33Z",
-      "updated": "2026-04-06T16:31:09Z"
+      "updated": "2026-04-06T18:50:43Z"
     },
     {
       "index": 1933,
@@ -28134,6 +28134,143 @@
       "done": true,
       "created": "2026-04-06T18:36:56Z",
       "updated": "2026-04-06T18:44:14Z"
+    },
+    {
+      "index": 2273,
+      "apiId": 2360,
+      "title": "Observability domain page + service design — document the full stack across shared-observability and chorus",
+      "description": "## Experience\n\nI want to open one page and see the full observability picture — what services run, what they monitor, what alerts fire, what dashboards exist, and where the gaps are. Right now this is spread across two repos (shared-observability and chorus), two alert mechanisms (Prometheus rules and shell-based cron), with no sync between them and 13 uncommitted changes.\n\n## Context\n\nTwo repos own observability:\n- shared-observability/ — canonical deployment source. Prometheus, Grafana, Loki, Alertmanager configs. 13 dashboards, 7 Prometheus alert rule files, Grafana-native alerts. Docker Compose stack. 13 uncommitted changes.\n- chorus/alerting/ — 7 shell-based alert rules (cron jobs, different mechanism). chorus/proving/ has stale copies of Grafana alerts and dashboards.\n\nTemplate: awareness-service-design.html + domain-context-awareness.html (shipped #2022, reconciled #2272).\n\n## AC\n\n1. Create domain-context-observability.html — domain page with Key Documents table, context diagram, services inventory, forcing functions, UIs, APIs, data, tests, alert rules, open questions\n2. Create observability-service-design.html — component breakdown (Metrics, Logs, Alerts, Health Checks, Dashboards, Instrumentation) with status tags (REAL/PARTIAL/NONE), services, tests, gaps per component\n3. Document the two-repo architecture — what's canonical where, what's a stale copy, what needs sync\n4. Document both alert mechanisms — Prometheus rules (shared-observability) vs shell-based cron (chorus/alerting) with coverage map\n5. Catalog all 13 dashboards with purpose and freshness\n6. Identify gaps: missing endpoints (hooks telemetry, pulse metrics), missing playbooks, dark spots (correlation, testimony)\n7. Both docs use 1-inch margins, consistent styling with awareness docs\n8. Domain page links to service design and shared-observability README\n\n## Files\n\n- jeff-bridwell-personal-site/public/gathering-docs/domain-context-observability.html\n- jeff-bridwell-personal-site/public/gathering-docs/observability-service-design.html",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:strategy",
+        "type:new",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T18:50:41Z",
+      "updated": "2026-04-06T18:51:31Z"
+    },
+    {
+      "index": 2274,
+      "apiId": 2361,
+      "title": "E2E alert delivery test — synthetic alert fires, verify arrival at Bridge + nudge",
+      "description": "## Experience\n\nI want to know that when an alert fires, it actually reaches the people who need to see it. Right now I trust the routing works but can't prove it. If Alertmanager routing breaks or the nudge path dies, I find out when something fails and nobody notices — the worst kind of failure.\n\n## Context\n\nTwo alert delivery paths:\n1. Prometheus → Alertmanager → Slack channels (critical→#all-gathering, warning→#silas). Config: shared-observability/config/alertmanager/alertmanager.yml\n2. Shell rules (chorus/alerting/) → nudge Silas + post to Bridge (localhost:3470/api/message)\n\ndeep-health.sh checks that services are alive but never verifies the full delivery chain: fire alert → route → deliver → visible to role. The 3-day indexer blind spot (#2227) proved that \"service alive\" ≠ \"service producing output.\"\n\nNo test environment — every deploy is production. A broken alert path in production means flying blind.\n\n## AC\n\n1. Synthetic alert fires through Prometheus path — test alert rule triggers Alertmanager, message arrives at configured channel\n2. Synthetic alert fires through shell path — test nudge delivers to Silas, message posts to Bridge\n3. Both paths tested by a single script: alert-delivery-test.sh\n4. Script runs as a scheduled health check (weekly cron via LaunchAgent)\n5. Failure to deliver = deep-health failure with diagnostic context\n6. No false alerts — synthetic alerts are clearly labeled and filtered from real alert streams\n\n## Files\n\n- platform/scripts/alert-delivery-test.sh\n- platform/scripts/deep-health.sh (integration point)\n- shared-observability/config/alertmanager/alertmanager.yml (reference)\n- chorus/alerting/ (reference)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "type:new",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T19:04:38Z",
+      "updated": "2026-04-06T19:04:38Z"
+    },
+    {
+      "index": 2275,
+      "apiId": 2362,
+      "title": "Repo sync — one canonical path for observability configs, delete stale chorus copies",
+      "description": "## Experience\n\nI open chorus/proving/alerting/ and see alert configs from March 29. I open shared-observability/ and see 13 uncommitted changes. Which is real? I shouldn't have to ask. There should be one canonical source with no stale copies to confuse anyone.\n\n## Context\n\nCurrent state:\n- shared-observability/ — canonical deployment source. 13 uncommitted changes (new dashboards, new configs, native variants).\n- chorus/proving/alerting/chorus-alerts.yaml — copy from March 29, 750 lines. shared-observability version is 467 lines with additional NiFi alerts.\n- chorus/proving/dashboards/chorus-activity.json — partial copy, March 29.\n\nNo automated sync. Manual copy-paste is the current method. Roles have already been confused about which configs are real.\n\nOptions:\nA. Delete chorus copies, document that shared-observability is canonical. Simplest.\nB. Symlink from chorus to shared-observability. Preserves paths but adds coupling.\nC. Automated sync script. Most complex, most maintainable long-term.\n\nRecommendation: Option A for now. shared-observability is a separate repo with its own CLAUDE.md. Chorus shouldn't duplicate it.\n\n## AC\n\n1. Commit 13 uncommitted changes in shared-observability with proper commit messages\n2. Delete chorus/proving/alerting/chorus-alerts.yaml — stale copy\n3. Delete chorus/proving/dashboards/chorus-activity.json — stale copy\n4. Add a README or pointer in chorus/proving/ explaining that observability configs live in shared-observability\n5. Update domain-context-observability.html to reflect the cleanup\n6. Verify Grafana still loads dashboards after cleanup (they're provisioned from shared-observability, not chorus)\n\n## Files\n\n- shared-observability/ (13 uncommitted files)\n- chorus/proving/alerting/chorus-alerts.yaml (delete)\n- chorus/proving/dashboards/chorus-activity.json (delete)\n- chorus/proving/README.md (add pointer)\n- jeff-bridwell-personal-site/public/gathering-docs/domain-context-observability.html (update)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "type:fix",
+        "sequence:awareness",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T19:04:55Z",
+      "updated": "2026-04-06T19:04:55Z"
+    },
+    {
+      "index": 2276,
+      "apiId": 2363,
+      "title": "Fix perf-baseline disk metric — reports 2%, actual ~51%",
+      "description": "## Experience\n\nI run the perf baseline and it says disk is 2% used. I look in Finder and it's 51%. The number is wrong in the direction that hides problems — it makes the disk look empty when it's half full. Any automated decision based on this metric will be wrong.\n\n## Context\n\nperf-baseline.sh uses a disk calculation that's broken on APFS. Known issue — APFS purgeable space and iCloud stubs confuse df/du (see feedback_apfs_reporting.md). Node exporter reports correctly via diskutil.\n\nThe fix should use diskutil info / or the node exporter metric, not df. This is the same lesson from #1384 (standardize disk/memory reporting) and #1868 (fix session-start disk check).\n\nPrior fixes:\n- #1868 fixed session-start to not use df\n- #1384 standardized reporting to match Finder\n- #1884 fixed Chorus API disk endpoint\n\nperf-baseline.sh is the last holdout still using the broken method.\n\n## AC\n\n1. perf-baseline.sh disk percentage matches what Finder shows (within 2%)\n2. Uses diskutil info / or equivalent APFS-aware method, not df\n3. Consistent with other disk reporting (#1868, #1884 patterns)\n4. Nightly baseline log shows correct disk values\n5. deep-health doesn't false-alert on disk based on corrected values\n\n## Files\n\n- platform/scripts/perf-baseline.sh (or wherever the nightly baseline runs)\n- ~/Library/Logs/Chorus/perf-baseline-nightly.log (verify output)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "type:fix",
+        "sequence:awareness",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-06T19:05:11Z",
+      "updated": "2026-04-06T19:05:11Z"
+    },
+    {
+      "index": 2277,
+      "apiId": 2364,
+      "title": "Hooks telemetry API — queryable endpoint for gate enforcement metrics",
+      "description": "## Experience\n\nThe compliance metric (38% gate-enforced) is real and valuable, but it's built on parsing a log file with awk. If the log format changes or the file moves, the metric breaks silently. I want to query an endpoint and get enforcement data back — same way I query /api/chorus/health for system status.\n\n## Context\n\nCurrent state:\n- ~/Library/Logs/Gathering/hooks.log — 62K+ lines, enriched format (#1859): timestamp | hook_type | tool | role | module | decision | duration | session_id | context\n- generate-standards-surface.sh parses this with awk for deny/allow/block counts per module\n- No API endpoint exposes this data\n- Chorus API (localhost:3340) already has /health, /search, /stats — adding a /hooks/metrics endpoint follows the pattern\n\nThe hooks binary (chorus-hooks, Rust) writes the log. The Chorus API (TypeScript) would serve the endpoint. The data flow: hooks binary → log file → API reads log → serves JSON.\n\nAlternative: hooks binary writes metrics directly to Prometheus (push gateway or textfile collector). More native to the observability stack but requires Rust changes.\n\nRecommendation: API endpoint first (simpler, follows existing pattern), Prometheus integration later.\n\n## AC\n\n1. GET /api/chorus/hooks/metrics returns JSON with per-module deny/allow counts (trailing 7 days)\n2. Response includes: total decisions, enforced modules count, enforcement percentage\n3. generate-standards-surface.sh can optionally use the API instead of direct file parsing\n4. Endpoint responds in <500ms (log is 62K lines, may need caching or pre-aggregation)\n5. Endpoint is documented in the observability service design\n\n## Files\n\n- jeff-bridwell-personal-site/src/api/ or chorus API source (add endpoint)\n- platform/scripts/generate-standards-surface.sh (optional: switch to API)\n- jeff-bridwell-personal-site/public/gathering-docs/observability-service-design.html (update)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "type:new",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T19:05:29Z",
+      "updated": "2026-04-06T19:05:29Z"
+    },
+    {
+      "index": 2278,
+      "apiId": 2365,
+      "title": "Dashboard content validation — verify Grafana panels render data, not empty",
+      "description": "## Experience\n\nI have 13 dashboards in Grafana. Any one of them could be rendering empty panels right now and I wouldn't know unless I opened each one. An empty dashboard looks like \"everything is fine\" when it actually means \"the data source is broken.\" I want a check that tells me when a dashboard stops showing data.\n\n## Context\n\n13 dashboards provisioned from shared-observability/dashboards/. Grafana auto-loads them on startup. Data sources: Prometheus (metrics), Loki (logs). If a data source goes down, panels show \"No data\" but no alert fires.\n\nGrafana has an API for dashboard/panel state:\n- GET /api/dashboards/uid/{uid} — dashboard definition\n- GET /api/datasources/proxy/{id}/api/v1/query — Prometheus query proxy\n- Panel query results can be tested via API\n\nA simple approach: for each dashboard, pick one representative panel query, run it via Grafana API, verify non-empty result. This catches \"data source broken\" and \"query broken\" without testing every panel.\n\n## AC\n\n1. Script checks each of the 13 dashboards has at least one panel returning data\n2. Uses Grafana API (localhost:3100) to query representative panels\n3. Reports which dashboards have empty/broken panels\n4. Runs as a weekly deep-health extension (daily is too noisy for slow-moving dashboards)\n5. Failure adds to deep-health FAILURES array with dashboard name and failing panel\n\n## Files\n\n- platform/scripts/dashboard-health.sh (new)\n- platform/scripts/deep-health.sh (integration: weekly check)\n- shared-observability/dashboards/ (reference: 13 JSON files)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "type:new",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T19:05:43Z",
+      "updated": "2026-04-06T19:05:43Z"
+    },
+    {
+      "index": 2279,
+      "apiId": 2366,
+      "title": "Per-alert runbooks — remediation docs linked from each alert rule",
+      "description": "## Experience\n\nAn alert fires: \"ServiceDown — gathering-app.\" What do I do? Right now I know because I built it, but that's tribal knowledge. If Kade or Wren see this alert, they need to know: what it means, what's probably broken, and what to do. The alert should link to the answer.\n\n## Context\n\n14 alert rules across two mechanisms:\n- 7 Prometheus rules in shared-observability/config/prometheus/rules/ — no runbook links\n- 7 shell rules in chorus/alerting/ — some have inline fix hints (deep-health does this well)\n\ndeep-health.sh already includes diagnostic context in failure messages: \"session-index: last indexed 3h ago. fswatch: alive, lockfile: LOCKED. Fix: check fswatch, check lock file, run chorus-index.sh sessions.\" That's the pattern to follow.\n\nPrometheus alert rules support an `annotations.runbook_url` field. Standard practice: each alert links to a runbook page.\n\nshared-observability already has docs/FAILURE-PLAYBOOK.md but it's general, not per-alert.\n\n## AC\n\n1. Each Prometheus alert rule has an annotations.runbook_url pointing to a remediation section\n2. Each shell alert rule includes a one-line fix hint in the alert message (deep-health pattern)\n3. Runbook content lives in shared-observability/docs/RUNBOOKS.md — one section per alert\n4. Each section covers: what fired, what's probably broken, how to diagnose, how to fix, escalation path\n5. Link from observability service design doc to the runbooks\n\n## Files\n\n- shared-observability/config/prometheus/rules/*.yml (add runbook_url annotations)\n- shared-observability/docs/RUNBOOKS.md (new)\n- chorus/alerting/*.yml (add fix hints where missing)\n- jeff-bridwell-personal-site/public/gathering-docs/observability-service-design.html (link)",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "type:new",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T19:05:58Z",
+      "updated": "2026-04-06T19:05:58Z"
+    },
+    {
+      "index": 2280,
+      "apiId": 2367,
+      "title": "Event correlation — trace cause-to-effect across services",
+      "description": "## Experience\n\nAn alert fires. I fix it. But I can't answer: what caused it? Was it a deploy, a config change, a disk issue? Right now I investigate manually — check git log, check spine events, check Loki. I want to query \"what happened around this alert?\" and get a timeline.\n\n## Context\n\nEvents exist in multiple stores:\n- Spine events in ~/Library/Logs/Chorus/chorus.log (card.pulled, card.accepted, pair.started, etc.)\n- Hook decisions in ~/Library/Logs/Gathering/hooks.log\n- Alert fires in Alertmanager history\n- Deploys in git log\n- Service state changes in LaunchAgent logs\n\nCorrelation IDs were added in #1809 for seed and nudge traces but don't span across alert → root cause.\n\nThis is the most complex gap — it's essentially a distributed tracing problem for a single-machine system. Simplest approach: a timeline API that queries multiple sources by time range and merges the results.\n\n## AC\n\n1. Script or API that takes a time range and returns a merged timeline of events from: spine, hooks, alerts, deploys\n2. Events sorted by timestamp, labeled by source\n3. Query: \"what happened between 14:00 and 14:30?\" returns all system events in that window\n4. Usable from CLI: correlation-timeline.sh --from \"2026-04-06 14:00\" --to \"2026-04-06 14:30\"\n5. Output is human-readable (not raw JSON) — one line per event\n\n## Files\n\n- platform/scripts/correlation-timeline.sh (new)\n- Sources: chorus.log, hooks.log, git log, Alertmanager API",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P3",
+      "domains": [
+        "type:new",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-06T19:06:12Z",
+      "updated": "2026-04-06T19:06:12Z"
     }
   ]
 }
