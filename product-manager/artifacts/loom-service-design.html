@@ -50,7 +50,7 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 <tr><td>Clearing</td><td><span class="tag-real">REAL</span></td><td>Socket.IO server (port 3460), LaunchAgent</td><td>3 unit + 1 BDD</td><td>Mobile UX issues persist</td></tr>
 <tr><td>Interactions</td><td><span class="tag-real">REAL</span></td><td>Heuristic detector + input_classifier.rs hook</td><td>1 BDD</td><td>No pattern history dashboard</td></tr>
 <tr><td>Briefs</td><td><span class="tag-real">REAL</span></td><td>1,391 briefs, handoff logger, pipeline</td><td>BDD gate tests</td><td>Stale brief accumulation</td></tr>
-<tr><td>Cards</td><td><span class="tag-real">REAL</span></td><td>board-ts CLI (2,986 LOC), Vikunja backend</td><td>17 test files</td><td>53 failing board-client tests</td></tr>
+<tr><td>Cards</td><td><span class="tag-real">REAL</span></td><td>board-ts CLI (2,986 LOC), Vikunja backend</td><td>17 test files</td><td>34 failing board-client tests</td></tr>
 <tr><td>Skills</td><td><span class="tag-real">REAL</span></td><td>26 skill definitions, CLI-driven</td><td>Integration via BDD</td><td>No skill registry API</td></tr>
 <tr><td>Decisions</td><td><span class="tag-real">REAL</span></td><td>218 decisions (DEC-*), 18 ADRs</td><td><span class="tag-none">NONE</span></td><td>No validation that decisions are enforced</td></tr>
 <tr><td>Practices</td><td><span class="tag-real">REAL</span></td><td>TDD gate, pair skill, demo gate</td><td>9 gate features, 6 step defs</td><td>Gate false positives erode trust</td></tr>
@@ -101,12 +101,12 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 <p>Real-time multi-party chat — browser-based, Socket.IO, with session tailing and transcript capture. For when async briefs are too slow.</p>
 <div class="section-grid">
   <div class="section-box"><strong>Services</strong>
-    Express + Socket.IO server (2,412 LOC)<br/>
+    Express + Socket.IO server (:3470, 2,412 LOC)<br/>
     LaunchAgent: <code>com.chorus.clearing</code><br/>
     <code>com.chorus.clearing-probe</code> (health)
   </div>
   <div class="section-box"><strong>APIs</strong>
-    <code>localhost:3460</code> (main)<br/>
+    <code>localhost:3470</code> (main)<br/>
     <code>POST /api/sessions</code> (create)<br/>
     <code>GET /</code> (health)
   </div>
@@ -118,9 +118,9 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
 </div>
 <div class="section-grid">
   <div class="section-box"><strong>Tests</strong>
-    <code>clearing-ui.test.ts</code><br/>
-    <code>socket-ack.test.ts</code><br/>
-    <code>session-tailer.test.ts</code><br/>
+    135 test cases across 7 files<br/>
+    <code>clearing-ui.test.ts</code> (53 cases)<br/>
+    <code>bridge-integration.test.ts</code> (30 cases)<br/>
     BDD: <code>clearing-access.feature</code>
   </div>
   <div class="section-box"><strong>Docs</strong>
@@ -129,7 +129,7 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
     Clearing service design (#2287)
   </div>
   <div class="section-box"><strong>UIs</strong>
-    <code>localhost:3460</code> — browser chat<br/>
+    <code>localhost:3470</code> — browser chat<br/>
     Mobile responsive (5G via tunnel)<br/>
     Domain card panels with fold
   </div>
@@ -250,7 +250,7 @@ Three AI roles and one human coordinate without Jeff becoming the relay. Briefs 
     Werk dashboard tabs
   </div>
 </div>
-<div class="gap"><strong>Gap:</strong> 53 failing board-client tests — test suite degraded, needs stabilization before new features. Bulk operations caused data duplication in past (#feedback). Won't Do column has test artifact noise (48 cards).</div>
+<div class="gap"><strong>Gap:</strong> 34 failing board-client tests — test suite degraded, needs stabilization before new features. Bulk operations caused data duplication in past (#feedback). Won't Do column has test artifact noise (48 cards).</div>
 </div>
 
 <!-- ==================== SKILLS ==================== -->
