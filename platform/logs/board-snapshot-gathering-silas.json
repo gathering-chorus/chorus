@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T21:09:40.539Z",
+  "timestamp": "2026-04-06T21:19:50.197Z",
   "tasks": [
     {
       "index": 3,
@@ -1230,7 +1230,7 @@
       ],
       "done": false,
       "created": "2026-02-22T16:22:47Z",
-      "updated": "2026-04-06T02:31:03Z"
+      "updated": "2026-04-06T21:19:31Z"
     },
     {
       "index": 129,
@@ -19164,7 +19164,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:04Z",
-      "updated": "2026-04-05T18:41:52Z"
+      "updated": "2026-04-06T21:19:32Z"
     },
     {
       "index": 1762,
@@ -19183,7 +19183,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:21Z",
-      "updated": "2026-04-05T18:41:52Z"
+      "updated": "2026-04-06T21:19:32Z"
     },
     {
       "index": 1763,
@@ -19202,7 +19202,7 @@
       ],
       "done": false,
       "created": "2026-03-27T15:43:31Z",
-      "updated": "2026-04-05T18:41:52Z"
+      "updated": "2026-04-06T21:19:32Z"
     },
     {
       "index": 1764,
@@ -22688,7 +22688,7 @@
       ],
       "done": false,
       "created": "2026-04-02T11:25:47Z",
-      "updated": "2026-04-06T18:47:06Z"
+      "updated": "2026-04-06T21:19:27Z"
     },
     {
       "index": 1965,
@@ -27994,10 +27994,11 @@
       "apiId": 2352,
       "title": "Fix demo feedback nudges — substantive not performative",
       "description": "## Experience\n\nWhen I say /demo <card#>, the builder announces the demo, nudges the team, and I get to ask questions and refine. But the nudges frame feedback as \"Jeff wants your review\" or \"ready for acceptance\" — which primes roles to rubber-stamp instead of actually looking at the work. I get compliance back, not perspective.\n\n## Problem\n\nThe /demo skill's feedback nudge template invokes Jeff's authority and pre-frames the expected outcome (acceptance). Roles mirror the framing — they respond with \"AC looks met, ready for Jeff's acceptance\" without substantive review.\n\n## AC\n\n- [ ] AC1: Demo feedback nudges present the work in terms of the recipient's domain — not \"Jeff wants your review\"\n- [ ] AC2: Nudges ask for the role's actual perspective — questions, concerns, connections from their domain\n- [ ] AC3: No pre-framing of acceptance or expected outcome in the nudge text\n- [ ] AC4: Nudge framing is substantive, not performative — roles should engage with the work, not perform a ceremony\n\n## Files\n- ~/.claude/skills/demo\n\n## Reference\nJeff's observation: \"the way you frame things to them shapes a lot in terms of how they respond\" — if you ask them to accept, they will almost without looking.",
-      "status": "Later",
+      "status": "WIP",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
+        "chunk:strategy",
         "domain:chorus",
         "type:fix",
         "sequence:loom",
@@ -28005,7 +28006,7 @@
       ],
       "done": false,
       "created": "2026-04-06T16:33:25Z",
-      "updated": "2026-04-06T16:33:25Z"
+      "updated": "2026-04-06T21:18:36Z"
     },
     {
       "index": 2266,
@@ -28162,7 +28163,7 @@
       "apiId": 2361,
       "title": "E2E alert delivery test — synthetic alert fires, verify arrival at Bridge + nudge",
       "description": "## Experience\n\nI want to know that when an alert fires, it actually reaches the people who need to see it. Right now I trust the routing works but can't prove it. If Alertmanager routing breaks or the nudge path dies, I find out when something fails and nobody notices — the worst kind of failure.\n\n## Context\n\nTwo alert delivery paths:\n1. Prometheus → Alertmanager → Slack channels (critical→#all-gathering, warning→#silas). Config: shared-observability/config/alertmanager/alertmanager.yml\n2. Shell rules (chorus/alerting/) → nudge Silas + post to Bridge (localhost:3470/api/message)\n\ndeep-health.sh checks that services are alive but never verifies the full delivery chain: fire alert → route → deliver → visible to role. The 3-day indexer blind spot (#2227) proved that \"service alive\" ≠ \"service producing output.\"\n\nNo test environment — every deploy is production. A broken alert path in production means flying blind.\n\n## AC\n\n1. Synthetic alert fires through Prometheus path — test alert rule triggers Alertmanager, message arrives at configured channel\n2. Synthetic alert fires through shell path — test nudge delivers to Silas, message posts to Bridge\n3. Both paths tested by a single script: alert-delivery-test.sh\n4. Script runs as a scheduled health check (weekly cron via LaunchAgent)\n5. Failure to deliver = deep-health failure with diagnostic context\n6. No false alerts — synthetic alerts are clearly labeled and filtered from real alert streams\n\n## Files\n\n- platform/scripts/alert-delivery-test.sh\n- platform/scripts/deep-health.sh (integration point)\n- shared-observability/config/alertmanager/alertmanager.yml (reference)\n- chorus/alerting/ (reference)",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P1",
       "domains": [
@@ -28172,9 +28173,9 @@
         "sequence:ops",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T19:04:38Z",
-      "updated": "2026-04-06T21:09:04Z"
+      "updated": "2026-04-06T21:19:42Z"
     },
     {
       "index": 2275,
@@ -28417,7 +28418,7 @@
       "apiId": 2375,
       "title": "Quality service page — test pyramid inventory with foldable details and next steps",
       "description": "## Experience\n\nI want to open one page and see the health of our test suite — how many tests, what layers are strong, where the gaps are. Not a coverage number — the shape of the pyramid and whether it's healthy.\n\n## AC\n\n- [x] AC1: Research complete — full inventory across both repos (8,465 tests, 5 languages)\n- [x] AC2: HTML page at /gathering-docs/quality-service.html with visual pyramid\n- [x] AC3: Foldable test details per repo layer — click to see test files and cases\n- [x] AC4: Deep verdict — bimodal shape analysis, findings with evidence\n- [x] AC5: Prioritized next steps — P1/P2/P3 with goals and metrics\n\n## Files\n- public/gathering-docs/quality-service.html",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -28426,9 +28427,9 @@
         "sequence:awareness",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T21:00:03Z",
-      "updated": "2026-04-06T21:04:26Z"
+      "updated": "2026-04-06T21:09:52Z"
     },
     {
       "index": 2289,
@@ -28447,6 +28448,132 @@
       "done": false,
       "created": "2026-04-06T21:05:05Z",
       "updated": "2026-04-06T21:05:05Z"
+    },
+    {
+      "index": 2290,
+      "apiId": 2377,
+      "title": "Fill integration test layer — 15 to 50 tests on high-churn service pairs",
+      "description": "## Experience\nThe integration layer is hollow — 15 tests for 83 services. Cross-service bugs slip through here. I want confidence that service A calling service B actually works, not just that each passes unit tests alone.\n\n## AC\n- [ ] Identify top 10 highest-churn service pairs from git log\n- [ ] Write integration tests for SPARQL → handler → view path\n- [ ] Write integration tests for seed pipeline end-to-end\n- [ ] Write integration tests for harvest → sync → search index\n- [ ] 50+ integration tests total",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:10:15Z",
+      "updated": "2026-04-06T21:10:15Z"
+    },
+    {
+      "index": 2291,
+      "apiId": 2378,
+      "title": "Chorus E2E — Bridge and Clearing user journey tests",
+      "description": "## Experience\nBridge and Clearing have zero end-to-end tests. I use them daily — send messages, start clearings, watch roles work. Nobody tests the full path.\n\n## AC\n- [ ] 10 Playwright specs for Chorus surfaces\n- [ ] Bridge: send message → message appears for role\n- [ ] Clearing: start session → roles join → decisions captured\n- [ ] Werk: page loads with live card data",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:10:41Z",
+      "updated": "2026-04-06T21:10:41Z"
+    },
+    {
+      "index": 2292,
+      "apiId": 2379,
+      "title": "Close 17 uncovered services — unit test coverage floor",
+      "description": "## Experience\n19% of services have no unit tests. When one of these breaks, I find out in production.\n\n## AC\n- [ ] Identify 17 uncovered services by name\n- [ ] Write unit tests for each, prioritized by git churn (last 30 days)\n- [ ] 100% service test coverage",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:10:41Z",
+      "updated": "2026-04-06T21:10:41Z"
+    },
+    {
+      "index": 2293,
+      "apiId": 2380,
+      "title": "API regression tests — top 30 routes with response shape validation",
+      "description": "## Experience\n310 API routes, ~10 tested. 3% coverage. When an API response shape changes, nothing catches it until the page breaks.\n\n## AC\n- [ ] Identify top 30 API routes by traffic/usage\n- [ ] Write response shape + status code tests for each\n- [ ] Run as part of pre-push gate",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:10:41Z",
+      "updated": "2026-04-06T21:10:41Z"
+    },
+    {
+      "index": 2294,
+      "apiId": 2381,
+      "title": "Performance baselines — SPARQL query budgets and page load SLAs",
+      "description": "## Experience\n13 performance tests total. When things get slow, I notice before the system does. I want time budgets for SPARQL queries and page loads, with nightly regression detection.\n\n## AC\n- [ ] Time budgets for top 10 SPARQL queries\n- [ ] Page load measurement for 5 heaviest pages\n- [ ] Nightly cron with baseline comparison and alerting\n- [ ] 20+ performance tests",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:10:42Z",
+      "updated": "2026-04-06T21:10:42Z"
+    },
+    {
+      "index": 2295,
+      "apiId": 2382,
+      "title": "Fix 53 failing board-client tests — test debt cleanup",
+      "description": "## Experience\n53 board-client tests are failing (#2118). These are tests that existed and broke — test debt, not missing coverage. They mask real regressions.\n\n## AC\n- [ ] Triage 53 failures — categorize as fixable, obsolete, or needs-rewrite\n- [ ] Fix or remove all 53\n- [ ] Board-client test suite green",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "origin:reactive",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:10:42Z",
+      "updated": "2026-04-06T21:10:42Z"
+    },
+    {
+      "index": 2296,
+      "apiId": 2383,
+      "title": "Smoke check expansion — all authenticated pages",
+      "description": "## Experience\n22 pages in smoke check, ~40 missing. I use /loom, /werk, /chorus, /jeff daily — none are smoke checked.\n\n## AC\n- [ ] Add all authenticated pages to smoke-check.sh (60+ pages)\n- [ ] Include Chorus surfaces: /chorus, /loom, /werk, /jeff\n- [ ] Run post-deploy automatically",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:enhance",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-06T21:10:43Z",
+      "updated": "2026-04-06T21:10:43Z"
     }
   ]
 }

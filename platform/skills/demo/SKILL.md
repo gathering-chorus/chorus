@@ -175,15 +175,29 @@ for ROLE in wren silas kade; do
 done
 ```
 
-Then **auto-nudge for feedback** — don't wait for Jeff to ask:
+Then **auto-nudge for feedback** — don't wait for Jeff to ask.
+
+**Frame the nudge in the recipient's domain, not Jeff's authority.** The way you frame the nudge shapes the response. If you say "Jeff wants your review," they rubber-stamp. If you say "this touches your domain — what does it mean for X?", they actually look.
+
 ```bash
-# Ask each role to verify from their perspective
+# Ask each role to verify from THEIR perspective — frame in their domain
 for ROLE in wren silas kade; do
   [ "$ROLE" = "<your-role>" ] && continue
   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$ROLE" \
-    "[feedback] #${CARD_ID} — <1-line what changed>. Questions? Ideas? Concerns from your domain?" 2>/dev/null || true
+    "[feedback] #${CARD_ID} — <1-line what changed>. <specific question for this role's domain>. detailed review, validation and feedback." 2>/dev/null || true
 done
 ```
+
+**How to frame per role:**
+- **To Wren (PM):** Frame as product impact — "How does this change the user experience? Does the AC match what Jeff described?"
+- **To Silas (Architect):** Frame as infrastructure/ops — "Any deployment concerns? Does this interact with health checks or gates you own?"
+- **To Kade (Engineer):** Frame as code quality — "Does the implementation approach make sense? Any test gaps you see?"
+
+**Nudge framing anti-patterns (NEVER use these):**
+- "Jeff wants your review" — invokes authority, produces rubber stamps
+- "ready for acceptance" — pre-frames the expected outcome
+- "review and accept" — tells them the answer before they look
+- "Jeff is waiting" — creates urgency that shortcuts thinking
 
 ### Demo Observer Mode (for nudge recipients)
 
@@ -195,9 +209,10 @@ The `/gemba` skill owns the full observe-loop pattern. Don't duplicate it here.
 
 When you receive a `[feedback]` nudge, **reply with substance.** Share your actual perspective — questions, ideas, concerns, or connections you see. This is not a checkbox exercise.
 
-1. **Check your domain** — look at your inbox, run relevant checks, think about implications
+1. **Check your domain** — look at your work, run relevant checks, think about implications from your expertise
 2. **Reply with your real take** — what you noticed, what questions it raises, how it connects to your work. If it's clean, say so briefly and add anything useful. If there's an issue, name it.
 3. **Do NOT** just say "got it" or "acknowledged" — that's not feedback, it's noise
+4. **Do NOT** mirror the sender's framing — form your own opinion before responding. "AC looks met" without checking is performative, not substantive.
 
 The builder is blocked on acceptance until team feedback lands. Silence forces Jeff to chase replies — that's failure demand.
 
