@@ -13,7 +13,7 @@ CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-l
 ROLE=""
 PROMPT_THRESHOLD=400
 HOUR_THRESHOLD=4
-REMOVE_RATE_THRESHOLD=5  # removes per 50-prompt bucket — acceleration = compaction pressure
+REMOVE_RATE_THRESHOLD=10  # removes per 50-prompt bucket — raised from 5, boot-heavy sessions inflate early
 ALERT=false
 TEST_MODE="${BATS_TEST_RUNNING:-${SESSION_HEALTH_TEST:-}}"
 
@@ -143,8 +143,8 @@ if [ "$ALERT" = true ]; then
   echo "WARN: ${ALERTS}Consider /reboot for fresh context."
   # Suppress nudges during test runs
   if [ -z "$TEST_MODE" ]; then
-    "$NUDGE" "$ROLE" "session-health: ${ALERTS}Consider /reboot." 2>/dev/null || true
-    "$NUDGE" wren "session-health: ${ROLE} session at ${PROMPT_COUNT} prompts, ${AGE_HOURS}h, ${REMOVE_RATE} removes/50. May need reboot." 2>/dev/null || true
+    "$NUDGE" "$ROLE" "session-health: ${ALERTS}Consider /reboot." --from system 2>/dev/null || true
+    "$NUDGE" wren "session-health: ${ROLE} session at ${PROMPT_COUNT} prompts, ${AGE_HOURS}h, ${REMOVE_RATE} removes/50. May need reboot." --from system 2>/dev/null || true
   fi
   "$CHORUS_LOG" session.health.warning "$ROLE" prompts="$PROMPT_COUNT" age_hours="$AGE_HOURS" tools="$TOOL_COUNT" removes="$QUEUE_REMOVES" remove_rate="$REMOVE_RATE" 2>/dev/null || true
 else
