@@ -1,13 +1,15 @@
 # Current Work
 
-Last updated: 2026-04-05 11:30 Boston
+Last updated: 2026-04-06 12:01 Boston
 
 ## WIP
 None.
 
-## New Cards Created This Session
-- #2088 — Daily signal integrity scan (P1, cron 6am ET)
-- #2089 — Weekly climate report (P1, cron Sunday 5am ET)
+## Shipped Last Session
+- #2249 — Async: photo.handler (35 sync calls)
+- #2250 — Async: pod-storage middleware (9 sync calls)
+- #2251 — Async: knowledge-graph + document handlers (31 sync calls)
+- #2256 — Async: MonitoringService (cache disk checks)
 
 ## Next Queue
 - #1865 — Photo detail thumbnail (P2)
