@@ -56,6 +56,24 @@ SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/deep-health.
   fi
 }
 
+# --- Log freshness threshold classification ---
+
+@test "weekly-scheduled logs use 8-day threshold not 2h" {
+  # alert-delivery-test runs weekly (Sunday 6am)
+  # cruft-scan runs every 72h
+  # fuseki-compact runs weekly (Saturday 1am)
+  # All three should be in WEEKLY_LOGS, not DAILY_LOGS or default 2h.
+  eval "$(grep -E '^(DAILY_LOGS|WEEKLY_LOGS)=' "$SCRIPT")"
+  [[ " $WEEKLY_LOGS " == *" alert-delivery-test.log "* ]]
+  [[ " $WEEKLY_LOGS " == *" cruft-scan.log "* ]]
+  [[ " $WEEKLY_LOGS " == *" fuseki-compact.log "* ]]
+}
+
+@test "fuseki-compact not in daily logs" {
+  eval "$(grep -E '^DAILY_LOGS=' "$SCRIPT")"
+  [[ " $DAILY_LOGS " != *" fuseki-compact.log "* ]]
+}
+
 @test "checks nudge binary exists" {
   run bash "$SCRIPT"
   # Should verify nudge is executable — either passes silently or reports
