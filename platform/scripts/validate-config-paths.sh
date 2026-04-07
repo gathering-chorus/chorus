@@ -5,7 +5,9 @@
 
 set -euo pipefail
 
-CANONICAL="/Users/jeffbridwell/CascadeProjects/chorus/proving/config/launchagents"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+CANONICAL="${CHORUS_ROOT}/proving/config/launchagents"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 errors=0
 warnings=0
@@ -33,7 +35,7 @@ echo ""
 echo "--- Path resolution check (plists) ---"
 for plist in "$CANONICAL"/*.plist; do
   name="$(basename "$plist")"
-  # Extract paths that look like /Users/jeffbridwell/CascadeProjects/...
+  # Extract paths that look like ${CHORUS_ROOT}/...
   paths=$(grep -oE '/Users/jeffbridwell/[^ "<]+\.(sh|py|js)' "$plist" 2>/dev/null || true)
   paths="$paths $(grep -oE '/Users/jeffbridwell/[^ "<]+/chorus-hook-shim' "$plist" 2>/dev/null || true)"
   paths="$paths $(grep -oE '/Users/jeffbridwell/bin/[^ "<]+' "$plist" 2>/dev/null || true)"
@@ -65,7 +67,7 @@ fi
 echo ""
 echo "--- Path resolution check (role settings) ---"
 for role_dir in architect engineer product-manager; do
-  settings="/Users/jeffbridwell/CascadeProjects/chorus/$role_dir/.claude/settings.local.json"
+  settings="${CHORUS_ROOT}/platform/roles/$role_dir/.claude/settings.local.json"
   if [ -f "$settings" ]; then
     role_paths=$(grep -oE '/Users/jeffbridwell/[^ "]+' "$settings" 2>/dev/null || true)
     for p in $role_paths; do

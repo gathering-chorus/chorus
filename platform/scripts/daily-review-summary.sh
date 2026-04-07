@@ -3,6 +3,8 @@
 # Card #1766 | Runs ops + quality, combines into one post
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/bridge-post.sh"
 
@@ -20,7 +22,7 @@ echo "$OPS_OUTPUT$QUALITY_OUTPUT" | grep -q "🔴" && OVERALL="🔴"
 echo "$OPS_OUTPUT$QUALITY_OUTPUT" | grep -q "🟡" && [ "$OVERALL" != "🔴" ] && OVERALL="🟡"
 
 # Board snapshot
-BOARD_DIR="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts"
+BOARD_DIR="${CHORUS_ROOT}/platform/scripts"
 WIP_COUNT=$(bash "$BOARD_DIR/cards" mine all 2>/dev/null | grep -c "WIP" || true)
 WIP_COUNT=${WIP_COUNT:-0}
 DONE_TODAY=$(bash "$BOARD_DIR/cards" list Done 2>/dev/null | grep "$(date +%Y-%m-%d)" | wc -l | tr -d ' ' || true)

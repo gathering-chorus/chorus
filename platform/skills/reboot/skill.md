@@ -10,7 +10,7 @@ When Jeff types `/reboot`, run the Hard 4 close-out and exit so a fresh session 
 
 ## Steps
 
-1. **Doc freshness gate** — run `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/session-close-thin.sh <role>`. Doc freshness is checked by the daily Rust health tier. If it flags stale docs, **update them before proceeding**. This is a gate, not a suggestion.
+1. **Doc freshness gate** — run `bash /Users/jeffbridwell/CascadeProjects/platform/scripts/session-close-thin.sh <role>`. Doc freshness is checked by the daily Rust health tier. If it flags stale docs, **update them before proceeding**. This is a gate, not a suggestion.
 
 1.5. **Domain context freshness** — check if you touched files in any domain this session. For each domain you worked in, check `messages/domain-context/domain-context-{domain}.md`:
    - If the file exists and you learned something new (constraint, persistence change, new test, new script), update it.

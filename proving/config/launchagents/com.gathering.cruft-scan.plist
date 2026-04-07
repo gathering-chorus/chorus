@@ -10,13 +10,13 @@
         <string>-c</string>
         <string>
 # Log rotation first
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/log-rotate.sh >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md 2>&amp;1
+/Users/jeffbridwell/CascadeProjects/platform/scripts/log-rotate.sh >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md 2>&amp;1
 
 # Cruft scan: disk, stale briefs, board audit
 echo "=== Cruft scan $(date '+%Y-%m-%d %H:%M') ===" >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md
 diskutil info / | grep 'Available Space' >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md 2>&amp;1
 echo "Board snapshot sizes:" >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md
-ls -lh /Users/jeffbridwell/CascadeProjects/chorus/proving/logs/board-snapshot-*.json 2>/dev/null | awk '{print "  "$5" "$9}' >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md
+ls -lh /Users/jeffbridwell/CascadeProjects/proving/logs/board-snapshot-*.json 2>/dev/null | awk '{print "  "$5" "$9}' >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md
 echo "=== Done ===" >> /Users/jeffbridwell/Library/Logs/Gathering/cruft-scan-latest.md
         </string>
     </array>

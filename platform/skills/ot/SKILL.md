@@ -14,7 +14,7 @@ Open a file or URL in the role's own Chrome window. Never opens in Jeff's window
 2. Run:
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chrome-window.sh <role> <target>
+/Users/jeffbridwell/CascadeProjects/platform/scripts/chrome-window.sh <role> <target>
 ```
 
 Target can be:

@@ -7,7 +7,9 @@
 
 set -uo pipefail
 
-CARDS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+CARDS="${CHORUS_ROOT}/platform/scripts/cards"
 APPLY=false
 FILTER_DOMAIN=""
 
@@ -95,7 +97,7 @@ echo "Mode: $( $APPLY && echo 'APPLY' || echo 'DRY-RUN' )"
 echo ""
 
 # Source env for API access
-source /Users/jeffbridwell/CascadeProjects/chorus/.env 2>/dev/null || true
+source ${CHORUS_ROOT}/.env 2>/dev/null || true
 TOKEN="${VIKUNJA_TOKEN_KADE:-${VIKUNJA_TOKEN:-}}"
 URL="${VIKUNJA_URL:-http://localhost:3456}"
 

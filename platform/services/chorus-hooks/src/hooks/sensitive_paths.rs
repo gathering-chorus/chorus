@@ -1,15 +1,19 @@
+use crate::shared::state_paths::chorus_root;
 use crate::state::chorus_log;
 use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookResponse};
 use regex::Regex;
 use std::path::Path;
 
-const REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects";
+fn repo_root() -> &'static str { chorus_root() }
 
-const MANIFEST_PATHS: &[&str] = &[
-    "/Users/jeffbridwell/CascadeProjects/product-manager/.sensitive-paths",
-    "/Users/jeffbridwell/CascadeProjects/architect/.sensitive-paths",
-    "/Users/jeffbridwell/CascadeProjects/engineer/.sensitive-paths",
-];
+fn manifest_paths() -> Vec<String> {
+    let root = chorus_root();
+    vec![
+        format!("{}/product-manager/.sensitive-paths", root),
+        format!("{}/architect/.sensitive-paths", root),
+        format!("{}/engineer/.sensitive-paths", root),
+    ]
+}
 
 pub async fn check(input: &HookInput) -> HookResponse {
     let tool = input.tool_name_str();
@@ -45,8 +49,8 @@ pub async fn check(input: &HookInput) -> HookResponse {
     }
 
     // Check manifests
-    for manifest_path in MANIFEST_PATHS {
-        if !Path::new(manifest_path).exists() {
+    for manifest_path in &manifest_paths() {
+        if !Path::new(manifest_path.as_str()).exists() {
             continue;
         }
 
@@ -103,7 +107,7 @@ fn path_matches(path: &str, pattern: &str) -> bool {
     let full_pattern = if pattern.starts_with('/') {
         pattern.to_string()
     } else {
-        format!("{}/{}", REPO_ROOT, pattern)
+        format!("{}/{}", repo_root(), pattern)
     };
 
     // Convert glob to regex
@@ -139,7 +143,7 @@ mod tests {
             tool_input: Some(json!({"file_path": path})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -154,7 +158,7 @@ mod tests {
             tool_input: Some(json!({"command": "ls"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -166,14 +170,14 @@ mod tests {
 
     #[tokio::test]
     async fn allows_normal_file_read() {
-        let input = make_read("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards");
+        let input = make_read(&format!("{}/platform/scripts/cards", chorus_root()));
         let r = check(&input).await;
         assert_eq!(r.exit_code, 0);
     }
 
     #[tokio::test]
     async fn handles_env_file_read() {
-        let input = make_read("/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env");
+        let input = make_read(&format!("{}/jeff-bridwell-personal-site/.env", chorus_root()));
         let r = check(&input).await;
         assert!(r.exit_code == 0 || r.stdout.is_some());
     }

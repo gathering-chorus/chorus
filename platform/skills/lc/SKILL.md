@@ -10,7 +10,7 @@ Screenshot Jeff's frontmost Chrome window. This shows you what Jeff is looking a
 
 ## How to Use
 
-1. Run: `/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/look.sh chrome`
+1. Run: `/Users/jeffbridwell/CascadeProjects/platform/scripts/look.sh chrome`
 2. Read the captured image with the Read tool
 3. Describe what you see — be specific about UI elements, text, layout
 

@@ -11,7 +11,8 @@ import { Transcript, ChatMessage } from './transcript';
 
 const MODEL = process.env.CLEARING_MODEL || 'claude-haiku-4-5-20251001';
 const MAX_TOKENS = parseInt(process.env.CLEARING_MAX_TOKENS || '300');
-const NUDGE_BINARY = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim';
+const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
+const NUDGE_BINARY = `${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim`;
 
 function executeNudge(from: string, target: string, message: string): { success: boolean; detail: string } {
   const { execSync } = require('child_process');

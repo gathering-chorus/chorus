@@ -4,6 +4,8 @@
 
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 DEST="$HOME/Desktop"
 PUBLIC="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public"

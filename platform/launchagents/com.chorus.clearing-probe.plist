@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/clearing-probe.sh</string>
+        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/clearing-probe.sh</string>
     </array>
     <key>StartInterval</key>
     <integer>60</integer>

@@ -20,7 +20,7 @@ If card-id given, reviews that card's AC against the code changes. Otherwise rev
 
 1. Get the card AC (if card-id given):
    ```bash
-   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view ${CARD_ID}
+   bash /Users/jeffbridwell/CascadeProjects/platform/scripts/cards view ${CARD_ID}
    ```
 
 2. Get the recent diff:
@@ -38,5 +38,5 @@ If card-id given, reviews that card's AC against the code changes. Otherwise rev
 
 5. Run tests after fixing:
    ```bash
-   cd /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks && cargo test
+   cd /Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks && cargo test
    ```

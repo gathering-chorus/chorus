@@ -169,6 +169,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    use crate::shared::state_paths::chorus_root;
+
     /// Helper: make a Bash input with structured tool_response (how Claude Code sends it)
     fn make_bash_input(command: &str, stderr: &str, stdout: &str) -> HookInput {
         HookInput {
@@ -181,7 +183,7 @@ mod tests {
                 "isImage": false,
             })),
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -196,7 +198,7 @@ mod tests {
             tool_input: Some(json!({"command": command})),
             tool_response: Some(json!(response)),
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -307,7 +309,7 @@ mod tests {
             tool_input: Some(json!({"file_path": "/x"})),
             tool_response: Some(json!({"stderr": "Exit code 1", "stdout": ""})),
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -321,7 +323,7 @@ mod tests {
     async fn test_blocks_script_not_found() {
         let state = AppState::new();
         let input = make_bash_input(
-            "bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/missing.sh",
+            &format!("bash {}/platform/scripts/missing.sh", chorus_root()),
             "Exit code 127\nbash: No such file or directory",
             "",
         );
@@ -333,7 +335,7 @@ mod tests {
     async fn test_allows_board_ts() {
         let state = AppState::new();
         let input = make_bash_input(
-            "bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view 1808",
+            &format!("bash {}/platform/scripts/cards view 1808", chorus_root()),
             "Exit code 1",
             "Card not found",
         );

@@ -9,7 +9,9 @@
 
 set -euo pipefail
 
-ALERT_DIR="/Users/jeffbridwell/CascadeProjects/chorus/alerting"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+ALERT_DIR="${CHORUS_ROOT}/platform/alerting"
 LOG="/Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log"
 TIMESTAMP() { TZ=America/New_York date '+%Y-%m-%d %H:%M:%S'; }
 
@@ -62,7 +64,7 @@ run_check() {
     local alert_ts
     alert_ts=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
     local nudge_msg="Alert — $alert_ts | $name: $result"
-    bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$owner" "$nudge_msg" --force >> "$LOG" 2>&1 || true
+    bash ${CHORUS_ROOT}/platform/scripts/nudge "$owner" "$nudge_msg" --force >> "$LOG" 2>&1 || true
     log "  NUDGE $owner ($name)"
   fi
 }

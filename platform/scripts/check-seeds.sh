@@ -6,6 +6,8 @@
 
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 FUSEKI_URL="http://localhost:3030"
 APP_URL="http://localhost:3000"
 TUNNEL_URL="https://lightlifeurbangardens.com"

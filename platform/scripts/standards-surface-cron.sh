@@ -5,6 +5,8 @@
 # Source change detection: compares sha256 of inputs against last-run checksums.
 # If nothing changed, skips regeneration (idempotent, no wasted work).
 set -euo pipefail
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -13,13 +15,13 @@ STATE_FILE="$HOME/.chorus/standards-surface-checksums.json"
 LOG_TAG="standards-surface-cron"
 
 # Sources to monitor for changes
-DECISIONS_MD="/Users/jeffbridwell/CascadeProjects/chorus/product-manager/decisions.md"
-HOOKS_DIR="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks"
+DECISIONS_MD="${CHORUS_ROOT}/platform/roles/product-manager/decisions.md"
+HOOKS_DIR="${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks"
 PULSE_LOG="$HOME/Library/Logs/Gathering/hooks.log"
 MEMORY_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory"
 
 # Chorus log helper
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
+CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 
 log() { echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $*"; }
 

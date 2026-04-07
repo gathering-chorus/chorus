@@ -3,8 +3,10 @@
 # Tests every hook via CHORUS_HOOK_RAW=1 shim test mode
 set -euo pipefail
 
-SCRIPTS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts"
-SHIM="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+SCRIPTS="${CHORUS_ROOT}/platform/scripts"
+SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 CHORUS_API="http://localhost:3340"
 CLEARING="http://localhost:3470"
 APP="http://localhost:3000"
@@ -58,7 +60,7 @@ echo "$R" | grep -qi "demo gate\|deny\|TDD" && pass "accept_gate: gate chain blo
 
 # 2. autonomy_guard — blocks cross-domain edits
 log "--- 2. autonomy_guard ---"
-D=$(gate_test '{"tool_name":"Edit","tool_input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas/docs/test.md","old_string":"a","new_string":"b"}}')
+D=$(gate_test '{"tool_name":"Edit","tool_input":{"file_path":"${CHORUS_ROOT}/platform/roles/silas/docs/test.md","old_string":"a","new_string":"b"}}')
 if [ "$D" = "allow" ] || [ "$D" = "deny" ]; then pass "autonomy_guard: returns $D for cross-domain edit"; else fail "autonomy_guard: $D"; fi
 
 # 3. batch_progress — monitors long ops
@@ -104,7 +106,7 @@ R=$(echo '{"tool_name":"Bash","stdout":"done"}' | CHORUS_HOOK_RAW=1 DEPLOY_ROLE=
 
 # 11. handoff_logger — logs handoffs
 log "--- 11. handoff_logger ---"
-D=$(gate_test '{"tool_name":"Write","tool_input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas/briefs/test.md","content":"test"}}')
+D=$(gate_test '{"tool_name":"Write","tool_input":{"file_path":"${CHORUS_ROOT}/platform/roles/silas/briefs/test.md","content":"test"}}')
 if [ "$D" = "allow" ] || [ "$D" = "deny" ]; then pass "handoff_logger: returns $D on cross-role write"; else fail "handoff_logger: $D"; fi
 
 # 12. icd_pre_read — requires ICD review before harvester
@@ -181,12 +183,12 @@ R=$(echo "{\"tool_name\":\"Skill\",\"tool_input\":{\"skill\":\"demo\",\"args\":\
 
 # 25. search_hierarchy — Chorus first
 log "--- 25. search_hierarchy ---"
-D=$(gate_test '{"tool_name":"Grep","tool_input":{"pattern":"test","path":"/Users/jeffbridwell/CascadeProjects"}}')
+D=$(gate_test '{"tool_name":"Grep","tool_input":{"pattern":"test","path":"${CHORUS_ROOT}"}}')
 if [ "$D" = "allow" ] || [ "$D" = "deny" ]; then pass "search_hierarchy: returns $D on Grep"; else fail "search_hierarchy: $D"; fi
 
 # 26. sensitive_paths — blocks credential writes
 log "--- 26. sensitive_paths ---"
-D=$(gate_test '{"tool_name":"Write","tool_input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/.env","content":"TWILIO_AUTH_TOKEN=secret123"}}')
+D=$(gate_test '{"tool_name":"Write","tool_input":{"file_path":"${CHORUS_ROOT}/.env","content":"TWILIO_AUTH_TOKEN=secret123"}}')
 if echo "$D" | grep -q "deny"; then pass "sensitive_paths: blocks .env write"; else fail "sensitive_paths: allowed .env write ($D)"; fi
 
 # 27. session_init_gate — session bootstrap
@@ -206,7 +208,7 @@ R=$(echo '{"tool_name":"Bash","tool_input":{"command":"false"},"exit_code":1}' |
 
 # 30. story_write_gate — validates story writes
 log "--- 30. story_write_gate ---"
-D=$(gate_test '{"tool_name":"Write","tool_input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/stories.md","content":"test story"}}')
+D=$(gate_test '{"tool_name":"Write","tool_input":{"file_path":"${CHORUS_ROOT}/platform/roles/messages/stories.md","content":"test story"}}')
 if [ "$D" = "allow" ] || [ "$D" = "deny" ]; then pass "story_write_gate: returns $D"; else fail "story_write_gate: $D"; fi
 
 # 31. tdd_gate — requires test run
@@ -224,7 +226,7 @@ if [ "$RECENT" -gt 0 ]; then pass "tool_telemetry: $RECENT decisions in last 5 l
 log "--- 33. write_scrubber ---"
 # write_scrubber test uses a fake key pattern — encoded to avoid pre-commit hook
 FAKE_KEY="$(echo 'QVBJfEtFWT1zay1hYmNkZWZnaGlqa2xtbm9wcXJzdHU=' | base64 -d 2>/dev/null || echo 'test_key')"
-D=$(gate_test "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/Users/jeffbridwell/CascadeProjects/chorus/TEAM_PROTOCOL.md\",\"old_string\":\"x\",\"new_string\":\"$FAKE_KEY\"}}")
+D=$(gate_test "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"${CHORUS_ROOT}/platform/roles/messages/TEAM_PROTOCOL.md\",\"old_string\":\"x\",\"new_string\":\"$FAKE_KEY\"}}")
 if echo "$D" | grep -q "deny"; then pass "write_scrubber: blocks credential in edit"; else fail "write_scrubber: allowed credential ($D)"; fi
 
 # ─── FLOW TESTS ───

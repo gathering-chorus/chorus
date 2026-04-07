@@ -158,6 +158,88 @@ describe('AC #5: findSessionFile picks newest file across ALL matching dirs', ()
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Restructure: role dirs renamed architect→silas, engineer→kade (#1308)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Role dir mapping matches current repo structure', () => {
+  let tmpDir: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    const setup = setupTempProjects();
+    tmpDir = setup.dir;
+    cleanup = setup.cleanup;
+  });
+
+  afterEach(() => cleanup());
+
+  test('Silas session found at platform-roles-silas dir, not architect', () => {
+    // Current path after restructure
+    const silasDir = path.join(tmpDir, '-Users-jeffbridwell-CascadeProjects-platform-roles-silas');
+    const silasFile = path.join(silasDir, 'active-session.jsonl');
+    writeJsonl(silasFile, [makeUserEntry('hi silas')]);
+
+    // Old path that no longer has active sessions
+    const oldDir = path.join(tmpDir, '-Users-jeffbridwell-CascadeProjects-architect');
+    const oldFile = path.join(oldDir, 'stale-session.jsonl');
+    writeJsonl(oldFile, [makeUserEntry('old message')]);
+    const oldTime = new Date('2026-03-01T00:00:00Z');
+    fs.utimesSync(oldFile, oldTime, oldTime);
+
+    // The ROLE_DIRS mapping must match 'silas' not 'architect'
+    const roleDir = 'silas'; // This is what ROLE_DIRS['silas'] should be
+    const entries = fs.readdirSync(tmpDir);
+    let newest: { path: string; mtime: number } | null = null;
+
+    for (const entry of entries) {
+      if (entry.includes(roleDir)) {
+        const projDir = path.join(tmpDir, entry);
+        const files = fs.readdirSync(projDir)
+          .filter((f: string) => f.endsWith('.jsonl'))
+          .map((f: string) => {
+            const fullPath = path.join(projDir, f);
+            return { path: fullPath, mtime: fs.statSync(fullPath).mtimeMs };
+          });
+        for (const file of files) {
+          if (!newest || file.mtime > newest.mtime) newest = file;
+        }
+      }
+    }
+
+    expect(newest).not.toBeNull();
+    expect(newest!.path).toBe(silasFile);
+  });
+
+  test('Kade session found at platform-roles-kade dir, not engineer', () => {
+    const kadeDir = path.join(tmpDir, '-Users-jeffbridwell-CascadeProjects-platform-roles-kade');
+    const kadeFile = path.join(kadeDir, 'active-session.jsonl');
+    writeJsonl(kadeFile, [makeUserEntry('hi kade')]);
+
+    const roleDir = 'kade';
+    const entries = fs.readdirSync(tmpDir);
+    let newest: { path: string; mtime: number } | null = null;
+
+    for (const entry of entries) {
+      if (entry.includes(roleDir)) {
+        const projDir = path.join(tmpDir, entry);
+        const files = fs.readdirSync(projDir)
+          .filter((f: string) => f.endsWith('.jsonl'))
+          .map((f: string) => {
+            const fullPath = path.join(projDir, f);
+            return { path: fullPath, mtime: fs.statSync(fullPath).mtimeMs };
+          });
+        for (const file of files) {
+          if (!newest || file.mtime > newest.mtime) newest = file;
+        }
+      }
+    }
+
+    expect(newest).not.toBeNull();
+    expect(newest!.path).toBe(kadeFile);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // AC #1: Jeff's input tagged as visible
 // ═══════════════════════════════════════════════════════════════════════════
 

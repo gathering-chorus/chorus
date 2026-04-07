@@ -88,6 +88,7 @@ pub fn post_edit_check(input: &HookInput) -> HookResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared::state_paths::chorus_root;
     use serde_json::json;
 
     fn make_input(tool: &str, key: &str, val: &str) -> HookInput {
@@ -96,7 +97,7 @@ mod tests {
             tool_input: Some(json!({ key: val })),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/chorus/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

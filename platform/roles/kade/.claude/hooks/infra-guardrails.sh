@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
+CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log"
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')

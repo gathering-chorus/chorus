@@ -121,8 +121,8 @@ pub async fn check(input: &HookInput, _state: &AppState) {
     // Check if domain context was read
     if !domain_context_read(&role, domain) {
         let context_path = format!(
-            "/Users/jeffbridwell/CascadeProjects/chorus/designing/domain-context/domain-context-{}.md",
-            domain
+            "{}/designing/domain-context/domain-context-{}.md",
+            crate::shared::state_paths::chorus_root(), domain
         );
         warn!(
             domain = domain,
@@ -145,6 +145,7 @@ mod tests {
     use super::*;
     use crate::state::AppState;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
     use serde_json::json;
 
     #[tokio::test]
@@ -154,7 +155,7 @@ mod tests {
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.md"})),
             tool_response: None, session_id: Some("t".into()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
         };
@@ -168,7 +169,7 @@ mod tests {
             tool_name: Some("Write".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.ts", "content": "test"})),
             tool_response: None, session_id: Some("t".into()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
         };

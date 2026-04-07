@@ -24,15 +24,15 @@ Vi-style command: one keystroke, full action. When Jeff types `/flow`, Wren swee
 
 ```bash
 # Step 1: Board state
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts list --status wip
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts list --status now
+/Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts list --status wip
+/Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts list --status now
 
 # Step 2: Tail active roles (only those with WIP cards)
 bash ~/Users/jeffbridwell/.chorus/scripts/chorus-query.sh tail kade --lines 5
 bash ~/Users/jeffbridwell/.chorus/scripts/chorus-query.sh tail silas --lines 5
 
 # Step 3: Check recent completions
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts list --status done | head -10
+/Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts list --status done | head -10
 
 # Step 4: Open /flow in Chrome so Jeff can see it visually
 open -a "Google Chrome" "http://localhost:3000/flow"

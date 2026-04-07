@@ -4,6 +4,8 @@
 
 set -uo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 PASS=0
 FAIL=0
 HOOKS_LOG="$HOME/Library/Logs/Chorus/chorus-hooks.stdout.log"
@@ -69,12 +71,12 @@ fi
 # --- Test 5: PostToolUse ops awareness is compiled and registered ---
 echo "Test 5: ops_awareness module is compiled into hook server"
 # The module is registered if the binary contains the ops-awareness string
-if strings "$(dirname "$(dirname "$HOOKS_LOG")")"/../CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hooks 2>/dev/null | grep -q "ops-awareness"; then
+if strings "$(dirname "$(dirname "$HOOKS_LOG")")"/../CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hooks 2>/dev/null | grep -q "ops-awareness"; then
   echo "  PASS: ops_awareness compiled into binary"
   ((PASS++))
 else
   # Fallback: check source registration
-  if grep -q "ops_awareness" /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/mod.rs 2>/dev/null; then
+  if grep -q "ops_awareness" ${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks/mod.rs 2>/dev/null; then
     echo "  PASS: ops_awareness registered in mod.rs"
     ((PASS++))
   else
@@ -85,7 +87,7 @@ fi
 
 # --- Test 6: ops_awareness wired into PostToolUse ---
 echo "Test 6: ops_awareness called in post_tool_use handler"
-if grep -q "ops_awareness::check" /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/main.rs 2>/dev/null; then
+if grep -q "ops_awareness::check" ${CHORUS_ROOT}/platform/services/chorus-hooks/src/main.rs 2>/dev/null; then
   echo "  PASS: ops_awareness::check called in main.rs"
   ((PASS++))
 else

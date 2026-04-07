@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/daily-review-quality.sh</string>
+        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/daily-review-quality.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>

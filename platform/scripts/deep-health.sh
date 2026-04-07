@@ -3,8 +3,10 @@
 # Runs on 5-min cron. Alerts via nudge --force on failure.
 set -euo pipefail
 
-NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+NUDGE="${CHORUS_ROOT}/platform/scripts/nudge"
+CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 ALERT_ROLE="silas"
 FAILURES=()
 
@@ -33,7 +35,7 @@ fi
 # --- 2. Hooks binary matches disk ---
 HOOKS_PID=$(cat /tmp/chorus-hooks.pid 2>/dev/null || echo "")
 if [ -n "$HOOKS_PID" ] && ps -p "$HOOKS_PID" > /dev/null 2>&1; then
-  DISK_MTIME=$(stat -f %m /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hooks 2>/dev/null || echo 0)
+  DISK_MTIME=$(stat -f %m ${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hooks 2>/dev/null || echo 0)
   PROC_START=$(ps -p "$HOOKS_PID" -o lstart= 2>/dev/null | xargs -I{} date -j -f "%a %b %d %T %Y" "{}" +%s 2>/dev/null || echo 0)
   if [ "$DISK_MTIME" -gt "$PROC_START" ] 2>/dev/null; then
     FAILURES+=("chorus-hooks: binary on disk newer than running process — rebuild without restart")

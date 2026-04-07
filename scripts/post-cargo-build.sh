@@ -7,7 +7,9 @@
 
 set -euo pipefail
 
-SHIM="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 
 if [[ ! -x "$SHIM" ]]; then
   echo "ERROR: chorus-hook-shim not found at $SHIM"

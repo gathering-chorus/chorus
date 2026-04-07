@@ -11,6 +11,7 @@
 //! - Session boot reads missed observations via `load_since()`
 //! - No in-session cron needed — the service IS the observer
 
+use crate::shared::state_paths::chorus_root;
 use crate::state::{chorus_log, AppState};
 use crate::types::{HookInput, Role};
 use chrono::Utc;
@@ -186,7 +187,7 @@ async fn rotate_if_needed(path: &PathBuf, _role: &str) {
 /// Fallback: andon state file (for backwards compat when log is unavailable).
 fn read_role_card(role: &str) -> Option<String> {
     // Primary: check chorus.log for most recent card.pulled by this role
-    let log_path = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
+    let log_path = format!("{}/platform/logs/chorus.log", chorus_root());
     if let Ok(content) = std::fs::read_to_string(log_path) {
         for line in content.lines().rev().take(200) {
             if line.contains("card.pulled") && line.contains(&format!("\"role\":\"{}\"", role)) {
@@ -325,8 +326,9 @@ fn truncate(s: &str, max: usize) -> String {
 
 fn short_path(path: &str) -> String {
     // Strip common prefix to show just the meaningful part
+    let prefix = format!("{}/", chorus_root());
     let stripped = path
-        .strip_prefix("/Users/jeffbridwell/CascadeProjects/")
+        .strip_prefix(&prefix)
         .unwrap_or(path);
     truncate(stripped, 60)
 }
@@ -358,7 +360,7 @@ mod tests {
         let input = make_post_input(
             "Bash",
             json!({"command": "cargo test 2>&1"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("running tests:"), "got: {}", d);
@@ -369,7 +371,7 @@ mod tests {
         let input = make_post_input(
             "Bash",
             json!({"command": "cargo build --release"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("building:"), "got: {}", d);
@@ -380,7 +382,7 @@ mod tests {
         let input = make_post_input(
             "Bash",
             json!({"command": "bash ../chorus/platform/scripts/cards move 1594 Done"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("board op:"), "got: {}", d);
@@ -391,7 +393,7 @@ mod tests {
         let input = make_post_input(
             "Bash",
             json!({"command": "bash ../chorus/platform/scripts/nudge.sh wren 'done with 1594'"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("nudging:"), "got: {}", d);
@@ -402,7 +404,7 @@ mod tests {
         let input = make_post_input(
             "Bash",
             json!({"command": "ls -la /tmp"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("bash:"), "got: {}", d);
@@ -412,8 +414,8 @@ mod tests {
     fn test_digest_write() {
         let input = make_post_input(
             "Write",
-            json!({"file_path": "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/observer.rs", "content": "test"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            json!({"file_path": &format!("{}/platform/services/chorus-hooks/src/hooks/observer.rs", chorus_root()), "content": "test"}),
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("writing "), "got: {}", d);
@@ -424,8 +426,8 @@ mod tests {
     fn test_digest_edit() {
         let input = make_post_input(
             "Edit",
-            json!({"file_path": "/Users/jeffbridwell/CascadeProjects/architect/CLAUDE.md", "old_string": "a", "new_string": "b"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            json!({"file_path": &format!("{}/architect/CLAUDE.md", chorus_root()), "old_string": "a", "new_string": "b"}),
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("editing "), "got: {}", d);
@@ -436,7 +438,7 @@ mod tests {
         let input = make_post_input(
             "Agent",
             json!({"description": "Find chorus-hooks source files"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("agent:"), "got: {}", d);
@@ -447,7 +449,7 @@ mod tests {
         let input = make_post_input(
             "Skill",
             json!({"skill": "reboot"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert_eq!(d, "skill: /reboot");
@@ -459,7 +461,7 @@ mod tests {
         let input = make_post_input(
             "Read",
             json!({"file_path": "/tmp/test"}),
-            "/Users/jeffbridwell/CascadeProjects/architect",
+            &format!("{}/architect", chorus_root()),
         );
         let d = digest_tool_call(&input);
         assert!(d.is_empty(), "Read should produce empty digest, got: {}", d);
@@ -502,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_short_path_strips_prefix() {
-        let p = short_path("/Users/jeffbridwell/CascadeProjects/architect/CLAUDE.md");
+        let p = short_path(&format!("{}/architect/CLAUDE.md", chorus_root()));
         assert_eq!(p, "architect/CLAUDE.md");
     }
 

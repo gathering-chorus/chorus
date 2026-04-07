@@ -10,7 +10,7 @@
 #[test]
 fn nudge_force_is_always_true() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs"
+        "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/nudge.rs"
     ).expect("nudge.rs should exist");
 
     assert!(

@@ -2,7 +2,8 @@ import fs from 'fs';
 import { EventEmitter } from 'events';
 import { MessageRouter } from './router';
 
-const CHORUS_LOG = '/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log';
+const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
+const CHORUS_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
 const POLL_INTERVAL = 2000; // 2 seconds
 
 /**

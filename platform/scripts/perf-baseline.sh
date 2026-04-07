@@ -5,9 +5,11 @@
 
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 DATE=$(date +%Y-%m-%d)
 TIME=$(date +%H:%M:%S)
-OUTDIR="/Users/jeffbridwell/CascadeProjects/chorus/proving/logs"
+OUTDIR="${CHORUS_ROOT}/proving/logs"
 OUTFILE="$OUTDIR/perf-baseline-${DATE}.json"
 
 # --- Disk ---

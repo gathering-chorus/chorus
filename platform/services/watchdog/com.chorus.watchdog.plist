@@ -9,7 +9,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/watchdog.sh</string>
+    <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/watchdog.sh</string>
   </array>
 
   <key>StartInterval</key>

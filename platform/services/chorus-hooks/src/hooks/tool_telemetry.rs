@@ -185,6 +185,7 @@ pub async fn post_tool_use_bash(input: &HookInput, state: &AppState) -> HookResp
 mod tests {
     use super::*;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
     use serde_json::json;
 
     fn make_bash(cmd: &str) -> HookInput {
@@ -193,7 +194,7 @@ mod tests {
             tool_input: Some(json!({"command": cmd})),
             tool_response: Some(json!({"stdout": "output", "stderr": ""})),
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

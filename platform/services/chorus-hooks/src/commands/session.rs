@@ -151,7 +151,7 @@ pub fn session_close_cmd(args: &[String]) -> ExitCode {
     // Find session.role.started timestamp for this role in chorus.log
     let duration_secs = {
         let log_content = fs::read_to_string(
-            state_paths::CHORUS_LOG_FILE
+            &state_paths::chorus_log_file()
         ).unwrap_or_default();
         let mut start_ts = 0u64;
         for line in log_content.lines().rev() {

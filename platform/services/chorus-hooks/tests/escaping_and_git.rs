@@ -6,8 +6,8 @@
 use std::process::Command;
 use serde_json::json;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
-const INJECT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-inject";
+const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const INJECT: &str = "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-inject";
 
 // === Bug 1: single-quote escaping ===
 
@@ -71,7 +71,7 @@ fn git_commit_blocked_inside_team_repo() {
         "tool_name": "Bash",
         "tool_input": {"command": "git commit -m 'test'"},
         "session_id": "test-session",
-        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/engineer"
+        "cwd": "/Users/jeffbridwell/CascadeProjects/platform/roles/engineer"
     });
 
     let output = Command::new(SHIM)

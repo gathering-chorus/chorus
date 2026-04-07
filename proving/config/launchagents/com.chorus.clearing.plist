@@ -7,10 +7,10 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node</string>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/dist/server.js</string>
+        <string>/Users/jeffbridwell/CascadeProjects/directing/clearing/dist/server.js</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing</string>
+    <string>/Users/jeffbridwell/CascadeProjects/directing/clearing</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>

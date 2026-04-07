@@ -15,10 +15,12 @@
 
 set -euo pipefail
 
-ALERT_RUNNER="/Users/jeffbridwell/CascadeProjects/chorus/scripts/alert-runner.sh"
-DEEP_HEALTH="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/deep-health.sh"
-NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+ALERT_RUNNER="${CHORUS_ROOT}/scripts/alert-runner.sh"
+DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
+NUDGE="${CHORUS_ROOT}/platform/scripts/nudge"
+CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 BRIDGE="http://localhost:3470"
 LOG="$HOME/Library/Logs/Chorus/alert-delivery-test.log"
 PROBE_MARKER="synthetic-delivery-$(date +%s)"

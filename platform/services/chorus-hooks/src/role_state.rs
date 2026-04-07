@@ -13,11 +13,15 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use crate::process;
+use crate::shared::state_paths::chorus_root;
 
 const SCAN_DIR: &str = "/tmp/claude-team-scan";
 const VALID_STATES: &[&str] = &["building", "blocked", "waiting", "observing", "idle"];
 const ROLES: &[&str] = &["wren", "silas", "kade"];
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
+
+fn chorus_log_path() -> String {
+    format!("{}/platform/logs/chorus.log", chorus_root())
+}
 
 pub fn run(args: &[String]) -> ExitCode {
     if args.is_empty() {
@@ -66,8 +70,9 @@ pub fn run(args: &[String]) -> ExitCode {
     // The hook service can't run `cards` (no node in LaunchAgent PATH),
     // so we resolve it here in the role's terminal where node is available.
     if !card.is_empty() && card_type.is_empty() {
+        let cards_script = format!("{}/platform/scripts/cards", chorus_root());
         if let Ok(output) = std::process::Command::new("bash")
-            .args(["/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards", "view", &card])
+            .args([cards_script.as_str(), "view", &card])
             .output()
         {
             if output.status.success() {
@@ -157,10 +162,11 @@ pub fn run(args: &[String]) -> ExitCode {
     if !gemba.is_empty() {
         event_kv.push_str(&format!(" gemba={}", gemba));
     }
+    let log_path = chorus_log_path();
     if let Ok(mut log_file) = fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(CHORUS_LOG)
+        .open(&log_path)
     {
         let _ = writeln!(log_file, "role.state.changed | {} {}", role, event_kv);
     }
@@ -185,7 +191,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 if let Ok(mut log_file) = fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(CHORUS_LOG)
+                    .open(&chorus_log_path())
                 {
                     let _ = writeln!(log_file, "nudge.acknowledged | {} role={} count={}", role, role, nudge_count);
                 }
@@ -252,7 +258,7 @@ fn query(target: &str) -> ExitCode {
 
 /// Get last spine event timestamp for a role from chorus.log (JSON format, tail search)
 fn last_spine_emit(role: &str) -> Option<String> {
-    let content = fs::read_to_string(CHORUS_LOG).ok()?;
+    let content = fs::read_to_string(chorus_log_path()).ok()?;
     let role_pattern = format!("\"role\":\"{}\"", role);
     for line in content.lines().rev() {
         if line.contains(&role_pattern) {

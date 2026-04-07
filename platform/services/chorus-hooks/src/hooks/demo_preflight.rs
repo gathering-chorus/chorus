@@ -7,12 +7,13 @@
 //! The skill handles the creative parts (stakes, showing, feedback).
 //! This hook handles the mechanical parts (did you check everything first?).
 
+use crate::shared::state_paths::chorus_root;
 use crate::types::{HookInput, HookResponse, permission_deny_json};
 use std::process::Command;
 use tracing::{info, warn};
 
-const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards";
-const SMOKE_CHECK: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh";
+fn board_ts() -> String { format!("{}/platform/scripts/cards", chorus_root()) }
+fn smoke_check() -> String { format!("{}/platform/scripts/smoke-check.sh", chorus_root()) }
 
 /// Check if this is a /demo invocation and validate preflight gates
 pub async fn check(input: &HookInput) -> HookResponse {
@@ -117,8 +118,9 @@ enum CardStatus {
 }
 
 fn check_card_status(card_id: &str) -> CardStatus {
+    let bts = board_ts();
     let output = Command::new("bash")
-        .args([BOARD_TS, "view", card_id])
+        .args([bts.as_str(), "view", card_id])
         .output();
 
     match output {
@@ -148,8 +150,9 @@ fn check_card_status(card_id: &str) -> CardStatus {
 }
 
 fn check_ac_exists(card_id: &str) -> bool {
+    let bts = board_ts();
     let output = Command::new("bash")
-        .args([BOARD_TS, "view", card_id])
+        .args([bts.as_str(), "view", card_id])
         .output();
 
     match output {
@@ -170,8 +173,9 @@ enum SmokeResult {
 }
 
 fn run_smoke_check() -> SmokeResult {
+    let sc = smoke_check();
     let output = Command::new("bash")
-        .args([SMOKE_CHECK, "--all"])
+        .args([sc.as_str(), "--all"])
         .output();
 
     match output {
@@ -201,8 +205,9 @@ fn run_smoke_check() -> SmokeResult {
 }
 
 fn get_card_domains(card_id: &str) -> Vec<String> {
+    let bts = board_ts();
     let output = Command::new("bash")
-        .args([BOARD_TS, "view", card_id])
+        .args([bts.as_str(), "view", card_id])
         .output();
 
     match output {
@@ -237,7 +242,7 @@ fn get_card_domains(card_id: &str) -> Vec<String> {
 async fn check_icd_render(domain: &str) -> Option<String> {
     // Check if ICD instance TTL exists for this domain
     let ttl_path = format!(
-        "/Users/jeffbridwell/CascadeProjects/architect/icd-instance-{}.ttl",
+        "{}/architect/icd-instance-{}.ttl", chorus_root(),
         domain
     );
     if !std::path::Path::new(&ttl_path).exists() {
@@ -275,7 +280,7 @@ mod tests {
             tool_input: Some(json!({"skill": skill})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -297,7 +302,7 @@ mod tests {
             tool_input: Some(json!({"command": "echo test"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

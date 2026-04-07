@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+NUDGE="/Users/jeffbridwell/CascadeProjects/platform/scripts/nudge"
 STATE_DIR="$HOME/Library/Logs/Gathering/alert-state"
 mkdir -p "$STATE_DIR"
 

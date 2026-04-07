@@ -5,11 +5,14 @@
 //! emitting progress to chorus log + Bridge.
 //! Silent background jobs become impossible.
 
+use crate::shared::state_paths::chorus_root;
 use crate::types::{HookInput, HookResponse};
 use std::process::Command;
 use tracing::{info, warn};
 
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log";
+fn chorus_log_script_path() -> String {
+    format!("{}/platform/scripts/chorus-log", chorus_root())
+}
 
 /// PreToolUse: detect run_in_background=true and spawn a monitor.
 /// The monitor waits for the output file to appear, then tails it every 30s.
@@ -146,7 +149,7 @@ rm -f "$0" /tmp/batch-pre-marker-{rust_pid}.txt /tmp/batch-bridge-msg-$$.json
 "#,
         role = role.as_str(),
         cmd_escaped = cmd_short.replace('"', r#"\""#).replace('$', r"\$"),
-        chorus_log = CHORUS_LOG,
+        chorus_log = chorus_log_script_path(),
         rust_pid = std::process::id(),
     );
 
@@ -295,7 +298,7 @@ rm -f "$0" /tmp/batch-bridge-msg-$$.json
         task_id = task_id,
         cmd_escaped = cmd_short.replace('"', r#"\""#).replace('$', r"\$"),
         role = role.as_str(),
-        chorus_log = CHORUS_LOG,
+        chorus_log = chorus_log_script_path(),
     );
 
     let monitor_path = format!("/tmp/batch-monitor-{}.sh", task_id);
@@ -387,7 +390,7 @@ mod tests {
             tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test", "skill": "demo"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

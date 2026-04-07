@@ -4,10 +4,12 @@
 # Alerts when session exceeds thresholds — gas gauge, not check engine light.
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 SESSIONS_DIR="$HOME/.claude/projects"
 HOOKS_LOG="$HOME/Library/Logs/Gathering/hooks.log"
-NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
+NUDGE="${CHORUS_ROOT}/platform/scripts/nudge"
+CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 
 # Defaults
 ROLE=""

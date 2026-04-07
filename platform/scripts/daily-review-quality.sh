@@ -3,6 +3,8 @@
 # Card #1766 | DEC-107 compliant (no osascript)
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 TIMESTAMP=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
@@ -11,7 +13,7 @@ STATUS="green"
 ISSUES=""
 
 # --- Smoke tests ---
-SMOKE_OUTPUT=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh --all 2>&1 || true)
+SMOKE_OUTPUT=$(bash ${CHORUS_ROOT}/platform/scripts/smoke-check.sh --all 2>&1 || true)
 SMOKE_PASS=$(echo "$SMOKE_OUTPUT" | grep -c "PASS" || true)
 SMOKE_PASS=${SMOKE_PASS:-0}
 SMOKE_FAIL=$(echo "$SMOKE_OUTPUT" | grep -c "FAIL" || true)

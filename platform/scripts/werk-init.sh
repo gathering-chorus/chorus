@@ -12,6 +12,8 @@
 
 set -uo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
@@ -167,7 +169,7 @@ ${_content}"
 
   # Card events from chorus.log — filtered by pulse level (#1896)
   CARD_EVENTS=""
-  CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log"
+  CHORUS_LOG="${CHORUS_ROOT}/platform/logs/chorus.log"
   if [ -f "$CHORUS_LOG" ]; then
     CARD_EVENTS=$(tail -500 "$CHORUS_LOG" | python3 -c "
 import sys, json

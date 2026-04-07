@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 LIBRARY="192.168.86.36"
 ALERT_TARGET="jeff"
 
@@ -40,7 +42,7 @@ echo ""
 if [ "$FAILURES" -gt 0 ]; then
   echo "ALERT: ${FAILURES} service(s) down on Library"
   # SSH back to Library to emit critical nudge to Jeff
-  ssh "${LIBRARY}" "bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge jeff '[critical] Bedroom probe: ${FAILURES} service(s) down on Library' --level critical --from system" 2>/dev/null || true
+  ssh "${LIBRARY}" "bash ${CHORUS_ROOT}/platform/scripts/nudge jeff '[critical] Bedroom probe: ${FAILURES} service(s) down on Library' --level critical --from system" 2>/dev/null || true
 else
   echo "All services healthy"
 fi

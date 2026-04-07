@@ -3,7 +3,7 @@
 # AC: subcommand runs, cruft scan writes, stale cards audited, disk trend logged, non-empty stdout
 set -euo pipefail
 
-SHIM="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+SHIM="/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 PASS=0
 FAIL=0
 

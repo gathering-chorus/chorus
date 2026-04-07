@@ -15,7 +15,7 @@ When Jeff invokes `/look`, capture his screen and read the image:
 ### Step 1: Capture
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/look.sh [target]
+/Users/jeffbridwell/CascadeProjects/platform/scripts/look.sh [target]
 ```
 
 **Targets:**

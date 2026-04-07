@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::session_cache::SessionCache;
+use crate::shared::state_paths::chorus_root;
 
 /// Shared application state
 #[derive(Clone)]
@@ -56,7 +57,7 @@ pub struct Config {
 impl AppState {
     pub fn new() -> Self {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-        let repo_root = PathBuf::from("/Users/jeffbridwell/CascadeProjects");
+        let repo_root = PathBuf::from(chorus_root());
 
         Self {
             inner: Arc::new(Mutex::new(StateInner {
@@ -70,8 +71,8 @@ impl AppState {
             })),
             session_cache: SessionCache::new(),
             config: Arc::new(Config {
-                log_dir: repo_root.join("chorus/platform/logs"),
-                prefs_file: repo_root.join("chorus/jeff-preferences.json"),
+                log_dir: repo_root.join("platform/logs"),
+                prefs_file: repo_root.join("jeff-preferences.json"),
                 chorus_db: PathBuf::from(&home).join(".chorus/index.db"),
                 repo_root,
                 home_dir: PathBuf::from(home),
@@ -254,7 +255,7 @@ pub async fn append_log(path: &std::path::Path, line: &str) {
 
 /// Emit a chorus-log event (replaces bash chorus-log.sh)
 pub async fn chorus_log(event: &str, role: &str, kvs: &[(&str, &str)]) {
-    let log_path = PathBuf::from("/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log");
+    let log_path = PathBuf::from(format!("{}/platform/logs/chorus.log", chorus_root()));
     let ts = Utc::now().with_timezone(&crate::hooks::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
 
     let mut obj = serde_json::json!({

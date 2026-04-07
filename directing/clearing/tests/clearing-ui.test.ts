@@ -12,7 +12,7 @@ import * as http from 'http';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
 
 const CLEARING_URL = 'http://localhost:3470';
-const REAL_NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
+const REAL_NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/platform/scripts/nudge';
 
 // Mock nudge script — writes to temp file instead of osascript injection.
 // Tests verify Clearing filters, not nudge delivery (that's nudge-integration.test.ts).
@@ -245,7 +245,7 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
-  const CHAT_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh';
+  const CHAT_SCRIPT = '/Users/jeffbridwell/CascadeProjects/platform/scripts/chat.sh';
 
   test('chat.sh message between roles does not leak into Clearing', async () => {
     const marker = `AC3-CHAT-${Date.now()}`;

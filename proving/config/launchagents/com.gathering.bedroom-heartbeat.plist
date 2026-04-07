@@ -9,7 +9,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/bedroom-heartbeat.sh</string>
+    <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/bedroom-heartbeat.sh</string>
   </array>
 
   <!-- Run every 5 minutes -->

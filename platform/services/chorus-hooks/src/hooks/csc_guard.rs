@@ -150,6 +150,7 @@ pub fn check(input: &HookInput) -> HookResponse {
 mod tests {
     use super::*;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
     use serde_json::json;
 
     fn make_bash(cmd: &str) -> HookInput {
@@ -158,7 +159,7 @@ mod tests {
             tool_input: Some(json!({"command": cmd})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -172,7 +173,7 @@ mod tests {
             tool_input: Some(json!({"file_path": path, "content": "test"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -186,7 +187,7 @@ mod tests {
             tool_input: Some(json!({"file_path": path, "old_string": "a", "new_string": "b"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -234,7 +235,7 @@ mod tests {
 
     #[test]
     fn allows_write_outside_tmp() {
-        let r = check(&make_write("/Users/jeffbridwell/CascadeProjects/chorus/architect/test.md"));
+        let r = check(&make_write(&format!("{}/architect/test.md", chorus_root())));
         assert_eq!(r.exit_code, 0, "Non-/tmp writes should pass");
     }
 
@@ -242,7 +243,7 @@ mod tests {
 
     #[test]
     fn allows_normal_bash_commands() {
-        let input = make_bash("ls -la /Users/jeffbridwell/CascadeProjects");
+        let input = make_bash(&format!("ls -la {}", chorus_root()));
         let r = check(&input);
         assert_eq!(r.exit_code, 0);
         assert!(r.stdout.is_none());
@@ -255,7 +256,7 @@ mod tests {
             tool_input: Some(json!({"file_path": "/tmp/test.txt"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -264,7 +265,6 @@ mod tests {
         let r = check(&input);
         assert_eq!(r.exit_code, 0);
     }
-}
 
     #[test]
     fn allows_read_commands() {
@@ -272,10 +272,11 @@ mod tests {
             tool_name: Some("Bash".to_string()),
             tool_input: Some(serde_json::json!({"command": "cat /tmp/session-start-silas.md"})),
             tool_response: None, session_id: Some("test".into()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
         };
         let r = check(&input);
         assert_eq!(r.exit_code, 0);
     }
+}

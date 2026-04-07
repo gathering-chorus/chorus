@@ -4,11 +4,14 @@
 //! Warns (doesn't block) if the target role is WIP on a card,
 //! making the interrupt cost visible before sending.
 
+use crate::shared::state_paths::chorus_root;
 use crate::types::{HookInput, HookResponse};
 use std::process::Command;
 use tracing::warn;
 
-const ROLE_STATE: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state";
+fn role_state_script_path() -> String {
+    format!("{}/platform/scripts/role-state", chorus_root())
+}
 const ROLES: &[&str] = &["wren", "silas", "kade"];
 
 /// Check if a bash command is invoking nudge and warn about blast radius
@@ -95,7 +98,8 @@ fn extract_target_role(command: &str) -> Option<String> {
 }
 
 fn query_role_state(role: &str) -> String {
-    let output = Command::new(ROLE_STATE)
+    let role_state_path = role_state_script_path();
+    let output = Command::new(&role_state_path)
         .args(["query", role])
         .output();
 
@@ -119,7 +123,7 @@ mod tests {
             tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test", "skill": "demo"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

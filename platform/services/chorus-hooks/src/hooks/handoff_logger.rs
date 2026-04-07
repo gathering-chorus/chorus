@@ -1,3 +1,4 @@
+use crate::shared::state_paths::chorus_root;
 use crate::state::{append_log, chorus_log, AppState};
 use crate::types::{HookInput, HookResponse, Role};
 use chrono::Utc;
@@ -30,7 +31,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             };
 
             if let Some(role) = pod_role {
-                let sync_script = state.config.repo_root.join("chorus/platform/scripts/pod-state-sync.sh");
+                let sync_script = state.config.repo_root.join("platform/scripts/pod-state-sync.sh");
                 if sync_script.exists() {
                     let role = role.to_string();
                     let fp = file_path.clone();
@@ -82,7 +83,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     // Check for duplicate (workflow-ts already logged)
-    let log_path = PathBuf::from("/Users/jeffbridwell/CascadeProjects/chorus/proving/logs/handoffs.log");
+    let log_path = PathBuf::from(format!("{}/proving/logs/handoffs.log", chorus_root()));
     if log_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&log_path) {
             if content.contains(filename) {
@@ -159,7 +160,7 @@ mod tests {
             tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test.txt", "new_string": "test", "old_string": "old"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

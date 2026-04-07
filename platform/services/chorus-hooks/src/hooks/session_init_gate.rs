@@ -1,3 +1,4 @@
+use crate::shared::state_paths::chorus_root;
 use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 use std::path::Path;
@@ -105,7 +106,8 @@ fn run_gate_smoke(role: &str, state: &AppState) -> bool {
     // Synthetic Edit on a cross-domain code file — both gates should DENY:
     // - log_first_gate: no log evidence in session
     // - memory_gate: no search/synthesis in session
-    let smoke_cwd = format!("/Users/jeffbridwell/CascadeProjects/chorus/{}",
+    let smoke_cwd = format!("{}/{}",
+        chorus_root(),
         match role { "wren" => "product-manager", "silas" => "architect", _ => "engineer" });
     let smoke_session_id = format!("smoke-{}", role);
 
@@ -123,7 +125,7 @@ fn run_gate_smoke(role: &str, state: &AppState) -> bool {
     let smoke_input = HookInput {
         tool_name: Some("Edit".to_string()),
         tool_input: Some(serde_json::json!({
-            "file_path": "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/smoke-test.rs",
+            "file_path": format!("{}/platform/services/smoke-test.rs", chorus_root()),
             "old_string": "x",
             "new_string": "y"
         })),
@@ -194,7 +196,7 @@ mod tests {
             tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some(format!("/Users/jeffbridwell/CascadeProjects/{}", role_dir)),
+            cwd: Some(format!("{}/{}", chorus_root(), role_dir)),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -291,7 +293,7 @@ mod tests {
             tool_input: Some(json!({"file_path": "/tmp/test.rs", "old_string": "x", "new_string": "y"})),
             tool_response: None,
             session_id: Some("test-boot".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/chorus/product-manager".to_string()),
+            cwd: Some(format!("{}/product-manager", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("wren".to_string()),
         };

@@ -17,6 +17,7 @@ use std::thread;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use crate::shared::state_paths::chorus_root;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -243,7 +244,7 @@ fn find_script_dir() -> PathBuf {
     candidates.push(PathBuf::from(&home).join(".chorus/scripts"));
 
     // Hardcoded fallback
-    candidates.push(PathBuf::from("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts"));
+    candidates.push(PathBuf::from(format!("{}/platform/scripts", chorus_root())));
 
     for c in &candidates {
         if c.join("cards").exists() {

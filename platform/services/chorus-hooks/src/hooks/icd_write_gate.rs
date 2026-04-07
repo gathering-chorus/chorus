@@ -124,6 +124,7 @@ mod tests {
     use super::*;
     use crate::state::AppState;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
     use serde_json::json;
 
     #[tokio::test]
@@ -133,7 +134,7 @@ mod tests {
             tool_name: Some("Write".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.ts", "content": "const x = 1;"})),
             tool_response: None, session_id: Some("t".into()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
         };
@@ -147,7 +148,7 @@ mod tests {
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.ttl"})),
             tool_response: None, session_id: Some("t".into()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
         };

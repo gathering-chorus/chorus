@@ -6,6 +6,7 @@
 //! Emits interaction.pattern.detected on pattern SHIFT only — not every message.
 //! All roles emit, not just Wren. Card-type mapping is fallback, not primary.
 
+use crate::shared::state_paths::chorus_root;
 use crate::state::AppState;
 use crate::types::{HookInput, HookResponse};
 use tracing::info;
@@ -135,7 +136,8 @@ pub async fn check(input: &HookInput, state: &AppState) -> Option<String> {
     let detected_clone = detected_str.clone();
     let previous_clone = previous.clone();
     tokio::task::spawn_blocking(move || {
-        let _ = std::process::Command::new("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log")
+        let chorus_log_script = format!("{}/platform/scripts/chorus-log", chorus_root());
+        let _ = std::process::Command::new(&chorus_log_script)
             .args([
                 "interaction.pattern.detected",
                 &role_clone,

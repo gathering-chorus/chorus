@@ -5,8 +5,10 @@
 # Alerts on failure so Jeff knows the channel is dead before he discovers it.
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 CLEARING="http://localhost:3470"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
+CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 PROBE_LOG="/Users/jeffbridwell/Library/Logs/Chorus/clearing-probe.log"
 MARKER="probe-$(date +%s)-$$"
 MAX_WAIT=5

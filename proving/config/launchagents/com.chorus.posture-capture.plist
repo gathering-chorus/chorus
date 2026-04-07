@@ -10,7 +10,7 @@
   <array>
     <string>open</string>
     <string>-a</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/apps/PostureCapture.app</string>
+    <string>/Users/jeffbridwell/CascadeProjects/platform/apps/PostureCapture.app</string>
     <string>--args</string>
     <string>--background</string>
   </array>

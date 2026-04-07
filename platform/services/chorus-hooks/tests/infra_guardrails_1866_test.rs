@@ -9,7 +9,7 @@
 use std::process::{Command, Stdio};
 use std::io::Write;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim";
 
 fn run_hook(tool_name: &str, command: &str) -> String {
     let input = serde_json::json!({

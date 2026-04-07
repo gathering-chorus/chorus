@@ -22,7 +22,7 @@ Generate self-contained shareable artifacts from any page in the system. Everyth
 
 ```bash
 # Run the share script
-bash ~/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/share.sh "<url>"
+bash ~/Users/jeffbridwell/CascadeProjects/platform/scripts/share.sh "<url>"
 ```
 
 The script handles URL expansion, filename extraction, and both exports in one call.

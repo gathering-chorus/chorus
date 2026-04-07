@@ -3,7 +3,7 @@
 # AC: targeted delivery (not broadcast to focused window), all 3 roles, intra-team + alert
 set -euo pipefail
 
-INJECT="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-inject"
+INJECT="/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-inject"
 PASS=0
 FAIL=0
 
@@ -61,7 +61,7 @@ result=$("$INJECT" "nonexistent" "test" 2>&1) && {
 }
 
 # Test 6: Nudge command delivers (end-to-end)
-NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+NUDGE="/Users/jeffbridwell/CascadeProjects/platform/scripts/nudge"
 result=$("$NUDGE" silas "[regression-test] nudge e2e" --force 2>&1) && {
   if echo "$result" | grep -q "DELIVERED"; then
     echo "PASS: nudge e2e delivered"

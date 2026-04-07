@@ -94,6 +94,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
 mod tests {
     use super::*;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
     use serde_json::json;
 
     fn make_input(tool: &str) -> HookInput {
@@ -102,7 +103,7 @@ mod tests {
             tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test", "skill": "demo"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

@@ -79,6 +79,7 @@ pub fn check(input: &HookInput) -> HookResponse {
 mod tests {
     use super::*;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
 
     fn make_input(prompt: &str) -> HookInput {
         HookInput {
@@ -86,7 +87,7 @@ mod tests {
             tool_input: None,
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/chorus/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: Some(prompt.to_string()),
             stop_hook_active: None,
             hook_type: None,

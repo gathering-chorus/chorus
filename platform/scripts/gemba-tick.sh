@@ -4,6 +4,8 @@
 # Usage: gemba-tick.sh <role> [start_epoch]
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 ROLE="${1:?Usage: gemba-tick.sh <role> [start_epoch]}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 START_EPOCH="${2:-0}"
@@ -135,13 +137,13 @@ echo ""
 echo "## Recent Files Changed"
 ROLE_DIR=""
 case "$ROLE" in
-  silas) ROLE_DIR="/Users/jeffbridwell/CascadeProjects/chorus/architect" ;;
+  silas) ROLE_DIR="${CHORUS_ROOT}/platform/roles/silas" ;;
   kade)  ROLE_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site" ;;
-  wren)  ROLE_DIR="/Users/jeffbridwell/CascadeProjects/chorus/product-manager" ;;
+  wren)  ROLE_DIR="${CHORUS_ROOT}/platform/roles/product-manager" ;;
 esac
 
 # Check git for uncommitted changes in role's working dirs
-for DIR in "$ROLE_DIR" /Users/jeffbridwell/CascadeProjects/chorus; do
+for DIR in "$ROLE_DIR" ${CHORUS_ROOT}/chorus; do
   if [ -n "$DIR" ] && [ -d "$DIR/.git" ]; then
     CHANGES=$(cd "$DIR" && git diff --name-only --diff-filter=M 2>/dev/null | head -5)
     if [ -n "$CHANGES" ]; then

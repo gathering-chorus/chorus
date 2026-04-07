@@ -22,7 +22,7 @@ If no card ID given, check the role's Next cards and suggest the highest-priorit
 ## Step 1: Validate card exists and is pullable
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view ${CARD_ID}
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts view ${CARD_ID}
 ```
 
 - Card must exist and be in **Next** or **Later** status
@@ -57,7 +57,7 @@ From the `board-ts view` output in Step 1, check:
 ## Step 3: WIP limit check (DEC-051)
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts mine <role> | grep -c WIP
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts mine <role> | grep -c WIP
 ```
 
 - WIP limit is 3 total, 1 per role is healthy
@@ -68,7 +68,7 @@ bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts mine <
 ## Step 4: Move to WIP
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts move ${CARD_ID} WIP
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts move ${CARD_ID} WIP
 ```
 
 This automatically generates a blast radius comment on the card (DEC-072) via the board SDK — no manual analysis needed.
@@ -77,14 +77,14 @@ This automatically generates a blast radius comment on the card (DEC-072) via th
 
 ```bash
 # Extract card type from board-ts view output (type:fix, type:new, etc.)
-CARD_TYPE=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view ${CARD_ID} | grep -oE 'type:\w+' | head -1 | sed 's/type://')
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <role> building card=${CARD_ID} type=${CARD_TYPE:-unknown}
+CARD_TYPE=$(bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts view ${CARD_ID} | grep -oE 'type:\w+' | head -1 | sed 's/type://')
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/role-state <role> building card=${CARD_ID} type=${CARD_TYPE:-unknown}
 ```
 
 ## Step 6: Emit signal
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log card.pulled <role> card=${CARD_ID}
+/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log card.pulled <role> card=${CARD_ID}
 ```
 
 ## Step 7: Brief (if cross-role)

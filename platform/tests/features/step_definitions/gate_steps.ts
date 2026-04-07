@@ -4,9 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import assert from 'assert';
 
-const HOOK_SHIM = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim';
+const HOOK_SHIM = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim';
 const STATE_DIR = '/tmp/claude-team-scan';
-const BRIEFS_DIR = '/Users/jeffbridwell/CascadeProjects/chorus/product-manager/briefs';
+const BRIEFS_DIR = '/Users/jeffbridwell/CascadeProjects/platform/roles/product-manager/briefs';
 const HOME = process.env.HOME || '/Users/jeffbridwell';
 const TEST_CARD_ID = '99998';
 
@@ -35,9 +35,9 @@ Before(function () {
     sessionLines: [],
     hookResult: null,
     stateBackups: new Map(),
-    targetFile: '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/smoke-test.rs',
+    targetFile: '/Users/jeffbridwell/CascadeProjects/platform/services/smoke-test.rs',
     targetTool: 'Edit',
-    cwd: '/Users/jeffbridwell/CascadeProjects/chorus/engineer',
+    cwd: '/Users/jeffbridwell/CascadeProjects/platform/roles/engineer',
   };
 
   // Backup AND clear ALL role state files for deterministic tests.
@@ -347,7 +347,7 @@ Given('they have not edited any test files', function () {
 Given('they have edited a test file', function () {
   // Session shows a test file was edited before production code
   ctx.sessionLines.push(
-    '{"type":"tool_use","name":"Edit","input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/platform/tests/features/gates/tdd.feature","old_string":"x","new_string":"y"}}',
+    '{"type":"tool_use","name":"Edit","input":{"file_path":"/Users/jeffbridwell/CascadeProjects/platform/tests/features/gates/tdd.feature","old_string":"x","new_string":"y"}}',
     '{"type":"tool_result","content":"File updated successfully"}'
   );
   writeSessionJsonl(ctx.sessionId, ctx.cwd, ctx.sessionLines);
@@ -355,7 +355,7 @@ Given('they have edited a test file', function () {
 
 When('they try to edit a test file', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/tests/features/gates/tdd.feature';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/platform/tests/features/gates/tdd.feature';
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -396,7 +396,7 @@ Given('the previous tool was {string} with exit code {int}', function (cmd: stri
 
 When('they try to edit a code file', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/smoke-test.rs';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/platform/services/smoke-test.rs';
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -406,7 +406,7 @@ When('they try to edit a code file', function () {
 
 When('they try to edit a code file in their own domain', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/engineer/src/app.ts';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/platform/roles/engineer/src/app.ts';
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -418,7 +418,7 @@ When('they try to edit a cross-domain code file', function () {
   ctx.targetTool = 'Edit';
   // Cross-domain for kade (engineer): must NOT contain /engineer/ or /src/
   // (memory_gate treats both as Kade's own domain)
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/product-manager/scripts/gate-check.ts';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/platform/roles/product-manager/scripts/gate-check.ts';
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -428,7 +428,7 @@ When('they try to edit a cross-domain code file', function () {
 
 When('they try to edit a file in their own domain', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/engineer/src/app.ts';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/platform/roles/engineer/src/app.ts';
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -438,7 +438,7 @@ When('they try to edit a file in their own domain', function () {
 
 When('they try to edit a markdown file', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/README.md';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/platform/README.md';
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -469,7 +469,7 @@ When('they try to run acp on the card', function () {
 
 When('they try to read a code file', function () {
   ctx.targetTool = 'Read';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/smoke-test.rs';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/platform/services/smoke-test.rs';
   ctx.hookResult = callHook('Read', {
     file_path: ctx.targetFile,
   }, ctx.sessionId, ctx.cwd, ctx.role);

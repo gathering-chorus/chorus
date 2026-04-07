@@ -294,7 +294,7 @@ echo ""
 echo "Summary: $PASS pass, $WARN warn, $FAIL fail"
 
 # Emit spine event
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
+CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log"
 if [ -x "$CHORUS_LOG" ]; then
   local_status="ok"
   [ "$WARN" -gt 0 ] && local_status="warn"

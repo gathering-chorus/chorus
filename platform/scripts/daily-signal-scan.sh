@@ -4,10 +4,12 @@
 # trust verification, signal-to-noise, doc freshness, backlog coherence,
 # sequence health, and golfball detection.
 set -euo pipefail
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 export PATH="/opt/homebrew/bin:/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 REPO="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
-CHORUS="/Users/jeffbridwell/CascadeProjects/chorus"
+CHORUS="${CHORUS_ROOT}/chorus"
 CARDS="$CHORUS/platform/scripts/cards"
 CHORUS_LOG="$CHORUS/platform/scripts/chorus-log"
 DECISIONS_MD="$CHORUS/product-manager/decisions.md"

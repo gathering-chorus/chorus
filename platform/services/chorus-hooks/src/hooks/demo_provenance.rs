@@ -4,13 +4,14 @@
 //! Auto-generates a demo brief to Wren's inbox so the builder
 //! can't skip the paper trail.
 
+use crate::shared::state_paths::chorus_root;
 use crate::types::{HookInput, HookResponse};
 use std::process::Command;
 use tracing::info;
 
-const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards";
-const BRIEFS_DIR: &str = "/Users/jeffbridwell/CascadeProjects/chorus/product-manager/briefs";
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log";
+fn board_ts_path() -> String { format!("{}/platform/scripts/cards", chorus_root()) }
+fn briefs_dir_path() -> String { format!("{}/product-manager/briefs", chorus_root()) }
+fn chorus_log_script_path() -> String { format!("{}/platform/scripts/chorus-log", chorus_root()) }
 
 /// PostToolUse: after /demo skill completes, generate the demo brief
 pub async fn check(input: &HookInput) -> HookResponse {
@@ -32,7 +33,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
 
     // Check if brief already exists (builder may have written one manually)
     let date = chrono::Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%d").to_string();
-    let brief_path = format!("{}/{}-demo-{}.md", BRIEFS_DIR, date, card_id);
+    let brief_path = format!("{}/{}-demo-{}.md", briefs_dir_path(), date, card_id);
     if std::path::Path::new(&brief_path).exists() {
         info!(card = %card_id, "demo-provenance: brief already exists, skipping");
         return HookResponse::allow();
@@ -59,7 +60,8 @@ pub async fn check(input: &HookInput) -> HookResponse {
         info!(card = %card_id, path = %brief_path, "demo-provenance: brief generated");
 
         // Emit spine event
-        let _ = Command::new(CHORUS_LOG)
+        let log_script = chorus_log_script_path();
+        let _ = Command::new(&log_script)
             .args(["card.demo.completed", role.as_str(), &format!("card={}", card_id)])
             .output();
 
@@ -80,8 +82,9 @@ fn extract_card_id(args: &str) -> String {
 }
 
 fn get_card_info(card_id: &str) -> (String, String) {
+    let board_script = board_ts_path();
     let output = Command::new("bash")
-        .args([BOARD_TS, "view", card_id])
+        .args([board_script.as_str(), "view", card_id])
         .output();
 
     match output {
@@ -114,7 +117,7 @@ mod tests {
             tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test", "skill": "demo"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

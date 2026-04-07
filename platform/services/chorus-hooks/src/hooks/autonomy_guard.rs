@@ -466,6 +466,7 @@ fn lookup_preference(pref_id: &str, prefs_path: &std::path::Path) -> Option<(Str
 mod tests {
     use super::*;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
     use serde_json::json;
 
     fn ask_question(question: &str) -> HookInput {
@@ -474,7 +475,7 @@ mod tests {
             tool_input: Some(json!({"question": question})),
             tool_response: None,
             session_id: Some("test-session".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -488,7 +489,7 @@ mod tests {
             tool_input: None,
             tool_response: None,
             session_id: Some("test-session".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: Some(text.to_string()),
             stop_hook_active: None,
             hook_type: None,
@@ -517,7 +518,7 @@ mod tests {
             tool_input: None,
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: Some(true),
             hook_type: None,
@@ -641,7 +642,7 @@ mod tests {
             tool_input: Some(json!({"command": "ls"})),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

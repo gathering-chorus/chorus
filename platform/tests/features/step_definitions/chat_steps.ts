@@ -3,7 +3,7 @@ import { execSync } from 'child_process';
 import * as assert from 'assert';
 import * as fs from 'fs';
 
-const CHAT_SH = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh';
+const CHAT_SH = '/Users/jeffbridwell/CascadeProjects/platform/scripts/chat.sh';
 
 let chatId = '';
 let lastOutput = '';

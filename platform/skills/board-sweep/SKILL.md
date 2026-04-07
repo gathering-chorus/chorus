@@ -19,7 +19,7 @@ Scan the board for hygiene issues. Fix what you can, report what you find. No re
 ### Step 1: Pull the full board
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts list 2>&1
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts list 2>&1
 ```
 
 ### Step 2: Check for issues
@@ -69,7 +69,7 @@ Then `/ot flow` to show the result.
 ### Step 4: Emit spine event
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log board.sweep.completed wren issues=<count>
+/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log board.sweep.completed wren issues=<count>
 ```
 
 ## Rules

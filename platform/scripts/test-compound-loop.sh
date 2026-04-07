@@ -4,6 +4,8 @@
 
 set -uo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 PASS=0
 FAIL=0
 HOOKS_LOG="$HOME/Library/Logs/Chorus/chorus-hooks.stdout.log"
@@ -41,7 +43,7 @@ assert_contains "UserPromptSubmit registered" "UserPromptSubmit" "$output"
 
 # --- Test 3: Hook shim binary exists ---
 echo "Test 3: Hook shim binary exists"
-SHIM="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 if [ -x "$SHIM" ]; then
   echo "  PASS: shim binary exists and is executable"
   ((PASS++))

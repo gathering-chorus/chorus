@@ -157,6 +157,7 @@ async fn log_scrub(decision: &str, tier: &str, pattern: &str, path: &str) {
 mod tests {
     use super::*;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
     use serde_json::json;
 
     fn make_write_input(file_path: &str, content: &str) -> HookInput {
@@ -168,7 +169,7 @@ mod tests {
             })),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -186,7 +187,7 @@ mod tests {
             })),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

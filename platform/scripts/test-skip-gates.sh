@@ -1,6 +1,8 @@
 #!/bin/bash
-SHIM="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
-CARDS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+CARDS="${CHORUS_ROOT}/platform/scripts/cards"
 PASS=0; FAIL=0
 
 p() { PASS=$((PASS+1)); echo "✅ $*"; }

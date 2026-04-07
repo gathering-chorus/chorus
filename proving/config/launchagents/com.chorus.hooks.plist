@@ -6,7 +6,7 @@
     <string>com.chorus.hooks</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hooks</string>
+        <string>/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hooks</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

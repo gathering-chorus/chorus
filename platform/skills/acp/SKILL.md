@@ -32,13 +32,13 @@ If **Jeff or Wren** is running /acp, they are the accepting authority — procee
 ## Step 1: Accept the card
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts done ${CARD_ID}
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts done ${CARD_ID}
 ```
 
 ## Step 2: Emit spine event
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log card.accepted <your-role> card=${CARD_ID}
+/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log card.accepted <your-role> card=${CARD_ID}
 ```
 
 ## Step 2.5: State file sync (if Wren)
@@ -53,7 +53,7 @@ Stage and commit all pending changes in the chorus repo. Use `git-queue.sh` for 
 cd /Users/jeffbridwell/CascadeProjects/chorus && DEPLOY_ROLE=<your-role> bash platform/scripts/git-queue.sh commit <your-dirs>/ -- -m "<your-role>: acp #${CARD_ID} — <short description>"
 ```
 
-Where `<your-dirs>` is your role's directory plus any shared files you changed (e.g., `chorus/architect/ chorus/platform/`).
+Where `<your-dirs>` is your role's directory plus any shared files you changed (e.g., `chorus/architect/ platform/`).
 
 ## Step 4: Push (race-safe)
 

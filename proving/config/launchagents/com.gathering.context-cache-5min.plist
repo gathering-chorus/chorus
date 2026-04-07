@@ -9,7 +9,7 @@
         <string>/bin/bash</string>
         <string>-c</string>
         <string>
-SCRIPT=/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-5min.sh
+SCRIPT=/Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-5min.sh
 for role in wren silas kade; do "$SCRIPT" "$role" 2>/dev/null; done
         </string>
     </array>

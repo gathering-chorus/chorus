@@ -9,7 +9,7 @@ use serde_json::json;
 // without the full hook server. Test via the shim binary instead.
 use std::process::Command;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim";
 
 /// Helper: simulate a PreToolUse hook check via the shim
 fn hook_check(tool: &str, input: serde_json::Value) -> String {

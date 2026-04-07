@@ -3,6 +3,7 @@
 //! Checks for demo spine event or demo brief in product-manager/briefs/.
 //! Jeff's direction: "block done without demo evidence."
 
+use crate::shared::state_paths::chorus_root;
 use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 
@@ -55,8 +56,8 @@ fn has_demo_evidence(input: &HookInput, card_id: &str, state: &AppState) -> bool
     // Check 1: Demo brief exists in product-manager/briefs/
     let today = chrono_today();
     let brief_pattern = format!("demo-{}", card_id);
-    let briefs_dir = "/Users/jeffbridwell/CascadeProjects/chorus/product-manager/briefs";
-    if let Ok(entries) = std::fs::read_dir(briefs_dir) {
+    let briefs_dir = format!("{}/product-manager/briefs", chorus_root());
+    if let Ok(entries) = std::fs::read_dir(&briefs_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
             if name.contains(&brief_pattern) {
@@ -143,7 +144,7 @@ mod tests {
             tool_input: Some(serde_json::json!({ key: val })),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/chorus/engineer".to_string()),
+            cwd: Some(format!("{}/engineer", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

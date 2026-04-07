@@ -19,14 +19,14 @@ Watch a role work in real time. Sports commentary, not status reports.
 ### Step 1: Run gemba-start.sh (< 5 seconds)
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gemba-start.sh ${ROLE}
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/gemba-start.sh ${ROLE}
 ```
 
 Read the output. Print your read — 2-3 sentences: what the role is doing, how it's going. That's it.
 
 Declare state:
 ```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <your-role> observing gemba=${ROLE}
+/Users/jeffbridwell/CascadeProjects/platform/scripts/role-state <your-role> observing gemba=${ROLE}
 ```
 
 ### Step 2: Start the cron loop

@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cruft-scan.sh</string>
+        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/cruft-scan.sh</string>
     </array>
     <key>StartInterval</key>
     <integer>259200</integer>

@@ -6,7 +6,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string><string>-c</string>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-daily.sh silas; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-daily.sh kade; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-daily.sh wren</string>
+        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-daily.sh silas; /Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-daily.sh kade; /Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-daily.sh wren</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>

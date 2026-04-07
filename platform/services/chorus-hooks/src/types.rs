@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::shared::state_paths::chorus_root;
 
 /// Role detection from working directory
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,7 +214,7 @@ pub fn card_type_for_role(role: &str) -> String {
 
     // Fallback: query board for card labels via cards CLI
     let output = std::process::Command::new("bash")
-        .args(["-lc", &format!("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view {}", card_id)])
+        .args(["-lc", &format!("{}/platform/scripts/cards view {}", chorus_root(), card_id)])
         .output();
 
     if let Ok(out) = output {

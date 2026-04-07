@@ -11,7 +11,9 @@
 set -euo pipefail
 
 # --- Configuration ---
-REPO_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+REPO_ROOT="${CHORUS_ROOT}/chorus"
 DECISIONS_MD="$REPO_ROOT/product-manager/decisions.md"
 HOOKS_DIR="$REPO_ROOT/platform/services/chorus-hooks/src/hooks"
 PULSE_LOG="$HOME/Library/Logs/Gathering/hooks.log"

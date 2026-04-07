@@ -6,7 +6,9 @@
 
 set -uo pipefail
 
-SHIM="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 SOCKET="/tmp/chorus-hooks.sock"
 PASS=0
 FAIL=0
@@ -67,7 +69,7 @@ fi
 echo ""
 echo "Test 3: PreToolUse blocks docker stop"
 if [ -S "$SOCKET" ]; then
-  response=$(echo '{"tool_name":"Bash","tool_input":{"command":"docker stop mycontainer"},"cwd":"/Users/jeffbridwell/CascadeProjects/engineer"}' | \
+  response=$(echo '{"tool_name":"Bash","tool_input":{"command":"docker stop mycontainer"},"cwd":"${CHORUS_ROOT}/engineer"}' | \
     curl -s --unix-socket "$SOCKET" -X POST \
       -H "Content-Type: application/json" \
       -d @- http://localhost/pre-tool-use 2>&1) || true

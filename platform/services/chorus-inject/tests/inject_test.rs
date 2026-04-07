@@ -10,15 +10,15 @@
 
 use std::process::Command;
 
-const INJECT_BIN: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-inject";
-const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge";
+const INJECT_BIN: &str = "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-inject";
+const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/platform/scripts/nudge";
 
 // --- AC1: do script, not keystroke ---
 
 #[test]
 fn inject_source_uses_do_script_not_keystroke() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/src/main.rs"
+        "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-inject/src/main.rs"
     ).expect("can't read main.rs");
 
     assert!(

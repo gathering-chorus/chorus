@@ -6,7 +6,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string><string>-c</string>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-hourly.sh silas; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-hourly.sh kade; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-hourly.sh wren</string>
+        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-hourly.sh silas; /Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-hourly.sh kade; /Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-hourly.sh wren</string>
     </array>
     <key>StartInterval</key><integer>3600</integer>
     <key>RunAtLoad</key><true/>

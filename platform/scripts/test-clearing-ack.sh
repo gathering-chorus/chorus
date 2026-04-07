@@ -4,10 +4,12 @@
 
 set -uo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 PASS=0
 FAIL=0
-SERVER="/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/src/server.ts"
-CLIENT="/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/public/index.html"
+SERVER="${CHORUS_ROOT}/directing/clearing/src/server.ts"
+CLIENT="${CHORUS_ROOT}/directing/clearing/public/index.html"
 
 assert_contains() {
   local label="$1" needle="$2" file="$3"

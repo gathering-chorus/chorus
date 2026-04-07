@@ -1,3 +1,4 @@
+use crate::shared::state_paths::chorus_root;
 use crate::state::chorus_log;
 use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookResponse};
 use regex::Regex;
@@ -55,7 +56,7 @@ static TERRAFORM_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bterraform\s+(apply|destroy)\b").unwrap()
 });
 
-const TEAM_REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects";
+fn team_repo_root() -> &'static str { chorus_root() }
 
 /// Blocks dangerous infra commands for all roles (#1714)
 /// Docker is retired for app+Fuseki (now native LaunchAgents).
@@ -167,8 +168,8 @@ pub async fn check(input: &HookInput) -> HookResponse {
             log_guardrail("allow", "git-in-heredoc").await;
         } else {
             // Check if we're in the team repo using actual CWD (#2078)
-            let in_team_repo = cwd.starts_with(TEAM_REPO_ROOT)
-                || cmd.contains(TEAM_REPO_ROOT);
+            let in_team_repo = cwd.starts_with(team_repo_root())
+                || cmd.contains(team_repo_root());
 
             if in_team_repo {
                 if GIT_COMMIT_RE.is_match(&cmd) {
@@ -234,7 +235,7 @@ mod tests {
             tool_input: Some(json!({"command": cmd})),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/engineer".to_string()),
+            cwd: Some(format!("{}/engineer", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -248,7 +249,7 @@ mod tests {
             tool_input: Some(json!({"command": cmd})),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -560,7 +561,7 @@ mod tests {
             tool_input: Some(json!({"file_path": "/tmp/test"})),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/engineer".to_string()),
+            cwd: Some(format!("{}/engineer", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

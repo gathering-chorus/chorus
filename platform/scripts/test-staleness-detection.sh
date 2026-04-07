@@ -1,6 +1,8 @@
 #!/bin/bash
 # test-staleness-detection.sh — Tests for team-scan staleness detection (#2031)
 set -uo pipefail
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 PASS=0
 FAIL=0
 
@@ -9,8 +11,8 @@ echo ""
 
 # Test 1: Fresh state does NOT show STALE
 echo "Test 1: Fresh state has no STALE flag"
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state silas building card=2031 2>/dev/null
-rm -f /tmp/claude-team-scan/silas-last-scan; SCAN=$(DEPLOY_ROLE=silas bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/werk-init.sh --scan silas 2>&1 || true)
+${CHORUS_ROOT}/platform/scripts/role-state silas building card=2031 2>/dev/null
+rm -f /tmp/claude-team-scan/silas-last-scan; SCAN=$(DEPLOY_ROLE=silas bash ${CHORUS_ROOT}/platform/scripts/werk-init.sh --scan silas 2>&1 || true)
 if echo "$SCAN" | grep -q "STALE"; then
   echo "  FAIL: fresh state shows STALE"
   ((FAIL++))
@@ -32,7 +34,7 @@ d = json.load(open('$STATE_FILE'))
 d['ts'] = int(time.time()) - 3600
 json.dump(d, open('$STATE_FILE','w'))
 " 2>/dev/null
-  rm -f /tmp/claude-team-scan/silas-last-scan; SCAN=$(DEPLOY_ROLE=silas bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/werk-init.sh --scan silas 2>&1 || true)
+  rm -f /tmp/claude-team-scan/silas-last-scan; SCAN=$(DEPLOY_ROLE=silas bash ${CHORUS_ROOT}/platform/scripts/werk-init.sh --scan silas 2>&1 || true)
   if echo "$SCAN" | grep -q "STALE"; then
     echo "  PASS: stale state shows STALE"
     ((PASS++))
@@ -57,7 +59,7 @@ d = json.load(open('$STATE_FILE'))
 d['ts'] = int(time.time()) - 3600
 json.dump(d, open('$STATE_FILE','w'))
 " 2>/dev/null
-  rm -f /tmp/claude-team-scan/silas-last-scan; SCAN=$(DEPLOY_ROLE=silas bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/werk-init.sh --scan silas 2>&1 || true)
+  rm -f /tmp/claude-team-scan/silas-last-scan; SCAN=$(DEPLOY_ROLE=silas bash ${CHORUS_ROOT}/platform/scripts/werk-init.sh --scan silas 2>&1 || true)
   if echo "$SCAN" | grep "kade" | grep -q "STALE"; then
     echo "  PASS: STALE on kade's line"
     ((PASS++))

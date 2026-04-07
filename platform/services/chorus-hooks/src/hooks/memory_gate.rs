@@ -371,6 +371,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
 mod tests {
     use super::*;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
 
     fn make_input(tool: &str, file_path: &str) -> HookInput {
         HookInput {
@@ -380,7 +381,7 @@ mod tests {
             })),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/chorus/engineer".to_string()),
+            cwd: Some(format!("{}/engineer", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -437,7 +438,7 @@ mod tests {
 
     #[test]
     fn allows_own_domain() {
-        let r = check(&make_input("Edit", "/Users/jeffbridwell/CascadeProjects/chorus/engineer/src/app.ts"), &state());
+        let r = check(&make_input("Edit", &format!("{}/engineer/src/app.ts", chorus_root())), &state());
         assert!(r.exit_code == 0);
     }
 
@@ -552,7 +553,7 @@ mod tests {
     fn existing_file_has_git_history() {
         // memory_gate.rs itself has commits
         let has = file_has_git_history(
-            "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/memory_gate.rs"
+            &format!("{}/platform/services/chorus-hooks/src/hooks/memory_gate.rs", chorus_root())
         );
         assert!(has, "memory_gate.rs should have git history");
     }

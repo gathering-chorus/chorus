@@ -3,6 +3,8 @@
 # Tests: spine events emitted, Bridge POST retry, ops.health.checked event, alert rule
 set -uo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PASS=0
 FAIL=0
@@ -102,7 +104,7 @@ assert_contains "status param in health event" "status=" "$OPS_SCRIPT"
 # --- AC4: Alert rule — daily review didn't fire by 6:30am ---
 echo ""
 echo "Test 9: alert rule file exists with correct content"
-ALERT_FILE="/Users/jeffbridwell/CascadeProjects/chorus/alerting/daily-review-missing.yml"
+ALERT_FILE="${CHORUS_ROOT}/platform/alerting/daily-review-missing.yml"
 if [ -f "$ALERT_FILE" ]; then
   ALERT_CONTENT=$(cat "$ALERT_FILE")
   assert_contains "alert references daily.review.completed" "daily.review.completed" "$ALERT_CONTENT"

@@ -20,7 +20,7 @@ fn trace_id() -> String {
 
 const INBOX_DIR: &str = "/tmp/voice-inbox";
 const EXCHANGE_DIR: &str = "/tmp/nudge-exchanges";
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log";
+fn chorus_log_path() -> String { format!("{}/platform/scripts/chorus-log", crate::shared::state_paths::chorus_root()) }
 
 /// Role directory names for Terminal tab matching
 fn role_dir(role: &str) -> Option<&'static str> {
@@ -130,8 +130,9 @@ fn needs_reply(msg: &str) -> bool {
 
 /// Emit spine event via chorus-log
 fn chorus_log(event: &str, role: &str, extra: &str) {
-    if Path::new(CHORUS_LOG).exists() {
-        let _ = Command::new(CHORUS_LOG)
+    let log_script = chorus_log_path();
+    if Path::new(&log_script).exists() {
+        let _ = Command::new(&log_script)
             .args([event, role, extra])
             .output();
     }

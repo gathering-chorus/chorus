@@ -14,6 +14,8 @@
 
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 BASE_URL="${GATHERING_URL:-http://localhost:3000}"
 COOKIE_JAR="/tmp/smoke-check-cookie.txt"
 

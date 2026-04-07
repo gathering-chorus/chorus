@@ -5,7 +5,9 @@
 
 set -euo pipefail
 
-CANONICAL="/Users/jeffbridwell/CascadeProjects/chorus/proving/config/launchagents"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
+CANONICAL="${CHORUS_ROOT}/proving/config/launchagents"
 TARGET="$HOME/Library/LaunchAgents"
 
 if [ ! -d "$CANONICAL" ]; then

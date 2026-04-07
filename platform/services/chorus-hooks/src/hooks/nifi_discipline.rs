@@ -84,7 +84,7 @@ pub async fn check(input: &HookInput, _state: &AppState) -> Option<String> {
 
     // Check if card description mentions NiFi — query cards
     let output = std::process::Command::new("bash")
-        .args(&["/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards", "view", card_id])
+        .args(&[&format!("{}/platform/scripts/cards", crate::shared::state_paths::chorus_root()), "view", card_id])
         .output()
         .ok()?;
     let desc = String::from_utf8_lossy(&output.stdout);
@@ -128,6 +128,7 @@ mod tests {
     use super::*;
     use crate::state::AppState;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
     use serde_json::json;
 
     #[tokio::test]
@@ -137,7 +138,7 @@ mod tests {
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test"})),
             tool_response: None, session_id: Some("t".into()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
         };
@@ -151,7 +152,7 @@ mod tests {
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": "echo hello"})),
             tool_response: None, session_id: Some("t".into()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".into()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
         };

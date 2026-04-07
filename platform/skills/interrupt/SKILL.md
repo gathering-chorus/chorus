@@ -16,7 +16,7 @@ Stop what a role is doing and redirect. Esc cancels the current generation, then
 ### Step 1: Send Escape to cancel current generation
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <role> "\x1b" --force
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/nudge <role> "\x1b" --force
 ```
 
 This sends an Escape character via osascript to the target role's terminal, canceling whatever Claude is currently generating.
@@ -30,7 +30,7 @@ sleep 1
 ### Step 3: Send the redirect as a nudge
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <role> "<message>" --force
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/nudge <role> "<message>" --force
 ```
 
 The role's terminal is now idle (generation cancelled) and receives the new direction immediately.

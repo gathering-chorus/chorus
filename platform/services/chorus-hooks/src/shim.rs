@@ -261,7 +261,7 @@ fn drain_nudge_inbox() -> Option<String> {
     if content.trim().is_empty() { return None; }
     // Log consumption as spine event
     let msg_count = content.lines().filter(|l| !l.trim().is_empty()).count();
-    let _ = std::process::Command::new("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log")
+    let _ = std::process::Command::new(&shared::state_paths::chorus_log_script())
         .args(["role.nudge.consumed", &role, &format!("count={}", msg_count)])
         .output();
     // Post consumed nudges to Bridge so Jeff sees them land
@@ -325,9 +325,9 @@ fn is_ancestor(target_pid: u32) -> bool {
 /// CLAUDE.md generator — replaces claudemd-gen.sh (#1624)
 /// Bash eliminated; Python logic extracted to claudemd-gen.py, called directly.
 fn claudemd_gen_cmd() -> ExitCode {
-    let repo = "/Users/jeffbridwell/CascadeProjects";
-    let script = format!("{}/chorus/platform/scripts/claudemd-gen.py", repo);
-    let claudemd_dir = format!("{}/chorus/designing/claudemd", repo);
+    let repo = shared::state_paths::chorus_root();
+    let script = format!("{}/platform/scripts/claudemd-gen.py", repo);
+    let claudemd_dir = format!("{}/designing/claudemd", repo);
     let manifest = format!("{}/manifest.json", claudemd_dir);
 
     // Parse args — skip binary name and "claudemd-gen" subcommand
@@ -376,7 +376,7 @@ fn claudemd_gen_cmd() -> ExitCode {
 /// Generic Python dispatch — run a .py script with remaining args (#1624)
 /// Dispatch to TypeScript workflow engine (replaces workflow.py per DEC-100 / #1775)
 fn workflow_ts_cmd() -> ExitCode {
-    let cli_path = "/Users/jeffbridwell/CascadeProjects/chorus/platform/workflow-engine/dist/cli.js";
+    let cli_path = format!("{}/platform/workflow-engine/dist/cli.js", shared::state_paths::chorus_root());
     let all_args: Vec<String> = std::env::args().collect();
     // Skip binary name + "workflow" subcommand if present
     let skip = if all_args.len() > 1 && all_args[1] == "workflow" { 2 } else { 1 };
@@ -438,10 +438,10 @@ fn role_checkpoint_cmd(args: &[String]) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let repo = "/Users/jeffbridwell/CascadeProjects";
+    let repo = shared::state_paths::chorus_root();
     let role_dir = match role { "wren" => "product-manager", "silas" => "architect", "kade" => "engineer", _ => unreachable!() };
     let checkpoint = format!("/tmp/role-checkpoint-{}.json", role);
-    let board_ts = format!("{}/chorus/platform/scripts/cards", repo);
+    let board_ts = format!("{}/platform/scripts/cards", repo);
 
     match action {
         "write" => {

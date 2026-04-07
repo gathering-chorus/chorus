@@ -55,7 +55,7 @@ pub fn get_cwd(pid: u32) -> Option<String> {
 /// The inject binary has its own TCC Accessibility grant — rebuilding the shim
 /// never revokes it. Restores #2075 architecture after #2100 broke TCC.
 pub fn inject_by_tab_name(role: &str, text: &str) -> Result<(), String> {
-    let inject_bin = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-inject";
+    let inject_bin = format!("{}/platform/services/chorus-hooks/target/release/chorus-inject", crate::shared::state_paths::chorus_root());
 
     let output = Command::new(inject_bin)
         .args([role, text])

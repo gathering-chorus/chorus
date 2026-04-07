@@ -14,7 +14,7 @@ START_EPOCH=<second argument>
 ### Step 1: Run gemba-tick.sh
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gemba-tick.sh ${ROLE} ${START_EPOCH}
+bash /Users/jeffbridwell/CascadeProjects/platform/scripts/gemba-tick.sh ${ROLE} ${START_EPOCH}
 ```
 
 ### Step 2: Read the output and commentate

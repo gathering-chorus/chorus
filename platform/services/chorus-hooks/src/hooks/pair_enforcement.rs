@@ -3,11 +3,12 @@
 //! When /pair starts, ensure the target role also loads the /pair skill.
 //! A nudge summary is not sufficient — both sides need the full protocol.
 
+use crate::shared::state_paths::chorus_root;
 use crate::types::{HookInput, HookResponse};
 use std::process::Command;
 use tracing::info;
 
-const NUDGE: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge.sh";
+fn nudge_script() -> String { format!("{}/platform/scripts/nudge.sh", chorus_root()) }
 
 /// PreToolUse: when /pair skill is invoked, nudge the target role to also load /pair
 pub async fn check(input: &HookInput) -> HookResponse {
@@ -42,7 +43,8 @@ pub async fn check(input: &HookInput) -> HookResponse {
         format!("/pair {} on #{} — {} initiated pairing. Load /pair to get the full navigator/driver protocol.", role.as_str(), card, role.as_str())
     };
 
-    let _ = Command::new(NUDGE)
+    let ns = nudge_script();
+    let _ = Command::new(&ns)
         .args([target, &nudge_msg])
         .output();
 
@@ -64,7 +66,7 @@ mod tests {
             tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test", "skill": "demo"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

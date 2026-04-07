@@ -6,7 +6,7 @@
     <string>com.chorus.chorus-ops</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-ops.sh</string>
+        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-ops.sh</string>
         <string>all</string>
     </array>
     <key>StartInterval</key>

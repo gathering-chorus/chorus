@@ -7,8 +7,8 @@
 # AC 5: infra-alert suppresses after first fire per component per day
 set -euo pipefail
 
-SCRIPTS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts"
-INFRA_ALERT="/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas/scripts/infra-alert.sh"
+SCRIPTS="/Users/jeffbridwell/CascadeProjects/platform/scripts"
+INFRA_ALERT="/Users/jeffbridwell/CascadeProjects/platform/roles/silas/scripts/infra-alert.sh"
 PASS=0
 FAIL=0
 

@@ -3,7 +3,7 @@ import { execSync } from 'child_process';
 import { VikunjaTask, VikunjaBucket, BoardConfig, BoardTask } from './types';
 import { LABELS, resolveBucket } from './config';
 
-const VIKUNJA_DB = '/Users/jeffbridwell/CascadeProjects/chorus/directing/vikunja/db/vikunja.db';
+const VIKUNJA_DB = process.env.VIKUNJA_DB || `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/vikunja/db/vikunja.db`;
 
 export class BoardClient {
   private url: string;

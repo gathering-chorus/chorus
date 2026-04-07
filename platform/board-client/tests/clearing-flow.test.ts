@@ -12,7 +12,7 @@ import { execSync } from 'child_process';
 
 const CLEARING_DIR = path.join(
   process.env.HOME || '/Users/jeffbridwell',
-  'CascadeProjects/chorus/directing/clearing'
+  'CascadeProjects/directing/clearing'
 );
 const CLEARING_SERVER = path.join(CLEARING_DIR, 'src/server.ts');
 const SCRIPTS_DIR = path.join(__dirname, '../../scripts');

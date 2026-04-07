@@ -5,8 +5,10 @@
 
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 ROLE="${1:?Usage: role-screenshot.sh <role>}"
-OUTDIR="/Users/jeffbridwell/CascadeProjects/chorus/proving/screenshots"
+OUTDIR="${CHORUS_ROOT}/proving/screenshots"
 mkdir -p "$OUTDIR"
 
 # Map role to working directory

@@ -7,7 +7,7 @@ use std::fs;
 use std::process::Command;
 
 const SCAN_DIR: &str = "/tmp/claude-team-scan";
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim";
 
 fn role_state(args: &[&str]) -> std::process::Output {
     Command::new(SHIM)

@@ -4,10 +4,12 @@
 
 set -uo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+
 PASS=0
 FAIL=0
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log"
-ROLE_STATE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state"
+CHORUS_LOG="${CHORUS_ROOT}/platform/logs/chorus.log"
+ROLE_STATE="${CHORUS_ROOT}/platform/scripts/role-state"
 
 echo "=== role-state spine event tests ==="
 echo ""

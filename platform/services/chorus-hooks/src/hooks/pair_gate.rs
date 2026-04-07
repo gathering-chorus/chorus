@@ -87,6 +87,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
 mod tests {
     use super::*;
     use crate::types::HookInput;
+    use crate::shared::state_paths::chorus_root;
 
     fn make_input(tool: &str, file_path: &str) -> HookInput {
         HookInput {
@@ -94,7 +95,7 @@ mod tests {
             tool_input: Some(serde_json::json!({ "file_path": file_path })),
             tool_response: None,
             session_id: None,
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/chorus/engineer".to_string()),
+            cwd: Some(format!("{}/engineer", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,

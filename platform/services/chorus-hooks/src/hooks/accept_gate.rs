@@ -4,12 +4,13 @@
 //! Validates: demo brief exists, prevents self-accept on code cards.
 //! Jeff always overrides (DEC-048).
 
+use crate::shared::state_paths::chorus_root;
 use crate::types::{HookInput, HookResponse, permission_deny_json, Role};
 use std::process::Command;
 use tracing::{info, warn};
 
-const BOARD_TS: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards";
-const BRIEFS_DIR: &str = "/Users/jeffbridwell/CascadeProjects/chorus/product-manager/briefs";
+fn board_ts() -> String { format!("{}/platform/scripts/cards", chorus_root()) }
+fn briefs_dir() -> String { format!("{}/product-manager/briefs", chorus_root()) }
 
 /// Check if this is an /acp invocation and validate acceptance gates
 pub async fn check(input: &HookInput) -> HookResponse {
@@ -75,8 +76,9 @@ fn extract_card_id(args: &str) -> String {
 
 fn demo_brief_exists(card_id: &str) -> bool {
     let pattern = format!("*demo*{}*", card_id);
+    let bd = briefs_dir();
     let output = Command::new("find")
-        .args([BRIEFS_DIR, "-name", &pattern, "-maxdepth", "1"])
+        .args([bd.as_str(), "-name", &pattern, "-maxdepth", "1"])
         .output();
 
     match output {
@@ -90,8 +92,9 @@ fn demo_brief_exists(card_id: &str) -> bool {
 
 /// Fetch card view once — reused for owner + code-card classification
 fn fetch_card_view(card_id: &str) -> String {
+    let bts = board_ts();
     let output = Command::new("bash")
-        .args([BOARD_TS, "view", card_id])
+        .args([bts.as_str(), "view", card_id])
         .output();
 
     match output {
@@ -137,7 +140,7 @@ mod tests {
             tool_input: Some(json!({"skill": skill})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some(format!("/Users/jeffbridwell/CascadeProjects/{}", role_dir)),
+            cwd: Some(format!("{}/{}", chorus_root(), role_dir)),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
@@ -159,7 +162,7 @@ mod tests {
             tool_input: Some(json!({"command": "echo test"})),
             tool_response: None,
             session_id: Some("test".to_string()),
-            cwd: Some("/Users/jeffbridwell/CascadeProjects/architect".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
