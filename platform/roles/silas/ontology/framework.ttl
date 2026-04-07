@@ -1,0 +1,291 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix fw:       <https://jeffbridwell.com/framework#> .
+@prefix borg:     <urn:borg:ontology/> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix jb:       <https://jeffbridwell.com/ontology#> .
+
+# =============================================================================
+# Framework Ontology v0.1.0 — Bridge Layer
+# =============================================================================
+#
+# Connects three existing ontologies into a unified entity model:
+#   borg:  — infrastructure topology (services, hosts, dependencies)
+#   chorus: — team coordination (roles, gates, spine, artifacts)
+#   jb:    — domain data (collections: photos, stories, music, etc.)
+#
+# Inspired by Backstage.io entity model, mapped onto OWL.
+# Prior art: US Patent 9,552,400 B2 (Bridwell) — RDF/OWL + SPARQL + workflow gates.
+#
+# Card: #2300
+# Version: 0.1.0
+# Date: 2026-04-07
+# =============================================================================
+
+fw: a owl:Ontology ;
+    owl:versionInfo "0.1.0" ;
+    owl:imports chorus:, borg: ;
+    dcterms:title "Framework — Bridge Ontology" ;
+    dcterms:description "Unified entity model connecting infrastructure (borg), coordination (chorus), and domain data (jb). One SPARQL query traces domain → services → gates → roles." ;
+    dcterms:created "2026-04-07"^^xsd:date .
+
+# =============================================================================
+# ENTITY KINDS (Bridge Classes)
+# =============================================================================
+#
+# These are the 6 entity kinds from the AC. Some reuse existing classes
+# via owl:equivalentClass, others are new bridge concepts.
+# =============================================================================
+
+# --- Service: reuse borg:Service, declare equivalence ---
+fw:Service a owl:Class ;
+    owl:equivalentClass borg:Service ;
+    rdfs:label "Service" ;
+    rdfs:comment "A managed service in the infrastructure. Bridges borg topology into the framework. Has a port, a host, a lifecycle, and dependencies." .
+
+# --- Domain: new bridge class linking to jb collection types ---
+fw:Domain a owl:Class ;
+    rdfs:label "Domain" ;
+    rdfs:comment "A bounded context within Gathering — a coherent area of data and functionality. Each domain has collection classes (jb:), services (borg:), and gates (chorus:) that govern it." .
+
+# --- Gate: reuse chorus:Gate ---
+fw:Gate a owl:Class ;
+    owl:equivalentClass chorus:Gate ;
+    rdfs:label "Gate" ;
+    rdfs:comment "A quality gate that protects a domain or stage transition. Enforced by hooks (Rust binary). Pass/Fail/Override." .
+
+# --- Role: reuse chorus:Role ---
+fw:Role a owl:Class ;
+    owl:equivalentClass chorus:Role ;
+    rdfs:label "Role" ;
+    rdfs:comment "A persistent perspective — human or agent. Owns services, domains, and gates." .
+
+# --- API: new class for service endpoints ---
+fw:API a owl:Class ;
+    rdfs:label "API" ;
+    rdfs:comment "An HTTP endpoint or CLI verb exposed by a service. The contract surface — what other services and roles consume." .
+
+# --- Artifact: reuse chorus:ArtifactType ---
+fw:Artifact a owl:Class ;
+    owl:equivalentClass chorus:ArtifactType ;
+    rdfs:label "Artifact" ;
+    rdfs:comment "A work product — card, brief, commit, decision, screenshot. Flows through the spine." .
+
+# =============================================================================
+# RELATIONSHIP TYPES (ObjectProperties)
+# =============================================================================
+#
+# The 5 core relationships from AC4, plus supporting properties.
+# =============================================================================
+
+# --- ownedBy: who is responsible ---
+fw:ownedBy a owl:ObjectProperty ;
+    rdfs:label "owned by" ;
+    rdfs:comment "The role responsible for this entity. Silas owns infrastructure services, Kade owns app services, Wren owns coordination." ;
+    rdfs:domain [ a owl:Class ; owl:unionOf (fw:Service fw:Domain fw:Gate fw:API) ] ;
+    rdfs:range fw:Role .
+
+# --- dependsOn: service dependencies ---
+fw:dependsOn a owl:ObjectProperty ;
+    owl:equivalentProperty borg:dependsOn ;
+    rdfs:label "depends on" ;
+    rdfs:comment "Service A requires Service B to function. Transitive — if Fuseki is down, everything depending on it is impaired." ;
+    rdfs:domain fw:Service ;
+    rdfs:range fw:Service ;
+    a owl:TransitiveProperty .
+
+# --- servesDomain: what domain does this service support ---
+fw:servesDomain a owl:ObjectProperty ;
+    rdfs:label "serves domain" ;
+    rdfs:comment "This service provides data or functionality for this domain." ;
+    rdfs:domain fw:Service ;
+    rdfs:range fw:Domain .
+
+# --- protectedBy: what gate guards this ---
+fw:protectedBy a owl:ObjectProperty ;
+    rdfs:label "protected by" ;
+    rdfs:comment "A gate that must pass before changes to this entity take effect." ;
+    rdfs:domain [ a owl:Class ; owl:unionOf (fw:Service fw:Domain) ] ;
+    rdfs:range fw:Gate .
+
+# --- providesAPI: what endpoints does a service expose ---
+fw:providesAPI a owl:ObjectProperty ;
+    rdfs:label "provides API" ;
+    rdfs:comment "Service exposes this API endpoint." ;
+    rdfs:domain fw:Service ;
+    rdfs:range fw:API .
+
+# --- Supporting relationships ---
+
+fw:containsClass a owl:ObjectProperty ;
+    rdfs:label "contains class" ;
+    rdfs:comment "Domain contains this jb: collection class." ;
+    rdfs:domain fw:Domain ;
+    rdfs:range owl:Class .
+
+fw:hostedOn a owl:ObjectProperty ;
+    owl:equivalentProperty borg:hostedOn ;
+    rdfs:label "hosted on" ;
+    rdfs:comment "Service runs on this host machine." ;
+    rdfs:domain fw:Service ;
+    rdfs:range borg:Host .
+
+fw:endpointPath a owl:DatatypeProperty ;
+    rdfs:label "endpoint path" ;
+    rdfs:comment "URL path for an API endpoint (e.g., /api/photos, /api/chorus/health)." ;
+    rdfs:domain fw:API ;
+    rdfs:range xsd:string .
+
+fw:httpMethod a owl:DatatypeProperty ;
+    rdfs:label "HTTP method" ;
+    rdfs:domain fw:API ;
+    rdfs:range xsd:string .
+
+fw:port a owl:DatatypeProperty ;
+    rdfs:label "port" ;
+    rdfs:domain fw:Service ;
+    rdfs:range xsd:integer .
+
+# =============================================================================
+# DOMAIN INSTANCES
+# =============================================================================
+#
+# The 10+ Gathering domains, each linking to their jb: collection classes,
+# the services that support them, and the roles that own them.
+# =============================================================================
+
+fw:photos a fw:Domain ;
+    rdfs:label "Photos" ;
+    fw:containsClass jb:Photo, jb:SourcePhoto ;
+    fw:ownedBy chorus:kade ;
+    rdfs:comment "Personal photo collection — 110K+ canonical photos across Apple, iPhone, Takeout sources." .
+
+fw:music a fw:Domain ;
+    rdfs:label "Music" ;
+    fw:containsClass jb:Track, jb:Album, jb:Artist ;
+    fw:ownedBy chorus:kade ;
+    rdfs:comment "Music library — 187K tracks on Bedroom NFS share." .
+
+fw:stories a fw:Domain ;
+    rdfs:label "Stories" ;
+    fw:containsClass jb:Story ;
+    fw:ownedBy chorus:kade ;
+    rdfs:comment "Personal narratives and experiences." .
+
+fw:people a fw:Domain ;
+    rdfs:label "People" ;
+    fw:containsClass jb:Person ;
+    fw:ownedBy chorus:kade ;
+    rdfs:comment "Relationships — friends, family, colleagues." .
+
+fw:documents a fw:Domain ;
+    rdfs:label "Documents" ;
+    fw:containsClass jb:Document, jb:Note ;
+    fw:ownedBy chorus:kade ;
+    rdfs:comment "Notes, documents, iCloud content." .
+
+fw:books a fw:Domain ;
+    rdfs:label "Books" ;
+    fw:containsClass jb:Book ;
+    fw:ownedBy chorus:kade ;
+    rdfs:comment "Physical and digital book collection." .
+
+fw:seeds a fw:Domain ;
+    rdfs:label "Seeds" ;
+    fw:containsClass jb:Seed ;
+    fw:ownedBy chorus:wren ;
+    rdfs:comment "Intake — SMS captures, voice notes, links. Entry point for Capturing vertebra." .
+
+fw:property a fw:Domain ;
+    rdfs:label "Property" ;
+    fw:containsClass jb:Zone, jb:Bed, jb:Planting ;
+    fw:ownedBy chorus:kade ;
+    rdfs:comment "Garden, home, physical space." .
+
+fw:infrastructure a fw:Domain ;
+    rdfs:label "Infrastructure" ;
+    fw:ownedBy chorus:silas ;
+    rdfs:comment "Machines, services, storage, network. Silas's vertical." .
+
+fw:chorus-domain a fw:Domain ;
+    rdfs:label "Chorus" ;
+    fw:ownedBy chorus:wren ;
+    rdfs:comment "The coordination protocol itself — skills, hooks, gates, spine, dashboards." .
+
+fw:sexuality a fw:Domain ;
+    rdfs:label "Sexuality" ;
+    fw:ownedBy chorus:kade ;
+    rdfs:comment "Adult media collection — video, image, archive, model types." .
+
+# =============================================================================
+# SERVICE → DOMAIN MAPPINGS
+# =============================================================================
+
+<urn:borg:service/fuseki> fw:servesDomain fw:photos, fw:music, fw:stories, fw:people, fw:documents, fw:books, fw:seeds, fw:property, fw:sexuality ;
+    fw:ownedBy chorus:silas .
+
+<urn:borg:service/gathering-app> fw:servesDomain fw:photos, fw:music, fw:stories, fw:people, fw:documents, fw:books, fw:seeds, fw:property ;
+    fw:ownedBy chorus:kade .
+
+<urn:borg:service/chorus-api> fw:servesDomain fw:chorus-domain, fw:seeds ;
+    fw:ownedBy chorus:silas .
+
+<urn:borg:service/bridge> fw:servesDomain fw:chorus-domain ;
+    fw:ownedBy chorus:silas .
+
+<urn:borg:service/vikunja> fw:servesDomain fw:chorus-domain ;
+    fw:ownedBy chorus:silas .
+
+<urn:borg:service/nifi> fw:servesDomain fw:photos, fw:music ;
+    fw:ownedBy chorus:silas .
+
+<urn:borg:service/grafana> fw:servesDomain fw:infrastructure ;
+    fw:ownedBy chorus:silas .
+
+<urn:borg:service/loki> fw:servesDomain fw:infrastructure ;
+    fw:ownedBy chorus:silas .
+
+# =============================================================================
+# GATE → DOMAIN PROTECTION
+# =============================================================================
+
+fw:photos fw:protectedBy chorus:BuildGate, chorus:ProvingGate .
+fw:stories fw:protectedBy chorus:BuildGate, chorus:ProvingGate .
+fw:seeds fw:protectedBy chorus:DirectionGate .
+fw:chorus-domain fw:protectedBy chorus:DesignGate, chorus:BuildGate .
+fw:infrastructure fw:protectedBy chorus:DesignGate .
+
+# =============================================================================
+# API INSTANCES (key endpoints)
+# =============================================================================
+
+fw:api-photos a fw:API ;
+    fw:endpointPath "/api/photos" ;
+    fw:httpMethod "GET" ;
+    rdfs:label "Photos API" .
+
+fw:api-music a fw:API ;
+    fw:endpointPath "/api/music" ;
+    fw:httpMethod "GET" ;
+    rdfs:label "Music API" .
+
+fw:api-chorus-health a fw:API ;
+    fw:endpointPath "/api/chorus/health" ;
+    fw:httpMethod "GET" ;
+    rdfs:label "Chorus Health API" .
+
+fw:api-seeds a fw:API ;
+    fw:endpointPath "/api/seeds" ;
+    fw:httpMethod "GET" ;
+    rdfs:label "Seeds API" .
+
+fw:api-cards a fw:API ;
+    fw:endpointPath "/api/cards" ;
+    fw:httpMethod "GET" ;
+    rdfs:label "Cards API" .
+
+<urn:borg:service/gathering-app> fw:providesAPI fw:api-photos, fw:api-music .
+<urn:borg:service/chorus-api> fw:providesAPI fw:api-chorus-health, fw:api-seeds, fw:api-cards .
