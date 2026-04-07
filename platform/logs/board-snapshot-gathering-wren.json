@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-07T14:40:20.228Z",
+  "timestamp": "2026-04-07T15:10:39.913Z",
   "tasks": [
     {
       "index": 3,
@@ -28970,7 +28970,7 @@
       "apiId": 2404,
       "title": "API E2E tests — top 16 uncovered endpoints through the real stack",
       "description": "## Experience\nEvery API endpoint is unit-tested with mocked dependencies. But I have zero tests that hit the real running app. When a handler passes unit tests but the route wiring, middleware chain, or auth gate is broken, I find out from Jeff. I want the 16 uncovered endpoints tested end-to-end.\n\n## Context\n16 API routes have ZERO test coverage (not even unit handler tests):\n/api/harvest/status, POST /api/harvest, /api/convergence, /api/board/card-statuses, /api/werk/schema, /api/werk/activity, /api/voice-analytics, /api/attention-analytics, /api/reprompt-analytics, /api/interaction-patterns, /api/memory/similar, /api/memory/links, /api/memory/links/progress, POST /api/sparql, /api/drive-analysis, /api/drive-analysis/confidence\n\nSupertest infrastructure already exists (tests/unit/app.test.ts, tests/security/rate-limiting.test.ts).\n\n## Files\n- tests/integration/api-e2e.test.ts (new)\n\n## AC\n- [ ] Each of the 16 uncovered API routes has a test that hits the real app via supertest\n- [ ] Tests verify status code, content-type, and response shape (not exact values)\n- [ ] Auth-gated endpoints return 401/403 without session, 200 with\n- [ ] Tests run in integration suite, not unit suite",
-      "status": "Later",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P1",
       "domains": [
@@ -28980,9 +28980,9 @@
         "origin:reflective",
         "sequence:quality"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-07T14:00:04Z",
-      "updated": "2026-04-07T14:00:04Z"
+      "updated": "2026-04-07T14:53:56Z"
     },
     {
       "index": 2318,
@@ -29058,6 +29058,114 @@
       "done": false,
       "created": "2026-04-07T14:24:44Z",
       "updated": "2026-04-07T14:24:44Z"
+    },
+    {
+      "index": 2322,
+      "apiId": 2409,
+      "title": "Session start includes last-session summary — each role tells Jeff what they did last",
+      "description": "## Experience\nWhen I start a new session with a role, I have no idea what they did last time. I have to ask, or dig through git logs. The session-start file should just tell me — here's what this role shipped, struggled with, and left open.\n\n## AC\n- [ ] session-start script includes a \"Last Session\" section per role\n- [ ] Section shows: cards completed, cards in progress, key decisions made, open blockers\n- [ ] Data sourced from git log + activity.md + board state, not cached summaries\n- [ ] Each role's session-start file includes their own last session AND a 1-liner for the other two roles\n- [ ] Works correctly after multi-day gaps (not just \"yesterday\")",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:enhance",
+        "sequence:ops",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:42:57Z",
+      "updated": "2026-04-07T14:42:57Z"
+    },
+    {
+      "index": 2323,
+      "apiId": 2410,
+      "title": "Auto-declare role state from card actions — pull emits building, done emits idle, no manual role-state calls",
+      "description": "## Experience\nI look at gemba or team-scan and see a role actively working but listed as idle or unknown. The state declaration is manual — roles forget to call role-state. Scolding doesn't fix a manual process. The system should enforce it.\n\n## AC\n- [ ] board pull/move to WIP auto-emits role-state building card=<id>\n- [ ] board done/move to Done auto-emits role-state idle\n- [ ] session start emits role-state idle\n- [ ] gemba-start and team-scan reflect accurate state without manual role-state calls\n- [ ] Remove manual role-state calls from CLAUDE.md instructions where they duplicate automated behavior",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:47:26Z",
+      "updated": "2026-04-07T14:47:26Z"
+    },
+    {
+      "index": 2324,
+      "apiId": 2411,
+      "title": "Skill step enforcement — gate terminal actions on spine events, not trust",
+      "description": "## Experience\nI watch a role run /demo and they skip half the steps. The skill describes the protocol but nothing enforces it. 50% improvisation rate on /demo alone. If I can't trust that a skill was followed, the skill is documentation not process.\n\n## AC\n- [ ] Each skill step emits a spine event when executed (e.g., demo.smoke_check.completed)\n- [ ] Terminal actions (accept, done, merge) check that prerequisite skill steps fired\n- [ ] Missing steps block the terminal action with a clear message (\"demo smoke check not recorded\")\n- [ ] /demo is the first skill wired — smoke check, prep summary, signal to Wren all gated\n- [ ] Instrumentation is in the skill runner, not in each role's CLAUDE.md",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:framework",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:49:19Z",
+      "updated": "2026-04-07T14:49:19Z"
+    },
+    {
+      "index": 2325,
+      "apiId": 2412,
+      "title": "Commit discipline — roles committing test artifacts, undeclared work, and board pollution",
+      "description": "## Experience\nThe commit history and board are full of test card artifacts (200+ BDD test cards in Won't Do), commits from roles working without cards pulled, and state that doesn't match what's actually happening. The commits tell a scary story about process discipline.\n\n## AC\n- [ ] Audit Won't Do column — bulk-close or delete test artifact cards (BDD test card, CLI test card, etc.)\n- [ ] Pre-commit gate: reject commits when role has no WIP card declared (ties to #2323)\n- [ ] Board hygiene sweep — remove duplicate and test-artifact cards from all columns\n- [ ] Document what a clean commit looks like (role prefix, card reference, what changed)",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:49:25Z",
+      "updated": "2026-04-07T14:49:25Z"
+    },
+    {
+      "index": 2326,
+      "apiId": 2413,
+      "title": "Peer review skill — audit role awareness, process compliance, and system enforcement gaps",
+      "description": "## Experience\nWhen I check in on a role, I'm not watching them work (gemba) — I'm asking: do you know what you did last time? Are you following the process? Is the system actually enforcing what we think? This is a different interaction pattern that doesn't have a skill yet.\n\n## AC\n- [ ] /review <role> skill defined with steps: last-session awareness check, state declaration check, WIP card check, recent commit audit\n- [ ] Outputs a scorecard: what's working, what's drifting, what the system should enforce but doesn't\n- [ ] Findings auto-card as fix cards when they reveal enforcement gaps\n- [ ] Distinct from /gemba (real-time observation) — this is diagnostic",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:57:36Z",
+      "updated": "2026-04-07T14:57:36Z"
+    },
+    {
+      "index": 2327,
+      "apiId": 2414,
+      "title": "Session health alerts route to own role only — not Jeff, not other roles",
+      "description": "## Experience\nI get session-health alerts about Silas and Kade's context pressure in my terminal. It's noise — I don't need to know their memory state, and forwarding it to them just adds to the noise. Each role should handle their own session health silently.\n\n## AC\n- [ ] session-health alerts route only to the role they're about\n- [ ] Jeff never sees session-health alerts in his terminal\n- [ ] Other roles never see session-health alerts about each other\n- [ ] Role handles its own reboot decision without external nudging",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T15:08:39Z",
+      "updated": "2026-04-07T15:08:39Z"
     }
   ]
 }
