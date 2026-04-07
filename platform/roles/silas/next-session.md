@@ -1,29 +1,26 @@
 # Next Session — Silas
 
-## Shipped This Session
-- **#2305** — Alert suppress during planned restarts. app-state.sh writes suppress file, deep-health.sh respects it. 5 AC, 5 tests, accepted by Wren.
-- **#2300** — Framework bridge ontology (paired with Wren). Reference model page (8-layer stack, OWL/RDF semantic layer, narrative), framework.ttl (220 triples), jb-ontology.ttl (14 domain classes), explorer patched (24 fw nodes, light theme), framework service design rewritten to conform to reference model. Accepted by Jeff.
-- Fixed app-state.sh restart path for native LaunchAgents (was falling through to dead Docker/Terraform).
-- Fixed explorer CSP (D3 + Mermaid self-hosted, inline JS extracted).
-- Dropped duplicate urn:framework:bridge graph, loaded urn:jb:ontology.
-- Created #2321 (cross-role commit collision — git checkout clobbers unstaged work).
+## Shipped This Session (2026-04-07)
+- **#1308** (was #1853) — Externalize configuration (CHORUS_ROOT). Paired with Kade. 196 files: 17 Rust prod, 67 Rust test, 34 shell, 4 TypeScript, 18 symlinks relative, 26 skills symlinked to repo. Accepted by Jeff.
+- Rebuilt entire toolchain after #1827 restructure broke 644 paths: hooks binary, board CLI, chorus-sdk, workflow-engine, Chorus API, Pulse, Clearing
+- Rebuilt Vikunja DB from API backup — 1791 cards, 95 labels, all bucket assignments restored
+- Fixed 32 LaunchAgent plists, 43 scripts, session-tailer role dir mapping
+- Fixed 17 broken symlinks, chorus-inject binary
 
 ## WIP
 None.
 
 ## Priority for Next Session
-- #2321 (commit collision) — P1, scoped lint + scoped recovery
-- Wren's follow-on cards from stabilization: reconcile chorus vs chorus-product ontologies, namespace convergence
-- Kade needs fw:API entries for 16 uncovered endpoints (#2317)
-- Framework service design page may need further revision per Wren's navigator notes
-- Ops cards: #1919 (SPARQL error), #2044 (Twilio sig), #2281 (CSRF)
+- **#1791** — restore chorus/ as repo root boundary. CHORUS_ROOT is in place, move is one default value change + git mv. Need: worktree test, service restarts, full regression.
+- Card: rename product-manager/ → wren/, engineer/ → kade/ for consistency with silas/
+- Card: CHORUS_ROOT automated test coverage (no test sets fake root and verifies resolution)
+- 3 files in jeff-bridwell-personal-site with stale paths need separate commit in that repo
 
 ## Briefs
-- Sent: demo-2300 to Wren, demo-2305 to Wren
-- Received: card-2305-done, card-2307-moved-to-WIP, ops-sequence-plan
+- 20 stale briefs in inbox (oldest 405h) — untriaged
+- Wren brief (2026-04-07-ops-sequence-plan.md) — unread
 
-## Key Learnings
-- Fuseki is on port 3030 (native LaunchAgent), not 3031 (old Docker mapping)
-- CSP blocks CDN scripts — self-host or use external JS files for gathering-docs
-- Cross-role commit collision is the #1 friction — git checkout -- . during recovery wipes other roles' work
-- Reference model: OWL/RDF is the semantic layer ABOVE Framework, not part of it
+## Key State
+- Vikunja DB at ~/.chorus/vikunja/db/vikunja.db (JWT auth, user: jeff/changeme123)
+- Card IDs renumbered from DB rebuild (old #2300 → #1759, old #1853 → #1308)
+- Repo root = CascadeProjects/ — sibling projects show as untracked. #1791 fixes this.
