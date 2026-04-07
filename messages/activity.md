@@ -28,3 +28,8 @@
 - [Kade] 2026-04-06 — 3 cards shipped (#2250 pod-storage async 9 calls, #2249 photo.handler async 35 calls incl execSync sips, #2251 KG+document async 31 calls). 75 total sync calls eliminated from request paths. Paired with Wren on #2250. Strategic conversation with Jeff about system complexity, distribution to Mark/Deb, Loki-as-data-store pattern. HTML assessment created. Carded #2248 parent + 5 split cards from Silas's event loop blocking finding. Fixed shared-partials test, integration test for async thumbnail resolution.
 
 - [Kade] 2026-04-06 evening → shipped 7 quality sequence cards (#2290-#2296): 170 new tests, 34 fixed, smoke check 22→50 pages. Fixed skills test disk dependency, board-client fetchBucketMapFromDB mock gap. 2026-04-07 AM: fixed perf baseline triple count budget (10→15s).
+
+- [Kade] → shipped #2301 (dynamic quality service page), #2307 (pre-push gate fix), #2311 (API/UI test classification) → Jeff, Wren
+- [Kade] → created quality sequence cards #2317-#2320 → Wren, board
+- [Kade] → reviewed Silas #1910 (backup strategy), #2305 (alert suppress), #2300 (framework ontology) → Silas
+- [Kade] → fixed monitoring-async test flakes, perf baseline threshold, eslint config for browser JS → repo

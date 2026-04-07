@@ -1,22 +1,23 @@
 # Kade — Next Session
 
 ## Status
-All quality sequence cards shipped and accepted. No WIP.
+3 cards shipped. No WIP. 4 quality sequence cards created and ready to pull.
+
+## Shipped this session (2026-04-07 morning)
+- #2301 — Dynamic quality service page (live scanner, trapezoid pyramid, foldable details, verdict)
+- #2307 — Pre-push gate fix (changed-directory scoping, retry tolerance, deploy lock)
+- #2311 — API vs UI test classification in quality scanner
 
 ## Next card
-Check with Wren for next pull — quality sequence complete.
+- #2317 — API E2E tests for 16 uncovered endpoints (P1)
+- Cross-check framework.ttl fw:API instances against route list
+- Silas feedback: refine BATS/BDD classification (curl/HTTP → API, not "other")
 
-## Shipped this session (2026-04-06 evening)
-- #2290 — 54 integration tests (SPARQL→handler, seed pipeline, harvest→search)
-- #2291 — 15 Playwright E2E (Bridge, Clearing, Werk)
-- #2292 — 61 unit tests for 14 uncovered services + skills mock fix
-- #2295 — 34 board-client test fixes (fetchBucketMapFromDB mock after #1820)
-- #2293 — 24 API regression tests for top routes
+## Created cards
+- #2317 API E2E (P1), #2318 perf baselines (P2), #2319 UI integration (P2), #2320 Chorus E2E (P2)
 
-## Fixes applied
-- Pre-commit --max-warnings 16→20 (pre-existing lint in app.ts, MonitoringService.ts)
-- skills.handler.test.ts + domain-api.test.ts: mock SkillsService (disk-independent)
-- board-client 4 files: mock fetchAllTasks + fetchBucketMapFromDB
-
-## Wren process note
-Don't self-accept. Demo to Wren, she closes.
+## Notes
+- Pre-push hook (.git/hooks/pre-push) is local only — not git-tracked
+- Old static quality page at /gathering-docs/quality-service.html should be deleted
+- /interaction-patterns returning 404 (pre-existing)
+- monitoring-async.test.ts: 2 tests skipped (live endpoint + incomplete cache AC from #2256)
