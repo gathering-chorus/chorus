@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-07T14:35:16.468Z",
+  "timestamp": "2026-04-07T14:40:19.322Z",
   "tasks": [
     {
       "index": 3,
@@ -28662,7 +28662,7 @@
       "apiId": 2387,
       "title": "Framework service design — OWL entity model unifying borg chorus and jb ontologies",
       "description": "## Experience\nI have three ontologies that dont talk to each other. Borg knows what services run on which machines. Chorus knows which roles own which gates. The jb ontology knows what domains hold what data. But nothing connects a service to the gate that protects it to the domain it serves. I want one entity model in OWL where I can ask: What services does the Photos domain depend on? Who owns them? What gates protect them? One SPARQL query not four tools.\n## Context\nThree existing ontologies: borg (8 services TOSCA-inspired) chorus v0.2.0 (roles spine gates) jb (10+ collection classes). Backstage.io reference architecture studied but not adopted. We map its entity model onto OWL connected to Fuseki. Domain crawler 1956 already queries 7 sources per domain. Prior art: US Patent 9552400B2.\n## AC\n1. Framework service design page (HTML same format as existing 5 service designs)\n2. OWL bridge classes connecting borg:Service to chorus:Gate to jb:Domain (TTL file)\n3. Entity kinds mapped as OWL classes: Service API Domain Gate Role Artifact\n4. Relationship types as OWL ObjectProperty: ownedBy dependsOn servesDomain protectedBy providesAPI\n5. Context diagram updated to show Framework layer with OWL/RDF as horizontal capability\n6. One working SPARQL query tracing domain to services to gates to roles\n## Files\n- jeff-bridwell-personal-site/public/gathering-docs/framework-service-design.html (new)\n- chorus/platform/roles/silas/ontology/framework.ttl (new bridge ontology)\n- jeff-bridwell-personal-site/public/gathering-docs/chorus-context-diagram-v2.html (update)",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Wren",
       "priority": "P1",
       "domains": [
@@ -28671,9 +28671,9 @@
         "sequence:framework",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-07T11:57:10Z",
-      "updated": "2026-04-07T11:57:47Z"
+      "updated": "2026-04-07T14:35:26Z"
     },
     {
       "index": 2301,
