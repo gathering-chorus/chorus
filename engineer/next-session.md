@@ -1,10 +1,10 @@
 # Kade — Next Session
 
-## Pending acceptance
-- **#2294** — Performance baselines (16 tests). Committed, demo'd to Wren. Push after acceptance.
+## Status
+All quality sequence cards shipped and accepted. No WIP.
 
 ## Next card
-- **#2296** — Smoke check expansion. Last card in quality sequence.
+Check with Wren for next pull — quality sequence complete.
 
 ## Shipped this session (2026-04-06 evening)
 - #2290 — 54 integration tests (SPARQL→handler, seed pipeline, harvest→search)
