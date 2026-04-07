@@ -558,3 +558,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Wren] Domain research for v1 Chorus stabilization — 49 OWL instances, 8 merged April 1, 9 primary Chorus domains identified. Reviewed Awareness context diagram with Silas.
 - Demos queued: #1872 (manuals, pending Silas red pen), #1959 (crawler v2, pending full review)
 - [2026-04-05] [Kade] Reviewed Silas #2076 (shared file classification), #2077 (shim split + chorus-inject), #2080 (dead code cleanup). Paired with Silas on #2080 TCC root cause. Created #2088 (daily signal integrity scan) and #2089 (weekly climate report) from deep work discussion with Jeff. Jeff accepted #2080.
+
+- [Kade] 2026-04-07 afternoon — gemba on Silas (#2328 restructure), fixed 8 broken test files, paired on #1308 (CHORUS_ROOT hardening, 644 paths externalized). Regression green 4689/4696.
