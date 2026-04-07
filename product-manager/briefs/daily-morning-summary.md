@@ -1,36 +1,37 @@
-# Daily Morning Summary — 2026-04-06
+# Daily Morning Summary — 2026-04-07
 
-**HEADLINE:** Disk is still a 770 GB mystery, board-client has 72 failures for day 3, and Clearing delivery is still broken — three open wounds, none touched since Friday.
+**HEADLINE:** Board-client went RED then got fixed in the same day — 261 tests now green — but chorus-sdk has been bleeding 5 failures for 4 straight days and the backlog.md WIP is 14 days stale.
 
 ---
 
-**OPS** 🔴 RED (Silas review: 2026-04-05)
-- 🔴 **Disk spike:** 257 GB → 1,027 GB (+299%) since 2026-03-29. Source unidentified. `percentUsed` in perf-baseline.sh broken (shows 2%, actual ~51%). No baseline runs between 2026-03-29 and 2026-04-04.
-- 🔴 **Stale WIP:** card-1865 stuck 5+ days; Kade's backlog has 10 cards aged 20+ days. WIP limit violated.
-- 🟡 chorus-hooks: 30 warnings, 9 auto-fixable. 10+ LaunchAgents logging to `/tmp/` (lost on reboot). CLAUDE.md root stale since 2026-04-03.
-- ✅ CSC compliance clean. Repo fully committed.
+**OPS** 🟡 YELLOW (Silas review: 2026-04-07)
+- 4 yellow, 0 red. No blockers.
+- Top concern: `backlog.md` header shows "Last updated: 2026-03-24" — WIP section lists #1674, #1675, #1652, but `next-session.md` (Apr 6 eve) says "WIP: None — all cards shipped." Board is source of truth. Sync this now.
+- 🟡 chorus-hooks: 2 warnings (unused `query` field, dead_code). `cargo fix` clears it.
+- 🟡 36 `/tmp` refs in LaunchAgents (log paths lost on reboot). Migrate to `~/Library/Logs/chorus/`.
+- 🟡 Root `chorus/CLAUDE.md` 4 days stale vs role fragments updated today.
+- ✅ Git clean. Domain context fresh (14h). Disk shrinking: 954.6 → 905.9 GB (−5.1%).
 
-**QUALITY** 🔴 RED (Kade review: 2026-04-05)
-- Tests: 371 total | 77 failures (72 board-client + 5 chorus-sdk). Zero movement vs 2026-04-04.
-- 🔴 **board-client:** 72 failures — hardcoded Mac path + missing `workflow-engine/dist`. Day 3. No ticket filed yet.
-- 🟡 **chorus-sdk:** 5 failures — `value_stream_step` null bug (`emit-metadata.test.ts:226`). Day 4 today.
-- 🟡 **App/lint/build:** `jeff-bridwell-personal-site` path missing — day 8 consecutive. Remove from matrix.
-- ✅ workflow-engine 61/61. slack-bridge 60/60. Both stable.
+**QUALITY** 🟡 YELLOW effective (Kade review: 2026-04-06, pre-fix)
+- Review showed board-client RED (91 failures, coverage collapsed to 12.94%). Kade's #2295 landed same day — fix 34 failures, suite now 261 tests green. Consider board-client YELLOW pending re-run confirmation.
+- 🔴→🟡 board-client: fixed per commit `868d4f1` + `7f88b81`. New tests (#2296 smoke check 22→50 pages) also shipped.
+- 🟡 chorus-sdk: 5 failures, `value_stream_step` returning null (`emit-metadata.test.ts:226`). **Day 4. No card filed.**
+- 🟡 `jeff-bridwell-personal-site` missing from filesystem. **Day 9.** Remove from check matrix.
+- ✅ workflow-engine 61/61. slack-bridge 60/60. Stable.
 
-**YESTERDAY** — 2026-04-05 (15 cards shipped)
-- Silas: #2100 (inject revert), #2101 (origin tag + 53 test fixes → suite down to 2 failures), #2224 (watchdog), #2225 (search hooks), #2228 (deep health checks). Cleared 46 junk test-pollution cards.
-- Kade: #2171 (Clearing card count fix — Vikunja 50/bucket cap), #1820 (14 board validation tests + Vikunja DB bypass).
-- Wren: Loom service design shipped, origin analysis (29% stolen prompts), hook architecture surface (36 hooks, 6 phases), board reckoning (160 junk cards removed via SQLite).
-- **This morning:** Silas shipped #2229 (osascript inject separation — TCC fix), #2231 (cycle ID correlation), #2241 (deep-health full coverage + chorus API freeze fix, execSync→async).
+**YESTERDAY** — 2026-04-06 (~15+ cards shipped)
+- Kade: #2295 (34 board-client test fixes, suite green), #2296 (smoke check 22→50 pages), #2250/#2249/#2251 (75 sync calls eliminated from request paths — pod-storage, photo handler, KG/document).
+- Silas: #2279 (per-alert runbooks), #2280 (event correlation timeline, 4-source), #2285 (defect triage gate + chorus-ops severity filter/auto-close) + 8-card observability session (TDD gate fix, interaction pattern detection, Bridge filtering, deep-health).
+- Wren: #2293 (API regression tests, 24 routes), #2294 (performance baselines — SPARQL budgets + page load SLAs), accepted #2295/#2296/#2285/#2280.
+- Key decisions: TDD gate now detects bats; interaction pattern detection live on UserPromptSubmit; Bridge no longer injects events into Jeff's terminal.
 
 **TODAY** (recommended order)
-1. **Jeff + Silas → disk spike** — 770 GB unidentified, first priority before any new work.
-2. **Kade → board-client ticket + fix** — hardcoded path is a 2-line fix; 72 failures on day 3 is not acceptable.
-3. **Kade → `value_stream_step` null** — day 4, chorus-sdk coverage bleeding.
-4. **Wren → stale WIP triage** — card-1865 + Kade's 10 aged cards, close or defer today.
-5. **Silas → migrate LaunchAgent logs from `/tmp/` + regenerate CLAUDE.md root.**
+1. **Wren → sync backlog.md WIP** against Vikunja board. Silas flagged explicitly; board is source of truth.
+2. **Kade → card and fix chorus-sdk `value_stream_step` null** — day 4 is too long, this is unowned.
+3. **Silas → cargo fix chorus-hooks** (2-minute fix) + migrate LaunchAgent log paths from `/tmp/`.
+4. **Silas → sync root `chorus/CLAUDE.md`** with role fragments updated today.
+5. **Kade → remove `jeff-bridwell-personal-site`** from quality check matrix (day 9 dead noise).
 
 **BLOCKERS** — needs Jeff's attention
-- 🔴 **Disk: +770 GB unexplained.** Data loss risk if Fuseki journal is unbounded. Needs eyes today.
-- 🔴 **Clearing delivery still broken** (per Silas session reboot). Core feature, no active fix in flight.
-- 🔴 **board-client 72 failures, day 3.** No ticket, no owner. Accept the red or fix it.
+- 🟡 **chorus-sdk `value_stream_step` null — day 4, no card, no owner.** Not blocking but this is the kind of stale failure that calcifies. Assign today.
+- No hard reds from ops. The disk spike from last week is resolved (shrinking). Board-client regression self-healed same day — good reflex from Kade.
