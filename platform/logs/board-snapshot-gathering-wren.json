@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-07T13:34:40.790Z",
+  "timestamp": "2026-04-07T14:35:17.208Z",
   "tasks": [
     {
       "index": 3,
@@ -28789,7 +28789,7 @@
       "apiId": 2394,
       "title": "Diagnose slow commits — git-queue lock contention and pre-commit hook performance",
       "description": "## Experience\n\nKade spent 22 minutes trying to push a finished card (#2301). Five attempts, each blocked by a different transient test failure — none from his changes. Meanwhile Silas restarted the app for #2305, which caused Kade's integration tests to fail mid-run. The push gate is correct in principle but broken in practice: it blocks legitimate pushes on flaky tests and has no awareness of concurrent service restarts.\n\n## Context\n\nCurrent pre-push hook (jeff-bridwell-personal-site/.git/hooks/pre-push) runs T1 tier on every push: Trivy scan (16s) + npm audit + full unit suite + integration tests + security tests + smoke E2E. Estimated 35s but actual 60-90s with transient failures causing retries.\n\nPre-commit runs TypeScript + lint (~15s). This split was done in #1542.\n\nThree concurrent problems observed in gemba 2026-04-07:\n1. Pre-push runs ALL tests, not just tests in changed directories\n2. No retry tolerance for transient failures (live endpoint timeouts, load-dependent budgets)\n3. No coordination with app-state.sh restarts — Silas restarts app while Kade tests run against it\n\nKade's recommendation: changed-directory scoping for pre-push.\n\n## AC\n\n1. Pre-push runs only tests in directories with changed files (git diff --name-only origin/main)\n2. Transient test failures get one automatic retry before blocking the push\n3. app-state.sh writes a deploy lock file; pre-push waits or warns if deploy is in progress\n4. Full test suite runs nightly via cron, not on every push\n5. Pre-push total time under 30s for typical single-card changes\n\n## Files\n\n- jeff-bridwell-personal-site/.git/hooks/pre-push (modify)\n- chorus/platform/scripts/app-state.sh (add deploy lock)",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -28798,9 +28798,9 @@
         "sequence:ops",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-07T13:11:42Z",
-      "updated": "2026-04-07T13:26:36Z"
+      "updated": "2026-04-07T13:35:55Z"
     },
     {
       "index": 2308,
@@ -28855,6 +28855,209 @@
       "done": false,
       "created": "2026-04-07T13:27:16Z",
       "updated": "2026-04-07T13:27:16Z"
+    },
+    {
+      "index": 2311,
+      "apiId": 2398,
+      "title": "Split test pyramid by API vs UI — decision-ready type breakdown",
+      "description": "## Experience\nWhen I look at the quality service page, I see 258 integration tests but can't tell how many test APIs vs page rendering. I need to make investment decisions by type — where do we have API gaps vs UI gaps? Show me both.\n\n## Files\n- src/services/quality-scanner.service.ts (modify — add API/UI classification)\n- views/quality-service.ejs (modify — show API vs UI in pyramid and repo tiles)\n\n## AC\n- [ ] Scanner classifies each test file as API or UI by scanning for patterns (fetch/.json/supertest = API, .render/page.goto/Playwright = UI)\n- [ ] Pyramid shows API and UI as distinct sub-layers within each tier\n- [ ] Repo tiles show API vs UI breakdown per layer in foldable details\n- [ ] Sub-layer pills on pyramid bands show API/UI split (e.g. \"API 11 · UI 3\" under Integration)",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": true,
+      "created": "2026-04-07T13:45:57Z",
+      "updated": "2026-04-07T14:17:00Z"
+    },
+    {
+      "index": 2312,
+      "apiId": 2399,
+      "title": "Reconcile chorus vs chorus-product ontology — merge or layer decision",
+      "description": "",
+      "status": "Later",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:52:45Z",
+      "updated": "2026-04-07T13:52:45Z"
+    },
+    {
+      "index": 2313,
+      "apiId": 2400,
+      "title": "Namespace convergence — migrate borg urn and jb and chorus URI patterns to one scheme",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:chore",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:52:46Z",
+      "updated": "2026-04-07T13:52:46Z"
+    },
+    {
+      "index": 2314,
+      "apiId": 2401,
+      "title": "[defect] gathering-app: Event loop lag: 11.34s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 11.34s\nSample: Event loop lag: 11.34s\nFirst seen: 2026-04-07T13:53:25Z\nCount: 1\nHash: 1d794ad7de3e178a",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:53:25Z",
+      "updated": "2026-04-07T13:53:25Z"
+    },
+    {
+      "index": 2315,
+      "apiId": 2402,
+      "title": "[defect] gathering-app: Event loop lag: 10.83s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 10.83s\nSample: Event loop lag: 10.83s\nFirst seen: 2026-04-07T13:58:26Z\nCount: 1\nHash: 1b48ba7327eaee3d",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:58:26Z",
+      "updated": "2026-04-07T13:58:26Z"
+    },
+    {
+      "index": 2316,
+      "apiId": 2403,
+      "title": "Fix Chrome tab management — roles opening tabs in Jeffs window creates chaos",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:59:08Z",
+      "updated": "2026-04-07T13:59:08Z"
+    },
+    {
+      "index": 2317,
+      "apiId": 2404,
+      "title": "API E2E tests — top 16 uncovered endpoints through the real stack",
+      "description": "## Experience\nEvery API endpoint is unit-tested with mocked dependencies. But I have zero tests that hit the real running app. When a handler passes unit tests but the route wiring, middleware chain, or auth gate is broken, I find out from Jeff. I want the 16 uncovered endpoints tested end-to-end.\n\n## Context\n16 API routes have ZERO test coverage (not even unit handler tests):\n/api/harvest/status, POST /api/harvest, /api/convergence, /api/board/card-statuses, /api/werk/schema, /api/werk/activity, /api/voice-analytics, /api/attention-analytics, /api/reprompt-analytics, /api/interaction-patterns, /api/memory/similar, /api/memory/links, /api/memory/links/progress, POST /api/sparql, /api/drive-analysis, /api/drive-analysis/confidence\n\nSupertest infrastructure already exists (tests/unit/app.test.ts, tests/security/rate-limiting.test.ts).\n\n## Files\n- tests/integration/api-e2e.test.ts (new)\n\n## AC\n- [ ] Each of the 16 uncovered API routes has a test that hits the real app via supertest\n- [ ] Tests verify status code, content-type, and response shape (not exact values)\n- [ ] Auth-gated endpoints return 401/403 without session, 200 with\n- [ ] Tests run in integration suite, not unit suite",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:new",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:00:04Z",
+      "updated": "2026-04-07T14:00:04Z"
+    },
+    {
+      "index": 2318,
+      "apiId": 2405,
+      "title": "Performance baselines — page load budgets for 5 heaviest pages + 10 SPARQL query budgets",
+      "description": "## Experience\nWhen pages get slow, I notice before the system does. 3 performance tests is not enough. I want budgets on the pages I use most and the queries that power them — if something regresses, the nightly cron catches it, not me.\n\n## Context\n5 heaviest pages (by handler complexity): /sexuality (3 concurrent SPARQL queries, 22K models), /music (paginated album list with artist joins), /knowledge-graph (cross-domain SPARQL + filesystem), /photos (SQLite + cross-source reconciliation), /search (rebuild indexes 2M+ items).\n\n10 most common SPARQL queries: album list, album count, artist list, genre list, track shuffle, model list, model count, content by type, stats by type, domain summary.\n\nExisting pattern in tests/integration/performance-baselines.test.ts uses timedFetch() and timedSparql() with performance.now(). Baselines written to data/perf-baselines/.\n\n## Files\n- tests/integration/performance-baselines.test.ts (extend)\n- tests/performance/page-load.test.ts (new)\n\n## AC\n- [ ] 5 page load budgets: /sexuality <3s, /music <2s, /knowledge-graph <3s, /photos <2s, /search <2s\n- [ ] 10 SPARQL query budgets with 2s default, 15s for large dataset queries\n- [ ] Page load tests measure server response time via supertest, not browser render\n- [ ] Baselines written to data/perf-baselines/ for nightly comparison\n- [ ] All tests gracefully skip if Fuseki unavailable",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:new",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:00:20Z",
+      "updated": "2026-04-07T14:00:20Z"
+    },
+    {
+      "index": 2319,
+      "apiId": 2406,
+      "title": "UI integration tests — 10 multi-service pages that break at seams",
+      "description": "## Experience\nWhen a handler calls 3 services and renders a template, unit tests pass because everything is mocked. But the real page breaks because the data shape from service A doesn't match what the template expects. I want the 10 most complex multi-service pages tested at the integration boundary.\n\n## Context\nCurrent UI integration: 3 files (convergence-page, page-render-flow, shared-partials-flow). Pattern: mock services, instantiate handler, call renderCollection(), verify template name + data shape.\n\nTop 10 by service dependency count:\n1. Seed (20 services — routes to 8+ collection types)\n2. Access-Dashboard (14 services — user+group+ACL+visibility)\n3. Document (5 services — folder hierarchy + harvest)\n4. Property (6 services — houses/gardens/beds + photos)\n5. Idea-Project (8 services — ideas+projects+collections+ACL)\n6. SocialPost (4 services — SPARQL aggregation)\n7. Gallery (2 services — image proxy + tag mapping)\n8. Intention (1 service — but untested)\n9. Network (1 service — people filter + company counts)\n10. Self-Domain (3 services — ontology + experience graph)\n\n## Files\n- tests/integration/ui-render-flow.test.ts (new)\n\n## AC\n- [ ] 10 handler render flows tested with mocked service data\n- [ ] Each test verifies: correct template name, data shape has required properties, empty/error state renders gracefully\n- [ ] Follow existing pattern from page-render-flow.test.ts\n- [ ] Priority order: Seed, Access-Dashboard, Document, Property, Idea-Project first",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:new",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:00:37Z",
+      "updated": "2026-04-07T14:00:37Z"
+    },
+    {
+      "index": 2320,
+      "apiId": 2407,
+      "title": "Chorus E2E — Flow page + Werk/Cost/Jeff interaction tests",
+      "description": "## Experience\nI use Werk, Flow, Cost, and the Jeff dashboard daily. Flow has zero E2E tests. Werk, Cost, and Jeff have only smoke tests (page loads, heading visible). I can't tell if tab switching, filtering, or drill-down works without clicking myself.\n\n## Context\nCurrent Chorus E2E coverage:\n- Bridge: good (8+ tests — health, message roundtrip, API endpoints)\n- Clearing: light (3 tests — lifecycle, decisions, role participation)\n- Werk: moderate (5 tests — page load, tabs visible, card data, spine phases)\n- Cost: minimal (2 tests — heading, daily activity table)\n- Jeff: minimal (2 tests — heading, analytics data)\n- Flow: NONE\n\nPlaywright config at playwright.config.ts, tests at e2e/tests/, single worker, auth fixture.\n\n## Files\n- e2e/tests/chorus-flow.spec.ts (new)\n- e2e/tests/chorus-werk.spec.ts (extend)\n- e2e/tests/chorus-cost.spec.ts (new)\n- e2e/tests/chorus-jeff.spec.ts (new)\n\n## AC\n- [ ] Flow page: loads, domain panels render, card counts visible, expand/collapse works\n- [ ] Werk page: tab switching (Funnel→Spine→Flow→Instruments), card status filters, spine events visible\n- [ ] Cost page: daily activity table with role data, time range filtering if present\n- [ ] Jeff page: analytics sections render, posture timelapse visible if data exists\n- [ ] All tests use existing auth fixture and pass against running app",
+      "status": "Later",
+      "owner": "Kade",
+      "priority": "P2",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:new",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:00:57Z",
+      "updated": "2026-04-07T14:00:57Z"
+    },
+    {
+      "index": 2321,
+      "apiId": 2408,
+      "title": "Cross-role commit collision — git checkout clobbers unstaged work from other roles",
+      "description": "## Experience\n\nThree roles edit files in the same repo. When one role's commit fails (lint, tests), recovery commands like git checkout -- . wipe unstaged changes from other roles. I just watched Kade's commit fight (4 attempts on #2311) destroy Silas's context diagram edits. My JS files broke Kade's lint. The git-queue lock serializes commits but doesn't protect unstaged work.\n\n## Context\n\nObserved 2026-04-07: Silas editing chorus-context-diagram-v2.html. Kade's #2311 commit fails lint on Silas's JS files. Kade runs git checkout -- . to recover. Silas's diagram edits gone. Same pattern happened with Wren's edits earlier in the session.\n\nRoot causes:\n1. git checkout -- . during commit recovery is a nuclear option that doesn't scope to the committing role's files\n2. No role-scoped staging — all roles share one working tree\n3. Lint runs on ALL unstaged JS files, not just staged ones\n4. No guard on destructive git operations that touch other roles' files\n\n## AC\n1. git-queue commit recovery only reverts the committing role's staged files, not the entire working tree\n2. Lint scoped to staged files only (git diff --cached), not working tree\n3. Warn or block when a role's commit would touch files modified by another role\n4. Document the collision pattern and prevention in team protocol\n\n## Files\n- chorus/platform/scripts/git-queue.sh (or equivalent)\n- jeff-bridwell-personal-site/.git/hooks/pre-commit",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T14:24:44Z",
+      "updated": "2026-04-07T14:24:44Z"
     }
   ]
 }
