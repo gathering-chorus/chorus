@@ -1,28 +1,26 @@
 # Current Work
 
-Last updated: 2026-03-27 08:31 Boston
+Last updated: 2026-04-07 16:59 Boston
 
 ## WIP
-None — all shipped.
+None — #1308 complete, pair ended.
 
-## This Session (10 cards)
-- #1617 Seed capture to graph — auto-classify, SPARQL persist, person linking
-- #1574 Analytics API — 4 canonical endpoints with date ranges
-- #1748 /jeff page — 3 fetches → 1 unified, per-fold range selectors
-- #1752 Tone reclassification — 4 sub-categories, skill injection filter, bigram dedup
-- #1749 /cost page — Role Performance table, billing/activity layout split
-- #1754 Daily Activity — backfilled from chorus.log archives, labels fixed
-- #1750 /werk Instruments — Card Velocity + Attention Cost panels
-- #1759 /werk overhaul umbrella — 5 Werk stages, schema remapping
-- #1760 Spine tab — 5 value stream stages, System absorbed, Completed fixed, Loki limits scaled
-- #1758 Tunnel lockdown — /health /metrics blocked from Cloudflare (cf-connecting-ip guard)
+## This Session
+- Gemba on Silas (#2328 repo restructure recovery) — watched ~55 min
+- Fixed 8 test files broken by restructure (Clearing paths, network-boundary, quality-scanner)
+- Pair with Silas on #1308 (CHORUS_ROOT hardening) — 37 min, I drove
+  - state_paths.rs: chorus_root() with OnceLock + env var fallback
+  - 17 Rust prod files + 29 Rust test files migrated (67 test paths)
+  - 34 shell scripts migrated to CHORUS_ROOT variable
+  - 5 TypeScript files migrated (api, clearing, board-client)
+  - 18 symlinks converted absolute → relative
+  - Smoke: cards CLI, chorus-log, hooks all pass
+  - Regression: 231/233 suites, 4689/4696 tests (2 pre-existing flaky timeouts)
 
 ## Blockers
 None
 
-## Queue
-- #1631 Face clusters (Next)
-- #1630 Embeddings (Next)
-- #1619 Provenance stamps (Next)
-- Werk tab-by-tab cards (Wren carding Funnel, Flow Metrics, Instruments tabs)
-- #1581 Complete doc-catalog page (Later)
+## Queue (renumbered after Vikunja rebuild)
+- #1074 Provenance stamps (Next)
+- #1085 Embeddings (Next)
+- #1320 Photo detail thumbnail fix (Next)
