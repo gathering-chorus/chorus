@@ -6,6 +6,7 @@ Last updated: 2026-04-07 10:35 Boston
 (none)
 
 ## Shipped This Session
+- #2317 — API E2E tests for 16 uncovered endpoints (supertest, auth gate, response shapes)
 - #2301 — Dynamic quality service page (live scanner, trapezoid pyramid, foldable details)
 - #2307 — Pre-push gate fix (scoping, retry, deploy lock)
 - #2311 — API vs UI test classification
