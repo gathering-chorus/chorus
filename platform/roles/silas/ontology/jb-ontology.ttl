@@ -1,0 +1,90 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix jb:       <https://jeffbridwell.com/ontology#> .
+
+# =============================================================================
+# JB Domain Ontology — Gathering Collection Classes
+# =============================================================================
+#
+# Declares the 14 domain classes referenced by framework.ttl.
+# These classes appear as instances across domain data graphs
+# (urn:gathering:photos, urn:gathering:music, etc.) but were
+# never formally declared in their own ontology graph.
+#
+# Card: #2300 (stabilization)
+# Version: 0.1.0
+# Date: 2026-04-07
+# =============================================================================
+
+jb: a owl:Ontology ;
+    owl:versionInfo "0.1.0" ;
+    dcterms:title "Gathering Domain Ontology" ;
+    dcterms:description "Core collection classes for Jeff's personal data domains." ;
+    dcterms:created "2026-04-07"^^xsd:date .
+
+# --- Photos ---
+jb:Photo a owl:Class ;
+    rdfs:label "Photo" ;
+    rdfs:comment "A canonical photo — merged from Apple, iPhone, Takeout sources." .
+
+jb:SourcePhoto a owl:Class ;
+    rdfs:label "Source Photo" ;
+    rdfs:comment "A photo record from a single source before canonical merge." .
+
+# --- Music ---
+jb:Track a owl:Class ;
+    rdfs:label "Track" ;
+    rdfs:comment "A music track — 187K in the canonical library." .
+
+jb:Album a owl:Class ;
+    rdfs:label "Album" ;
+    rdfs:comment "A music album containing tracks." .
+
+jb:Artist a owl:Class ;
+    rdfs:label "Artist" ;
+    rdfs:comment "A music artist or performer." .
+
+# --- Stories ---
+jb:Story a owl:Class ;
+    rdfs:label "Story" ;
+    rdfs:comment "A personal narrative — experience, memory, or reflection." .
+
+# --- People ---
+jb:Person a owl:Class ;
+    rdfs:label "Person" ;
+    rdfs:comment "A person in Jeff's network — friend, family, colleague." .
+
+# --- Documents ---
+jb:Document a owl:Class ;
+    rdfs:label "Document" ;
+    rdfs:comment "A document — iCloud, Drive, or local file." .
+
+jb:Note a owl:Class ;
+    rdfs:label "Note" ;
+    rdfs:comment "A note — Apple Notes, captured text." .
+
+# --- Books ---
+jb:Book a owl:Class ;
+    rdfs:label "Book" ;
+    rdfs:comment "A physical or digital book in Jeff's collection." .
+
+# --- Seeds ---
+jb:Seed a owl:Class ;
+    rdfs:label "Seed" ;
+    rdfs:comment "An intake capture — SMS, voice note, link. Entry point for the Capturing stage." .
+
+# --- Property ---
+jb:Zone a owl:Class ;
+    rdfs:label "Zone" ;
+    rdfs:comment "A garden zone — a defined area of the property." .
+
+jb:Bed a owl:Class ;
+    rdfs:label "Bed" ;
+    rdfs:comment "A garden bed within a zone." .
+
+jb:Planting a owl:Class ;
+    rdfs:label "Planting" ;
+    rdfs:comment "A planting event — what was planted where and when." .
