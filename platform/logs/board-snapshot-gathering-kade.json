@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-07T15:10:39.216Z",
+  "timestamp": "2026-04-07T15:25:48.251Z",
   "tasks": [
     {
       "index": 3,
@@ -28982,7 +28982,7 @@
       ],
       "done": true,
       "created": "2026-04-07T14:00:04Z",
-      "updated": "2026-04-07T14:53:56Z"
+      "updated": "2026-04-07T15:14:49Z"
     },
     {
       "index": 2318,
@@ -29166,6 +29166,25 @@
       "done": false,
       "created": "2026-04-07T15:08:39Z",
       "updated": "2026-04-07T15:08:39Z"
+    },
+    {
+      "index": 2328,
+      "apiId": 2415,
+      "title": "Repo cleanup — rename gathering-team, flatten chorus/ to root, remove symlinks, resolve split-brain role dirs, delete cruft",
+      "description": "## Experience\n\nWhen I look at the repo structure, I see symlinks pretending to be directories, two copies of every role directory that have diverged, 500MB of dead backups and abandoned files, and a repo named gathering-team that only contains chorus/. The name doesn't match the content, the structure doesn't match reality, and the cruft slows down every push. After this, the repo is clean, correctly named, and the directory structure matches what git actually tracks.\n\n## AC\n\n- [ ] Rename gathering-team repo to chorus on GitHub. Update local remote URL.\n- [ ] Flatten chorus/ subdirectory to repo root using git filter-repo (preserves history).\n- [ ] Remove 4 top-level symlinks (architect, engineer, product-manager, messages). Replace with additionalDirectories in settings.local.json.\n- [ ] Resolve split-brain role directories — one canonical location per role (chorus/platform/roles/<name> vs chorus/<role-name>). Delete the duplicate.\n- [ ] Delete dead weight: architect-old/, chorus.bak.*, gathering-team/ stub, top-level loose scripts, stale chorus-sdk/.\n- [ ] Update all hardcoded paths in: state_paths.rs (REPO_ROOT), skills (acp, reboot), LaunchAgent plists, git-queue.sh.\n- [ ] All 3 roles can boot, commit, push, and deliver briefs after the migration.\n- [ ] No symlinks required for normal operation.\n\n## Files\n\n- chorus/platform/services/chorus-hooks/src/shared/state_paths.rs\n- chorus/platform/scripts/git-queue.sh\n- chorus/platform/skills/acp/SKILL.md\n- chorus/platform/skills/reboot/skill.md\n- chorus/architect/.claude/settings.local.json\n- chorus/engineer/.claude/settings.local.json\n- chorus/product-manager/.claude/settings.local.json\n- ~/Library/LaunchAgents/com.chorus.*.plist",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P1",
+      "domains": [
+        "chunk:spine",
+        "domain:chorus",
+        "type:chore",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T15:17:00Z",
+      "updated": "2026-04-07T15:18:09Z"
     }
   ]
 }
