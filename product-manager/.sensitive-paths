@@ -1,8 +1,0 @@
-# Wren's sensitive paths — files that should not be sent to external APIs
-# Referenced by PreToolUse hook. See data-classification-policy.md.
-
-internal:
-  - messages/cost-log.md
-
-private:
-  []
