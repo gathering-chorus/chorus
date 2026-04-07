@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-07T13:24:32.848Z",
+  "timestamp": "2026-04-07T13:34:38.863Z",
   "tasks": [
     {
       "index": 3,
@@ -28753,7 +28753,7 @@
       "apiId": 2392,
       "title": "Suppress alerts during planned restarts — correlate app-state.sh commands with alert window",
       "description": "## Experience\nEvery time the app restarts — planned or not — deep-health fires alerts that land on my screen. I just watched Silas spiral through a transient app-down alert that resolved itself. I want planned restarts (app-state.sh deploy, kickstart) to suppress alerts for a grace window so I only see real problems.\n\n## Context\ndeep-health.sh runs on cron and fires alerts to Bridge + nudge. app-state.sh handles all deploys and restarts. No correlation between the two — a planned restart looks identical to a crash.\n\n## AC\n1. app-state.sh writes a suppress file on deploy/restart with TTL (default 120s)\n2. deep-health.sh checks for suppress file and skips alerting during window\n3. Suppress file auto-expires (no cleanup needed)\n4. Manual override: app-state.sh suppress <seconds> for ad-hoc windows\n5. Alerts that fire after suppress window expires are real — no delay\n\n## Files\n- chorus/platform/scripts/app-state.sh\n- chorus/platform/scripts/deep-health.sh",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
@@ -28762,9 +28762,9 @@
         "sequence:ops",
         "origin:reflective"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-07T13:10:55Z",
-      "updated": "2026-04-07T13:17:56Z"
+      "updated": "2026-04-07T13:28:57Z"
     },
     {
       "index": 2306,
@@ -28788,9 +28788,9 @@
       "index": 2307,
       "apiId": 2394,
       "title": "Diagnose slow commits — git-queue lock contention and pre-commit hook performance",
-      "description": "",
-      "status": "Later",
-      "owner": "Silas",
+      "description": "## Experience\n\nKade spent 22 minutes trying to push a finished card (#2301). Five attempts, each blocked by a different transient test failure — none from his changes. Meanwhile Silas restarted the app for #2305, which caused Kade's integration tests to fail mid-run. The push gate is correct in principle but broken in practice: it blocks legitimate pushes on flaky tests and has no awareness of concurrent service restarts.\n\n## Context\n\nCurrent pre-push hook (jeff-bridwell-personal-site/.git/hooks/pre-push) runs T1 tier on every push: Trivy scan (16s) + npm audit + full unit suite + integration tests + security tests + smoke E2E. Estimated 35s but actual 60-90s with transient failures causing retries.\n\nPre-commit runs TypeScript + lint (~15s). This split was done in #1542.\n\nThree concurrent problems observed in gemba 2026-04-07:\n1. Pre-push runs ALL tests, not just tests in changed directories\n2. No retry tolerance for transient failures (live endpoint timeouts, load-dependent budgets)\n3. No coordination with app-state.sh restarts — Silas restarts app while Kade tests run against it\n\nKade's recommendation: changed-directory scoping for pre-push.\n\n## AC\n\n1. Pre-push runs only tests in directories with changed files (git diff --name-only origin/main)\n2. Transient test failures get one automatic retry before blocking the push\n3. app-state.sh writes a deploy lock file; pre-push waits or warns if deploy is in progress\n4. Full test suite runs nightly via cron, not on every push\n5. Pre-push total time under 30s for typical single-card changes\n\n## Files\n\n- jeff-bridwell-personal-site/.git/hooks/pre-push (modify)\n- chorus/platform/scripts/app-state.sh (add deploy lock)",
+      "status": "WIP",
+      "owner": "Kade",
       "priority": "P2",
       "domains": [
         "domain:chorus",
@@ -28800,7 +28800,7 @@
       ],
       "done": false,
       "created": "2026-04-07T13:11:42Z",
-      "updated": "2026-04-07T13:11:42Z"
+      "updated": "2026-04-07T13:26:36Z"
     },
     {
       "index": 2308,
@@ -28837,6 +28837,24 @@
       "done": false,
       "created": "2026-04-07T13:22:15Z",
       "updated": "2026-04-07T13:22:15Z"
+    },
+    {
+      "index": 2310,
+      "apiId": 2397,
+      "title": "[defect] gathering-app: Event loop lag: 11.20s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 11.20s\nSample: Event loop lag: 11.20s\nFirst seen: 2026-04-07T13:27:16Z\nCount: 1\nHash: 13ed850699304fb8",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:27:16Z",
+      "updated": "2026-04-07T13:27:16Z"
     }
   ]
 }
