@@ -1,6 +1,6 @@
 {
   "board": "gathering",
-  "timestamp": "2026-04-06T23:12:26.718Z",
+  "timestamp": "2026-04-07T13:24:34.004Z",
   "tasks": [
     {
       "index": 3,
@@ -21730,19 +21730,19 @@
       "apiId": 1993,
       "title": "Local backup reconciliation and strategy — TM disabled, need a real plan",
       "description": "## Experience\nTime Machine was backing up locally to the same SSD with no external drive — eating 880GB in snapshots during heavy sessions. We disabled it, but now Library has no backup at all. Git covers code. Fuseki has TTL sources. But system config, LaunchAgents, photos library, and user data have no protection against drive failure.\n\n## AC\n- [ ] Inventory what needs backup protection (system config, photos library, LaunchAgents, user data)\n- [ ] Evaluate options: Bedroom NAS via TM network destination, rsync to Bedroom, or iCloud\n- [ ] Implement chosen strategy\n- [ ] Verify restore path works\n- [ ] Document in infrastructure-constraints.md\n\n## Context\nTM disabled 2026-03-31. Exclusions set for CascadeProjects, .gathering, Library/Caches. Daily snapshot thinner (com.chorus.tm-thin) still runs as safety net if TM is re-enabled.",
-      "status": "Later",
+      "status": "Done",
       "owner": "Silas",
       "priority": "P2",
       "domains": [
         "chunk:ops",
         "domain:infrastructure",
-        "type:fix",
+        "type:chore",
         "sequence:ops",
         "origin:reactive"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-03-31T13:47:54Z",
-      "updated": "2026-04-06T22:59:34Z"
+      "updated": "2026-04-07T12:16:00Z"
     },
     {
       "index": 1911,
@@ -24102,7 +24102,7 @@
       ],
       "done": false,
       "created": "2026-04-04T18:11:15Z",
-      "updated": "2026-04-06T15:53:12Z"
+      "updated": "2026-04-07T10:32:54Z"
     },
     {
       "index": 2045,
@@ -28551,7 +28551,7 @@
       "apiId": 2381,
       "title": "Performance baselines — SPARQL query budgets and page load SLAs",
       "description": "## Experience\n13 performance tests total. When things get slow, I notice before the system does. I want time budgets for SPARQL queries and page loads, with nightly regression detection.\n\n## Files\n- tests/integration/performance-baselines.test.ts\n\n## AC\n- [ ] Time budgets for top 10 SPARQL queries\n- [ ] Page load measurement for 5 heaviest pages\n- [ ] Nightly cron with baseline comparison and alerting\n- [ ] 20+ performance tests",
-      "status": "WIP",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -28560,9 +28560,9 @@
         "origin:reflective",
         "sequence:quality"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T21:10:42Z",
-      "updated": "2026-04-06T23:07:17Z"
+      "updated": "2026-04-06T23:14:46Z"
     },
     {
       "index": 2295,
@@ -28586,8 +28586,8 @@
       "index": 2296,
       "apiId": 2383,
       "title": "Smoke check expansion — all authenticated pages",
-      "description": "## Experience\n22 pages in smoke check, ~40 missing. I use /loom, /werk, /chorus, /jeff daily — none are smoke checked.\n\n## AC\n- [ ] Add all authenticated pages to smoke-check.sh (60+ pages)\n- [ ] Include Chorus surfaces: /chorus, /loom, /werk, /jeff\n- [ ] Run post-deploy automatically",
-      "status": "Later",
+      "description": "## Experience\n22 pages in smoke check, ~40 missing. I use /loom, /werk, /chorus, /jeff daily — none are smoke checked.\n\n## Files\n- platform/scripts/smoke-check.sh\n\n## AC\n- [ ] Add all authenticated pages to smoke-check.sh (60+ pages)\n- [ ] Include Chorus surfaces: /chorus, /loom, /werk, /jeff\n- [ ] Run post-deploy automatically",
+      "status": "Done",
       "owner": "Kade",
       "priority": "P2",
       "domains": [
@@ -28596,9 +28596,9 @@
         "origin:reflective",
         "sequence:quality"
       ],
-      "done": false,
+      "done": true,
       "created": "2026-04-06T21:10:43Z",
-      "updated": "2026-04-06T21:10:43Z"
+      "updated": "2026-04-06T23:16:31Z"
     },
     {
       "index": 2297,
@@ -28637,6 +28637,206 @@
       "done": true,
       "created": "2026-04-06T21:35:50Z",
       "updated": "2026-04-06T21:48:37Z"
+    },
+    {
+      "index": 2299,
+      "apiId": 2386,
+      "title": "Infrastructure service design page — home cloud topology, services, constraints",
+      "description": "## Experience\n\nI want one page that shows my home cloud: two Macs, what runs where, ports, health, constraints (C1-C7), and gaps. Same format as the observability service design page.\n\n## AC\n\n1. HTML page at gathering-docs/infrastructure-service-design.html\n2. Sections: Compute, Network, Storage, Services, Backup, Constraints\n3. Each section shows real state — IPs, ports, what runs where\n4. Gaps called out per section\n5. Linked from nav or service design index\n\n## Files\n\n- jeff-bridwell-personal-site/public/gathering-docs/infrastructure-service-design.html (new)",
+      "status": "Done",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:new",
+        "sequence:awareness",
+        "origin:reflective"
+      ],
+      "done": true,
+      "created": "2026-04-07T00:00:42Z",
+      "updated": "2026-04-07T00:04:59Z"
+    },
+    {
+      "index": 2300,
+      "apiId": 2387,
+      "title": "Framework service design — OWL entity model unifying borg chorus and jb ontologies",
+      "description": "## Experience\nI have three ontologies that dont talk to each other. Borg knows what services run on which machines. Chorus knows which roles own which gates. The jb ontology knows what domains hold what data. But nothing connects a service to the gate that protects it to the domain it serves. I want one entity model in OWL where I can ask: What services does the Photos domain depend on? Who owns them? What gates protect them? One SPARQL query not four tools.\n## Context\nThree existing ontologies: borg (8 services TOSCA-inspired) chorus v0.2.0 (roles spine gates) jb (10+ collection classes). Backstage.io reference architecture studied but not adopted. We map its entity model onto OWL connected to Fuseki. Domain crawler 1956 already queries 7 sources per domain. Prior art: US Patent 9552400B2.\n## AC\n1. Framework service design page (HTML same format as existing 5 service designs)\n2. OWL bridge classes connecting borg:Service to chorus:Gate to jb:Domain (TTL file)\n3. Entity kinds mapped as OWL classes: Service API Domain Gate Role Artifact\n4. Relationship types as OWL ObjectProperty: ownedBy dependsOn servesDomain protectedBy providesAPI\n5. Context diagram updated to show Framework layer with OWL/RDF as horizontal capability\n6. One working SPARQL query tracing domain to services to gates to roles\n## Files\n- jeff-bridwell-personal-site/public/gathering-docs/framework-service-design.html (new)\n- chorus/platform/roles/silas/ontology/framework.ttl (new bridge ontology)\n- jeff-bridwell-personal-site/public/gathering-docs/chorus-context-diagram-v2.html (update)",
+      "status": "WIP",
+      "owner": "Wren",
+      "priority": "P1",
+      "domains": [
+        "domain:chorus",
+        "type:new",
+        "sequence:framework",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-07T11:57:10Z",
+      "updated": "2026-04-07T11:57:47Z"
+    },
+    {
+      "index": 2301,
+      "apiId": 2388,
+      "title": "Dynamic quality service page — live test pyramid from filesystem scan",
+      "description": "## Experience\nWhen I open the quality service page, I see our actual test counts — not a snapshot from last week. The pyramid grows as we ship test cards. I can see where we're investing and where the gaps are, updated every time I look.\n\n## Files\n- public/gathering-docs/quality-service.html\n- src/handlers/quality.handler.ts (new)\n- src/services/quality-scanner.service.ts (new)\n\n## AC\n- [ ] Scanner counts tests by layer (unit/integration/e2e/security/performance/bdd/bats/smoke) across both repos\n- [ ] Layer classification uses directory name as contract — tests/unit/ → Unit, tests/integration/ → Integration, e2e/ → E2E, *.bats → BATS, *.feature → BDD\n- [ ] Page renders live pyramid with proportional bar widths from real counts\n- [ ] Cron refreshes cached scan hourly — page serves cached result, not live scan per request\n- [ ] Repo breakdown (Gathering vs Chorus) shown separately\n- [ ] Remove static HTML — replace with EJS template wired to scanner data",
+      "status": "Done",
+      "owner": "Kade",
+      "priority": "P1",
+      "domains": [
+        "chunk:app",
+        "domain:chorus",
+        "type:enhance",
+        "origin:reflective",
+        "sequence:quality"
+      ],
+      "done": true,
+      "created": "2026-04-07T12:07:20Z",
+      "updated": "2026-04-07T13:05:09Z"
+    },
+    {
+      "index": 2302,
+      "apiId": 2389,
+      "title": "Implement nightly rsync backup — Library to Bedroom",
+      "description": "## Experience\nBackup strategy designed in #1910. Library has 5 unprotected data categories (LaunchAgents, ~/.claude, ~/.ssh, index.db, Vikunja). Nightly rsync to Bedroom covers all at zero cost.\n\n## AC\n- [ ] Create rsync script targeting Bedroom:/Volumes/Gathering/Ops/backups/library/\n- [ ] Create LaunchAgent for nightly 2am run\n- [ ] Create Bedroom destination directories\n- [ ] Run first sync, verify file counts match\n- [ ] Add backup freshness check to deep-health.sh\n- [ ] Test restore path on a non-critical item (e.g. restore a LaunchAgent plist)\n- [ ] Generate Brewfile (brew bundle dump) and commit to git\n- [ ] Document in infrastructure-constraints.md\n\n## Context\nFollows #1910 (blueprint). Photos covered by iCloud (confirmed 2026-04-07). 178TB Bedroom media is physical-only — not in scope.",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:chore",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-07T12:13:38Z",
+      "updated": "2026-04-07T12:13:38Z"
+    },
+    {
+      "index": 2303,
+      "apiId": 2390,
+      "title": "[defect] gathering-app: WAV conversion failed",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: WAV conversion failed\nSample: WAV conversion failed\nFirst seen: 2026-04-07T12:20:10Z\nCount: 1\nHash: 6475fe9a89c8a64f",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T12:20:11Z",
+      "updated": "2026-04-07T12:20:11Z"
+    },
+    {
+      "index": 2304,
+      "apiId": 2391,
+      "title": "[defect] gathering-app: Invalid doc slug rejected",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Invalid doc slug rejected\nSample: Invalid doc slug rejected\nFirst seen: 2026-04-07T12:45:38Z\nCount: 1\nHash: a28e69802d6d63ce",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T12:45:38Z",
+      "updated": "2026-04-07T12:45:38Z"
+    },
+    {
+      "index": 2305,
+      "apiId": 2392,
+      "title": "Suppress alerts during planned restarts — correlate app-state.sh commands with alert window",
+      "description": "## Experience\nEvery time the app restarts — planned or not — deep-health fires alerts that land on my screen. I just watched Silas spiral through a transient app-down alert that resolved itself. I want planned restarts (app-state.sh deploy, kickstart) to suppress alerts for a grace window so I only see real problems.\n\n## Context\ndeep-health.sh runs on cron and fires alerts to Bridge + nudge. app-state.sh handles all deploys and restarts. No correlation between the two — a planned restart looks identical to a crash.\n\n## AC\n1. app-state.sh writes a suppress file on deploy/restart with TTL (default 120s)\n2. deep-health.sh checks for suppress file and skips alerting during window\n3. Suppress file auto-expires (no cleanup needed)\n4. Manual override: app-state.sh suppress <seconds> for ad-hoc windows\n5. Alerts that fire after suppress window expires are real — no delay\n\n## Files\n- chorus/platform/scripts/app-state.sh\n- chorus/platform/scripts/deep-health.sh",
+      "status": "WIP",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:enhance",
+        "sequence:ops",
+        "origin:reflective"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:10:55Z",
+      "updated": "2026-04-07T13:17:56Z"
+    },
+    {
+      "index": 2306,
+      "apiId": 2393,
+      "title": "[defect] gathering-app: Event loop lag: 11.37s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 11.37s\nSample: Event loop lag: 11.37s\nFirst seen: 2026-04-07T13:11:29Z\nCount: 1\nHash: 1f5149518a03bf2e",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:11:33Z",
+      "updated": "2026-04-07T13:11:33Z"
+    },
+    {
+      "index": 2307,
+      "apiId": 2394,
+      "title": "Diagnose slow commits — git-queue lock contention and pre-commit hook performance",
+      "description": "",
+      "status": "Later",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "domain:chorus",
+        "type:fix",
+        "sequence:ops",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:11:42Z",
+      "updated": "2026-04-07T13:11:42Z"
+    },
+    {
+      "index": 2308,
+      "apiId": 2395,
+      "title": "[defect] gathering-app: Event loop lag: 5.74s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 5.74s\nSample: Event loop lag: 5.74s\nFirst seen: 2026-04-07T13:16:35Z\nCount: 1\nHash: 42569a1619ef60a8",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:16:38Z",
+      "updated": "2026-04-07T13:16:39Z"
+    },
+    {
+      "index": 2309,
+      "apiId": 2396,
+      "title": "[defect] gathering-app: Event loop lag: 5.12s",
+      "description": "Auto-detected by chorus-ops (errors).\n\nPattern: Event loop lag: 5.12s\nSample: Event loop lag: 5.12s\nFirst seen: 2026-04-07T13:22:15Z\nCount: 1\nHash: 1f986791ef3e2c78",
+      "status": "Ops",
+      "owner": "Silas",
+      "priority": "P2",
+      "domains": [
+        "chunk:ops",
+        "domain:infrastructure",
+        "type:fix",
+        "origin:reactive"
+      ],
+      "done": false,
+      "created": "2026-04-07T13:22:15Z",
+      "updated": "2026-04-07T13:22:15Z"
     }
   ]
 }

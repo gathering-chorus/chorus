@@ -19,6 +19,7 @@ LOGS_DIR="$PROJECT_ROOT/logs"
 APP_CONTAINER="jeff-bridwell-personal-site-app"
 FUSEKI_CONTAINER="jeff-bridwell-personal-site-fuseki"
 NETWORK_NAME="jeff-bridwell-personal-site-network"
+SUPPRESS_FILE="/tmp/chorus-alert-suppress"
 
 # Load environment variables from .env if it exists
 if [ -f "$PROJECT_ROOT/.env" ]; then
@@ -40,6 +41,22 @@ log() {
 
 # Shared observability project location
 OBSERVABILITY_DIR="$(dirname "$PROJECT_ROOT")/shared-observability"
+
+# ============================================================================
+# ALERT SUPPRESSION (#2305)
+# ============================================================================
+
+write_suppress() {
+  local ttl="${1:-120}"
+  local expiry=$(( $(date +%s) + ttl ))
+  echo "$expiry" > "$SUPPRESS_FILE"
+  log "info" "Alert suppression active for ${ttl}s (expires $(date -r "$expiry" '+%H:%M:%S'))"
+}
+
+cmd_suppress() {
+  local ttl="${1:-120}"
+  write_suppress "$ttl"
+}
 
 # ============================================================================
 # PREREQUISITES
@@ -442,6 +459,7 @@ cmd_start() {
 
 cmd_stop() {
   check_docker
+  write_suppress 120
 
   # Stop all containers (but don't destroy)
   local stopped=false
@@ -471,21 +489,29 @@ cmd_restart() {
     esac
   done
 
-  check_docker
-
   if $run_tests; then
     run_tests || exit 1
   fi
 
-  if infra_exists && infra_running; then
-    # Fast restart - just restart the container
-    log "info" "Performing fast restart..."
-    restart_container
+  # Native LaunchAgent restart (preferred path)
+  if launchctl list 2>/dev/null | grep -q "com.gathering.app"; then
+    write_suppress 120
+    log "info" "Restarting gathering-app via launchctl..."
+    launchctl kickstart -k "gui/$(id -u)/com.gathering.app"
+    wait_for_health
+    log "info" "Restart complete - app available at http://localhost:3000"
+    return 0
+  fi
 
+  # Docker fallback
+  check_docker
+  if infra_exists && infra_running; then
+    log "info" "Performing Docker restart..."
+    write_suppress 120
+    restart_container
     wait_for_health
     log "info" "Restart complete - app available at http://localhost:3000"
   else
-    # Need full start
     log "info" "Infrastructure not running, performing full start..."
     cmd_start "$@"
   fi
@@ -638,6 +664,10 @@ case "${1:-help}" in
     ;;
   test)
     cmd_test
+    ;;
+  suppress)
+    shift
+    cmd_suppress "$@"
     ;;
   help|--help|-h)
     cmd_help

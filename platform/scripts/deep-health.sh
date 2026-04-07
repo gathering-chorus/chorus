@@ -10,6 +10,19 @@ FAILURES=()
 
 now=$(date +%s)
 
+# --- 0. Alert suppression check (#2305) ---
+SUPPRESS_FILE="/tmp/chorus-alert-suppress"
+if [ -f "$SUPPRESS_FILE" ]; then
+  expiry=$(cat "$SUPPRESS_FILE" 2>/dev/null || echo 0)
+  if [ "$expiry" -gt "$now" ] 2>/dev/null; then
+    remaining=$(( expiry - now ))
+    echo "deep-health: suppressed (${remaining}s remaining — planned restart)"
+    exit 0
+  fi
+  # Expired — remove and continue normally
+  rm -f "$SUPPRESS_FILE"
+fi
+
 # --- 1. Session watcher: fswatch subprocess alive ---
 if pgrep -f "fswatch.*\.jsonl" > /dev/null 2>&1; then
   : # fswatch alive
