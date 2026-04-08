@@ -291,7 +291,7 @@ pub fn health_daily(args: &[String]) -> ExitCode {
     let role_dir_path = match role {
         "wren" => format!("{}/roles/wren", REPO_ROOT),
         "silas" => format!("{}/roles/silas", REPO_ROOT),
-        "kade" => format!("{}/platform/roles/kade", REPO_ROOT),
+        "kade" => format!("{}/roles/kade", REPO_ROOT),
         _ => unreachable!(),
     };
 

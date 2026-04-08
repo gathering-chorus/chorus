@@ -15,7 +15,7 @@ fn run_hook(tool_name: &str, command: &str) -> String {
     let input = serde_json::json!({
         "tool_name": tool_name,
         "tool_input": { "command": command },
-        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/kade",
+        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade",
         "session_id": "test-1866"
     });
 

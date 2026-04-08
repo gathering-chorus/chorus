@@ -71,7 +71,7 @@ fn git_commit_blocked_inside_team_repo() {
         "tool_name": "Bash",
         "tool_input": {"command": "git commit -m 'test'"},
         "session_id": "test-session",
-        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/kade"
+        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade"
     });
 
     let output = Command::new(SHIM)

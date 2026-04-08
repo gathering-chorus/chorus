@@ -76,7 +76,7 @@ fn test_role_detection_from_cwd() {
     let cases = vec![
         ("/Users/jeffbridwell/CascadeProjects/chorus/roles/wren", "wren"),
         ("/Users/jeffbridwell/CascadeProjects/chorus/roles/silas", "silas"),
-        ("/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/kade", "kade"),
+        ("/Users/jeffbridwell/CascadeProjects/chorus/roles/kade", "kade"),
         ("/Users/jeffbridwell/CascadeProjects/chorus/messages", "unknown"),
         ("/tmp/random", "unknown"),
     ];

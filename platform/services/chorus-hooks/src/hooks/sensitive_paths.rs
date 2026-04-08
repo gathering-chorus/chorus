@@ -11,7 +11,7 @@ fn manifest_paths() -> Vec<String> {
     vec![
         format!("{}/roles/wren/.sensitive-paths", root),
         format!("{}/roles/silas/.sensitive-paths", root),
-        format!("{}/platform/roles/kade/.sensitive-paths", root),
+        format!("{}/roles/kade/.sensitive-paths", root),
     ]
 }
 

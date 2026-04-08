@@ -37,7 +37,7 @@ Before(function () {
     stateBackups: new Map(),
     targetFile: '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/smoke-test.rs',
     targetTool: 'Edit',
-    cwd: '/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/kade',
+    cwd: '/Users/jeffbridwell/CascadeProjects/chorus/roles/kade',
   };
 
   // Backup AND clear ALL role state files for deterministic tests.
@@ -406,7 +406,7 @@ When('they try to edit a code file', function () {
 
 When('they try to edit a code file in their own domain', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/kade/src/app.ts';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/roles/kade/src/app.ts';
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -428,7 +428,7 @@ When('they try to edit a cross-domain code file', function () {
 
 When('they try to edit a file in their own domain', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/kade/src/app.ts';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/roles/kade/src/app.ts';
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',

@@ -410,7 +410,7 @@ fi
 # ─── Brief file cleanup — probes auto-route to role inboxes ─────
 CR="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 BRIEF_DIRS=(
-  "$CR/platform/roles/kade/briefs"
+  "$CR/roles/kade/briefs"
   "$CR/roles/silas/briefs"
   "$CR/roles/wren/briefs"
 )
