@@ -54,7 +54,13 @@ for line in sys.stdin:
     try:
         d = json.loads(line.strip())
         msg_type = d.get('type','')
-        ts = d.get('timestamp','')[:16] or '?'
+        from datetime import datetime, timezone, timedelta
+        raw_ts = d.get('timestamp','')[:19] or ''
+        try:
+            utc = datetime.fromisoformat(raw_ts.replace('Z','+00:00')).replace(tzinfo=timezone.utc)
+            eastern = utc.astimezone(timezone(timedelta(hours=-4)))
+            ts = eastern.strftime('%H:%M')
+        except: ts = raw_ts[:16]
         if msg_type == 'assistant':
             for block in d.get('message',{}).get('content',[]):
                 if block.get('type') == 'tool_use':
