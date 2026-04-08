@@ -19,13 +19,13 @@ describe('spine event metadata enrichment (#1817)', () => {
 
   describe('SpineContext construction', () => {
     it('createSpineContext returns context with product and version', () => {
-      const ctx = createSpineContext({ appName: 'board-client', version: 'abc1234' });
+      const ctx = createSpineContext({ appName: 'cards', version: 'abc1234' });
       expect(ctx.product).toBe('Chorus');
       expect(ctx.version).toBe('abc1234');
     });
 
     it('emit with context injects product and version into event', () => {
-      const ctx = createSpineContext({ appName: 'board-client', version: 'def5678' });
+      const ctx = createSpineContext({ appName: 'cards', version: 'def5678' });
       const event = emit('test.enriched', 'kade', {}, { logFile: tmpFile, context: ctx });
 
       expect(event.product).toBe('Chorus');
@@ -33,7 +33,7 @@ describe('spine event metadata enrichment (#1817)', () => {
     });
 
     it('context fields appear in logged JSON line', () => {
-      const ctx = createSpineContext({ appName: 'board-client', version: 'ghi9012' });
+      const ctx = createSpineContext({ appName: 'cards', version: 'ghi9012' });
       emit('test.logged', 'silas', {}, { logFile: tmpFile, context: ctx });
 
       const lines = fs.readFileSync(tmpFile, 'utf-8').trim().split('\n');
@@ -51,8 +51,8 @@ describe('spine event metadata enrichment (#1817)', () => {
       expect(ctx.product).toBe('Chorus');
     });
 
-    it('maps board-client appName to Chorus product', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+    it('maps cards appName to Chorus product', () => {
+      const ctx = createSpineContext({ appName: 'cards' });
       expect(ctx.product).toBe('Chorus');
     });
 
@@ -71,13 +71,13 @@ describe('spine event metadata enrichment (#1817)', () => {
 
   describe('card field', () => {
     it('injects card from context', () => {
-      const ctx = createSpineContext({ appName: 'board-client', card: '1817' });
+      const ctx = createSpineContext({ appName: 'cards', card: '1817' });
       const event = emit('test.card', 'kade', {}, { logFile: tmpFile, context: ctx });
       expect(event.card).toBe('1817');
     });
 
     it('per-call card overrides context card', () => {
-      const ctx = createSpineContext({ appName: 'board-client', card: '1817' });
+      const ctx = createSpineContext({ appName: 'cards', card: '1817' });
       const event = emit('test.card.override', 'kade', { card: '9999' }, { logFile: tmpFile, context: ctx });
       expect(event.card).toBe('9999');
     });
@@ -87,7 +87,7 @@ describe('spine event metadata enrichment (#1817)', () => {
 
   describe('version field', () => {
     it('version injected from context', () => {
-      const ctx = createSpineContext({ appName: 'board-client', version: 'a1b2c3d' });
+      const ctx = createSpineContext({ appName: 'cards', version: 'a1b2c3d' });
       const event = emit('test.version', 'kade', {}, { logFile: tmpFile, context: ctx });
       expect(event.version).toBe('a1b2c3d');
     });
@@ -106,7 +106,7 @@ describe('spine event metadata enrichment (#1817)', () => {
 
   describe('null for missing fields', () => {
     it('emits null for fields not provided', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const event = emit('test.nulls', 'kade', {}, { logFile: tmpFile, context: ctx });
 
       // version not set in context → null
@@ -120,7 +120,7 @@ describe('spine event metadata enrichment (#1817)', () => {
     });
 
     it('null fields appear in JSON output', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       emit('test.nulls.json', 'kade', {}, { logFile: tmpFile, context: ctx });
 
       const lines = fs.readFileSync(tmpFile, 'utf-8').trim().split('\n');
@@ -135,7 +135,7 @@ describe('spine event metadata enrichment (#1817)', () => {
 
   describe('caller info auto-population', () => {
     it('function field is auto-populated from caller', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const event = emit('test.caller', 'kade', {}, { logFile: tmpFile, context: ctx });
 
       // Should contain something — the exact value depends on the call site
@@ -144,7 +144,7 @@ describe('spine event metadata enrichment (#1817)', () => {
     });
 
     it('line field is auto-populated from caller', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const event = emit('test.line', 'kade', {}, { logFile: tmpFile, context: ctx });
 
       expect(event.line).toBeDefined();
@@ -156,7 +156,7 @@ describe('spine event metadata enrichment (#1817)', () => {
 
   describe('error and stack fields', () => {
     it('error field included when level=error', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const event = emit('test.error', 'kade', {
         level: 'error',
         error: 'Fuseki unreachable',
@@ -168,7 +168,7 @@ describe('spine event metadata enrichment (#1817)', () => {
     });
 
     it('error and stack are null when not error level', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const event = emit('test.info', 'kade', {}, { logFile: tmpFile, context: ctx });
 
       expect(event.error).toBeNull();
@@ -189,7 +189,7 @@ describe('spine event metadata enrichment (#1817)', () => {
     });
 
     it('card.pulled: value_stream=Chorus, value_stream_step=Building', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const event = emit('card.pulled', 'kade', {}, { logFile: tmpFile, context: ctx });
       expect(event.value_stream).toBe('Chorus');
       expect(event.value_stream_step).toBe('Building');
@@ -198,7 +198,7 @@ describe('spine event metadata enrichment (#1817)', () => {
     });
 
     it('card.accepted: value_stream_step=Proving', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const event = emit('card.accepted', 'kade', {}, { logFile: tmpFile, context: ctx });
       expect(event.value_stream_step).toBe('Proving');
     });
@@ -211,7 +211,7 @@ describe('spine event metadata enrichment (#1817)', () => {
     });
 
     it('unknown event gets null value_stream_step', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const event = emit('totally.unknown.event', 'kade', {}, { logFile: tmpFile, context: ctx });
       expect(event.value_stream_step).toBeNull();
       expect(event.event).toBe('totally.unknown.event');
@@ -233,7 +233,7 @@ describe('spine event metadata enrichment (#1817)', () => {
 
   describe('trace_id correlation', () => {
     it('auto-generates trace_id when not passed', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const event = emit('test.trace', 'kade', {}, { logFile: tmpFile, context: ctx });
       expect(event.trace_id).toBeDefined();
       expect(typeof event.trace_id).toBe('string');
@@ -241,14 +241,14 @@ describe('spine event metadata enrichment (#1817)', () => {
     });
 
     it('each emit gets a unique trace_id', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const e1 = emit('test.trace1', 'kade', {}, { logFile: tmpFile, context: ctx });
       const e2 = emit('test.trace2', 'kade', {}, { logFile: tmpFile, context: ctx });
       expect(e1.trace_id).not.toBe(e2.trace_id);
     });
 
     it('caller can pass trace_id to continue a trace', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       const e1 = emit('seed.received', 'system', {}, { logFile: tmpFile, context: ctx });
       const traceId = e1.trace_id!;
       const e2 = emit('seed.routed', 'system', { trace_id: traceId }, { logFile: tmpFile, context: ctx });
@@ -256,7 +256,7 @@ describe('spine event metadata enrichment (#1817)', () => {
     });
 
     it('trace_id appears in JSON output', () => {
-      const ctx = createSpineContext({ appName: 'board-client' });
+      const ctx = createSpineContext({ appName: 'cards' });
       emit('test.trace.json', 'kade', {}, { logFile: tmpFile, context: ctx });
       const lines = fs.readFileSync(tmpFile, 'utf-8').trim().split('\n');
       const last = JSON.parse(lines[lines.length - 1]);
@@ -280,13 +280,13 @@ describe('spine event metadata enrichment (#1817)', () => {
     it('existing SpineEvent fields preserved', () => {
       const event = emit('card.accepted', 'silas', { card_id: '177' }, {
         logFile: tmpFile,
-        appName: 'board-client',
+        appName: 'cards',
         component: 'cli',
       });
 
       expect(event.timestamp).toBeTruthy();
       expect(event.level).toBe('info');
-      expect(event.appName).toBe('board-client');
+      expect(event.appName).toBe('cards');
       expect(event.component).toBe('cli');
     });
   });

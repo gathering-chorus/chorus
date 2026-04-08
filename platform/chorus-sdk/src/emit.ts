@@ -39,7 +39,7 @@ const STREAM_NAME: Record<string, string> = {
 const PRODUCT_MAP: Record<string, string> = {
   'chorus-events': 'Chorus',
   'chorus-sdk': 'Chorus',
-  'board-client': 'Chorus',
+  'cards': 'Chorus',
   'jeff-bridwell-personal-site': 'Gathering',
 };
 

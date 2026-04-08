@@ -37,15 +37,15 @@ describe('emit', () => {
   it('uses custom appName and component', () => {
     const event = emit('custom.event', 'silas', {}, {
       logFile: tmpFile,
-      appName: 'board-client',
+      appName: 'cards',
       component: 'cli',
     });
 
-    expect(event.appName).toBe('board-client');
+    expect(event.appName).toBe('cards');
     expect(event.component).toBe('cli');
   });
 
-  it('is backward compatible with board-client format', () => {
+  it('is backward compatible with cards format', () => {
     const event = emit('card.accepted', 'silas', { card_id: '177' }, { logFile: tmpFile });
     const lines = fs.readFileSync(tmpFile, 'utf-8').trim().split('\n');
     const last = JSON.parse(lines[lines.length - 1]);

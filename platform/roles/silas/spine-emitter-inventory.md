@@ -48,8 +48,8 @@ All 5 shell direct-writers now call chorus-log.sh. New event types added to spin
 
 | Source | appName | Events | Reaches Loki |
 |--------|---------|--------|:---:|
-| board-client/cli.ts | board-client | card_created/moved/done/blocked/updated/commented, board_snapshot, board_audit_start/close, stale_card_detected, quality_gate_warn | Yes |
-| board-client/cli.ts | chorus-events | verification_complete | Yes |
+| cards/cli.ts | cards | card_created/moved/done/blocked/updated/commented, board_snapshot, board_audit_start/close, stale_card_detected, quality_gate_warn | Yes |
+| cards/cli.ts | chorus-events | verification_complete | Yes |
 | workflow-engine/cli.ts | workflow-engine | workflow_advance, workflow_complete | Yes |
 | chorus/api/server.ts | grafana-alerts | alert_firing, alert_resolved | Yes |
 
