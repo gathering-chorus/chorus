@@ -8,6 +8,9 @@ ROLE="${1:?Usage: gemba-start.sh <role>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CARDS="$SCRIPT_DIR/cards"
 
+# Write fresh start epoch so gemba-tick.sh TTL computes from now
+echo "$(date +%s)" > "/tmp/gemba-start-epoch-${ROLE}"
+
 echo "=== GEMBA: $ROLE ==="
 echo "--- $(TZ=America/New_York date '+%Y-%m-%d %H:%M') Boston ---"
 echo ""

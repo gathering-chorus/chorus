@@ -32,9 +32,10 @@ Declare state:
 ### Step 2: Start the cron loop
 
 ```bash
-START_EPOCH=$(date +%s)
-# CronCreate: cron="*/1 * * * *", prompt="/gemba-tick <ROLE> <START_EPOCH>", recurring=true
+# CronCreate: cron="*/1 * * * *", prompt="/gemba-tick <ROLE>", recurring=true
 ```
+
+Note: gemba-start.sh writes the start epoch to `/tmp/gemba-start-epoch-${ROLE}`. The tick script reads it automatically — no epoch argument needed.
 
 ### Step 3: Commentary format
 
@@ -54,10 +55,9 @@ On each tick, read the script output and commentate in this format:
 
 ### Exit
 
-Triggers: Jeff says stop, card accepted/rejected, 10-minute TTL (computed from epoch, never estimated), or Jeff moves to other work. In /pair sessions, TTL is scope-boxed to the pair duration.
+Triggers: Jeff says stop, card accepted/rejected, 10-minute TTL (computed from epoch file, never estimated), or Jeff moves to other work. In /pair sessions, TTL is scope-boxed to the pair duration.
 
 Exit sequence:
 1. CronDelete the loop
-2. Compute elapsed: `echo $(( $(date +%s) - START_EPOCH ))`
-3. Debrief: one paragraph, include elapsed seconds
-4. `role-state <your-role> waiting`
+2. Debrief: one paragraph, include elapsed time from script output
+3. `role-state <your-role> waiting`

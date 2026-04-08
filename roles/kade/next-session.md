@@ -1,30 +1,31 @@
 # Kade — Next Session
 
 ## Status
-No WIP. #1794 and #1801 shipped and accepted.
+No WIP. 5 cards shipped: #1812, #1815, #1816, #1822, #1821.
 
 ## This session (2026-04-08)
-- **#1794** — Fix test suite from #1791 restructure. Pair with Wren (62 min). 390 Rust + 106 BDD green. --dry-run on nudge/chat. 12 Rust production hooks fixed (dead paths). Restarted com.chorus.hooks server.
-- **#1801** — Rename board-client to cards. Pair with Wren (20 min). Directory, package, CLI, 4 docs, 20 test failures fixed. Cards 20/20 green.
-- Domain map v2 artifact: 40 domains across 8 layers with quality overlay
-- Team retro on reliability (28% correction rate). Repo structure audit. Product ownership defined.
-- Gemba on Silas: #1807 product inventory, #1809 demo gate to shell scripts
+- **#1812** — Card completion pipeline design. 8-stage pipeline with Jeff. HTML design doc, BDD scenarios, actor diagram. Practices domain.
+- **#1815** — Built /gate-code and /gate-quality skills. Reviewed, adjusted for pilot mode.
+- **#1816** — Seeds domain migration. Paired with Wren (7 min). 235 tests green, 18 BDD alert steps written, PRODUCT_TEMPLATE created. First live pipeline pilot.
+- **#1822** — Moved platform/cards → directing/products/cards. Fixed symlink, 20+ path refs, cards script wrapper.
+- **#1821** — Moved platform/roles/kade → roles/kade. Paired with Silas navigating. 3 Rust source files, 6+ test fixtures, 359+ tests green.
 
-## Key discoveries
-- chorus-hooks SERVER binary must restart after rebuild (shim forwards via socket)
-- 25 domain doc pages missing from doc-catalog (stale #1791 paths)
-- git-queue.sh had mangled CHORUS_LOG string — fixed
-- API returns 25 domains, reference model names 40 — 15 undeclared
-- 27 of 40 domains have zero tests
+## Pick up
+- **Python scripts in roles/kade/scripts/** — Jeff flagged. Review after namespace move (photo-pipeline.py, gen-thumbs-bedroom.py, nifi/, etc.)
+- **4 brief-dirs test failures** — should now pass since roles/kade/ exists. Verify.
+- **9 engineer fallbacks in Rust** — dead code, clean up (types.rs, nudge.rs, process.rs, etc.)
+- **Gate skills not invocable** — symlinks exist, skill loader doesn't find them. Fix naming.
 
 ## Next card
-- #1800 — Board test isolation (P1, mine). Tests hit live Vikunja.
+- #1800 — Board test isolation (P1)
 - #1619 — Provenance stamps (Next)
-- #1630 — Rebuild semantic embeddings (Next)
+- #1630 — Embeddings (Next)
 - #1865 — Photo detail thumbnail fix (Next)
 
-## Notes
-- Product ownership: I own Clearing + Cards code
-- Sexuality-player on Bedroom needs plist log path fix
-- 40 @wip BDD scenarios need step defs (Wren carding)
-- Inverse Conway is the operating model — team shape drives code shape
+## Key decisions
+- Card completion pipeline: Product → Code → Quality → Arch → Ops (Jeff's design)
+- No premature ACP — nudge next gate owner, not Jeff
+- Gate sign-off via card labels: gate:*-pass
+- /demo = Product gate (Wren)
+- Pilot mode: observe before enforce
+- Kade = code + quality gates, Silas = arch + ops gates

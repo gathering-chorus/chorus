@@ -1,7 +1,7 @@
 /**
  * Brief Directory Restructure Test — #1802
  *
- * Validates that brief routing uses the canonical platform/roles/<name>/briefs paths,
+ * Validates that brief routing uses the canonical roles/<name>/briefs paths,
  * not the legacy root-level architect/engineer/product-manager directories.
  */
 import * as fs from 'fs';
@@ -11,15 +11,15 @@ const PROJECT_ROOT = path.join(__dirname, '../../../..');
 const SDK_PATH = path.join(__dirname, '../src/sdk.ts');
 
 describe('#1802: Brief directories use canonical paths', () => {
-  test('platform/roles/silas/briefs exists', () => {
+  test('roles/silas/briefs exists', () => {
     expect(fs.existsSync(path.join(PROJECT_ROOT, 'roles/silas/briefs'))).toBe(true);
   });
 
-  test('platform/roles/kade/briefs exists', () => {
+  test('roles/kade/briefs exists', () => {
     expect(fs.existsSync(path.join(PROJECT_ROOT, 'roles/kade/briefs'))).toBe(true);
   });
 
-  test('platform/roles/wren/briefs exists', () => {
+  test('roles/wren/briefs exists', () => {
     expect(fs.existsSync(path.join(PROJECT_ROOT, 'roles/wren/briefs'))).toBe(true);
   });
 

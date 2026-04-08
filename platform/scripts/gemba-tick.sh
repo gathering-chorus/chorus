@@ -6,10 +6,14 @@ set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
 
-ROLE="${1:?Usage: gemba-tick.sh <role> [start_epoch]}"
+ROLE="${1:?Usage: gemba-tick.sh <role>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-START_EPOCH="${2:-0}"
+EPOCH_FILE="/tmp/gemba-start-epoch-${ROLE}"
 NOW=$(date +%s)
+if [ ! -f "$EPOCH_FILE" ]; then
+  echo "$NOW" > "$EPOCH_FILE"
+fi
+START_EPOCH=$(cat "$EPOCH_FILE")
 ELAPSED=$(( NOW - START_EPOCH ))
 LAST_CHECK_FILE="/tmp/gemba-last-check-${ROLE}"
 

@@ -6,7 +6,6 @@ Internal skill — invoked by cron, not by Jeff directly.
 
 ```
 ROLE=<first argument>
-START_EPOCH=<second argument>
 ```
 
 ## How to Execute
@@ -14,7 +13,7 @@ START_EPOCH=<second argument>
 ### Step 1: Run gemba-tick.sh
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gemba-tick.sh ${ROLE} ${START_EPOCH}
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gemba-tick.sh ${ROLE}
 ```
 
 ### Step 2: Read the output and commentate
@@ -33,9 +32,8 @@ If script says "TTL EXPIRED": run exit sequence.
 ### Step 3: Exit sequence (if triggered)
 
 1. CronDelete the loop
-2. Compute elapsed: `echo $(( $(date +%s) - START_EPOCH ))`
-3. Debrief: one paragraph with elapsed seconds
-4. `role-state <your-role> waiting`
+2. Debrief: one paragraph, include elapsed time from script output
+3. `role-state <your-role> waiting`
 
 ## Rules
 
