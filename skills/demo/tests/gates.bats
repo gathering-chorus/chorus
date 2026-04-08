@@ -31,7 +31,7 @@ GATES_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/../gates" && pwd)"
 @test "provenance generates brief with correct AC format" {
   run bash "$GATES_DIR/provenance.sh" 1809 wren
   [ "$status" -eq 0 ]
-  brief="$(ls -t "$CHORUS_ROOT/platform/roles/wren/briefs/"*demo*1809* 2>/dev/null | head -1)"
+  brief="$(ls -t "$CHORUS_ROOT/roles/wren/briefs/"*demo*1809* 2>/dev/null | head -1)"
   [ -f "$brief" ]
   # AC count should be on one line like (0/6) not split across lines
   run grep "AC Status" "$brief"

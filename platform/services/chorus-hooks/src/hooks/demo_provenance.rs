@@ -28,7 +28,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
 
     info!(card = %card_id, "demo-provenance: dispatching to provenance.sh");
 
-    let script = format!("{}/platform/skills/demo/gates/provenance.sh", chorus_root());
+    let script = format!("{}/skills/demo/gates/provenance.sh", chorus_root());
     let output = Command::new("bash")
         .args([&script, card_id, role.as_str()])
         .output();
