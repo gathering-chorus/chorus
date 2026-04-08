@@ -53,7 +53,7 @@ SESSION_DIR=""
 case "$ROLE" in
   silas) SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-architect" ;;
   kade)  SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-engineer" ;;
-  wren)  SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-product-manager" ;;
+  wren)  SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-wren" ;;
 esac
 
 if [ -n "$SESSION_DIR" ] && [ -d "$SESSION_DIR" ]; then
@@ -139,7 +139,7 @@ ROLE_DIR=""
 case "$ROLE" in
   silas) ROLE_DIR="${CHORUS_ROOT}/roles/silas" ;;
   kade)  ROLE_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site" ;;
-  wren)  ROLE_DIR="${CHORUS_ROOT}/platform/roles/product-manager" ;;
+  wren)  ROLE_DIR="${CHORUS_ROOT}/chorus/roles/wren" ;;
 esac
 
 # Check git for uncommitted changes in role's working dirs
