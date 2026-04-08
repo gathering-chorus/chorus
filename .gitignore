@@ -38,9 +38,10 @@ directing/vikunja/db/
 # Rust build artifacts
 *.rlib
 
-# Logs in proving/ (runtime, rotated by logrotate)
+# Logs and snapshots in proving/ (runtime, not source)
 proving/logs/*.log
 proving/logs/*.log.*
+proving/logs/*.json
 
 # Stale config backups
 *.json.bak
