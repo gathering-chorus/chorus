@@ -128,6 +128,29 @@ Source: domain map v3 + <code>framework.ttl</code> + <code>chorus-product-ontolo
 
 <div class="entity complete" data-product="chorus">
   <div class="entity-header">
+    <span class="entity-name">Seeds <span class="type-badge badge-domain">DOMAIN</span></span>
+    <span class="entity-owner">Wren</span>
+  </div>
+  <div class="entity-desc">SMS intake pipeline. Two-message pattern. 12 routing destinations. Cross-product: Gathering receives, Chorus monitors.</div>
+  <div class="checks">
+    <span class="check check-pass">&#10003; Owner</span>
+    <span class="check check-pass">&#10003; Services (3)</span>
+    <span class="check check-pass">&#10003; Direction Gate</span>
+    <span class="check check-pass">&#10003; Tests (235 Gathering + 41 BDD)</span>
+    <span class="check check-pass">&#10003; Service design</span>
+    <span class="check check-pass">&#10003; PRODUCT_TEMPLATE</span>
+  </div>
+  <div class="domains"><span class="domain-chip d-real">seeds</span> <span class="domain-chip d-partial">glimmers</span></div>
+  <div class="services">
+    <span class="svc">Fuseki (Silas)</span>
+    <span class="svc">Gathering App (Kade)</span>
+    <span class="svc">Chorus API (Silas)</span>
+  </div>
+  <div class="gates"><span class="gate">Direction Gate (Jeff)</span></div>
+</div>
+
+<div class="entity complete" data-product="chorus">
+  <div class="entity-header">
     <span class="entity-name">Demo <span class="type-badge badge-subproduct">SUB-PRODUCT</span></span>
     <span class="entity-owner">Wren</span>
   </div>
@@ -201,26 +224,6 @@ Source: domain map v3 + <code>framework.ttl</code> + <code>chorus-product-ontolo
   <div class="services"><span class="svc">Clearing Express (Kade)</span></div>
 </div>
 
-<div class="entity partial" data-product="chorus">
-  <div class="entity-header">
-    <span class="entity-name">Seeds <span class="type-badge badge-domain">DOMAIN</span></span>
-    <span class="entity-owner">Wren</span>
-  </div>
-  <div class="entity-desc">SMS intake pipeline. Two-message pattern. Entry point for Capturing vertebra.</div>
-  <div class="checks">
-    <span class="check check-pass">&#10003; Owner</span>
-    <span class="check check-pass">&#10003; Services (3)</span>
-    <span class="check check-pass">&#10003; Direction Gate</span>
-    <span class="check check-fail">&#10007; Tests</span>
-  </div>
-  <div class="domains"><span class="domain-chip d-real">seeds</span> <span class="domain-chip d-partial">glimmers</span></div>
-  <div class="services">
-    <span class="svc">Fuseki (Silas)</span>
-    <span class="svc">Gathering App (Kade)</span>
-    <span class="svc">Chorus API (Silas)</span>
-  </div>
-  <div class="gates"><span class="gate">Direction Gate (Jeff)</span></div>
-</div>
 
 <div class="entity partial" data-product="chorus">
   <div class="entity-header">
@@ -461,7 +464,7 @@ Source: domain map v3 + <code>framework.ttl</code> + <code>chorus-product-ontolo
   <tr data-product="chorus"><td>3</td><td><strong>Hooks</strong></td><td>Sub-product</td><td><span class="readiness ready">READY</span></td><td>390 Rust tests green. Needs PRODUCT_TEMPLATE.</td></tr>
   <tr data-product="gathering"><td>4</td><td><strong>Photos</strong></td><td>Domain</td><td><span class="readiness ready">READY</span></td><td>Most mature. Full gate coverage.</td></tr>
   <tr data-product="chorus"><td>5</td><td><strong>Clearing</strong></td><td>Sub-product</td><td><span class="readiness close">CLOSE</span></td><td>Needs template, spine events.</td></tr>
-  <tr data-product="chorus"><td>6</td><td><strong>Seeds</strong></td><td>Domain</td><td><span class="readiness close">CLOSE</span></td><td>Needs tests.</td></tr>
+  <tr data-product="chorus"><td>4</td><td><strong>Seeds</strong></td><td>Domain</td><td><span class="readiness ready">READY</span></td><td>Migrated #1816. 235+41 tests, service design, template.</td></tr>
   <tr data-product="chorus"><td>7</td><td><strong>Observability</strong></td><td>Domain</td><td><span class="readiness close">CLOSE</span></td><td>Needs full test coverage.</td></tr>
   <tr data-product="chorus"><td>8</td><td><strong>Protocol</strong></td><td>Domain</td><td><span class="readiness close">CLOSE</span></td><td>Event contract incomplete.</td></tr>
   <tr data-product="chorus"><td>9</td><td><strong>Infrastructure</strong></td><td>Domain</td><td><span class="readiness close">CLOSE</span></td><td>Needs tests.</td></tr>
