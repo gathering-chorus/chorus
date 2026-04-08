@@ -7,7 +7,7 @@ Each entry maps to: location, owner, run mode, and external dependencies.
 
 | Script | Location | Owner | Run Mode | Dependencies |
 |--------|----------|-------|----------|-------------|
-| Navidrome | `roles/silas/scripts/launchagents/com.gathering.navidrome.plist` | Silas | LaunchAgent (KeepAlive) | `/Volumes/VideosNew/Gathering/Music/Music`, port 4533 |
+| Navidrome | `platform/scripts/launchagents-canonical/com.gathering.navidrome.plist` | Silas | LaunchAgent (KeepAlive) | `/Volumes/VideosNew/Gathering/Music/Music`, port 4533 |
 | harvest-exporter | `~/Library/LaunchAgents/com.chorus.harvest-exporter.plist` | Silas | LaunchAgent (15 min) | shared-observability, Prometheus |
 | deep-health | `platform/scripts/deep-health.sh` | Silas | LaunchAgent (5 min) | fswatch, chorus-hooks binary, nudge |
 | chorus-ops | `platform/scripts/chorus-ops.sh` | Silas | LaunchAgent (5 min) | Vikunja, Fuseki, Clearing |
@@ -41,7 +41,7 @@ Each entry maps to: location, owner, run mode, and external dependencies.
 |--------|----------|-------|----------|-------------|
 | harvest-media.sh | `building/products/convergence/` | Silas | On-demand | MongoDB, Fuseki (192.168.86.36:3030), `/harvest` endpoint |
 | harvest-media-export.js | `building/products/convergence/` | Silas | On-demand | MongoDB (mongosh), N-Triples output |
-| fuseki-maintenance.sh | `building/products/convergence/` | Silas | On-demand DBA | Fuseki (localhost:3030/pods), TDB2 |
+| fuseki-maintenance.sh | `building/products/convergence/` | Silas | On-demand DBA + LaunchAgent (com.chorus.fuseki-compact, Sat 1am compact) | Fuseki (localhost:3030/pods), TDB2 |
 | fuseki-baseline.sh | `building/products/convergence/` | Silas | On-demand | Fuseki |
 | graph-lint.sh | `building/products/convergence/` | Silas | On-demand | Fuseki, SPARQL |
 | owl-linter.py | `building/products/convergence/` | Silas | On-demand | OWL files |
