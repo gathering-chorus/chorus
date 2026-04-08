@@ -1,0 +1,48 @@
+{
+  "id": "WF-027",
+  "decision": "Fix /gemba epoch footgun — compute start time in script, not agent",
+  "source": "board:card-moved:#1828",
+  "card": 1828,
+  "created": "2026-04-08T20:43:22Z",
+  "updated": "2026-04-08T20:43:22Z",
+  "status": "in_progress",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Fix /gemba epoch footgun — compute start time in script not agent",
+      "status": "ready",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1828",
+      "status": "pending",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-04-08T20:43:22Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Fix /gemba epoch footgun — compute start time in script, not agent"
+    }
+  ]
+}
