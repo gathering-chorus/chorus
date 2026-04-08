@@ -48,7 +48,7 @@ fi
 
 # TypeScript tests (cards, app)
 if echo "$CHANGED" | grep -q 'cards/\|services/'; then
-  cd platform/cards && npm test 2>&1
+  cd directing/products/cards && npm test 2>&1
 fi
 ```
 
@@ -66,7 +66,7 @@ fi
 
 # TypeScript build
 if echo "$CHANGED" | grep -q '\.ts$'; then
-  cd /Users/jeffbridwell/CascadeProjects/chorus/platform/cards
+  cd /Users/jeffbridwell/CascadeProjects/chorus/directing/products/cards
   npx tsc --noEmit 2>&1
 fi
 ```

@@ -9,7 +9,7 @@
 #   cards audit-close wren        Session close diff
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CLIENT_DIR="$SCRIPT_DIR/../cards"
+CLIENT_DIR="$SCRIPT_DIR/../../directing/products/cards"
 
 # Use compiled JS if available, fall back to ts-node
 if [ -f "$CLIENT_DIR/dist/cli.js" ]; then
