@@ -9,7 +9,7 @@
 <style>
   :root { --bg: #fff; --surface: #f5f5f5; --accent: #2471a3; --accent2: #c0392b; --text: #1a1a2e; --muted: #555; --green: #27ae60; --yellow: #d4a017; --red: #c0392b; --border: #ccc; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Georgia', serif; background: var(--bg); color: var(--text); line-height: 1.7; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  body { font-family: 'Georgia', serif; background: var(--bg); color: var(--text); line-height: 1.7; padding: 2rem 1in; max-width: none; margin: 0 auto; }
   h1 { font-size: 2rem; color: var(--accent); margin-bottom: 0.25rem; }
   h1 + .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 2.5rem; }
   h2 { font-size: 1.4rem; color: var(--accent2); margin: 2.5rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
@@ -34,11 +34,31 @@
 <body>
 
 <h1>Attention Architecture</h1>
-<p class="subtitle">Observer / Navigator / Driver &mdash; three interlocking loops that hold the thread &middot; Silas, 2026-03-18 &middot; Derived from session with Jeff</p>
+<p class="subtitle">Observer / Navigator / Driver &mdash; three interlocking loops that hold the thread &middot; Silas, 2026-03-18 &middot; Updated Wren, 2026-04-08 &middot; Derived from sessions with Jeff</p>
 
 <div class="callout">
 <strong>Core insight (Jeff):</strong> "The working definition of attention for you as agents is: on a prompt, or on a loop with commentary. Otherwise you lose attention." Attention is not a state &mdash; it's an active process. Without a loop, there is no attention. Without attention, there is no work.
 </div>
+
+<!-- ============================================================ -->
+<h2>0. The Governing Formula</h2>
+
+<div class="principle">
+<strong>Time + Attention &rarr; Awareness</strong><br/>
+This is the equation that governs everything downstream. If either input is wrong, awareness breaks and nothing works.
+</div>
+
+<p><strong>Time</strong> means current, local, verified time. A stale timestamp is stale attention. A UTC timestamp when the team works in Boston is wrong time &mdash; every escalation decision, every "how long has this been stalled?" judgment is off. Time must be <code>TZ=America/New_York date</code>, refreshed every cycle, never cached.</p>
+
+<p><strong>Attention</strong> means an active loop with commentary output. Not a state declaration, not a ceremony, not a one-time announcement. The loop must produce observable output on every tick. If the output stops, the attention stopped &mdash; regardless of what the role claims.</p>
+
+<p><strong>Awareness</strong> is the outcome &mdash; not files moved, not counts reported, not status announced. This is Mik Kersten's output-to-outcome distinction (<em>Project to Product</em>): the output is the loop running and producing commentary; the outcome is awareness &mdash; the team's shared understanding of state. Measuring output (files moved, scripts run) without measuring outcome (does Jeff have a clear picture?) is the root cause of every "122K photos showing!" failure.</p>
+
+<p>Both inputs must be correct simultaneously. The 2026-04-08 session proved both failure modes:</p>
+<ul>
+<li><strong>Time off:</strong> UTC timestamps in prompts cascade into wrong escalation timing &mdash; "stalled for 10 minutes" might be 5 or 15 depending on the offset.</li>
+<li><strong>Attention off:</strong> Navigator startup ceremony (reading briefs, announcing plans, restating context) consumed 8+ minutes before the first actual loop iteration. During that time, the driver had zero direction.</li>
+</ul>
 
 <!-- ============================================================ -->
 <h2>1. The Problem</h2>
@@ -241,6 +261,21 @@ flowchart TD
 </div>
 
 <!-- ============================================================ -->
+<h2>5b. Anti-Patterns Observed (2026-04-08 Session)</h2>
+
+<p>These were observed during a pair session where navigator startup ceremony replaced the navigator loop, and UTC/local time mismatch broke time awareness.</p>
+
+<div class="anti">
+<strong>Navigator ceremony replaces loop.</strong> Navigator spent 8+ minutes on startup ceremony &mdash; reading briefs, restating AC, announcing plans, loading context. During this time the driver had zero direction. The navigator was "preparing to attend" instead of attending. The ceremony felt productive because it was visible, but it produced no navigational output.<br/>
+<em>Fix:</em> Navigator startup = declare state + first direction + start loop. Three actions, under 60 seconds. Everything else (brief reads, context loading) happens inside the loop, not before it. If you're not directing the driver within 60 seconds, the pair is broken.
+</div>
+
+<div class="anti">
+<strong>UTC/local time mismatch breaks time awareness.</strong> Prompt timestamps showed UTC instead of Boston local time. Every time-based judgment was off: "stalled 10 minutes" was wrong, escalation thresholds were wrong, "how long since last heartbeat" was wrong. Time is the first input to awareness &mdash; if time is wrong, awareness cannot be correct.<br/>
+<em>Fix:</em> Every loop cycle runs <code>TZ=America/New_York date</code>. Never use system UTC. Never cache. Never derive time from session metadata. The wall clock is the source of truth.
+</div>
+
+<!-- ============================================================ -->
 <h2>6. Attention = Loop &times; Commentary</h2>
 
 <div class="mermaid">
@@ -299,12 +334,17 @@ graph TD
 <tr><td>ICD lint gate as executable script</td><td style="color:var(--yellow);">Inline Python, not formalized</td><td>Session transcript</td></tr>
 <tr><td>ICD-driven code generation (#1508)</td><td style="color:var(--red);">Carded, not started</td><td>Board card #1508</td></tr>
 <tr><td>Batch progress output standard</td><td style="color:var(--yellow);">Feedback memory, not enforced</td><td><code>feedback_batch_progress.md</code></td></tr>
+<tr><td>Time+Attention&rarr;Awareness formula</td><td style="color:var(--green);">Done</td><td>Section 0 of this document</td></tr>
+<tr><td>Navigator startup &le;60s gate</td><td style="color:var(--yellow);">Documented, not enforced</td><td>Section 5b anti-patterns</td></tr>
+<tr><td>UTC/local time enforcement</td><td style="color:var(--green);">Done</td><td>CLAUDE.md wall-clock rules + Section 5b</td></tr>
+<tr><td>Mik Kersten output-to-outcome framing</td><td style="color:var(--green);">Done</td><td>Section 0 of this document</td></tr>
 </table>
 
 <hr style="border-color:var(--border); margin: 3rem 0 1rem;">
 <p style="color:var(--muted); font-size:0.8rem;">
-  Silas (Architect) &middot; 2026-03-18 &middot; Derived from 4-hour session with Jeff including 3.5-hour gemba observation of Wren/Kade #1507 pair.
-  References: Deming's 14 Points, ADR-010 (harvest pipeline), DEC-095 (mapper before harvest), DEC-069 (intellectual honesty), Bridwell patent US9552400B2.
+  Silas (Architect) &middot; 2026-03-18 &middot; Updated Wren (PM) &middot; 2026-04-08 &middot; Derived from 4-hour session with Jeff including 3.5-hour gemba observation of Wren/Kade #1507 pair.
+  2026-04-08 update: time+attention&rarr;awareness formula, navigator ceremony and UTC anti-patterns, Mik Kersten output-to-outcome framing.
+  References: Deming's 14 Points, Mik Kersten <em>Project to Product</em>, ADR-010 (harvest pipeline), DEC-095 (mapper before harvest), DEC-069 (intellectual honesty), Bridwell patent US9552400B2.
 </p>
 
 </body>
