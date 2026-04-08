@@ -381,7 +381,7 @@ mod tests {
             })),
             tool_response: None,
             session_id: None,
-            cwd: Some(format!("{}/engineer", chorus_root())),
+            cwd: Some(format!("{}/roles/kade", chorus_root())),
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
