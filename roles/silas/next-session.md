@@ -1,26 +1,30 @@
 # Next Session — Silas
 
-## CRITICAL: Incomplete Work
-- **#1820 needs commit** — all references updated (15 files), Rust compiles, Jeff deleted old dirs, but commit didn't happen (shell cwd was platform/roles/silas which got deleted). Run git-queue.sh from roles/silas/ to commit.
-- The `directing/products/cards/` tests still have stale `platform/roles/silas` references — not my card but needs fixing
-- Verify `dist/sdk.js` has correct silas brief path after recompile
-
 ## Shipped This Session (2026-04-08)
-- **#1802** — Repo cleanup: removed 19 tracked artifacts (rlib + 18 log/snapshot files), fixed .gitignore
-- **#1811** — Fixed duplicate nudge delivery: inject-first/queue-on-failure + removed chat.sh auto-nudge
-- **#1814** — Gate skill design: actor diagram + 10 BDD scenarios, all 3 roles reviewed, questions resolved
-- **Gate skills built** — /gate-arch, /gate-ops, /gate-code, /gate-quality scaffolded and symlinked
-- **First gate pilot** — ran /gate-arch on #1816 (Seeds), Kade ran code+quality. Pipeline works.
-- **#1820** — Silas role move to roles/silas. 15 references updated, Rust compiles. Needs commit.
+- **#1820** — Committed Silas role move to roles/silas/ (8ab70527, 1149 files)
+- **#1821** — Paired with Kade to move roles/kade/ (3d2af490, 775 files). Drove Rust ref updates, Kade drove code changes. Jeff did the rm + git archive restore.
+- **#1824** — Moved 64 code files out of roles/silas/. 11 convergence → building/products/convergence/, 41 one-shots → convergence/one-shots/, 10 infra-ops → platform/scripts/. Fixed 4 broken LaunchAgent plists. Paired with Wren (she navigated).
+- **Stale alias cleanup** — Fixed workflow-engine/config.ts + manifest.json: architect/ → roles/silas/, engineer/ → roles/kade/, product-manager/ → roles/wren/ (28d45166)
+- **#1821 cleanup** — Committed 6 Rust test helper files Kade missed (4a576003)
 
 ## Key Decisions
-- Gates replaces "Chorus Hooks" as product name
-- Repo structure: value streams, roles, skills, interactions are top-level peers
-- Gate pipeline: 5 skills, automation-first, pilot mode = observe not enforce
-- DEC-1816: roles move to repo root
+- Role dirs = markdown + YAML only. No code. (Established during #1824)
+- Convergence is a Chorus product and domain — scripts go to building/products/convergence/
+- One-shot scripts kept for reference, not deleted (Jeff's preference)
+- Demos need refinement for ops/infra cards — file counts aren't proof, show system behavior
+
+## Open Items
+- Kade's #1822 (Cards move to directing/products/cards/) is in-flight, not committed yet
+- directing/products/roles/kade/ exists as untracked dir — unclear origin, may be Kade's WIP
+- platform/workflows/active/WF-027.json untracked
+- Kade's #1827 (pipeline manifest) in demo — sent feedback on 2 stale paths
+- Wren flagged gemba-start.sh vs gemba-tick.sh using different data sources — her card
+
+## Feedback to Remember
+- Jeff finds demos hand-wavy for infra work. Saved to memory.
+- Jeff says "don't delete one-shots, they're handy later"
+- Jeff values working this way — pairing, chat, demo flow — more manageable for him
+- The human-agent demo gap is real and unsolved. Worth thinking about, not solving today.
 
 ## Budget
-- 91% usage as of session start. Likely capped until 2026-04-09 11pm.
-
-## Pending Briefs
-- Wren's ops-sequence-plan (2026-04-07) — unread
+- Unknown for new session — was at 91% last session start
