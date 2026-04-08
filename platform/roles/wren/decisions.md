@@ -1,5 +1,21 @@
 # Decision Log
 
+## DEC-1784: Clean commit standard — what a good commit looks like
+- **Date**: 2026-04-08
+- **Context**: Board had 158 test artifact cards from BDD/CLI tests creating real cards. Commit history full of undeclared work — roles committing without WIP cards pulled. Test data polluting production state. Jeff: "the commits tell a scary story about process discipline."
+- **Decision**: Every commit must follow this format:
+  1. **Prefix**: `<role>:` — wren, silas, or kade
+  2. **Card reference**: `#<card-id>` or `acp #<card-id>` for acceptance
+  3. **What changed**: verb + outcome, not process description
+  4. **Example**: `kade: acp #1794 — fix stale test paths, wire dry-run into BDD suite`
+  5. **Anti-patterns**: commits without card refs, test artifacts committed to board, "session reboot" commits with no card context, bulk commits that hide what changed
+  6. **Test isolation**: BDD/CLI tests must NOT create real board cards or fire real nudge/chat delivery. Use --dry-run, test fixtures, or mock APIs. Test artifacts on the board are a commit discipline failure.
+  7. **No binaries or generated files in git**: .rlib files, log files, DB backups, and build artifacts belong in .gitignore, not tracked in the repo.
+  8. **Board writes need isolation too**: --dry-run covers nudge/chat delivery but NOT board-client tests. board-client tests hit the live Vikunja API — every `cards add` in a test creates a real card. Requires BOARD_DRY_RUN or a dedicated test project (#1800).
+- **Rationale**: The board is Jeff's view of what's happening. Test pollution makes it unreadable. Undeclared commits make the history untrustworthy. Both cost Jeff attention to sort signal from noise.
+- **Enforcement**: Pre-commit gate (#1799) will reject commits without WIP card declared. Until then, roles self-enforce.
+- **Status**: Active
+
 ## DEC-107: Nudge delivery — osascript is the path, stop cycling
 - **Date**: 2026-03-27
 - **Context**: Nudge delivery has been revisited at least 4 times: osascript injection (#1591), TTY polling, background drain, passive queue (DEC-104). Each iteration breaks something differently. Today Silas lost the nudge binary, thrashed for 20 minutes, and Jeff interrupted twice: "I'm tired of looping over osascript/tty/background nudges." The cost isn't technical — it's Jeff's attention spent re-litigating a solved problem.
