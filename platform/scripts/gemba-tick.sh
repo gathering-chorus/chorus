@@ -49,12 +49,8 @@ echo "## New Activity"
 RESULTS=""
 
 # Direct session JSONL — fastest path, no indexer dependency (#2021)
-SESSION_DIR=""
-case "$ROLE" in
-  silas) SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-architect" ;;
-  kade)  SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-engineer" ;;
-  wren)  SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-wren" ;;
-esac
+# Find the most recently modified project dir matching the role name
+SESSION_DIR=$(ls -dt "$HOME/.claude/projects/"*chorus*"$ROLE"* 2>/dev/null | head -1)
 
 if [ -n "$SESSION_DIR" ] && [ -d "$SESSION_DIR" ]; then
   LATEST_JSONL=$(ls -t "$SESSION_DIR"/*.jsonl 2>/dev/null | head -1)

@@ -41,12 +41,8 @@ fi
 echo "## Recent Activity (last 20 session lines)"
 
 # Primary: direct session JSONL (no indexer dependency)
-SESSION_DIR=""
-case "$ROLE" in
-  silas) SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-architect" ;;
-  kade)  SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-engineer" ;;
-  wren)  SESSION_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-wren" ;;
-esac
+# Find the most recently modified project dir matching the role name
+SESSION_DIR=$(ls -dt "$HOME/.claude/projects/"*chorus*"$ROLE"* 2>/dev/null | head -1)
 
 RESULTS=""
 if [ -n "$SESSION_DIR" ] && [ -d "$SESSION_DIR" ]; then
