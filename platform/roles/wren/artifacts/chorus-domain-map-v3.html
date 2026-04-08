@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Domain Map v3 — Sub-products, Domains, Services</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #fafafa; color: #1a1a1a; max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; line-height: 1.5; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.3rem; }
+  .subtitle { color: #6b7280; font-size: 0.82rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.1rem; color: #374151; margin: 2.5rem 0 0.8rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3rem; }
+  h3 { font-size: 0.95rem; margin: 1.5rem 0 0.5rem; }
+
+  .stats { display: flex; gap: 1rem; margin: 1rem 0; flex-wrap: wrap; }
+  .stat { text-align: center; padding: 0.6rem; border: 1px solid #e5e7eb; border-radius: 6px; flex: 1; min-width: 80px; background: white; }
+  .stat-num { font-size: 1.5rem; font-weight: 700; color: #0d6efd; }
+  .stat-label { font-size: 0.68rem; color: #6b7280; }
+
+  .legend { display: flex; gap: 1.5rem; margin: 1rem 0; font-size: 0.72rem; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 0.25rem; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .role-section { margin: 1.5rem 0; padding: 1.2rem; border-radius: 8px; border: 1px solid #e5e7eb; background: white; }
+  .role-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1rem; }
+  .role-name { font-weight: 700; font-size: 1rem; }
+  .role-title { font-size: 0.75rem; color: #6b7280; }
+
+  .product-row { margin: 0.8rem 0; padding: 0.8rem; border-radius: 6px; border: 1px solid #e5e7eb; background: #f9fafb; }
+  .product-name { font-weight: 700; font-size: 0.88rem; display: flex; align-items: center; gap: 0.4rem; }
+  .product-name .type-badge { font-size: 0.6rem; padding: 0.1rem 0.4rem; border-radius: 3px; font-weight: 600; }
+  .type-product { background: #dbeafe; color: #1d4ed8; }
+  .type-domain { background: #f3e8ff; color: #7c3aed; }
+  .type-service { background: #fef3c7; color: #92400e; }
+  .type-subproduct { background: #dbeafe; color: #1d4ed8; }
+  .product-desc { font-size: 0.78rem; color: #6b7280; margin: 0.3rem 0; }
+
+  .domain-list { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+  .domain-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.55rem; border-radius: 4px; font-size: 0.72rem; border: 1px solid; }
+  .domain-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .d-real { background: #d1fae5; border-color: #6ee7b7; } .d-real .dot { background: #059669; }
+  .d-partial { background: #fef9c3; border-color: #fde047; } .d-partial .dot { background: #ca8a04; }
+  .d-conceptual { background: #fee2e2; border-color: #fca5a5; } .d-conceptual .dot { background: #dc2626; }
+  .d-new { background: #dbeafe; border-color: #93c5fd; } .d-new .dot { background: #2563eb; }
+  .q { font-size: 0.55rem; padding: 0.05rem 0.25rem; border-radius: 2px; margin-left: 0.2rem; font-weight: 600; }
+  .q-t { background: #d1fae5; color: #065f46; }
+  .q-s { background: #fef3c7; color: #92400e; }
+  .q-n { background: #fee2e2; color: #991b1b; }
+
+  .shared-section { margin: 1.5rem 0; padding: 1.2rem; border-radius: 8px; border: 1px dashed #9ca3af; background: #f9fafb; }
+  .shared-header { font-weight: 700; font-size: 1rem; margin-bottom: 0.8rem; color: #6b7280; }
+
+  table { border-collapse: collapse; width: 100%; margin: 0.75rem 0; font-size: 0.78rem; }
+  th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #e5e7eb; text-align: left; }
+  th { font-weight: 600; font-size: 0.72rem; color: #374151; }
+
+  .insight { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 0.8rem 1rem; margin: 1rem 0; font-size: 0.82rem; }
+  .gap { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 0.8rem 1rem; margin: 1rem 0; font-size: 0.82rem; }
+
+  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; font-size: 0.7rem; color: #9ca3af; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Chorus Domain Map v3</h1>
+<p class="subtitle">OWL ontology vocabulary applied. Products own sub-products. Roles own sub-products, domains, and services.<br>
+Refines v2 (Kade). Vocabulary from chorus-product-ontology.owl. Products (Jeff) &rarr; Sub-products (roles) &rarr; Domains + Services.</p>
+
+<div class="stats">
+  <div class="stat"><div class="stat-num">2</div><div class="stat-label">Products (Jeff)</div></div>
+  <div class="stat"><div class="stat-num">40</div><div class="stat-label">Domains</div></div>
+  <div class="stat"><div class="stat-num">3</div><div class="stat-label">Roles</div></div>
+  <div class="stat"><div class="stat-num">7</div><div class="stat-label">Tested</div></div>
+  <div class="stat"><div class="stat-num">27</div><div class="stat-label">No Tests</div></div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#1d4ed8"></div> Sub-product</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div> Domain</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#059669"></div> Real</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ca8a04"></div> Partial</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#dc2626"></div> Conceptual</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2563eb"></div> New</div>
+  <div class="legend-item"><span class="q q-t">TESTED</span> <span class="q q-s">SOME</span> <span class="q q-n">NONE</span></div>
+</div>
+
+<h2>Products (Jeff owns)</h2>
+
+<div class="insight">
+<strong>Gathering</strong> and <strong>Chorus</strong> are the two products. Jeff owns both. Everything below is a sub-product, domain, or service within one of them. Sub-products are owned by roles. The ontology (<code>chorus-product-ontology.owl</code>) is the authority &mdash; SPARQL queries validate completeness.
+</div>
+
+<table>
+  <tr><th>Product</th><th>Owner</th><th>Sub-products</th><th>Value Streams</th></tr>
+  <tr><td><strong>Gathering</strong></td><td>Jeff</td><td>Chorus (nested)</td><td>Personal, Life</td></tr>
+  <tr><td><strong>Chorus</strong></td><td>Jeff</td><td>Cards, Demo, Clearing, Hooks, Bridge, Loom, Convergence</td><td>Chorus</td></tr>
+</table>
+
+<h2>Ownership by Role</h2>
+
+<!-- WREN -->
+<div class="role-section">
+  <div class="role-header">
+    <span class="role-name">Wren</span>
+    <span class="role-title">Product Manager &mdash; coordination tooling, service design, domain knowledge</span>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-subproduct">SUB-PRODUCT</span> Cards</div>
+    <div class="product-desc">Board CLI + SDK. Renamed from board-client (#1801). Template proven (#1807).</div>
+    <div class="domain-list">
+      <span class="domain-chip d-real"><span class="dot"></span>cards<span class="q q-t">TESTED</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-subproduct">SUB-PRODUCT</span> Demo</div>
+    <div class="product-desc">Proving gate ceremony. Gate scripts owned by Wren (#1809). Second template proof.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-real"><span class="dot"></span>demo<span class="q q-t">TESTED</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">DOMAIN</span> Seeds</div>
+    <div class="product-desc">SMS intake pipeline. Two-message pattern (content + #role). Pilot domain for ownership move.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-real"><span class="dot"></span>seeds<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>glimmers<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">DOMAIN</span> Service Design</div>
+    <div class="product-desc">Product definitions, interaction patterns, domain governance. The contracts that drive the team.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-partial"><span class="dot"></span>service-design<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-new"><span class="dot"></span>domain-ownership<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-conceptual"><span class="dot"></span>evaluations<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-conceptual"><span class="dot"></span>practices<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">DOMAIN</span> Interactions</div>
+    <div class="product-desc">Nine interaction patterns, session moderation, clearing protocol, pair protocol.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-new"><span class="dot"></span>interactions<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-conceptual"><span class="dot"></span>policy<span class="q q-s">SOME</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">DOMAIN</span> Framework</div>
+    <div class="product-desc">OWL ontology, BDD suites, ground pages. How we codify design.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-partial"><span class="dot"></span>OWL/ontology<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>BDD-suites<span class="q q-t">TESTED</span></span>
+      <span class="domain-chip d-conceptual"><span class="dot"></span>ground-pages<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- KADE -->
+<div class="role-section">
+  <div class="role-header">
+    <span class="role-name">Kade</span>
+    <span class="role-title">Engineer &mdash; application code, UI, data pipelines</span>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-subproduct">SUB-PRODUCT</span> Gathering</div>
+    <div class="product-desc">The application. 20 domains, Express + EJS + Fuseki. Separate repo.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-real"><span class="dot"></span>photos<span class="q q-t">TESTED</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>music<span class="q q-s">SOME</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>people<span class="q q-s">SOME</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>stories<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>documents<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>social<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>notes<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>books<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>search<span class="q q-t">TESTED</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>ideas<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>property<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>cooking<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>reading<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>watching<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>gallery<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>blog<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>self<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>knowledge-graph<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-subproduct">SUB-PRODUCT</span> Clearing</div>
+    <div class="product-desc">Multi-party chat. Express + Socket.IO. Wren owns service design, Kade owns code.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-real"><span class="dot"></span>clearing<span class="q q-s">SOME</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">DOMAIN</span> Convergence</div>
+    <div class="product-desc">Integration layer &mdash; ICDs, harvesters, NiFi, field mapping. Cross-repo (code in Gathering, architecture in Chorus).</div>
+    <div class="domain-list">
+      <span class="domain-chip d-partial"><span class="dot"></span>convergence<span class="q q-s">SOME</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>webmethods<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-conceptual"><span class="dot"></span>tech-work<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- SILAS -->
+<div class="role-section">
+  <div class="role-header">
+    <span class="role-name">Silas</span>
+    <span class="role-title">Architect &mdash; infrastructure, protocol, observability</span>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-subproduct">SUB-PRODUCT</span> Chorus Hooks</div>
+    <div class="product-desc">Rust hook server + shim binary. Dispatches to product gate scripts. 240 lines after #1809 refactor.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-real"><span class="dot"></span>gates<span class="q q-t">TESTED</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>nudge<span class="q q-t">TESTED</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">DOMAIN</span> Protocol</div>
+    <div class="product-desc">Spine events, role state, session lifecycle. The nervous system.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-partial"><span class="dot"></span>spine<span class="q q-s">SOME</span></span>
+      <span class="domain-chip d-new"><span class="dot"></span>awareness<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-new"><span class="dot"></span>pulse<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-new"><span class="dot"></span>context-tagging<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">DOMAIN</span> Observability</div>
+    <div class="product-desc">Grafana, Loki, Alertmanager, metrics. The platform that products emit into.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-partial"><span class="dot"></span>alerts<span class="q q-s">SOME</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>logs<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>health<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>metrics<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">DOMAIN</span> Infrastructure</div>
+    <div class="product-desc">Machines, LaunchAgents, Docker, tunnel, databases, symlinks.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-real"><span class="dot"></span>machines<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>agents<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>tunnel<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>docker<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>databases<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-conceptual"><span class="dot"></span>symlinks<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- SHARED -->
+<div class="shared-section">
+  <div class="shared-header">Shared (no single owner)</div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">SHARED</span> Substrate</div>
+    <div class="product-desc">Emergent from all roles. History, sessions, decisions, memory. The floor everything stands on.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-partial"><span class="dot"></span>history<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>sessions<span class="q q-s">SOME</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>decisions<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>memory<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>CLAUDE.md<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>roles<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-partial"><span class="dot"></span>briefs<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>skills<span class="q q-n">NONE</span></span>
+      <span class="domain-chip d-real"><span class="dot"></span>ADRs<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+
+  <div class="product-row">
+    <div class="product-name"><span class="type-badge type-domain">SHARED</span> Borg</div>
+    <div class="product-desc">Self-assessment, calibration, team behavioral analysis. Conceptual &mdash; design exists, no code.</div>
+    <div class="domain-list">
+      <span class="domain-chip d-conceptual"><span class="dot"></span>borg<span class="q q-n">NONE</span></span>
+    </div>
+  </div>
+</div>
+
+<h2>OWL Vocabulary</h2>
+
+<div class="insight">
+<strong>OWL vocabulary:</strong> A <strong>Product</strong> (Gathering, Chorus) is owned by Jeff. A <strong>Sub-product</strong> (Cards, Clearing, Hooks) is owned by a role. A <strong>Domain</strong> is a bounded context with data, handlers, and routes. A <strong>Service</strong> is running code that operates in a domain. Roles own sub-products, domains, and services. The ontology governs &mdash; SPARQL queries validate completeness.
+</div>
+
+<table>
+  <tr><th></th><th>Sub-product</th><th>Domain</th><th>Service</th></tr>
+  <tr><td>Contains</td><td>Domains + services</td><td>Specs, gates, BDD, policy</td><td>Code, tests, alerts, logs</td></tr>
+  <tr><td>Examples</td><td>Cards, Clearing, Hooks</td><td>photos, seeds, nudge</td><td>Cards CLI, Clearing Express</td></tr>
+  <tr><td>Ownership</td><td>Role (ownedBy)</td><td>Role (ownsDomain)</td><td>Role (ownedBy)</td></tr>
+  <tr><td>Template</td><td>PRODUCT_TEMPLATE.md</td><td>domain-context.md</td><td>RUNBOOK.md</td></tr>
+  <tr><td>Test</td><td>SPARQL completeness</td><td>BDD scenarios</td><td>Unit + integration</td></tr>
+  <tr><td>OWL relation</td><td>hasProduct (recursive)</td><td>belongsToProduct</td><td>operatesIn domain</td></tr>
+</table>
+
+<h2>Cross-Cutting Contracts</h2>
+
+<table>
+  <tr><th>Contract</th><th>Producer</th><th>Consumer</th><th>Status</th></tr>
+  <tr><td>Observability</td><td>Product owner emits spine events</td><td>Silas correlates</td><td>Piloting on Cards (#1807)</td></tr>
+  <tr><td>Quality</td><td>Product owner defines AC + tests</td><td>Wren validates</td><td>Future</td></tr>
+  <tr><td>Code</td><td>Product owner maintains build</td><td>Bootstrap script runs it</td><td>Future</td></tr>
+  <tr><td>Design</td><td>Product owner + Silas declare model</td><td>All roles consume</td><td>Future</td></tr>
+</table>
+
+<h2>Quality Gap</h2>
+
+<div class="gap">
+<strong>27 of 40 domains have zero tests.</strong> 7 are TESTED (search, cards, nudge, gates, BDD-suites, photos, demo). 6 have SOME. The quality contract can't enforce what isn't measured. Next steps: register 15 unregistered domains in the API, set a quality floor per domain tier (REAL domains must have tests).
+</div>
+
+<h2>Delta from v2</h2>
+<table>
+  <tr><th>Change</th><th>Detail</th></tr>
+  <tr><td>Products separated from domains</td><td>v2 mixed them. v3 shows products as containers, domains as knowledge areas.</td></tr>
+  <tr><td>Organized by role ownership</td><td>v2 used functional layers (Protocol, Framework). v3 uses who owns what.</td></tr>
+  <tr><td>Gathering domains expanded</td><td>v2 collapsed "Gathering (20 domains)". v3 shows all 18 registered domains.</td></tr>
+  <tr><td>Demo added as product</td><td>#1809 shipped. Second template conformance proof.</td></tr>
+  <tr><td>Shared section explicit</td><td>Substrate domains that no single role owns are called out, not hidden in layers.</td></tr>
+  <tr><td>Contracts section added</td><td>Horizontal contracts from org design discussion now visible.</td></tr>
+</table>
+
+<footer>Wren | April 8, 2026 | OWL vocabulary applied (#1810). Sources: chorus-product-ontology.owl, API /domains (25), org design discussions.</footer>
+
+</body>
+</html>

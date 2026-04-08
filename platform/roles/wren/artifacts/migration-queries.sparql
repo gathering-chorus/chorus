@@ -1,0 +1,71 @@
+# Migration Gap Queries — SPARQL against chorus-product-ontology.owl
+# Run against Fuseki or any SPARQL endpoint with the ontology loaded.
+# Each query finds a gap that becomes an AC item on a migration card.
+
+PREFIX chorus: <http://gathering.local/ontology/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+# Q1: Sub-products with no owner
+# Every sub-product must have ownedBy. Missing = migration incomplete.
+SELECT ?product ?label WHERE {
+  ?parent chorus:hasProduct ?product .
+  ?product rdfs:label ?label .
+  FILTER NOT EXISTS { ?product chorus:ownedBy ?role }
+}
+
+# Q2: Services with no domain
+# Every service must operateIn a domain. Missing = orphaned code.
+SELECT ?service ?label WHERE {
+  ?service a chorus:Service .
+  ?service rdfs:label ?label .
+  FILTER NOT EXISTS { ?service chorus:operatesIn ?domain }
+}
+
+# Q3: Domains with no services
+# A domain without services exists only as design — may be correct for conceptual domains.
+SELECT ?domain ?label ?product WHERE {
+  ?domain a chorus:Domain .
+  ?domain rdfs:label ?label .
+  ?domain chorus:belongsToProduct ?prod .
+  ?prod rdfs:label ?product .
+  FILTER NOT EXISTS { ?service chorus:operatesIn ?domain }
+}
+
+# Q4: Services with no owner
+# Every service must have ownedBy. Missing = nobody maintains it.
+SELECT ?service ?label WHERE {
+  ?service a chorus:Service .
+  ?service rdfs:label ?label .
+  FILTER NOT EXISTS { ?service chorus:ownedBy ?role }
+}
+
+# Q5: Sub-products with no primaryPhase
+# Every sub-product needs a value stream phase. Missing = can't place in flow.
+SELECT ?product ?label WHERE {
+  ?parent chorus:hasProduct ?product .
+  ?product rdfs:label ?label .
+  FILTER NOT EXISTS { ?product chorus:primaryPhaseProduct ?phase }
+}
+
+# Q6: Domains with no value stream
+# Every domain should serve at least one value stream.
+SELECT ?domain ?label WHERE {
+  ?domain a chorus:Domain .
+  ?domain rdfs:label ?label .
+  FILTER NOT EXISTS { ?domain chorus:servesValueStream ?stream }
+}
+
+# Q7: Complete sub-products (migration validation)
+# Shows sub-products that pass all checks — owner, phase, at least one domain with services.
+SELECT ?product ?label ?owner ?phase WHERE {
+  ?parent chorus:hasProduct ?product .
+  ?product rdfs:label ?label .
+  ?product chorus:ownedBy ?role .
+  ?role rdfs:label ?owner .
+  ?product chorus:primaryPhaseProduct ?p .
+  ?p rdfs:label ?phase .
+  FILTER EXISTS {
+    ?domain chorus:belongsToProduct ?product .
+    ?service chorus:operatesIn ?domain .
+  }
+}
