@@ -8,7 +8,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas/scripts/fuseki-maintenance.sh</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/roles/silas/scripts/fuseki-maintenance.sh</string>
     <string>compact</string>
   </array>
 

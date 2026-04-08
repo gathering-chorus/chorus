@@ -60,7 +60,7 @@ echo "$R" | grep -qi "demo gate\|deny\|TDD" && pass "accept_gate: gate chain blo
 
 # 2. autonomy_guard — blocks cross-domain edits
 log "--- 2. autonomy_guard ---"
-D=$(gate_test '{"tool_name":"Edit","tool_input":{"file_path":"${CHORUS_ROOT}/platform/roles/silas/docs/test.md","old_string":"a","new_string":"b"}}')
+D=$(gate_test '{"tool_name":"Edit","tool_input":{"file_path":"${CHORUS_ROOT}/roles/silas/docs/test.md","old_string":"a","new_string":"b"}}')
 if [ "$D" = "allow" ] || [ "$D" = "deny" ]; then pass "autonomy_guard: returns $D for cross-domain edit"; else fail "autonomy_guard: $D"; fi
 
 # 3. batch_progress — monitors long ops
@@ -106,7 +106,7 @@ R=$(echo '{"tool_name":"Bash","stdout":"done"}' | CHORUS_HOOK_RAW=1 DEPLOY_ROLE=
 
 # 11. handoff_logger — logs handoffs
 log "--- 11. handoff_logger ---"
-D=$(gate_test '{"tool_name":"Write","tool_input":{"file_path":"${CHORUS_ROOT}/platform/roles/silas/briefs/test.md","content":"test"}}')
+D=$(gate_test '{"tool_name":"Write","tool_input":{"file_path":"${CHORUS_ROOT}/roles/silas/briefs/test.md","content":"test"}}')
 if [ "$D" = "allow" ] || [ "$D" = "deny" ]; then pass "handoff_logger: returns $D on cross-role write"; else fail "handoff_logger: $D"; fi
 
 # 12. icd_pre_read — requires ICD review before harvester

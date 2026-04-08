@@ -293,7 +293,7 @@ mod tests {
             tool_input: Some(json!({"file_path": "/tmp/test.rs", "old_string": "x", "new_string": "y"})),
             tool_response: None,
             session_id: Some("test-boot".to_string()),
-            cwd: Some(format!("{}/platform/roles/wren", chorus_root())),
+            cwd: Some(format!("{}/roles/wren", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("wren".to_string()),
         };

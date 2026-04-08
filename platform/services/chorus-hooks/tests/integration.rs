@@ -74,8 +74,8 @@ fn test_decode_chunked_hex_size() {
 fn test_role_detection_from_cwd() {
     // These patterns are critical — wrong role = wrong guard chain
     let cases = vec![
-        ("/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/wren", "wren"),
-        ("/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas", "silas"),
+        ("/Users/jeffbridwell/CascadeProjects/chorus/roles/wren", "wren"),
+        ("/Users/jeffbridwell/CascadeProjects/chorus/roles/silas", "silas"),
         ("/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/kade", "kade"),
         ("/Users/jeffbridwell/CascadeProjects/chorus/messages", "unknown"),
         ("/tmp/random", "unknown"),

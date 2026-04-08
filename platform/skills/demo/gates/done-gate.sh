@@ -29,7 +29,7 @@ fi
 # Check for demo evidence
 
 # Evidence 1: Demo brief in wren/briefs/
-BRIEF_DIR="$CHORUS_ROOT/platform/roles/wren/briefs"
+BRIEF_DIR="$CHORUS_ROOT/roles/wren/briefs"
 if ls "$BRIEF_DIR"/*demo*"$CARD_ID"* >/dev/null 2>&1; then
   exit 0
 fi

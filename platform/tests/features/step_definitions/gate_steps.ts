@@ -6,7 +6,7 @@ import assert from 'assert';
 
 const HOOK_SHIM = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim';
 const STATE_DIR = '/tmp/claude-team-scan';
-const BRIEFS_DIR = '/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/wren/briefs';
+const BRIEFS_DIR = '/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs';
 const HOME = process.env.HOME || '/Users/jeffbridwell';
 const TEST_CARD_ID = '99998';
 
@@ -418,7 +418,7 @@ When('they try to edit a cross-domain code file', function () {
   ctx.targetTool = 'Edit';
   // Cross-domain for kade (engineer): must NOT contain /engineer/ or /src/
   // (memory_gate treats both as Kade's own domain)
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/wren/scripts/gate-check.ts';
+  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/scripts/gate-check.ts';
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',

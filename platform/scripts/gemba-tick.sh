@@ -137,7 +137,7 @@ echo ""
 echo "## Recent Files Changed"
 ROLE_DIR=""
 case "$ROLE" in
-  silas) ROLE_DIR="${CHORUS_ROOT}/platform/roles/silas" ;;
+  silas) ROLE_DIR="${CHORUS_ROOT}/roles/silas" ;;
   kade)  ROLE_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site" ;;
   wren)  ROLE_DIR="${CHORUS_ROOT}/platform/roles/product-manager" ;;
 esac

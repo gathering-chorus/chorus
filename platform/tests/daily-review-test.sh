@@ -9,7 +9,7 @@ set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 SCRIPTS="$CHORUS_ROOT/platform/scripts"
-INFRA_ALERT="$CHORUS_ROOT/platform/roles/silas/scripts/infra-alert.sh"
+INFRA_ALERT="$CHORUS_ROOT/roles/silas/scripts/infra-alert.sh"
 PASS=0
 FAIL=0
 

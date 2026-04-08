@@ -9,7 +9,7 @@ set -euo pipefail
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../../../.." && pwd)}"
 CARDS="$CHORUS_ROOT/platform/scripts/cards"
 CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
-BRIEF_DIR="$CHORUS_ROOT/platform/roles/wren/briefs"
+BRIEF_DIR="$CHORUS_ROOT/roles/wren/briefs"
 
 CARD_ID="${1:-}"
 ROLE="${2:-wren}"

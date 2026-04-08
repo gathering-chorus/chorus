@@ -17,7 +17,7 @@ fn hook_check(tool: &str, input: serde_json::Value) -> String {
         "tool_name": tool,
         "tool_input": input,
         "session_id": "test-session",
-        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas"
+        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas"
     });
 
     let output = Command::new(SHIM)
