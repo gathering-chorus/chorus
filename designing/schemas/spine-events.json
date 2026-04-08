@@ -23,7 +23,7 @@
         "type": "string",
         "enum": [
           "chorus-events",
-          "board-client"
+          "cards"
         ],
         "required": true,
         "description": "Source system identifier"
@@ -176,7 +176,7 @@
     "card.item.created": {
       "vertebra": "capturing",
       "legacy_name": "card_created",
-      "source": "board-client",
+      "source": "cards",
       "description": "New card added to the board",
       "fields": {
         "card_id": "Card identifier",
@@ -189,7 +189,7 @@
     "card.quality.warned": {
       "vertebra": "capturing",
       "legacy_name": "quality_gate_warn",
-      "source": "board-client",
+      "source": "cards",
       "description": "Quality gate warning \u2014 title too short, empty description, or no comments at done",
       "fields": {
         "gate": "Gate type (title_short, description_empty, no_comments)",
@@ -202,7 +202,7 @@
     "card.swat.created": {
       "vertebra": "capturing",
       "legacy_name": null,
-      "source": "board-client",
+      "source": "cards",
       "description": "SWAT card created \u2014 crisis fast-lane card outside WIP limit (DEC-055)",
       "fields": {
         "card_id": "Card identifier",
@@ -213,7 +213,7 @@
     "card.item.moved": {
       "vertebra": "directing",
       "legacy_name": "card_moved",
-      "source": "board-client",
+      "source": "cards",
       "description": "Card moved to a different bucket/status",
       "fields": {
         "card_id": "Card identifier",
@@ -224,7 +224,7 @@
     "card.item.blocked": {
       "vertebra": "directing",
       "legacy_name": "card_blocked",
-      "source": "board-client",
+      "source": "cards",
       "description": "Card marked as blocked",
       "fields": {
         "card_id": "Card identifier",
@@ -235,7 +235,7 @@
     "card.item.unblocked": {
       "vertebra": "directing",
       "legacy_name": "card_unblocked",
-      "source": "board-client",
+      "source": "cards",
       "description": "Card unblocked",
       "fields": {
         "card_id": "Card identifier",
@@ -245,7 +245,7 @@
     "card.item.updated": {
       "vertebra": "directing",
       "legacy_name": "card_updated",
-      "source": "board-client",
+      "source": "cards",
       "description": "Card metadata updated (title, description, labels)",
       "fields": {
         "card_id": "Card identifier",
@@ -258,7 +258,7 @@
     "card.item.commented": {
       "vertebra": "directing",
       "legacy_name": "card_commented",
-      "source": "board-client",
+      "source": "cards",
       "description": "Comment added to a card",
       "fields": {
         "card_id": "Card identifier",
@@ -268,7 +268,7 @@
     "card.item.tagged": {
       "vertebra": "directing",
       "legacy_name": "card_tagged",
-      "source": "board-client",
+      "source": "cards",
       "description": "Label or tag added to a card",
       "fields": {
         "card_id": "Card identifier",
@@ -279,7 +279,7 @@
     "card.item.completed": {
       "vertebra": "directing",
       "legacy_name": "card_done",
-      "source": "board-client",
+      "source": "cards",
       "description": "Card moved to Done",
       "fields": {
         "card_id": "Card identifier",
@@ -407,7 +407,7 @@
     },
     "card.demo.started": {
       "vertebra": "proving",
-      "source": "board-client",
+      "source": "cards",
       "description": "Demo started for card (DEC-048 Proving gate)",
       "fields": {
         "card_id": "Card identifier",
@@ -416,7 +416,7 @@
     },
     "card.accepted": {
       "vertebra": "proving",
-      "source": "board-client",
+      "source": "cards",
       "description": "Card accepted after demo (DEC-048 Proving gate)",
       "fields": {
         "card_id": "Card identifier",
@@ -425,7 +425,7 @@
     },
     "card.rejected": {
       "vertebra": "proving",
-      "source": "board-client",
+      "source": "cards",
       "description": "Card rejected after demo with reason",
       "fields": {
         "card_id": "Card identifier",
@@ -436,7 +436,7 @@
     "card.stale.detected": {
       "vertebra": "directing",
       "legacy_name": "stale_card_detected",
-      "source": "board-client",
+      "source": "cards",
       "description": "Card detected as stale during board audit (>48h in Now/WIP, >7d in Next)",
       "fields": {
         "card_id": "Card identifier",
@@ -449,7 +449,7 @@
     "board.snapshot.taken": {
       "vertebra": "directing",
       "legacy_name": "board_snapshot",
-      "source": "board-client",
+      "source": "cards",
       "description": "Board state snapshot taken",
       "fields": {
         "board": "Board name",
@@ -459,7 +459,7 @@
     "board.audit.started": {
       "vertebra": "directing",
       "legacy_name": "board_audit_start",
-      "source": "board-client",
+      "source": "cards",
       "description": "Board audit initiated at session start",
       "fields": {
         "board": "Board name",
@@ -469,7 +469,7 @@
     "board.audit.closed": {
       "vertebra": "directing",
       "legacy_name": "board_audit_close",
-      "source": "board-client",
+      "source": "cards",
       "description": "Board audit at session close \u2014 checks for retroactive cards",
       "fields": {
         "board": "Board name",
@@ -481,7 +481,7 @@
     "board.limit.set": {
       "vertebra": "directing",
       "legacy_name": "bucket_limit_set",
-      "source": "board-client",
+      "source": "cards",
       "description": "WIP limit set on a board bucket",
       "fields": {
         "bucket": "Bucket name",
@@ -489,10 +489,73 @@
         "board": "Board name"
       }
     },
+    "card.blast_radius.failed": {
+      "vertebra": "designing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Blast radius generation failed — card has 0 files on a code card",
+      "fields": {
+        "card_id": "Card identifier",
+        "reason": "Failure reason"
+      }
+    },
+    "card.bulk.moved": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Multiple cards moved in a single bulk operation",
+      "fields": {
+        "card_ids": "Comma-separated card identifiers",
+        "status": "Target status",
+        "count": "Number of cards moved"
+      }
+    },
+    "card.item.reassigned": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Card ownership changed to a different role",
+      "fields": {
+        "card_id": "Card identifier",
+        "from": "Previous owner role",
+        "to": "New owner role"
+      }
+    },
+    "card.quick.created": {
+      "vertebra": "capturing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Card created with --quick flag, skipping full AC requirement",
+      "fields": {
+        "card_id": "Card identifier",
+        "title": "Card title"
+      }
+    },
+    "card.sequence.bulk_tagged": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Multiple cards tagged with a sequence label in bulk",
+      "fields": {
+        "card_ids": "Comma-separated card identifiers",
+        "sequence": "Sequence label applied",
+        "count": "Number of cards tagged"
+      }
+    },
+    "card.unblocked": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Card moved from Blocked back to Next",
+      "fields": {
+        "card_id": "Card identifier",
+        "reason": "Original block reason"
+      }
+    },
     "workflow.manifest.created": {
       "vertebra": "designing",
       "legacy_name": "workflow_created",
-      "source": "board-client",
+      "source": "cards",
       "description": "Workflow manifest auto-created when card moves to Now",
       "fields": {
         "workflow_id": "Workflow identifier (WF-NNN)",
