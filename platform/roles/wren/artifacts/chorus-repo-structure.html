@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Repo Structure &mdash; April 2026</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e0e0e0;
+    --text: #2d2d2d;
+    --muted: #6b7280;
+    --accent: #0d6efd;
+    --warn: #d97706;
+    --danger: #dc2626;
+    --info: #2563eb;
+    --ok: #16a34a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    line-height: 1.6;
+  }
+  h1 { color: var(--accent); font-size: 1.8rem; margin-bottom: 0.5rem; }
+  h2 { color: var(--info); font-size: 1.3rem; margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+  h3 { color: var(--muted); font-size: 1rem; margin: 1.5rem 0 0.5rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1rem 0; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .card h3 { margin-top: 0; }
+  .stat { font-size: 2rem; color: var(--accent); font-weight: bold; }
+  .stat-label { color: var(--muted); font-size: 0.8rem; }
+  table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.85rem; }
+  th, td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--accent); font-weight: 600; }
+  .size { color: var(--muted); text-align: right; }
+  .badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .badge-ok { background: #dcfce7; color: var(--ok); }
+  .badge-warn { background: #fef3c7; color: var(--warn); }
+  .badge-danger { background: #fee2e2; color: var(--danger); }
+  .badge-info { background: #dbeafe; color: var(--info); }
+  .badge-ignored { background: #f3f4f6; color: var(--muted); }
+  .tree { font-size: 0.8rem; line-height: 1.8; }
+  .tree .dir { color: var(--info); }
+  .tree .ignored { color: var(--muted); opacity: 0.5; }
+  .tree .risk { color: var(--danger); }
+  .tree .indent { display: inline-block; }
+  .risk-section {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 1.2rem;
+    margin: 1rem 0;
+  }
+  .risk-section h3 { color: var(--danger); }
+  .ok-section {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    padding: 1.2rem;
+    margin: 1rem 0;
+  }
+  .ok-section h3 { color: var(--ok); }
+  .gitignore-block {
+    background: #f8f9fa;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    font-size: 0.8rem;
+    overflow-x: auto;
+    margin: 0.5rem 0;
+  }
+  .gitignore-block .comment { color: #6b7280; }
+  .gitignore-block .pattern { color: #92400e; }
+  .gitignore-block .note { color: var(--muted); font-style: italic; }
+  ul { padding-left: 1.5rem; margin: 0.5rem 0; }
+  li { margin: 0.3rem 0; font-size: 0.85rem; }
+  code { background: #e8edf2; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
+  .symlink { color: #7c3aed; }
+  .file-count { color: var(--muted); font-size: 0.8rem; }
+  .separator { border-top: 2px solid var(--border); margin: 3rem 0 2rem; }
+</style>
+</head>
+<body>
+
+<h1>chorus/ &mdash; Repository Structure</h1>
+<p class="subtitle">Audit: April 8, 2026 &bull; 3,609 tracked files &bull; Branch: main &bull; Git objects: ~1 GiB</p>
+
+<div class="grid">
+  <div class="card">
+    <div class="stat">3,609</div>
+    <div class="stat-label">Tracked files</div>
+  </div>
+  <div class="card">
+    <div class="stat">~16 MB</div>
+    <div class="stat-label">Unique source content (excl. screenshots)</div>
+  </div>
+  <div class="card">
+    <div class="stat">108 MB</div>
+    <div class="stat-label">Screenshots in proving/ (170 PNGs)</div>
+  </div>
+  <div class="card">
+    <div class="stat">1 GiB</div>
+    <div class="stat-label">Git object database (.git/)</div>
+  </div>
+</div>
+
+<h2>Directory Map</h2>
+<p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 1rem;">
+  Organized by the 5-group structure from #1827. Each group has a purpose; files outside this structure are flagged.
+</p>
+
+<table>
+  <tr><th>Directory</th><th>Purpose</th><th>Files</th><th class="size">Size</th><th>Status</th></tr>
+  <tr><td colspan="5" style="color: var(--accent); padding-top: 1rem; font-weight: 600;">DESIGNING &mdash; Architecture &amp; decisions</td></tr>
+  <tr><td><code>designing/claudemd/</code></td><td>CLAUDE.md source fragments + manifest</td><td>171</td><td class="size">2.8 MB</td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>designing/decisions/</code></td><td>Decision records (DEC-NNN)</td><td></td><td class="size"></td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>designing/docs/</code></td><td>Design docs + rendered diagrams</td><td></td><td class="size"></td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>designing/domain-context/</code></td><td>Per-domain context files</td><td></td><td class="size"></td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>designing/schemas/</code></td><td>JSON schemas for spine events etc</td><td></td><td class="size"></td><td><span class="badge badge-ok">clean</span></td></tr>
+
+  <tr><td colspan="5" style="color: var(--accent); padding-top: 1rem; font-weight: 600;">DIRECTING &mdash; Runtime services</td></tr>
+  <tr><td><code>directing/clearing/</code></td><td>The Clearing &mdash; multi-party chat (Express + Socket.IO)</td><td>27</td><td class="size">1.4 MB</td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>directing/vikunja/</code></td><td>Vikunja board config</td><td></td><td class="size"></td><td><span class="badge badge-warn">DB backup was tracked</span></td></tr>
+
+  <tr><td colspan="5" style="color: var(--accent); padding-top: 1rem; font-weight: 600;">PLATFORM &mdash; Core infrastructure</td></tr>
+  <tr><td><code>platform/api/</code></td><td>Chorus context index HTTP API</td><td>4</td><td class="size">131 KB</td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>platform/board-client/</code></td><td>Board CLI (<code>cards</code> command)</td><td>32</td><td class="size">260 KB</td><td><span class="badge badge-warn">sdk.ts had stale paths</span></td></tr>
+  <tr><td><code>platform/roles/silas/</code></td><td>Architect role &mdash; CLAUDE.md, briefs, scripts, state</td><td>1,135</td><td class="size">220 KB</td><td><span class="badge badge-ok">canonical</span></td></tr>
+  <tr><td><code>platform/roles/kade/</code></td><td>Engineer role &mdash; CLAUDE.md, briefs, hooks</td><td>765</td><td class="size">80 KB</td><td><span class="badge badge-ok">canonical</span></td></tr>
+  <tr><td><code>platform/roles/wren/</code></td><td>PM role &mdash; CLAUDE.md, briefs, skills</td><td>628</td><td class="size">710 KB</td><td><span class="badge badge-ok">canonical</span></td></tr>
+  <tr><td><code>platform/scripts/</code></td><td>Shared scripts (97 files, 18 are symlinks to Rust binary)</td><td>97</td><td class="size">370 KB</td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>platform/services/chorus-hooks/</code></td><td>Rust hook server + shim binary</td><td>81</td><td class="size">660 KB</td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>platform/services/chorus-inject/</code></td><td>Rust inject binary (TCC-stable)</td><td></td><td class="size"></td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>platform/skills/</code></td><td>28 skill definitions for /slash commands</td><td>31</td><td class="size">80 KB</td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>platform/pulse/</code></td><td>Messaging API (port 3475)</td><td>7</td><td class="size">60 KB</td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>platform/tests/</code></td><td>Integration &amp; BDD tests</td><td>57</td><td class="size">180 KB</td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>platform/logs/</code></td><td>Runtime logs &amp; board snapshots</td><td>4</td><td class="size">35 MB</td><td><span class="badge badge-danger">symlink to live log tracked!</span></td></tr>
+
+  <tr><td colspan="5" style="color: var(--accent); padding-top: 1rem; font-weight: 600;">PROVING &mdash; Validation &amp; deployment</td></tr>
+  <tr><td><code>proving/config/launchagents/</code></td><td>Canonical LaunchAgent plists (23 files)</td><td></td><td class="size"></td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>proving/config/profiles/</code></td><td>Permission profiles</td><td></td><td class="size"></td><td><span class="badge badge-ok">clean</span></td></tr>
+  <tr><td><code>proving/screenshots/</code></td><td>Dashboard captures (Silas)</td><td>170</td><td class="size">108 MB</td><td><span class="badge badge-warn">repo bloat source</span></td></tr>
+  <tr><td><code>proving/logs/</code></td><td>Runtime logs (should be ignored)</td><td>8</td><td class="size">14 MB</td><td><span class="badge badge-danger">logs tracked in git!</span></td></tr>
+  <tr><td><code>proving/workflows/archive/</code></td><td>Completed workflow manifests</td><td>110+</td><td class="size"></td><td><span class="badge badge-ok">historical</span></td></tr>
+
+  <tr><td colspan="5" style="color: var(--accent); padding-top: 1rem; font-weight: 600;">ARCHIVE &mdash; Retired code</td></tr>
+  <tr><td><code>archive/slack-bridge/</code></td><td>Deprecated Slack integration</td><td>50</td><td class="size">5.8 MB</td><td><span class="badge badge-ignored">archived</span></td></tr>
+  <tr><td><code>archive/clearing/</code></td><td>Old Clearing version</td><td></td><td class="size"></td><td><span class="badge badge-ignored">archived</span></td></tr>
+  <tr><td><code>archive/screenshots/</code></td><td>Old screenshots</td><td></td><td class="size"></td><td><span class="badge badge-ignored">archived</span></td></tr>
+
+  <tr><td colspan="5" style="color: var(--accent); padding-top: 1rem; font-weight: 600;">ROOT-LEVEL ORPHANS</td></tr>
+  <tr><td><code>engineer/</code></td><td>Old role dir &mdash; should not exist</td><td>0 tracked</td><td class="size"></td><td><span class="badge badge-danger">orphan</span></td></tr>
+  <tr><td><code>messages/</code></td><td>Old coordination dir &mdash; 2 files untracked</td><td>2</td><td class="size"></td><td><span class="badge badge-warn">ambiguous</span></td></tr>
+  <tr><td><code>logs/</code></td><td>3 tracked log files at root</td><td>3</td><td class="size">170 KB</td><td><span class="badge badge-warn">misplaced</span></td></tr>
+  <tr><td><code>building/</code></td><td>2 files (nudge queue)</td><td>2</td><td class="size">10 KB</td><td><span class="badge badge-info">small</span></td></tr>
+</table>
+
+<h2>.gitignore &mdash; What's Excluded and Why</h2>
+
+<div class="gitignore-block">
+<span class="comment"># Build artifacts &mdash; regenerated from source</span><br>
+<span class="pattern">node_modules/</span> <span class="note">&larr; JS dependencies (npm install)</span><br>
+<span class="pattern">dist/</span> <span class="note">&larr; TypeScript compiled output (npm run build)</span><br>
+<span class="pattern">target/</span> <span class="note">&larr; Rust compiled output (cargo build)</span><br>
+<span class="pattern">coverage/</span> <span class="note">&larr; Test coverage reports</span><br>
+<span class="pattern">*.js.map</span> <span class="note">&larr; Source maps</span><br>
+<span class="pattern">*.tsbuildinfo</span> <span class="note">&larr; TS incremental build cache</span><br>
+<span class="pattern">*.rlib</span> <span class="note">&larr; Rust library archives (build artifact)</span><br>
+<br>
+<span class="comment"># Secrets &mdash; never commit</span><br>
+<span class="pattern">.env</span> <span class="note">&larr; Vikunja tokens, API keys</span><br>
+<span class="pattern">.env.*</span> <span class="note">&larr; Per-service env overrides</span><br>
+<br>
+<span class="comment"># Runtime databases &mdash; live state, not source</span><br>
+<span class="pattern">*.db / *.db-wal / *.db-shm</span> <span class="note">&larr; SQLite (chorus index, vikunja)</span><br>
+<span class="pattern">directing/vikunja/db/</span> <span class="note">&larr; Vikunja board database</span><br>
+<span class="pattern">vikunja/db/ / vikunja/files/</span> <span class="note">&larr; Legacy vikunja paths</span><br>
+<br>
+<span class="comment"># Logs &mdash; indexed by Loki, not git</span><br>
+<span class="pattern">platform/logs/permission-prompts.log</span><br>
+<span class="pattern">platform/logs/command-errors.log</span><br>
+<span class="pattern">platform/logs/board-snapshot-*.json</span><br>
+<span class="pattern">proving/logs/*.log / proving/logs/*.log.*</span><br>
+<span class="pattern">ops/logs/*</span> <span class="note">&larr; Legacy path (ops/ renamed)</span><br>
+<br>
+<span class="comment"># Config backups &mdash; stale after restructures</span><br>
+<span class="pattern">*.json.bak</span><br>
+<br>
+<span class="comment"># OS &amp; editor</span><br>
+<span class="pattern">.DS_Store / *.swp / *~</span><br>
+<span class="pattern">package-lock.json</span> <span class="note">&larr; Generated by npm, not committed</span><br>
+</div>
+
+<h2>Versioning Risk Assessment</h2>
+
+<div class="risk-section">
+<h3>CRITICAL &mdash; Code at risk of not being versioned</h3>
+<table>
+  <tr><th>Item</th><th>Risk</th><th>Status</th></tr>
+  <tr>
+    <td><code>platform/logs/chorus.log</code></td>
+    <td>Symlink to live log (<code>~/Library/Logs/Chorus/chorus.log</code>) &mdash; 34 MB and growing. Tracked in git but .gitignore only covers <code>command-errors.log</code> and <code>permission-prompts.log</code>, not <code>chorus.log</code> itself. Every commit includes the current log state.</td>
+    <td><span class="badge badge-danger">add to .gitignore</span></td>
+  </tr>
+  <tr>
+    <td><code>platform/logs/board-snapshot-*.json</code></td>
+    <td>Three 790KB JSON snapshots tracked despite .gitignore pattern. Pattern may not match because files were force-added. Churns on every board change &mdash; 18K lines per diff.</td>
+    <td><span class="badge badge-danger">git rm --cached</span></td>
+  </tr>
+  <tr>
+    <td><code>Rust binaries (target/release/)</code></td>
+    <td>The compiled <code>chorus-hook-shim</code> (4 MB) and <code>chorus-inject</code> (354 KB) are NOT tracked (good &mdash; <code>target/</code> is ignored). But 18 symlinks in <code>platform/scripts/</code> point to the binary. If the binary doesn't exist (fresh clone), all 18 scripts break silently.</td>
+    <td><span class="badge badge-warn">needs post-clone build step</span></td>
+  </tr>
+  <tr>
+    <td><code>engineer/briefs/</code></td>
+    <td>Root-level <code>engineer/</code> directory has 2 untracked brief files. This is an orphan from the restructure &mdash; briefs written here are invisible to git and to the canonical <code>platform/roles/kade/briefs/</code>.</td>
+    <td><span class="badge badge-danger">orphan &mdash; delete or consolidate</span></td>
+  </tr>
+  <tr>
+    <td><code>.env</code> restoration</td>
+    <td>The <code>.env</code> file (Vikunja token) is correctly gitignored but has no backup mechanism. If deleted (as happened yesterday), the board CLI, cards command, and all board operations break. The token exists in <code>CascadeProjects/.env</code> but there's no documented recovery path.</td>
+    <td><span class="badge badge-warn">needs recovery doc</span></td>
+  </tr>
+</table>
+</div>
+
+<div class="risk-section">
+<h3>HIGH &mdash; Bloat and history pollution</h3>
+<table>
+  <tr><th>Item</th><th>Impact</th><th>Size</th></tr>
+  <tr>
+    <td><code>proving/screenshots/</code> &mdash; 170 PNGs</td>
+    <td>Dashboard captures baked into git history forever. Main contributor to the 1 GiB .git directory. Every screenshot adds ~700KB to history that can never be reclaimed without filter-repo.</td>
+    <td>108 MB</td>
+  </tr>
+  <tr>
+    <td>Duplicate images across role briefs</td>
+    <td><code>gathering-miro-fence.jpg</code> (5 MB) and <code>gathering-self-portrait-as-is.jpeg</code> (3.2 MB) tracked in all 3 role directories. Same file, 3x the storage.</td>
+    <td>24 MB</td>
+  </tr>
+  <tr>
+    <td><code>platform/roles/silas/docs/source-*.json</code></td>
+    <td>Two large JSON data files (16.8 MB + 9.6 MB) tracked as source. These appear to be harvester source data, not code.</td>
+    <td>26 MB</td>
+  </tr>
+</table>
+</div>
+
+<div class="ok-section">
+<h3>HEALTHY &mdash; Properly versioned</h3>
+<ul>
+  <li><strong>All Rust source</strong> (<code>platform/services/chorus-hooks/src/</code>, <code>chorus-inject/src/</code>) &mdash; tracked, build artifacts ignored</li>
+  <li><strong>All TypeScript source</strong> (api, board-client, clearing, pulse, workflow-engine, tests) &mdash; tracked, dist/ ignored</li>
+  <li><strong>All shell scripts</strong> (<code>platform/scripts/</code>, role scripts) &mdash; tracked</li>
+  <li><strong>All CLAUDE.md files</strong> + source fragments in <code>designing/claudemd/</code> &mdash; tracked</li>
+  <li><strong>All skill definitions</strong> (<code>platform/skills/</code>) &mdash; tracked</li>
+  <li><strong>All LaunchAgent plists</strong> (<code>proving/config/launchagents/</code>) &mdash; tracked (canonical source)</li>
+  <li><strong>All decision records</strong> (<code>designing/decisions/</code>) &mdash; tracked</li>
+  <li><strong>Team protocol docs</strong> (TEAM_PROTOCOL.md, team-architecture.md, activity.md) &mdash; tracked</li>
+  <li><strong>Secrets</strong> (.env files) &mdash; properly gitignored</li>
+  <li><strong>Databases</strong> (*.db) &mdash; properly gitignored</li>
+</ul>
+</div>
+
+<h2>Symlink Map</h2>
+<table>
+  <tr><th>Link</th><th>Target</th><th>Purpose</th><th>Status</th></tr>
+  <tr>
+    <td class="symlink">platform/roles/architect</td><td>&rarr; silas</td><td>Legacy alias</td>
+    <td><span class="badge badge-warn">remove when old refs gone</span></td>
+  </tr>
+  <tr>
+    <td class="symlink">platform/roles/engineer</td><td>&rarr; kade</td><td>Legacy alias</td>
+    <td><span class="badge badge-warn">remove when old refs gone</span></td>
+  </tr>
+  <tr>
+    <td class="symlink">platform/roles/product-manager</td><td>&rarr; wren</td><td>Legacy alias</td>
+    <td><span class="badge badge-warn">remove when old refs gone</span></td>
+  </tr>
+  <tr>
+    <td class="symlink">platform/scripts/chorus-log</td><td>&rarr; chorus-hook-shim</td><td>Multicall binary</td>
+    <td><span class="badge badge-ok">correct</span></td>
+  </tr>
+  <tr>
+    <td class="symlink">platform/scripts/role-state</td><td>&rarr; chorus-hook-shim</td><td>Multicall binary</td>
+    <td><span class="badge badge-ok">correct</span></td>
+  </tr>
+  <tr>
+    <td class="symlink">platform/scripts/wall-clock</td><td>&rarr; chorus-hook-shim</td><td>Multicall binary</td>
+    <td><span class="badge badge-ok">correct</span></td>
+  </tr>
+  <tr>
+    <td class="symlink">platform/logs/chorus.log</td><td>&rarr; ~/Library/Logs/...</td><td>Live log</td>
+    <td><span class="badge badge-danger">tracked symlink to live file</span></td>
+  </tr>
+  <tr>
+    <td class="symlink" style="color: var(--muted);">+ 15 more script symlinks</td><td>&rarr; chorus-hook-shim</td><td>Multicall</td>
+    <td><span class="badge badge-ok">correct</span></td>
+  </tr>
+</table>
+
+<h2>Recommendations</h2>
+
+<table>
+  <tr><th>#</th><th>Action</th><th>Impact</th><th>Effort</th></tr>
+  <tr><td>1</td><td>Add <code>platform/logs/chorus.log</code> to .gitignore + <code>git rm --cached</code></td><td>Stops 34MB live log from polluting commits</td><td>1 min</td></tr>
+  <tr><td>2</td><td><code>git rm --cached platform/logs/board-snapshot-*.json</code></td><td>Stops 18K-line churn per board change</td><td>1 min</td></tr>
+  <tr><td>3</td><td>Delete <code>engineer/</code> root-level orphan, consolidate briefs</td><td>Eliminates split-brain brief delivery</td><td>5 min</td></tr>
+  <tr><td>4</td><td>Move screenshots to external storage or Git LFS</td><td>Reclaims 108 MB from future clones</td><td>30 min</td></tr>
+  <tr><td>5</td><td>Deduplicate role images (fence.jpg, portrait.jpeg)</td><td>Saves 16 MB tracked, reduces clone size</td><td>10 min</td></tr>
+  <tr><td>6</td><td>Add post-clone build step doc (<code>cargo build --release</code>)</td><td>18 symlinks work on fresh clone</td><td>5 min</td></tr>
+  <tr><td>7</td><td>Remove role alias symlinks when all old refs are cleaned</td><td>Clean structure, no phantom paths</td><td>5 min</td></tr>
+</table>
+
+<div class="separator"></div>
+<p style="color: var(--muted); font-size: 0.75rem; text-align: center;">
+  Generated by Silas &bull; SWAT #1802 &bull; April 8, 2026
+</p>
+
+</body>
+</html>
