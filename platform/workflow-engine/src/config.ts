@@ -10,10 +10,10 @@ export const DEFAULT_CONFIG: WorkflowEngineConfig = {
   activeDir: resolve(MESSAGES_DIR, 'workflows/active'),
   archiveDir: resolve(MESSAGES_DIR, 'workflows/archive'),
   briefDirs: {
-    silas: resolve(CASCADEPROJECTS, 'architect/briefs'),
-    kade: resolve(CASCADEPROJECTS, 'engineer/briefs'),
-    wren: resolve(CASCADEPROJECTS, 'product-manager/briefs'),
-    jeff: resolve(CASCADEPROJECTS, 'product-manager/briefs'),
+    silas: resolve(CASCADEPROJECTS, 'roles/silas/briefs'),
+    kade: resolve(CASCADEPROJECTS, 'roles/kade/briefs'),
+    wren: resolve(CASCADEPROJECTS, 'roles/wren/briefs'),
+    jeff: resolve(CASCADEPROJECTS, 'roles/wren/briefs'),
   },
   handoffLogPath: resolve(MESSAGES_DIR, 'logs/handoffs.log'),
 };

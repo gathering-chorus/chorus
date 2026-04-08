@@ -508,7 +508,7 @@
       "ROLE_NAME": "Wren",
       "ROLE_LOWER": "wren",
       "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Wren --priority P1 --status Next",
-      "BRIEF_ROUTING": "- For Silas: `../architect/briefs/`\n- For Kade: `../engineer/briefs/`\n- For Wren (incoming): `briefs/` (this directory)",
+      "BRIEF_ROUTING": "- For Silas: `../silas/briefs/`\n- For Kade: `../kade/briefs/`\n- For Wren (incoming): `briefs/` (this directory)",
       "SESSION_START_FILES": "`backlog.md`, `projects.md`, `decisions.md`",
       "CREDENTIAL_EXAMPLE": "$SLACK_BOT_TOKEN"
     },
@@ -516,7 +516,7 @@
       "ROLE_NAME": "Silas",
       "ROLE_LOWER": "silas",
       "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Silas --priority P2 --domain infrastructure",
-      "BRIEF_ROUTING": "- For Wren: `../product-manager/briefs/`\n- For Kade: `../engineer/briefs/`\n- For Silas (incoming): `briefs/` (this directory)",
+      "BRIEF_ROUTING": "- For Wren: `../wren/briefs/`\n- For Kade: `../kade/briefs/`\n- For Silas (incoming): `briefs/` (this directory)",
       "SESSION_START_FILES": "`system-architecture.md`, `ontology-status.md`, `infrastructure-constraints.md`",
       "CREDENTIAL_EXAMPLE": "$FUSEKI_ADMIN_PASSWORD"
     },
@@ -524,7 +524,7 @@
       "ROLE_NAME": "Kade",
       "ROLE_LOWER": "kade",
       "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Kade --priority P1 --domain infrastructure",
-      "BRIEF_ROUTING": "- For Silas: `../architect/briefs/`\n- For Wren: `../product-manager/briefs/`\n- For Kade (incoming): `briefs/` (this directory)",
+      "BRIEF_ROUTING": "- For Silas: `../silas/briefs/`\n- For Wren: `../wren/briefs/`\n- For Kade (incoming): `briefs/` (this directory)",
       "SESSION_START_FILES": "`current-work.md`, `tech-debt.md`",
       "CREDENTIAL_EXAMPLE": "$TWILIO_AUTH_TOKEN"
     }
@@ -543,7 +543,7 @@
   },
   "roles": {
     "wren": {
-      "output": "../product-manager/CLAUDE.md",
+      "output": "../../roles/wren/CLAUDE.md",
       "sections": [
         "roles/wren/title.md",
         "shared/chorus-prompt.md",
@@ -571,7 +571,7 @@
       ]
     },
     "silas": {
-      "output": "../architect/CLAUDE.md",
+      "output": "../../roles/silas/CLAUDE.md",
       "sections": [
         "roles/silas/title.md",
         "shared/chorus-prompt.md",
@@ -600,7 +600,7 @@
       ]
     },
     "kade": {
-      "output": "../engineer/CLAUDE.md",
+      "output": "../../roles/kade/CLAUDE.md",
       "sections": [
         "roles/kade/title.md",
         "shared/chorus-prompt.md",
