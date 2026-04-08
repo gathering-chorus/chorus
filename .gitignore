@@ -33,6 +33,17 @@ archive/clearing/transcripts/
 # Vikunja data
 vikunja/db/
 vikunja/files/
+directing/vikunja/db/
+
+# Rust build artifacts
+*.rlib
+
+# Logs in proving/ (runtime, rotated by logrotate)
+proving/logs/*.log
+proving/logs/*.log.*
+
+# Stale config backups
+*.json.bak
 
 # Temp files
 /tmp/
