@@ -1,0 +1,54 @@
+{
+  "id": "WF-026",
+  "decision": "Seeds domain migration — service design, test verification, close gaps",
+  "source": "board:card-moved:#1816",
+  "card": 1816,
+  "created": "2026-04-08T16:33:47Z",
+  "updated": "2026-04-08T18:38:25.624Z",
+  "status": "completed",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Seeds domain migration — service design test verification close gaps",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-04-08T18:38:25.624Z",
+      "notes": "Skipped — card #1816 marked Done by wren"
+    },
+    {
+      "seq": 2,
+      "role": "silas",
+      "action": "Review and verify #1816",
+      "status": "skipped",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": "2026-04-08T18:38:25.624Z",
+      "notes": "Skipped — card #1816 marked Done by wren"
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-04-08T16:33:47Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Seeds domain migration — service design, test verification, close gaps"
+    },
+    {
+      "timestamp": "2026-04-08T18:38:25.624Z",
+      "event": "workflow_completed",
+      "role": "system",
+      "detail": "Auto-archived: card #1816 marked Done by wren"
+    }
+  ]
+}
