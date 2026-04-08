@@ -9,7 +9,7 @@ CascadeProjects/              ← git root (gathering-team repo)
 ├── .git/
 ├── architect/                → symlink to chorus/platform/roles/silas
 ├── engineer/                 → symlink to chorus/platform/roles/kade
-├── product-manager/          → symlink to chorus/platform/roles/wren
+├── product-manager/          → symlink to chorus/roles/wren
 ├── messages/                 → symlink to chorus/
 ├── chorus/                   ← 99.7% of all tracked files
 ├── jeff-bridwell-personal-site/  ← SEPARATE repo
@@ -56,7 +56,7 @@ No symlinks. No duplicate role directories. No dead weight.
 Each role has TWO directories in chorus/:
 - `chorus/architect/` (slim, 8 items) vs `chorus/platform/roles/silas/` (full, 40+ items)
 - `chorus/engineer/` (slim) vs `chorus/platform/roles/kade/` (nearly identical)
-- `chorus/product-manager/` (has extra HTML) vs `chorus/platform/roles/wren/` (core files)
+- `chorus/product-manager/` (has extra HTML) vs `chorus/roles/wren/` (core files)
 
 **Decision needed:** Which is canonical? The symlinks point to `platform/roles/<name>` which is where sessions actually run. Recommendation: `platform/roles/<name>` is canonical. Merge any unique files from `chorus/<role>/` into it, then delete `chorus/<role>/`.
 
@@ -64,7 +64,7 @@ Each role has TWO directories in chorus/:
 Delete these 4 symlinks from CascadeProjects/:
 - architect → chorus/platform/roles/silas
 - engineer → chorus/platform/roles/kade
-- product-manager → chorus/platform/roles/wren
+- product-manager → chorus/roles/wren
 - messages → chorus
 
 Replace with `additionalDirectories` in each role's `settings.local.json` using absolute paths.

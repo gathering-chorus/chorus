@@ -9,8 +9,8 @@
 #   Outputs JSON-like schedule definitions, one per line.
 
 cat <<'EOF'
-SCHEDULE bedroom-health "*/30 * * * *" "Run $CHORUS_ROOT/platform/roles/silas/scripts/health-check-bedroom.sh --card and report any failures. If all OK, stay silent."
-SCHEDULE fuseki-baseline "3 9 * * *" "Run $CHORUS_ROOT/platform/roles/silas/scripts/fuseki-baseline.sh and report timing. Alert if any query exceeds 10 seconds."
+SCHEDULE bedroom-health "*/30 * * * *" "Run $CHORUS_ROOT/roles/silas/scripts/health-check-bedroom.sh --card and report any failures. If all OK, stay silent."
+SCHEDULE fuseki-baseline "3 9 * * *" "Run $CHORUS_ROOT/roles/silas/scripts/fuseki-baseline.sh and report timing. Alert if any query exceeds 10 seconds."
 SCHEDULE stale-handoffs "17 */4 * * *" "Scan briefs directories for handoffs older than 24h. List them. Delete briefs from completed workflows."
 SCHEDULE doc-staleness "23 9 * * 1" "Check data/about/*.md for stale numbers: compare test count to actual (grep -c 'it(' tests/**/*.test.*), message count to Chorus index, card count to board. Card any doc that's >10% off."
 EOF

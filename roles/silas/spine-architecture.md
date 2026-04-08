@@ -32,7 +32,7 @@ Latency: ~3-5s for full context load.
 
 | Component | Function | Trigger | Key Files |
 |-----------|----------|---------|-----------|
-| `cards` | TypeScript Vikunja client — card CRUD, audit snapshots, staleness detection (Now >48h, Next >7d), WIP limiting | Manual, session-start.sh | `platform/cards/src/cli.ts`, `platform/cards/src/client.ts` |
+| `cards` | TypeScript Vikunja client — card CRUD, audit snapshots, staleness detection (Now >48h, Next >7d), WIP limiting | Manual, session-start.sh | `directing/products/cards/src/cli.ts`, `directing/products/cards/src/client.ts` |
 | Workflow engine | Multi-step state machine — JSON manifests, auto-handoff briefs, swim lane dashboard | Auto on `board-ts move <id> Now`, manual via `workflow.sh` | `messages/workflow-engine/src/engine.ts`, `messages/scripts/workflow.sh` |
 | Briefs protocol | Structured files in recipient's `briefs/` dir, staleness flagging, activity.md audit trail | Manual write, workflow auto-generation | Role `briefs/` directories, `messages/activity.md` |
 

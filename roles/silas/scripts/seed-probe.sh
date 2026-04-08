@@ -411,8 +411,8 @@ fi
 CR="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 BRIEF_DIRS=(
   "$CR/platform/roles/kade/briefs"
-  "$CR/platform/roles/silas/briefs"
-  "$CR/platform/roles/wren/briefs"
+  "$CR/roles/silas/briefs"
+  "$CR/roles/wren/briefs"
 )
 BRIEF_CLEANED=0
 for bdir in "${BRIEF_DIRS[@]}"; do
