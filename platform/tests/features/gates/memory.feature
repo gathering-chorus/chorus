@@ -11,13 +11,13 @@ Feature: Context synthesis gate (memory gate)
   # Note: memory_gate checks git history on the target file BEFORE search/synthesis.
   # To test search/synthesis behavior, scenarios must first satisfy the git history check.
 
-  Scenario: Fix card edit without git history — blocked before search check
+  Scenario: Fix card edit without log evidence — blocked by log-first gate
     Given a role is building a fix card
     And they have searched "chorus-query.sh search seeds"
     And they have produced a synthesis with "Prior work: checked history"
     But they have not run git log on the target file
     When they try to edit a cross-domain code file
-    Then the gate blocks with "no git history"
+    Then the gate blocks with "Log-first gate"
 
   Scenario: Fix card edit with git history but no synthesis — blocked
     Given a role is building a fix card
@@ -53,12 +53,12 @@ Feature: Context synthesis gate (memory gate)
     When they try to edit a file in their own domain
     Then the gate allows the edit
 
-  Scenario: Fix card edit in own domain without git history — blocked
+  Scenario: Fix card edit cross-domain without context — blocked by context synthesis gate
     Given a role is building a fix card
     And they have not searched Chorus or memory
     And they have not produced a context synthesis
     When they try to edit a cross-domain code file
-    Then the gate blocks with "no git history"
+    Then the gate blocks with "Context synthesis gate"
 
   # --- Non-fix card scenarios ---
 

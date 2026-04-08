@@ -439,7 +439,7 @@ fn role_checkpoint_cmd(args: &[String]) -> ExitCode {
     }
 
     let repo = shared::state_paths::chorus_root();
-    let role_dir = match role { "wren" => "product-manager", "silas" => "architect", "kade" => "engineer", _ => unreachable!() };
+    let role_dir = match role { "wren" => "platform/roles/wren", "silas" => "platform/roles/silas", "kade" => "platform/roles/kade", _ => unreachable!() };
     let checkpoint = format!("/tmp/role-checkpoint-{}.json", role);
     let board_ts = format!("{}/platform/scripts/cards", repo);
 

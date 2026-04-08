@@ -8,7 +8,7 @@ import * as path from 'path';
 // Runtime enforcement is via conversation gates (Silas's domain).
 
 const MEMORY_DIR = '/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory';
-const POLICY_PAGE = '/Users/jeffbridwell/CascadeProjects/platform/roles/product-manager/artifacts/domain-policy.html';
+const POLICY_PAGE = '/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/wren/artifacts/domain-policy.html';
 
 let lastContext = '';
 let violationDetected = false;

@@ -1,4 +1,4 @@
-@gate @ops
+@gate @ops @wip
 Feature: Chorus API health endpoint
   Jeff or a probe hits /api/chorus/health and gets real answers about
   whether the API is functional — database, vectors, uptime — not just

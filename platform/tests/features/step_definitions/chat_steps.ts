@@ -3,7 +3,7 @@ import { execSync } from 'child_process';
 import * as assert from 'assert';
 import * as fs from 'fs';
 
-const CHAT_SH = '/Users/jeffbridwell/CascadeProjects/platform/scripts/chat.sh';
+const CHAT_SH = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh';
 
 let chatId = '';
 let lastOutput = '';
@@ -14,6 +14,7 @@ function chat(args: string): string {
     return execSync(`bash ${CHAT_SH} ${args} 2>/dev/null`, {
       encoding: 'utf-8',
       timeout: 10000,
+      env: { ...process.env, CHAT_DRY_RUN: '1' },
     }).trim();
   } catch (e: any) {
     return e.stdout?.trim() || e.message || 'chat.sh failed';
@@ -116,6 +117,40 @@ Then('the chat is marked ended', function () {
 Then('the transcript is saved to \\/tmp\\/chorus-chat\\/', function () {
   const files = fs.readdirSync('/tmp/chorus-chat/').filter(f => f.includes(chatId));
   assert.ok(files.length > 0, `No transcript file for ${chatId} in /tmp/chorus-chat/`);
+});
+
+// --- Real delivery smoke test (no dry-run) ---
+
+function chatReal(args: string): string {
+  try {
+    return execSync(`bash ${CHAT_SH} ${args} 2>/dev/null`, {
+      encoding: 'utf-8',
+      timeout: 10000,
+    }).trim();
+  } catch (e: any) {
+    return e.stdout?.trim() || e.message || 'chat.sh failed';
+  }
+}
+
+When('{word} starts a real chat with {word} about {string}', function (roleA: string, roleB: string, topic: string) {
+  const output = chatReal(`start ${roleA} ${roleB} "${topic}"`);
+  const lines = output.split('\n');
+  chatId = lines[lines.length - 1].trim();
+  lastOutput = output;
+});
+
+When('{word} says {string} with real delivery', function (role: string, message: string) {
+  const output = chatReal(`say ${chatId} ${role} "${message}"`);
+  const num = parseInt(output.match(/\d+/)?.[0] || '0', 10);
+  if (num > 0) lastLineCount = num;
+  lastOutput = output;
+});
+
+Then('the nudge was delivered — not dry-run', function () {
+  assert.ok(
+    lastOutput.includes('DELIVERED') && !lastOutput.includes('DRY-RUN'),
+    `Expected real delivery, got: ${lastOutput}`
+  );
 });
 
 // --- Cleanup ---

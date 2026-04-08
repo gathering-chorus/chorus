@@ -9,9 +9,9 @@ fn repo_root() -> &'static str { chorus_root() }
 fn manifest_paths() -> Vec<String> {
     let root = chorus_root();
     vec![
-        format!("{}/product-manager/.sensitive-paths", root),
-        format!("{}/architect/.sensitive-paths", root),
-        format!("{}/engineer/.sensitive-paths", root),
+        format!("{}/platform/roles/wren/.sensitive-paths", root),
+        format!("{}/platform/roles/silas/.sensitive-paths", root),
+        format!("{}/platform/roles/kade/.sensitive-paths", root),
     ]
 }
 

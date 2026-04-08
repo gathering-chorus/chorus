@@ -10,7 +10,7 @@ use std::process::Command;
 use tracing::{info, warn};
 
 fn board_ts() -> String { format!("{}/platform/scripts/cards", chorus_root()) }
-fn briefs_dir() -> String { format!("{}/product-manager/briefs", chorus_root()) }
+fn briefs_dir() -> String { format!("{}/platform/roles/wren/briefs", chorus_root()) }
 
 /// Check if this is an /acp invocation and validate acceptance gates
 pub async fn check(input: &HookInput) -> HookResponse {

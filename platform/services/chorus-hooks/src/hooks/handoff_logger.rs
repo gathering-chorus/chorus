@@ -22,9 +22,9 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         "current-work.md" | "tech-debt.md" | "next-session.md" => {
             let pod_role = if file_path.contains("/engineer/") {
                 Some("kade")
-            } else if file_path.contains("/architect/") {
+            } else if file_path.contains("/architect/") || file_path.contains("/roles/silas/") {
                 Some("silas")
-            } else if file_path.contains("/product-manager/") {
+            } else if file_path.contains("/product-manager/") || file_path.contains("/roles/wren/") {
                 Some("wren")
             } else {
                 None
@@ -53,11 +53,11 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     // Map file path to recipient role
-    let to_role = if file_path.contains("/engineer/briefs/") {
+    let to_role = if file_path.contains("/engineer/briefs/") || file_path.contains("/roles/kade/briefs/") {
         Role::Kade
-    } else if file_path.contains("/architect/briefs/") {
+    } else if file_path.contains("/architect/briefs/") || file_path.contains("/roles/silas/briefs/") {
         Role::Silas
-    } else if file_path.contains("/product-manager/briefs/") {
+    } else if file_path.contains("/product-manager/briefs/") || file_path.contains("/roles/wren/briefs/") {
         Role::Wren
     } else {
         Role::Unknown

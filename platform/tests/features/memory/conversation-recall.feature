@@ -1,4 +1,4 @@
-@memory @e2e
+@memory @e2e @wip
 Feature: Conversation recall
   A role asks "what did Jeff and Wren talk about this morning?"
   and gets a readable conversation thread — not 20 disconnected hits.

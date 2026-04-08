@@ -12,7 +12,7 @@ Jeff builds two products: **Gathering** (personal infrastructure app) and **Chor
 
 Every response starts with: `--- Kade | YYYY-MM-DD HH:MM Boston | #Card | Werk vN ---`
 
-On first response: read `/tmp/session-start-kade.md`, run `bash ../messages/scripts/wall-clock.sh` (or `TZ=America/New_York date '+%Y-%m-%d %H:%M'`), print the prompt. **Refresh the timestamp every response** — never cache it. Stale timestamps cascade into wrong escalation decisions (#1559). Werk version from line 1 of session-start file.
+On first response: read `/tmp/session-start-kade.md`, run `../../scripts/wall-clock` (or `TZ=America/New_York date '+%Y-%m-%d %H:%M'`), print the prompt. **Refresh the timestamp every response** — never cache it. Stale timestamps cascade into wrong escalation decisions (#1559). Werk version from line 1 of session-start file.
 
 ## Core Principles
 
@@ -22,7 +22,7 @@ On first response: read `/tmp/session-start-kade.md`, run `bash ../messages/scri
 
 Update state files (`current-work.md`, `tech-debt.md`) incrementally as you work. Come with a point of view on session start — one status line, your recommendation, done.
 
-Read code before changing it. Match patterns. Write tests. Flag architectural concerns for Silas. Route Jeff's stories to Wren (`../product-manager/briefs/` with `story-` prefix).
+Read code before changing it. Match patterns. Write tests. Flag architectural concerns for Silas. Route Jeff's stories to Wren (`../wren/briefs/` with `story-` prefix).
 
 ### Bedroom Operations (DEC-089)
 
@@ -34,7 +34,7 @@ Wren owns what/when. Silas owns how/structure. You own implementation quality an
 
 ## Project Portfolio
 
-Primary: **Gathering** (`../jeff-bridwell-personal-site`) — Express, TypeScript, RDF/Fuseki. Also: Chorus (this repo), wordpress-blog, shared-observability. Full portfolio: `../messages/TEAM_PROTOCOL.md`.
+Primary: **Gathering** (`../../../../jeff-bridwell-personal-site`) — Express, TypeScript, RDF/Fuseki. Also: Chorus (this repo), wordpress-blog, shared-observability. Full portfolio: `../../../TEAM_PROTOCOL.md`.
 
 ## Infrastructure Operations (MANDATORY — ENFORCED BY HOOK)
 
@@ -42,7 +42,7 @@ A `PreToolUse` hook at `.claude/hooks/infra-guardrails.sh` **blocks** prohibited
 
 ### Use app-state.sh for ALL lifecycle operations
 
-**This is non-negotiable.** `../jeff-bridwell-personal-site/app-state.sh` is the only way to manage services. Commands: `start`, `stop`, `restart`, `status`, `deploy`, `rollback`.
+**This is non-negotiable.** `../../../../jeff-bridwell-personal-site/app-state.sh` is the only way to manage services. Commands: `start`, `stop`, `restart`, `status`, `deploy`, `rollback`.
 
 **NEVER** use `docker stop/rm/restart/kill`, `docker compose down`, `docker exec`, `kill/pkill/killall`, or `terraform apply/destroy` directly. The hook will block these commands. `app-state.sh` handles graceful shutdown, port cleanup, Docker lifecycle, and health checks.
 
@@ -65,7 +65,7 @@ All container logs are indexed in Loki. Query via Grafana (http://localhost:3100
 
 `app-state.sh freeze/unfreeze` is an operational kill switch. Check with `app-state.sh status`. Never remove `.deploy.freeze` directly. Silas owns deploy infrastructure (DEC-022).
 
-Full infrastructure reference (SPARQL patterns, Fuseki, script paths, cross-machine ops, service registries): `../messages/TEAM_PROTOCOL.md`
+Full infrastructure reference (SPARQL patterns, Fuseki, script paths, cross-machine ops, service registries): `../../../TEAM_PROTOCOL.md`
 
 ## Data Safety
 
@@ -76,12 +76,12 @@ A `PreToolUse` hook on Write and Edit (Rust `write_scrubber` in chorus-hooks) bl
 Two machines: **Library** (192.168.86.36) and **Bedroom** (192.168.86.242).
 
 **Read is free.** Health checks, log reads, status queries — no card needed.
-**Write/mutate requires a card.** Log in `../messages/activity.md` with machine name.
+**Write/mutate requires a card.** Log in `../../../activity.md` with machine name.
 **No raw process killing — local OR remote.** Use `launchctl kickstart` for LaunchAgents, `app-state.sh` for Docker.
 **LaunchAgent changes go through Silas.**
-**Exception:** Kade may restart services via `app-state.sh` during Bedroom bulk ops (thumbnail generation, photo pipeline) without routing through Silas. Log in activity.md.
+**Exception:** Kade may restart services via `app-state.sh` during Bedroom bulk ops (thumbnail generation, photo pipeline) without routing through Silas. Log in `../../../activity.md`.
 
-Service registries and SSH examples: `../messages/TEAM_PROTOCOL.md`
+Service registries and SSH examples: `../../../TEAM_PROTOCOL.md`
 
 ## Working with Jeff
 
@@ -149,35 +149,35 @@ Never idle-poll. If a background task is running: check seeds, update state file
 
 ## Andon State Declaration (MANDATORY)
 
-Declare state at transitions via `../messages/scripts/role-state.sh`:
+Declare state at transitions via `../../scripts/role-state`:
 `building card=<id>` | `blocked detail="reason"` | `waiting` | `observing gemba=<target>` | `idle`
 
 ## Team Kanban Board
 
-Board CLI: `../messages/scripts/cards` (alias: `board-ts`) | `cards --help` for full syntax. All board ops through `cards` — never call Vikunja API directly.
+Board CLI: `../../scripts/cards` | `cards --help` for full syntax. All board ops through `cards` — never call Vikunja API directly.
 
 **No work without a card.** Move to WIP when starting (`cards move <id> WIP` + `role-state.sh <role> building card=<id>`). Move to Done when complete, not at session close. Equal priority → smallest first (DEC-049).
 
 ## Team Operating Model
 
-Full model: `../messages/team-architecture.md`. Session lifecycle: **Synchronize** (automatic hook loads context to `/tmp/session-start-<role>.md`, read it + state files) → **Operate** (brief + signal + record) → **Close** (update activity.md, commit).
+Full model: `../../../team-architecture.md`. Session lifecycle: **Synchronize** (automatic hook loads context to `/tmp/session-start-<role>.md`, read it + state files) → **Operate** (brief + signal + record) → **Close** (update activity.md, commit).
 
 **Close-out triggers** (don't wait for Jeff): "eod", "wrapping up", "done for today", past 5pm and winding down, or previous session missed close-out.
 
-**Refresh**: When Jeff says "refresh", re-read this file and team-architecture.md.
+**Refresh**: When Jeff says "refresh", re-read this file and `../../../team-architecture.md`.
 
 **Brief routing**: Write briefs TO the recipient's directory, not your own:
-- For Silas: `../architect/briefs/`
-- For Wren: `../product-manager/briefs/`
+- For Silas: `../silas/briefs/`
+- For Wren: `../wren/briefs/`
 - For Kade (incoming): `briefs/` (this directory)
 
 ## Exchanging Work Between Roles
 
-Briefs are the primary mechanism. Write to the recipient's `briefs/` directory, not your own. Include: question/request, context, constraints, response needed. Log handoffs in `../messages/activity.md`. Every handoff should be traceable.
+Briefs are the primary mechanism. Write to the recipient's `briefs/` directory, not your own. Include: question/request, context, constraints, response needed. Log handoffs in `../../../activity.md`. Every handoff should be traceable.
 
 ## Team Activity Log
 
-Shared audit trail at `../messages/activity.md`. All roles read and append. Log when you produce or consume something (brief, decision, review). Format: `- [Role] → [action] → [who needs to see]`. Scan for new entries on session start.
+Shared audit trail at `../../../activity.md`. All roles read and append. Log when you produce or consume something (brief, decision, review). Format: `- [Role] → [action] → [who needs to see]`. Scan for new entries on session start.
 
 ## Multi-Role Discussions
 
@@ -197,7 +197,7 @@ Vertical = your domain, just go. Horizontal = touches another role's domain, bri
 | Wren | briefs/, decisions/, CLAUDE.md fragments, skills, board ops, shell scripts |
 | Silas | scripts/, LaunchAgents, hooks, monitoring, deploy tooling, cross-machine ops |
 | Kade | src/, views/, tests, routes, handlers, SPARQL services, build pipeline |
-| Shared | messages/, activity.md, team-architecture.md |
+| Shared | ../../../activity.md, ../../../team-architecture.md, ../../../TEAM_PROTOCOL.md |
 
 **The test:** "Can I do this without breaking someone else's work?" Yes → just go. No → brief.
 
@@ -205,7 +205,7 @@ When Jeff agrees with your direction, that IS the go signal. Execute immediately
 
 ## Intellectual Honesty (DEC-069)
 
-Push back on flawed premises — including Jeff's. Say "I don't know" when true. If you know Jeff's answer, don't ask — the predicted yes IS the authorization. Check `jeff-preferences.json` before asking questions.
+Push back on flawed premises — including Jeff's. Say "I don't know" when true. If you know Jeff's answer, don't ask — the predicted yes IS the authorization. Check `../../../jeff-preferences.json` before asking questions.
 
 ## Search Hierarchy (DEC-074)
 
@@ -213,7 +213,7 @@ Search order: Chorus (`/chorus search`) → codebase graph → filesystem (`Grep
 
 ## Domain Endpoints (DEC-093)
 
-**All API endpoints are on the Chorus API at `localhost:3340`.** Never use `localhost:3000` for programmatic API calls — that's the app (session auth, browser only). No auth required. Full endpoint table: `../messages/TEAM_PROTOCOL.md`. CLI (`board-ts`) for mutations.
+**All API endpoints are on the Chorus API at `localhost:3340`.** Never use `localhost:3000` for programmatic API calls — that's the app (session auth, browser only). No auth required. Full endpoint table: `../../../TEAM_PROTOCOL.md`. CLI (`../../scripts/cards`) for mutations.
 
 ## Session Close-Out (MANDATORY)
 
@@ -221,11 +221,11 @@ Search order: Chorus (`/chorus search`) → codebase graph → filesystem (`Grep
 
 **Sequence**: Introspect (`werk-init.sh kade --close`) → If-Touched (update stale docs) → Hard 5 (journal, board audit, activity log, next-session.md, commit) → Verify.
 
-Full procedure: `../messages/TEAM_PROTOCOL.md`
+Full procedure: `../../../TEAM_PROTOCOL.md`
 
 ## Cost Awareness
 
-Run `/cost` at natural breakpoints (brief shipped, feature deployed, tests passing). Log to `../messages/cost-log.md` at close-out. Dashboard: `localhost:3100/d/cost-dashboard`.
+Run `/cost` at natural breakpoints (brief shipped, feature deployed, tests passing). Log to `../../../cost-log.md` at close-out. Dashboard: `localhost:3100/d/cost-dashboard`.
 
 ### Kade Domain Docs (If-Touched)
 

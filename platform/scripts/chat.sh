@@ -15,6 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHAT_DIR="/tmp/chorus-chat"
 CHORUS_LOG="${SCRIPT_DIR}/chorus-log"
 MESSAGING_API="http://localhost:3475"
+# --dry-run: persist messages but skip nudge delivery (osascript inject)
+CHAT_DRY_RUN="${CHAT_DRY_RUN:-}"
 
 mkdir -p "$CHAT_DIR"
 
@@ -72,7 +74,9 @@ cmd_say() {
   else
     other="$role1"
   fi
-  bash "$SCRIPT_DIR/nudge" "$other" "[chat] New message in $chat_id — check and reply." 2>/dev/null || true
+  local nudge_flags=""
+  [ -n "$CHAT_DRY_RUN" ] && nudge_flags="--dry-run"
+  bash "$SCRIPT_DIR/nudge" "$other" "[chat] New message in $chat_id — check and reply." $nudge_flags 2>/dev/null || true
 
   # Return current line count so caller can track position
   wc -l < "$chat_file" | tr -d ' '

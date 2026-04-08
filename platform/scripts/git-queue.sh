@@ -20,7 +20,7 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "${CHORUS_ROOT}")"
 LOCK_FILE="${REPO_ROOT}/.git-commit.lock"
 META_FILE="${REPO_ROOT}/.git-commit.meta"
-CHORUS_LOG="${REPO_ROOT}/messages/scripts/chorus-log"
+CHORUS_LOG="${REPO_ROOT}/platform/scripts/chorus-log"
 LOCK_TIMEOUT=30
 ROLE="${DEPLOY_ROLE:-unknown}"
 

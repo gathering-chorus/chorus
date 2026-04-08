@@ -6,8 +6,8 @@
 
 use std::process::Command;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim";
-const POST_BUILD: &str = "/Users/jeffbridwell/CascadeProjects/scripts/post-cargo-build.sh";
+const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const POST_BUILD: &str = "/Users/jeffbridwell/CascadeProjects/chorus/scripts/post-cargo-build.sh";
 
 #[test]
 fn post_build_script_exists_and_is_executable() {

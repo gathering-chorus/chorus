@@ -53,11 +53,11 @@ Feature: TDD gate
 
   # --- Gate 2: Tests must run before demo/done ---
 
-  Scenario: Fix card demo without running tests — blocked
+  Scenario: Fix card demo without running tests — blocked by demo gate (card not on board)
     Given a role is building a fix card
     And they have not run any tests in the session
     When they try to run demo on the card
-    Then the gate blocks with "test"
+    Then the gate blocks with "Demo"
 
   Scenario: Fix card done after running tests with demo — allowed
     Given a role is building a fix card
@@ -66,11 +66,11 @@ Feature: TDD gate
     When they try to mark the card done
     Then the gate allows the edit
 
-  Scenario: New card done without tests — blocked
+  Scenario: New card done without tests — blocked by demo gate (no demo evidence)
     Given a role is building a new card
     And they have not run any tests in the session
     When they try to mark the card done
-    Then the gate blocks with "test"
+    Then the gate blocks with "Demo gate"
 
   # --- Chore/SWAT exemptions ---
 

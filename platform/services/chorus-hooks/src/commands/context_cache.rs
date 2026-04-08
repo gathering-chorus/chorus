@@ -55,7 +55,7 @@ pub fn run(args: &[String]) -> ExitCode {
     });
 
     // Recent decisions
-    let decisions_path = format!("{}/product-manager/decisions.md", REPO_ROOT);
+    let decisions_path = format!("{}/platform/roles/wren/decisions.md", REPO_ROOT);
     let decisions = fs::read_to_string(&decisions_path).ok()
         .map(|c| c.lines().filter(|l| l.starts_with("## DEC-"))
             .collect::<Vec<_>>().into_iter().rev().take(10).collect::<Vec<_>>()

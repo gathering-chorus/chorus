@@ -253,9 +253,9 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // Own domain, enhancement = trust builder
     let role = input.role();
     let is_own_domain = match role {
-        crate::types::Role::Kade => file_path.contains("/engineer/") || file_path.contains("/src/"),
-        crate::types::Role::Silas => file_path.contains("/architect/") || file_path.contains("/platform/"),
-        crate::types::Role::Wren => file_path.contains("/product-manager/") || file_path.contains("/directing/"),
+        crate::types::Role::Kade => file_path.contains("/engineer/") || file_path.contains("/roles/kade/") || file_path.contains("/src/"),
+        crate::types::Role::Silas => file_path.contains("/architect/") || file_path.contains("/roles/silas/") || file_path.contains("/platform/"),
+        crate::types::Role::Wren => file_path.contains("/product-manager/") || file_path.contains("/roles/wren/") || file_path.contains("/directing/"),
         crate::types::Role::Unknown => false,
     };
 

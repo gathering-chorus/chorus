@@ -29,11 +29,11 @@ Feature: Memory-first search gate (#1951)
 
   # --- Context searches after memory query — allowed ---
 
-  Scenario: Grep for card context after querying card-story — allowed
+  Scenario: Grep for card context after querying card-story — compound context injected
     Given a role is building a new card
     And they have queried card-story endpoint
     When they grep for card context "bdd-zxy-nomatch-99997"
-    Then the gate allows the search
+    Then the deny message contains "Compound context"
 
   Scenario: Grep in briefs after chorus search — allowed
     Given a role is building a new card

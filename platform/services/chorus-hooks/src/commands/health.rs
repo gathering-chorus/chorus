@@ -156,8 +156,8 @@ pub fn cruft_scan() -> ExitCode {
 
     // CLAUDE.md sizes
     out.push_str("## CLAUDE.md Sizes\n");
-    for dir in &["architect", "product-manager", "engineer"] {
-        let path = format!("{}/{}/CLAUDE.md", REPO_ROOT, dir);
+    for dir in &["silas", "wren", "kade"] {
+        let path = format!("{}/platform/roles/{}/CLAUDE.md", REPO_ROOT, dir);
         if let Ok(meta) = fs::metadata(&path) {
             let flag = if meta.len() > 30000 { " ⚠ HEAVY" } else { "" };
             out.push_str(&format!("  {}: {} bytes{}\n", dir, meta.len(), flag));
@@ -198,9 +198,9 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
     }
 
     let role_dir = match role {
-        "wren" => "product-manager",
-        "silas" => "architect",
-        "kade" => "engineer",
+        "wren" => "wren",
+        "silas" => "silas",
+        "kade" => "kade",
         _ => unreachable!(),
     };
 
@@ -289,9 +289,9 @@ pub fn health_daily(args: &[String]) -> ExitCode {
     }
 
     let role_dir_path = match role {
-        "wren" => format!("{}/product-manager", REPO_ROOT),
-        "silas" => format!("{}/architect", REPO_ROOT),
-        "kade" => format!("{}/engineer", REPO_ROOT),
+        "wren" => format!("{}/platform/roles/wren", REPO_ROOT),
+        "silas" => format!("{}/platform/roles/silas", REPO_ROOT),
+        "kade" => format!("{}/platform/roles/kade", REPO_ROOT),
         _ => unreachable!(),
     };
 

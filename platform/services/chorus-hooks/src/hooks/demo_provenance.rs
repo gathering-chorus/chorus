@@ -10,7 +10,7 @@ use std::process::Command;
 use tracing::info;
 
 fn board_ts_path() -> String { format!("{}/platform/scripts/cards", chorus_root()) }
-fn briefs_dir_path() -> String { format!("{}/product-manager/briefs", chorus_root()) }
+fn briefs_dir_path() -> String { format!("{}/platform/roles/wren/briefs", chorus_root()) }
 fn chorus_log_script_path() -> String { format!("{}/platform/scripts/chorus-log", chorus_root()) }
 
 /// PostToolUse: after /demo skill completes, generate the demo brief

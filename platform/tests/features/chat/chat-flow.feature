@@ -47,3 +47,9 @@ Feature: Chat flow — two-role direct channel
     And kade says "answer"
     When kade ends the chat
     Then the chat is marked ended
+
+  @smoke @real-delivery
+  Scenario: Real delivery smoke test — one chat hits the full nudge path
+    When kade starts a real chat with wren about "smoke test"
+    And kade says "integration smoke" with real delivery
+    Then the nudge was delivered — not dry-run

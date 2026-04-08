@@ -1,4 +1,4 @@
-@gate @ops
+@gate @ops @wip
 Feature: LaunchAgent lifecycle management
   Jeff runs agent-state.sh to see which services are up, restart crashed ones,
   and find orphan processes. No more guessing from raw launchctl output.

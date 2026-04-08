@@ -74,19 +74,19 @@ fn test_decode_chunked_hex_size() {
 fn test_role_detection_from_cwd() {
     // These patterns are critical — wrong role = wrong guard chain
     let cases = vec![
-        ("/Users/jeffbridwell/CascadeProjects/product-manager", "wren"),
-        ("/Users/jeffbridwell/CascadeProjects/architect", "silas"),
-        ("/Users/jeffbridwell/CascadeProjects/engineer", "kade"),
-        ("/Users/jeffbridwell/CascadeProjects/messages", "unknown"),
+        ("/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/wren", "wren"),
+        ("/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas", "silas"),
+        ("/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/kade", "kade"),
+        ("/Users/jeffbridwell/CascadeProjects/chorus/messages", "unknown"),
         ("/tmp/random", "unknown"),
     ];
 
     for (cwd, expected_role) in cases {
-        let role = if cwd.contains("product-manager") {
+        let role = if cwd.contains("roles/wren") || cwd.contains("product-manager") {
             "wren"
-        } else if cwd.contains("architect") {
+        } else if cwd.contains("roles/silas") || cwd.contains("architect") {
             "silas"
-        } else if cwd.contains("engineer") {
+        } else if cwd.contains("roles/kade") || cwd.contains("engineer") {
             "kade"
         } else {
             "unknown"

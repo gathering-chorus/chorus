@@ -1,4 +1,4 @@
-@seed @alert
+@seed @alert @wip
 Feature: Seed failure alerting
   When a seed write fails, Jeff sees an alert on the Bridge
   within 60 seconds. The system catches the problem before

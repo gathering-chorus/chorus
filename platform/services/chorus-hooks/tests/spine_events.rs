@@ -6,8 +6,8 @@
 use std::fs;
 use std::process::Command;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim";
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/platform/logs/chorus.log";
+const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
 
 fn log_tail(n: usize) -> String {
     let content = fs::read_to_string(CHORUS_LOG).unwrap_or_default();

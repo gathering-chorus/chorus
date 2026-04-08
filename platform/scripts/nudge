@@ -2,4 +2,6 @@
 # nudge — thin wrapper to Rust binary. All logic is in chorus-hook-shim.
 # DEC-100: no bash APIs. This file only exists because scripts reference it by name.
 # DEC-107: --force is ALWAYS on. No background/passive path. osascript inject every time.
-exec /Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim nudge "$@" --force
+# --dry-run: persist + queue + construct inject, skip osascript. For tests.
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+exec "$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim" nudge "$@" --force

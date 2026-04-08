@@ -106,9 +106,9 @@ fn run_gate_smoke(role: &str, state: &AppState) -> bool {
     // Synthetic Edit on a cross-domain code file — both gates should DENY:
     // - log_first_gate: no log evidence in session
     // - memory_gate: no search/synthesis in session
-    let smoke_cwd = format!("{}/{}",
+    let smoke_cwd = format!("{}/platform/roles/{}",
         chorus_root(),
-        match role { "wren" => "product-manager", "silas" => "architect", _ => "engineer" });
+        match role { "wren" => "wren", "silas" => "silas", _ => "kade" });
     let smoke_session_id = format!("smoke-{}", role);
 
     // Seed a minimal JSONL file so gates have session data to scan (and find no evidence).
@@ -293,7 +293,7 @@ mod tests {
             tool_input: Some(json!({"file_path": "/tmp/test.rs", "old_string": "x", "new_string": "y"})),
             tool_response: None,
             session_id: Some("test-boot".to_string()),
-            cwd: Some(format!("{}/product-manager", chorus_root())),
+            cwd: Some(format!("{}/platform/roles/wren", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("wren".to_string()),
         };

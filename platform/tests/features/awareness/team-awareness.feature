@@ -1,4 +1,4 @@
-@awareness @watchdog
+@awareness @watchdog @wip
 Feature: Team awareness watchdog
   A role stalls. Within 2 minutes the watchdog nudges them.
   Within 3 minutes Wren knows. Within 5 minutes Jeff knows.

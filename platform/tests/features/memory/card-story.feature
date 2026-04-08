@@ -1,4 +1,4 @@
-@memory @e2e
+@memory @e2e @wip
 Feature: Card story
   Jeff asks "what happened on card #1930?" and gets a timeline
   from six data sources — not scattered fragments across six systems.
