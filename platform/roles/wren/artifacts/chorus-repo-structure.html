@@ -318,17 +318,101 @@
   </tr>
 </table>
 
+<h2>Product Map &mdash; What We've Built</h2>
+
+<p>The value stream hierarchy (designing &rarr; directing &rarr; building &rarr; operating &rarr; proving) organizes <em>how work flows</em>. But users ask "where's the Clearing?" not "what's in the directing stage?" These are the <strong>products</strong> &mdash; each is code, each needs an owner.</p>
+
+<table>
+  <tr><th>Product</th><th>What it does</th><th>Where the code lives</th><th>Owner</th><th>Status</th></tr>
+  <tr>
+    <td><strong>Clearing</strong></td>
+    <td>Multi-party chat &mdash; Jeff + 3 AI roles in real-time</td>
+    <td><code>directing/clearing/</code></td>
+    <td>Kade</td>
+    <td><span class="badge badge-ok">consolidated</span></td>
+  </tr>
+  <tr>
+    <td><strong>Cards</strong></td>
+    <td>Board CLI + Vikunja integration</td>
+    <td><code>directing/vikunja/</code> (config)<br><code>platform/board-client/</code> (CLI)</td>
+    <td>Kade</td>
+    <td><span class="badge badge-warn">split across 2 groups</span></td>
+  </tr>
+  <tr>
+    <td><strong>Convergence</strong></td>
+    <td>Integration &mdash; ICDs, NiFi pipelines, harvester framework</td>
+    <td>Scattered:<br>
+      &bull; <code>jeff-bridwell-personal-site/</code> (harvester services)<br>
+      &bull; <code>platform/roles/silas/scripts/</code> (NiFi configs)<br>
+      &bull; <code>platform/roles/silas/adr/</code> (architecture)<br>
+      &bull; <code>platform/roles/wren/harvest-designs/</code> (design docs)</td>
+    <td>Kade (code)<br>Silas (arch)</td>
+    <td><span class="badge badge-danger">no home in repo</span></td>
+  </tr>
+  <tr>
+    <td><strong>Chorus</strong></td>
+    <td>Coordination protocol &mdash; hooks, spine events, nudge, role state</td>
+    <td><code>platform/services/</code> (Rust)<br><code>platform/scripts/</code> (CLI)<br><code>platform/api/</code> (HTTP)<br><code>platform/pulse/</code> (messaging)</td>
+    <td>Silas</td>
+    <td><span class="badge badge-ok">consolidated</span></td>
+  </tr>
+  <tr>
+    <td><strong>Loom</strong></td>
+    <td>The app framework (Gathering site)</td>
+    <td><code>jeff-bridwell-personal-site/</code> (separate repo)</td>
+    <td>Kade</td>
+    <td><span class="badge badge-info">outside chorus repo</span></td>
+  </tr>
+  <tr>
+    <td><strong>Designing tools</strong></td>
+    <td>Frameworks for codifying design work</td>
+    <td><code>designing/</code> (placeholder)</td>
+    <td>TBD</td>
+    <td><span class="badge badge-info">backlog</span></td>
+  </tr>
+  <tr>
+    <td><strong>Building tools</strong></td>
+    <td>Frameworks for codifying build work</td>
+    <td><code>building/</code> (placeholder)</td>
+    <td>TBD</td>
+    <td><span class="badge badge-info">backlog</span></td>
+  </tr>
+</table>
+
+<div class="risk-section">
+<h3>Cross-Repo Risk &mdash; Products split across repositories</h3>
+<p>When a product's code lives in one repo and its architecture/design lives in another, changes on either side go stale with no signal.</p>
+<table>
+  <tr><th>Product</th><th>Code repo</th><th>Design/arch repo</th><th>Risk</th></tr>
+  <tr>
+    <td><strong>Convergence</strong></td>
+    <td><code>jeff-bridwell-personal-site/</code><br>(harvester services, NiFi)</td>
+    <td><code>chorus/</code><br>(ICDs, ADRs, pipeline specs, design docs)</td>
+    <td><span class="badge badge-danger">High</span> &mdash; harvester code changes without updating ICD or ADR. No cross-repo link. Pipeline specs in silas/docs/ go stale.</td>
+  </tr>
+  <tr>
+    <td><strong>Loom</strong></td>
+    <td><code>jeff-bridwell-personal-site/</code><br>(Express app, routes, views)</td>
+    <td><code>chorus/</code><br>(ontology, SPARQL patterns, test fixtures)</td>
+    <td><span class="badge badge-warn">Medium</span> &mdash; ontology changes here need matching route/view changes there. Currently manual.</td>
+  </tr>
+</table>
+<p><strong>Key concern:</strong> Framing everything as "infrastructure" causes Silas to be the bottleneck. These are products made of code, not scaffolding. Product ownership &mdash; not repo location &mdash; determines who builds, tests, and maintains each one.</p>
+</div>
+
 <h2>Recommendations</h2>
 
 <table>
   <tr><th>#</th><th>Action</th><th>Impact</th><th>Effort</th></tr>
-  <tr><td>1</td><td>Add <code>platform/logs/chorus.log</code> to .gitignore + <code>git rm --cached</code></td><td>Stops 34MB live log from polluting commits</td><td>1 min</td></tr>
-  <tr><td>2</td><td><code>git rm --cached platform/logs/board-snapshot-*.json</code></td><td>Stops 18K-line churn per board change</td><td>1 min</td></tr>
-  <tr><td>3</td><td>Delete <code>engineer/</code> root-level orphan, consolidate briefs</td><td>Eliminates split-brain brief delivery</td><td>5 min</td></tr>
-  <tr><td>4</td><td>Move screenshots to external storage or Git LFS</td><td>Reclaims 108 MB from future clones</td><td>30 min</td></tr>
-  <tr><td>5</td><td>Deduplicate role images (fence.jpg, portrait.jpeg)</td><td>Saves 16 MB tracked, reduces clone size</td><td>10 min</td></tr>
-  <tr><td>6</td><td>Add post-clone build step doc (<code>cargo build --release</code>)</td><td>18 symlinks work on fresh clone</td><td>5 min</td></tr>
-  <tr><td>7</td><td>Remove role alias symlinks when all old refs are cleaned</td><td>Clean structure, no phantom paths</td><td>5 min</td></tr>
+  <tr style="background: #f0fdf4;"><td>1</td><td><strong>Assign product ownership</strong> &mdash; each product gets an owner who treats it as code, not infra</td><td>Unblocks Silas as bottleneck, enables parallel work</td><td>Decision</td></tr>
+  <tr style="background: #f0fdf4;"><td>2</td><td><strong>Give Convergence a home</strong> &mdash; consolidate ICDs, pipeline scripts, harvester arch into one directory</td><td>Product code findable in one place; cross-repo staleness visible</td><td>1 hour</td></tr>
+  <tr style="background: #f0fdf4;"><td>3</td><td><strong>Bootstrap script</strong> &mdash; <code>cargo build</code>, <code>npm install</code> x6, <code>launchctl bootstrap</code></td><td>Fresh clone works. 18 symlinks resolve. Tests run.</td><td>30 min</td></tr>
+  <tr><td>4</td><td><strong>.env recovery doc</strong> &mdash; documented path to restore Vikunja token</td><td>Board stack doesn't go dark on accidental delete</td><td>10 min</td></tr>
+  <tr><td>5</td><td>Add <code>platform/logs/chorus.log</code> to .gitignore + <code>git rm --cached</code></td><td>Stops 34MB live log from polluting commits</td><td>1 min</td></tr>
+  <tr><td>6</td><td><code>git rm --cached platform/logs/board-snapshot-*.json</code></td><td>Stops 18K-line churn per board change</td><td>1 min</td></tr>
+  <tr><td>7</td><td>Move screenshots to Git LFS or external storage</td><td>108 MB permanent debt in git history</td><td>30 min</td></tr>
+  <tr><td>8</td><td>Consolidate Cards &mdash; <code>directing/vikunja/</code> + <code>platform/board-client/</code> into one product dir</td><td>One product, one place</td><td>30 min</td></tr>
+  <tr><td>9</td><td>Remove role alias symlinks when all old refs are cleaned</td><td>Clean structure, no phantom paths</td><td>5 min</td></tr>
 </table>
 
 <div class="separator"></div>

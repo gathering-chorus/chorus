@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Organizational Architecture</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e0e0e0;
+    --text: #2d2d2d;
+    --muted: #6b7280;
+    --accent: #0d6efd;
+    --warn: #d97706;
+    --danger: #dc2626;
+    --info: #2563eb;
+    --ok: #16a34a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    line-height: 1.6;
+  }
+  h1 { font-size: 1.6rem; margin-bottom: 0.3rem; }
+  h2 { font-size: 1.2rem; margin: 2.5rem 0 0.8rem; color: var(--info); border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 0.5rem; color: var(--text); }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; font-size: 0.9rem; }
+  p { margin: 0.5rem 0; font-size: 0.9rem; }
+
+  .principle-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 4px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .principle-box strong { color: var(--accent); }
+
+  .analogy {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+  }
+  .analogy strong { color: var(--warn); }
+
+  table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
+  th, td { padding: 0.5rem 0.7rem; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: #f5f5f5; font-weight: 600; color: var(--text); }
+
+  .contract-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin: 0.75rem 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .contract-card h4 { font-size: 0.9rem; margin: 0 0 0.5rem; }
+  .contract-card .flow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+    font-size: 0.8rem;
+  }
+  .contract-card .flow .arrow { color: var(--accent); font-weight: bold; }
+  .contract-card .producer { background: #dbeafe; padding: 0.2rem 0.5rem; border-radius: 3px; color: var(--info); font-weight: 600; }
+  .contract-card .contract-name { background: #f3f4f6; padding: 0.2rem 0.5rem; border-radius: 3px; color: var(--text); font-weight: 600; font-family: monospace; }
+  .contract-card .consumer { background: #dcfce7; padding: 0.2rem 0.5rem; border-radius: 3px; color: var(--ok); font-weight: 600; }
+  .contract-card .status { font-size: 0.75rem; color: var(--muted); margin-top: 0.3rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .axis-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+  }
+  .axis-card h4 { font-size: 0.85rem; margin: 0 0 0.5rem; }
+  .axis-card ul { padding-left: 1.2rem; font-size: 0.8rem; }
+  .axis-card li { margin: 0.2rem 0; }
+
+  .namespace-example {
+    background: #f8f9fa;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.78rem;
+    line-height: 1.8;
+    margin: 0.75rem 0;
+    overflow-x: auto;
+  }
+  .namespace-example .owner { color: var(--accent); font-weight: 600; }
+  .namespace-example .product { color: var(--ok); font-weight: 600; }
+  .namespace-example .muted { color: var(--muted); }
+
+  .insight {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+  }
+  .insight strong { color: var(--ok); }
+
+  .risk {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+  }
+  .risk strong { color: var(--danger); }
+
+  .diagram {
+    text-align: center;
+    margin: 1.5rem 0;
+    font-family: 'SF Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+  .diagram .label { color: var(--muted); font-size: 0.7rem; }
+
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Chorus Organizational Architecture</h1>
+<p class="subtitle">How three AI roles and one human coordinate across products, domains, and contracts.<br>From Jeff-led discussions, April 8 2026.</p>
+
+<h2>The Core Problem</h2>
+
+<p>Jeff's correction rate climbed from 7% to 28% over 8 weeks. Repeat instructions up 19x. Cards shipped code but not reference propagation. Roles reported things as "broken" without searching for moved files. Jeff became the monitoring system.</p>
+
+<p>The root cause wasn't shallow reasoning. It was organizational: everything was framed as <em>infrastructure</em>, which made one role the bottleneck. There was no ownership model, no contracts between roles, and no way to see from the filesystem who owned what.</p>
+
+<div class="analogy">
+<strong>The street crew analogy.</strong> Jeff's neighborhood has construction crews that tear up the road, fill it with asphalt, then come back 1&ndash;5 days later to tear it up again. Each crew only sees their own work order. Nobody owns the whole road. The result: the patient gets opened and sewn up 3&ndash;5 times instead of once. That's what happened with cards #1308 &rarr; #1791 &rarr; #2328 &rarr; #1794. Four restructures, each leaving the next one a mess.
+</div>
+
+<h2>Two Axes of Responsibility</h2>
+
+<p>Every role has both <strong>vertical</strong> ownership (products they build and maintain) and <strong>horizontal</strong> responsibilities (concerns that cut across all products). The org design makes both visible.</p>
+
+<div class="grid-2">
+  <div class="axis-card">
+    <h4>Vertical: Products</h4>
+    <ul>
+      <li>You own the code, the tests, the alerts, the domain knowledge</li>
+      <li>One owner, one namespace, one place in the filesystem</li>
+      <li>You define what "healthy" means for your product</li>
+      <li>You instrument your own code &mdash; nobody writes your health checks for you</li>
+    </ul>
+  </div>
+  <div class="axis-card">
+    <h4>Horizontal: Contracts</h4>
+    <ul>
+      <li>Cross-cutting concerns that every product must satisfy</li>
+      <li>Observability, quality, code standards, design coherence</li>
+      <li>Product <em>conforms</em> to the contract; consumer <em>reads</em> from it</li>
+      <li>No coupling &mdash; the contract is the interface</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Product Ownership Map</h2>
+
+<table>
+  <tr><th>Product</th><th>What</th><th>Owner</th><th>Namespace</th></tr>
+  <tr><td><strong>Clearing</strong></td><td>Multi-party chat</td><td>Kade</td><td><code>directing/clearing/</code></td></tr>
+  <tr><td><strong>Cards</strong></td><td>Board CLI + Vikunja</td><td>Wren</td><td><code>wren/products/cards/</code></td></tr>
+  <tr><td><strong>Convergence</strong></td><td>Integration &mdash; ICDs, NiFi, harvesters</td><td>Kade + Silas</td><td>Needs a home</td></tr>
+  <tr><td><strong>Chorus</strong></td><td>Coordination protocol</td><td>Silas</td><td><code>platform/services/</code></td></tr>
+  <tr><td><strong>Loom</strong></td><td>Gathering app framework</td><td>Kade</td><td>Separate repo</td></tr>
+  <tr><td><strong>Designing tools</strong></td><td>Design codification</td><td>TBD</td><td>Backlog</td></tr>
+  <tr><td><strong>Building tools</strong></td><td>Build codification</td><td>TBD</td><td>Backlog</td></tr>
+</table>
+
+<div class="insight">
+<strong>Ownership is readable from the path.</strong> No lookup table, no metadata, no asking "who owns this?" The namespace <em>is</em> the ownership map. When a file changes in <code>wren/products/cards/</code>, Wren knows it's hers. When Silas sees a spine event from <code>cards.*</code>, he knows to route the alert to Wren, not handle it himself.
+</div>
+
+<h2>The Namespace</h2>
+
+<div class="namespace-example">
+platform/roles/<span class="owner">wren</span>/products/<span class="product">cards</span>/     <span class="muted">&larr; code, tests, config, alerts</span><br>
+platform/roles/<span class="owner">wren</span>/domains/<span class="product">cards</span>/      <span class="muted">&larr; lifecycle spec, gate defs, BDD scenarios</span><br>
+<br>
+platform/roles/<span class="owner">kade</span>/products/<span class="product">clearing</span>/  <span class="muted">&larr; source, tests, config</span><br>
+platform/roles/<span class="owner">kade</span>/domains/<span class="product">clearing</span>/   <span class="muted">&larr; protocol spec, message classification</span><br>
+<br>
+platform/roles/<span class="owner">silas</span>/domains/<span class="product">observability</span>/ <span class="muted">&larr; Grafana, Loki, Alertmanager platform</span><br>
+platform/roles/<span class="owner">silas</span>/products/<span class="product">chorus</span>/     <span class="muted">&larr; hooks, spine, nudge, role state</span><br>
+</div>
+
+<p>Two directories per product per owner: <strong>products/</strong> (code) and <strong>domains/</strong> (knowledge). Both live under the owning role. Everything about a product in one tree.</p>
+
+<h2>Horizontal Contracts</h2>
+
+<p>Each contract follows the same pattern: product <em>conforms</em>, horizontal owner <em>consumes</em>. The contract is the interface. No coupling in either direction.</p>
+
+<div class="contract-card">
+  <h4>Observability Contract</h4>
+  <div class="flow">
+    <span class="producer">Product owner</span>
+    <span class="arrow">&rarr; emits &rarr;</span>
+    <span class="contract-name">spine events (domain.noun.verb_past)</span>
+    <span class="arrow">&rarr; consumed by &rarr;</span>
+    <span class="consumer">Silas</span>
+  </div>
+  <p>Product owner defines health and instruments their code. Silas provides the observability platform (Grafana, Loki, spine). Silas consumes events for cross-product correlation. Product-specific alerts live in the product directory, not in Silas's domain.</p>
+  <div class="status">Piloting on Cards &mdash; #1807</div>
+</div>
+
+<div class="contract-card">
+  <h4>Quality Contract</h4>
+  <div class="flow">
+    <span class="producer">Product owner</span>
+    <span class="arrow">&rarr; declares &rarr;</span>
+    <span class="contract-name">AC + tests + demo</span>
+    <span class="arrow">&rarr; validated by &rarr;</span>
+    <span class="consumer">Wren</span>
+  </div>
+  <p>Product owner defines acceptance criteria, writes tests (TDD), runs the demo ceremony. Wren validates AC coverage. Silas runs gate hooks. The quality definition belongs to the product, not to the validator.</p>
+  <div class="status">Future</div>
+</div>
+
+<div class="contract-card">
+  <h4>Code Contract</h4>
+  <div class="flow">
+    <span class="producer">Product owner</span>
+    <span class="arrow">&rarr; declares &rarr;</span>
+    <span class="contract-name">build + test + deploy steps</span>
+    <span class="arrow">&rarr; consumed by &rarr;</span>
+    <span class="consumer">Kade / Silas</span>
+  </div>
+  <p>Product owner maintains build config, dependency declarations, deploy targets. Bootstrap script, package.json / Cargo.toml conventions. The build system consumes these declarations. Products conform, infrastructure runs them.</p>
+  <div class="status">Future &mdash; bootstrap script is the first step</div>
+</div>
+
+<div class="contract-card">
+  <h4>Design Contract</h4>
+  <div class="flow">
+    <span class="producer">Product owner + Silas</span>
+    <span class="arrow">&rarr; declares &rarr;</span>
+    <span class="contract-name">domain model + ICDs + interfaces</span>
+    <span class="arrow">&rarr; consumed by &rarr;</span>
+    <span class="consumer">All roles</span>
+  </div>
+  <p>Products declare their domain model, ICD provider sections, and interface boundaries. Used for cross-product integration and ontology coherence. The design contract is the internal ICD &mdash; same pattern Convergence uses for external data sources, applied inward.</p>
+  <div class="status">Future</div>
+</div>
+
+<h2>The Fan-In Pattern</h2>
+
+<div class="diagram" id="fan-in-diagram">
+<pre class="mermaid">
+graph LR
+    Clearing["Clearing\n(Kade)"] -->|spine events| Contract["Spine Event\nContract\ndomain.noun.verb_past"]
+    Cards["Cards\n(Wren)"] -->|spine events| Contract
+    Convergence["Convergence\n(Kade/Silas)"] -->|spine events| Contract
+    Chorus["Chorus\n(Silas)"] -->|spine events| Contract
+    Loom["Loom\n(Kade)"] -->|spine events| Contract
+    Contract -->|consumes all| Silas["Silas\nFan-In\nCorrelation"]
+    Silas -->|system alerts| Jeff["Jeff"]
+    Silas -->|cross-product\npatterns| Jeff
+
+    style Contract fill:#f3f4f6,stroke:#6b7280,color:#2d2d2d
+    style Silas fill:#dcfce7,stroke:#16a34a,color:#2d2d2d
+    style Jeff fill:#dbeafe,stroke:#2563eb,color:#2d2d2d
+    style Clearing fill:#fff,stroke:#e0e0e0,color:#2d2d2d
+    style Cards fill:#fff,stroke:#e0e0e0,color:#2d2d2d
+    style Convergence fill:#fff,stroke:#e0e0e0,color:#2d2d2d
+    style Chorus fill:#fff,stroke:#e0e0e0,color:#2d2d2d
+    style Loom fill:#fff,stroke:#e0e0e0,color:#2d2d2d
+</pre>
+<div class="label">Each product emits to the spine event contract. Silas is the only role that reads all of them.</div>
+</div>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+
+<p>The fan-in position is Silas's unique value: cross-product pattern detection. Cards healthy + Clearing healthy + nudge delivery failing = a system problem only visible from this vantage point. But the fan-in role <em>consumes</em>. It doesn't <em>produce</em> each product's monitoring. That distinction prevents the bottleneck.</p>
+
+<h2>Operating Rules</h2>
+
+<div class="principle-box">
+<strong>Pair as default, solo as exception.</strong> The 28% correction rate proves solo builds drop cross-cutting concerns. Pair on anything that spans products or repos. Solo only for vertical work within your own product.
+</div>
+
+<div class="principle-box">
+<strong>Done means propagation done.</strong> A card is not done when the code compiles. It's done when downstream references, docs, plists, configs, and tests all reflect the change. Don't sew up the patient between steps.
+</div>
+
+<div class="principle-box">
+<strong>Products conform, consumers read.</strong> Every horizontal contract follows the same pattern. Product doesn't know how it's consumed. Consumer doesn't know product internals. The contract is the interface. No coupling.
+</div>
+
+<div class="principle-box">
+<strong>Ownership is the namespace.</strong> If you can't read who owns it from the path, it's in the wrong place. No lookup tables, no metadata, no asking. The filesystem is the org chart.
+</div>
+
+<h2>What Changes</h2>
+
+<div class="grid-2">
+  <div class="axis-card" style="border-left: 3px solid var(--danger);">
+    <h4>Before</h4>
+    <ul>
+      <li>Everything is "infrastructure"</li>
+      <li>Silas writes all monitoring</li>
+      <li>Solo builds are default</li>
+      <li>Cards close when code ships</li>
+      <li>Ownership requires a lookup</li>
+      <li>Each restructure opens and closes the road 3&ndash;5 times</li>
+    </ul>
+  </div>
+  <div class="axis-card" style="border-left: 3px solid var(--ok);">
+    <h4>After</h4>
+    <ul>
+      <li>Everything is a product made of code</li>
+      <li>Product owners instrument their own code</li>
+      <li>Pair is default</li>
+      <li>Cards close when propagation is done</li>
+      <li>Ownership is the path</li>
+      <li>One owner, one pass, one close</li>
+    </ul>
+  </div>
+</div>
+
+<div class="risk">
+<strong>The transition risk.</strong> Changing the org model is itself a restructure. If we rename directories, move files, and reassign ownership all at once, we create the same 333-stale-reference problem we just fixed. Pilot on Cards first. Prove the pattern. Then roll it out product by product. Don't open the whole road.
+</div>
+
+<footer>
+  Generated by Silas &bull; April 8, 2026 &bull; From Jeff-led discussions on repo structure, team reliability, and product ownership.
+</footer>
+
+</body>
+</html>
