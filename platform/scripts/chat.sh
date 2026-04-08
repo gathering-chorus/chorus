@@ -64,19 +64,8 @@ cmd_say() {
   curl -s -X POST "$MESSAGING_API/api/chat/$chat_id/message" -H 'Content-Type: application/json' \
     -d "{\"from\":\"$role\",\"content\":\"$(echo "$message" | sed 's/"/\\"/g')\"}" > /dev/null 2>&1 &
 
-  # Auto-nudge the other party
-  # Parse chat ID to find the other role: format is <role1>-<role2>-<timestamp>
-  local role1 role2 other
-  role1=$(echo "$chat_id" | cut -d- -f1)
-  role2=$(echo "$chat_id" | cut -d- -f2)
-  if [ "$role" = "$role1" ]; then
-    other="$role2"
-  else
-    other="$role1"
-  fi
-  local nudge_flags=""
-  [ -n "$CHAT_DRY_RUN" ] && nudge_flags="--dry-run"
-  bash "$SCRIPT_DIR/nudge" "$other" "[chat] New message in $chat_id — check and reply." $nudge_flags 2>/dev/null || true
+  # No auto-nudge — the /chat skill tells the caller to nudge manually.
+  # Previous bug (#1811): auto-nudge here + manual nudge from skill = double delivery.
 
   # Return current line count so caller can track position
   wc -l < "$chat_file" | tr -d ' '

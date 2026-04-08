@@ -342,17 +342,21 @@ pub fn run(args: &[String]) -> ExitCode {
         println!("DRY-RUN: would inject to {} at {} | text={}",
             target, clock_short, &full_text.chars().take(120).collect::<String>());
     } else {
-        // Real delivery — queue for drain-on-prompt, then optionally inject
-        queue_message(target, &full_text);
+        // Real delivery — inject first, queue only as fallback (#1811).
+        // Previous bug: queue + inject both fired, then PostToolUse drain
+        // re-delivered the queued message → every nudge arrived twice.
 
         if level == "critical" || force {
-            // Critical: osascript inject — immediate delivery
+            // Try osascript inject first — immediate delivery
             match process::inject_by_tab_name(target, &full_text) {
                 Ok(()) => {
+                    // Inject succeeded — do NOT queue (drain would re-deliver)
                     mode = "injected";
                     println!("DELIVERED to {} at {}", target, clock_short);
                 }
                 Err(e) => {
+                    // Inject failed — queue as fallback for drain-on-prompt
+                    queue_message(target, &full_text);
                     mode = "inject-failed-queued";
                     eprintln!("INJECT FAILED for {} (queued for drain): {}", target, e);
                     println!("DELIVERED to {} at {} (queued — inject failed)", target, clock_short);
