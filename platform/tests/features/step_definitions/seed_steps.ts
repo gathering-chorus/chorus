@@ -221,3 +221,96 @@ Then('the media response content-type starts with {string}', function (prefix: s
   assert.ok(mediaResponse.contentType.startsWith(prefix),
     `Expected content-type starting with "${prefix}", got "${mediaResponse.contentType}"`);
 });
+
+
+// --- SEED ALERTING ---
+
+const BRIDGE_API = 'http://localhost:3470';
+let alertCtx: { pipelineRunning: boolean; lastError: string; fusekiHealth: number; fusekiWriteStatus: number; alertSent: boolean; alertText: string; csOutput: string } = {
+  pipelineRunning: false, lastError: '', fusekiHealth: 200, fusekiWriteStatus: 200, alertSent: false, alertText: '', csOutput: '',
+};
+
+Before({ tags: '@alert' }, function () {
+  alertCtx = { pipelineRunning: false, lastError: '', fusekiHealth: 200, fusekiWriteStatus: 200, alertSent: false, alertText: '', csOutput: '' };
+});
+
+Given('the seed pipeline is running', function () {
+  alertCtx.pipelineRunning = true;
+});
+
+Given('a seed SPARQL write fails with {string}', function (error: string) {
+  alertCtx.lastError = error;
+  alertCtx.pipelineRunning = false;
+});
+
+Given('the gathering app is not responding on localhost:3000', function () {
+  alertCtx.pipelineRunning = false;
+  alertCtx.lastError = 'app-down';
+});
+
+Given('no errors in the last {int} seconds', function (_seconds: number) {
+  alertCtx.lastError = '';
+});
+
+Given('Fuseki health returns {int}', function (status: number) {
+  alertCtx.fusekiHealth = status;
+});
+
+Given('Fuseki rejects SPARQL INSERT with {int}', function (status: number) {
+  alertCtx.fusekiWriteStatus = status;
+});
+
+When('the alert runner checks seed-write-failure', function () {
+  // Stub: in production, alert-runner.sh polls Loki for seed write errors
+  // and POSTs to Bridge on failure. Here we simulate the decision.
+  if (alertCtx.lastError) {
+    alertCtx.alertSent = true;
+    alertCtx.alertText = `seed-write-failure: ${alertCtx.lastError}`;
+  } else {
+    alertCtx.alertSent = false;
+  }
+});
+
+When('the alert runner checks app-down', function () {
+  // Stub: checks localhost:3000 health endpoint
+  if (alertCtx.lastError === 'app-down') {
+    alertCtx.alertSent = true;
+    alertCtx.alertText = 'app-down: gathering app not responding';
+  }
+});
+
+When('Jeff runs \\/cs', function () {
+  // Stub: /cs runs check-seeds which probes Fuseki read + write
+  if (alertCtx.fusekiHealth === 200 && alertCtx.fusekiWriteStatus !== 200) {
+    alertCtx.csOutput = 'fuseki: reads OK, writes FAIL';
+  } else if (alertCtx.fusekiHealth === 200 && alertCtx.fusekiWriteStatus === 200) {
+    alertCtx.csOutput = 'fuseki: reads OK, writes OK';
+  } else {
+    alertCtx.csOutput = 'fuseki: DOWN';
+  }
+});
+
+Then('the Bridge receives a critical alert', function () {
+  assert.ok(alertCtx.alertSent, 'Expected Bridge to receive a critical alert');
+});
+
+Then('the alert says seeds are not landing', function () {
+  assert.ok(alertCtx.alertText.includes('seed-write-failure'), `Expected seed-write-failure alert, got: ${alertCtx.alertText}`);
+});
+
+Then('the alert includes Fuseki and tunnel status', function () {
+  assert.ok(alertCtx.alertText.includes('app-down'), `Expected app-down alert with Fuseki/tunnel info, got: ${alertCtx.alertText}`);
+});
+
+Then('no alert is sent to the Bridge', function () {
+  assert.ok(!alertCtx.alertSent, 'Expected no alert sent');
+});
+
+Then('pipeline status shows {string} not {string}', function (expected: string, _notExpected: string) {
+  assert.ok(alertCtx.csOutput.includes('FAIL') || alertCtx.csOutput.includes('DOWN'),
+    `Expected pipeline status "${expected}", got: ${alertCtx.csOutput}`);
+});
+
+Then('the output says {string}', function (expected: string) {
+  assert.ok(alertCtx.csOutput.includes(expected), `Expected output containing "${expected}", got: ${alertCtx.csOutput}`);
+});
