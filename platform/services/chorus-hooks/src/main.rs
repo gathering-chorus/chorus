@@ -239,7 +239,7 @@ async fn pre_tool_use_inner(
             }
 
             // Demo gate (#1814) — block done without demo evidence
-            _last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input, &state);
+            _last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
@@ -323,7 +323,7 @@ async fn pre_tool_use_inner(
                 return (_last_module.clone(), r);
             }
             // Demo gate (#1814) — block done without demo evidence
-            _last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input, &state);
+            _last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
