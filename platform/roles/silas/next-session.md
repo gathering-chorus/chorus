@@ -1,26 +1,20 @@
 # Next Session — Silas
 
-## Shipped This Session (2026-04-07)
-- **#1308** (was #1853) — Externalize configuration (CHORUS_ROOT). Paired with Kade. 196 files: 17 Rust prod, 67 Rust test, 34 shell, 4 TypeScript, 18 symlinks relative, 26 skills symlinked to repo. Accepted by Jeff.
-- Rebuilt entire toolchain after #1827 restructure broke 644 paths: hooks binary, board CLI, chorus-sdk, workflow-engine, Chorus API, Pulse, Clearing
-- Rebuilt Vikunja DB from API backup — 1791 cards, 95 labels, all bucket assignments restored
-- Fixed 32 LaunchAgent plists, 43 scripts, session-tailer role dir mapping
-- Fixed 17 broken symlinks, chorus-inject binary
+## Shipped This Session (2026-04-08)
+- **#1807** — Spine event contract on Cards: 6 missing events registered, 20 board-client→cards renames, product/domain split defined as universal template
+- **#1809** — Product template on /demo skill: 3 Rust hooks slimmed 658→240 lines dispatch-only, 3 shell gate scripts owned by Wren, 9/9 tests green
 
 ## WIP
-None.
+- #1802: Stabilize chorus repo structure — in progress
+- #1807, #1809: Need acceptance
 
 ## Priority for Next Session
-- **#1791** — restore chorus/ as repo root boundary. CHORUS_ROOT is in place, move is one default value change + git mv. Need: worktree test, service restarts, full regression.
-- Card: rename product-manager/ → wren/, engineer/ → kade/ for consistency with silas/
-- Card: CHORUS_ROOT automated test coverage (no test sets fake root and verifies resolution)
-- 3 files in jeff-bridwell-personal-site with stale paths need separate commit in that repo
+- Apply product template to third product (chorus-sdk or pulse) — validate universality
+- Investigate demo_preflight subprocess PATH bug (cards view works in terminal, fails in hook context)
+- #1808: Move roles/, skills/, interactions/ to repo root as peers (Jeff direction)
+- Pre-existing test failure: `waiting_clears_card_from_previous_building` — not from this session
 
-## Briefs
-- 20 stale briefs in inbox (oldest 405h) — untriaged
-- Wren brief (2026-04-07-ops-sequence-plan.md) — unread
-
-## Key State
-- Vikunja DB at ~/.chorus/vikunja/db/vikunja.db (JWT auth, user: jeff/changeme123)
-- Card IDs renumbered from DB rebuild (old #2300 → #1759, old #1853 → #1308)
-- Repo root = CascadeProjects/ — sibling projects show as untracked. #1791 fixes this.
+## Key Decisions
+- Product/domain split: product owns runtime (src/, tests/, alerts/, logs/, domain-context.md, RUNBOOK.md), domain owns governance (lifecycle.md, gate-definitions/, bdd/, spine-contract.md)
+- Domain is authoritative: spine-contract.md governs events.ts, not reverse
+- Gate dispatch pattern: hooks dispatch to shell scripts, product owns the logic. Exit 0 = allow, exit 1 = deny (stderr = message)
