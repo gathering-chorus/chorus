@@ -1,44 +1,55 @@
 # Wren — Next Session
 
-## What Happened (April 8, 2026)
+## What Happened (April 8, 2026 — afternoon)
 
-Big session — operating model, seeds migration, and the start of a namespace restructure.
+Namespace restructure session. Outcomes over output. Jeff slowed us down and it worked.
 
 ### Shipped
-- **#1759 Operating model** — page with product filter, 18 entities, migration sequence. Accepted, pushed.
-- **#1816 Seeds migration** — service design published, 18 BDD step defs written (41 total green), PRODUCT_TEMPLATE, gaps carded. Paired with Kade (8 min). Demo ran.
-- **#1810** merged into #1759 (ontology-driven migration = operating model)
-- **#1812 pipeline review** — reviewed Product stage for Kade's card completion pipeline. /demo = Product gate.
-- **#1814 gate skill review** — reviewed /gate-product checklist for Silas. Three tweaks accepted.
-- Doc catalog: added operating model, seeds service design, domain map v3, org design, repo structure, reliability analysis.
-- Two gap cards: #1817 (Bridge confirmation on seed arrival), #1818 (close-the-loop)
+- **#1819** — Wren moved to roles/wren, wren-old and product-manager symlink deleted
+- **#1822** — Cards moved to directing/products/cards (paired w/ Kade, 25 min)
+- **#1825** — Gemba skill moved to skills/gemba, coherence fix (start/tick read same sources), dynamic session dir lookup, Boston timezone fix
+- **#1824** — Silas scripts moved out of roles/silas to building/products/convergence/ and platform/scripts/ (paired w/ Silas, 10 min)
+- **#1827** — Pipeline manifest at building/products/convergence/PIPELINE_MANIFEST.md (Kade)
+- **#1833** — Demo skill moved to skills/demo, Rust hook paths updated (paired w/ Kade, 5 min)
+- Kade also shipped #1821 (his own role move) and #1815 (gate skills)
+- platform/roles/ deleted (empty after all moves)
+- Gemba epoch footgun fixed by Kade (auto-compute, no stale args)
+- Briefs sent to Silas and Kade for their role moves
 
-### Namespace Restructure (IN PROGRESS — DO NOT SKIP)
-- Jeff directed: value streams, roles, skills, interactions are **peers at root** — not nested under platform
-- DEC-1816 written: `designing/decisions/DEC-1816-repo-namespace.md`
-- Created `/chorus/roles/` and `/chorus/skills/` at root
-- Moved `platform/roles/wren/` → `roles/wren/` — 16 references updated, Rust compiles, tests pass
-- **Old `platform/roles/wren/` is deleted.** This session starts from `roles/wren/`.
-- Silas and Kade NOT briefed yet — Jeff wants to iterate the design with Wren first
+### Key Insights from Jeff
+- "hides complexity" — no symlinks for aliasing, ever
+- "we must be delete then you have one room" — one canonical location
+- "we have seen everything as infra" — Silas becomes bottleneck when everything is labeled infrastructure
+- "time + attention → awareness" — if either input is off, nothing downstream works
+- "the controlling loop on the pair never starts" — navigator ceremony replaces the actual loop
+- "that is engagement and focus" — the loop IS the attention
+- "watching the outcomes not the output" — Mik Kersten resonance
+- "like cleaning your room" — one thing at a time, verify, next
+- "magical thinking to think you all could do this in one giant run" — each move is a design decision
 
-### Jeff's Key Insights
-- "Framework is almost like an operating model" — renamed accordingly
-- "Chorus is literally everything — feels like big bang" — led to sub-product granularity
-- "The org architecture must be right for the flow to work"
-- "Value streams have products and domains" — roles, skills, interactions are peers
-- "This almost has to be me and you iterating" — namespace design before execution
-- "Like cleaning your room" — start with Wren, prove the pattern
+### Cards Created
+- #1823 — Fix git-queue.sh .git-commit.meta dirty file loop (Silas, P2)
+- #1826 — Shared timestamp utility (Wren, P2)
+- #1829 — Read: Output to Outcome by Mik Kersten (Jeff, P3)
+- #1830 — Revise pair skill — navigator loop starts immediately (Wren, P1)
+- #1831 — Update Attention Architecture doc (Wren, P2)
+- #1832 — Fix 40 broken doc-catalog links (Kade, P1)
 
-## WIP
-- #1816 needs acp (all AC done, demo ran, pipeline gates passed except ops)
-- Namespace restructure — design iteration with Jeff continues next session
+### Namespace State
+- `roles/` — wren ✓, kade ✓ (Kade did his own), silas has #1820 in WIP
+- `skills/` — gemba ✓, gemba-tick ✓, demo ✓ — 31 remain in platform/skills/
+- `directing/products/cards/` ✓
+- `building/products/convergence/` ✓
+- `platform/roles/` deleted
+- `platform/skills/demo` deleted, `platform/skills/gemba*` deleted
 
 ## Pickup
-- Continue namespace design with Jeff — where do products land under value streams?
-- Commit the namespace move (roles/wren + references + DEC-1816)
-- Accept #1816
-- Brief Silas and Kade on DEC-1816 once design is stable
-- Plan next role move after pattern proven
+- Move remaining 31 skills from platform/skills/ to skills/ (research blast radius first)
+- #1830 — Revise pair skill (P1)
+- #1831 — Update Attention Architecture doc
+- #1832 — 40 broken doc-catalog links (Kade)
+- Kade's roles/kade/scripts/ needs same treatment as Silas's (move code out of role dir)
+- Continue namespace design with Jeff — what else moves?
 
 ## Session Start
 **Start from `/Users/jeffbridwell/CascadeProjects/chorus/roles/wren`**
