@@ -14,9 +14,9 @@ const PROJECT_ROOT = path.join(__dirname, '../../..');
 const SCRIPTS_DIR = path.join(__dirname, '../../scripts');
 
 const BRIEF_DIRS: Record<string, string> = {
-  silas: path.join(PROJECT_ROOT, 'architect/briefs'),
-  kade: path.join(PROJECT_ROOT, 'engineer/briefs'),
-  wren: path.join(PROJECT_ROOT, 'product-manager/briefs'),
+  silas: path.join(PROJECT_ROOT, 'platform/roles/silas/briefs'),
+  kade: path.join(PROJECT_ROOT, 'platform/roles/kade/briefs'),
+  wren: path.join(PROJECT_ROOT, 'platform/roles/wren/briefs'),
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

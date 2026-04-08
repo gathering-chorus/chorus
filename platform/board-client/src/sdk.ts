@@ -11,9 +11,9 @@ const SNAPSHOT_DIR = path.join(__dirname, '../../logs');
 const WORKFLOWS_ACTIVE_DIR = path.join(__dirname, '../../workflows/active');
 const WORKFLOWS_ARCHIVE_DIR = path.join(__dirname, '../../workflows/archive');
 const BRIEF_DIRS: Record<string, string> = {
-  silas: path.join(__dirname, '../../../architect/briefs'),
-  kade: path.join(__dirname, '../../../engineer/briefs'),
-  wren: path.join(__dirname, '../../../product-manager/briefs'),
+  silas: path.join(__dirname, '../../roles/silas/briefs'),
+  kade: path.join(__dirname, '../../roles/kade/briefs'),
+  wren: path.join(__dirname, '../../roles/wren/briefs'),
 };
 
 // Import from compiled dist to avoid rootDir conflicts

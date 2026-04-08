@@ -56,9 +56,9 @@ echo ""
 # 5. Recent briefs for this role
 BRIEF_DIR=""
 case "$ROLE" in
-  silas) BRIEF_DIR="$SCRIPT_DIR/../../architect/briefs" ;;
-  kade)  BRIEF_DIR="$SCRIPT_DIR/../../engineer/briefs" ;;
-  wren)  BRIEF_DIR="$SCRIPT_DIR/../../product-manager/briefs" ;;
+  silas) BRIEF_DIR="$SCRIPT_DIR/../roles/silas/briefs" ;;
+  kade)  BRIEF_DIR="$SCRIPT_DIR/../roles/kade/briefs" ;;
+  wren)  BRIEF_DIR="$SCRIPT_DIR/../roles/wren/briefs" ;;
 esac
 
 if [ -n "$BRIEF_DIR" ] && [ -d "$BRIEF_DIR" ]; then
