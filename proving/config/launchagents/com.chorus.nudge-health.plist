@@ -6,7 +6,7 @@
     <string>com.chorus.nudge-health</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim</string>
         <string>nudge</string>
         <string>health</string>
     </array>
@@ -18,5 +18,10 @@
     <string>/tmp/nudge-health.log</string>
     <key>RunAtLoad</key>
     <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    </dict>
 </dict>
 </plist>

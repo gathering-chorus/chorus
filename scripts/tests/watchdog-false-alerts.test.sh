@@ -10,7 +10,7 @@ FAIL=0
 test_pass() { echo "  PASS: $1"; ((PASS++)); }
 test_fail() { echo "  FAIL: $1"; ((FAIL++)); }
 
-WATCHDOG="/Users/jeffbridwell/CascadeProjects/platform/scripts/watchdog.sh"
+WATCHDOG="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/watchdog.sh"
 
 echo "=== Watchdog False Alert Tests (#2033) ==="
 

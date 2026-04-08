@@ -24,11 +24,11 @@ curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \
 
 | Script | Canonical invocation |
 |--------|---------------------|
-| cards | `bash ../messages/scripts/cards <command>` |
+| cards | `bash ../../scripts/cards <command>` |
 | git-queue.sh | `cd /Users/jeffbridwell/CascadeProjects && DEPLOY_ROLE=<role> bash messages/scripts/git-queue.sh commit <dirs> -- -m "message"` |
-| role-state | `../messages/scripts/role-state <role> <state>` |
-| nudge | `bash ../messages/scripts/nudge <target> "message" --from <sender>` |
-| chorus-log | `../messages/scripts/chorus-log <event> <role> key=value` |
-| werk-init.sh | `bash ../messages/scripts/werk-init.sh <role> [--close]` |
+| role-state | `../../scripts/role-state <role> <state>` |
+| nudge | `bash ../../scripts/nudge <target> "message" --from <sender>` |
+| chorus-log | `../../scripts/chorus-log <event> <role> key=value` |
+| werk-init.sh | `bash ../../scripts/werk-init.sh <role> [--close]` |
 
-**Never use:** `/Users/jeffbridwell/CascadeProjects/chorus/scripts/nudge` (stale copy), `gathering-team/messages/scripts/` (wrong repo name).
+**Never use:** `/Users/jeffbridwell/CascadeProjects/chorus/scripts/nudge` (stale copy), `gathering-te../../scripts/` (wrong repo name).

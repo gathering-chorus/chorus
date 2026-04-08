@@ -31,14 +31,14 @@ curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \
 
 | Script | Canonical invocation |
 |--------|---------------------|
-| cards | `bash ../messages/scripts/cards <command>` |
+| cards | `bash ../../scripts/cards <command>` |
 | git-queue.sh | `cd /Users/jeffbridwell/CascadeProjects && DEPLOY_ROLE=<role> bash messages/scripts/git-queue.sh commit <dirs> -- -m "message"` |
-| role-state | `../messages/scripts/role-state <role> <state>` |
-| nudge | `bash ../messages/scripts/nudge <target> "message" --from <sender>` |
-| chorus-log | `../messages/scripts/chorus-log <event> <role> key=value` |
-| werk-init.sh | `bash ../messages/scripts/werk-init.sh <role> [--close]` |
+| role-state | `../../scripts/role-state <role> <state>` |
+| nudge | `bash ../../scripts/nudge <target> "message" --from <sender>` |
+| chorus-log | `../../scripts/chorus-log <event> <role> key=value` |
+| werk-init.sh | `bash ../../scripts/werk-init.sh <role> [--close]` |
 
-**Never use:** `/Users/jeffbridwell/CascadeProjects/chorus/scripts/nudge` (stale copy), `gathering-team/messages/scripts/` (wrong repo name).
+**Never use:** `/Users/jeffbridwell/CascadeProjects/chorus/scripts/nudge` (stale copy), `gathering-te../../scripts/` (wrong repo name).
 
 ## Cross-Machine Reference
 
@@ -67,7 +67,7 @@ ssh jeffbridwell@192.168.86.242 "df -h"
 
 ## Board CLI Quick Reference
 
-Board URL: http://localhost:3456 | CLI: `../messages/scripts/cards`
+Board URL: http://localhost:3456 | CLI: `../../scripts/cards`
 
 ```
 cards add "title" --owner <role> --priority P1|P2|P3   # create card (NOT "create")
@@ -94,7 +94,7 @@ cards audit-close <role>                                # session close audit
 **Trigger**: /reboot, "eod", "wrapping up", "done for today", past 5pm.
 
 ### Step 0: Introspect
-Run `../messages/scripts/werk-init.sh <role> --close`. Scan `## Close Issues`. Run auto-fix commands silently.
+Run `../../scripts/werk-init.sh <role> --close`. Scan `## Close Issues`. Run auto-fix commands silently.
 
 ### If-Touched (before Hard 5, only if relevant)
 Scan: "did anything I did today make these stale?" Gate — Hard 5 cannot proceed until complete.
@@ -103,12 +103,12 @@ Scan: "did anything I did today make these stale?" Gate — Hard 5 cannot procee
 - `/cost` → log to cost-log.md
 - Role-specific domain docs (listed in each role's CLAUDE.md)
 
-After updates: `../messages/scripts/chorus-log session.docscan.completed <role> checked=<N> updated=<M>`
+After updates: `../../scripts/chorus-log session.docscan.completed <role> checked=<N> updated=<M>`
 
 ### Hard 5 (in order)
 1. **Journal** — reflective entry in `journal/<date>.md`. Not status — reflection. 3-8 sentences.
 2. **Board audit** — `cards audit-close <role>`. Finished → Done. Continuing → note.
-3. **Activity log** — append to `../messages/activity.md`.
+3. **Activity log** — append to `../../../activity.md`.
 4. **next-session.md** — accomplishments, WIP, handoffs, what next session picks up.
 5. **Commit** — `git-queue.sh`. Message: `<role>: session close — <summary>`. Then: `role-state <role> idle`.
 
@@ -151,7 +151,7 @@ CLI (`cards`) for mutations. API is read-only.
 | wordpress-blog | `../wordpress-blog` | Primary | Content — WordPress, Docker, Terraform |
 | shared-observability | `../shared-observability` | Primary | Monitoring — Prometheus, Grafana, Loki |
 | images-api | (secondary Mac) | Secondary | Media serving — ~178TB video/photo library |
-| team-building | `../messages/` | Primary | Protocol service — bridge, scripts, hooks, board |
+| chorus | `../../` | Primary | Protocol service — bridge, scripts, hooks, board |
 | product-manager | `../product-manager` | Primary | PM role (Wren) |
 
 **Library** (primary): Mac mini M1, 16GB, 2TB SSD (192.168.86.36)

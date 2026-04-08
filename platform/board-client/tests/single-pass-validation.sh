@@ -5,7 +5,7 @@
 
 set -uo pipefail
 
-CARDS="/Users/jeffbridwell/CascadeProjects/platform/scripts/cards"
+CARDS="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/cards"
 PASS=0
 FAIL=0
 

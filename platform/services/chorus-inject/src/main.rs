@@ -36,9 +36,9 @@ fn main() -> ExitCode {
 
 fn role_pattern(role: &str) -> Option<&'static str> {
     match role {
-        "wren" => Some("product-manager"),
-        "silas" => Some("architect"),
-        "kade" => Some("engineer"),
+        "wren" => Some("wren"),
+        "silas" => Some("silas"),
+        "kade" => Some("kade"),
         _ => None,
     }
 }
@@ -68,11 +68,13 @@ fn inject(role: &str, text: &str) -> Result<(), String> {
     let script = format!(
         r#"tell application "Terminal"
     repeat with w in windows
-        set winName to name of w
-        if winName contains "{pattern}" and winName contains "claude" then
-            do script "{text}" in (selected tab of w)
-            return "ok"
-        end if
+        try
+            set winName to name of w
+            if winName contains "{pattern}" and winName contains "claude" then
+                do script "{text}" in (selected tab of w)
+                return "ok"
+            end if
+        end try
     end repeat
     return "no claude window found for {role} (looking for {pattern} + claude)"
 end tell"#,

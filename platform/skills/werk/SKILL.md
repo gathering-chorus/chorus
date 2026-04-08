@@ -11,7 +11,7 @@ When Jeff invokes `/werk`, show **board + chain state together**. The skill wrap
 If Jeff says `/werk init` or a role needs to bootstrap its context window:
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/platform/scripts/werk-init.sh <role>
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/werk-init.sh <role>
 ```
 
 Where `<role>` is `silas`, `wren`, or `kade`. This replaces MEMORY.md — it queries live sources (board, decisions, briefs, git, chorus index) and returns structured context. Use this at session start or whenever a role needs to re-orient.

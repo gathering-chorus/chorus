@@ -4,7 +4,7 @@
  */
 import { execSync } from 'child_process';
 
-const CARDS = 'bash /Users/jeffbridwell/CascadeProjects/platform/scripts/cards';
+const CARDS = 'bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards';
 
 function run(cmd: string): { stdout: string; stderr: string; exitCode: number } {
   try {

@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 static CHORUS_ROOT_INNER: LazyLock<String> = LazyLock::new(|| {
     std::env::var("CHORUS_ROOT")
-        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects".to_string())
+        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
 });
 
 /// Resolve CHORUS_ROOT: env var with fallback to compile-time default.
@@ -17,7 +17,7 @@ pub fn chorus_root() -> &'static str {
 
 /// Repository root — alias for chorus_root(). Existing call sites use REPO_ROOT;
 /// update them to use chorus_root() over time.
-pub static REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects";
+pub static REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects/chorus";
 
 /// Team scan directory — role state JSON files
 pub const SCAN_DIR: &str = "/tmp/claude-team-scan";
@@ -50,9 +50,9 @@ pub const CHAT_DIR: &str = "/tmp/chorus-chat";
 /// Role directory mapping
 pub fn role_dir(role: &str) -> Option<&'static str> {
     match role {
-        "wren" => Some("product-manager"),
-        "silas" => Some("architect"),
-        "kade" => Some("engineer"),
+        "wren" => Some("wren"),
+        "silas" => Some("silas"),
+        "kade" => Some("kade"),
         _ => None,
     }
 }

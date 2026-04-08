@@ -6,7 +6,8 @@
 
 set -euo pipefail
 
-NUDGE="/Users/jeffbridwell/CascadeProjects/platform/scripts/nudge"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+NUDGE="$CHORUS_ROOT/platform/scripts/nudge"
 STATE_DIR="$HOME/Library/Logs/Gathering/alert-state"
 mkdir -p "$STATE_DIR"
 

@@ -6,7 +6,7 @@
 | wordpress-blog | `../wordpress-blog` | Primary | Content — WordPress, Docker, Terraform |
 | shared-observability | `../shared-observability` | Primary | Monitoring — Prometheus, Grafana, Loki |
 | images-api | (secondary Mac) | Secondary | Media serving — ~178TB video/photo library |
-| team-building | `../messages/` | Primary | Protocol service — bridge, scripts, hooks, board |
+| chorus | `../../` | Primary | Protocol service — bridge, scripts, hooks, board |
 | product-manager | `../product-manager` | Primary | PM role (Wren) |
 
 **Library** (primary): Mac mini M1, 16GB, 2TB SSD (192.168.86.36)

@@ -127,12 +127,12 @@ Jeff participates when he wants to — not because the system breaks without him
 
 ```bash
 # Post a message
-../messages/scripts/slack-post.sh <channel> "<message>"
+../../scripts/slack-post.sh <channel> "<message>"
 
 # Read recent messages
-../messages/scripts/slack-read.sh <channel> [count]
+../../scripts/slack-read.sh <channel> [count]
 
 # Quick catch-up (all channels)
-../messages/scripts/slack-read.sh all-gathering 20
-../messages/scripts/slack-read.sh <your-channel> 10
+../../scripts/slack-read.sh all-gathering 20
+../../scripts/slack-read.sh <your-channel> 10
 ```

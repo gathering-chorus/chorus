@@ -8,9 +8,10 @@
 
 set -eo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 BEDROOM="192.168.86.242"
-BOARD_TS="/Users/jeffbridwell/CascadeProjects/platform/scripts/cards"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log"
+BOARD_TS="$CHORUS_ROOT/platform/scripts/cards"
+CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 CARD_MODE=false
 [ "${1:-}" = "--card" ] && CARD_MODE=true
 

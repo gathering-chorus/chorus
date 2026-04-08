@@ -311,7 +311,7 @@ function mergeUnified(
 }
 
 // --- Spine event emitter (fire-and-forget to chorus-log.sh) ---
-const CHORUS_LOG = path.join(os.homedir(), 'CascadeProjects/platform/scripts/chorus-log');
+const CHORUS_LOG = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/chorus-log');
 
 function emitSearchEvent(fields: Record<string, string | number>): void {
   const args = ['search.query.executed', 'system', ...Object.entries(fields).map(([k, v]) => `${k}=${v}`)];
@@ -2729,7 +2729,7 @@ app.get('/api/chorus/disk', (_req: Request, res: Response) => {
 
 // --- GET /api/chorus/harvest — Harvest pipeline status (#1485) ---
 
-const HARVEST_EXPORTER = path.join(os.homedir(), 'CascadeProjects/platform/scripts/harvest-exporter.sh');
+const HARVEST_EXPORTER = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/harvest-exporter.sh');
 
 app.get('/api/chorus/harvest', (_req: Request, res: Response) => {
   // Query Fuseki for graph counts per domain
@@ -2779,7 +2779,7 @@ app.get('/api/chorus/harvest', (_req: Request, res: Response) => {
 
 // --- GET /api/chorus/cost — Cost summary (#1485) ---
 
-const COST_SCRIPT = path.join(os.homedir(), 'CascadeProjects/platform/scripts/cost-report.sh');
+const COST_SCRIPT = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/cost-report.sh');
 
 app.get('/api/chorus/cost', (req: Request, res: Response) => {
   const period = (req.query.period as string) || 'summary';

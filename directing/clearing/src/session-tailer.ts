@@ -16,9 +16,9 @@ const ROLES = ['wren', 'silas', 'kade'] as const;
 
 // Map role to its project directory pattern
 const ROLE_DIRS: Record<string, string> = {
-  wren: 'product-manager',
+  wren: 'wren',
   silas: 'silas',
-  kade: 'engineer',
+  kade: 'kade',
 };
 
 interface SessionState {

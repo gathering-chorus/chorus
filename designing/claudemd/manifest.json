@@ -530,7 +530,7 @@
     }
   },
   "reference": {
-    "output": "../messages/TEAM_PROTOCOL.md",
+    "output": "../../../TEAM_PROTOCOL.md",
     "sections": [
       "shared/infrastructure-operations-reference.md",
       "shared/cross-machine-operations-reference.md",

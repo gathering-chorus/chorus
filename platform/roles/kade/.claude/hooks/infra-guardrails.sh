@@ -16,7 +16,8 @@
 
 set -euo pipefail
 
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
@@ -128,10 +129,10 @@ if echo "$COMMAND" | grep -qE '\bgit\s+(commit|add)\b'; then
     fi
     if [ "$GIT_ROOT" = "$TEAM_REPO_ROOT" ]; then
       if echo "$COMMAND" | grep -qE '\bgit\s+commit\b'; then
-        deny "BLOCKED: Direct git commit is prohibited in the team repo. Use git-queue.sh which serializes commits across roles with lockf. Three roles share one git index — raw commits cause staging collisions. Path: ../messages/scripts/git-queue.sh" "git-commit"
+        deny "BLOCKED: Direct git commit is prohibited in the team repo. Use git-queue.sh which serializes commits across roles with lockf. Three roles share one git index — raw commits cause staging collisions. Path: ../../scripts/git-queue.sh" "git-commit"
       fi
       if echo "$COMMAND" | grep -qE '\bgit\s+add\b'; then
-        deny "BLOCKED: Direct git add is prohibited in the team repo. Use git-queue.sh which performs atomic add+commit under lock. Path: ../messages/scripts/git-queue.sh" "git-add"
+        deny "BLOCKED: Direct git add is prohibited in the team repo. Use git-queue.sh which performs atomic add+commit under lock. Path: ../../scripts/git-queue.sh" "git-add"
       fi
     fi
   fi

@@ -23,5 +23,10 @@
 
   <key>StandardErrorPath</key>
   <string>/tmp/fuseki-perf.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHORUS_ROOT</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+  </dict>
 </dict>
 </plist>

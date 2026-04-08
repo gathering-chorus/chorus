@@ -1,6 +1,6 @@
 ## Board CLI Quick Reference
 
-Board URL: http://localhost:3456 | CLI: `../messages/scripts/cards`
+Board URL: http://localhost:3456 | CLI: `../../scripts/cards`
 
 ```
 cards add "title" --owner <role> --priority P1|P2|P3   # create card (NOT "create")

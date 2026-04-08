@@ -27,7 +27,7 @@ All container logs are indexed in Loki. Query via Grafana (http://localhost:3100
 
 `app-state.sh freeze/unfreeze` is an operational kill switch. Check with `app-state.sh status`. Never remove `.deploy.freeze` directly. Silas owns deploy infrastructure (DEC-022).
 
-Full infrastructure reference (SPARQL patterns, Fuseki, script paths, cross-machine ops, service registries): `../messages/TEAM_PROTOCOL.md`
+Full infrastructure reference (SPARQL patterns, Fuseki, script paths, cross-machine ops, service registries): `../../../TEAM_PROTOCOL.md`
 
 ## Data Safety
 

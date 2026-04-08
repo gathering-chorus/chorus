@@ -18,10 +18,11 @@ FUSEKI_UPDATE="http://localhost:3030/pods/update"
 FUSEKI_ADMIN="http://localhost:3030/\$"
 ENV_FILE="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env"
 APP_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
-BACKUP_DIR="/Users/jeffbridwell/CascadeProjects/architect/backups"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+BACKUP_DIR="$CHORUS_ROOT/platform/roles/silas/backups"
 VOLUME_NAME="jeff-bridwell-personal-site-fuseki-data"
 CONTAINER_NAME="jeff-bridwell-personal-site-fuseki"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log"
+CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

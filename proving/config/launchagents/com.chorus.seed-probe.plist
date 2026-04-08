@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/jeffbridwell/CascadeProjects/architect/scripts/seed-probe.sh</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas/scripts/seed-probe.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
@@ -24,6 +24,8 @@
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     </dict>
 </dict>
 </plist>

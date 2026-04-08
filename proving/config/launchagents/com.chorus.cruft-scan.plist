@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/cruft-scan.sh</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cruft-scan.sh</string>
     </array>
     <key>StartInterval</key>
     <integer>259200</integer>
@@ -17,5 +17,10 @@
     <string>/tmp/cruft-scan.log</string>
     <key>RunAtLoad</key>
     <false/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    </dict>
 </dict>
 </plist>

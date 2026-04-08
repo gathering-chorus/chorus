@@ -7,7 +7,7 @@
 Run the **Hard 4** from Session Close-Out (CLAUDE.md). Before that:
 
 ### 0. Introspect
-Run `../messages/scripts/werk-init.sh silas --close`. Fix auto-fix items silently.
+Run `../../scripts/werk-init.sh silas --close`. Fix auto-fix items silently.
 
 ### If-Touched Domain Docs (DEC-058)
 
@@ -23,7 +23,7 @@ Scan for staleness from this session's work. Update what changed:
 - ADRs (`adr/`) — decisions made without records?
 - **About/Architecture docs** (`data/about/`) — SYSTEM_ARCHITECTURE.md, INFRASTRUCTURE.md, C4-ARCHITECTURE.md stale?
 
-**After updates:** `../messages/scripts/chorus-log.sh session.docscan.completed silas checked=<N> updated=<M>`
+**After updates:** `../../scripts/chorus-log.sh session.docscan.completed silas checked=<N> updated=<M>`
 
 ### Then Hard 4
 

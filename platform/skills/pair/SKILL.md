@@ -52,17 +52,17 @@ Two roles working one problem. The **navigator's scope loop** is the pair. When 
 
 2. **Declare state for both roles**:
    ```bash
-   /Users/jeffbridwell/CascadeProjects/platform/scripts/role-state <your-role> building card=<card-id>
+   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <your-role> building card=<card-id>
    ```
 
 3. **Emit spine event**:
    ```bash
-   /Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log pair.started <your-role> card=<card-id> partner=<target-role>
+   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pair.started <your-role> card=<card-id> partner=<target-role>
    ```
 
 4. **Nudge the navigator to load /pair** — the navigator MUST load the full skill, not just follow a text description:
    ```bash
-   bash /Users/jeffbridwell/CascadeProjects/platform/scripts/nudge <target-role> "/pair <card-id> <your-role> — You navigate, <your-role> drives. Load this skill now so you have the full protocol."
+   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <target-role> "/pair <card-id> <your-role> — You navigate, <your-role> drives. Load this skill now so you have the full protocol."
    ```
    The `/pair` prefix in the nudge triggers the navigator's system to load the skill. Both roles must have the full protocol loaded — a text summary is not sufficient.
 
@@ -74,7 +74,7 @@ Two roles working one problem. The **navigator's scope loop** is the pair. When 
 
 1. **Card context** — both roles read the card:
    ```bash
-   bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts view <card-id>
+   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view <card-id>
    ```
 
 2. **Shared scratch file** — create `/tmp/pair-<card-id>.md`:
@@ -215,11 +215,11 @@ If any answer is no, the card stays open. Don't declare victory against internal
 2. Write session summary to the shared scratch file
 3. Emit spine event:
    ```bash
-   /Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log pair.ended <your-role> card=<card-id> partner=<target-role> duration=<minutes>
+   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pair.ended <your-role> card=<card-id> partner=<target-role> duration=<minutes>
    ```
 4. Declare state back:
    ```bash
-   /Users/jeffbridwell/CascadeProjects/platform/scripts/role-state <your-role> waiting
+   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <your-role> waiting
    ```
 5. **Write the Jeff summary** in the scratch file — required, not optional:
    ```

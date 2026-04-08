@@ -5,8 +5,9 @@
 set -euo pipefail
 
 SCRIPTS_DIR="$(cd "$(dirname "$0")/../scripts" && pwd)"
-MSG_SCRIPTS="/Users/jeffbridwell/CascadeProjects/platform/scripts"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/platform/logs/chorus.log"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+MSG_SCRIPTS="$CHORUS_ROOT/platform/scripts"
+CHORUS_LOG="$CHORUS_ROOT/platform/logs/chorus.log"
 API_URL="http://localhost:3340"
 PASS=0
 FAIL=0

@@ -21,7 +21,7 @@ No action needed from the role — just respond to what Jeff said.
 ### Path 2: `/listen` command
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/platform/scripts/listen.sh [audio-file]
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/listen.sh [audio-file]
 ```
 
 **Modes:**

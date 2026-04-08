@@ -6,7 +6,7 @@
     <string>com.chorus.ops</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-ops.sh</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-ops.sh</string>
         <string>all</string>
     </array>
     <key>StartInterval</key>
@@ -23,6 +23,8 @@
         <string>/Users/jeffbridwell/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
         <key>HOME</key>
         <string>/Users/jeffbridwell</string>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     </dict>
 </dict>
 </plist>

@@ -6,13 +6,13 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string><string>-c</string>
-        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-weekly.sh silas; /Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-weekly.sh kade; /Users/jeffbridwell/CascadeProjects/platform/scripts/context-cache-weekly.sh wren</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-weekly.sh silas; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-weekly.sh kade; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-weekly.sh wren</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
     <key>StandardOutPath</key><string>/tmp/context-cache-weekly.log</string>
     <key>StandardErrorPath</key><string>/tmp/context-cache-weekly.err</string>
     <key>EnvironmentVariables</key>
-    <dict><key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string><key>HOME</key><string>/Users/jeffbridwell</string></dict>
+    <dict><key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string><key>HOME</key><string>/Users/jeffbridwell</string><key>CHORUS_ROOT</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string></dict>
 </dict>
 </plist>

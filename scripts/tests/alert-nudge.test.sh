@@ -10,8 +10,9 @@ FAIL=0
 test_pass() { echo "  PASS: $1"; ((PASS++)); }
 test_fail() { echo "  FAIL: $1"; ((FAIL++)); }
 
-ALERT_DIR="/Users/jeffbridwell/CascadeProjects/platform/alerting"
-RUNNER="/Users/jeffbridwell/CascadeProjects/scripts/alert-runner.sh"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+ALERT_DIR="$CHORUS_ROOT/platform/alerting"
+RUNNER="$CHORUS_ROOT/scripts/alert-runner.sh"
 
 echo "=== Alert Nudge Tests (#2037) ==="
 

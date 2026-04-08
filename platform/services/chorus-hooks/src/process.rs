@@ -21,9 +21,9 @@ pub fn find_role_pid(role: &str) -> Option<u32> {
             if let Ok(pid) = parts[0].parse::<u32>() {
                 if let Some(cwd) = get_cwd(pid) {
                     let matches = match role {
-                        "wren" => cwd.contains("product-manager"),
-                        "silas" => cwd.contains("architect"),
-                        "kade" => cwd.contains("engineer"),
+                        "wren" => cwd.contains("roles/wren") || cwd.contains("product-manager"),
+                        "silas" => cwd.contains("roles/silas") || cwd.contains("architect"),
+                        "kade" => cwd.contains("roles/kade") || cwd.contains("engineer"),
                         _ => false,
                     };
                     if matches && best_pid.map_or(true, |prev| pid > prev) {
@@ -55,7 +55,7 @@ pub fn get_cwd(pid: u32) -> Option<String> {
 /// The inject binary has its own TCC Accessibility grant — rebuilding the shim
 /// never revokes it. Restores #2075 architecture after #2100 broke TCC.
 pub fn inject_by_tab_name(role: &str, text: &str) -> Result<(), String> {
-    let inject_bin = format!("{}/platform/services/chorus-hooks/target/release/chorus-inject", crate::shared::state_paths::chorus_root());
+    let inject_bin = format!("{}/platform/services/chorus-inject/target/release/chorus-inject", crate::shared::state_paths::chorus_root());
 
     let output = Command::new(inject_bin)
         .args([role, text])

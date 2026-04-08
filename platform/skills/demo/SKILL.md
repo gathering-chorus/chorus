@@ -34,7 +34,7 @@ When multiple card IDs or a pipeline ID is given:
 ## Step 1: Validate card exists and is in WIP or Now (or Done for post-acceptance demos)
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts view ${CARD_ID}
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view ${CARD_ID}
 ```
 
 - Card must exist and be in WIP or Now status
@@ -88,7 +88,7 @@ If card is not in WIP/Now: "Card #${CARD_ID} is in <status> — must be in WIP t
 
 7. Emit spine event:
    ```bash
-   /Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log quality.gate.completed <your-role> card=${CARD_ID} result=pass|fail|skipped
+   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log quality.gate.completed <your-role> card=${CARD_ID} result=pass|fail|skipped
    ```
 
 **Skip conditions:** Cards tagged `type:chore` or `type:swat` skip the agent review (same as demo gate skip in #1881).
@@ -99,7 +99,7 @@ If card is not in WIP/Now: "Card #${CARD_ID} is in <status> — must be in WIP t
 
 ```bash
 # For code cards that touch app pages: run smoke-check.sh
-bash /Users/jeffbridwell/CascadeProjects/platform/scripts/smoke-check.sh --all
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh --all
 ```
 
 **Gate logic:**
@@ -150,10 +150,10 @@ Print a structured demo brief:
 
 ```bash
 # Log demo started
-bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts demo ${CARD_ID}
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts demo ${CARD_ID}
 
 # Emit spine event
-/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log card.demo.started <your-role> card=${CARD_ID}
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log card.demo.started <your-role> card=${CARD_ID}
 ```
 
 **Post the demo brief to Bridge so Jeff sees it without switching windows:**
@@ -170,7 +170,7 @@ curl -s -X POST http://localhost:3470/api/message \
 # Nudge both other roles (skip yourself)
 for ROLE in wren silas kade; do
   [ "$ROLE" = "<your-role>" ] && continue
-  bash /Users/jeffbridwell/CascadeProjects/platform/scripts/nudge "$ROLE" \
+  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$ROLE" \
     "[demo] #${CARD_ID} — <title>. /gemba <your-role>, card #${CARD_ID}." 2>/dev/null || true
 done
 ```
@@ -183,7 +183,7 @@ Then **auto-nudge for feedback** — don't wait for Jeff to ask.
 # Ask each role to verify from THEIR perspective — frame in their domain
 for ROLE in wren silas kade; do
   [ "$ROLE" = "<your-role>" ] && continue
-  bash /Users/jeffbridwell/CascadeProjects/platform/scripts/nudge "$ROLE" \
+  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$ROLE" \
     "[feedback] #${CARD_ID} — <1-line what changed>. <specific question for this role's domain>." 2>/dev/null || true
 done
 ```
@@ -228,7 +228,7 @@ The builder does NOT manually write this brief. The demo skill generates it mech
 
 ```bash
 # Extract AC from card description
-AC_LINES=$(bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts view ${CARD_ID} | grep -E '^\s*- \[[ x]\]')
+AC_LINES=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view ${CARD_ID} | grep -E '^\s*- \[[ x]\]')
 AC_TOTAL=$(echo "$AC_LINES" | grep -c '^\s*- \[' 2>/dev/null | tr -d '\n')
 AC_CHECKED=$(echo "$AC_LINES" | grep -c '^\s*- \[x\]' 2>/dev/null | tr -d '\n')
 : "${AC_TOTAL:=0}" "${AC_CHECKED:=0}"
@@ -277,9 +277,9 @@ EOF
 
 6. **Scroll for Jeff** — for long pages, use `demo-scroll.sh` to walk through content hands-free:
    ```bash
-   bash /Users/jeffbridwell/CascadeProjects/platform/scripts/demo-scroll.sh down 3   # scroll down 3 sections
-   bash /Users/jeffbridwell/CascadeProjects/platform/scripts/demo-scroll.sh top       # back to top
-   bash /Users/jeffbridwell/CascadeProjects/platform/scripts/demo-scroll.sh bottom    # jump to bottom
+   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/demo-scroll.sh down 3   # scroll down 3 sections
+   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/demo-scroll.sh top       # back to top
+   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/demo-scroll.sh bottom    # jump to bottom
    ```
 
 **Anti-patterns:**

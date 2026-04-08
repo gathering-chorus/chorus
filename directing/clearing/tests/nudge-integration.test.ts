@@ -14,7 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-const NUDGE_BINARY = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hook-shim';
+const NUDGE_BINARY = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim';
 const INBOX_DIR = '/tmp/voice-inbox';
 const EXCHANGE_DIR = '/tmp/nudge-exchanges';
 
@@ -223,7 +223,7 @@ describe('AC #3.3: Exchange tracking — pair key mechanics', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('AC #3.4: WIP state detection — blast radius warning', () => {
-  const ROLE_STATE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/platform/scripts/role-state';
+  const ROLE_STATE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state';
 
   test('role-state binary exists for WIP detection', () => {
     // role-state is the Rust binary that tracks role state
@@ -249,26 +249,26 @@ describe('AC #3.4: WIP state detection — blast radius warning', () => {
   });
 
   test('nudge_blast_radius hook file exists', () => {
-    const hookFile = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
+    const hookFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
     expect(fs.existsSync(hookFile)).toBe(true);
   });
 
   test('blast radius hook detects nudge invocations', () => {
-    const hookFile = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
+    const hookFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
     const content = fs.readFileSync(hookFile, 'utf-8');
     expect(content).toContain('nudge');
     expect(content).toContain('/nudge ');
   });
 
   test('blast radius hook checks target role WIP state', () => {
-    const hookFile = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
+    const hookFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
     const content = fs.readFileSync(hookFile, 'utf-8');
     expect(content).toContain('building');
     expect(content).toContain('WIP');
   });
 
   test('blast radius hook warns but does not block', () => {
-    const hookFile = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
+    const hookFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
     const content = fs.readFileSync(hookFile, 'utf-8');
     // Should use warn_stderr (not block_with_message)
     expect(content).toContain('warn_stderr');
@@ -276,7 +276,7 @@ describe('AC #3.4: WIP state detection — blast radius warning', () => {
   });
 
   test('blast radius hook skips self-nudge (no warning when nudging yourself)', () => {
-    const hookFile = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
+    const hookFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/nudge_blast_radius.rs';
     const content = fs.readFileSync(hookFile, 'utf-8');
     expect(content).toContain('sender');
     // Self-nudge check exists
@@ -290,26 +290,26 @@ describe('AC #3.4: WIP state detection — blast radius warning', () => {
 
 describe('AC #3.5: Spine events — nudge lifecycle is observable', () => {
   test('nudge binary emits role.nudge.sent event', () => {
-    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/nudge.rs';
+    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
     const content = fs.readFileSync(nudgeSource, 'utf-8');
     expect(content).toContain('role.nudge.sent');
   });
 
   test('nudge binary emits role.nudge.delivered event', () => {
-    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/nudge.rs';
+    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
     const content = fs.readFileSync(nudgeSource, 'utf-8');
     expect(content).toContain('role.nudge.delivered');
   });
 
   test('nudge sent event includes target and content preview', () => {
-    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/nudge.rs';
+    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
     const content = fs.readFileSync(nudgeSource, 'utf-8');
     expect(content).toContain('target=');
     expect(content).toContain('content=');
   });
 
   test('nudge delivered event includes delivery mode', () => {
-    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/src/nudge.rs';
+    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
     const content = fs.readFileSync(nudgeSource, 'utf-8');
     expect(content).toContain('mode=');
     // Delivery modes: injected, queued-no-session, queued-inject-failed, queued-passive, bridge

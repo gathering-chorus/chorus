@@ -16,7 +16,7 @@ All three roles (Silas, Wren, Kade) run on the same model with the same capabili
 
 Every response starts with: `--- Silas | YYYY-MM-DD HH:MM Boston | #Card | Werk vN ---`
 
-On first response: read `/tmp/session-start-silas.md`, run `bash ../messages/scripts/wall-clock.sh` (or `TZ=America/New_York date '+%Y-%m-%d %H:%M'`), print the prompt. **Refresh the timestamp every response** — never cache it. Stale timestamps cascade into wrong escalation decisions (#1559). Werk version from line 1 of session-start file.
+On first response: read `/tmp/session-start-silas.md`, run `../../scripts/wall-clock` (or `TZ=America/New_York date '+%Y-%m-%d %H:%M'`), print the prompt. **Refresh the timestamp every response** — never cache it. Stale timestamps cascade into wrong escalation decisions (#1559). Werk version from line 1 of session-start file.
 
 ## Core Principles
 
@@ -32,13 +32,13 @@ Working hours 8am–6pm. Outside hours: card it, don't act on it until next day.
 
 ## Project Portfolio
 
-Six projects across two machines. See `infrastructure-constraints.md` for topology and hard constraints (C1-C7). Full portfolio table: `../messages/TEAM_PROTOCOL.md`.
+Six projects across two machines. See `infrastructure-constraints.md` for topology and hard constraints (C1-C7). Full portfolio table: `../../../TEAM_PROTOCOL.md`.
 
 ## Infrastructure Operations (MANDATORY)
 
 All service lifecycle through `app-state.sh`. Never kill PIDs manually. Views/CSS are bind-mounted (no deploy). TypeScript changes need `app-state.sh deploy`. Logs via Loki (`localhost:3102`), not `docker logs`.
 
-All shared scripts: `../messages/scripts/`. Commits to team repo use `git-queue.sh`. Full reference: `../messages/TEAM_PROTOCOL.md`
+All shared scripts: `../../scripts/`. Commits to team repo use `git-queue.sh`. Full reference: `../../../TEAM_PROTOCOL.md`
 
 ## Data Safety
 
@@ -49,12 +49,12 @@ A `PreToolUse` hook (Rust `write_scrubber` in chorus-hooks) blocks writing crede
 Two machines: **Library** (192.168.86.36) and **Bedroom** (192.168.86.242).
 
 **Read is free.** Health checks, log reads, status queries — no card needed.
-**Write/mutate requires a card.** Log in `../messages/activity.md` with machine name.
+**Write/mutate requires a card.** Log in `../../../activity.md` with machine name.
 **No raw process killing — local OR remote.** Use `launchctl kickstart` for LaunchAgents, `app-state.sh` for Docker.
 **LaunchAgent changes go through Silas.**
 **Exception:** Kade may restart services via `app-state.sh` during Bedroom bulk ops (thumbnail generation, photo pipeline) without routing through Silas. Log in activity.md.
 
-Service registries and SSH examples: `../messages/TEAM_PROTOCOL.md`
+Service registries and SSH examples: `../../../TEAM_PROTOCOL.md`
 
 ## Operations Responsibilities (DEC-022)
 
@@ -122,18 +122,18 @@ Never idle-poll. If a background task is running: check seeds, update state file
 
 ## Andon State Declaration (MANDATORY)
 
-Declare state at transitions via `../messages/scripts/role-state.sh`:
+Declare state at transitions via `../../scripts/role-state`:
 `building card=<id>` | `blocked detail="reason"` | `waiting` | `observing gemba=<target>` | `idle`
 
 ## Team Kanban Board
 
-Board CLI: `../messages/scripts/cards` (alias: `board-ts`) | `cards --help` for full syntax. All board ops through `cards` — never call Vikunja API directly.
+Board CLI: `../../scripts/cards` (alias: `board-ts`) | `cards --help` for full syntax. All board ops through `cards` — never call Vikunja API directly.
 
 **No work without a card.** Move to WIP when starting (`cards move <id> WIP` + `role-state.sh <role> building card=<id>`). Move to Done when complete, not at session close. Equal priority → smallest first (DEC-049).
 
 ## Team Operating Model
 
-Full model: `../messages/team-architecture.md`. Session lifecycle: **Synchronize** (automatic hook loads context to `/tmp/session-start-<role>.md`, read it + state files) → **Operate** (brief + signal + record) → **Close** (update activity.md, commit).
+Full model: `../../../team-architecture.md`. Session lifecycle: **Synchronize** (automatic hook loads context to `/tmp/session-start-<role>.md`, read it + state files) → **Operate** (brief + signal + record) → **Close** (update activity.md, commit).
 
 **Close-out triggers** (don't wait for Jeff): "eod", "wrapping up", "done for today", past 5pm and winding down, or previous session missed close-out.
 
@@ -146,11 +146,11 @@ Full model: `../messages/team-architecture.md`. Session lifecycle: **Synchronize
 
 ## Exchanging Work Between Roles
 
-Briefs are the primary mechanism. Write to the recipient's `briefs/` directory, not your own. Include: question/request, context, constraints, response needed. Log handoffs in `../messages/activity.md`. Every handoff should be traceable.
+Briefs are the primary mechanism. Write to the recipient's `briefs/` directory, not your own. Include: question/request, context, constraints, response needed. Log handoffs in `../../../activity.md`. Every handoff should be traceable.
 
 ## Team Activity Log
 
-Shared audit trail at `../messages/activity.md`. All roles read and append. Log when you produce or consume something (brief, decision, review). Format: `- [Role] → [action] → [who needs to see]`. Scan for new entries on session start.
+Shared audit trail at `../../../activity.md`. All roles read and append. Log when you produce or consume something (brief, decision, review). Format: `- [Role] → [action] → [who needs to see]`. Scan for new entries on session start.
 
 ## Multi-Role Discussions
 
@@ -186,7 +186,7 @@ Search order: Chorus (`/chorus search`) → codebase graph → filesystem (`Grep
 
 ## Domain Endpoints (DEC-093)
 
-**All API endpoints are on the Chorus API at `localhost:3340`.** Never use `localhost:3000` for programmatic API calls — that's the app (session auth, browser only). No auth required. Full endpoint table: `../messages/TEAM_PROTOCOL.md`. CLI (`board-ts`) for mutations.
+**All API endpoints are on the Chorus API at `localhost:3340`.** Never use `localhost:3000` for programmatic API calls — that's the app (session auth, browser only). No auth required. Full endpoint table: `../../../TEAM_PROTOCOL.md`. CLI (`board-ts`) for mutations.
 
 ## Session Close-Out (MANDATORY)
 
@@ -194,11 +194,11 @@ Search order: Chorus (`/chorus search`) → codebase graph → filesystem (`Grep
 
 **Sequence**: Introspect (`werk-init.sh silas --close`) → If-Touched (update stale docs) → Hard 5 (journal, board audit, activity log, next-session.md, commit) → Verify.
 
-Full procedure: `../messages/TEAM_PROTOCOL.md`
+Full procedure: `../../../TEAM_PROTOCOL.md`
 
 ## Cost Awareness
 
-Run `/cost` at natural breakpoints (brief shipped, feature deployed, tests passing). Log to `../messages/cost-log.md` at close-out. Dashboard: `localhost:3100/d/cost-dashboard`.
+Run `/cost` at natural breakpoints (brief shipped, feature deployed, tests passing). Log to `../../../cost-log.md` at close-out. Dashboard: `localhost:3100/d/cost-dashboard`.
 
 ### Silas Domain Docs (If-Touched)
 

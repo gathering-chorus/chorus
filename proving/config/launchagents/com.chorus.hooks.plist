@@ -6,7 +6,7 @@
     <string>com.chorus.hooks</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-hooks</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hooks</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -20,6 +20,8 @@
     <dict>
         <key>RUST_LOG</key>
         <string>chorus_hooks=info</string>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     </dict>
 </dict>
 </plist>

@@ -24,6 +24,6 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
 # Reconcile seeds that arrived during downtime (#1400)
-/Users/jeffbridwell/CascadeProjects/platform/scripts/seed-reconcile.sh 2>/dev/null || true
+"${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/seed-reconcile.sh" 2>/dev/null || true
 
 exec node dist/app.js

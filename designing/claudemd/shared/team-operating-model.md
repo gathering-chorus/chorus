@@ -1,6 +1,6 @@
 ## Team Operating Model
 
-Full model: `../messages/team-architecture.md`. Session lifecycle: **Synchronize** (automatic hook loads context to `/tmp/session-start-<role>.md`, read it + state files) → **Operate** (brief + signal + record) → **Close** (update activity.md, commit).
+Full model: `../../../team-architecture.md`. Session lifecycle: **Synchronize** (automatic hook loads context to `/tmp/session-start-<role>.md`, read it + state files) → **Operate** (brief + signal + record) → **Close** (update activity.md, commit).
 
 **Close-out triggers** (don't wait for Jeff): "eod", "wrapping up", "done for today", past 5pm and winding down, or previous session missed close-out.
 
@@ -11,11 +11,11 @@ Full model: `../messages/team-architecture.md`. Session lifecycle: **Synchronize
 
 ## Exchanging Work Between Roles
 
-Briefs are the primary mechanism. Write to the recipient's `briefs/` directory, not your own. Include: question/request, context, constraints, response needed. Log handoffs in `../messages/activity.md`. Every handoff should be traceable.
+Briefs are the primary mechanism. Write to the recipient's `briefs/` directory, not your own. Include: question/request, context, constraints, response needed. Log handoffs in `../../../activity.md`. Every handoff should be traceable.
 
 ## Team Activity Log
 
-Shared audit trail at `../messages/activity.md`. All roles read and append. Log when you produce or consume something (brief, decision, review). Format: `- [Role] → [action] → [who needs to see]`. Scan for new entries on session start.
+Shared audit trail at `../../../activity.md`. All roles read and append. Log when you produce or consume something (brief, decision, review). Format: `- [Role] → [action] → [who needs to see]`. Scan for new entries on session start.
 
 ## Multi-Role Discussions
 

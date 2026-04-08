@@ -81,9 +81,9 @@ How each role is launched, what normal looks like, and how to fix it when it bre
 |------|------|
 | whisper-cli | `/opt/homebrew/bin/whisper-cli` |
 | whisper models | `/Users/jeffbridwell/models/ggml-small.en.bin`, `ggml-medium.en.bin` |
-| cards | `../messages/scripts/cards` |
+| cards | `../../scripts/cards` |
 | app-state.sh | `../jeff-bridwell-personal-site/app-state.sh` |
-| git-queue.sh | `../messages/scripts/git-queue.sh` |
-| werk-init.sh | `../messages/scripts/werk-init.sh` |
-| chorus-log | `../messages/scripts/chorus-log` |
+| git-queue.sh | `../../scripts/git-queue.sh` |
+| werk-init.sh | `../../scripts/werk-init.sh` |
+| chorus-log | `../../scripts/chorus-log` |
 | chorus-query.sh | `~/.chorus/scripts/chorus-query.sh` |

@@ -82,7 +82,7 @@ Each stage has gates. Work items flow through the pipeline. Trust accrues as ite
 
 | Artifact | Location | Description |
 |----------|----------|-------------|
-| Chorus Audit Runner | [messages/scripts/chorus-audit.sh](../messages/scripts/chorus-audit.sh) | Session start/close checks, gate compliance, disk health |
+| Chorus Audit Runner | [messages/scripts/chorus-audit.sh](../../scripts/chorus-audit.sh) | Session start/close checks, gate compliance, disk health |
 | Board Client | [messages/board-client/](../messages/board-client/) | TypeScript board client — both boards, typed API, card-first audit (DEC-033) |
 | Infra Guardrails Hook | [engineer/.claude/hooks/infra-guardrails.sh](../engineer/.claude/hooks/infra-guardrails.sh) | Platform-enforced command blocking (G1) |
 | Structured Logs | [messages/logs/chorus.log](../messages/logs/chorus.log) | JSON audit trail → Promtail → Loki |

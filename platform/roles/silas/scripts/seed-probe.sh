@@ -56,7 +56,7 @@ alert_bridge() {
 
 log_result() {
   local status="$1" detail="$2"
-  /Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log \
+  "${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
     seed.probe.${status} silas "detail=${detail}" 2>/dev/null || true
 }
 
@@ -408,13 +408,11 @@ else
 fi
 
 # ─── Brief file cleanup — probes auto-route to role inboxes ─────
+CR="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 BRIEF_DIRS=(
-  /Users/jeffbridwell/CascadeProjects/platform/roles/kade/briefs
-  /Users/jeffbridwell/CascadeProjects/platform/roles/silas/briefs
-  /Users/jeffbridwell/CascadeProjects/platform/roles/wren/briefs
-  /Users/jeffbridwell/CascadeProjects/platform/roles/engineer/briefs
-  /Users/jeffbridwell/CascadeProjects/platform/roles/silas/briefs
-  /Users/jeffbridwell/CascadeProjects/platform/roles/product-manager/briefs
+  "$CR/platform/roles/kade/briefs"
+  "$CR/platform/roles/silas/briefs"
+  "$CR/platform/roles/wren/briefs"
 )
 BRIEF_CLEANED=0
 for bdir in "${BRIEF_DIRS[@]}"; do

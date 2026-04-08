@@ -137,7 +137,7 @@ Every role, every session, same sequence:
 - `git -C /Users/jeffbridwell/CascadeProjects pull --rebase` — get latest from all roles
 - **Run `session-start.sh <role>`** — one call, all reads parallel, under 1 second:
   ```bash
-  ../messages/scripts/session-start.sh <role>   # wren | silas | kade
+  ../../scripts/session-start.sh <role>   # wren | silas | kade
   ```
   This runs board reads, brief checks, state file checks, and next-session.md checks **concurrently**. All reads are independent — zero sequencing dependencies. Session context is loaded by the `SessionStart` hook to `/tmp/session-start-<role>.md`.
   - Output to Jeff: one status line (`🟢` / `🟡` / `🔴`)

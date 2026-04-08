@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/jeffbridwell/CascadeProjects/platform/scripts/daily-review-quality.sh</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/daily-review-quality.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
@@ -26,6 +26,8 @@
         <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HOME</key>
         <string>/Users/jeffbridwell</string>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     </dict>
 </dict>
 </plist>

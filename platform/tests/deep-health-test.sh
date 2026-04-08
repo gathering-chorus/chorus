@@ -3,7 +3,8 @@
 # RED before script exists. GREEN after.
 set -euo pipefail
 
-SCRIPT="/Users/jeffbridwell/CascadeProjects/platform/scripts/deep-health.sh"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+SCRIPT="$CHORUS_ROOT/platform/scripts/deep-health.sh"
 PASS=0
 FAIL=0
 

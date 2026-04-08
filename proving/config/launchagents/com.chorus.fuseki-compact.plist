@@ -8,7 +8,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/jeffbridwell/CascadeProjects/architect/scripts/fuseki-maintenance.sh</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/roles/silas/scripts/fuseki-maintenance.sh</string>
     <string>compact</string>
   </array>
 
@@ -31,5 +31,10 @@
 
   <key>StandardErrorPath</key>
   <string>/tmp/fuseki-compact.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHORUS_ROOT</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+  </dict>
 </dict>
 </plist>

@@ -17,5 +17,10 @@
     <string>/Users/jeffbridwell/.chorus/watcher.log</string>
     <key>StandardErrorPath</key>
     <string>/Users/jeffbridwell/.chorus/watcher.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    </dict>
 </dict>
 </plist>

@@ -175,7 +175,7 @@ Then('the message {string} appears in the message feed', function (_label: strin
 
 // --- Nudge delivery (--force = osascript inject) ---
 
-const NUDGE = '/Users/jeffbridwell/CascadeProjects/platform/scripts/nudge';
+const NUDGE = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
 
 When('Jeff nudges {word} with {string} via --force', function (role: string, label: string) {
   const msg = `[e2e-test] ${label}-${Date.now()}`;

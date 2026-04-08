@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-hook.sh pre-tool-use",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-hook.sh pre-tool-use",
             "timeout": 5
           }
         ]
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-hook.sh post-tool-use",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-hook.sh post-tool-use",
             "timeout": 5
           }
         ]
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-hook.sh user-prompt-submit",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-hook.sh user-prompt-submit",
             "timeout": 5
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-hook.sh stop",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-hook.sh stop",
             "timeout": 5
           }
         ]
@@ -59,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/CascadeProjects/platform/scripts/session-end-hook.sh",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/session-end-hook.sh",
             "timeout": 10
           }
         ]

@@ -32,13 +32,13 @@ If **Jeff or Wren** is running /acp, they are the accepting authority — procee
 ## Step 1: Accept the card
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts done ${CARD_ID}
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts done ${CARD_ID}
 ```
 
 ## Step 2: Emit spine event
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/platform/scripts/chorus-log card.accepted <your-role> card=${CARD_ID}
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log card.accepted <your-role> card=${CARD_ID}
 ```
 
 ## Step 2.5: State file sync (if Wren)

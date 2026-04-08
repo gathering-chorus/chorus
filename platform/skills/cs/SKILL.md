@@ -11,7 +11,7 @@ Run the seed pipeline check and assess any pending seeds.
 ## Step 1: Run the script
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/platform/scripts/check-seeds.sh
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/check-seeds.sh
 ```
 
 This queries SPARQL for pending seeds, checks pipeline health (tunnel + app + Fuseki), and reports the last seed timestamp. The output is the answer — no further queries needed.

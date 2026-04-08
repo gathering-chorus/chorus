@@ -10,7 +10,7 @@ Not a status dump — a PM read on the shape of the work. Two keystrokes.
 
 ## How to Use
 
-1. Run: `bash /Users/jeffbridwell/CascadeProjects/platform/scripts/board-ts list` to get full board state
+1. Run: `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts list` to get full board state
 2. Analyze and report on:
    - **Flow:** Is work moving? Where is it stuck? What's aging?
    - **Balance:** Role load distribution. Is anyone overloaded or idle?

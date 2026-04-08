@@ -26,7 +26,7 @@ Use your working directory to determine your role name (wren, silas, kade).
 ### Step 2: Send the nudge
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/platform/scripts/nudge <target-role> "<your-role-name>: <message>"
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <target-role> "<your-role-name>: <message>"
 ```
 
 The script will:

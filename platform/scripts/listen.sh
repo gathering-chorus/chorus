@@ -15,7 +15,7 @@ LISTEN_DIR="/tmp/chorus-listen"
 PID_FILE="$LISTEN_DIR/recording.pid"
 WAV_FILE="$LISTEN_DIR/recording.wav"
 TIMESTAMP=$(date +%Y%m%dT%H%M%S)
-CHORUS_LOG="$(dirname "$0")/../../messages/scripts/chorus-log"
+CHORUS_LOG="$(dirname "$0")/../../../scripts/chorus-log"
 
 mkdir -p "$LISTEN_DIR"
 

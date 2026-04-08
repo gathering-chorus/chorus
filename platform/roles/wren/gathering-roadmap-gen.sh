@@ -29,8 +29,9 @@ VIKUNJA_URL="${VIKUNJA_URL:-http://localhost:3456}"
 VIKUNJA_TOKEN="${VIKUNJA_TOKEN:-}"
 
 if [ -z "$VIKUNJA_TOKEN" ]; then
-  for env_file in "/Users/jeffbridwell/CascadeProjects/platform/.env" \
-                  "/Users/jeffbridwell/CascadeProjects/platform/scripts/.env"; do
+  CR="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  for env_file in "$CR/platform/.env" \
+                  "$CR/platform/scripts/.env"; do
     if [ -f "$env_file" ]; then
       VIKUNJA_TOKEN=$(grep "^VIKUNJA_TOKEN_WREN=" "$env_file" 2>/dev/null | cut -d'=' -f2- || true)
       if [ -z "$VIKUNJA_TOKEN" ]; then
