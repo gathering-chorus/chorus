@@ -7,14 +7,14 @@
 
 ```bash
 # Test preflight on a WIP card
-bash platform/skills/demo/gates/preflight.sh <wip-card-id>
+bash skills/demo/gates/preflight.sh <wip-card-id>
 # Should exit 0
 ```
 
 ## Test
 
 ```bash
-cd $CHORUS_ROOT && bats platform/skills/demo/tests/gates.bats
+cd $CHORUS_ROOT && bats skills/demo/tests/gates.bats
 ```
 
 Expected: 6 tests, 6 pass.

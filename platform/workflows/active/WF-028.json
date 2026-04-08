@@ -1,0 +1,48 @@
+{
+  "id": "WF-028",
+  "decision": "Wire demo gate to cards done — no Done without demo evidence",
+  "source": "board:card-moved:#1834",
+  "card": 1834,
+  "created": "2026-04-08T21:30:10Z",
+  "updated": "2026-04-08T21:30:10Z",
+  "status": "in_progress",
+  "steps": [
+    {
+      "seq": 1,
+      "role": "kade",
+      "action": "Wire demo gate to cards done — no Done without demo evidence",
+      "status": "ready",
+      "card": null,
+      "blocked_by": [],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    },
+    {
+      "seq": 2,
+      "role": "wren",
+      "action": "Review and verify #1834",
+      "status": "pending",
+      "card": null,
+      "blocked_by": [
+        1
+      ],
+      "artifacts": [],
+      "brief": null,
+      "started_at": null,
+      "completed_at": null,
+      "notes": null
+    }
+  ],
+  "verification": null,
+  "history": [
+    {
+      "timestamp": "2026-04-08T21:30:10Z",
+      "event": "created",
+      "role": "system",
+      "detail": "Workflow created: Wire demo gate to cards done — no Done without demo evidence"
+    }
+  ]
+}
