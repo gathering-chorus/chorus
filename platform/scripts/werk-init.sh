@@ -35,9 +35,9 @@ if [ -z "$ROLE" ]; then
 fi
 
 case "$ROLE" in
-  wren)  ROLE_DIR="$REPO_ROOT/product-manager"; ROLE_DIR_NAME="product-manager" ;;
-  silas) ROLE_DIR="$REPO_ROOT/architect"; ROLE_DIR_NAME="architect" ;;
-  kade)  ROLE_DIR="$REPO_ROOT/engineer"; ROLE_DIR_NAME="engineer" ;;
+  wren)  ROLE_DIR="$REPO_ROOT/roles/wren"; ROLE_DIR_NAME="wren" ;;
+  silas) ROLE_DIR="$REPO_ROOT/roles/silas"; ROLE_DIR_NAME="silas" ;;
+  kade)  ROLE_DIR="$REPO_ROOT/roles/kade"; ROLE_DIR_NAME="kade" ;;
   *)     echo "Unknown role: $ROLE" >&2; exit 1 ;;
 esac
 

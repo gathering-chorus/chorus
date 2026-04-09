@@ -56,9 +56,9 @@ case "$MODE" in
     if [ "$ROLE" = "unknown" ] || [ -z "$ROLE" ]; then
       CWD="$(pwd)"
       case "$CWD" in
-        *product-manager*) ROLE="wren" ;;
-        *architect*)       ROLE="silas" ;;
-        *engineer*)        ROLE="kade" ;;
+        *roles/wren*)  ROLE="wren" ;;
+        *roles/silas*) ROLE="silas" ;;
+        *roles/kade*)  ROLE="kade" ;;
         *)                 ROLE="unknown" ;;
       esac
     fi

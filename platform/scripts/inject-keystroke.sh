@@ -9,9 +9,9 @@ MSG="$2"
 
 # Map role to terminal tab name
 case "$ROLE" in
-  wren) TAB_PATTERN="wren\|product-manager" ;;
-  silas) TAB_PATTERN="silas\|architect" ;;
-  kade) TAB_PATTERN="kade\|engineer" ;;
+  wren) TAB_PATTERN="wren" ;;
+  silas) TAB_PATTERN="silas" ;;
+  kade) TAB_PATTERN="kade" ;;
   *) echo "Unknown role: $ROLE" >&2; exit 1 ;;
 esac
 

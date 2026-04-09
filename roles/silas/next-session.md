@@ -1,26 +1,16 @@
 # Next Session — Silas
 
 ## Shipped This Session (2026-04-09)
-- **#1837** — Deep ops review. Fixed alert-runner.sh path bug (CHORUS_ROOT + ALERT_DIR). Moved alert rules to proving/domains/alerts/, scripts to proving/scripts/. Updated platform/RUNBOOK.md with alerting pipeline docs, LaunchAgent health validation, log locations, expanded service inventory for both machines. Fixed infra-alert LaunchAgent (stale cached path). Both test suites green (15/15).
-- **Bedroom Mac triage** — Diagnosed sluggishness (memory exhaustion on Library, CPU load on Bedroom from Toolkit + Spotlight post-reboot). Fixed SSH auth (was passing wrong username).
+- **#1839** — Fixed 19 LaunchAgent plists with stale paths (16 missing `chorus/` segment, 3 pointing to deleted `architect/` repo). 5 retired plists deleted. All 60 agents loaded. App-down alert resolved mid-fix — the plist fix was load-bearing.
+- **#1843 (partial)** — Swept 12 scripts in platform/scripts/: replaced `product-manager`→`roles/wren`, `architect`→`roles/silas`, `engineer`→`roles/kade`. 6/6 bats tests green.
+- **#1835 pair** — Navigated for Wren on skills symlink cleanup. Verified AC 5 (36/36 symlinks correct).
 
-## Created Cards
-- **#1839** — Fix 16+ LaunchAgent plists pointing to pre-namespace paths (Next, P1)
-- **#1841** — Decompose platform/ into value stream folders (Next, P2)
+## Resume
+- **#1843 AC 5-6** — `roles/product-manager/` dir still exists. Move stray brief to `roles/wren/briefs/`, then delete dir. Jeff denied rm — get approval.
+- **#1843 demo** — Was mid-demo when /reboot called. Resume.
 
-## Key Decisions
-- Alert rules canonical location: `proving/domains/alerts/`
-- Scripts from `chorus/scripts/` moved to `proving/scripts/`
-- role-config-manifest.md stays at repo root (Jeff-facing, spans all roles — Wren agreed)
-- #1839 sequences before #1841 (fix plists before moving dirs again)
-
-## Open Items
-- Wren shipped #1835 (32 skills to chorus/skills/, ownership in ontology). Silas owns 6 skills (gates + gemba).
-- /demo skill won't load until next session (skills cache at session start)
-- Kade's #1838 (seed split-message race fix) — gave arch review (in-memory buffer fine), awaiting Jeff accept
-- platform/logs/ has 2.3MB board snapshots + 1.5MB permission-prompts.log in repo — unresolved whether to move to ~/Library/Logs/
-- chorus/messages/ dir has stale dupes — Jeff aware, may have deleted
-
-## Feedback Saved
-- Don't pressure Jeff on accept/ACP — state completion once and move on
-- SSH to Bedroom: use bare hostname, never jeff@
+## Context
+- `platform/scripts/` is canonical script location
+- `proving/scripts/` intentional for alert-runner.sh and inject-watcher.sh
+- LaunchAgent plists are always absolute paths (plist XML limitation). Portability via $CHORUS_HOME is #1853.
+- `.git-commit.meta` and `t.sh` show as deleted in git status — restored to unblock rebase, should be properly cleaned up.

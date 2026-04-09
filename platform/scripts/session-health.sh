@@ -35,9 +35,9 @@ fi
 
 # Map role to project directory
 case "$ROLE" in
-  silas) PROJECT_SUFFIX="chorus-architect" ;;
-  wren) PROJECT_SUFFIX="chorus-product-manager" ;;
-  kade) PROJECT_SUFFIX="chorus-engineer" ;;
+  silas) PROJECT_SUFFIX="chorus-silas" ;;
+  wren) PROJECT_SUFFIX="chorus-wren" ;;
+  kade) PROJECT_SUFFIX="chorus-kade" ;;
   *) echo "Unknown role: $ROLE" >&2; exit 1 ;;
 esac
 

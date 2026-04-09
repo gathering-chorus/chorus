@@ -164,11 +164,7 @@ def compute_input_hash(role_name, role_config, variables, manifest_path, claudem
                 h.update(f.read())
     # Include permission profile (settings.local.json) — part of Werk
     repo_root = os.path.dirname(os.path.dirname(claudemd_dir))  # messages/ -> gathering-team/
-    settings_path = os.path.join(repo_root, role_name if role_name != "wren" else "product-manager",
-                                 ".claude", "settings.local.json")
-    # Map role names to directory names
-    role_dir_map = {"wren": "product-manager", "silas": "architect", "kade": "engineer"}
-    settings_path = os.path.join(repo_root, role_dir_map.get(role_name, role_name),
+    settings_path = os.path.join(repo_root, "roles", role_name,
                                  ".claude", "settings.local.json")
     if os.path.exists(settings_path):
         with open(settings_path, 'rb') as f:

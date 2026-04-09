@@ -13,9 +13,9 @@ mkdir -p "$OUTDIR"
 
 # Map role to working directory
 case "$ROLE" in
-  wren)  CWD_MATCH="product-manager" ;;
-  silas) CWD_MATCH="architect" ;;
-  kade)  CWD_MATCH="engineer" ;;
+  wren)  CWD_MATCH="roles/wren" ;;
+  silas) CWD_MATCH="roles/silas" ;;
+  kade)  CWD_MATCH="roles/kade" ;;
   *)     echo "Unknown role: $ROLE" >&2; exit 1 ;;
 esac
 

@@ -74,7 +74,7 @@ Environment:
 
 Examples:
   DEPLOY_ROLE=silas git-queue.sh commit architect/ -- -m "silas: ADR-016"
-  DEPLOY_ROLE=wren git-queue.sh commit product-manager/ messages/activity.md -- -m "wren: briefs"
+  DEPLOY_ROLE=wren git-queue.sh commit roles/wren/ -- -m "wren: briefs"
   git-queue.sh status
 EOF
 }

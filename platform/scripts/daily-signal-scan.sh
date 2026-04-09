@@ -12,8 +12,8 @@ REPO="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
 CHORUS="${CHORUS_ROOT}/chorus"
 CARDS="$CHORUS/platform/scripts/cards"
 CHORUS_LOG="$CHORUS/platform/scripts/chorus-log"
-DECISIONS_MD="$CHORUS/product-manager/decisions.md"
-PROJECTS_MD="$CHORUS/product-manager/projects.md"
+DECISIONS_MD="$CHORUS/roles/wren/decisions.md"
+PROJECTS_MD="$CHORUS/roles/wren/projects.md"
 PULSE_LOG="$HOME/Library/Logs/Gathering/hooks.log"
 DATE=$(TZ=America/New_York date '+%Y-%m-%d')
 OUTPUT="/tmp/daily-signal-${DATE}.md"
@@ -121,9 +121,9 @@ doc_freshness() {
   for role in Wren Silas Kade; do
     local stale_count=0 total_count=0 stale_files="" dirs=""
     case "$role" in
-      Wren) dirs="$CHORUS/product-manager $REPO/public/gathering-docs" ;;
-      Silas) dirs="$CHORUS/architect" ;;
-      Kade) dirs="$CHORUS/engineer $REPO/src" ;;
+      Wren) dirs="$CHORUS/roles/wren $REPO/public/gathering-docs" ;;
+      Silas) dirs="$CHORUS/roles/silas" ;;
+      Kade) dirs="$CHORUS/roles/kade $REPO/src" ;;
     esac
     for dir in $dirs; do
       [ -d "$dir" ] || continue

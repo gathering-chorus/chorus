@@ -15,7 +15,7 @@ STATE_FILE="$HOME/.chorus/standards-surface-checksums.json"
 LOG_TAG="standards-surface-cron"
 
 # Sources to monitor for changes
-DECISIONS_MD="${CHORUS_ROOT}/platform/roles/product-manager/decisions.md"
+DECISIONS_MD="${CHORUS_ROOT}/roles/wren/decisions.md"
 HOOKS_DIR="${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks"
 PULSE_LOG="$HOME/Library/Logs/Gathering/hooks.log"
 MEMORY_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory"

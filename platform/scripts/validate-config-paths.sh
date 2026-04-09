@@ -66,8 +66,8 @@ fi
 # 4. Check role settings.local.json hook paths
 echo ""
 echo "--- Path resolution check (role settings) ---"
-for role_dir in architect engineer product-manager; do
-  settings="${CHORUS_ROOT}/platform/roles/$role_dir/.claude/settings.local.json"
+for role_dir in silas kade wren; do
+  settings="${CHORUS_ROOT}/roles/$role_dir/.claude/settings.local.json"
   if [ -f "$settings" ]; then
     role_paths=$(grep -oE '/Users/jeffbridwell/[^ "]+' "$settings" 2>/dev/null || true)
     for p in $role_paths; do

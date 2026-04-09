@@ -18,9 +18,9 @@ mkdir -p "$CANARY_DIR"
 
 for role in "${ROLES[@]}"; do
   case "$role" in
-    wren)  pattern="product-manager" ;;
-    silas) pattern="architect" ;;
-    kade)  pattern="engineer" ;;
+    wren)  pattern="wren" ;;
+    silas) pattern="silas" ;;
+    kade)  pattern="kade" ;;
   esac
 
   # Find matching windows — return count + the actual window name that matched
@@ -60,16 +60,16 @@ end tell" 2>&1)
     wrong_target=false
     case "$role" in
       wren)
-        echo "$match_name" | grep -q "architect" && wrong_target=true
-        echo "$match_name" | grep -q "engineer" && wrong_target=true
+        echo "$match_name" | grep -q "silas" && wrong_target=true
+        echo "$match_name" | grep -q "kade" && wrong_target=true
         ;;
       silas)
-        echo "$match_name" | grep -q "product-manager" && wrong_target=true
-        echo "$match_name" | grep -q "engineer" && wrong_target=true
+        echo "$match_name" | grep -q "wren" && wrong_target=true
+        echo "$match_name" | grep -q "kade" && wrong_target=true
         ;;
       kade)
-        echo "$match_name" | grep -q "product-manager" && wrong_target=true
-        echo "$match_name" | grep -q "architect" && wrong_target=true
+        echo "$match_name" | grep -q "wren" && wrong_target=true
+        echo "$match_name" | grep -q "silas" && wrong_target=true
         ;;
     esac
 
