@@ -4,6 +4,14 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-04-09 — Silas (reboot)
+
+- [06:22] [Silas] → #1837 deep ops review: fixed alert-runner.sh path bug, moved rules to proving/domains/alerts/, updated RUNBOOK.md, fixed infra-alert LaunchAgent → Jeff accepted
+- [06:22] [Silas] → Bedroom Mac triage: diagnosed sluggishness, fixed SSH auth (wrong username) → Jeff
+- [06:55] [Silas] → Created #1839 (LaunchAgent plist fixes) and #1841 (platform/ decomposition) → Wren, Kade
+- [07:01] [Silas] → Chat with Wren: role-config-manifest.md stays at root → Wren
+- [07:13] [Silas] → Arch review for Kade #1838: in-memory buffer approved → Kade
+
 ## 2026-03-30 — Kade (reboot)
 
 - [17:02] [Kade] → Pulled #1877 doc-catalog as live service. Built GET /api/doc-catalog (scans 5→10 dirs), POST /api/doc-catalog/add, rewrote static HTML to API client. 12 tests. → Jeff accepted
