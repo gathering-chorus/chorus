@@ -1,0 +1,2 @@
+set -x
+! CANONICAL="/Users/jeffbridwell/CascadeProjects/chorus/skills"; for dir in "$HOME/.claude/skills" "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/.claude/skills" "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas/.claude/skills" "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade/.claude/skills"; do for name in chorus gemba gemba-tick golfball; do t="$dir/$name"; if [ -d "$t" ] && [ ! -L "$t" ]; then rm -rf "$t" && ln -s "$CANONICAL/$name/" "$t" && echo "fixed: $t"; fi; done; done
