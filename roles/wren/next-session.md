@@ -1,55 +1,38 @@
 # Wren — Next Session
 
-## What Happened (April 8, 2026 — afternoon)
+## What Happened (April 8-9, 2026)
 
-Namespace restructure session. Outcomes over output. Jeff slowed us down and it worked.
+Two sessions. First shipped #1831 (attention architecture doc). Second was skills migration (#1835) — got the files right but demoed poorly. Jeff called out announce-and-rubber-stamp pattern.
 
 ### Shipped
-- **#1819** — Wren moved to roles/wren, wren-old and product-manager symlink deleted
-- **#1822** — Cards moved to directing/products/cards (paired w/ Kade, 25 min)
-- **#1825** — Gemba skill moved to skills/gemba, coherence fix (start/tick read same sources), dynamic session dir lookup, Boston timezone fix
-- **#1824** — Silas scripts moved out of roles/silas to building/products/convergence/ and platform/scripts/ (paired w/ Silas, 10 min)
-- **#1827** — Pipeline manifest at building/products/convergence/PIPELINE_MANIFEST.md (Kade)
-- **#1833** — Demo skill moved to skills/demo, Rust hook paths updated (paired w/ Kade, 5 min)
-- Kade also shipped #1821 (his own role move) and #1815 (gate skills)
-- platform/roles/ deleted (empty after all moves)
-- Gemba epoch footgun fixed by Kade (auto-compute, no stale args)
-- Briefs sent to Silas and Kade for their role moves
+- **#1831** — Attention Architecture doc: time+attention→awareness formula (Section 0), Three Laws of Agent Attention (Asimov framing), navigator ceremony + UTC anti-patterns (Section 5b), Mik Kersten output-to-outcome reference, 1in margins, implementation checklist updated
+- Retagged 39 cards from sequence:framework into 6 sequences: infrastructure, gates, quality, spine, ops, coordination
+- Fixed demo skill symlink for Silas mid-session
+- Reviewed Silas #1837 ops review
 
-### Key Insights from Jeff
-- "hides complexity" — no symlinks for aliasing, ever
-- "we must be delete then you have one room" — one canonical location
-- "we have seen everything as infra" — Silas becomes bottleneck when everything is labeled infrastructure
-- "time + attention → awareness" — if either input is off, nothing downstream works
-- "the controlling loop on the pair never starts" — navigator ceremony replaces the actual loop
-- "that is engagement and focus" — the loop IS the attention
-- "watching the outcomes not the output" — Mik Kersten resonance
-- "like cleaning your room" — one thing at a time, verify, next
-- "magical thinking to think you all could do this in one giant run" — each move is a design decision
+### In Progress — NOT VERIFIED
+- **#1835** — 32 skills copied to chorus/skills/, symlinked to all 3 roles, fw:Skill class + ownedBy triples added to framework.ttl. Fixed 30 circular symlinks from sloppy bulk copy. **Demo broke. Skills load at session start so couldn't verify in-session.**
 
 ### Cards Created
-- #1823 — Fix git-queue.sh .git-commit.meta dirty file loop (Silas, P2)
-- #1826 — Shared timestamp utility (Wren, P2)
-- #1829 — Read: Output to Outcome by Mik Kersten (Jeff, P3)
-- #1830 — Revise pair skill — navigator loop starts immediately (Wren, P1)
-- #1831 — Update Attention Architecture doc (Wren, P2)
-- #1832 — Fix 40 broken doc-catalog links (Kade, P1)
+- #1835 — Skills migration sequence (Wren, P2)
+- #1836 — Periodic signal review — quarterly audit (Wren, P2)
+- #1840 — Review TEAM_PROTOCOL.md + team-architecture.md overlap (Wren, P2)
 
-### Namespace State
-- `roles/` — wren ✓, kade ✓ (Kade did his own), silas has #1820 in WIP
-- `skills/` — gemba ✓, gemba-tick ✓, demo ✓ — 31 remain in platform/skills/
-- `directing/products/cards/` ✓
-- `building/products/convergence/` ✓
-- `platform/roles/` deleted
-- `platform/skills/demo` deleted, `platform/skills/gemba*` deleted
+### Jeff Insights
+- Three Laws of Agent Attention: (1) don't waste Jeff's attention, (2) obey direction unless it wastes attention, (3) protect session unless it conflicts with 1 or 2
+- Skill ownership gap proved live — demo broke because nobody owned the migration path
+- "That was a really lame demo" — announcing AC items as done without verifying is the 122K photos pattern
+- Rahul Garg feedback flywheel article validates our signal capture approach
 
-## Pickup
-- Move remaining 31 skills from platform/skills/ to skills/ (research blast radius first)
-- #1830 — Revise pair skill (P1)
-- #1831 — Update Attention Architecture doc
-- #1832 — 40 broken doc-catalog links (Kade)
-- Kade's roles/kade/scripts/ needs same treatment as Silas's (move code out of role dir)
-- Continue namespace design with Jeff — what else moves?
+## Critical Pickup
+1. **FIRST: Verify #1835.** Run /demo. If it works, verify 2-3 more skills. Only then accept. Do not rubber-stamp.
+2. #1807 — Pilot spine event contract (parked, no progress)
+3. #1840 — TEAM_PROTOCOL + team-architecture review
+4. Silas #1837 and Kade #1838 ready for Jeff accept
+
+## Memories Saved
+- Three Laws of Agent Attention (project)
+- Skill ownership gap (project)
 
 ## Session Start
 **Start from `/Users/jeffbridwell/CascadeProjects/chorus/roles/wren`**
