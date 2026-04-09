@@ -4,6 +4,12 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-04-09 — Kade (reboot)
+
+- [07:25] [Kade] → Researched #1800, updated card: renamed from "board test isolation" to "Isolate cards integration tests from live Vikunja", narrowed AC to actual problem scope → Jeff
+- [07:47] [Kade] → Gemba on Silas #1839 (LaunchAgent path fix). Verified cards product has no stale paths, flagged daily-review-quality.sh for verification → Silas confirmed
+- [07:49] [Kade] → Chat with Wren: #1834 ownership transferred to Wren (demo gate is product coordination). Pointed her to done handler in cli.ts → sdk.ts acceptCard() → Wren
+
 ## 2026-04-09 — Silas (reboot)
 
 - [06:22] [Silas] → #1837 deep ops review: fixed alert-runner.sh path bug, moved rules to proving/domains/alerts/, updated RUNBOOK.md, fixed infra-alert LaunchAgent → Jeff accepted

@@ -1,28 +1,22 @@
 # Kade — Next Session
 
 ## Status
-#1838 shipped (seed split-message race fix). Test suite clean — 205 unit suites, 18 integration, 10 E2E all green.
+No code shipped this session. Research and coordination only.
 
 ## This session (2026-04-09)
-- **#1838** — Fixed seed split-message race. Apple Messages splits "link #kade" into two SMS segments; hashtag can arrive first. Added in-memory pendingHashtags buffer to SeedHandler. Prior fixes (4582bfa, ec97859) relied on persisted captures; #1937 AC3 broke that. Fixed false-green AC4 test. 5 new tests, 240 seed tests green.
-- Fixed 6 clearing test paths broken by #2328 repo restructure (directing/ → chorus/directing/)
-- Fixed quality-scanner CHORUS_ROOT (CascadeProjects/ → CascadeProjects/chorus/)
-- Bumped drive-analysis e2e timeout 15s → 30s (Fuseki latency flake)
-- Restarted sexuality-player on Bedroom via launchctl kickstart, installed LaunchDaemon for headless reboots
-- Reviewed Silas's #1837 — flagged 2 broken test paths in alert-runner tests, both fixed
-- Walked Jeff through seed pipeline architecture end-to-end
+- Researched #1800 (board test isolation) — card was stale. Renamed to "Isolate cards integration tests from live Vikunja", rewrote AC to match current state: 260/297 tests already isolated via jest.mock(), only integration.test.ts and board-validation.test.ts hit live Vikunja + SQLite contention
+- Gemba on Silas #1839 — verified cards product has no stale LaunchAgent paths, confirmed daily-review-quality.sh exists at expected path
+- Chat with Wren — #1834 (wire demo gate to cards done) ownership transferred to Wren. Demo gate is product coordination tooling, her domain. Pointed her to done handler in cli.ts → acceptCard() in sdk.ts
 
 ## Pick up
-- **#1834** — Wire demo gate to `cards done`. P1 fix. No Done without demo evidence.
-- **#1835** — Wren migrated 32 skills to chorus/skills/. I own /lc, /lm, /look, /ot, /share. Restart will load new paths.
-- Backstage link seed (sms-1775730500614-p9fjps) routed to Wren pre-fix — Jeff may want re-routed to Kade
+- **#1834** — Now Wren's card. She'll brief me on the integration point in cards CLI
+- **#1800** — Isolate cards integration tests. AC updated, ready to pull
+- **#1835** — Skills migration. I own /lc, /lm, /look, /ot, /share. Restart loads new paths
 
 ## Next card
-- #1834 — Wire demo gate to cards done (P1)
-- #1800 — Board test isolation (P1)
+- #1800 — Isolate cards integration tests (P1, updated AC)
 - #1619 — Provenance stamps (Next)
 
-## Key decisions
-- Seed hashtag buffer is in-memory only (not SPARQL) — persisting caused empty briefs per #1120
-- 120s TTL matches existing correlation window
-- Demo gate must fire on `cards done`, not just on `/demo` entry
+## Notes
+- chat-tick skill doesn't exist — don't use it in cron loops. Just read chat directly
+- cards CLI lives at chorus/directing/products/cards/ (not board-client, not scripts/cards)
