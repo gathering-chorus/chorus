@@ -63,28 +63,95 @@ agent-state.sh restart chorus-hooks
 
 ---
 
+## Alerting Pipeline
+
+### How It Works
+Three layers: YAML rules → alert-runner.sh → dual delivery (Bridge POST + terminal nudge).
+
+**Alert rules:** `chorus/proving/domains/alerts/*.yml` (8 rules: app-down, daily-review-missing, hook-server-down, nudge-stale, seed-write-failure, startup-sync-failure, synthetic-test, tunnel-down)
+
+**Execution:**
+- `com.chorus.alert-runner` — runs every 60s, evaluates YAML rules
+- `com.gathering.infra-alert` — runs every 300s, infrastructure health checks
+- `com.chorus.deep-health` — runs every 300s, subprocess liveness
+
+**Delivery (DEC-107 — both paths fire every time):**
+1. POST to Bridge API (localhost:3470) — persisted
+2. Nudge to owning role's terminal — immediate
+
+**Verification:**
+```bash
+# Check alert runner log for recent SKIP/OK/FIRE lines
+tail -20 ~/Library/Logs/Chorus/alert-runner.log
+
+# Run a single rule manually
+bash chorus/proving/scripts/alert-runner.sh --rule synthetic-test
+```
+
+**Common failure:** Path drift after namespace moves. If alert-runner logs show "started" + "complete" with no rule processing between, check `ALERT_DIR` in `proving/scripts/alert-runner.sh`.
+
+---
+
 ## Service Inventory
 
-### Native LaunchAgents (managed by agent-state.sh)
-- `com.chorus.hooks` — Hook server (Rust binary, /tmp/chorus-hooks.sock)
+### Library Mac (192.168.86.36)
+
+#### Native LaunchAgents
+All managed via `launchctl`. Plists in `~/Library/LaunchAgents/`.
+
+**Core infrastructure:**
 - `com.chorus.api` — Chorus API (localhost:3340)
-- `com.chorus.context-cache` — Daily context cache refresh
-- All `com.chorus.*` and `com.gathering.*` agents
+- `com.chorus.hooks` — Hook server (Rust binary, /tmp/chorus-hooks.sock)
+- `com.chorus.alert-runner` — Alert rule evaluation (60s)
+- `com.chorus.alert-notifier` — Webhook receiver (port 9095), macOS notifications
+- `com.chorus.session-watcher` — Session lifecycle
+- `com.chorus.inject-watcher` — Terminal injection
+- `com.chorus.bridge-subscriber-{silas,wren,kade}` — Message bridge per role
 
-### App Services (managed by app-state.sh)
-- Gathering app (localhost:3000)
-- Fuseki (localhost:3030)
-- NiFi, Loki, Grafana
+**Observability:**
+- `com.gathering.grafana` — Dashboards (localhost:3100)
+- `com.gathering.loki` — Log aggregation (localhost:3102)
+- `com.gathering.prometheus` — Metrics (localhost:9090)
+- `com.gathering.promtail` — Log shipping
+- `com.gathering.alertmanager` — Prometheus alert routing
+- `com.gathering.node-exporter` — System metrics (port 9101)
+- `com.gathering.blackbox-exporter` — Endpoint probing
 
-### Key Ports
+**App services:**
+- `com.gathering.app` — Gathering app (localhost:3000)
+- `com.gathering.fuseki` — SPARQL store (localhost:3030)
+- `com.gathering.mysql` — MySQL (localhost:3306)
+- `com.gathering.vikunja` — Board (localhost:3456)
+- `com.gathering.messaging` — Pulse messaging
+- `com.gathering.wordpress` — WordPress
+
+### Bedroom Mac (192.168.86.242)
+
+SSH: `ssh 192.168.86.242` (do NOT use `jeff@` — config supplies username)
+
+**Services:**
+- `com.gathering.promtail` — Log shipping to Library Loki
+- `com.gathering.ollama` — Local AI
+- `com.gathering.images-api-server` — Photos API
+- `com.gathering.images-api-video` — Video processing
+- `com.gathering.node-exporter` — System metrics
+- `com.gathering.navidrome` — Music server
+
+No Docker on Bedroom. All services via LaunchAgents.
+
+### Key Ports (Library)
 | Port | Service | Health Check |
 |------|---------|-------------|
 | 3000 | Gathering app | `curl -s localhost:3000/health` |
 | 3030 | Fuseki | `curl -s localhost:3030/$/ping` |
 | 3100 | Grafana | `curl -s localhost:3100/api/health` |
 | 3102 | Loki | `curl -s localhost:3102/ready` |
-| 3340 | Chorus API | `curl -s localhost:3340/api/chorus/health` |
+| 3340 | Chorus API | `curl -s localhost:3340/health` |
 | 3456 | Vikunja | `curl -s localhost:3456/api/v1/info` |
+| 3470 | Bridge | `curl -s localhost:3470/health` |
+| 9090 | Prometheus | `curl -s localhost:9090/-/healthy` |
+| 9095 | Alert notifier | webhook receiver |
+| 9101 | Node exporter | `curl -s localhost:9101/metrics` |
 
 ---
 
@@ -111,13 +178,71 @@ agent-state.sh restart chorus-hooks
 
 ---
 
+## LaunchAgent Health
+
+### Validate all plists point to existing scripts
+```bash
+for plist in ~/Library/LaunchAgents/com.{gathering,chorus}*.plist; do
+  label=$(basename "$plist" .plist)
+  script=$(/usr/libexec/PlistBuddy -c "Print :ProgramArguments:1" "$plist" 2>/dev/null)
+  if [[ -n "$script" ]] && [[ "$script" == /* ]] && [[ ! -f "$script" ]]; then
+    echo "MISSING  $label → $script"
+  fi
+done
+```
+
+After any namespace move or script relocation, run this. Agents with broken paths will exit 127 on next load.
+
+### Reload an agent after plist change
+```bash
+launchctl unload ~/Library/LaunchAgents/<label>.plist
+launchctl load ~/Library/LaunchAgents/<label>.plist
+```
+
+### Check agent status
+```bash
+launchctl list | grep <label>
+# PID  ExitCode  Label
+# -    127       = command not found (broken path)
+# -    0         = ran successfully, not currently running
+# PID  0         = running
+```
+
+---
+
+## Log Locations
+
+| Log | Path |
+|-----|------|
+| Alert runner | `~/Library/Logs/Chorus/alert-runner.log` |
+| Alert delivery test | `~/Library/Logs/Chorus/alert-delivery-test.log` |
+| Chorus (structured) | `~/Library/Logs/Chorus/chorus.log` |
+| Infra health | `~/Library/Logs/Gathering/infra-alert.log` |
+| Alert notifier | `/tmp/alert-notifier.log` |
+| Deep health | `~/Library/Logs/Chorus/deep-health.log` |
+
+For application logs, use Loki (localhost:3102) via Grafana (localhost:3100), not `docker logs`.
+
+---
+
 ## Daily Health Check
 
 Run at session start, every session:
 ```bash
-agent-state.sh health          # All agents running?
-bash ~/.chorus/scripts/check-seeds.sh  # Pipeline healthy?
-curl -s localhost:3340/api/chorus/health   # Chorus API up?
+# All agents running?
+launchctl list | grep -E 'chorus|gathering' | grep -v '\t0\t' | grep -v 'PID'
+
+# Key endpoints up?
+for port in 3000 3030 3100 3102 3340 3456; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$port/health 2>/dev/null)
+  echo "localhost:$port → $code"
+done
+
+# Pipeline healthy?
+bash ~/.chorus/scripts/check-seeds.sh
+
+# Alerts firing?
+tail -5 ~/Library/Logs/Chorus/alert-runner.log
 ```
 
 If any of these fail, that's the first card you work on. Not whatever was planned.
