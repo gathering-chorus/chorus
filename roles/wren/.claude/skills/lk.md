@@ -1,1 +1,0 @@
-/Users/jeffbridwell/CascadeProjects/chorus/platform/skills/lk.md

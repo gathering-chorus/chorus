@@ -339,3 +339,7 @@ fw:skill-lm        a fw:Skill ; rdfs:label "/lm — Look at me"                 
 fw:skill-look      a fw:Skill ; rdfs:label "/look — Capture Jeff screen"      ; fw:ownedBy chorus:kade .
 fw:skill-ot        a fw:Skill ; rdfs:label "/ot — Open in tab"                ; fw:ownedBy chorus:kade .
 fw:skill-share     a fw:Skill ; rdfs:label "/share — Export as PDF+PNG"       ; fw:ownedBy chorus:kade .
+fw:skill-lk        a fw:Skill ; rdfs:label "/lk — Look at Kade terminal"     ; fw:ownedBy chorus:wren .
+fw:skill-ls        a fw:Skill ; rdfs:label "/ls — Look at Silas terminal"    ; fw:ownedBy chorus:wren .
+fw:skill-lw        a fw:Skill ; rdfs:label "/lw — Look at Wren terminal"     ; fw:ownedBy chorus:wren .
+fw:skill-retro     a fw:Skill ; rdfs:label "/retro — Team retrospective"     ; fw:ownedBy chorus:wren .
