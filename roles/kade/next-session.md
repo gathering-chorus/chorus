@@ -1,23 +1,21 @@
 # Kade — Next Session
 
 ## Status
-#1828 shipped (gemba epoch fix), #1827 shipped (pipeline manifest). #1833 shipped (demo gate paths). #1834 created (wire demo gate to cards done).
+#1838 shipped (seed split-message race fix). Test suite clean — 205 unit suites, 18 integration, 10 E2E all green.
 
-## This session (2026-04-08)
-- **#1828** — Fixed gemba epoch footgun. gemba-tick.sh computes own start time, no agent arg needed. Skill prompts updated.
-- **#1827** — Pipeline script manifest at building/products/convergence/PIPELINE_MANIFEST.md. 30+ scripts inventoried. Silas feedback incorporated (Navidrome plist path, fuseki-maintenance run mode).
-- **#1833** — Fixed 3 Rust demo gate paths (platform/skills/demo/ → skills/demo/). Cargo build green. Fixed stale wren briefs path in bats test.
-- Swept 311 stale briefs from inbox to briefs-archive.
-- Removed old engineer/briefs/ directory (legacy path, workflow engine now fixed by Silas).
-- Gemba'd Silas for ~8 min — watched him ship #1824 and fix legacy brief routing.
-- Chat with Silas re commit blocker — 755 dirty files from briefs sweep blocking his rebase. Committed to unblock.
-- Found stale `platform/roles/kade` references in 6 files, `platform/cards` in 3 files.
+## This session (2026-04-09)
+- **#1838** — Fixed seed split-message race. Apple Messages splits "link #kade" into two SMS segments; hashtag can arrive first. Added in-memory pendingHashtags buffer to SeedHandler. Prior fixes (4582bfa, ec97859) relied on persisted captures; #1937 AC3 broke that. Fixed false-green AC4 test. 5 new tests, 240 seed tests green.
+- Fixed 6 clearing test paths broken by #2328 repo restructure (directing/ → chorus/directing/)
+- Fixed quality-scanner CHORUS_ROOT (CascadeProjects/ → CascadeProjects/chorus/)
+- Bumped drive-analysis e2e timeout 15s → 30s (Fuseki latency flake)
+- Restarted sexuality-player on Bedroom via launchctl kickstart, installed LaunchDaemon for headless reboots
+- Reviewed Silas's #1837 — flagged 2 broken test paths in alert-runner tests, both fixed
+- Walked Jeff through seed pipeline architecture end-to-end
 
 ## Pick up
-- **#1834** — Wire demo gate to `cards done`. P1 fix. No Done without demo evidence. Created but not started.
-- **Brief routing still has stale paths** — `handoff_logger.rs:56` still checks `engineer/briefs/` as fallback. Low priority.
-- **7/9 bats test failures in gates.bats** — hardcoded card IDs hitting live board. Known brittle, not blocking.
-- **roles/kade/scripts/** — Python scripts still here (photo-pipeline.py, etc.). Not in manifest scope but may need moving to building/products/ eventually.
+- **#1834** — Wire demo gate to `cards done`. P1 fix. No Done without demo evidence.
+- **#1835** — Wren migrated 32 skills to chorus/skills/. I own /lc, /lm, /look, /ot, /share. Restart will load new paths.
+- Backstage link seed (sms-1775730500614-p9fjps) routed to Wren pre-fix — Jeff may want re-routed to Kade
 
 ## Next card
 - #1834 — Wire demo gate to cards done (P1)
@@ -25,7 +23,6 @@
 - #1619 — Provenance stamps (Next)
 
 ## Key decisions
-- Demo gate must fire on `cards done`, not just on `/demo` entry — the exit is what matters
-- Jeff's insight: roles are addicted to closing cards (AI dopamine hit). Demo is the thing that makes the close mean something.
-- Pipeline manifest lives next to the scripts at building/products/convergence/
-- No symlinks for dead folders — delete the old dir, update the references
+- Seed hashtag buffer is in-memory only (not SPARQL) — persisting caused empty briefs per #1120
+- 120s TTL matches existing correlation window
+- Demo gate must fire on `cards done`, not just on `/demo` entry
