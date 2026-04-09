@@ -68,6 +68,11 @@ fw:API a owl:Class ;
     rdfs:label "API" ;
     rdfs:comment "An HTTP endpoint or CLI verb exposed by a service. The contract surface — what other services and roles consume." .
 
+# --- Skill: slash-command capability available to roles ---
+fw:Skill a owl:Class ;
+    rdfs:label "Skill" ;
+    rdfs:comment "A slash-command skill (/demo, /pair, /pull, etc.). Lives in chorus/skills/, symlinked to each role's .claude/skills/. Owner is responsible for lifecycle: creation, migration, verification after moves." .
+
 # --- Artifact: reuse chorus:ArtifactType ---
 fw:Artifact a owl:Class ;
     owl:equivalentClass chorus:ArtifactType ;
@@ -85,7 +90,7 @@ fw:Artifact a owl:Class ;
 fw:ownedBy a owl:ObjectProperty ;
     rdfs:label "owned by" ;
     rdfs:comment "The role responsible for this entity. Silas owns infrastructure services, Kade owns app services, Wren owns coordination." ;
-    rdfs:domain [ a owl:Class ; owl:unionOf (fw:Service fw:Domain fw:Gate fw:API) ] ;
+    rdfs:domain [ a owl:Class ; owl:unionOf (fw:Service fw:Domain fw:Gate fw:API fw:Skill) ] ;
     rdfs:range fw:Role .
 
 # --- dependsOn: service dependencies ---
@@ -289,3 +294,48 @@ fw:api-cards a fw:API ;
 
 <urn:borg:service/gathering-app> fw:providesAPI fw:api-photos, fw:api-music .
 <urn:borg:service/chorus-api> fw:providesAPI fw:api-chorus-health, fw:api-seeds, fw:api-cards .
+
+# =============================================================================
+# SKILL INSTANCES — canonical in chorus/skills/, symlinked to all roles
+# =============================================================================
+# Owner = role responsible for skill lifecycle (creation, migration, verification).
+# Added 2026-04-09 after demo skill broke due to missing ownership (#1835).
+# =============================================================================
+
+# --- Wren-owned: coordination, product, board ops ---
+fw:skill-ab        a fw:Skill ; rdfs:label "/ab — Analyze board"              ; fw:ownedBy chorus:wren .
+fw:skill-acp       a fw:Skill ; rdfs:label "/acp — Accept commit push"        ; fw:ownedBy chorus:wren .
+fw:skill-board-sweep a fw:Skill ; rdfs:label "/board-sweep — Board coherence"  ; fw:ownedBy chorus:wren .
+fw:skill-chat      a fw:Skill ; rdfs:label "/chat — Two-role chat"            ; fw:ownedBy chorus:wren .
+fw:skill-chorus    a fw:Skill ; rdfs:label "/chorus — Query shared index"     ; fw:ownedBy chorus:wren .
+fw:skill-clearing  a fw:Skill ; rdfs:label "/clearing — Multi-role alignment" ; fw:ownedBy chorus:wren .
+fw:skill-cs        a fw:Skill ; rdfs:label "/cs — Check seeds"                ; fw:ownedBy chorus:wren .
+fw:skill-demo      a fw:Skill ; rdfs:label "/demo — Demo gate"                ; fw:ownedBy chorus:wren .
+fw:skill-flow      a fw:Skill ; rdfs:label "/flow — Board sweep + proposal"   ; fw:ownedBy chorus:wren .
+fw:skill-golfball  a fw:Skill ; rdfs:label "/golfball — Pre-sequence scan"    ; fw:ownedBy chorus:wren .
+fw:skill-interrupt a fw:Skill ; rdfs:label "/interrupt — Break into session"   ; fw:ownedBy chorus:wren .
+fw:skill-jdi       a fw:Skill ; rdfs:label "/jdi — Just do it"                ; fw:ownedBy chorus:wren .
+fw:skill-listen    a fw:Skill ; rdfs:label "/listen — Voice input"            ; fw:ownedBy chorus:wren .
+fw:skill-nudge     a fw:Skill ; rdfs:label "/nudge — Send message to role"    ; fw:ownedBy chorus:wren .
+fw:skill-pair      a fw:Skill ; rdfs:label "/pair — Strong-style pairing"     ; fw:ownedBy chorus:wren .
+fw:skill-pipeline  a fw:Skill ; rdfs:label "/pipeline — Multi-card pipeline"  ; fw:ownedBy chorus:wren .
+fw:skill-pull      a fw:Skill ; rdfs:label "/pull — Pull card to WIP"         ; fw:ownedBy chorus:wren .
+fw:skill-reboot    a fw:Skill ; rdfs:label "/reboot — Save and exit cleanly"  ; fw:ownedBy chorus:wren .
+fw:skill-sb        a fw:Skill ; rdfs:label "/sb — Scan board"                 ; fw:ownedBy chorus:wren .
+fw:skill-simplify  a fw:Skill ; rdfs:label "/simplify — Review changed code"  ; fw:ownedBy chorus:wren .
+fw:skill-werk      a fw:Skill ; rdfs:label "/werk — Work state dashboard"     ; fw:ownedBy chorus:wren .
+
+# --- Silas-owned: observation, infrastructure, gates ---
+fw:skill-gate-arch a fw:Skill ; rdfs:label "/gate-arch — Architecture gate"   ; fw:ownedBy chorus:silas .
+fw:skill-gate-code a fw:Skill ; rdfs:label "/gate-code — Code gate"           ; fw:ownedBy chorus:silas .
+fw:skill-gate-ops  a fw:Skill ; rdfs:label "/gate-ops — Operations gate"      ; fw:ownedBy chorus:silas .
+fw:skill-gate-quality a fw:Skill ; rdfs:label "/gate-quality — Quality gate"  ; fw:ownedBy chorus:silas .
+fw:skill-gemba     a fw:Skill ; rdfs:label "/gemba — Live observation"        ; fw:ownedBy chorus:silas .
+fw:skill-gemba-tick a fw:Skill ; rdfs:label "/gemba-tick — Observation tick"  ; fw:ownedBy chorus:silas .
+
+# --- Kade-owned: presentation, screen interaction ---
+fw:skill-lc        a fw:Skill ; rdfs:label "/lc — Look at Chrome"             ; fw:ownedBy chorus:kade .
+fw:skill-lm        a fw:Skill ; rdfs:label "/lm — Look at me"                 ; fw:ownedBy chorus:kade .
+fw:skill-look      a fw:Skill ; rdfs:label "/look — Capture Jeff screen"      ; fw:ownedBy chorus:kade .
+fw:skill-ot        a fw:Skill ; rdfs:label "/ot — Open in tab"                ; fw:ownedBy chorus:kade .
+fw:skill-share     a fw:Skill ; rdfs:label "/share — Export as PDF+PNG"       ; fw:ownedBy chorus:kade .
