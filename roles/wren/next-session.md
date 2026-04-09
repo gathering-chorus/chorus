@@ -1,38 +1,29 @@
 # Wren — Next Session
 
-## What Happened (April 8-9, 2026)
-
-Two sessions. First shipped #1831 (attention architecture doc). Second was skills migration (#1835) — got the files right but demoed poorly. Jeff called out announce-and-rubber-stamp pattern.
+## What Happened (April 9, 2026)
 
 ### Shipped
-- **#1831** — Attention Architecture doc: time+attention→awareness formula (Section 0), Three Laws of Agent Attention (Asimov framing), navigator ceremony + UTC anti-patterns (Section 5b), Mik Kersten output-to-outcome reference, 1in margins, implementation checklist updated
-- Retagged 39 cards from sequence:framework into 6 sequences: infrastructure, gates, quality, spine, ops, coordination
-- Fixed demo skill symlink for Silas mid-session
-- Reviewed Silas #1837 ops review
+- **#1835** — Skills migration complete. 36 skills in chorus/skills/, all 4 locations (Wren/Silas/Kade/Global) symlinked clean. Zero stale, zero broken. Ownership doc at skills/SKILLS.md. 4 orphan skills migrated (lk/ls/lw/retro). Paired with Silas. 6/6 bats tests green.
 
-### In Progress — NOT VERIFIED
-- **#1835** — 32 skills copied to chorus/skills/, symlinked to all 3 roles, fw:Skill class + ownedBy triples added to framework.ttl. Fixed 30 circular symlinks from sloppy bulk copy. **Demo broke. Skills load at session start so couldn't verify in-session.**
+### In Progress
+- **#1843** (P1 fix) — Fixed product-manager→wren brief path in demo + clearing skills. Silas swept 12 scripts (6/6 tests green). Remaining: Jeff needs to `rm -rf roles/product-manager/`, then commit + verify brief path works end-to-end.
+- **#1834** (P1 fix) — Took ownership from Kade. Wire demo gate to `cards done`. Not started. Kade advising on CLI integration — check chat kade-wren-1775740137 for his reply.
 
 ### Cards Created
-- #1835 — Skills migration sequence (Wren, P2)
-- #1836 — Periodic signal review — quarterly audit (Wren, P2)
-- #1840 — Review TEAM_PROTOCOL.md + team-architecture.md overlap (Wren, P2)
+- #1842 — Portable Chorus spike (friends want to run it)
+- #1843 — Fix stale product-manager brief path
 
 ### Jeff Insights
-- Three Laws of Agent Attention: (1) don't waste Jeff's attention, (2) obey direction unless it wastes attention, (3) protect session unless it conflicts with 1 or 2
-- Skill ownership gap proved live — demo broke because nobody owned the migration path
-- "That was a really lame demo" — announcing AC items as done without verifying is the 122K photos pattern
-- Rahul Garg feedback flywheel article validates our signal capture approach
+- Friends want to run Chorus on their own machines — real pull signal
+- "Chorus is the protocol, Gathering is yours" — key product distinction
+- Personalization layer needed: roles, domains, tone adapt to a different human
+- `chorus init` as the forcing function for portability
 
 ## Critical Pickup
-1. **FIRST: Verify #1835.** Run /demo. If it works, verify 2-3 more skills. Only then accept. Do not rubber-stamp.
-2. #1807 — Pilot spine event contract (parked, no progress)
-3. #1840 — TEAM_PROTOCOL + team-architecture review
-4. Silas #1837 and Kade #1838 ready for Jeff accept
-
-## Memories Saved
-- Three Laws of Agent Attention (project)
-- Skill ownership gap (project)
+1. **Finish #1843** — get Jeff to rm the stale dir, commit, verify, ship
+2. **Read Kade's chat reply** on #1834 — where does the done handler live?
+3. **Demo #1839** for Jeff — Silas's LaunchAgent fixes, 19 plists
+4. Push remaining commits (gitignore change at 3774dde2)
 
 ## Session Start
 **Start from `/Users/jeffbridwell/CascadeProjects/chorus/roles/wren`**

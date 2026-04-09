@@ -233,7 +233,7 @@ AC_TOTAL=$(echo "$AC_LINES" | grep -c '^\s*- \[' 2>/dev/null | tr -d '\n')
 AC_CHECKED=$(echo "$AC_LINES" | grep -c '^\s*- \[x\]' 2>/dev/null | tr -d '\n')
 : "${AC_TOTAL:=0}" "${AC_CHECKED:=0}"
 
-cat > /Users/jeffbridwell/CascadeProjects/product-manager/briefs/$(date +%Y-%m-%d)-demo-${CARD_ID}.md << EOF
+cat > /Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs/$(date +%Y-%m-%d)-demo-${CARD_ID}.md << EOF
 # Demo ready: #${CARD_ID} — <title from board-ts>
 
 **Builder:** <owner from board-ts>
@@ -254,7 +254,7 @@ EOF
 
 **After the demo completes (Step 5)**, append to the existing brief:
 ```bash
-cat >> /Users/jeffbridwell/CascadeProjects/product-manager/briefs/$(date +%Y-%m-%d)-demo-${CARD_ID}.md << EOF
+cat >> /Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs/$(date +%Y-%m-%d)-demo-${CARD_ID}.md << EOF
 
 ## Demo outcome
 - **What Jeff saw:** <what was shown>

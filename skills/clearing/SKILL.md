@@ -19,7 +19,7 @@ Assemble Chorus context by running these in parallel:
 bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts list 2>/dev/null | head -30
 
 # Recent decisions (last 10)
-grep -E '^## DEC-' /Users/jeffbridwell/CascadeProjects/product-manager/decisions.md | tail -10
+grep -E '^## DEC-' /Users/jeffbridwell/CascadeProjects/chorus/roles/wren/decisions.md | tail -10
 
 # Recent team activity
 bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-query.sh reconcile 2>/dev/null | head -60
