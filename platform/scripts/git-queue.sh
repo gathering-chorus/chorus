@@ -197,6 +197,51 @@ do_commit() {
   return $exit_code
 }
 
+# --- Push with dirty-tree handling (#1780) ---
+# Prior work: two stash-drop incidents lost work when roles manually stashed.
+# This is NOT manual stash — it's atomic stash-rebase-pop inside the lock.
+# The lock prevents concurrent push/commit. Stash always pops immediately.
+
+do_push() {
+  exec 9>"$LOCK_FILE"
+  if ! lockf -t "$LOCK_TIMEOUT" 9; then
+    echo "git-queue: push timeout — lock held" >&2
+    exit 75
+  fi
+  write_meta
+  log_event "build.push.started"
+
+  local dirty
+  dirty=$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | grep -v '^?' | head -1)
+
+  local stashed=false
+  if [ -n "$dirty" ]; then
+    git -C "$REPO_ROOT" stash --quiet 2>/dev/null
+    stashed=true
+  fi
+
+  local exit_code=0
+  git -C "$REPO_ROOT" pull --rebase 2>&1 && git -C "$REPO_ROOT" push 2>&1 || exit_code=$?
+
+  if $stashed; then
+    git -C "$REPO_ROOT" stash pop --quiet 2>/dev/null || {
+      local stash_ref
+      stash_ref=$(git -C "$REPO_ROOT" stash list | head -1)
+      echo "git-queue: WARNING — stash pop failed (conflict). Your files are safe in: ${stash_ref:-stash@{0}}" >&2
+      echo "git-queue: recover with: git stash pop (resolve conflicts) or git stash show" >&2
+      log_event "build.push.stash_pop_failed" "stash_ref=${stash_ref:-unknown}"
+    }
+  fi
+
+  clear_meta
+  log_event "build.push.completed" "exit_code=${exit_code}"
+
+  if [ $exit_code -ne 0 ]; then
+    echo "git-queue: push failed (exit ${exit_code})" >&2
+  fi
+  return $exit_code
+}
+
 # --- Main ---
 
 cmd="${1:-help}"
@@ -204,8 +249,8 @@ shift || true
 
 case "$cmd" in
   commit)  do_commit "$@" ;;
+  push)    do_push ;;
   add)
-    # Common misuse: roles call "add" instead of "commit"
     echo "git-queue: 'add' is not a command — did you mean 'commit'?" >&2
     echo "  git-queue.sh commit <files...> -- -m \"message\"" >&2
     echo "  (stages AND commits in one atomic operation)" >&2
@@ -214,7 +259,6 @@ case "$cmd" in
   status)  show_status ;;
   help|--help|-h)  usage ;;
   silas|wren|kade)
-    # Common misuse: roles call "git-queue.sh <role> <message>" (old syntax)
     echo "git-queue: old syntax detected — use this instead:" >&2
     echo "  cd /Users/jeffbridwell/CascadeProjects && DEPLOY_ROLE=${cmd} bash messages/scripts/git-queue.sh commit <your-dir>/ -- -m \"${cmd}: ${1:-your message}\"" >&2
     exit 1
