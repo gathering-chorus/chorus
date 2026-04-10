@@ -73,4 +73,14 @@ else
     echo "WARN: $w"
   done
   bash "$CHORUS_LOG" health.bedroom.issues silas failures="${#FAILURES[@]}" warnings="${#WARNINGS[@]}" 2>/dev/null || true
+  # Nudge silas on any issue — cooldown 1hr
+  COOLDOWN="/tmp/bedroom-health-$(date '+%Y-%m-%d-%H')"
+  if [ ! -f "$COOLDOWN" ]; then
+    touch "$COOLDOWN"
+    ALL_ISSUES=""
+    for f in "${FAILURES[@]}"; do ALL_ISSUES="$ALL_ISSUES FAIL:$f"; done
+    for w in "${WARNINGS[@]}"; do ALL_ISSUES="$ALL_ISSUES WARN:$w"; done
+    NUDGE="$CHORUS_ROOT/platform/scripts/nudge"
+    "$NUDGE" silas "bedroom-health:$ALL_ISSUES" --force 2>/dev/null || true
+  fi
 fi
