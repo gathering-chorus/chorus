@@ -54,7 +54,7 @@ describeIntegration('GET /api/athena/subdomains', () => {
     const res = await fetch(`${API}/api/athena/subdomains`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body._meta.count).toBe(31);
+    expect(body._meta.count).toBe(41);
     for (const sd of body.data) {
       expect(sd.label).toBeDefined();
       expect(sd.owner).toBeDefined();
@@ -66,7 +66,7 @@ describeIntegration('GET /api/athena/subdomains', () => {
     const res = await fetch(`${API}/api/athena/subdomains?owner=kade`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body._meta.count).toBe(5);
+    expect(body._meta.count).toBe(14);
     for (const sd of body.data) {
       expect(sd.owner.toLowerCase()).toBe('kade');
     }
@@ -113,9 +113,9 @@ describeIntegration('GET /api/athena/owners', () => {
 
 describeIntegration('GET /api/athena/subdomains — owner filters', () => {
   test.each([
-    ['wren', 9],
+    ['wren', 10],
     ['silas', 12],
-    ['kade', 5],
+    ['kade', 14],
     ['jeff', 5],
   ])('owner=%s returns %i subdomains', async (owner, expected) => {
     const res = await fetch(`${API}/api/athena/subdomains?owner=${owner}`);
@@ -130,11 +130,11 @@ describeIntegration('GET /api/athena/subdomains — owner filters', () => {
 
 describeIntegration('GET /api/athena/subdomains — step filters', () => {
   test.each([
-    ['building', 6],
-    ['proving', 10],
-    ['shaping', 9],
+    ['building', 14],
+    ['proving', 7],
+    ['shaping', 10],
     ['designing', 5],
-    ['directing', 1],
+    ['directing', 5],
   ])('step=%s returns %i subdomains', async (step, expected) => {
     const res = await fetch(`${API}/api/athena/subdomains?step=${step}`);
     expect(res.status).toBe(200);
@@ -188,6 +188,19 @@ describeIntegration('_meta envelope', () => {
       expect(typeof body._meta.duration_ms).toBe('number');
       expect(typeof body._meta.cached).toBe('boolean');
     }
+  });
+});
+
+describeIntegration('GET /api/athena/subdomains/:id — hasDomain composition', () => {
+  test('pulse-domain has domains array with Streams, Messages, Cards, Alerts', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/pulse-domain`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data.domains)).toBe(true);
+    expect(body.data.domains.length).toBe(4);
+    const labels = body.data.domains.map(d => d.label).sort();
+    expect(labels).toContain('Alerts');
+    expect(labels).toContain('Streams');
   });
 });
 

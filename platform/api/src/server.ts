@@ -3509,6 +3509,7 @@ app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
     const first = bindings[0];
     const consumers = [...new Set(bindings.filter((b: any) => b.consumer).map((b: any) => JSON.stringify({ uri: b.consumer.value, label: b.consumerLabel?.value || b.consumer.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
     const consumes = [...new Set(bindings.filter((b: any) => b.consumed).map((b: any) => JSON.stringify({ uri: b.consumed.value, label: b.consumedLabel?.value || b.consumed.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
+    const domains = [...new Set(bindings.filter((b: any) => b.child).map((b: any) => JSON.stringify({ uri: b.child.value, id: b.child.value.split('#').pop(), label: b.childLabel?.value || b.child.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
     res.json(athenaEnvelope('subdomain-detail', {
       uri: sdUri,
       id: req.params.id,
@@ -3518,6 +3519,7 @@ app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
       comment: first.comment?.value || null,
       consumedBy: consumers,
       consumes,
+      domains,
     }, Date.now() - start));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('subdomain-detail', { error: err.message }, Date.now() - start, { error: true }));
