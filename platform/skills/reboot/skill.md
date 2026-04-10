@@ -10,29 +10,25 @@ When Jeff types `/reboot`, run the Hard 4 close-out and exit so a fresh session 
 
 ## Steps
 
-1. **Doc freshness gate** — run `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/session-close-thin.sh <role>`. Doc freshness is checked by the daily Rust health tier. If it flags stale docs, **update them before proceeding**. This is a gate, not a suggestion.
+0. **Reboot flag** — exempt this session from search enrichment overhead:
+   ```bash
+   touch /tmp/reboot-<role>.active
+   ```
 
-1.5. **Domain context freshness** — check if you touched files in any domain this session. For each domain you worked in, check `messages/domain-context/domain-context-{domain}.md`:
-   - If the file exists and you learned something new (constraint, persistence change, new test, new script), update it.
-   - If the file doesn't exist and you worked in that domain, create it from `messages/domain-context/TEMPLATE.md`.
-   - Prompt: "You touched files in domain:{X}. domain-context-{X}.md was last updated {date}. Update needed?"
-   - This is targeted — only domains you actually worked in, not all domains.
+1. **Write state** — two files, do them in one pass:
+   - **next-session.md** in your role directory: what shipped, WIP status, open threads, what to resume.
+   - **activity.md** — append session summary to `activity.md`: what you did, briefs exchanged, decisions.
 
-2. **Board audit** — `board-ts audit-close <role>`. Cards you finished → Done. Cards continuing → note in description.
+2. **Close + commit** — single command does close-out, board audit, and commit:
+   ```bash
+   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/session-close.sh <role> "<summary>"
+   ```
+   This runs: session-close checks → board audit-close → git add + commit + push. One script, one tool call.
 
-3. **Activity log** — append session summary to `../../../activity.md`: what you did, briefs sent/received, decisions made.
-
-4. **next-session.md** — write in your role directory. Include:
-   - What was accomplished this session
-   - WIP cards and their status
-   - Pending briefs sent/received
-   - Anything the next session needs to pick up
-
-5. **Verify** — run `werk-init.sh <role> --close`. Check for warns. Fix any before committing.
-
-6. **Commit** — use `git-queue.sh` to commit all changes in the team repo. Message: `<role>: session reboot — <summary>`
-
-7. **Exit** — say one line summarizing the session, then tell Jeff you're done.
+3. **Exit** — remove the reboot flag, one line summarizing the session, done:
+   ```bash
+   rm -f /tmp/reboot-<role>.active
+   ```
 
 ## Rules
 

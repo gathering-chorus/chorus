@@ -299,6 +299,13 @@ fn extract_git_search_term(cmd: &str) -> String {
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let tool = input.tool_name_str();
 
+    // Reboot exemption (#1866) — skip all search enrichment during close-out
+    let role_str = input.role().as_str().to_string();
+    let reboot_flag = format!("/tmp/reboot-{}.active", role_str);
+    if std::path::Path::new(&reboot_flag).exists() {
+        return HookResponse::allow();
+    }
+
     // Detect git-as-search via Bash — same gate as Grep/Glob
     let (is_search, pattern) = if tool == "Grep" || tool == "Glob" {
         (true, input.get_tool_input_str("pattern"))
