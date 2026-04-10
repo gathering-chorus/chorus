@@ -26,7 +26,7 @@ check: |
   exit 0
 
 action: |
-  COOLDOWN="/tmp/alert-lancedb-$(date '+%Y-%m-%d')"
+  COOLDOWN="/tmp/alert-lancedb-stale-$(date '+%Y-%m-%d')"
   if [ -f "$COOLDOWN" ]; then
     exit 0
   fi

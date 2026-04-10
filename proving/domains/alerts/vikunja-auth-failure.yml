@@ -26,7 +26,7 @@ check: |
   exit 1
 
 action: |
-  COOLDOWN="/tmp/alert-vikunja-401-$(date '+%Y-%m-%d')"
+  COOLDOWN="/tmp/alert-vikunja-auth-failure-$(date '+%Y-%m-%d')"
   if [ -f "$COOLDOWN" ]; then
     exit 0
   fi
