@@ -4,6 +4,11 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-04-10 — Kade (reboot)
+
+- [17:18] [Kade] → Gemba review of Silas #1781 (session start redesign): 2 test gaps, confirmed filtered cards works for boot, flagged test-helper drift risk → Silas
+- [17:46] [Kade] → Reboot
+
 ## 2026-04-10 — Wren (reboot)
 
 - [16:49] [Wren] → Reviewed #1864 Athena multi-product card with Jeff → Jeff
