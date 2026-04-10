@@ -499,7 +499,8 @@ chorus:werk-product chorus:consumes chorus:cards-service, chorus:spine-service,
 chorus:clearing-product chorus:consumes chorus:cards-service, chorus:spine-service,
                                        chorus:observability-service, chorus:infra-service .
 
-chorus:cards-product chorus:consumes chorus:observability-service, chorus:infra-service .
+chorus:cards-product chorus:consumes chorus:observability-service, chorus:infra-service,
+                                   chorus:spine-service .
 
 chorus:observability-product chorus:consumes chorus:infra-service, chorus:logs-service,
                                              chorus:alerts-service, chorus:deploys-service .
@@ -1032,4 +1033,35 @@ chorus:gathering chorus:inputTo chorus:Capturing .
 #   { ?service a chorus:ProtocolService . BIND("ability-to-work" AS ?tier) }
 # }
 # Expected: 5 infrastructure (visibility), 4 protocol (ability-to-work)
+#
+# Q6: Drift detection — declared vs actual dependencies
+# -------------------------------------------------------
+# Compare declared chorus:consumes edges against codebase imports.
+# Run per-product: extract imports/requires from source, compare to declared edges.
+#
+# SELECT ?product ?productLabel ?declared ?declaredLabel WHERE {
+#   ?product a chorus:SubProduct .
+#   ?product rdfs:label ?productLabel .
+#   ?product chorus:consumes ?declared .
+#   ?declared rdfs:label ?declaredLabel .
+# }
+# ORDER BY ?productLabel
+#
+# Then compare against actual codebase dependencies (extracted by grep):
+#
+# Cards pilot validation (2026-04-10):
+#   Declared consumes: observability-service, infra-service
+#   Actual code deps:  Vikunja (localhost:3456) = cards-service itself (not a consumer)
+#                      Gathering app (localhost:3000) = blast-radius feature
+#                      chorus-sdk spine events = spine-service (UNDECLARED)
+#   DRIFT FOUND: cards-product should also consume spine-service
+#                (events.ts imports chorus-sdk, emits card.* spine events)
+#
+# Drift detection procedure:
+#   1. For each SubProduct, list declared chorus:consumes edges
+#   2. grep source code for localhost ports, service imports, SDK usage
+#   3. Map code deps to service URIs via port→service table:
+#      3456=cards-service, 3340=chorus-api, 3000=gathering-app,
+#      3100=grafana(observability), 3102=loki(logs), chorus-sdk=spine
+#   4. Diff declared vs actual. Undeclared = drift.
 #
