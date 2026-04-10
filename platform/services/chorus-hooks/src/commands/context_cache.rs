@@ -18,11 +18,11 @@ pub fn run(args: &[String]) -> ExitCode {
 
     let role_dir_name = crate::shared::state_paths::role_dir(role).unwrap();
     let role_dir = format!("{}/{}", REPO_ROOT, role_dir_name);
-    let board_ts = format!("{}/chorus/platform/scripts/cards", REPO_ROOT);
+    let board_ts = format!("{}/platform/scripts/cards", REPO_ROOT);
     let out_path = format!("/tmp/session-context-{}.md", role);
 
     // Werk version
-    let manifest_path = format!("{}/chorus/designing/claudemd/manifest.json", REPO_ROOT);
+    let manifest_path = format!("{}/designing/claudemd/manifest.json", REPO_ROOT);
     let werk_version = fs::read_to_string(&manifest_path).ok()
         .and_then(|c| c.lines().find(|l| l.contains("\"version\"")).map(|l| {
             l.split('"').nth(3).unwrap_or("unknown").to_string()
@@ -30,19 +30,21 @@ pub fn run(args: &[String]) -> ExitCode {
         .unwrap_or_else(|| "unknown".to_string());
 
     // --- Parallel data gathering via threads ---
+    // Board: active cards only — filter out Done/Won't Do (#1781)
     let board_ts_c = board_ts.clone();
     let role_s = role.to_string();
     let board_mine = std::thread::spawn(move || -> (bool, String) {
         match Cmd::new("zsh").arg("-lc").arg(format!("{} mine {}", board_ts_c, role_s)).output() {
-            Ok(o) if o.status.success() => (true, String::from_utf8(o.stdout).unwrap_or_default()),
-            _ => (false, String::new()),
-        }
-    });
-
-    let board_ts_c = board_ts.clone();
-    let board_list = std::thread::spawn(move || -> (bool, String) {
-        match Cmd::new("zsh").arg("-lc").arg(format!("{} list", board_ts_c)).output() {
-            Ok(o) if o.status.success() => (true, String::from_utf8(o.stdout).unwrap_or_default()),
+            Ok(o) if o.status.success() => {
+                let full = String::from_utf8(o.stdout).unwrap_or_default();
+                let filtered: Vec<&str> = full.lines()
+                    .filter(|l| {
+                        let lt = l.trim().to_lowercase();
+                        !lt.contains("[done]") && !lt.contains("[won't do]")
+                    })
+                    .collect();
+                (true, filtered.join("\n"))
+            }
             _ => (false, String::new()),
         }
     });
@@ -53,6 +55,9 @@ pub fn run(args: &[String]) -> ExitCode {
         Cmd::new("zsh").arg("-lc").arg(format!("{} audit-start {}", board_ts_c, role_s))
             .output().ok().and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default()
     });
+
+    // Last session context is now fetched by the role at boot via Chorus query (#1781)
+    // No git log parsing needed — the role synthesizes from semantic search results.
 
     // Recent decisions
     let decisions_path = format!("{}/roles/wren/decisions.md", REPO_ROOT);
@@ -77,10 +82,10 @@ pub fn run(args: &[String]) -> ExitCode {
     } else { String::new() };
 
     // Handoff check
-    let handoff_log = format!("{}/chorus/proving/logs/handoffs.log", REPO_ROOT);
+    let handoff_log = format!("{}/proving/logs/handoffs.log", REPO_ROOT);
     let role_s = role.to_string();
     let briefs_dir_c = briefs_dir.clone();
-    let archive_dir = format!("{}/chorus/proving/workflows/archive", REPO_ROOT);
+    let archive_dir = format!("{}/proving/workflows/archive", REPO_ROOT);
     let handoff_check = std::thread::spawn(move || {
         check_handoffs(&handoff_log, &role_s, &briefs_dir_c, &archive_dir)
     });
@@ -99,11 +104,10 @@ pub fn run(args: &[String]) -> ExitCode {
     let (mine_ok, mine_text) = board_mine.join().unwrap_or((false, String::new()));
     if mine_ok { ok_sources.push("board_mine"); } else { failed_sources.push("board_mine"); }
 
-    let (list_ok, list_text) = board_list.join().unwrap_or((false, String::new()));
-    if list_ok { ok_sources.push("board_list"); } else { failed_sources.push("board_list"); }
-
     let audit_text = board_audit.join().unwrap_or_default();
     if !audit_text.is_empty() { ok_sources.push("board_audit"); } else { failed_sources.push("board_audit"); }
+
+    // last_session moved to Chorus query at boot — no thread to join
 
     let handoff_text = handoff_check.join().unwrap_or_default();
     ok_sources.push("handoffs"); // handoffs returning empty is normal (no pending)
@@ -142,7 +146,7 @@ pub fn run(args: &[String]) -> ExitCode {
         .output().ok().and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.lines().count()).unwrap_or(0);
 
-    let activity_path = format!("{}/chorus/activity.md", REPO_ROOT);
+    let activity_path = format!("{}/activity.md", REPO_ROOT);
     let activity_age = fs::metadata(&activity_path).ok()
         .and_then(|m| m.modified().ok())
         .map(|t| format!("{}h", t.elapsed().unwrap_or_default().as_secs() / 3600))
@@ -162,52 +166,110 @@ pub fn run(args: &[String]) -> ExitCode {
     let clock = process::wall_clock();
     let clock_short: String = clock.chars().take(16).collect();
 
-    // --- Assemble ---
-    let mut out = String::with_capacity(8192);
+    // Open threads: read next-session.md (role's own synthesis of what's pending)
+    let next_session_path = format!("{}/next-session.md", role_dir);
+    let next_session_text = fs::read_to_string(&next_session_path).unwrap_or_default();
+
+    // Recent activity.md entries for this role
+    let activity_entries = {
+        let content = fs::read_to_string(&activity_path).unwrap_or_default();
+        let role_lower = role.to_lowercase();
+        content.lines()
+            .filter(|l| {
+                let lt = l.to_lowercase();
+                lt.contains(&format!("[{}]", role_lower))
+            })
+            .take(10)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    // --- Assemble — signal-first, ~80 lines target (#1781) ---
+    let mut out = String::with_capacity(4096);
     out.push_str(&format!("# {} — Session Context (Werk v{})\n", role_cap, werk_version));
     out.push_str(&format!("Generated: {} Boston | Werk v{}\n\n", clock_short, werk_version));
 
-    out.push_str("## Your Active Cards\n");
+    // 1. Session comprehension — role queries Chorus and synthesizes (#1781)
+    out.push_str("## Boot: Synthesize Before Speaking\n\n");
+    out.push_str(&format!(
+        "Before your first response, query Chorus to understand what happened:\n\
+         ```\n\
+         curl -s \"http://localhost:3340/api/chorus/search?q={role}+last+session+shipped+friction+decisions&limit=10\"\n\
+         curl -s \"http://localhost:3340/api/chorus/search?q=team+today+shipped+blocked+progress&limit=10\"\n\
+         ```\n\
+         Synthesize the results into your opening — show Jeff you understand the arc of the last session, \
+         what mattered, and what's next. Don't recite cards or tickets. Sound like a colleague who was here yesterday.\n"
+    , role=role));
+
+    // 2. Active Work — WIP + Now + Ops + Later only (no Done wall)
+    out.push_str("\n## Active Cards\n");
     out.push_str(if !mine_ok { "(board unreachable)" } else if mine_text.is_empty() { "(none)" } else { &mine_text });
-    out.push_str("\n\n## Boards\n\n");
-    out.push_str(if !list_ok { "(board unreachable)" } else if list_text.is_empty() { "(none)" } else { &list_text });
-    out.push_str("\n\n## Board Audit\n\n");
-    out.push_str(if audit_text.is_empty() { "(none)" } else { &audit_text });
 
-    out.push_str("\n\n## Workflow Steps Waiting\n");
-    out.push_str("(none)\n"); // workflow dispatches to TS engine (#1775)
+    // 3. Open Threads — next-session.md + activity + handoffs + briefs
+    out.push_str("\n\n## Open Threads\n\n");
+    if !next_session_text.is_empty() {
+        out.push_str("### Next Session Notes\n");
+        out.push_str(&next_session_text);
+        out.push('\n');
+    }
+    if !activity_entries.is_empty() {
+        out.push_str("\n### Recent Activity\n");
+        out.push_str(&activity_entries);
+        out.push('\n');
+    }
+    if !handoff_text.is_empty() {
+        out.push_str("\n### Pending Handoffs\n");
+        out.push_str(&handoff_text);
+        out.push('\n');
+    }
+    if !briefs.is_empty() {
+        out.push_str("\n### Recent Briefs\n");
+        out.push_str(&briefs);
+        out.push('\n');
+    }
+    if next_session_text.is_empty() && activity_entries.is_empty()
+        && handoff_text.is_empty() && briefs.is_empty() {
+        out.push_str("(clean)\n");
+    }
 
-    out.push_str("\n## Recent Briefs\n");
-    out.push_str(if briefs.is_empty() { "(none)" } else { &briefs });
+    // 4. Board Audit
+    if !audit_text.is_empty() {
+        out.push_str("\n## Board Audit\n\n");
+        out.push_str(&audit_text);
+    }
 
-    out.push_str("\n\n## Recent Decisions\n");
-    out.push_str(if decisions.is_empty() { "(decisions.md not found)" } else { &decisions });
+    // 5. Recent Decisions
+    if !decisions.is_empty() {
+        out.push_str("\n\n## Recent Decisions\n");
+        out.push_str(&decisions);
+    }
 
+    // 6. Health — compact
     out.push_str("\n\n## Health\n\n");
     out.push_str(&format!("- Disk: {}\n", disk_pct));
     out.push_str(&format!("- Uncommitted in {}/: {}\n", role_dir_name, uncommitted));
     out.push_str(&format!("- Activity.md: updated {} ago\n", activity_age));
     out.push_str(&format!("- CLAUDE.md: {}\n", claude_status));
 
-    out.push_str("\n## Memory Context\n");
-    if memory_text.is_empty() {
-        out.push_str("(none)\n");
-    } else {
+    // 7. Memory Context
+    if !memory_text.is_empty() {
+        out.push_str("\n## Memory Context\n");
         let line_count = memory_text.lines().count();
         out.push_str(&format!("Related memories for WIP cards ({} found):\n\n", line_count));
         out.push_str(&memory_text);
     }
-
-    out.push_str("\n## Handoff Check\n");
-    out.push_str(if handoff_text.is_empty() { "(clean)" } else { &handoff_text });
     out.push('\n');
 
     let _ = fs::write(&out_path, &out);
+    // Also write session-start file — roles read this, not the context cache.
+    // Without this, session-start-<role>.md goes stale forever (#1781 bug).
+    let start_path = format!("/tmp/session-start-{}.md", role);
+    let _ = fs::write(&start_path, &out);
     let lines = out.lines().count();
     println!("Context cached: {} ({} lines)", out_path, lines);
 
     // Spine events — AC for #1808
-    let log_path = format!("{}/chorus/platform/logs/chorus.log", REPO_ROOT);
+    let log_path = format!("{}/platform/logs/chorus.log", REPO_ROOT);
     let eastern_offset = {
         let out = std::process::Command::new("date").args(["+%z"]).env("TZ", "America/New_York").output();
         out.ok().and_then(|o| String::from_utf8(o.stdout).ok())
@@ -257,6 +319,77 @@ pub fn run(args: &[String]) -> ExitCode {
         .and_then(|mut f| { use std::io::Write; writeln!(f, "{}", event) });
 
     ExitCode::SUCCESS
+}
+
+/// Fetch last session git log per role — own commits + 1-liner for other roles (#1781)
+/// Returns (own_commits_text, vec of (role, summary) for other roles)
+fn fetch_last_session_log(role: &str) -> (String, Vec<(String, String)>) {
+    // Find the date of the last reboot commit for this role to set the --since boundary
+    // Use git directly with full path — zsh -lc quoting eats grep patterns
+    // Use zsh -lc to get homebrew git in PATH — /usr/bin/git (Xcode shim) has date parsing issues
+    // Find the SECOND-to-last reboot for this role — that's the session boundary.
+    // Commits between reboot N-1 and reboot N are the last session's work.
+    let git_log = Cmd::new("zsh").arg("-lc")
+        .arg(format!(
+            concat!(
+                "PREV=$(git -C {} log --oneline --no-merges -n 2 ",
+                "--grep=\"{}: session reboot\" --format=%aI 2>/dev/null | tail -1); ",
+                "if [ -z \"$PREV\" ]; then PREV=\"3 days ago\"; fi; ",
+                "git -C {} log --oneline --no-merges --since=\"$PREV\""
+            ),
+            REPO_ROOT, role, REPO_ROOT
+        ))
+        .output().ok()
+        .and_then(|o| if o.status.success() {
+            String::from_utf8(o.stdout).ok()
+        } else { None })
+        .unwrap_or_default();
+
+    let mut own_commits = Vec::new();
+    let mut other_roles: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+
+    for line in git_log.lines().take(50) {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        // Format: "abc123 role: message"
+        let after_hash = match line.split_whitespace().nth(1) {
+            Some(w) => {
+                let pos = line.find(w).unwrap_or(0);
+                &line[pos..]
+            }
+            None => continue,
+        };
+
+        if after_hash.starts_with(&format!("{}:", role)) {
+            own_commits.push(line.to_string());
+        } else {
+            if let Some(colon_pos) = after_hash.find(':') {
+                let r = after_hash[..colon_pos].trim().to_string();
+                if matches!(r.as_str(), "wren" | "silas" | "kade") {
+                    other_roles.entry(r).or_default().push(line.to_string());
+                }
+            }
+        }
+    }
+
+    // Cap own commits at 20 lines
+    own_commits.truncate(20);
+
+    let other_summaries: Vec<(String, String)> = other_roles
+        .into_iter()
+        .map(|(r, commits)| {
+            let summary = if let Some(reboot) = commits.iter().find(|c| c.contains("reboot")) {
+                // Reboot commit is already a synthesis — use its message
+                let msg_start = reboot.find(&format!("{}:", r)).map(|p| p + r.len() + 2).unwrap_or(0);
+                reboot[msg_start..].to_string()
+            } else {
+                format!("{} commits", commits.len())
+            };
+            (r, summary)
+        })
+        .collect();
+
+    (own_commits.join("\n"), other_summaries)
 }
 
 /// Fetch memory context from Chorus API for WIP card domains
