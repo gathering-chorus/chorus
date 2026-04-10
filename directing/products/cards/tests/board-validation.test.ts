@@ -5,6 +5,10 @@
  * No mocks — the mocks told us everything was fine while
  * the real API was capping at 50 per bucket.
  *
+ * Requires RUN_INTEGRATION=true to run. These tests MUTATE the board
+ * (move operations) and hit SQLite directly via fetchBucketMapFromDB.
+ * Gating prevents silent skip-on-fail and SQLite contention (#1800).
+ *
  * What broke on 2026-04-05:
  * - move() reported success without verifying persistence
  * - view() showed Unknown for cards beyond bucket 50-cap
@@ -18,11 +22,14 @@ import { BoardClient } from '../src/client';
 import { GATHERING, loadEnv } from '../src/config';
 import { BoardTask } from '../src/types';
 
+const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
+
 let env: { url: string; token: string };
 let client: BoardClient;
 let canConnect = false;
 
 beforeAll(async () => {
+  if (!INTEGRATION_ENABLED) return;
   try {
     env = loadEnv();
     client = new BoardClient(env.url, env.token, GATHERING);
@@ -33,7 +40,7 @@ beforeAll(async () => {
   }
 });
 
-function skip() { return !canConnect; }
+function skip() { return !INTEGRATION_ENABLED || !canConnect; }
 
 // ── move() ──
 
