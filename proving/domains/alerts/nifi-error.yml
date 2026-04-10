@@ -27,6 +27,12 @@ check: |
   exit 1
 
 action: |
+  # Cooldown: max once per hour (pre-existing broken processor fires constantly)
+  COOLDOWN_FILE="/tmp/alert-nifi-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN_FILE" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN_FILE"
   NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
   "$NUDGE" silas "nifi-error: $COUNT ERROR entries in Bedroom NiFi logs (last 5 min). Check: Loki query {job=\"nifi\",component=\"app\",machine=\"bedroom\"} |~ \"ERROR\"" --force 2>/dev/null || true
   curl -sf -X POST http://localhost:3470/api/message \
