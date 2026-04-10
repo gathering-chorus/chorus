@@ -51,11 +51,7 @@ elif [ "$OLLAMA_DIM" != "768" ]; then
   WARNINGS+=("Ollama embedding returned unexpected dim=$OLLAMA_DIM (expected 768)")
 fi
 
-# 3c. Fuseki on Bedroom (#1853 feedback from Kade)
-FUSEKI_BED=$(ssh -o ConnectTimeout=5 "$BEDROOM" "curl -sf -o /dev/null -w '%{http_code}' http://localhost:3030/\$/ping 2>/dev/null || echo 000" 2>/dev/null)
-if [ "$FUSEKI_BED" != "200" ]; then
-  WARNINGS+=("Bedroom Fuseki down (HTTP $FUSEKI_BED)")
-fi
+# 3c. Fuseki — not installed on Bedroom. Library (192.168.86.36:3030) is primary.
 
 # 3d. NiFi process check (#1853 feedback from Kade)
 NIFI_PID=$(ssh -o ConnectTimeout=5 "$BEDROOM" "pgrep -f 'nifi.*run' 2>/dev/null || echo 0" 2>/dev/null)
