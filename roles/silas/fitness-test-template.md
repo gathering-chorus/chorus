@@ -2,7 +2,7 @@
 
 **Purpose**: Verify that the ingestion pipeline (Turtle authoring → filesystem → Fuseki sync → SPARQL) produces correct, complete, schema-conformant triples for any collection type.
 
-**Fuseki endpoint**: `http://localhost:3031/pods/sparql`
+**Fuseki endpoint**: `http://localhost:3030/pods/sparql`
 
 ---
 
@@ -349,7 +349,7 @@ WHERE {
 ```bash
 curl -s -H "Accept: application/sparql-results+json" \
   --data-urlencode "query=<SPARQL_QUERY>" \
-  http://localhost:3031/pods/sparql
+  http://localhost:3030/pods/sparql
 ```
 
 ### Automated (script pattern)
@@ -358,7 +358,7 @@ curl -s -H "Accept: application/sparql-results+json" \
 #!/bin/bash
 # fitness-test.sh — run all checks, report pass/fail
 
-FUSEKI="http://localhost:3031/pods/sparql"
+FUSEKI="http://localhost:3030/pods/sparql"
 PASS=0
 FAIL=0
 

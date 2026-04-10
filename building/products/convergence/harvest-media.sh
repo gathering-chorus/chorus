@@ -7,7 +7,7 @@ set -euo pipefail
 SECONDARY="jeffbridwell@192.168.86.242"
 MONGOSH="/opt/homebrew/bin/mongosh"
 DB="media"
-FUSEKI_URL="http://localhost:3031"
+FUSEKI_URL="http://localhost:3030"
 DATASET="pods"
 GRAPH_BASE="https://jeffbridwell.com/pods/jeff/media"
 HARVEST_DIR="/Volumes/VideosNew/Gathering/Media/generated/harvest"

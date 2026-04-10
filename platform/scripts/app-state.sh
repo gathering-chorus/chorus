@@ -617,7 +617,7 @@ Commands:
 
 Managed containers:
   jeff-bridwell-personal-site-app       Express application (port 3000)
-  jeff-bridwell-personal-site-fuseki    SPARQL triplestore (port 3031)
+  jeff-bridwell-personal-site-fuseki    SPARQL triplestore (port 3030)
 
 External dependencies (shared-observability project):
   Prometheus (9090), Grafana (3100), Loki (3102), Promtail
