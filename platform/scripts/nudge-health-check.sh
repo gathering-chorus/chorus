@@ -24,18 +24,21 @@ for role in "${ROLES[@]}"; do
   esac
 
   # Find matching windows — return count + the actual window name that matched
+  # try/on error skips zombie windows Terminal can't name (-1728)
   result=$(osascript -e "
 tell application \"Terminal\"
     set matchCount to 0
     set matchName to \"\"
     set winCount to count of windows
     repeat with i from 1 to winCount
-        set w to window i
-        set winName to name of w
-        if winName contains \"${pattern}\" and winName contains \"claude\" then
-            set matchCount to matchCount + 1
-            set matchName to winName
-        end if
+        try
+            set w to window i
+            set winName to name of w
+            if winName contains \"${pattern}\" and winName contains \"claude\" then
+                set matchCount to matchCount + 1
+                set matchName to winName
+            end if
+        end try
     end repeat
     return (matchCount as text) & \"::\" & matchName
 end tell" 2>&1)
