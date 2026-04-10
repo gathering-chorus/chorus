@@ -1,0 +1,35 @@
+# nifi-error.yml — Alert when NiFi pipeline errors appear in Bedroom logs
+# Card #1852 | AC4
+#
+# NiFi pipeline failures are silent — photo harvests fail with no signal.
+# Promtail on Bedroom pushes NiFi logs to Library Loki.
+# This alert queries Loki for ERROR-level NiFi entries in the last 5 minutes.
+
+name: nifi-error
+description: NiFi pipeline error on Bedroom — harvest may be failing silently
+severity: warning
+schedule: "*/5 * * * *"  # every 5 minutes
+
+check: |
+  NOW=$(date +%s)
+  START=$(( NOW - 300 ))
+  RESULT=$(curl -sf --max-time 5 -G "http://localhost:3102/loki/api/v1/query_range" \
+    --data-urlencode 'query={job="nifi",component="app",machine="bedroom"} |~ "ERROR"' \
+    --data-urlencode "start=${START}000000000" \
+    --data-urlencode "end=${NOW}000000000" \
+    --data-urlencode "limit=5" 2>/dev/null)
+  COUNT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(len(r.get('values',[])) for r in d.get('data',{}).get('result',[])))" 2>/dev/null || echo "0")
+  if [[ "$COUNT" == "0" ]]; then
+    echo "ok"
+    exit 0
+  fi
+  echo "nifi-errors:$COUNT"
+  exit 1
+
+action: |
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "nifi-error: $COUNT ERROR entries in Bedroom NiFi logs (last 5 min). Check: Loki query {job=\"nifi\",component=\"app\",machine=\"bedroom\"} |~ \"ERROR\"" --force 2>/dev/null || true
+  curl -sf -X POST http://localhost:3470/api/message \
+    -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg text '[alert] NiFi pipeline errors on Bedroom' --arg from 'system' '{from: $from, text: $text}')" \
+    &>/dev/null || true
