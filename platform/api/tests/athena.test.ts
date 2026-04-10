@@ -1,15 +1,17 @@
 /**
- * Athena CMDB API tests — #1849
+ * Athena CMDB API tests — #1849, #1860
  *
- * Tests hit the live Chorus API at localhost:3340.
- * Requires: Chorus API running, Fuseki running on 3030 with ontology loaded.
+ * Integration tests — hit live Chorus API at localhost:3340.
+ * Requires RUN_INTEGRATION=true, Chorus API running, Fuseki on 3030.
  */
 
+const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 const API = process.env.CHORUS_API || 'http://localhost:3340';
 
 let apiUp = false;
 
 beforeAll(async () => {
+  if (!INTEGRATION_ENABLED) return;
   try {
     const res = await fetch(`${API}/api/athena/health`);
     apiUp = res.ok;
@@ -18,7 +20,9 @@ beforeAll(async () => {
   }
 });
 
-describe('GET /api/athena/health', () => {
+const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+
+describeIntegration('GET /api/athena/health', () => {
   test('returns 200 with status ok and triple count', async () => {
     const res = await fetch(`${API}/api/athena/health`);
     expect(res.status).toBe(200);
@@ -30,7 +34,7 @@ describe('GET /api/athena/health', () => {
   });
 });
 
-describe('GET /api/athena/products', () => {
+describeIntegration('GET /api/athena/products', () => {
   test('returns product list with uri and label', async () => {
     const res = await fetch(`${API}/api/athena/products`);
     expect(res.status).toBe(200);
@@ -45,7 +49,7 @@ describe('GET /api/athena/products', () => {
   });
 });
 
-describe('GET /api/athena/subdomains', () => {
+describeIntegration('GET /api/athena/subdomains', () => {
   test('returns 31 subdomains with owner and step', async () => {
     const res = await fetch(`${API}/api/athena/subdomains`);
     expect(res.status).toBe(200);
@@ -69,7 +73,7 @@ describe('GET /api/athena/subdomains', () => {
   });
 });
 
-describe('GET /api/athena/subdomains/:id/blast-radius', () => {
+describeIntegration('GET /api/athena/subdomains/:id/blast-radius', () => {
   test('cards-service has 3 consumers', async () => {
     const res = await fetch(`${API}/api/athena/subdomains/cards-service/blast-radius`);
     expect(res.status).toBe(200);
@@ -79,7 +83,7 @@ describe('GET /api/athena/subdomains/:id/blast-radius', () => {
   });
 });
 
-describe('GET /api/athena/steps', () => {
+describeIntegration('GET /api/athena/steps', () => {
   test('returns value stream steps with subdomains', async () => {
     const res = await fetch(`${API}/api/athena/steps`);
     expect(res.status).toBe(200);
@@ -92,7 +96,7 @@ describe('GET /api/athena/steps', () => {
   });
 });
 
-describe('GET /api/athena/owners', () => {
+describeIntegration('GET /api/athena/owners', () => {
   test('returns owners with subdomain counts', async () => {
     const res = await fetch(`${API}/api/athena/owners`);
     expect(res.status).toBe(200);
@@ -107,7 +111,7 @@ describe('GET /api/athena/owners', () => {
 
 // ── #1860: Data-driven filter tests against spreadsheet counts ──
 
-describe('GET /api/athena/subdomains — owner filters', () => {
+describeIntegration('GET /api/athena/subdomains — owner filters', () => {
   test.each([
     ['wren', 9],
     ['silas', 12],
@@ -124,7 +128,7 @@ describe('GET /api/athena/subdomains — owner filters', () => {
   });
 });
 
-describe('GET /api/athena/subdomains — step filters', () => {
+describeIntegration('GET /api/athena/subdomains — step filters', () => {
   test.each([
     ['building', 6],
     ['proving', 10],
@@ -139,7 +143,7 @@ describe('GET /api/athena/subdomains — step filters', () => {
   });
 });
 
-describe('GET /api/athena/subdomains/:id — detail endpoint', () => {
+describeIntegration('GET /api/athena/subdomains/:id — detail endpoint', () => {
   test('cards-service returns owner, step, consumedBy', async () => {
     const res = await fetch(`${API}/api/athena/subdomains/cards-service`);
     expect(res.status).toBe(200);
@@ -160,7 +164,7 @@ describe('GET /api/athena/subdomains/:id — detail endpoint', () => {
   });
 });
 
-describe('GET /api/athena/machines', () => {
+describeIntegration('GET /api/athena/machines', () => {
   test('returns machines with labels', async () => {
     const res = await fetch(`${API}/api/athena/machines`);
     expect(res.status).toBe(200);
@@ -174,7 +178,7 @@ describe('GET /api/athena/machines', () => {
   });
 });
 
-describe('_meta envelope', () => {
+describeIntegration('_meta envelope', () => {
   test('all endpoints include query_name, duration_ms, cached', async () => {
     const endpoints = ['health', 'products', 'subproducts', 'subdomains', 'steps', 'owners', 'machines'];
     for (const ep of endpoints) {
@@ -187,7 +191,7 @@ describe('_meta envelope', () => {
   });
 });
 
-describe('404 handler', () => {
+describeIntegration('404 handler', () => {
   test('unknown path returns 404 with available endpoints', async () => {
     const res = await fetch(`${API}/api/athena/bogus`);
     expect(res.status).toBe(404);
