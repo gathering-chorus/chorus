@@ -239,6 +239,14 @@ elif [ -z "$(find "$LANCE_DIR" -type f -mtime -1 2>/dev/null | head -1)" ]; then
   WARNINGS+=("lancedb: index not updated in 24h — semantic search may be stale")
 fi
 
+# --- 11c. Vikunja log freshness (#1856) ---
+VIKUNJA_LOG="/Users/jeffbridwell/Library/Logs/Gathering/vikunja.log"
+if [ ! -f "$VIKUNJA_LOG" ]; then
+  WARNINGS+=("vikunja: log file missing")
+elif [ -z "$(find "$VIKUNJA_LOG" -mmin -60 2>/dev/null)" ]; then
+  WARNINGS+=("vikunja: log not updated in 1h — service may be stalled")
+fi
+
 for entry in "${HEALTH_ENDPOINTS[@]}"; do
   IFS='|' read -r url name desc <<< "$entry"
   if ! curl -sf --max-time 5 "$url" > /dev/null 2>&1; then

@@ -1,0 +1,35 @@
+# vikunja-auth-failure.yml — Alert when Vikunja returns 401 (token expired)
+# Card #1856 | AC2
+#
+# Token expiry is silent — cards CLI just stops working.
+# This alert catches 401 responses in Vikunja logs within 5 minutes.
+
+name: vikunja-auth-failure
+description: Vikunja returning 401 — API token may be expired
+severity: critical
+schedule: "*/5 * * * *"
+
+check: |
+  NOW=$(date +%s)
+  START=$(( NOW - 300 ))
+  RESULT=$(curl -sf --max-time 5 -G "http://localhost:3102/loki/api/v1/query_range" \
+    --data-urlencode 'query={job="vikunja"} |~ "401"' \
+    --data-urlencode "start=${START}000000000" \
+    --data-urlencode "end=${NOW}000000000" \
+    --data-urlencode "limit=1" 2>/dev/null)
+  COUNT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(len(r.get('values',[])) for r in d.get('data',{}).get('result',[])))" 2>/dev/null || echo "0")
+  if [[ "$COUNT" == "0" ]]; then
+    echo "ok"
+    exit 0
+  fi
+  echo "vikunja-401:$COUNT"
+  exit 1
+
+action: |
+  COOLDOWN="/tmp/alert-vikunja-401-$(date '+%Y-%m-%d')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "vikunja-auth: 401 errors in Vikunja logs — token likely expired. Fix: regenerate long-lived token, update chorus/.env" --force 2>/dev/null || true
