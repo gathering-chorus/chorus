@@ -1,0 +1,10 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?sd ?label ?ownerLabel ?stepLabel WHERE {
+  GRAPH <urn:chorus:ontology> {
+    ?sd a chorus:SubDomain .
+    OPTIONAL { ?sd rdfs:label ?label }
+    OPTIONAL { ?sd chorus:ownedBy ?owner . ?owner rdfs:label ?ownerLabel }
+    OPTIONAL { ?sd chorus:primaryStep ?step . ?step rdfs:label ?stepLabel }
+  }
+} ORDER BY ?stepLabel ?label

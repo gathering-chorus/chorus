@@ -1,0 +1,8 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?owner ?label (COUNT(?sd) AS ?count) WHERE {
+  GRAPH <urn:chorus:ontology> {
+    ?sd chorus:ownedBy ?owner .
+    ?owner rdfs:label ?label .
+  }
+} GROUP BY ?owner ?label ORDER BY DESC(?count)

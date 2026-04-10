@@ -1,0 +1,1 @@
+SELECT (COUNT(*) AS ?count) WHERE { GRAPH <urn:chorus:ontology> { ?s ?p ?o } }

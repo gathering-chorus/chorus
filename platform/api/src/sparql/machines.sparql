@@ -1,0 +1,10 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?machine ?label ?ip ?role WHERE {
+  GRAPH <urn:chorus:ontology> {
+    ?machine a chorus:Machine .
+    OPTIONAL { ?machine rdfs:label ?label }
+    OPTIONAL { ?machine chorus:ipAddress ?ip }
+    OPTIONAL { ?machine chorus:machineRole ?role }
+  }
+} ORDER BY ?label
