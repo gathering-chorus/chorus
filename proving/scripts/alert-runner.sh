@@ -50,14 +50,14 @@ run_check() {
     log "  ACTION $name fired"
   fi
 
-  # DEC-107: persist AND deliver. Action posts to Bridge (persist).
-  # Now also nudge --force to owning role's terminal (deliver). (#2037)
-  # Nudge cooldown: max once per 10 minutes per alert, same as action (#2071 fix)
-  local nudge_cooldown="/tmp/alert-nudge-${name}-$(date '+%Y-%m-%d-%H')-$(( 10#$(date '+%M') / 10 ))"
-  if [[ -f "$nudge_cooldown" ]]; then
-    log "  NUDGE $name cooldown (skipped)"
+  # DEC-107: persist AND deliver — but respect action block's cooldown.
+  # Action block writes its own cooldown file (e.g. /tmp/alert-nifi-2026-04-10).
+  # If ANY /tmp/alert-${name}-* cooldown file exists for today, skip the nudge.
+  # This prevents the dual-path leak where action cooldown suppresses but runner still nudges.
+  local action_cooldown=$(ls /tmp/alert-${name}-$(date '+%Y-%m-%d')* 2>/dev/null | head -1)
+  if [[ -n "$action_cooldown" ]]; then
+    log "  NUDGE $name action-cooldown active (skipped)"
   else
-    touch "$nudge_cooldown"
     local owner
     owner=$(grep '^owner:' "$rule_file" | head -1 | sed 's/owner: *//' || true)
     owner="${owner:-silas}"
