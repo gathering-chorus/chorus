@@ -3571,12 +3571,26 @@ app.get('/api/athena/machines', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
     const result = await athenaSparqlQuery(loadSparql('machines'));
-    const machines = result.results.bindings.map((b: any) => ({
-      uri: b.machine.value,
-      label: b.label?.value || b.machine.value.split('#').pop(),
-      ip: b.ip?.value || null,
-      role: b.role?.value || null,
-    }));
+    const machineMap = new Map<string, { uri: string; label: string; ip: string | null; role: string | null; services: { uri: string; label: string }[] }>();
+    for (const b of result.results.bindings) {
+      const uri = b.machine.value;
+      if (!machineMap.has(uri)) {
+        machineMap.set(uri, {
+          uri,
+          label: b.label?.value || uri.split('#').pop(),
+          ip: b.ip?.value || null,
+          role: b.role?.value || null,
+          services: [],
+        });
+      }
+      if (b.service) {
+        machineMap.get(uri)!.services.push({
+          uri: b.service.value,
+          label: b.serviceLabel?.value || b.service.value.split('#').pop(),
+        });
+      }
+    }
+    const machines = Array.from(machineMap.values());
     res.json(athenaEnvelope('machines', machines, Date.now() - start, { count: machines.length }));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('machines', { error: err.message }, Date.now() - start, { error: true }));

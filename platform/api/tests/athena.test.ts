@@ -66,7 +66,7 @@ describeIntegration('GET /api/athena/subdomains', () => {
     const res = await fetch(`${API}/api/athena/subdomains?owner=kade`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body._meta.count).toBe(14);
+    expect(body._meta.count).toBe(13);
     for (const sd of body.data) {
       expect(sd.owner.toLowerCase()).toBe('kade');
     }
@@ -114,8 +114,8 @@ describeIntegration('GET /api/athena/owners', () => {
 describeIntegration('GET /api/athena/subdomains — owner filters', () => {
   test.each([
     ['wren', 10],
-    ['silas', 12],
-    ['kade', 14],
+    ['silas', 13],
+    ['kade', 13],
     ['jeff', 5],
   ])('owner=%s returns %i subdomains', async (owner, expected) => {
     const res = await fetch(`${API}/api/athena/subdomains?owner=${owner}`);
@@ -155,6 +155,13 @@ describeIntegration('GET /api/athena/subdomains/:id — detail endpoint', () => 
     expect(body.data.consumedBy.length).toBe(3);
   });
 
+  test('detail includes consumes (dependencies) array', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/cards-service`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data.consumes)).toBe(true);
+  });
+
   test('nonexistent returns 404 with suggestion', async () => {
     const res = await fetch(`${API}/api/athena/subdomains/nonexistent`);
     expect(res.status).toBe(404);
@@ -175,6 +182,20 @@ describeIntegration('GET /api/athena/machines', () => {
     for (const m of body.data) {
       expect(m.label).toBeDefined();
     }
+  });
+
+  test('Library has 9 services and Bedroom has 1', async () => {
+    const res = await fetch(`${API}/api/athena/machines`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const library = body.data.find(m => m.label === 'Library');
+    const bedroom = body.data.find(m => m.label === 'Bedroom');
+    expect(library).toBeDefined();
+    expect(bedroom).toBeDefined();
+    expect(Array.isArray(library.services)).toBe(true);
+    expect(library.services.length).toBe(9);
+    expect(Array.isArray(bedroom.services)).toBe(true);
+    expect(bedroom.services.length).toBe(1);
   });
 });
 

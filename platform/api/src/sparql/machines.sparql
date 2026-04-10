@@ -1,10 +1,11 @@
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?machine ?label ?ip ?role WHERE {
+SELECT ?machine ?label ?ip ?role ?service ?serviceLabel WHERE {
   GRAPH <urn:chorus:ontology> {
     ?machine a chorus:Machine .
     OPTIONAL { ?machine rdfs:label ?label }
     OPTIONAL { ?machine chorus:ipAddress ?ip }
     OPTIONAL { ?machine chorus:machineRole ?role }
+    OPTIONAL { ?service chorus:runsOn ?machine . ?service rdfs:label ?serviceLabel }
   }
-} ORDER BY ?label
+} ORDER BY ?label ?serviceLabel
