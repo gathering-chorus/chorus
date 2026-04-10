@@ -176,40 +176,24 @@ chorus:Domain a owl:Class ;
 chorus:CollectionDomain a owl:Class ;
     rdfs:subClassOf chorus:Domain ;
     rdfs:label "Collection Domain" ;
-    rdfs:comment "A Gathering data domain — Photos, Music, Stories, Books, People, Property, Seeds, Sexuality. Owned collections with jb: class instances." .
+    rdfs:comment "A Gathering data domain — Photos, Music, Stories, Books, People, Property, Seeds, Sexuality." .
 
 chorus:SubProduct a owl:Class ;
     rdfs:subClassOf chorus:Domain ;
     rdfs:label "Sub-Product" ;
-    rdfs:comment "A Chorus product domain — Cards, Loom, The Clearing, Werk, Observability. Ownable, buildable units within the protocol." .
+    rdfs:comment "A named product within Chorus — Cards, Loom, The Clearing, Werk, Observability." .
 
-chorus:LoomDomain a owl:Class ;
+chorus:SubDomain a owl:Class ;
     rdfs:subClassOf chorus:Domain ;
-    rdfs:label "Loom Domain" ;
-    rdfs:comment "A governance concept within Loom — Principles, Practices, Decisions, Roles, RCAs, Metrics, Analytics. Not a sub-product or technical domain." .
-
-chorus:TechnicalDomain a owl:Class ;
-    rdfs:subClassOf chorus:Domain ;
-    rdfs:label "Technical Domain" ;
-    rdfs:comment "An infrastructure concern — Infra, Codebase, Search, Network, Disk, Compute, ToolsChain. Cross-cutting, consumed by products." .
+    rdfs:label "Sub-Domain" ;
+    rdfs:comment "A sub-domain within a sub-product. Matches the Sub Domain column in Jeff's spreadsheet." .
 
 # =============================================================================
 # 2d. SERVICES (from product ontology)
 # =============================================================================
 
-chorus:Service a owl:Class ;
-    rdfs:label "Service" ;
-    rdfs:comment "A running piece of infrastructure with a port, data model, integration contract, and non-functionals. Two tiers: Infrastructure (degrade visibility) and Protocol (degrade ability to work)." .
-
-chorus:InfrastructureService a owl:Class ;
-    rdfs:subClassOf chorus:Service ;
-    rdfs:label "Infrastructure Service" ;
-    rdfs:comment "Tier 1: Observability, Infra, Logs, Alerts, Deploys. Failure degrades visibility into the system." .
-
-chorus:ProtocolService a owl:Class ;
-    rdfs:subClassOf chorus:Service ;
-    rdfs:label "Protocol Service" ;
-    rdfs:comment "Tier 2: Cards, Skills, Gates, Spine. Failure degrades the ability to work at all." .
+# Service tier classes removed (#1845 Phase 6) — Jeff's model uses Sub-Domain for all.
+# Tier distinction (infra vs protocol) is metadata, not a type.
 
 # =============================================================================
 # 2e. MACHINES (from product ontology)
@@ -380,43 +364,43 @@ chorus:actor-bdd-product a chorus:SubProduct ;
 
 # --- Loom Domains (7 unique governance concepts) ---
 
-chorus:loom-principles a chorus:LoomDomain ;
+chorus:loom-principles a chorus:SubDomain ;
     rdfs:label "Principles" ;
     rdfs:comment "Shared values that explain why. Stable. Patterns derive from principles." ;
     chorus:ownedBy chorus:jeff ;
     chorus:primaryStep chorus:Shaping .
 
-chorus:loom-practices a chorus:LoomDomain ;
+chorus:loom-practices a chorus:SubDomain ;
     rdfs:label "Practices" ;
     rdfs:comment "Repeatable disciplines that apply across domains." ;
     chorus:ownedBy chorus:jeff ;
     chorus:primaryStep chorus:Shaping .
 
-chorus:loom-decisions a chorus:LoomDomain ;
+chorus:loom-decisions a chorus:SubDomain ;
     rdfs:label "Decisions" ;
     rdfs:comment "DEC-NNN — governing choices that constrain future behavior." ;
     chorus:ownedBy chorus:jeff ;
     chorus:primaryStep chorus:Shaping .
 
-chorus:loom-roles a chorus:LoomDomain ;
+chorus:loom-roles a chorus:SubDomain ;
     rdfs:label "Roles" ;
     rdfs:comment "Role definitions, boundaries, interaction modes." ;
     chorus:ownedBy chorus:jeff ;
     chorus:primaryStep chorus:Shaping .
 
-chorus:loom-rcas a chorus:LoomDomain ;
+chorus:loom-rcas a chorus:SubDomain ;
     rdfs:label "RCAs" ;
     rdfs:comment "Root cause analyses — post-incident learning." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving .
 
-chorus:loom-metrics a chorus:LoomDomain ;
+chorus:loom-metrics a chorus:SubDomain ;
     rdfs:label "Metrics" ;
     rdfs:comment "Team and system health metrics — cost, velocity, quality." ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Shaping .
 
-chorus:loom-analytics a chorus:LoomDomain ;
+chorus:loom-analytics a chorus:SubDomain ;
     rdfs:label "Analytics" ;
     rdfs:comment "Usage trends, value stream analysis, pattern detection." ;
     chorus:ownedBy chorus:wren ;
@@ -424,63 +408,63 @@ chorus:loom-analytics a chorus:LoomDomain ;
 
 # --- Shared Services (consumed by multiple products) ---
 
-chorus:observability-service a chorus:InfrastructureService ;
+chorus:observability-service a chorus:SubDomain ;
     rdfs:label "Observability (Service)" ;
     rdfs:comment "Grafana dashboards, metrics, health surfaces. Consumed at different steps by different products." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
     chorus:runsOn chorus:library .
 
-chorus:infra-service a chorus:InfrastructureService ;
+chorus:infra-service a chorus:SubDomain ;
     rdfs:label "Infrastructure (Service)" ;
     rdfs:comment "Machines, containers, storage, network, LaunchAgents." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
     chorus:runsOn chorus:library, chorus:bedroom .
 
-chorus:logs-service a chorus:InfrastructureService ;
+chorus:logs-service a chorus:SubDomain ;
     rdfs:label "Logs" ;
     rdfs:comment "Loki log aggregation. Structured logging pipeline." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
     chorus:runsOn chorus:library .
 
-chorus:alerts-service a chorus:InfrastructureService ;
+chorus:alerts-service a chorus:SubDomain ;
     rdfs:label "Alerts" ;
     rdfs:comment "Alert rules, alert-runner, Alertmanager, macOS notifications." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
     chorus:runsOn chorus:library .
 
-chorus:deploys-service a chorus:InfrastructureService ;
+chorus:deploys-service a chorus:SubDomain ;
     rdfs:label "Deploys" ;
     rdfs:comment "app-state.sh, deploy freeze, build pipeline, container lifecycle." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
     chorus:runsOn chorus:library .
 
-chorus:cards-service a chorus:ProtocolService ;
+chorus:cards-service a chorus:SubDomain ;
     rdfs:label "Cards (Service)" ;
     rdfs:comment "Vikunja board + board-ts CLI. Coordination primitive — all three roles stall if broken." ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Directing ;
     chorus:runsOn chorus:library .
 
-chorus:skills-service a chorus:ProtocolService ;
+chorus:skills-service a chorus:SubDomain ;
     rdfs:label "Skills" ;
     rdfs:comment "Slash-command skills. 36 skills, symlinked to all roles." ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Shaping ;
     chorus:runsOn chorus:library .
 
-chorus:gates-service a chorus:ProtocolService ;
+chorus:gates-service a chorus:SubDomain ;
     rdfs:label "Gates" ;
     rdfs:comment "PreToolUse/PostToolUse hooks — Rust binary. Quality enforcement." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Building ;
     chorus:runsOn chorus:library .
 
-chorus:spine-service a chorus:ProtocolService ;
+chorus:spine-service a chorus:SubDomain ;
     rdfs:label "Spine" ;
     rdfs:comment "Event bus — chorus-log.sh, spine-events.json. Vertical integration across all layers." ;
     chorus:ownedBy chorus:silas ;
@@ -489,91 +473,91 @@ chorus:spine-service a chorus:ProtocolService ;
 
 # --- Missing Chorus sub-domains (from spreadsheet, Phase 6) ---
 
-chorus:code-domain a chorus:TechnicalDomain ;
+chorus:code-domain a chorus:SubDomain ;
     rdfs:label "Code" ;
     rdfs:comment "Source code, build artifacts, TypeScript/Rust compilation." ;
     chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building .
 
-chorus:commits-domain a chorus:TechnicalDomain ;
+chorus:commits-domain a chorus:SubDomain ;
     rdfs:label "Commits" ;
     rdfs:comment "Git commits, change history, git-queue serialization." ;
     chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building .
 
-chorus:tests-domain a chorus:TechnicalDomain ;
+chorus:tests-domain a chorus:SubDomain ;
     rdfs:label "Tests" ;
     rdfs:comment "Unit, integration, bats tests. TDD discipline." ;
     chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building .
 
-chorus:pipelines-domain a chorus:TechnicalDomain ;
+chorus:pipelines-domain a chorus:SubDomain ;
     rdfs:label "Pipelines" ;
     rdfs:comment "Build/deploy pipelines, harvest pipelines, ETL." ;
     chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building .
 
-chorus:messages-domain a chorus:TechnicalDomain ;
+chorus:messages-domain a chorus:SubDomain ;
     rdfs:label "Messages" ;
     rdfs:comment "Bridge messaging, nudge delivery, inter-role communication." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving .
 
-chorus:streams-domain a chorus:TechnicalDomain ;
+chorus:streams-domain a chorus:SubDomain ;
     rdfs:label "Streams" ;
     rdfs:comment "Event streams, spine event flow, Loki log streams." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving .
 
-chorus:pulse-domain a chorus:TechnicalDomain ;
+chorus:pulse-domain a chorus:SubDomain ;
     rdfs:label "Pulse" ;
     rdfs:comment "Team health signals, role state, andon, heartbeat." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving .
 
-chorus:knowledge-domain a chorus:TechnicalDomain ;
+chorus:knowledge-domain a chorus:SubDomain ;
     rdfs:label "Knowledge" ;
     rdfs:comment "Chorus index, doc catalog, semantic search." ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Designing .
 
-chorus:integrations-domain a chorus:TechnicalDomain ;
+chorus:integrations-domain a chorus:SubDomain ;
     rdfs:label "Integrations" ;
     rdfs:comment "ICDs, cross-domain data contracts, harvester interfaces." ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Designing .
 
-chorus:policies-domain a chorus:LoomDomain ;
+chorus:policies-domain a chorus:SubDomain ;
     rdfs:label "Policies" ;
     rdfs:comment "Team policies — working hours, WIP limits, response windows." ;
     chorus:ownedBy chorus:jeff ;
     chorus:primaryStep chorus:Shaping .
 
-chorus:toolschain-domain a chorus:TechnicalDomain ;
+chorus:toolschain-domain a chorus:SubDomain ;
     rdfs:label "ToolsChain" ;
     rdfs:comment "Build tools, linters, formatters, CI infrastructure." ;
     chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building .
 
-chorus:domains-domain a chorus:TechnicalDomain ;
+chorus:domains-domain a chorus:SubDomain ;
     rdfs:label "Domains" ;
     rdfs:comment "Domain definitions, BDD specs, domain context files." ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Designing .
 
-chorus:services-domain a chorus:TechnicalDomain ;
+chorus:services-domain a chorus:SubDomain ;
     rdfs:label "Services" ;
     rdfs:comment "Service definitions, service registry, service design docs." ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Designing .
 
-chorus:chorus-domain a chorus:TechnicalDomain ;
+chorus:chorus-domain a chorus:SubDomain ;
     rdfs:label "Chorus (Domain)" ;
     rdfs:comment "The coordination protocol itself — skills, hooks, gates, spine, dashboards." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving .
 
-chorus:convergence-domain a chorus:TechnicalDomain ;
+chorus:convergence-domain a chorus:SubDomain ;
     rdfs:label "Convergence (Domain)" ;
     rdfs:comment "Cross-domain integration patterns, ICD enforcement, data pipeline contracts." ;
     chorus:ownedBy chorus:wren ;
