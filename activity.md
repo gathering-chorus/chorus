@@ -584,3 +584,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Kade] 2026-04-07 afternoon — gemba on Silas (#2328 restructure), fixed 8 broken test files, paired on #1308 (CHORUS_ROOT hardening, 644 paths externalized). Regression green 4689/4696.
 
 - [Silas] 2026-04-08 10:15–11:00 — Paired with Wren on #1807 (spine event contract, product template) and #1809 (apply template to /demo skill). Defined product/domain split, registered 6 missing spine events, extracted 658→240 lines of demo gate Rust into shell scripts Wren owns. Two cards shipped in 24 min pair time. Committed and pushed both.
+
+- [Wren] 2026-04-10 17:18–17:25 — No-op session. Greeting exchange, watchdog false positives dismissed. No cards pulled, no work done.
