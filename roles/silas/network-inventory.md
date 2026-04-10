@@ -93,7 +93,7 @@ All HomePods advertise AirPlay + RAOP (AirPlay audio) + HomeKit (HAP) sensor ser
 | Container | Port | Status | Stack |
 |-----------|------|--------|-------|
 | jeff-bridwell-personal-site-app | 3000 | Healthy | Gathering app |
-| jeff-bridwell-personal-site-fuseki | 3031 | Healthy | Gathering RDF/SPARQL |
+| jeff-bridwell-personal-site-fuseki | 3030 | Healthy | Gathering RDF/SPARQL |
 | jeff-bridwell-personal-site-webvowl | 8089 | Healthy | Gathering ontology viz |
 | wordpress-blog | 8081 | Healthy | Blog |
 | wordpress-mysql | 3306 | Healthy | Blog DB |

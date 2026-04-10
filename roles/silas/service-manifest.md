@@ -15,7 +15,7 @@ Lifecycle: `app-state.sh start|stop|restart|deploy|status`
 | Container | Port | Bind | Health Endpoint | Health Check | Owner |
 |-----------|------|------|-----------------|-------------|-------|
 | jeff-bridwell-personal-site-app | 3000 | 0.0.0.0 | /health | Docker HEALTHCHECK | Kade |
-| jeff-bridwell-personal-site-fuseki | 3031 | 127.0.0.1 | /$/ping | Docker HEALTHCHECK | Kade |
+| jeff-bridwell-personal-site-fuseki | 3030 | 127.0.0.1 | /$/ping | Docker HEALTHCHECK | Kade |
 | jeff-bridwell-personal-site-webvowl | 8089 | 127.0.0.1 | / | Docker HEALTHCHECK | Kade |
 
 **Dependencies**: Fuseki must be up before app starts. App → Fuseki via Docker network (`fuseki:3030`).
@@ -169,7 +169,7 @@ Bedroom services (bare Node.js)
 | Port | Service | Bind |
 |------|---------|------|
 | 3000 | Gathering App | 0.0.0.0 (LAN) |
-| 3031 | Fuseki SPARQL | 127.0.0.1 |
+| 3030 | Fuseki SPARQL | 127.0.0.1 |
 | 3100 | Grafana | 127.0.0.1 |
 | 3102 | Loki | 127.0.0.1 |
 | 3306 | MySQL | 127.0.0.1 |

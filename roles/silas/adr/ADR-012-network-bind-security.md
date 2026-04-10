@@ -10,7 +10,7 @@
 All 16 Docker containers on the primary Mac (192.168.86.36) bind their ports to `0.0.0.0`, making every service accessible from any device on the LAN (192.168.86.0/24 — 22 devices including iPhones, Apple TVs, HomePods, printer, etc.).
 
 Most of these services have no authentication:
-- **Fuseki** (3031) — SPARQL endpoint, full read/write to the knowledge graph
+- **Fuseki** (3030) — SPARQL endpoint, full read/write to the knowledge graph
 - **Prometheus** (9090) — metrics, targets, configuration visible
 - **Grafana** (3100) — dashboards, Loki queries (password was `admin` until secrets audit)
 - **Loki** (3102) — raw log queries
@@ -153,7 +153,7 @@ ip = "127.0.0.1"    # Was: "0.0.0.0"
 | Service | Port | Current | Target | Config File |
 |---------|------|---------|--------|-------------|
 | **App** | 3000 | 0.0.0.0 | **0.0.0.0** (keep) | main.tf |
-| Fuseki | 3031 | 0.0.0.0 | 127.0.0.1 | fuseki.tf |
+| Fuseki | 3030 | 0.0.0.0 | 127.0.0.1 | fuseki.tf |
 | WebVOWL | 8089 | 0.0.0.0 | 127.0.0.1 | webvowl.tf |
 | Prometheus | 9090 | 0.0.0.0 | 127.0.0.1 | prometheus/main.tf |
 | Grafana | 3100 | 0.0.0.0 | 127.0.0.1 | prometheus/main.tf |
