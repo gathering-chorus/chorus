@@ -3492,6 +3492,38 @@ app.get('/api/athena/subdomains/:id/blast-radius', async (req: Request, res: Res
   }
 });
 
+// GET /api/athena/subdomains/:id — single sub-domain detail
+app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const query = loadSparql('subdomain-detail').split('$URI').join(sdUri);
+    const result = await athenaSparqlQuery(query);
+    const bindings = result.results.bindings;
+    if (bindings.length === 0) {
+      return res.status(404).json(athenaEnvelope('subdomain-detail', {
+        error: `Sub-domain '${req.params.id}' not found`,
+        suggestion: 'Use GET /api/athena/subdomains to list all available sub-domains.',
+      }, Date.now() - start, { error: true }));
+    }
+    const first = bindings[0];
+    const consumers = [...new Set(bindings.filter((b: any) => b.consumer).map((b: any) => JSON.stringify({ uri: b.consumer.value, label: b.consumerLabel?.value || b.consumer.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
+    const consumes = [...new Set(bindings.filter((b: any) => b.consumed).map((b: any) => JSON.stringify({ uri: b.consumed.value, label: b.consumedLabel?.value || b.consumed.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
+    res.json(athenaEnvelope('subdomain-detail', {
+      uri: sdUri,
+      id: req.params.id,
+      label: first.label?.value || req.params.id,
+      owner: first.ownerLabel?.value || null,
+      step: first.stepLabel?.value || null,
+      comment: first.comment?.value || null,
+      consumedBy: consumers,
+      consumes,
+    }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-detail', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
 // GET /api/athena/steps — value stream steps with sub-domains at each step
 app.get('/api/athena/steps', async (_req: Request, res: Response) => {
   const start = Date.now();

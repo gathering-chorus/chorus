@@ -7,7 +7,7 @@
     "chorus-api": "./bin/chorus-api"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && rm -rf dist/sparql && cp -r src/sparql dist/sparql",
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts"
   },

@@ -1,0 +1,13 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label ?ownerLabel ?stepLabel ?comment ?consumer ?consumerLabel ?consumed ?consumedLabel WHERE {
+  GRAPH <urn:chorus:ontology> {
+    <$URI> a chorus:SubDomain .
+    OPTIONAL { <$URI> rdfs:label ?label }
+    OPTIONAL { <$URI> chorus:ownedBy ?owner . ?owner rdfs:label ?ownerLabel }
+    OPTIONAL { <$URI> chorus:primaryStep ?step . ?step rdfs:label ?stepLabel }
+    OPTIONAL { <$URI> rdfs:comment ?comment }
+    OPTIONAL { ?consumer chorus:consumes <$URI> . ?consumer rdfs:label ?consumerLabel }
+    OPTIONAL { <$URI> chorus:consumes ?consumed . ?consumed rdfs:label ?consumedLabel }
+  }
+}
