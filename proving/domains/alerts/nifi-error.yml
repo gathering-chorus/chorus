@@ -27,8 +27,8 @@ check: |
   exit 1
 
 action: |
-  # Cooldown: max once per hour (pre-existing broken processor fires constantly)
-  COOLDOWN_FILE="/tmp/alert-nifi-$(date '+%Y-%m-%d-%H')"
+  # Cooldown: max once per day (pre-existing broken processor fires constantly)
+  COOLDOWN_FILE="/tmp/alert-nifi-$(date '+%Y-%m-%d')"
   if [ -f "$COOLDOWN_FILE" ]; then
     exit 0
   fi
