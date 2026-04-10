@@ -158,7 +158,7 @@ chorus:ValueStream a owl:Class ;
     rdfs:comment "A named flow of value from signal to outcome. Stable — when a value stream changes, the product has fundamentally changed." .
 
 chorus:gatheringStream a chorus:ValueStream ;
-    rdfs:label "Gathering" ;
+    rdfs:label "Gathering (Stream)" ;
     rdfs:comment "The flow of meaning: Spark → Capture → Triage → Settle → Revisit → Transform → Connect → Reflect." .
 
 chorus:chorusStream a chorus:ValueStream ;
@@ -330,7 +330,7 @@ chorus:gathering a chorus:Product ;
     rdfs:comment "Personal infrastructure — SOLID pods, knowledge graph, collections, Self domain. The product the spine builds." .
 
 chorus:chorusProduct a chorus:Product ;
-    rdfs:label "Chorus" ;
+    rdfs:label "Chorus (Product)" ;
     rdfs:comment "The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system." .
 
 # --- Sub-Products (Chorus) ---
@@ -344,7 +344,7 @@ chorus:loom a chorus:SubProduct ;
                      chorus:loom-analytics .
 
 chorus:cards-product a chorus:SubProduct ;
-    rdfs:label "Cards" ;
+    rdfs:label "Cards (Product)" ;
     rdfs:comment "The kanban work coordination system — board-ts CLI, Vikunja API, card lifecycle." ;
     chorus:ownedBy chorus:wren .
 
@@ -359,7 +359,7 @@ chorus:werk-product a chorus:SubProduct ;
     chorus:ownedBy chorus:wren .
 
 chorus:observability-product a chorus:SubProduct ;
-    rdfs:label "Observability" ;
+    rdfs:label "Observability (Product)" ;
     rdfs:comment "Monitoring, dashboards, alerts, logs, deploys. The ability to see what's happening." ;
     chorus:ownedBy chorus:silas .
 
@@ -425,14 +425,14 @@ chorus:loom-analytics a chorus:LoomDomain ;
 # --- Shared Services (consumed by multiple products) ---
 
 chorus:observability-service a chorus:InfrastructureService ;
-    rdfs:label "Observability" ;
+    rdfs:label "Observability (Service)" ;
     rdfs:comment "Grafana dashboards, metrics, health surfaces. Consumed at different steps by different products." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
     chorus:runsOn chorus:library .
 
 chorus:infra-service a chorus:InfrastructureService ;
-    rdfs:label "Infrastructure" ;
+    rdfs:label "Infrastructure (Service)" ;
     rdfs:comment "Machines, containers, storage, network, LaunchAgents." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
@@ -460,7 +460,7 @@ chorus:deploys-service a chorus:InfrastructureService ;
     chorus:runsOn chorus:library .
 
 chorus:cards-service a chorus:ProtocolService ;
-    rdfs:label "Cards" ;
+    rdfs:label "Cards (Service)" ;
     rdfs:comment "Vikunja board + board-ts CLI. Coordination primitive — all three roles stall if broken." ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Directing ;
@@ -486,6 +486,116 @@ chorus:spine-service a chorus:ProtocolService ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Shaping ;
     chorus:runsOn chorus:library .
+
+# --- Missing Chorus sub-domains (from spreadsheet, Phase 6) ---
+
+chorus:code-domain a chorus:TechnicalDomain ;
+    rdfs:label "Code" ;
+    rdfs:comment "Source code, build artifacts, TypeScript/Rust compilation." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:primaryStep chorus:Building .
+
+chorus:commits-domain a chorus:TechnicalDomain ;
+    rdfs:label "Commits" ;
+    rdfs:comment "Git commits, change history, git-queue serialization." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:primaryStep chorus:Building .
+
+chorus:tests-domain a chorus:TechnicalDomain ;
+    rdfs:label "Tests" ;
+    rdfs:comment "Unit, integration, bats tests. TDD discipline." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:primaryStep chorus:Building .
+
+chorus:pipelines-domain a chorus:TechnicalDomain ;
+    rdfs:label "Pipelines" ;
+    rdfs:comment "Build/deploy pipelines, harvest pipelines, ETL." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:primaryStep chorus:Building .
+
+chorus:messages-domain a chorus:TechnicalDomain ;
+    rdfs:label "Messages" ;
+    rdfs:comment "Bridge messaging, nudge delivery, inter-role communication." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving .
+
+chorus:streams-domain a chorus:TechnicalDomain ;
+    rdfs:label "Streams" ;
+    rdfs:comment "Event streams, spine event flow, Loki log streams." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving .
+
+chorus:pulse-domain a chorus:TechnicalDomain ;
+    rdfs:label "Pulse" ;
+    rdfs:comment "Team health signals, role state, andon, heartbeat." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving .
+
+chorus:knowledge-domain a chorus:TechnicalDomain ;
+    rdfs:label "Knowledge" ;
+    rdfs:comment "Chorus index, doc catalog, semantic search." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Designing .
+
+chorus:integrations-domain a chorus:TechnicalDomain ;
+    rdfs:label "Integrations" ;
+    rdfs:comment "ICDs, cross-domain data contracts, harvester interfaces." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Designing .
+
+chorus:policies-domain a chorus:LoomDomain ;
+    rdfs:label "Policies" ;
+    rdfs:comment "Team policies — working hours, WIP limits, response windows." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:toolschain-domain a chorus:TechnicalDomain ;
+    rdfs:label "ToolsChain" ;
+    rdfs:comment "Build tools, linters, formatters, CI infrastructure." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:primaryStep chorus:Building .
+
+chorus:domains-domain a chorus:TechnicalDomain ;
+    rdfs:label "Domains" ;
+    rdfs:comment "Domain definitions, BDD specs, domain context files." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Designing .
+
+chorus:services-domain a chorus:TechnicalDomain ;
+    rdfs:label "Services" ;
+    rdfs:comment "Service definitions, service registry, service design docs." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Designing .
+
+chorus:chorus-domain a chorus:TechnicalDomain ;
+    rdfs:label "Chorus (Domain)" ;
+    rdfs:comment "The coordination protocol itself — skills, hooks, gates, spine, dashboards." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving .
+
+chorus:convergence-domain a chorus:TechnicalDomain ;
+    rdfs:label "Convergence (Domain)" ;
+    rdfs:comment "Cross-domain integration patterns, ICD enforcement, data pipeline contracts." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Designing .
+
+# --- Wire new domains into products ---
+
+chorus:observability-product chorus:hasDomain chorus:code-domain, chorus:commits-domain,
+                                              chorus:tests-domain .
+
+chorus:operating-model-product chorus:hasDomain chorus:pipelines-domain .
+
+chorus:chorusProduct chorus:hasDomain chorus:messages-domain, chorus:streams-domain,
+                                     chorus:pulse-domain, chorus:knowledge-domain .
+
+chorus:convergence-product chorus:hasDomain chorus:integrations-domain, chorus:convergence-domain .
+
+chorus:chorusProduct chorus:hasDomain chorus:chorus-domain .
+
+chorus:loom chorus:hasDomain chorus:policies-domain .
+
+chorus:actor-bdd-product chorus:hasDomain chorus:domains-domain, chorus:services-domain .
 
 # --- Product → Service consumption edges ---
 
@@ -568,7 +678,7 @@ chorus:HandoffType a owl:Class ;
     rdfs:label "Handoff Type" .
 
 chorus:BriefHandoff a chorus:HandoffType ;
-    rdfs:label "Brief" ;
+    rdfs:label "Brief (Handoff)" ;
     rdfs:comment "File written to target role's briefs/ directory." .
 
 chorus:WorkflowHandoff a chorus:HandoffType ;
@@ -576,7 +686,7 @@ chorus:WorkflowHandoff a chorus:HandoffType ;
     rdfs:comment "workflow-ts advance — step completion routes to next role." .
 
 chorus:DecisionHandoff a chorus:HandoffType ;
-    rdfs:label "Decision" ;
+    rdfs:label "Decision (Handoff)" ;
     rdfs:comment "Decision made in Clearing or conversation, routed to affected role." .
 
 chorus:HandoffStatus a owl:Class ;
