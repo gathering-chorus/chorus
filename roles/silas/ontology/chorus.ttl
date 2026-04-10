@@ -6,29 +6,36 @@
 @prefix chorus:   <https://jeffbridwell.com/chorus#> .
 
 # =============================================================================
-# Chorus Ontology v0.2.0 — Shared Awareness
+# Chorus Ontology v0.3.0 — Canonical Model
 # =============================================================================
 #
 # Unified model of how the team operates: roles, tools, the value stream
-# (spine), artifacts, handoffs, gates, trust, and the products being built.
+# (spine), artifacts, handoffs, gates, trust, products, domains, and services.
 #
-# Merges former building.ttl (team protocol) + chorus.ttl v0.1.0 (pipeline)
-# into a single coherent model. The viz at /chorus/system is a VIEW of this
-# ontology — connections are derived from relationships, not hand-coded.
+# v0.3.0 merges Wren's product ontology (chorus-product-ontology.owl) into the
+# canonical namespace. Adds: ValueStream, Phase, Domain subtypes, Service,
+# Machine, Shaping vertebra, consumption/provision edges.
+#
+# Migration sources (no longer live):
+#   - building.ttl v0.1.0 (deprecated 2026-02-22, merged in v0.2.0)
+#   - chorus-product-ontology.owl v0.1 (migrated 2026-04-10)
+#
+# Bridge: framework.ttl connects this ontology to borg: (infra) and jb: (data).
 #
 # Prior art: US Patent 9,552,400 B2 (Bridwell) — RDF/OWL + SPARQL + workflow gates.
 #
-# Version: 0.2.0
-# Date: 2026-02-22
-# Status: Active (C#40, supersedes ADR-009 v0.1.0)
+# Version: 0.3.0
+# Date: 2026-04-10
+# Status: Active (#1845, supersedes v0.2.0)
 # =============================================================================
 
 chorus: a owl:Ontology ;
-    owl:versionInfo "0.2.0" ;
-    dcterms:title "Chorus — Shared Awareness Ontology" ;
-    dcterms:description "Unified model of human+AI team coordination: roles, tools, spine, artifacts, handoffs, gates, trust." ;
+    owl:versionInfo "0.3.0" ;
+    dcterms:title "Chorus — Canonical Model" ;
+    dcterms:description "Unified model of human+AI team coordination: roles, tools, spine, artifacts, handoffs, gates, trust, products, domains, services, value streams." ;
     dcterms:created "2026-02-22"^^xsd:date ;
-    rdfs:comment "Merges former building.ttl + chorus.ttl v0.1.0. Single namespace, single truth." .
+    dcterms:modified "2026-04-10"^^xsd:date ;
+    rdfs:comment "v0.3.0: merges product ontology, adds Shaping vertebra, domain subtypes, service model. Single namespace (https://jeffbridwell.com/chorus#), single truth." .
 
 # =============================================================================
 # 1. ROLES
@@ -88,20 +95,28 @@ chorus:Capturing a chorus:Vertebra ;
     rdfs:label "Capturing" ;
     rdfs:comment "Intake. Signals, seeds, observations flow in from tools and from Gathering itself." ;
     chorus:stageOrder 0 ;
-    chorus:nextStage chorus:Directing .
+    chorus:nextStage chorus:Shaping .
+
+chorus:Shaping a chorus:Vertebra ;
+    rdfs:label "Shaping" ;
+    rdfs:comment "Defining the operating model — principles, practices, roles, skills, metrics. The meta layer that governs how everything else works. Loom lives here." ;
+    chorus:stageOrder 1 ;
+    chorus:nextStage chorus:Directing ;
+    chorus:previousStage chorus:Capturing ;
+    chorus:exitArtifactType chorus:Decision .
 
 chorus:Directing a chorus:Vertebra ;
     rdfs:label "Directing" ;
     rdfs:comment "Jeff expresses intent, direction, or feedback. Entry: human initiative. Exit: card on board." ;
-    chorus:stageOrder 1 ;
+    chorus:stageOrder 2 ;
     chorus:nextStage chorus:Designing ;
-    chorus:previousStage chorus:Capturing ;
+    chorus:previousStage chorus:Shaping ;
     chorus:exitArtifactType chorus:Card .
 
 chorus:Designing a chorus:Vertebra ;
     rdfs:label "Designing" ;
     rdfs:comment "Product framing (Wren) + architectural design (Silas). Exit: build-ready brief." ;
-    chorus:stageOrder 2 ;
+    chorus:stageOrder 3 ;
     chorus:nextStage chorus:Building ;
     chorus:previousStage chorus:Directing ;
     chorus:exitArtifactType chorus:Brief .
@@ -109,7 +124,7 @@ chorus:Designing a chorus:Vertebra ;
 chorus:Building a chorus:Vertebra ;
     rdfs:label "Building" ;
     rdfs:comment "Implementation by Kade. Exit: shipped code with visual proof." ;
-    chorus:stageOrder 3 ;
+    chorus:stageOrder 4 ;
     chorus:nextStage chorus:Proving ;
     chorus:previousStage chorus:Designing ;
     chorus:exitArtifactType chorus:Commit .
@@ -117,7 +132,7 @@ chorus:Building a chorus:Vertebra ;
 chorus:Proving a chorus:Vertebra ;
     rdfs:label "Proving" ;
     rdfs:comment "Validation. UX verified, architecture sound, no regressions. Feeds back to Directing." ;
-    chorus:stageOrder 4 ;
+    chorus:stageOrder 5 ;
     chorus:previousStage chorus:Building ;
     chorus:feedsInto chorus:Directing ;
     chorus:exitArtifactType chorus:Signal .
@@ -132,7 +147,85 @@ chorus:Operating a chorus:EventCategory ;
     rdfs:label "Operating" ;
     rdfs:comment "Infrastructure health, deploys, disk monitoring, container lifecycle, and system resilience. Crosscuts all vertebrae — the substrate the value stream runs on." ;
     chorus:color "#f3f4f6" ;
-    chorus:crosscuts chorus:Capturing, chorus:Directing, chorus:Designing, chorus:Building, chorus:Proving .
+    chorus:crosscuts chorus:Capturing, chorus:Shaping, chorus:Directing, chorus:Designing, chorus:Building, chorus:Proving .
+
+# =============================================================================
+# 2b. VALUE STREAMS (from product ontology)
+# =============================================================================
+
+chorus:ValueStream a owl:Class ;
+    rdfs:label "Value Stream" ;
+    rdfs:comment "A named flow of value from signal to outcome. Stable — when a value stream changes, the product has fundamentally changed." .
+
+chorus:gatheringStream a chorus:ValueStream ;
+    rdfs:label "Gathering" ;
+    rdfs:comment "The flow of meaning: Spark → Capture → Triage → Settle → Revisit → Transform → Connect → Reflect." .
+
+chorus:chorusStream a chorus:ValueStream ;
+    rdfs:label "Chorus" ;
+    rdfs:comment "The flow of coordination: Capturing → Shaping → Directing → Designing → Building → Proving." .
+
+# =============================================================================
+# 2c. DOMAINS (three types — from #1845 chat insight)
+# =============================================================================
+
+chorus:Domain a owl:Class ;
+    rdfs:label "Domain" ;
+    rdfs:comment "A bounded context with its own data, handlers, ontology, and routes. Three subtypes separate concerns." .
+
+chorus:CollectionDomain a owl:Class ;
+    rdfs:subClassOf chorus:Domain ;
+    rdfs:label "Collection Domain" ;
+    rdfs:comment "A Gathering data domain — Photos, Music, Stories, Books, People, Property, Seeds, Sexuality. Owned collections with jb: class instances." .
+
+chorus:SubProduct a owl:Class ;
+    rdfs:subClassOf chorus:Domain ;
+    rdfs:label "Sub-Product" ;
+    rdfs:comment "A Chorus product domain — Cards, Loom, The Clearing, Werk, Observability. Ownable, buildable units within the protocol." .
+
+chorus:LoomDomain a owl:Class ;
+    rdfs:subClassOf chorus:Domain ;
+    rdfs:label "Loom Domain" ;
+    rdfs:comment "A governance concept within Loom — Principles, Practices, Decisions, Roles, RCAs, Metrics, Analytics. Not a sub-product or technical domain." .
+
+chorus:TechnicalDomain a owl:Class ;
+    rdfs:subClassOf chorus:Domain ;
+    rdfs:label "Technical Domain" ;
+    rdfs:comment "An infrastructure concern — Infra, Codebase, Search, Network, Disk, Compute, ToolsChain. Cross-cutting, consumed by products." .
+
+# =============================================================================
+# 2d. SERVICES (from product ontology)
+# =============================================================================
+
+chorus:Service a owl:Class ;
+    rdfs:label "Service" ;
+    rdfs:comment "A running piece of infrastructure with a port, data model, integration contract, and non-functionals. Two tiers: Infrastructure (degrade visibility) and Protocol (degrade ability to work)." .
+
+chorus:InfrastructureService a owl:Class ;
+    rdfs:subClassOf chorus:Service ;
+    rdfs:label "Infrastructure Service" ;
+    rdfs:comment "Tier 1: Observability, Infra, Logs, Alerts, Deploys. Failure degrades visibility into the system." .
+
+chorus:ProtocolService a owl:Class ;
+    rdfs:subClassOf chorus:Service ;
+    rdfs:label "Protocol Service" ;
+    rdfs:comment "Tier 2: Cards, Skills, Gates, Spine. Failure degrades the ability to work at all." .
+
+# =============================================================================
+# 2e. MACHINES (from product ontology)
+# =============================================================================
+
+chorus:Machine a owl:Class ;
+    rdfs:label "Machine" ;
+    rdfs:comment "Physical hardware that hosts services." .
+
+chorus:library a chorus:Machine ;
+    rdfs:label "Library" ;
+    rdfs:comment "M1 MacBook Air. Primary development machine. 192.168.86.36." .
+
+chorus:bedroom a chorus:Machine ;
+    rdfs:label "Bedroom" ;
+    rdfs:comment "M2 Pro Mac Mini. Data services, harvesting, bulk ops. 192.168.86.242." .
 
 # =============================================================================
 # 3. TOOLS
@@ -235,6 +328,196 @@ chorus:Product a owl:Class ;
 chorus:gathering a chorus:Product ;
     rdfs:label "Gathering" ;
     rdfs:comment "Personal infrastructure — SOLID pods, knowledge graph, collections, Self domain. The product the spine builds." .
+
+chorus:chorusProduct a chorus:Product ;
+    rdfs:label "Chorus" ;
+    rdfs:comment "The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system." .
+
+# --- Sub-Products (Chorus) ---
+
+chorus:loom a chorus:SubProduct ;
+    rdfs:label "Loom" ;
+    rdfs:comment "The operating model — principles, practices, decisions, roles, metrics. Defines how the team works. DSL/Org/Team layer." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:hasDomain chorus:loom-principles, chorus:loom-practices, chorus:loom-decisions,
+                     chorus:loom-roles, chorus:loom-rcas, chorus:loom-metrics,
+                     chorus:loom-analytics .
+
+chorus:cards-product a chorus:SubProduct ;
+    rdfs:label "Cards" ;
+    rdfs:comment "The kanban work coordination system — board-ts CLI, Vikunja API, card lifecycle." ;
+    chorus:ownedBy chorus:wren .
+
+chorus:clearing-product a chorus:SubProduct ;
+    rdfs:label "The Clearing" ;
+    rdfs:comment "Multi-party real-time alignment — browser chat with Jeff and all three AI roles." ;
+    chorus:ownedBy chorus:wren .
+
+chorus:werk-product a chorus:SubProduct ;
+    rdfs:label "Werk" ;
+    rdfs:comment "Workflow engine — sequences decisions into steps across roles. IS the spine." ;
+    chorus:ownedBy chorus:wren .
+
+chorus:observability-product a chorus:SubProduct ;
+    rdfs:label "Observability" ;
+    rdfs:comment "Monitoring, dashboards, alerts, logs, deploys. The ability to see what's happening." ;
+    chorus:ownedBy chorus:silas .
+
+chorus:convergence-product a chorus:SubProduct ;
+    rdfs:label "Convergence" ;
+    rdfs:comment "Cross-domain integration — ICDs, harvesters, data pipelines." ;
+    chorus:ownedBy chorus:wren .
+
+chorus:operating-model-product a chorus:SubProduct ;
+    rdfs:label "Operating Model" ;
+    rdfs:comment "Pipelines, skills, gates — the machinery that moves work through the spine." ;
+    chorus:ownedBy chorus:wren .
+
+chorus:actor-bdd-product a chorus:SubProduct ;
+    rdfs:label "Actor + BDD" ;
+    rdfs:comment "Domain modeling framework — actor definitions, behavior-driven development, test scaffolding." ;
+    chorus:ownedBy chorus:wren .
+
+# --- Loom Domains (7 unique governance concepts) ---
+
+chorus:loom-principles a chorus:LoomDomain ;
+    rdfs:label "Principles" ;
+    rdfs:comment "Shared values that explain why. Stable. Patterns derive from principles." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:loom-practices a chorus:LoomDomain ;
+    rdfs:label "Practices" ;
+    rdfs:comment "Repeatable disciplines that apply across domains." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:loom-decisions a chorus:LoomDomain ;
+    rdfs:label "Decisions" ;
+    rdfs:comment "DEC-NNN — governing choices that constrain future behavior." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:loom-roles a chorus:LoomDomain ;
+    rdfs:label "Roles" ;
+    rdfs:comment "Role definitions, boundaries, interaction modes." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:loom-rcas a chorus:LoomDomain ;
+    rdfs:label "RCAs" ;
+    rdfs:comment "Root cause analyses — post-incident learning." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving .
+
+chorus:loom-metrics a chorus:LoomDomain ;
+    rdfs:label "Metrics" ;
+    rdfs:comment "Team and system health metrics — cost, velocity, quality." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:loom-analytics a chorus:LoomDomain ;
+    rdfs:label "Analytics" ;
+    rdfs:comment "Usage trends, value stream analysis, pattern detection." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Shaping .
+
+# --- Shared Services (consumed by multiple products) ---
+
+chorus:observability-service a chorus:InfrastructureService ;
+    rdfs:label "Observability" ;
+    rdfs:comment "Grafana dashboards, metrics, health surfaces. Consumed at different steps by different products." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:runsOn chorus:library .
+
+chorus:infra-service a chorus:InfrastructureService ;
+    rdfs:label "Infrastructure" ;
+    rdfs:comment "Machines, containers, storage, network, LaunchAgents." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:runsOn chorus:library, chorus:bedroom .
+
+chorus:logs-service a chorus:InfrastructureService ;
+    rdfs:label "Logs" ;
+    rdfs:comment "Loki log aggregation. Structured logging pipeline." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:runsOn chorus:library .
+
+chorus:alerts-service a chorus:InfrastructureService ;
+    rdfs:label "Alerts" ;
+    rdfs:comment "Alert rules, alert-runner, Alertmanager, macOS notifications." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:runsOn chorus:library .
+
+chorus:deploys-service a chorus:InfrastructureService ;
+    rdfs:label "Deploys" ;
+    rdfs:comment "app-state.sh, deploy freeze, build pipeline, container lifecycle." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:runsOn chorus:library .
+
+chorus:cards-service a chorus:ProtocolService ;
+    rdfs:label "Cards" ;
+    rdfs:comment "Vikunja board + board-ts CLI. Coordination primitive — all three roles stall if broken." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Directing ;
+    chorus:runsOn chorus:library .
+
+chorus:skills-service a chorus:ProtocolService ;
+    rdfs:label "Skills" ;
+    rdfs:comment "Slash-command skills. 36 skills, symlinked to all roles." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Shaping ;
+    chorus:runsOn chorus:library .
+
+chorus:gates-service a chorus:ProtocolService ;
+    rdfs:label "Gates" ;
+    rdfs:comment "PreToolUse/PostToolUse hooks — Rust binary. Quality enforcement." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Building ;
+    chorus:runsOn chorus:library .
+
+chorus:spine-service a chorus:ProtocolService ;
+    rdfs:label "Spine" ;
+    rdfs:comment "Event bus — chorus-log.sh, spine-events.json. Vertical integration across all layers." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Shaping ;
+    chorus:runsOn chorus:library .
+
+# --- Product → Service consumption edges ---
+
+chorus:loom chorus:consumes chorus:cards-service, chorus:skills-service,
+                            chorus:gates-service, chorus:spine-service,
+                            chorus:observability-service, chorus:infra-service .
+
+chorus:werk-product chorus:consumes chorus:cards-service, chorus:spine-service,
+                                    chorus:observability-service, chorus:infra-service .
+
+chorus:clearing-product chorus:consumes chorus:cards-service, chorus:spine-service,
+                                       chorus:observability-service, chorus:infra-service .
+
+chorus:cards-product chorus:consumes chorus:observability-service, chorus:infra-service .
+
+chorus:observability-product chorus:consumes chorus:infra-service, chorus:logs-service,
+                                             chorus:alerts-service, chorus:deploys-service .
+
+# --- Product → Service provision edges ---
+
+chorus:chorusProduct chorus:provides chorus:observability-service, chorus:infra-service,
+                                     chorus:logs-service, chorus:alerts-service,
+                                     chorus:deploys-service, chorus:cards-service,
+                                     chorus:skills-service, chorus:gates-service,
+                                     chorus:spine-service .
+
+# --- Product containment ---
+
+chorus:chorusProduct chorus:hasDomain chorus:loom, chorus:cards-product, chorus:clearing-product,
+                                     chorus:werk-product, chorus:observability-product,
+                                     chorus:convergence-product, chorus:operating-model-product,
+                                     chorus:actor-bdd-product .
 
 # =============================================================================
 # 5. ARTIFACTS
@@ -425,6 +708,50 @@ chorus:Facilitating a chorus:InteractionMode ;
 # =============================================================================
 # OBJECT PROPERTIES — Relationships
 # =============================================================================
+
+# --- Product/Domain/Service relationships (the CMDB core) ---
+
+chorus:hasDomain a owl:ObjectProperty ;
+    rdfs:label "has domain" ;
+    rdfs:comment "True containment — a product has this domain as a constituent part. Loom hasDomain Principles." ;
+    rdfs:domain chorus:Product ;
+    rdfs:range chorus:Domain .
+
+chorus:consumes a owl:ObjectProperty ;
+    rdfs:label "consumes" ;
+    rdfs:comment "Cross-cutting dependency — a product uses a shared service. Werk consumes Observability. The value stream step where the value is realized belongs on the consumption edge, not the service." ;
+    rdfs:domain chorus:Product ;
+    rdfs:range chorus:Service .
+
+chorus:provides a owl:ObjectProperty ;
+    rdfs:label "provides" ;
+    rdfs:comment "What a product offers as a shared service. Chorus provides Observability." ;
+    rdfs:domain chorus:Product ;
+    rdfs:range chorus:Service .
+
+chorus:primaryStep a owl:ObjectProperty ;
+    rdfs:label "primary step" ;
+    rdfs:comment "The vertebra where this service is primarily maintained." ;
+    rdfs:domain chorus:Service ;
+    rdfs:range chorus:Vertebra .
+
+chorus:consumptionStep a owl:ObjectProperty ;
+    rdfs:label "consumption step" ;
+    rdfs:comment "The vertebra where value is realized by the consumer. Property of a consumption edge — the same service can be consumed at different steps by different products." ;
+    rdfs:domain chorus:Product ;
+    rdfs:range chorus:Vertebra .
+
+chorus:runsOn a owl:ObjectProperty ;
+    rdfs:label "runs on" ;
+    rdfs:comment "Service runs on this machine." ;
+    rdfs:domain chorus:Service ;
+    rdfs:range chorus:Machine .
+
+chorus:ownedBy a owl:ObjectProperty ;
+    rdfs:label "owned by" ;
+    rdfs:comment "The role responsible for this entity. Initial assignments as of #1845 — subject to Jeff's review. Ownership follows structure, not vice versa." ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range chorus:Role .
 
 # --- Core viz relationships ---
 
@@ -617,14 +944,14 @@ chorus:transitionDate a owl:DatatypeProperty ;
 # INSTANCE DATA — Role ↔ Vertebra Affinities
 # =============================================================================
 
-# Jeff: primarily Directing, secondarily Capturing (observes) + Proving (validates)
-chorus:jeff chorus:operatesAt chorus:Directing, chorus:Capturing, chorus:Proving .
+# Jeff: primarily Shaping + Directing, secondarily Capturing (observes) + Proving (validates)
+chorus:jeff chorus:operatesAt chorus:Shaping, chorus:Directing, chorus:Capturing, chorus:Proving .
 
-# Wren: primarily Directing + Designing, secondarily Capturing (intake)
-chorus:wren chorus:operatesAt chorus:Directing, chorus:Designing, chorus:Capturing .
+# Wren: primarily Directing + Designing, secondarily Shaping (practices, metrics) + Capturing (intake)
+chorus:wren chorus:operatesAt chorus:Directing, chorus:Designing, chorus:Shaping, chorus:Capturing .
 
-# Silas: primarily Designing + Building, secondarily Proving
-chorus:silas chorus:operatesAt chorus:Designing, chorus:Building, chorus:Proving .
+# Silas: primarily Proving + Designing, secondarily Building + Shaping (RCAs)
+chorus:silas chorus:operatesAt chorus:Proving, chorus:Designing, chorus:Building, chorus:Shaping .
 
 # Kade: primarily Building + Proving, secondarily Designing
 chorus:kade chorus:operatesAt chorus:Building, chorus:Proving, chorus:Designing .
@@ -653,3 +980,56 @@ chorus:chorusTool chorus:indexes chorus:gathering .
 
 chorus:gathering chorus:outputOf chorus:Building, chorus:Proving .
 chorus:gathering chorus:inputTo chorus:Capturing .
+
+# =============================================================================
+# VALIDATION QUERIES (Phase 4) — SPARQL against this graph
+# =============================================================================
+#
+# Q1: Who owns domain X?
+# ----------------------
+# SELECT ?owner ?ownerLabel WHERE {
+#   chorus:loom-principles chorus:ownedBy ?owner .
+#   ?owner rdfs:label ?ownerLabel .
+# }
+# Expected: chorus:jeff, "Jeff"
+#
+# Q2: What services does product Y have?
+# ---------------------------------------
+# SELECT ?service ?serviceLabel WHERE {
+#   chorus:loom chorus:consumes ?service .
+#   ?service rdfs:label ?serviceLabel .
+# }
+# Expected: cards-service, skills-service, gates-service, spine-service,
+#           observability-service, infra-service
+#
+# Q3: What sub-products are impaired if service Z fails?
+# -------------------------------------------------------
+# SELECT ?product ?productLabel WHERE {
+#   ?product chorus:consumes chorus:cards-service .
+#   ?product rdfs:label ?productLabel .
+# }
+# Expected: chorus:loom ("Loom"), chorus:werk-product ("Werk"),
+#           chorus:clearing-product ("The Clearing")
+#
+# Q4: Full failure propagation — service → consumers → their owned domains
+# -------------------------------------------------------------------------
+# SELECT ?product ?productLabel ?domain ?domainLabel WHERE {
+#   ?product chorus:consumes chorus:spine-service .
+#   ?product rdfs:label ?productLabel .
+#   OPTIONAL {
+#     ?product chorus:hasDomain ?domain .
+#     ?domain rdfs:label ?domainLabel .
+#   }
+# }
+# Expected: Loom (with 7 LoomDomain children), Werk, Clearing
+#
+# Q5: Two-tier blast radius — which tier of service is down?
+# -----------------------------------------------------------
+# SELECT ?service ?serviceLabel ?tier WHERE {
+#   ?service rdfs:label ?serviceLabel .
+#   { ?service a chorus:InfrastructureService . BIND("visibility" AS ?tier) }
+#   UNION
+#   { ?service a chorus:ProtocolService . BIND("ability-to-work" AS ?tier) }
+# }
+# Expected: 5 infrastructure (visibility), 4 protocol (ability-to-work)
+#

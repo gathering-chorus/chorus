@@ -40,14 +40,15 @@ fw: a owl:Ontology ;
 # via owl:equivalentClass, others are new bridge concepts.
 # =============================================================================
 
-# --- Service: reuse borg:Service, declare equivalence ---
+# --- Service: bridge to both borg:Service and chorus:Service ---
 fw:Service a owl:Class ;
-    owl:equivalentClass borg:Service ;
+    owl:equivalentClass borg:Service, chorus:Service ;
     rdfs:label "Service" ;
-    rdfs:comment "A managed service in the infrastructure. Bridges borg topology into the framework. Has a port, a host, a lifecycle, and dependencies." .
+    rdfs:comment "A managed service in the infrastructure. Bridges borg topology and chorus coordination into the framework. Has a port, a host, a lifecycle, and dependencies." .
 
-# --- Domain: new bridge class linking to jb collection types ---
+# --- Domain: bridge to chorus:Domain ---
 fw:Domain a owl:Class ;
+    owl:equivalentClass chorus:Domain ;
     rdfs:label "Domain" ;
     rdfs:comment "A bounded context within Gathering — a coherent area of data and functionality. Each domain has collection classes (jb:), services (borg:), and gates (chorus:) that govern it." .
 

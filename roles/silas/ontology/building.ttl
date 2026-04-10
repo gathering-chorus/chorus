@@ -9,27 +9,31 @@
 
 # =============================================================================
 # DEPRECATED — Merged into chorus.ttl v0.2.0 (2026-02-22, C#40)
+# RETIRED — Superseded by chorus.ttl v0.3.0 (2026-04-10, #1845)
 # =============================================================================
 #
-# This file is preserved for reference. The unified Chorus ontology at
-# chorus.ttl now contains all role, interaction, constraint, service,
-# and fitness function definitions previously in this file.
+# This file is no longer a live ontology. All classes have been migrated:
+#   - Role, InteractionMode, Constraint, FitnessFunction → chorus.ttl v0.2.0
+#   - TeamTopologyType, SessionPhase, MessageType, Priority → chorus.ttl v0.3.0
+#   - BuildingStage, GatheringStage → chorus:Vertebra + chorus:ValueStream
+#   - Service subtypes → chorus:Service (with Tier 1/2 classification)
 #
-# Reason: building.ttl (team protocol) and chorus.ttl (pipeline execution)
-# both model "how the team operates" — an artificial split. Jeff directed
-# the merge: "feels like building.ttl and chorus.ttl should be same not separate."
+# Do not import this file. Do not add new definitions here.
+# Retained as migration reference only.
 #
 # Original version: 0.1.0 (2026-02-15)
 # Deprecated: 2026-02-22
-# Successor: chorus.ttl v0.2.0
+# Retired: 2026-04-10
+# Successor: chorus.ttl v0.3.0
 # =============================================================================
 
 building: a owl:Ontology ;
     owl:versionInfo "0.1.0" ;
-    dcterms:title "Building Ontology" ;
-    dcterms:description "Team protocol ontology — roles, interactions, constraints, services, and fitness functions for the Gathering team." ;
+    owl:deprecated true ;
+    dcterms:title "Building Ontology (RETIRED)" ;
+    dcterms:description "Team protocol ontology — RETIRED. All classes migrated to chorus.ttl v0.3.0." ;
     dcterms:created "2026-02-15"^^xsd:date ;
-    rdfs:seeAlso <https://jeffbridwell.com/ontology#> .
+    rdfs:seeAlso <https://jeffbridwell.com/chorus#> .
 
 # =============================================================================
 # CLASSES — Roles
