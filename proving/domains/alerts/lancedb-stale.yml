@@ -1,0 +1,35 @@
+# lancedb-stale.yml — Alert when LanceDB vector index is stale
+# Card #1854 | AC3
+#
+# LanceDB is embedded in the Gathering app. No external health endpoint.
+# Check: data directory exists and was modified within 24h.
+# If stale, semantic search is returning outdated results.
+
+name: lancedb-stale
+description: LanceDB vector index stale — semantic search returning outdated results
+severity: warning
+schedule: "0 */6 * * *"  # every 6 hours
+
+check: |
+  LANCE_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/lance"
+  if [ ! -d "$LANCE_DIR" ]; then
+    echo "lancedb-missing"
+    exit 1
+  fi
+  # Check if any file modified in last 24h
+  RECENT=$(find "$LANCE_DIR" -type f -mtime -1 2>/dev/null | head -1)
+  if [ -z "$RECENT" ]; then
+    echo "lancedb-stale-24h"
+    exit 1
+  fi
+  echo "ok"
+  exit 0
+
+action: |
+  COOLDOWN="/tmp/alert-lancedb-$(date '+%Y-%m-%d')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "lancedb-stale: Vector index not updated in 24h. Semantic search may be outdated. Check: ls -lt data/lance/ in the app dir, verify Ollama is running on Bedroom." --force 2>/dev/null || true

@@ -43,6 +43,26 @@ for svc in "com.gathering.images-api" "com.gathering.ollama" "com.gathering.vide
   fi
 done
 
+# 3b. Ollama model health — verify embedding endpoint actually works (#1855)
+OLLAMA_DIM=$(ssh -o ConnectTimeout=5 "$BEDROOM" "curl -sf --max-time 10 http://localhost:11434/api/embeddings -d '{\"model\":\"nomic-embed-text\",\"prompt\":\"health check\"}' 2>/dev/null | python3 -c 'import sys,json; print(len(json.load(sys.stdin).get(\"embedding\",[])))' 2>/dev/null || echo 0" 2>/dev/null)
+if [ "$OLLAMA_DIM" = "0" ] || [ "$OLLAMA_DIM" = "" ]; then
+  FAILURES+=("Ollama embedding failed — model may be unloaded or broken")
+elif [ "$OLLAMA_DIM" != "768" ]; then
+  WARNINGS+=("Ollama embedding returned unexpected dim=$OLLAMA_DIM (expected 768)")
+fi
+
+# 3c. Fuseki on Bedroom (#1853 feedback from Kade)
+FUSEKI_BED=$(ssh -o ConnectTimeout=5 "$BEDROOM" "curl -sf -o /dev/null -w '%{http_code}' http://localhost:3030/\$/ping 2>/dev/null || echo 000" 2>/dev/null)
+if [ "$FUSEKI_BED" != "200" ]; then
+  WARNINGS+=("Bedroom Fuseki down (HTTP $FUSEKI_BED)")
+fi
+
+# 3d. NiFi process check (#1853 feedback from Kade)
+NIFI_PID=$(ssh -o ConnectTimeout=5 "$BEDROOM" "pgrep -f 'nifi.*run' 2>/dev/null || echo 0" 2>/dev/null)
+if [ "$NIFI_PID" = "0" ] || [ -z "$NIFI_PID" ]; then
+  WARNINGS+=("NiFi process not running on Bedroom")
+fi
+
 # 4. Disk space on Bedroom external drives
 DISK_INFO=$(ssh -o ConnectTimeout=5 "$BEDROOM" "df -h /Volumes/VideosNew 2>/dev/null | tail -1 | awk '{print \$5}'" 2>/dev/null || echo "unknown")
 DISK_PCT="${DISK_INFO%%%}"
