@@ -3355,6 +3355,209 @@ function crashAlert(reason: string): void {
   console.error(`[chorus-api] CRASH LOGGED: ${reason}`);
 }
 
+// ── Athena CMDB API ──────────────────────────────────────────────
+// Named SPARQL queries against the Chorus ontology in Fuseki.
+// Access layer for agents — no raw SPARQL, no port guessing.
+
+const ATHENA_GRAPH = 'urn:chorus:ontology';
+const ATHENA_SPARQL = 'http://localhost:3030/pods/sparql';
+
+async function sparqlQuery(query: string): Promise<any> {
+  const res = await fetch(ATHENA_SPARQL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/sparql-query', 'Accept': 'application/sparql-results+json' },
+    body: query,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Fuseki ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+function athenaEnvelope(data: any, meta: Record<string, any> = {}) {
+  return {
+    _meta: { source: 'athena', graph: ATHENA_GRAPH, timestamp: new Date().toISOString(), ...meta },
+    data,
+  };
+}
+
+// GET /api/athena/health — proves Fuseki wiring works
+app.get('/api/athena/health', async (_req: Request, res: Response) => {
+  try {
+    const result = await sparqlQuery(`SELECT (COUNT(*) AS ?count) WHERE { GRAPH <${ATHENA_GRAPH}> { ?s ?p ?o } }`);
+    const count = parseInt(result.results.bindings[0]?.count?.value || '0', 10);
+    res.json(athenaEnvelope({ status: 'ok', tripleCount: count, endpoint: ATHENA_SPARQL }));
+  } catch (err: any) {
+    res.status(503).json(athenaEnvelope({ status: 'error', message: err.message }, { error: true }));
+  }
+});
+
+// GET /api/athena/products — list all products
+app.get('/api/athena/products', async (_req: Request, res: Response) => {
+  try {
+    const result = await sparqlQuery(`
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?product ?label WHERE {
+        GRAPH <${ATHENA_GRAPH}> {
+          ?product a chorus:Product .
+          OPTIONAL { ?product rdfs:label ?label }
+        }
+      } ORDER BY ?label
+    `);
+    const products = result.results.bindings.map((b: any) => ({
+      uri: b.product.value,
+      label: b.label?.value || b.product.value.split('#').pop(),
+    }));
+    res.json(athenaEnvelope(products, { count: products.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope({ error: err.message }, { error: true }));
+  }
+});
+
+// GET /api/athena/subproducts — list all sub-products with owner, domain count, consumes count
+app.get('/api/athena/subproducts', async (_req: Request, res: Response) => {
+  try {
+    const result = await sparqlQuery(`
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?sp ?label ?ownerLabel (COUNT(DISTINCT ?domain) AS ?domainCount) (COUNT(DISTINCT ?consumed) AS ?consumesCount) WHERE {
+        GRAPH <${ATHENA_GRAPH}> {
+          ?sp a chorus:SubProduct .
+          OPTIONAL { ?sp rdfs:label ?label }
+          OPTIONAL { ?sp chorus:ownedBy ?owner . ?owner rdfs:label ?ownerLabel }
+          OPTIONAL { ?sp chorus:hasDomain ?domain }
+          OPTIONAL { ?sp chorus:consumes ?consumed }
+        }
+      } GROUP BY ?sp ?label ?ownerLabel ORDER BY ?label
+    `);
+    const subproducts = result.results.bindings.map((b: any) => ({
+      uri: b.sp.value,
+      label: b.label?.value || b.sp.value.split('#').pop(),
+      owner: b.ownerLabel?.value || null,
+      domainCount: parseInt(b.domainCount?.value || '0', 10),
+      consumesCount: parseInt(b.consumesCount?.value || '0', 10),
+    }));
+    res.json(athenaEnvelope(subproducts, { count: subproducts.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope({ error: err.message }, { error: true }));
+  }
+});
+
+// GET /api/athena/subdomains — list sub-domains with owner, step, consumers
+app.get('/api/athena/subdomains', async (req: Request, res: Response) => {
+  try {
+    const filters: string[] = [];
+    if (req.query.owner) filters.push(`FILTER(LCASE(STR(?ownerLabel)) = "${String(req.query.owner).toLowerCase()}")`);
+    if (req.query.step) filters.push(`FILTER(LCASE(STR(?stepLabel)) = "${String(req.query.step).toLowerCase()}")`);
+    const result = await sparqlQuery(`
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?sd ?label ?ownerLabel ?stepLabel WHERE {
+        GRAPH <${ATHENA_GRAPH}> {
+          ?sd a chorus:SubDomain .
+          OPTIONAL { ?sd rdfs:label ?label }
+          OPTIONAL { ?sd chorus:ownedBy ?owner . ?owner rdfs:label ?ownerLabel }
+          OPTIONAL { ?sd chorus:primaryStep ?step . ?step rdfs:label ?stepLabel }
+        }
+        ${filters.join('\n        ')}
+      } ORDER BY ?stepLabel ?label
+    `);
+    const subdomains = result.results.bindings.map((b: any) => ({
+      uri: b.sd.value,
+      id: b.sd.value.split('#').pop(),
+      label: b.label?.value || b.sd.value.split('#').pop(),
+      owner: b.ownerLabel?.value || null,
+      step: b.stepLabel?.value || null,
+    }));
+    res.json(athenaEnvelope(subdomains, { count: subdomains.length, filters: { owner: req.query.owner || null, step: req.query.step || null } }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope({ error: err.message }, { error: true }));
+  }
+});
+
+// GET /api/athena/subdomains/:id/blast-radius — which sub-products consume this sub-domain
+app.get('/api/athena/subdomains/:id/blast-radius', async (req: Request, res: Response) => {
+  try {
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const result = await sparqlQuery(`
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?consumer ?consumerLabel WHERE {
+        GRAPH <${ATHENA_GRAPH}> {
+          ?consumer chorus:consumes <${sdUri}> .
+          OPTIONAL { ?consumer rdfs:label ?consumerLabel }
+        }
+      } ORDER BY ?consumerLabel
+    `);
+    const consumers = result.results.bindings.map((b: any) => ({
+      uri: b.consumer.value,
+      label: b.consumerLabel?.value || b.consumer.value.split('#').pop(),
+    }));
+    res.json(athenaEnvelope({ subdomain: req.params.id, consumers }, { count: consumers.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope({ error: err.message }, { error: true }));
+  }
+});
+
+// GET /api/athena/steps — value stream steps with their sub-domains and counts
+app.get('/api/athena/steps', async (_req: Request, res: Response) => {
+  try {
+    const result = await sparqlQuery(`
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?step ?stepLabel ?sd ?sdLabel ?sdOwnerLabel WHERE {
+        GRAPH <${ATHENA_GRAPH}> {
+          ?step a chorus:Vertebra .
+          OPTIONAL { ?step rdfs:label ?stepLabel }
+          OPTIONAL { ?sd chorus:primaryStep ?step . ?sd rdfs:label ?sdLabel . OPTIONAL { ?sd chorus:ownedBy ?sdOwner . ?sdOwner rdfs:label ?sdOwnerLabel } }
+        }
+      } ORDER BY ?stepLabel ?sdLabel
+    `);
+    const stepMap = new Map<string, { uri: string; label: string; domainCount: number; subdomains: { uri: string; label: string; owner: string | null }[] }>();
+    for (const b of result.results.bindings) {
+      const key = b.step.value;
+      if (!stepMap.has(key)) {
+        stepMap.set(key, { uri: key, label: b.stepLabel?.value || key.split('#').pop()!, domainCount: 0, subdomains: [] });
+      }
+      if (b.sd) {
+        const entry = stepMap.get(key)!;
+        entry.subdomains.push({ uri: b.sd.value, label: b.sdLabel?.value || b.sd.value.split('#').pop()!, owner: b.sdOwnerLabel?.value || null });
+        entry.domainCount = entry.subdomains.length;
+      }
+    }
+    const steps = Array.from(stepMap.values());
+    res.json(athenaEnvelope(steps, { count: steps.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope({ error: err.message }, { error: true }));
+  }
+});
+
+// GET /api/athena/owners — owners with their sub-domain counts
+app.get('/api/athena/owners', async (_req: Request, res: Response) => {
+  try {
+    const result = await sparqlQuery(`
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?owner ?label (COUNT(?sd) AS ?count) WHERE {
+        GRAPH <${ATHENA_GRAPH}> {
+          ?sd chorus:ownedBy ?owner .
+          ?owner rdfs:label ?label .
+        }
+      } GROUP BY ?owner ?label ORDER BY DESC(?count)
+    `);
+    const owners = result.results.bindings.map((b: any) => ({
+      uri: b.owner.value,
+      label: b.label?.value || b.owner.value.split('#').pop(),
+      subdomainCount: parseInt(b.count.value, 10),
+    }));
+    res.json(athenaEnvelope(owners, { count: owners.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope({ error: err.message }, { error: true }));
+  }
+});
+
 process.on('uncaughtException', (err) => {
   console.error(`[chorus-api] FATAL uncaughtException: ${err.message}`);
   console.error(err.stack);
