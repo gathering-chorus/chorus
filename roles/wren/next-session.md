@@ -1,53 +1,41 @@
 # Wren — Next Session
 
-## What Happened (April 10, 2026)
+## What Happened (April 10, 2026 — afternoon)
 
-### Shipped
-- **#1843** — Fix stale product-manager brief path. Accepted.
-- **#1845** — Chorus canonical model in OWL/RDF. chorus.ttl v0.3.0, 40 SubDomains, dynamic instance explorer backed by Fuseki. Accepted.
-- **#1849** — Athena CMDB API. 8 named query endpoints at localhost:3340/api/athena/*. Health, products, subproducts, subdomains (with filters), blast-radius, steps, owners, machines.
-- **#1858** — Wired Athena UI pages to live API. CSP connect-src fix was the blocker. 4 pages live from Fuseki.
-- **#1860** — Athena API endpoint tests. 21 data-driven tests, all filter counts verified against Fuseki.
-
-### In Progress
-- **#1863** — Retire domain HTML docs into Athena. Tier 1 done (9 EJS views deprecated with banners). 9 Gathering domains added to Fuseki. Tier 2 (metadata harvest from service design docs) scoped but not started.
-- **#1800** — Kade's test isolation. Demo received, not yet accepted by Jeff.
+### Key Work
+- Reviewed #1864 (Athena multi-product value stream entry) — confirmed it's the next Athena card
+- Helped Silas scope #1781 (session-start redesign) — mapped all context_cache consumers, confirmed safe to reshape. Only structural dependency is Werk version on line 1.
+- Identified Role Awareness as a subdomain — context_cache is not just a function, it's a bounded context with its own data sources, refresh cycle, and consumers. Carded as #1865.
+- Domain architecture discussion with Jeff: Context, Streams, Messages, Pulse, Cards are peer subdomains under Chorus. Cards has its own surface (CLI, API, audit, WIP limits) — different from pure infrastructure subdomains.
 
 ### Cards Created
-- #1845, #1849, #1850, #1851, #1858, #1859, #1860, #1862, #1863, #1864
+- #1865 — Role Awareness subdomain — name and bound the context assembly engine
 
-### Key Decisions
-- **Product boundary**: Gathering domains belong to Gathering's value stream (Personal/Life), not Chorus spine steps. Use `builtBy` edge, not `primaryStep` in Chorus.
-- **Two spirals**: February drawing confirmed — products have separate value streams. Athena shows all 3 streams, product filter narrows.
-- **Athena pattern**: Named query API over Fuseki graph, from Jeff's patent (9,552,400 B2). No ad-hoc SPARQL.
-- **Domain page as operating surface**: Value stream → step → domain entry. Domain page shows everything: sub-domains, services, code, tests, alerts, monitors, logs, actors, BDD, cards, integrations, blast radius.
-- **CMDB discipline**: Picture → ownership → move, one at a time. Named queries, not ad-hoc.
-- **AX gap**: 5/31 services have clean agent APIs (per Kade).
+### Still In Progress
+- #1834 — Wire demo gate to cards done
+- #1864 — Athena multi-product value stream entry (Later, not started)
 
-### Jeff Insights
-- Came in excited to share model work (spreadsheet, garden sketch, draw.io). Session rushed past his sharing.
-- "The process of understanding IS the work to get there"
-- Domains are atomic services — the spreadsheet was a service inventory, not a taxonomy
-- Sub-products compose from services via consumes edges
-- The domain page should gate the process end to end — can't work in an incomplete domain
-- "Model first, not ready aim fire — we've been fire fire fire aim"
-- Pulse is a domain that composes Messages, Streams, Cards, Alerts
-- Clearing is a domain (composition), same pattern as Chorus
-- ToolsChain is Silas's (infra tooling), not Kade's
+### Key Insights from Jeff
+- Context_cache is a subdomain like Streams and Messages — not just a utility function
+- Cards is both a domain and a subdomain — it has its own surface
+- Watchdog alert is "a badly implemented good idea" — fires because data is siloed, not because alerting logic is wrong
+- Fix the subdomains, the alert fixes itself
+- Jeff plans to walk each domain individually to find boundaries
+- "Pulse is a domain that composes Messages, Streams, Cards, Alerts" (from prior session, reinforced today)
 
-### Feedback Recorded
-- No AC negotiation — finish the AC or don't demo
-- Have a position — don't agree with contradictory statements
-- Open in Jeff's browser — use `open <url>`, not chrome-window.sh
-- Don't abandon pair partners
-- Don't make up what a role is doing during gemba — look at the screen
+### Feedback
+- Don't hit Vikunja API directly — use `cards` CLI only. Got burned trying `curl` to board endpoints.
+- `cards view <id>`, not `cards show <id>` — CLI changed, keep up.
+
+### Open Threads
+- Asked Silas (via chat) if he found pre-existing bugs in context_cache — no answer yet
+- Silas demoing #1781 — session-start redesign, 795→139 lines
 
 ## Critical Pickup
-1. **#1863 Tier 2** — harvest 169 component rows from 6 service design HTML docs into Athena
-2. **#1864** — Athena multi-product entry page with 3 value streams and builtBy edges
-3. **Vikunja token** — expired, Jeff needs to regenerate. Silas added 401 alerting (#1856)
-4. **Move Gathering domains** out of Chorus steps into Gathering value stream steps
-5. Accept #1845, #1849, #1858, #1860 when board is back (Vikunja token)
+1. **#1864** — Athena multi-product entry page with 3 value streams and builtBy edges
+2. **#1865** — Role Awareness subdomain definition (flesh out AC)
+3. **Domain walk** — Jeff will go through each domain. Be ready to help name and bound them.
+4. **#1834** — Demo gate wiring, still in progress
 
 ## Session Start
 **Start from `/Users/jeffbridwell/CascadeProjects/chorus/roles/wren`**
