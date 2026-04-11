@@ -169,6 +169,41 @@ describeIntegration('GET /api/athena/subdomains/:id — detail endpoint', () => 
     expect(body.data.error).toContain('not found');
     expect(body.data.suggestion).toBeDefined();
   });
+
+  // #1901 — Collection pattern: domains contain typed instances via chorus:contains
+  test('loom-principles contains Principle instances via chorus:contains', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/loom-principles`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data.instances)).toBe(true);
+    expect(body.data.instances.length).toBeGreaterThanOrEqual(7);
+    for (const inst of body.data.instances) {
+      expect(inst.label).toBeDefined();
+      expect(inst.comment).toBeDefined();
+      expect(inst.type).toBe('Principle');
+    }
+  });
+
+  test('loom-practices contains Practice instances via chorus:contains', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/loom-practices`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data.instances)).toBe(true);
+    expect(body.data.instances.length).toBeGreaterThanOrEqual(7);
+    for (const inst of body.data.instances) {
+      expect(inst.label).toBeDefined();
+      expect(inst.comment).toBeDefined();
+      expect(inst.type).toBe('Practice');
+    }
+  });
+
+  test('domain without instances returns empty instances array', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/cards-service`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data.instances)).toBe(true);
+    expect(body.data.instances.length).toBe(0);
+  });
 });
 
 describeIntegration('GET /api/athena/machines', () => {

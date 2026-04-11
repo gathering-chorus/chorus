@@ -3927,6 +3927,21 @@ app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
     const consumers = [...new Set(bindings.filter((b: any) => b.consumer).map((b: any) => JSON.stringify({ uri: b.consumer.value, label: b.consumerLabel?.value || b.consumer.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
     const consumes = [...new Set(bindings.filter((b: any) => b.consumed).map((b: any) => JSON.stringify({ uri: b.consumed.value, label: b.consumedLabel?.value || b.consumed.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
     const domains = [...new Set(bindings.filter((b: any) => b.child).map((b: any) => JSON.stringify({ uri: b.child.value, id: b.child.value.split('#').pop(), label: b.childLabel?.value || b.child.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
+    const instanceMap = new Map<string, { uri: string; id: string; label: string; comment: string | null; type: string | null }>();
+    for (const b of bindings) {
+      if (!b.instance) continue;
+      const uri = b.instance.value;
+      if (!instanceMap.has(uri)) {
+        instanceMap.set(uri, {
+          uri,
+          id: uri.split('#').pop() || '',
+          label: b.instanceLabel?.value || uri.split('#').pop() || '',
+          comment: b.instanceComment?.value || null,
+          type: b.instanceTypeLabel?.value || b.instanceType?.value?.split('#').pop() || null,
+        });
+      }
+    }
+    const instances = [...instanceMap.values()];
     res.json(athenaEnvelope('subdomain-detail', {
       uri: sdUri,
       id: req.params.id,
@@ -3937,6 +3952,7 @@ app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
       consumedBy: consumers,
       consumes,
       domains,
+      instances,
     }, Date.now() - start));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('subdomain-detail', { error: err.message }, Date.now() - start, { error: true }));
