@@ -1,5 +1,5 @@
 {
-  "version": "89",
+  "version": "90",
   "description": "Werk manifest \u2014 shared fragments + role-specific fragments \u2192 generated CLAUDE.md per role + shared TEAM_PROTOCOL.md. Version = Werk version.",
   "size_budget": 35000,
   "_versioning_rule": "Monotonic integer. Bumps on protocol changes: CLAUDE.md fragments, scripts, manifest schema, boot sequence, hooks, spine events. NOT on state files, briefs, board ops, memory edits. manifest.json is the single source of truth. DEC-036, DEC-065.",

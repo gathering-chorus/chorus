@@ -47,7 +47,7 @@ If skipped, emit: `gate.ops.skipped` spine event. Exit.
 # Check all registered service endpoints respond
 ENDPOINTS=(
   "http://localhost:3000|app"
-  "http://localhost:3030|fuseki"
+  "http://localhost:3030/\$/ping|fuseki"
   "http://localhost:3340/api/athena/health|chorus-api"
   "http://localhost:3102/ready|loki"
   "http://localhost:3470/api/health|bridge"
