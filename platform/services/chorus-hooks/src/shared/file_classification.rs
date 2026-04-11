@@ -7,7 +7,7 @@ pub fn is_source_code(path: &str) -> bool {
     let source_exts = [".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".sh"];
     source_exts.iter().any(|ext| path.ends_with(ext))
         // HTML outside public dirs is source (templates, app pages)
-        || (path.ends_with(".html") && !path.contains("/public/"))
+        || (path.ends_with(".html") && !path.contains("/public/") && !path.starts_with("public/") && !path.contains("gathering-docs"))
 }
 
 /// Presentation/config files — editable without pair, but still tracked.
@@ -100,6 +100,14 @@ mod tests {
         assert!(!is_production_code("tests/nudge_test.rs"));
         assert!(!is_production_code("src/handlers/music.handler.test.ts"));
         assert!(!is_production_code("target/release/chorus-hooks"));
+    }
+
+    #[test]
+    fn gathering_docs_html_excluded() {
+        // #1695: generated docs in public/gathering-docs/ are not production code
+        assert!(!is_production_code("public/gathering-docs/chorus-standards.html"));
+        assert!(!is_production_code("/Users/jeff/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/domain-chorus.html"));
+        assert!(!is_source_code("public/gathering-docs/pulse-service-design.html"));
     }
 
     #[test]
