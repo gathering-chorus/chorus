@@ -39,7 +39,10 @@ If skipped, emit: `gate.code.skipped` spine event. Exit.
 # Run the test suite for the affected codebase
 # Detect which codebase from changed files
 cd /Users/jeffbridwell/CascadeProjects/chorus
-CHANGED=$(git diff HEAD~3 --name-only)
+# Use card's WIP-start commit if available (from spine event), fall back to HEAD~3
+WIP_BASE=$(grep "card=$CARD_ID" /Users/jeffbridwell/.chorus/logs/spine.log 2>/dev/null | grep 'card.wip.started\|role.state.building' | tail -1 | sed 's/.*commit=\([a-f0-9]*\).*/\1/' 2>/dev/null)
+DIFF_BASE="${WIP_BASE:-HEAD~3}"
+CHANGED=$(git diff "$DIFF_BASE" --name-only)
 
 # Rust tests (chorus-hooks)
 if echo "$CHANGED" | grep -q 'chorus-hooks'; then
@@ -81,13 +84,14 @@ fi
 # Rust: count warning lines in build output
 cd /Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks
 WARNINGS_NOW=$(cargo build --release 2>&1 | grep -c '^warning:')
-# Compare against baseline (last known count from prior build)
-WARNINGS_PREV=$(cat /tmp/gate-warning-baseline 2>/dev/null || echo "0")
+# Compare against baseline (persisted across reboots)
+BASELINE_FILE="/Users/jeffbridwell/CascadeProjects/chorus/platform/state/gate-warning-baseline"
+WARNINGS_PREV=$(cat "$BASELINE_FILE" 2>/dev/null || echo "0")
 if [ "$WARNINGS_NOW" -gt "$WARNINGS_PREV" ]; then
   echo "FAIL: warnings increased from $WARNINGS_PREV to $WARNINGS_NOW"
   exit 1
 else
-  echo "$WARNINGS_NOW" > /tmp/gate-warning-baseline
+  echo "$WARNINGS_NOW" > "$BASELINE_FILE"
   echo "PASS: warnings $WARNINGS_NOW (was $WARNINGS_PREV)"
 fi
 ```
@@ -101,7 +105,7 @@ fi
 # Check that changed files follow existing patterns
 # Crude: verify no new files with names that don't match existing conventions
 cd /Users/jeffbridwell/CascadeProjects/chorus
-git diff HEAD~3 --diff-filter=A --name-only | head -10
+git diff "$DIFF_BASE" --diff-filter=A --name-only | head -10
 # New files listed for manual review if any
 ```
 

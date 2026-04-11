@@ -36,6 +36,14 @@ Same as /gate-code — doc-only and board-process cards skip.
 
 ## Automated Checks (run all, collect results)
 
+Resolve the diff base before running checks:
+```bash
+cd /Users/jeffbridwell/CascadeProjects/chorus
+# Use card's WIP-start commit if available (from spine event), fall back to HEAD~3
+WIP_BASE=$(grep "card=$CARD_ID" /Users/jeffbridwell/.chorus/logs/spine.log 2>/dev/null | grep 'card.wip.started\|role.state.building' | tail -1 | sed 's/.*commit=\([a-f0-9]*\).*/\1/' 2>/dev/null)
+DIFF_BASE="${WIP_BASE:-HEAD~3}"
+```
+
 ### 1. Hooks pass
 
 ```bash
@@ -55,7 +63,7 @@ Note: Full test suite already ran in /gate-code. This check verifies the hooks a
 ```bash
 # Verify no test files were deleted or skipped in this change
 cd /Users/jeffbridwell/CascadeProjects/chorus
-DELETED_TESTS=$(git diff HEAD~3 --diff-filter=D --name-only | grep -E 'test|spec|\.bats')
+DELETED_TESTS=$(git diff "$DIFF_BASE" --diff-filter=D --name-only | grep -E 'test|spec|\.bats')
 if [ -n "$DELETED_TESTS" ]; then
   echo "WARN: test files deleted: $DELETED_TESTS"
 fi
@@ -69,7 +77,7 @@ fi
 ```bash
 # Check changed production files for console.log (should use logger)
 cd /Users/jeffbridwell/CascadeProjects/chorus
-PROD_FILES=$(git diff HEAD~3 --name-only -- '*.ts' '*.rs' | grep -v 'test\|spec\|\.test\.')
+PROD_FILES=$(git diff "$DIFF_BASE" --name-only -- '*.ts' '*.rs' | grep -v 'test\|spec\|\.test\.')
 if [ -n "$PROD_FILES" ]; then
   grep -n 'console\.log' $PROD_FILES 2>/dev/null
   if [ $? -eq 0 ]; then
@@ -88,7 +96,7 @@ echo "PASS: no console.log in production code"
 ```bash
 # Check changed handlers/routes for structured log calls
 cd /Users/jeffbridwell/CascadeProjects/chorus
-HANDLER_FILES=$(git diff HEAD~3 --name-only -- '*.ts' | grep -E 'handler|route|service' | grep -v test)
+HANDLER_FILES=$(git diff "$DIFF_BASE" --name-only -- '*.ts' | grep -E 'handler|route|service' | grep -v test)
 if [ -n "$HANDLER_FILES" ]; then
   # Should have at least one logger call per handler file
   for f in $HANDLER_FILES; do

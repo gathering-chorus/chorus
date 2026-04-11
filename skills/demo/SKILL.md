@@ -26,74 +26,75 @@ If no argument given, check the role's current WIP card from andon state.
 
 When multiple card IDs or a pipeline ID is given:
 1. Parse the arguments: if starts with `WF-`, read the manifest from `messages/workflows/archive/WF-NNN.json` and extract all card IDs
-2. Run Steps 1-4 **for each card** — validate, smoke check, prep brief, signal
+2. Run Steps 1-5 **for each card** — validate, gates, smoke check, stakes brief, signal
 3. Consolidate into **one demo brief** with a section per card
 4. Nudge roles **once** with the full list, not per-card: `[demo] #1459 #1461 #1480 — <pipeline name or summary>`
 5. Nudge for feedback **once**: `[feedback] #1459 #1461 #1480 — <summary>. Questions? Concerns?`
 
-## Step 1: Validate card exists and is in WIP or Now (or Done for post-acceptance demos)
+## Step 1: Validate (HARD GATE)
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view ${CARD_ID}
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view ${CARD_ID}
 ```
 
-- Card must exist and be in WIP or Now status
-- Read the card's AC (acceptance criteria) from description
-- Identify the owner (builder)
+**All three must be true or the demo stops:**
+- Card exists
+- Card is in WIP or Now status (or Done for post-acceptance demos)
+- Card has AC (acceptance criteria) in description
 
-If card is not in WIP/Now: "Card #${CARD_ID} is in <status> — must be in WIP to demo."
+Extract and print: card title, owner (builder), AC items, status.
 
-## Step 1.5: Quality gate — AC review (HARD GATE, #1717)
+If any check fails → **STOP:**
+- Card not found: `Card #${CARD_ID} does not exist.`
+- Wrong status: `Card #${CARD_ID} is in <status> — must be in WIP to demo.`
+- No AC: `Card #${CARD_ID} has no acceptance criteria. Add AC before demo.`
 
-**Before the smoke check, verify the work covers the AC.** This is the gate that catches "done but not done" before Jeff ever sees it.
+Emit spine event:
+```bash
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log demo.validate.completed <your-role> card=${CARD_ID} result=pass|fail
+```
 
-1. Extract AC items from the card description (from Step 1 output)
-2. Get the recent git diff:
-   ```bash
-   cd /Users/jeffbridwell/CascadeProjects/chorus && git diff HEAD~5 --stat
-   ```
-3. Run the agent review:
-   ```bash
-   echo "<review prompt>" | claude -p \
-     --model haiku \
-     --permission-mode dontAsk \
-     --no-session-persistence \
-     --max-budget-usd 0.10 \
-     --output-format json \
-     --disallowedTools "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"
-   ```
-   
-   The review prompt includes the card AC and the diff stat. The agent returns:
-   ```json
-   {"pass": true/false, "gaps": ["description of each gap"]}
-   ```
+## Step 2: Gate chain (HARD GATE)
 
-4. **If `pass: false`** → **STOP.** Print the gaps. Builder fixes before re-running `/demo`:
-   ```
-   Quality gate FAILED for #<card-id>:
-   - <gap 1>
-   - <gap 2>
-   Fix these AC gaps before demo.
-   ```
+**Before the smoke check, run the full gate chain.** This is how the team verifies quality together — every demo, every time.
 
-5. **If `pass: true`** → continue to smoke check. Print:
-   ```
-   Quality gate: PASS — AC coverage verified by agent review.
-   ```
+**Skip conditions:** Cards tagged `type:chore` or `type:swat` skip the gate chain (crisis/housekeeping cards).
 
-6. **If agent fails** (timeout, spawn error, budget exceeded) → **warn but don't block**:
-   ```
-   Quality gate: SKIPPED — agent review failed (<reason>). Proceeding with smoke check.
-   ```
+### Gate sequence
 
-7. Emit spine event:
-   ```bash
-   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log quality.gate.completed <your-role> card=${CARD_ID} result=pass|fail|skipped
-   ```
+1. **Run `/gate-code <card-id>`** — tests green, build clean, no new warnings, pattern match. Kade runs this.
+2. **Run `/gate-quality <card-id>`** — hooks pass, regression clean, no console.log, debt check. Kade runs this. On pass, auto-nudges Silas for arch review.
+3. **Wait for `/gate-arch` pass from Silas** — system fit, namespace conventions, domain boundaries. Silas runs this after receiving the nudge.
 
-**Skip conditions:** Cards tagged `type:chore` or `type:swat` skip the agent review (same as demo gate skip in #1881).
+Check for gate results via card comments:
+```bash
+# Check which gates have passed
+CARD_COMMENTS=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards comments ${CARD_ID} 2>/dev/null)
+CODE_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:code-pass')
+QUALITY_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:quality-pass')
+ARCH_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:arch-pass')
+```
 
-## Step 2: Smoke check (HARD GATE)
+### Gate logic
+
+- **If invoking role is Kade (builder):** Run `/gate-code` and `/gate-quality` inline. They post card comments and spine events on pass. `/gate-quality` auto-nudges Silas. Wait for Silas to respond with `gate:arch-pass`.
+- **If invoking role is Jeff or Wren (not builder):** Check card comments for existing gate passes. If any gate is missing, report which gates need to run:
+  ```
+  Gate chain incomplete for #<card-id>:
+    gate:code    — <PASS or MISSING — Kade runs /gate-code>
+    gate:quality — <PASS or MISSING — Kade runs /gate-quality>
+    gate:arch    — <PASS or MISSING — Silas runs /gate-arch>
+  ```
+- **If all three gates passed:** Print gate summary and continue to Step 3:
+  ```
+  Gate chain: PASS
+    gate:code     PASS — Kade
+    gate:quality  PASS — Kade
+    gate:arch     PASS — Silas
+  ```
+- **If any gate FAILED:** STOP. Print the failing gate's output. Builder fixes before re-running `/demo`.
+
+## Step 3: Smoke check (HARD GATE)
 
 **Run the automated smoke check first.** This is a gate — non-zero exit blocks the demo.
 
@@ -122,22 +123,27 @@ bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh 
 
 If card-specific check FAILS: stop here. Report what broke. Builder fixes before re-running `/demo`.
 
-## Step 3: Open with stakes, not mechanics
+## Step 4: Stakes brief (HARD GATE)
 
 **Do NOT** lead with what you built or how it works. Lead with **why it matters and what you want Jeff to see.**
 
-Print a structured demo brief:
+**You must print the structured brief below before proceeding. If you skip it or lead with mechanics, the demo is invalid.**
+
+Print:
 
 ```
 ## Demo: #<card-id> — <title>
 
 **Builder:** <owner>
-**Smoke check:** PASS/FAIL
+**Gates:** code PASS | quality PASS | arch PASS
+**Smoke check:** PASS (N pass, 0 fail)
 **Why this matters:** <1-2 sentences — what was broken/missing before, what's different now for the user>
 **What I want to show you:** <the specific moment or interaction Jeff should watch>
 ```
 
-**Anti-patterns:**
+**Gate check:** The brief must contain a "Why this matters" line that describes user impact, not implementation. If the brief leads with mechanics ("I built...", "The API now...", "Here's what changed...") → rewrite before proceeding.
+
+**Anti-patterns (FAIL the gate if any appear in the brief):**
 - "I built a function that..." — mechanics first, no stakes
 - "Here's what changed in the codebase..." — implementation, not impact
 - "The API now returns..." — plumbing, not value
@@ -146,13 +152,20 @@ Print a structured demo brief:
 - "Before this, a role could start building without knowing what files they'd touch. Now the board tells them before they write a line of code. Let me show you on a real card."
 - "Notes and music were islands — no connection. The engine found 2,600 links between them. Watch the knowledge graph when I toggle inferred edges."
 
-## Step 4: Signal
+Emit spine event:
+```bash
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log demo.stakes.completed <your-role> card=${CARD_ID}
+```
+
+## Step 5: Signal (HARD GATE)
+
+**All four signal actions must complete before showing Jeff. If any fail, stop and fix.**
 
 ```bash
-# Log demo started
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts demo ${CARD_ID}
+# 1. Log demo started on board
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards demo ${CARD_ID}
 
-# Emit spine event
+# 2. Emit spine event
 /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log card.demo.started <your-role> card=${CARD_ID}
 ```
 
@@ -216,7 +229,7 @@ When you receive a `[feedback]` nudge, **reply with substance.** Share your actu
 
 The builder is blocked on acceptance until team feedback lands. Silence forces Jeff to chase replies — that's failure demand.
 
-### Auto-generate demo brief (MANDATORY — #1670)
+### 4. Auto-generate demo brief (MANDATORY — #1670)
 
 The builder does NOT manually write this brief. The demo skill generates it mechanically from card data. This is the provenance record — it proves a demo happened.
 
@@ -228,7 +241,7 @@ The builder does NOT manually write this brief. The demo skill generates it mech
 
 ```bash
 # Extract AC from card description
-AC_LINES=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view ${CARD_ID} | grep -E '^\s*- \[[ x]\]')
+AC_LINES=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view ${CARD_ID} | grep -E '^\s*- \[[ x]\]')
 AC_TOTAL=$(echo "$AC_LINES" | grep -c '^\s*- \[' 2>/dev/null | tr -d '\n')
 AC_CHECKED=$(echo "$AC_LINES" | grep -c '^\s*- \[x\]' 2>/dev/null | tr -d '\n')
 : "${AC_TOTAL:=0}" "${AC_CHECKED:=0}"
@@ -252,7 +265,20 @@ Ready for Jeff + Wren review.
 EOF
 ```
 
-**After the demo completes (Step 5)**, append to the existing brief:
+**Signal gate check — all 4 must have completed:**
+1. Board demo logged (cards demo)
+2. Spine event emitted (card.demo.started)
+3. Roles nudged (demo observer + feedback)
+4. Demo brief written to Wren's briefs/
+
+If any action failed → **STOP.** Fix before proceeding to Step 6.
+
+Emit spine event:
+```bash
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log demo.signal.completed <your-role> card=${CARD_ID}
+```
+
+**After the demo completes (Step 6)**, append to the existing brief:
 ```bash
 cat >> /Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs/$(date +%Y-%m-%d)-demo-${CARD_ID}.md << EOF
 
@@ -263,7 +289,7 @@ cat >> /Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs/$(date +%Y-%
 EOF
 ```
 
-## Step 5: Show, don't tell — then wait
+## Step 6: Show, don't tell — then wait
 
 **The builder shows the feature working. Not describes it. Not summarizes it.**
 
@@ -287,7 +313,7 @@ EOF
 - Explaining what's on screen before Jeff has processed it — let him look first
 - Answering a question Jeff hasn't asked yet — wait for his actual concern
 
-## Step 6: Accept or reject
+## Step 7: Accept or reject
 
 **Only Wren or Jeff can accept.** The builder CANNOT mark their own code card Done.
 
