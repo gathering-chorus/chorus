@@ -1163,6 +1163,82 @@ chorus:Principle a owl:Class ;
     rdfs:label "Principle" ;
     rdfs:comment "A shared value. Stable. Patterns derive from principles." .
 
+chorus:Practice a owl:Class ;
+    rdfs:label "Practice" ;
+    rdfs:comment "A repeatable discipline derived from principles. How the team works." .
+
+# --- 7 Principles (from team-architecture.md) ---
+
+chorus:principle-protect-attention a chorus:Principle ;
+    rdfs:label "Protect Jeff's attention" ;
+    rdfs:comment "Jeff's attention is the scarcest resource. Every protocol, gate, and automation exists to keep coordination off his desk. Target: 2 touches per card." .
+
+chorus:principle-enforce a chorus:Principle ;
+    rdfs:label "Enforce, don't suggest" ;
+    rdfs:comment "Skills describe. Gates enforce. A hook that blocks the wrong action beats instructions that drift." .
+
+chorus:principle-no-dark-work a chorus:Principle ;
+    rdfs:label "No dark work" ;
+    rdfs:comment "Everything must be visible — board, domain graph, API. If the system can't see it, it doesn't exist." .
+
+chorus:principle-artifacts a chorus:Principle ;
+    rdfs:label "Artifacts are the source of truth" ;
+    rdfs:comment "When conversation and a file disagree, the file wins. If it matters next week, it's a file." .
+
+chorus:principle-owner-sets-direction a chorus:Principle ;
+    rdfs:label "The owner sets direction, the system does the relay" ;
+    rdfs:comment "Jeff sets direction. Roles maintain shared context directly. The system is the router." .
+
+chorus:principle-ship-small a chorus:Principle ;
+    rdfs:label "Ship small, learn fast" ;
+    rdfs:comment "Small cards, fast cycles, real demos. The demo is the learning moment." .
+
+chorus:principle-self-healing a chorus:Principle ;
+    rdfs:label "The system should be self-healing" ;
+    rdfs:comment "Synchronization brings roles current without Jeff recapping. Any role should reconstruct state from artifacts alone." .
+
+# --- 7 Practices (from team-architecture.md) ---
+
+chorus:practice-actor-bdd a chorus:Practice ;
+    rdfs:label "Actor-BDD" ;
+    rdfs:comment "Before code, model the actors and write the scenarios. Scenarios become the test suite." .
+
+chorus:practice-domain-first a chorus:Practice ;
+    rdfs:label "Domain first" ;
+    rdfs:comment "Register the domain before building in it. The domain exists before a line of code." .
+
+chorus:practice-service-next a chorus:Practice ;
+    rdfs:label "Service next" ;
+    rdfs:comment "After the domain, design the service. Ship the contract before the implementation." .
+
+chorus:practice-product-owner-aligned a chorus:Practice ;
+    rdfs:label "Product and owner aligned" ;
+    rdfs:comment "Every domain has an owner. Every card has an owner. They match. Ownership is routing." .
+
+chorus:practice-tdd a chorus:Practice ;
+    rdfs:label "TDD" ;
+    rdfs:comment "Tests describe Jeff's experience, not implementation details. AC → tests → code → green → demo." .
+
+chorus:practice-production-ready a chorus:Practice ;
+    rdfs:label "Production ready on every release" ;
+    rdfs:comment "Done means production ready. Full gate chain: product, code, quality, arch, ops." .
+
+chorus:practice-api-first a chorus:Practice ;
+    rdfs:label "API first" ;
+    rdfs:comment "Define the shape before populating data. API prevents snowflake domains." .
+
+# --- Contains edges — domains contain their instances ---
+
+chorus:loom-principles chorus:contains chorus:principle-protect-attention,
+    chorus:principle-enforce, chorus:principle-no-dark-work,
+    chorus:principle-artifacts, chorus:principle-owner-sets-direction,
+    chorus:principle-ship-small, chorus:principle-self-healing .
+
+chorus:loom-practices chorus:contains chorus:practice-actor-bdd,
+    chorus:practice-domain-first, chorus:practice-service-next,
+    chorus:practice-product-owner-aligned, chorus:practice-tdd,
+    chorus:practice-production-ready, chorus:practice-api-first .
+
 # =============================================================================
 # 10. INTERACTIONS
 # =============================================================================
@@ -1194,6 +1270,11 @@ chorus:hasDomain a owl:ObjectProperty ;
     rdfs:comment "True containment — a product has this domain as a constituent part. Loom hasDomain Principles." ;
     rdfs:domain chorus:Product ;
     rdfs:range chorus:Domain .
+
+chorus:contains a owl:ObjectProperty ;
+    rdfs:label "contains" ;
+    rdfs:comment "Collection pattern — a domain contains typed instances. Principles contains 7 Principle instances." ;
+    rdfs:domain chorus:Domain .
 
 chorus:consumes a owl:ObjectProperty ;
     rdfs:label "consumes" ;

@@ -59,6 +59,20 @@
       "properties": {
         "rdfs:label": { "required": true, "cardinality": "1" }
       }
+    },
+    "chorus:Principle": {
+      "required": true,
+      "properties": {
+        "rdfs:label": { "required": true, "cardinality": "1" },
+        "rdfs:comment": { "required": true, "cardinality": "1" }
+      }
+    },
+    "chorus:Practice": {
+      "required": true,
+      "properties": {
+        "rdfs:label": { "required": true, "cardinality": "1" },
+        "rdfs:comment": { "required": true, "cardinality": "1" }
+      }
     }
   },
   "consumers": [
