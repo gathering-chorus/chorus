@@ -426,6 +426,49 @@ describeIntegration('POST /api/athena/validate', () => {
   });
 });
 
+// === #1899: Domain detail sections ===
+
+describeIntegration('GET /api/athena/subdomains/:id/actors', () => {
+  test('returns actor list with athena envelope', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/actors`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.source).toBe('athena');
+    expect(body._meta.query_name).toBe('subdomain-actors');
+    expect(body.data.subdomain).toBe('logs-service');
+    expect(Array.isArray(body.data.actors)).toBe(true);
+  });
+
+  test('returns 404 for unknown subdomain', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/nonexistent-xyz/actors`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describeIntegration('GET /api/athena/subdomains/:id/scenarios', () => {
+  test('returns scenario list with athena envelope', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/scenarios`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.source).toBe('athena');
+    expect(body._meta.query_name).toBe('subdomain-scenarios');
+    expect(body.data.subdomain).toBe('logs-service');
+    expect(Array.isArray(body.data.scenarios)).toBe(true);
+  });
+});
+
+describeIntegration('GET /api/athena/subdomains/:id/contract', () => {
+  test('returns contract list with athena envelope', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/contract`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.source).toBe('athena');
+    expect(body._meta.query_name).toBe('subdomain-contract');
+    expect(body.data.subdomain).toBe('logs-service');
+    expect(Array.isArray(body.data.endpoints)).toBe(true);
+  });
+});
+
 // === #1899: Completeness API ===
 
 describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
