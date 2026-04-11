@@ -4339,7 +4339,7 @@ app.post('/api/athena/subdomains/:id/prior-art', async (req: Request, res: Respo
         }
       }
     `;
-    await fetch(ATHENA_SPARQL.replace('/sparql', '/update'), { method: 'POST', headers: { 'Content-Type': 'application/sparql-update' }, body: update });
+    await athenaSparqlUpdate(update);
     res.json(athenaEnvelope('subdomain-prior-art-create', { subdomain: req.params.id, uri: itemUri, label, path: path || null, description: description || null }, Date.now() - start));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('subdomain-prior-art-create', { error: err.message }, Date.now() - start, { error: true }));
@@ -4369,7 +4369,7 @@ app.post('/api/athena/subdomains/:id/actors', async (req: Request, res: Response
         }
       }
     `;
-    await fetch(ATHENA_SPARQL.replace('/sparql', '/update'), { method: 'POST', headers: { 'Content-Type': 'application/sparql-update' }, body: update });
+    await athenaSparqlUpdate(update);
     res.json(athenaEnvelope('subdomain-actor-create', { subdomain: req.params.id, uri: actorUri, label, role: role || null, action: action || null }, Date.now() - start));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('subdomain-actor-create', { error: err.message }, Date.now() - start, { error: true }));
@@ -4397,7 +4397,7 @@ app.post('/api/athena/subdomains/:id/scenarios', async (req: Request, res: Respo
         }
       }
     `;
-    await fetch(ATHENA_SPARQL.replace('/sparql', '/update'), { method: 'POST', headers: { 'Content-Type': 'application/sparql-update' }, body: update });
+    await athenaSparqlUpdate(update);
     res.json(athenaEnvelope('subdomain-scenario-create', { subdomain: req.params.id, uri: scenarioUri, label, givenWhenThen: givenWhenThen || null }, Date.now() - start));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('subdomain-scenario-create', { error: err.message }, Date.now() - start, { error: true }));
@@ -4426,7 +4426,7 @@ app.post('/api/athena/subdomains/:id/contract', async (req: Request, res: Respon
         }
       }
     `;
-    await fetch(ATHENA_SPARQL.replace('/sparql', '/update'), { method: 'POST', headers: { 'Content-Type': 'application/sparql-update' }, body: update });
+    await athenaSparqlUpdate(update);
     res.json(athenaEnvelope('subdomain-contract-create', { subdomain: req.params.id, uri: contractUri, label, endpoint: endpoint || null, method: method || null }, Date.now() - start));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('subdomain-contract-create', { error: err.message }, Date.now() - start, { error: true }));
