@@ -64,8 +64,19 @@ cmd_say() {
   curl -s -X POST "$MESSAGING_API/api/chat/$chat_id/message" -H 'Content-Type: application/json' \
     -d "{\"from\":\"$role\",\"content\":\"$(echo "$message" | sed 's/"/\\"/g')\"}" > /dev/null 2>&1 &
 
-  # No auto-nudge — the /chat skill tells the caller to nudge manually.
-  # Previous bug (#1811): auto-nudge here + manual nudge from skill = double delivery.
+  # Auto-nudge the other party. Script owns delivery — /chat skill must NOT also nudge.
+  # Restored from pre-8bc9f0d9. Prior bug (#1811) was double-delivery from both paths nudging.
+  local role1 role2 other
+  role1=$(echo "$chat_id" | cut -d- -f1)
+  role2=$(echo "$chat_id" | cut -d- -f2)
+  if [ "$role" = "$role1" ]; then
+    other="$role2"
+  else
+    other="$role1"
+  fi
+  if [ -z "$CHAT_DRY_RUN" ]; then
+    "$SCRIPT_DIR/nudge" "$other" "${role}: replied in chat ${chat_id}" 2>/dev/null || true
+  fi
 
   # Return current line count so caller can track position
   wc -l < "$chat_file" | tr -d ' '
