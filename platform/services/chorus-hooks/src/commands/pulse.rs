@@ -25,25 +25,25 @@ pub fn run(_args: &[String]) -> ExitCode {
     let events = assemble_recent_events();
     pulse.insert("events".into(), events);
 
-    // 3. Alerts — check cooldown files
-    let alerts = assemble_alerts();
+    // 3. Index freshness — compute early so alerts can cross-reference
+    let freshness = assemble_freshness();
+    pulse.insert("index_freshness".into(), freshness.clone());
+
+    // 4. Alerts — check cooldown files, filter resolved freshness alerts
+    let alerts = assemble_alerts(&freshness);
     pulse.insert("alerts".into(), alerts);
 
-    // 4. Nudges — pending counts per role
+    // 5. Nudges — pending counts per role
     let nudges = assemble_nudges();
     pulse.insert("nudges".into(), nudges);
 
-    // 5. Health — service endpoints (cached, not live)
+    // 6. Health — service endpoints (cached, not live)
     let health = assemble_health();
     pulse.insert("health".into(), health);
 
-    // 6. Board — WIP from cached snapshot
+    // 7. Board — WIP from cached snapshot
     let board = assemble_board();
     pulse.insert("board".into(), board);
-
-    // 7. Index freshness — read from API cache or last known
-    let freshness = assemble_freshness();
-    pulse.insert("index_freshness".into(), freshness);
 
     let elapsed_ms = start.elapsed().as_millis();
     pulse.insert("elapsed_ms".into(), serde_json::Value::Number(serde_json::Number::from(elapsed_ms as u64)));
@@ -106,7 +106,7 @@ fn assemble_recent_events() -> serde_json::Value {
     })
 }
 
-fn assemble_alerts() -> serde_json::Value {
+fn assemble_alerts(freshness: &serde_json::Value) -> serde_json::Value {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let mut fired_today = Vec::new();
 
@@ -130,6 +130,17 @@ fn assemble_alerts() -> serde_json::Value {
     }
     fired_today.sort();
     fired_today.dedup();
+
+    // Filter out resolved freshness alerts when index is healthy (#1889)
+    let dead = freshness.get("dead").and_then(|d| d.as_u64()).unwrap_or(1);
+    let critical = freshness.get("critical").and_then(|d| d.as_u64()).unwrap_or(1);
+    if dead == 0 && critical == 0 {
+        fired_today.retain(|name| {
+            !name.contains("index-freshness")
+                && !name.contains("fuseki-harvest-stale")
+                && !name.contains("lancedb-stale")
+        });
+    }
 
     serde_json::json!({
         "fired_today": fired_today,

@@ -1,6 +1,8 @@
 //! #1889 — Session start must regenerate Pulse before writing context
-//! Bug: roles boot with stale pulse-latest.json from previous session,
-//! report dead index sources that were already fixed.
+//! Bug 1: roles boot with stale pulse-latest.json from previous session,
+//!         report dead index sources that were already fixed.
+//! Bug 2: resolved freshness alerts persist in alerts.fired_today,
+//!         contradicting index_freshness which shows all-fresh.
 
 use std::fs;
 use std::path::Path;
@@ -60,4 +62,41 @@ fn session_start_pulse_has_fresh_freshness() {
         dead != 99,
         "index_freshness should be live data, not stale poison value"
     );
+}
+
+/// When index is all-fresh, freshness-related alerts should not appear in fired_today
+#[test]
+fn pulse_no_stale_freshness_alerts_when_index_fresh() {
+    // Run pulse to get current state
+    let _ = std::process::Command::new(SHIM)
+        .arg("pulse")
+        .output();
+
+    let content = fs::read_to_string("/tmp/pulse-latest.json")
+        .expect("pulse-latest.json should exist");
+    let v: serde_json::Value = serde_json::from_str(&content)
+        .expect("pulse should be valid JSON");
+
+    let freshness = v.get("index_freshness").expect("must have index_freshness");
+    let dead = freshness.get("dead").and_then(|d| d.as_u64()).unwrap_or(0);
+    let critical = freshness.get("critical").and_then(|d| d.as_u64()).unwrap_or(0);
+
+    // Only check alert filtering when index is actually healthy
+    if dead == 0 && critical == 0 {
+        let alerts = v.get("alerts").expect("must have alerts");
+        let fired = alerts.get("fired_today").and_then(|f| f.as_array()).expect("fired_today should be array");
+        let freshness_alerts: Vec<&str> = fired.iter()
+            .filter_map(|a| a.as_str())
+            .filter(|name| {
+                name.contains("index-freshness")
+                    || name.contains("fuseki-harvest-stale")
+                    || name.contains("lancedb-stale")
+            })
+            .collect();
+        assert!(
+            freshness_alerts.is_empty(),
+            "when index is all-fresh, freshness-related alerts should be filtered out, but found: {:?}",
+            freshness_alerts
+        );
+    }
 }
