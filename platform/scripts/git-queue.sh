@@ -138,6 +138,8 @@ do_commit() {
 
   # Export marker so pre-commit hook knows we're in the queue
   export _GIT_QUEUE_INTERNAL=1
+  # Export commit message for pre-commit WIP gate swat/chore bypass (#1799)
+  export _COMMIT_MSG="${_msg}"
 
   # Doc-drift check (#763) — warn if related docs may be stale
   local drift_conf
