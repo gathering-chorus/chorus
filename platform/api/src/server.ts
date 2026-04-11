@@ -1282,6 +1282,11 @@ function isEDT(dateStr: string): boolean {
   return false; // Dec-Feb always EST
 }
 
+/** Boston timestamp — one conversion point for all display (#1826) */
+function bostonNow(): string {
+  return convertToLocal(new Date().toISOString(), 'America/New_York');
+}
+
 /** Convert ISO timestamp to local time string */
 function convertToLocal(isoTimestamp: string, _tz: string): string {
   try {
@@ -1631,7 +1636,7 @@ app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
       dead: sources.filter(s => s.level === 'dead').length,
     };
 
-    res.json({ sources, summary, timestamp: new Date().toISOString() });
+    res.json({ sources, summary, timestamp: bostonNow() });
   } finally {
     db.close();
   }
@@ -1667,7 +1672,7 @@ app.post('/api/chorus/reindex', async (_req: Request, res: Response) => {
       ...indexResult,
       embedded: embedResult.embedded,
       skipped: embedResult.skipped,
-      timestamp: new Date().toISOString(),
+      timestamp: bostonNow(),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -2037,7 +2042,7 @@ app.post('/api/chorus/pulse', (req: Request, res: Response) => {
   const safeLevel = validLevels.includes(level) ? level : 'info';
 
   const entry: Record<string, string> = {
-    timestamp: new Date().toISOString(),
+    timestamp: bostonNow(),
     level: safeLevel,
     appName: 'chorus-events',
     component: 'lifecycle',
@@ -2231,7 +2236,7 @@ app.get('/api/chorus/voice-analytics', (req: Request, res: Response) => {
     const weeklyTone: Record<string, Record<string, number>> = {};
     const weeklyRole: Record<string, Record<string, number>> = {};
     const weeklyLength: Record<string, { total: number; count: number }> = {};
-    // Hour of day (Boston = UTC-5)
+    // Hour of day (Boston — DST-aware)
     const hourByRole: Record<string, number[]> = {
       wren: new Array(24).fill(0),
       silas: new Array(24).fill(0),
@@ -2294,9 +2299,10 @@ app.get('/api/chorus/voice-analytics', (req: Request, res: Response) => {
       weeklyLength[weekKey].total += words.length;
       weeklyLength[weekKey].count++;
 
-      // Hour of day (UTC-5 Boston)
+      // Hour of day (Boston — DST-aware via isEDT)
       const utcHour = d.getUTCHours();
-      const bostonHour = (utcHour - 5 + 24) % 24;
+      const offset = isEDT(d.toISOString().slice(0, 10)) ? 4 : 5;
+      const bostonHour = (utcHour - offset + 24) % 24;
       hourByRole[role][bostonHour]++;
 
       // Bigrams — deduplicate repeated messages (#1752)
@@ -2627,14 +2633,16 @@ app.get('/api/chorus/attention-analytics', (_req: Request, res: Response) => {
       redPct: Math.round(intensityCounts.red / dayTotal * 100),
     };
 
-    // --- Daily rhythm: hour-of-day buckets (Boston = UTC-5) ---
+    // --- Daily rhythm: hour-of-day buckets (Boston — DST-aware) ---
     const hourBuckets: { keys: number[]; prompts: number[]; count: number[] } = {
       keys: Array(24).fill(0),
       prompts: Array(24).fill(0),
       count: Array(24).fill(0),
     };
     day.forEach(r => {
-      const hr = new Date((r.timestamp - 5 * 3600) * 1000).getUTCHours();
+      const d = new Date(r.timestamp * 1000);
+      const off = isEDT(d.toISOString().slice(0, 10)) ? 4 : 5;
+      const hr = (d.getUTCHours() - off + 24) % 24;
       hourBuckets.keys[hr] += r.keys_per_min;
       hourBuckets.prompts[hr] += r.prompts_1h;
       hourBuckets.count[hr]++;
@@ -3669,7 +3677,7 @@ app.get('/api/chorus/health', async (_req: Request, res: Response) => {
     db: { status: dbStatus, rows: dbRows },
     vectors,
     hooks: { status: hooksStatus },
-    timestamp: new Date().toISOString(),
+    timestamp: bostonNow(),
   });
 });
 
@@ -3819,7 +3827,7 @@ async function athenaSparqlUpdate(update: string): Promise<void> {
 
 function athenaEnvelope(queryName: string, data: any, durationMs: number, extra: Record<string, any> = {}) {
   return {
-    _meta: { source: 'athena', query_name: queryName, graph: ATHENA_GRAPH, duration_ms: durationMs, cached: false, timestamp: new Date().toISOString(), ...extra },
+    _meta: { source: 'athena', query_name: queryName, graph: ATHENA_GRAPH, duration_ms: durationMs, cached: false, timestamp: bostonNow(), ...extra },
     data,
   };
 }
