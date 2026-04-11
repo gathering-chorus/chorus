@@ -62,14 +62,16 @@ Emit spine event:
 
 ### Gate sequence
 
-1. **Run `/gate-code <card-id>`** — tests green, build clean, no new warnings, pattern match. Kade runs this.
-2. **Run `/gate-quality <card-id>`** — hooks pass, regression clean, no console.log, debt check. Kade runs this. On pass, auto-nudges Silas for arch review.
-3. **Wait for `/gate-arch` pass from Silas** — system fit, namespace conventions, domain boundaries. Silas runs this after receiving the nudge.
+1. **Run `/gate-product <card-id>`** — AC described, experience section, domain registered, spine contract. Wren runs this. On pass, nudges Kade for gate-code. **Note:** The "demo evidence" check (check 2) is expected to WARN when running inside `/demo`, since the demo brief is created later in Step 5. This is normal — the check validates that a brief exists for re-demos, not the first pass.
+2. **Run `/gate-code <card-id>`** — tests green, build clean, no new warnings, pattern match. Kade runs this.
+3. **Run `/gate-quality <card-id>`** — hooks pass, regression clean, no console.log, debt check. Kade runs this. On pass, auto-nudges Silas for arch review.
+4. **Wait for `/gate-arch` pass from Silas** — system fit, namespace conventions, domain boundaries. Silas runs this after receiving the nudge.
 
 Check for gate results via card comments:
 ```bash
 # Check which gates have passed
 CARD_COMMENTS=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards comments ${CARD_ID} 2>/dev/null)
+PRODUCT_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:product-pass')
 CODE_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:code-pass')
 QUALITY_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:quality-pass')
 ARCH_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:arch-pass')
@@ -77,17 +79,19 @@ ARCH_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:arch-pass')
 
 ### Gate logic
 
-- **If invoking role is Kade (builder):** Run `/gate-code` and `/gate-quality` inline. They post card comments and spine events on pass. `/gate-quality` auto-nudges Silas. Wait for Silas to respond with `gate:arch-pass`.
-- **If invoking role is Jeff or Wren (not builder):** Check card comments for existing gate passes. If any gate is missing, report which gates need to run:
+- **If invoking role is Kade (builder):** Run `/gate-product` (as Wren's gate — invoke it, Wren's owner check applies contextually), then run `/gate-code` and `/gate-quality` inline. They post card comments and spine events on pass. `/gate-quality` auto-nudges Silas. Wait for Silas to respond with `gate:arch-pass`.
+- **If invoking role is Jeff or Wren:** Check card comments for existing gate passes. If any gate is missing, report which gates need to run:
   ```
   Gate chain incomplete for #<card-id>:
+    gate:product — <PASS or MISSING — Wren runs /gate-product>
     gate:code    — <PASS or MISSING — Kade runs /gate-code>
     gate:quality — <PASS or MISSING — Kade runs /gate-quality>
     gate:arch    — <PASS or MISSING — Silas runs /gate-arch>
   ```
-- **If all three gates passed:** Print gate summary and continue to Step 3:
+- **If all four gates passed:** Print gate summary and continue to Step 3:
   ```
   Gate chain: PASS
+    gate:product  PASS — Wren
     gate:code     PASS — Kade
     gate:quality  PASS — Kade
     gate:arch     PASS — Silas
