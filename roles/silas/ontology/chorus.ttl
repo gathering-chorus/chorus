@@ -95,7 +95,8 @@ chorus:Capturing a chorus:Vertebra ;
     rdfs:label "Capturing" ;
     rdfs:comment "Intake. Signals, seeds, observations flow in from tools and from Gathering itself." ;
     chorus:stageOrder 0 ;
-    chorus:nextStage chorus:Shaping .
+    chorus:nextStage chorus:Shaping ;
+    chorus:belongsTo chorus:chorusStream .
 
 chorus:Shaping a chorus:Vertebra ;
     rdfs:label "Shaping" ;
@@ -103,7 +104,8 @@ chorus:Shaping a chorus:Vertebra ;
     chorus:stageOrder 1 ;
     chorus:nextStage chorus:Directing ;
     chorus:previousStage chorus:Capturing ;
-    chorus:exitArtifactType chorus:Decision .
+    chorus:exitArtifactType chorus:Decision ;
+    chorus:belongsTo chorus:chorusStream .
 
 chorus:Directing a chorus:Vertebra ;
     rdfs:label "Directing" ;
@@ -111,7 +113,8 @@ chorus:Directing a chorus:Vertebra ;
     chorus:stageOrder 2 ;
     chorus:nextStage chorus:Designing ;
     chorus:previousStage chorus:Shaping ;
-    chorus:exitArtifactType chorus:Card .
+    chorus:exitArtifactType chorus:Card ;
+    chorus:belongsTo chorus:chorusStream .
 
 chorus:Designing a chorus:Vertebra ;
     rdfs:label "Designing" ;
@@ -119,7 +122,8 @@ chorus:Designing a chorus:Vertebra ;
     chorus:stageOrder 3 ;
     chorus:nextStage chorus:Building ;
     chorus:previousStage chorus:Directing ;
-    chorus:exitArtifactType chorus:Brief .
+    chorus:exitArtifactType chorus:Brief ;
+    chorus:belongsTo chorus:chorusStream .
 
 chorus:Building a chorus:Vertebra ;
     rdfs:label "Building" ;
@@ -127,7 +131,8 @@ chorus:Building a chorus:Vertebra ;
     chorus:stageOrder 4 ;
     chorus:nextStage chorus:Proving ;
     chorus:previousStage chorus:Designing ;
-    chorus:exitArtifactType chorus:Commit .
+    chorus:exitArtifactType chorus:Commit ;
+    chorus:belongsTo chorus:chorusStream .
 
 chorus:Proving a chorus:Vertebra ;
     rdfs:label "Proving" ;
@@ -135,7 +140,61 @@ chorus:Proving a chorus:Vertebra ;
     chorus:stageOrder 5 ;
     chorus:previousStage chorus:Building ;
     chorus:feedsInto chorus:Directing ;
-    chorus:exitArtifactType chorus:Signal .
+    chorus:exitArtifactType chorus:Signal ;
+    chorus:belongsTo chorus:chorusStream .
+
+# --- Personal value stream steps (Gathering product) -------------------------
+
+chorus:Sowing a chorus:Vertebra ;
+    rdfs:label "Sowing" ;
+    rdfs:comment "Planting seeds — capturing raw inputs, interests, and intentions that may grow into something." ;
+    chorus:stageOrder 10 ;
+    chorus:nextStage chorus:Growing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:Growing a chorus:Vertebra ;
+    rdfs:label "Growing" ;
+    rdfs:comment "Nurturing what was sown — enriching, connecting, and developing raw material into structured knowledge." ;
+    chorus:stageOrder 11 ;
+    chorus:nextStage chorus:Practicing ;
+    chorus:previousStage chorus:Sowing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:Practicing a chorus:Vertebra ;
+    rdfs:label "Practicing" ;
+    rdfs:comment "Applying knowledge — putting gathered material into active use, building habits and routines." ;
+    chorus:stageOrder 12 ;
+    chorus:nextStage chorus:Harvesting ;
+    chorus:previousStage chorus:Growing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:Harvesting a chorus:Vertebra ;
+    rdfs:label "Harvesting" ;
+    rdfs:comment "Collecting the yield — extracting value from what was grown and practiced. Photos, music, notes, documents flow through here." ;
+    chorus:stageOrder 13 ;
+    chorus:nextStage chorus:Reflecting ;
+    chorus:previousStage chorus:Practicing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:Reflecting a chorus:Vertebra ;
+    rdfs:label "Reflecting" ;
+    rdfs:comment "Looking back — reviewing what was harvested, finding patterns, feeding insights back into the next sowing cycle." ;
+    chorus:stageOrder 14 ;
+    chorus:previousStage chorus:Harvesting ;
+    chorus:feedsInto chorus:Sowing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+# --- Life value stream steps (placeholder — Jeff defines later) ---------------
+
+chorus:lifeStream a chorus:ValueStream ;
+    rdfs:label "Life" ;
+    rdfs:comment "The flow of living well — health, relationships, home, values. Steps to be defined by Jeff." .
+
+chorus:Tending a chorus:Vertebra ;
+    rdfs:label "Tending" ;
+    rdfs:comment "Placeholder step for the Life value stream. Jeff will define the full sequence." ;
+    chorus:stageOrder 20 ;
+    chorus:belongsTo chorus:lifeStream .
 
 # --- Operating (parallel category, not a sequential vertebra) ----------------
 
@@ -599,7 +658,129 @@ chorus:convergence-domain a chorus:SubDomain ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Designing .
 
-# --- Wire new domains into products ---
+# --- Gathering content domains (#1864) — Personal value stream ---
+
+chorus:music-domain a chorus:SubDomain ;
+    rdfs:label "Music" ;
+    rdfs:comment "Music library, album reviews, listening history, playlists." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:photos-domain a chorus:SubDomain ;
+    rdfs:label "Photos" ;
+    rdfs:comment "Photo library, albums, metadata enrichment, semantic search." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:books-domain a chorus:SubDomain ;
+    rdfs:label "Books" ;
+    rdfs:comment "Book collection, reading history, notes, reviews." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:notes-domain a chorus:SubDomain ;
+    rdfs:label "Notes" ;
+    rdfs:comment "Personal notes, journal entries, captured thoughts." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:documents-domain a chorus:SubDomain ;
+    rdfs:label "Documents" ;
+    rdfs:comment "Document metadata, iCloud imports, Drive routing." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:blog-domain a chorus:SubDomain ;
+    rdfs:label "Blog" ;
+    rdfs:comment "WordPress blog content, posts, categories." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Practicing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:seeds-domain a chorus:SubDomain ;
+    rdfs:label "Seeds" ;
+    rdfs:comment "SMS-captured seeds, glimmers, intentions — raw inputs." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Sowing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:property-domain a chorus:SubDomain ;
+    rdfs:label "Property" ;
+    rdfs:comment "Home, garden, zones, beds, plantings, maintenance." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Growing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:people-domain a chorus:SubDomain ;
+    rdfs:label "People" ;
+    rdfs:comment "Relationships, social connections, interaction patterns." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Reflecting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:social-domain a chorus:SubDomain ;
+    rdfs:label "Social" ;
+    rdfs:comment "Social media presence, external connections." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Practicing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:sexuality-domain a chorus:SubDomain ;
+    rdfs:label "Sexuality" ;
+    rdfs:comment "Intimate self-knowledge, practices, reflection." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Reflecting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:stories-domain a chorus:SubDomain ;
+    rdfs:label "Stories" ;
+    rdfs:comment "Personal narratives, family stories, oral history." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Reflecting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:video-domain a chorus:SubDomain ;
+    rdfs:label "Video" ;
+    rdfs:comment "Video library, home movies, captures." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+# --- Wire domains to value streams via builtBy (#1864) ---
+
+# Chorus domains → chorusStream
+chorus:code-domain chorus:builtBy chorus:chorusStream .
+chorus:commits-domain chorus:builtBy chorus:chorusStream .
+chorus:gates-service chorus:builtBy chorus:chorusStream .
+chorus:pipelines-domain chorus:builtBy chorus:chorusStream .
+chorus:tests-domain chorus:builtBy chorus:chorusStream .
+chorus:toolschain-domain chorus:builtBy chorus:chorusStream .
+chorus:domains-domain chorus:builtBy chorus:chorusStream .
+chorus:services-domain chorus:builtBy chorus:chorusStream .
+chorus:chorus-domain chorus:builtBy chorus:chorusStream .
+chorus:convergence-domain chorus:builtBy chorus:chorusStream .
+
+# Gathering domains → gatheringStream
+chorus:music-domain chorus:builtBy chorus:gatheringStream .
+chorus:photos-domain chorus:builtBy chorus:gatheringStream .
+chorus:books-domain chorus:builtBy chorus:gatheringStream .
+chorus:notes-domain chorus:builtBy chorus:gatheringStream .
+chorus:documents-domain chorus:builtBy chorus:gatheringStream .
+chorus:blog-domain chorus:builtBy chorus:gatheringStream .
+chorus:seeds-domain chorus:builtBy chorus:gatheringStream .
+chorus:property-domain chorus:builtBy chorus:gatheringStream .
+chorus:people-domain chorus:builtBy chorus:gatheringStream .
+chorus:social-domain chorus:builtBy chorus:gatheringStream .
+chorus:sexuality-domain chorus:builtBy chorus:gatheringStream .
+chorus:stories-domain chorus:builtBy chorus:gatheringStream .
+chorus:video-domain chorus:builtBy chorus:gatheringStream .
+
+# --- Wire domains into products (hasDomain) ---
 
 chorus:observability-product chorus:hasDomain chorus:code-domain, chorus:commits-domain,
                                               chorus:tests-domain .
@@ -1137,6 +1318,12 @@ chorus:status a owl:DatatypeProperty ;
 chorus:toolType a owl:ObjectProperty ;
     rdfs:domain chorus:Tool ;
     rdfs:range chorus:ToolType .
+
+chorus:builtBy a owl:ObjectProperty ;
+    rdfs:label "builtBy" ;
+    rdfs:comment "Links a domain to the product that builds/maintains it." ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range chorus:ValueStream .
 
 chorus:channelName a owl:DatatypeProperty ;
     rdfs:domain chorus:Role ;

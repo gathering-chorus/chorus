@@ -188,7 +188,7 @@ do_commit() {
     esac
   done
   if $ttl_changed; then
-    local validate_script="$SCRIPT_DIR/ontology-validate.sh"
+    local validate_script="$(dirname "$0")/ontology-validate.sh"
     if [ -x "$validate_script" ]; then
       local validate_output
       validate_output=$("$validate_script" 2>&1)
