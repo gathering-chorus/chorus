@@ -351,14 +351,28 @@ function addStaleHeader(res: Response, db: Database.Database): void {
 // --- Search freshness metadata (#1878) ---
 
 function buildSearchMeta(results: any[], db?: Database.Database): Record<string, any> {
-  // Coverage: proportion of indexed sources updated within the stale threshold
+  // Coverage: proportion of indexed sources within 2x their expected cadence (#1879)
   let domain_coverage = 1;
   if (db) {
     try {
-      const total = (db.prepare('SELECT COUNT(*) as c FROM watermarks').get() as { c: number }).c || 1;
-      const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
-      const fresh = (db.prepare('SELECT COUNT(*) as c FROM watermarks WHERE last_indexed > ?').get(cutoff) as { c: number }).c;
-      domain_coverage = fresh / total;
+      const watermarks = db.prepare('SELECT source, last_indexed FROM watermarks ORDER BY source').all() as Array<{ source: string; last_indexed: string }>;
+      const aggregated = new Map<string, string>();
+      for (const w of watermarks) {
+        const parts = w.source.split(':');
+        const key = parts[0] === 'artifact' ? parts.slice(0, 2).join(':') : parts[0];
+        const existing = aggregated.get(key);
+        if (!existing || w.last_indexed > existing) aggregated.set(key, w.last_indexed);
+      }
+      const now = Date.now();
+      let total = 0, contributing = 0;
+      for (const [source, lastIndexed] of aggregated) {
+        total++;
+        const ageSecs = (now - new Date(lastIndexed).getTime()) / 1000;
+        const cadenceKey = source.split(':')[0];
+        const cadence = SOURCE_CADENCE[cadenceKey] || SOURCE_CADENCE[source] || 86400;
+        if (ageSecs / cadence <= 2) contributing++;
+      }
+      domain_coverage = total > 0 ? contributing / total : 1;
     } catch { /* default to 1 */ }
   }
 
