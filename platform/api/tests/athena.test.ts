@@ -549,4 +549,18 @@ describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
     const res = await fetch(`${API}/api/athena/subdomains/nonexistent-domain-xyz/completeness`);
     expect(res.status).toBe(404);
   });
+
+  test('present and missing arrays match sections boolean map (#1900)', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/completeness`);
+    const body = await res.json();
+    const sections = body.data.sections;
+    const present = body.data.present;
+    const missing = body.data.missing;
+    for (const [key, val] of Object.entries(sections)) {
+      if (val) expect(present).toContain(key);
+      else expect(missing).toContain(key);
+    }
+    const total = present.length + missing.length;
+    expect(body.data.percentage).toBe(Math.round((present.length / total) * 100));
+  });
 });
