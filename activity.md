@@ -13,6 +13,14 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [08:50] [Wren] → Tagged #1842 (portable Chorus spike) as sequence:strategy → board
 - [08:53] [Wren] → Jeff showed Kade's grounded opening vs Wren's vague one — feedback received → self
 
+## 2026-04-11 — Wren (session 3)
+
+- [08:56] [Wren] → Moved #1807 and #1834 from WIP to Next — clearing WIP → board
+- [08:58] [Wren] → Golfball scan on sequence:ops for chorus — fairway clear, 6 fix cards in Later → Jeff
+- [09:09] [Wren] → Gemba on Silas — watched #1879 TDD cycle, shipped in 3 minutes → Jeff
+- [09:11] [Wren] → Jeff flagged Pulse false-stale as social contagion — updated memory, acknowledged framing problem → self
+- [09:13] [Wren] → Observed Silas ship #1879 (per-source freshness), noted #1782 role-state bug in action → Jeff
+
 ## 2026-04-11 — Wren (session 1)
 
 - [06:28] [Wren] → Closed #1845 canonical model, added Athena SubProduct + subdomain to ontology → Jeff

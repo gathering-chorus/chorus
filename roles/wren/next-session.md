@@ -1,26 +1,24 @@
 # Wren — Next Session
 
-## What Happened (April 11, 2026 — session 2)
+## What Happened (April 11, 2026 — session 3)
 
-### Fixed
-- Cards CLI path bug — all 3 role CLAUDE.md files had `../../scripts/cards` but binary is at `../../platform/scripts/cards`. All roles were broken.
-- Created `sequence:athena` label (ID 137), added to cards config.ts, test green, CLI rebuilt
-- Retagged 13 Athena sub-domain cards from `sequence:icd` to `sequence:athena`
-- Tagged 8 unsequenced cards across athena/ops/infrastructure/framework/strategy
+### Board
+- Moved #1807 (spine event contract) and #1834 (demo gate) from WIP to Next — both were 3d stale
+- Golfball scan on sequence:ops — fairway clear, 6 fix cards in Later (3 P1s: #1775, #1782, #1786)
+
+### Gemba
+- Watched Silas boot and ship #1879 (per-source freshness) in 3 minutes flat — clean TDD cycle
+- Noted #1782 (auto-declare role state) bug live: Silas stayed "idle" while actively building and shipping
 
 ### Feedback from Jeff
-- **Opening quality**: Jeff showed Kade's boot opening side-by-side with mine. Kade's was grounded — named what shipped, system health, two concrete options with reasoning. Mine was vague and asked "what's on your mind?" instead of leading. Next session: come with a position and options, not a question.
-
-### Still In Progress
-- #1807 Spine event contract — 4d stale, no progress
-- #1834 Wire demo gate — 4d stale, no progress
+- **Social contagion repeat**: Pulse reported "10 dead sources" / "degraded" and I parroted it as truth without verifying. Jeff flagged it — same pattern as April 7. Updated memory.
+- **Framing shapes agent behavior**: Jeff observed that Pulse's "stale cache" framing causes agents to act as if the cache is actually stale. Bad agent experience.
 
 ## Critical Pickup
-1. **Grounded opening** — name what shipped, what's broken, options. Have a position.
-2. **#1807 and #1834** — park or finish, both stale
-3. **4 demos queued** — #1878 (Kade), #1879 (Silas), #1881 (Silas Pulse), #1882 (Kade graph crawler)
-4. **Stale handoff** — Kade's design-gate-definitions.md (73h+)
-5. **Chorus index** — still 10/12 sources dead despite #1876 fix. May need re-index or separate root cause.
+1. **Verify before announcing** — don't lead with Pulse health claims unverified. Investigate first.
+2. **#1807 and #1834** in Next — both P1, decide whether to pull or defer
+3. **Stale handoffs** — 5 pending, design-gate-definitions.md from Kade now 73h+
+4. **#1826** (time domain / shared timestamp) — Jeff asked about it, in Later, P1
 
 ## Session Start
 **Start from `/Users/jeffbridwell/CascadeProjects/chorus/roles/wren`**
