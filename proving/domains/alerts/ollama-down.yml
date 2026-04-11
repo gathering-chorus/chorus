@@ -16,6 +16,7 @@ check: |
     # Verify a model is actually loaded
     MODEL_COUNT=$(echo "$RESULT" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('models',[])))" 2>/dev/null || echo "0")
     if [ "$MODEL_COUNT" -gt 0 ]; then
+      rm -f /tmp/alert-ollama-down-failures
       echo "ok"
       exit 0
     fi
@@ -26,10 +27,20 @@ check: |
   exit 1
 
 action: |
-  COOLDOWN="/tmp/alert-ollama-down-$(date '+%Y-%m-%d-%H')"
+  # Consecutive failure tracking — only fire after 3 failures (6 minutes)
+  FAIL_COUNT_FILE="/tmp/alert-ollama-down-failures"
+  PREV=$(cat "$FAIL_COUNT_FILE" 2>/dev/null || echo "0")
+  NEXT=$((PREV + 1))
+  echo "$NEXT" > "$FAIL_COUNT_FILE"
+  if [ "$NEXT" -lt 3 ]; then
+    exit 0
+  fi
+  # Daily cooldown — Jeff doesn't want hourly noise for a warning
+  COOLDOWN="/tmp/alert-ollama-down-$(date '+%Y-%m-%d')"
   if [ -f "$COOLDOWN" ]; then
     exit 0
   fi
   touch "$COOLDOWN"
+  # Nudge Silas only (ops owner), not Jeff — warning severity, not critical
   NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "ollama-down: Bedroom Ollama unreachable or no models loaded. Semantic search degraded. Check: ssh bedroom 'curl http://localhost:11434/api/tags'" --force 2>/dev/null || true
+  "$NUDGE" silas "ollama-down: Bedroom Ollama unreachable after 3 consecutive checks. Semantic search degraded. Check: ssh bedroom 'curl http://localhost:11434/api/tags'" 2>/dev/null || true
