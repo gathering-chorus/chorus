@@ -181,9 +181,59 @@ fn assemble_health() -> serde_json::Value {
 }
 
 fn assemble_board() -> serde_json::Value {
-    // Read WIP snapshot written by context-cache cron or manual refresh
+    // Live query via cards CLI, fall back to cached snapshot (#1889)
     let snapshot_file = "/tmp/board-wip-snapshot.json";
+    let board_ts = format!("{}/platform/scripts/cards", REPO_ROOT);
 
+    // Try live query first
+    if let Ok(output) = std::process::Command::new("bash")
+        .args(["-l", "-c", &format!("{} list 2>/dev/null", board_ts)])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut wip_cards = Vec::new();
+            let mut in_wip = false;
+            for line in stdout.lines() {
+                if line.starts_with("WIP") || line.contains("[WIP]") || line.contains("In Progress") {
+                    in_wip = true;
+                    continue;
+                }
+                if in_wip && line.starts_with("  ") && !line.trim().is_empty() {
+                    // Parse: "  1234  Title here [P1]"
+                    let trimmed = line.trim();
+                    if let Some(id_end) = trimmed.find(|c: char| !c.is_ascii_digit()) {
+                        let id = &trimmed[..id_end];
+                        let rest = trimmed[id_end..].trim();
+                        let title = rest.split('[').next().unwrap_or(rest).trim();
+                        let owner = rest.split('[').nth(1)
+                            .and_then(|s| s.split('|').next())
+                            .unwrap_or("").trim().to_string();
+                        if !id.is_empty() {
+                            wip_cards.push(serde_json::json!({
+                                "id": id.parse::<u64>().unwrap_or(0),
+                                "title": title,
+                                "owner": if owner.is_empty() { "".to_string() } else { owner },
+                                "status": "WIP",
+                            }));
+                        }
+                    }
+                } else if in_wip && !line.starts_with("  ") {
+                    in_wip = false;
+                }
+            }
+            if !wip_cards.is_empty() {
+                // Update cache for other consumers
+                let _ = fs::write(snapshot_file, serde_json::to_string(&wip_cards).unwrap_or_default());
+                return serde_json::json!({
+                    "wip_count": wip_cards.len(),
+                    "wip_cards": wip_cards,
+                });
+            }
+        }
+    }
+
+    // Fall back to cached snapshot
     if let Ok(content) = fs::read_to_string(snapshot_file) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(cards) = v.as_array() {
