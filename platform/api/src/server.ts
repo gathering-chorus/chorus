@@ -4570,6 +4570,23 @@ app.post('/api/athena/validate', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/athena/card/:id — card detail for inline rendering (#1900)
+app.get('/api/athena/card/:id', async (req: Request, res: Response) => {
+  const start = Date.now();
+  const cardId = req.params.id;
+  try {
+    const cardsScript = path.resolve(__dirname, '../../scripts/cards');
+    const { stdout } = await execAsync(
+      `bash ${cardsScript} view ${cardId} --json 2>/dev/null`,
+      { encoding: 'utf-8', timeout: 10000, env: { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
+    );
+    const card = JSON.parse(stdout);
+    res.json(athenaEnvelope('card-detail', card, Date.now() - start));
+  } catch (err: any) {
+    res.status(404).json(athenaEnvelope('card-detail', { error: `Card ${cardId} not found` }, Date.now() - start, { error: true }));
+  }
+});
+
 // 404 handler for unknown /api/athena/* paths — agent-friendly suggestions
 app.use('/api/athena', (_req: Request, res: Response) => {
   res.status(404).json(athenaEnvelope('unknown', {
