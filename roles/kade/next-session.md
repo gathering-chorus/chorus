@@ -1,23 +1,28 @@
 # Kade — Next Session
 
-## Status
-Light session — Pulse validation and gemba observation.
+## This session (2026-04-11 08:52–14:58)
+9 cards shipped — all operating model + coherence work:
+- #1815: gate-code + gate-quality skills (8 automated checks)
+- #1893: push consolidation (git-queue.sh push replaces raw git)
+- #1896: demo gate orchestration (comments-first, nudge owners)
+- #1894: /pull hard gate chain (5 gates) + /pair delegates to /pull
+- #1897: navigator heartbeat gate for /pair (60s stall warning)
+- #1356: domain versioning (contract, validation script, validate endpoint, git-queue ontology gate)
+- #1864: multi-product value stream (13 Gathering domains, Personal+Life steps, builtBy edges)
+- #1900: domain detail page (completeness, actors/mermaid, scenarios/folds, API contract, card inline expand)
+- #1848: AX convergence doc + HTML page (UX/AX/JX framing)
 
-## This session (2026-04-11 08:37–08:51)
-- Verified Pulse data loads on boot — team state visible from first response
-- Gemba'd Silas on #1879 (per-source freshness): endpoint live, iterating on source coverage, clean edit-compile-test cycles
-- No cards pulled, no code written
+4 pairs with Wren, avg 12 min each. Ran gates for Silas (#1898, #1899) and Wren (#1892).
 
 ## Pick up
-- **#1884** — Crawl API response shape tests (P1, small, de-risks #1883)
-- **#1883** — Expand crawler to all 41 domains (P1, high impact)
-- **#1868** — Populate Code sub-domain graph (P1, may still be blocked on write API)
-- **#1886** — Crawl API input validation (P2)
+1. **#1901 follow-on** — Silas added 7 Principle + 7 Practice instances via chorus:contains. Wire `chorus:contains` into domain detail page folds (Wren nudged at session end).
+2. **Crawler cluster** — #1883 (expand 7→41 domains), #1884 (shape tests), #1886 (input validation)
+3. **Ontology population** — #1868 (Code sub-domain), #1869 (Tests sub-domain)
+4. **CHORUS_ROOT fix** — empty string in env breaks hooks. state_paths.rs fix committed but root cause needs investigation.
 
-## Pending handoffs
-- STALE (69h): brief from Wren — namespace-move-kade.md. Check if still relevant.
-
-## Key context
-- Chorus index degraded (11/12 sources dead) — Silas actively fixing via #1879
-- 9 alerts firing today (tunnel, ollama, fuseki/lancedb, vikunja auth)
-- Ontology population cards (#1868-1875) may still be blocked on ServiceSpec + write endpoints
+## Operating model state
+- /demo: 7 steps, 5 hard gates (product→code→quality→arch→ops), comments-first orchestration
+- /pull: 7 steps, 5 hard gates (validate→preflight→WIP→domain→TDD), single engineering entry point
+- /pair: delegates to /pull, navigator heartbeat monitor (60s/120s/180s escalation)
+- /acp: uses git-queue.sh push, demo brief required
+- Ontology validation gate in git-queue.sh — blocks chorus.ttl commits that break version contract

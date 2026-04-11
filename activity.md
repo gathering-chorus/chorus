@@ -651,3 +651,18 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [08:13] [Silas] → Built #1881 — Pulse service. Team state JSON in 40ms on every prompt cycle → all roles
 - [08:36] [Silas] → Fixed remaining dead index sources. Rebuilt all indexers inline in server.ts. 11/11 fresh → Jeff
 - [08:52] [Silas] → Added Werk auto-bump to pre-commit hook. v80→v81 → all roles
+
+## 2026-04-11 — Kade (reboot)
+
+- [08:52] [Kade] → Session start. 8 cards in Next, crawler cluster + ontology population.
+- [09:02] [Kade] → #1815 gate-code + gate-quality skills shipped. 366 Rust tests, 8 automated checks. Silas arch review passed → Jeff
+- [09:05] [Kade] → #1893 push consolidation — git-queue.sh push replaces raw git push in /acp and /reboot → Jeff
+- [09:06] [Kade] → #1896 demo gate orchestration fix — comments-first, nudge owners for missing gates → Jeff, Wren
+- [09:10] [Kade] → #1894 /pull hard gate chain (5 gates) + /pair delegates to /pull → Jeff, Wren
+- [09:20] [Kade] → #1897 navigator heartbeat gate for /pair — 60s stall warning, 180s escalation → Jeff, Wren
+- [09:38] [Kade] → Paired with Wren on #1356 domain versioning — version contract, validation script, POST /api/athena/validate, git-queue ontology gate → Jeff, Silas
+- [09:42] [Kade] → Paired with Wren on #1864 multi-product value stream — 13 Gathering domains, Personal+Life steps, builtBy edges, product filter page → Jeff
+- [10:10] [Kade] → Paired with Wren on #1859/#1900 domain detail page — completeness, actors (mermaid), scenarios (foldable BDD), API contract, child domains (foldable), card detail inline expand → Jeff
+- [10:20] [Kade] → Ran gate:code + gate:quality for Silas on #1898, #1899 and Wren on #1892 → Silas, Wren
+- [10:48] [Kade] → #1848 AX convergence doc + HTML page — UX/AX/JX framing, JX profile, 8 evidence cards, assemblage flow → Jeff
+- [10:49] [Kade] → Reboot. 9 cards shipped, 4 pairs (avg 12 min), all operating model + coherence work.
