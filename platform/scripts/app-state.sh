@@ -35,7 +35,7 @@ fi
 log() {
   local level="$1"
   local message="$2"
-  local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  local timestamp=$(TZ=America/New_York date +"%Y-%m-%d %H:%M:%S")
   echo "{\"timestamp\":\"$timestamp\",\"level\":\"$level\",\"appName\":\"jeff-bridwell-personal-site\",\"message\":\"$message\"}"
 }
 
