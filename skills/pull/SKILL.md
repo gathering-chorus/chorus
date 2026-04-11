@@ -6,7 +6,9 @@ user-invocable: true
 
 # /pull — Pull Card to WIP and Start Building
 
-`/pull <card-id>` is a **go signal**. Pull the card, set up state, then start building immediately. No checkpoint, no pause for approval.
+`/pull <card-id>` is a **go signal** with hard gates. Pull the card, pass the gates, then build immediately. No checkpoint, no pause for approval.
+
+**This is the single engineering entry point.** `/pair`, `/jdi`, and any other build-starting skill delegates to `/pull` for card setup. All engineering gates live here.
 
 **Any role can invoke this.** Jeff can assign work with `/pull 1092 kade`. A builder calls `/pull 1092` for themselves.
 
@@ -19,95 +21,82 @@ ROLE_OVERRIDE=<optional second argument — target role, defaults to invoking ro
 
 If no card ID given, check the role's Next cards and suggest the highest-priority smallest card (DEC-049 WSJF).
 
-## Step 1: Validate card exists and is pullable
+## Step 1: Validate (HARD GATE)
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view ${CARD_ID}
+CARD_VIEW=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view ${CARD_ID} 2>&1)
 ```
 
-- Card must exist and be in **Next** or **Later** status
-- If card is already in WIP: "Card #${CARD_ID} is already in WIP — owned by <owner>."
-- If card is in Done: "Card #${CARD_ID} is already Done."
-- Identify the owner from the card labels
+**All must be true or the pull stops:**
+- Card exists
+- Card is in **Next** or **Later** status
+- Card has AC (acceptance criteria) in description
+- Card has Experience section in description
 
-## Step 2: Pre-flight quality check (MANDATORY)
+If any check fails → **STOP:**
+- Card not found: `Card #${CARD_ID} does not exist.`
+- Already WIP: `Card #${CARD_ID} is already in WIP — owned by <owner>.`
+- Already Done: `Card #${CARD_ID} is already Done.`
+- No AC: `Card #${CARD_ID} has no acceptance criteria. Add AC before pulling.`
+- No Experience: `Card #${CARD_ID} has no Experience section. Add Experience before pulling.`
 
-Before attempting `board-ts move`, verify the card has everything it needs. **Fix what you can, flag what you can't. Never hit the gate error blind.**
+**Fix what you can:** If AC or Experience is missing and you can draft it from the card title/description, draft it, update with `cards update <id> --desc "..."`, and tell Jeff: "Drafted AC for #<id> — <summary>. Override if wrong."
 
-From the `board-ts view` output in Step 1, check:
+Emit spine event:
+```bash
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.validate.completed <role> card=${CARD_ID} result=pass|fail
+```
 
-1. **Experience section exists?** (#1839) — Description must contain `## Experience` with 2-5 sentences in Jeff's voice describing what he sees/feels/gets.
-   - If missing: **draft Experience from the title and AC.** Write it as Jeff would say it — his words, his sequence. Update with `board-ts set <id> desc="..."` before moving. Route to Wren if unsure.
+## Step 2: Preflight (HARD GATE)
 
-2. **AC exists?** — Description must contain acceptance criteria (look for "## AC", "Acceptance Criteria", or bullet points with testable conditions).
-   - If missing: **draft AC from the Experience section and title.** AC derives from the experience, not the other way around. Update the card with `board-ts set <id> desc="..."` before moving. Don't ask Jeff — draft it yourself.
+**Card must be tagged and filed before it enters WIP. Fix what you can, flag what you can't.**
 
-3. **Chunk tagged?** — Card must have a `chunk:` label.
-   - If missing: infer from domain labels or file paths. `domain:photos` → `chunk:memory`, `domain:documents` → `chunk:app`, etc. Tag with `board-ts set <id> chunk=<chunk>`.
+1. **Chunk tagged?** — Card must have a `chunk:` label.
+   - If missing: infer from domain labels. Tag with `cards update <id> --chunk <chunk>`.
+   - If can't infer → **STOP:** `Card #${CARD_ID} needs a chunk label.`
 
-4. **Sequence tagged?** — Card should have a sequence label. Warn if missing but don't block.
+2. **Domain tagged?** — Card must have a `domain:` label.
+   - If missing and obvious from title/AC: tag it. If not → **STOP.**
 
-5. **Files listed?** — Description should reference specific files for blast radius.
-   - If missing and you know the files from the AC: add them. If you don't know: proceed, blast radius will auto-generate on move.
+3. **Files listed?** — Description should reference specific files for blast radius.
+   - If missing and you know the files from the AC: add them.
+   - If missing and unknown: proceed — blast radius auto-generates on move.
 
-**If AC was missing and you drafted it:** tell Jeff what you wrote so he can correct it. One line: "Drafted AC for #<id> — <summary>. Override if wrong."
+4. **Sequence tagged?** — Warn if missing but don't block.
 
-**Anti-pattern:** Attempting `board-ts move` and discovering the gate error. That's the old pattern. The pre-flight catches it first.
+Emit spine event:
+```bash
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.preflight.completed <role> card=${CARD_ID} result=pass|fail
+```
 
-## Step 3: WIP limit check (DEC-051)
+## Step 3: WIP check (HARD GATE)
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts mine <role> | grep -c WIP
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards list --status WIP 2>&1
 ```
 
 - WIP limit is 3 total, 1 per role is healthy
-- If the target role already has 2+ WIP cards, **warn**: "⚠ <role> has <N> WIP cards. Finish or park one first?"
-- If total WIP is 3+, **warn**: "⚠ Team WIP at <N>/3. Consider finishing before pulling."
-- Warnings don't block — Jeff can override. But surface the cost.
+- If the target role already has 2+ WIP cards → **WARN:** `<role> has <N> WIP cards. Finish or park one first?`
+- If total WIP is 3+ → **WARN:** `Team WIP at <N>/3. Consider finishing before pulling.`
+- Warnings surface the cost but don't block — Jeff can override.
 
-## Step 4: Move to WIP
-
+Emit spine event:
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts move ${CARD_ID} WIP
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.wip_check.completed <role> card=${CARD_ID} wip_count=<N>
 ```
 
-This automatically generates a blast radius comment on the card (DEC-072) via the board SDK — no manual analysis needed.
+## Step 4: Domain context (HARD GATE)
 
-## Step 5: Declare state
-
-```bash
-# Extract card type from board-ts view output (type:fix, type:new, etc.)
-CARD_TYPE=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view ${CARD_ID} | grep -oE 'type:\w+' | head -1 | sed 's/type://')
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <role> building card=${CARD_ID} type=${CARD_TYPE:-unknown}
-```
-
-## Step 6: Emit signal
+**Read domain state before writing code. No building blind.**
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log card.pulled <role> card=${CARD_ID}
-```
-
-## Step 7: Brief (if cross-role)
-
-If the pulling role is NOT the card owner, or if there's AC/context the builder needs:
-- Print the card's AC and description
-- Note any briefs in the builder's inbox related to this card
-- Note any dependency cards that must complete first
-
-## Step 7.5: Domain context injection (MANDATORY)
-
-**Always call the domain service.** Every card pull reads domain state before the builder starts.
-
-```bash
-# Extract domain from card labels (from board-ts view output)
 DOMAIN=$(echo "$CARD_VIEW" | grep -oE 'domain:\w+' | head -1 | sed 's/domain://')
 
 if [ -n "$DOMAIN" ]; then
-  # Query domain service API — returns UI pages, API endpoints, pipelines, data, known issues
   curl -s "http://localhost:3340/api/chorus/domain/${DOMAIN}" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-print(f'## Domain: {d.get(\"domain\")} ({d.get(\"product\")}/{d.get(\"step\")})')
+print(f'## Domain: {d.get(\"domain\")} ({d.get(\"product\",\"\")}/{d.get(\"step\",\"\")})')
 print(f'Description: {d.get(\"description\",\"\")}')
 sections = d.get('sections', {})
 for name, content in sections.items():
@@ -121,16 +110,67 @@ print(f'### Cards: {cards.get(\"total\",0)} total, {cards.get(\"wip\",0)} WIP')
 fi
 ```
 
-**Read the domain state before writing any code.** The domain service shows you what exists, what's broken, what's in flight. The ICD pre-read hook will block you if you skip this.
+**Gate check:** Domain service must respond. If the API is down or returns an error, **WARN** but don't block — print: `Domain service unavailable — building without domain context.`
 
-## Step 8: Start building
+Emit spine event:
+```bash
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.domain_context.completed <role> card=${CARD_ID} domain=${DOMAIN}
+```
 
-**Do not stop after the pull summary.** Read the AC, understand the card, and begin work immediately. `/pull` is not a status report — it's the start of execution.
+## Step 5: TDD readiness (HARD GATE)
 
-## Output
+**Set the expectation for test-first before any code is written.** This gate doesn't block — `tdd_gate.rs` enforces at edit time. But the builder should know what tests to write before they start.
 
-Brief summary, then get to work:
+From the AC items, suggest:
+1. **Test file path** — based on the card's domain and files listed. E.g., AC mentions `server.ts` → suggest `tests/athena.test.ts`.
+2. **Test cases** — one per AC item. Frame as what Jeff sees, not implementation: "When I POST /api/athena/subdomains, a new subdomain appears on the domain page."
+3. **Red first** — remind: "Write these tests first. They should fail (red). Then write code to make them pass (green). DEC-1674."
 
+Print:
+```
+## TDD Readiness
+
+Tests first (DEC-1674). Suggested test structure from AC:
+
+  File: <suggested test file path>
+  Cases:
+    - <AC item 1 as test case>
+    - <AC item 2 as test case>
+    ...
+
+Write tests → red → code → green → demo.
+```
+
+**Skip conditions:** Cards tagged `type:chore` or `type:swat` skip TDD readiness.
+
+Emit spine event:
+```bash
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.tdd_readiness.completed <role> card=${CARD_ID}
+```
+
+## Step 6: Move + declare + signal
+
+All gates passed. Execute the pull:
+
+```bash
+# Move to WIP (auto-generates blast radius comment)
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards move ${CARD_ID} WIP
+
+# Declare state
+CARD_TYPE=$(echo "$CARD_VIEW" | grep -oE 'type:\w+' | head -1 | sed 's/type://')
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <role> building card=${CARD_ID} type=${CARD_TYPE:-unknown}
+
+# Emit spine event
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log card.pulled <role> card=${CARD_ID}
+```
+
+If cross-role pull: print the card's AC, note briefs in the builder's inbox, note dependency cards.
+
+## Step 7: Build
+
+**Do not stop after the pull summary.** Start building immediately.
+
+Print one line:
 ```
 Pulled #<card-id> — <title>. WIP: <role> <N>/1, team <N>/3.
 ```
@@ -139,8 +179,10 @@ Then start building.
 
 ## Rules
 
-- Pull = go. Start building immediately after the pull completes.
-- WIP warnings don't block — but always surface them
-- Blast radius is auto-generated by `board-ts move WIP` — don't duplicate it manually
-- Always emit the spine event — this feeds Borg flow metrics
-- If Jeff says `/pull 1092 kade`, move it and brief Kade — don't ask for confirmation
+- Pull = go. Start building immediately after gates pass.
+- Gates 1-5 are HARD GATES — each emits a spine event, each must pass before proceeding.
+- WIP warnings surface cost but don't block — Jeff can override.
+- Blast radius is auto-generated by `cards move WIP` — don't duplicate manually.
+- Always emit spine events — they feed Borg flow metrics.
+- If Jeff says `/pull 1092 kade`, move it and brief Kade — don't ask for confirmation.
+- **This is the single engineering entry point.** /pair, /jdi, and any other build-starting skill delegates here.

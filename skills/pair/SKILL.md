@@ -46,6 +46,22 @@ Two roles working one problem. The **navigator's scope loop** is the pair. When 
 - `role` — the role to pair with (silas, kade, or wren)
 - `card-id` (optional) — the card to work on. If omitted, uses current WIP card.
 
+## Step 0: Card setup — delegate to /pull
+
+**If the card is not already in WIP, run `/pull <card-id>` first.** /pull owns all engineering gates (validate, preflight, WIP check, domain context, TDD readiness). /pair adds the collaboration protocol — not separate engineering gates.
+
+```bash
+CARD_VIEW=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view <card-id> 2>&1)
+STATUS=$(echo "$CARD_VIEW" | grep -oE 'Status:\s+\w+' | awk '{print $2}')
+if [ "$STATUS" != "WIP" ]; then
+  # Card not in WIP — run /pull to pass engineering gates and move it
+  echo "Card not in WIP — running /pull <card-id> first."
+  # Invoke /pull skill — all gates run, card moves to WIP
+fi
+```
+
+If the card IS already in WIP (pulled earlier or by another role), skip to Step 1.
+
 ## Step 1: Establish the pair
 
 1. **Determine roles**: The invoking role is the **driver**. The target role is the **navigator**.
