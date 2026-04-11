@@ -91,7 +91,7 @@ infer_domain() {
   echo ""  # Can't infer
 }
 
-echo "=== Domain Tag Backfill — $(date '+%Y-%m-%d %H:%M') ==="
+echo "=== Domain Tag Backfill — $(TZ=America/New_York date '+%Y-%m-%d %H:%M') ==="
 echo "Mode: $( $APPLY && echo 'APPLY' || echo 'DRY-RUN' )"
 [ -n "$FILTER_DOMAIN" ] && echo "Filter: domain=$FILTER_DOMAIN"
 echo ""

@@ -76,7 +76,7 @@ FALSE_POSITIVES=(
     "command not found"
 )
 
-log() { echo "[chorus-ops] $(date '+%H:%M:%S') $*" >&2; }
+log() { echo "[chorus-ops] $(TZ=America/New_York date '+%H:%M:%S') $*" >&2; }
 vlog() { $VERBOSE && log "$*" || true; }
 
 show_help() {
