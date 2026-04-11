@@ -292,12 +292,59 @@ Every 60 seconds:
   4. Loop back to scope loop step 1 (CHECK AC)
 ```
 
+**Navigator attention monitor (driver-side, MANDATORY — #1897):**
+
+The driver sets up a cron tick at pair start that monitors for navigator silence. This is the enforcement mechanism — the navigator's heartbeat is self-reported, this one is observed.
+
+**Setup (driver does this in Step 1):**
+```bash
+# Record pair start + last navigator activity timestamp
+echo "$(date +%s)" > /tmp/pair-nav-last-activity-<card-id>
+
+# CronCreate: cron="*/1 * * * *", prompt="/pair-heartbeat-check <card-id> <navigator-role>"
+```
+
+**On each tick, the driver checks:**
+```bash
+CARD_ID=<card-id>
+NAV_ROLE=<navigator-role>
+SCRATCH="/tmp/pair-${CARD_ID}.md"
+LAST_FILE="/tmp/pair-nav-last-activity-${CARD_ID}"
+NOW=$(date +%s)
+LAST=$(cat "$LAST_FILE" 2>/dev/null || echo "$NOW")
+ELAPSED=$(( NOW - LAST ))
+
+# Check for navigator activity: nudges received, scratch file changes, chat messages
+SCRATCH_MOD=$(stat -f %m "$SCRATCH" 2>/dev/null || echo "0")
+if [ "$SCRATCH_MOD" -gt "$LAST" ]; then
+  echo "$SCRATCH_MOD" > "$LAST_FILE"
+  ELAPSED=0
+fi
+```
+
+**Stall signals (advisory, not blocking):**
+- **60s silence:** Print: `⚠ Navigator silent for 60s — pair may be stalling. Check: is ${NAV_ROLE} thinking, blocked, or disengaged?`
+- **120s silence:** Re-nudge navigator: `[pair] Navigator silent 2min on #${CARD_ID} — are you blocked or did you lose context?`
+- **180s silence:** Emit spine event + escalate: `pair.navigator.stall card=${CARD_ID} elapsed=180s`. Write to scratch `## Escalation`. Nudge Wren for gemba.
+
+**Reset triggers — any of these reset the 60s clock:**
+- Navigator nudge received
+- Scratch file modified (navigator wrote directions)
+- Chat message from navigator
+- Navigator's cron tick fires (proves navigator session is alive)
+
+**Cleanup (driver does this at pair end):**
+```bash
+# CronDelete the heartbeat check
+rm -f /tmp/pair-nav-last-activity-<card-id>
+```
+
 **Heartbeat escalation (driver completion):**
 When the driver completes an AC item and nudges the navigator:
 - **0-60s:** Navigator responds with next directive. Normal flow.
-- **60-120s:** Driver asks: "Navigator, what's unchecked on the AC?" (already in the rules)
-- **120s+:** Driver re-nudges with urgency: `[pair] Navigator silent 2min on #<card> — are you blocked or did you lose context?`
-- **180s+:** Driver writes to scratch file `## Escalation` and nudges Wren: `[pair] Navigator unresponsive 3min on #<card>. May need gemba or restart.`
+- **60-120s:** Stall warning prints automatically (from heartbeat monitor above).
+- **120s+:** Driver re-nudges with urgency (automatic from heartbeat monitor).
+- **180s+:** Spine event + Wren escalation (automatic from heartbeat monitor).
 
 **Why escalate at 3 minutes, not 10?** Because 10 minutes of silence in a pair is the pair dying. The navigator's scope loop IS the pair — if it stops for 3 minutes without a declared reason (blocking operation, investigate mode), the pair is already over. Early escalation gives the navigator a chance to re-engage before the session context drifts.
 
