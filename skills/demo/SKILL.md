@@ -66,6 +66,7 @@ Emit spine event:
 2. **Run `/gate-code <card-id>`** — tests green, build clean, no new warnings, pattern match. Kade runs this.
 3. **Run `/gate-quality <card-id>`** — hooks pass, regression clean, no console.log, debt check. Kade runs this. On pass, auto-nudges Silas for arch review.
 4. **Wait for `/gate-arch` pass from Silas** — system fit, namespace conventions, domain boundaries. Silas runs this after receiving the nudge.
+5. **Run `/gate-ops <card-id>`** — health checks, log flow, rollback path, disk health. Silas runs this. On pass, auto-nudges Wren for gate-product (already done in step 1) or confirms chain complete.
 
 Check for gate results via card comments:
 ```bash
@@ -75,6 +76,7 @@ PRODUCT_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:product-pass')
 CODE_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:code-pass')
 QUALITY_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:quality-pass')
 ARCH_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:arch-pass')
+OPS_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:ops-pass')
 ```
 
 ### Gate logic
@@ -88,6 +90,7 @@ ARCH_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:arch-pass')
    CODE_PASS=$(echo "$CARD_VIEW" | grep -c 'gate:code-pass')
    QUALITY_PASS=$(echo "$CARD_VIEW" | grep -c 'gate:quality-pass')
    ARCH_PASS=$(echo "$CARD_VIEW" | grep -c 'gate:arch-pass')
+   OPS_PASS=$(echo "$CARD_VIEW" | grep -c 'gate:ops-pass')
    ```
 
 2. **Run only gates you own** — if a gate is missing and you own it, run it inline. If you don't own it, nudge the owner:
@@ -95,6 +98,7 @@ ARCH_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:arch-pass')
    - `gate:code` missing → Kade runs `/gate-code`, or nudge Kade
    - `gate:quality` missing → Kade runs `/gate-quality`, or nudge Kade
    - `gate:arch` missing → Silas runs `/gate-arch`, or nudge Silas
+   - `gate:ops` missing → Silas runs `/gate-ops`, or nudge Silas
 
 3. **If gates are missing and you've nudged:** Report which gates are pending and who was nudged. **Do not block silently** — tell Jeff what you're waiting on:
    ```
@@ -106,13 +110,14 @@ ARCH_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:arch-pass')
    Waiting on Kade for gate:quality. Will proceed when comment appears.
    ```
 
-- **If all four gates passed:** Print gate summary and continue to Step 3:
+- **If all five gates passed:** Print gate summary and continue to Step 3:
   ```
   Gate chain: PASS
     gate:product  PASS — Wren
     gate:code     PASS — Kade
     gate:quality  PASS — Kade
     gate:arch     PASS — Silas
+    gate:ops      PASS — Silas
   ```
 - **If any gate FAILED:** STOP. Print the failing gate's output. Builder fixes before re-running `/demo`.
 
@@ -157,7 +162,7 @@ Print:
 ## Demo: #<card-id> — <title>
 
 **Builder:** <owner>
-**Gates:** code PASS | quality PASS | arch PASS
+**Gates:** product PASS | code PASS | quality PASS | arch PASS | ops PASS
 **Smoke check:** PASS (N pass, 0 fail)
 **Why this matters:** <1-2 sentences — what was broken/missing before, what's different now for the user>
 **What I want to show you:** <the specific moment or interaction Jeff should watch>
