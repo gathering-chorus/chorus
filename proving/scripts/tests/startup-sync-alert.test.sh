@@ -41,6 +41,13 @@ else
   test_fail "alert lost failure detection"
 fi
 
+# Test 5: health probe uses /$/ping not dataset-specific query (#1895 Kade feedback)
+if grep -q '\$/ping' "$ALERT"; then
+  test_pass "health probe uses /\$/ping — dataset-independent"
+else
+  test_fail "health probe uses dataset query — will 404 if dataset is rebuilding"
+fi
+
 echo ""
 echo "Results: $PASS pass, $FAIL fail"
 [[ "$FAIL" -eq 0 ]] && exit 0 || exit 1
