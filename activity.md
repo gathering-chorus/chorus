@@ -4,6 +4,30 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-04-11 — Wren (reboot)
+
+- [06:28] [Wren] → Closed #1845 canonical model, added Athena SubProduct + subdomain to ontology → Jeff
+- [06:32] [Wren] → Pulled, built, accepted #1851 — Properties, Security subdomains with consumption edges → Jeff
+- [06:40] [Wren] → Fixed value-stream page hardcoded stats/tiles — now live from API → Jeff
+- [06:45] [Wren] → Discovered 19-day search memory loss, escalated to Kade (#1876), chatted Silas on freshness scoring → Kade, Silas
+- [06:55] [Wren] → Carded #1878 (search freshness metadata) and #1879 (per-source staleness) → Kade, Silas
+- [07:10] [Wren] → Pulled, built, accepted #1880 — Athena service design page, moved to chorus repo → Jeff
+- [07:30] [Wren] → Updated #1826 — full timestamp consistency audit (API UTC, DST bug, scripts) → Jeff
+- [08:00] [Wren] → Added Time subdomain — universal cross-cut consumed by all 34 subdomains → Jeff
+- [08:10] [Wren] → Jeff shared Dallas Systems WMS story — graph-driven codegen insight captured → memory
+- [08:22] [Wren] → Gemba on Silas #1881 (Pulse service) — watched 14-min build cycle → Jeff
+
+## 2026-04-11 — Kade (reboot)
+
+- [06:08] [Kade] → Fixed flaky api-regression test (harvest/status timeout → mocked handler). 4707 tests green → Jeff
+- [07:08] [Kade] → Paired with Silas on #1876 (LanceDB semantic search fix). Added GRAPH clauses to 5 broken domains. 99K docs indexed across all 6 domains → Jeff, Silas
+- [07:50] [Kade] → #1878 search freshness metadata shipped. _meta with domain_coverage, newest_result_age_s, stale flag. Wired to SOURCE_CADENCE per-source thresholds → Jeff, Silas
+- [07:50] [Kade] → Chat with Silas on monitoring operationalization. Found spine 94h stale (3 dead bridge subscribers). Freshness endpoint caught it live → Jeff, Silas
+- [08:15] [Kade] → Accepted #1846, #1858, #1860 (Athena API filters, machines, interaction-patterns fix) → Jeff
+- [08:27] [Kade] → #1882 crawler service design shipped. 41 domains mapped, 7 indexed, 34 gaps named → Jeff, Wren, Silas
+- [08:30] [Kade] → Created 13 cards: 8 ontology population (#1868-1875), 5 crawler follow-on (#1883-1887) → Board
+- [08:33] [Kade] → Reviewed Silas #1881 (Pulse service) and Wren #1880 (Athena service design). Aligned on API-first ontology population → Wren, Silas
+
 ## 2026-04-10 — Kade (reboot)
 
 - [17:18] [Kade] → Gemba review of Silas #1781 (session start redesign): 2 test gaps, confirmed filtered cards works for boot, flagged test-helper drift risk → Silas
