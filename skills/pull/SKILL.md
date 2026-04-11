@@ -117,6 +117,45 @@ Emit spine event:
 /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.domain_context.completed <role> card=${CARD_ID} domain=${DOMAIN}
 ```
 
+## Step 4.5: Design gate (HARD GATE) — #1396
+
+**Before code starts, the domain must have actors and dependency edges.** This gate checks the completeness API's `lifecycle.wip` stage. If the domain isn't design-ready, the pull is blocked.
+
+**Skip conditions:** Cards tagged `type:chore`, `type:swat`, or `type:fix` skip this gate — they're reactive work that shouldn't wait on domain design.
+
+```bash
+CARD_TYPE=$(echo "$CARD_VIEW" | grep -oE 'type:\w+' | head -1 | sed 's/type://')
+
+if [ "$CARD_TYPE" = "new" ] || [ "$CARD_TYPE" = "enhance" ]; then
+  # Find the domain's subdomain ID (e.g., domain:chorus → chorus-domain or similar)
+  DOMAIN_SD="${DOMAIN}-domain"
+  COMP=$(curl -s "http://localhost:3340/api/athena/subdomains/${DOMAIN_SD}/completeness" 2>/dev/null)
+  WIP_PASS=$(echo "$COMP" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['data']['lifecycle']['wip']['pass'])" 2>/dev/null)
+  WIP_MISSING=$(echo "$COMP" | python3 -c "import json,sys; d=json.load(sys.stdin); print(', '.join(d['data']['lifecycle']['wip']['missing']))" 2>/dev/null)
+
+  if [ "$WIP_PASS" = "False" ]; then
+    echo "BLOCKED: Design gate — domain '$DOMAIN' is missing: ${WIP_MISSING}"
+    echo "  Populate actors and edges before pulling type:${CARD_TYPE} cards."
+    echo "  POST http://localhost:3340/api/athena/subdomains/${DOMAIN_SD}/actors"
+    echo "  See: http://localhost:3000/gathering-docs/domain-detail.html?id=${DOMAIN_SD}"
+    # Emit spine event with fail
+    /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.design_gate.completed <role> card=${CARD_ID} domain=${DOMAIN} result=fail missing="${WIP_MISSING}"
+    exit 1
+  fi
+fi
+```
+
+**Gate logic:**
+- `type:new` or `type:enhance` → check `lifecycle.wip.pass` from completeness API
+- If `False` → **STOP.** Print missing sections and the POST endpoint to populate them.
+- `type:chore`, `type:swat`, `type:fix` → **exempt**, skip the check
+- If completeness API is unreachable → **WARN** but don't block
+
+Emit spine event:
+```bash
+/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.design_gate.completed <role> card=${CARD_ID} domain=${DOMAIN} result=pass
+```
+
 ## Step 5: TDD readiness (HARD GATE)
 
 **Set the expectation for test-first before any code is written.** This gate doesn't block — `tdd_gate.rs` enforces at edit time. But the builder should know what tests to write before they start.
