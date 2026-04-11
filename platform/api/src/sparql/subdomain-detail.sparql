@@ -1,5 +1,6 @@
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
 SELECT ?label ?ownerLabel ?stepLabel ?comment ?consumer ?consumerLabel ?consumed ?consumedLabel ?child ?childLabel ?instance ?instanceLabel ?instanceComment ?instanceType ?instanceTypeLabel WHERE {
   GRAPH <urn:chorus:ontology> {
     <$URI> a chorus:SubDomain .
