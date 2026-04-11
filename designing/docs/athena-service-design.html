@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athena — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #0369a1; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #e0f2fe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #0369a1; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .resolved { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .resolved strong { color: #059669; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0f2fe; color: #0c4a6e; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #0369a1; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-design { background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
+  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
+  .flow-diagram { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 12px 0; font-family: -apple-system, sans-serif; font-size: 0.82em; line-height: 2; }
+  .flow-step { display: inline-block; padding: 2px 10px; border-radius: 4px; margin: 2px; font-weight: 500; }
+  .flow-ontology { background: #e0f2fe; color: #0c4a6e; }
+  .flow-api { background: #d1fae5; color: #065f46; }
+  .flow-ui { background: #ede9fe; color: #5b21b6; }
+  .flow-role { background: #fef3c7; color: #92400e; }
+  .flow-arrow { color: #9ca3af; margin: 0 4px; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Athena <span>— Service Design</span></h1>
+<p class="date">2026-04-11 — Wren (#1880). Sources: server.ts (Athena endpoints), chorus.ttl (ontology v0.3.0), 8 SPARQL query files, 5 UI pages, 29 integration tests.</p>
+
+<div class="promise">
+Any role can query the operating model — who owns what, what depends on what, what breaks if something fails — from a single API. The graph is the implementation of how the team operates. When agent experience through this API is good, Jeff's experience is good. Athena is the CMDB that agents maintain by working, not by filling out forms.
+</div>
+
+<!-- ==================== OVERVIEW ==================== -->
+<h2>Overview</h2>
+
+<p>Athena is the CMDB visibility layer for Chorus. Named after the system Jeff built at Staples (2010–2015), but fundamentally different: the original was designed for human data entry; this one is populated by agents as they build. The ontology (OWL/RDF in Fuseki) is the source of truth. The API makes it queryable. The UI is a view on the API. Gates and hooks enforce it.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Services</th><th>Tests</th><th>Gap</th></tr>
+<tr><td>OWL/RDF Ontology</td><td><span class="tag-real">REAL</span></td><td>chorus.ttl v0.3.0, 853 triples</td><td>6 integration</td><td>Manual loading to Fuseki</td></tr>
+<tr><td>Read API (9 endpoints)</td><td><span class="tag-real">REAL</span></td><td>Chorus API on :3340</td><td>29 integration</td><td>No freshness metadata</td></tr>
+<tr><td>Write API</td><td><span class="tag-none">NONE</span></td><td>—</td><td>—</td><td>Roles edit TTL by hand</td></tr>
+<tr><td>UI Pages (5)</td><td><span class="tag-real">REAL</span></td><td>Static HTML + JS, bind-mounted</td><td>—</td><td>2 placeholder sections on domain detail</td></tr>
+<tr><td>Ontology Loading</td><td><span class="tag-partial">PARTIAL</span></td><td>Manual curl to Fuseki GSP</td><td>—</td><td>No automated pipeline</td></tr>
+</table>
+
+<!-- ==================== DATA FLOW ==================== -->
+<h2>Data Flow</h2>
+
+<div class="flow-diagram">
+  <span class="flow-step flow-role">Role edits chorus.ttl</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-ontology">curl PUT to Fuseki</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-ontology">urn:chorus:ontology graph</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-api">SPARQL queries</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-api">Athena API :3340</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-ui">UI pages :3000</span>
+  <br>
+  <span class="flow-step flow-role">Gates query API</span>
+  <span class="flow-arrow">&larr;</span>
+  <span class="flow-step flow-api">Ownership, blast radius</span>
+  <span class="flow-arrow">&larr;</span>
+  <span class="flow-step flow-ontology">consumes / ownedBy edges</span>
+</div>
+
+<div class="gap"><strong>Gap:</strong> The write path is manual — roles edit a Turtle file and curl it to Fuseki. This is the 2010 pattern inverted: humans used forms, agents use file editing. Neither is an API.</div>
+
+<!-- ==================== DATA MODEL ==================== -->
+<h2>Data Model</h2>
+
+<div class="component">
+<h3>Current OWL Classes (chorus.ttl v0.3.0)</h3>
+<table>
+  <tr><th>Class</th><th>Subclass Of</th><th>Instances</th><th>Purpose</th></tr>
+  <tr><td><code>chorus:Product</code></td><td>owl:Class</td><td>2 (Chorus, Gathering)</td><td>Top-level products</td></tr>
+  <tr><td><code>chorus:SubProduct</code></td><td>chorus:Domain</td><td>9</td><td>Product components (Loom, Cards, Athena, etc.)</td></tr>
+  <tr><td><code>chorus:SubDomain</code></td><td>chorus:Domain</td><td>34</td><td>Bounded contexts with owner, step, dependencies</td></tr>
+  <tr><td><code>chorus:Role</code></td><td>owl:Class</td><td>4 (Jeff, Wren, Silas, Kade)</td><td>Ownership targets</td></tr>
+  <tr><td><code>chorus:Vertebra</code></td><td>owl:Class</td><td>6</td><td>Value stream steps (Shaping &rarr; Proving)</td></tr>
+  <tr><td><code>chorus:Machine</code></td><td>owl:Class</td><td>2 (Library, Bedroom)</td><td>Physical infrastructure</td></tr>
+</table>
+</div>
+
+<div class="component">
+<h3>Key Object Properties</h3>
+<table>
+  <tr><th>Property</th><th>Domain</th><th>Range</th><th>Purpose</th></tr>
+  <tr><td><code>ownedBy</code></td><td>Domain</td><td>Role</td><td>Who is responsible</td></tr>
+  <tr><td><code>primaryStep</code></td><td>SubDomain</td><td>Vertebra</td><td>Where in the value stream</td></tr>
+  <tr><td><code>consumes</code></td><td>Product/SubDomain</td><td>SubDomain</td><td>Dependency edge — blast radius source</td></tr>
+  <tr><td><code>provides</code></td><td>Product</td><td>SubDomain</td><td>What a product offers as shared service</td></tr>
+  <tr><td><code>hasDomain</code></td><td>Product</td><td>Domain</td><td>Containment — product has this domain</td></tr>
+  <tr><td><code>runsOn</code></td><td>SubDomain</td><td>Machine</td><td>Physical deployment target</td></tr>
+</table>
+</div>
+
+<div class="component">
+<h3>Missing Classes <span class="tag-design">DESIGN</span></h3>
+<table>
+  <tr><th>Class</th><th>Purpose</th><th>Why Needed</th></tr>
+  <tr><td><code>ServiceSpec</code></td><td>Runtime properties: port, health check, binary, env</td><td>Domain detail page "Service Properties" section</td></tr>
+  <tr><td><code>AlertRule</code></td><td>Condition, severity, cooldown, escalation</td><td>Domain detail "Alerts/Monitors" section; 13 YAML rules not in graph</td></tr>
+  <tr><td><code>TestSuite</code></td><td>BDD scenarios, pass/fail, coverage</td><td>Domain detail "BDD Scenarios" section; 178 test files not queryable</td></tr>
+  <tr><td><code>CodePath</code></td><td>File globs, language, type per domain</td><td>Domain detail "Code Inventory" section</td></tr>
+  <tr><td><code>InteractionContract</code></td><td>How a role uses a domain: operation, friction level</td><td>Agent Experience (AX) metrics — make friction measurable</td></tr>
+</table>
+</div>
+
+<!-- ==================== READ API ==================== -->
+<h2>Read API (Current)</h2>
+
+<div class="component">
+<h3>Chorus API (:3340) <span class="tag-real">REAL</span></h3>
+<table>
+  <tr><th>Method</th><th>Path</th><th>SPARQL</th><th>Purpose</th></tr>
+  <tr><td>GET</td><td><code>/api/athena/health</code></td><td>health.sparql</td><td>Triple count, endpoint inventory, status</td></tr>
+  <tr><td>GET</td><td><code>/api/athena/products</code></td><td>products.sparql</td><td>Top-level products (Chorus, Gathering)</td></tr>
+  <tr><td>GET</td><td><code>/api/athena/subproducts</code></td><td>subproducts.sparql</td><td>SubProducts with owner, domain count, consumes count</td></tr>
+  <tr><td>GET</td><td><code>/api/athena/subdomains</code></td><td>subdomains.sparql</td><td>SubDomains with owner, step. Filters: ?owner, ?step</td></tr>
+  <tr><td>GET</td><td><code>/api/athena/subdomains/:id</code></td><td>subdomain-detail.sparql</td><td>Detail: consumedBy[], consumes[], domains[], comment</td></tr>
+  <tr><td>GET</td><td><code>/api/athena/subdomains/:id/blast-radius</code></td><td>blast-radius.sparql</td><td>Which SubProducts consume this SubDomain</td></tr>
+  <tr><td>GET</td><td><code>/api/athena/steps</code></td><td>steps.sparql</td><td>Vertebrae with SubDomains at each step</td></tr>
+  <tr><td>GET</td><td><code>/api/athena/owners</code></td><td>owners.sparql</td><td>Roles with SubDomain counts</td></tr>
+  <tr><td>GET</td><td><code>/api/athena/machines</code></td><td>machines.sparql</td><td>Machines with running services</td></tr>
+</table>
+<p>All endpoints return the Athena envelope: <code>{ _meta: { source, query_name, graph, duration_ms, cached, timestamp, count }, data: [...] }</code></p>
+</div>
+
+<!-- ==================== WRITE API ==================== -->
+<h2>Write API (Designed)</h2>
+
+<div class="component">
+<h3>Mutation Endpoints <span class="tag-design">DESIGN</span></h3>
+<table>
+  <tr><th>Method</th><th>Path</th><th>Purpose</th><th>Owner</th></tr>
+  <tr><td>POST</td><td><code>/api/athena/subdomains</code></td><td>Create a new SubDomain with owner, step, comment</td><td>Kade</td></tr>
+  <tr><td>PUT</td><td><code>/api/athena/subdomains/:id</code></td><td>Update SubDomain properties (owner, step, comment)</td><td>Kade</td></tr>
+  <tr><td>POST</td><td><code>/api/athena/subdomains/:id/consumes</code></td><td>Add consumption edge</td><td>Kade</td></tr>
+  <tr><td>DELETE</td><td><code>/api/athena/subdomains/:id/consumes/:targetId</code></td><td>Remove consumption edge</td><td>Kade</td></tr>
+  <tr><td>POST</td><td><code>/api/athena/reload</code></td><td>Reload ontology from TTL to Fuseki</td><td>Silas</td></tr>
+</table>
+<p>Write endpoints use SPARQL UPDATE against Fuseki. The TTL file remains the versioned source of truth; the API is the operational write path for runtime changes. Periodic reconciliation syncs API-written triples back to TTL.</p>
+</div>
+
+<!-- ==================== MISSING READ ENDPOINTS ==================== -->
+<h2>Missing Read Endpoints (Designed)</h2>
+
+<div class="component">
+<h3>Domain Detail Sections <span class="tag-design">DESIGN</span></h3>
+<table>
+  <tr><th>Endpoint</th><th>Feeds Section</th><th>Data Source</th><th>Owner</th></tr>
+  <tr><td><code>GET /api/athena/subdomains/:id/cards</code></td><td>Active Cards</td><td>Board API filtered by domain label</td><td>Kade</td></tr>
+  <tr><td><code>GET /api/athena/subdomains/:id/code</code></td><td>Code Inventory</td><td>Indexed file paths per domain</td><td>Kade</td></tr>
+  <tr><td><code>GET /api/athena/subdomains/:id/alerts</code></td><td>Alerts/Monitors</td><td>Alert rule YAML files, indexed</td><td>Silas</td></tr>
+  <tr><td><code>GET /api/athena/subdomains/:id/tests</code></td><td>BDD Scenarios</td><td>Test files per domain, indexed</td><td>Kade</td></tr>
+  <tr><td><code>GET /api/athena/subdomains/:id/services</code></td><td>Service Properties</td><td>ServiceSpec class in ontology</td><td>Silas</td></tr>
+</table>
+</div>
+
+<!-- ==================== UI PAGES ==================== -->
+<h2>UI Pages</h2>
+
+<div class="component">
+<h3>Gathering App (:3000/gathering-docs/) <span class="tag-real">REAL</span></h3>
+<table>
+  <tr><th>Page</th><th>File</th><th>Endpoints Called</th><th>Purpose</th></tr>
+  <tr><td>Value Stream</td><td><code>value-stream.html/.js</code></td><td>/steps, /products, /subproducts, /subdomains</td><td>5 vertebrae tiles with live domain counts, owner dots</td></tr>
+  <tr><td>Step Detail</td><td><code>step-detail.html/.js</code></td><td>/steps, /subdomains?step=</td><td>Domains at a step with owner filter</td></tr>
+  <tr><td>Domain Detail</td><td><code>domain-detail.html/.js</code></td><td>/subdomains/:id, /blast-radius</td><td>Full domain card — 9/11 sections live, 2 placeholders</td></tr>
+  <tr><td>Product View</td><td><code>product-view.html/.js</code></td><td>/subproducts, /subdomains</td><td>SubProduct cards with domain/consumes counts</td></tr>
+  <tr><td>Instance Explorer</td><td><code>chorus-instance-explorer.html</code></td><td>/subproducts, /subdomains</td><td>Tree view: products &rarr; subdomains with filters</td></tr>
+</table>
+</div>
+
+<!-- ==================== DOMAIN DETAIL SECTIONS ==================== -->
+<h2>Domain Detail — 11 Sections</h2>
+
+<div class="component">
+<h3>Section Readiness</h3>
+<table>
+  <tr><th>#</th><th>Section</th><th>Status</th><th>Data Source</th></tr>
+  <tr><td>1</td><td>Stats Bar (owner, step, counts)</td><td><span class="tag-real">LIVE</span></td><td>subdomain-detail API</td></tr>
+  <tr><td>2</td><td>Consumed By</td><td><span class="tag-real">LIVE</span></td><td>consumedBy[] from detail API</td></tr>
+  <tr><td>3</td><td>Depends On</td><td><span class="tag-real">LIVE</span></td><td>consumes[] from detail API</td></tr>
+  <tr><td>4</td><td>Blast Radius</td><td><span class="tag-real">LIVE</span></td><td>/blast-radius endpoint</td></tr>
+  <tr><td>5</td><td>Description</td><td><span class="tag-real">LIVE</span></td><td>comment field from detail API</td></tr>
+  <tr><td>6</td><td>Legacy Documentation</td><td><span class="tag-real">LIVE</span></td><td>Hardcoded link map by domain ID</td></tr>
+  <tr><td>7</td><td>Domains (hasDomain)</td><td><span class="tag-real">LIVE</span></td><td>domains[] from detail API</td></tr>
+  <tr><td>8</td><td>Service Properties</td><td><span class="tag-partial">PARTIAL</span></td><td>runsOn from API; port/health missing</td></tr>
+  <tr><td>9</td><td>Active Cards</td><td><span class="tag-none">PLACEHOLDER</span></td><td>Needs /cards endpoint</td></tr>
+  <tr><td>10</td><td>Code Inventory</td><td><span class="tag-none">PLACEHOLDER</span></td><td>Needs /code endpoint</td></tr>
+  <tr><td>11</td><td>Alerts/Monitors</td><td><span class="tag-none">PLACEHOLDER</span></td><td>Needs /alerts endpoint</td></tr>
+</table>
+</div>
+
+<!-- ==================== TESTS ==================== -->
+<h2>Test Coverage</h2>
+
+<div class="component">
+<h3>Integration Tests <span class="tag-real">REAL</span></h3>
+<table>
+  <tr><th>Suite</th><th>Tests</th><th>Covers</th></tr>
+  <tr><td>Health</td><td>1</td><td>Status OK, triple count &gt; 0</td></tr>
+  <tr><td>Products</td><td>1</td><td>Product list with uri/label</td></tr>
+  <tr><td>Subdomains</td><td>2</td><td>Full list, owner filter</td></tr>
+  <tr><td>Owner filters</td><td>4</td><td>wren(10), silas(13), kade(13), jeff(5)</td></tr>
+  <tr><td>Step filters</td><td>5</td><td>Building, Proving, Shaping, Designing, Directing counts</td></tr>
+  <tr><td>Subdomain detail</td><td>3</td><td>Detail fields, consumes array, 404 handling</td></tr>
+  <tr><td>Blast radius</td><td>1</td><td>cards-service has 3 consumers</td></tr>
+  <tr><td>Machines</td><td>2</td><td>Machine list, service counts</td></tr>
+  <tr><td>Properties &amp; Security (#1851)</td><td>6</td><td>Existence, ownership, consumption edges, step counts, coverage</td></tr>
+  <tr><td>Envelope</td><td>1</td><td>All endpoints return _meta with query_name, duration_ms</td></tr>
+  <tr><td>hasDomain composition</td><td>1</td><td>pulse-domain nested domains</td></tr>
+  <tr><td>404 handler</td><td>1</td><td>Unknown path returns suggestion</td></tr>
+</table>
+<p><strong>Total: 29 tests.</strong> Activation: <code>RUN_INTEGRATION=true</code>. Requires Chorus API + Fuseki running.</p>
+</div>
+
+<!-- ==================== ARCHITECTURE DECISIONS ==================== -->
+<h2>Architecture Decisions</h2>
+
+<table>
+<tr><th>Decision</th><th>Rationale</th><th>Impact</th></tr>
+<tr><td>OWL/RDF in Fuseki</td><td>Semantic reasoning, SPARQL expressiveness, same store as Gathering data</td><td>Rich queries but manual loading; no built-in auth on write path</td></tr>
+<tr><td>SPARQL files on disk</td><td>Versionable, readable, testable independently of server code</td><td>fs.readFileSync on each request — no caching, but hot-reloadable</td></tr>
+<tr><td>Read-only API (current)</td><td>Started with visibility before mutation</td><td>Roles edit TTL + curl to Fuseki — slow, error-prone, no audit trail</td></tr>
+<tr><td>Static HTML + JS pages</td><td>Bind-mounted — no deploy needed for UI changes</td><td>Fast iteration but no server-side rendering or auth</td></tr>
+<tr><td>Athena as Chorus SubProduct</td><td>It surfaces the canonical model — doesn't exist without Chorus</td><td>Lives in Designing step, Wren-owned, consumes Knowledge and Cards</td></tr>
+<tr><td>Security consumed by all</td><td>Every subdomain depends on credentials and tokens</td><td>33 consumption edges — highest blast radius in the system</td></tr>
+</table>
+
+<!-- ==================== ONTOLOGY LOADING ==================== -->
+<h2>Ontology Loading</h2>
+
+<div class="component">
+<h3>Current: Manual <span class="tag-partial">PARTIAL</span></h3>
+<p>Source: <code>roles/silas/ontology/chorus.ttl</code> &rarr; Fuseki GSP endpoint with admin auth.</p>
+<table>
+  <tr><th>Step</th><th>Command</th><th>Notes</th></tr>
+  <tr><td>Load</td><td><code>curl -X PUT localhost:3030/pods/data?graph=urn:chorus:ontology --data-binary @chorus.ttl -u admin:$PW</code></td><td>Replaces entire graph</td></tr>
+  <tr><td>Verify</td><td><code>curl localhost:3340/api/athena/health</code></td><td>Check triple count changed</td></tr>
+</table>
+</div>
+
+<div class="component">
+<h3>Target: Automated <span class="tag-design">DESIGN</span></h3>
+<p>TTL changes committed to git trigger reload via <code>POST /api/athena/reload</code>. The reload endpoint reads the TTL file, validates syntax, loads to Fuseki, and returns the new triple count. PostToolUse hook on git commit triggers the reload if chorus.ttl was in the changeset.</p>
+</div>
+
+<!-- ==================== GAPS ==================== -->
+<h2>Gaps</h2>
+
+<div class="gap"><strong>Gap:</strong> No write API. Roles edit TTL by hand and curl to Fuseki. Every ontology change requires file editing, manual auth, and manual verification. No audit trail on mutations.</div>
+
+<div class="gap"><strong>Gap:</strong> No automated ontology loading. TTL changes require a manual curl command with admin credentials. If a role forgets to reload, the API serves stale data.</div>
+
+<div class="gap"><strong>Gap:</strong> 3 domain detail sections are placeholders (Active Cards, Code Inventory, Alerts/Monitors). Each needs a new API endpoint backed by indexed data.</div>
+
+<div class="gap"><strong>Gap:</strong> No Agent Experience (AX) metrics in the model. "Does Kade have good tooling for this domain?" is a vibes question, not a queryable property. Need frictionIndicator, migrationReadiness as data properties.</div>
+
+<div class="gap"><strong>Gap:</strong> Operating model data lives in prose (TEAM_PROTOCOL.md, team-architecture.md). Ownership tables, execution modes, service registries, decision flow — all in markdown, not in the graph. Gates can't query prose.</div>
+
+<div class="gap"><strong>Gap:</strong> Test count assertions in integration tests are brittle. Adding a subdomain breaks 13 existing tests because counts are hardcoded. Tests should use relative assertions (count &gt; 0, contains X) not absolute counts.</div>
+
+<div class="resolved"><strong>Resolved:</strong> Value stream page renders live from API. Stats bar, step tiles, and owner dots all dynamic — no more hardcoded counts. Fixed 2026-04-11.</div>
+
+<div class="resolved"><strong>Resolved:</strong> Properties and Security subdomains added to ontology. Security consumed by all 33 subdomains — highest blast radius, correctly modeled. Shipped 2026-04-11 (#1851).</div>
+
+<div class="resolved"><strong>Resolved:</strong> Athena SubProduct and SubDomain exist in the ontology. Visible in the Designing step on the value stream page. Shipped 2026-04-11.</div>
+
+<!-- ==================== NEXT STEPS ==================== -->
+<h2>Next Steps (Priority Order)</h2>
+
+<table>
+<tr><th>#</th><th>Action</th><th>Impact</th><th>Owner</th></tr>
+<tr><td>1</td><td>POST /api/athena/reload endpoint</td><td>Automated ontology loading — no manual curl</td><td>Kade</td></tr>
+<tr><td>2</td><td>Write API: POST/PUT SubDomain + consumption edges</td><td>Roles write through API, not TTL</td><td>Kade</td></tr>
+<tr><td>3</td><td>GET /api/athena/subdomains/:id/cards</td><td>Active Cards section goes live — board integration</td><td>Kade</td></tr>
+<tr><td>4</td><td>GET /api/athena/subdomains/:id/alerts</td><td>Alerts/Monitors section — 13 YAML rules indexed</td><td>Silas</td></tr>
+<tr><td>5</td><td>GET /api/athena/subdomains/:id/code</td><td>Code Inventory section — file paths per domain</td><td>Kade</td></tr>
+<tr><td>6</td><td>ServiceSpec class + port/healthCheck properties</td><td>Service Properties section fully populated</td><td>Silas</td></tr>
+<tr><td>7</td><td>AX metrics: frictionIndicator, migrationReadiness</td><td>Agent experience becomes queryable, not vibes</td><td>Wren</td></tr>
+<tr><td>8</td><td>PostToolUse hook: auto-reload on chorus.ttl commit</td><td>Graph always matches committed ontology</td><td>Silas</td></tr>
+<tr><td>9</td><td>Fix brittle test counts — relative assertions</td><td>Adding a domain doesn't break 13 tests</td><td>Kade</td></tr>
+<tr><td>10</td><td>Migrate operating model prose to graph properties</td><td>Gates can query ownership and execution modes</td><td>Wren</td></tr>
+</table>
+
+<!-- ==================== SERVICE DESIGN FAMILY ==================== -->
+<h2>Service Design Family</h2>
+
+<div class="section-grid">
+  <div class="section-box"><strong>Chorus</strong><a href="chorus-service-design.html">chorus-service-design.html</a><br/>Shared memory: FTS, LanceDB, hooks, ingestion</div>
+  <div class="section-box"><strong>Awareness</strong><a href="awareness-service-design.html">awareness-service-design.html</a><br/>Compound loop, context injection</div>
+  <div class="section-box"><strong>Infrastructure</strong><a href="infrastructure-service-design.html">infrastructure-service-design.html</a><br/>Machines, services, deploy pipeline</div>
+  <div class="section-box"><strong>Framework</strong><a href="framework-service-design.html">framework-service-design.html</a><br/>Entity model, OWL bridge</div>
+  <div class="section-box"><strong>Observability</strong><a href="observability-service-design.html">observability-service-design.html</a><br/>Grafana, Loki, alerting</div>
+  <div class="section-box"><strong>Seeds</strong><a href="seeds-service-design.html">seeds-service-design.html</a><br/>SMS intake, routing, triage</div>
+</div>
+
+<!-- ==================== SOURCE ==================== -->
+<h2>Source</h2>
+
+<div class="section-grid">
+  <div class="section-box"><strong>API Code</strong><code>chorus/platform/api/src/server.ts</code> (lines 3363–3607)<br/><code>chorus/platform/api/src/sparql/</code> (8 query files)</div>
+  <div class="section-box"><strong>Ontology</strong><code>chorus/roles/silas/ontology/chorus.ttl</code> (v0.3.0)<br/><code>chorus/roles/silas/ontology/framework.ttl</code></div>
+  <div class="section-box"><strong>Tests</strong><code>chorus/platform/api/tests/athena.test.ts</code> (29 tests)</div>
+  <div class="section-box"><strong>UI</strong><code>jeff-bridwell-personal-site/public/gathering-docs/value-stream.*</code><br/><code>domain-detail.*, step-detail.*, product-view.*</code></div>
+</div>
+
+</body>
+</html>
