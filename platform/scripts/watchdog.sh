@@ -40,8 +40,8 @@ for role in wren silas kade; do
   STATE_VAL=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('state','unknown'))" 2>/dev/null || echo "unknown")
   CARD=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('card',''))" 2>/dev/null || echo "")
 
-  # Skip idle/waiting roles — they're not expected to be active
-  if [ "$STATE_VAL" = "idle" ] || [ "$STATE_VAL" = "waiting" ]; then
+  # Skip idle/waiting/observing roles — they're not expected to be active (#1891)
+  if [ "$STATE_VAL" = "idle" ] || [ "$STATE_VAL" = "waiting" ] || [ "$STATE_VAL" = "observing" ]; then
     continue
   fi
 
@@ -96,6 +96,31 @@ except: print(0)" 2>/dev/null || echo "0")
   if [ -f "$WATCHDOG_STATE" ]; then
     last_action=$(head -1 "$WATCHDOG_STATE" 2>/dev/null || echo "none")
     last_action_ts=$(tail -1 "$WATCHDOG_STATE" 2>/dev/null || echo "0")
+  fi
+
+  # Check for recent gate pass or demo — role may be waiting for acceptance (#1891)
+  if [ -f "$CHORUS_LOG" ] && [ -n "$CARD" ]; then
+    recent_gate=$(tail -50 "$CHORUS_LOG" 2>/dev/null | grep -E "gate\.(code|quality|arch|ops)\.(passed|completed)|card\.demo\.started" | grep "card=$CARD" | tail -1)
+    if [ -n "$recent_gate" ]; then
+      # Extract timestamp from the gate event and check if it's within threshold
+      gate_ts=$(echo "$recent_gate" | python3 -c "
+import sys,re
+from datetime import datetime,timezone
+line=sys.stdin.read()
+m=re.search(r'\"timestamp\":\"([^\"]+)\"', line)
+if m:
+  ts=m.group(1)[:19]
+  try:
+    dt=datetime.strptime(ts,'%Y-%m-%dT%H:%M:%S')
+    import time; print(int(dt.replace(tzinfo=timezone.utc).timestamp()))
+  except: print(0)
+else: print(0)" 2>/dev/null || echo "0")
+      gate_age=$((now - gate_ts))
+      if [ "$gate_age" -lt "$ALERT_THRESHOLD" ]; then
+        # Gate passed recently — role is waiting for acceptance, not stalled
+        continue
+      fi
+    fi
   fi
 
   # Role is active recently — reset watchdog

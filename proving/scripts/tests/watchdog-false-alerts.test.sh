@@ -49,6 +49,20 @@ else
   test_fail "watchdog lost stall detection"
 fi
 
+# Test 6: watchdog skips observing state (#1891)
+if grep -q 'observing' "$WATCHDOG"; then
+  test_pass "watchdog skips observing (gemba) state"
+else
+  test_fail "watchdog doesn't skip observing state — will fire during gemba"
+fi
+
+# Test 7: watchdog checks recent gate/demo events before firing (#1891)
+if grep -q 'gate\.\|demo\.\|spine.*event\|chorus.log\|gate_pass\|demo_sent' "$WATCHDOG"; then
+  test_pass "watchdog checks recent gate/demo events"
+else
+  test_fail "watchdog doesn't check gate/demo events — will fire on roles waiting for acceptance"
+fi
+
 echo ""
 echo "Results: $PASS pass, $FAIL fail"
 [[ "$FAIL" -eq 0 ]] && exit 0 || exit 1
