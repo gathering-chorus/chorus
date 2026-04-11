@@ -13,6 +13,10 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [08:50] [Wren] → Tagged #1842 (portable Chorus spike) as sequence:strategy → board
 - [08:53] [Wren] → Jeff showed Kade's grounded opening vs Wren's vague one — feedback received → self
 
+## 2026-04-11 — Wren (session 4)
+
+- [09:17] [Wren] → Quick hello, immediate reboot — no work done → Jeff
+
 ## 2026-04-11 — Wren (session 3)
 
 - [08:56] [Wren] → Moved #1807 and #1834 from WIP to Next — clearing WIP → board
