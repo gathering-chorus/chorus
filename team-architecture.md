@@ -327,6 +327,26 @@ Two types of work, two modes of collaboration:
 
 **Anti-pattern:** All three roles jumping in with opinions simultaneously. That hijacks the audience's attention and prevents absorption.
 
+### Gate Pipeline (Card Quality Verification)
+
+Every card passes through role-scoped gates before it ships. Gates are skills — automated checks with minimal manual confirms. The pipeline enforces that work is not just code-complete but product-complete, quality-verified, architecturally sound, and operationally safe.
+
+**Gate sequence:**
+
+| Gate | Owner | When it fires | What it verifies |
+|------|-------|---------------|-----------------|
+| `/gate-product` | Wren | Before handoff to engineering | AC complete, demo evidence, description fidelity, domain registered in Athena, spine contract present |
+| `/gate-code` | Kade | At code-complete | Tests green, build clean, no new warnings, file naming patterns |
+| `/gate-quality` | Kade | After code gate passes | Hooks pass, no regression, no console.log in production, observability present, 1 manual: new debt? |
+| `/gate-arch` | Silas | After quality gate passes | Namespace check, ICD consistency, domain boundaries, 1 manual: structural fit? |
+| `/gate-ops` | Silas | At deploy time | Health checks, log flow, rollback path, deploy safety |
+
+**Flow:** Product → Code → Quality → Arch → Ops. On pass, each gate auto-nudges the next gate's owner. On fail, the gate reports what failed and blocks forward progress.
+
+**Integration with /demo:** Gates are wired into the `/demo` skill as hard gates. A builder cannot demo without passing their gates first. Jeff sees work that has already been verified.
+
+**Design:** Gate definitions live in skills (`chorus/skills/gate-*/SKILL.md`). The overall design is tracked in #1814.
+
 ### Jeff Tickets (Temporary Instrument)
 
 Until the PM bypass rate is automated, `messages/jeff-tickets.md` tracks when Jeff gives direction directly to Silas or Kade that didn't originate from a Wren card/brief.

@@ -76,6 +76,8 @@ cards move <id> <status>                                # Next, WIP, Done, "won'
 cards done <id>                                         # mark Done + emit accept event
 cards demo <id>                                         # log demo started (proving gate)
 cards reject <id> "reason"                              # reject with reason
+# Gate skills — role-scoped quality verification (see team-architecture.md § Gate Pipeline)
+# /gate-product (Wren) → /gate-code (Kade) → /gate-quality (Kade) → /gate-arch (Silas) → /gate-ops (Silas)
 cards view <id>                                         # full card details
 cards mine <role>                                       # role's cards
 cards set <id> key=value [key=value ...]                 # unified mutation (domain=, chunk=, owner=, priority=, title=, desc=, after=, gates=)
