@@ -57,21 +57,13 @@ Where `<your-dirs>` is your role's directory plus any shared files you changed (
 
 ## Step 4: Push (race-safe)
 
-**CRITICAL: Always pull --rebase before push.** Multiple roles commit to main. A bare `git push` will fail if another role pushed first. Do NOT improvise with `git stash` — that loses changes.
+Use `git-queue.sh push` — it handles dirty working trees, rebase, and conflicts atomically under the commit lock.
 
 ```bash
-cd /Users/jeffbridwell/CascadeProjects/chorus && git pull --rebase && git push
+cd /Users/jeffbridwell/CascadeProjects/chorus && DEPLOY_ROLE=<your-role> bash platform/scripts/git-queue.sh push
 ```
 
-If `git pull --rebase` fails due to dirty working tree:
-1. **STOP.** You have uncommitted changes that should have been in Step 3.
-2. Run `git status` to see what's dirty.
-3. Commit those changes with `git-queue.sh`, then retry Step 4.
-4. **NEVER run `git stash` during acp.** Stash-drop sequences lose work.
-
-If `git pull --rebase` fails due to conflicts:
-1. Report the conflict to Jeff. Do not force-push or reset.
-2. The accept still stands (card is Done), but the push needs manual resolution.
+If push fails (conflict, network), report the failure but the accept still stands (card is Done).
 
 ## Step 5: Confirm
 
@@ -87,5 +79,4 @@ Accepted #<card-id> — committed and pushed.
 - If the card isn't in WIP or Demo state, warn but still proceed (Jeff overrides)
 - Always emit the spine event before committing
 - If push fails (hook, network), report the failure but the accept still stands
-- **NEVER use `git stash` during acp.** Two incidents in 12 hours lost committed work via stash-drop races. All changes must be committed before pushing. If the working tree is dirty at push time, commit first — don't stash.
-- **Always `git pull --rebase` before `git push`.** Bare push fails when another role pushed first. The rebase replays your commit cleanly on top.
+- **Always use `git-queue.sh push` — never raw `git push`.** git-queue.sh handles dirty trees, rebase, and lock serialization. Raw push fails on dirty trees and concurrent commits.

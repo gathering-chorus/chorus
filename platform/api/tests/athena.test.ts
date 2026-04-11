@@ -286,3 +286,89 @@ describeIntegration('404 handler', () => {
     expect(Array.isArray(body.data.available)).toBe(true);
   });
 });
+
+// #1892 — new read endpoints
+describeIntegration('GET /api/athena/subdomains/:id/cards', () => {
+  test('returns cards for athena subdomain via sequence match', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/athena-domain/cards`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-cards');
+    expect(body.data.subdomain).toBe('athena-domain');
+    expect(body.data.domainLabel).toBe('athena');
+    expect(Array.isArray(body.data.cards)).toBe(true);
+  });
+
+  test('returns envelope with count for domain with no active cards', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/time-domain/cards`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.count).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(body.data.cards)).toBe(true);
+  });
+});
+
+describeIntegration('GET /api/athena/subdomains/:id/alerts', () => {
+  test('returns alert rules matching domain keyword', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/infra-service/alerts`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-alerts');
+    expect(body.data.subdomain).toBe('infra-service');
+    expect(Array.isArray(body.data.alerts)).toBe(true);
+  });
+
+  test('alert objects have name, severity, schedule', async () => {
+    // app-down.yml matches many domains — use a broad domain
+    const res = await fetch(`${API}/api/athena/subdomains/athena-domain/alerts`);
+    const body = await res.json();
+    for (const alert of body.data.alerts) {
+      expect(alert.name).toBeDefined();
+      expect(alert.severity).toBeDefined();
+    }
+  });
+});
+
+describeIntegration('GET /api/athena/subdomains/:id/code', () => {
+  test('returns code inventory for gates subdomain', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/gates-service/code`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-code');
+    expect(body.data.subdomain).toBe('gates-service');
+    expect(Array.isArray(body.data.files)).toBe(true);
+    expect(body.data.files.length).toBeGreaterThan(0);
+    // Should find gate skill files
+    expect(body.data.files.some(f => f.path.includes('gate-'))).toBe(true);
+  });
+
+  test('returns empty files for unmapped domain', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/time-domain/code`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.files).toEqual([]);
+  });
+});
+
+// #1892 — write endpoints (require Fuseki auth — skip if 401)
+describeIntegration('POST /api/athena/subdomains', () => {
+  test('rejects missing required fields', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.data.error).toContain('Missing required fields');
+  });
+});
+
+describeIntegration('POST /api/athena/reload', () => {
+  test('returns 200 or 500 with envelope', async () => {
+    const res = await fetch(`${API}/api/athena/reload`, { method: 'POST' });
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('reload');
+    // May fail with 401 from Fuseki — that's expected until auth is configured
+  });
+});

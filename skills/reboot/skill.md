@@ -30,7 +30,11 @@ When Jeff types `/reboot`, run the Hard 4 close-out and exit so a fresh session 
 
 5. **Verify** — run `werk-init.sh <role> --close`. Check for warns. Fix any before committing.
 
-6. **Commit** — use `git-queue.sh` to commit all changes in the team repo. Message: `<role>: session reboot — <summary>`
+6. **Commit + Push** — use `git-queue.sh` to commit all changes, then push:
+   ```bash
+   cd /Users/jeffbridwell/CascadeProjects/chorus && DEPLOY_ROLE=<role> bash platform/scripts/git-queue.sh commit <role-dirs>/ -- -m "<role>: session reboot — <summary>"
+   cd /Users/jeffbridwell/CascadeProjects/chorus && DEPLOY_ROLE=<role> bash platform/scripts/git-queue.sh push
+   ```
 
 7. **Exit** — say one line summarizing the session, then tell Jeff you're done.
 

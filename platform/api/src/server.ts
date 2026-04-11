@@ -3737,7 +3737,7 @@ function crashAlert(reason: string): void {
 // CORS for Athena — allows pages on localhost:3000 to fetch from 3340
 app.use('/api/athena', (_req: Request, res: Response, next: NextFunction) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (_req.method === 'OPTIONS') return res.sendStatus(204);
   next();
@@ -3773,6 +3773,20 @@ async function athenaSparqlQuery(query: string): Promise<any> {
     throw new Error(`Fuseki ${res.status}: ${text.slice(0, 200)}`);
   }
   return res.json();
+}
+
+const ATHENA_UPDATE = 'http://localhost:3030/pods/update';
+
+async function athenaSparqlUpdate(update: string): Promise<void> {
+  const res = await fetch(ATHENA_UPDATE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/sparql-update' },
+    body: update,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Fuseki update ${res.status}: ${text.slice(0, 200)}`);
+  }
 }
 
 function athenaEnvelope(queryName: string, data: any, durationMs: number, extra: Record<string, any> = {}) {
@@ -3969,6 +3983,246 @@ app.get('/api/athena/machines', async (_req: Request, res: Response) => {
     res.json(athenaEnvelope('machines', machines, Date.now() - start, { count: machines.length }));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('machines', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// GET /api/athena/subdomains/:id/cards — active board cards for this domain
+app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    // Map subdomain ID to board search terms
+    const domainLabel = req.params.id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    // Board uses domain: and sequence: labels — match either
+    const { execSync } = require('child_process');
+    const CARDS_CLI = path.join(REPO_SCRIPTS, 'cards');
+    const raw = execSync(`bash ${CARDS_CLI} list 2>/dev/null`, { encoding: 'utf-8', timeout: 10000 });
+    // Extract active lanes (WIP, Now, Next)
+    const activeSection = raw.split(/^(?=Later |Done |Ideas )/m)[0];
+    const lines = activeSection.split('\n').filter((l: string) => {
+      if (!l.match(/^\s+\d+/)) return false;
+      // Match domain:label OR sequence:label (e.g., gates-service → domain:gates or sequence:gates)
+      return l.includes(`domain:${domainLabel}`) || l.includes(`sequence:${domainLabel}`);
+    });
+    const cards = lines.map((l: string) => {
+      const match = l.match(/^\s+(\d+)\s+(.+?)\s+\[([^\]]*)\]/);
+      if (!match) return null;
+      const [, id, title, meta] = match;
+      const owner = meta.match(/^(Wren|Silas|Kade|Jeff)/i)?.[1]?.toLowerCase() || null;
+      const status = raw.split('\n').reduce((s: string, line: string) => {
+        if (line.match(/^(WIP|Now|Next) /)) return line.split(' ')[0];
+        if (line.includes(id!) && s) return s;
+        return s;
+      }, '');
+      return { id, title: title.replace(/ — /g, ' — ').trim(), owner, status };
+    }).filter(Boolean);
+    res.json(athenaEnvelope('subdomain-cards', { subdomain: req.params.id, domainLabel, cards }, Date.now() - start, { count: cards.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-cards', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// GET /api/athena/subdomains/:id/alerts — alert rules related to this domain
+app.get('/api/athena/subdomains/:id/alerts', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const domainLabel = req.params.id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    const ALERTS_DIR = path.join(REPO_ROOT, 'proving/domains/alerts');
+    const yaml = require('js-yaml') || null;
+    const alertFiles = fs.readdirSync(ALERTS_DIR).filter((f: string) => f.endsWith('.yml'));
+    const alerts: any[] = [];
+    for (const file of alertFiles) {
+      const content = fs.readFileSync(path.join(ALERTS_DIR, file), 'utf-8');
+      // Match by domain keyword in filename, name, description, or check script
+      const lower = content.toLowerCase();
+      if (lower.includes(domainLabel) || file.toLowerCase().includes(domainLabel)) {
+        // Parse basic fields from YAML comments and keys
+        const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file.replace('.yml', '');
+        const description = content.match(/^description:\s*(.+)/m)?.[1]?.trim() || '';
+        const severity = content.match(/^severity:\s*(.+)/m)?.[1]?.trim() || 'unknown';
+        const schedule = content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() || '';
+        alerts.push({ file, name, description, severity, schedule });
+      }
+    }
+    res.json(athenaEnvelope('subdomain-alerts', { subdomain: req.params.id, domainLabel, alerts }, Date.now() - start, { count: alerts.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-alerts', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// GET /api/athena/subdomains/:id/code — code inventory for this domain
+app.get('/api/athena/subdomains/:id/code', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const domainLabel = req.params.id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    // Code inventory — map domain labels to known code paths in REPO_ROOT
+    // Map domain labels to known code paths
+    const domainPaths: Record<string, string[]> = {
+      cards: ['platform/scripts/cards', 'directing/products/cards/'],
+      gates: ['skills/gate-code/', 'skills/gate-quality/', 'skills/gate-arch/', 'skills/gate-ops/', 'skills/gate-product/'],
+      pulse: ['platform/services/chorus-hooks/src/commands/pulse.rs'],
+      alerts: ['proving/domains/alerts/'],
+      spine: ['platform/scripts/chorus-log'],
+      athena: ['platform/api/src/server.ts', 'platform/api/src/sparql/', 'platform/api/tests/athena.test.ts'],
+      observability: ['dashboards/', 'alerting/'],
+      infrastructure: ['scripts/', 'config/'],
+      deploys: ['platform/scripts/app-state.sh', 'platform/scripts/git-queue.sh'],
+      logs: ['platform/scripts/chorus-log'],
+      tests: ['platform/api/tests/', 'platform/services/chorus-hooks/tests/'],
+      code: ['platform/api/src/', 'platform/services/'],
+      skills: ['skills/'],
+      convergence: ['roles/silas/ontology/'],
+      nudge: ['platform/scripts/nudge'],
+    };
+    const paths = domainPaths[domainLabel] || [];
+    const files: { path: string; type: string; size: number }[] = [];
+    for (const p of paths) {
+      const fullPath = path.join(REPO_ROOT, p);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+          const entries = fs.readdirSync(fullPath, { recursive: true }) as string[];
+          for (const entry of entries) {
+            const fp = path.join(fullPath, entry);
+            try {
+              const s = fs.statSync(fp);
+              if (s.isFile()) {
+                const ext = path.extname(entry).slice(1) || 'unknown';
+                files.push({ path: path.relative(REPO_ROOT, fp), type: ext, size: s.size });
+              }
+            } catch { /* skip unreadable */ }
+          }
+        } else {
+          const ext = path.extname(p).slice(1) || 'unknown';
+          files.push({ path: p, type: ext, size: stat.size });
+        }
+      } catch { /* path doesn't exist */ }
+    }
+    const byType = files.reduce((acc: Record<string, number>, f) => { acc[f.type] = (acc[f.type] || 0) + 1; return acc; }, {});
+    res.json(athenaEnvelope('subdomain-code', { subdomain: req.params.id, domainLabel, paths, files, byType }, Date.now() - start, { count: files.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-code', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/subdomains — create a new SubDomain
+app.post('/api/athena/subdomains', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { id, label, owner, step, comment } = req.body || {};
+    if (!id || !label) {
+      return res.status(400).json(athenaEnvelope('subdomain-create', {
+        error: 'Missing required fields: id, label',
+        example: { id: 'my-domain', label: 'My Domain', owner: 'Wren', step: 'Building', comment: 'Description' },
+      }, Date.now() - start, { error: true }));
+    }
+    const uri = `https://jeffbridwell.com/chorus#${id}`;
+    const ownerMap: Record<string, string> = { wren: 'chorus:wren', silas: 'chorus:silas', kade: 'chorus:kade', jeff: 'chorus:jeff' };
+    const stepMap: Record<string, string> = {
+      capturing: 'chorus:capturing', shaping: 'chorus:shaping', designing: 'chorus:designing',
+      building: 'chorus:building', proving: 'chorus:proving', directing: 'chorus:directing',
+    };
+    let triples = `<${uri}> a chorus:SubDomain ; rdfs:label "${label}"`;
+    if (owner && ownerMap[owner.toLowerCase()]) triples += ` ; chorus:ownedBy ${ownerMap[owner.toLowerCase()]}`;
+    if (step && stepMap[step.toLowerCase()]) triples += ` ; chorus:primaryStep ${stepMap[step.toLowerCase()]}`;
+    if (comment) triples += ` ; rdfs:comment "${comment.replace(/"/g, '\\"')}"`;
+    triples += ' .';
+    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nPREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\nINSERT DATA { GRAPH <${ATHENA_GRAPH}> { ${triples} } }`;
+    await athenaSparqlUpdate(update);
+    res.status(201).json(athenaEnvelope('subdomain-create', { uri, id, label, owner: owner || null, step: step || null, comment: comment || null }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-create', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// PUT /api/athena/subdomains/:id — update SubDomain properties
+app.put('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const uri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const { label, owner, step, comment } = req.body || {};
+    if (!label && !owner && !step && !comment) {
+      return res.status(400).json(athenaEnvelope('subdomain-update', {
+        error: 'No fields to update. Provide at least one of: label, owner, step, comment',
+      }, Date.now() - start, { error: true }));
+    }
+    const ownerMap: Record<string, string> = { wren: 'chorus:wren', silas: 'chorus:silas', kade: 'chorus:kade', jeff: 'chorus:jeff' };
+    const stepMap: Record<string, string> = {
+      capturing: 'chorus:capturing', shaping: 'chorus:shaping', designing: 'chorus:designing',
+      building: 'chorus:building', proving: 'chorus:proving', directing: 'chorus:directing',
+    };
+    const deletes: string[] = [];
+    const inserts: string[] = [];
+    if (label) { deletes.push(`<${uri}> rdfs:label ?oldLabel .`); inserts.push(`<${uri}> rdfs:label "${label}" .`); }
+    if (owner && ownerMap[owner.toLowerCase()]) { deletes.push(`<${uri}> chorus:ownedBy ?oldOwner .`); inserts.push(`<${uri}> chorus:ownedBy ${ownerMap[owner.toLowerCase()]} .`); }
+    if (step && stepMap[step.toLowerCase()]) { deletes.push(`<${uri}> chorus:primaryStep ?oldStep .`); inserts.push(`<${uri}> chorus:primaryStep ${stepMap[step.toLowerCase()]} .`); }
+    if (comment) { deletes.push(`<${uri}> rdfs:comment ?oldComment .`); inserts.push(`<${uri}> rdfs:comment "${comment.replace(/"/g, '\\"')}" .`); }
+    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nPREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\nWITH <${ATHENA_GRAPH}>\nDELETE { ${deletes.join(' ')} }\nINSERT { ${inserts.join(' ')} }\nWHERE { <${uri}> a chorus:SubDomain . ${deletes.map(d => `OPTIONAL { ${d} }`).join(' ')} }`;
+    await athenaSparqlUpdate(update);
+    res.json(athenaEnvelope('subdomain-update', { uri, id: req.params.id, updated: { label, owner, step, comment } }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-update', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/subdomains/:id/consumes — add consumption edge
+app.post('/api/athena/subdomains/:id/consumes', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { targetId } = req.body || {};
+    if (!targetId) {
+      return res.status(400).json(athenaEnvelope('subdomain-consumes-add', {
+        error: 'Missing required field: targetId',
+        example: { targetId: 'security-domain' },
+      }, Date.now() - start, { error: true }));
+    }
+    const sourceUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const targetUri = `https://jeffbridwell.com/chorus#${targetId}`;
+    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nINSERT DATA { GRAPH <${ATHENA_GRAPH}> { <${sourceUri}> chorus:consumes <${targetUri}> . } }`;
+    await athenaSparqlUpdate(update);
+    res.status(201).json(athenaEnvelope('subdomain-consumes-add', { source: req.params.id, target: targetId }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-consumes-add', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// DELETE /api/athena/subdomains/:id/consumes/:targetId — remove consumption edge
+app.delete('/api/athena/subdomains/:id/consumes/:targetId', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sourceUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const targetUri = `https://jeffbridwell.com/chorus#${req.params.targetId}`;
+    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nDELETE DATA { GRAPH <${ATHENA_GRAPH}> { <${sourceUri}> chorus:consumes <${targetUri}> . } }`;
+    await athenaSparqlUpdate(update);
+    res.json(athenaEnvelope('subdomain-consumes-remove', { source: req.params.id, target: req.params.targetId }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-consumes-remove', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/reload — reload ontology from TTL into Fuseki
+app.post('/api/athena/reload', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const ttlPath = path.join(REPO_ROOT, 'roles/silas/ontology/chorus.ttl');
+    if (!fs.existsSync(ttlPath)) {
+      return res.status(404).json(athenaEnvelope('reload', { error: `TTL file not found: ${ttlPath}` }, Date.now() - start, { error: true }));
+    }
+    const ttlContent = fs.readFileSync(ttlPath, 'utf-8');
+    await athenaSparqlUpdate(`DROP SILENT GRAPH <${ATHENA_GRAPH}>`);
+    const loadRes = await fetch('http://localhost:3030/pods/data?graph=' + encodeURIComponent(ATHENA_GRAPH), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/turtle' },
+      body: ttlContent,
+    });
+    if (!loadRes.ok) {
+      const text = await loadRes.text();
+      throw new Error(`Fuseki load ${loadRes.status}: ${text.slice(0, 200)}`);
+    }
+    const countResult = await athenaSparqlQuery(loadSparql('health'));
+    const tripleCount = parseInt(countResult.results.bindings[0]?.count?.value || '0', 10);
+    res.json(athenaEnvelope('reload', { status: 'ok', source: ttlPath, tripleCount }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('reload', { error: err.message }, Date.now() - start, { error: true }));
   }
 });
 
