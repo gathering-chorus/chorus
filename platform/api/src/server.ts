@@ -3558,6 +3558,28 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
       }
     } catch {}
 
+    // Fetch completeness from Athena if subdomain exists (#1899)
+    let completeness: any = null;
+    try {
+      const sdId = `${name}-service`;
+      const cRes = await fetch(`http://localhost:3340/api/athena/subdomains/${sdId}/completeness`);
+      if (cRes.ok) {
+        const cBody = await cRes.json() as any;
+        completeness = cBody.data;
+      } else {
+        // Try domain suffix
+        const cRes2 = await fetch(`http://localhost:3340/api/athena/subdomains/${name}-domain/completeness`);
+        if (cRes2.ok) {
+          const cBody2 = await cRes2.json() as any;
+          completeness = cBody2.data;
+        }
+      }
+    } catch {}
+
+    if (completeness && completeness.percentage < 60) {
+      console.warn(`[domain-completeness] ${name}: ${completeness.percentage}% — missing: ${completeness.missing?.join(', ')}`);
+    }
+
     res.json({
       domain: name,
       product: meta.product,
@@ -3570,6 +3592,12 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
         blocked: blocked.length,
         items: cards,
       },
+      completeness: completeness ? {
+        percentage: completeness.percentage,
+        present: completeness.present,
+        missing: completeness.missing,
+        lifecycle: completeness.lifecycle,
+      } : null,
       hasIcd: ['photos', 'stories', 'people', 'music', 'documents', 'social', 'notes', 'webmethods'].includes(name),
       icdEndpoint: `/api/icd/domains/${name}`,
     });
