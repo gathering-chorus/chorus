@@ -685,9 +685,9 @@ chorus:streams-domain a chorus:SubDomain ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving .
 
-chorus:pulse-domain a chorus:SubDomain ;
+chorus:pulse-domain a chorus:SubProduct ;
     rdfs:label "Pulse" ;
-    rdfs:comment "Team health signals, role state, andon, heartbeat." ;
+    rdfs:comment "Claude Code instrumentation layer. Agent vital signs made visible to the operating model. Fires every prompt cycle. The circulatory system's heartbeat." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving .
 
