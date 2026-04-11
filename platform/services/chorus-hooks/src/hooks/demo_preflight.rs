@@ -29,6 +29,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     let script = format!("{}/skills/demo/gates/preflight.sh", chorus_root());
     let output = Command::new("bash")
         .args([&script, card_id])
+        .env("CHORUS_ROOT", chorus_root())
         .output();
 
     match output {

@@ -65,6 +65,7 @@ pub fn check(input: &HookInput) -> HookResponse {
     let role = input.role();
     let output = Command::new("bash")
         .args([&script, &card_id, role.as_str()])
+        .env("CHORUS_ROOT", chorus_root())
         .output();
 
     match output {

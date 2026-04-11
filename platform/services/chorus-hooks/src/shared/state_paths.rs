@@ -6,7 +6,9 @@ use std::sync::LazyLock;
 
 static CHORUS_ROOT_INNER: LazyLock<String> = LazyLock::new(|| {
     std::env::var("CHORUS_ROOT")
-        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
 });
 
 /// Resolve CHORUS_ROOT: env var with fallback to compile-time default.
