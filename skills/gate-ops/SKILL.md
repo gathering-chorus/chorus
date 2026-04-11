@@ -22,13 +22,20 @@ Ops gate is owned by Silas.
 ```
 Exit — no checks run.
 
+## Prerequisite
+
+/gate-arch must have passed for this card. Check for `gate:arch-pass` card comment. If not found:
+```
+WARN: No gate:arch-pass found for this card. Run /gate-arch <card-id> first.
+```
+In pilot mode: warn but continue. In enforce mode (future): block.
+
 ## Applicability Check
 
 Read the card with `cards view <card-id>`. Check the card type label.
 
-- `type:fix` (bug fix): **SKIP** unless it touches LaunchAgents or deploy paths.
-- Doc-only / board-process cards: **SKIP**.
-- Feature, infra, script/hook cards that touch LaunchAgents or deploy: **RUN**.
+- Doc-only / board-process / skill-only cards with no deploy: **SKIP** — "Ops gate not applicable."
+- Cards that touch services, scripts, hooks, LaunchAgents, deploy paths: **RUN**.
 
 If skipped, emit: `gate.ops.skipped` spine event. Exit.
 
@@ -37,55 +44,88 @@ If skipped, emit: `gate.ops.skipped` spine event. Exit.
 ### 1. Service health
 
 ```bash
-# Check app-state status for all services
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/app-state.sh status 2>/dev/null
-# Exit 0 = all healthy, non-zero = something down
+# Check all registered service endpoints respond
+ENDPOINTS=(
+  "http://localhost:3000|app"
+  "http://localhost:3030|fuseki"
+  "http://localhost:3340/api/athena/health|chorus-api"
+  "http://localhost:3102/ready|loki"
+  "http://localhost:3470/api/health|bridge"
+)
+for EP in "${ENDPOINTS[@]}"; do
+  URL="${EP%%|*}"
+  NAME="${EP##*|}"
+  CODE=$(curl -sf --max-time 3 -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null || echo "000")
+  if [[ "$CODE" =~ ^(200|204|301|302)$ ]]; then
+    echo "PASS: $NAME ($CODE)"
+  else
+    echo "FAIL: $NAME ($CODE)"
+  fi
+done
 ```
 
-**Pass:** All services report healthy.
-**Fail:** List unhealthy services.
+**Pass:** All endpoints respond with 2xx or 3xx.
+**Fail:** Any endpoint unreachable or 4xx/5xx — list the failing services.
 
-### 2. Health endpoint
-
-```bash
-# Hit the app health endpoint
-curl -sf http://localhost:3000/health --connect-timeout 5 > /dev/null
-```
-
-**Pass:** 200 response.
-**Fail:** Non-200 or timeout.
-
-### 3. Loki log flow
+### 2. Loki log flow
 
 ```bash
 # Check if logs are flowing — query Loki for recent entries
-curl -s "http://localhost:3102/loki/api/v1/query?query=%7Bjob%3D%22gathering-app%22%7D&limit=1" --connect-timeout 5 | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-results = d.get('data', {}).get('result', [])
-if results:
-    print('PASS: logs flowing')
-    sys.exit(0)
-else:
-    print('FAIL: no recent log entries')
-    sys.exit(1)
-" 2>/dev/null
+NOW=$(date +%s)
+START=$(( NOW - 300 ))
+RESULT=$(curl -sf --max-time 5 -G "http://localhost:3102/loki/api/v1/query_range" \
+  --data-urlencode 'query={job=~"gathering.*"}' \
+  --data-urlencode "start=${START}000000000" \
+  --data-urlencode "end=${NOW}000000000" \
+  --data-urlencode "limit=1" 2>/dev/null)
+COUNT=$(echo "$RESULT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print(sum(len(r.get('values',[])) for r in d.get('data',{}).get('result',[])))
+" 2>/dev/null || echo "0")
+if [[ "$COUNT" -gt 0 ]]; then
+  echo "PASS: logs flowing ($COUNT entries in last 5min)"
+else
+  echo "WARN: no logs in Loki for last 5min — check log pipeline"
+fi
 ```
 
 **Pass:** Recent log entries exist.
-**Fail:** No entries or Loki unreachable.
+**Warn:** No entries — advisory, not blocking (cadence gaps possible).
 
-### 4. Rollback path
+### 3. Rollback path
 
 ```bash
 # Verify the previous commit exists and is reachable
 cd /Users/jeffbridwell/CascadeProjects/chorus
-git log --oneline -2 | tail -1
-# If we can see the prior commit, rollback is possible
+PREV=$(git log --oneline -2 | tail -1 | awk '{print $1}')
+if [ -n "$PREV" ]; then
+  echo "PASS: rollback target $PREV"
+else
+  echo "FAIL: no prior commit for rollback"
+fi
 ```
 
 **Pass:** Prior commit exists (can `git revert` if needed).
-**Fail:** No prior commit (shouldn't happen, but check).
+**Fail:** No prior commit.
+
+### 4. Disk health
+
+```bash
+# Check disk usage — DEC-022 thresholds
+USAGE=$(df -h /System/Volumes/Data 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
+if [ "$USAGE" -lt 90 ]; then
+  echo "PASS: disk at ${USAGE}%"
+elif [ "$USAGE" -lt 95 ]; then
+  echo "WARN: disk at ${USAGE}% — warning threshold"
+else
+  echo "FAIL: disk at ${USAGE}% — critical, blocks deploy"
+fi
+```
+
+**Pass:** Under 90%.
+**Warn:** 90-95%.
+**Fail:** Over 95% — critical, blocks deploy.
 
 ## No Manual Confirms
 
@@ -98,10 +138,10 @@ Print summary:
 ```
 ## /gate-ops #<card-id>
 
-  Service health:   PASS | FAIL (details)
-  Health endpoint:  PASS | FAIL (status)
-  Loki log flow:    PASS | FAIL
+  Service health:   PASS | FAIL (services listed)
+  Loki log flow:    PASS | WARN
   Rollback path:    PASS | FAIL
+  Disk health:      PASS | WARN | FAIL (usage%)
 
   VERDICT: PASS | FAIL
 ```
@@ -110,8 +150,7 @@ Print summary:
 
 1. Emit spine event: `gate.ops.passed` with card ID
 2. Add card comment: "gate:ops-pass — Silas"
-3. Check if all prior gates passed. If yes: nudge Jeff "Pipeline complete on #<card-id> — all gates passed, ready for /acp"
-4. If prior gates not all passed: nudge the owner of the next incomplete gate.
+3. Nudge Wren: "gate:ops passed on #<card-id> — run /gate-product"
 
 ## On Fail
 

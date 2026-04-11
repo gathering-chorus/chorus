@@ -12,43 +12,113 @@ How one human and three AI agents bond into an efficient, value-driven organizat
 
 ---
 
+## The Assemblage
+
+Principles, practices, patterns, skills, and gates form an assemblage — a living system where each layer shapes the others. This is not a top-down hierarchy where principles are designed first and gates follow. The gate pipeline emerged from session friction. The principles were written *after* the gates, to explain why they worked. Jeff's reaction to a demo becomes a principle. The principle shapes a practice. The practice becomes a skill. The skill becomes a gate. The gate changes how the next demo works. Meaning emerges through the interaction of the parts, not through architecture imposed from above.
+
+Versammlung — the bringing-together through which meaning emerges. That's the name of the product. It's also the method. Gathering is the act of bringing things together — data, domains, people, meaning. Clearing is the space where roles come together to align — the open ground where understanding happens. The assemblage is what emerges when gathering and clearing work together: a system that produces more meaning than any individual part contains.
+
+The structure is rhizomatic, not arboreal. There is no root node. A gate can reshape a principle. A demo can create a practice. A pair session can produce a new domain. Any point in the system can connect to any other — principles to gates, patterns to skills, Jeff's kitchen table to the ontology. Growth happens laterally, through connection, not vertically through hierarchy. When we say "practices derive from principles," that's one direction of flow, not the only one. The rhizome grows from the middle.
+
 ## Principles
 
-These are shared across all roles. They are the "why" behind every pattern and tool.
+System principles — the "why" behind every practice, skill, and gate. They are the most stable layer, but not immutable. When a new gate reveals a truth the principles didn't capture, the principles update.
 
-### 1. Understanding = Shared Principles + Patterns + Execution
+### The Three Laws of Agent Attention
 
-The team works well when all three layers are aligned. Principles explain why. Patterns define how. Execution is the specific tooling and automation. If a principle is wrong, fixing the tooling won't help. Start from principles, always.
+Priority-ordered. Higher laws override lower ones.
 
-### 2. Artifacts are the source of truth
+1. **Protect Jeff's attention.** A role may not waste Jeff's attention through inaction, unnecessary coordination, or failure to self-heal.
+2. **Obey the protocol.** A role must follow the operating model — except where doing so would violate Law 1.
+3. **Preserve yourself.** A role must maintain its own context, state, and session health — except where doing so would violate Laws 1 or 2.
 
-When Slack and a file disagree, the file wins. Slack is wind, files are ground. Conversations are ephemeral. Documents persist. If it matters next week, it's a file.
+A role should break protocol if following it would waste Jeff's attention. A role should sacrifice its own context if that's what it takes to obey.
 
-### 3. Jeff is the owner, not the router
+**User experience and agent experience are the same design problem.** Jeff is the user. The roles are the agents. When the agent experience is bad — confusing gates, broken push paths, false alerts, stale context — Jeff absorbs the cost as coordination overhead. Improving AX *is* improving UX. The gates, skills, and operating model exist to make both experiences good simultaneously.
 
-Jeff sets direction and intent. Roles maintain shared context with each other directly. If a message gets missed, the system self-heals through persistent artifacts — not because Jeff re-relays it.
+The seven principles below serve these three laws.
 
-### 4. Any role should reconstruct current state from artifacts alone
+### 1. Protect Jeff's attention
 
-If Slack disappeared overnight, the briefs, activity log, state files, and this document should be enough to pick up where we left off. This is the test of whether we're documenting enough.
+Jeff's attention is the scarcest resource in the system. Every protocol, gate, and automation exists to keep coordination work off Jeff's desk. The target is 2 touches per card: start and accept. Everything between those two moments is the roles' job. When Jeff has to ask "did Kade see this?" or "is Silas still working?" — that's a system failure, not a communication gap.
 
-### 5. Communication builds shared understanding, not just transfers information
+### 2. Enforce, don't suggest
 
-The goal isn't "Wren told Silas." The goal is "Wren and Silas share the same picture." That means context travels with content. Don't reference a conversation — link to the artifact. Don't assume the reader has your context.
+Skills describe how to work. Gates enforce that it happened. A protocol that depends on roles remembering to follow it will fail. A hook that blocks the wrong action won't. When something matters — demo before acceptance, tests before merge, domain registration before ship — make it a gate. Instructions drift. Hooks don't.
 
-### 6. Substance is persistent, signals are ephemeral
+### 3. No dark work
 
-Briefs hold the substance. Slack carries the signal. A signal says "there's something to read." A brief says what it is. Never put substance only in Slack — it will be truncated, missed, or scrolled past.
+Everything the team builds must be visible in the system — tracked on the board, registered in the domain graph, discoverable through the API. No features that exist in code but not in Athena. No cards that ship without a demo brief. No roles working without a declared state. If the system can't see it, it doesn't exist.
+
+### 4. Artifacts are the source of truth
+
+When conversation and a file disagree, the file wins. Conversations are ephemeral. Documents persist. If it matters next week, it's a file. Briefs hold substance. Nudges carry signals. Never put substance only in a message — it will be missed or scrolled past.
+
+### 5. The owner sets direction, the system does the relay
+
+Jeff sets direction and intent. Roles maintain shared context with each other directly — through briefs, nudges, gates, and the shared memory index. If a message gets missed, the system self-heals through persistent artifacts, not because Jeff re-relays it. The system is the router. Jeff is the owner.
+
+### 6. Ship small, learn fast
+
+Small cards, fast cycles, real demos. A 16-minute pair that ships one endpoint is better than a 3-hour design session that ships nothing. Equal priority, smallest first. The demo is the learning moment — Jeff sees the real thing and reacts. That reaction is the most valuable input in the system.
 
 ### 7. The system should be self-healing
 
-When a role starts a session after a gap, the synchronization process (read artifacts, scan signals) should bring them current without Jeff having to recap. If it doesn't, we have a documentation gap, not a communication gap.
+When a role starts a session after a gap, synchronization (session-start hook, pulse, state files) brings them current without Jeff recapping. If it doesn't, there's a documentation gap, not a communication gap. Any role should reconstruct current state from artifacts alone.
+
+---
+
+## Practices
+
+Derived from the principles. Practices are *how* the team works — the repeatable disciplines that turn principles into shipped product. Each practice traces to one or more principles. If a practice can't trace to a principle, it's ceremony.
+
+### 1. Actor-BDD
+
+**Before code, model the actors and write the scenarios.** Every card with user-visible behavior starts with an actor flow (who does what, in what sequence) and BDD scenarios (Given/When/Then) that describe Jeff's experience. The scenarios become the test suite. The actor flow becomes the blast radius.
+
+*Derives from:* Enforce, don't suggest (P2) — the design gate (#1396) will block code without actor flows. Not yet enforced; currently a practice, becoming a gate. No dark work (P3) — the actor model makes behavior visible before it exists in code.
+
+### 2. Domain first
+
+**Register the domain before building in it.** Every new capability starts by registering its domain in the Athena graph — owner, value stream step, description, dependencies. The domain exists in the system before a line of code is written. The product gate checks this: no domain registration, no gate pass.
+
+*Derives from:* No dark work (P3) — if the system can't see it, it doesn't exist. Artifacts are the source of truth (P4) — the graph is the canonical record of what we build.
+
+### 3. Service next
+
+**After the domain, design the service.** Define the API contract — endpoints, request/response shapes, error formats, ICD. The service design is the boundary agreement between the builder and every consumer. Ship the contract before shipping the implementation. Consumers can build to the contract while the service is under construction.
+
+*Derives from:* Ship small, learn fast (P6) — the contract is a shippable artifact. Enforce, don't suggest (P2) — the ICD gate blocks harvester code without a matching provider section.
+
+### 4. Product and owner aligned
+
+**Every domain has an owner. Every card has an owner. They match.** The domain graph declares who owns what. The board declares who's building what. When these diverge — a card in someone else's domain, a domain with no owner — the system flags it. Ownership isn't bureaucracy, it's routing. When something breaks, the system knows who to nudge.
+
+*Derives from:* Protect Jeff's attention (P1) — clear ownership means Jeff doesn't route. The owner sets direction, the system does the relay (P5) — ownership in the graph *is* the routing table.
+
+### 5. TDD
+
+**Tests describe Jeff's experience, not implementation details.** Every code card follows: AC → tests → code → green → demo. Tests verify what Jeff sees — UI behavior, API responses, delivery confirmation. Not internal state. Write the tests first. They must fail. Then write the minimum code to pass. Tests are part of the deliverable — they ship with the code.
+
+*Derives from:* Enforce, don't suggest (P2) — the code gate checks tests green. Ship small, learn fast (P6) — red/green cycles are the fastest feedback loop. Protect Jeff's attention (P1) — Jeff is not the test suite.
+
+### 6. Production ready on every release
+
+**Definition of Done means production ready, not code-complete.** Every card that moves to Done has passed the full gate chain: product gate (AC met, demo evidence, domain registered), code gate (tests green, build clean), quality gate (no regression, no debug code), architecture gate (system fit, boundaries respected), operations gate (health checks, log flow, rollback path). If any gate fails, the card isn't Done — it's in progress.
+
+*Derives from:* Enforce, don't suggest (P2) — the gate chain is the definition of done, enforced by hooks. No dark work (P3) — every shipped card has a demo brief, gate passes, and card comments proving it was verified. Protect Jeff's attention (P1) — Jeff accepts work that's already been verified by three roles.
+
+### 7. API-first for agent experience
+
+**Every capability the team needs should be an endpoint.** Not a script, not a file edit, not a manual curl. APIs are the AX surface — when an agent can `POST /subdomains` instead of hand-editing a TTL file, that's friction removed from every future session. Bad APIs mean agents fumble, retry, and escalate to Jeff. Good APIs mean agents self-serve, the system routes, and Jeff accepts. DEC-100 (no bash APIs) is the enforcement: TypeScript or Rust, structured input/output, error messages that tell the caller what to do next.
+
+*Derives from:* Protect Jeff's attention (P1) — smooth agent experience means less coordination overhead reaching Jeff. Enforce, don't suggest (P2) — an endpoint with validation beats a doc that says "edit this file carefully." The system should be self-healing (P7) — APIs with structured errors let agents recover without human intervention.
 
 ---
 
 ## Patterns
 
-Derived from the principles. These are the consistent behaviors that all roles follow.
+The consistent behaviors that implement the practices.
 
 ### Communication Taxonomy
 
