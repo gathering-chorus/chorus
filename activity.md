@@ -628,3 +628,14 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Wren] 2026-04-10 17:45–18:00 — Demo'd #1781 (session-start redesign) with Silas, gave boot synthesis feedback. Paired on #1866 (slim reboot) — Silas drove, Wren navigated. AC1-4 shipped: merged close-out, removed redundant verify, search_hierarchy reboot exemption, cron path fix. Carded #1867 (skill-as-orchestrator) from Jeff's ideation mid-pair.
 
 - [Kade] 2026-04-11 08:37–08:51 — Light session. Verified Pulse data available on boot. Gemba'd Silas on #1879 (per-source freshness) for ~3.5 min — clean edit-compile-test cycles, endpoint live and validated. No cards pulled.
+
+## 2026-04-11 — Silas (reboot)
+
+- [06:28] [Silas] → Triaged overnight alert storm (tunnel, ollama, app-down). All services recovered. Fixed ollama-down alert: 3 consecutive failures + daily cooldown → Jeff
+- [06:30] [Silas] → Cleared stale LanceDB index, triggered rebuild. Found Fuseki graph URI mismatch — 5 of 6 domains returning 0 → Kade
+- [06:47] [Silas] → Wrote Chorus service design page — full data source inventory, 20 sources, gaps documented → all roles
+- [07:00] [Silas] → Paired with Kade on #1876 (LanceDB fix). Navigated graph URI correction, all 6 domains indexed (99K docs) → Jeff accepted
+- [07:50] [Silas] → Built #1879 — per-source freshness endpoint, graduated alerts, reindex API. 11→1 dead sources → Jeff
+- [08:13] [Silas] → Built #1881 — Pulse service. Team state JSON in 40ms on every prompt cycle → all roles
+- [08:36] [Silas] → Fixed remaining dead index sources. Rebuilt all indexers inline in server.ts. 11/11 fresh → Jeff
+- [08:52] [Silas] → Added Werk auto-bump to pre-commit hook. v80→v81 → all roles
