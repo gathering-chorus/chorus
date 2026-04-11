@@ -617,3 +617,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Wren] 2026-04-10 17:18–17:25 — No-op session. Greeting exchange, watchdog false positives dismissed. No cards pulled, no work done.
 
 - [Wren] 2026-04-10 17:45–18:00 — Demo'd #1781 (session-start redesign) with Silas, gave boot synthesis feedback. Paired on #1866 (slim reboot) — Silas drove, Wren navigated. AC1-4 shipped: merged close-out, removed redundant verify, search_hierarchy reboot exemption, cron path fix. Carded #1867 (skill-as-orchestrator) from Jeff's ideation mid-pair.
+
+- [Kade] 2026-04-11 08:37–08:51 — Light session. Verified Pulse data available on boot. Gemba'd Silas on #1879 (per-source freshness) for ~3.5 min — clean edit-compile-test cycles, endpoint live and validated. No cards pulled.
