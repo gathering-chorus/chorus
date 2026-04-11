@@ -1,4 +1,24 @@
-# Agent Experience (AX)
+# Agent Experience (AX) — What Good Looks Like
+
+**Card:** #1848 | **Updated:** 2026-04-11 | **Author:** Kade
+
+---
+
+## The Convergence: UX, AX, JX
+
+Three names for one problem: **the cost Jeff pays when the system doesn't work.**
+
+```
+UX  = Can Jeff see what he needs on the page?
+AX  = Can an agent complete a task without retrying?
+JX  = Can Jeff do 2 touches per card and trust the rest?
+```
+
+When AX is bad — agents retry commits, guess ports, fight hooks — Jeff absorbs the cost as coordination overhead. He becomes the relay, the debugger, the git untangler. Every AX improvement eliminates a Jeff intervention. That's not correlation — it's the same problem. Bad AX is invisible UX debt that Jeff pays as attention cost.
+
+**The design principle:** User experience and agent experience are the same design problem. Jeff is the user. The roles are the agents. Improving AX *is* improving UX. The gates, skills, and operating model exist to make both experiences good simultaneously.
+
+---
 
 ## What AX Is
 
@@ -8,115 +28,128 @@ DX for human developers means: the CLI works, the docs are accurate, the error m
 
 AX is the same thing, applied to agents operating inside a coordination system. The operations are different — querying a triplestore, committing to a shared repo, nudging another role, running a gate check — but the principle is identical: **the default path should work.**
 
-## Why It Matters
+---
 
-When AX is bad, three things happen:
+## JX: Not Generic UX
 
-1. **Agents build workarounds.** Retry the grep. Add a synthesis paragraph to pass the edit gate. Check if we're behind remote before pushing to dodge the rebase. Skip the failing test. Every workaround means the underlying problem never gets fixed.
+JX is UX tuned to one person. Jeff isn't a generic user — the system is tuned to how he operates:
 
-2. **Jeff becomes the debugger.** When an agent spends 5 minutes arguing that Fuseki data is missing because it's hitting port 3031 instead of 3030, Jeff pays the debugging tax. When a commit can't push because another role left dirty files, Jeff untangles the working tree. His attention is the most expensive resource in the system, and bad AX burns it on operational friction instead of creative work.
+- **HBDI D-dominant** — holistic thinker, acts on incomplete info, course-corrects. The system supports fast direction changes, not complete specs upfront.
+- **High idea volume** — not lack of focus, it's his learning process (PDCA). The system absorbs rapid pivots without losing state.
+- **2-touch target** — start and accept. Everything between is the roles' job. The system's quality is measured by how close to 2 touches each card gets.
+- **Emotional center of the team** — tone matters. When agents fumble and retry in front of Jeff, it erodes confidence. Smooth AX = Jeff trusts the team.
+- **Learns by doing** — he ideates, builds, assesses. The system shows him real things, not describes them. Demos over status reports.
 
-3. **Errors go silent.** A test that silently skips isn't a test. A route that returns 404 because the build is stale isn't monitored. A port number that's wrong in 7 files across 3 "fix" attempts isn't fixed. Bad AX means agents don't verify, and without verification, errors accumulate invisibly until Jeff trips over them.
+JX isn't "make the UI nice." It's: does the entire system — agents, gates, pipelines, pages — operate in a way that respects how Jeff thinks and works?
 
-## The Current State
+---
+
+## The AX Friction Inventory
 
 ### What agents fight on every prompt
 
-| Friction | What happens | Workaround agents use | Cost |
-|----------|-------------|----------------------|------|
-| **Hook cascade on Grep** | First grep attempt blocked by compound context injection. Must retry. | Retry every grep. Accept the wasted turn. | 2x latency on every search, context pollution |
-| **Synthesis gate on Edit** | Edit blocked until agent writes "Prior work / Current state / Approach" paragraph | Write boilerplate synthesis before every edit | Extra tokens, breaks flow, doesn't actually prevent bad edits |
-| **Dirty working tree on push** | `git pull --rebase` fails when another role has unstaged changes | Ask Jeff to intervene, or check if behind remote first | Jeff becomes orchestrator, push sometimes just fails |
-| **Port confusion (Fuseki 3030 vs 3031)** | Wrong port hardcoded in 7+ files across 3 "fix" attempts | Agents guess, get it wrong, debug for 5 minutes | Jeff watches the same failure repeat for weeks |
-| **Silent test skips** | Integration tests skip when Vikunja is unreachable, report as "passed" | Nobody notices. Tests "pass" without running. | False confidence. Bugs ship. |
-| **Stale builds** | `dist/` out of sync with `src/`. Routes exist in source, 404 in production. | Rebuild manually when someone notices | Features silently broken for days (interaction-patterns: 3+ days) |
-| **Blast radius gate** | Card can't move to WIP if blast radius check returns 0 files | Add files to description, change card type, fight the gate | 5 minutes to start working on a doc (this card, right now) |
+| Friction | What happens | Workaround | Cost to Jeff |
+|----------|-------------|------------|-------------|
+| **Hook cascade on Grep** | First grep blocked by compound context injection | Retry every grep | Watches wasted turns |
+| **Synthesis gate on Edit** | Edit blocked until agent writes context paragraph | Write boilerplate before every edit | Reads filler text |
+| **Dirty working tree on push** | `git pull --rebase` fails when another role has unstaged changes | Ask Jeff to intervene | Becomes git operator |
+| **Port confusion (Fuseki 3030)** | Wrong port hardcoded in 7+ files across 3 "fix" attempts | Agents guess and debug | Watches same failure repeat |
+| **Silent test skips** | Integration tests skip, report as "passed" | Nobody notices | False confidence, bugs ship |
+| **Stale builds** | `dist/` out of sync with `src/` | Rebuild manually | Features silently broken |
+| **Blast radius gate** | Card can't move to WIP if check returns 0 files | Fight the gate | 5 min to start a doc card |
+| **Gate ownership** | Non-owner tries to run another role's gate | Route through Jeff | Jeff becomes relay |
 
-### What agents don't do
+### What agents don't do (yet)
 
-- **Verify after mutation.** Edit a file, don't check it compiled. Fix a port, don't grep for remaining references. Deploy, don't curl the endpoint.
-- **Read error signal.** Logs exist. Test output exists. 404s exist. Agents build forward instead of reading what the system is already telling them.
-- **Measure their own friction.** No agent tracks how many retries a session takes, how many workarounds it uses, or how much time is spent on operational friction vs. productive work.
+- **Verify after mutation.** Edit a file, don't check it compiled. Fix a port, don't grep for remaining references.
+- **Read error signal.** Logs exist. 404s exist. Agents build forward instead of reading what the system tells them.
+- **Measure their own friction.** No agent tracks retry count or workaround usage per session.
+
+---
+
+## Evidence: 2026-04-11 Session (8 Cards)
+
+The convergence proven mechanically — every AX improvement eliminated a Jeff intervention:
+
+| AX Failure | Jeff's Cost (Before) | Fix | Jeff's Cost (After) | Card |
+|---|---|---|---|---|
+| Raw git push on dirty tree | Jeff runs manual git commands | git-queue.sh push | Zero | #1893 |
+| Wren can't run Kade's gates | Jeff routes between roles | Comments-first, auto-nudge | Zero | #1896 |
+| Silent SPARQL breakage | Jeff debugs empty pages | Version contract + validate endpoint | Zero | #1356 |
+| No gate enforcement | Jeff checks manually | 5 automated gates in /demo | Zero | #1815 |
+| Pull has no gates | Roles skip preflight | 5 hard gates in /pull | Zero | #1894 |
+| Navigator goes silent | Jeff notices 10 min later | 60s heartbeat monitor | Zero | #1897 |
+| Gathering domains invisible | Jeff asks "where's Music?" | 13 domains in ontology | Zero | #1864 |
+| Domain page has placeholders | Jeff sees empty sections | 4 live sections from API | Zero | #1900 |
+
+Eight cards. Zero new infrastructure. All coherence work — making things that already exist actually talk to each other.
+
+---
 
 ## What Good AX Looks Like
 
-### Principle: Zero-retry operations
+### 1. Paved Roads
+The right way should be the easiest way. `git-queue.sh push` is easier than `git pull --rebase && git push`. Gates that auto-detect ownership are easier than manual role checks.
 
-Every basic operation — grep, edit, commit, push, query, deploy — should succeed on the first attempt. If it doesn't, that's a bug in the platform, not a skill gap in the agent.
+### 2. Zero-Retry Operations
+Every basic operation — grep, edit, commit, push, query, deploy — should succeed on the first attempt. If it doesn't, that's a platform bug, not a skill gap.
 
-**Before (current):**
-```
-Agent: grep for "product-manager"
-Hook: BLOCKED — compound context injection
-Agent: (reads context, retries)
-Hook: OK
-```
+### 3. Self-Validating Actions
+Every mutation should verify its own result. Commit → check it landed. Push → confirm remote received. Gate → post the comment. No trust-based verification.
 
-**After (good AX):**
-```
-Agent: grep for "product-manager"
-System: (injects context AND returns results in one pass)
-```
+### 4. Transparent Failure
+When something fails, Jeff should see it immediately — not 10 minutes later when he notices silence. The navigator heartbeat (#1897) is this principle applied to pairs.
 
-### Principle: Self-validating actions
+### 5. Single Source of Truth
+One place for every fact. Port numbers, file paths, service endpoints — each has one canonical location. When an agent reads it, it's correct. When it changes, all consumers know.
 
-Every mutation should verify its own result. Not as a discipline agents remember to follow, but as a property of the tool.
-
-**Before (current):**
-```
-Agent: edit port 3031 → 3030 in harvest-media.sh
-Agent: commit
-Agent: say "done"
-(6 other files still say 3031)
-```
-
-**After (good AX):**
-```
-Agent: edit port 3031 → 3030 in harvest-media.sh
-Tool: (automatically greps for remaining 3031 references)
-Tool: "Warning: 6 other files contain 3031 — fix those too?"
-```
-
-### Principle: Single source of truth, machine-readable
-
-Port numbers, role-to-directory mappings, service endpoints — these should be in one place that tools read at runtime, not scattered as string literals in docs, scripts, CLAUDE.md, and role memory.
-
-**Before (current):**
-- Fuseki port in: CLAUDE.md, TEAM_PROTOCOL.md, harvest-media.sh, app-state.sh, fitness-test-template.md, 4 archived briefs, 3 Silas docs
-- Each is a chance to be wrong
-
-**After (good AX):**
-- Fuseki port in: `config/services.json` → `{ "fuseki": { "port": 3030 } }`
-- Everything else reads from that file
-
-### Principle: The paved road is the only road
-
-Agents shouldn't need to know workarounds. If the blast radius gate blocks a doc card, the gate is wrong — docs don't have blast radius. If `git pull --rebase` fails because another role has dirty files, the commit tool should handle that. If a test silently skips, the test runner should flag it.
-
-**The test for good AX:** Can a brand-new agent session, with no accumulated workaround knowledge, complete a basic task cycle (read → build → test → commit → push → verify) without Jeff intervening?
-
-Right now the answer is no.
+---
 
 ## AX in the Chorus Model
 
-In Jeff's 5-layer diagram:
+```
+Principles  → "Protect Jeff's attention" (Law 1)
+               "Enforce, don't suggest" (P2)
+               "The system should be self-healing" (P7)
 
-| Layer | AX responsibility |
-|-------|------------------|
-| **DSL / Org / Team** (Loom) | Decisions, roles, practices are legible to agents — not just humans |
-| **Interaction / Attention** | Nudges land. Chats don't stall. Gemba works without manual TTY hunting |
-| **Operating Model / Pipeline** | Commit-push-deploy works atomically. Gates don't block valid work. Tests report honestly. |
-| **Observability** | Agents can read their own error signal. Logs, alerts, dashboards are agent-queryable. |
-| **Infra / Home Cloud** | Ports, endpoints, paths are discoverable at runtime, not memorized. |
+Practices   → "API-first for agent experience" (Practice 7)
+               "TDD — tests describe Jeff's experience" (Practice 5)
+               "Production ready on every release" (Practice 6)
 
-AX is vertical — it touches every layer. It's closest to Spine and Pulse: an invisible property that everything depends on, and that nobody notices until it breaks.
+Skills      → /pull (5 hard gates), /demo (5 hard gates), /pair (heartbeat)
+               The executable operating model — skills ARE the AX surface
 
-## Measuring AX
+Gates       → Enforcement points where AX becomes JX
+               product → code → quality → arch → ops
+               The gate chain is the definition of done, made mechanical
 
-Three metrics, all observable from session logs:
+Pulse       → Visibility layer — team state every 40ms
+               Can Jeff see who's active without asking?
 
-1. **Retry rate** — How many tool calls are retried per session? Target: 0.
-2. **Jeff interventions** — How many times does Jeff have to unblock an operational issue? Target: 0 after session start.
-3. **Time-to-first-productive-action** — From session start to first code edit or meaningful output. Current: 5-10 minutes of context loading and state reading. Target: under 60 seconds.
+Spine       → Audit trail — every transition emits an event
+               When something goes wrong, the spine says when and why
+```
 
-These aren't aspirational. They're diagnostic. Measure them, and the improvement priorities become obvious.
+The assemblage: gates enforce AX → smooth AX reduces relays → fewer relays protect Jeff's attention → Jeff's attention stays on creative work → Jeff directs more clearly → better cards → better gates. The loop feeds itself.
+
+---
+
+## Measuring AX/JX
+
+| Metric | What it measures | Target |
+|--------|-----------------|--------|
+| Touches per card | Jeff's coordination cost | 2 (start + accept) |
+| Agent retry rate | AX friction per session | 0 |
+| Time to first productive action | Session start quality | < 30s |
+| Jeff interventions per session | System self-healing | 0 |
+| Silent failures detected by Jeff | Visibility gap | 0 |
+
+**JX = inverse of Jeff's coordination touches.** If Jeff touches a card twice (start + accept), JX is perfect. Every additional touch is a JX failure.
+
+---
+
+## The Test
+
+Can a brand-new agent session, with no accumulated workaround knowledge, complete a basic task cycle — read → build → test → commit → push → verify — without Jeff intervening?
+
+When the answer is yes, AX is good. When AX is good, JX is good. When JX is good, Jeff's attention is free for the work that matters.
