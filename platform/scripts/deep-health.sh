@@ -52,7 +52,7 @@ STALE_25H=$((now - 90000))
 STALE_8D=$((now - 691200))
 
 # Skip: stderr-only logs, own log, orphaned logs, agents that don't use stdout
-SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log"
+SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log chorus-api.log chorus-hooks.stdout.log clearing-probe-stdout.log inject-watcher.log"
 STDERR_LOGS="clearing-probe-stderr.log chorus-bridge.stderr.log chorus-hooks.stderr.log"
 # Daily jobs — 25h threshold instead of 2h
 DAILY_LOGS="context-cache-daily.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log"
