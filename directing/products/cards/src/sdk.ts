@@ -160,6 +160,43 @@ export function isCodeCard(text: string): boolean {
   return CODE_INDICATORS.test(text);
 }
 
+// ── Demo evidence check (#1834) ──
+
+/**
+ * Check for demo evidence: a demo brief file OR a card.demo.started spine event.
+ */
+function checkDemoEvidence(cardIndex: number): boolean {
+  const briefDirs = [
+    path.join(__dirname, '..', '..', '..', '..', 'roles', 'wren', 'briefs'),
+    path.join(__dirname, '..', '..', '..', '..', 'roles', 'silas', 'briefs'),
+    path.join(__dirname, '..', '..', '..', '..', 'roles', 'kade', 'briefs'),
+    path.join(__dirname, '..', '..', 'roles', 'wren', 'briefs'),
+    path.join(__dirname, '..', '..', 'roles', 'silas', 'briefs'),
+    path.join(__dirname, '..', '..', 'roles', 'kade', 'briefs'),
+  ];
+
+  // Check 1: demo brief file in any role's briefs/
+  for (const dir of briefDirs) {
+    try {
+      const files = fs.readdirSync(dir);
+      if (files.some(f => f.includes('demo') && f.includes(String(cardIndex)))) {
+        return true;
+      }
+    } catch { /* dir may not exist */ }
+  }
+
+  // Check 2: card.demo.started spine event in chorus.log
+  const logPath = path.join(__dirname, '..', '..', '..', '..', 'platform', 'logs', 'chorus.log');
+  try {
+    const log = fs.readFileSync(logPath, 'utf-8');
+    if (log.includes(`"event":"card.demo.started"`) && log.includes(`"card_id":"${cardIndex}"`)) {
+      return true;
+    }
+  } catch { /* log may not exist */ }
+
+  return false;
+}
+
 // ── Quality gates ──
 
 export function warnShortTitle(title: string, board: string): void {
@@ -781,6 +818,20 @@ export async function doneCard(client: BoardClient, index: number): Promise<void
   } catch { /* best effort */ }
 
   await warnNoComments(client, index, title, client.boardName);
+
+  // Demo gate (#1834) — require demo evidence before Done transition
+  // Exempt: type:chore and type:swat cards (same as existing skip logic)
+  const cardForGate = await client.view(index).catch(() => null);
+  const cardDomains = cardForGate?.domains || [];
+  const isExempt = cardDomains.some((d: string) => d === 'type:chore' || d === 'type:swat');
+  if (!isExempt) {
+    const hasDemoEvidence = checkDemoEvidence(index);
+    if (!hasDemoEvidence) {
+      console.error(`Demo gate: #${index} has no demo evidence. Run /demo ${index} first.`);
+      process.exit(1);
+    }
+  }
+
   await client.done(index);
   console.log(`Done: #${index}`);
   emitSpineEvent('card.item.completed', role, {
