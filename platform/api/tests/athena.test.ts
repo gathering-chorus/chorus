@@ -372,3 +372,56 @@ describeIntegration('POST /api/athena/reload', () => {
     // May fail with 401 from Fuseki — that's expected until auth is configured
   });
 });
+
+// #1356 — POST /api/athena/validate
+describeIntegration('POST /api/athena/validate', () => {
+  test('validates existing predicates as valid', async () => {
+    const res = await fetch(`${API}/api/athena/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ predicates: ['chorus:ownedBy', 'rdfs:label'] }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('validate');
+    expect(body.data.valid).toContain('chorus:ownedBy');
+    expect(body.data.valid).toContain('rdfs:label');
+    expect(body.data.missing).toEqual([]);
+    expect(body.data.valid_count).toBe(2);
+    expect(body.data.missing_count).toBe(0);
+  });
+
+  test('detects missing predicates', async () => {
+    const res = await fetch(`${API}/api/athena/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ predicates: ['chorus:ownedBy', 'chorus:doesNotExist'] }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.valid).toContain('chorus:ownedBy');
+    expect(body.data.missing).toContain('chorus:doesNotExist');
+    expect(body.data.valid_count).toBe(1);
+    expect(body.data.missing_count).toBe(1);
+  });
+
+  test('rejects empty predicates', async () => {
+    const res = await fetch(`${API}/api/athena/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ predicates: [] }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.data.error).toBeDefined();
+  });
+
+  test('rejects missing body', async () => {
+    const res = await fetch(`${API}/api/athena/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+});

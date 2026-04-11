@@ -4226,6 +4226,52 @@ app.post('/api/athena/reload', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/athena/validate — consumer declares predicate dependencies, API checks if they exist (#1356)
+app.post('/api/athena/validate', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const predicates: string[] = req.body?.predicates;
+    if (!Array.isArray(predicates) || predicates.length === 0) {
+      return res.status(400).json(athenaEnvelope('validate', { error: 'Body must include predicates: string[]' }, Date.now() - start, { error: true }));
+    }
+
+    const prefixMap: Record<string, string> = {
+      'chorus:': 'https://jeffbridwell.com/chorus#',
+      'rdfs:': 'http://www.w3.org/2000/01/rdf-schema#',
+      'owl:': 'http://www.w3.org/2002/07/owl#',
+      'rdf:': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+    };
+
+    const valid: string[] = [];
+    const missing: string[] = [];
+
+    for (const pred of predicates) {
+      let fullUri = pred;
+      for (const [prefix, uri] of Object.entries(prefixMap)) {
+        if (pred.startsWith(prefix)) {
+          fullUri = pred.replace(prefix, uri);
+          break;
+        }
+      }
+      const query = `ASK WHERE { GRAPH <${ATHENA_GRAPH}> { ?s <${fullUri}> ?o } }`;
+      try {
+        const result = await athenaSparqlQuery(query);
+        if (result.boolean) {
+          valid.push(pred);
+        } else {
+          missing.push(pred);
+        }
+      } catch {
+        missing.push(pred);
+      }
+    }
+
+    res.json(athenaEnvelope('validate', { valid, missing, total: predicates.length, valid_count: valid.length, missing_count: missing.length }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('validate', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
 // 404 handler for unknown /api/athena/* paths — agent-friendly suggestions
 app.use('/api/athena', (_req: Request, res: Response) => {
   res.status(404).json(athenaEnvelope('unknown', {

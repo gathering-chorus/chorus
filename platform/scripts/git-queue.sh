@@ -180,6 +180,26 @@ do_commit() {
     fi
   fi
 
+  # Ontology validation (#1356) — if chorus.ttl is being committed, validate against version contract
+  local ttl_changed=false
+  for f in "${files[@]}"; do
+    case "$f" in
+      *chorus.ttl*) ttl_changed=true; break ;;
+    esac
+  done
+  if $ttl_changed; then
+    local validate_script="$SCRIPT_DIR/ontology-validate.sh"
+    if [ -x "$validate_script" ]; then
+      if ! "$validate_script" 2>&1; then
+        echo "git-queue: ontology validation FAILED — fix violations before committing chorus.ttl" >&2
+        clear_meta
+        log_event "build.queue.blocked" "reason=ontology-validation"
+        return 1
+      fi
+      log_event "build.ontology.validated" "status=pass"
+    fi
+  fi
+
   # Stage and commit — pass files to BOTH git add and git commit.
   # Without files on git commit, any previously staged files from another
   # role would leak into this commit (cross-role staging collision).

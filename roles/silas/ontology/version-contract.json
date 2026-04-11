@@ -1,0 +1,86 @@
+{
+  "version": "1.0.0",
+  "description": "Structural schema contract for chorus.ttl — defines what consumers depend on",
+  "updated": "2026-04-11",
+  "classes": {
+    "chorus:Domain": {
+      "required": true,
+      "abstract": true,
+      "properties": {
+        "rdfs:label": { "required": true, "cardinality": "1" },
+        "rdfs:comment": { "required": false, "cardinality": "0..1" }
+      }
+    },
+    "chorus:SubProduct": {
+      "required": true,
+      "superClass": "chorus:Domain",
+      "properties": {
+        "rdfs:label": { "required": true, "cardinality": "1" },
+        "rdfs:comment": { "required": false, "cardinality": "0..1" },
+        "chorus:ownedBy": { "required": true, "cardinality": "1", "range": "chorus:Role" },
+        "chorus:hasDomain": { "required": false, "cardinality": "0..*", "range": "chorus:SubDomain" },
+        "chorus:primaryStep": { "required": false, "cardinality": "0..1", "range": "chorus:Vertebra" }
+      }
+    },
+    "chorus:SubDomain": {
+      "required": true,
+      "superClass": "chorus:Domain",
+      "properties": {
+        "rdfs:label": { "required": true, "cardinality": "1" },
+        "rdfs:comment": { "required": false, "cardinality": "0..1" },
+        "chorus:ownedBy": { "required": true, "cardinality": "1", "range": "chorus:Role" },
+        "chorus:primaryStep": { "required": false, "cardinality": "0..1", "range": "chorus:Vertebra" },
+        "chorus:consumes": { "required": false, "cardinality": "0..*", "range": "chorus:SubDomain" }
+      }
+    },
+    "chorus:Role": {
+      "required": true,
+      "abstract": true,
+      "properties": {
+        "rdfs:label": { "required": true, "cardinality": "1" }
+      }
+    },
+    "chorus:HumanRole": {
+      "required": true,
+      "superClass": "chorus:Role"
+    },
+    "chorus:AgentRole": {
+      "required": true,
+      "superClass": "chorus:Role"
+    },
+    "chorus:Vertebra": {
+      "required": true,
+      "properties": {
+        "rdfs:label": { "required": true, "cardinality": "1" }
+      }
+    },
+    "chorus:ValueStream": {
+      "required": true,
+      "properties": {
+        "rdfs:label": { "required": true, "cardinality": "1" }
+      }
+    }
+  },
+  "consumers": [
+    {
+      "name": "domain-detail-page",
+      "owner": "kade",
+      "depends_on": ["chorus:SubDomain", "chorus:SubProduct", "chorus:ownedBy", "chorus:primaryStep", "chorus:consumes", "chorus:hasDomain", "rdfs:label", "rdfs:comment"]
+    },
+    {
+      "name": "athena-api-subdomains",
+      "owner": "kade",
+      "depends_on": ["chorus:SubDomain", "chorus:SubProduct", "chorus:ownedBy", "chorus:primaryStep", "chorus:consumes", "chorus:hasDomain", "rdfs:label", "rdfs:comment"]
+    },
+    {
+      "name": "value-stream-page",
+      "owner": "kade",
+      "depends_on": ["chorus:ValueStream", "chorus:Vertebra", "chorus:SubProduct", "chorus:hasDomain", "chorus:primaryStep", "rdfs:label"]
+    },
+    {
+      "name": "crawler-service",
+      "owner": "kade",
+      "depends_on": ["chorus:SubDomain", "chorus:SubProduct", "chorus:ownedBy", "chorus:consumes", "rdfs:label", "rdfs:comment"]
+    }
+  ]
+}
