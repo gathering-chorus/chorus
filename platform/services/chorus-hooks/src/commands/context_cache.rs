@@ -189,16 +189,20 @@ pub fn run(args: &[String]) -> ExitCode {
     out.push_str(&format!("# {} — Session Context (Werk v{})\n", role_cap, werk_version));
     out.push_str(&format!("Generated: {} Boston | Werk v{}\n\n", clock_short, werk_version));
 
-    // 1. Session comprehension — role queries Chorus and synthesizes (#1781)
+    // 1. Session comprehension — Pulse + Chorus query (#1781, #1881)
     out.push_str("## Boot: Synthesize Before Speaking\n\n");
     out.push_str(&format!(
-        "Before your first response, query Chorus to understand what happened:\n\
+        "Before your first response, read team state and query Chorus:\n\
          ```\n\
+         cat /tmp/pulse-latest.json\n\
          curl -s \"http://localhost:3340/api/chorus/search?q={role}+last+session+shipped+friction+decisions&limit=10\"\n\
-         curl -s \"http://localhost:3340/api/chorus/search?q=team+today+shipped+blocked+progress&limit=10\"\n\
          ```\n\
-         Synthesize the results into your opening — show Jeff you understand the arc of the last session, \
-         what mattered, and what's next. Don't recite cards or tickets. Sound like a colleague who was here yesterday.\n"
+         Pulse gives you: who's active, what they're building, alerts fired, nudges pending, index freshness.\n\
+         Chorus search gives you: the arc of your last session.\n\
+         Synthesize both into your opening — show Jeff you understand the team state and the session arc. \
+         Don't recite cards or tickets. Sound like a colleague who was here yesterday.\n\
+         If Pulse shows index_freshness with critical/dead sources, note it: \
+         'Chorus index is degraded — my recall may be incomplete.'\n"
     , role=role));
 
     // 2. Active Work — WIP + Now + Ops + Later only (no Done wall)

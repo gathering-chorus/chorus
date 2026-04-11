@@ -13,8 +13,17 @@ export interface RoleTile {
   sessionAlive: boolean;
 }
 
+export interface PulseState {
+  alertsToday: number;
+  indexFreshness: { fresh: number; warn: number; critical: number; dead: number };
+  nudges: Record<string, { pending: number; stale: boolean }>;
+  eventsLast60s: number;
+  elapsed_ms: number;
+}
+
 export class TilePoller {
   private tiles: Map<string, RoleTile> = new Map();
+  private pulse: PulseState | null = null;
 
   constructor() {
     for (const role of ROLES) {
@@ -35,10 +44,32 @@ export class TilePoller {
       const tile = this.readRoleTile(role);
       this.tiles.set(role, tile);
     }
+    this.pulse = this.readPulse();
   }
 
   getTiles(): RoleTile[] {
     return ROLES.map((r) => this.tiles.get(r)!);
+  }
+
+  getPulse(): PulseState | null {
+    return this.pulse;
+  }
+
+  /** Read Pulse snapshot (#1881) */
+  private readPulse(): PulseState | null {
+    try {
+      const content = fs.readFileSync('/tmp/pulse-latest.json', 'utf-8');
+      const data = JSON.parse(content);
+      return {
+        alertsToday: data.alerts?.count || 0,
+        indexFreshness: data.index_freshness || { fresh: 0, warn: 0, critical: 0, dead: 0 },
+        nudges: data.nudges || {},
+        eventsLast60s: data.events?.last_60s_count || 0,
+        elapsed_ms: data.elapsed_ms || 0,
+      };
+    } catch {
+      return null;
+    }
   }
 
   /** Clear card from role state on acceptance (#2286) */

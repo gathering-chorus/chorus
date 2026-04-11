@@ -156,6 +156,15 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let role_name = format!("{:?}", input.role()).to_lowercase();
     let query = keywords.join(" ");
 
+    // Pulse: assemble team state snapshot on every prompt cycle (#1881)
+    // Spawn shim binary — context_inject runs in the Axum server, Pulse is in the shim
+    let shim = format!("{}/platform/services/chorus-hooks/target/release/chorus-hook-shim",
+        crate::shared::state_paths::REPO_ROOT);
+    let _ = std::process::Command::new(&shim).arg("pulse")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
     // Search Chorus API — hybrid mode (FTS + semantic + SPARQL)
     let chorus_results = query_chorus_hybrid(&query);
 

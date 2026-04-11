@@ -88,6 +88,7 @@ fn main() -> ExitCode {
         "health-daily" | "context-cache-daily" => return commands::health::health_daily(&args),
         "health-weekly" | "context-cache-weekly" => return commands::health::health_weekly(&args),
         "context-cache" | "context-cache-5min" => return commands::context_cache::run(&args),
+        "pulse" => return commands::pulse::run(&args),
         "session-start" | "session-start-thin" => return commands::session::session_start_cmd(&args),
         "session-close" | "session-close-thin" | "session-end-hook" => return commands::session::session_close_cmd(&args),
 
