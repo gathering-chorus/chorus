@@ -1,0 +1,44 @@
+# index-freshness.yml — Per-source graduated staleness alert (#1879)
+# Replaces binary lancedb-stale.yml with source-aware thresholds.
+# warn at 2x cadence, critical at 5x. No more 19-day blind spots.
+
+name: index-freshness
+description: Chorus index source staleness — graduated per-source thresholds
+severity: warning
+schedule: "*/10 * * * *"
+
+check: |
+  RESULT=$(curl -sf --max-time 5 http://localhost:3340/api/chorus/freshness 2>/dev/null)
+  if [ -z "$RESULT" ]; then
+    echo "api-unreachable"
+    exit 1
+  fi
+  CRITICAL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary']['critical'] + d['summary']['dead'])" 2>/dev/null || echo "0")
+  WARN=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary']['warn'])" 2>/dev/null || echo "0")
+  if [ "$CRITICAL" -gt 0 ]; then
+    echo "critical:$CRITICAL"
+    exit 1
+  fi
+  if [ "$WARN" -gt 0 ]; then
+    echo "warn:$WARN"
+    exit 1
+  fi
+  echo "ok"
+  exit 0
+
+action: |
+  COOLDOWN="/tmp/alert-index-freshness-$(date '+%Y-%m-%d')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  STALE=$(curl -sf --max-time 5 http://localhost:3340/api/chorus/freshness 2>/dev/null | python3 -c "
+import sys,json
+d = json.load(sys.stdin)
+for s in d['sources']:
+    if s['level'] in ('critical','dead'):
+        print(f\"  {s['source']}: {s['level']} ({s['staleness_ratio']}x cadence, {s['age_seconds']//3600}h old)\")
+" 2>/dev/null || echo "  (could not fetch details)")
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "index-freshness: stale sources detected. Semantic search degraded.
+$STALE" 2>/dev/null || true

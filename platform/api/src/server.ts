@@ -348,6 +348,44 @@ function addStaleHeader(res: Response, db: Database.Database): void {
   }
 }
 
+// --- Search freshness metadata (#1878) ---
+
+function buildSearchMeta(results: any[], db?: Database.Database): Record<string, any> {
+  // Coverage: proportion of indexed sources updated within the stale threshold
+  let domain_coverage = 1;
+  if (db) {
+    try {
+      const total = (db.prepare('SELECT COUNT(*) as c FROM watermarks').get() as { c: number }).c || 1;
+      const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
+      const fresh = (db.prepare('SELECT COUNT(*) as c FROM watermarks WHERE last_indexed > ?').get(cutoff) as { c: number }).c;
+      domain_coverage = fresh / total;
+    } catch { /* default to 1 */ }
+  }
+
+  let newest_result_age_s = 0;
+  if (results.length > 0) {
+    const timestamps = results
+      .map((r: any) => r.timestamp)
+      .filter(Boolean)
+      .map((t: string) => new Date(t).getTime())
+      .filter((t: number) => !isNaN(t));
+    if (timestamps.length > 0) {
+      const newest = Math.max(...timestamps);
+      newest_result_age_s = Math.round((Date.now() - newest) / 1000);
+    }
+  }
+
+  const stale = newest_result_age_s > 86400 || domain_coverage < 0.5;
+
+  const sources: Record<string, number> = {};
+  for (const r of results) {
+    const src = r.source || r.domain || 'unknown';
+    sources[src] = (sources[src] || 0) + 1;
+  }
+
+  return { domain_coverage: Math.round(domain_coverage * 100) / 100, newest_result_age_s, stale, sources };
+}
+
 // --- GET /api/chorus/search ---
 // Supports mode=fts (default), mode=semantic, mode=hybrid
 
@@ -373,7 +411,7 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
     try {
       const results = await semanticSearch(q, limit, role);
       emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'semantic', result_count: results.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-      res.json({ results, total: results.length, mode: 'semantic' });
+      res.json({ results, total: results.length, mode: 'semantic', _meta: buildSearchMeta(results) });
     } catch (err) {
       res.status(500).json({ error: `Semantic search failed: ${err}` });
     }
@@ -439,7 +477,7 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
         ]);
         const merged = mergeUnified(ftsResults, semResults, sparqlResults, limit);
         emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'unified', result_count: merged.length, sources: `fts=${ftsResults.length},semantic=${semResults.length},sparql=${sparqlResults.length}`, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-        res.json({ results: merged, total: merged.length, mode: 'unified', sources: { fts: ftsResults.length, semantic: semResults.length, sparql: sparqlResults.length } });
+        res.json({ results: merged, total: merged.length, mode: 'unified', sources: { fts: ftsResults.length, semantic: semResults.length, sparql: sparqlResults.length }, _meta: buildSearchMeta(merged, db) });
         return;
       } catch {
         // Fall through to FTS-only
@@ -452,7 +490,7 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
         const semResults = await semanticSearch(q, limit, role);
         const merged = mergeRRF(ftsResults, semResults, limit);
         emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'hybrid', result_count: merged.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-        res.json({ results: merged, total: merged.length, mode: 'hybrid' });
+        res.json({ results: merged, total: merged.length, mode: 'hybrid', _meta: buildSearchMeta(merged, db) });
         return;
       } catch {
         // Semantic failed — fall through to FTS-only
@@ -460,7 +498,7 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
     }
 
     emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'fts', result_count: ftsResults.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-    res.json({ results: ftsResults, total: ftsResults.length, mode: 'fts' });
+    res.json({ results: ftsResults, total: ftsResults.length, mode: 'fts', _meta: buildSearchMeta(ftsResults, db) });
   } finally {
     db.close();
   }
@@ -1500,6 +1538,115 @@ app.get('/api/chorus/stats', (_req: Request, res: Response) => {
     });
   } finally {
     db.close();
+  }
+});
+
+// --- GET /api/chorus/freshness (#1879) ---
+// Per-source freshness with graduated staleness levels
+
+const SOURCE_CADENCE: Record<string, number> = {
+  claude: 3600,        // 1h — session data should be near-realtime
+  spine: 3600,         // 1h
+  brief: 86400,        // 24h
+  decision: 86400,     // 24h
+  clearing: 86400,     // 24h
+  memory: 86400,       // 24h
+  story: 86400,        // 24h
+  adr: 604800,         // 7d
+  activity: 86400,     // 24h
+  state: 86400,        // 24h
+  crawler: 86400,      // 24h
+  journal: 604800,     // 7d
+};
+
+app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
+  if (!fs.existsSync(DB_PATH)) {
+    res.status(503).json({ error: 'Index database not found' });
+    return;
+  }
+  const db = new Database(DB_PATH, { readonly: true });
+  db.pragma('journal_mode = WAL');
+
+  try {
+    const watermarks = db.prepare(
+      `SELECT source, last_indexed FROM watermarks ORDER BY source`
+    ).all() as Array<{ source: string; last_indexed: string }>;
+
+    const now = Date.now();
+    // Aggregate by source prefix — watermarks has per-file entries (artifact:adr:ADR-001...)
+    // Roll up to source type level (claude, spine, brief, artifact:adr, etc.)
+    const aggregated = new Map<string, string>();
+    for (const w of watermarks) {
+      const parts = w.source.split(':');
+      const key = parts[0] === 'artifact' ? parts.slice(0, 2).join(':') : parts[0];
+      const existing = aggregated.get(key);
+      if (!existing || w.last_indexed > existing) {
+        aggregated.set(key, w.last_indexed);
+      }
+    }
+
+    const sources = Array.from(aggregated.entries()).map(([source, lastIndexed]) => {
+      const lastMs = new Date(lastIndexed).getTime();
+      const ageSecs = Math.floor((now - lastMs) / 1000);
+      const cadenceKey = source.split(':')[0];
+      const cadence = SOURCE_CADENCE[cadenceKey] || SOURCE_CADENCE[source] || 86400;
+      const ratio = ageSecs / cadence;
+
+      let level: string;
+      if (ratio <= 1) level = 'fresh';
+      else if (ratio <= 2) level = 'warn';
+      else if (ratio <= 5) level = 'critical';
+      else level = 'dead';
+
+      return {
+        source,
+        last_indexed: lastIndexed,
+        age_seconds: ageSecs,
+        expected_cadence: cadence,
+        staleness_ratio: Math.round(ratio * 10) / 10,
+        level,
+      };
+    });
+
+    const summary = {
+      total_sources: sources.length,
+      fresh: sources.filter(s => s.level === 'fresh').length,
+      warn: sources.filter(s => s.level === 'warn').length,
+      critical: sources.filter(s => s.level === 'critical').length,
+      dead: sources.filter(s => s.level === 'dead').length,
+    };
+
+    res.json({ sources, summary, timestamp: new Date().toISOString() });
+  } finally {
+    db.close();
+  }
+});
+
+// --- POST /api/chorus/reindex (#1879) ---
+// Trigger full re-index + re-embed without app restart
+
+app.post('/api/chorus/reindex', async (_req: Request, res: Response) => {
+  try {
+    // Run all indexers
+    const indexResult = await new Promise<string>((resolve) => {
+      const scriptPath = path.join(SCRIPTS_DIR, 'chorus-index-sessions.sh');
+      execFile('bash', [scriptPath], { timeout: 60000 }, (err, stdout) => {
+        resolve(err ? `error: ${err.message}` : stdout.trim());
+      });
+    });
+
+    // Trigger delta embedding
+    const embedResult = await embedDelta();
+
+    res.json({
+      status: 'ok',
+      index: indexResult,
+      embedded: embedResult.embedded,
+      skipped: embedResult.skipped,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
