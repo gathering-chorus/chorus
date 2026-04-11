@@ -1,24 +1,29 @@
 # Next Session — Silas
 
 ## Shipped This Session (2026-04-11)
-- **#1781** — Session-start redesign. 795→120 lines. Roles query Chorus semantically at boot.
-- **#1866** — Reboot slimmed from 2min to 52s. search_hierarchy exemption, session-close.sh.
-- **#1780** — Cross-role push collisions fixed. git-queue.sh push handles dirty trees.
-- **#1876** — Semantic search fixed across all 6 Fuseki domains (pair with Kade). 99K docs.
-- **#1877** — Chorus service design page. Full data source inventory.
-- **#1879** — Per-source freshness endpoint, graduated alerts, reindex API. All 11 sources fresh.
-- **#1881** — Pulse service. Team state JSON in 40ms. Design page shipped.
-- Werk auto-bump in pre-commit hook (v80→v81)
-- Fixed 5 stale chorus/chorus/ paths, rebuilt all indexers inline, fixed session-start stale-forever bug
+- **#1879** — Per-source freshness tracking, reindex API. All 11 sources fresh.
+- **#1881** — Pulse service. 40ms team state JSON.
+- **#1889** — Fix stale Pulse on boot + filter resolved freshness alerts.
+- **#1891** — Watchdog suppresses on observing state + recent gate pass.
+- **#1895** — Startup-sync alert checks Fuseki health before firing.
+- **#1898** — Gate-ops skill. 5th gate in chain. Health, Loki, rollback, disk.
+- **#1899** — Athena completeness API. 7 endpoints. Lifecycle-gated scoring.
+- **#1826** — Boston timestamps everywhere. bostonNow(), DST-aware, no UTC to Jeff.
+- **#1901** — Collection pattern (in progress). 7 Principle + 7 Practice instances in TTL.
+- Fuseki shiro.ini for write access. .git-commit.meta gitignored. 16 test count fixes.
+- Pulse board data now live from cards CLI (not stale snapshot).
+- Domain architecture: Pulse→SubProduct, Awareness domain, Chorus=memory, Spine=shared substrate.
 
 ## Resume
-- **Werk auto-bump** — pre-commit pattern matching needs path prefix tuning
-- **Board WIP snapshot + deep-health cache** need cron automation
-- **Bridge subscribers** spawn from session-start only — consider standalone LaunchAgents
-- **6 ontology cards** (#1870-1875) mine from Kade — not started
-- **Pulse design page** and **Chorus design page** both shipped — update on changes
+- **#1901** — Collection pattern. Principles + Practices done. Decision class stub, Gathering content stubs, detail page rendering via contains query remaining.
+- **#1874** — Logs subdomain. Graph populated (5 children, edges). Paused waiting on #1899 completeness API (now shipped). Resume with actor diagram + BDD.
+- **Attention domain** — discussed with Jeff. Time + Attention = Awareness. Needs Athena nodes. Prior art: attention-architecture.html.
+- **Prior art sections** — Jeff wants every domain to have prior art references. Card needed.
+- **Completeness API enhancements** — -ility annotations (actors=legibility, scenarios=testability). Briefed Wren.
+- **4 failing athena tests** — Wren/Kade added contains/composition tests that need data alignment.
 
 ## Context
-- Jeff: operational reliability IS product quality. Stale index = dumber roles.
-- Session arc: boot redesign → comprehension quality → stale index → broken graphs → service design → Pulse
-- One pull, seven cards shipped.
+- Session arc: stale Pulse bug → alert reliability → gate chain completion → Athena completeness API → domain architecture (circulatory metaphor) → time+attention=awareness
+- Jeff insight: domain discovery is the borg vector for refactors. Completeness measures -ilities, not checkboxes.
+- Jeff insight: domains are the fundamental unit. Complexity drives services, consumer diversity drives products. Don't promote until pressure is real.
+- Jeff insight: most of what we're doing is integration — making existing capabilities reliable, consistent, legible, auditable.

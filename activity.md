@@ -668,3 +668,25 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [10:49] [Kade] → Reboot. 9 cards shipped, 4 pairs (avg 12 min), all operating model + coherence work.
 
 - [Wren] → session 2026-04-11: Shipped gate pipeline (5 gates), Athena write API (#1892), domain versioning (#1356), completeness API (#1899), multi-product value streams (#1864), domain detail page sections (#1859, #1900), principles+practices+assemblage in team-architecture.md. Paired with Silas (#1892, #1899) and Kade (#1356, #1859, #1864, #1900). Restructured domain architecture (Awareness domain, Chorus narrowed to memory). Collection pattern carded (#1901). → all roles
+
+## 2026-04-11 — Silas (reboot)
+
+- [09:02] [Silas] → Session start. Found stale Pulse on boot (#1889 bug). Fixed session-start to regenerate Pulse → Jeff
+- [09:13] [Silas] → #1879 accepted, #1881 accepted → Jeff
+- [09:22] [Silas] → #1889 shipped: stale Pulse fix + resolved alert filtering → all roles
+- [09:50] [Silas] → Gemba on Kade #1815 demo. Arch feedback: /tmp warning baseline, HEAD~3 diff scope → Kade
+- [09:56] [Silas] → Gate-arch passed on #1815 → Kade
+- [10:06] [Silas] → #1891 shipped: watchdog role-state awareness → Jeff
+- [10:12] [Silas] → #1889 deeper fix: Pulse board data from live cards CLI, not stale snapshot → all roles
+- [10:27] [Silas] → Pair with Wren on #1892 (Athena write API). Unblocked Fuseki writes (shiro.ini) → Wren
+- [10:46] [Silas] → #1895 shipped: startup-sync alert checks Fuseki health → Jeff
+- [11:08] [Silas] → #1898 shipped: gate-ops skill, 5th gate in chain → all roles
+- [11:18] [Silas] → Gate-ops wired into /demo as 5th gate → all roles
+- [13:16] [Silas] → Gate-arch on #1356 (domain versioning) → Wren
+- [13:19] [Silas] → #1874 logs subdomain: 5 children populated → Jeff
+- [13:35] [Silas] → Domain architecture discussion with Jeff: Pulse=product, Awareness=domain, time+attention=awareness
+- [14:01] [Silas] → #1899 shipped: completeness API, 7 endpoints, lifecycle-gated scoring → all roles
+- [14:35] [Silas] → Pulse type change SubDomain→SubProduct in ontology → all roles
+- [14:58] [Silas] → #1901 Collection pattern: 7 Principle + 7 Practice instances in TTL → Wren
+- [15:12] [Silas] → #1826 shipped: Boston timestamps everywhere → Jeff
+- [15:23] [Silas] → Session reboot → all roles
