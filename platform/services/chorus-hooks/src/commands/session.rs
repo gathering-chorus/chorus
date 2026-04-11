@@ -7,6 +7,7 @@ use crate::chorus_log;
 use crate::shared::state_paths::{self, REPO_ROOT};
 
 use super::context_cache;
+use super::pulse;
 
 /// Session start — replaces session-start-thin.sh (#1623)
 pub fn session_start_cmd(args: &[String]) -> ExitCode {
@@ -51,6 +52,9 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         content.push_str(&ckpt_out.lines().next().unwrap_or(""));
         content.push('\n');
     }
+
+    // Regenerate Pulse so session boots with fresh state (#1889)
+    let _ = pulse::run(&[]);
 
     let _ = fs::write(&out, &content);
 
