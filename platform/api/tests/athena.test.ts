@@ -247,6 +247,81 @@ describeIntegration('_meta envelope', () => {
   });
 });
 
+// === #1904: Roles domain — parent + 4 sub-domains ===
+
+describeIntegration('GET /api/athena — #1904 Roles domain', () => {
+  test('roles-domain exists at Shaping, owned by Jeff', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/roles-domain`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.label).toBe('Roles');
+    expect(body.data.owner).toBe('Jeff');
+    expect(body.data.step).toBe('Shaping');
+  });
+
+  test('roles-domain has 4 child sub-domains via hasDomain', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/roles-domain`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const childLabels = body.data.domains.map(c => c.label);
+    expect(childLabels).toContain('Role Identity');
+    expect(childLabels).toContain('Role State');
+    expect(childLabels).toContain('Role Permissions');
+    expect(childLabels).toContain('Role Communication');
+  });
+
+  test('role-identity exists at Shaping, owned by Wren', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/role-identity`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.label).toBe('Role Identity');
+    expect(body.data.owner).toBe('Wren');
+    expect(body.data.step).toBe('Shaping');
+  });
+
+  test('role-state exists at Proving, owned by Silas, consumes cards-service', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/role-state`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.label).toBe('Role State');
+    expect(body.data.owner).toBe('Silas');
+    expect(body.data.step).toBe('Proving');
+    const consumes = body.data.consumes.map(c => c.label);
+    expect(consumes.some(c => c.includes('Cards'))).toBe(true);
+  });
+
+  test('role-permissions exists at Proving, owned by Silas, consumes gates-service', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/role-permissions`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.label).toBe('Role Permissions');
+    expect(body.data.owner).toBe('Silas');
+    expect(body.data.step).toBe('Proving');
+    const consumes = body.data.consumes.map(c => c.label);
+    expect(consumes.some(c => c.includes('Gates'))).toBe(true);
+  });
+
+  test('role-communication exists at Directing, owned by Wren, consumes messages + streams', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/role-communication`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.label).toBe('Role Communication');
+    expect(body.data.owner).toBe('Wren');
+    expect(body.data.step).toBe('Directing');
+    const consumes = body.data.consumes.map(c => c.label);
+    expect(consumes.some(c => c.includes('Messages'))).toBe(true);
+    expect(consumes.some(c => c.includes('Streams'))).toBe(true);
+  });
+
+  test('subdomains count increased by 5 (1 parent + 4 children)', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Was >= 40 before roles domain, now >= 45
+    expect(body._meta.count).toBeGreaterThanOrEqual(45);
+  });
+});
+
 describeIntegration('GET /api/athena/subdomains/:id — hasDomain composition', () => {
   test('pulse-domain exists and has detail data', async () => {
     const res = await fetch(`${API}/api/athena/subdomains/pulse-domain`);
@@ -309,6 +384,58 @@ describeIntegration('GET /api/athena — #1851 Properties and Security sub-domai
     const res = await fetch(`${API}/api/athena/subdomains?step=Proving`);
     const body = await res.json();
     expect(body._meta.count).toBeGreaterThanOrEqual(7);
+  });
+});
+
+// === #1907: Prior Art section ===
+
+describeIntegration('GET /api/athena/subdomains/:id/prior-art', () => {
+  test('returns prior art list with athena envelope', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/roles-domain/prior-art`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.source).toBe('athena');
+    expect(body._meta.query_name).toBe('subdomain-prior-art');
+    expect(body.data.subdomain).toBe('roles-domain');
+    expect(Array.isArray(body.data.items)).toBe(true);
+  });
+
+  test('returns 404 for unknown subdomain', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/nonexistent-xyz/prior-art`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describeIntegration('POST /api/athena/subdomains/:id/prior-art', () => {
+  test('creates prior art entry and returns it', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/roles-domain/prior-art`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Org Design Artifact', path: 'roles/wren/artifacts/org-design.html', description: 'Chorus organizational architecture — two axes of responsibility, product ownership map' }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-prior-art-create');
+    expect(body.data.label).toBe('Org Design Artifact');
+    expect(body.data.path).toBe('roles/wren/artifacts/org-design.html');
+  });
+
+  test('rejects missing label', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/roles-domain/prior-art`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: 'some/file.ts' }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describeIntegration('GET /api/athena/subdomains/:id/completeness — prior_art section', () => {
+  test('completeness includes prior_art in sections map', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/roles-domain/completeness`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect('prior_art' in body.data.sections).toBe(true);
   });
 });
 

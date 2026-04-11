@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roles — Domain Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #7c3aed; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #f5f3ff; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #7c3aed; font-style: italic; font-size: 0.9em; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #f5f3ff; color: #5b21b6; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  pre { background: #1e1e2e; color: #cdd6f4; padding: 14px 16px; border-radius: 6px; font-size: 0.78em; overflow-x: auto; margin: 10px 0; line-height: 1.5; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #5b21b6; }
+  .tag-wren { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-silas { background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-kade { background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-shared { background: #ede9fe; color: #5b21b6; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
+  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
+  .flow-diagram { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 12px 0; font-family: -apple-system, sans-serif; font-size: 0.82em; line-height: 2; }
+  .flow-step { display: inline-block; padding: 2px 10px; border-radius: 4px; margin: 2px; font-weight: 500; }
+  .flow-wren { background: #d1fae5; color: #065f46; }
+  .flow-silas { background: #dbeafe; color: #1e40af; }
+  .flow-kade { background: #fef3c7; color: #92400e; }
+  .flow-system { background: #ede9fe; color: #5b21b6; }
+  .flow-jeff { background: #f3f4f6; color: #374151; }
+  .flow-arrow { color: #9ca3af; margin: 0 4px; }
+  .domain-tree { font-family: -apple-system, sans-serif; font-size: 0.85em; margin: 12px 0; }
+  .domain-tree .parent { font-weight: 600; color: #5b21b6; font-size: 1.1em; margin-bottom: 8px; }
+  .domain-tree .child { margin-left: 24px; padding: 6px 0; border-left: 2px solid #e5e7eb; padding-left: 16px; }
+  .domain-tree .child-label { font-weight: 600; }
+  .domain-tree .child-desc { color: #666; font-size: 0.9em; }
+  .source-list { list-style: none; padding: 0; }
+  .source-list li { padding: 3px 0; font-size: 0.82em; }
+  .source-list li code { font-size: 0.95em; }
+  .insight { background: #fef3c7; padding: 10px 14px; margin: 12px 0; border-radius: 4px; border-left: 4px solid #d97706; font-size: 0.86em; }
+  .insight strong { color: #92400e; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Roles <span>— Domain Design</span></h1>
+<p class="date">2026-04-11 — Wren (#1904). Sources: chorus.ttl, 3x CLAUDE.md, tiles.ts, participants.ts, role-state binary, profiles/*.json, server.ts (6 endpoints).</p>
+
+<p class="promise">Three AI roles and one human coordinate daily across two products. The system knows who each role is, what they're doing right now, what they're allowed to do, and how they talk to each other. But this knowledge is scattered across 17+ files in 6 different formats. The Roles domain makes it legible in one place — for Jeff, for the roles themselves, and for any future role that joins.</p>
+
+<!-- ==================== DOMAIN STRUCTURE ==================== -->
+<h2>Domain Structure</h2>
+
+<p>Roles is a parent domain at the <strong>Shaping</strong> step — it defines the operating model that everything else is shaped around. Four sub-domains capture the four facets of what a role is.</p>
+
+<div class="domain-tree">
+  <div class="parent">roles-domain <span style="font-weight:normal; color:#666;">(Shaping &middot; owned by Jeff)</span></div>
+  <div class="child">
+    <span class="child-label">role-identity</span> &mdash;
+    <span class="child-desc">Who they are. Name, type (human/agent), emoji, color, channel, purpose, tone, working hours, domain ownership map.</span>
+  </div>
+  <div class="child">
+    <span class="child-label">role-state</span> &mdash;
+    <span class="child-desc">What they're doing now. Live state machine (building/blocked/waiting/observing/idle), card context, session lifecycle, andon declarations.</span>
+  </div>
+  <div class="child">
+    <span class="child-label">role-permissions</span> &mdash;
+    <span class="child-desc">What they can do. Per-role allowed/denied commands, hook enforcement, vertical vs horizontal scope, execution modes.</span>
+  </div>
+  <div class="child">
+    <span class="child-label">role-communication</span> &mdash;
+    <span class="child-desc">How they talk. Nudges, briefs, clearing, attention contract, voice analytics, tone patterns, interaction detection.</span>
+  </div>
+</div>
+
+<div class="insight"><strong>Why Jeff owns this domain:</strong> The three-role structure is Jeff's design decision. Roles don't define themselves — Jeff defines roles, roles execute. Wren shapes the domain page; Silas instruments the state; Kade builds the UI. But Jeff owns the model.</div>
+
+<!-- ==================== ROLE IDENTITY ==================== -->
+<h2>Sub-Domain: Role Identity</h2>
+
+<p>Each role has a persistent identity that spans sessions. Identity includes hard facts (name, type, permissions) and soft facts (tone, emoji, working style). Today this lives across ontology instances and CLAUDE.md files — two formats, no single view.</p>
+
+<table>
+<tr><th>Property</th><th>Wren</th><th>Silas</th><th>Kade</th><th>Jeff</th></tr>
+<tr><td>Type</td><td>AgentRole</td><td>AgentRole</td><td>AgentRole</td><td>HumanRole</td></tr>
+<tr><td>Title</td><td>Product Manager</td><td>Architect</td><td>Engineer</td><td>Owner</td></tr>
+<tr><td>Color</td><td style="color:#3fb950;">#3fb950</td><td style="color:#58a6ff;">#58a6ff</td><td style="color:#d29922;">#d29922</td><td style="color:#e6edf3;">#e6edf3</td></tr>
+<tr><td>Channel</td><td>#wren</td><td>#silas</td><td>#kade</td><td>&mdash;</td></tr>
+<tr><td>Vertical scope</td><td>briefs, decisions, skills, board ops</td><td>scripts, hooks, monitoring, deploy</td><td>src, views, tests, routes, SPARQL</td><td>all</td></tr>
+<tr><td>Working hours</td><td>8am&ndash;6pm Boston</td><td>8am&ndash;6pm Boston</td><td>8am&ndash;6pm Boston</td><td>flexible</td></tr>
+</table>
+
+<h3>Source Files</h3>
+<ul class="source-list">
+  <li><code>roles/silas/ontology/chorus.ttl</code> &mdash; Role, HumanRole, AgentRole classes + 4 instances <span class="tag-silas">Silas</span></li>
+  <li><code>roles/wren/CLAUDE.md</code> &mdash; Wren identity, responsibilities, tone <span class="tag-wren">Wren</span></li>
+  <li><code>roles/silas/CLAUDE.md</code> &mdash; Silas identity, operations ownership <span class="tag-silas">Silas</span></li>
+  <li><code>roles/kade/CLAUDE.md</code> &mdash; Kade identity, build constraints <span class="tag-kade">Kade</span></li>
+  <li><code>directing/clearing/public/index.html</code> &mdash; Color definitions, tile styling <span class="tag-shared">Shared</span></li>
+  <li><code>directing/clearing/src/participants.ts</code> &mdash; Role interface, system prompts <span class="tag-shared">Shared</span></li>
+</ul>
+
+<!-- ==================== ROLE STATE ==================== -->
+<h2>Sub-Domain: Role State</h2>
+
+<p>Every role declares its state at transitions. The state machine is simple and enforced:</p>
+
+<div class="flow-diagram">
+  <span class="flow-step flow-system">idle</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-wren">building card=N</span>
+  <span class="flow-arrow">&harr;</span>
+  <span class="flow-step" style="background:#fee2e2; color:#991b1b;">blocked detail="reason"</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-silas">waiting</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-jeff">observing gemba=role</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-system">idle</span>
+</div>
+
+<p>State feeds three consumers: the Clearing tile UI (what Jeff sees), Pulse (system health), and the attention contract (DEC-1571 — silence = failure).</p>
+
+<h3>State Flow</h3>
+<div class="flow-diagram">
+  <span class="flow-step flow-wren">Role declares state</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-silas">role-state binary</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-system">/tmp/role-state-{role}.json</span>
+  <span class="flow-arrow">&rarr;</span>
+  <span class="flow-step flow-kade">Clearing tile + Pulse</span>
+  <br>
+  <span style="margin-left: 240px;" class="flow-arrow">&searr;</span>
+  <span class="flow-step flow-silas">spine event &rarr; chorus.log</span>
+</div>
+
+<h3>Source Files</h3>
+<ul class="source-list">
+  <li><code>platform/scripts/role-state</code> &mdash; Rust binary, writes JSON + spine event <span class="tag-silas">Silas</span></li>
+  <li><code>/tmp/role-state-{role}.json</code> &mdash; Live state file (role, state, card, updated) <span class="tag-shared">Runtime</span></li>
+  <li><code>/tmp/claude-team-scan/{role}-declared.json</code> &mdash; Team scan state for tiles <span class="tag-shared">Runtime</span></li>
+  <li><code>directing/clearing/src/tiles.ts</code> &mdash; Tile data structure + rendering <span class="tag-kade">Kade</span></li>
+  <li><code>POST /api/chorus/role-state</code> &mdash; API endpoint for state updates <span class="tag-kade">Kade</span></li>
+</ul>
+
+<!-- ==================== ROLE PERMISSIONS ==================== -->
+<h2>Sub-Domain: Role Permissions</h2>
+
+<p>Permissions are enforced at two levels: JSON profiles (what commands are allowed) and PreToolUse hooks (what the system blocks in real time). This is not documentation — it's active enforcement.</p>
+
+<div class="section-grid">
+  <div class="section-box">
+    <strong>All roles (base.json)</strong>
+    git ops, file ops, chorus scripts, docker read-only.
+    <br><em>Denied:</em> docker kill/rm/exec, rm -rf, git push --force, git reset --hard, kill/pkill.
+  </div>
+  <div class="section-box">
+    <strong>Wren additions</strong>
+    Python, Node, curl, image processing (sips).
+    <br><em>Scope:</em> briefs, decisions, skills, board ops, shell scripts.
+  </div>
+  <div class="section-box">
+    <strong>Silas additions</strong>
+    Infrastructure queries (Prometheus, AlertManager, Loki, Node Exporter), df/du, app-state.sh.
+    <br><em>Scope:</em> scripts, hooks, monitoring, deploy, cross-machine ops.
+  </div>
+  <div class="section-box">
+    <strong>Kade additions</strong>
+    npm/jest/eslint/tsc/playwright/trivy, app-state.sh, dev servers.
+    <br><em>Scope:</em> src, views, tests, routes, handlers, SPARQL, build pipeline.
+  </div>
+</div>
+
+<div class="insight"><strong>Execution modes (DEC-058):</strong> Vertical = your domain, just go. Horizontal = touches another role's domain, brief them first. The permission profile is the vertical boundary made explicit.</div>
+
+<h3>Source Files</h3>
+<ul class="source-list">
+  <li><code>proving/config/profiles/base.json</code> &mdash; Shared permissions for all roles <span class="tag-shared">Shared</span></li>
+  <li><code>proving/config/profiles/wren.json</code> &mdash; Wren-specific additions <span class="tag-wren">Wren</span></li>
+  <li><code>proving/config/profiles/silas.json</code> &mdash; Silas-specific additions <span class="tag-silas">Silas</span></li>
+  <li><code>proving/config/profiles/kade.json</code> &mdash; Kade-specific additions <span class="tag-kade">Kade</span></li>
+  <li><code>platform/services/chorus-hooks/</code> &mdash; PreToolUse hook enforcement (Rust) <span class="tag-silas">Silas</span></li>
+</ul>
+
+<!-- ==================== ROLE COMMUNICATION ==================== -->
+<h2>Sub-Domain: Role Communication</h2>
+
+<p>Roles communicate through four channels, each with different latency and richness. The attention contract (DEC-1571) governs responsiveness — silence is a failure mode, not a neutral state.</p>
+
+<table>
+<tr><th>Channel</th><th>Latency</th><th>Richness</th><th>When to use</th></tr>
+<tr><td><strong>Nudge</strong></td><td>Immediate</td><td>1&ndash;3 sentences</td><td>Time-sensitive, need response soon</td></tr>
+<tr><td><strong>Brief</strong></td><td>Next session</td><td>Full context</td><td>Detailed request with constraints</td></tr>
+<tr><td><strong>Clearing</strong></td><td>Real-time</td><td>Multi-party</td><td>All-role alignment needed</td></tr>
+<tr><td><strong>Chat</strong></td><td>Real-time</td><td>Back-and-forth</td><td>Two-role conversation</td></tr>
+</table>
+
+<h3>Attention Contract (DEC-1571)</h3>
+<div class="component">
+  <h3>The Five Rules</h3>
+  <p>1. <strong>Complete &rarr; next action.</strong> Never go silent after shipping.</p>
+  <p>2. <strong>60-second heartbeat in pairs.</strong> Respond or emit status.</p>
+  <p>3. <strong>Idle is declared.</strong> Don't just stop emitting.</p>
+  <p>4. <strong>Jeff's target: 2 touches per card.</strong> Start + accept. Every re-nudge is a failure.</p>
+  <p>5. <strong>Nudge recipients must act.</strong> A nudge requires response, not acknowledgment.</p>
+</div>
+
+<h3>Analytics Surface</h3>
+<div class="section-grid">
+  <div class="section-box">
+    <strong>Voice Analytics</strong>
+    Per-role tone classification (directive, collaborative, question, corrective). Weekly trends. Distinctive vocabulary. Message length patterns. Hour-of-day activity.
+    <br><code>GET /api/chorus/voice-analytics</code>
+  </div>
+  <div class="section-box">
+    <strong>Attention Analytics</strong>
+    Jeff's attention distribution across roles. Hourly prompt counts. Role-phase alignment (deep_work, directing, dual_load, recovery).
+    <br><code>GET /api/chorus/attention-analytics</code>
+  </div>
+</div>
+
+<h3>Source Files</h3>
+<ul class="source-list">
+  <li><code>platform/scripts/nudge</code> &mdash; Terminal injection + API persist <span class="tag-silas">Silas</span></li>
+  <li><code>roles/{role}/briefs/</code> &mdash; Incoming briefs directory <span class="tag-shared">Shared</span></li>
+  <li><code>directing/clearing/</code> &mdash; Multi-party chat system <span class="tag-shared">Shared</span></li>
+  <li><code>platform/api/src/server.ts</code> &mdash; voice-analytics, attention-analytics endpoints <span class="tag-kade">Kade</span></li>
+  <li><code>platform/logs/chorus.log</code> &mdash; Spine event stream <span class="tag-silas">Silas</span></li>
+</ul>
+
+<!-- ==================== CONSUMPTION EDGES ==================== -->
+<h2>Consumption Edges</h2>
+
+<p>Roles is the most-consumed domain in the system. Every other domain has an <code>ownedBy</code> edge back to a role. But Roles also consumes:</p>
+
+<table>
+<tr><th>This sub-domain</th><th>Consumes</th><th>Why</th></tr>
+<tr><td>role-state</td><td>Cards</td><td>State declaration includes <code>card=N</code> context</td></tr>
+<tr><td>role-communication</td><td>Messages</td><td>Nudges persist to messaging API</td></tr>
+<tr><td>role-communication</td><td>Spine Events</td><td>Analytics computed from event stream</td></tr>
+<tr><td>role-identity</td><td>Domains (all)</td><td>Ownership map: which role owns which domain</td></tr>
+<tr><td>role-permissions</td><td>Gates</td><td>Hook enforcement is gate infrastructure</td></tr>
+</table>
+
+<div class="insight"><strong>Reverse edge:</strong> Every SubDomain in the ontology has <code>chorus:ownedBy chorus:{role}</code>. The Roles domain is the only domain consumed by all other domains. This makes it the root of the ownership graph.</div>
+
+<!-- ==================== WHAT THE PAGE SHOWS ==================== -->
+<h2>What the Athena Page Shows</h2>
+
+<p>When Jeff opens the Roles domain in Athena, he sees:</p>
+
+<div class="component">
+  <h3>Roles &mdash; Domain Detail</h3>
+  <p><strong>Step:</strong> Shaping &middot; <strong>Owner:</strong> Jeff &middot; <strong>Sub-domains:</strong> 4 &middot; <strong>Consumed by:</strong> all domains</p>
+  <p style="margin-top: 12px;"><strong>Sub-domain tree:</strong></p>
+  <table>
+    <tr><th>Sub-domain</th><th>Owner</th><th>Source files</th><th>Completeness</th></tr>
+    <tr><td>Role Identity</td><td>Wren</td><td>6 files</td><td>Ontology + CLAUDE.md + UI colors</td></tr>
+    <tr><td>Role State</td><td>Silas</td><td>5 files</td><td>Binary + JSON + tiles + API</td></tr>
+    <tr><td>Role Permissions</td><td>Silas</td><td>5 files</td><td>Profiles + hook enforcement</td></tr>
+    <tr><td>Role Communication</td><td>Wren</td><td>5 files</td><td>Nudge + brief + clearing + analytics</td></tr>
+  </table>
+  <p style="margin-top: 12px;"><strong>Ownership map:</strong> 40+ sub-domains with <code>ownedBy</code> edges. Wren: 12. Silas: 18. Kade: 8. Jeff: 2.</p>
+</div>
+
+<!-- ==================== TTL PROPOSAL ==================== -->
+<h2>TTL Proposal</h2>
+
+<pre>
+chorus:roles-domain a chorus:SubDomain ;
+    rdfs:label "Roles" ;
+    rdfs:comment "Three AI roles and one human coordinate across two products. Identity, state, permissions, and communication — the operating model everything else is shaped around." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Shaping ;
+    chorus:runsOn chorus:library, chorus:bedroom ;
+    chorus:hasDomain chorus:role-identity, chorus:role-state, chorus:role-permissions, chorus:role-communication .
+
+chorus:role-identity a chorus:SubDomain ;
+    rdfs:label "Role Identity" ;
+    rdfs:comment "Who they are. Name, type, emoji, color, channel, purpose, tone, domain ownership map." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:role-state a chorus:SubDomain ;
+    rdfs:label "Role State" ;
+    rdfs:comment "Live state machine — building/blocked/waiting/observing/idle with card context. Feeds tiles, Pulse, attention contract." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:consumes chorus:cards-service .
+
+chorus:role-permissions a chorus:SubDomain ;
+    rdfs:label "Role Permissions" ;
+    rdfs:comment "Per-role allowed/denied commands. JSON profiles + PreToolUse hook enforcement. Vertical scope boundaries." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:consumes chorus:gates-service .
+
+chorus:role-communication a chorus:SubDomain ;
+    rdfs:label "Role Communication" ;
+    rdfs:comment "Four channels: nudge, brief, clearing, chat. Attention contract governs responsiveness. Voice and attention analytics." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Directing ;
+    chorus:consumes chorus:messages-domain, chorus:streams-domain .
+</pre>
+
+<!-- ==================== OPEN QUESTIONS ==================== -->
+<h2>Open Questions for Silas &amp; Kade</h2>
+
+<div class="component">
+  <h3>For Silas (Architecture)</h3>
+  <p>1. Does <code>role-state</code> belong at Proving or Shaping? State declaration is infrastructure, but the state model itself is the operating model.</p>
+  <p>2. Should <code>role-permissions</code> consume Gates, or is it part of Gates? The hook enforcement is gate infrastructure — is this a consumption edge or an identity edge?</p>
+  <p>3. The <code>roles-domain</code> is the only domain owned by Jeff (not a role). Does the ontology need a <code>chorus:jeff</code> owner path, or is this already handled?</p>
+</div>
+
+<div class="component">
+  <h3>For Kade (Implementation)</h3>
+  <p>1. The Clearing tiles already render role state. Should the Athena domain detail page link to the live tile, or render its own state view?</p>
+  <p>2. Voice analytics and attention analytics are rich data. Should they render on the role-communication sub-domain page, or stay as standalone endpoints?</p>
+  <p>3. Permission profiles are JSON. Should the domain page render them inline, or link to the profile files?</p>
+</div>
+
+</body>
+</html>

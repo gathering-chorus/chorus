@@ -4259,6 +4259,93 @@ app.get('/api/athena/subdomains/:id/contract', async (req: Request, res: Respons
   }
 });
 
+// POST /api/chorus/open — open a file locally (#1907)
+app.options('/api/chorus/open', (_req: Request, res: Response) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(204);
+});
+app.post('/api/chorus/open', (req: Request, res: Response) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  const { path: filePath } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: 'Missing path' });
+  const resolved = path.resolve(REPO_ROOT, filePath);
+  if (!resolved.startsWith(REPO_ROOT)) return res.status(403).json({ error: 'Path outside repo' });
+  const { execSync } = require('child_process');
+  try {
+    execSync(`open "${resolved}"`);
+    res.json({ ok: true, opened: resolved });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/athena/subdomains/:id/prior-art — prior art for this subdomain (#1907)
+app.get('/api/athena/subdomains/:id/prior-art', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const query = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?item ?label ?path ?description WHERE {
+        GRAPH <urn:chorus:ontology> {
+          <${sdUri}> a chorus:SubDomain .
+          <${sdUri}> chorus:hasPriorArt ?item .
+          ?item rdfs:label ?label .
+          OPTIONAL { ?item chorus:filePath ?path }
+          OPTIONAL { ?item rdfs:comment ?description }
+        }
+      }
+      ORDER BY ?label
+    `;
+    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
+    if (check.results.bindings.length === 0) {
+      return res.status(404).json(athenaEnvelope('subdomain-prior-art', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
+    }
+    const result = await athenaSparqlQuery(query);
+    const items = result.results.bindings.map((b: any) => ({
+      uri: b.item.value,
+      label: b.label?.value || b.item.value.split('#').pop(),
+      path: b.path?.value,
+      description: b.description?.value,
+    }));
+    res.json(athenaEnvelope('subdomain-prior-art', { subdomain: req.params.id, items }, Date.now() - start, { count: items.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-prior-art', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/subdomains/:id/prior-art — add prior art to subdomain (#1907)
+app.post('/api/athena/subdomains/:id/prior-art', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { label, path, description } = req.body || {};
+    if (!label) return res.status(400).json(athenaEnvelope('subdomain-prior-art-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const itemId = `${req.params.id}-prior-art-${label.toLowerCase().replace(/\s+/g, '-')}`;
+    const itemUri = `https://jeffbridwell.com/chorus#${itemId}`;
+    const update = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      INSERT DATA {
+        GRAPH <urn:chorus:ontology> {
+          <${itemUri}> a chorus:PriorArt ;
+            rdfs:label "${label.replace(/"/g, '\\"')}" .
+          <${sdUri}> chorus:hasPriorArt <${itemUri}> .
+          ${path ? `<${itemUri}> chorus:filePath "${path.replace(/"/g, '\\"')}" .` : ''}
+          ${description ? `<${itemUri}> rdfs:comment "${description.replace(/"/g, '\\"')}" .` : ''}
+        }
+      }
+    `;
+    await fetch(ATHENA_SPARQL.replace('/sparql', '/update'), { method: 'POST', headers: { 'Content-Type': 'application/sparql-update' }, body: update });
+    res.json(athenaEnvelope('subdomain-prior-art-create', { subdomain: req.params.id, uri: itemUri, label, path: path || null, description: description || null }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-prior-art-create', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
 // POST /api/athena/subdomains/:id/actors — add actor to subdomain (#1899)
 app.post('/api/athena/subdomains/:id/actors', async (req: Request, res: Response) => {
   const start = Date.now();
@@ -4358,6 +4445,7 @@ app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Res
         (COUNT(DISTINCT ?actor) AS ?actorCount)
         (COUNT(DISTINCT ?scenario) AS ?scenarioCount)
         (COUNT(DISTINCT ?contract) AS ?contractCount)
+        (COUNT(DISTINCT ?priorArt) AS ?priorArtCount)
         (COUNT(DISTINCT ?consumed) AS ?consumesCount)
         (COUNT(DISTINCT ?consumer) AS ?consumedByCount)
         ?label ?comment ?ownerLabel ?stepLabel
@@ -4371,6 +4459,7 @@ app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Res
           OPTIONAL { <${sdUri}> chorus:hasActor ?actor }
           OPTIONAL { <${sdUri}> chorus:hasScenario ?scenario }
           OPTIONAL { <${sdUri}> chorus:hasContract ?contract }
+          OPTIONAL { <${sdUri}> chorus:hasPriorArt ?priorArt }
           OPTIONAL { <${sdUri}> chorus:consumes ?consumed }
           OPTIONAL { ?consumer chorus:consumes <${sdUri}> }
         }
@@ -4393,6 +4482,7 @@ app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Res
       actors: parseInt(b.actorCount.value) > 0,
       scenarios: parseInt(b.scenarioCount.value) > 0,
       contract: parseInt(b.contractCount.value) > 0,
+      prior_art: parseInt(b.priorArtCount.value) > 0,
       edges: (parseInt(b.consumesCount.value) + parseInt(b.consumedByCount.value)) > 0,
     };
 

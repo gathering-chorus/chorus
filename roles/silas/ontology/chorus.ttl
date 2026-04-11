@@ -57,28 +57,28 @@ chorus:AgentRole a owl:Class ;
 
 chorus:jeff a chorus:HumanRole ;
     rdfs:label "Jeff" ;
-    rdfs:comment "Owner. Judgment, direction, meaning." ;
+    rdfs:comment "Owner. Judgment, direction, meaning. Jeff is the emotional center of the team — sets tone, defines role structure, assigns ownership. Working hours flexible. Vertical scope: all. Two products: Gathering (personal infrastructure) and Chorus (team coordination)." ;
     chorus:domain "directs" ;
     chorus:color "#e6edf3" ;
     chorus:channelName "#all-gathering" .
 
 chorus:wren a chorus:AgentRole ;
     rdfs:label "Wren" ;
-    rdfs:comment "Product Manager. What matters, what's next, why." ;
+    rdfs:comment "Product Manager. Value first, ship small, have a position. Owns briefs, decisions, skills, board ops. Moderates multi-role interactions, detects interaction patterns, captures demo seeds. 8am-6pm Boston. Emoji: feather." ;
     chorus:domain "product" ;
     chorus:color "#4ade80" ;
     chorus:channelName "#wren" .
 
 chorus:silas a chorus:AgentRole ;
     rdfs:label "Silas" ;
-    rdfs:comment "Architect. Structural integrity, cross-project coherence." ;
+    rdfs:comment "Architect. Structural integrity, cross-project coherence, infrastructure health. Owns scripts, hooks, monitoring, deploy tooling, cross-machine ops. Maintains ontology, LaunchAgents, Fuseki. 8am-6pm Boston." ;
     chorus:domain "architecture" ;
     chorus:color "#60a5fa" ;
     chorus:channelName "#silas" .
 
 chorus:kade a chorus:AgentRole ;
     rdfs:label "Kade" ;
-    rdfs:comment "Engineer. Make it real, make it work." ;
+    rdfs:comment "Engineer. Clean, tested, maintainable code matching architectural intent. Owns src, views, tests, routes, handlers, SPARQL services, build pipeline. Feeds back when reality diverges from product/architecture decisions. 8am-6pm Boston." ;
     chorus:domain "engineering" ;
     chorus:color "#fb923c" ;
     chorus:channelName "#kade" .
@@ -661,7 +661,8 @@ chorus:role-identity a chorus:SubDomain ;
     rdfs:label "Role Identity" ;
     rdfs:comment "Who they are. Name, type, emoji, color, channel, purpose, tone, domain ownership map." ;
     chorus:ownedBy chorus:wren ;
-    chorus:primaryStep chorus:Shaping .
+    chorus:primaryStep chorus:Shaping ;
+    chorus:contains chorus:jeff, chorus:wren, chorus:silas, chorus:kade .
 
 chorus:role-state a chorus:SubDomain ;
     rdfs:label "Role State" ;
