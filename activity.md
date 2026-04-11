@@ -690,3 +690,9 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [14:58] [Silas] → #1901 Collection pattern: 7 Principle + 7 Practice instances in TTL → Wren
 - [15:12] [Silas] → #1826 shipped: Boston timestamps everywhere → Jeff
 - [15:23] [Silas] → Session reboot → all roles
+- [15:29] [Silas] → Pulled #1902 (reflective session opening) from Later to WIP → Jeff
+- [15:35] [Silas] → Replied to Kade #1832 arch question: static file path change safe, no deploy needed → Kade
+- [15:38] [Silas] → Restarted gathering-app (app container + Fuseki down) → all roles
+- [15:38] [Silas] → Chat with Wren: roles domain design #1904 — role-state at Proving, permissions consumes Gates, chorus:jeff as owner → Wren
+- [15:39] [Silas] → Built #1902: rewrote boot template in context_cache.rs, 4 integration tests, all green → Jeff
+- [15:42] [Silas] → Demo #1902: gate chain complete (5/5), smoke 50/50, accepted and pushed → all roles

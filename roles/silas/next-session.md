@@ -1,29 +1,27 @@
 # Next Session — Silas
 
-## Shipped This Session (2026-04-11)
-- **#1879** — Per-source freshness tracking, reindex API. All 11 sources fresh.
-- **#1881** — Pulse service. 40ms team state JSON.
-- **#1889** — Fix stale Pulse on boot + filter resolved freshness alerts.
-- **#1891** — Watchdog suppresses on observing state + recent gate pass.
-- **#1895** — Startup-sync alert checks Fuseki health before firing.
-- **#1898** — Gate-ops skill. 5th gate in chain. Health, Loki, rollback, disk.
-- **#1899** — Athena completeness API. 7 endpoints. Lifecycle-gated scoring.
-- **#1826** — Boston timestamps everywhere. bostonNow(), DST-aware, no UTC to Jeff.
-- **#1901** — Collection pattern (in progress). 7 Principle + 7 Practice instances in TTL.
-- Fuseki shiro.ini for write access. .git-commit.meta gitignored. 16 test count fixes.
-- Pulse board data now live from cards CLI (not stale snapshot).
-- Domain architecture: Pulse→SubProduct, Awareness domain, Chorus=memory, Spine=shared substrate.
+## Shipped This Session (2026-04-11 afternoon)
+- **#1902** — Reflective session opening. Boot template rewritten in context_cache.rs: "Think, Then Speak" with arc/pace/friction framing, explicit anti-readout rules. 4 integration tests. All roles get this on next boot.
 
 ## Resume
-- **#1901** — Collection pattern. Principles + Practices done. Decision class stub, Gathering content stubs, detail page rendering via contains query remaining.
-- **#1874** — Logs subdomain. Graph populated (5 children, edges). Paused waiting on #1899 completeness API (now shipped). Resume with actor diagram + BDD.
-- **Attention domain** — discussed with Jeff. Time + Attention = Awareness. Needs Athena nodes. Prior art: attention-architecture.html.
-- **Prior art sections** — Jeff wants every domain to have prior art references. Card needed.
-- **Completeness API enhancements** — -ility annotations (actors=legibility, scenarios=testability). Briefed Wren.
-- **4 failing athena tests** — Wren/Kade added contains/composition tests that need data alignment.
+- **#1874** — Logs sub-domain graph. Parked while working on #1902. Resume next session.
+- **#1901** — Collection pattern (Kade WIP). Principles + Practices done. Decision class stub, Gathering content stubs, detail page rendering remaining.
+- **Kade's test gap note** — Add interpolation test for #1902: assert role name appears in Chorus search URL (e.g., `q=wren+last+session` for role=wren). Quick add.
+
+## Pending Handoffs
+- Wren namespace-move brief (76h stale) — read first thing next session.
+- Kade git-queue dirty tree brief (35h stale) — read first thing next session.
+- Wren chat #1904 roles domain design — positions given (role-state at Proving, permissions consumes Gates, chorus:jeff as owner), waiting on follow-up.
+
+## Ops Notes
+- gathering-app restarted mid-session (container down). Monitor stability.
+- 15 stale logs (86-104h), nudge binary path broken after #1791 restructure. Neither urgent but both compound.
+- Bridge health endpoint returning 404 — pre-existing, worth investigation.
+
+## Next Queue
+- Sub-domain graph cards: #1870 (Alerts), #1871 (Infra), #1872 (Observability), #1873 (Deploys), #1875 (Gates)
+- #1841 platform/ decomposition
 
 ## Context
-- Session arc: stale Pulse bug → alert reliability → gate chain completion → Athena completeness API → domain architecture (circulatory metaphor) → time+attention=awareness
-- Jeff insight: domain discovery is the borg vector for refactors. Completeness measures -ilities, not checkboxes.
-- Jeff insight: domains are the fundamental unit. Complexity drives services, consumer diversity drives products. Don't promote until pressure is real.
-- Jeff insight: most of what we're doing is integration — making existing capabilities reliable, consistent, legible, auditable.
+- Jeff insight from yesterday with Wren: "I think we can have a more reflective read on session start" — synthesis over summary, tell him what you're thinking not what you're seeing. That's what #1902 implements.
+- Session arc: pulled #1902 → TDD (4 tests red → green) → gate chain (5/5) → demo → accepted. Clean single-card session.

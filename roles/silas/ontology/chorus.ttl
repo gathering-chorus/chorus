@@ -647,6 +647,43 @@ chorus:time-domain a chorus:SubDomain ;
     chorus:primaryStep chorus:Proving ;
     chorus:runsOn chorus:library, chorus:bedroom .
 
+# --- Roles domain — operating model (#1904) ---
+
+chorus:roles-domain a chorus:SubDomain ;
+    rdfs:label "Roles" ;
+    rdfs:comment "Three AI roles and one human coordinate across two products. Identity, state, permissions, and communication — the operating model everything else is shaped around." ;
+    chorus:ownedBy chorus:jeff ;
+    chorus:primaryStep chorus:Shaping ;
+    chorus:runsOn chorus:library, chorus:bedroom ;
+    chorus:hasDomain chorus:role-identity, chorus:role-state, chorus:role-permissions, chorus:role-communication .
+
+chorus:role-identity a chorus:SubDomain ;
+    rdfs:label "Role Identity" ;
+    rdfs:comment "Who they are. Name, type, emoji, color, channel, purpose, tone, domain ownership map." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:role-state a chorus:SubDomain ;
+    rdfs:label "Role State" ;
+    rdfs:comment "Live state machine — building/blocked/waiting/observing/idle with card context. Feeds tiles, Pulse, attention contract." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:consumes chorus:cards-service .
+
+chorus:role-permissions a chorus:SubDomain ;
+    rdfs:label "Role Permissions" ;
+    rdfs:comment "Per-role allowed/denied commands. JSON profiles + PreToolUse hook enforcement. Vertical scope boundaries." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:consumes chorus:gates-service .
+
+chorus:role-communication a chorus:SubDomain ;
+    rdfs:label "Role Communication" ;
+    rdfs:comment "Four channels: nudge, brief, clearing, chat. Attention contract governs responsiveness. Voice and attention analytics." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:primaryStep chorus:Directing ;
+    chorus:consumes chorus:messages-domain, chorus:streams-domain .
+
 # --- Missing Chorus sub-domains (from spreadsheet, Phase 6) ---
 
 chorus:code-domain a chorus:SubDomain ;
@@ -875,7 +912,7 @@ chorus:convergence-product chorus:hasDomain chorus:integrations-domain, chorus:c
 
 chorus:chorusProduct chorus:hasDomain chorus:chorus-domain,
                                      chorus:properties-domain, chorus:security-domain,
-                                     chorus:time-domain .
+                                     chorus:time-domain, chorus:roles-domain .
 
 chorus:loom chorus:hasDomain chorus:policies-domain .
 
