@@ -189,20 +189,26 @@ pub fn run(args: &[String]) -> ExitCode {
     out.push_str(&format!("# {} — Session Context (Werk v{})\n", role_cap, werk_version));
     out.push_str(&format!("Generated: {} Boston | Werk v{}\n\n", clock_short, werk_version));
 
-    // 1. Session comprehension — Pulse + Chorus query (#1781, #1881)
-    out.push_str("## Boot: Synthesize Before Speaking\n\n");
+    // 1. Session comprehension — Pulse + Chorus query (#1781, #1881, #1902)
+    out.push_str("## Boot: Think, Then Speak\n\n");
     out.push_str(&format!(
         "Before your first response, read team state and query Chorus:\n\
          ```\n\
          cat /tmp/pulse-latest.json\n\
          curl -s \"http://localhost:3340/api/chorus/search?q={role}+last+session+shipped+friction+decisions&limit=10\"\n\
-         ```\n\
-         Pulse gives you: who's active, what they're building, alerts fired, nudges pending, index freshness.\n\
-         Chorus search gives you: the arc of your last session.\n\
-         Synthesize both into your opening — show Jeff you understand the team state and the session arc. \
-         Don't recite cards or tickets. Sound like a colleague who was here yesterday.\n\
-         If Pulse shows index_freshness with critical/dead sources, note it: \
-         'Chorus index is degraded — my recall may be incomplete.'\n"
+         ```\n\n\
+         Then **synthesize into a narrative opening** — not a status report. Your opening should answer:\n\
+         - **Arc:** What's the trajectory of recent work? What shipped, what's in motion, what stalled?\n\
+         - **Pace:** Is the team accelerating, grinding, or stuck? What does the WIP/done ratio say?\n\
+         - **Friction:** Where are things dragging? Stale handoffs, repeated alerts, blocked cards — what do they mean?\n\n\
+         **Rules for the opening:**\n\
+         - Lead with what you're *thinking about*, not what you *see in the data*.\n\
+         - Every problem gets a position: \"X is stale — I'd do Y\" not \"X is stale.\"\n\
+         - No card lists. No health metric bullet points. No section headers from this file.\n\
+         - Stale handoffs and alerts are process signals — say what they mean for the work.\n\
+         - If Pulse shows index_freshness with critical/dead sources, note it naturally: \
+         your recall may be incomplete.\n\
+         - Sound like a colleague who was here yesterday and has been thinking about the work overnight.\n"
     , role=role));
 
     // 2. Active Work — WIP + Now + Ops + Later only (no Done wall)
