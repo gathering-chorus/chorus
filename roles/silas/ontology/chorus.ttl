@@ -499,7 +499,44 @@ chorus:logs-service a chorus:SubDomain ;
     rdfs:comment "Loki log aggregation. Structured logging pipeline." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library .
+    chorus:runsOn chorus:library ;
+    chorus:hasDomain chorus:logs-app, chorus:logs-chorus-ops, chorus:logs-spine,
+                     chorus:logs-infrastructure, chorus:logs-role-sessions .
+
+chorus:logs-app a chorus:SubDomain ;
+    rdfs:label "App Logs" ;
+    rdfs:comment "gathering-app container logs via Loki. job=gathering-app. Labels: appName, component, level, correlationId." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Practicing ;
+    chorus:consumes chorus:cards-service, chorus:api-service .
+
+chorus:logs-chorus-ops a chorus:SubDomain ;
+    rdfs:label "Chorus Operations" ;
+    rdfs:comment "Chorus operational logs. job=chorus-operations. Sources: alert-runner, watchdog, context-cache, deep-health, session-health." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Practicing ;
+    chorus:consumes chorus:alerts-service, chorus:gates-service .
+
+chorus:logs-spine a chorus:SubDomain ;
+    rdfs:label "Spine Events" ;
+    rdfs:comment "Structured spine event log at platform/logs/chorus.log. JSON lines with timestamp, event, role, detail. Not in Loki — file-based." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Practicing ;
+    chorus:consumes chorus:gates-service, chorus:pulse-service .
+
+chorus:logs-infrastructure a chorus:SubDomain ;
+    rdfs:label "Infrastructure Logs" ;
+    rdfs:comment "LaunchAgent stderr/stdout, Fuseki perf, disk-trend, cloudflared tunnel. job=system. Mixed Loki and file." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:consumes chorus:infra-service, chorus:deploys-service .
+
+chorus:logs-role-sessions a chorus:SubDomain ;
+    rdfs:label "Role Session Logs" ;
+    rdfs:comment "Per-role session activity. team-scan observations, bridge subscribers. File-based in ~/Library/Logs/Chorus/." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Practicing ;
+    chorus:consumes chorus:awareness-service .
 
 chorus:alerts-service a chorus:SubDomain ;
     rdfs:label "Alerts" ;
