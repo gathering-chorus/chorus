@@ -225,6 +225,58 @@ describeIntegration('GET /api/athena/subdomains/:id — hasDomain composition', 
   });
 });
 
+describeIntegration('GET /api/athena — #1851 Properties and Security sub-domains', () => {
+  test('Properties sub-domain exists in Proving, owned by Silas', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/properties-domain`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.label).toBe('Properties');
+    expect(body.data.owner).toBe('Silas');
+    expect(body.data.step).toBe('Proving');
+  });
+
+  test('Security sub-domain exists in Proving, owned by Silas', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/security-domain`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.label).toBe('Security');
+    expect(body.data.owner).toBe('Silas');
+    expect(body.data.step).toBe('Proving');
+  });
+
+  test('Properties is consumed by at least Cards and Infrastructure', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/properties-domain`);
+    const body = await res.json();
+    const consumers = body.data.consumedBy.map(c => c.label);
+    expect(consumers).toContain('Cards (Service)');
+    expect(consumers).toContain('Infrastructure (Service)');
+  });
+
+  test('Security is consumed by all other subdomains', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/security-domain`);
+    const body = await res.json();
+    const subRes = await fetch(`${API}/api/athena/subdomains`);
+    const subBody = await subRes.json();
+    // Every subdomain except security itself consumes security
+    expect(body.data.consumedBy.length).toBe(subBody._meta.count - 1);
+  });
+
+  test('steps endpoint counts match subdomains endpoint', async () => {
+    const stepsRes = await fetch(`${API}/api/athena/steps`);
+    const stepsBody = await stepsRes.json();
+    const stepTotal = stepsBody.data.reduce((sum, s) => sum + s.domainCount, 0);
+    const subRes = await fetch(`${API}/api/athena/subdomains`);
+    const subBody = await subRes.json();
+    expect(stepTotal).toBe(subBody._meta.count);
+  });
+
+  test('Proving step has 12 subdomains', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains?step=Proving`);
+    const body = await res.json();
+    expect(body._meta.count).toBe(12);
+  });
+});
+
 describeIntegration('404 handler', () => {
   test('unknown path returns 404 with available endpoints', async () => {
     const res = await fetch(`${API}/api/athena/bogus`);
