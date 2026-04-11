@@ -79,15 +79,33 @@ ARCH_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:arch-pass')
 
 ### Gate logic
 
-- **If invoking role is Kade (builder):** Run `/gate-product` (as Wren's gate — invoke it, Wren's owner check applies contextually), then run `/gate-code` and `/gate-quality` inline. They post card comments and spine events on pass. `/gate-quality` auto-nudges Silas. Wait for Silas to respond with `gate:arch-pass`.
-- **If invoking role is Jeff or Wren:** Check card comments for existing gate passes. If any gate is missing, report which gates need to run:
-  ```
-  Gate chain incomplete for #<card-id>:
-    gate:product — <PASS or MISSING — Wren runs /gate-product>
-    gate:code    — <PASS or MISSING — Kade runs /gate-code>
-    gate:quality — <PASS or MISSING — Kade runs /gate-quality>
-    gate:arch    — <PASS or MISSING — Silas runs /gate-arch>
-  ```
+**Every role starts by checking card comments for existing gate passes.** Never attempt to run a gate you don't own.
+
+1. **Check comments first** — always, regardless of who is demoing:
+   ```bash
+   CARD_VIEW=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view ${CARD_ID} 2>/dev/null)
+   PRODUCT_PASS=$(echo "$CARD_VIEW" | grep -c 'gate:product-pass')
+   CODE_PASS=$(echo "$CARD_VIEW" | grep -c 'gate:code-pass')
+   QUALITY_PASS=$(echo "$CARD_VIEW" | grep -c 'gate:quality-pass')
+   ARCH_PASS=$(echo "$CARD_VIEW" | grep -c 'gate:arch-pass')
+   ```
+
+2. **Run only gates you own** — if a gate is missing and you own it, run it inline. If you don't own it, nudge the owner:
+   - `gate:product` missing → Wren runs `/gate-product`, or nudge Wren
+   - `gate:code` missing → Kade runs `/gate-code`, or nudge Kade
+   - `gate:quality` missing → Kade runs `/gate-quality`, or nudge Kade
+   - `gate:arch` missing → Silas runs `/gate-arch`, or nudge Silas
+
+3. **If gates are missing and you've nudged:** Report which gates are pending and who was nudged. **Do not block silently** — tell Jeff what you're waiting on:
+   ```
+   Gate chain waiting for #<card-id>:
+     gate:product  PASS
+     gate:code     PASS
+     gate:quality  MISSING — nudged Kade
+     gate:arch     PASS
+   Waiting on Kade for gate:quality. Will proceed when comment appears.
+   ```
+
 - **If all four gates passed:** Print gate summary and continue to Step 3:
   ```
   Gate chain: PASS
