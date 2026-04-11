@@ -4,7 +4,16 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
-## 2026-04-11 — Wren (reboot)
+## 2026-04-11 — Wren (session 2)
+
+- [08:38] [Wren] → Fixed cards CLI path in all 3 role CLAUDE.md files (../../scripts/cards → ../../platform/scripts/cards) → all roles
+- [08:42] [Wren] → Confirmed Kade shipped #1876 (LanceDB fix) → Jeff
+- [08:46] [Wren] → Retagged 8 Athena sub-domain cards (#1868–#1875) from sequence:icd to sequence:athena → board
+- [08:49] [Wren] → Tagged 8 unsequenced cards (athena, ops, infrastructure, framework) → board
+- [08:50] [Wren] → Tagged #1842 (portable Chorus spike) as sequence:strategy → board
+- [08:53] [Wren] → Jeff showed Kade's grounded opening vs Wren's vague one — feedback received → self
+
+## 2026-04-11 — Wren (session 1)
 
 - [06:28] [Wren] → Closed #1845 canonical model, added Athena SubProduct + subdomain to ontology → Jeff
 - [06:32] [Wren] → Pulled, built, accepted #1851 — Properties, Security subdomains with consumption edges → Jeff

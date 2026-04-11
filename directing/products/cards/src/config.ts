@@ -39,7 +39,7 @@ export const LABELS = {
     visibility: 71, gates: 72, spine: 73, ops: 74, strategy: 75,
     icd: 76, werk: 77, infrastructure: 78, clearing: 79, content: 80,
     framework: 81, awareness: 82, coordination: 83, surfaces: 84, loom: 85,
-    quality: 86,
+    quality: 86, athena: 137,
   } as Record<string, number>,
   type: {
     new: 66, enhance: 67, fix: 68, chore: 69, swat: 70,
