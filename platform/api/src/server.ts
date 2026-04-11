@@ -4207,6 +4207,93 @@ app.get('/api/athena/subdomains/:id/contract', async (req: Request, res: Respons
   }
 });
 
+// POST /api/athena/subdomains/:id/actors — add actor to subdomain (#1899)
+app.post('/api/athena/subdomains/:id/actors', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { label, role, action } = req.body || {};
+    if (!label) return res.status(400).json(athenaEnvelope('subdomain-actor-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const actorId = `${req.params.id}-actor-${label.toLowerCase().replace(/\s+/g, '-')}`;
+    const actorUri = `https://jeffbridwell.com/chorus#${actorId}`;
+    const roleUri = role ? `chorus:${role}` : '';
+    const update = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      INSERT DATA {
+        GRAPH <urn:chorus:ontology> {
+          <${actorUri}> a chorus:Actor ;
+            rdfs:label "${label.replace(/"/g, '\\"')}" .
+          <${sdUri}> chorus:hasActor <${actorUri}> .
+          ${roleUri ? `<${actorUri}> chorus:actorRole ${roleUri} .` : ''}
+          ${action ? `<${actorUri}> chorus:actorAction "${action.replace(/"/g, '\\"')}" .` : ''}
+        }
+      }
+    `;
+    await fetch(ATHENA_SPARQL.replace('/sparql', '/update'), { method: 'POST', headers: { 'Content-Type': 'application/sparql-update' }, body: update });
+    res.json(athenaEnvelope('subdomain-actor-create', { subdomain: req.params.id, uri: actorUri, label, role: role || null, action: action || null }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-actor-create', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/subdomains/:id/scenarios — add BDD scenario to subdomain (#1899)
+app.post('/api/athena/subdomains/:id/scenarios', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { label, givenWhenThen } = req.body || {};
+    if (!label) return res.status(400).json(athenaEnvelope('subdomain-scenario-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const scenarioId = `${req.params.id}-scenario-${label.toLowerCase().replace(/\s+/g, '-')}`;
+    const scenarioUri = `https://jeffbridwell.com/chorus#${scenarioId}`;
+    const update = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      INSERT DATA {
+        GRAPH <urn:chorus:ontology> {
+          <${scenarioUri}> a chorus:Scenario ;
+            rdfs:label "${label.replace(/"/g, '\\"')}" .
+          <${sdUri}> chorus:hasScenario <${scenarioUri}> .
+          ${givenWhenThen ? `<${scenarioUri}> chorus:givenWhenThen "${givenWhenThen.replace(/"/g, '\\"')}" .` : ''}
+        }
+      }
+    `;
+    await fetch(ATHENA_SPARQL.replace('/sparql', '/update'), { method: 'POST', headers: { 'Content-Type': 'application/sparql-update' }, body: update });
+    res.json(athenaEnvelope('subdomain-scenario-create', { subdomain: req.params.id, uri: scenarioUri, label, givenWhenThen: givenWhenThen || null }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-scenario-create', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/subdomains/:id/contract — add API contract endpoint to subdomain (#1899)
+app.post('/api/athena/subdomains/:id/contract', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { label, endpoint, method } = req.body || {};
+    if (!label) return res.status(400).json(athenaEnvelope('subdomain-contract-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const contractId = `${req.params.id}-contract-${label.toLowerCase().replace(/\s+/g, '-')}`;
+    const contractUri = `https://jeffbridwell.com/chorus#${contractId}`;
+    const update = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      INSERT DATA {
+        GRAPH <urn:chorus:ontology> {
+          <${contractUri}> a chorus:Contract ;
+            rdfs:label "${label.replace(/"/g, '\\"')}" .
+          <${sdUri}> chorus:hasContract <${contractUri}> .
+          ${endpoint ? `<${contractUri}> chorus:endpoint "${endpoint}" .` : ''}
+          ${method ? `<${contractUri}> chorus:httpMethod "${method}" .` : ''}
+        }
+      }
+    `;
+    await fetch(ATHENA_SPARQL.replace('/sparql', '/update'), { method: 'POST', headers: { 'Content-Type': 'application/sparql-update' }, body: update });
+    res.json(athenaEnvelope('subdomain-contract-create', { subdomain: req.params.id, uri: contractUri, label, endpoint: endpoint || null, method: method || null }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-contract-create', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
 // GET /api/athena/subdomains/:id/completeness — lifecycle-gated completeness score (#1899)
 app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Response) => {
   const start = Date.now();

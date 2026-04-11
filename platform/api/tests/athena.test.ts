@@ -469,6 +469,51 @@ describeIntegration('GET /api/athena/subdomains/:id/contract', () => {
   });
 });
 
+// === #1899: POST endpoints for actors, scenarios, contracts ===
+
+describeIntegration('POST /api/athena/subdomains/:id/actors', () => {
+  test('creates actor and returns it', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/actors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Test Actor', role: 'silas', action: 'verifies log flow' }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-actor-create');
+    expect(body.data.label).toBe('Test Actor');
+    expect(body.data.role).toBe('silas');
+  });
+});
+
+describeIntegration('POST /api/athena/subdomains/:id/scenarios', () => {
+  test('creates scenario and returns it', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/scenarios`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Test Scenario', givenWhenThen: 'Given logs flow, When Loki is queried, Then entries appear' }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-scenario-create');
+    expect(body.data.label).toBe('Test Scenario');
+  });
+});
+
+describeIntegration('POST /api/athena/subdomains/:id/contract', () => {
+  test('creates contract endpoint and returns it', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/contract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Test Endpoint', endpoint: '/api/chorus/logs/test', method: 'GET' }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-contract-create');
+    expect(body.data.endpoint).toBe('/api/chorus/logs/test');
+  });
+});
+
 // === #1899: Completeness API ===
 
 describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
