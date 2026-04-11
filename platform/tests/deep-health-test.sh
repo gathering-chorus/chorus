@@ -31,6 +31,41 @@ run_test "script runs" bash "$SCRIPT"
 OUTPUT=$(bash "$SCRIPT" 2>/dev/null || true)
 run_test "output is structured" echo "$OUTPUT" | grep -qE "(all checks passed|failure)"
 
+# 4. JSON output exists and has correct structure
+JSON_FILE="/tmp/deep-health-latest.json"
+bash "$SCRIPT" 2>/dev/null || true
+run_test "JSON output written" test -f "$JSON_FILE"
+
+if [ -f "$JSON_FILE" ]; then
+  # 5. JSON has warnings array (separate from failures)
+  run_test "JSON has warnings array" python3 -c "import json; d=json.load(open('$JSON_FILE')); assert 'warnings' in d and isinstance(d['warnings'], list)"
+
+  # 6. Log-freshness issues go to warnings, not failures
+  run_test "log-freshness in warnings not failures" python3 -c "
+import json
+d = json.load(open('$JSON_FILE'))
+for f in d.get('details', []):
+    assert 'log-freshness' not in f, f'log-freshness in failures: {f}'
+"
+
+  # 7. Status is not degraded when only warnings exist
+  run_test "warnings-only does not degrade status" python3 -c "
+import json
+d = json.load(open('$JSON_FILE'))
+real_failures = [f for f in d.get('details', []) if 'log-freshness' not in f]
+if len(real_failures) == 0:
+    assert d['status'] != 'degraded', 'status is degraded with no real failures'
+"
+
+  # 8. Nudge path resolves correctly (CHORUS_ROOT includes chorus/)
+  run_test "nudge path resolves" python3 -c "
+import json
+d = json.load(open('$JSON_FILE'))
+nudge_missing = [f for f in d.get('details', []) if 'nudge' in f and 'not found' in f]
+assert len(nudge_missing) == 0, f'nudge not found: {nudge_missing}'
+"
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

@@ -3,12 +3,13 @@
 # Runs on 5-min cron. Alerts via nudge --force on failure.
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 NUDGE="${CHORUS_ROOT}/platform/scripts/nudge"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 ALERT_ROLE="silas"
 FAILURES=()
+WARNINGS=()
 
 now=$(date +%s)
 
@@ -79,10 +80,10 @@ for log in "$LOG_DIR"/*.log; do
   fi
 
   if [ "$size" -eq 0 ]; then
-    FAILURES+=("log-freshness: $name is 0 bytes — agent running but silent")
+    WARNINGS+=("log-freshness: $name is 0 bytes — agent running but silent")
   elif [ "$mtime" -lt "$threshold" ]; then
     age_h=$(( (now - mtime) / 3600 ))
-    FAILURES+=("log-freshness: $name is ${age_h}h stale")
+    WARNINGS+=("log-freshness: $name is ${age_h}h stale")
   fi
 done
 
@@ -299,11 +300,48 @@ else
 fi
 
 # --- Report ---
-if [ ${#FAILURES[@]} -eq 0 ]; then
+# Determine status: degraded (real failures), warning (only log-freshness), healthy (nothing)
+if [ ${#FAILURES[@]} -gt 0 ]; then
+  STATUS="degraded"
+elif [ ${#WARNINGS[@]} -gt 0 ]; then
+  STATUS="warning"
+else
+  STATUS="healthy"
+fi
+
+# Write JSON for pulse.rs consumption
+{
+  echo -n '{"status":"'"$STATUS"'","failures":'"${#FAILURES[@]}"',"warning_count":'"${#WARNINGS[@]}"',"details":['
+  sep=""
+  if [ ${#FAILURES[@]} -gt 0 ]; then
+    for f in "${FAILURES[@]}"; do
+      echo -n "${sep}\"$(echo "$f" | sed 's/"/\\"/g')\""
+      sep=","
+    done
+  fi
+  echo -n '],"warnings":['
+  sep=""
+  if [ ${#WARNINGS[@]} -gt 0 ]; then
+    for w in "${WARNINGS[@]}"; do
+      echo -n "${sep}\"$(echo "$w" | sed 's/"/\\"/g')\""
+      sep=","
+    done
+  fi
+  echo -n '],"timestamp":"'"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"'"}'
+} > /tmp/deep-health-latest.json
+
+if [ "$STATUS" = "healthy" ]; then
   echo "deep-health: all checks passed"
   exit 0
 fi
 
+if [ "$STATUS" = "warning" ]; then
+  echo "deep-health: ${#WARNINGS[@]} warning(s) (no failures)"
+  echo "$(date '+%Y-%m-%d %H:%M') deep-health: ${#WARNINGS[@]} warning(s)" >> "$HOME/Library/Logs/Chorus/deep-health.log"
+  exit 0
+fi
+
+# degraded — real failures
 MSG="deep-health: ${#FAILURES[@]} failure(s)"
 for f in "${FAILURES[@]}"; do
   MSG="$MSG
