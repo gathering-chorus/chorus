@@ -91,19 +91,12 @@ chorus:Vertebra a owl:Class ;
     rdfs:label "Vertebra" ;
     rdfs:comment "A stage in the value stream — the Werk. Work flows through vertebrae sequentially, with feedback loops. The spine is the ordered set of all vertebrae." .
 
-chorus:Capturing a chorus:Vertebra ;
-    rdfs:label "Capturing" ;
-    rdfs:comment "Intake. Signals, seeds, observations flow in from tools and from Gathering itself." ;
-    chorus:stageOrder 0 ;
-    chorus:nextStage chorus:Shaping ;
-    chorus:belongsTo chorus:chorusStream .
-
 chorus:Shaping a chorus:Vertebra ;
     rdfs:label "Shaping" ;
     rdfs:comment "Defining the operating model — principles, practices, roles, skills, metrics. The meta layer that governs how everything else works. Loom lives here." ;
     chorus:stageOrder 1 ;
     chorus:nextStage chorus:Directing ;
-    chorus:previousStage chorus:Capturing ;
+    chorus:stageOrder 0 ;
     chorus:exitArtifactType chorus:Decision ;
     chorus:belongsTo chorus:chorusStream .
 
@@ -206,7 +199,7 @@ chorus:Operating a chorus:EventCategory ;
     rdfs:label "Operating" ;
     rdfs:comment "Infrastructure health, deploys, disk monitoring, container lifecycle, and system resilience. Crosscuts all vertebrae — the substrate the value stream runs on." ;
     chorus:color "#f3f4f6" ;
-    chorus:crosscuts chorus:Capturing, chorus:Shaping, chorus:Directing, chorus:Designing, chorus:Building, chorus:Proving .
+    chorus:crosscuts chorus:Shaping, chorus:Directing, chorus:Designing, chorus:Building, chorus:Proving .
 
 # =============================================================================
 # 2b. VALUE STREAMS (from product ontology)
@@ -222,7 +215,7 @@ chorus:gatheringStream a chorus:ValueStream ;
 
 chorus:chorusStream a chorus:ValueStream ;
     rdfs:label "Chorus" ;
-    rdfs:comment "The flow of coordination: Capturing → Shaping → Directing → Designing → Building → Proving." .
+    rdfs:comment "The flow of coordination: Shaping → Directing → Designing → Building → Proving." .
 
 # =============================================================================
 # 2c. DOMAINS (three types — from #1845 chat insight)
@@ -246,6 +239,57 @@ chorus:SubDomain a owl:Class ;
     rdfs:subClassOf chorus:Domain ;
     rdfs:label "Sub-Domain" ;
     rdfs:comment "A sub-domain within a sub-product. Matches the Sub Domain column in Jeff's spreadsheet." .
+
+# =============================================================================
+# 2c2. DOMAIN COMPLETENESS — Actors, Scenarios, Contracts (#1899)
+# =============================================================================
+
+chorus:Actor a owl:Class ;
+    rdfs:label "Actor" ;
+    rdfs:comment "An actor that interacts with a sub-domain. Has a role and a set of actions." .
+
+chorus:Scenario a owl:Class ;
+    rdfs:label "Scenario" ;
+    rdfs:comment "A BDD scenario — Given/When/Then — describing a guaranteed behavior of a sub-domain." .
+
+chorus:Contract a owl:Class ;
+    rdfs:label "Contract" ;
+    rdfs:comment "An API contract — endpoint, method, request/response shape — for a sub-domain's service boundary." .
+
+chorus:hasActor a owl:ObjectProperty ;
+    rdfs:label "has actor" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:Actor .
+
+chorus:hasScenario a owl:ObjectProperty ;
+    rdfs:label "has scenario" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:Scenario .
+
+chorus:hasContract a owl:ObjectProperty ;
+    rdfs:label "has contract" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:Contract .
+
+chorus:actorRole a owl:DatatypeProperty ;
+    rdfs:label "actor role" ;
+    rdfs:domain chorus:Actor .
+
+chorus:actorAction a owl:DatatypeProperty ;
+    rdfs:label "actor action" ;
+    rdfs:domain chorus:Actor .
+
+chorus:givenWhenThen a owl:DatatypeProperty ;
+    rdfs:label "given/when/then" ;
+    rdfs:domain chorus:Scenario .
+
+chorus:endpoint a owl:DatatypeProperty ;
+    rdfs:label "endpoint" ;
+    rdfs:domain chorus:Contract .
+
+chorus:httpMethod a owl:DatatypeProperty ;
+    rdfs:label "HTTP method" ;
+    rdfs:domain chorus:Contract .
 
 # =============================================================================
 # 2d. SERVICES (from product ontology)

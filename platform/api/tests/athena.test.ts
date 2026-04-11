@@ -425,3 +425,40 @@ describeIntegration('POST /api/athena/validate', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// === #1899: Completeness API ===
+
+describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
+  test('returns completeness score with sections, present, missing, percentage', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/completeness`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.source).toBe('athena');
+    expect(body._meta.query_name).toBe('subdomain-completeness');
+    expect(body.data.subdomain).toBe('logs-service');
+    expect(body.data.sections).toBeDefined();
+    expect(Array.isArray(body.data.present)).toBe(true);
+    expect(Array.isArray(body.data.missing)).toBe(true);
+    expect(typeof body.data.percentage).toBe('number');
+    expect(body.data.percentage).toBeGreaterThanOrEqual(0);
+    expect(body.data.percentage).toBeLessThanOrEqual(100);
+  });
+
+  test('returns lifecycle gates with create/wip/done stages', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/completeness`);
+    const body = await res.json();
+    expect(body.data.lifecycle).toBeDefined();
+    expect(body.data.lifecycle.create).toBeDefined();
+    expect(body.data.lifecycle.create.required).toContain('label');
+    expect(body.data.lifecycle.create.required).toContain('owner');
+    expect(body.data.lifecycle.wip).toBeDefined();
+    expect(body.data.lifecycle.wip.required).toContain('actors');
+    expect(body.data.lifecycle.done).toBeDefined();
+    expect(body.data.lifecycle.done.required).toContain('scenarios');
+  });
+
+  test('returns 404 for unknown subdomain', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/nonexistent-domain-xyz/completeness`);
+    expect(res.status).toBe(404);
+  });
+});

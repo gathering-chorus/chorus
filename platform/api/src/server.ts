@@ -4104,6 +4104,86 @@ app.get('/api/athena/subdomains/:id/code', async (req: Request, res: Response) =
   }
 });
 
+// GET /api/athena/subdomains/:id/completeness — lifecycle-gated completeness score (#1899)
+app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const query = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT
+        (COUNT(DISTINCT ?actor) AS ?actorCount)
+        (COUNT(DISTINCT ?scenario) AS ?scenarioCount)
+        (COUNT(DISTINCT ?contract) AS ?contractCount)
+        (COUNT(DISTINCT ?consumed) AS ?consumesCount)
+        (COUNT(DISTINCT ?consumer) AS ?consumedByCount)
+        ?label ?comment ?ownerLabel ?stepLabel
+      WHERE {
+        GRAPH <urn:chorus:ontology> {
+          <${sdUri}> a chorus:SubDomain .
+          OPTIONAL { <${sdUri}> rdfs:label ?label }
+          OPTIONAL { <${sdUri}> rdfs:comment ?comment }
+          OPTIONAL { <${sdUri}> chorus:ownedBy ?owner . ?owner rdfs:label ?ownerLabel }
+          OPTIONAL { <${sdUri}> chorus:primaryStep ?step . ?step rdfs:label ?stepLabel }
+          OPTIONAL { <${sdUri}> chorus:hasActor ?actor }
+          OPTIONAL { <${sdUri}> chorus:hasScenario ?scenario }
+          OPTIONAL { <${sdUri}> chorus:hasContract ?contract }
+          OPTIONAL { <${sdUri}> chorus:consumes ?consumed }
+          OPTIONAL { ?consumer chorus:consumes <${sdUri}> }
+        }
+      }
+      GROUP BY ?label ?comment ?ownerLabel ?stepLabel
+    `;
+    const result = await athenaSparqlQuery(query);
+    const b = result.results.bindings[0];
+    if (!b) {
+      return res.status(404).json(athenaEnvelope('subdomain-completeness', {
+        error: `Sub-domain '${req.params.id}' not found`,
+      }, Date.now() - start, { error: true }));
+    }
+
+    const sections: Record<string, boolean> = {
+      label: !!b.label,
+      comment: !!b.comment,
+      owner: !!b.ownerLabel,
+      step: !!b.stepLabel,
+      actors: parseInt(b.actorCount.value) > 0,
+      scenarios: parseInt(b.scenarioCount.value) > 0,
+      contract: parseInt(b.contractCount.value) > 0,
+      edges: (parseInt(b.consumesCount.value) + parseInt(b.consumedByCount.value)) > 0,
+    };
+
+    const lifecycle: Record<string, { required: string[]; met: string[]; missing: string[]; pass: boolean }> = {
+      create: { required: ['label', 'owner', 'step', 'comment'], met: [], missing: [], pass: false },
+      wip: { required: ['actors', 'edges'], met: [], missing: [], pass: false },
+      done: { required: ['scenarios', 'contract'], met: [], missing: [], pass: false },
+    };
+    for (const [stage, gate] of Object.entries(lifecycle)) {
+      gate.met = gate.required.filter(r => sections[r]);
+      gate.missing = gate.required.filter(r => !sections[r]);
+      gate.pass = gate.missing.length === 0;
+    }
+
+    const present = Object.entries(sections).filter(([, v]) => v).map(([k]) => k);
+    const missing = Object.entries(sections).filter(([, v]) => !v).map(([k]) => k);
+    const percentage = Math.round((present.length / Object.keys(sections).length) * 100);
+
+    res.json(athenaEnvelope('subdomain-completeness', {
+      subdomain: req.params.id,
+      label: b.label?.value,
+      step: b.stepLabel?.value,
+      sections,
+      present,
+      missing,
+      percentage,
+      lifecycle,
+    }, Date.now() - start, { count: present.length, total: Object.keys(sections).length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-completeness', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
 // POST /api/athena/subdomains — create a new SubDomain
 app.post('/api/athena/subdomains', async (req: Request, res: Response) => {
   const start = Date.now();
