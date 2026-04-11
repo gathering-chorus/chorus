@@ -159,8 +159,11 @@ if violations:
         print(f"  ✗ {v}")
     sys.exit(1)
 else:
+    version = contract.get('version', '?')
     print(f"PASS: {passes} checks passed, 0 violations")
-    print(f"Contract version: {contract.get('version', '?')}")
+    print(f"Contract version: {version}")
+    # Output version for spine event detection
+    print(f"__VERSION__:{version}")
     sys.exit(0)
 PYEOF
 

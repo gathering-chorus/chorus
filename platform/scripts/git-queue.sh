@@ -190,13 +190,34 @@ do_commit() {
   if $ttl_changed; then
     local validate_script="$SCRIPT_DIR/ontology-validate.sh"
     if [ -x "$validate_script" ]; then
-      if ! "$validate_script" 2>&1; then
+      local validate_output
+      validate_output=$("$validate_script" 2>&1)
+      local validate_exit=$?
+      if [ $validate_exit -ne 0 ]; then
+        echo "$validate_output"
         echo "git-queue: ontology validation FAILED — fix violations before committing chorus.ttl" >&2
         clear_meta
         log_event "build.queue.blocked" "reason=ontology-validation"
         return 1
       fi
+      echo "$validate_output" | grep -v '__VERSION__'
       log_event "build.ontology.validated" "status=pass"
+
+      # Spine event on version change (#1356 AC7)
+      local new_version
+      new_version=$(echo "$validate_output" | grep '__VERSION__' | sed 's/__VERSION__://')
+      local version_file="/tmp/chorus-ontology-version"
+      local old_version
+      old_version=$(cat "$version_file" 2>/dev/null || echo "")
+      if [ -n "$new_version" ] && [ "$new_version" != "$old_version" ]; then
+        echo "$new_version" > "$version_file"
+        if [ -n "$old_version" ]; then
+          log_event "ontology.version.changed" "old=$old_version" "new=$new_version"
+          echo "git-queue: ontology version changed $old_version → $new_version"
+        else
+          echo "$new_version" > "$version_file"
+        fi
+      fi
     fi
   fi
 
