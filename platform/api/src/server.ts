@@ -1613,6 +1613,22 @@ app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
       }
     }
 
+    // Drift counts for countable sources (#1959)
+    const claudeOnDisk = fs.existsSync(path.join(os.homedir(), '.claude'))
+      ? (fs.readdirSync(path.join(os.homedir(), '.claude'), { recursive: true }) as string[])
+          .filter((f: string) => f.toString().endsWith('.jsonl')).length
+      : 0;
+    const claudeIndexed = (db.prepare("SELECT COUNT(DISTINCT source) as cnt FROM watermarks WHERE source LIKE 'claude:%'").get() as { cnt: number }).cnt;
+    const spineOnDisk = fs.existsSync(path.join(REPO_ROOT, 'platform/logs/chorus.log'))
+      ? fs.readFileSync(path.join(REPO_ROOT, 'platform/logs/chorus.log'), 'utf-8').split('\n').length
+      : 0;
+    const spineIndexed = (db.prepare("SELECT COUNT(*) as cnt FROM messages WHERE source='spine'").get() as { cnt: number }).cnt;
+
+    const driftMap: Record<string, { onDisk: number; indexed: number }> = {
+      claude: { onDisk: claudeOnDisk, indexed: claudeIndexed },
+      spine: { onDisk: spineOnDisk, indexed: spineIndexed },
+    };
+
     const sources = Array.from(aggregated.entries()).map(([source, lastIndexed]) => {
       const lastMs = new Date(lastIndexed).getTime();
       const ageSecs = Math.floor((now - lastMs) / 1000);
@@ -1620,11 +1636,21 @@ app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
       const cadence = SOURCE_CADENCE[cadenceKey] || SOURCE_CADENCE[source] || 86400;
       const ratio = ageSecs / cadence;
 
+      const drift = driftMap[cadenceKey];
       let level: string;
-      if (ratio <= 1) level = 'fresh';
-      else if (ratio <= 2) level = 'warn';
-      else if (ratio <= 5) level = 'critical';
-      else level = 'dead';
+      let unindexed = 0;
+      if (drift) {
+        unindexed = Math.max(0, drift.onDisk - drift.indexed);
+        if (unindexed === 0) level = 'fresh';
+        else if (unindexed < 100) level = 'warn';
+        else if (unindexed < 1000) level = 'critical';
+        else level = 'dead';
+      } else {
+        if (ratio <= 1.5) level = 'fresh';
+        else if (ratio <= 3) level = 'warn';
+        else if (ratio <= 7) level = 'critical';
+        else level = 'dead';
+      }
 
       return {
         source,
@@ -1632,6 +1658,7 @@ app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
         age_seconds: ageSecs,
         expected_cadence: cadence,
         staleness_ratio: Math.round(ratio * 10) / 10,
+        unindexed,
         level,
       };
     });
@@ -4153,6 +4180,7 @@ app.get('/api/athena/subdomains/:id/code', async (req: Request, res: Response) =
         if (stat.isDirectory()) {
           const entries = fs.readdirSync(fullPath, { recursive: true }) as string[];
           for (const entry of entries) {
+            if (entry.includes('node_modules') || entry.includes('.git/') || entry.includes('dist/')) continue;
             const fp = path.join(fullPath, entry);
             try {
               const s = fs.statSync(fp);
