@@ -1,24 +1,31 @@
 # Wren — Next Session
 
-## Accomplished
-- Shipped 4 cards: #1904 (Roles domain), #1907 (Prior Art), #1834 (Demo gate on done), #1396 (Design gate in /pull)
-- Role-level and domain-level instrumentation — Jeff's reflection on the day's theme
-- Reflective session opening carded (#1902) — synthesis over summary
-- Gate:product reviews for Silas (#1826, #1799, #1912) and Kade
+## What happened
+Massive Athena domain page session. Mock-first design → 8 API cards shipped → blog-domain fully populated → data loss incident → graph separation fix → repopulated. 81% completeness on blog-domain, all via API. Fowler harness engineering article mapped to Chorus. O'Neill metric established. Ravi eye contact = attention as prerequisite for communication.
 
 ## WIP
-- **#1795** RCA domain — AC drafted, pulled to WIP, not started. Build tomorrow.
-- **#1902** Reflective session opening — gate:product pass, needs acp
+- #1795 RCA domain — April 6 is first case study. Frustration data pulled from Chorus. Waiting for next session to analyze.
+
+## Cards created this session
+- #1913 Harness templates per service topology
+- #1915 Fix TDD gate — skip on acceptance
+- #1916 Fix demo gate — proven bypass
+- #1919 Mock Athena domain page (DONE)
+- #1921 Design system spike
+- #1922-#1929 Athena API pipeline (all DONE)
+- #1930 Frontend authoring on Lifes Practice
+- #1931 Cards endpoint all lanes (DONE)
+- #1932 Code inventory type field
+- #1955 Graph separation (DONE via #1956)
 
 ## Pending
-- Silas offline for #1396 arch/ops gate — brief him next session
-- Prior art links (file open via /api/chorus/open) — CORS fixed, needs verification
-- Domain detail child domains now show actors + mermaid + instances on expand
+- Blog-domain at 81% — missing integrations, services, edges
+- 23 static domain docs ready for migration once more domains populated
+- Silas chat re: skills in chorus repo — agreed, needs card
+- #1795 RCA — April 6 incident analysis ready to start
 
-## Sequence Focus
-- Jeff directed: sequence:coordination is Wren's lane
-- Seeds #1817 and #1818 in Next after #1795
-
-## Memories Saved
-- Org design artifact (reference)
-- Wren sequence focus (project)
+## Key insights
+- Mock-first: UI designs the data model, not the other way around
+- Data durability: API-created instances must survive TTL reload (fixed)
+- Attention is eye contact: mutual presence is the prerequisite, not the content
+- Jeff's frustration is a system failure, not a personal one (O'Neill metric)

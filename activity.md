@@ -706,3 +706,19 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [17:20] [Wren] → #1396 built — Design gate in /pull Step 4.5, completeness lifecycle.wip enforcement → Jeff
 - [17:25] [Wren] → #1795 pulled to WIP — RCA domain, staged for morning → next session
 - [15:08–17:39] [Wren] → gate:product reviews on #1826, #1902, #1907, #1799, #1912 → Silas, Kade
+
+## 2026-04-12 — Wren (reboot)
+
+- [06:16] [Wren] → Session opened, processed Silas nudge on #1917 (tunnel fix) product gate pass → Silas
+- [06:30] [Wren] → Domain doc audit across 31 files, identified 4 template families → Jeff
+- [07:00] [Wren] → Created domain-roles.html and domain-rcas.html with Athena-influenced template → Jeff
+- [07:55] [Wren] → Converted domain-template-proposal.html to mockup → Jeff
+- [08:00] [Wren] → Jeff directed: all domain data must be in Athena, not static HTML. Updated #1919 vision → Jeff
+- [08:30] [Wren] → Deep research: 7 API gap cards (#1922-#1928) identified from mock → Kade
+- [09:00] [Wren] → Paired with Kade on #1922 (schema mismatches), #1923 (pages+integrations+persistence), #1924-1926 (services+pipeline+logs+gaps), #1927 (completeness), #1928 (wire mock), #1929 (CRUD) → all shipped
+- [10:00] [Wren] → Populated blog-domain via API: actors, scenarios, contract, pages, gaps, persistence, pipeline, prior art, logs → Jeff
+- [12:30] [Wren] → Blog-domain data lost on Kade's deploy — root cause: TTL reload DROPs graph with API data
+- [14:00] [Wren] → Carded #1955/#1956 (graph separation), paired with Kade to fix. POST→reload→data survives verified
+- [15:30] [Wren] → Repopulated blog-domain via API — 81% completeness, 13/16 sections filled
+- [Wren] → Harness engineering article (Fowler), O'Neill metric, attention-as-eye-contact captured to memory
+- [Wren] → Carded #1913 (harness templates), #1921 (design system spike), #1930 (frontend authoring), #1932 (code inventory type field)
