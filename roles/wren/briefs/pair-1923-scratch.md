@@ -1,0 +1,2 @@
+- 09:26 — Silas added 3 OWL classes to chorus.ttl. storeNamespace confirmed as xsd:string.
+- 09:27 — Directed Kade: build endpoints one at a time — pages first, verify, then integrations, then persistence.

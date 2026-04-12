@@ -389,6 +389,117 @@ chorus:storeStatus a owl:DatatypeProperty ;
     rdfs:label "status" ;
     rdfs:domain chorus:PersistenceStore .
 
+# --- Services (#1924) ---
+
+chorus:Service a owl:Class ;
+    rdfs:label "Service" ;
+    rdfs:comment "A runtime component — LaunchAgent, container, cron job." .
+
+chorus:hasService a owl:ObjectProperty ;
+    rdfs:label "has service" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:Service .
+
+chorus:serviceType a owl:DatatypeProperty ;
+    rdfs:label "type" ;
+    rdfs:comment "launchagent, container, or cron." ;
+    rdfs:domain chorus:Service .
+
+chorus:serviceHost a owl:DatatypeProperty ;
+    rdfs:label "host" ;
+    rdfs:comment "Library or Bedroom." ;
+    rdfs:domain chorus:Service .
+
+chorus:serviceStatus a owl:DatatypeProperty ;
+    rdfs:label "status" ;
+    rdfs:domain chorus:Service .
+
+chorus:healthEndpoint a owl:DatatypeProperty ;
+    rdfs:label "health endpoint" ;
+    rdfs:domain chorus:Service .
+
+# --- Pipelines (#1925) ---
+
+chorus:Pipeline a owl:Class ;
+    rdfs:label "Pipeline" ;
+    rdfs:comment "A data pipeline that brings data into a domain — source, harvester, ICD." .
+
+chorus:hasPipeline a owl:ObjectProperty ;
+    rdfs:label "has pipeline" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:Pipeline .
+
+chorus:pipelineSource a owl:DatatypeProperty ;
+    rdfs:label "source" ;
+    rdfs:domain chorus:Pipeline .
+
+chorus:pipelineHarvester a owl:DatatypeProperty ;
+    rdfs:label "harvester" ;
+    rdfs:domain chorus:Pipeline .
+
+chorus:pipelineICD a owl:DatatypeProperty ;
+    rdfs:label "ICD" ;
+    rdfs:comment "Interface control document name." ;
+    rdfs:domain chorus:Pipeline .
+
+chorus:pipelineStatus a owl:DatatypeProperty ;
+    rdfs:label "status" ;
+    rdfs:domain chorus:Pipeline .
+
+chorus:pipelineLastRun a owl:DatatypeProperty ;
+    rdfs:label "last run" ;
+    rdfs:domain chorus:Pipeline .
+
+# --- Log Sources (#1926) ---
+
+chorus:LogSource a owl:Class ;
+    rdfs:label "Log Source" ;
+    rdfs:comment "Where a domain's logs live — Loki labels, file paths, retention." .
+
+chorus:hasLogSource a owl:ObjectProperty ;
+    rdfs:label "has log source" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:LogSource .
+
+chorus:logSourceLocation a owl:DatatypeProperty ;
+    rdfs:label "location" ;
+    rdfs:comment "Loki label selector or file path." ;
+    rdfs:domain chorus:LogSource .
+
+chorus:logSourceRetention a owl:DatatypeProperty ;
+    rdfs:label "retention" ;
+    rdfs:comment "Retention period in days." ;
+    rdfs:domain chorus:LogSource .
+
+chorus:logSourceStatus a owl:DatatypeProperty ;
+    rdfs:label "status" ;
+    rdfs:domain chorus:LogSource .
+
+# --- Gaps (#1926) ---
+
+chorus:Gap a owl:Class ;
+    rdfs:label "Gap" ;
+    rdfs:comment "A known issue or missing capability in a domain." .
+
+chorus:hasGap a owl:ObjectProperty ;
+    rdfs:label "has gap" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:Gap .
+
+chorus:gapType a owl:DatatypeProperty ;
+    rdfs:label "type" ;
+    rdfs:comment "gap or resolved." ;
+    rdfs:domain chorus:Gap .
+
+chorus:gapDescription a owl:DatatypeProperty ;
+    rdfs:label "description" ;
+    rdfs:domain chorus:Gap .
+
+chorus:gapSeverity a owl:DatatypeProperty ;
+    rdfs:label "severity" ;
+    rdfs:comment "blocking, important, or nice-to-have." ;
+    rdfs:domain chorus:Gap .
+
 # =============================================================================
 # 2d. SERVICES (from product ontology)
 # =============================================================================

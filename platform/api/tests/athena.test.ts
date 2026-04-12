@@ -766,6 +766,81 @@ describeIntegration('POST /api/athena/subdomains/:id/persistence (#1923)', () =>
   });
 });
 
+// === #1924 #1925 #1926: Services, Pipeline, Logs, Gaps endpoints ===
+
+describeIntegration('GET/POST /api/athena/subdomains/:id/services (#1924)', () => {
+  test('GET returns services list', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/services`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-services');
+    expect(Array.isArray(body.data.services)).toBe(true);
+  });
+  test('POST creates service with type, host, status, health_endpoint', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/services`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Loki', type: 'container', host: 'Library', status: 'running', health_endpoint: 'http://localhost:3102/ready' }) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-service-create');
+    expect(body.data.label).toBe('Loki');
+    expect(body.data.type).toBe('container');
+    expect(body.data.host).toBe('Library');
+  });
+});
+
+describeIntegration('GET/POST /api/athena/subdomains/:id/pipeline (#1925)', () => {
+  test('GET returns pipeline list', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pipeline`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-pipeline');
+    expect(Array.isArray(body.data.pipelines)).toBe(true);
+  });
+  test('POST creates pipeline with source, harvester, icd, status', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pipeline`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Bedroom log ingest', source: 'Docker stdout', harvester: 'Promtail', icd: 'logs-icd', status: 'active' }) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-pipeline-create');
+    expect(body.data.label).toBe('Bedroom log ingest');
+    expect(body.data.source).toBe('Docker stdout');
+  });
+});
+
+describeIntegration('GET/POST /api/athena/subdomains/:id/logs (#1926)', () => {
+  test('GET returns log sources list', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/logs`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-logs');
+    expect(Array.isArray(body.data.logs)).toBe(true);
+  });
+  test('POST creates log source with location, retention, status', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/logs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Bedroom containers', location: '{container_name=~".*bedroom.*"}', retention: '30', status: 'active' }) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-log-create');
+    expect(body.data.label).toBe('Bedroom containers');
+    expect(body.data.location).toContain('bedroom');
+  });
+});
+
+describeIntegration('GET/POST /api/athena/subdomains/:id/gaps (#1926)', () => {
+  test('GET returns gaps list', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/gaps`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-gaps');
+    expect(Array.isArray(body.data.gaps)).toBe(true);
+  });
+  test('POST creates gap with type, description, severity', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/gaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Missing retention policy', type: 'gap', description: 'No automated log rotation configured', severity: 'important' }) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-gap-create');
+    expect(body.data.label).toBe('Missing retention policy');
+    expect(body.data.severity).toBe('important');
+  });
+});
+
 // === #1899: Completeness API ===
 
 describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
