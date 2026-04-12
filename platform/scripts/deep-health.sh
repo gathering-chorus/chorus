@@ -265,7 +265,7 @@ if [ -f "$DELIVERY_LOG" ]; then
   if [ "$delivery_mtime" -lt "$STALE_8D" ]; then
     delivery_age_d=$(( (now - delivery_mtime) / 86400 ))
     FAILURES+=("alert-delivery: last run ${delivery_age_d}d ago — weekly cron may be dead. Fix: bash platform/scripts/alert-delivery-test.sh")
-  elif grep -q "FAIL" "$DELIVERY_LOG" 2>/dev/null; then
+  elif ! tail -5 "$DELIVERY_LOG" | grep -q "all passed" 2>/dev/null; then
     last_fail=$(grep "FAIL" "$DELIVERY_LOG" | tail -1)
     FAILURES+=("alert-delivery: last run had failures — $last_fail")
   fi
