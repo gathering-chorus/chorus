@@ -41,18 +41,34 @@ pub async fn check(input: &HookInput) -> HookResponse {
         issues.push("Hook server (com.chorus.hooks) has no PID — may be crashed".to_string());
     }
 
-    // 2. API health — one HTTP call with generous timeout
-    if let Ok(resp) = ureq::get("http://localhost:3340/api/chorus/health")
-        .timeout(std::time::Duration::from_millis(1000))
-        .call()
-    {
-        if let Ok(body) = resp.into_json::<serde_json::Value>() {
-            let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
-            if status != "healthy" {
-                issues.push(format!("Chorus API status: {}", status));
+    // 2. API health — retry once on timeout (first request after idle hits cold DNS/TCP path)
+    let api_healthy = {
+        let mut healthy = false;
+        for attempt in 0..2 {
+            match ureq::get("http://localhost:3340/api/chorus/health")
+                .timeout(std::time::Duration::from_millis(1000))
+                .call()
+            {
+                Ok(resp) => {
+                    if let Ok(body) = resp.into_json::<serde_json::Value>() {
+                        let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        if status != "healthy" {
+                            issues.push(format!("Chorus API status: {}", status));
+                        }
+                    }
+                    healthy = true;
+                    break;
+                }
+                Err(ureq::Error::Transport(_)) if attempt == 0 => {
+                    // Cold-start timeout — retry immediately (#1981)
+                    continue;
+                }
+                Err(_) => break,
             }
         }
-    } else {
+        healthy
+    };
+    if !api_healthy {
         issues.push("Chorus API unreachable at localhost:3340".to_string());
     }
 
@@ -87,5 +103,6 @@ pub async fn check(input: &HookInput) -> HookResponse {
     }
     msg.push_str("</ops-state>");
 
-    HookResponse::block_with_stderr(&msg)
+    // Surface, don't block — health state is advisory, not a gate (#1981)
+    HookResponse::warn_stderr(&msg)
 }
