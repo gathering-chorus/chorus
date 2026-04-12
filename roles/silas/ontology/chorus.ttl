@@ -636,8 +636,8 @@ chorus:loom a chorus:SubProduct ;
     rdfs:comment "The operating model — principles, practices, decisions, roles, metrics. Defines how the team works. DSL/Org/Team layer." ;
     chorus:ownedBy chorus:jeff ;
     chorus:hasDomain chorus:loom-principles, chorus:loom-practices, chorus:loom-decisions,
-                     chorus:loom-roles, chorus:loom-rcas, chorus:loom-metrics,
-                     chorus:loom-analytics .
+                     chorus:roles-domain, chorus:loom-rcas, chorus:loom-metrics,
+                     chorus:loom-analytics, chorus:policies-domain .
 
 chorus:cards-product a chorus:SubProduct ;
     rdfs:label "Cards (Product)" ;
@@ -687,7 +687,7 @@ chorus:athena-domain a chorus:SubDomain ;
     chorus:primaryStep chorus:Designing ;
     chorus:runsOn chorus:library .
 
-# --- Loom Domains (7 unique governance concepts) ---
+# --- Loom Domains (governance concepts) ---
 
 chorus:loom-principles a chorus:SubDomain ;
     rdfs:label "Principles" ;
@@ -704,12 +704,6 @@ chorus:loom-practices a chorus:SubDomain ;
 chorus:loom-decisions a chorus:SubDomain ;
     rdfs:label "Decisions" ;
     rdfs:comment "DEC-NNN — governing choices that constrain future behavior." ;
-    chorus:ownedBy chorus:jeff ;
-    chorus:primaryStep chorus:Shaping .
-
-chorus:loom-roles a chorus:SubDomain ;
-    rdfs:label "Roles" ;
-    rdfs:comment "Role definitions, boundaries, interaction modes." ;
     chorus:ownedBy chorus:jeff ;
     chorus:primaryStep chorus:Shaping .
 
@@ -752,44 +746,8 @@ chorus:logs-service a chorus:SubDomain ;
     rdfs:comment "Loki log aggregation. Structured logging pipeline." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library ;
-    chorus:hasDomain chorus:logs-app, chorus:logs-chorus-ops, chorus:logs-spine,
-                     chorus:logs-infrastructure, chorus:logs-role-sessions .
-
-chorus:logs-app a chorus:SubDomain ;
-    rdfs:label "App Logs" ;
-    rdfs:comment "gathering-app container logs via Loki. job=gathering-app. Labels: appName, component, level, correlationId." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Practicing ;
-    chorus:consumes chorus:cards-service, chorus:api-service .
-
-chorus:logs-chorus-ops a chorus:SubDomain ;
-    rdfs:label "Chorus Operations" ;
-    rdfs:comment "Chorus operational logs. job=chorus-operations. Sources: alert-runner, watchdog, context-cache, deep-health, session-health." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Practicing ;
-    chorus:consumes chorus:alerts-service, chorus:gates-service .
-
-chorus:logs-spine a chorus:SubDomain ;
-    rdfs:label "Spine Events" ;
-    rdfs:comment "Structured spine event log at platform/logs/chorus.log. JSON lines with timestamp, event, role, detail. Not in Loki — file-based." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Practicing ;
-    chorus:consumes chorus:gates-service, chorus:pulse-service .
-
-chorus:logs-infrastructure a chorus:SubDomain ;
-    rdfs:label "Infrastructure Logs" ;
-    rdfs:comment "LaunchAgent stderr/stdout, Fuseki perf, disk-trend, cloudflared tunnel. job=system. Mixed Loki and file." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:consumes chorus:infra-service, chorus:deploys-service .
-
-chorus:logs-role-sessions a chorus:SubDomain ;
-    rdfs:label "Role Session Logs" ;
-    rdfs:comment "Per-role session activity. team-scan observations, bridge subscribers. File-based in ~/Library/Logs/Chorus/." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Practicing ;
-    chorus:consumes chorus:awareness-service .
+    chorus:runsOn chorus:library .
+# --- Log sub-domains removed (#1962) — App Logs, Chorus Operations, Spine Events, Infrastructure Logs, Role Session Logs are detail within Logs, not separate sub-domains. ---
 
 chorus:alerts-service a chorus:SubDomain ;
     rdfs:label "Alerts" ;
@@ -864,59 +822,14 @@ chorus:roles-domain a chorus:SubDomain ;
     chorus:ownedBy chorus:jeff ;
     chorus:primaryStep chorus:Shaping ;
     chorus:runsOn chorus:library, chorus:bedroom ;
-    chorus:hasDomain chorus:role-identity, chorus:role-state, chorus:role-permissions, chorus:role-communication .
-
-chorus:role-identity a chorus:SubDomain ;
-    rdfs:label "Role Identity" ;
-    rdfs:comment "Who they are. Name, type, emoji, color, channel, purpose, tone, domain ownership map." ;
-    chorus:ownedBy chorus:wren ;
-    chorus:primaryStep chorus:Shaping ;
     chorus:contains chorus:jeff, chorus:wren, chorus:silas, chorus:kade .
+# --- Role sub-domains removed (#1962) — Identity, State, Permissions, Communication are sections within Roles domain page, not separate sub-domains. ---
 
-chorus:role-state a chorus:SubDomain ;
-    rdfs:label "Role State" ;
-    rdfs:comment "Live state machine — building/blocked/waiting/observing/idle with card context. Feeds tiles, Pulse, attention contract." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:consumes chorus:cards-service .
-
-chorus:role-permissions a chorus:SubDomain ;
-    rdfs:label "Role Permissions" ;
-    rdfs:comment "Per-role allowed/denied commands. JSON profiles + PreToolUse hook enforcement. Vertical scope boundaries." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:consumes chorus:gates-service .
-
-chorus:role-communication a chorus:SubDomain ;
-    rdfs:label "Role Communication" ;
-    rdfs:comment "Four channels: nudge, brief, clearing, chat. Attention contract governs responsiveness. Voice and attention analytics." ;
-    chorus:ownedBy chorus:wren ;
-    chorus:primaryStep chorus:Directing ;
-    chorus:consumes chorus:messages-domain, chorus:streams-domain .
-
-# --- Missing Chorus sub-domains (from spreadsheet, Phase 6) ---
+# --- Tests/Commits/Pipelines removed (#1962) — inventory sections on domain pages, not separate sub-domains. ---
 
 chorus:code-domain a chorus:SubDomain ;
     rdfs:label "Code" ;
     rdfs:comment "Source code, build artifacts, TypeScript/Rust compilation." ;
-    chorus:ownedBy chorus:kade ;
-    chorus:primaryStep chorus:Building .
-
-chorus:commits-domain a chorus:SubDomain ;
-    rdfs:label "Commits" ;
-    rdfs:comment "Git commits, change history, git-queue serialization." ;
-    chorus:ownedBy chorus:kade ;
-    chorus:primaryStep chorus:Building .
-
-chorus:tests-domain a chorus:SubDomain ;
-    rdfs:label "Tests" ;
-    rdfs:comment "Unit, integration, bats tests. TDD discipline." ;
-    chorus:ownedBy chorus:kade ;
-    chorus:primaryStep chorus:Building .
-
-chorus:pipelines-domain a chorus:SubDomain ;
-    rdfs:label "Pipelines" ;
-    rdfs:comment "Build/deploy pipelines, harvest pipelines, ETL." ;
     chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building .
 
@@ -1083,10 +996,7 @@ chorus:video-domain a chorus:SubDomain ;
 
 # Chorus domains → chorusStream
 chorus:code-domain chorus:builtBy chorus:chorusStream .
-chorus:commits-domain chorus:builtBy chorus:chorusStream .
 chorus:gates-service chorus:builtBy chorus:chorusStream .
-chorus:pipelines-domain chorus:builtBy chorus:chorusStream .
-chorus:tests-domain chorus:builtBy chorus:chorusStream .
 chorus:toolschain-domain chorus:builtBy chorus:chorusStream .
 chorus:domains-domain chorus:builtBy chorus:chorusStream .
 chorus:services-domain chorus:builtBy chorus:chorusStream .
@@ -1110,10 +1020,9 @@ chorus:video-domain chorus:builtBy chorus:gatheringStream .
 
 # --- Wire domains into products (hasDomain) ---
 
-chorus:observability-product chorus:hasDomain chorus:code-domain, chorus:commits-domain,
-                                              chorus:tests-domain .
+# observability-product hasDomain removed (#1962) — code/commits/tests are inventory, not domains
 
-chorus:operating-model-product chorus:hasDomain chorus:pipelines-domain .
+# operating-model-product hasDomain removed (#1962) — pipelines is inventory, not a domain
 
 chorus:chorusProduct chorus:hasDomain chorus:messages-domain, chorus:streams-domain,
                                      chorus:pulse-domain, chorus:knowledge-domain .
@@ -1176,10 +1085,7 @@ chorus:deploys-service chorus:consumes chorus:properties-domain .
 chorus:logs-service chorus:consumes chorus:properties-domain .
 
 chorus:code-domain chorus:consumes chorus:security-domain .
-chorus:commits-domain chorus:consumes chorus:security-domain .
 chorus:gates-service chorus:consumes chorus:security-domain .
-chorus:pipelines-domain chorus:consumes chorus:security-domain .
-chorus:tests-domain chorus:consumes chorus:security-domain .
 chorus:toolschain-domain chorus:consumes chorus:security-domain .
 chorus:athena-domain chorus:consumes chorus:security-domain .
 chorus:convergence-domain chorus:consumes chorus:security-domain .
@@ -1205,15 +1111,12 @@ chorus:loom-metrics chorus:consumes chorus:security-domain .
 chorus:policies-domain chorus:consumes chorus:security-domain .
 chorus:loom-practices chorus:consumes chorus:security-domain .
 chorus:loom-principles chorus:consumes chorus:security-domain .
-chorus:loom-roles chorus:consumes chorus:security-domain .
 chorus:skills-service chorus:consumes chorus:security-domain .
 chorus:spine-service chorus:consumes chorus:security-domain .
+chorus:roles-domain chorus:consumes chorus:security-domain .
 
 chorus:code-domain chorus:consumes chorus:time-domain .
-chorus:commits-domain chorus:consumes chorus:time-domain .
 chorus:gates-service chorus:consumes chorus:time-domain .
-chorus:pipelines-domain chorus:consumes chorus:time-domain .
-chorus:tests-domain chorus:consumes chorus:time-domain .
 chorus:toolschain-domain chorus:consumes chorus:time-domain .
 chorus:athena-domain chorus:consumes chorus:time-domain .
 chorus:convergence-domain chorus:consumes chorus:time-domain .
@@ -1240,9 +1143,9 @@ chorus:loom-metrics chorus:consumes chorus:time-domain .
 chorus:policies-domain chorus:consumes chorus:time-domain .
 chorus:loom-practices chorus:consumes chorus:time-domain .
 chorus:loom-principles chorus:consumes chorus:time-domain .
-chorus:loom-roles chorus:consumes chorus:time-domain .
 chorus:skills-service chorus:consumes chorus:time-domain .
 chorus:spine-service chorus:consumes chorus:time-domain .
+chorus:roles-domain chorus:consumes chorus:time-domain .
 
 # =============================================================================
 # 5. ARTIFACTS
