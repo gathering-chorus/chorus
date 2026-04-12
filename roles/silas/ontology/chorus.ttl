@@ -279,17 +279,115 @@ chorus:actorAction a owl:DatatypeProperty ;
     rdfs:label "actor action" ;
     rdfs:domain chorus:Actor .
 
-chorus:givenWhenThen a owl:DatatypeProperty ;
-    rdfs:label "given/when/then" ;
+chorus:scenarioGiven a owl:DatatypeProperty ;
+    rdfs:label "given" ;
+    rdfs:comment "Precondition — the initial state before the action." ;
+    rdfs:domain chorus:Scenario .
+
+chorus:scenarioWhen a owl:DatatypeProperty ;
+    rdfs:label "when" ;
+    rdfs:comment "Action — what the actor does." ;
+    rdfs:domain chorus:Scenario .
+
+chorus:scenarioThen a owl:DatatypeProperty ;
+    rdfs:label "then" ;
+    rdfs:comment "Outcome — what should be true after the action." ;
+    rdfs:domain chorus:Scenario .
+
+chorus:scenarioNotes a owl:DatatypeProperty ;
+    rdfs:label "notes" ;
+    rdfs:comment "Additional context or edge cases for this scenario." ;
     rdfs:domain chorus:Scenario .
 
 chorus:endpoint a owl:DatatypeProperty ;
     rdfs:label "endpoint" ;
     rdfs:domain chorus:Contract .
 
+chorus:contractDescription a owl:DatatypeProperty ;
+    rdfs:label "description" ;
+    rdfs:comment "What this contract endpoint does." ;
+    rdfs:domain chorus:Contract .
+
 chorus:httpMethod a owl:DatatypeProperty ;
     rdfs:label "HTTP method" ;
     rdfs:domain chorus:Contract .
+
+# --- Pages (#1923) ---
+
+chorus:Page a owl:Class ;
+    rdfs:label "Page" ;
+    rdfs:comment "A UI page that renders domain data." .
+
+chorus:hasPage a owl:ObjectProperty ;
+    rdfs:label "has page" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:Page .
+
+chorus:pageRoute a owl:DatatypeProperty ;
+    rdfs:label "route" ;
+    rdfs:domain chorus:Page .
+
+chorus:pageDescription a owl:DatatypeProperty ;
+    rdfs:label "description" ;
+    rdfs:domain chorus:Page .
+
+chorus:pageStatus a owl:DatatypeProperty ;
+    rdfs:label "status" ;
+    rdfs:comment "real, partial, or design" ;
+    rdfs:domain chorus:Page .
+
+# --- Integrations (#1923) ---
+
+chorus:Integration a owl:Class ;
+    rdfs:label "Integration" ;
+    rdfs:comment "A data pipeline or feed that brings data into the domain." .
+
+chorus:hasIntegration a owl:ObjectProperty ;
+    rdfs:label "has integration" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:Integration .
+
+chorus:integrationSource a owl:DatatypeProperty ;
+    rdfs:label "source" ;
+    rdfs:domain chorus:Integration .
+
+chorus:integrationPath a owl:DatatypeProperty ;
+    rdfs:label "path" ;
+    rdfs:comment "Data flow path from source to domain." ;
+    rdfs:domain chorus:Integration .
+
+chorus:integrationStatus a owl:DatatypeProperty ;
+    rdfs:label "status" ;
+    rdfs:domain chorus:Integration .
+
+# --- Persistence (#1923) ---
+
+chorus:PersistenceStore a owl:Class ;
+    rdfs:label "Persistence Store" ;
+    rdfs:comment "Where domain data is stored — Fuseki, SQLite, LanceDB, filesystem." .
+
+chorus:hasPersistence a owl:ObjectProperty ;
+    rdfs:label "has persistence" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:PersistenceStore .
+
+chorus:storeType a owl:DatatypeProperty ;
+    rdfs:label "type" ;
+    rdfs:comment "Fuseki, SQLite, LanceDB, or filesystem." ;
+    rdfs:domain chorus:PersistenceStore .
+
+chorus:storeNamespace a owl:DatatypeProperty ;
+    rdfs:label "namespace" ;
+    rdfs:comment "Graph URI, table name, collection, or directory path." ;
+    rdfs:domain chorus:PersistenceStore .
+
+chorus:storeRecordCount a owl:DatatypeProperty ;
+    rdfs:label "record count" ;
+    rdfs:domain chorus:PersistenceStore .
+
+chorus:storeStatus a owl:DatatypeProperty ;
+    rdfs:label "status" ;
+    rdfs:domain chorus:PersistenceStore .
 
 # =============================================================================
 # 2d. SERVICES (from product ontology)

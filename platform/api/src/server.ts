@@ -4304,6 +4304,210 @@ app.post('/api/chorus/open', (req: Request, res: Response) => {
   }
 });
 
+// GET /api/athena/subdomains/:id/pages — UI pages for this subdomain (#1923)
+app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const query = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?page ?label ?route ?description ?status WHERE {
+        GRAPH <urn:chorus:ontology> {
+          <${sdUri}> a chorus:SubDomain .
+          <${sdUri}> chorus:hasPage ?page .
+          OPTIONAL { ?page rdfs:label ?label }
+          OPTIONAL { ?page chorus:pageRoute ?route }
+          OPTIONAL { ?page chorus:pageDescription ?description }
+          OPTIONAL { ?page chorus:pageStatus ?status }
+        }
+      }
+    `;
+    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
+    if (check.results.bindings.length === 0) {
+      return res.status(404).json(athenaEnvelope('subdomain-pages', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
+    }
+    const result = await athenaSparqlQuery(query);
+    const pages = result.results.bindings.map((b: any) => ({
+      uri: b.page.value,
+      label: b.label?.value || b.page.value.split('#').pop(),
+      route: b.route?.value || null,
+      description: b.description?.value || null,
+      status: b.status?.value || null,
+    }));
+    res.json(athenaEnvelope('subdomain-pages', { subdomain: req.params.id, pages }, Date.now() - start, { count: pages.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-pages', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/subdomains/:id/pages — add page to subdomain (#1923)
+app.post('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { label, route, description, status } = req.body || {};
+    if (!label) return res.status(400).json(athenaEnvelope('subdomain-page-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const pageId = `${req.params.id}-page-${label.toLowerCase().replace(/\s+/g, '-')}`;
+    const pageUri = `https://jeffbridwell.com/chorus#${pageId}`;
+    const update = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      INSERT DATA {
+        GRAPH <urn:chorus:ontology> {
+          <${pageUri}> a chorus:Page ;
+            rdfs:label "${label.replace(/"/g, '\\"')}" .
+          <${sdUri}> chorus:hasPage <${pageUri}> .
+          ${route ? `<${pageUri}> chorus:pageRoute "${route.replace(/"/g, '\\"')}" .` : ''}
+          ${description ? `<${pageUri}> chorus:pageDescription "${description.replace(/"/g, '\\"')}" .` : ''}
+          ${status ? `<${pageUri}> chorus:pageStatus "${status.replace(/"/g, '\\"')}" .` : ''}
+        }
+      }
+    `;
+    await athenaSparqlUpdate(update);
+    res.json(athenaEnvelope('subdomain-page-create', { subdomain: req.params.id, uri: pageUri, label, route: route || null, description: description || null, status: status || null }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-page-create', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// GET /api/athena/subdomains/:id/integrations — data integrations for this subdomain (#1923)
+app.get('/api/athena/subdomains/:id/integrations', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const query = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?integration ?label ?source ?path ?status WHERE {
+        GRAPH <urn:chorus:ontology> {
+          <${sdUri}> a chorus:SubDomain .
+          <${sdUri}> chorus:hasIntegration ?integration .
+          OPTIONAL { ?integration rdfs:label ?label }
+          OPTIONAL { ?integration chorus:integrationSource ?source }
+          OPTIONAL { ?integration chorus:integrationPath ?path }
+          OPTIONAL { ?integration chorus:integrationStatus ?status }
+        }
+      }
+    `;
+    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
+    if (check.results.bindings.length === 0) {
+      return res.status(404).json(athenaEnvelope('subdomain-integrations', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
+    }
+    const result = await athenaSparqlQuery(query);
+    const integrations = result.results.bindings.map((b: any) => ({
+      uri: b.integration.value,
+      label: b.label?.value || b.integration.value.split('#').pop(),
+      source: b.source?.value || null,
+      path: b.path?.value || null,
+      status: b.status?.value || null,
+    }));
+    res.json(athenaEnvelope('subdomain-integrations', { subdomain: req.params.id, integrations }, Date.now() - start, { count: integrations.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-integrations', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/subdomains/:id/integrations — add integration to subdomain (#1923)
+app.post('/api/athena/subdomains/:id/integrations', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { label, source, path: dataPath, status } = req.body || {};
+    if (!label) return res.status(400).json(athenaEnvelope('subdomain-integration-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const intId = `${req.params.id}-integration-${label.toLowerCase().replace(/\s+/g, '-')}`;
+    const intUri = `https://jeffbridwell.com/chorus#${intId}`;
+    const update = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      INSERT DATA {
+        GRAPH <urn:chorus:ontology> {
+          <${intUri}> a chorus:Integration ;
+            rdfs:label "${label.replace(/"/g, '\\"')}" .
+          <${sdUri}> chorus:hasIntegration <${intUri}> .
+          ${source ? `<${intUri}> chorus:integrationSource "${source.replace(/"/g, '\\"')}" .` : ''}
+          ${dataPath ? `<${intUri}> chorus:integrationPath "${dataPath.replace(/"/g, '\\"')}" .` : ''}
+          ${status ? `<${intUri}> chorus:integrationStatus "${status.replace(/"/g, '\\"')}" .` : ''}
+        }
+      }
+    `;
+    await athenaSparqlUpdate(update);
+    res.json(athenaEnvelope('subdomain-integration-create', { subdomain: req.params.id, uri: intUri, label, source: source || null, path: dataPath || null, status: status || null }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-integration-create', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// GET /api/athena/subdomains/:id/persistence — persistence stores for this subdomain (#1923)
+app.get('/api/athena/subdomains/:id/persistence', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const query = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?store ?label ?type ?namespace ?records ?status WHERE {
+        GRAPH <urn:chorus:ontology> {
+          <${sdUri}> a chorus:SubDomain .
+          <${sdUri}> chorus:hasPersistence ?store .
+          OPTIONAL { ?store rdfs:label ?label }
+          OPTIONAL { ?store chorus:storeType ?type }
+          OPTIONAL { ?store chorus:storeNamespace ?namespace }
+          OPTIONAL { ?store chorus:storeRecordCount ?records }
+          OPTIONAL { ?store chorus:storeStatus ?status }
+        }
+      }
+    `;
+    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
+    if (check.results.bindings.length === 0) {
+      return res.status(404).json(athenaEnvelope('subdomain-persistence', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
+    }
+    const result = await athenaSparqlQuery(query);
+    const stores = result.results.bindings.map((b: any) => ({
+      uri: b.store.value,
+      label: b.label?.value || b.store.value.split('#').pop(),
+      type: b.type?.value || null,
+      namespace: b.namespace?.value || null,
+      records: b.records?.value ? parseInt(b.records.value) : null,
+      status: b.status?.value || null,
+    }));
+    res.json(athenaEnvelope('subdomain-persistence', { subdomain: req.params.id, stores }, Date.now() - start, { count: stores.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-persistence', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/subdomains/:id/persistence — add persistence store to subdomain (#1923)
+app.post('/api/athena/subdomains/:id/persistence', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { label, type, namespace, records, status } = req.body || {};
+    if (!label) return res.status(400).json(athenaEnvelope('subdomain-persistence-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const storeId = `${req.params.id}-store-${label.toLowerCase().replace(/\s+/g, '-')}`;
+    const storeUri = `https://jeffbridwell.com/chorus#${storeId}`;
+    const update = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      INSERT DATA {
+        GRAPH <urn:chorus:ontology> {
+          <${storeUri}> a chorus:PersistenceStore ;
+            rdfs:label "${label.replace(/"/g, '\\"')}" .
+          <${sdUri}> chorus:hasPersistence <${storeUri}> .
+          ${type ? `<${storeUri}> chorus:storeType "${type.replace(/"/g, '\\"')}" .` : ''}
+          ${namespace ? `<${storeUri}> chorus:storeNamespace "${namespace.replace(/"/g, '\\"')}" .` : ''}
+          ${records != null ? `<${storeUri}> chorus:storeRecordCount "${records}" .` : ''}
+          ${status ? `<${storeUri}> chorus:storeStatus "${status.replace(/"/g, '\\"')}" .` : ''}
+        }
+      }
+    `;
+    await athenaSparqlUpdate(update);
+    res.json(athenaEnvelope('subdomain-persistence-create', { subdomain: req.params.id, uri: storeUri, label, type: type || null, namespace: namespace || null, records: records != null ? parseInt(records) : null, status: status || null }, Date.now() - start));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-persistence-create', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
 // GET /api/athena/subdomains/:id/prior-art — prior art for this subdomain (#1907)
 app.get('/api/athena/subdomains/:id/prior-art', async (req: Request, res: Response) => {
   const start = Date.now();

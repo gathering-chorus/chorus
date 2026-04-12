@@ -648,31 +648,121 @@ describeIntegration('POST /api/athena/subdomains/:id/actors', () => {
   });
 });
 
-describeIntegration('POST /api/athena/subdomains/:id/scenarios', () => {
-  test('creates scenario and returns it', async () => {
+describeIntegration('POST /api/athena/subdomains/:id/scenarios (#1922)', () => {
+  test('creates scenario with separate given/when/then/notes fields', async () => {
     const res = await fetch(`${API}/api/athena/subdomains/logs-service/scenarios`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: 'Test Scenario', givenWhenThen: 'Given logs flow, When Loki is queried, Then entries appear' }),
+      body: JSON.stringify({ label: 'Test Scenario Split', given: 'logs are flowing', when: 'Loki is queried', then: 'entries appear', notes: 'requires tunnel' }),
     });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-scenario-create');
-    expect(body.data.label).toBe('Test Scenario');
+    expect(body.data.label).toBe('Test Scenario Split');
+    expect(body.data.given).toBe('logs are flowing');
+    expect(body.data.when).toBe('Loki is queried');
+    expect(body.data.then).toBe('entries appear');
+    expect(body.data.notes).toBe('requires tunnel');
   });
 });
 
-describeIntegration('POST /api/athena/subdomains/:id/contract', () => {
-  test('creates contract endpoint and returns it', async () => {
+describeIntegration('POST /api/athena/subdomains/:id/contract (#1922)', () => {
+  test('creates contract with path and description fields', async () => {
     const res = await fetch(`${API}/api/athena/subdomains/logs-service/contract`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: 'Test Endpoint', endpoint: '/api/chorus/logs/test', method: 'GET' }),
+      body: JSON.stringify({ label: 'Test Endpoint V2', path: '/api/chorus/logs/test', method: 'GET', description: 'Query log entries' }),
     });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-contract-create');
-    expect(body.data.endpoint).toBe('/api/chorus/logs/test');
+    expect(body.data.label).toBe('Test Endpoint V2');
+  });
+});
+
+// === #1923: Pages, Integrations, Persistence endpoints ===
+
+describeIntegration('GET /api/athena/subdomains/:id/pages (#1923)', () => {
+  test('returns pages list with athena envelope', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pages`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-pages');
+    expect(body.data.subdomain).toBe('logs-service');
+    expect(Array.isArray(body.data.pages)).toBe(true);
+  });
+});
+
+describeIntegration('POST /api/athena/subdomains/:id/pages (#1923)', () => {
+  test('creates page with route, description, status', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Log Explorer', route: '/logs', description: 'Browse log entries by container', status: 'design' }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-page-create');
+    expect(body.data.label).toBe('Log Explorer');
+    expect(body.data.route).toBe('/logs');
+    expect(body.data.description).toBe('Browse log entries by container');
+    expect(body.data.status).toBe('design');
+  });
+});
+
+describeIntegration('GET /api/athena/subdomains/:id/integrations (#1923)', () => {
+  test('returns integrations list with athena envelope', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/integrations`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-integrations');
+    expect(body.data.subdomain).toBe('logs-service');
+    expect(Array.isArray(body.data.integrations)).toBe(true);
+  });
+});
+
+describeIntegration('POST /api/athena/subdomains/:id/integrations (#1923)', () => {
+  test('creates integration with source, path, status', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/integrations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Bedroom log shipping', source: 'Docker containers on Bedroom', path: 'stdout → Promtail → Loki tunnel → Loki', status: 'active' }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-integration-create');
+    expect(body.data.label).toBe('Bedroom log shipping');
+    expect(body.data.source).toBe('Docker containers on Bedroom');
+    expect(body.data.path).toBe('stdout → Promtail → Loki tunnel → Loki');
+    expect(body.data.status).toBe('active');
+  });
+});
+
+describeIntegration('GET /api/athena/subdomains/:id/persistence (#1923)', () => {
+  test('returns persistence stores list with athena envelope', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/persistence`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-persistence');
+    expect(body.data.subdomain).toBe('logs-service');
+    expect(Array.isArray(body.data.stores)).toBe(true);
+  });
+});
+
+describeIntegration('POST /api/athena/subdomains/:id/persistence (#1923)', () => {
+  test('creates persistence store with type, namespace, records, status', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/persistence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Loki', type: 'Loki', namespace: '{container_name=~".*"}', records: '500000', status: 'active' }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.query_name).toBe('subdomain-persistence-create');
+    expect(body.data.label).toBe('Loki');
+    expect(body.data.type).toBe('Loki');
+    expect(body.data.records).toBe(500000);
+    expect(body.data.status).toBe('active');
   });
 });
 
