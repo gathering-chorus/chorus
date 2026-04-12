@@ -233,7 +233,7 @@ HEALTH_ENDPOINTS=(
 )
 
 # --- 11b. LanceDB index freshness (#1854) ---
-LANCE_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/lance"
+LANCE_DIR="$HOME/.chorus/lance"
 if [ ! -d "$LANCE_DIR" ]; then
   FAILURES+=("lancedb: data directory missing — semantic search broken")
 elif [ -z "$(find "$LANCE_DIR" -type f -mtime -1 2>/dev/null | head -1)" ]; then
