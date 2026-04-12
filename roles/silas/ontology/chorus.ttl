@@ -389,6 +389,26 @@ chorus:storeStatus a owl:DatatypeProperty ;
     rdfs:label "status" ;
     rdfs:domain chorus:PersistenceStore .
 
+# --- Code Files (#1868) ---
+
+chorus:CodeFile a owl:Class ;
+    rdfs:label "Code File" ;
+    rdfs:comment "A source file that belongs to a domain — manually populated, crawler verified." .
+
+chorus:hasCodeFile a owl:ObjectProperty ;
+    rdfs:label "has code file" ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range chorus:CodeFile .
+
+chorus:filePath a owl:DatatypeProperty ;
+    rdfs:label "file path" ;
+    rdfs:domain chorus:CodeFile .
+
+chorus:fileType a owl:DatatypeProperty ;
+    rdfs:label "file type" ;
+    rdfs:comment "ts, js, rs, sh, etc." ;
+    rdfs:domain chorus:CodeFile .
+
 # --- Services (#1924) ---
 
 chorus:Service a owl:Class ;

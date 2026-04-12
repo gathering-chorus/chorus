@@ -1,28 +1,20 @@
 # Kade — Next Session
 
-## This session (2026-04-11 08:52–14:58)
-9 cards shipped — all operating model + coherence work:
-- #1815: gate-code + gate-quality skills (8 automated checks)
-- #1893: push consolidation (git-queue.sh push replaces raw git)
-- #1896: demo gate orchestration (comments-first, nudge owners)
-- #1894: /pull hard gate chain (5 gates) + /pair delegates to /pull
-- #1897: navigator heartbeat gate for /pair (60s stall warning)
-- #1356: domain versioning (contract, validation script, validate endpoint, git-queue ontology gate)
-- #1864: multi-product value stream (13 Gathering domains, Personal+Life steps, builtBy edges)
-- #1900: domain detail page (completeness, actors/mermaid, scenarios/folds, API contract, card inline expand)
-- #1848: AX convergence doc + HTML page (UX/AX/JX framing)
+## This session (2026-04-11 15:00 – 2026-04-12 17:04)
 
-4 pairs with Wren, avg 12 min each. Ran gates for Silas (#1898, #1899) and Wren (#1892).
+Massive Athena build day — 20+ cards shipped. Domain pages went from empty shells to fully populated foldable sections with CRUD, graph separation, and crawler-backed code inventory.
+
+**Shipped:** #1901 #1832 #1909 #1918 #1922-1928 #1929 #1931 #1932 #1933 #1956, CVE fix, 12+ gate reviews.
 
 ## Pick up
-1. **#1901 follow-on** — Silas added 7 Principle + 7 Practice instances via chorus:contains. Wire `chorus:contains` into domain detail page folds (Wren nudged at session end).
-2. **Crawler cluster** — #1883 (expand 7→41 domains), #1884 (shape tests), #1886 (input validation)
-3. **Ontology population** — #1868 (Code sub-domain), #1869 (Tests sub-domain)
-4. **CHORUS_ROOT fix** — empty string in env breaks hooks. state_paths.rs fix committed but root cause needs investigation.
+1. **#1868 Code inventory** — WIP. POST /code works, 12 domains populated, hardcoded map removed. CSP inline script fixed. Need to verify pages render and populate remaining domains.
+2. **CSP audit** — Other gathering-docs pages may have inline scripts that CSP blocks.
+3. **#1869 Tests sub-domain** — Same pattern as code.
+4. **Crawl API cleanup** — codeScan.discovered still has grep for context injection.
 
-## Operating model state
-- /demo: 7 steps, 5 hard gates (product→code→quality→arch→ops), comments-first orchestration
-- /pull: 7 steps, 5 hard gates (validate→preflight→WIP→domain→TDD), single engineering entry point
-- /pair: delegates to /pull, navigator heartbeat monitor (60s/120s/180s escalation)
-- /acp: uses git-queue.sh push, demo brief required
-- Ontology validation gate in git-queue.sh — blocks chorus.ttl commits that break version contract
+## Jeff feedback
+- Don't make Jeff redirect twice — go immediately
+- Data quality over architecture — don't demo empty
+- Explain simply — Jeff isn't in the code
+- Stop asking for acp
+- All sections foldable

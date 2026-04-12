@@ -56,7 +56,7 @@ async function initLance(): Promise<void> {
 // --- Embed-at-ingest: embed new messages after indexing ---
 
 const MIN_EMBED_LENGTH = 100;
-const EMBED_PAGE_SIZE = 1000;  // Process one page per cycle, timer handles the rest (#1920)
+const EMBED_PAGE_SIZE = 100;  // Process one page per cycle, timer handles the rest (#1920)
 
 async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
   if (!lanceDb) {
@@ -1159,20 +1159,16 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
       photos: ['src/handlers/photos.handler.ts', 'src/services/photo-pod.service.ts'],
       music: ['src/handlers/music.handler.ts', 'src/services/music-query.service.ts'],
       people: ['src/handlers/people.handler.ts', 'src/services/people-query.service.ts'],
+      blog: ['src/services/wordpress-harvester.service.ts'],
+      books: ['src/handlers/books.handler.ts'],
+      notes: ['src/handlers/notes.handler.ts'],
+      stories: ['src/handlers/stories.handler.ts', 'src/services/self-domain-pod.service.ts'],
+      search: ['src/services/search-index.service.ts', 'src/services/sparql.service.ts'],
       chorus: ['platform/api/src/server.ts', 'platform/services/chorus-hooks/src/'],
       infrastructure: ['platform/scripts/agent-state.sh', 'platform/scripts/app-state.sh'],
     };
-    // Find files by grep for domain keyword in src/
-    const appRoot = '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site';
-    const { stdout: grepResult } = await execAsync(
-      `grep -rlw "${domain}" ${appRoot}/src/ --include="*.ts" 2>/dev/null | head -20 || true`,
-      { encoding: 'utf-8', timeout: 10000 }
-    );
-    codeScan.discovered = grepResult.split('\n')
-      .filter((l: string) => l.trim())
-      .map((l: string) => l.replace(appRoot + '/', ''));
-
-    // Add known directory mappings
+    // #1868: Code discovery moved to instances graph via POST /code endpoint.
+    // Crawl API retains static mapping for context injection, not for /code endpoint.
     if (domainDirs[domain]) {
       codeScan.scanned = domainDirs[domain];
     }
@@ -4147,63 +4143,42 @@ app.get('/api/athena/subdomains/:id/alerts', async (req: Request, res: Response)
   }
 });
 
-// GET /api/athena/subdomains/:id/code — code inventory for this domain
+// GET /api/athena/subdomains/:id/code — code inventory from instances graph (#1868)
 app.get('/api/athena/subdomains/:id/code', async (req: Request, res: Response) => {
   const start = Date.now();
   try {
-    const domainLabel = req.params.id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
-    // Code inventory — map domain labels to known code paths in REPO_ROOT
-    // Map domain labels to known code paths
-    const domainPaths: Record<string, string[]> = {
-      cards: ['platform/scripts/cards', 'directing/products/cards/'],
-      gates: ['skills/gate-code/', 'skills/gate-quality/', 'skills/gate-arch/', 'skills/gate-ops/', 'skills/gate-product/'],
-      pulse: ['platform/services/chorus-hooks/src/commands/pulse.rs'],
-      alerts: ['proving/domains/alerts/'],
-      spine: ['platform/scripts/chorus-log'],
-      athena: ['platform/api/src/server.ts', 'platform/api/src/sparql/', 'platform/api/tests/athena.test.ts'],
-      observability: ['dashboards/', 'alerting/'],
-      infrastructure: ['scripts/', 'config/'],
-      deploys: ['platform/scripts/app-state.sh', 'platform/scripts/git-queue.sh'],
-      logs: ['platform/scripts/chorus-log'],
-      tests: ['platform/api/tests/', 'platform/services/chorus-hooks/tests/'],
-      code: ['platform/api/src/', 'platform/services/'],
-      skills: ['skills/'],
-      convergence: ['roles/silas/ontology/'],
-      nudge: ['platform/scripts/nudge'],
-    };
-    const paths = domainPaths[domainLabel] || [];
-    const files: { path: string; type: string; size: number }[] = [];
-    for (const p of paths) {
-      const fullPath = path.join(REPO_ROOT, p);
-      try {
-        const stat = fs.statSync(fullPath);
-        if (stat.isDirectory()) {
-          const entries = fs.readdirSync(fullPath, { recursive: true }) as string[];
-          for (const entry of entries) {
-            if (entry.includes('node_modules') || entry.includes('.git/') || entry.includes('dist/')) continue;
-            const fp = path.join(fullPath, entry);
-            try {
-              const s = fs.statSync(fp);
-              if (s.isFile()) {
-                const ext = path.extname(entry).slice(1) || 'unknown';
-                files.push({ path: path.relative(REPO_ROOT, fp), type: ext, size: s.size });
-              }
-            } catch { /* skip unreadable */ }
-          }
-        } else {
-          const ext = path.extname(p).slice(1) || 'unknown';
-          files.push({ path: p, type: ext, size: stat.size });
-        }
-      } catch { /* path doesn't exist */ }
-    }
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?file ?label ?filePath ?fileType ?description WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasCodeFile ?file . OPTIONAL { ?file rdfs:label ?label } OPTIONAL { ?file chorus:filePath ?filePath } OPTIONAL { ?file chorus:fileType ?fileType } OPTIONAL { ?file rdfs:comment ?description } } }`;
+    const result = await athenaSparqlQuery(query);
+    const allFiles = result.results.bindings.map((b: any) => ({
+      path: b.filePath?.value || b.label?.value || b.file.value.split('#').pop(),
+      type: b.fileType?.value || path.extname(b.filePath?.value || '').slice(1) || 'unknown',
+      description: b.description?.value || null,
+    }));
     const isTestFile = (p: string) => /\/(tests?|__tests__)\//i.test(p) || /\.(test|spec)\./i.test(p);
-    const tests = files.filter(f => isTestFile(f.path));
-    const source = files.filter(f => !isTestFile(f.path));
-    const byType = files.reduce((acc: Record<string, number>, f) => { acc[f.type] = (acc[f.type] || 0) + 1; return acc; }, {});
-    res.json(athenaEnvelope('subdomain-code', { subdomain: req.params.id, domainLabel, paths, files: source, tests, byType }, Date.now() - start, { count: files.length, source_count: source.length, test_count: tests.length }));
+    const tests = allFiles.filter((f: any) => isTestFile(f.path));
+    const source = allFiles.filter((f: any) => !isTestFile(f.path));
+    const byType = allFiles.reduce((acc: Record<string, number>, f: any) => { acc[f.type] = (acc[f.type] || 0) + 1; return acc; }, {});
+    res.json(athenaEnvelope('subdomain-code', { subdomain: req.params.id, files: source, tests, byType }, Date.now() - start, { count: allFiles.length, source_count: source.length, test_count: tests.length }));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('subdomain-code', { error: err.message }, Date.now() - start, { error: true }));
   }
+});
+
+// POST /api/athena/subdomains/:id/code — add code file to subdomain (#1868)
+app.post('/api/athena/subdomains/:id/code', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const { label, path: filePath, type: fileType, description } = req.body || {};
+    if (!filePath && !label) return res.status(400).json(athenaEnvelope('subdomain-code-create', { error: 'Missing required field: path or label' }, Date.now() - start, { error: true }));
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const name = label || filePath;
+    const fileId = `${req.params.id}-code-${name.replace(/[\/\.]/g, '-').toLowerCase()}`;
+    const fileUri = `https://jeffbridwell.com/chorus#${fileId}`;
+    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${fileUri}> a chorus:CodeFile ; rdfs:label "${name.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasCodeFile <${fileUri}> . ${filePath ? `<${fileUri}> chorus:filePath "${filePath.replace(/"/g, '\\"')}" .` : ''} ${fileType ? `<${fileUri}> chorus:fileType "${fileType}" .` : ''} ${description ? `<${fileUri}> rdfs:comment "${description.replace(/"/g, '\\"')}" .` : ''} } }`;
+    await athenaSparqlUpdate(update);
+    res.json(athenaEnvelope('subdomain-code-create', { subdomain: req.params.id, uri: fileUri, label: name, path: filePath || null, type: fileType || null, description: description || null }, Date.now() - start));
+  } catch (err: any) { res.status(500).json(athenaEnvelope('subdomain-code-create', { error: err.message }, Date.now() - start, { error: true })); }
 });
 
 // GET /api/athena/subdomains/:id/actors — actors that interact with this subdomain (#1899)
