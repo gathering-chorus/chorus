@@ -56,7 +56,7 @@ async function initLance(): Promise<void> {
 // --- Embed-at-ingest: embed new messages after indexing ---
 
 const MIN_EMBED_LENGTH = 100;
-const EMBED_BATCH_SIZE = 50;
+const EMBED_PAGE_SIZE = 200;  // Process one page per cycle, timer handles the rest (#1920)
 
 async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
   if (!lanceDb) {
@@ -79,19 +79,24 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
       } catch { /* empty table */ }
     }
 
-    // Get new messages not yet embedded
-    const newMessages = db.prepare(`
+    // Page through unembedded messages — one page per call (#1920)
+    // Continuous timer calls this repeatedly until drift reaches zero.
+    const page = db.prepare(`
       SELECT id, source, channel, role, content, timestamp
       FROM messages
       WHERE id > ? AND LENGTH(content) >= ?
       ORDER BY id ASC
-    `).all(maxEmbeddedId, MIN_EMBED_LENGTH) as Array<{
+      LIMIT ?
+    `).all(maxEmbeddedId, MIN_EMBED_LENGTH, EMBED_PAGE_SIZE) as Array<{
       id: number; source: string; channel: string; role: string; content: string; timestamp: string;
     }>;
 
-    if (newMessages.length === 0) return { embedded: 0, skipped: 0 };
+    if (page.length === 0) return { embedded: 0, skipped: 0 };
 
-    console.log(`[embed-delta] ${newMessages.length} new messages to embed (after id ${maxEmbeddedId})`);
+    // Count total remaining for logging
+    const countRow = db.prepare(`
+      SELECT COUNT(*) as cnt FROM messages WHERE id > ? AND LENGTH(content) >= ?
+    `).get(maxEmbeddedId, MIN_EMBED_LENGTH) as { cnt: number };
 
     const records: Array<{
       msg_id: number; source: string; channel: string; role: string;
@@ -99,38 +104,34 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
     }> = [];
     let skipped = 0;
 
-    // Embed in batches
-    for (let i = 0; i < newMessages.length; i += EMBED_BATCH_SIZE) {
-      const batch = newMessages.slice(i, i + EMBED_BATCH_SIZE);
-      for (const msg of batch) {
-        try {
-          const text = `[${msg.source}/${msg.role}] ${msg.content.slice(0, 2000)}`;
-          const vector = await embedQuery(text);
-          records.push({
-            msg_id: msg.id,
-            source: msg.source,
-            channel: msg.channel,
-            role: msg.role,
-            content: msg.content.slice(0, 2000),
-            timestamp: msg.timestamp,
-            vector,
-          });
-        } catch {
-          skipped++;
-        }
+    for (const msg of page) {
+      try {
+        const text = `[${msg.source}/${msg.role}] ${msg.content.slice(0, 2000)}`;
+        const vector = await embedQuery(text);
+        records.push({
+          msg_id: msg.id,
+          source: msg.source,
+          channel: msg.channel,
+          role: msg.role,
+          content: msg.content.slice(0, 2000),
+          timestamp: msg.timestamp,
+          vector,
+        });
+      } catch {
+        skipped++;
       }
     }
 
     if (records.length === 0) return { embedded: 0, skipped };
 
-    // Write to LanceDB
+    // Write page to LanceDB — incremental, restartable
     if (lanceTable) {
       await lanceTable.add(records);
     } else if (lanceDb) {
       lanceTable = await lanceDb.createTable('messages', records);
     }
 
-    console.log(`[embed-delta] Embedded ${records.length}, skipped ${skipped}`);
+    console.log(`[embed-delta] Embedded ${records.length}/${countRow.cnt} remaining, skipped ${skipped}`);
     return { embedded: records.length, skipped };
   } finally {
     db.close();
@@ -4736,6 +4737,23 @@ app.listen(PORT, BIND_HOST, () => {
   console.log(`[chorus-api] Database: ${DB_PATH}`);
   // Init LanceDB async (non-blocking)
   initLance().catch(err => console.error(`[chorus-api] LanceDB init error: ${err}`));
+
+  // Continuous embed sync — process one page every 60s until drift is zero (#1920)
+  let embedRunning = false;
+  setInterval(async () => {
+    if (embedRunning) return;  // Skip if previous page still processing
+    embedRunning = true;
+    try {
+      const result = await embedDelta();
+      if (result.embedded > 0) {
+        console.log(`[embed-sync] Processed ${result.embedded} (timer cycle)`);
+      }
+    } catch (err: any) {
+      console.error(`[embed-sync] Error: ${err.message}`);
+    } finally {
+      embedRunning = false;
+    }
+  }, 60_000);
 });
 
 export default app;

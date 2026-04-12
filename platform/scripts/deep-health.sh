@@ -232,12 +232,18 @@ HEALTH_ENDPOINTS=(
   "http://192.168.86.242:11434/api/tags|ollama-http|semantic search"
 )
 
-# --- 11b. LanceDB index freshness (#1854) ---
-LANCE_DIR="$HOME/.chorus/lance"
-if [ ! -d "$LANCE_DIR" ]; then
-  FAILURES+=("lancedb: data directory missing — semantic search broken")
-elif [ -z "$(find "$LANCE_DIR" -type f -mtime -1 2>/dev/null | head -1)" ]; then
-  FAILURES+=("lancedb: index not updated in 24h — semantic search stale")
+# --- 11b. LanceDB sync drift (#1920 — replaces mtime check) ---
+# Check producer-consumer gap: SQLite rows vs LanceDB vectors.
+# Drift > 0 with no activity = fine. Drift > threshold = degraded search.
+LANCE_DRIFT_THRESHOLD=5000
+lance_health=$(curl -sf --max-time 5 http://localhost:3340/api/chorus/health 2>/dev/null || echo "")
+if [ -n "$lance_health" ]; then
+  lance_rows=$(echo "$lance_health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('db',{}).get('rows',0))" 2>/dev/null || echo 0)
+  lance_vectors=$(echo "$lance_health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('vectors',0))" 2>/dev/null || echo 0)
+  lance_drift=$((lance_rows - lance_vectors))
+  if [ "$lance_drift" -gt "$LANCE_DRIFT_THRESHOLD" ]; then
+    FAILURES+=("lancedb: ${lance_drift} unembedded messages — semantic search degraded")
+  fi
 fi
 
 # --- 11c. Vikunja log freshness (#1856) ---
