@@ -4063,11 +4063,18 @@ app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) 
     const { execSync } = require('child_process');
     const CARDS_CLI = path.join(REPO_SCRIPTS, 'cards');
     const raw = execSync(`bash ${CARDS_CLI} list 2>/dev/null`, { encoding: 'utf-8', timeout: 10000 });
-    // Extract active lanes (WIP, Now, Next)
-    const activeSection = raw.split(/^(?=Later |Done |Ideas )/m)[0];
-    const lines = activeSection.split('\n').filter((l: string) => {
+    // Search all lanes — Jeff wants every card for the domain visible (#1931)
+    // Build ID→status map from full board output
+    const statusMap = new Map<string, string>();
+    let currentStatus = '';
+    for (const line of raw.split('\n')) {
+      const headerMatch = line.match(/^(WIP|Now|Next|Later|Done) /);
+      if (headerMatch) { currentStatus = headerMatch[1]; continue; }
+      const idMatch = line.match(/^\s+(\d+)\s/);
+      if (idMatch && currentStatus) statusMap.set(idMatch[1], currentStatus);
+    }
+    const lines = raw.split('\n').filter((l: string) => {
       if (!l.match(/^\s+\d+/)) return false;
-      // Match domain:label OR sequence:label (e.g., gates-service → domain:gates or sequence:gates)
       return l.includes(`domain:${domainLabel}`) || l.includes(`sequence:${domainLabel}`);
     });
     const cards = lines.map((l: string) => {
@@ -4075,12 +4082,7 @@ app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) 
       if (!match) return null;
       const [, id, title, meta] = match;
       const owner = meta.match(/^(Wren|Silas|Kade|Jeff)/i)?.[1]?.toLowerCase() || null;
-      const status = raw.split('\n').reduce((s: string, line: string) => {
-        if (line.match(/^(WIP|Now|Next) /)) return line.split(' ')[0];
-        if (line.includes(id!) && s) return s;
-        return s;
-      }, '');
-      return { id, title: title.replace(/ — /g, ' — ').trim(), owner, status };
+      return { id, title: title.replace(/ — /g, ' — ').trim(), owner, status: statusMap.get(id!) || '' };
     }).filter(Boolean);
     res.json(athenaEnvelope('subdomain-cards', { subdomain: req.params.id, domainLabel, cards }, Date.now() - start, { count: cards.length }));
   } catch (err: any) {
