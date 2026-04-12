@@ -3,7 +3,7 @@
 # Card #1766 | DEC-107 compliant (no osascript)
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHORUS_LOG="$SCRIPT_DIR/chorus-log"

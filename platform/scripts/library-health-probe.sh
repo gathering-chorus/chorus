@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 LIBRARY="192.168.86.36"
 ALERT_TARGET="jeff"

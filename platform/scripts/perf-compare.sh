@@ -2,7 +2,7 @@
 # Compare two performance baselines — flag degradation
 # Usage: perf-compare.sh [date1] [date2]  (defaults: yesterday vs today)
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 LOGDIR="${CHORUS_ROOT}/proving/logs"
 DATE1=${1:-$(date -v-1d +%Y-%m-%d)}

@@ -5,7 +5,7 @@
 # Alerts on failure so Jeff knows the channel is dead before he discovers it.
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 CLEARING="http://localhost:3470"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"

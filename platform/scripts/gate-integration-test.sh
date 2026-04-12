@@ -3,7 +3,7 @@
 # Tests every hook via CHORUS_HOOK_RAW=1 shim test mode
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 SCRIPTS="${CHORUS_ROOT}/platform/scripts"
 SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"

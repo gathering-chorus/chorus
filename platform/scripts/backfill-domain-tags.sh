@@ -7,7 +7,7 @@
 
 set -uo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 CARDS="${CHORUS_ROOT}/platform/scripts/cards"
 APPLY=false

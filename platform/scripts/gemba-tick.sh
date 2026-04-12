@@ -4,7 +4,7 @@
 # Usage: gemba-tick.sh <role> [start_epoch]
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 ROLE="${1:?Usage: gemba-tick.sh <role>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

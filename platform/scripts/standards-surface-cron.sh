@@ -5,7 +5,7 @@
 # Source change detection: compares sha256 of inputs against last-run checksums.
 # If nothing changed, skips regeneration (idempotent, no wasted work).
 set -euo pipefail
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 

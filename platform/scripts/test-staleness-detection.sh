@@ -1,7 +1,7 @@
 #!/bin/bash
 # test-staleness-detection.sh — Tests for team-scan staleness detection (#2031)
 set -uo pipefail
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 PASS=0
 FAIL=0

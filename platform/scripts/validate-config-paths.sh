@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 CANONICAL="${CHORUS_ROOT}/proving/config/launchagents"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"

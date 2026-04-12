@@ -3,7 +3,7 @@
 # Tests: spine events emitted, Bridge POST retry, ops.health.checked event, alert rule
 set -uo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PASS=0

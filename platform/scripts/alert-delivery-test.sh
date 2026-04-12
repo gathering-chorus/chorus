@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 ALERT_RUNNER="${CHORUS_ROOT}/scripts/alert-runner.sh"
 DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"

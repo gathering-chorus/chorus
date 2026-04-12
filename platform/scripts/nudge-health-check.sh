@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 ROLES=(wren silas kade)

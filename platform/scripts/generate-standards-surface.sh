@@ -11,7 +11,7 @@
 set -euo pipefail
 
 # --- Configuration ---
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 REPO_ROOT="${CHORUS_ROOT}/chorus"
 DECISIONS_MD="$REPO_ROOT/roles/wren/decisions.md"
