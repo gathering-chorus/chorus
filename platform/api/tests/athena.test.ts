@@ -841,6 +841,40 @@ describeIntegration('GET/POST /api/athena/subdomains/:id/gaps (#1926)', () => {
   });
 });
 
+// === #1929: PUT and DELETE for entities ===
+
+describeIntegration('PUT /api/athena/subdomains/:id/actors/:entityId (#1929)', () => {
+  test('updates actor fields', async () => {
+    await fetch(`${API}/api/athena/subdomains/logs-service/actors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'PUT Test Actor', role: 'kade', action: 'original action' }) });
+    const put = await fetch(`${API}/api/athena/subdomains/logs-service/actors/logs-service-actor-put-test-actor`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'PUT Test Actor Updated', role: 'silas', action: 'updated action' }) });
+    expect(put.status).toBe(200);
+    const body = await put.json();
+    expect(body.data.label).toBe('PUT Test Actor Updated');
+    expect(body.data.role).toBe('silas');
+    expect(body.data.action).toBe('updated action');
+    await fetch(`${API}/api/athena/subdomains/logs-service/actors/logs-service-actor-put-test-actor`, { method: 'DELETE' });
+  });
+});
+
+describeIntegration('DELETE /api/athena/subdomains/:id/:section/:entityId (#1929)', () => {
+  test('deletes actor and returns 204', async () => {
+    await fetch(`${API}/api/athena/subdomains/logs-service/actors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Delete Test Actor' }) });
+    const del = await fetch(`${API}/api/athena/subdomains/logs-service/actors/logs-service-actor-delete-test-actor`, { method: 'DELETE' });
+    expect(del.status).toBe(204);
+  });
+
+  test('deletes gap and returns 204', async () => {
+    await fetch(`${API}/api/athena/subdomains/logs-service/gaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Delete Test Gap', severity: 'nice-to-have' }) });
+    const del = await fetch(`${API}/api/athena/subdomains/logs-service/gaps/logs-service-gap-delete-test-gap`, { method: 'DELETE' });
+    expect(del.status).toBe(204);
+  });
+
+  test('returns 400 for unknown section', async () => {
+    const del = await fetch(`${API}/api/athena/subdomains/logs-service/bogus/some-id`, { method: 'DELETE' });
+    expect(del.status).toBe(400);
+  });
+});
+
 // === #1899: Completeness API ===
 
 describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
