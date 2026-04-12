@@ -238,11 +238,9 @@ HEALTH_ENDPOINTS=(
 LANCE_DRIFT_THRESHOLD=5000
 lance_health=$(curl -sf --max-time 5 http://localhost:3340/api/chorus/health 2>/dev/null || echo "")
 if [ -n "$lance_health" ]; then
-  lance_rows=$(echo "$lance_health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('db',{}).get('rows',0))" 2>/dev/null || echo 0)
-  lance_vectors=$(echo "$lance_health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('vectors',0))" 2>/dev/null || echo 0)
-  lance_drift=$((lance_rows - lance_vectors))
-  if [ "$lance_drift" -gt "$LANCE_DRIFT_THRESHOLD" ]; then
-    FAILURES+=("lancedb: ${lance_drift} unembedded messages — semantic search degraded")
+  lance_unembedded=$(echo "$lance_health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('unembedded',0))" 2>/dev/null || echo 0)
+  if [ "$lance_unembedded" -gt "$LANCE_DRIFT_THRESHOLD" ]; then
+    FAILURES+=("lancedb: ${lance_unembedded} unembedded messages — semantic search degraded")
   fi
 fi
 

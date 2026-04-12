@@ -68,26 +68,23 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
   db.pragma('journal_mode = WAL');
 
   try {
-    // Find max msg_id already in LanceDB
-    let maxEmbeddedId = 0;
-    if (lanceTable) {
-      try {
-        const rows = await lanceTable.query().select(['msg_id']).toArray();
-        for (const r of rows) {
-          if ((r as any).msg_id > maxEmbeddedId) maxEmbeddedId = (r as any).msg_id;
-        }
-      } catch { /* empty table */ }
-    }
+    // Track embedded state in SQLite — add column if missing (#1920)
+    // Using a writable connection for the schema check only
+    const rwDb = new Database(DB_PATH);
+    rwDb.pragma('journal_mode = WAL');
+    try {
+      rwDb.exec(`ALTER TABLE messages ADD COLUMN embedded INTEGER DEFAULT 0`);
+    } catch { /* column already exists */ }
+    rwDb.close();
 
     // Page through unembedded messages — one page per call (#1920)
-    // Continuous timer calls this repeatedly until drift reaches zero.
     const page = db.prepare(`
       SELECT id, source, channel, role, content, timestamp
       FROM messages
-      WHERE id > ? AND LENGTH(content) >= ?
+      WHERE embedded = 0 AND LENGTH(content) >= ?
       ORDER BY id ASC
       LIMIT ?
-    `).all(maxEmbeddedId, MIN_EMBED_LENGTH, EMBED_PAGE_SIZE) as Array<{
+    `).all(MIN_EMBED_LENGTH, EMBED_PAGE_SIZE) as Array<{
       id: number; source: string; channel: string; role: string; content: string; timestamp: string;
     }>;
 
@@ -95,8 +92,8 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
 
     // Count total remaining for logging
     const countRow = db.prepare(`
-      SELECT COUNT(*) as cnt FROM messages WHERE id > ? AND LENGTH(content) >= ?
-    `).get(maxEmbeddedId, MIN_EMBED_LENGTH) as { cnt: number };
+      SELECT COUNT(*) as cnt FROM messages WHERE embedded = 0 AND LENGTH(content) >= ?
+    `).get(MIN_EMBED_LENGTH) as { cnt: number };
 
     const records: Array<{
       msg_id: number; source: string; channel: string; role: string;
@@ -130,6 +127,16 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
     } else if (lanceDb) {
       lanceTable = await lanceDb.createTable('messages', records);
     }
+
+    // Mark as embedded in SQLite so we don't reprocess (#1920)
+    const markDb = new Database(DB_PATH);
+    markDb.pragma('journal_mode = WAL');
+    const markStmt = markDb.prepare(`UPDATE messages SET embedded = 1 WHERE id = ?`);
+    const markMany = markDb.transaction((ids: number[]) => {
+      for (const id of ids) markStmt.run(id);
+    });
+    markMany(records.map(r => r.msg_id));
+    markDb.close();
 
     console.log(`[embed-delta] Embedded ${records.length}/${countRow.cnt} remaining, skipped ${skipped}`);
     return { embedded: records.length, skipped };
@@ -3635,10 +3642,16 @@ app.get('/api/chorus/health', async (_req: Request, res: Response) => {
   // DB check
   let dbStatus = 'ok';
   let dbRows = 0;
+  let unembedded = 0;
   try {
     const db = new Database(DB_PATH, { readonly: true });
     const row = db.prepare('SELECT COUNT(*) as cnt FROM messages').get() as { cnt: number };
     dbRows = row.cnt;
+    // Count unembedded using the embedded column (#1920)
+    try {
+      const uRow = db.prepare('SELECT COUNT(*) as cnt FROM messages WHERE embedded = 0 AND LENGTH(content) >= 100').get() as { cnt: number };
+      unembedded = uRow.cnt;
+    } catch { /* column may not exist yet */ }
     db.close();
   } catch {
     dbStatus = 'error';
@@ -3677,6 +3690,7 @@ app.get('/api/chorus/health', async (_req: Request, res: Response) => {
     uptime,
     db: { status: dbStatus, rows: dbRows },
     vectors,
+    unembedded,
     hooks: { status: hooksStatus },
     timestamp: bostonNow(),
   });
