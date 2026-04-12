@@ -237,7 +237,7 @@ LANCE_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/
 if [ ! -d "$LANCE_DIR" ]; then
   FAILURES+=("lancedb: data directory missing — semantic search broken")
 elif [ -z "$(find "$LANCE_DIR" -type f -mtime -1 2>/dev/null | head -1)" ]; then
-  WARNINGS+=("lancedb: index not updated in 24h — semantic search may be stale")
+  FAILURES+=("lancedb: index not updated in 24h — semantic search stale")
 fi
 
 # --- 11c. Vikunja log freshness (#1856) ---

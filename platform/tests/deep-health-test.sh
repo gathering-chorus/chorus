@@ -64,6 +64,14 @@ d = json.load(open('$JSON_FILE'))
 nudge_missing = [f for f in d.get('details', []) if 'nudge' in f and 'not found' in f]
 assert len(nudge_missing) == 0, f'nudge not found: {nudge_missing}'
 "
+
+  # 9. LanceDB staleness is a failure, not a warning
+  run_test "lancedb stale is failure not warning" python3 -c "
+import json
+d = json.load(open('$JSON_FILE'))
+for w in d.get('warnings', []):
+    assert 'lancedb' not in w, f'lancedb in warnings instead of failures: {w}'
+"
 fi
 
 echo ""
