@@ -5315,22 +5315,9 @@ app.listen(PORT, BIND_HOST, () => {
   // Init LanceDB async (non-blocking)
   initLance().catch(err => console.error(`[chorus-api] LanceDB init error: ${err}`));
 
-  // Continuous embed sync — process one page every 60s until drift is zero (#1920)
-  let embedRunning = false;
-  setInterval(async () => {
-    if (embedRunning) return;  // Skip if previous page still processing
-    embedRunning = true;
-    try {
-      const result = await embedDelta();
-      if (result.embedded > 0) {
-        console.log(`[embed-sync] Processed ${result.embedded} (timer cycle)`);
-      }
-    } catch (err: any) {
-      console.error(`[embed-sync] Error: ${err.message}`);
-    } finally {
-      embedRunning = false;
-    }
-  }, 60_000);
+  // Embed sync moved to standalone worker (chorus-embed-worker.sh) — #1978
+  // The in-process timer was blocking the API with 100+ sequential Ollama calls per cycle.
+  // POST /api/chorus/embed still works for on-demand batches.
 });
 
 export default app;

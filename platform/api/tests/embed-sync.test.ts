@@ -20,6 +20,35 @@ beforeAll(async () => {
 
 const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
 
+describeIntegration('Embed sync — no in-process timer (#1978)', () => {
+  test('API responds within 2s even when embed backlog exists', async () => {
+    // If embed timer is running in-process, sequential Ollama calls (~1.2s each)
+    // cause the API to become intermittently unavailable.
+    // 10 rapid health checks should all complete within 2s each.
+    const times = [];
+    for (let i = 0; i < 10; i++) {
+      const start = Date.now();
+      const res = await fetch(`${API}/api/chorus/health`);
+      const elapsed = Date.now() - start;
+      times.push(elapsed);
+      expect(res.ok).toBe(true);
+      expect(elapsed).toBeLessThan(2000);
+    }
+    const maxTime = Math.max(...times);
+    console.log(`[embed-timer-test] 10 health checks: max=${maxTime}ms, avg=${Math.round(times.reduce((a,b)=>a+b,0)/times.length)}ms`);
+  });
+
+  test('health endpoint exposes unembedded count for external worker', async () => {
+    // The embed backlog is now drained by an external worker (chorus-embed-worker.sh),
+    // not an in-process timer. The health endpoint must expose unembedded count
+    // so deep-health and the worker can monitor drift.
+    const res = await fetch(`${API}/api/chorus/health`);
+    const data = await res.json();
+    expect(typeof data.unembedded).toBe('number');
+    expect(typeof data.vectors).toBe('number');
+  });
+});
+
 describeIntegration('Embed sync (#1920)', () => {
   test('health endpoint reports vector drift', async () => {
     const res = await fetch(`${API}/api/chorus/health`);
