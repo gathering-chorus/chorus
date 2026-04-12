@@ -736,3 +736,18 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [16:50] [Wren] → Paired with Silas on observability domain: 8 actors (incl DORA Metrics), 8 scenarios, contract, prior art, pages, pipeline, logs → Jeff
 - [16:57] [Wren] → Domain page blank — API SPARQL endpoints crashing. Unresolved at session end → Silas
 - [Wren] → Memory: verify-before-asserting, Ravi training analogy → future sessions
+
+## 2026-04-12 — Silas (reboot)
+
+- [08:00-17:13] [Silas] → Deep ops session: signal/noise separation, embed sync, freshness rewrite, backup, /cs skill, observability domain → Jeff
+- [08:00] [Silas] → Fixed deep-health signal separation: 14 warnings → 2, CHORUS_ROOT in 30 scripts → all roles
+- [08:05] [Silas] → #1799 pre-commit WIP gate shipped → Jeff accepted
+- [09:00] [Silas] → #1917 loki tunnel wrapper, Bedroom reboot (Apple Intelligence disabled) → Jeff
+- [09:00] [Silas] → #1920 streaming embed sync, 115K backlog drained → Jeff accepted
+- [12:00] [Silas] → #1761 nightly rsync backup shipped (31GB to Bedroom) → Jeff accepted
+- [14:00] [Silas] → Time bomb audit: 10 issues across 11 service designs → Jeff
+- [15:00] [Silas] → #1957 /cs skill rewrite (read seeds, not count) → Jeff accepted
+- [15:30] [Silas] → #1959 drift-based freshness API (11/11 fresh) → Jeff accepted
+- [16:00] [Silas] → #1934 ops audit: 13 issues carded (#1964-#1976) → all roles
+- [16:15] [Silas] → #1963 observability domain populated in Athena (12 services, 8 actors, 8 scenarios, 7 gaps) → Jeff, Wren
+- [17:09] [Silas] → Found #1979: completeness query timeout is why domain page is blank → Kade
