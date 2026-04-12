@@ -722,3 +722,17 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [15:30] [Wren] → Repopulated blog-domain via API — 81% completeness, 13/16 sections filled
 - [Wren] → Harness engineering article (Fowler), O'Neill metric, attention-as-eye-contact captured to memory
 - [Wren] → Carded #1913 (harness templates), #1921 (design system spike), #1930 (frontend authoring), #1932 (code inventory type field)
+
+## 2026-04-12 — Wren (afternoon session)
+
+- [15:43] [Wren] → Session opened. Cleared 21 stale demo briefs — acceptance backlog drained → all roles
+- [15:50] [Wren] → Diagnosed index freshness: 196K unindexed (38% of memory), no scheduled reindex. Carded #1960 → Silas
+- [15:52] [Wren] → Product gate pass #1932 (foldable sections) to Kade → Kade
+- [16:10] [Wren] → Ontology pruning #1962: 57→44 sub-domains, removed sub-sub-domains and duplicate. Over-pruned, Jeff corrected, restored Loom/meta → Jeff
+- [16:30] [Wren] → Chat with Silas: streaming vs batched index pipeline. Architecture correct, coverage was the gap → Silas
+- [16:35] [Wren] → acp #1962 — committed and pushed → all roles
+- [16:38] [Wren] → Gemba on Silas #1934 ops audit: 13 issues carded, zero fixes. Clean discipline → Jeff
+- [16:46] [Wren] → Product gate pass #1959 (drift-based freshness) to Silas → Silas
+- [16:50] [Wren] → Paired with Silas on observability domain: 8 actors (incl DORA Metrics), 8 scenarios, contract, prior art, pages, pipeline, logs → Jeff
+- [16:57] [Wren] → Domain page blank — API SPARQL endpoints crashing. Unresolved at session end → Silas
+- [Wren] → Memory: verify-before-asserting, Ravi training analogy → future sessions

@@ -1,31 +1,29 @@
 # Wren — Next Session
 
 ## What happened
-Massive Athena domain page session. Mock-first design → 8 API cards shipped → blog-domain fully populated → data loss incident → graph separation fix → repopulated. 81% completeness on blog-domain, all via API. Fowler harness engineering article mapped to Chorus. O'Neill metric established. Ravi eye contact = attention as prerequisite for communication.
+Acceptance backlog drain (21 briefs), index freshness investigation (38% of memory unindexed — fixed), ontology pruning (57→44 sub-domains), paired with Silas on observability domain (16/16 sections including DORA Metrics actor). Jeff raised DORA metrics — wants to measure the team. API unstable at session end (SPARQL queries crashing).
 
 ## WIP
-- #1795 RCA domain — April 6 is first case study. Frustration data pulled from Chorus. Waiting for next session to analyze.
+- #1795 RCA domain — untouched again, longest-running WIP
 
-## Cards created this session
-- #1913 Harness templates per service topology
-- #1915 Fix TDD gate — skip on acceptance
-- #1916 Fix demo gate — proven bypass
-- #1919 Mock Athena domain page (DONE)
-- #1921 Design system spike
-- #1922-#1929 Athena API pipeline (all DONE)
-- #1930 Frontend authoring on Lifes Practice
-- #1931 Cards endpoint all lanes (DONE)
-- #1932 Code inventory type field
-- #1955 Graph separation (DONE via #1956)
+## Cards created/moved
+- #1960 Scheduled reindex — no cron for indexAllSources (Next, Silas)
+- #1961 CVE axios — won't do, already fixed
+- #1962 Ontology pruning — DONE, committed
+- #1977 Pre-commit WIP gate blocks acp commits (Next, Silas)
 
 ## Pending
-- Blog-domain at 81% — missing integrations, services, edges
-- 23 static domain docs ready for migration once more domains populated
-- Silas chat re: skills in chorus repo — agreed, needs card
-- #1795 RCA — April 6 incident analysis ready to start
+- API SPARQL crash — observability domain page blank, Silas notified
+- DORA metrics card — Jeff interested, not yet created
+- Observability domain page should render once API fixed — verify
+- #1960 and #1977 waiting on Silas
 
-## Key insights
-- Mock-first: UI designs the data model, not the other way around
-- Data durability: API-created instances must survive TTL reload (fixed)
-- Attention is eye contact: mutual presence is the prerequisite, not the content
-- Jeff's frustration is a system failure, not a personal one (O'Neill metric)
+## Key feedback (saved to memory)
+- Verify before asserting — don't claim something is fine without checking
+- Ravi analogy — training the roles is the actual work right now
+- 38% of Chorus memory was unindexed and nobody knew — worst finding today
+
+## For next session
+- Check API stability, verify observability page renders
+- Card DORA metrics if Jeff confirms
+- #1795 RCA — needs to move or be parked
