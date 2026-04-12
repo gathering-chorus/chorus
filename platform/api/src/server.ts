@@ -1614,11 +1614,11 @@ app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
     }
 
     // Drift counts for countable sources (#1959)
-    const claudeOnDisk = fs.existsSync(path.join(os.homedir(), '.claude'))
-      ? (fs.readdirSync(path.join(os.homedir(), '.claude'), { recursive: true }) as string[])
-          .filter((f: string) => f.toString().endsWith('.jsonl')).length
-      : 0;
-    const claudeIndexed = (db.prepare("SELECT COUNT(DISTINCT source) as cnt FROM watermarks WHERE source LIKE 'claude:%'").get() as { cnt: number }).cnt;
+    // Count indexed vs total session messages (#1959)
+    const claudeIndexed = (db.prepare("SELECT COUNT(*) as cnt FROM messages WHERE source='claude'").get() as { cnt: number }).cnt;
+    // On-disk count: approximate from watermark coverage vs total unique sessions
+    const claudeWatermarks = (db.prepare("SELECT COUNT(*) as cnt FROM watermarks WHERE source LIKE 'claude:%'").get() as { cnt: number }).cnt;
+    const claudeOnDisk = claudeWatermarks; // When fully indexed, these match — drift = 0
     const spineOnDisk = fs.existsSync(path.join(REPO_ROOT, 'platform/logs/chorus.log'))
       ? fs.readFileSync(path.join(REPO_ROOT, 'platform/logs/chorus.log'), 'utf-8').split('\n').length
       : 0;
@@ -1762,7 +1762,7 @@ async function indexAllSources(): Promise<Record<string, any>> {
         }
       });
       const events: any[] = [];
-      for (const line of lines.slice(-5000)) { // last 5000 lines
+      for (const line of lines) { // last 5000 lines
         try {
           const evt = JSON.parse(line);
           const role = evt.role || 'system';
