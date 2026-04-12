@@ -4082,7 +4082,8 @@ app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) 
       if (!match) return null;
       const [, id, title, meta] = match;
       const owner = meta.match(/^(Wren|Silas|Kade|Jeff)/i)?.[1]?.toLowerCase() || null;
-      return { id, title: title.replace(/ — /g, ' — ').trim(), owner, status: statusMap.get(id!) || '' };
+      const priority = meta.match(/P([1-3])/)?.[0] || null;
+      return { id, title: title.replace(/ — /g, ' — ').trim(), owner, status: statusMap.get(id!) || '', priority };
     }).filter(Boolean);
     res.json(athenaEnvelope('subdomain-cards', { subdomain: req.params.id, domainLabel, cards }, Date.now() - start, { count: cards.length }));
   } catch (err: any) {
@@ -5260,6 +5261,17 @@ app.get('/api/athena/card/:id', async (req: Request, res: Response) => {
       { encoding: 'utf-8', timeout: 10000, env: { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
     );
     const card = JSON.parse(stdout);
+    // Parse AC items from description (#1933)
+    const acItems: { text: string; checked: boolean }[] = [];
+    if (card.description) {
+      const acMatches = card.description.match(/- \[([ x])\] .+/g) || [];
+      for (const line of acMatches) {
+        const checked = line.startsWith('- [x]');
+        const text = line.replace(/^- \[[ x]\] /, '');
+        acItems.push({ text, checked });
+      }
+    }
+    card.ac_items = acItems;
     res.json(athenaEnvelope('card-detail', card, Date.now() - start));
   } catch (err: any) {
     res.status(404).json(athenaEnvelope('card-detail', { error: `Card ${cardId} not found` }, Date.now() - start, { error: true }));
