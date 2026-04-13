@@ -50,3 +50,4 @@ proving/logs/*.json
 /tmp/
 *.swp
 *~
+.git-commit.meta

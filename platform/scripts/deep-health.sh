@@ -87,26 +87,10 @@ for log in "$LOG_DIR"/*.log; do
   fi
 done
 
-# --- 4. Loki tunnel: SSH exit code — auto-heal stale port on Bedroom ---
-if launchctl list 2>/dev/null | grep -q "loki-tunnel-bedroom"; then
-  tunnel_exit=$(launchctl list | grep loki-tunnel-bedroom | awk '{print $2}')
-  if [ "$tunnel_exit" != "0" ] && [ "$tunnel_exit" != "-" ]; then
-    # Auto-heal: kill stale sshd on Bedroom holding port 3102, then restart tunnel
-    stale_pid=$(ssh -o ConnectTimeout=5 jeffbridwell@192.168.86.242 "lsof -t -i :3102 -sTCP:LISTEN" 2>/dev/null || true)
-    if [ -n "$stale_pid" ]; then
-      ssh -o ConnectTimeout=5 jeffbridwell@192.168.86.242 "kill $stale_pid" 2>/dev/null || true
-      sleep 2
-    fi
-    launchctl kickstart -k gui/$(id -u)/com.gathering.loki-tunnel-bedroom 2>/dev/null || true
-    sleep 3
-    # Re-check after heal attempt
-    tunnel_exit2=$(launchctl list | grep loki-tunnel-bedroom | awk '{print $2}')
-    if [ "$tunnel_exit2" != "0" ] && [ "$tunnel_exit2" != "-" ]; then
-      FAILURES+=("loki-tunnel-bedroom: exit code $tunnel_exit2 — auto-heal failed")
-    fi
-  fi
-else
-  FAILURES+=("loki-tunnel-bedroom: not loaded — remote log ingestion broken")
+# --- 4. Loki reachability from Bedroom (direct LAN, no tunnel — #1988) ---
+bedroom_loki=$(ssh -o ConnectTimeout=5 bedroom "curl -sf --max-time 3 http://192.168.86.36:3102/ready 2>/dev/null" || true)
+if [ "$bedroom_loki" != "ready" ]; then
+  FAILURES+=("loki-bedroom: Bedroom cannot reach Loki at 192.168.86.36:3102")
 fi
 
 # --- 5. Session index freshness (#2270) ---
