@@ -8,8 +8,9 @@
  * Card: #1694
  */
 
-// Resolve socket.io-client from Bridge's node_modules
-const BRIDGE_NODE_MODULES = '/Users/jeffbridwell/CascadeProjects/directing/clearing/node_modules';
+// Resolve socket.io-client from Bridge's node_modules (CHORUS_ROOT, not hardcoded — #1964)
+const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus';
+const BRIDGE_NODE_MODULES = `${CHORUS_ROOT}/directing/clearing/node_modules`;
 const io = require(`${BRIDGE_NODE_MODULES}/socket.io-client`);
 const fs = require('fs');
 const path = require('path');
