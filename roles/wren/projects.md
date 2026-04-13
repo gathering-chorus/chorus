@@ -28,7 +28,7 @@ Last updated: 2026-03-22 (session 6 — 31+ cards shipped)
 - **Core principle**: Observability not surveillance — data serves the person it's about, not someone above them.
 - **Stack**: Git repo (gathering-team), CLAUDE.md files (generated from ~25 fragments post-audit #1313), team-architecture.md, Vikunja kanban, TypeScript board client, workflow engine, SessionStart hooks, context service (SQLite FTS5 + LanceDB semantic, 97K messages), The Clearing (multi-party chat), CLAUDE.md generator (fragments → manifest → 3 roles)
 - **Health**: GREEN. 100 decisions recorded (DEC-001 through DEC-100). 15+ ADRs. 10+ Grafana dashboards. Card-first gate enforced. WIP limit 3 + Harvesting lane 2 + SWAT lane.
-- **Board stats**: ~1595 total cards. Done column growing. Board sweep skill runs every 4h.
+- **Board stats**: ~2045 total cards. Done column growing. Board sweep skill runs every 4h.
 - **Key decisions this session**: DEC-101 (Jeff Constitution), DEC-102 (Attention Contract — roles monitor each other), #1594 (chorus-hooks test backfill), #1595 (persistent role observation). Rust hooks service (#1587) shipped — 12 shell scripts → compiled binary. PostToolUse nudge drain working with exit-code-2 stderr.
 - **Semantic search**: 97K messages indexed. Chorus API supports mode=fts|semantic|hybrid. Inverted search hierarchy (#1302) — Chorus enrichment injected transparently on context searches.
 - **Three surfaces (DEC-043)**: `/werk` = protocol, `/loom` = team, `/chorus/*` = memory. Plus `/flow` = product board.
@@ -40,6 +40,7 @@ Last updated: 2026-03-22 (session 6 — 31+ cards shipped)
 - **Design constraint**: Chrome + Terminal only. No third-party apps.
 - **Interaction model**: One navigator (Jeff), multiple AI drivers (Wren/Silas/Kade). Nine interaction patterns instrumented. Coordination: nudge→chat→brief→clearing escalation ladder. /pair skill for cross-domain co-working. /board-sweep for automated hygiene.
 - **Cadences (#1397)**: Condition-driven, not calendar. Pulse (every session), Sweep (threshold-triggered), Reflection (Jeff-initiated). Build:clean ratios tracked per role.
+- **Ontology enforcement (shipped 4/13)**: SHACL shapes validate graph integrity — 5 hard constraints (Product→Domain, Product→ServiceDesign, SubProduct→Product, SubProduct→SubDomain, SubDomain→Domain), 2 soft constraints. GET /api/athena/validate surfaces violations in 96ms. 43 violations, 39 warnings in current graph — known domain model gaps now visible. (#2014)
 - **Borg**: Three expressions — convergence (card absorption, cross-domain linking), instrumentation (spine events, ratios, patterns), self-awareness (condition triggers, Wren session-start observations). Currently blended with Chorus, may differentiate as Gathering graph matures.
 
 ## wordpress-blog
