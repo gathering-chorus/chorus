@@ -3678,6 +3678,29 @@ async function refreshHealthCache(): Promise<void> {
 setTimeout(() => refreshHealthCache(), 2000);
 setInterval(() => refreshHealthCache(), 30_000);
 
+// Scheduled reindex — keep index_freshness sources current (#1960)
+// indexAllSources() is SQLite-only (no Ollama), safe in-process unlike embedDelta (#1978).
+// Runs every 15 min. First run after 60s startup delay to avoid boot contention.
+const REINDEX_INTERVAL = 15 * 60_000;
+let reindexRunning = false;
+async function scheduledReindex(): Promise<void> {
+  if (reindexRunning) return;
+  reindexRunning = true;
+  try {
+    const result = await indexAllSources();
+    const total = Object.values(result).filter(v => typeof v === 'string' && v.startsWith('indexed')).length;
+    console.log(`[reindex] scheduled run complete — ${total} sources indexed`);
+  } catch (err: any) {
+    console.error(`[reindex] scheduled run failed: ${err.message}`);
+  } finally {
+    reindexRunning = false;
+  }
+}
+setTimeout(() => {
+  scheduledReindex();
+  setInterval(() => scheduledReindex(), REINDEX_INTERVAL);
+}, 60_000);
+
 app.get('/api/chorus/health', (_req: Request, res: Response) => {
   // Liveness + uptime — no expensive queries (#1978)
   const uptime = Math.floor((Date.now() - startTime) / 1000);
