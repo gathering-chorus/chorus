@@ -3655,66 +3655,52 @@ app.get('/api/chorus/domains', (_req: Request, res: Response) => {
   res.json({ domains, total: domains.length });
 });
 
-// --- GET /api/chorus/health (#2011) ---
+// --- GET /api/chorus/health (#2011, #1978 cache) ---
 
 const startTime = Date.now();
 
-app.get('/api/chorus/health', async (_req: Request, res: Response) => {
-  const uptime = Math.floor((Date.now() - startTime) / 1000);
+// Cache expensive counts — refresh every 30s, serve from cache (#1978)
+let healthCache = { dbRows: 0, unembedded: 0, vectors: 0, dbStatus: 'unknown', hooksStatus: 'unknown', ts: 0 };
 
-  // DB check
-  let dbStatus = 'ok';
-  let dbRows = 0;
-  let unembedded = 0;
+async function refreshHealthCache(): Promise<void> {
   try {
     const db = new Database(DB_PATH, { readonly: true });
     const row = db.prepare('SELECT COUNT(*) as cnt FROM messages').get() as { cnt: number };
-    dbRows = row.cnt;
-    // Count unembedded using the embedded column (#1920)
+    healthCache.dbRows = row.cnt;
+    healthCache.dbStatus = 'ok';
     try {
       const uRow = db.prepare('SELECT COUNT(*) as cnt FROM messages WHERE embedded = 0 AND LENGTH(content) >= 100').get() as { cnt: number };
-      unembedded = uRow.cnt;
+      healthCache.unembedded = uRow.cnt;
     } catch { /* column may not exist yet */ }
     db.close();
   } catch {
-    dbStatus = 'error';
+    healthCache.dbStatus = 'error';
   }
-
-  // Vector check
-  let vectors = 0;
   try {
-    if (lanceTable) {
-      vectors = await lanceTable.countRows();
-    }
-  } catch {
-    // non-fatal
-  }
-
-  // Hook server check — see if the shim binary exists and is recent
-  let hooksStatus = 'unknown';
+    if (lanceTable) healthCache.vectors = await lanceTable.countRows();
+  } catch { /* non-fatal */ }
   const hookBinary = path.resolve(__dirname, '../../services/chorus-hooks/target/release/chorus-hooks');
   try {
     if (fs.existsSync(hookBinary)) {
       const stat = fs.statSync(hookBinary);
-      const ageHours = (Date.now() - stat.mtimeMs) / 3600000;
-      hooksStatus = ageHours < 24 ? 'active' : 'stale';
-    } else {
-      hooksStatus = 'missing';
-    }
-  } catch {
-    hooksStatus = 'error';
-  }
+      healthCache.hooksStatus = (Date.now() - stat.mtimeMs) / 3600000 < 24 ? 'active' : 'stale';
+    } else { healthCache.hooksStatus = 'missing'; }
+  } catch { healthCache.hooksStatus = 'error'; }
+  healthCache.ts = Date.now();
+}
 
-  const status = dbStatus === 'ok' ? 'healthy' : 'degraded';
-  const code = dbStatus === 'ok' ? 200 : 503;
+setTimeout(() => refreshHealthCache(), 2000);
+setInterval(() => refreshHealthCache(), 30_000);
 
-  res.status(code).json({
-    status,
-    uptime,
-    db: { status: dbStatus, rows: dbRows },
-    vectors,
-    unembedded,
-    hooks: { status: hooksStatus },
+app.get('/api/chorus/health', (_req: Request, res: Response) => {
+  const uptime = Math.floor((Date.now() - startTime) / 1000);
+  const status = healthCache.dbStatus === 'ok' ? 'healthy' : 'degraded';
+  res.status(status === 'healthy' ? 200 : 503).json({
+    status, uptime,
+    db: { status: healthCache.dbStatus, rows: healthCache.dbRows },
+    vectors: healthCache.vectors,
+    unembedded: healthCache.unembedded,
+    hooks: { status: healthCache.hooksStatus },
     timestamp: bostonNow(),
   });
 });

@@ -49,6 +49,23 @@ describeIntegration('Embed sync — no in-process timer (#1978)', () => {
   });
 });
 
+describeIntegration('Health endpoint performance (#1978)', () => {
+  test('health endpoint responds under 500ms consistently', async () => {
+    // AC2: API health endpoint responds consistently under 500ms
+    const times = [];
+    for (let i = 0; i < 5; i++) {
+      const start = Date.now();
+      const res = await fetch(`${API}/api/chorus/health`);
+      const elapsed = Date.now() - start;
+      times.push(elapsed);
+      expect(res.ok).toBe(true);
+      expect(elapsed).toBeLessThan(500);
+    }
+    const maxTime = Math.max(...times);
+    console.log(`[health-perf] 5 checks: max=${maxTime}ms, avg=${Math.round(times.reduce((a,b)=>a+b,0)/times.length)}ms`);
+  });
+});
+
 describeIntegration('Embed sync (#1920)', () => {
   test('health endpoint reports vector drift', async () => {
     const res = await fetch(`${API}/api/chorus/health`);
