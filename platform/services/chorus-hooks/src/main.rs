@@ -467,9 +467,11 @@ async fn post_tool_use(
 
     // Demo provenance (#1670) — auto-generate brief after /demo
     if tool == "Skill" {
+        let skill_name = input.get_tool_input_str("skill");
+        tracing::info!(skill = %skill_name, "post-tool-use: Skill completed");
         let r = hooks::demo_provenance::check(&input).await;
         if r.stderr.is_some() {
-            // Pass the notification through
+            tracing::info!(skill = %skill_name, "demo-provenance: dispatched");
             return Json(r);
         }
     }

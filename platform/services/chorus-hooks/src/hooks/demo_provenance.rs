@@ -29,9 +29,12 @@ pub async fn check(input: &HookInput) -> HookResponse {
     info!(card = %card_id, "demo-provenance: dispatching to provenance.sh");
 
     let script = format!("{}/skills/demo/gates/provenance.sh", chorus_root());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     let output = Command::new("bash")
-        .args([&script, card_id, role.as_str()])
+        .args(["-l", &script, card_id, role.as_str()])
         .env("CHORUS_ROOT", chorus_root())
+        .env("HOME", &home)
+        .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))
         .output();
 
     match output {

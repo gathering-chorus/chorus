@@ -27,9 +27,12 @@ pub async fn check(input: &HookInput) -> HookResponse {
     info!(card = %card_id, "demo-preflight: dispatching to preflight.sh");
 
     let script = format!("{}/skills/demo/gates/preflight.sh", chorus_root());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     let output = Command::new("bash")
-        .args([&script, card_id])
+        .args(["-l", &script, card_id])
         .env("CHORUS_ROOT", chorus_root())
+        .env("HOME", &home)
+        .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))
         .output();
 
     match output {

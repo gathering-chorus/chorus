@@ -4,6 +4,10 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-04-13 — Wren
+
+- [06:21] [Wren] → Drained 65 demo briefs (60 cards Done, archived to briefs/archive/). Only #1868 (WIP) remains active. → Jeff
+
 ## 2026-04-11 — Wren (session 2)
 
 - [08:38] [Wren] → Fixed cards CLI path in all 3 role CLAUDE.md files (../../scripts/cards → ../../platform/scripts/cards) → all roles
