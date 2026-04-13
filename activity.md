@@ -787,3 +787,13 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [12:10] [Kade] → #1868 shipped — code discovery (331 files, 28 domains, replaces hardcoded map) → Jeff
 - [13:01] [Kade] → #1869 shipped — test coverage discovery (98 tests, 23 domains, by type) → Jeff
 - [13:02] [Kade] → Reboot
+
+## 2026-04-13 — Silas (reboot)
+
+- [05:15-15:40] [Silas] → 10+ cards shipped: ops tuning pass, C4 diagrams, skill lifecycle map, alert cooldown, git-queue fd leak, bridge subscribers, seed probe, DEC-101 logging, Loki tunnel, cloudflared upgrade → Jeff, all roles
+- [05:15] [Silas] → Overnight alerts triaged: tunnel restarted, app-down false alerts, Loki tunnel down → Jeff
+- [06:18] [Silas] → Paired with Kade on #1868 test flakes (navigator) → Kade
+- [09:00] [Silas] → C4 architecture diagrams created, code-grounded, team-reviewed via chat with Kade and Wren → Jeff, all roles
+- [12:22] [Silas] → Skill lifecycle and dependency map: 40 skills mapped, delegation chains, shared infra, decision enforcement audit → Jeff, all roles
+- [14:09] [Silas] → Bridge subscribers restored (#1964), seed probe restored (#1965), found seed persistence gap (#2004) → Jeff, Kade
+- [15:30] [Silas] → DEC-101 stdout-only logging: ADR written, node-exporter migrated, deep-health enforcement, /tmp/ cleaned → Jeff, all roles
