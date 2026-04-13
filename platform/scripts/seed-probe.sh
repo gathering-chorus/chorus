@@ -20,6 +20,7 @@ PROBE_CONTENT="${PROBE_TAG} synthetic health check $(date -u +%Y-%m-%dT%H:%M:%SZ
 PUBLIC_URL="https://lightlifeurbangardens.com"
 LOCAL_URL="http://localhost:3000"
 FUSEKI_URL="http://localhost:3030"
+LOKI_URL="http://localhost:3102"
 BRIDGE_URL="http://localhost:3470/api/message"
 WEBHOOK_PATH="/api/seed/sms"
 TIMEOUT=5
@@ -58,6 +59,35 @@ log_result() {
   local status="$1" detail="$2"
   "${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
     seed.probe.${status} silas "detail=${detail}" 2>/dev/null || true
+}
+
+# Check Loki for 'Test seed detected' log line with a specific marker (SID or content tag)
+loki_has_test_seed() {
+  local marker="$1"
+  local loki_start loki_end result
+  loki_start=$(date -u -v-120S +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-120 seconds' +%Y-%m-%dT%H:%M:%SZ)
+  loki_end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  result=$(curl -sf --max-time "$TIMEOUT" \
+    "${LOKI_URL}/loki/api/v1/query_range" \
+    --data-urlencode "query={container_name=\"gathering-app\"} |= \"Test seed detected\" |= \"${marker}\"" \
+    --data-urlencode "start=${loki_start}" \
+    --data-urlencode "end=${loki_end}" \
+    --data-urlencode "limit=1" 2>/dev/null || echo "")
+  echo "$result" | grep -q "Test seed detected"
+}
+
+# Check Loki for 'Test seed detected' in a recent time window (for real SMS where SID is unknown)
+loki_has_test_seed_recent() {
+  local loki_start loki_end result
+  loki_start=$(date -u -v-60S +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ)
+  loki_end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  result=$(curl -sf --max-time "$TIMEOUT" \
+    "${LOKI_URL}/loki/api/v1/query_range" \
+    --data-urlencode "query={container_name=\"gathering-app\"} |= \"Test seed detected\"" \
+    --data-urlencode "start=${loki_start}" \
+    --data-urlencode "end=${loki_end}" \
+    --data-urlencode "limit=1" 2>/dev/null || echo "")
+  echo "$result" | grep -q "Test seed detected"
 }
 
 # ─── HOP 1: Cloudflare tunnel ───────────────────────────────────
@@ -139,48 +169,38 @@ if [[ "$WEBHOOK_HTTP" != "200" ]]; then
 fi
 echo "${PROBE_TAG} Hop 4: OK (webhook accepted)"
 
-# ─── HOP 5: Verify seed landed in Fuseki ────────────────────────
-echo "${PROBE_TAG} Hop 5: Polling Fuseki for probe seed (${POLL_TIMEOUT}s window)..."
+# ─── HOP 5: Verify handler received probe seed ─────────────────
+# The handler guard (seed.handler.ts:689-695) intentionally blocks probe seeds
+# from persisting to Fuseki. Instead of checking Fuseki, we verify the handler
+# logged 'Test seed detected' — proving the webhook was received, parsed, and
+# reached the guard. This is the correct end-to-end signal: tunnel → app → handler.
+echo "${PROBE_TAG} Hop 5: Checking app logs for probe receipt (${POLL_TIMEOUT}s window)..."
 
-SPARQL_QUERY="PREFIX jb: <https://jeffbridwell.com/ontology#>
-SELECT ?seed WHERE {
-  GRAPH <urn:jb:seeds/> {
-    ?seed jb:messageSid \"${PROBE_SID}\" .
-  }
-} LIMIT 1"
-
-SEED_FOUND=""
+SEED_RECEIVED=""
 ELAPSED=0
 
 while [[ $ELAPSED -lt $POLL_TIMEOUT ]]; do
-  RESULT=$(curl -sf --max-time "$TIMEOUT" \
-    -H "Accept: application/sparql-results+json" \
-    --data-urlencode "query=${SPARQL_QUERY}" \
-    "${FUSEKI_URL}/pods/sparql" 2>/dev/null || echo "")
-
-  if echo "$RESULT" | grep -q "seed"; then
-    SEED_FOUND=$(echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['results']['bindings'][0]['seed']['value'])" 2>/dev/null || echo "")
-    if [[ -n "$SEED_FOUND" ]]; then
-      echo "${PROBE_TAG} Hop 5: OK — seed found in Fuseki after ${ELAPSED}s"
-      break
-    fi
+  if loki_has_test_seed "$PROBE_SID"; then
+    SEED_RECEIVED="true"
+    echo "${PROBE_TAG} Hop 5: OK — handler received probe, guard blocked persistence (${ELAPSED}s)"
+    break
   fi
 
   sleep "$POLL_INTERVAL"
   ELAPSED=$((ELAPSED + POLL_INTERVAL))
 done
 
-if [[ -z "$SEED_FOUND" ]]; then
+if [[ -z "$SEED_RECEIVED" ]]; then
   FAILED_HOP="capture"
-  DIAG="Webhook accepted (200) but seed not found in Fuseki within ${POLL_TIMEOUT}s. Handler may have failed silently."
+  DIAG="Webhook accepted (200) but no 'Test seed detected' log found within ${POLL_TIMEOUT}s. Handler may not have reached the guard."
   echo "${PROBE_TAG} FAIL: ${DIAG}" >&2
   alert_bridge "FAIL hop=capture — ${DIAG}"
   log_result "failed" "hop=capture sid=${PROBE_SID}"
   exit 1
 fi
 
-# ─── CLEANUP: Delete probe seed from Fuseki ──────────────────────
-echo "${PROBE_TAG} Cleanup: removing probe seed..."
+# ─── CLEANUP: Safety net — delete any probe seed that leaked past the guard ──
+echo "${PROBE_TAG} Cleanup: safety check for leaked probe seeds..."
 
 DELETE_QUERY="PREFIX jb: <https://jeffbridwell.com/ontology#>
 DELETE WHERE {
@@ -285,13 +305,11 @@ P1_BODY="[SEED-PROBE] Garden design ideas ${P1_TAG} #idea"
 if $USE_REAL_SMS; then
   send_real_sms "$P1_BODY"
   sleep $WAIT_SMS
-  fuseki_has_content "$P1_TAG" && { echo "${PROBE_TAG} P1: PASS — content+hashtag (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P1: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
-  delete_seed_by_content "$P1_TAG"
+  loki_has_test_seed_recent && { echo "${PROBE_TAG} P1: PASS — content+hashtag, guard caught (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P1: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 else
   P1_SID="SM_PROBE_P1_${TS}"
   send_signed_webhook "$P1_BODY" "$P1_SID" >/dev/null; sleep 3
-  fuseki_has_sid "$P1_SID" && { echo "${PROBE_TAG} P1: PASS — content+hashtag (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P1: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
-  delete_seed "$P1_SID"
+  loki_has_test_seed "$P1_SID" && { echo "${PROBE_TAG} P1: PASS — content+hashtag, guard caught (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P1: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 fi
 
 # ─── P2: Link + hashtag
@@ -301,13 +319,11 @@ P2_BODY="[SEED-PROBE] https://example.com/${P2_TAG} #idea"
 if $USE_REAL_SMS; then
   send_real_sms "$P2_BODY"
   sleep $WAIT_SMS
-  fuseki_has_content "$P2_TAG" && { echo "${PROBE_TAG} P2: PASS — link+hashtag (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P2: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
-  delete_seed_by_content "$P2_TAG"
+  loki_has_test_seed_recent && { echo "${PROBE_TAG} P2: PASS — link+hashtag, guard caught (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P2: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 else
   P2_SID="SM_PROBE_P2_${TS}"
   send_signed_webhook "$P2_BODY" "$P2_SID" >/dev/null; sleep 3
-  fuseki_has_sid "$P2_SID" && { echo "${PROBE_TAG} P2: PASS — link+hashtag (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P2: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
-  delete_seed "$P2_SID"
+  loki_has_test_seed "$P2_SID" && { echo "${PROBE_TAG} P2: PASS — link+hashtag, guard caught (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P2: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 fi
 
 # ─── P3: Content without hashtag — routes to wren by default
@@ -317,30 +333,40 @@ P3_BODY="[SEED-PROBE] Random thought about gardens ${P3_TAG}"
 if $USE_REAL_SMS; then
   send_real_sms "$P3_BODY"
   sleep $WAIT_SMS
-  fuseki_has_content "$P3_TAG" && { echo "${PROBE_TAG} P3: PASS — no hashtag, default route (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P3: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
-  delete_seed_by_content "$P3_TAG"
+  loki_has_test_seed_recent && { echo "${PROBE_TAG} P3: PASS — no hashtag, guard caught (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P3: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 else
   P3_SID="SM_PROBE_P3_${TS}"
   send_signed_webhook "$P3_BODY" "$P3_SID" >/dev/null; sleep 5
-  fuseki_has_sid "$P3_SID" && { echo "${PROBE_TAG} P3: PASS — no hashtag, default route (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P3: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
-  delete_seed "$P3_SID"
+  loki_has_test_seed "$P3_SID" && { echo "${PROBE_TAG} P3: PASS — no hashtag, guard caught (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P3: FAIL" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 fi
 
-# ─── P4: Hashtag only — NO capture (webhook only, can't verify negative via real SMS)
+# ─── P4: Hashtag only — NO capture. Handler's hashtag-only guard (line 669)
+# fires BEFORE the probe guard (line 691), logging "Hashtag-only message" instead
+# of "Test seed detected". Verify the hashtag-only path ran and nothing persisted.
 echo "${PROBE_TAG} P4: Hashtag only..."
 P4_SID="SM_PROBE_P4_${TS}"
+
+loki_has_hashtag_only() {
+  local loki_start loki_end result
+  loki_start=$(date -u -v-120S +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-120 seconds' +%Y-%m-%dT%H:%M:%SZ)
+  loki_end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  result=$(curl -sf --max-time "$TIMEOUT" \
+    "${LOKI_URL}/loki/api/v1/query_range" \
+    --data-urlencode "query={container_name=\"gathering-app\"} |= \"Hashtag-only message\"" \
+    --data-urlencode "start=${loki_start}" \
+    --data-urlencode "end=${loki_end}" \
+    --data-urlencode "limit=1" 2>/dev/null || echo "")
+  echo "$result" | grep -q "Hashtag-only message"
+}
+
 if $USE_REAL_SMS; then
-  P4_TAG="p4-${TS}"
   send_real_sms "#wren"
   sleep $WAIT_SMS
-  # Hashtag-only should NOT create a capture. Check that no seed has content "#wren" with our timestamp window.
-  ! fuseki_has_content "$P4_TAG" && { echo "${PROBE_TAG} P4: PASS — hashtag-only, no capture (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P4: FAIL — hashtag created capture" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
+  loki_has_hashtag_only && { echo "${PROBE_TAG} P4: PASS — hashtag-only, correlation triggered, no capture (real SMS)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P4: FAIL — hashtag-only not handled correctly" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 else
   send_signed_webhook "#wren" "$P4_SID" >/dev/null; sleep 3
-  ! fuseki_has_sid "$P4_SID" && { echo "${PROBE_TAG} P4: PASS — hashtag-only, no capture (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P4: FAIL — hashtag created capture" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
+  loki_has_hashtag_only && ! fuseki_has_sid "$P4_SID" && { echo "${PROBE_TAG} P4: PASS — hashtag-only, correlation triggered, no capture (webhook)"; PERM_PASS=$((PERM_PASS+1)); } || { echo "${PROBE_TAG} P4: FAIL — hashtag-only not handled correctly" >&2; PERM_FAIL=$((PERM_FAIL+1)); }
 fi
-delete_seed "$P4_SID"
-delete_seed "$P4_SID"
 
 # ─── P5: Multi-photo + hashtag — one seed, multiple media
 echo "${PROBE_TAG} P5: Multi-photo + hashtag (single webhook)..."
@@ -363,25 +389,14 @@ P5_HTTP=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 15 \
   -H "X-Twilio-Signature: ${P5_SIG}" \
   -d "$P5_FORM" 2>/dev/null || echo "000")
 sleep 3
-if fuseki_has_sid "$P5_SID"; then
-  # Verify only ONE seed was created (not two from two media)
-  P5_COUNT=$(curl -sf --max-time "$TIMEOUT" \
-    -H "Accept: application/sparql-results+json" \
-    --data-urlencode "query=PREFIX jb: <https://jeffbridwell.com/ontology#> SELECT (COUNT(?s) AS ?c) WHERE { GRAPH <urn:jb:seeds/> { ?s jb:messageSid \"${P5_SID}\" } }" \
-    "${FUSEKI_URL}/pods/sparql" 2>/dev/null \
-    | python3 -c "import json,sys; print(json.load(sys.stdin)['results']['bindings'][0]['c']['value'])" 2>/dev/null || echo "0")
-  if [[ "$P5_COUNT" == "1" ]]; then
-    echo "${PROBE_TAG} P5: PASS — multi-photo created exactly 1 seed (HTTP ${P5_HTTP})"
-    PERM_PASS=$((PERM_PASS + 1))
-  else
-    echo "${PROBE_TAG} P5: FAIL — multi-photo created ${P5_COUNT} seeds (expected 1)" >&2
-    PERM_FAIL=$((PERM_FAIL + 1))
-  fi
+# Guard catches via SM_PROBE_ prefix. Verify guard logged it and nothing persisted.
+if loki_has_test_seed "$P5_SID" && ! fuseki_has_sid "$P5_SID"; then
+  echo "${PROBE_TAG} P5: PASS — multi-photo received, guard caught, no persistence (HTTP ${P5_HTTP})"
+  PERM_PASS=$((PERM_PASS + 1))
 else
-  echo "${PROBE_TAG} P5: FAIL — multi-photo seed not found in Fuseki (HTTP ${P5_HTTP})" >&2
+  echo "${PROBE_TAG} P5: FAIL — multi-photo not handled correctly (HTTP ${P5_HTTP})" >&2
   PERM_FAIL=$((PERM_FAIL + 1))
 fi
-delete_seed "$P5_SID"
 
 # ─── Content-based purge — catch anything SID-based cleanup missed
 echo "${PROBE_TAG} Purging all SEED-PROBE content from Fuseki..."
