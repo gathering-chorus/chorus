@@ -925,3 +925,53 @@ describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
     expect(body.data.percentage).toBe(Math.round((present.length / total) * 100));
   });
 });
+
+// #1868 — Code discovery: auto-populate code files per domain from filesystem
+describeIntegration('POST /api/athena/discover-code', () => {
+  test('endpoint exists and returns discovery results', async () => {
+    const res = await fetch(`${API}/api/athena/discover-code`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.source).toBe('athena');
+    expect(body._meta.query_name).toBe('discover-code');
+    expect(body.data.total_files).toBeGreaterThan(0);
+    expect(body.data.total_domains).toBeGreaterThan(0);
+    expect(body.data.written).toBe(body.data.total_files);
+    expect(typeof body.data.by_domain).toBe('object');
+  }, 30000);
+
+  test('photos-domain gets code files from filesystem discovery', async () => {
+    // Run discovery first
+    await fetch(`${API}/api/athena/discover-code`, { method: 'POST' });
+    // Now query the code endpoint — should have photo handler and service
+    const res = await fetch(`${API}/api/athena/subdomains/photos-domain/code`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const allPaths = [...body.data.files, ...body.data.tests].map(f => f.path);
+    expect(allPaths.some(p => p.includes('photo'))).toBe(true);
+    expect(allPaths.length).toBeGreaterThan(0);
+  }, 30000);
+
+  test('music-domain gets code files from filesystem discovery', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/music-domain/code`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const allPaths = [...body.data.files, ...body.data.tests].map(f => f.path);
+    expect(allPaths.some(p => p.includes('music'))).toBe(true);
+  }, 15000);
+
+  test('discovery covers more than the old hardcoded 12 domains', async () => {
+    const res = await fetch(`${API}/api/athena/discover-code`, { method: 'POST' });
+    const body = await res.json();
+    // Old hardcoded map had 11 domains — discovery should find more
+    expect(body.data.total_domains).toBeGreaterThan(11);
+  }, 30000);
+
+  test('discovery is idempotent — running twice gives same count', async () => {
+    const res1 = await fetch(`${API}/api/athena/discover-code`, { method: 'POST' });
+    const body1 = await res1.json();
+    const res2 = await fetch(`${API}/api/athena/discover-code`, { method: 'POST' });
+    const body2 = await res2.json();
+    expect(body2.data.total_files).toBe(body1.data.total_files);
+  }, 60000);
+});

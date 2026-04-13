@@ -1151,28 +1151,20 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
     }
   } catch { /* memory dir not readable */ }
 
-  // Source 8: Code scan — actual codebase directories mapped to domain (#1959)
+  // Source 8: Code files from instances graph (#1868 — replaces hardcoded domainDirs map)
   const codeScan: { scanned: string[]; discovered: string[] } = { scanned: [], discovered: [] };
   try {
-    const domainDirs: Record<string, string[]> = {
-      seeds: ['src/adapters/sms-seed.adapter.ts', 'src/services/seed-capture.service.ts', 'src/services/seed-sparql.service.ts', 'src/services/seed-pod.service.ts', 'src/handlers/hooks.handler.ts'],
-      photos: ['src/handlers/photos.handler.ts', 'src/services/photo-pod.service.ts'],
-      music: ['src/handlers/music.handler.ts', 'src/services/music-query.service.ts'],
-      people: ['src/handlers/people.handler.ts', 'src/services/people-query.service.ts'],
-      blog: ['src/services/wordpress-harvester.service.ts'],
-      books: ['src/handlers/books.handler.ts'],
-      notes: ['src/handlers/notes.handler.ts'],
-      stories: ['src/handlers/stories.handler.ts', 'src/services/self-domain-pod.service.ts'],
-      search: ['src/services/search-index.service.ts', 'src/services/sparql.service.ts'],
-      chorus: ['platform/api/src/server.ts', 'platform/services/chorus-hooks/src/'],
-      infrastructure: ['platform/scripts/agent-state.sh', 'platform/scripts/app-state.sh'],
-    };
-    // #1868: Code discovery moved to instances graph via POST /code endpoint.
-    // Crawl API retains static mapping for context injection, not for /code endpoint.
-    if (domainDirs[domain]) {
-      codeScan.scanned = domainDirs[domain];
+    const domainSuffix = domain.endsWith('-domain') || domain.endsWith('-service') ? domain : `${domain}-domain`;
+    const codeQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domainSuffix}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
+    const codeResult = await athenaSparqlQuery(codeQuery);
+    codeScan.scanned = codeResult.results.bindings.map((b: any) => b.filePath.value);
+    // Also try without -domain suffix for service domains
+    if (codeScan.scanned.length === 0 && !domain.endsWith('-service')) {
+      const svcQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domain}-service> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
+      const svcResult = await athenaSparqlQuery(svcQuery);
+      codeScan.scanned = svcResult.results.bindings.map((b: any) => b.filePath.value);
     }
-  } catch { /* code scan failed */ }
+  } catch { /* graph query failed — no code data */ }
 
   // Source 9: Loki logs — recent domain-related entries (#1959)
   const logs: Array<{ timestamp: string; level: string; message: string; component: string }> = [];
@@ -4163,6 +4155,151 @@ app.post('/api/athena/subdomains/:id/code', async (req: Request, res: Response) 
     await athenaSparqlUpdate(update);
     res.json(athenaEnvelope('subdomain-code-create', { subdomain: req.params.id, uri: fileUri, label: name, path: filePath || null, type: fileType || null, description: description || null }, Date.now() - start));
   } catch (err: any) { res.status(500).json(athenaEnvelope('subdomain-code-create', { error: err.message }, Date.now() - start, { error: true })); }
+});
+
+// POST /api/athena/discover-code — auto-discover code files per domain from filesystem (#1868 AC1)
+app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    // 1. Get all SubDomains from ontology
+    const sdQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }`;
+    const sdResult = await athenaSparqlQuery(sdQuery);
+    const domains = sdResult.results.bindings.map((b: any) => ({
+      id: b.sd.value.split('#').pop() as string,
+      label: b.label.value as string,
+    }));
+
+    // 2. Domain alias map: ontology id → filesystem name patterns
+    // Skip domains whose base name is too generic (matches nearly every file)
+    const genericBases = new Set(['services', 'service', 'domains', 'domain', 'code', 'loom', 'time', 'streams', 'stream', 'messages', 'message', 'policies', 'policy']);
+    const aliasMap: Record<string, string[]> = {};
+    for (const d of domains) {
+      const base = d.id.replace(/-(domain|service)$/, '');
+      if (genericBases.has(base)) continue;
+      const aliases = [base];
+      if (base.endsWith('s') && !base.endsWith('ss')) {
+        if (base.endsWith('ies')) aliases.push(base.replace(/ies$/, 'y'));
+        else aliases.push(base.replace(/s$/, ''));
+      }
+      aliasMap[d.id] = aliases;
+    }
+    // Special cases not derivable from the label
+    aliasMap['blog-domain'] = ['blog', 'wordpress'];
+    aliasMap['social-domain'] = ['social', 'socialpost'];
+    aliasMap['people-domain'] = ['people', 'person'];
+    aliasMap['documents-domain'] = ['documents', 'document', 'doc-catalog'];
+    aliasMap['knowledge-domain'] = ['knowledge', 'knowledge-graph'];
+    aliasMap['sexuality-domain'] = ['sexuality', 'self-ai'];
+    aliasMap['seeds-domain'] = ['seeds', 'seed', 'sms-seed'];
+    aliasMap['convergence-domain'] = ['convergence', 'ontology'];
+    aliasMap['chorus-domain'] = ['chorus', 'clearing', 'bridge', 'context-cache'];
+    aliasMap['infra-service'] = ['infrastructure', 'infra', 'app-state', 'agent-state'];
+    aliasMap['observability-service'] = ['observability', 'dashboard'];
+    aliasMap['cards-service'] = ['cards', 'board'];
+    aliasMap['skills-service'] = ['skills'];
+    aliasMap['gates-service'] = ['gates', 'gate'];
+    aliasMap['spine-service'] = ['spine', 'chorus-log'];
+    aliasMap['logs-service'] = ['logs', 'log-freshness'];
+    aliasMap['alerts-service'] = ['alerts', 'alert'];
+    aliasMap['deploys-service'] = ['deploys', 'deploy', 'app-state'];
+
+    // 3. Scan source trees
+    const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
+    const CHORUS_ROOT = path.resolve(__dirname, '../../..');
+    const discovered: Array<{ domainId: string; filePath: string; fileType: string }> = [];
+
+    const scanDir = (dir: string, repoRoot: string) => {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { recursive: true }) as string[];
+      for (const entry of entries) {
+        const entryStr = String(entry);
+        if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) continue;
+        const fullPath = path.join(dir, entryStr);
+        try { if (!fs.statSync(fullPath).isFile()) continue; } catch { continue; }
+        const relPath = path.relative(repoRoot, fullPath);
+        const basename = path.basename(entryStr).toLowerCase();
+
+        const relLower = relPath.toLowerCase();
+        const pathParts = relLower.split('/');
+        for (const [domainId, aliases] of Object.entries(aliasMap)) {
+          for (const alias of aliases) {
+            // Match on filename (handler/service naming) OR on directory path (skills/, alerts/, etc.)
+            const nameMatch = basename.includes(alias) || basename.startsWith(alias + '.') || basename.startsWith(alias + '-');
+            const pathMatch = pathParts.some(part => part === alias || part === alias + 's');
+            if (nameMatch || pathMatch) {
+              const ext = path.extname(entryStr).slice(1) || 'unknown';
+              discovered.push({ domainId, filePath: relPath, fileType: ext });
+              break;
+            }
+          }
+        }
+      }
+    };
+
+    scanDir(path.join(GATHERING_ROOT, 'src/handlers'), GATHERING_ROOT);
+    scanDir(path.join(GATHERING_ROOT, 'src/services'), GATHERING_ROOT);
+    scanDir(path.join(GATHERING_ROOT, 'src/adapters'), GATHERING_ROOT);
+    scanDir(path.join(GATHERING_ROOT, 'tests'), GATHERING_ROOT);
+    scanDir(path.join(CHORUS_ROOT, 'platform/scripts'), CHORUS_ROOT);
+    scanDir(path.join(CHORUS_ROOT, 'platform/services/chorus-hooks/src'), CHORUS_ROOT);
+    // Explicit directory→domain for code that doesn't name itself after its domain
+    const dirDomainOverrides: Record<string, string> = {
+      'platform/api/src': 'chorus-domain',
+      'platform/api/tests': 'chorus-domain',
+    };
+    for (const [dir, domainId] of Object.entries(dirDomainOverrides)) {
+      const fullDir = path.join(CHORUS_ROOT, dir);
+      if (!fs.existsSync(fullDir)) continue;
+      const entries = fs.readdirSync(fullDir, { recursive: true }) as string[];
+      for (const entry of entries) {
+        const entryStr = String(entry);
+        if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) continue;
+        const fullPath = path.join(fullDir, entryStr);
+        try { if (!fs.statSync(fullPath).isFile()) continue; } catch { continue; }
+        const relPath = path.relative(CHORUS_ROOT, fullPath);
+        const ext = path.extname(entryStr).slice(1) || 'unknown';
+        discovered.push({ domainId, filePath: relPath, fileType: ext });
+      }
+    }
+    scanDir(path.join(CHORUS_ROOT, 'skills'), CHORUS_ROOT);
+    scanDir(path.join(CHORUS_ROOT, 'proving/domains/alerts'), CHORUS_ROOT);
+
+    // 4. Clear existing code files and repopulate (idempotent)
+    const clearQuery = `DELETE WHERE { GRAPH <urn:chorus:instances> { ?file a <https://jeffbridwell.com/chorus#CodeFile> ; ?p ?o . ?sd <https://jeffbridwell.com/chorus#hasCodeFile> ?file . } }`;
+    await athenaSparqlUpdate(clearQuery);
+
+    // 5. Write discovered files to graph in batches
+    const batchSize = 50;
+    let written = 0;
+    for (let i = 0; i < discovered.length; i += batchSize) {
+      const batch = discovered.slice(i, i + batchSize);
+      const triples = batch.map(d => {
+        const fileId = `${d.domainId}-code-${d.filePath.replace(/[\/\.]/g, '-').toLowerCase()}`;
+        const fileUri = `https://jeffbridwell.com/chorus#${fileId}`;
+        const sdUri = `https://jeffbridwell.com/chorus#${d.domainId}`;
+        return `<${fileUri}> a chorus:CodeFile ; rdfs:label "${d.filePath.replace(/"/g, '\\"')}" ; chorus:filePath "${d.filePath.replace(/"/g, '\\"')}" ; chorus:fileType "${d.fileType}" . <${sdUri}> chorus:hasCodeFile <${fileUri}> .`;
+      }).join('\n');
+      const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} } }`;
+      await athenaSparqlUpdate(insert);
+      written += batch.length;
+    }
+
+    // 6. Summary by domain
+    const byDomain: Record<string, number> = {};
+    for (const d of discovered) {
+      byDomain[d.domainId] = (byDomain[d.domainId] || 0) + 1;
+    }
+
+    res.json(athenaEnvelope('discover-code', {
+      total_files: discovered.length,
+      total_domains: Object.keys(byDomain).length,
+      domains_available: domains.length,
+      by_domain: byDomain,
+      written,
+    }, Date.now() - start, { count: discovered.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('discover-code', { error: err.message }, Date.now() - start, { error: true }));
+  }
 });
 
 // GET /api/athena/subdomains/:id/actors — actors that interact with this subdomain (#1899)
