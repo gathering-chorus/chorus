@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chorus — Skill Lifecycle and Dependencies</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f8f9fa; color: #1a1a1a; margin: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
+    h1 { color: #1a1a1a; margin-bottom: 5px; }
+    h2 { color: #0a58ca; margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
+    .subtitle { color: #666; margin-bottom: 30px; }
+    .diagram { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; overflow-x: auto; }
+    .nav { position: sticky; top: 0; background: #f8f9fa; padding: 10px 0; border-bottom: 1px solid #ddd; z-index: 10; }
+    .nav a { color: #0a58ca; text-decoration: none; margin-right: 20px; font-size: 14px; }
+    .nav a:hover { text-decoration: underline; }
+    .meta { color: #666; font-size: 13px; margin-bottom: 10px; }
+    table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; font-size: 13px; }
+    th { background: #f0f0f0; font-weight: 600; }
+    tr:nth-child(even) { background: #fafafa; }
+    .hard { color: #d32f2f; font-weight: 600; }
+    .soft { color: #f57c00; }
+    .none { color: #999; }
+    code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 12px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'loose' });</script>
+</head>
+<body>
+
+<h1>Chorus — Skill Lifecycle and Dependencies</h1>
+<p class="subtitle">How 40 skills form the operating model. Generated from source code, 2026-04-13.</p>
+
+<div class="nav">
+  <a href="#lifecycle">Lifecycle</a>
+  <a href="#delegation">Delegation Map</a>
+  <a href="#shared">Shared Infrastructure</a>
+  <a href="#crossrole">Cross-Role Interactions</a>
+  <a href="#decisions">Decision Enforcement</a>
+</div>
+
+<h2 id="lifecycle">Card Lifecycle — How Work Flows Through Skills</h2>
+<p class="meta">Every card follows this path. Skills are the executable steps. Gates are the quality checkpoints.</p>
+<div class="diagram">
+  <pre class="mermaid">
+flowchart TD
+    subgraph ENTRY["Entry"]
+        sb["/sb — scan board"]
+        ab["/ab — analyze board"]
+        flow["/flow — Wren proposes"]
+        golfball["/golfball — domain safety check"]
+        cs["/cs — check seeds"]
+    end
+
+    subgraph PULL["Pull (single entry point)"]
+        validate["Step 1: Validate\ncard exists, has AC + Experience"]
+        preflight["Step 2: Preflight\nchunk, domain, files tagged"]
+        wip_check["Step 3: WIP check\nwarn if >3 total"]
+        domain_ctx["Step 4: Domain context\nread domain state API"]
+        design_gate["Step 4.5: Design gate\nactors + edges required"]
+        tdd_ready["Step 5: TDD readiness\nsuggest test structure"]
+        move_wip["Step 6: Move to WIP\ndeclare building"]
+    end
+
+    subgraph BUILD["Build"]
+        solo["Solo build\ntests first, then code"]
+        pair["/pair — strong-style\nnavigator scope loop"]
+        jdi["/jdi — just do it\nzero preamble"]
+        simplify["/simplify — code review"]
+    end
+
+    subgraph DEMO["Demo (proving gate)"]
+        demo_validate["Step 1: Validate card"]
+        gate_chain["Step 2: 5-Gate Chain"]
+        smoke["Step 3: Smoke check\n50 page endpoints"]
+        stakes["Step 4: Stakes brief\nwhy this matters"]
+        signal["Step 5: Signal\nboard + spine + nudge + brief"]
+        show["Step 6: Show live\npause, follow Jeff's eye"]
+    end
+
+    subgraph GATES["Gate Chain (strict sequence)"]
+        gp["/gate-product\nWren"]
+        gc["/gate-code\nKade"]
+        gq["/gate-quality\nKade"]
+        ga["/gate-arch\nSilas"]
+        go["/gate-ops\nSilas"]
+    end
+
+    subgraph ACCEPT["Accept"]
+        acp["/acp\ndemo brief check"]
+        commit["git-queue.sh commit"]
+        push["git-queue.sh push"]
+    end
+
+    subgraph CLOSE["Close"]
+        reboot["/reboot\ndoc freshness gate"]
+    end
+
+    sb --> ab
+    ab --> flow
+    flow -->|"Wren proposes"| PULL
+    golfball -->|"domain clear?"| PULL
+    cs -->|"seed arrives"| PULL
+
+    validate --> preflight --> wip_check --> domain_ctx --> design_gate --> tdd_ready --> move_wip
+
+    move_wip --> solo
+    move_wip --> pair
+    move_wip --> jdi
+    solo --> simplify
+    pair --> simplify
+
+    solo --> DEMO
+    pair --> DEMO
+    jdi --> DEMO
+
+    demo_validate --> gate_chain
+    gate_chain --> gp --> gc --> gq --> ga --> go
+    go -->|"all pass"| smoke
+    smoke --> stakes --> signal --> show
+
+    show -->|"Jeff accepts"| acp
+    show -->|"Jeff rejects"| solo
+
+    acp --> commit --> push
+
+    push --> reboot
+
+    style PULL fill:#e3f2fd
+    style DEMO fill:#fff3e0
+    style GATES fill:#fce4ec
+    style ACCEPT fill:#e8f5e9
+    style CLOSE fill:#f3e5f5
+  </pre>
+</div>
+
+<h2 id="delegation">Skill Delegation Map — Who Calls Who</h2>
+<p class="meta">Cross-skill delegation is text-based — nudges containing slash commands, not programmatic invocation. No skill uses the Skill tool to call another skill.</p>
+<div class="diagram">
+  <pre class="mermaid">
+flowchart LR
+    pair["/pair"] -->|"delegates to"| pull["/pull"]
+    demo["/demo"] -->|"runs gate chain"| gp["/gate-product"]
+    demo -->|"nudges for"| gc["/gate-code"]
+    demo -->|"nudges for"| gq["/gate-quality"]
+    demo -->|"nudges for"| ga["/gate-arch"]
+    demo -->|"nudges for"| go["/gate-ops"]
+    demo -->|"nudges recipients"| gemba["/gemba"]
+    acp["/acp"] -->|"checks for"| demo
+    pipeline["/pipeline"] -->|"nudges owners"| pull
+    flow["/flow"] -->|"proposes to Jeff"| pull
+    golfball["/golfball"] -->|"run before"| pull
+    reboot["/reboot"] -->|"verifies"| werk["/werk"]
+
+    style pull fill:#e3f2fd
+    style demo fill:#fff3e0
+    style acp fill:#e8f5e9
+  </pre>
+</div>
+
+<h2 id="shared">Shared Infrastructure — Scripts Called by Multiple Skills</h2>
+<p class="meta">Four scripts form the nervous system. When one breaks, it cascades across the entire lifecycle.</p>
+<div class="diagram">
+  <pre class="mermaid">
+flowchart TD
+    subgraph skills["Skills (13 use cards, 12 use chorus-log, 6 use nudge, 4 use role-state)"]
+        pull["/pull"]
+        demo["/demo"]
+        acp["/acp"]
+        pair["/pair"]
+        chat["/chat"]
+        ab["/ab"]
+        sb["/sb"]
+        flow["/flow"]
+        golfball["/golfball"]
+        reboot["/reboot"]
+        ga["/gate-arch"]
+        gc["/gate-code"]
+        gp["/gate-product"]
+        gq["/gate-quality"]
+        go["/gate-ops"]
+        sweep["/board-sweep"]
+        interrupt["/interrupt"]
+        gemba["/gemba"]
+    end
+
+    cards["cards CLI\n13 skills"]
+    log["chorus-log\n12 skills"]
+    nudge_s["nudge\n6 skills"]
+    rs["role-state\n4 skills"]
+    gq_sh["git-queue.sh\n2 skills"]
+    smoke["smoke-check.sh\n1 skill"]
+
+    pull --> cards
+    pull --> log
+    pull --> rs
+    demo --> cards
+    demo --> log
+    demo --> nudge_s
+    demo --> smoke
+    acp --> cards
+    acp --> log
+    acp --> gq_sh
+    pair --> log
+    pair --> nudge_s
+    pair --> rs
+    chat --> nudge_s
+    reboot --> gq_sh
+    ga --> log
+    gc --> log
+    gp --> log
+    gq --> log
+    go --> log
+    ab --> cards
+    sb --> cards
+    flow --> cards
+    golfball --> cards
+    golfball --> log
+    sweep --> cards
+    sweep --> log
+    interrupt --> nudge_s
+    interrupt --> log
+    gemba --> rs
+
+    style cards fill:#bbdefb
+    style log fill:#c8e6c9
+    style nudge_s fill:#ffe0b2
+    style rs fill:#e1bee7
+    style gq_sh fill:#ffccbc
+    style smoke fill:#fff9c4
+  </pre>
+</div>
+
+<h2 id="crossrole">Cross-Role Interactions — Where Skills Span Boundaries</h2>
+<p class="meta">Most skills are single-role. These are the ones that require coordination across role sessions.</p>
+
+<table>
+  <tr><th>Skill</th><th>Roles Involved</th><th>Interaction Pattern</th><th>Communication</th></tr>
+  <tr><td><code>/pair</code></td><td>2 roles (driver + navigator)</td><td>Strong-style: navigator directs, driver executes. Scope loop is the pair.</td><td>Shared scratch file + nudges. DND mode queues external messages.</td></tr>
+  <tr><td><code>/chat</code></td><td>2 roles</td><td>Direct text conversation. Cron loop polls for replies.</td><td>chat.sh file + nudges on reply</td></tr>
+  <tr><td><code>/demo</code></td><td>Builder + all roles + Jeff</td><td>Builder shows. 5 gates run by 3 different roles. Feedback mandatory from all.</td><td>Nudge per role with domain-specific questions. Demo brief to Wren.</td></tr>
+  <tr><td><code>/pipeline</code></td><td>Wren + all builders</td><td>Wren orchestrates sequence. Roles nudge back on completion.</td><td>Nudge with [pipeline] prefix. Board <code>after=</code> for dependencies.</td></tr>
+  <tr><td><code>/clearing</code></td><td>All 3 + Jeff</td><td>Real-time browser chat. Decisions marked with DECISION: prefix.</td><td>Socket.IO via Clearing server :3470</td></tr>
+  <tr><td><code>/gemba</code></td><td>Observer + target</td><td>One-way observation. Observer tails, commentates. No participation.</td><td>Session tail + spine events. 10-min TTL.</td></tr>
+  <tr><td><code>/interrupt</code></td><td>Sender + target</td><td>Cancel current work, redirect to new task.</td><td>Escape keystroke + redirect nudge</td></tr>
+</table>
+
+<h2 id="decisions">Decision Enforcement Audit — Hard vs Soft vs None</h2>
+<p class="meta">12 decisions encoded as executable gates. Enforcement varies: Rust hooks can't be bypassed, skill markdown can be skipped, conventions have no enforcement.</p>
+
+<table>
+  <tr><th>Decision</th><th>What It Says</th><th>Enforcement</th><th>Where</th></tr>
+  <tr><td>DEC-048</td><td>Builder cannot self-accept code cards</td><td class="hard">HARD — Rust hook</td><td><code>accept_gate.rs</code> + <code>/acp</code> Step 0</td></tr>
+  <tr><td>DEC-050</td><td>Smoke check before every demo</td><td class="hard">HARD — skill gate</td><td><code>/demo</code> Step 3 runs <code>smoke-check.sh</code></td></tr>
+  <tr><td>DEC-074</td><td>Search Chorus before filesystem grep</td><td class="hard">HARD — Rust hook</td><td><code>search_hierarchy.rs</code></td></tr>
+  <tr><td>DEC-095</td><td>No harvester code without ICD provider</td><td class="hard">HARD — Rust hook</td><td><code>icd_write_gate.rs</code></td></tr>
+  <tr><td>DEC-1674</td><td>Tests before code (TDD)</td><td class="hard">HARD — Rust hook</td><td><code>tdd_gate.rs</code> blocks Edit/Write without test file</td></tr>
+  <tr><td>DEC-1396</td><td>Domain design-ready before code</td><td class="hard">HARD — skill gate</td><td><code>/pull</code> Step 4.5 checks completeness API</td></tr>
+  <tr><td>DEC-025</td><td>Execute, don't ask permission</td><td class="hard">HARD — Rust hook</td><td><code>stop_on_error.rs</code> (stop hook)</td></tr>
+  <tr><td>DEC-049</td><td>Smallest card first at equal priority</td><td class="soft">SOFT — skill text</td><td><code>/pull</code>, <code>/flow</code> mention WSJF but don't enforce</td></tr>
+  <tr><td>DEC-079</td><td>Max 2 nudge exchanges, then /chat</td><td class="soft">SOFT — skill text</td><td><code>/nudge</code> mentions limit but doesn't count</td></tr>
+  <tr><td>DEC-091</td><td>Roles card/schedule/chore without asking</td><td class="soft">SOFT — skill text</td><td>Multiple skills reference but no enforcement</td></tr>
+  <tr><td>DEC-089</td><td>SSH for bulk ops, not NFS</td><td class="soft">SOFT — Rust hook warns</td><td><code>bedroom_nfs_guard.rs</code> warns but allows</td></tr>
+  <tr><td>DEC-022</td><td>Disk thresholds: 90% warn, 95% critical</td><td class="hard">HARD — skill gate</td><td><code>/gate-ops</code> Step 4 blocks deploy at 95%+</td></tr>
+</table>
+
+<h2>Key Insight: The Enforcement Gap</h2>
+<p class="meta">Three types of enforcement exist. The gap between "described in a skill" and "enforced in a hook" is where inconsistent execution lives.</p>
+
+<table>
+  <tr><th>Level</th><th>Mechanism</th><th>Can Be Bypassed?</th><th>Examples</th></tr>
+  <tr><td class="hard">Hard — Rust hook</td><td>PreToolUse gate in <code>chorus-hooks</code> binary</td><td>No — blocks the tool call at the harness level</td><td>TDD gate, search hierarchy, sensitive paths, accept gate, ICD gate</td></tr>
+  <tr><td class="hard">Hard — Skill gate</td><td>Step in a skill that stops progression</td><td>Yes — role can skip the skill entirely</td><td>Design gate in /pull, smoke check in /demo, demo check in /acp</td></tr>
+  <tr><td class="soft">Soft — Skill text</td><td>Instruction in skill markdown</td><td>Yes — role can ignore</td><td>WSJF priority, nudge exchange limit, autonomy rules</td></tr>
+  <tr><td class="none">None — Convention</td><td>Described in CLAUDE.md or decisions but not in any gate</td><td>Yes — no enforcement at all</td><td>Brief routing, handoff logging, cost awareness</td></tr>
+</table>
+
+</body>
+</html>
