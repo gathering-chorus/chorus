@@ -42,30 +42,17 @@ run_check() {
 
   log "FIRE $name — $result"
 
+  # Action block owns ALL nudge delivery, cooldown, and consecutive-failure tracking.
+  # Runner does NOT nudge independently. (#1985: runner's nudge path bypassed the
+  # action block's consecutive-failure counter, firing on every single check failure.
+  # Previous fix #1861 tried cooldown-file gating but the file doesn't exist until
+  # the action block's counter reaches threshold — so runner still leaked nudges.)
   local action_script
   action_script=$(awk '/^action: \|/{found=1; next} /^[a-z]/{if(found) exit} found{print}' "$rule_file")
 
   if [[ -n "$action_script" ]]; then
     bash -c "$action_script" >> "$LOG" 2>&1 || true
     log "  ACTION $name fired"
-  fi
-
-  # DEC-107: persist AND deliver — but respect action block's cooldown.
-  # Action block writes its own cooldown file (e.g. /tmp/alert-nifi-2026-04-10).
-  # If ANY /tmp/alert-${name}-* cooldown file exists for today, skip the nudge.
-  # This prevents the dual-path leak where action cooldown suppresses but runner still nudges.
-  local action_cooldown=$(ls /tmp/alert-${name}-$(date '+%Y-%m-%d')* 2>/dev/null | head -1)
-  if [[ -n "$action_cooldown" ]]; then
-    log "  NUDGE $name action-cooldown active (skipped)"
-  else
-    local owner
-    owner=$(grep '^owner:' "$rule_file" | head -1 | sed 's/owner: *//' || true)
-    owner="${owner:-silas}"
-    local alert_ts
-    alert_ts=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
-    local nudge_msg="Alert — $alert_ts | $name: $result"
-    bash ${CHORUS_ROOT}/platform/scripts/nudge "$owner" "$nudge_msg" --force >> "$LOG" 2>&1 || true
-    log "  NUDGE $owner ($name)"
   fi
 }
 
