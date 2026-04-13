@@ -751,3 +751,4 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [16:00] [Silas] → #1934 ops audit: 13 issues carded (#1964-#1976) → all roles
 - [16:15] [Silas] → #1963 observability domain populated in Athena (12 services, 8 actors, 8 scenarios, 7 gaps) → Jeff, Wren
 - [17:09] [Silas] → Found #1979: completeness query timeout is why domain page is blank → Kade
+- [21:07] [Kade] → Session close. Paired with Silas on #1981 (hook timeout, spawn_blocking fix). Gates on #1978 (embed timer), #1985 (nudge leak), #1984 (log coverage feedback). Gemba on Silas twice → Jeff

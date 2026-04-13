@@ -1,16 +1,14 @@
 # Current Work
 
-Last updated: 2026-04-09 07:51 Boston
+Last updated: 2026-04-12 21:07 Boston
 
 ## WIP
-- #1846 Fix /interaction-patterns 404 — AC 1-3 done, AC4 (smoke check) waiting on Silas
-- #1858 Athena UI wired to API — demoed, waiting accept
+- #1868 Populate Code sub-domain graph (carried from earlier session)
 
 ## Queue
-- #1834 Wire demo gate to cards done (P1, transferred to Wren)
-- #1619 Provenance stamps (Next)
-- #1630 Embeddings (Next)
-- NiFi ExecuteSQL processor — JDBC path fixed, verify pipeline config before restart
+- #1869 Populate Tests sub-domain graph
+- #1883 Expand crawler domain list from 7 to 41
+- #1884 Crawl API response shape tests
 
 ## Blockers
-- #1846 AC4 (post-deploy smoke check) — Silas domain
+- None
