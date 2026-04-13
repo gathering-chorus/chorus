@@ -226,8 +226,10 @@ do_commit() {
   # Stage and commit — pass files to BOTH git add and git commit.
   # Without files on git commit, any previously staged files from another
   # role would leak into this commit (cross-role staging collision).
+  # Close fd 9 for child processes so git credential-cache-daemon
+  # doesn't inherit the lockf descriptor and hold the lock forever.
   local exit_code=0
-  git add "${files[@]}" && git commit "${git_args[@]}" -- "${files[@]}" || exit_code=$?
+  git add "${files[@]}" 9>&- && git commit "${git_args[@]}" -- "${files[@]}" 9>&- || exit_code=$?
 
   # Release
   clear_meta

@@ -1,0 +1,34 @@
+C4Context
+    title Chorus — System Context (Level 1)
+
+    Person(jeff, "Jeff", "System owner. Uses Clearing for chat, reviews demos, accepts cards.")
+    Person(silas, "Silas", "Architect/ops AI role — Claude Code session")
+    Person(wren, "Wren", "Product/coordination AI role — Claude Code session")
+    Person(kade, "Kade", "Engineer/quality AI role — Claude Code session")
+
+    System(chorus, "Chorus", "Coordination protocol for multi-role AI team. Hooks, context search, messaging, alerting, gates, board ops.")
+
+    Boundary(b1, "External Systems") {
+        System_Ext(anthropic, "Anthropic Claude API", "Powers AI role sessions")
+        System_Ext(cloudflare, "Cloudflare Tunnel", "Remote HTTPS ingress to Clearing")
+        System_Ext(fuseki, "Apache Fuseki", "RDF triple store — SPARQL queries")
+        System_Ext(vikunja, "Vikunja", "Kanban board — card CRUD")
+        System_Ext(gathering_app, "Gathering App", "Smoke tests and health checks")
+        System_Ext(bedroom, "Bedroom Mac", "Ollama embeddings, NiFi, media APIs")
+        System_Ext(grafana_stack, "Observability Stack", "Grafana, Prometheus, Alertmanager, Loki")
+    }
+
+    Rel(jeff, chorus, "Chat, demo review, card acceptance")
+    Rel(silas, chorus, "Gates, search, spine events, board ops")
+    Rel(wren, chorus, "Gates, search, spine events, board ops")
+    Rel(kade, chorus, "Gates, search, spine events, board ops")
+
+    Rel(chorus, anthropic, "AI role inference")
+    Rel(chorus, cloudflare, "Remote access tunnel")
+    Rel(chorus, fuseki, "SPARQL queries")
+    Rel(chorus, vikunja, "Card CRUD")
+    Rel(chorus, gathering_app, "Health and smoke checks")
+    Rel(chorus, bedroom, "Embedding inference, log shipping")
+    Rel(chorus, grafana_stack, "Metrics, logs, alerts")
+
+    UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")

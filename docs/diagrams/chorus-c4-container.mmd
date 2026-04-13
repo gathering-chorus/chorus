@@ -1,0 +1,75 @@
+C4Container
+    title Chorus — Container Diagram (Level 2)
+
+    Person(jeff, "Jeff", "System owner")
+    Person(roles, "AI Roles", "Silas, Wren, Kade — Claude Code sessions")
+
+    System_Ext(fuseki, "Fuseki :3030", "RDF triple store")
+    System_Ext(vikunja, "Vikunja :3456", "Kanban board")
+    System_Ext(bedroom, "Bedroom Mac", "Ollama :11434, NiFi :8443")
+    System_Ext(cloudflare, "Cloudflare Tunnel", "HTTPS ingress")
+    System_Ext(loki, "Loki :3102", "Log aggregation")
+    System_Ext(prometheus, "Prometheus :9090", "Metrics")
+    System_Ext(alertmanager, "Alertmanager :9093", "Alert routing")
+
+    Container_Boundary(chorus, "Chorus") {
+
+        Container(api, "Chorus API", "Node.js, Express :3340", "Monolith: context search (FTS+semantic+SPARQL via RRF), Athena ontology, freshness scoring, indexing pipeline, embed endpoint, telemetry")
+        Container(clearing, "Clearing", "Node.js, Express+Socket.IO :3470", "Multi-party chat server: message routing, participant streaming, transcript persistence, session tailing")
+        Container(hooks, "Chorus Hooks", "Rust, Axum, Unix socket", "38 guard modules: pre/post tool-use gates, decision enforcement, credential scrubbing, search hierarchy")
+        Container(shim, "chorus-hook-shim", "Rust CLI", "Unified binary — subcommands: nudge, log, role-state, session, health, pulse, context-cache. Nudge delivers inter-role messages via API + osascript injection.")
+
+        Container(cards_cli, "Cards CLI", "TypeScript (bash wrapper)", "Board gateway — every card mutation from skills, hooks, and roles routes through here to Vikunja API")
+        Container(chat, "Chat", "Bash + messaging API", "Two-role direct channel — persists to /tmp/chorus-chat/*.md files and posts to messaging API :3475")
+        Container(bridge_subs, "Bridge Subscribers", "Node.js x3", "Per-role Socket.IO clients — filter card/role events, queue to voice-inbox")
+
+        Container(session_boot, "Session Boot", "Bash + Rust", "session-start.sh → werk-init.sh → assembles /tmp/session-start-{role}.md from Pulse, board, briefs, activity, memory")
+
+        ContainerDb(index_db, "Index DB", "SQLite, WAL mode, 441MB", "Messages, watermarks — FTS search, session transcripts, spine events, briefs")
+        ContainerDb(lance_db, "LanceDB", "525K vectors", "Semantic search embeddings — nomic-embed-text via Ollama")
+        ContainerDb(spine_log, "Spine Log", "JSON lines, append-only", "platform/logs/chorus.log — audit trail for all system actions")
+        ContainerDb(file_state, "File State", "/tmp/ + ~/.chorus/", "Role state, nudge queues, chat transcripts, watermarks, ops state")
+
+        Container(alert_runner, "Alert Runner", "Bash, 60s", "Evaluates proving/domains/alerts/*.yml rules, fires action blocks")
+        Container(deep_health, "Deep Health", "Bash, 300s", "14 checks: service liveness, log freshness, index drift, disk, tunnel")
+        Container(embed_worker, "Embed Worker", "Bash, 300s", "Polls API /embed endpoint, batches through Ollama, writes to LanceDB")
+        Container(context_cache, "Context Cache", "Bash, 5m/1h/daily/weekly", "Snapshots agent context at multiple intervals via chorus-hook-shim")
+        Container(session_watcher, "Session Watcher", "Node.js", "fs.watch on session JSONL files, feeds into Clearing and index")
+    }
+
+    Rel(jeff, clearing, "Browser chat, remote via Cloudflare tunnel")
+    Rel(roles, hooks, "Every tool call — pre/post gate on Unix socket")
+    Rel(roles, api, "Context search, domain queries, freshness")
+    Rel(roles, shim, "nudge, chorus-log, role-state — CLI subcommands")
+    Rel(roles, cards_cli, "Board ops — add, move, done, demo, view")
+    Rel(roles, chat, "Two-role direct conversations")
+
+    Rel(cloudflare, clearing, "Proxies HTTPS to :3470, token-gated")
+
+    Rel(hooks, api, "Search hierarchy enforcement, context injection")
+    Rel(hooks, spine_log, "Write spine events via chorus-log subcommand")
+    Rel(shim, file_state, "Role state, nudge queues — /tmp/claude-team-scan/, /tmp/voice-inbox/")
+    Rel(shim, clearing, "Post consumed nudges to Bridge API")
+    Rel(chat, file_state, "Read/write /tmp/chorus-chat/*.md")
+    Rel(chat, clearing, "Post messages to messaging API :3475")
+    Rel(session_boot, api, "Pulse, freshness queries")
+    Rel(session_boot, cards_cli, "Board audit, WIP cards")
+    Rel(session_boot, file_state, "Read briefs, memory, activity, write session-start")
+
+    Rel(api, index_db, "FTS5 search, message indexing, watermarks")
+    Rel(api, lance_db, "Vector similarity search, embed writes")
+    Rel(api, fuseki, "SPARQL queries — ontology, harvest stats")
+    Rel(clearing, file_state, "Message persistence /tmp/bridge-messages.json")
+    Rel(cards_cli, vikunja, "Card CRUD via REST API")
+
+    Rel(bridge_subs, clearing, "Socket.IO event subscription")
+    Rel(bridge_subs, file_state, "Queue to /tmp/voice-inbox/{role}/")
+    Rel(session_watcher, index_db, "Index transcripts")
+    Rel(session_watcher, clearing, "Feed session events to Bridge UI")
+
+    Rel(alert_runner, alertmanager, "Fire alerts")
+    Rel(alert_runner, shim, "Action blocks use nudge for delivery")
+    Rel(deep_health, shim, "Nudge silas on failure")
+    Rel(deep_health, loki, "Log freshness queries")
+    Rel(embed_worker, api, "POST /api/chorus/embed batches")
+    Rel(embed_worker, bedroom, "Ollama embedding inference")
