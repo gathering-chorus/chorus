@@ -41,35 +41,27 @@ pub async fn check(input: &HookInput) -> HookResponse {
         issues.push("Hook server (com.chorus.hooks) has no PID — may be crashed".to_string());
     }
 
-    // 2. API health — retry once on timeout (first request after idle hits cold DNS/TCP path)
-    let api_healthy = {
-        let mut healthy = false;
-        for attempt in 0..2 {
-            match ureq::get("http://localhost:3340/api/chorus/health")
-                .timeout(std::time::Duration::from_millis(1000))
-                .call()
-            {
-                Ok(resp) => {
-                    if let Ok(body) = resp.into_json::<serde_json::Value>() {
-                        let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
-                        if status != "healthy" {
-                            issues.push(format!("Chorus API status: {}", status));
-                        }
-                    }
-                    healthy = true;
-                    break;
-                }
-                Err(ureq::Error::Transport(_)) if attempt == 0 => {
-                    // Cold-start timeout — retry immediately (#1981)
-                    continue;
-                }
-                Err(_) => break,
+    // 2. API health — run blocking ureq off the tokio thread pool (#1981)
+    // ureq is synchronous; running it inline starves the async runtime under concurrent
+    // PostToolUse calls, causing spurious timeouts on a 120ms API.
+    let api_result = tokio::task::spawn_blocking(|| {
+        ureq::get("http://localhost:3340/api/chorus/health")
+            .timeout(std::time::Duration::from_millis(1000))
+            .call()
+            .ok()
+            .and_then(|resp| resp.into_json::<serde_json::Value>().ok())
+    }).await;
+
+    match api_result {
+        Ok(Some(body)) => {
+            let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+            if status != "healthy" {
+                issues.push(format!("Chorus API status: {}", status));
             }
         }
-        healthy
-    };
-    if !api_healthy {
-        issues.push("Chorus API unreachable at localhost:3340".to_string());
+        _ => {
+            issues.push("Chorus API unreachable at localhost:3340".to_string());
+        }
     }
 
     // 3. Alert cooldown files — check if any alert fired today
