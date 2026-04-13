@@ -12,10 +12,13 @@ set -euo pipefail
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 ALERT_DIR="${CHORUS_ROOT}/proving/domains/alerts"
+ALERT_STATE_DIR="/Users/jeffbridwell/Library/Logs/Gathering/alert-state"
 LOG="/Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log"
+COOLDOWN_SECONDS="${ALERT_COOLDOWN:-600}"  # 10 minutes default
+CONSECUTIVE_THRESHOLD="${ALERT_THRESHOLD:-2}"  # require 2 failures before firing
 TIMESTAMP() { TZ=America/New_York date '+%Y-%m-%d %H:%M:%S'; }
 
-mkdir -p "$(dirname "$LOG")"
+mkdir -p "$(dirname "$LOG")" "$ALERT_STATE_DIR"
 
 log() { echo "[$(TIMESTAMP)] $*" >> "$LOG"; }
 
@@ -37,22 +40,46 @@ run_check() {
 
   if [[ "$result" == "ok" ]]; then
     log "OK $name"
+    # Reset consecutive failure count on success
+    rm -f "$ALERT_STATE_DIR/${name}.consecutive"
     return
   fi
 
-  log "FIRE $name — $result"
+  # Track consecutive failures
+  local consec_file="$ALERT_STATE_DIR/${name}.consecutive"
+  local fail_count=0
+  [[ -f "$consec_file" ]] && fail_count=$(cat "$consec_file")
+  fail_count=$((fail_count + 1))
+  echo "$fail_count" > "$consec_file"
 
-  # Action block owns ALL nudge delivery, cooldown, and consecutive-failure tracking.
-  # Runner does NOT nudge independently. (#1985: runner's nudge path bypassed the
-  # action block's consecutive-failure counter, firing on every single check failure.
-  # Previous fix #1861 tried cooldown-file gating but the file doesn't exist until
-  # the action block's counter reaches threshold — so runner still leaked nudges.)
+  # Require consecutive failures before firing
+  if [[ $fail_count -lt $CONSECUTIVE_THRESHOLD ]]; then
+    log "WARN $name — failure $fail_count/$CONSECUTIVE_THRESHOLD, waiting for consecutive threshold"
+    return
+  fi
+
+  # Cooldown — skip if fired too recently
+  local fire_file="$ALERT_STATE_DIR/${name}.last_fire"
+  if [[ -f "$fire_file" ]]; then
+    local last_fire now elapsed
+    last_fire=$(cat "$fire_file")
+    now=$(date +%s)
+    elapsed=$((now - last_fire))
+    if [[ $elapsed -lt $COOLDOWN_SECONDS ]]; then
+      log "SKIP $name — cooldown active (${elapsed}s/${COOLDOWN_SECONDS}s since last fire)"
+      return
+    fi
+  fi
+
+  log "FIRE $name — $result (consecutive: $fail_count)"
+
   local action_script
   action_script=$(awk '/^action: \|/{found=1; next} /^[a-z]/{if(found) exit} found{print}' "$rule_file")
 
   if [[ -n "$action_script" ]]; then
     bash -c "$action_script" >> "$LOG" 2>&1 || true
-    log "  ACTION $name fired"
+    date +%s > "$fire_file"
+    log "  ACTION $name fired — cooldown ${COOLDOWN_SECONDS}s started"
   fi
 }
 

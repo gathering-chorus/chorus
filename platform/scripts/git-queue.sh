@@ -193,7 +193,7 @@ do_commit() {
     local validate_script="$(dirname "$0")/ontology-validate.sh"
     if [ -x "$validate_script" ]; then
       local validate_output
-      validate_output=$("$validate_script" 2>&1)
+      validate_output=$("$validate_script" 9>&- 2>&1)
       local validate_exit=$?
       if [ $validate_exit -ne 0 ]; then
         echo "$validate_output"
@@ -261,15 +261,15 @@ do_push() {
 
   local stashed=false
   if [ -n "$dirty" ]; then
-    git -C "$REPO_ROOT" stash --quiet 2>/dev/null
+    git -C "$REPO_ROOT" stash --quiet 9>&- 2>/dev/null
     stashed=true
   fi
 
   local exit_code=0
-  git -C "$REPO_ROOT" pull --rebase 2>&1 && git -C "$REPO_ROOT" push 2>&1 || exit_code=$?
+  git -C "$REPO_ROOT" pull --rebase 9>&- 2>&1 && git -C "$REPO_ROOT" push 9>&- 2>&1 || exit_code=$?
 
   if $stashed; then
-    git -C "$REPO_ROOT" stash pop --quiet 2>/dev/null || {
+    git -C "$REPO_ROOT" stash pop --quiet 9>&- 2>/dev/null || {
       local stash_ref
       stash_ref=$(git -C "$REPO_ROOT" stash list | head -1)
       echo "git-queue: WARNING — stash pop failed (conflict). Your files are safe in: ${stash_ref:-stash@{0}}" >&2

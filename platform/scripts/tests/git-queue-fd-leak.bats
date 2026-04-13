@@ -6,12 +6,23 @@
   grep -q '9>&-' "$BATS_TEST_DIRNAME/../git-queue.sh"
 }
 
-@test "git add line closes fd 9 for child processes" {
-  # Both git add and git commit must close fd 9
+@test "git add and commit close fd 9 for child processes" {
   local line
   line=$(grep 'git add.*git commit' "$BATS_TEST_DIRNAME/../git-queue.sh")
   echo "$line" | grep -q 'git add.*9>&-'
   echo "$line" | grep -q 'git commit.*9>&-'
+}
+
+@test "push path closes fd 9 on stash, pull, push, and stash pop" {
+  local script="$BATS_TEST_DIRNAME/../git-queue.sh"
+  grep -q 'stash --quiet 9>&-' "$script"
+  grep -q 'pull --rebase 9>&-' "$script"
+  grep -q 'push 9>&-' "$script"
+  grep -q 'stash pop --quiet 9>&-' "$script"
+}
+
+@test "ontology validation closes fd 9" {
+  grep -q 'validate_script.*9>&-' "$BATS_TEST_DIRNAME/../git-queue.sh"
 }
 
 @test "no credential-cache-daemon holding lock fd" {
