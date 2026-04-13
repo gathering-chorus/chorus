@@ -58,10 +58,10 @@ async function initLance(): Promise<void> {
 const MIN_EMBED_LENGTH = 100;
 const EMBED_PAGE_SIZE = 100;  // Process one page per cycle, timer handles the rest (#1920)
 
-async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
+async function embedDelta(): Promise<{ embedded: number; skipped: number; ollama_failures: number }> {
   if (!lanceDb) {
     await initLance();
-    if (!lanceDb) return { embedded: 0, skipped: 0 };
+    if (!lanceDb) return { embedded: 0, skipped: 0, ollama_failures: 0 };
   }
 
   const db = new Database(DB_PATH, { readonly: true });
@@ -88,7 +88,7 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
       id: number; source: string; channel: string; role: string; content: string; timestamp: string;
     }>;
 
-    if (page.length === 0) return { embedded: 0, skipped: 0 };
+    if (page.length === 0) return { embedded: 0, skipped: 0, ollama_failures: 0 };
 
     // Count total remaining for logging
     const countRow = db.prepare(`
@@ -101,6 +101,7 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
     }> = [];
     let skipped = 0;
 
+    let ollamaFailures = 0;
     for (const msg of page) {
       try {
         const text = `[${msg.source}/${msg.role}] ${msg.content.slice(0, 2000)}`;
@@ -114,12 +115,14 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
           timestamp: msg.timestamp,
           vector,
         });
-      } catch {
+      } catch (err: any) {
         skipped++;
+        ollamaFailures++;
+        console.error(`[embed-delta] Ollama failure for msg ${msg.id}: ${err.message}`);
       }
     }
 
-    if (records.length === 0) return { embedded: 0, skipped };
+    if (records.length === 0) return { embedded: 0, skipped, ollama_failures: ollamaFailures };
 
     // Write page to LanceDB — incremental, restartable
     if (lanceTable) {
@@ -138,23 +141,41 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number }> {
     markMany(records.map(r => r.msg_id));
     markDb.close();
 
-    console.log(`[embed-delta] Embedded ${records.length}/${countRow.cnt} remaining, skipped ${skipped}`);
-    return { embedded: records.length, skipped };
+    if (ollamaFailures > 0) {
+      console.log(`[embed-delta] Embedded ${records.length}/${countRow.cnt} remaining, skipped ${skipped}, ollama_failures ${ollamaFailures}`);
+    } else {
+      console.log(`[embed-delta] Embedded ${records.length}/${countRow.cnt} remaining, skipped ${skipped}`);
+    }
+    return { embedded: records.length, skipped, ollama_failures: ollamaFailures };
   } finally {
     db.close();
   }
 }
 
+const EMBED_MAX_RETRIES = 3;
+const EMBED_BACKOFF_MS = [1000, 2000, 4000];
+
 async function embedQuery(text: string): Promise<number[]> {
-  const res = await fetch(`${OLLAMA_URL}/api/embeddings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: EMBED_MODEL, prompt: text }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!res.ok) throw new Error(`Ollama embed failed: ${res.status}`);
-  const data = await res.json() as { embedding: number[] };
-  return data.embedding;
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < EMBED_MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(`${OLLAMA_URL}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: EMBED_MODEL, prompt: text }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) throw new Error(`Ollama embed failed: ${res.status}`);
+      const data = await res.json() as { embedding: number[] };
+      return data.embedding;
+    } catch (err: any) {
+      lastErr = err;
+      if (attempt < EMBED_MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, EMBED_BACKOFF_MS[attempt]));
+      }
+    }
+  }
+  throw lastErr || new Error('Ollama embed failed after retries');
 }
 
 interface SemanticResult {
@@ -3708,12 +3729,20 @@ app.get('/api/chorus/health', (_req: Request, res: Response) => {
 });
 
 // Health cache exposed via /api/chorus/health/detail for deep-health (#1978)
-app.get('/api/chorus/health/detail', (_req: Request, res: Response) => {
+app.get('/api/chorus/health/detail', async (_req: Request, res: Response) => {
+  // Ollama availability check (#1980)
+  let ollamaStatus = 'unknown';
+  try {
+    const ollamaRes = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    ollamaStatus = ollamaRes.ok ? 'up' : 'degraded';
+  } catch { ollamaStatus = 'down'; }
+
   res.json({
     db: { status: healthCache.dbStatus, rows: healthCache.dbRows },
     vectors: healthCache.vectors,
     unembedded: healthCache.unembedded,
     hooks: { status: healthCache.hooksStatus },
+    ollama: { status: ollamaStatus },
     timestamp: bostonNow(),
   });
 });
