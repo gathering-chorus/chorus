@@ -1,33 +1,33 @@
 # Wren — Next Session
 
 ## What happened
-Jeff's "drain briefs" session turned into a deep investigation of skill reliability. The demo skill hadn't been loading — preflight hook was blocking every /demo invocation due to missing PATH in Rust Command spawns. Same bug in 9 more hooks. TDD gate was blocking /acp (wrong session scope). All fixed, tested, deployed. Added spine logging to gate scripts so we can now see mechanically whether gates fire. Retagged 15 infrastructure cards to chorus domain. Drained 65 stale demo briefs. RCA'd app-down alerts (execSync blocking event loop 797s). 5 cards shipped, 6 carded.
+Massive Sunday session — tuning, not building. Found blind /tmp/ logs (Loki watching empty files while 15 real 500s sat invisible), session indexer misclassifying all roles as jeff (map_role() pattern match bug), session watcher crashing every 90min (1564 Python spawns consolidated to 1). Shipped Knowledge Domain service design and Kade built it — 165 artifacts indexed into Chorus. Board cleaned from 111 → 93 Chorus cards (51 seed junk + dups). Deep conversation with Jeff about outcomes vs output, DORA metrics, domain ownership hypothesis, the /loomsucks origin story, Paulo Dorow's observations on agent role breadth. Ran gate:product 10+ times. Cleared all 5 chorus:ops golfballs.
 
 ## Key lessons this session
-- When Jeff reports something broken, investigate the observation — don't theorize why it can't be true. He said "/demo doesn't load" and I spent 20 minutes on wrong theories before listening.
-- Skills are product (Wren's domain), not infrastructure (Silas's). I own coordination.
-- The coverage script had a 1-hour window — useless at 5am. Verify the tool before trusting its output.
-- AC checkbox pattern: every builder ships work but doesn't check boxes. Gate:product fails on first run every time. Automation gap.
-- execSync on the main thread caused 797s of event loop lag. The health check was causing the problem it detects.
-- Always invoke skills through the Skill tool — never manually replicate steps.
+- Briefs are not vital to how we operate. Jeff will be crabby if you prioritize draining them. #2002 cards deprecation.
+- "Outcomes not rituals" — don't chase ACP, brief draining, gate running for ceremony. Ask if it produces an outcome Jeff cares about.
+- The richest vein for the team is what Jeff actually said — not tool calls, not spine events, the words. Session indexing must be reliable.
+- Jeff expects steady improvement over time, not reactive ups and downs.
+- The GraphQL hallucination swat is the origin story for why Chorus must be trustworthy. Saved to memory.
+- AC checkbox pattern persists — every builder ships work but doesn't check boxes. #2017 cards the gap.
+- Demos slow things down and that's good — better JX. Jeff endorsed this.
 
 ## WIP
-- None — clean slate
+- #1905 Knowledge Domain — gate:product passed, awaiting Jeff acceptance
 
-## Next
-- Skill execution reliability is still open. Model sometimes follows skill steps, sometimes doesn't. Documented Claude Code bugs #13919 and #182117. Frontmatter hook on /demo is new — watch /tmp/demo-trace.jsonl.
-- #1999 execSync audit — Kade, P1
-- #2000 gate:code execSync lint — Kade, P2
-- #2001 LaunchAgent plist PATH audit — Silas, P1
-- #1869 (Tests sub-domain) — gate:product passed, needs Jeff /acp
-- #1868 (Code sub-domain) — gate:product passed, needs Jeff /acp
+## Tomorrow
+- #2014 SHACL shapes (Silas) — product/domain/subdomain constraints from today's session
+- #1903 Chorus UI navbar — value streams as top-level, graph-driven nav (Kade)
+- #1355 Pulse calibration (Silas) — least complex golfball, baseline cadence
+- Domain walkthroughs — Jeff expects detailed review of each domain soon
+- Photos endpoint — Jeff wants to search photos from 4/14/2006 (Julian's birthday April 14)
+- Julian turns 20 tomorrow
+
+## Cards created this session
+#2002 (deprecate briefs), #2003 (Clearing card numbers), #2006 (no silent data loss), #2009 (pair gate scope), #2013 (seed watermark), #2014 (SHACL shapes), #2015 (structured skill logging), #2017 (AC checking gap)
 
 ## Pending
-- Vikunja token — 401s in Loki
-- Bridge subscribers — socket.io-client missing (#1964, Silas finishing)
-- Alert cooldown verified (#1966 shipped)
-
-## For next session
-- Check /tmp/demo-trace.jsonl for frontmatter hook data
-- Close-out should include qualitative reflection — Jeff noticed this gap. Not just what happened, but what it meant.
-- The preflight test (demo_preflight_env.rs) hardcodes a WIP card ID that goes stale. Needs a better approach.
+- End-to-end probes for critical paths — briefed Silas, needs card
+- Log path split principle (Loki-only vs both) — articulated, not encoded as decision
+- Jeff wants 20-30 card operating range long-term
+- #2014 and #1908 are related but different scope — Jeff wants both

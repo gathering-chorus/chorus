@@ -811,3 +811,11 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [18:41] [Kade] → Gate stamps: #1990, #2010, #1870, #1886, #1980, #1986 → Silas
 - [18:41] [Kade] → #1573 wontdo (0 failing tests) → Jeff
 - [18:42] [Kade] → Reboot
+- [Wren] → Tuning session: blind logs fixed (#2005), session indexer role mapping fixed (#2011), watcher stale lock fixed (#2018) → all roles
+- [Wren] → Knowledge Domain service design written + Kade built + Silas hooked (#1905) → all roles
+- [Wren] → Board cleaned 111→93 Chorus cards, 51 seed junk removed → Jeff
+- [Wren] → gate:product ran on #2000, #2010, #1990, #1960, #1986, #1886, #1870, #1776, #1980, #1905 → Kade, Silas
+- [Wren] → All 5 chorus:ops golfballs cleared (#1960, #1980, #1964, #1986, #1886) → Jeff
+- [Wren] → Cards created: #2002, #2003, #2006, #2009, #2013, #2014, #2015, #2017 → board
+- [Wren] → DEC-101 log path ADR scoped with Silas via chat → Silas
+- [Wren] → Paulo Dorow conversation captured: outcomes not output, DORA metrics, domain ownership → memory
