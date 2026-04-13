@@ -93,8 +93,12 @@ fn demo_brief_exists(card_id: &str) -> bool {
 /// Fetch card view once — reused for owner + code-card classification
 fn fetch_card_view(card_id: &str) -> String {
     let bts = board_ts();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     let output = Command::new("bash")
-        .args([bts.as_str(), "view", card_id])
+        .args(["-l", bts.as_str(), "view", card_id])
+        .env("CHORUS_ROOT", chorus_root())
+        .env("HOME", &home)
+        .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))
         .output();
 
     match output {

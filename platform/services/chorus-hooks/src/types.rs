@@ -213,8 +213,12 @@ pub fn card_type_for_role(role: &str) -> String {
     }
 
     // Fallback: query board for card labels via cards CLI
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     let output = std::process::Command::new("bash")
         .args(["-lc", &format!("{}/platform/scripts/cards view {}", chorus_root(), card_id)])
+        .env("CHORUS_ROOT", chorus_root())
+        .env("HOME", &home)
+        .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))
         .output();
 
     if let Ok(out) = output {

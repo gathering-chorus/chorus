@@ -186,8 +186,12 @@ fn assemble_board() -> serde_json::Value {
     let board_ts = format!("{}/platform/scripts/cards", REPO_ROOT);
 
     // Try live query first
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     if let Ok(output) = std::process::Command::new("bash")
         .args(["-l", "-c", &format!("{} list 2>/dev/null", board_ts)])
+        .env("CHORUS_ROOT", REPO_ROOT)
+        .env("HOME", &home)
+        .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))
         .output()
     {
         if output.status.success() {

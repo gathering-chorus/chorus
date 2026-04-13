@@ -28,8 +28,12 @@ pub async fn check(input: &HookInput, _state: &AppState) {
     info!(file = %file_path, "ICD write detected — running validation pipeline");
 
     // Step 1: Validate TTL
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+    let path_env = format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home);
     let validate = Command::new("npx")
         .args(["-y", "turtle-validator", &file_path])
+        .env("HOME", &home)
+        .env("PATH", &path_env)
         .output();
 
     match validate {
@@ -57,6 +61,7 @@ pub async fn check(input: &HookInput, _state: &AppState) {
     let _ = Command::new("curl")
         .args(["-s", "-X", "DELETE",
             "http://localhost:3030/pods/data?graph=urn:gathering:icd/current"])
+        .env("PATH", &path_env)
         .output();
 
     // Load ontology
@@ -66,6 +71,7 @@ pub async fn check(input: &HookInput, _state: &AppState) {
             "http://localhost:3030/pods/data?graph=urn:gathering:icd/current",
             "-H", "Content-Type: text/turtle",
             "--data-binary", &format!("@{}", ontology_path)])
+        .env("PATH", &path_env)
         .output();
 
     // Load all instance files
@@ -79,6 +85,7 @@ pub async fn check(input: &HookInput, _state: &AppState) {
                         "http://localhost:3030/pods/data?graph=urn:gathering:icd/current",
                         "-H", "Content-Type: text/turtle",
                         "--data-binary", &format!("@{}", path.display())])
+                    .env("PATH", &path_env)
                     .output();
             }
         }
@@ -90,6 +97,8 @@ pub async fn check(input: &HookInput, _state: &AppState) {
     let lint = Command::new("python3")
         .args(["scripts/icd-lint-sparql.py"])
         .current_dir(app_dir)
+        .env("HOME", &home)
+        .env("PATH", &path_env)
         .output();
 
     match lint {
