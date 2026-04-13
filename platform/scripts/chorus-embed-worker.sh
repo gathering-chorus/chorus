@@ -47,7 +47,7 @@ fi
 batch=0
 total_embedded=0
 
-while [ "$batch" -lt "$MAX_BATCHES" ]; do
+while true; do
   result=$(curl -sf --max-time 120 -X POST "${API}/api/chorus/embed" 2>/dev/null || echo '{"embedded":0,"error":"request failed"}')
 
   embedded=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('embedded',0))" 2>/dev/null || echo 0)
@@ -57,6 +57,10 @@ while [ "$batch" -lt "$MAX_BATCHES" ]; do
   fi
 
   total_embedded=$((total_embedded + embedded))
+  if [ $((total_embedded % 1000)) -lt 100 ]; then
+    remaining=$(curl -sf --max-time 5 "${API}/api/chorus/health" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('unembedded',0))" 2>/dev/null || echo "?")
+    log "Progress: ${total_embedded} embedded so far (${remaining} remaining)"
+  fi
   batch=$((batch + 1))
 
   sleep "$PAUSE_BETWEEN_BATCHES"
