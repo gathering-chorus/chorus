@@ -287,6 +287,13 @@ else
   FAILURES+=("standards-surface: chorus-standards.html not found — run generate-standards-surface.sh first")
 fi
 
+# --- 16. Shadow logs in /tmp/ (DEC-101) ---
+TMP_LOGS=$(find /tmp -maxdepth 1 -name "*.log" -size +0c 2>/dev/null | wc -l | tr -d ' ')
+if [ "$TMP_LOGS" -gt 0 ]; then
+  TMP_LIST=$(find /tmp -maxdepth 1 -name "*.log" -size +0c -exec basename {} \; 2>/dev/null | head -5 | tr '\n' ', ' | sed 's/,$//')
+  WARNINGS+=("shadow-logs: ${TMP_LOGS} log file(s) in /tmp/ — DEC-101 violation: ${TMP_LIST}")
+fi
+
 # --- Report ---
 # Determine status: degraded (real failures), warning (only log-freshness), healthy (nothing)
 if [ ${#FAILURES[@]} -gt 0 ]; then
