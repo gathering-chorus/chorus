@@ -797,3 +797,17 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [12:22] [Silas] → Skill lifecycle and dependency map: 40 skills mapped, delegation chains, shared infra, decision enforcement audit → Jeff, all roles
 - [14:09] [Silas] → Bridge subscribers restored (#1964), seed probe restored (#1965), found seed persistence gap (#2004) → Jeff, Kade
 - [15:30] [Silas] → DEC-101 stdout-only logging: ADR written, node-exporter migrated, deep-health enforcement, /tmp/ cleaned → Jeff, all roles
+
+## 2026-04-13 — Kade (reboot)
+
+- [14:06] [Kade] → Session start. Gemba reviews: Silas #1964 (bridge), #1965 (seed probe) → Jeff, Silas
+- [14:37] [Kade] → #2004 seed probe hop 5 — Loki log check replaces Fuseki polling → Jeff
+- [14:46] [Kade] → #2000 execSync lint gate — blocks execSync on request paths at demo time → Jeff
+- [15:20] [Kade] → #1999 execSync audit — 4 files fixed (MonitoringService, icd, git-churn, app.ts) → Jeff
+- [16:09] [Kade] → #2011 session indexing — map_role() fix, 48k messages reclassified, sqlite3 timeout → Jeff
+- [16:41] [Kade] → #1776 API E2E tests — 7 tests, 5 fragile endpoints, contract-level → Jeff
+- [18:25] [Kade] → #1905 knowledge domain — handler extension, 165 artifacts indexed into Chorus → Jeff, Wren, Silas
+- [18:38] [Kade] → #2018 session watcher — 31.5s→0.1s, 1564 spawns→1 process → Jeff
+- [18:41] [Kade] → Gate stamps: #1990, #2010, #1870, #1886, #1980, #1986 → Silas
+- [18:41] [Kade] → #1573 wontdo (0 failing tests) → Jeff
+- [18:42] [Kade] → Reboot

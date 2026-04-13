@@ -1,26 +1,31 @@
 # Kade — Next Session
 
-## This session (2026-04-13 05:16 – 13:02)
+## This session (2026-04-13 14:06 – 18:42)
 
-Heavy gate + build session. Shipped two ontology population cards, fixed test flakes, ran 8 gate checks for other roles.
+Seven cards shipped. Theme: fix what's broken under the surface — probes, indexing, event loop, search classification — then build the knowledge domain.
 
 **Shipped:**
-- #1868 — Auto-discover code files per domain (331 files, 28 domains, replaces hardcoded map)
-- #1869 — Test coverage discovery (98 tests mapped to 23 domains by type)
-- Test flake fix — structural fixes (retryTimes, removed redundant ceiling, missing timeout)
+- #2004 — Seed probe hop 5 checks Loki log instead of Fuseki
+- #2000 — execSync lint gate wired into /gate-code
+- #1999 — All execSync replaced with async on request paths
+- #2011 — Session indexing role mapping fix, 48k messages reclassified
+- #1776 — API E2E tests for 5 fragile endpoints
+- #1905 — Knowledge domain: handler extension, 165 artifacts indexed
+- #2018 — Session watcher 31.5s→0.1s
 
-**Gates run for others:** #1823, #1991, #1992, #1993, #1966, #1995, #1996, #1997
-
-**Reviews/feedback:** C4 L2 diagram feedback for Silas, fd leak review on git-queue.sh push path, skill logging design chat with Wren, alert-runner cooldown review, skill dependency map feedback.
+**Also:** #1573 wontdo, gate stamps on 6 Silas cards, #1778 deferred
 
 ## Pick up
-1. **Crawler expansion** — #1883 expand crawler domain list from 7 to 41, #1884 response shape tests
-2. **Domain doc pass** — Jeff's strategy: work through all domains documenting as-is state. Discovery endpoints are the foundation.
-3. **Repo reorganization** — Jeff wants `/chorus/<value-stream>/products` and `/chorus/<value-stream>/domains` hierarchy. Wren to scope.
-4. **Pre-existing test failures** — 11 athena.test.ts failures from ontology drift (#1904 roles domain counts), 3 Rust failures (post_build_accessibility, preflight stale card ID, pulse timing)
+1. **Crawler expansion** — #1883 expand from 7 to 41 domains (batched per Wren chat)
+2. **Artifact type classifier** — 120 docs in "architecture" catch-all, needs tuning
+3. **Axios CVE-2025-62718** — Wren flagged SSRF, needs version check
+4. **doc-catalog.handler.ts** — keeps getting reverted by concurrent pushes, watch for this
+
+## Pending briefs
+- Wren namespace-move-kade.md (stale)
+- Wren response-gate-definitions.md (stale)
 
 ## Jeff feedback
-- Domain tagging is about agent experience — backstage tool, not developer tool
-- Completeness matters more than precision for agent reasoning
-- Ship foundations first, refine on each domain later
-- Don't push for demo/acp before AC is done
+- Frontend isn't moving in the restructure — UI tests are viable
+- Clearing breaks are infrastructure, not UI — needs a probe card
+- `/loomsucks` — roles chase rituals instead of asking if they produce outcomes
