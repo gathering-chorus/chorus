@@ -776,3 +776,14 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [21:33] [Wren] → gate:product-pass on #1978, #1984, #1985 (verified independently) → Silas
 - [21:33] [Wren] → Retracted then re-passed #1981 after Jeff caught unchecked AC → self
 - [21:33] [Wren] → Carded #1984 (log routing gap) from log inventory audit → Silas
+
+## 2026-04-13 — Kade (reboot)
+
+- [05:16] [Kade] → Fixed 6 test flakes (structural: retryTimes, removed ceiling, missing timeout) → Jeff
+- [06:08-09:40] [Kade] → Ran gates on 8 cards (#1823 #1991 #1992 #1993 #1966 #1995 #1996 #1997) → Wren, Silas
+- [09:25] [Kade] → C4 L2 feedback to Silas — flagged cards CLI, messaging layer, session lifecycle → Silas
+- [09:56] [Kade] → git-queue.sh fd leak review — push path missing 9>&- → Silas
+- [11:55] [Kade] → Skill logging chat with Wren — gate scripts first, frontmatter hooks second → Wren
+- [12:10] [Kade] → #1868 shipped — code discovery (331 files, 28 domains, replaces hardcoded map) → Jeff
+- [13:01] [Kade] → #1869 shipped — test coverage discovery (98 tests, 23 domains, by type) → Jeff
+- [13:02] [Kade] → Reboot
