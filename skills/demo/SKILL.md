@@ -2,6 +2,12 @@
 name: demo
 description: Proving gate — smoke check, prep summary, signal to Wren, builder cannot self-accept.
 user-invocable: true
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Read|Write|Edit|Skill"
+      hooks:
+        - type: command
+          command: "echo \"{\\\"ts\\\":\\\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\",\\\"tool\\\":\\\"$CLAUDE_TOOL_NAME\\\",\\\"skill\\\":\\\"demo\\\"}\" >> /tmp/demo-trace.jsonl"
 ---
 
 # /demo — Proving Gate

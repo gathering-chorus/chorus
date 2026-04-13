@@ -10,10 +10,13 @@ CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../../../.." && pwd)}"
 CARDS="$CHORUS_ROOT/platform/scripts/cards"
 
 CARD_ID="${1:-}"
+CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 
 if [ -z "$CARD_ID" ]; then
   exit 0
 fi
+
+"$CHORUS_LOG" demo.done_gate.started system card="$CARD_ID" 2>/dev/null || true
 
 # Get card details
 CARD_VIEW=$("$CARDS" view "$CARD_ID" 2>&1) || true
@@ -31,20 +34,24 @@ fi
 # Evidence 1: Demo brief in wren/briefs/
 BRIEF_DIR="$CHORUS_ROOT/roles/wren/briefs"
 if ls "$BRIEF_DIR"/*demo*"$CARD_ID"* >/dev/null 2>&1; then
+  "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="brief" 2>/dev/null || true
   exit 0
 fi
 
 # Evidence 2: Demo spine event via Chorus search API
 if curl -sf "http://localhost:3340/api/chorus/search?q=card.demo.started+card%3D${CARD_ID}" 2>/dev/null | grep -q "card.demo.started"; then
+  "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="spine_event" 2>/dev/null || true
   exit 0
 fi
 
 # Evidence 3: cards demo was called (recorded in card comments, not description)
 COMMENTS=$(echo "$CARD_VIEW" | sed -n '/Comments/,$p')
 if echo "$COMMENTS" | grep -qi "Demo started"; then
+  "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="comment" 2>/dev/null || true
   exit 0
 fi
 
 # No evidence found
 echo "Demo gate: #${CARD_ID} has no demo evidence. Run /demo ${CARD_ID} first." >&2
+"$CHORUS_LOG" demo.done_gate.failed system card="$CARD_ID" reason="no_evidence" 2>/dev/null || true
 exit 1

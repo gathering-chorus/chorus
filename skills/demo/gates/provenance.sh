@@ -19,6 +19,8 @@ if [ -z "$CARD_ID" ]; then
   exit 1
 fi
 
+"$CHORUS_LOG" demo.provenance.started "$ROLE" card="$CARD_ID" 2>/dev/null || true
+
 # Get card details
 CARD_VIEW=$("$CARDS" view "$CARD_ID" 2>&1) || true
 if echo "$CARD_VIEW" | head -1 | grep -q "^ERROR"; then
@@ -55,5 +57,6 @@ EOF
 # Log demo on the board
 "$CARDS" demo "$CARD_ID" >/dev/null 2>&1 || true
 
+"$CHORUS_LOG" demo.provenance.completed "$ROLE" card="$CARD_ID" brief="$BRIEF_FILE" 2>/dev/null || true
 echo "provenance: brief written to ${BRIEF_FILE}, spine event emitted" >&2
 exit 0
