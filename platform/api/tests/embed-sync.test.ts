@@ -11,7 +11,7 @@ let apiUp = false;
 beforeAll(async () => {
   if (!INTEGRATION_ENABLED) return;
   try {
-    const res = await fetch(`${API}/api/chorus/health`);
+    const res = await fetch(`${API}/api/chorus/health/detail`);
     apiUp = res.ok;
   } catch {
     apiUp = false;
@@ -38,11 +38,9 @@ describeIntegration('Embed sync — no in-process timer (#1978)', () => {
     console.log(`[embed-timer-test] 10 health checks: max=${maxTime}ms, avg=${Math.round(times.reduce((a,b)=>a+b,0)/times.length)}ms`);
   });
 
-  test('health endpoint exposes unembedded count for external worker', async () => {
-    // The embed backlog is now drained by an external worker (chorus-embed-worker.sh),
-    // not an in-process timer. The health endpoint must expose unembedded count
-    // so deep-health and the worker can monitor drift.
-    const res = await fetch(`${API}/api/chorus/health`);
+  test('stats endpoint exposes unembedded count for external worker', async () => {
+    // Counts moved from /health to /stats (#1978) — health is liveness only
+    const res = await fetch(`${API}/api/chorus/health/detail`);
     const data = await res.json();
     expect(typeof data.unembedded).toBe('number');
     expect(typeof data.vectors).toBe('number');
@@ -68,7 +66,7 @@ describeIntegration('Health endpoint performance (#1978)', () => {
 
 describeIntegration('Embed sync (#1920)', () => {
   test('health endpoint reports vector drift', async () => {
-    const res = await fetch(`${API}/api/chorus/health`);
+    const res = await fetch(`${API}/api/chorus/health/detail`);
     const data = await res.json();
     expect(data.db.rows).toBeDefined();
     expect(data.vectors).toBeDefined();
@@ -85,12 +83,12 @@ describeIntegration('Embed sync (#1920)', () => {
   });
 
   test('embed reduces drift toward zero', async () => {
-    const before = await fetch(`${API}/api/chorus/health`).then(r => r.json());
+    const before = await fetch(`${API}/api/chorus/health/detail`).then(r => r.json());
     const driftBefore = before.db.rows - before.vectors;
 
     const embedRes = await fetch(`${API}/api/chorus/embed`, { method: 'POST' }).then(r => r.json());
 
-    const after = await fetch(`${API}/api/chorus/health`).then(r => r.json());
+    const after = await fetch(`${API}/api/chorus/health/detail`).then(r => r.json());
     const driftAfter = after.db.rows - after.vectors;
 
     if (embedRes.embedded > 0) {

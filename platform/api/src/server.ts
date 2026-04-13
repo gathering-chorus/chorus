@@ -3284,14 +3284,8 @@ app.get('/api/chorus/seed-media/:filename', (req: Request, res: Response) => {
 // --- Health check ---
 
 app.get('/health', (_req: Request, res: Response) => {
-  try {
-    const db = getDb();
-    const count = (db.prepare(`SELECT COUNT(*) as c FROM messages`).get() as any).c;
-    db.close();
-    res.json({ status: 'ok', messages: count });
-  } catch {
-    res.status(503).json({ status: 'unhealthy' });
-  }
+  // Liveness only — no queries, no counts (#1978)
+  res.json({ status: 'ok' });
 });
 
 // --- ICD Write API (#1549) — mirrors app write endpoints, no auth ---
@@ -3693,10 +3687,14 @@ setTimeout(() => refreshHealthCache(), 2000);
 setInterval(() => refreshHealthCache(), 30_000);
 
 app.get('/api/chorus/health', (_req: Request, res: Response) => {
+  // Liveness + uptime — no expensive queries (#1978)
   const uptime = Math.floor((Date.now() - startTime) / 1000);
-  const status = healthCache.dbStatus === 'ok' ? 'healthy' : 'degraded';
-  res.status(status === 'healthy' ? 200 : 503).json({
-    status, uptime,
+  res.json({ status: 'healthy', uptime, timestamp: bostonNow() });
+});
+
+// Health cache exposed via /api/chorus/health/detail for deep-health (#1978)
+app.get('/api/chorus/health/detail', (_req: Request, res: Response) => {
+  res.json({
     db: { status: healthCache.dbStatus, rows: healthCache.dbRows },
     vectors: healthCache.vectors,
     unembedded: healthCache.unembedded,

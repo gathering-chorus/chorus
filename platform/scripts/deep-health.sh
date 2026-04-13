@@ -236,7 +236,7 @@ HEALTH_ENDPOINTS=(
 # Check producer-consumer gap: SQLite rows vs LanceDB vectors.
 # Drift > 0 with no activity = fine. Drift > threshold = degraded search.
 LANCE_DRIFT_THRESHOLD=5000
-lance_health=$(curl -sf --max-time 5 http://localhost:3340/api/chorus/health 2>/dev/null || echo "")
+lance_health=$(curl -sf --max-time 5 http://localhost:3340/api/chorus/health/detail 2>/dev/null || echo "")
 if [ -n "$lance_health" ]; then
   lance_unembedded=$(echo "$lance_health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('unembedded',0))" 2>/dev/null || echo 0)
   if [ "$lance_unembedded" -gt "$LANCE_DRIFT_THRESHOLD" ]; then
