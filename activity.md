@@ -752,3 +752,23 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [16:15] [Silas] → #1963 observability domain populated in Athena (12 services, 8 actors, 8 scenarios, 7 gaps) → Jeff, Wren
 - [17:09] [Silas] → Found #1979: completeness query timeout is why domain page is blank → Kade
 - [21:07] [Kade] → Session close. Paired with Silas on #1981 (hook timeout, spawn_blocking fix). Gates on #1978 (embed timer), #1985 (nudge leak), #1984 (log coverage feedback). Gemba on Silas twice → Jeff
+
+## 2026-04-12 — Silas (evening session)
+
+- [17:16] [Silas] → Session start: API blips all day from embed timer, Jeff angry → Jeff
+- [17:25] [Silas] → Removed embed timer from API, restarted session-watcher → all roles
+- [18:43] [Silas] → Damaged embed state with 3 ad-hoc UPDATEs, reconciled via watermark script → Jeff
+- [19:02] [Silas] → Pair with Kade #1981: hook timeout retry + warn-not-block → Kade
+- [19:54] [Silas] → ACP #1967: 9 LaunchAgent logs moved from /tmp/ to Loki-watched paths → all roles
+- [20:01] [Silas] → Pair with Wren #1984: Loki coverage 3/89 → 80/89 via glob Promtail config → Wren
+- [20:51] [Silas] → ACP #1985: alert-runner dual nudge path removed → all roles
+- [21:30] [Silas] → ACP #1978: health split to liveness-only (0-1ms), counts on /health/detail → Jeff
+- Cards shipped: #1967, #1978, #1981, #1984, #1985
+- [21:33] [Wren] → Drained 22 stale demo briefs, accepted 21 cards (#1781, #1860, #1780, #1876, #1881, #1882, #1912, #1695, #1832, #1909, #1918, #1933, #1922, #1923, #1929, #1931, #1956, #1955, #1932, #1917, #1959, #1868) → all roles
+- [21:33] [Wren] → Responded to Kade's design-gate-definitions brief → Kade
+- [21:33] [Wren] → Gemba on Silas: watched embed timer TDD, worker deploy, reconcile script → Jeff
+- [21:33] [Wren] → Gemba on Kade: watched #1981 ops_awareness hook fix → Jeff
+- [21:33] [Wren] → Navigated pair #1984: log inventory + Promtail config, 3→80 Loki coverage → Silas
+- [21:33] [Wren] → gate:product-pass on #1978, #1984, #1985 (verified independently) → Silas
+- [21:33] [Wren] → Retracted then re-passed #1981 after Jeff caught unchecked AC → self
+- [21:33] [Wren] → Carded #1984 (log routing gap) from log inventory audit → Silas

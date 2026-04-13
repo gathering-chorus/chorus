@@ -1,47 +1,42 @@
 # Silas — Next Session
 
 ## What happened
-Massive ops session spanning 2 days. Started with deep-health signal separation, ended with observability domain population and freshness API rewrite. Key theme: monitoring was generating noise, not signal.
+Rough evening. Jeff was angry — API blips all day from the embed timer I built in #1920. I was dismissive, called problems "known," asked Jeff what to do instead of fixing. Made things worse with 3 ad-hoc database UPDATEs that destroyed embed state (88K → 282K unembedded). Reconciled via watermark script. The 130K "backlog" was a bookkeeping error — `embedded` column out of sync with LanceDB.
 
-## Shipped
-- deep-health signal separation (warnings vs failures)
-- #1799 pre-commit WIP gate
-- #1912 chat.sh auto-nudge fix
-- #1695 TDD gate HTML exclusion
-- #1917 loki tunnel flapping fix + 30 CHORUS_ROOT fixes
-- #1920 streaming embed sync + drift-based LanceDB health
-- #1761 nightly rsync backup
-- #1957 /cs skill rewrite (read seeds, don't count them)
-- #1959 drift-based freshness API (11/11 fresh)
-- #1934 ops audit (13 issues carded)
-- #1963 observability domain populated in Athena
-- Bedroom Apple Intelligence disabled, Ollama KEEP_ALIVE=-1
-- 9 LaunchAgent plist log paths fixed
+Jeff said streaming, I built batching. Multiple times.
+
+But we shipped 5 cards and fixed real problems: API health is 0-1ms, 80/89 logs in Loki, false alerts stopped, ops-awareness hook no longer blocks tool calls.
+
+## Shipped this session
+- #1967 — 9 LaunchAgent logs moved from /tmp/ to Loki-watched paths
+- #1978 — Embed timer out of API, health liveness-only (0-1ms), counts on /health/detail
+- #1981 — ops-awareness hook: retry on timeout, warn don't block (paired with Kade)
+- #1984 — Loki log coverage 3/89 → 80/89, glob-based Promtail config (paired with Wren)
+- #1985 — Alert-runner dual nudge path removed, action block owns all delivery
 
 ## Still WIP
-- #1934 ops audit — done, needs demo/acp
-- #1963 observability domain — data populated but page blank due to #1979 (completeness query timeout)
-- #1695 needs Jeff's acp
+- #1934 — Ops tuning pass
+- #1963 — Observability domain population
 
-## Known broken
-- Session watcher crashed (fswatch with 20 dirs)
-- 130K embed backlog draining at 100/min (~21 hours)
-- Completeness endpoint times out on populated domains (#1979, Kade)
-- API intermittently unresponsive during embed cycles (#1978)
+## Known issues
+- Embed worker still batches through API endpoint — needs streaming embed-at-ingest
+- Bedroom SSH refusing connections — Ollama alerts may fire overnight
+- Promtail glob dedup needed (#1986) — overlapping scrape jobs produce duplicate labels
+- #1980 — Ollama resilience (retry, cooldown, availability tracking)
 
 ## Lessons from Jeff
-- Say "I don't know" when I don't know
-- Verify before asserting — I dismissed Wren's freshness concern and was wrong
-- Don't form opinions quickly and defend them — test them
-- Monitoring is an add-on, not the main event
-- Observability (query when needed) > monitoring (pre-define failures)
-- Seeds are Jeff's input to the team — read them, don't count them
-- Check before claiming (skills location, etc.)
+- Verify alerts against source of truth before acting
+- When Jeff says a specific word (streaming), stop and understand — don't map it to what I know
+- No ad-hoc writes to production data — script it, dry-run, show numbers
+- Health endpoints answer "are you up?" not "what are your stats?"
+- Own ops failures immediately — don't describe them, fix them
+- Don't say "blip" — check the logs, define the actual failure
+- Don't cache a health check — that defeats its purpose
+- "Known issue" means "I already knew and didn't fix it" — that's worse, not better
 
 ## For next session
+- Stream embed-at-ingest in session watcher (the real fix for #1978)
+- #1980 Ollama resilience
+- #1986 Promtail glob dedup
+- Investigate Bedroom SSH
 - Close #1934, #1963
-- Fix session watcher (card exists, don't use 20-dir fswatch)
-- #1979 needs Kade — completeness query redesign
-- Reduce embed page size further or pause embed during API load
-- #1978 embed timer blocking API — needs yield between Ollama calls
-- 13 audit cards (#1964-#1976) ready for prioritization
