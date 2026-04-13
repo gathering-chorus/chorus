@@ -22,19 +22,17 @@ fn is_production_code(path: &str) -> bool {
     crate::shared::file_classification::is_production_code(path)
 }
 
-/// Check if the current tool call is a demo or done action
+/// Check if the current tool call is a demo action.
+/// /acp and cards-done are NOT included — acceptance is a product decision
+/// by Jeff/Wren, not a build action. The TDD gate checks the invoker's
+/// session, but the acceptor isn't the builder (#1996).
+/// demo_gate.rs handles done-without-demo separately.
 fn is_demo_or_done(input: &HookInput) -> bool {
     let tool = input.tool_name_str();
 
     if tool == "Skill" {
         let skill = input.get_tool_input_str("skill");
-        return skill == "demo" || skill == "acp";
-    }
-
-    if tool == "Bash" {
-        let cmd = input.get_tool_input_str("command");
-        return cmd.contains("board-ts done") || cmd.contains("cards done")
-            || (cmd.contains("board-ts") || cmd.contains("/cards ")) && cmd.contains(" done ");
+        return skill == "demo";
     }
 
     false
@@ -240,15 +238,17 @@ mod tests {
     }
 
     #[test]
-    fn detects_acp_skill() {
+    fn acp_not_demo_or_done() {
+        // #1996: /acp is acceptance, not a build action — TDD gate shouldn't block it
         let input = make_input("Skill", "skill", "acp");
-        assert!(is_demo_or_done(&input));
+        assert!(!is_demo_or_done(&input));
     }
 
     #[test]
-    fn detects_board_done() {
+    fn board_done_not_demo_or_done() {
+        // #1996: cards done handled by demo_gate.rs, not TDD gate
         let input = make_input("Bash", "command", "bash board-ts done 1811");
-        assert!(is_demo_or_done(&input));
+        assert!(!is_demo_or_done(&input));
     }
 
     #[test]

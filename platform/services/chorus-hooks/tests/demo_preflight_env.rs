@@ -29,10 +29,10 @@ fn full_path() -> String {
 #[test]
 fn preflight_fails_without_path() {
     // Current behavior: no PATH → cards CLI fails → preflight blocks
-    // Use a known WIP card (1993 is WIP right now)
+    // Use a known WIP card (1995 is WIP right now)
     let script = format!("{}/skills/demo/gates/preflight.sh", chorus_root());
     let output = Command::new("bash")
-        .args([&script, "1993"])
+        .args([&script, "1995"])
         .env("CHORUS_ROOT", chorus_root())
         .env_remove("PATH")
         .output()
@@ -51,7 +51,7 @@ fn preflight_passes_with_path() {
     // Fixed behavior: with PATH → cards CLI works → preflight passes for valid WIP card
     let script = format!("{}/skills/demo/gates/preflight.sh", chorus_root());
     let output = Command::new("bash")
-        .args([&script, "1993"])
+        .args([&script, "1995"])
         .env("CHORUS_ROOT", chorus_root())
         .env("HOME", home())
         .env("PATH", full_path())
