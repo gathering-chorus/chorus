@@ -975,3 +975,58 @@ describeIntegration('POST /api/athena/discover-code', () => {
     expect(body2.data.total_files).toBe(body1.data.total_files);
   }, 60000);
 });
+
+// #1869 — Tests sub-domain graph: test coverage mapping
+describeIntegration('POST /api/athena/discover-tests', () => {
+  test('endpoint exists and returns test discovery results', async () => {
+    const res = await fetch(`${API}/api/athena/discover-tests`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body._meta.source).toBe('athena');
+    expect(body._meta.query_name).toBe('discover-tests');
+    expect(body.data.total_tests).toBeGreaterThan(0);
+    expect(body.data.by_type).toBeDefined();
+    expect(body.data.by_type.unit).toBeGreaterThan(0);
+    expect(body.data.by_type.integration).toBeGreaterThan(0);
+  }, 30000);
+
+  test('test areas have chorus:covers edges to domains', async () => {
+    await fetch(`${API}/api/athena/discover-tests`, { method: 'POST' });
+    // Query photos-domain — it has known test coverage
+    const res = await fetch(`${API}/api/athena/subdomains/photos-domain/coverage`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.coverage).toBeDefined();
+    expect(body.data.coverage.length).toBeGreaterThan(0);
+    const entry = body.data.coverage[0];
+    expect(entry.testFile).toBeDefined();
+    expect(entry.testType).toBeDefined();
+    expect(entry.coversDomain).toBeDefined();
+  }, 30000);
+
+  test('query what tests cover photos-domain returns results', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/photos-domain/test-coverage`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.tests).toBeDefined();
+    expect(body.data.tests.length).toBeGreaterThan(0);
+    expect(body.data.tests.some(t => t.path.includes('photo'))).toBe(true);
+  }, 15000);
+
+  test('tests grouped by type — unit, integration, e2e', async () => {
+    // Photos has unit tests, check they're typed correctly
+    const res = await fetch(`${API}/api/athena/subdomains/photos-domain/coverage`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const types = [...new Set(body.data.coverage.map(c => c.testType))];
+    expect(types).toContain('unit');
+  }, 15000);
+
+  test('discovery is idempotent', async () => {
+    const res1 = await fetch(`${API}/api/athena/discover-tests`, { method: 'POST' });
+    const body1 = await res1.json();
+    const res2 = await fetch(`${API}/api/athena/discover-tests`, { method: 'POST' });
+    const body2 = await res2.json();
+    expect(body2.data.total_tests).toBe(body1.data.total_tests);
+  }, 60000);
+});
