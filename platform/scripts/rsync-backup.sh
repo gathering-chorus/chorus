@@ -61,3 +61,23 @@ if [ "$FAILED" -gt 0 ]; then
 else
   "$CHORUS_LOG" ops.backup.completed silas synced="$SYNCED" 2>/dev/null || true
 fi
+
+# --- RESTORE PROCEDURE (#2043) ---
+# To restore from Bedroom backup to Library:
+#
+# 1. ALWAYS dry-run first:
+#    rsync -azn --stats -e ssh 192.168.86.242:/Users/jeffbridwell/Backups/library/<target>/ ~/<dest>/
+#
+# 2. Review dry-run output — check "Number of files transferred"
+#
+# 3. Remove -n flag to execute the actual restore
+#
+# 4. Restore order:
+#    a. dot-ssh (28K, instant — need SSH keys for everything else)
+#    b. LaunchAgents (268K, instant — service configs)
+#    c. dot-chorus (1.6GB, ~2 min — Chorus runtime state)
+#    d. dot-claude (3.2GB, ~4 min — Claude session state)
+#    e. CascadeProjects (26GB, ~30 min — all code repos)
+#
+# Estimated total restore: ~35-45 minutes over WiFi
+# Tested: 2026-04-14, dry-run 2s for dot-claude (3.2GB, 16K files)
