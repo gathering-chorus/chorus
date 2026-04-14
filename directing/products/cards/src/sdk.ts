@@ -4,6 +4,18 @@ import { BoardClient } from './client';
 import { BoardConfig, BoardTask } from './types';
 import { detectRole } from './config';
 import { emitSpineEvent, emitChorusEvent } from './events';
+import { spawnSync } from 'child_process';
+
+// Auto-declare role state from card actions (#1782)
+// Eliminates manual role-state calls — state follows card lifecycle.
+const ROLE_STATE_BIN = path.resolve(__dirname, '../../../../platform/scripts/role-state');
+function autoRoleState(state: string, extra: string = ''): void {
+  const role = detectRole();
+  if (!role) return;
+  try {
+    spawnSync(ROLE_STATE_BIN, [role, state, ...extra.split(' ').filter(Boolean)], { timeout: 3000 });
+  } catch { /* non-blocking — don't break card ops if role-state fails */ }
+}
 import { generateBlastRadius, formatBlastComment } from './blast-radius';
 import { LABELS } from './config';
 
@@ -721,6 +733,7 @@ export async function moveCard(
   // AC1 (#1805): emit card.pulled when entering WIP — role started building
   if (/^wip$/i.test(status)) {
     emitSpineEvent('card.pulled', role, { card_id: String(index), title, board: client.boardName });
+    autoRoleState('building', `card=${index}`);
   }
   notifyOwnerIfDifferent(index, title, owner, `moved-to-${status}`, role);
 
@@ -840,6 +853,7 @@ export async function doneCard(client: BoardClient, index: number): Promise<void
   emitSpineEvent('card.accepted', role, {
     card_id: String(index), title, board: client.boardName,
   });
+  autoRoleState('idle');
 
   emitChorusEvent('deploy.verification.completed', role, {
     card_id: String(index), title, result: 'pass', method: 'manual',
