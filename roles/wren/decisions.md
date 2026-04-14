@@ -888,3 +888,10 @@
 **Context:** 115 bash scripts, 6,500 lines functioning as APIs (board-ts, nudge, workflow, werk-init). Debugging tax: sed regex bugs, prefix stripping, silent failures, 12 early exits to trace. #1551 (Rust hook service) proved the alternative — 4.3x faster, typed, testable.
 **Decision:** New team infrastructure defaults to TypeScript (app stack) or Rust (hooks/daemons). Bash only for true one-shot glue. Existing bash APIs migrate to typed services. board-ts is first target.
 **Consequences:** Higher upfront cost per script, lower ongoing debugging tax. Scripts become testable. Errors become typed. The team stops spending creative energy on bash string parsing.
+
+## DEC-1785: No silent data loss — every pipeline hop succeeds visibly or fails visibly
+- **Date**: 2026-04-14
+- **Context**: Seeds vanish at hop 5 with a 200 response. Chorus-api 500s go to /tmp where Loki can't see them. Bridge events fire but get filtered before roles read them. Two failure modes: hose (delivery — Promtail wrong files, tunnel drops) and bucket (persistence — silent guard drops, invisible 500s, stale state). Data enters pipelines and silently disappears.
+- **Decision**: Every pipeline hop must succeed visibly or fail visibly. No silent drops. No pipeline expansion until existing hose-to-bucket path is proven end-to-end for that domain. New data integration cards blocked until target domain's observability is leak-proof.
+- **Enforcement**: Soft — skill text in /pull. Future: hard gate checking domain observability completeness before pipeline cards enter WIP.
+- **Source**: #2006 (converted from card to decision)

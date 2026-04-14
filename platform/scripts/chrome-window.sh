@@ -103,7 +103,11 @@ navigate_window() {
     return
   fi
   # Check if active tab is the default blank page — reuse it instead of opening new tab
+  # Save and restore frontmost app to prevent focus theft (#2045)
   osascript -e "
+    tell application \"System Events\"
+      set frontApp to name of first application process whose frontmost is true
+    end tell
     tell application \"Google Chrome\"
       repeat with w in every window
         if (id of w as text) is \"$wid\" then
@@ -113,11 +117,11 @@ navigate_window() {
           else
             tell w to make new tab with properties {URL:\"$url\"}
           end if
-          set index of w to 1
-          activate
         end if
       end repeat
     end tell
+    delay 0.1
+    tell application frontApp to activate
   " 2>/dev/null
   echo "$wid"
 }

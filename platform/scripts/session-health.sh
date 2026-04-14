@@ -148,8 +148,8 @@ if [ "$ALERT" = true ]; then
   echo "WARN: ${ALERTS}Context pressure rising."
   # Suppress nudges during test runs or if already alerted this session
   if [ -z "$TEST_MODE" ] && [ ! -f "$ALERT_MARKER" ]; then
+    # Route alert to own role only (#1786) — no Jeff, no other roles
     "$NUDGE" "$ROLE" "session-health: ${ALERTS}Context pressure rising." --from system 2>/dev/null || true
-    "$NUDGE" wren "session-health: ${ROLE} at ${PROMPT_COUNT} prompts, ${REMOVE_RATE} removes/50. Context pressure rising." --from system 2>/dev/null || true
     touch "$ALERT_MARKER"
   fi
   "$CHORUS_LOG" session.health.warning "$ROLE" prompts="$PROMPT_COUNT" age_hours="$AGE_HOURS" tools="$TOOL_COUNT" removes="$QUEUE_REMOVES" remove_rate="$REMOVE_RATE" 2>/dev/null || true
