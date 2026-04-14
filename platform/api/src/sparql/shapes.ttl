@@ -1,0 +1,66 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# SHACL shapes for Chorus ontology integrity (#2014)
+# 5 hard constraints + 1 soft constraint = 6 checks.
+# Each shape maps 1:1 to a SPARQL validation query in server.ts.
+# Jeff's rules from the Clearing (2026-04-13).
+
+# --- Hard constraints (violations) ---
+
+chorus:ProductDomainShape a sh:NodeShape ;
+  sh:targetClass chorus:Product ;
+  sh:property [
+    sh:path chorus:hasDomain ;
+    sh:minCount 1 ;
+    sh:severity sh:Violation ;
+    sh:message "Product must have at least one Domain"
+  ] .
+
+chorus:ProductServiceDesignShape a sh:NodeShape ;
+  sh:targetClass chorus:Product ;
+  sh:property [
+    sh:path chorus:hasServiceDesign ;
+    sh:minCount 1 ;
+    sh:severity sh:Violation ;
+    sh:message "Product must have at least one ServiceDesign"
+  ] .
+
+chorus:SubProductParentShape a sh:NodeShape ;
+  sh:targetClass chorus:SubProduct ;
+  sh:property [
+    sh:path [ sh:inversePath chorus:hasSubProduct ] ;
+    sh:minCount 1 ;
+    sh:severity sh:Violation ;
+    sh:message "SubProduct must have at least one parent Product"
+  ] .
+
+chorus:SubProductDomainShape a sh:NodeShape ;
+  sh:targetClass chorus:SubProduct ;
+  sh:property [
+    sh:path chorus:hasDomain ;
+    sh:minCount 1 ;
+    sh:severity sh:Violation ;
+    sh:message "SubProduct must have at least one SubDomain"
+  ] .
+
+chorus:SubDomainParentShape a sh:NodeShape ;
+  sh:targetClass chorus:SubDomain ;
+  sh:property [
+    sh:path [ sh:inversePath chorus:hasDomain ] ;
+    sh:minCount 1 ;
+    sh:severity sh:Violation ;
+    sh:message "SubDomain must have at least one parent"
+  ] .
+
+# --- Soft constraint (warning) ---
+
+chorus:SubDomainInstancesShape a sh:NodeShape ;
+  sh:targetClass chorus:SubDomain ;
+  sh:property [
+    sh:path chorus:contains ;
+    sh:severity sh:Warning ;
+    sh:message "SubDomain has no instances (incomplete)"
+  ] .

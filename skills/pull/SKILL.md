@@ -117,6 +117,39 @@ Emit spine event:
 /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.domain_context.completed <role> card=${CARD_ID} domain=${DOMAIN}
 ```
 
+### Knowledge injection (#1905)
+
+**After domain context loads, surface governing artifacts.** The role sees relevant docs before writing code — service designs, decisions, ADRs, research.
+
+```bash
+if [ -n "$DOMAIN" ]; then
+  CATALOG=$(curl -s --max-time 5 "http://localhost:3000/api/doc-catalog" 2>/dev/null)
+  if [ -n "$CATALOG" ]; then
+    echo "$CATALOG" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+domain = '${DOMAIN}'.lower()
+groups = d.get('groups', [])
+hits = []
+for g in groups:
+    for doc in g.get('docs', []):
+        title = doc.get('title', '').lower()
+        href = doc.get('href', '').lower()
+        if domain in title or domain in href:
+            hits.append(doc)
+if hits:
+    print(f'## Knowledge: {len(hits)} artifacts for domain \"{domain}\"')
+    for h in hits[:10]:
+        print(f'  - {h.get(\"title\",\"?\")} ({h.get(\"artifactType\",\"?\")}) → {h.get(\"href\",\"\")}')
+    if len(hits) > 10:
+        print(f'  ... and {len(hits)-10} more')
+" 2>/dev/null
+  fi
+fi
+```
+
+**Not a gate — informational only.** If the doc-catalog is down or returns nothing, proceed silently.
+
 ## Step 4.5: Design gate (HARD GATE) — #1396
 
 **Before code starts, the domain must have actors and dependency edges.** This gate checks the completeness API's `lifecycle.wip` stage. If the domain isn't design-ready, the pull is blocked.

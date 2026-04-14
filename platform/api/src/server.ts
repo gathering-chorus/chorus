@@ -3741,6 +3741,102 @@ setTimeout(() => {
   setInterval(() => scheduledReindex(), REINDEX_INTERVAL);
 }, 60_000);
 
+// SHACL validation — check ontology integrity (#2014)
+app.get('/api/athena/validate', async (_req: Request, res: Response) => {
+  const start = Date.now();
+  const FUSEKI = 'http://localhost:3030';
+  const violations: Array<{ node: string; constraint: string; severity: string; message: string }> = [];
+  const warnings: Array<{ node: string; constraint: string; severity: string; message: string }> = [];
+
+  const checks = [
+    {
+      name: 'Product must have Domain',
+      severity: 'violation',
+      query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
+          ?node a chorus:Product . OPTIONAL { ?node rdfs:label ?label }
+          FILTER NOT EXISTS { ?node chorus:hasDomain ?d }
+        }}`,
+    },
+    {
+      name: 'Product must have ServiceDesign',
+      severity: 'violation',
+      query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
+          ?node a chorus:Product . OPTIONAL { ?node rdfs:label ?label }
+          FILTER NOT EXISTS { ?node chorus:hasServiceDesign ?sd }
+        }}`,
+    },
+    {
+      name: 'SubProduct must have parent Product',
+      severity: 'violation',
+      query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
+          ?node a chorus:SubProduct . OPTIONAL { ?node rdfs:label ?label }
+          FILTER NOT EXISTS { ?parent chorus:hasSubProduct ?node }
+        }}`,
+    },
+    {
+      name: 'SubProduct must have SubDomain',
+      severity: 'violation',
+      query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
+          ?node a chorus:SubProduct . OPTIONAL { ?node rdfs:label ?label }
+          FILTER NOT EXISTS { ?node chorus:hasDomain ?d }
+        }}`,
+    },
+    {
+      name: 'SubDomain must have parent',
+      severity: 'violation',
+      query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
+          ?node a chorus:SubDomain . OPTIONAL { ?node rdfs:label ?label }
+          FILTER NOT EXISTS { ?parent chorus:hasDomain ?node }
+        }}`,
+    },
+    {
+      name: 'SubDomain has no instances (incomplete)',
+      severity: 'warning',
+      query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
+          ?node a chorus:SubDomain . OPTIONAL { ?node rdfs:label ?label }
+          FILTER NOT EXISTS { ?node chorus:contains ?i }
+        }}`,
+    },
+  ];
+
+  try {
+    for (const check of checks) {
+      const result = await fetch(`${FUSEKI}/pods/query?query=${encodeURIComponent(check.query)}`, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!result.ok) continue;
+      const data = await result.json() as { results: { bindings: Array<{ node: { value: string }; label?: { value: string } }> } };
+      for (const b of data.results.bindings) {
+        const entry = {
+          node: b.label?.value || b.node.value.replace('https://jeffbridwell.com/chorus#', ''),
+          constraint: check.name,
+          severity: check.severity,
+          message: check.name,
+        };
+        if (check.severity === 'violation') violations.push(entry);
+        else warnings.push(entry);
+      }
+    }
+    res.json({
+      valid: violations.length === 0,
+      violations,
+      warnings,
+      checked: checks.length,
+      duration_ms: Date.now() - start,
+      timestamp: bostonNow(),
+    });
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('validate', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
 app.get('/api/chorus/health', (_req: Request, res: Response) => {
   // Liveness + uptime — no expensive queries (#1978)
   const uptime = Math.floor((Date.now() - startTime) / 1000);
