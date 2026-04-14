@@ -112,6 +112,21 @@ git diff "$DIFF_BASE" --diff-filter=A --name-only | head -10
 **Pass:** No new files, or new files follow naming conventions.
 **Fail:** New files with unexpected naming — warn.
 
+### 5. execSync lint (#2000)
+
+```bash
+# Check changed .ts files for execSync in request-path code
+APP_ROOT="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
+CHANGED_TS=$(cd "$APP_ROOT" && git diff "$DIFF_BASE" --name-only -- '*.ts' 2>/dev/null | head -50)
+if [ -n "$CHANGED_TS" ]; then
+  FULL_PATHS=$(echo "$CHANGED_TS" | sed "s|^|${APP_ROOT}/|")
+  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gate-code-lint.sh $FULL_PATHS
+fi
+```
+
+**Pass:** No execSync in src/handlers/, src/services/, src/middleware/.
+**Fail:** execSync found in request-path code — blocks the event loop.
+
 ## No Manual Confirms
 
 All code checks are automated.
@@ -127,6 +142,7 @@ Print summary:
   Build clean:       PASS | FAIL (errors)
   Warning diff:      PASS | FAIL (N new warnings)
   Pattern match:     PASS | WARN (new files listed)
+  execSync lint:     PASS | FAIL (N files with execSync on request path)
 
   VERDICT: PASS | FAIL
 ```

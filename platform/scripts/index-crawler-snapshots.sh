@@ -13,6 +13,16 @@ set -euo pipefail
 API_URL="http://localhost:3340"
 DB_PATH="$HOME/.chorus/index.db"
 TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+STATUS_FILE="/tmp/crawler-domain-status.json"
+CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
+
+# Load existing status file or start fresh (#1885)
+if [ -f "$STATUS_FILE" ]; then
+  DOMAIN_STATUS=$(cat "$STATUS_FILE")
+else
+  DOMAIN_STATUS="{}"
+fi
 
 # All crawlable domains — matches knownCrawlDomains in server.ts (#1883, #2026)
 ALL_DOMAINS=(
@@ -37,9 +47,23 @@ indexed=0
 errors=0
 
 for domain in "${DOMAINS[@]}"; do
+  # Track per-domain timing (#1885)
+  domain_start=$(python3 -c "import time; print(int(time.time()*1000))")
+
   # Call crawler API
   crawl_json=$(curl -sf "$API_URL/api/chorus/crawl/$domain" 2>/dev/null) || {
-    echo "WARN: Crawl failed for $domain" >&2
+    domain_end=$(python3 -c "import time; print(int(time.time()*1000))")
+    duration_ms=$((domain_end - domain_start))
+    prev_failures=$(echo "$DOMAIN_STATUS" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('$domain',{}).get('consecutive_failures',0))" 2>/dev/null || echo "0")
+    new_failures=$((prev_failures + 1))
+    DOMAIN_STATUS=$(echo "$DOMAIN_STATUS" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+d['$domain']={'status':'error','duration_ms':$duration_ms,'timestamp':'$TIMESTAMP','consecutive_failures':$new_failures,'last_error':'crawl API returned non-200'}
+print(json.dumps(d))
+" 2>/dev/null)
+    echo "WARN: Crawl failed for $domain (${duration_ms}ms, ${new_failures} consecutive)" >&2
+    "$CHORUS_LOG" crawler.domain.failed system domain="$domain" duration_ms="$duration_ms" consecutive="$new_failures" 2>/dev/null || true
     ((errors++))
     continue
   }
@@ -124,9 +148,23 @@ print('\n'.join(lines))
   sqlite3 "$DB_PATH" "INSERT INTO messages (source, source_id, channel, role, author, content, timestamp, metadata)
     VALUES ('crawler', '$source_id', 'crawl:$domain', 'system', 'crawler', '$escaped_snapshot', '$TIMESTAMP', '{\"domain\":\"$domain\"}');" 2>/dev/null
 
+  # Track success (#1885)
+  domain_end=$(python3 -c "import time; print(int(time.time()*1000))")
+  duration_ms=$((domain_end - domain_start))
+  DOMAIN_STATUS=$(echo "$DOMAIN_STATUS" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+d['$domain']={'status':'ok','duration_ms':$duration_ms,'timestamp':'$TIMESTAMP','consecutive_failures':0}
+print(json.dumps(d))
+" 2>/dev/null)
+  "$CHORUS_LOG" crawler.domain.indexed system domain="$domain" duration_ms="$duration_ms" 2>/dev/null || true
+
   ((indexed++))
-  echo "Indexed: $domain ($(echo "$snapshot" | wc -l | tr -d ' ') lines)"
+  echo "Indexed: $domain ($(echo "$snapshot" | wc -l | tr -d ' ') lines, ${duration_ms}ms)"
 done
+
+# Write status file (#1885)
+echo "$DOMAIN_STATUS" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin), indent=2))" > "$STATUS_FILE" 2>/dev/null
 
 echo ""
 echo "Done: $indexed domains indexed, $errors errors"
