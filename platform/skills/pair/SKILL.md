@@ -40,60 +40,44 @@ Two roles working one problem. The **navigator's scope loop** is the pair. When 
 ## Arguments
 
 ```
-/pair <role> [card-id]
+/pair <driver> <navigator> [card-id]
 ```
 
-- `role` — the role to pair with (silas, kade, or wren)
+- `driver` — the role who executes (writes code, runs commands, makes changes)
+- `navigator` — the role who directs (holds AC, sends directions, catches cascades)
 - `card-id` (optional) — the card to work on. If omitted, uses current WIP card.
 
-## Step 1: Establish the pair
+**Examples:**
+- `/pair kade silas 2036` — Kade builds, Silas navigates on #2036
+- `/pair silas wren` — Silas builds, Wren navigates on current WIP
 
-1. **Determine roles**: The invoking role is the **driver**. The target role is the **navigator**.
+**Jeff can invoke:** `/pair kade silas 2036` assigns both roles. No ambiguity about who does what.
 
-2. **Declare state for both roles**:
+## Step 1: Start — declare, direct, loop
+
+**No ceremony.** The pair starts when the navigator sends the first direction, not when both roles acknowledge.
+
+1. **Declare state + emit event** (one command each, no waiting):
    ```bash
    /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <your-role> building card=<card-id>
-   ```
-
-3. **Emit spine event**:
-   ```bash
    /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pair.started <your-role> card=<card-id> partner=<target-role>
    ```
 
-4. **Nudge the navigator to load /pair** — the navigator MUST load the full skill, not just follow a text description:
+2. **Nudge the navigator with the first AC item**:
    ```bash
-   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <target-role> "/pair <card-id> <your-role> — You navigate, <your-role> drives. Load this skill now so you have the full protocol."
-   ```
-   The `/pair` prefix in the nudge triggers the navigator's system to load the skill. Both roles must have the full protocol loaded — a text summary is not sufficient.
-
-5. **Navigator opens the shared scratch file** — read `/tmp/pair-<card-id>.md` at session start.
-
-6. **Set rotation checkpoint** — note the start time. At 15 minutes, both roles evaluate: swap, re-commit, or shift work mode.
-
-## Step 2: Shared context setup
-
-1. **Card context** — both roles read the card:
-   ```bash
-   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view <card-id>
+   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <navigator> "/pair <driver> <navigator> <card-id> — You navigate, I drive. First unchecked AC: <item>. Send your first direction."
    ```
 
-2. **Shared scratch file** — create `/tmp/pair-<card-id>.md`:
-   - Card title, AC checklist (copy verbatim — this is the navigator's loop target)
-   - Known blockers, machine topology
-   - `## Navigator Directions` — what the navigator told the driver to do
-   - `## Navigator Fixes` — what was prevented vs just observed
-   - `## Work Mode Log` — track mode transitions
-   - `## Follow-on Cards`
-   - `## For Jeff` (filled at pair-end)
+3. **Navigator's first response IS the first direction.** Not "acknowledged." Not "loading skill." A direction: "Read the card, then check X." The loop is turning from word one. **If no direction from the navigator within 60 seconds, the driver asks: "Navigator, what's the first AC item I should work on?" If still no direction at 120 seconds, the pair auto-cancels — a navigator who doesn't direct isn't navigating.**
 
-3. **Determine initial work mode** (see Step 3).
+4. **Scratch file is shorthand, not a prerequisite.** Create `/tmp/pair-<card-id>.md` when useful — don't block the first direction on it. Sections: `## Navigator Directions`, `## Navigator Fixes`, `## Follow-on Cards`, `## For Jeff`.
 
-4. **Print the pair contract** — one line to Jeff:
+5. **One line to Jeff:**
    ```
-   Pair started: <driver> (drives) + <navigator> (scope loop) on #<card-id>. Mode: <build|investigate>.
+   Pair started: <driver> (drives) + <navigator> (scope loop) on #<card-id>.
    ```
 
-## Step 3: Work modes
+## Step 2: Work modes
 
 **Detect and declare the work mode.** Different work needs different pair dynamics. Log mode transitions in the scratch file.
 
@@ -145,7 +129,7 @@ Use when: well-understood task, single domain, low complexity.
 
 **Protocol:** One role works. The other does different productive work. Review the output when done. **Don't pair on simple tasks — research shows it wastes effort without quality gain.**
 
-## Step 4: Rotation checkpoints (every 15 minutes)
+## Step 3: Rotation checkpoints (every 15 minutes)
 
 At each checkpoint, both roles evaluate:
 
@@ -162,7 +146,7 @@ chorus-log pair.swapped <role> card=<card-id>
 
 **The rotation checkpoint doesn't always mean swap.** Sometimes it means "confirm the split is working and both roles are active." A domain-based split (Kade on code, Silas on graph) can sustain longer than 15 minutes if both roles are producing.
 
-## Step 5: Cascade prevention
+## Step 4: Cascade prevention
 
 The highest-value moment in BUILD mode is when the navigator prevents a cascade:
 
@@ -187,7 +171,7 @@ Navigator: "Kill it. Batched version at /tmp/migrate-batch.py. Data is safe — 
 
 The navigator's job is to catch the 30-second mistake before it becomes a 30-minute investigation.
 
-## Step 6: Outcome gate (before closing)
+## Step 5: Outcome gate (before closing)
 
 **Before declaring "done," validate against the outcome, not the task.**
 
@@ -200,7 +184,7 @@ Checklist before close:
 
 If any answer is no, the card stays open. Don't declare victory against internal metrics.
 
-## Step 7: End the pair
+## Step 6: End the pair
 
 **Triggers:**
 - Card work is complete AND outcome gate passes
