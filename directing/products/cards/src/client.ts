@@ -323,11 +323,14 @@ export class BoardClient {
   /** Remove a label by category and value */
   async untag(index: number, category: string, value: string): Promise<void> {
     const apiId = await this.resolveIndex(index);
-    const group = (LABELS as Record<string, Record<string, number>>)[category];
-    if (!group) throw new Error(`Unknown label category "${category}". Valid: ${Object.keys(LABELS).join(', ')}`);
-    const labelId = group[value.toLowerCase()];
-    if (!labelId) throw new Error(`Unknown ${category} "${value}". Valid: ${Object.keys(group).join(', ')}`);
-    await this.removeLabel(apiId, labelId);
+    const labelTitle = `${category}:${value}`;
+    // Look up the actual label ID from the task's labels, not from config.
+    // Config IDs can be stale after DB rebuild — the task knows its own label IDs.
+    const task = await this.api<any>('GET', `/tasks/${apiId}`);
+    const taskLabels: Array<{ id: number; title: string }> = task.labels || [];
+    const match = taskLabels.find((l: { title: string }) => l.title === labelTitle);
+    if (!match) throw new Error(`Label "${labelTitle}" not found on card #${index}`);
+    await this.removeLabel(apiId, match.id);
   }
 
   /** Add a comment to a task */
