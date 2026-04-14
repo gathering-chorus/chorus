@@ -79,11 +79,11 @@ tell application "Terminal"
             tell application "System Events"
                 tell process "Terminal"
                     keystroke "{text}"
-                    delay 0.05
+                    delay 0.3
                     key code 36
                 end tell
             end tell
-            delay 0.05
+            delay 0.3
             tell application originalApp to activate
             return "ok"
         end if
