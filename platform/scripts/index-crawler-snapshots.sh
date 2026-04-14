@@ -14,8 +14,12 @@ API_URL="http://localhost:3340"
 DB_PATH="$HOME/.chorus/index.db"
 TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
-# Known active domains
-ALL_DOMAINS=(seeds photos music people chorus infrastructure search)
+# All crawlable domains — matches knownCrawlDomains in server.ts (#1883, #2026)
+ALL_DOMAINS=(
+  photos music people books cooking reading watching property stories notes
+  blog gallery social glimmers ideas seeds self chorus clearing pulse spine
+  interactions memory infrastructure observability loom search
+)
 
 DOMAINS=("${@:-${ALL_DOMAINS[@]}}")
 
