@@ -44,22 +44,24 @@ A `PreToolUse` hook at `.claude/hooks/infra-guardrails.sh` **blocks** prohibited
 
 **This is non-negotiable.** `../../../../jeff-bridwell-personal-site/app-state.sh` is the only way to manage services. Commands: `start`, `stop`, `restart`, `status`, `deploy`, `rollback`.
 
-**NEVER** use `docker stop/rm/restart/kill`, `docker compose down`, `docker exec`, `kill/pkill/killall`, or `terraform apply/destroy` directly. The hook will block these commands. `app-state.sh` handles graceful shutdown, port cleanup, Docker lifecycle, and health checks.
+**NEVER** use `kill/pkill/killall`, `launchctl unload/remove` directly, or `terraform apply/destroy`. The hook will block these commands. `app-state.sh` handles graceful shutdown, port cleanup, LaunchAgent lifecycle, and health checks.
 
-### ALWAYS use Loki for log search — NEVER `docker logs`
+### Services run as native LaunchAgents — not Docker
 
-All container logs are indexed in Loki. Query via Grafana (http://localhost:3100 → Explore) or Loki API at http://localhost:3102 (NOT 3100 — that's Grafana).
+The app and Fuseki run as native LaunchAgents (since #1393). Only CSS (Solid community server) still uses Docker. Do not reference Docker for app or Fuseki operations.
+
+### ALWAYS use Loki for log search
+
+All service logs are indexed in Loki. Query via Grafana (http://localhost:3100 → Explore) or Loki API at http://localhost:3102 (NOT 3100 — that's Grafana).
 
 ```
-{container_name="jeff-bridwell-personal-site-app"} |= "error"
-{container_name=~".*fuseki.*"} | json | level="ERROR"
+{service_name="gathering-app"} |= "error"
+{service_name=~".*fuseki.*"} | json | level="ERROR"
 ```
-
-`docker logs` is ephemeral, unstructured, and lost on restart. The hook blocks it.
 
 ### What IS allowed
 
-`docker ps`, `docker images` (read-only), `docker build`, normal dev commands (npm, git, node), and `app-state.sh` for all lifecycle operations.
+`docker ps`, `docker images` (read-only for CSS), normal dev commands (npm, git, node), and `app-state.sh` for all lifecycle operations.
 
 ### Deploy freeze
 
@@ -77,7 +79,7 @@ Two machines: **Library** (192.168.86.36) and **Bedroom** (192.168.86.242).
 
 **Read is free.** Health checks, log reads, status queries — no card needed.
 **Write/mutate requires a card.** Log in `../../../activity.md` with machine name.
-**No raw process killing — local OR remote.** Use `launchctl kickstart` for LaunchAgents, `app-state.sh` for Docker.
+**No raw process killing — local OR remote.** Use `launchctl kickstart` for LaunchAgents, `app-state.sh` for service lifecycle.
 **LaunchAgent changes go through Silas.**
 **Exception:** Kade may restart services via `app-state.sh` during Bedroom bulk ops (thumbnail generation, photo pipeline) without routing through Silas. Log in `../../../activity.md`.
 

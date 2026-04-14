@@ -5424,29 +5424,22 @@ app.post('/api/athena/subdomains/:id/contract', async (req: Request, res: Respon
   }
 });
 
-// GET /api/athena/subdomains/:id/completeness — lifecycle-gated completeness score (#1899)
+// GET /api/athena/subdomains/:id/completeness — lifecycle-gated completeness score (#1899, #1979)
+// #1979: Split into 2 parallel queries — metadata (ontology) + instance counts (instances).
+// The original monolithic query had 11 OPTIONAL cross-graph joins that caused
+// Fuseki timeout on populated domains due to combinatorial explosion.
 app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Response) => {
   const start = Date.now();
   try {
     const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `
+
+    // Query 1: Metadata from ontology graph (no cross-graph joins)
+    const metaQuery = `
       PREFIX chorus: <https://jeffbridwell.com/chorus#>
       PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT
-        (COUNT(DISTINCT ?actor) AS ?actorCount)
-        (COUNT(DISTINCT ?scenario) AS ?scenarioCount)
-        (COUNT(DISTINCT ?contract) AS ?contractCount)
-        (COUNT(DISTINCT ?priorArt) AS ?priorArtCount)
-        (COUNT(DISTINCT ?page) AS ?pageCount)
-        (COUNT(DISTINCT ?integration) AS ?integrationCount)
-        (COUNT(DISTINCT ?service) AS ?serviceCount)
-        (COUNT(DISTINCT ?persistence) AS ?persistenceCount)
-        (COUNT(DISTINCT ?pipeline) AS ?pipelineCount)
-        (COUNT(DISTINCT ?logSource) AS ?logCount)
-        (COUNT(DISTINCT ?gap) AS ?gapCount)
+      SELECT ?label ?comment ?ownerLabel ?stepLabel
         (COUNT(DISTINCT ?consumed) AS ?consumesCount)
         (COUNT(DISTINCT ?consumer) AS ?consumedByCount)
-        ?label ?comment ?ownerLabel ?stepLabel
       WHERE {
         GRAPH <urn:chorus:ontology> {
           <${sdUri}> a chorus:SubDomain .
@@ -5457,45 +5450,73 @@ app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Res
           OPTIONAL { <${sdUri}> chorus:consumes ?consumed }
           OPTIONAL { ?consumer chorus:consumes <${sdUri}> }
         }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasActor ?actor } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasScenario ?scenario } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasContract ?contract } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasPriorArt ?priorArt } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasPage ?page } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasIntegration ?integration } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasService ?service } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasPersistence ?persistence } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasPipeline ?pipeline } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasLogSource ?logSource } }
-        OPTIONAL { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasGap ?gap } }
       }
       GROUP BY ?label ?comment ?ownerLabel ?stepLabel
     `;
-    const result = await athenaSparqlQuery(query);
-    const b = result.results.bindings[0];
+
+    // Query 2: Instance counts — single graph, no cross-graph joins (#1979)
+    const countsQuery = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      SELECT
+        (COUNT(DISTINCT ?actor) AS ?actorCount)
+        (COUNT(DISTINCT ?scenario) AS ?scenarioCount)
+        (COUNT(DISTINCT ?contract) AS ?contractCount)
+        (COUNT(DISTINCT ?priorArt) AS ?priorArtCount)
+        (COUNT(DISTINCT ?page) AS ?pageCount)
+        (COUNT(DISTINCT ?integration) AS ?integrationCount)
+        (COUNT(DISTINCT ?service) AS ?serviceCount)
+        (COUNT(DISTINCT ?persistence) AS ?persistenceCount)
+        (COUNT(DISTINCT ?pipeline) AS ?pipelineCount)
+        (COUNT(DISTINCT ?logSource) AS ?logSourceCount)
+        (COUNT(DISTINCT ?gap) AS ?gapCount)
+      WHERE {
+        GRAPH <urn:chorus:instances> {
+          OPTIONAL { <${sdUri}> chorus:hasActor ?actor }
+          OPTIONAL { <${sdUri}> chorus:hasScenario ?scenario }
+          OPTIONAL { <${sdUri}> chorus:hasContract ?contract }
+          OPTIONAL { <${sdUri}> chorus:hasPriorArt ?priorArt }
+          OPTIONAL { <${sdUri}> chorus:hasPage ?page }
+          OPTIONAL { <${sdUri}> chorus:hasIntegration ?integration }
+          OPTIONAL { <${sdUri}> chorus:hasService ?service }
+          OPTIONAL { <${sdUri}> chorus:hasPersistence ?persistence }
+          OPTIONAL { <${sdUri}> chorus:hasPipeline ?pipeline }
+          OPTIONAL { <${sdUri}> chorus:hasLogSource ?logSource }
+          OPTIONAL { <${sdUri}> chorus:hasGap ?gap }
+        }
+      }
+    `;
+
+    // Run both queries in parallel — no cross-graph join in either
+    const [metaResult, countsResult] = await Promise.all([
+      athenaSparqlQuery(metaQuery),
+      athenaSparqlQuery(countsQuery),
+    ]);
+
+    const b = metaResult.results.bindings[0];
     if (!b) {
       return res.status(404).json(athenaEnvelope('subdomain-completeness', {
         error: `Sub-domain '${req.params.id}' not found`,
       }, Date.now() - start, { error: true }));
     }
 
+    const c = countsResult.results.bindings[0] || {};
     const sections: Record<string, boolean> = {
       label: !!b.label,
       comment: !!b.comment,
       owner: !!b.ownerLabel,
       step: !!b.stepLabel,
-      actors: parseInt(b.actorCount.value) > 0,
-      scenarios: parseInt(b.scenarioCount.value) > 0,
-      contract: parseInt(b.contractCount.value) > 0,
-      prior_art: parseInt(b.priorArtCount.value) > 0,
-      pages: parseInt(b.pageCount.value) > 0,
-      integrations: parseInt(b.integrationCount.value) > 0,
-      services: parseInt(b.serviceCount.value) > 0,
-      persistence: parseInt(b.persistenceCount.value) > 0,
-      pipeline: parseInt(b.pipelineCount.value) > 0,
-      logs: parseInt(b.logCount.value) > 0,
-      gaps: parseInt(b.gapCount.value) > 0,
-      edges: (parseInt(b.consumesCount.value) + parseInt(b.consumedByCount.value)) > 0,
+      actors: parseInt(c.actorCount?.value || '0') > 0,
+      scenarios: parseInt(c.scenarioCount?.value || '0') > 0,
+      contract: parseInt(c.contractCount?.value || '0') > 0,
+      prior_art: parseInt(c.priorArtCount?.value || '0') > 0,
+      pages: parseInt(c.pageCount?.value || '0') > 0,
+      integrations: parseInt(c.integrationCount?.value || '0') > 0,
+      services: parseInt(c.serviceCount?.value || '0') > 0,
+      persistence: parseInt(c.persistenceCount?.value || '0') > 0,
+      pipeline: parseInt(c.pipelineCount?.value || '0') > 0,
+      logs: parseInt(c.logSourceCount?.value || '0') > 0,
+      gaps: parseInt(c.gapCount?.value || '0') > 0,
+      edges: (parseInt(b.consumesCount?.value || '0') + parseInt(b.consumedByCount?.value || '0')) > 0,
     };
 
     const lifecycle: Record<string, { required: string[]; met: string[]; missing: string[]; pass: boolean }> = {
