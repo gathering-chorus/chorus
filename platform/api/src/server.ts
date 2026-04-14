@@ -936,23 +936,18 @@ app.get('/api/chorus/domain-story/:domain', async (req: Request, res: Response) 
 app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
   const domain = req.params.domain.toLowerCase();
 
-  // Domain validation — return 404 for unknown domains (#1886)
-  try {
-    const sdRes = await fetch(`http://localhost:3340/api/athena/subdomains`);
-    if (sdRes.ok) {
-      const sdData = await sdRes.json() as { data?: Array<{ id: string }> };
-      const subdomains = (sdData.data || []) as Array<{ id: string }>;
-      const validDomains = new Set(subdomains.map(s => s.id.replace(/-(?:domain|service)$/, '')));
-      if (!validDomains.has(domain)) {
-        res.status(404).json({
-          error: `Domain '${domain}' not found`,
-          suggestion: 'GET /api/athena/subdomains for valid domains',
-          valid_count: validDomains.size,
-        });
-        return;
-      }
-    }
-  } catch { /* Athena unavailable — skip validation, proceed with crawl */ }
+  // Domain validation — return 404 for unknown domains (#1886, #2026)
+  // #2026: Use knownDomains list, not subdomain ontology. "search" and "infrastructure"
+  // are valid crawl targets even without ontology subdomains — they have cards, code, logs.
+  const knownCrawlDomains = ['photos', 'music', 'people', 'books', 'cooking', 'reading', 'watching', 'property', 'stories', 'notes', 'blog', 'gallery', 'social', 'glimmers', 'ideas', 'seeds', 'self', 'chorus', 'clearing', 'pulse', 'spine', 'interactions', 'memory', 'infrastructure', 'observability', 'loom', 'search'];
+  if (!knownCrawlDomains.includes(domain)) {
+    res.status(404).json({
+      error: `Domain '${domain}' not found`,
+      suggestion: 'Valid domains: ' + knownCrawlDomains.join(', '),
+      valid_count: knownCrawlDomains.length,
+    });
+    return;
+  }
 
   const FUSEKI_URL = 'http://localhost:3030';
   const NODE_PATH = '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin';
