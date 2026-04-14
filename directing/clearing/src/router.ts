@@ -19,18 +19,18 @@ export class MessageRouter extends EventEmitter {
     const classified = this.classify(raw);
     if (raw.level) classified.level = raw.level;
 
-    // Dedup: skip if any recent message (last 10) has same from + text
-    // Also catch @mention-stripped duplicates — Bridge sends "@silas do X",
-    // session-tailer sees "do X" without the prefix (#1706)
+    // Dedup: skip if any recent message (last 10) has same from + exact same text
+    // #2036: Removed fuzzy substring matching — it dropped Jeff's short messages
+    // ("test" matched "end-to-end bridge test" as substring). Only exact match now.
     const recent = this.messages.slice(-10);
     const normText = classified.text.replace(/^@(wren|silas|kade)\s+/i, '').trim();
     for (const prev of recent) {
       if (prev.from !== classified.from) continue;
       if (prev.text === classified.text) return; // exact match
-      // Fuzzy: one is substring of the other after stripping @mentions
+      // Exact match after stripping @mentions (#1706)
       const prevNorm = prev.text.replace(/^@(wren|silas|kade)\s+/i, '').trim();
-      if (normText && prevNorm && (normText === prevNorm || prev.text.includes(normText) || classified.text.includes(prevNorm))) {
-        return; // @mention-stripped duplicate
+      if (normText && prevNorm && normText === prevNorm) {
+        return; // @mention-stripped exact duplicate
       }
     }
 

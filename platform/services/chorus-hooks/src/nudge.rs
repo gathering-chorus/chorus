@@ -359,7 +359,9 @@ pub fn run(args: &[String]) -> ExitCode {
                     queue_message(target, &full_text);
                     mode = "inject-failed-queued";
                     eprintln!("INJECT FAILED for {} (queued for drain): {}", target, e);
-                    println!("DELIVERED to {} at {} (queued — inject failed)", target, clock_short);
+                    // #2036: Print INJECT_FAILED so callers (Clearing) can detect failure.
+                    // Previously printed "DELIVERED" which masked inject failure — Jeff saw "Sent".
+                    println!("INJECT_FAILED for {} at {} (queued for drain)", target, clock_short);
                     chorus_log(
                         "role.nudge.inject_failed",
                         &sender,

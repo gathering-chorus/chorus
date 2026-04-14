@@ -803,6 +803,12 @@ io.on('connection', (socket) => {
           env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' },
         });
         console.log(`[clearing] result: ${result.trim()}`);
+        // #2036: Detect inject failure — nudge persisted but keystroke didn't work
+        if (result.includes('INJECT_FAILED')) {
+          console.error(`[clearing] inject failed for ${target} — TCC or window issue`);
+          ack?.({ ok: false, error: `inject failed for ${target} (message queued but not delivered to terminal)` });
+          return;
+        }
       } catch (err) {
         const errMsg = err instanceof Error ? (err as any).stderr || err.message : String(err);
         console.error(`[clearing] delivery to ${target} failed: ${errMsg}`);
