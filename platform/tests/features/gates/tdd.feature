@@ -97,3 +97,30 @@ Feature: TDD gate
     And they have not run any tests in the session
     When they try to mark the card done
     Then the gate allows the edit
+
+  # --- #1915: Acceptance and retroactive closure exemptions ---
+
+  Scenario: Role not building — demo allowed without tests
+    Given a role is NOT in building state
+    And they have not edited any test files
+    And they have not run any tests in the session
+    When they try to run demo on the card
+    Then the gate allows the edit
+
+  Scenario: Role not building — production code edit allowed without tests
+    Given a role is NOT in building state
+    And they have not edited any test files
+    When they try to edit a code file in their own domain
+    Then the gate allows the edit
+
+  Scenario: Retroactive closure of Later card — allowed without tests
+    Given a role is NOT in building state
+    And a card is in Later status
+    When they try to mark the card done
+    Then the gate allows the edit
+
+  Scenario: Role building — gate still enforces on production code edit
+    Given a role is building a fix card
+    And they have not edited any test files
+    When they try to edit a code file in their own domain
+    Then the gate blocks with "haven't written a test yet"

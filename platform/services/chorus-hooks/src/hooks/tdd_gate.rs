@@ -1,15 +1,36 @@
-//! TDD gate (#1814, refined per Jeff's feedback)
+//! TDD gate (#1814, refined per Jeff's feedback, #1915 acceptance fix)
 //!
 //! Two enforcement points:
 //! 1. PreToolUse on Edit/Write of production code: blocks unless a test file
 //!    was edited FIRST in this session. Tests before code, not tests before done.
-//! 2. PreToolUse on demo/done/acp: blocks unless tests were actually RUN.
+//! 2. PreToolUse on demo: blocks unless tests were actually RUN.
+//!
+//! Only enforces when the role is actively building (state = "building").
+//! Acceptance, retroactive closure, and idle roles are exempt — the TDD gate
+//! applies to builders, not acceptors (#1915).
 //!
 //! Jeff's direction: "Running tests just to get past the gate is performative.
 //! TDD means tests come before code, not after."
 
 use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
+
+/// Check if the role is actively in "building" state (#1915).
+/// TDD gate only applies to builders — acceptance and retroactive closure are exempt.
+fn is_role_building(role: &str) -> bool {
+    let state_path = format!("/tmp/claude-team-scan/{}-declared.json", role);
+    match std::fs::read_to_string(&state_path) {
+        Ok(content) => {
+            match serde_json::from_str::<serde_json::Value>(&content) {
+                Ok(parsed) => {
+                    parsed.get("state").and_then(|s| s.as_str()) == Some("building")
+                }
+                Err(_) => false,
+            }
+        }
+        Err(_) => false,
+    }
+}
 
 /// Test file patterns — delegated to shared module (#2076)
 #[cfg(test)]
@@ -147,6 +168,12 @@ fn test_guidance(card_type: &str) -> &'static str {
 }
 
 pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
+    // #1915: TDD gate only applies when the role is actively building.
+    // Acceptance, retroactive closure, and idle roles are exempt.
+    if !is_role_building(input.role().as_str()) {
+        return HookResponse::allow();
+    }
+
     // Skip TDD for chore and swat cards
     let card_type = crate::types::card_type_for_role(input.role().as_str());
     if card_type == "chore" || card_type == "swat" {
