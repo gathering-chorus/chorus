@@ -4293,9 +4293,9 @@ app.get('/api/athena/subdomains/:id/code', async (req: Request, res: Response) =
       type: b.fileType?.value || path.extname(b.filePath?.value || '').slice(1) || 'unknown',
       description: b.description?.value || null,
     }));
-    const isTestFile = (p: string) => /\/(tests?|__tests__)\//i.test(p) || /\.(test|spec)\./i.test(p);
-    const tests = allFiles.filter((f: any) => isTestFile(f.path));
-    const source = allFiles.filter((f: any) => !isTestFile(f.path));
+    const isTest = (p: string) => /\/(tests?|__tests__)\//i.test(p) || /\.(test|spec)\./i.test(p) || /\.bats$/i.test(p) || /_test\.rs$/i.test(p) || /\.feature$/i.test(p);
+    const tests = allFiles.filter((f: any) => isTest(f.path));
+    const source = allFiles.filter((f: any) => !isTest(f.path));
     const byType = allFiles.reduce((acc: Record<string, number>, f: any) => { acc[f.type] = (acc[f.type] || 0) + 1; return acc; }, {});
     res.json(athenaEnvelope('subdomain-code', { subdomain: req.params.id, files: source, tests, byType }, Date.now() - start, { count: allFiles.length, source_count: source.length, test_count: tests.length }));
   } catch (err: any) {
