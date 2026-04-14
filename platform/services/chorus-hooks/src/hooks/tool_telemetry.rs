@@ -1,4 +1,4 @@
-use crate::state::{append_log, AppState};
+use crate::state::{append_log, chorus_log, AppState};
 use crate::types::{HookInput, HookResponse};
 use chrono::Utc;
 use regex::Regex;
@@ -31,6 +31,24 @@ pub async fn pre_tool_use(input: &HookInput, state: &AppState) -> HookResponse {
         "WebSearch" => input.get_tool_input_str("query"),
         _ => String::new(),
     };
+
+    // #2015: Structured skill/gate logging — emit spine events for Loki/Grafana
+    if tool == "Skill" {
+        let skill_name = input.get_tool_input_str("skill");
+        let args = input.get_tool_input_str("args");
+        let card_id = args.split_whitespace()
+            .find(|s| s.chars().all(|c| c.is_ascii_digit()) && !s.is_empty())
+            .unwrap_or("");
+        let is_gate = skill_name.starts_with("gate-");
+        let event = if is_gate { "gate.invoked" } else { "skill.invoked" };
+        let card_id_val = if card_id.is_empty() { "none" } else { card_id };
+        let args_short: String = args.chars().take(80).collect();
+        chorus_log(event, role.as_str(), &[
+            ("skill", skill_name.as_str()),
+            ("card_id", card_id_val),
+            ("args", args_short.as_str()),
+        ]).await;
+    }
 
     let detail_clean: String = detail
         .replace('"', "'")
