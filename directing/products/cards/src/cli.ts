@@ -163,6 +163,54 @@ async function cmdList(client: BoardClient, label: string, productFilter?: strin
   }
 }
 
+async function cmdFilter(client: BoardClient, args: string[]) {
+  const filters: Record<string, string> = {};
+  for (let i = 0; i < args.length; i++) {
+    const flag = args[i];
+    if (flag === '--domain' && args[i + 1]) { filters.domain = args[++i]; }
+    else if (flag === '--sequence' && args[i + 1]) { filters.sequence = args[++i]; }
+    else if (flag === '--owner' && args[i + 1]) { filters.owner = args[++i]; }
+    else if (flag === '--type' && args[i + 1]) { filters.type = args[++i]; }
+    else if (flag === '--status' && args[i + 1]) { filters.status = args[++i]; }
+  }
+
+  if (Object.keys(filters).length === 0) {
+    console.log('Usage: cards filter --domain <d> [--sequence <s>] [--owner <o>] [--type <t>] [--status <s>]');
+    console.log('  At least one filter required.');
+    return;
+  }
+
+  const grouped = await client.listGrouped();
+  const excludeStatuses = ["Won't Do", 'Done'];
+  let results: { status: string; task: any }[] = [];
+
+  for (const [status, tasks] of grouped.entries()) {
+    if (excludeStatuses.includes(status)) continue;
+    if (filters.status && status.toLowerCase() !== filters.status.toLowerCase()) continue;
+    for (const t of tasks) {
+      let match = true;
+      if (filters.domain && !t.domains.includes(`domain:${filters.domain}`)) match = false;
+      if (filters.sequence && !t.domains.includes(`sequence:${filters.sequence}`)) match = false;
+      if (filters.owner && t.owner.toLowerCase() !== filters.owner.toLowerCase()) match = false;
+      if (filters.type && !t.domains.includes(`type:${filters.type}`)) match = false;
+      if (match) results.push({ status, task: t });
+    }
+  }
+
+  if (results.length === 0) {
+    console.log('No cards match filters.');
+    return;
+  }
+
+  console.log(`\nFiltered (${results.length} cards):`);
+  for (const { status, task: t } of results) {
+    const tags = [t.owner, t.priority, ...t.domains.filter((d: string) => !d.startsWith('product:'))].filter(Boolean);
+    const tagStr = tags.length > 0 ? ` [${tags.join('|')}]` : '';
+    console.log(`  ${String(t.index).padStart(4)}  ${t.title}${tagStr}  (${status})`);
+  }
+  console.log(`\n${results.length} cards`);
+}
+
 async function cmdMine(client: BoardClient, args: string[], label: string) {
   const role = args[0] || detectRole();
   const tasks = await client.mine(role);
@@ -814,6 +862,7 @@ async function main() {
       break;
     }
 
+    case 'filter': await cmdFilter(client, cmdArgs); break;
     case 'chunk': await cmdChunk(client, cmdArgs); break;
     case 'domain': await cmdDomain(client, cmdArgs); break;
 
