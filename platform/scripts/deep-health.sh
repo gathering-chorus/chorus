@@ -26,6 +26,12 @@ if [ -f "$SUPPRESS_FILE" ]; then
   rm -f "$SUPPRESS_FILE"
 fi
 
+# --- 0.5. Fuseki liveness (#2033) ---
+FUSEKI_CODE=$(curl -sf --max-time 3 -o /dev/null -w '%{http_code}' "http://localhost:3030/$/ping" 2>/dev/null || echo "000")
+if [ "$FUSEKI_CODE" != "200" ]; then
+  FAILURES+=("fuseki: localhost:3030 unreachable — ontology, SHACL, domain context broken")
+fi
+
 # --- 1. Session watcher: fswatch subprocess alive ---
 if pgrep -f "fswatch.*\.jsonl" > /dev/null 2>&1; then
   : # fswatch alive

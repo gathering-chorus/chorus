@@ -89,6 +89,18 @@ Emit spine event:
 
 **Read domain state before writing code. No building blind.**
 
+### Fuseki health check (#2033)
+
+```bash
+FUSEKI_OK=$(curl -sf --max-time 3 -o /dev/null -w '%{http_code}' "http://localhost:3030/$/ping" 2>/dev/null)
+if [ "$FUSEKI_OK" != "200" ]; then
+  echo "BLOCKED: Fuseki is down (localhost:3030). Domain context, SHACL validation, and ontology queries all depend on it."
+  echo "  Fix: check launchctl list | grep fuseki, then app-state.sh status"
+  /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log pull.fuseki_gate.failed <role> card=${CARD_ID}
+  exit 1
+fi
+```
+
 ```bash
 DOMAIN=$(echo "$CARD_VIEW" | grep -oE 'domain:\w+' | head -1 | sed 's/domain://')
 
