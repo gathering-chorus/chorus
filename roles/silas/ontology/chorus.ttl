@@ -641,6 +641,10 @@ chorus:Product a owl:Class ;
     rdfs:label "Product" ;
     rdfs:comment "A system being built by the team. Products are outputs of the spine AND inputs back to Capturing (feedback loop)." .
 
+chorus:ServiceDesign a owl:Class ;
+    rdfs:label "Service Design" ;
+    rdfs:comment "Architectural blueprint for a service — interfaces, contracts, dependencies, deployment model." .
+
 chorus:gathering a chorus:Product ;
     rdfs:label "Gathering" ;
     rdfs:comment "Personal infrastructure — SOLID pods, knowledge graph, collections, Self domain. The product the spine builds." .
@@ -648,6 +652,16 @@ chorus:gathering a chorus:Product ;
 chorus:chorusProduct a chorus:Product ;
     rdfs:label "Chorus (Product)" ;
     rdfs:comment "The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system." .
+
+# --- Service Designs ---
+
+chorus:gathering-service-design a chorus:ServiceDesign ;
+    rdfs:label "Gathering App" ;
+    rdfs:comment "Personal knowledge graph — TypeScript/Express, SOLID pods, Fuseki SPARQL, LaunchAgent deploy on Library." .
+
+chorus:chorus-api-service-design a chorus:ServiceDesign ;
+    rdfs:label "Chorus API" ;
+    rdfs:comment "Team coordination API — TypeScript/Express at localhost:3340. Board, Athena, spine, messaging, search." .
 
 # --- Sub-Products (Chorus) ---
 
@@ -877,6 +891,12 @@ chorus:knowledge-domain a chorus:SubDomain ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Designing .
 
+chorus:pulse-metrics-domain a chorus:SubDomain ;
+    rdfs:label "Pulse Metrics" ;
+    rdfs:comment "Agent vital signs — heartbeat frequency, context usage, tool call patterns, session health." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving .
+
 chorus:integrations-domain a chorus:SubDomain ;
     rdfs:label "Integrations" ;
     rdfs:comment "ICDs, cross-domain data contracts, harvester interfaces." ;
@@ -1040,12 +1060,13 @@ chorus:video-domain chorus:builtBy chorus:gatheringStream .
 
 # --- Wire domains into products (hasDomain) ---
 
-# observability-product hasDomain removed (#1962) — code/commits/tests are inventory, not domains
-
-# operating-model-product hasDomain removed (#1962) — pipelines is inventory, not a domain
+# Note: code/commits/tests and pipelines are inventory sections, not domains (#1962).
+# Services (observability, logs, alerts, deploys, skills, gates) remain as sub-domains.
 
 chorus:chorusProduct chorus:hasDomain chorus:messages-domain, chorus:streams-domain,
-                                     chorus:pulse-domain, chorus:knowledge-domain .
+                                     chorus:knowledge-domain,
+                                     chorus:infra-service, chorus:code-domain,
+                                     chorus:toolschain-domain .
 
 chorus:convergence-product chorus:hasDomain chorus:integrations-domain, chorus:convergence-domain .
 
@@ -1056,6 +1077,27 @@ chorus:chorusProduct chorus:hasDomain chorus:chorus-domain,
 chorus:loom chorus:hasDomain chorus:policies-domain .
 
 chorus:actor-bdd-product chorus:hasDomain chorus:domains-domain, chorus:services-domain .
+
+chorus:observability-product chorus:hasDomain chorus:observability-service, chorus:logs-service,
+                                              chorus:alerts-service, chorus:deploys-service .
+
+chorus:cards-product chorus:hasDomain chorus:cards-service .
+
+chorus:clearing-product chorus:hasDomain chorus:messages-domain .
+
+chorus:operating-model-product chorus:hasDomain chorus:skills-service, chorus:gates-service .
+
+chorus:werk-product chorus:hasDomain chorus:spine-service .
+
+chorus:pulse-domain chorus:hasDomain chorus:pulse-metrics-domain .
+
+# --- Gathering content domains ---
+
+chorus:gathering chorus:hasDomain chorus:music-domain, chorus:photos-domain, chorus:books-domain,
+                                 chorus:notes-domain, chorus:documents-domain, chorus:blog-domain,
+                                 chorus:seeds-domain, chorus:property-domain, chorus:people-domain,
+                                 chorus:social-domain, chorus:sexuality-domain, chorus:stories-domain,
+                                 chorus:video-domain .
 
 # --- Product → Service consumption edges ---
 
@@ -1083,12 +1125,20 @@ chorus:chorusProduct chorus:provides chorus:observability-service, chorus:infra-
                                      chorus:skills-service, chorus:gates-service,
                                      chorus:spine-service .
 
-# --- Product containment ---
+# --- Product → SubProduct containment (hasSubProduct) ---
 
-chorus:chorusProduct chorus:hasDomain chorus:loom, chorus:cards-product, chorus:clearing-product,
-                                     chorus:werk-product, chorus:observability-product,
-                                     chorus:convergence-product, chorus:operating-model-product,
-                                     chorus:actor-bdd-product, chorus:athena-product .
+chorus:chorusProduct chorus:hasSubProduct chorus:loom, chorus:cards-product, chorus:clearing-product,
+                                         chorus:werk-product, chorus:observability-product,
+                                         chorus:convergence-product, chorus:operating-model-product,
+                                         chorus:actor-bdd-product, chorus:athena-product,
+                                         chorus:pulse-domain .
+
+# --- Product → ServiceDesign ---
+
+chorus:gathering chorus:hasServiceDesign chorus:gathering-service-design .
+chorus:chorusProduct chorus:hasServiceDesign chorus:chorus-api-service-design .
+
+# --- SubProduct → SubDomain containment ---
 
 chorus:athena-product chorus:hasDomain chorus:athena-domain .
 
@@ -1440,6 +1490,18 @@ chorus:hasDomain a owl:ObjectProperty ;
     rdfs:comment "True containment — a product has this domain as a constituent part. Loom hasDomain Principles." ;
     rdfs:domain chorus:Product ;
     rdfs:range chorus:Domain .
+
+chorus:hasSubProduct a owl:ObjectProperty ;
+    rdfs:label "has sub-product" ;
+    rdfs:comment "Product contains this sub-product as a constituent part." ;
+    rdfs:domain chorus:Product ;
+    rdfs:range chorus:SubProduct .
+
+chorus:hasServiceDesign a owl:ObjectProperty ;
+    rdfs:label "has service design" ;
+    rdfs:comment "Product has this service design as an architectural blueprint." ;
+    rdfs:domain chorus:Product ;
+    rdfs:range chorus:ServiceDesign .
 
 chorus:contains a owl:ObjectProperty ;
     rdfs:label "contains" ;

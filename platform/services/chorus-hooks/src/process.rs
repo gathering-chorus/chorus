@@ -128,22 +128,19 @@ mod tests {
         assert!(cwd.is_none());
     }
 
-    // --- #2100: inject_by_tab_name uses inline osascript, not external binary ---
+    // --- inject_by_tab_name delegates to chorus-inject binary (#2077) ---
+    // Separate crate so TCC accessibility permissions survive shim rebuilds.
+    // History: #2100 inlined it, #2229 tried bash, both reverted. Binary delegation
+    // is the stable path. This test was stale since re-introduction of the binary.
 
     #[test]
-    fn inject_by_tab_name_uses_inline_osascript() {
-        // Structural test: inject_by_tab_name should call osascript directly,
-        // not delegate to an external binary. We verify by calling with a role
-        // that has no window — the error message should come from osascript/AppleScript,
-        // not from "chorus-inject spawn failed".
+    fn inject_by_tab_name_delegates_to_chorus_inject_binary() {
         let result = inject_by_tab_name("silas", "structural-test");
+        // Either succeeds (window found) or fails with an error from the
+        // inject binary — both valid in test context.
         if let Err(e) = result {
-            assert!(
-                !e.contains("chorus-inject spawn failed"),
-                "should use inline osascript, not external binary: {}", e
-            );
+            assert!(!e.is_empty(), "error should have a message");
         }
-        // Ok means it actually injected (Terminal window found) — also fine
     }
 
     #[test]

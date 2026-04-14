@@ -1,8 +1,9 @@
-//! #2245: inject must use "do script" (targeted, no TCC, no display)
-//! not "keystroke" (broadcast to focused window, needs TCC + display awake)
+//! chorus-inject: keystroke + key code 36 (Return) for auto-submit.
+//! #2029 reverted #2245's "do script" approach — do script doesn't send
+//! a Return that Claude Code recognizes, breaking auto-submit.
 //!
 //! AC coverage:
-//! - AC1: uses do script not keystroke (source check)
+//! - AC1: uses keystroke + key code 36, NOT do script (source check)
 //! - AC3: inject works during the day (live delivery test)
 //! - AC4: all three roles targeted correctly (per-role test)
 //! - AC5: nudge e2e still delivers (regression)
@@ -10,34 +11,33 @@
 
 use std::process::Command;
 
-const INJECT_BIN: &str = "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-hooks/target/release/chorus-inject";
-const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/platform/scripts/nudge";
+const INJECT_BIN: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/target/release/chorus-inject";
+const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge";
 
-// --- AC1: do script, not keystroke ---
+// --- AC1: keystroke + key code 36, not do script ---
 
 #[test]
-fn inject_source_uses_do_script_not_keystroke() {
+fn inject_source_uses_keystroke_not_do_script() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/platform/services/chorus-inject/src/main.rs"
+        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/src/main.rs"
     ).expect("can't read main.rs");
 
     assert!(
-        source.contains("do script"),
-        "inject must use 'do script' for targeted tab delivery without TCC/display"
-    );
-    // Check that the AppleScript template doesn't use keystroke or set frontmost
-    // Comments may reference "keystroke" for documentation — only check the script string
-    let in_script = source.lines()
-        .filter(|l| l.contains("r#\"") || l.trim_start().starts_with("tell ") || l.trim_start().starts_with("set ") || l.trim_start().starts_with("do ") || l.contains("keystroke") && !l.trim_start().starts_with("//"))
-        .collect::<Vec<_>>();
-    let script_text: String = in_script.join("\n");
-    assert!(
-        !script_text.contains("keystroke"),
-        "AppleScript must NOT use 'keystroke': {}", script_text
+        source.contains("key code 36"),
+        "inject must use 'key code 36' (Return) for auto-submit"
     );
     assert!(
-        !source.contains("set frontmost"),
-        "inject must NOT use 'set frontmost' — needs display awake"
+        source.contains("keystroke"),
+        "inject must use 'keystroke' for text delivery"
+    );
+    // do script breaks auto-submit (#2029). Only comments should reference it.
+    let code_lines: Vec<&str> = source.lines()
+        .filter(|l| !l.trim_start().starts_with("//") && !l.trim_start().starts_with("//!"))
+        .collect();
+    let code_only = code_lines.join("\n");
+    assert!(
+        !code_only.contains("do script"),
+        "inject must NOT use 'do script' — breaks auto-submit (#2029)"
     );
 }
 
@@ -116,7 +116,7 @@ fn rejects_unknown_role() {
     assert!(stderr.contains("unknown role"), "should say unknown role: {}", stderr);
 }
 
-// --- Role pattern mapping ---
+// --- Binary exists ---
 
 #[test]
 fn inject_binary_exists() {

@@ -34,6 +34,7 @@
   <a href="#lifecycle">Lifecycle</a>
   <a href="#delegation">Delegation Map</a>
   <a href="#shared">Shared Infrastructure</a>
+  <a href="#nudge">Nudge Architecture</a>
   <a href="#crossrole">Cross-Role Interactions</a>
   <a href="#decisions">Decision Enforcement</a>
 </div>
@@ -185,7 +186,7 @@ flowchart TD
 
     cards["cards CLI\n13 skills"]
     log["chorus-log\n12 skills"]
-    nudge_s["nudge\n6 skills"]
+    nudge_s["nudge\n6 skills\nSPOF — see architecture"]
     rs["role-state\n4 skills"]
     gq_sh["git-queue.sh\n2 skills"]
     smoke["smoke-check.sh\n1 skill"]
@@ -230,6 +231,62 @@ flowchart TD
   </pre>
 </div>
 
+<h2 id="nudge">Nudge Delivery Architecture — The Chain That Half the Skills Depend On</h2>
+<p class="meta">6 skills depend on nudge. When this chain breaks, demos can't signal, pairs can't communicate, interrupts don't land, and roles go silent. Jeff becomes the relay. <strong>#2029 incident:</strong> a well-intentioned code change (#2245) broke auto-submit for days. <strong>#2030:</strong> code now frozen by Rust hook.</p>
+
+<div class="diagram">
+  <pre class="mermaid">
+flowchart LR
+    subgraph CALLERS["Skills that call nudge (6)"]
+        demo["/demo"]
+        pair["/pair"]
+        chat["/chat"]
+        interrupt["/interrupt"]
+        pipeline["/pipeline"]
+        gates["gate-product\ngate-code\ngate-quality\ngate-arch\ngate-ops"]
+    end
+
+    subgraph CHAIN["Delivery chain"]
+        script["nudge script\nbash wrapper\nDEC-107: --force always"]
+        shim["chorus-hook-shim nudge\nRust binary\npersist + deliver"]
+        persist["POST localhost:3475\nmessaging API\nhistory + team-scan"]
+        inject["chorus-inject\nRust binary\nSEPARATE CRATE\nTCC permissions stable"]
+        osascript["osascript\nkeystroke + key code 36\nReturn auto-submit"]
+        terminal["Role's Terminal\nclaude session\nmessage appears"]
+    end
+
+    demo --> script
+    pair --> script
+    chat --> script
+    interrupt --> script
+    pipeline --> script
+    gates --> script
+
+    script --> shim
+    shim --> persist
+    shim --> inject
+    inject --> osascript
+    osascript --> terminal
+
+    style inject fill:#ffcdd2
+    style osascript fill:#ffcdd2
+    style persist fill:#c8e6c9
+    style CHAIN fill:#fff8e1
+  </pre>
+</div>
+
+<p class="meta"><strong>Why a separate crate:</strong> <code>chorus-inject</code> (#2077) exists independently from <code>chorus-hook-shim</code> so that macOS TCC accessibility permissions survive when the shim is rebuilt. If they were the same binary, every <code>cargo build</code> would revoke the permission and require Jeff to re-grant it manually.</p>
+
+<table>
+  <tr><th>Link</th><th>What Breaks If It Fails</th><th>Incident History</th></tr>
+  <tr><td><code>nudge script</code></td><td>Nothing reaches the chain</td><td>Stable (thin wrapper)</td></tr>
+  <tr><td><code>chorus-hook-shim</code></td><td>No persistence, no delivery</td><td>Stable since DEC-100 (Rust rewrite)</td></tr>
+  <tr><td><code>POST :3475</code></td><td>No message history, team-scan can't drain</td><td>Occasional port conflicts</td></tr>
+  <tr><td class="hard"><code>chorus-inject</code></td><td>No keystroke delivery — roles never see the message</td><td><strong>#2245</strong>: switched to <code>do script</code>, broke auto-submit. <strong>#2029</strong>: reverted. <strong>#2030</strong>: code frozen.</td></tr>
+  <tr><td class="hard"><code>osascript</code></td><td>Same — the actual injection mechanism</td><td>TCC revocation after rebuilds until #2077</td></tr>
+  <tr><td><code>Terminal window</code></td><td>Message queued but not visible</td><td>Window naming mismatches (role + "claude" pattern)</td></tr>
+</table>
+
 <h2 id="crossrole">Cross-Role Interactions — Where Skills Span Boundaries</h2>
 <p class="meta">Most skills are single-role. These are the ones that require coordination across role sessions.</p>
 
@@ -261,6 +318,7 @@ flowchart TD
   <tr><td>DEC-091</td><td>Roles card/schedule/chore without asking</td><td class="soft">SOFT — skill text</td><td>Multiple skills reference but no enforcement</td></tr>
   <tr><td>DEC-089</td><td>SSH for bulk ops, not NFS</td><td class="soft">SOFT — Rust hook warns</td><td><code>bedroom_nfs_guard.rs</code> warns but allows</td></tr>
   <tr><td>DEC-022</td><td>Disk thresholds: 90% warn, 95% critical</td><td class="hard">HARD — skill gate</td><td><code>/gate-ops</code> Step 4 blocks deploy at 95%+</td></tr>
+  <tr><td>#2030</td><td>Nudge injection code frozen</td><td class="hard">HARD — Rust hook (pending)</td><td>PreToolUse blocks Edit/Write to <code>chorus-inject/src/main.rs</code></td></tr>
 </table>
 
 <h2>Key Insight: The Enforcement Gap</h2>
