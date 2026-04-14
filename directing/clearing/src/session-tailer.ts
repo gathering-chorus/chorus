@@ -204,12 +204,24 @@ export class SessionTailer {
       if (text.includes('[Request interrupted')) return;
       if (text.startsWith('ARGUMENTS:') || text.startsWith('Base directory') || text.startsWith('Stop hook')) return;
 
-      this.router.ingest({
-        from: 'jeff',
-        text,
-        ts,
-        type: 'jeff-input',
-      });
+      // #2048: Detect nudge messages — attribute to sending role, not Jeff.
+      // Nudges inject into terminals as user input but they're role-to-role.
+      const nudgeMatch = text.match(/^\[nudge from (wren|silas|kade)/i);
+      if (nudgeMatch) {
+        this.router.ingest({
+          from: nudgeMatch[1].toLowerCase(),
+          text,
+          ts,
+          type: 'role-response',
+        });
+      } else {
+        this.router.ingest({
+          from: 'jeff',
+          text,
+          ts,
+          type: 'jeff-input',
+        });
+      }
     } else if (msgType === 'assistant') {
       // Surface ALL roles' reasoning/thinking on Bridge (#1706, Jeff comment 3)
       // Terminal output is ephemeral — Bridge is the persistent record.
