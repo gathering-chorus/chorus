@@ -58,10 +58,10 @@ static TERRAFORM_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 fn team_repo_root() -> &'static str { chorus_root() }
 
-/// Blocks dangerous infra commands for all roles (#1714)
-/// Docker is retired for app+Fuseki (now native LaunchAgents).
-/// Three containers remain: Vikunja (board), Navidrome (music), webvowl (ontology viz).
-/// Docker guards stay active to protect those containers.
+/// Blocks dangerous infra commands for all roles (#1714, #2020)
+/// Docker is fully retired — all services are LaunchAgents.
+/// CSS (Solid) was the last Docker container, now a LaunchAgent (com.gathering.css).
+/// Docker guards remain to prevent accidental Docker usage.
 pub async fn check(input: &HookInput) -> HookResponse {
     if input.tool_name_str() != "Bash" {
         return HookResponse::allow();
@@ -97,7 +97,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if DOCKER_EXEC_RE.is_match(&cmd) {
         log_guardrail("deny", "docker-exec").await;
         return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: docker exec is prohibited (ADR-011). Remaining containers (Vikunja, Navidrome, webvowl) are managed via docker-compose, not exec. If you need read-only inspection for debugging, ask Jeff for permission first."
+            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use agent-state.sh for service lifecycle."
         ));
     }
 
@@ -106,7 +106,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
         if DOCKER_LOGS_FOLLOW_RE.is_match(&cmd) {
             log_guardrail("deny", "docker-logs-follow").await;
             return HookResponse::deny(&permission_deny_json(
-                "BLOCKED: docker logs --follow is prohibited. Use Loki for real-time log streaming. For crash diagnostics, use: docker logs --tail 20 <container>"
+                "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use Loki for log streaming."
             ));
         }
 
@@ -121,7 +121,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
 
         log_guardrail("deny", "docker-logs").await;
         return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: docker logs without --tail is prohibited. Use Loki for log search: Grafana at http://localhost:3100 → Explore → Loki. For crash diagnostics (container died before Promtail scraped): docker logs --tail 20 <container>"
+            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use Loki for log search."
         ));
     }
 
@@ -131,7 +131,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
         if !is_signal_0 {
             log_guardrail("deny", "kill").await;
             return HookResponse::deny(&permission_deny_json(
-                "BLOCKED: Manual process killing is prohibited. Use agent-state.sh for LaunchAgents or app-state.sh for Docker."
+                "BLOCKED: Manual process killing is prohibited. Use agent-state.sh for LaunchAgents."
             ));
         }
         log_guardrail("allow", "kill-signal-0").await;
@@ -141,7 +141,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if DOCKER_LIFECYCLE_RE.is_match(&cmd) {
         log_guardrail("deny", "docker-lifecycle").await;
         return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: Direct Docker lifecycle commands are prohibited. Use app-state.sh (start|stop|restart|status)."
+            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use agent-state.sh for service lifecycle."
         ));
     }
 
@@ -149,7 +149,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if DOCKER_COMPOSE_LIFECYCLE_RE.is_match(&cmd) {
         log_guardrail("deny", "docker-compose-lifecycle").await;
         return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: docker compose lifecycle commands are prohibited. Use app-state.sh (start|stop|restart|deploy|status)."
+            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use agent-state.sh for service lifecycle."
         ));
     }
 
@@ -157,7 +157,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if DOCKER_COMPOSE_FLAGS_RE.is_match(&cmd) {
         log_guardrail("deny", "docker-compose-flags").await;
         return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: docker compose flags are prohibited. Use app-state.sh for container lifecycle."
+            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020)."
         ));
     }
 
@@ -192,7 +192,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if DOCKER_RUN_RE.is_match(&cmd) {
         log_guardrail("ask", "docker-run").await;
         return HookResponse::deny(&permission_ask_json(
-            "docker run detected. App+Fuseki are native LaunchAgents. Only Vikunja, Navidrome, and webvowl still use Docker. Is this a temporary test container? If so, Jeff must approve."
+            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). No containers to run."
         ));
     }
 
@@ -200,7 +200,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
     if TERRAFORM_RE.is_match(&cmd) {
         log_guardrail("ask", "terraform-direct").await;
         return HookResponse::deny(&permission_ask_json(
-            "Direct terraform apply/destroy detected. App+Fuseki are native LaunchAgents. Remaining Docker services (Vikunja, Navidrome, webvowl) use docker-compose, not Terraform."
+            "Direct terraform apply/destroy detected. All services are LaunchAgents — no Terraform-managed infrastructure."
         ));
     }
 
@@ -275,7 +275,7 @@ mod tests {
         let input = kade_bash("docker exec -it gathering-app bash");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker exec is prohibited"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     // === docker logs ===
@@ -285,7 +285,7 @@ mod tests {
         let input = kade_bash("docker logs -f gathering-app");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker logs --follow is prohibited"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     #[tokio::test]
@@ -293,7 +293,7 @@ mod tests {
         let input = kade_bash("docker logs gathering-app");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker logs without --tail"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     #[tokio::test]
@@ -309,7 +309,7 @@ mod tests {
         let input = kade_bash("docker logs --tail 100 gathering-app");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker logs without --tail"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     // === kill/pkill/killall ===
@@ -345,7 +345,7 @@ mod tests {
         let input = kade_bash("docker stop gathering-app");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker lifecycle"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     #[tokio::test]
@@ -353,7 +353,7 @@ mod tests {
         let input = kade_bash("docker rm gathering-app");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker lifecycle"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     #[tokio::test]
@@ -361,7 +361,7 @@ mod tests {
         let input = kade_bash("docker restart gathering-app");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker lifecycle"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     // === docker compose lifecycle (absorbed from app_state_guard #1862) ===
@@ -371,7 +371,7 @@ mod tests {
         let input = kade_bash("docker compose down");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker compose lifecycle"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     #[tokio::test]
@@ -379,7 +379,7 @@ mod tests {
         let input = kade_bash("docker compose up -d");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker compose lifecycle"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     #[tokio::test]
@@ -387,7 +387,7 @@ mod tests {
         let input = kade_bash("docker compose restart app");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker compose lifecycle"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     #[tokio::test]
@@ -395,7 +395,7 @@ mod tests {
         let input = kade_bash("docker-compose down");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker compose lifecycle"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     #[tokio::test]
@@ -403,7 +403,7 @@ mod tests {
         let input = kade_bash("docker compose --force-recreate up");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker compose flags"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     // === heredoc/echo skip (absorbed from app_state_guard #1862) ===
@@ -467,7 +467,7 @@ mod tests {
         let input = kade_bash("docker run -d nginx");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("docker run detected"));
+        assert!(r.stdout.unwrap().contains("Docker is not used"));
     }
 
     // === terraform (ask, not deny) ===
@@ -535,21 +535,21 @@ mod tests {
     // === #1866: Updated Docker messages reference docker-compose, not app-state.sh ===
 
     #[tokio::test]
-    async fn test_docker_exec_message_no_app_state_deploy() {
+    async fn test_docker_exec_message_references_launchagents() {
         let input = kade_bash("docker exec -it mycontainer bash");
         let r = check(&input).await;
         let msg = r.stdout.unwrap();
-        assert!(!msg.contains("redeploy using app-state.sh"), "should not reference app-state.sh deploy");
-        assert!(msg.contains("docker-compose"), "should reference docker-compose for remaining containers");
+        assert!(msg.contains("LaunchAgents"), "should reference LaunchAgents");
+        assert!(!msg.contains("docker-compose"), "should not reference docker-compose");
     }
 
     #[tokio::test]
-    async fn test_terraform_message_no_terraform_manages_docker() {
+    async fn test_terraform_message_references_launchagents() {
         let input = kade_bash("terraform apply");
         let r = check(&input).await;
         let msg = r.stdout.unwrap();
-        assert!(!msg.contains("Terraform is only used for"), "should not suggest Terraform manages remaining services");
-        assert!(msg.contains("docker-compose"), "should reference docker-compose");
+        assert!(msg.contains("LaunchAgents"), "should reference LaunchAgents");
+        assert!(!msg.contains("docker-compose"), "should not reference docker-compose");
     }
 
     // === Non-Bash tool bypass ===
