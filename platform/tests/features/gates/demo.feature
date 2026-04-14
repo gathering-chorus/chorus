@@ -61,3 +61,22 @@ Feature: Demo gate
     And no demo brief exists for the card
     When they try to run acp on the card
     Then the gate blocks with "demo"
+
+  # --- #1916: Proven bypass for retroactive closure ---
+
+  Scenario: cards done with --proven flag — allowed without demo evidence
+    Given a role is building a fix card
+    And no demo brief exists for the card
+    When they run "cards done 1783 --proven 1815 1898 1894"
+    Then the gate allows the edit
+
+  Scenario: cards done without --proven flag — still blocked without demo
+    Given a role is building a fix card
+    And no demo brief exists for the card
+    When they try to mark the card done
+    Then the gate blocks with "demo gate"
+
+  Scenario: --proven logs justification as card comment
+    Given a role is building a fix card
+    When they run "cards done 1783 --proven 1815 1898"
+    Then a comment "proven: evidence from #1815, #1898" is added to the card

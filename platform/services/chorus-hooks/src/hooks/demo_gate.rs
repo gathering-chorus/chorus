@@ -49,6 +49,20 @@ fn extract_card_id(input: &HookInput) -> Option<String> {
     None
 }
 
+/// Check if the command contains --proven flag (#1916)
+fn has_proven_flag(input: &HookInput) -> bool {
+    let tool = input.tool_name_str();
+    if tool == "Bash" {
+        let cmd = input.get_tool_input_str("command");
+        return cmd.contains("--proven");
+    }
+    if tool == "Skill" {
+        let args = input.get_tool_input_str("args");
+        return args.contains("--proven");
+    }
+    false
+}
+
 pub fn check(input: &HookInput) -> HookResponse {
     if !is_done_action(input) {
         return HookResponse::allow();
@@ -58,6 +72,13 @@ pub fn check(input: &HookInput) -> HookResponse {
         Some(id) => id,
         None => return HookResponse::allow(),
     };
+
+    // #1916: --proven bypass for retroactive closure of cards
+    // proven by distributed work across multiple cards
+    if has_proven_flag(input) {
+        info!(card = %card_id, "demo-gate: --proven flag detected, skipping evidence check");
+        return HookResponse::allow();
+    }
 
     info!(card = %card_id, "demo-gate: dispatching to done-gate.sh");
 
@@ -148,5 +169,34 @@ mod tests {
     fn ignores_non_done_bash() {
         let input = make_input("Bash", "command", "ls -la");
         assert!(!is_done_action(&input));
+    }
+
+    // --- #1916: --proven bypass ---
+
+    #[test]
+    fn detects_proven_flag_in_bash() {
+        let input = make_input("Bash", "command", "bash cards done 1783 --proven \"1815 1898\"");
+        assert!(has_proven_flag(&input));
+    }
+
+    #[test]
+    fn no_proven_flag_in_normal_done() {
+        let input = make_input("Bash", "command", "bash cards done 1783");
+        assert!(!has_proven_flag(&input));
+    }
+
+    #[test]
+    fn proven_flag_in_acp_args() {
+        let mut input = make_input("Skill", "skill", "acp");
+        input.tool_input = Some(serde_json::json!({ "skill": "acp", "args": "1783 --proven 1815 1898" }));
+        assert!(has_proven_flag(&input));
+    }
+
+    #[test]
+    fn proven_flag_allows_done_without_evidence() {
+        let input = make_input("Bash", "command", "bash cards done 1783 --proven \"1815 1898\"");
+        let r = check(&input);
+        // Should allow (no stdout = no deny)
+        assert!(r.stdout.is_none(), "proven flag should bypass demo gate");
     }
 }

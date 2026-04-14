@@ -820,7 +820,7 @@ export async function moveCard(
   }
 }
 
-export async function doneCard(client: BoardClient, index: number): Promise<void> {
+export async function doneCard(client: BoardClient, index: number, provenCards?: string[]): Promise<void> {
   const role = detectRole();
   let title = '';
   let owner = '';
@@ -832,16 +832,29 @@ export async function doneCard(client: BoardClient, index: number): Promise<void
 
   await warnNoComments(client, index, title, client.boardName);
 
-  // Demo gate (#1834) — require demo evidence before Done transition
-  // Exempt: type:chore and type:swat cards (same as existing skip logic)
-  const cardForGate = await client.view(index).catch(() => null);
-  const cardDomains = cardForGate?.domains || [];
-  const isExempt = cardDomains.some((d: string) => d === 'type:chore' || d === 'type:swat');
-  if (!isExempt) {
-    const hasDemoEvidence = checkDemoEvidence(index);
-    if (!hasDemoEvidence) {
-      console.error(`Demo gate: #${index} has no demo evidence. Run /demo ${index} first.`);
-      process.exit(1);
+  // #1916: --proven bypass for retroactive closure
+  if (provenCards && provenCards.length > 0) {
+    const evidenceList = provenCards.map(c => `#${c}`).join(', ');
+    console.log(`Proven: #${index} — evidence from ${evidenceList}`);
+    try {
+      await client.comment(index, `proven: evidence from ${evidenceList}`);
+    } catch { /* best effort */ }
+    emitSpineEvent('card.accepted.proven', role, {
+      card_id: String(index), title, board: client.boardName,
+      evidence: provenCards.join(','),
+    });
+  } else {
+    // Demo gate (#1834) — require demo evidence before Done transition
+    // Exempt: type:chore and type:swat cards (same as existing skip logic)
+    const cardForGate = await client.view(index).catch(() => null);
+    const cardDomains = cardForGate?.domains || [];
+    const isExempt = cardDomains.some((d: string) => d === 'type:chore' || d === 'type:swat');
+    if (!isExempt) {
+      const hasDemoEvidence = checkDemoEvidence(index);
+      if (!hasDemoEvidence) {
+        console.error(`Demo gate: #${index} has no demo evidence. Run /demo ${index} first.`);
+        process.exit(1);
+      }
     }
   }
 

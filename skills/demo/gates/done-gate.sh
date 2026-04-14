@@ -12,7 +12,18 @@ CARDS="$CHORUS_ROOT/platform/scripts/cards"
 CARD_ID="${1:-}"
 CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 
+ROLE="${2:-system}"
+
 if [ -z "$CARD_ID" ]; then
+  exit 0
+fi
+
+# #1916: --proven bypass for retroactive closure
+# Usage: done-gate.sh <card-id> <role> --proven "1815 1898 1894"
+if echo "$@" | grep -q -- '--proven'; then
+  EVIDENCE=$(echo "$@" | sed 's/.*--proven *//')
+  "$CHORUS_LOG" card.accepted.proven "$ROLE" card="$CARD_ID" evidence="$EVIDENCE" 2>/dev/null || true
+  echo "Proven: #${CARD_ID} — evidence from ${EVIDENCE}"
   exit 0
 fi
 

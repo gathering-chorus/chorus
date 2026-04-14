@@ -652,8 +652,10 @@ async function main() {
     }
 
     case 'done': {
-      if (!cmdArgs[0]) die('Usage: cards done <id>');
-      await doneCard(client, parseInt(cmdArgs[0], 10));
+      if (!cmdArgs[0]) die('Usage: cards done <id> [--proven "1815 1898"]');
+      const provenIdx = cmdArgs.indexOf('--proven');
+      const provenCards = provenIdx >= 0 ? cmdArgs.slice(provenIdx + 1) : undefined;
+      await doneCard(client, parseInt(cmdArgs[0], 10), provenCards);
       break;
     }
 
