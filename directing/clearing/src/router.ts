@@ -91,6 +91,11 @@ export class MessageRouter extends EventEmitter {
       if (isToolCall(text)) {
         return { from, text, ts, type: 'pm-thinking', visible: false };
       }
+      // #2049: Filter structured skill output — machine actions, not role thinking.
+      // Jeff wants role commentary, not "Done: #2048" or "Moved #2049 to WIP".
+      if (isSkillOutput(text)) {
+        return { from, text, ts, type: 'pm-thinking', visible: false };
+      }
       return { from, text, ts, type: 'pm-thinking', visible: true };
     }
 
@@ -195,6 +200,26 @@ function isToolCall(text: string): boolean {
   if (text.match(/^Exit code \d+/)) return true;
   // Shell variable assignments
   if (text.match(/^[A-Z_]+=.*[;|&]/)) return true;
+  return false;
+}
+
+/** Check if text is structured skill/CLI output — not role thinking (#2049) */
+function isSkillOutput(text: string): boolean {
+  if (/^Auto-checked \d+ AC item/i.test(text)) return true;
+  if (/^Demo started: #\d+/i.test(text)) return true;
+  if (/^Done: #\d+/i.test(text)) return true;
+  if (/^Moved #\d+/i.test(text)) return true;
+  if (/^Accepted #\d+/i.test(text)) return true;
+  if (/^INJECT_FAILED/i.test(text)) return true;
+  if (/^Pulled #\d+/i.test(text)) return true;
+  if (/^Updated #\d+/i.test(text)) return true;
+  if (/^Rejected: #\d+/i.test(text)) return true;
+  if (/^Blocked: #\d+/i.test(text)) return true;
+  if (/^Unblocked: #\d+/i.test(text)) return true;
+  if (/^Gate chain/i.test(text)) return true;
+  if (/^gate:(product|code|quality|arch|ops)/i.test(text)) return true;
+  if (/^Nudge delivered/i.test(text)) return true;
+  if (/^pre-commit:/i.test(text)) return true;
   return false;
 }
 

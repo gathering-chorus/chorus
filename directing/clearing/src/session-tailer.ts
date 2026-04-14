@@ -178,31 +178,37 @@ export class SessionTailer {
       const rawContent = entry.message?.content;
       if (!rawContent) return;
 
+      // #2049: Jeff's input goes through verbatim — no content filtering.
+      // Reconstruct slash commands from <command-name>/<command-args> tags.
+      // Strip system-reminder and skill expansion boilerplate, keep Jeff's words.
       let text = '';
       if (typeof rawContent === 'string') {
         text = rawContent.trim();
       } else if (Array.isArray(rawContent)) {
-        const textParts = rawContent
-          .filter((p: { type: string; text?: string }) =>
-            p.type === 'text' && p.text &&
-            !p.text.includes('<command-') &&
-            !p.text.includes('<system-reminder>') &&
-            !p.text.includes('Base directory for this skill') &&
-            !p.text.startsWith('ARGUMENTS:'))
-          .map((p: { text: string }) => p.text.trim());
-        text = textParts.join(' ').trim();
+        // Extract slash command if present
+        let slashCmd = '';
+        const humanParts: string[] = [];
+        for (const p of rawContent) {
+          if (p.type !== 'text' || !p.text) continue;
+          const t = p.text.trim();
+          // Reconstruct /command from tags
+          const nameMatch = t.match(/<command-name>([^<]+)<\/command-name>/);
+          const argsMatch = t.match(/<command-args>([^<]*)<\/command-args>/);
+          if (nameMatch) { slashCmd = nameMatch[1].trim(); continue; }
+          if (argsMatch && slashCmd) { slashCmd += ' ' + argsMatch[1].trim(); continue; }
+          // Skip system injections — not Jeff's words
+          if (t.includes('<system-reminder>')) continue;
+          if (t.includes('<command-message>')) continue;
+          if (t.startsWith('Base directory for this skill')) continue;
+          if (t.startsWith('ARGUMENTS:')) continue;
+          if (t.startsWith('Stop hook')) continue;
+          humanParts.push(t);
+        }
+        text = slashCmd || humanParts.join(' ').trim();
       }
 
       if (!text) return;
       text = text.replace(/\n/g, ' ');
-
-      // Filter system artifacts only — never filter Jeff's words by content (#2035)
-      // System-reminder and command expansions already filtered at line 180-183
-      if (/<system-reminder>/i.test(text)) return;
-      if (/<command-/i.test(text)) return;
-      if (text.includes('[Image: source:')) return;
-      if (text.includes('[Request interrupted')) return;
-      if (text.startsWith('ARGUMENTS:') || text.startsWith('Base directory') || text.startsWith('Stop hook')) return;
 
       // #2048: Detect nudge messages — attribute to sending role, not Jeff.
       // Nudges inject into terminals as user input but they're role-to-role.

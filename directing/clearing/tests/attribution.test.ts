@@ -55,3 +55,37 @@ describe('#2048: Message attribution', () => {
     expect(msgs[0].visible).toBe(true);
   });
 });
+
+describe('#2049: Skill output filtering', () => {
+  test('structured skill output is hidden from Clearing', () => {
+    const router = new MessageRouter();
+    const skillOutputs = [
+      'Auto-checked 3 AC items on #2017',
+      'Demo started: #2015 — Structured logging',
+      'Done: #2048',
+      'Moved #2049 to WIP',
+      'Accepted #2036 — committed and pushed.',
+      'INJECT_FAILED for silas at 2026-04-14 08:44',
+    ];
+    for (const text of skillOutputs) {
+      router.ingest({ from: 'kade', text, ts: new Date().toISOString(), type: 'pm-thinking' });
+    }
+    const visible = router.getRecent(20);
+    for (const msg of visible) {
+      expect(msg.text).not.toMatch(/^(Auto-checked|Demo started:|Done:|Moved #|Accepted #\d+|INJECT_FAILED)/);
+    }
+  });
+
+  test('role thinking/commentary passes through', () => {
+    const router = new MessageRouter();
+    router.ingest({
+      from: 'kade',
+      text: 'The fix is two small changes in session-tailer.ts',
+      ts: new Date().toISOString(),
+      type: 'pm-thinking',
+    });
+    const msgs = router.getRecent(10);
+    expect(msgs.length).toBe(1);
+    expect(msgs[0].visible).toBe(true);
+  });
+});
