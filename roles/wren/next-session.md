@@ -1,33 +1,35 @@
 # Wren — Next Session
 
-## What happened
-Massive Sunday session — tuning, not building. Found blind /tmp/ logs (Loki watching empty files while 15 real 500s sat invisible), session indexer misclassifying all roles as jeff (map_role() pattern match bug), session watcher crashing every 90min (1564 Python spawns consolidated to 1). Shipped Knowledge Domain service design and Kade built it — 165 artifacts indexed into Chorus. Board cleaned from 111 → 93 Chorus cards (51 seed junk + dups). Deep conversation with Jeff about outcomes vs output, DORA metrics, domain ownership hypothesis, the /loomsucks origin story, Paulo Dorow's observations on agent role breadth. Ran gate:product 10+ times. Cleared all 5 chorus:ops golfballs.
+## What happened (2026-04-14)
+Record team day — 30+ cards shipped across 3 roles. Wren shipped 7: graph wiring (#2025), SPOF doc (#2031), dead code sweep (#2035), cards filter (#2051), untag fix (#2052), pair skill revision (#1830), gate:product on #2014. Gate:product on 20+ cards for Silas and Kade. Won't-do'd ~40 stale cards. Board: chorus:ops 35→~5, chorus:gates 9→3, chorus:coordination 14→9. Created sequence:convergence. DEC-1785 (no silent data loss).
 
-## Key lessons this session
-- Briefs are not vital to how we operate. Jeff will be crabby if you prioritize draining them. #2002 cards deprecation.
-- "Outcomes not rituals" — don't chase ACP, brief draining, gate running for ceremony. Ask if it produces an outcome Jeff cares about.
-- The richest vein for the team is what Jeff actually said — not tool calls, not spine events, the words. Session indexing must be reliable.
-- Jeff expects steady improvement over time, not reactive ups and downs.
-- The GraphQL hallucination swat is the origin story for why Chorus must be trustworthy. Saved to memory.
-- AC checkbox pattern persists — every builder ships work but doesn't check boxes. #2017 cards the gap.
-- Demos slow things down and that's good — better JX. Jeff endorsed this.
+## Key lessons
+- Gate nudge brevity — state result only, don't coach or signal acceptance
+- Pull not push JX — announce URLs, let Jeff open them
+- Card count is an anti-pattern metric — outcomes matter
+- Agent code smells are real — 3 competing nudge implementations, test asserting wrong approach, 12 dead scripts
+- Athena is becoming the primary front end for both products
+- Jeff wants a training layer — corrections that compound, not decay
+- Process engine is not needed — reactive hooks on spine events instead
 
-## WIP
-- #1905 Knowledge Domain — gate:product passed, awaiting Jeff acceptance
+## Strategy cards created (not yet built)
+- #2040 Decisions domain — enforcement audit in Athena
+- #2041 Athena as primary front end
+- #2044 Reactive gate chain — spine events auto-trigger gates
+- #2046 Training layer — correction adoption feedback loop
+- #2047 Chorus as learning harness — product positioning
+- #2050 Agent code smells blog post
+- #2037 /rvw skill, #2038 /rca skill
 
 ## Tomorrow
-- #2014 SHACL shapes (Silas) — product/domain/subdomain constraints from today's session
-- #1903 Chorus UI navbar — value streams as top-level, graph-driven nav (Kade)
-- #1355 Pulse calibration (Silas) — least complex golfball, baseline cadence
-- Domain walkthroughs — Jeff expects detailed review of each domain soon
-- Photos endpoint — Jeff wants to search photos from 4/14/2006 (Julian's birthday April 14)
-- Julian turns 20 tomorrow
-
-## Cards created this session
-#2002 (deprecate briefs), #2003 (Clearing card numbers), #2006 (no silent data loss), #2009 (pair gate scope), #2013 (seed watermark), #2014 (SHACL shapes), #2015 (structured skill logging), #2017 (AC checking gap)
+- #2040 (decisions domain) — P1, feeds training layer
+- #1818 (seeds close-the-loop) — P2, in Next
+- Kade pulls #2019 (blast radius from domain data) — sequence him
+- Namespace mismatch: Silas carding quick fix (dual-namespace SPARQL) + P2 migration
+- Review chorus:strategy cards (7 on board)
+- Clearing bridge reliability (#2036 shipped, #2048/#2049 follow-ons)
 
 ## Pending
-- End-to-end probes for critical paths — briefed Silas, needs card
-- Log path split principle (Loki-only vs both) — articulated, not encoded as decision
+- 5 convergence cards need domain:convergence untag (Vikunja 403 fixed but tags not cleaned on those)
 - Jeff wants 20-30 card operating range long-term
-- #2014 and #1908 are related but different scope — Jeff wants both
+- Lindenberg LinkedIn post (harness engineering + agent memory) — validates product direction
