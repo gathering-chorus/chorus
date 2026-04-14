@@ -1,1 +1,1 @@
-../services/chorus-hooks/target/release/chorus-hook-shim
+shim-wrapper.sh

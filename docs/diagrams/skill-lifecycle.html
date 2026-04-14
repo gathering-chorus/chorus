@@ -37,6 +37,7 @@
   <a href="#nudge">Nudge Architecture</a>
   <a href="#crossrole">Cross-Role Interactions</a>
   <a href="#decisions">Decision Enforcement</a>
+  <a href="#spof">SPOFs</a>
 </div>
 
 <h2 id="lifecycle">Card Lifecycle — How Work Flows Through Skills</h2>
@@ -319,6 +320,62 @@ flowchart LR
   <tr><td>DEC-089</td><td>SSH for bulk ops, not NFS</td><td class="soft">SOFT — Rust hook warns</td><td><code>bedroom_nfs_guard.rs</code> warns but allows</td></tr>
   <tr><td>DEC-022</td><td>Disk thresholds: 90% warn, 95% critical</td><td class="hard">HARD — skill gate</td><td><code>/gate-ops</code> Step 4 blocks deploy at 95%+</td></tr>
   <tr><td>#2030</td><td>Nudge injection code frozen</td><td class="hard">HARD — Rust hook (pending)</td><td>PreToolUse blocks Edit/Write to <code>chorus-inject/src/main.rs</code></td></tr>
+</table>
+
+<h2 id="spof">Infrastructure Single Points of Failure</h2>
+<p class="meta">Agent-built systems accumulate implementation complexity faster than human-built ones. Each role solves the same problem independently — competing scripts, duplicate wrappers, dead code that looks alive. These SPOFs were discovered by auditing what actually calls what.</p>
+
+<div class="diagram">
+  <pre class="mermaid">
+flowchart TD
+    subgraph SHIM["chorus-hook-shim (1 Rust binary = 17 functions)"]
+        cl["chorus-log"]
+        rs["role-state"]
+        wc["wall-clock"]
+        cc["context-cache (4 variants)"]
+        sh["session handlers (3)"]
+        rc["role-checkpoint"]
+        hb["heartbeat"]
+        lr["log-rotate"]
+        cg["claudemd-gen"]
+        wf["workflow"]
+        cs["cruft-scan"]
+        cid["chorus-init-db"]
+    end
+
+    subgraph INFRA["Infrastructure services (no fallback)"]
+        fuseki["Fuseki :3030\n15 scripts depend\nontology, SPARQL, validation"]
+        vikunja["Vikunja :3456\nboard database\n13 skills via cards CLI"]
+        chorusapi["Chorus API :3340\nsearch, domain context\npull gates depend on it"]
+    end
+
+    subgraph DELIVERY["Nudge delivery chain (documented above)"]
+        nudge_chain["nudge → shim → chorus-inject → osascript\n6 skills depend"]
+    end
+
+    pull["/pull"] --> fuseki
+    pull --> chorusapi
+    pull --> vikunja
+    demo["/demo"] --> vikunja
+    demo --> nudge_chain
+    acp["/acp"] --> vikunja
+
+    style SHIM fill:#ffcdd2
+    style fuseki fill:#fff3e0
+    style vikunja fill:#fff3e0
+    style chorusapi fill:#fff3e0
+    style nudge_chain fill:#ffcdd2
+  </pre>
+</div>
+
+<table>
+  <tr><th>SPOF</th><th>Blast Radius</th><th>Failure Mode</th><th>Mitigation</th></tr>
+  <tr><td class="hard"><code>chorus-hook-shim</code></td><td>17 functions die — logging, state, sessions, context cache, wall-clock</td><td>Build failure or runtime crash. All 17 symlinks point to one binary.</td><td>Binary rarely changes. Rebuild carefully — test before deploying.</td></tr>
+  <tr><td class="hard"><code>chorus-inject</code></td><td>6 skills lose inter-role communication. Jeff becomes relay.</td><td>Code change breaks auto-submit, or rebuild revokes TCC grant.</td><td>#2030: source frozen by Rust hook. Don't rebuild without Jeff.</td></tr>
+  <tr><td class="hard">Fuseki <code>:3030</code></td><td>Ontology validation, domain context, SPARQL queries, Athena pages</td><td>Container down, port conflict, or corrupt graph. 15 scripts fail.</td><td>No fallback. <code>app-state.sh status</code> checks health. No gate catches outage before /pull.</td></tr>
+  <tr><td class="hard">Vikunja <code>:3456</code></td><td>All card operations — 13 skills can't read or move cards</td><td>Process crash, auth token expiry, database corruption.</td><td><code>deep-health.sh</code> checks status. SQLite database at <code>~/.chorus/vikunja/db/</code>.</td></tr>
+  <tr><td>Chorus API <code>:3340</code></td><td>Search, domain context in /pull, validation endpoint</td><td>Process crash, port conflict.</td><td>Pull gate warns but doesn't block if API unreachable.</td></tr>
+  <tr><td>Terminal window naming</td><td>Nudge delivery — messages sent but never arrive</td><td>Window name doesn't contain role + "claude". Silent failure.</td><td><code>nudge health</code> checks window patterns. Run after terminal setup.</td></tr>
 </table>
 
 <h2>Key Insight: The Enforcement Gap</h2>
