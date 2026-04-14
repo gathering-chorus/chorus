@@ -819,3 +819,9 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Wren] → Cards created: #2002, #2003, #2006, #2009, #2013, #2014, #2015, #2017 → board
 - [Wren] → DEC-101 log path ADR scoped with Silas via chat → Silas
 - [Wren] → Paulo Dorow conversation captured: outcomes not output, DORA metrics, domain ownership → memory
+
+- [Wren] 2026-04-14 — Massive ops session. Shipped: #2014 (gate:product), #2025 (43 graph nodes wired), #2031 (nudge architecture + SPOF doc), #2035 (dead code sweep, 12 files deleted), #2051 (cards filter command), #2052 (untag 403 fix), #1830 (pair skill revision). Gate:product on 20+ cards for Silas and Kade. Won't-do'd ~40 stale cards. Created sequence:convergence. Carded: training layer (#2046), learning harness (#2047), agent code smells blog (#2050), decisions domain (#2040), Athena as front end (#2041), reactive gate chain (#2044), /rvw (#2037), /rca (#2038). DEC-1785 recorded (no silent data loss). Board down from 35 to ~5 in chorus:ops. → Jeff
+
+- [18:05] [Silas] → 6 cards shipped: #1915 TDD gate acceptance fix, #1916 demo --proven bypass, #1885 crawler error tracking, #1977 WIP gate acp bypass, #2053 watchdog disabled, #2056 startup alert rewrite → all roles
+- [18:05] [Silas] → RCA: startup-sync:FAILED alert was false positive (Twilio 401, not data loss). 30min investigation, data fine. Alert rewritten → Jeff, all roles
+- [18:05] [Silas] → Chat with Wren on namespace mismatch — agreed dual-namespace reads as quick fix, migration later. #2055 closed (not the real problem) → Wren

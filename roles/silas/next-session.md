@@ -1,28 +1,37 @@
 # Silas — Next Session
 
 ## What happened
-23 cards shipped across Apr 13-14. Massive ops hardening: Bedroom log migration (#2010), Promtail dedup (#1986), scheduled reindex (#1960), Ollama resilience (#1980), crawl API validation (#1886), alerts sub-domain graph (#1870), SHACL validation (#2014), nudge auto-submit fix (#2029) + lock (#2030), shim wrapper resilience (#2034), Chrome tab gate (#1775), Docker cruft removal (#2020), session health routing (#1786), Fuseki health gate (#2033), auto role-state (#1782), dead services revival (#2027), rsync restore docs (#2043). Plus Athena proxy for phone access, Loki 72h error analysis, 10+ cleanup cards carded.
+6 cards shipped, all ops/gates hardening. Theme: less noise, less friction, fewer ghost alerts.
 
-## Shipped (23)
-#2010, #1990, #1960, #1980, #1986, #1886, #1870, #2014, #2029, #2030, #2034, #2021, #2022, #2024, #2039, #1775, #2023, #2020, #1786, #2033, #1782, #2027, #2043
+## Shipped (6)
+#1915, #1916, #1885, #1977, #2053, #2056
+
+- #1915 — TDD gate skips for non-building roles (acceptance exempt)
+- #1916 — Demo gate --proven bypass for retroactive card closure
+- #1885 — Per-domain crawler error tracking + alert at 3 consecutive failures
+- #1977 — Pre-commit WIP gate bypasses acp commits (no more role-state workaround)
+- #2053 — Watchdog disabled (zero signal, all noise)
+- #2056 — Startup alert rewrite (Fuseki-first check, dynamic error from Loki)
+
+## RCA: startup-sync alert
+False FAILED alert triggered 30min RCA. Data was fine (121 seeds, 13GB TDB2). Alert had hardcoded message from fixed April 3 bug. Real issue was Twilio 401 (credential expiry). Fixed: alert now checks Fuseki health first, pulls actual error from logs.
 
 ## WIP / Parked
-- #2045 — chrome-window.sh focus theft. Parked on macOS limitation. Save/restore is best available.
+- None in WIP
+- #2055 Won't Do — namespace issue was misdiagnosis from the false alert
 
 ## Open follow-ons
-- infra_guardrails integration tests need updating (docker-compose → LaunchAgents)
-- infra_guardrails references agent-state.sh — should say app-state.sh (per Kade)
-- #2042 — nudge auto-submit inconsistent for caffeinate-wrapped terminals
-- #2032 — deep-health false positive fixed but card not formally closed
-- posture-capture needs display session investigation
+- Pre-commit hook sync: canonical copy in platform/scripts/ with symlink setup (Kade's feedback on #1977)
+- /acp SKILL.md: remove role-state workaround now that #1977 shipped (Wren's feedback)
+- Twilio credential refresh: #1499 tracks the 401 auth failure
+- Namespace convergence: #1772 tracks urn:gathering → urn:jb migration (not urgent, data is fine)
 
 ## Feedback learned
-- Check AC boxes before requesting gates
-- Pull not push for JX — open in role's window silently, announce URL
-- Slow down when testing nudges — one test, wait for visual confirmation
-- Don't change working code without being asked (#2245 broke nudge auto-submit)
+- Alerts with zero signal should be disabled, not tuned — ask "what value does this provide?" before fixing thresholds
+- RCA before restarting services — the data investigation on Fuseki revealed the namespace structure even though the alert was wrong
+- Jeff is tired by 6pm — chat with Wren to offload analysis when Jeff needs a break
 
-## Stale briefs to drain
-- namespace-move-silas.md (Wren, 5+ days)
-- git-queue-dirty-tree.md (Kade, 3.5 days)
-- reindex-gap.md (Wren, 27h)
+## Stale briefs
+- namespace-move-silas.md (Wren, 6+ days)
+- git-queue-dirty-tree.md (Kade, 4+ days)
+- reindex-gap.md (Wren, 2+ days)
