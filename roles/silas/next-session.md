@@ -1,41 +1,28 @@
 # Silas — Next Session
 
 ## What happened
-Big session. 10+ cards shipped. Ops tuning pass (#1934) closed — 12 issues carded, 4 fixed same session. C4 architecture diagrams created for Chorus (#1991). Skill lifecycle and dependency map built (#1997). Alert cooldown added (#1966). Git-queue fd leak root cause found and fixed (#1823) — credential-cache-daemon inheriting lockf descriptor. Bridge subscribers restored (#1964). Seed probe restored (#1965) — found real pipeline gap (#2004). DEC-101 stdout-only logging established (#2005). Cloudflare tunnel upgraded (#1990).
+23 cards shipped across Apr 13-14. Massive ops hardening: Bedroom log migration (#2010), Promtail dedup (#1986), scheduled reindex (#1960), Ollama resilience (#1980), crawl API validation (#1886), alerts sub-domain graph (#1870), SHACL validation (#2014), nudge auto-submit fix (#2029) + lock (#2030), shim wrapper resilience (#2034), Chrome tab gate (#1775), Docker cruft removal (#2020), session health routing (#1786), Fuseki health gate (#2033), auto role-state (#1782), dead services revival (#2027), rsync restore docs (#2043). Plus Athena proxy for phone access, Loki 72h error analysis, 10+ cleanup cards carded.
 
-Lessons from Jeff: don't blame memory pressure without evidence (3x wrong today), don't make architecture diagrams without reading the code, check pair status before deep research, the C4 and domain model serve different purposes (as-is vs to-be).
+## Shipped (23)
+#2010, #1990, #1960, #1980, #1986, #1886, #1870, #2014, #2029, #2030, #2034, #2021, #2022, #2024, #2039, #1775, #2023, #2020, #1786, #2033, #1782, #2027, #2043
 
-## Shipped this session
-- #1823 — git-queue fd leak (credential-cache-daemon), plus .git-commit.meta cleanup
-- #1934 — ops tuning pass complete (12 issues carded)
-- #1964 — bridge subscribers restored (CHORUS_ROOT path fix)
-- #1965 — seed probe restored (plist path, found #2004)
-- #1966 — alert cooldown + consecutive threshold in alert-runner.sh
-- #1988 — Loki tunnel eliminated, Promtail direct to Library LAN
-- #1990 — cloudflared upgraded 2026.2.0 → 2026.3.0
-- #1991 — C4 architecture diagrams (context, container, component)
-- #1997 — skill lifecycle and dependency map
-- #2005 — DEC-101 stdout-only logging, node-exporter migrated, deep-health enforcement
+## WIP / Parked
+- #2045 — chrome-window.sh focus theft. Parked on macOS limitation. Save/restore is best available.
 
-## Still WIP
-- #1963 — Observability domain population
-- #1997 — skill dependency map (accepted but needs Wren's product gate)
+## Open follow-ons
+- infra_guardrails integration tests need updating (docker-compose → LaunchAgents)
+- infra_guardrails references agent-state.sh — should say app-state.sh (per Kade)
+- #2042 — nudge auto-submit inconsistent for caffeinate-wrapped terminals
+- #2032 — deep-health false positive fixed but card not formally closed
+- posture-capture needs display session investigation
 
-## Cards created
-- #1990 — cloudflared upgrade (Done)
-- #1991 — C4 diagrams (Done)
-- #1994 — Cloudflare tunnel drops ongoing (Later)
-- #1997 — Skill dependency map (Done)
-- #2004 — Seed webhook persistence gap (Later, Kade's domain)
-- #2005 — DEC-101 stdout-only logging (Done)
-- #2007 — Decision enforcement gap (Later)
-- #2008 — Observability blind spot sweep (Later)
-- #2010 — Bedroom log migration (Later, next priority)
+## Feedback learned
+- Check AC boxes before requesting gates
+- Pull not push for JX — open in role's window silently, announce URL
+- Slow down when testing nudges — one test, wait for visual confirmation
+- Don't change working code without being asked (#2245 broke nudge auto-submit)
 
-## For next session
-- #2010 Bedroom log migration — Jeff wants this next
-- #1994 Cloudflare tunnel still dropping (39 errors since upgrade, better but not fixed)
-- #2004 Seed probe hop 5 — Kade has the RCA, needs log-line check instead of Fuseki persistence
-- #2007 Decision enforcement gap — which DECs need hard gates
-- #2008 Observability blind spot sweep — systematic coverage audit
-- Session watcher fswatch keeps segfaulting — not memory pressure, check binary version
+## Stale briefs to drain
+- namespace-move-silas.md (Wren, 5+ days)
+- git-queue-dirty-tree.md (Kade, 3.5 days)
+- reindex-gap.md (Wren, 27h)
