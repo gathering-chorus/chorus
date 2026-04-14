@@ -26,6 +26,14 @@ pub async fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
 
+    // Frozen code — nudge injection (#2030). Changed 3 times, broke auto-submit each time.
+    if (tool == "Write" || tool == "Edit") && file_path.contains("chorus-inject/src/main.rs") {
+        log_access("deny", "frozen", &file_path).await;
+        return HookResponse::block_with_stderr(
+            "BLOCKED: Nudge injection code is frozen (#2030). This file was changed 3 times and broke auto-submit each time. Talk to Jeff to change it."
+        );
+    }
+
     // Common patterns — always Private (block read AND write)
     if file_path.ends_with("/.env")
         || file_path.ends_with(".env")
