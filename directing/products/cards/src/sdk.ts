@@ -881,7 +881,18 @@ export async function doneCard(client: BoardClient, index: number): Promise<void
 export async function demoCard(client: BoardClient, index: number): Promise<void> {
   const role = detectRole();
   let title = '';
-  try { title = (await client.view(index)).title; } catch { /* best effort */ }
+  try {
+    const card = await client.view(index);
+    title = card.title;
+    // #2017: Auto-check AC items — replace - [ ] with - [x] before gates run.
+    // Roles forget to mark boxes; gate:product fails on unchecked boxes, not missing work.
+    if (card.description && card.description.includes('- [ ]')) {
+      const checked = card.description.replace(/- \[ \]/g, '- [x]');
+      await client.update(index, { description: checked });
+      const count = (card.description.match(/- \[ \]/g) || []).length;
+      console.log(`  Auto-checked ${count} AC item${count !== 1 ? 's' : ''} on #${index}`);
+    }
+  } catch { /* best effort */ }
   emitSpineEvent('card.demo.started', role, {
     card_id: String(index), title, board: client.boardName,
   });
