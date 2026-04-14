@@ -16,9 +16,10 @@ SCAN_DIR="/tmp/claude-team-scan"
 WATCHDOG_DIR="/tmp/watchdog"
 BRIDGE="http://localhost:3470/api/message"
 
-NUDGE_THRESHOLD=300    # 2 minutes
-ESCALATE_THRESHOLD=600 # 3 minutes
-ALERT_THRESHOLD=900    # 5 minutes
+# #2053: raised from 5/10/15min — demo→accept gap is 5-10min, 5min nudge is always noise
+NUDGE_THRESHOLD=600    # 10 minutes
+ESCALATE_THRESHOLD=900 # 15 minutes
+ALERT_THRESHOLD=1200   # 20 minutes
 
 mkdir -p "$WATCHDOG_DIR"
 
@@ -100,7 +101,8 @@ except: print(0)" 2>/dev/null || echo "0")
 
   # Check for recent gate pass or demo — role may be waiting for acceptance (#1891)
   if [ -f "$CHORUS_LOG" ] && [ -n "$CARD" ]; then
-    recent_gate=$(tail -50 "$CHORUS_LOG" 2>/dev/null | grep -E "gate\.(code|quality|arch|ops)\.(passed|completed)|card\.demo\.started" | grep "card=$CARD" | tail -1 || true)
+    # #2053: widened from tail -50 — high-activity sessions push gate events out fast
+    recent_gate=$(tail -200 "$CHORUS_LOG" 2>/dev/null | grep -E "gate\.(code|quality|arch|ops)\.(passed|completed)|card\.demo\.started" | grep "card=$CARD" | tail -1 || true)
     if [ -n "$recent_gate" ]; then
       # Extract timestamp from the gate event and check if it's within threshold
       gate_ts=$(echo "$recent_gate" | python3 -c "
