@@ -100,7 +100,7 @@ except: print(0)" 2>/dev/null || echo "0")
 
   # Check for recent gate pass or demo — role may be waiting for acceptance (#1891)
   if [ -f "$CHORUS_LOG" ] && [ -n "$CARD" ]; then
-    recent_gate=$(tail -50 "$CHORUS_LOG" 2>/dev/null | grep -E "gate\.(code|quality|arch|ops)\.(passed|completed)|card\.demo\.started" | grep "card=$CARD" | tail -1)
+    recent_gate=$(tail -50 "$CHORUS_LOG" 2>/dev/null | grep -E "gate\.(code|quality|arch|ops)\.(passed|completed)|card\.demo\.started" | grep "card=$CARD" | tail -1 || true)
     if [ -n "$recent_gate" ]; then
       # Extract timestamp from the gate event and check if it's within threshold
       gate_ts=$(echo "$recent_gate" | python3 -c "
