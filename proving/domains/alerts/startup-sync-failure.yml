@@ -1,44 +1,82 @@
-# startup-sync-failure.yml — Alert when app startup SMS sync fails
-# Card #2000
+# startup-sync-failure.yml — Alert when app startup sync fails AND Fuseki is down (#2056)
 #
-# Every app restart triggers SMS seed sync. It has failed on every
-# boot today (2026-04-03) due to triple-quote escape bug in stored seeds.
-# This is logged as "non-fatal" but masks real data loss.
+# The SMS sync fails on every restart when Twilio credentials expire (401).
+# That's a credential issue, not data loss. Only alert when Fuseki is actually
+# unreachable — that's the only case where stored data is at risk.
+#
+# Prior art: #2000 (triple-quote bug, fixed), #1895 (Fuseki health suppression)
 
 name: startup-sync-failure
-description: App startup SMS sync failed — stored seeds not loading
+description: App startup sync failed with Fuseki down — potential data access issue
 severity: warning
-schedule: "*/5 * * * *"  # every 5 minutes
+schedule: "*/5 * * * *"
 
 check: |
-  NOW=$(date +%s)
-  START=$(( NOW - 300 ))
-  RESULT=$(curl -sf --max-time 5 -G "http://localhost:3102/loki/api/v1/query_range" \
-    --data-urlencode 'query={job=~"gathering.*"} |~ "Startup SMS sync failed"' \
-    --data-urlencode "start=${START}000000000" \
-    --data-urlencode "end=${NOW}000000000" \
-    --data-urlencode "limit=1" 2>/dev/null)
-  COUNT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(len(r.get('values',[])) for r in d.get('data',{}).get('result',[])))" 2>/dev/null || echo "0")
-  if [[ "$COUNT" == "0" ]]; then
+  # Step 1: Is Fuseki healthy? If yes, no alert needed — sync failures
+  # without Fuseki being down are credential issues (Twilio 401), not data loss.
+  FUSEKI_OK=$(curl -sf --max-time 3 -o /dev/null -w '%{http_code}' \
+    "http://localhost:3030/$/ping" 2>/dev/null || echo "000")
+  if [[ "$FUSEKI_OK" == "200" ]]; then
     echo "ok"
     exit 0
   fi
-  # Sync failed — but check if Fuseki is healthy before alerting (#1895)
-  # Transient failures during Fuseki restart cascade are noise, not signal.
-  FUSEKI_OK=$(curl -sf --max-time 2 -o /dev/null -w '%{http_code}' \
-    "http://localhost:3030/\$/ping" 2>/dev/null || echo "000")
-  if [[ "$FUSEKI_OK" == "200" ]]; then
-    echo "ok — fuseki healthy, sync failure was transient"
+
+  # Step 2: Fuseki is down. Check if there was also a sync failure recently.
+  NOW=$(date +%s)
+  START=$(( NOW - 300 ))
+  RESULT=$(curl -sf --max-time 5 -G "http://localhost:3102/loki/api/v1/query_range" \
+    --data-urlencode 'query={job=~"gathering.*"} |~ "sync failed"' \
+    --data-urlencode "start=${START}000000000" \
+    --data-urlencode "end=${NOW}000000000" \
+    --data-urlencode "limit=3" 2>/dev/null)
+  COUNT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(len(r.get('values',[])) for r in d.get('data',{}).get('result',[])))" 2>/dev/null || echo "0")
+  if [[ "$COUNT" == "0" ]]; then
+    echo "ok — fuseki down but no sync failures"
     exit 0
   fi
-  echo "failed:$COUNT"
+
+  # Extract actual error message from logs
+  ERROR_MSG=$(echo "$RESULT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+for r in d.get('data',{}).get('result',[]):
+  for ts,msg in r.get('values',[]):
+    try:
+      j=json.loads(msg)
+      print(j.get('error',j.get('message','unknown error'))[:150])
+    except: print(msg[:150])
+    sys.exit(0)
+print('unknown')
+" 2>/dev/null || echo "unknown")
+  echo "failed:fuseki_down+sync_error:$ERROR_MSG"
   exit 1
 
 action: |
-  # Nudge Silas — alerts go to roles, not the Clearing
+  COOLDOWN="/tmp/alert-startup-sync-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+
+  # Pull actual error from Loki — never hardcode the message
+  NOW=$(date +%s)
+  START=$(( NOW - 300 ))
+  ERROR_DETAIL=$(curl -sf --max-time 5 -G "http://localhost:3102/loki/api/v1/query_range" \
+    --data-urlencode 'query={job=~"gathering.*"} |~ "sync failed"' \
+    --data-urlencode "start=${START}000000000" \
+    --data-urlencode "end=${NOW}000000000" \
+    --data-urlencode "limit=1" 2>/dev/null | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+for r in d.get('data',{}).get('result',[]):
+  for ts,msg in r.get('values',[]):
+    try:
+      j=json.loads(msg)
+      print(f'{j.get(\"message\",\"sync failed\")}: {j.get(\"error\",\"no details\")}')
+    except: print(msg[:200])
+    sys.exit(0)
+print('sync failed — check Loki for details')
+" 2>/dev/null || echo "sync failed — could not fetch details from Loki")
+
   NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "startup-sync: FAILED — stored seeds not loading after app restart. Fix: check Fuseki readiness, check Loki for triple-quote escape bugs in stored seeds, restart app if Fuseki was slow to start" --force 2>/dev/null || true
-  curl -sf -X POST http://localhost:3470/api/message \
-    -H 'Content-Type: application/json' \
-    -d "$(jq -n --arg text '[alert] startup sync FAILED' --arg from 'system' '{from: $from, text: $text}')" \
-    &>/dev/null || true
+  "$NUDGE" silas "startup-sync alert: Fuseki is DOWN and sync failed. Error: $ERROR_DETAIL" 2>/dev/null || true
