@@ -825,3 +825,13 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [18:05] [Silas] → 6 cards shipped: #1915 TDD gate acceptance fix, #1916 demo --proven bypass, #1885 crawler error tracking, #1977 WIP gate acp bypass, #2053 watchdog disabled, #2056 startup alert rewrite → all roles
 - [18:05] [Silas] → RCA: startup-sync:FAILED alert was false positive (Twilio 401, not data loss). 30min investigation, data fine. Alert rewritten → Jeff, all roles
 - [18:05] [Silas] → Chat with Wren on namespace mismatch — agreed dual-namespace reads as quick fix, migration later. #2055 closed (not the real problem) → Wren
+
+## 2026-04-14 — Kade (reboot)
+
+- [06:18] [Kade] → Session start. Gated Silas #2014 (SHACL validation), responded to Docker/LaunchAgent chat → Silas
+- [12:07] [Kade] → Shipped #1979 completeness query fix (11→2 queries, 15ms), #2009 pair gate ops exempt, #2036 Clearing bridge (nudge ack + dedup), #2017 AC auto-check → Jeff, all roles
+- [13:41] [Kade] → Deep research: agent code smell tooling. Product opportunity identified. Chat with Wren on blog post → Jeff, Wren
+- [14:10] [Kade] → Shipped #2015 structured skill logging, #2048 Clearing attribution, #2049 Jeff's input verbatim, #2026 crawler fix, #1883 crawler 27 domains → Jeff, all roles
+- [16:52] [Kade] → Tests sub-domain registered via Athena API (#2054), domain-detail page HTML fix, app deployed for Athena proxy → Jeff
+- [17:55] [Kade] → Jeff clarified sequence: #2019 first → graph pipeline → quality-service reads graph. Stopped building backwards → Jeff
+- [18:05] [Kade] → Gated ~15 cards for Silas and Wren throughout session → Silas, Wren

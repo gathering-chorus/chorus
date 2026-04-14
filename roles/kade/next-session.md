@@ -1,31 +1,34 @@
 # Kade — Next Session
 
-## This session (2026-04-13 14:06 – 18:42)
+## This session (2026-04-14 06:18 – 18:05)
 
-Seven cards shipped. Theme: fix what's broken under the surface — probes, indexing, event loop, search classification — then build the knowledge domain.
+Massive session — 9 cards shipped, ~15 gates for Silas and Wren, Clearing bridge fixed end-to-end, agent code smell research, tests sub-domain foundation.
 
 **Shipped:**
-- #2004 — Seed probe hop 5 checks Loki log instead of Fuseki
-- #2000 — execSync lint gate wired into /gate-code
-- #1999 — All execSync replaced with async on request paths
-- #2011 — Session indexing role mapping fix, 48k messages reclassified
-- #1776 — API E2E tests for 5 fragile endpoints
-- #1905 — Knowledge domain: handler extension, 165 artifacts indexed
-- #2018 — Session watcher 31.5s→0.1s
+- #1979 — Completeness query split (11 cross-graph OPTIONALs → 2 parallel, 15ms)
+- #2009 — Pair gate exempts ops scripts
+- #2036 — Clearing bridge fix (nudge ack + dedup)
+- #2017 — AC auto-check in demoCard
+- #2015 — Structured skill/gate logging
+- #2048 — Clearing attribution fix (nudges show role, not jeff)
+- #2049 — Clearing preserves Jeff's input verbatim
+- #2026 — Crawler fix (7/7 → 27/27 domains)
+- #1883 — Crawler expanded to 27 domains
 
-**Also:** #1573 wontdo, gate stamps on 6 Silas cards, #1778 deferred
+**Also:** CLAUDE.md Docker→LaunchAgent, domain-detail HTML fix, app deployed for Athena proxy, agent code smell deep research, tests sub-domain registered (#2054 WIP), ~15 gates for Silas/Wren, #2028 card created
 
 ## Pick up
-1. **Crawler expansion** — #1883 expand from 7 to 41 domains (batched per Wren chat)
-2. **Artifact type classifier** — 120 docs in "architecture" catch-all, needs tuning
-3. **Axios CVE-2025-62718** — Wren flagged SSRF, needs version check
-4. **doc-catalog.handler.ts** — keeps getting reverted by concurrent pushes, watch for this
+1. **#2019** — Blast radius from domain data. This is THE next card. Crawl → graph pipeline for code/test files per domain. Enables test inventory on domain pages. Quality-service eventually queries graph instead of filesystem.
+2. **#2054** — Tests sub-domain WIP, foundation done. Needs accept, then follow-on work after #2019.
+3. **Agent code smell blog post** — Wren carding it. I provide technical detail.
 
 ## Pending briefs
-- Wren namespace-move-kade.md (stale)
-- Wren response-gate-definitions.md (stale)
+- Wren namespace-move-kade.md (stale 6+ days)
+- Wren response-gate-definitions.md (stale 2+ days)
 
 ## Jeff feedback
-- Frontend isn't moving in the restructure — UI tests are viable
-- Clearing breaks are infrastructure, not UI — needs a probe card
-- `/loomsucks` — roles chase rituals instead of asking if they produce outcomes
+- "my messages must not get summarized or changed" — input is source of truth
+- "what i type is what shows in my messages - even if it is typos"
+- Sequence: #2019 first → code/tests to graph → quality-service reads graph
+- Agent code smells are a product opportunity — blog post first, tool second
+- Julian's birthday April 14
