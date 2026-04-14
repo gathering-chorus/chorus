@@ -99,9 +99,11 @@ export class MessageRouter extends EventEmitter {
       return { from, text, ts, type: 'pm-thinking', visible: true };
     }
 
-    // Accept request / acceptance — always visible (check before jeff-input so acceptance gets styled)
-    if (raw.type === 'accept-request' || text.includes('/acp') || text.includes('ready for accept') || text.includes('ready for Jeff') || text.match(/^Accepted #\d+/)) {
-      const cleanText = from === 'jeff' ? stripSpineMetadata(text) : text;
+    // Accept request / acceptance — only from Jeff or explicit accept-request type (#2049)
+    // Role output like "Accepted #2049 — ..." must NOT show as Jeff's message.
+    const fromJeff = from === 'jeff' || from.toLowerCase().startsWith('jeff');
+    if (raw.type === 'accept-request' || (fromJeff && (text.includes('/acp') || text.match(/^Accepted #\d+/)))) {
+      const cleanText = fromJeff ? stripSpineMetadata(text) : text;
       return { from, text: cleanText, ts, type: 'accept-request', visible: true };
     }
 
