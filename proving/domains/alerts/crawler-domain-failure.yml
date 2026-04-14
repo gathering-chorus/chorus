@@ -1,0 +1,50 @@
+# crawler-domain-failure.yml — Per-domain crawler failure alert (#1885)
+# Fires when any domain has 3+ consecutive crawl failures.
+# Status tracked in /tmp/crawler-domain-status.json by index-crawler-snapshots.sh.
+
+name: crawler-domain-failure
+description: Domain crawler consecutive failure detection
+severity: warning
+schedule: "0 * * * *"
+
+check: |
+  STATUS_FILE="/tmp/crawler-domain-status.json"
+  if [ ! -f "$STATUS_FILE" ]; then
+    echo "ok:no-status-file"
+    exit 0
+  fi
+  FAILING=$(python3 -c "
+  import json, sys
+  try:
+      d = json.load(open('$STATUS_FILE'))
+      failing = [k for k,v in d.items() if isinstance(v, dict) and v.get('consecutive_failures',0) >= 3]
+      if failing:
+          print(','.join(failing))
+  except Exception:
+      pass
+  " 2>/dev/null || true)
+  if [ -n "$FAILING" ]; then
+    echo "failing:$FAILING"
+    exit 1
+  fi
+  echo "ok"
+  exit 0
+
+action: |
+  COOLDOWN="/tmp/alert-crawler-failure-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  STATUS_FILE="/tmp/crawler-domain-status.json"
+  DETAILS=$(python3 -c "
+  import json
+  d = json.load(open('$STATUS_FILE'))
+  for k,v in sorted(d.items()):
+      f = v.get('consecutive_failures',0)
+      if f >= 3:
+          print(f'  {k}: {f} consecutive failures (last: {v.get(\"timestamp\",\"?\")})')
+  " 2>/dev/null || echo "  (could not read details)")
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "crawler-domain-failure: domains with 3+ consecutive crawl failures:
+$DETAILS" 2>/dev/null || true
