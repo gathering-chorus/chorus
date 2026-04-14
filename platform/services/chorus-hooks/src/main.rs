@@ -213,6 +213,12 @@ async fn pre_tool_use_inner(
                 return (_last_module.clone(), r);
             }
 
+            // Chrome tab gate (#1775, DEC-090) — block role-initiated 'open http'
+            _last_module = "chrome_tab_gate".into(); let r = hooks::chrome_tab_gate::check(&input).await;
+            if r.stderr.is_some() {
+                return (_last_module.clone(), r);
+            }
+
             // Nudge blast radius (#1658) — warn if target role is WIP
             _last_module = "nudge_blast_radius".into(); let r = hooks::nudge_blast_radius::check(&input).await;
             if r.stderr.is_some() {

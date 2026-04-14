@@ -35,3 +35,4 @@ pub mod memory_first;
 pub mod e2e_responder;
 pub mod ops_awareness;
 pub mod interaction_pattern;
+pub mod chrome_tab_gate;

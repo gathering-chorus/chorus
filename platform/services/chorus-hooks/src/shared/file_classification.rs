@@ -61,6 +61,12 @@ pub fn is_production_code(path: &str) -> bool {
         && !lower.contains("/dist/")
 }
 
+/// Ops scripts in platform/scripts/ — exempt from pair gate (#2009).
+/// These are infrastructure tooling, not application code.
+pub fn is_ops_script(path: &str) -> bool {
+    path.contains("platform/scripts/") && path.ends_with(".sh")
+}
+
 /// Skip generated/build paths — used by pair_gate and others
 pub fn is_generated_path(path: &str) -> bool {
     path.contains("/target/") || path.contains("/node_modules/") || path.contains("/dist/")
@@ -111,6 +117,15 @@ mod tests {
         // artifacts/ HTML is also generated, not production code
         assert!(!is_production_code("roles/wren/artifacts/chorus-domain-map-v2.html"));
         assert!(!is_source_code("/Users/jeff/CascadeProjects/chorus/roles/wren/artifacts/team-analysis.html"));
+    }
+
+    #[test]
+    fn ops_scripts_detected() {
+        assert!(is_ops_script("platform/scripts/deep-health.sh"));
+        assert!(is_ops_script("/Users/jeff/CascadeProjects/chorus/platform/scripts/smoke-check.sh"));
+        assert!(!is_ops_script("platform/services/chorus-hooks/src/main.rs"));
+        assert!(!is_ops_script("platform/scripts/cards")); // no .sh extension
+        assert!(!is_ops_script("src/scripts/deploy.sh")); // not platform/scripts/
     }
 
     #[test]

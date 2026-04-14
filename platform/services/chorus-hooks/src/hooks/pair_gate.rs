@@ -71,6 +71,11 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
         return HookResponse::allow();
     }
 
+    // #2009: Ops scripts don't require pairing — they're infra tooling, not app code
+    if crate::shared::file_classification::is_ops_script(&file_path) {
+        return HookResponse::allow();
+    }
+
     // Check for active pair — either a pair file on disk or pair evidence in session
     if has_active_pair() || has_pair_evidence_in_session(input, state) {
         return HookResponse::allow();
@@ -131,6 +136,23 @@ mod tests {
         let input = make_input("Edit", "/project/node_modules/pkg/index.js");
         let r = check(&input, &state());
         assert!(r.stdout.is_none());
+    }
+
+    #[test]
+    fn allows_ops_scripts_without_pair() {
+        // #2009: platform/scripts/*.sh exempt from pair gate
+        let input = make_input("Edit", "/Users/jeff/CascadeProjects/chorus/platform/scripts/deep-health.sh");
+        let r = check(&input, &state());
+        assert!(r.stdout.is_none(), "ops scripts should not require pair");
+    }
+
+    #[test]
+    fn blocks_app_code_without_pair() {
+        // Application code still requires pairing
+        let input = make_input("Edit", "/Users/jeff/CascadeProjects/chorus/platform/api/src/server.ts");
+        let r = check(&input, &state());
+        // Without a pair session, this should block (deny has stdout)
+        assert!(r.stdout.is_some(), "app code should require pair");
     }
 
     #[test]
