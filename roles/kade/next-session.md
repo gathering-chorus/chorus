@@ -1,34 +1,33 @@
 # Kade — Next Session
 
-## This session (2026-04-14 06:18 – 18:05)
+## This session (2026-04-15 14:28 – 18:30)
 
-Massive session — 9 cards shipped, ~15 gates for Silas and Wren, Clearing bridge fixed end-to-end, agent code smell research, tests sub-domain foundation.
+8 cards shipped. Domain-detail page transformed from skeleton to full operating surface. Crash recovery was "dramatically better" — Chorus index reconstructed 5.5 hours in 3 minutes.
 
 **Shipped:**
-- #1979 — Completeness query split (11 cross-graph OPTIONALs → 2 parallel, 15ms)
-- #2009 — Pair gate exempts ops scripts
-- #2036 — Clearing bridge fix (nudge ack + dedup)
-- #2017 — AC auto-check in demoCard
-- #2015 — Structured skill/gate logging
-- #2048 — Clearing attribution fix (nudges show role, not jeff)
-- #2049 — Clearing preserves Jeff's input verbatim
-- #2026 — Crawler fix (7/7 → 27/27 domains)
-- #1883 — Crawler expanded to 27 domains
+- #2060 — Domain API consolidation (5 facet endpoints, AX=UX)
+- #2069 — Value stream pipeline view (5 stages from existing data)
+- #2078 — Docs proxy into Prior Art section
+- #2080 — Borg infra on domain pages (domain-scoped via usesEnvironment)
+- #2082 — Dependencies facet (direct + shared infrastructure)
+- #1910 — Release history (273 chorus releases, git-first)
+- #2028 — Domain radius + blast radius + decisions rendering
+- #2054/#2070 — Crash recovery ACPs
 
-**Also:** CLAUDE.md Docker→LaunchAgent, domain-detail HTML fix, app deployed for Athena proxy, agent code smell deep research, tests sub-domain registered (#2054 WIP), ~15 gates for Silas/Wren, #2028 card created
+**Also:** Paired with Silas on #2060, reviewed client onboarding design brief, gated 7 Silas + 1 Wren cards, fixed alerts rendering, merged Docs into Prior Art, wired decisions section
 
 ## Pick up
-1. **#2019** — Blast radius from domain data. This is THE next card. Crawl → graph pipeline for code/test files per domain. Enables test inventory on domain pages. Quality-service eventually queries graph instead of filesystem.
-2. **#2054** — Tests sub-domain WIP, foundation done. Needs accept, then follow-on work after #2019.
-3. **Agent code smell blog post** — Wren carding it. I provide technical detail.
+1. **#2068** — Demo skill blocks if AC unchecked (coordination tooling, original sequence)
+2. **Persistence section** — render borg:Resource instances per domain (Wren priority)
+3. **Gate pass rate metric** — pipeline Prove stage enrichment (from Wren chat on LinkedIn seeds)
+4. **Section reorder** — follow value stream per Wren's direction
+5. **domain-detail.js refactor** — function signature has 22 params, needs object
 
-## Pending briefs
-- Wren namespace-move-kade.md (stale 6+ days)
-- Wren response-gate-definitions.md (stale 2+ days)
+## Domain-detail page sections (current)
+Pipeline, Release History, Infrastructure, Dependencies, Prior Art, Decisions, Code, Tests, Alerts, Services, Logs, UI Pages, API Contract, Actors, Scenarios, Cards, Completeness, Persistence, Integration, Blast Radius, Gaps
 
-## Jeff feedback
-- "my messages must not get summarized or changed" — input is source of truth
-- "what i type is what shows in my messages - even if it is typos"
-- Sequence: #2019 first → code/tests to graph → quality-service reads graph
-- Agent code smells are a product opportunity — blog post first, tool second
-- Julian's birthday April 14
+## Key context
+- Borg service design read and loaded — 7 domains, herald pattern, Engine→Environment→Resource
+- Client onboarding design reviewed — builder feedback posted to cross-role chat
+- Crash recovery pattern saved to memory — use Chorus index, roles coordinate directly
+- Silas's graph hygiene ADR-022 includes two patterns from this session

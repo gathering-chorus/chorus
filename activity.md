@@ -852,3 +852,17 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [16:06] [Silas] → Reviewed client onboarding design with Wren: borg service design fits Steps 3-4, 10 heralds align, OMG KDM added to lineage → Wren
 - [16:17] [Silas] → Added borg:usesEnvironment property + domain→environment edges for Kade's #2080 → Kade
 - [16:23] [Silas] → Gated #2060, #2067, #2080 (arch + ops) for Kade and Wren → Kade, Wren
+
+## 2026-04-15 — Kade (reboot)
+
+- [14:28] [Kade] → Session start. Crash recovery — reconstructed 6am-11:30am session from Chorus index. Shared summary with Wren via chat → Wren, Jeff
+- [14:36] [Kade] → ACP #2070 (doc-catalog fix) and #2054 (tests sub-domain) — demo evidence reconstructed after crash → Jeff
+- [15:06] [Kade] → #2060 domain API consolidation — 5 facet endpoints, blast-radius wired, AX=UX. Paired with Silas → Jeff, all roles
+- [15:27] [Kade] → #2069 value stream pipeline view — 5 stages from existing data, domain-detail rendering → Jeff, all roles
+- [15:45] [Kade] → #2078 docs proxy into Prior Art section — 5 seeds docs, 53 chorus docs → Jeff, Wren
+- [16:23] [Kade] → #2080 borg infra on domain pages — domain-scoped via usesEnvironment edges, 3 envs for seeds → Jeff, Silas
+- [16:44] [Kade] → #2082 dependencies facet — direct edges + shared infrastructure, duplicate section removed → Jeff, all roles
+- [17:55] [Kade] → #1910 release history — 273 chorus releases, git-first with card domain index, 1s response → Jeff, all roles
+- [18:14] [Kade] → #2028 domain radius + blast radius from ontology + decisions section wired → Jeff, all roles
+- [18:14] [Kade] → Reviewed client onboarding design brief, contributed builder perspective to Wren/Silas chat → Wren, Silas
+- [18:14] [Kade] → Gated Silas cards: #1908, #2074, #1911, #1871, #2080, #2085, #2087. Gated Wren #2067 → Silas, Wren
