@@ -889,6 +889,14 @@
 **Decision:** New team infrastructure defaults to TypeScript (app stack) or Rust (hooks/daemons). Bash only for true one-shot glue. Existing bash APIs migrate to typed services. board-ts is first target.
 **Consequences:** Higher upfront cost per script, lower ongoing debugging tax. Scripts become testable. Errors become typed. The team stops spending creative energy on bash string parsing.
 
+## DEC-1786: Graph-lens architecture — one graph, multiple product lenses, no product owns the data
+- **Date**: 2026-04-15
+- **Context**: Morning architecture session crystallized three peer products — Gathering, Chorus, Borg — all reading the same ontology graph. Werk was reframed as a 5-layer control surface (operating model, loom, spine, pulse, clearing) that aggregates but owns no unique data. Borg is reflection — the system seeing itself — consuming the same graph through a different lens than Gathering or Chorus. The risk: products start claiming ownership of graph entities, forking the data, or building private stores that drift from the shared graph.
+- **Decision**: One graph, multiple product lenses. No product owns graph data — products own their lens (which entities they render, how they present them). Gathering sees domains as content. Chorus sees domains as coordination surfaces. Borg sees domains as infrastructure topology. Same triples, different views. If a product needs data that isn't in the graph, the graph gets extended — not the product's private store.
+- **Consequences**: Domain-detail pages are the shared rendering surface. Each product adds facets to the page, not separate pages. Werk is pure aggregation — if Werk shows wrong data, the source service is wrong, not Werk. Herald pattern (discover-*) writes to the shared graph, not to product-specific stores.
+- **Source**: Architecture session 2026-04-15 (Jeff + Silas + Kade + Wren), clearing transcripts indexed in Chorus.
+- **Status**: Active
+
 ## DEC-1785: No silent data loss — every pipeline hop succeeds visibly or fails visibly
 - **Date**: 2026-04-14
 - **Context**: Seeds vanish at hop 5 with a 200 response. Chorus-api 500s go to /tmp where Loki can't see them. Bridge events fire but get filtered before roles read them. Two failure modes: hose (delivery — Promtail wrong files, tunnel drops) and bucket (persistence — silent guard drops, invisible 500s, stale state). Data enters pipelines and silently disappears.

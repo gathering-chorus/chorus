@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus — Client Onboarding Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #6366f1; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #eef2ff; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #6366f1; font-style: italic; font-size: 0.9em; }
+  .principle { background: #f0fdf4; padding: 10px 14px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #22c55e; font-size: 0.85em; }
+  .warning { background: #fef2f2; padding: 10px 14px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ef4444; font-size: 0.85em; }
+  .insight { background: #fffbeb; padding: 10px 14px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #f59e0b; font-size: 0.85em; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #eef2ff; color: #3730a3; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .step { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px; margin: 16px 0; }
+  .step h3 { margin-top: 0; color: #3730a3; }
+  .step-number { display: inline-block; background: #6366f1; color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; line-height: 24px; font-size: 0.75em; font-weight: bold; margin-right: 6px; }
+  .tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 0.72em; font-weight: 600; margin-left: 4px; }
+  .tag-exists { background: #d1fae5; color: #065f46; }
+  .tag-partial { background: #fef3c7; color: #92400e; }
+  .tag-new { background: #fee2e2; color: #991b1b; }
+  .tag-aspirational { background: #ede9fe; color: #5b21b6; }
+  .flow { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 16px 0; text-align: center; font-size: 0.85em; }
+  .flow .arrow { color: #6366f1; font-weight: bold; margin: 0 8px; }
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
+  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Chorus — Client Onboarding Design <span>Product Brief</span></h1>
+<div class="date">2026-04-15 — Wren + Jeff. Aspirational product design. Evolves #1842 (portable Chorus spike). Incorporates Borg Mitosis (Wren), Borg Service Design (Silas + Jeff), Codebase Decomposition Spike (Silas), Graph-Driven Code Generation pattern (Jeff, Dallas Systems lineage).</div>
+
+<div class="promise">
+  A guided conversation that takes someone from "I have a system" to "I understand my system and can evolve it safely." Five steps. Each produces the input for the next. The wizard compresses what took Jeff months into hours.
+</div>
+
+<h2>The Problem</h2>
+
+<p>Chorus, Borg, and Athena work because Jeff spent months teaching the system about himself — his principles, his value streams, his domains, his infrastructure. Every session where Jeff explains how something works, every time Silas discovers a service, every time Wren cards a domain — that's knowledge entering the graph. The system got smart slowly.</p>
+
+<p>Nobody else can do that. There's no cold-start path. A second human would face an empty ontology, unconfigured roles, no domain model, no heralds knowing where to look. The coordination substrate (Chorus) and the reflection engine (Borg) both assume someone already told them what exists. Without that, they're inert.</p>
+
+<p>The wizard solves the cold-start problem. Not by shipping a pre-configured template, but by having a conversation that seeds the graph with enough structure for heralds to take over.</p>
+
+<div class="insight">
+  <strong>Key insight:</strong> Jeff has been the first customer of this product for four months. Every session is the interview. The wizard doesn't invent a new process — it compresses the process Jeff already proved.
+</div>
+
+<h2>The Value Stream</h2>
+
+<div class="flow">
+  <strong>Interview</strong>
+  <span class="arrow">&rarr;</span>
+  <strong>Discover</strong>
+  <span class="arrow">&rarr;</span>
+  <strong>Map</strong>
+  <span class="arrow">&rarr;</span>
+  <strong>Monitor</strong>
+  <span class="arrow">&rarr;</span>
+  <strong>Transform</strong>
+</div>
+
+<p>Five steps, each building on the last. The first two are conversations with a human. The last three are the system working on its own, guided by what the conversations produced.</p>
+
+<table>
+  <tr><th>Step</th><th>What happens</th><th>Input</th><th>Output</th><th>Status</th></tr>
+  <tr>
+    <td>1. Interview</td>
+    <td>Guided conversation about principles, patterns, roles, team shape</td>
+    <td>A human who owns a system</td>
+    <td>Configured harness: roles, gates, skills, principles</td>
+    <td><span class="tag tag-new">New</span></td>
+  </tr>
+  <tr>
+    <td>2. Discover</td>
+    <td>Guided conversation about value streams, domains, boundaries</td>
+    <td>Configured harness</td>
+    <td>Seeded ontology: value streams, domains, entity types</td>
+    <td><span class="tag tag-partial">Partial</span></td>
+  </tr>
+  <tr>
+    <td>3. Map</td>
+    <td>Heralds scan the real system, Athena captures the model</td>
+    <td>Seeded ontology + codebase access</td>
+    <td>Populated graph: code, tests, pages, endpoints, infra per domain</td>
+    <td><span class="tag tag-exists">Proven</span></td>
+  </tr>
+  <tr>
+    <td>4. Monitor</td>
+    <td>Generate observability from what the graph knows</td>
+    <td>Populated graph + running infrastructure</td>
+    <td>Alert coverage, health checks, dependency-aware monitoring</td>
+    <td><span class="tag tag-partial">Partial</span></td>
+  </tr>
+  <tr>
+    <td>5. Transform</td>
+    <td>Refactor guided by validated domain decomposition</td>
+    <td>Validated domain model + coverage map</td>
+    <td>Boundary-aware refactoring, safe migration paths</td>
+    <td><span class="tag tag-aspirational">Aspirational</span></td>
+  </tr>
+</table>
+
+<h2>Step 1: The Harness Interview</h2>
+
+<div class="step">
+  <h3><span class="step-number">1</span> How do you want to work? <span class="tag tag-new">New</span></h3>
+
+  <p>A structured conversation with the <strong>harness owner</strong> — the person who shapes how their team coordinates. Not a form. Not a config file. A dialogue that understands what they care about and builds the coordination layer around it.</p>
+
+  <p><strong>What the interview captures:</strong></p>
+  <table>
+    <tr><th>Topic</th><th>Questions</th><th>Produces</th></tr>
+    <tr>
+      <td>Principles</td>
+      <td>What do you believe about how software should be built? What practices are non-negotiable? What have you learned the hard way?</td>
+      <td>Principle set — feeds gate design and role behavior</td>
+    </tr>
+    <tr>
+      <td>Roles</td>
+      <td>Who works on your system? What are their responsibilities? How do they hand off work? Who decides what gets built?</td>
+      <td>Role definitions — CLAUDE.md equivalents, ownership boundaries</td>
+    </tr>
+    <tr>
+      <td>Workflow</td>
+      <td>How does work move from idea to running? What gates exist? What must happen before code ships? What blocks you?</td>
+      <td>Gate chain — the quality/safety/product checks that matter to this team</td>
+    </tr>
+    <tr>
+      <td>Patterns</td>
+      <td>What interaction patterns does your team use? Pairing? Mob? Async reviews? Standups? What works? What's theater?</td>
+      <td>Interaction model — which patterns to instrument, which to skip</td>
+    </tr>
+    <tr>
+      <td>Attention</td>
+      <td>What costs you the most energy? Where do you lose time to coordination overhead? What do you wish the system handled without you?</td>
+      <td>Attention contract — what the harness protects the owner from</td>
+    </tr>
+  </table>
+
+  <div class="principle">
+    <strong>Design principle:</strong> The interview doesn't ask "do you want feature X?" It asks about problems and values, then maps those to harness capabilities. Jeff never asked for gates — he asked for quality. The gates emerged from the principle.
+  </div>
+
+  <p><strong>Output:</strong> A configured Chorus instance — role definitions, gate chain, skill set, principle registry. The coordination substrate is tuned to this specific human and their team. Not a template. Not a fork. A bespoke harness grown from conversation.</p>
+
+  <p><strong>What exists today:</strong> Jeff's CLAUDE.md files, decisions log (100+ DECs), TEAM_PROTOCOL.md, team-architecture.md. These ARE the output of a 4-month interview. The wizard needs to produce equivalent artifacts in hours.</p>
+
+  <p><strong>What's needed:</strong> A conversational agent that knows the full space of harness capabilities (roles, gates, skills, spine events, hooks, interaction patterns) and can map a human's answers to configuration. This is the most aspirational step — it requires the system to understand its own architecture well enough to explain it to a stranger.</p>
+</div>
+
+<h2>Step 2: Customer Discovery</h2>
+
+<div class="step">
+  <h3><span class="step-number">2</span> What does your system do? <span class="tag tag-partial">Partial</span></h3>
+
+  <p>A structured conversation about the <strong>client's system</strong> — their value streams, domains, boundaries, and the things they worry about. This is product discovery applied to infrastructure. The output seeds the ontology.</p>
+
+  <p><strong>What the interview captures:</strong></p>
+  <table>
+    <tr><th>Topic</th><th>Questions</th><th>Produces</th></tr>
+    <tr>
+      <td>Value streams</td>
+      <td>What does your system do for its users? Walk me through the journey from first touch to delivered value. Where does money flow? Where does data flow?</td>
+      <td>Value stream definitions — the macro pipelines that matter</td>
+    </tr>
+    <tr>
+      <td>Domains</td>
+      <td>What are the natural groupings? If you had to explain your system to a new engineer in terms of areas of responsibility, what would they be?</td>
+      <td>Domain model — the bounded contexts, named and bounded</td>
+    </tr>
+    <tr>
+      <td>Boundaries</td>
+      <td>Where are the seams? What's a monolith, what's decomposed? Where do teams own boundaries vs. share them? What's the messiest boundary?</td>
+      <td>Boundary map — where domains meet, where they blur</td>
+    </tr>
+    <tr>
+      <td>Infrastructure</td>
+      <td>What do you run on? Cloud, on-prem, hybrid? What databases? What services are always-on vs. batch? What's the thing that pages you at 3am?</td>
+      <td>Infrastructure seed — enough for heralds to know where to scan</td>
+    </tr>
+    <tr>
+      <td>Fragility</td>
+      <td>What scares you? What's the thing that almost broke last quarter? What do you not monitor but should? Where are you blind?</td>
+      <td>Risk map — feeds monitoring priority in Step 4</td>
+    </tr>
+  </table>
+
+  <div class="principle">
+    <strong>Design principle:</strong> The discovery conversation is not requirements gathering. It's collaborative modeling. The wizard builds the domain model WITH the client, reflecting their language back to them, testing boundaries, surfacing implicit knowledge they haven't articulated. "You said auth handles login AND payment tokens — are those the same domain or two domains that share infrastructure?"
+  </div>
+
+  <p><strong>Output:</strong> A seeded ontology — value streams, domains, sub-domains, entity types, dependency edges. Enough structure for heralds to know WHAT to scan and WHERE to look. Not complete — the heralds fill in reality. But shaped enough that the gap between the model and reality is meaningful, not random.</p>
+
+  <p><strong>What exists today:</strong> Jeff and Silas did exactly this on April 15 for the Borg service design — 2+ hours of conversation that produced 7 domains, 5 layers, 2 cross-cutting capabilities, and the Engine &rarr; Environment &rarr; Resource hierarchy. The domain facet pipeline (model &rarr; service design &rarr; source &rarr; crawl &rarr; query) is the formalized version of this step.</p>
+
+  <p><strong>What's needed:</strong> A conversational agent that understands domain-driven design, value stream mapping, and the ontology schema well enough to ask good follow-up questions and write triples from natural language answers. The April 15 session is the prototype — a wizard that does what Jeff and Silas did, but as a guided interaction.</p>
+</div>
+
+<h2>Step 3: Capture &amp; Map</h2>
+
+<div class="step">
+  <h3><span class="step-number">3</span> What actually exists? <span class="tag tag-exists">Proven</span></h3>
+
+  <p>The system takes over. Heralds scan the client's codebase, infrastructure, and configuration. Athena renders what they find. The graph fills with reality.</p>
+
+  <p><strong>The herald pipeline:</strong></p>
+  <table>
+    <tr><th>Herald</th><th>Scans</th><th>Writes</th><th>Status</th></tr>
+    <tr><td>discover-code</td><td>Source files by domain</td><td>Code inventory per domain</td><td><span class="tag tag-exists">Proven</span></td></tr>
+    <tr><td>discover-tests</td><td>Test files by convention</td><td>Test inventory with pyramid classification</td><td><span class="tag tag-exists">Proven</span></td></tr>
+    <tr><td>discover-pages</td><td>Views, templates, HTML</td><td>UI page inventory per domain</td><td><span class="tag tag-exists">Proven</span></td></tr>
+    <tr><td>discover-endpoints</td><td>Route registrations</td><td>API endpoint inventory per domain</td><td><span class="tag tag-exists">Proven</span></td></tr>
+    <tr><td>discover-toolchain</td><td>Package files, binaries, configs</td><td>Engine catalog</td><td><span class="tag tag-new">Designed</span></td></tr>
+    <tr><td>discover-services</td><td>LaunchAgents, docker-compose, systemd</td><td>Service topology per host</td><td><span class="tag tag-new">Designed</span></td></tr>
+    <tr><td>discover-storage</td><td>Databases, volumes, graphs</td><td>Data resource inventory</td><td><span class="tag tag-new">Designed</span></td></tr>
+    <tr><td>discover-network</td><td>Ports, tunnels, routes</td><td>Network map</td><td><span class="tag tag-new">Designed</span></td></tr>
+    <tr><td>discover-alerts</td><td>Prometheus rules, health checks</td><td>Monitor coverage per domain</td><td><span class="tag tag-new">Designed</span></td></tr>
+    <tr><td>discover-security</td><td>Ports, auth, CVEs</td><td>Exposure map</td><td><span class="tag tag-new">Designed</span></td></tr>
+  </table>
+
+  <div class="insight">
+    <strong>The gap is the backlog.</strong> The seeded ontology (from Step 2) says what SHOULD exist. The heralds (Step 3) report what DOES exist. The difference between the model and reality is not a bug — it's the work that needs to happen. Domains with code but no tests. Services with no health checks. Endpoints with no documentation. Each gap is a card waiting to be written.
+  </div>
+
+  <p><strong>Output:</strong> A populated graph with reality mapped against the model. Domain pages in Athena showing code, tests, pages, endpoints, infrastructure, and coverage scores per domain. The client sees their system reflected back to them — probably for the first time with this level of structure.</p>
+
+  <p><strong>What exists today:</strong> Kade proved this on the application surface. 57 code files, 63 UI pages, 342 API endpoints across 27 domains — all discovered, classified, and rendered on domain-detail pages. The borg service design extends the same pattern to infrastructure.</p>
+
+  <p><strong>What's needed for portability:</strong> Herald source detection needs to be configurable. Today's heralds know where Jeff's code lives (app.ts, views/*.ejs). A portable version needs the discovery interview (Step 2) to tell heralds where to look — "our routes are in src/routes/*.ts" or "we use Kubernetes, not LaunchAgents." The herald pattern is proven; the source configuration is the gap.</p>
+</div>
+
+<h2>Step 4: Monitor</h2>
+
+<div class="step">
+  <h3><span class="step-number">4</span> Can we see what's happening? <span class="tag tag-partial">Partial</span></h3>
+
+  <p>Once the graph knows what exists, monitoring becomes a coverage problem, not a configuration problem. The system knows the dependency graph. It knows which services have health checks and which don't. It can generate monitoring from the model.</p>
+
+  <p><strong>What the graph enables:</strong></p>
+  <ul style="font-size: 0.85em; margin: 10px 0 10px 20px;">
+    <li><strong>Dependency-aware alerting:</strong> If Service A depends on Service B, and B goes down, don't page about A. The graph knows the dependency chain.</li>
+    <li><strong>Coverage scoring:</strong> For every service, count dependency edges with monitors vs. total edges. The gap is unmonitored risk. Score it per domain.</li>
+    <li><strong>Health check generation:</strong> The graph knows every service's port and health endpoint. Generate Prometheus scrape configs, blackbox probes, and health check scripts from the model.</li>
+    <li><strong>Alert pyramid:</strong> Unit monitors (single service liveness), integration monitors (dependency chain health), E2E monitors (value stream smoke tests). Same pyramid as testing — applied to operations.</li>
+    <li><strong>Blind spot detection:</strong> Domains with code but no monitors. Services with ports but no health checks. The system knows what it can't see.</li>
+  </ul>
+
+  <div class="principle">
+    <strong>Design principle:</strong> "Don't break ourselves as we move at high speed" (Jeff, April 15). Monitoring isn't about catching failures after they happen. It's about maintaining velocity safely. The alert coverage score is the confidence metric: "we can ship to this domain because we'll know if it breaks."
+  </div>
+
+  <p><strong>Output:</strong> A monitoring layer generated from the domain model. Alert coverage scores on every domain page. Health dashboards that understand the dependency graph. Blind spots surfaced as cards.</p>
+
+  <p><strong>What exists today:</strong> deep-health.sh (13+ checks, 5-minute cycle), Prometheus scrape targets, Promtail log streams, Grafana dashboards. The Alerts &amp; Monitors domain in the borg service design describes the complete model. Coverage scoring is designed but not implemented.</p>
+
+  <p><strong>What's needed:</strong> The coverage scoring engine — take the dependency graph, overlay existing monitors, compute the gaps. Then: config generation from the model. The graph knows "Fuseki runs on port 3030 with /$/ping as health endpoint" — generating a blackbox probe config from that is mechanical.</p>
+</div>
+
+<h2>Step 5: Transform</h2>
+
+<div class="step">
+  <h3><span class="step-number">5</span> Can we safely evolve this? <span class="tag tag-aspirational">Aspirational</span></h3>
+
+  <p>The most ambitious step. Once the domain decomposition is validated — the model matches reality, monitoring confirms the boundaries, the dependency graph is trusted — use that knowledge to guide refactoring and evolution.</p>
+
+  <p><strong>What becomes possible:</strong></p>
+  <ul style="font-size: 0.85em; margin: 10px 0 10px 20px;">
+    <li><strong>Boundary validation:</strong> The domain model says auth and payments are separate domains. The code shows 47 files that import from both. That's a coupling signal — either the boundary is wrong or there's work to do.</li>
+    <li><strong>Safe extraction:</strong> Extract a service from a monolith. The graph knows what depends on it, what it depends on, what data it uses. The monitoring layer confirms the extraction didn't break anything.</li>
+    <li><strong>Blast radius prediction:</strong> Before changing a file, the graph shows every domain that file touches, every endpoint that calls it, every test that covers it. Confidence before change.</li>
+    <li><strong>Migration planning:</strong> Moving from one engine to another (MySQL &rarr; Postgres, Docker &rarr; native). The graph knows every resource in the old engine, every service that uses it. Generate a migration plan with dependency order.</li>
+    <li><strong>Evolutionary architecture:</strong> The system doesn't prevent drift — it makes drift visible. When a new service appears that no domain claims, when a dependency edge forms that crosses a boundary, when a domain grows beyond its intended scope — the graph sees it. Architecture decisions become data-driven.</li>
+  </ul>
+
+  <div class="insight">
+    <strong>Prior art:</strong> Jeff's patent (US9552400B2) describes structured knowledge discovery from legacy systems. The Dallas Systems WMS used 5-character transaction codes as a domain hierarchy — makefiles generated 4GL code and database tables from the naming convention. Same principle: define the domain in the model, generate the implementation. The codebase decomposition spike (Silas, February 2026) connected this patent to OMG KDM (ISO/IEC 19506) and proved Tree-sitter parsing could extract dependency graphs. Step 5 is where all of that converges.
+  </div>
+
+  <p><strong>Output:</strong> Refactoring guided by a validated domain model. Not "the AI rewrites your code" — the AI shows you the boundaries, the dependencies, the blast radius, and the monitoring coverage, then generates the migration plan. The human decides. The system executes safely.</p>
+
+  <p><strong>What exists today:</strong> Blast radius endpoint (Kade, #2059). Dependency edges in the ontology. The conceptual framework from the codebase decomposition spike. But no end-to-end refactoring workflow.</p>
+
+  <p><strong>What's needed:</strong> This is the farthest horizon. Requires Steps 1-4 to be solid. The dependency graph needs to be trusted (Step 3 validated), the monitoring needs to catch regressions (Step 4 operational), and the domain boundaries need to be confirmed (gap between model and reality is small). Only then can you refactor with confidence.</p>
+</div>
+
+<h2>The Two Interviews</h2>
+
+<p>Steps 1 and 2 are the wizard. They're conversations, not forms. The distinction matters.</p>
+
+<table>
+  <tr><th></th><th>Harness Interview (Step 1)</th><th>Customer Discovery (Step 2)</th></tr>
+  <tr>
+    <td><strong>Who</strong></td>
+    <td>The harness owner — person who shapes how the team works</td>
+    <td>The system owner — person who knows what the system does</td>
+  </tr>
+  <tr>
+    <td><strong>Could be the same person?</strong></td>
+    <td colspan="2" style="text-align: center;">Yes. Jeff is both. A startup CTO is both. At scale, they diverge — VP Eng vs. Staff Engineer.</td>
+  </tr>
+  <tr>
+    <td><strong>Tone</strong></td>
+    <td>Coaching — "what do you believe about quality?"</td>
+    <td>Discovery — "walk me through what happens when a user signs up"</td>
+  </tr>
+  <tr>
+    <td><strong>Output format</strong></td>
+    <td>Configuration artifacts: CLAUDE.md, gate definitions, role profiles, principle registry</td>
+    <td>Ontology triples: value streams, domains, sub-domains, entity types, dependency edges</td>
+  </tr>
+  <tr>
+    <td><strong>Duration</strong></td>
+    <td>1-2 hours (principles and workflow are relatively stable)</td>
+    <td>2-4 hours (domain models have depth, need iteration)</td>
+  </tr>
+  <tr>
+    <td><strong>Iteration</strong></td>
+    <td>Evolves slowly — principles shift over months, not days</td>
+    <td>Evolves as heralds report reality — "you said 5 domains, we found 7"</td>
+  </tr>
+</table>
+
+<div class="principle">
+  <strong>The interviews are not intake forms.</strong> They're collaborative modeling sessions. The wizard pushes back: "You said everything is one domain, but you also said the billing team owns their own deploy cycle — that sounds like a boundary." The wizard reflects: "So your value stream is: lead &rarr; trial &rarr; convert &rarr; onboard &rarr; retain. Is 'retain' a real stage or does it blur into ongoing support?" The wizard connects: "The 3am pages you mentioned are all in what you called the 'integration' domain — that might be your highest-priority monitoring target."
+</div>
+
+<h2>Why This Order</h2>
+
+<p>Each step requires the previous step's output. You can't skip ahead.</p>
+
+<table>
+  <tr><th>If you skip...</th><th>What breaks</th></tr>
+  <tr>
+    <td>Step 1 (Interview)</td>
+    <td>Heralds scan without purpose. You get a list of files but no coordination layer to act on them. Who reviews what? What gates apply? Nobody knows.</td>
+  </tr>
+  <tr>
+    <td>Step 2 (Discover)</td>
+    <td>Heralds scan but can't classify. Code files exist but belong to no domain. The graph has facts but no structure. It's a data lake, not a model.</td>
+  </tr>
+  <tr>
+    <td>Step 3 (Map)</td>
+    <td>You have a model but no reality check. The domain model says "we have a payments service" but nobody verified it exists. Monitoring targets are theoretical.</td>
+  </tr>
+  <tr>
+    <td>Step 4 (Monitor)</td>
+    <td>You refactor without a safety net. The decomposition looks right but you can't confirm the extraction didn't break anything. Blast radius is a guess.</td>
+  </tr>
+</table>
+
+<div class="warning">
+  <strong>This is also why most observability tools disappoint.</strong> They start at Step 4 — "instrument your code and we'll show you dashboards." But without the domain model (Step 2) and the reality map (Step 3), the dashboards show metrics without meaning. You see CPU usage but don't know which value stream it affects. You see error rates but don't know which domain owns the fix. Context-free monitoring is noise.
+</div>
+
+<h2>What Jeff Proved</h2>
+
+<p>Jeff has been running this value stream for four months. The wizard compresses it — it doesn't replace it.</p>
+
+<table>
+  <tr><th>Step</th><th>How Jeff did it</th><th>Duration</th><th>Wizard target</th></tr>
+  <tr>
+    <td>1. Interview</td>
+    <td>100+ decisions (DECs), CLAUDE.md files across 3 roles, TEAM_PROTOCOL.md, 50+ feedback memories that shaped role behavior over time</td>
+    <td>4 months (ongoing)</td>
+    <td>1-2 hours</td>
+  </tr>
+  <tr>
+    <td>2. Discover</td>
+    <td>Canonical model spreadsheet, domain-by-domain ontology population, April 15 borg architecture session</td>
+    <td>6 weeks</td>
+    <td>2-4 hours</td>
+  </tr>
+  <tr>
+    <td>3. Map</td>
+    <td>4 heralds built by Kade: 57 code files, 63 pages, 342 endpoints, test pyramid classification. 8 borg heralds designed.</td>
+    <td>2 weeks</td>
+    <td>Hours (automated once heralds exist)</td>
+  </tr>
+  <tr>
+    <td>4. Monitor</td>
+    <td>deep-health.sh, Prometheus, Loki, Grafana. Iterated over 3 months. Still incomplete — coverage scoring not yet built.</td>
+    <td>3 months (ongoing)</td>
+    <td>Days (generated from model)</td>
+  </tr>
+  <tr>
+    <td>5. Transform</td>
+    <td>Blast radius endpoint, codebase decomposition spike. Conceptual — not yet end-to-end.</td>
+    <td>Not yet</td>
+    <td>TBD</td>
+  </tr>
+</table>
+
+<p>The compression ratio matters. Jeff's 4 months produced a working system — but nobody's buying a 4-month onboarding. If Step 1 + Step 2 can run in a day, and Step 3 runs overnight, a client has a populated domain model in 48 hours. That's the product.</p>
+
+<h2>Prior Art &amp; Lineage</h2>
+
+<table>
+  <tr><th>Source</th><th>Date</th><th>Author</th><th>Contribution</th></tr>
+  <tr>
+    <td>Dallas Systems WMS</td>
+    <td>1996-2002</td>
+    <td>Jeff</td>
+    <td>5-character transaction codes as domain hierarchy. Makefiles generated 4GL code and database tables from naming conventions. The model drives the implementation — same principle, different century.</td>
+  </tr>
+  <tr>
+    <td>US Patent 9552400B2</td>
+    <td>Filed 2013</td>
+    <td>Jeff (inventor)</td>
+    <td>Structured knowledge discovery from legacy systems. Computer-implemented method for extracting domain models from existing codebases. Step 5 is this patent applied through a modern stack.</td>
+  </tr>
+  <tr>
+    <td>Codebase Decomposition Spike</td>
+    <td>2026-02-21</td>
+    <td>Silas</td>
+    <td>Tree-sitter parsing, dependency graphs, decomposition engine. Connected the patent to OMG KDM (ISO/IEC 19506). Proved on SSIS: 13 domains from 13K lines of vendor XML.</td>
+  </tr>
+  <tr>
+    <td>Being a Good Borg</td>
+    <td>March 2026</td>
+    <td>Wren</td>
+    <td>Three expressions: Convergence, Instrumentation, Self-Awareness. "Recording without tending is hoarding. Tending without recording is amnesia."</td>
+  </tr>
+  <tr>
+    <td>Borg Mitosis</td>
+    <td>March 2026</td>
+    <td>Wren</td>
+    <td>How the pattern reproduces: Gathering &rarr; Chorus &rarr; Borg &rarr; next client. Serial growth, not parallel. Each split carries the DNA.</td>
+  </tr>
+  <tr>
+    <td>Borg Assimilation Pattern</td>
+    <td>2026-03-18</td>
+    <td>Silas</td>
+    <td>Observe &rarr; Assimilate &rarr; Adapt &rarr; Regenerate. ICD as platform-independent knowledge extraction. "The ship is irrelevant, the function persists."</td>
+  </tr>
+  <tr>
+    <td>Emergent Evolutionary Architecture</td>
+    <td>2026-03-05</td>
+    <td>Wren</td>
+    <td>Architecture emerges from interaction, then becomes visible through reflection. The system doesn't control emergence — it makes emergence observable.</td>
+  </tr>
+  <tr>
+    <td>Harness Engineering (Fowler/Lewis)</td>
+    <td>2025</td>
+    <td>External</td>
+    <td>Agent = Model + Harness. The harness IS the product — the model is commodity. Validates Chorus's gate architecture and the interview's focus on harness configuration.</td>
+  </tr>
+  <tr>
+    <td>Borg Service Design</td>
+    <td>2026-04-15</td>
+    <td>Silas + Jeff</td>
+    <td>Seven domains, five layers, two cross-cutting. Engine &rarr; Environment &rarr; Resource. Herald pattern for all domains. Provider-agnostic model. The architecture that Steps 3-5 implement.</td>
+  </tr>
+</table>
+
+<h2>Commercial Position</h2>
+
+<p>This is not a SaaS tool. It's not a consulting engagement. It's a system that learns your system through conversation.</p>
+
+<p><strong>What we're selling:</strong></p>
+<ul style="font-size: 0.85em; margin: 10px 0 10px 20px;">
+  <li>The interview compresses months of tribal knowledge into hours of structured dialogue</li>
+  <li>The heralds give you a map of what you actually have — not what you think you have</li>
+  <li>The gap between the model and reality IS your backlog, prioritized by risk</li>
+  <li>Monitoring generated from the model means you see what matters, not everything</li>
+  <li>Refactoring guided by validated boundaries means you move fast without breaking things</li>
+</ul>
+
+<p><strong>The Borg Mitosis sequence:</strong></p>
+<div class="flow">
+  Gathering <span class="arrow">&rarr;</span> Chorus <span class="arrow">&rarr;</span> Borg <span class="arrow">&rarr;</span> Next client
+</div>
+
+<p>Gathering proved the domain model works (content domains, value streams, ontology-first). Chorus proved the coordination model works (roles, gates, spine, skills). Borg proved the reflection model works (heralds, coverage scoring, the system seeing itself). The wizard is how you hand all three to someone else. Each new client validates the pattern and improves the wizard. Serial growth — not parallel.</p>
+
+<div class="insight">
+  <strong>The moat is the interview, not the tooling.</strong> Anyone can build a herald that scans source files. The hard part is the conversation that gives the scan meaning. The domain model is the context that turns a list of files into a map of responsibilities. That context comes from human knowledge, extracted through structured dialogue. The wizard is the product.
+</div>
+
+<h2>Open Questions</h2>
+
+<table>
+  <tr><th>#</th><th>Question</th><th>Stakes</th></tr>
+  <tr>
+    <td>1</td>
+    <td>Can the harness interview (Step 1) be automated, or does it require a human facilitator?</td>
+    <td>If automated: scalable product. If human: consultative service. Both are viable businesses, but very different.</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>How much of the discovery interview (Step 2) can heralds pre-populate? If we scan first, does the conversation get shorter?</td>
+    <td>"We found 342 endpoints in 27 clusters — do these look like your domains?" is a much faster starting point than "tell me about your domains." Scan-first might flip Steps 2 and 3.</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>What's the minimum viable ontology seed? How much structure does the graph need before heralds produce meaningful output?</td>
+    <td>Too little: heralds scan without context, results are noise. Too much: the interview takes as long as Jeff's 4 months. The sweet spot determines onboarding time.</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>Does Step 5 (Transform) require the client's codebase to be in a specific state, or can it work with legacy spaghetti?</td>
+    <td>Jeff's patent was specifically about legacy system knowledge discovery. The messier the code, the more valuable the decomposition. But the heralds need to be able to parse it.</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>What's the pricing model? Per-onboarding? Ongoing subscription for monitoring and evolution? Both?</td>
+    <td>Steps 1-3 are one-time. Steps 4-5 are ongoing. A split model (onboarding fee + monitoring subscription) matches the value delivery.</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td>Is the first external client someone Jeff knows, or a stranger? How much trust does the wizard need to build?</td>
+    <td>A friend who's seen Jeff's system is a warm start. A stranger needs the wizard to earn credibility through the quality of its questions. Very different design constraints.</td>
+  </tr>
+</table>
+
+<h2>Relationship to Existing Cards</h2>
+
+<table>
+  <tr><th>Card</th><th>Title</th><th>Relationship</th></tr>
+  <tr><td>#1842</td><td>Spike: portable Chorus — chorus init for a second human</td><td>Ancestor. Scope was "make Chorus portable." This brief expands it into a five-step product with commercial positioning.</td></tr>
+  <tr><td>#2047</td><td>Chorus as learning harness — product positioning</td><td>The harness interview (Step 1) IS the learning harness. The wizard teaches Chorus what this specific human cares about.</td></tr>
+  <tr><td>#2046</td><td>Training layer — correction adoption feedback loop</td><td>Feeds back into Step 1. As the client uses the system, corrections refine the harness — the interview never really ends.</td></tr>
+  <tr><td>#2041</td><td>Athena as primary front end</td><td>Steps 2 and 3 output renders through Athena. Domain pages are the client's view of their own system.</td></tr>
+  <tr><td>#2044</td><td>Reactive gate chain — spine events auto-trigger gates</td><td>Part of the harness output from Step 1. The gate chain is configured per-client based on their workflow.</td></tr>
+  <tr><td>#2050</td><td>Agent code smells blog post</td><td>Marketing. The wizard's ability to detect code smells across domain boundaries is a compelling demo.</td></tr>
+</table>
+
+</body>
+</html>
