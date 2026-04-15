@@ -107,17 +107,17 @@ export async function generateBlastRadius(
   const touchedFiles = new Set<string>();
   const touchedDomains = new Set<string>();
 
-  // Step 3a (#2019, #2059): If domain tag provided, query Chorus API for domain code files.
-  // Uses lightweight /api/chorus/domain/:domain/code-files endpoint (DEC-093 compliant).
+  // Step 3a (#2019, #2059, #2060): If domain tag provided, query consolidated domain code endpoint.
+  // Uses /api/chorus/domain/:name/code — same endpoint domain page renders from (AX = UX).
   if (domain) {
-    const codeFiles = await fetchJson(
-      `${CHORUS_API}/api/chorus/domain/${encodeURIComponent(domain)}/code-files`
+    const codeRes = await fetchJson(
+      `${CHORUS_API}/api/chorus/domain/${encodeURIComponent(domain)}/code`
     );
-    if (codeFiles?.files) {
-      for (const file of codeFiles.files) {
-        touchedFiles.add(file);
+    if (codeRes?.data?.files) {
+      for (const file of codeRes.data.files) {
+        touchedFiles.add(file.path);
       }
-      if (codeFiles.files.length > 0) touchedDomains.add(domain);
+      if (codeRes.data.files.length > 0) touchedDomains.add(domain);
     }
   }
 

@@ -1292,10 +1292,9 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
   });
 });
 
-// --- GET /api/chorus/domain/:domain/code-files ---
-// Lightweight endpoint for domain code files (#2059 — DEC-093 compliance).
-// Returns just the code file list from instances graph — <1s vs crawl's 15s+ full traversal.
-// Used by blast-radius.ts instead of direct Fuseki SPARQL.
+// --- GET /api/chorus/domain/:domain/code-files --- DEPRECATED by #2060
+// Replaced by GET /api/chorus/domain/:name/code (consolidated domain API).
+// Kept temporarily for backwards compatibility — remove after confirming no consumers.
 app.get('/api/chorus/domain/:domain/code-files', async (req: Request, res: Response) => {
   const domain = req.params.domain.toLowerCase();
   const files: string[] = [];
@@ -1315,6 +1314,145 @@ app.get('/api/chorus/domain/:domain/code-files', async (req: Request, res: Respo
   } catch { /* graph query failed */ }
 
   res.json({ domain, files, count: files.length });
+});
+
+// --- Consolidated domain facet API (#2060) ---
+// One endpoint per facet under /api/chorus/domain/:name/.
+// AX = UX: same shape whether rendering for Jeff or briefing a role on /pull.
+
+/** Resolve a domain name to its subdomain ID in the ontology.
+ *  "seeds" → "seeds-domain", "seeds-domain" → "seeds-domain", "tests-service" → "tests-service" */
+async function resolveSubdomainId(name: string): Promise<string> {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('-domain') || lower.endsWith('-service')) return lower;
+  // Try -domain first (most common), then -service
+  const domainId = `${lower}-domain`;
+  const svcId = `${lower}-service`;
+  const checkQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <urn:chorus:ontology> { <https://jeffbridwell.com/chorus#${domainId}> a chorus:SubDomain } }`;
+  try {
+    const result = await athenaSparqlQuery(checkQuery);
+    if (result.boolean) return domainId;
+  } catch { /* fall through */ }
+  return svcId;
+}
+
+const isTestFile = (p: string) => /\/(tests?|__tests__)\//i.test(p) || /\.(test|spec)\./i.test(p) || /\.bats$/i.test(p) || /_test\.rs$/i.test(p) || /\.feature$/i.test(p);
+
+// GET /api/chorus/domain/:name/code — source files for a domain (#2060 AC1)
+app.get('/api/chorus/domain/:name/code', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdId = await resolveSubdomainId(req.params.name);
+    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?file ?label ?filePath ?fileType ?description WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasCodeFile ?file . OPTIONAL { ?file rdfs:label ?label } OPTIONAL { ?file chorus:filePath ?filePath } OPTIONAL { ?file chorus:fileType ?fileType } OPTIONAL { ?file rdfs:comment ?description } } }`;
+    const result = await athenaSparqlQuery(query);
+    const allFiles = result.results.bindings.map((b: any) => ({
+      path: b.filePath?.value || b.label?.value || b.file.value.split('#').pop(),
+      type: b.fileType?.value || path.extname(b.filePath?.value || '').slice(1) || 'unknown',
+      description: b.description?.value || null,
+    }));
+    const source = allFiles.filter((f: any) => !isTestFile(f.path));
+    const byType = source.reduce((acc: Record<string, number>, f: any) => { acc[f.type] = (acc[f.type] || 0) + 1; return acc; }, {});
+    res.json(athenaEnvelope('domain-code', { subdomain: sdId, files: source, byType }, Date.now() - start, { count: allFiles.length, source_count: source.length, test_count: allFiles.length - source.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-code', { subdomain: req.params.name, files: [], byType: {} }, Date.now() - start, { count: 0, source_count: 0, test_count: 0 }));
+  }
+});
+
+// GET /api/chorus/domain/:name/tests — test files covering a domain (#2060 AC2)
+app.get('/api/chorus/domain/:name/tests', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdId = await resolveSubdomainId(req.params.name);
+    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+    // First: test files from code inventory
+    const codeQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?filePath ?fileType WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . OPTIONAL { ?file chorus:fileType ?fileType } } }`;
+    const codeResult = await athenaSparqlQuery(codeQuery);
+    const codeTests = codeResult.results.bindings
+      .filter((b: any) => isTestFile(b.filePath?.value || ''))
+      .map((b: any) => ({ path: b.filePath.value, type: b.fileType?.value || path.extname(b.filePath.value).slice(1) || 'unknown' }));
+    // Second: TestCoverage triples
+    const tcQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:testFile ?testFile ; chorus:testType ?testType ; chorus:covers <${sdUri}> . } } ORDER BY ?testType ?testFile`;
+    const tcResult = await athenaSparqlQuery(tcQuery);
+    const coverageTests = tcResult.results.bindings.map((b: any) => ({ path: b.testFile.value, type: b.testType.value }));
+    // Merge and deduplicate by path
+    const seen = new Set<string>();
+    const tests: Array<{ path: string; type: string }> = [];
+    for (const t of [...codeTests, ...coverageTests]) {
+      if (!seen.has(t.path)) { seen.add(t.path); tests.push(t); }
+    }
+    const byType: Record<string, number> = {};
+    for (const t of tests) { byType[t.type] = (byType[t.type] || 0) + 1; }
+    res.json(athenaEnvelope('domain-tests', { subdomain: sdId, tests, byType }, Date.now() - start, { count: tests.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-tests', { subdomain: req.params.name, tests: [], byType: {} }, Date.now() - start, { count: 0 }));
+  }
+});
+
+// GET /api/chorus/domain/:name/alerts — alert rules for a domain (#2060 AC3)
+app.get('/api/chorus/domain/:name/alerts', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdId = await resolveSubdomainId(req.params.name);
+    const domainLabel = sdId.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    const ALERTS_DIR = path.join(REPO_ROOT, 'proving/domains/alerts');
+    const alertFiles = fs.readdirSync(ALERTS_DIR).filter((f: string) => f.endsWith('.yml'));
+    const alerts: any[] = [];
+    for (const file of alertFiles) {
+      const content = fs.readFileSync(path.join(ALERTS_DIR, file), 'utf-8');
+      const lower = content.toLowerCase();
+      if (lower.includes(domainLabel) || file.toLowerCase().includes(domainLabel)) {
+        const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file.replace('.yml', '');
+        const description = content.match(/^description:\s*(.+)/m)?.[1]?.trim() || '';
+        const severity = content.match(/^severity:\s*(.+)/m)?.[1]?.trim() || 'unknown';
+        const schedule = content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() || '';
+        alerts.push({ file, name, description, severity, schedule });
+      }
+    }
+    res.json(athenaEnvelope('domain-alerts', { subdomain: sdId, domainLabel, alerts }, Date.now() - start, { count: alerts.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-alerts', { subdomain: req.params.name, alerts: [] }, Date.now() - start, { count: 0 }));
+  }
+});
+
+// GET /api/chorus/domain/:name/logs — log sources for a domain (#2060 AC4)
+app.get('/api/chorus/domain/:name/logs', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdId = await resolveSubdomainId(req.params.name);
+    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?log ?label ?logPath ?logType WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasLogSource ?log . OPTIONAL { ?log rdfs:label ?label } OPTIONAL { ?log chorus:logPath ?logPath } OPTIONAL { ?log chorus:logType ?logType } } }`;
+    const result = await athenaSparqlQuery(query);
+    const logs = result.results.bindings.map((b: any) => ({
+      label: b.label?.value || b.log.value.split('#').pop(),
+      path: b.logPath?.value || null,
+      type: b.logType?.value || 'unknown',
+    }));
+    res.json(athenaEnvelope('domain-logs', { subdomain: sdId, logs }, Date.now() - start, { count: logs.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-logs', { subdomain: req.params.name, logs: [] }, Date.now() - start, { count: 0 }));
+  }
+});
+
+// GET /api/chorus/domain/:name/services — API endpoints in a domain (#2060 AC5)
+app.get('/api/chorus/domain/:name/services', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdId = await resolveSubdomainId(req.params.name);
+    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?method ?routePath ?filePath WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasEndpoint ?ep . ?ep a chorus:Endpoint ; chorus:httpMethod ?method ; chorus:routePath ?routePath ; chorus:filePath ?filePath . } } ORDER BY ?method ?routePath`;
+    const result = await athenaSparqlQuery(query);
+    const endpoints = result.results.bindings.map((b: any) => ({
+      method: b.method.value,
+      path: b.routePath.value,
+      handler: b.filePath.value,
+    }));
+    const byMethod: Record<string, number> = {};
+    for (const e of endpoints) { byMethod[e.method] = (byMethod[e.method] || 0) + 1; }
+    res.json(athenaEnvelope('domain-services', { subdomain: sdId, endpoints, byMethod }, Date.now() - start, { count: endpoints.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-services', { subdomain: req.params.name, endpoints: [], byMethod: {} }, Date.now() - start, { count: 0 }));
+  }
 });
 
 /** Check if a date falls in US Eastern Daylight Time */
