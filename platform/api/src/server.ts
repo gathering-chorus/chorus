@@ -1455,6 +1455,91 @@ app.get('/api/chorus/domain/:name/services', async (req: Request, res: Response)
   }
 });
 
+// GET /api/chorus/domain/:name/decisions — DECs + ADRs governing this domain (#2040)
+app.get('/api/chorus/domain/:name/decisions', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const domainName = req.params.name.replace(/-(domain|service|analytics)$/, '').replace(/-/g, '_');
+    const domainUri = `https://jeffbridwell.com/chorus#${domainName}-domain`;
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id ?title ?date ?status ?level ?type WHERE { GRAPH <urn:chorus:decisions> { ?s a chorus:Decision ; rdfs:label ?id ; rdfs:comment ?title ; chorus:decisionDate ?date ; chorus:decisionStatus ?status ; chorus:enforcementLevel ?level ; chorus:decisionType ?type ; chorus:hasDomain <${domainUri}> . } } ORDER BY ?type ?id`;
+    const result = await athenaSparqlQuery(query);
+    const decisions = result.results.bindings.map((b: any) => ({
+      id: b.id.value,
+      title: b.title.value,
+      date: b.date.value,
+      status: b.status.value,
+      enforcement: b.level.value,
+      type: b.type.value,
+    }));
+    const byEnforcement: Record<string, number> = {};
+    for (const d of decisions) { byEnforcement[d.enforcement] = (byEnforcement[d.enforcement] || 0) + 1; }
+    res.json(athenaEnvelope('domain-decisions', { domain: req.params.name, decisions, byEnforcement }, Date.now() - start, { count: decisions.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-decisions', { domain: req.params.name, decisions: [], byEnforcement: {} }, Date.now() - start, { count: 0 }));
+  }
+});
+
+// GET /api/chorus/domain/:name/releases — domain-scoped deploy history (#1910)
+// Git-first: parse ACP commits, match card domain tags, return newest first.
+app.get('/api/chorus/domain/:name/releases', async (req: Request, res: Response) => {
+  const start = Date.now();
+  const domainName = req.params.name.replace(/-(domain|service|analytics)$/, '').toLowerCase();
+  try {
+    const { execSync } = require('child_process');
+    const gitLog = execSync(
+      'git log --oneline --format="%H|%aI|%s"',
+      { cwd: REPO_ROOT, encoding: 'utf-8', timeout: 10000 }
+    );
+    const acpPattern = /^([a-f0-9]+)\|(.+?)\|(\w+): acp #(\d+)(?:.*?)— (.+)$/;
+    const allAcps: Array<{ commit: string; timestamp: string; role: string; cardId: string; title: string }> = [];
+    for (const line of gitLog.split('\n')) {
+      const m = line.match(acpPattern);
+      if (m) {
+        allAcps.push({ commit: m[1].slice(0, 8), timestamp: m[2], role: m[3], cardId: m[4], title: m[5].trim() });
+      }
+    }
+    // Build card→domain index from one cards list call (fast, ~1s)
+    const cardsDomainIndex = new Map<string, string[]>();
+    try {
+      const cardsRaw = execSync(
+        `bash ${REPO_ROOT}/platform/scripts/cards list 2>/dev/null`,
+        { encoding: 'utf-8', timeout: 10000 }
+      );
+      for (const line of cardsRaw.split('\n')) {
+        const idMatch = line.match(/^\s+(\d+)\s/);
+        if (idMatch) {
+          const domains: string[] = [];
+          const domainMatches = line.matchAll(/domain:(\w[\w-]*)/g);
+          for (const dm of domainMatches) domains.push(dm[1]);
+          const seqMatches = line.matchAll(/sequence:(\w[\w-]*)/g);
+          for (const sm of seqMatches) domains.push(sm[1]);
+          if (domains.length > 0) cardsDomainIndex.set(idMatch[1], domains);
+        }
+      }
+    } catch { /* board down — fall back to title matching */ }
+
+    // Filter ACPs by domain using the index
+    const releases: Array<{ cardId: string; title: string; commit: string; timestamp: string; role: string; gates: string }> = [];
+    for (const acp of allAcps) {
+      const cardDomains = cardsDomainIndex.get(acp.cardId);
+      if (cardDomains && cardDomains.includes(domainName)) {
+        releases.push({ ...acp, gates: 'passed' });
+      } else if (!cardDomains && acp.title.toLowerCase().includes(domainName)) {
+        releases.push({ ...acp, gates: 'unknown' });
+      }
+    }
+    res.json(athenaEnvelope('domain-releases', {
+      subdomain: req.params.name,
+      releases,
+    }, Date.now() - start, { count: releases.length, total_acps: allAcps.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-releases', {
+      subdomain: req.params.name,
+      releases: [],
+    }, Date.now() - start, { count: 0 }));
+  }
+});
+
 // GET /api/chorus/domain/:name/dependencies — upstream/downstream + shared infra (#2082)
 app.get('/api/chorus/domain/:name/dependencies', async (req: Request, res: Response) => {
   const start = Date.now();
