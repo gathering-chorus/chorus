@@ -54,10 +54,13 @@ STALE_25H=$((now - 90000))
 STALE_8D=$((now - 691200))
 
 # Skip: stderr-only logs, own log, orphaned logs, agents that don't use stdout
-SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log chorus-api.log chorus-hooks.stdout.log clearing-probe-stdout.log inject-watcher.log"
+SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log chorus-api.log chorus-hooks.stdout.log clearing-probe-stdout.log inject-watcher.log harvest-exporter.log"
 STDERR_LOGS="clearing-probe-stderr.log chorus-bridge.stderr.log chorus-hooks.stderr.log"
+# Persistent daemons — silence is healthy when the process is alive.
+# Format: "logname:launchctl_label" — check PID via launchctl, skip mtime.
+LIVENESS_LOGS="bridge-subscriber-silas.log:com.chorus.bridge-subscriber-silas bridge-subscriber-wren.log:com.chorus.bridge-subscriber-wren bridge-subscriber-kade.log:com.chorus.bridge-subscriber-kade chorus-bridge.log:com.chorus.clearing shim-wrapper.log:com.chorus.hooks"
 # Daily jobs — 25h threshold instead of 2h
-DAILY_LOGS="context-cache-daily.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log"
+DAILY_LOGS="context-cache-daily.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log rsync-backup.log"
 # Weekly / multi-day jobs — 8 day threshold
 WEEKLY_LOGS="context-cache-weekly.log disk-trend.log fuseki-compact.log alert-delivery-test.log cruft-scan.log"
 
@@ -68,6 +71,24 @@ for log in "$LOG_DIR"/*.log; do
   # Skip own log and stderr-only logs
   [[ " $SKIP_LOGS " == *" $name "* ]] && continue
   [[ " $STDERR_LOGS " == *" $name "* ]] && continue
+
+  # Event-driven: check process liveness, not log freshness
+  liveness_match=""
+  for entry in $LIVENESS_LOGS; do
+    lname="${entry%%:*}"
+    llabel="${entry##*:}"
+    if [ "$name" = "$lname" ]; then
+      liveness_match="$llabel"
+      break
+    fi
+  done
+  if [ -n "$liveness_match" ]; then
+    pid=$(launchctl list 2>/dev/null | grep "$liveness_match" | awk '{print $1}')
+    if [ "$pid" = "-" ] || [ -z "$pid" ]; then
+      WARNINGS+=("liveness: $name — process $liveness_match not running")
+    fi
+    continue
+  fi
 
   size=$(stat -f %z "$log" 2>/dev/null || echo 0)
   mtime=$(stat -f %m "$log" 2>/dev/null || echo 0)
