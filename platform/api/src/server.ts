@@ -4395,6 +4395,9 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
     const CHORUS_ROOT = path.resolve(__dirname, '../../..');
     const discovered: Array<{ domainId: string; filePath: string; fileType: string }> = [];
 
+    // Project prefix: paths include the project so consumers know which repo (#2054)
+    const repoName = (repoRoot: string) => repoRoot === GATHERING_ROOT ? 'gathering' : 'chorus';
+
     const scanDir = (dir: string, repoRoot: string) => {
       if (!fs.existsSync(dir)) return;
       const entries = fs.readdirSync(dir, { recursive: true }) as string[];
@@ -4404,18 +4407,18 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
         const fullPath = path.join(dir, entryStr);
         try { if (!fs.statSync(fullPath).isFile()) continue; } catch { continue; }
         const relPath = path.relative(repoRoot, fullPath);
+        const qualifiedPath = `${repoName(repoRoot)}/${relPath}`;
         const basename = path.basename(entryStr).toLowerCase();
 
         const relLower = relPath.toLowerCase();
         const pathParts = relLower.split('/');
         for (const [domainId, aliases] of Object.entries(aliasMap)) {
           for (const alias of aliases) {
-            // Match on filename (handler/service naming) OR on directory path (skills/, alerts/, etc.)
             const nameMatch = basename.includes(alias) || basename.startsWith(alias + '.') || basename.startsWith(alias + '-');
             const pathMatch = pathParts.some(part => part === alias || part === alias + 's');
             if (nameMatch || pathMatch) {
               const ext = path.extname(entryStr).slice(1) || 'unknown';
-              discovered.push({ domainId, filePath: relPath, fileType: ext });
+              discovered.push({ domainId, filePath: qualifiedPath, fileType: ext });
               break;
             }
           }
@@ -4444,8 +4447,9 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
         const fullPath = path.join(fullDir, entryStr);
         try { if (!fs.statSync(fullPath).isFile()) continue; } catch { continue; }
         const relPath = path.relative(CHORUS_ROOT, fullPath);
+        const qualifiedPath = `chorus/${relPath}`;
         const ext = path.extname(entryStr).slice(1) || 'unknown';
-        discovered.push({ domainId, filePath: relPath, fileType: ext });
+        discovered.push({ domainId, filePath: qualifiedPath, fileType: ext });
       }
     }
     scanDir(path.join(CHORUS_ROOT, 'skills'), CHORUS_ROOT);
@@ -4548,6 +4552,7 @@ app.post('/api/athena/discover-tests', async (_req: Request, res: Response) => {
 
     const scanTests = (dir: string, repoRoot: string) => {
       if (!fs.existsSync(dir)) return;
+      const prefix = repoRoot === GATHERING_ROOT ? 'gathering' : 'chorus';
       const entries = fs.readdirSync(dir, { recursive: true }) as string[];
       for (const entry of entries) {
         const entryStr = String(entry);
@@ -4556,10 +4561,11 @@ app.post('/api/athena/discover-tests', async (_req: Request, res: Response) => {
         try { if (!fs.statSync(fullPath).isFile()) continue; } catch { continue; }
         if (!/\.(test|spec)\.(ts|js)$|\.bats$|\.feature$/i.test(entryStr)) continue;
         const relPath = path.relative(repoRoot, fullPath);
+        const qualifiedPath = `${prefix}/${relPath}`;
         const testType = classifyTestType(relPath);
         const coversDomain = inferDomain(relPath);
         if (coversDomain) {
-          testEntries.push({ testFile: relPath, testType, coversDomain });
+          testEntries.push({ testFile: qualifiedPath, testType, coversDomain });
         }
       }
     };
@@ -4644,6 +4650,194 @@ app.get('/api/athena/subdomains/:id/test-coverage', async (req: Request, res: Re
     res.json(athenaEnvelope('subdomain-test-coverage', { subdomain: req.params.id, tests, byType }, Date.now() - start, { count: tests.length }));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('subdomain-test-coverage', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// POST /api/athena/discover-pages — auto-discover UI pages per domain from filesystem (#2065)
+app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    // 1. Get all SubDomains for domain→alias mapping (reuse pattern from discover-code)
+    const sdQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }`;
+    const sdResult = await athenaSparqlQuery(sdQuery);
+    const domains = sdResult.results.bindings.map((b: any) => ({
+      id: b.sd.value.split('#').pop() as string,
+      label: (b.label.value as string).toLowerCase(),
+    }));
+
+    const genericBases = new Set(['services', 'service', 'domains', 'domain', 'code', 'loom', 'time', 'streams', 'stream', 'messages', 'message', 'policies', 'policy']);
+    const aliasToId: Record<string, string> = {};
+    for (const d of domains) {
+      const base = d.id.replace(/-(domain|service)$/, '');
+      if (genericBases.has(base)) continue;
+      aliasToId[base] = d.id;
+      if (base.endsWith('s') && !base.endsWith('ss')) {
+        if (base.endsWith('ies')) aliasToId[base.replace(/ies$/, 'y')] = d.id;
+        else aliasToId[base.replace(/s$/, '')] = d.id;
+      }
+    }
+    aliasToId['blog'] = 'blog-domain';
+    aliasToId['wordpress'] = 'blog-domain';
+    aliasToId['social'] = 'social-domain';
+    aliasToId['socialpost'] = 'social-domain';
+    aliasToId['seed'] = 'seeds-domain';
+    aliasToId['seeds'] = 'seeds-domain';
+    aliasToId['self-ai'] = 'sexuality-domain';
+    aliasToId['ontology'] = 'convergence-domain';
+    aliasToId['chorus'] = 'chorus-domain';
+    aliasToId['werk'] = 'chorus-domain';
+    aliasToId['flow'] = 'chorus-domain';
+    aliasToId['garden'] = 'property-domain';
+    aliasToId['gardening'] = 'property-domain';
+
+    const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
+    const entries: Array<{ route: string; path: string; pageType: string; domainId: string }> = [];
+
+    // 2. Scan EJS views — classify by naming convention
+    const viewsDir = path.join(GATHERING_ROOT, 'views');
+    if (fs.existsSync(viewsDir)) {
+      const viewFiles = fs.readdirSync(viewsDir).filter(f => f.endsWith('.ejs'));
+      for (const file of viewFiles) {
+        const name = file.replace('.ejs', '');
+        let pageType = 'page';
+        let domainId: string | null = null;
+
+        // collection-{domain}.ejs
+        const collectionMatch = name.match(/^collection-(.+?)(-list)?$/);
+        if (collectionMatch) {
+          pageType = 'collection';
+          const alias = collectionMatch[1];
+          domainId = aliasToId[alias] || null;
+        }
+        // {domain}-detail.ejs or {domain}-album.ejs
+        const detailMatch = name.match(/^(.+?)-(detail|album|artist|artists|create)$/);
+        if (!domainId && detailMatch) {
+          pageType = 'detail';
+          domainId = aliasToId[detailMatch[1]] || null;
+        }
+        // admin-{domain}-add.ejs or admin-harvest-{domain}.ejs
+        const adminMatch = name.match(/^admin-(?:harvest-)?(.+?)(?:-add)?$/);
+        if (!domainId && adminMatch) {
+          pageType = 'admin';
+          domainId = aliasToId[adminMatch[1]] || null;
+        }
+        // Direct domain name match or prefix match (e.g., seed-pipeline → seeds-domain)
+        if (!domainId) {
+          domainId = aliasToId[name] || null;
+          if (!domainId) {
+            for (const [alias, did] of Object.entries(aliasToId)) {
+              if (name.startsWith(alias + '-') || name === alias) {
+                domainId = did;
+                break;
+              }
+            }
+          }
+        }
+
+        if (domainId) {
+          const route = pageType === 'collection' ? `/${collectionMatch![1]}` :
+                        pageType === 'detail' ? `/${detailMatch![1]}/:slug` :
+                        pageType === 'admin' ? `/admin/${name.replace('admin-', '')}` :
+                        `/${name}`;
+          entries.push({ route, path: `gathering/views/${file}`, pageType, domainId });
+        }
+      }
+
+      // Ontology views
+      const ontologyDir = path.join(viewsDir, 'ontology-views');
+      if (fs.existsSync(ontologyDir)) {
+        const ontologyFiles = fs.readdirSync(ontologyDir).filter(f => f.endsWith('.ejs'));
+        for (const file of ontologyFiles) {
+          const name = file.replace('.ejs', '');
+          const domainId = aliasToId[name] || null;
+          if (domainId) {
+            entries.push({ route: `/ontology-views/${name}`, path: `gathering/views/ontology-views/${file}`, pageType: 'ontology', domainId });
+          }
+        }
+      }
+    }
+
+    // 3. Scan static HTML — gathering-docs/domain-*.html and service designs
+    const docsDir = path.join(GATHERING_ROOT, 'public/gathering-docs');
+    if (fs.existsSync(docsDir)) {
+      const htmlFiles = fs.readdirSync(docsDir).filter(f => f.endsWith('.html'));
+      for (const file of htmlFiles) {
+        const name = file.replace('.html', '');
+        let domainId: string | null = null;
+        let pageType = 'doc';
+
+        // domain-{domain}.html
+        const domainMatch = name.match(/^domain-(.+)$/);
+        if (domainMatch) {
+          domainId = aliasToId[domainMatch[1]] || null;
+          pageType = 'doc';
+        }
+        // {domain}-service-design.html
+        const serviceMatch = name.match(/^(.+?)-service-design$/);
+        if (!domainId && serviceMatch) {
+          domainId = aliasToId[serviceMatch[1]] || null;
+          pageType = 'service-design';
+        }
+
+        if (domainId) {
+          entries.push({ route: `/gathering-docs/${file}`, path: `gathering/public/gathering-docs/${file}`, pageType, domainId });
+        }
+      }
+    }
+
+    // 4. Clear existing page data and repopulate
+    const clearQuery = `DELETE WHERE { GRAPH <urn:chorus:instances> { ?p a <https://jeffbridwell.com/chorus#Page> ; ?prop ?val . ?sd <https://jeffbridwell.com/chorus#hasPage> ?p . } }`;
+    await athenaSparqlUpdate(clearQuery);
+
+    // 5. Write to graph in batches
+    const batchSize = 50;
+    let written = 0;
+    for (let i = 0; i < entries.length; i += batchSize) {
+      const batch = entries.slice(i, i + batchSize);
+      const triples = batch.map(e => {
+        const pageId = `page-${e.path.replace(/[\/\.]/g, '-').toLowerCase()}`;
+        const pageUri = `https://jeffbridwell.com/chorus#${pageId}`;
+        const sdUri = `https://jeffbridwell.com/chorus#${e.domainId}`;
+        return `<${pageUri}> a chorus:Page ; rdfs:label "${e.route.replace(/"/g, '\\"')}" ; chorus:filePath "${e.path.replace(/"/g, '\\"')}" ; chorus:pageType "${e.pageType}" ; chorus:route "${e.route.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasPage <${pageUri}> .`;
+      }).join('\n');
+      const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} } }`;
+      await athenaSparqlUpdate(insert);
+      written += batch.length;
+    }
+
+    // 6. Summary by domain
+    const byDomain: Record<string, number> = {};
+    for (const e of entries) { byDomain[e.domainId] = (byDomain[e.domainId] || 0) + 1; }
+
+    res.json(athenaEnvelope('discover-pages', {
+      total_pages: entries.length,
+      total_domains: Object.keys(byDomain).length,
+      by_domain: byDomain,
+      entries,
+      written,
+    }, Date.now() - start, { count: entries.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('discover-pages', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// GET /api/athena/subdomains/:id/pages — pages for a domain (#2065)
+app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?route ?filePath ?pageType WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasPage ?page . ?page a chorus:Page ; chorus:route ?route ; chorus:filePath ?filePath ; chorus:pageType ?pageType . } } ORDER BY ?pageType ?route`;
+    const result = await athenaSparqlQuery(query);
+    const pages = result.results.bindings.map((b: any) => ({
+      route: b.route.value,
+      path: b.filePath.value,
+      pageType: b.pageType.value,
+    }));
+    const byType: Record<string, number> = {};
+    for (const p of pages) { byType[p.pageType] = (byType[p.pageType] || 0) + 1; }
+    res.json(athenaEnvelope('subdomain-pages', { subdomain: req.params.id, pages, byType }, Date.now() - start, { count: pages.length }));
+  } catch (err: any) {
+    res.status(500).json(athenaEnvelope('subdomain-pages', { error: err.message }, Date.now() - start, { error: true }));
   }
 });
 
