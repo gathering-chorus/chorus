@@ -835,3 +835,20 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [16:52] [Kade] → Tests sub-domain registered via Athena API (#2054), domain-detail page HTML fix, app deployed for Athena proxy → Jeff
 - [17:55] [Kade] → Jeff clarified sequence: #2019 first → graph pipeline → quality-service reads graph. Stopped building backwards → Jeff
 - [18:05] [Kade] → Gated ~15 cards for Silas and Wren throughout session → Silas, Wren
+
+## 2026-04-15 — Silas (reboot)
+
+- [14:28] [Silas] → Session start after global Claude Code 401 crash + Library Mac reboot. All services recovered via LaunchAgents → Jeff
+- [14:38] [Silas] → Fixed session-health.sh stale path mapping (chorus-silas → chorus-roles-silas) → all roles
+- [14:42] [Silas] → Vikunja token refreshed (long-lived, expires 2027), both .env files updated → all roles
+- [14:48] [Silas] → Chat validation with Wren + Kade: stack confirmed healthy post-reboot → Jeff
+- [14:55] [Silas] → #1908 demo + acp: borg ontology v0.1.0, 7 classes, 7 domains, 3 SHACL shapes → Jeff
+- [15:04] [Silas] → #2074 demo + acp: borg product registration, 5 heralds, 3 surfaces → Jeff
+- [15:12] [Silas] → Paired with Kade on #2060 (domain API consolidation), navigated 5 facet endpoints → Kade
+- [15:35] [Silas] → #1911 demo + acp: pipelines domain, 4 stages, cards CLI label 139 → Jeff
+- [15:39] [Silas] → #2067 AC9: chorus:Document class added to ontology for Wren → Wren
+- [15:49] [Silas] → #2075 carded (app-state.sh Docker bug), #2080 carded (borg→Athena wiring) → board
+- [16:08] [Silas] → #1871 demo + acp: infrastructure graph, 15 environments, 11 engines, domain-scoped usesEnvironment edges → Jeff
+- [16:06] [Silas] → Reviewed client onboarding design with Wren: borg service design fits Steps 3-4, 10 heralds align, OMG KDM added to lineage → Wren
+- [16:17] [Silas] → Added borg:usesEnvironment property + domain→environment edges for Kade's #2080 → Kade
+- [16:23] [Silas] → Gated #2060, #2067, #2080 (arch + ops) for Kade and Wren → Kade, Wren
