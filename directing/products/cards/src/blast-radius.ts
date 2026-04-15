@@ -7,6 +7,7 @@
  */
 
 const APP_BASE = process.env.GATHERING_APP_URL || 'http://localhost:3000';
+const FUSEKI_SPARQL = process.env.FUSEKI_SPARQL_URL || 'http://localhost:3030/pods/sparql';
 
 // Six blast radius dimensions (DEC-072)
 interface BlastDimension {
@@ -89,6 +90,7 @@ export async function generateBlastRadius(
   cardId: number,
   title: string,
   description: string,
+  domain?: string,
 ): Promise<BlastReport | null> {
   const fullText = `${title}\n${description}`;
 
@@ -104,6 +106,29 @@ export async function generateBlastRadius(
   // Step 3: Resolve file paths to graph nodes and walk connections
   const touchedFiles = new Set<string>();
   const touchedDomains = new Set<string>();
+
+  // Step 3a (#2019): If domain tag provided, query Fuseki instances graph for domain code files.
+  // Direct SPARQL is <1s vs crawl API's 15s+ full traversal.
+  if (domain) {
+    try {
+      const domainSuffix = domain.endsWith('-domain') || domain.endsWith('-service') ? domain : `${domain}-domain`;
+      const sparql = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domainSuffix}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
+      const res = await fetch(FUSEKI_SPARQL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/sparql-results+json' },
+        body: `query=${encodeURIComponent(sparql)}`,
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const result = await res.json() as any;
+        const files: string[] = (result.results?.bindings || []).map((b: any) => b.filePath?.value).filter(Boolean);
+        for (const file of files) {
+          touchedFiles.add(file);
+        }
+        if (files.length > 0) touchedDomains.add(domain);
+      }
+    } catch { /* Fuseki query failed — fall through to existing path */ }
+  }
 
   for (const filePath of explicitFiles) {
     // Try exact node lookup first

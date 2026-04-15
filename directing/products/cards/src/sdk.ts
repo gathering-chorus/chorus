@@ -703,8 +703,10 @@ export async function moveCard(
     if (/^wip$/i.test(status)) {
       try {
         const fullText = `${title}\n${card.description || ''}`;
+        const domainLabel = (card.domains || []).find((d: string) => d.startsWith('domain:'));
+        const cardDomain = domainLabel ? domainLabel.replace('domain:', '') : undefined;
         if (isCodeCard(fullText)) {
-          const report = await generateBlastRadius(index, title, card.description || '');
+          const report = await generateBlastRadius(index, title, card.description || '', cardDomain);
           if (report && report.totalFiles === 0) {
             console.error(`ERROR: Blast radius: 0 files on a code card (#${index}).`);
             console.error(`  Add explicit file paths to description (e.g. src/handlers/music.handler.ts)`);
@@ -742,13 +744,15 @@ export async function moveCard(
     catch (err: any) { console.error(`  (workflow: ${err.message || err})`); }
   }
 
-  // Automated blast radius on WIP entry (DEC-072, #1098, DEC-084)
+  // Automated blast radius on WIP entry (DEC-072, #1098, DEC-084, #2019)
   if (/^wip$/i.test(status)) {
     try {
       const card = title ? await client.view(index).catch(() => null) : null;
       const desc = card?.description || '';
       const fullText = `${title}\n${desc}`;
-      const report = await generateBlastRadius(index, title, desc);
+      const domainLabel2 = (card?.domains || []).find((d: string) => d.startsWith('domain:'));
+      const cardDomain2 = domainLabel2 ? domainLabel2.replace('domain:', '') : undefined;
+      const report = await generateBlastRadius(index, title, desc, cardDomain2);
 
       if (report && report.totalFiles > 0) {
         const comment = formatBlastComment(report);
