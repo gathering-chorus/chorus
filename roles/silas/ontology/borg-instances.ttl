@@ -1,0 +1,325 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix borg:     <urn:borg:ontology/> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix inst:     <urn:borg:instances/> .
+
+# =============================================================================
+# Borg Instance Data — Infrastructure on Library Mac
+# =============================================================================
+# Card: #1871
+# Source: LaunchAgent inventory + port scan, 2026-04-15
+# Host: Library (192.168.86.36)
+# =============================================================================
+
+# --- Host ---
+
+inst:library a borg:Host ;
+    borg:hostName "Library" ;
+    borg:hostIP "192.168.86.36" ;
+    borg:hostProvider "home-cloud" .
+
+inst:bedroom a borg:Host ;
+    borg:hostName "Bedroom" ;
+    borg:hostIP "192.168.86.242" ;
+    borg:hostProvider "home-cloud" .
+
+# =============================================================================
+# ENGINES — what technology
+# =============================================================================
+
+inst:engine-fuseki a borg:Engine ;
+    borg:engineName "Apache Jena Fuseki" ;
+    borg:engineVersion "5.1.0" ;
+    borg:engineType "graph-db" ;
+    borg:configLanguage "ttl" .
+
+inst:engine-nodejs a borg:Engine ;
+    borg:engineName "Node.js" ;
+    borg:engineVersion "20.11.1" ;
+    borg:engineType "app-runtime" ;
+    borg:configLanguage "json" .
+
+inst:engine-mysql a borg:Engine ;
+    borg:engineName "MySQL" ;
+    borg:engineVersion "8.0" ;
+    borg:engineType "relational" ;
+    borg:configLanguage "ini" .
+
+inst:engine-prometheus a borg:Engine ;
+    borg:engineName "Prometheus" ;
+    borg:engineVersion "2.51" ;
+    borg:engineType "metrics" ;
+    borg:configLanguage "yaml" .
+
+inst:engine-grafana a borg:Engine ;
+    borg:engineName "Grafana" ;
+    borg:engineVersion "10.4" ;
+    borg:engineType "dashboards" ;
+    borg:configLanguage "ini" .
+
+inst:engine-loki a borg:Engine ;
+    borg:engineName "Loki" ;
+    borg:engineVersion "2.9" ;
+    borg:engineType "logs" ;
+    borg:configLanguage "yaml" .
+
+inst:engine-promtail a borg:Engine ;
+    borg:engineName "Promtail" ;
+    borg:engineVersion "2.9" ;
+    borg:engineType "logs" ;
+    borg:configLanguage "yaml" .
+
+inst:engine-vikunja a borg:Engine ;
+    borg:engineName "Vikunja" ;
+    borg:engineVersion "1.1.0" ;
+    borg:engineType "app-runtime" ;
+    borg:configLanguage "env" .
+
+inst:engine-wordpress a borg:Engine ;
+    borg:engineName "WordPress" ;
+    borg:engineVersion "6.x" ;
+    borg:engineType "blog" ;
+    borg:configLanguage "env" .
+
+inst:engine-alertmanager a borg:Engine ;
+    borg:engineName "Alertmanager" ;
+    borg:engineVersion "0.27" ;
+    borg:engineType "metrics" ;
+    borg:configLanguage "yaml" .
+
+inst:engine-sqlite a borg:Engine ;
+    borg:engineName "SQLite" ;
+    borg:engineVersion "3.x" ;
+    borg:engineType "relational" ;
+    borg:configLanguage "sql" .
+
+# =============================================================================
+# ENVIRONMENTS — running instances on Library
+# =============================================================================
+
+inst:fuseki-library a borg:Environment ;
+    borg:environmentName "fuseki-library" ;
+    borg:instanceOf inst:engine-fuseki ;
+    borg:port 3030 ;
+    borg:host "Library" ;
+    borg:healthEndpoint "http://localhost:3030/$/ping" ;
+    borg:heapSize "2G" ;
+    borg:configPath "/Users/jeffbridwell/bin/fuseki/run/configuration/pods.ttl" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:gathering-app a borg:Environment ;
+    borg:environmentName "gathering-app" ;
+    borg:instanceOf inst:engine-nodejs ;
+    borg:port 3000 ;
+    borg:host "Library" ;
+    borg:healthEndpoint "http://localhost:3000" ;
+    borg:configPath "/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/package.json" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:chorus-api a borg:Environment ;
+    borg:environmentName "chorus-api" ;
+    borg:instanceOf inst:engine-nodejs ;
+    borg:port 3340 ;
+    borg:host "Library" ;
+    borg:healthEndpoint "http://localhost:3340/api/chorus/health" ;
+    borg:configPath "/Users/jeffbridwell/CascadeProjects/chorus/platform/api/package.json" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:mysql-library a borg:Environment ;
+    borg:environmentName "mysql-library" ;
+    borg:instanceOf inst:engine-mysql ;
+    borg:port 3306 ;
+    borg:host "Library" ;
+    borg:configPath "/opt/homebrew/etc/my.cnf" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:prometheus-library a borg:Environment ;
+    borg:environmentName "prometheus-library" ;
+    borg:instanceOf inst:engine-prometheus ;
+    borg:port 9090 ;
+    borg:host "Library" ;
+    borg:healthEndpoint "http://localhost:9090/-/ready" ;
+    borg:configPath "/opt/homebrew/etc/prometheus.yml" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:grafana-library a borg:Environment ;
+    borg:environmentName "grafana-library" ;
+    borg:instanceOf inst:engine-grafana ;
+    borg:port 3100 ;
+    borg:host "Library" ;
+    borg:healthEndpoint "http://localhost:3100/api/health" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:loki-library a borg:Environment ;
+    borg:environmentName "loki-library" ;
+    borg:instanceOf inst:engine-loki ;
+    borg:port 3102 ;
+    borg:host "Library" ;
+    borg:healthEndpoint "http://localhost:3102/ready" ;
+    borg:configPath "/opt/homebrew/etc/loki-config.yaml" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:promtail-library a borg:Environment ;
+    borg:environmentName "promtail-library" ;
+    borg:instanceOf inst:engine-promtail ;
+    borg:host "Library" ;
+    borg:configPath "/opt/homebrew/etc/promtail-config.yaml" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:vikunja-library a borg:Environment ;
+    borg:environmentName "vikunja-library" ;
+    borg:instanceOf inst:engine-vikunja ;
+    borg:port 3456 ;
+    borg:host "Library" ;
+    borg:healthEndpoint "http://localhost:3456/api/v1/info" ;
+    borg:configPath "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/vikunja-wrapper.sh" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:messaging-library a borg:Environment ;
+    borg:environmentName "messaging-library" ;
+    borg:instanceOf inst:engine-nodejs ;
+    borg:port 3470 ;
+    borg:host "Library" ;
+    borg:healthEndpoint "http://localhost:3470" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:alertmanager-library a borg:Environment ;
+    borg:environmentName "alertmanager-library" ;
+    borg:instanceOf inst:engine-alertmanager ;
+    borg:port 9093 ;
+    borg:host "Library" ;
+    borg:healthEndpoint "http://localhost:9093" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:wordpress-library a borg:Environment ;
+    borg:environmentName "wordpress-library" ;
+    borg:instanceOf inst:engine-wordpress ;
+    borg:port 8080 ;
+    borg:host "Library" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:clearing-library a borg:Environment ;
+    borg:environmentName "clearing-library" ;
+    borg:instanceOf inst:engine-nodejs ;
+    borg:port 3475 ;
+    borg:host "Library" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:chorus-index a borg:Environment ;
+    borg:environmentName "chorus-index" ;
+    borg:instanceOf inst:engine-sqlite ;
+    borg:host "Library" ;
+    borg:configPath "/Users/jeffbridwell/.chorus/index.db" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+inst:vikunja-db a borg:Environment ;
+    borg:environmentName "vikunja-db" ;
+    borg:instanceOf inst:engine-sqlite ;
+    borg:host "Library" ;
+    borg:configPath "/Users/jeffbridwell/.chorus/vikunja/db/vikunja.db" ;
+    borg:serviceType "launchagent" ;
+    borg:environmentStatus "running" ;
+    borg:runsOn inst:library .
+
+# =============================================================================
+# DEPENDENCIES — what depends on what
+# =============================================================================
+
+# App depends on Fuseki (ontology queries), MySQL (WordPress data), Chorus API
+inst:gathering-app borg:dependsOn inst:fuseki-library .
+inst:gathering-app borg:dependsOn inst:mysql-library .
+inst:gathering-app borg:dependsOn inst:chorus-api .
+
+# Chorus API depends on Fuseki (SPARQL), chorus-index (search)
+inst:chorus-api borg:dependsOn inst:fuseki-library .
+inst:chorus-api borg:dependsOn inst:chorus-index .
+
+# Grafana depends on Prometheus (metrics), Loki (logs)
+inst:grafana-library borg:dependsOn inst:prometheus-library .
+inst:grafana-library borg:dependsOn inst:loki-library .
+
+# Promtail ships to Loki
+inst:promtail-library borg:dependsOn inst:loki-library .
+
+# Alertmanager depends on Prometheus (alert rules)
+inst:alertmanager-library borg:dependsOn inst:prometheus-library .
+
+# Vikunja depends on its SQLite DB
+inst:vikunja-library borg:dependsOn inst:vikunja-db .
+
+# WordPress depends on MySQL
+inst:wordpress-library borg:dependsOn inst:mysql-library .
+
+# Messaging depends on Chorus API (message routing)
+inst:messaging-library borg:dependsOn inst:chorus-api .
+
+# Clearing depends on messaging (delivery)
+inst:clearing-library borg:dependsOn inst:messaging-library .
+
+# =============================================================================
+# DOMAIN → ENVIRONMENT EDGES — which domains use which services
+# =============================================================================
+
+# Chorus domain — coordination infrastructure
+chorus:chorus-domain borg:usesEnvironment inst:chorus-api, inst:messaging-library,
+    inst:clearing-library, inst:vikunja-library, inst:chorus-index .
+
+# Infrastructure domain — the engines themselves
+chorus:infrastructure-domain borg:usesEnvironment inst:fuseki-library, inst:mysql-library,
+    inst:prometheus-library, inst:grafana-library, inst:loki-library,
+    inst:promtail-library, inst:alertmanager-library .
+
+# Observability domain — monitoring stack
+chorus:observability-domain borg:usesEnvironment inst:prometheus-library, inst:grafana-library,
+    inst:loki-library, inst:promtail-library, inst:alertmanager-library .
+
+# Seeds domain — app + fuseki + chorus-api
+chorus:seeds-domain borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:chorus-api .
+
+# Photos domain
+chorus:photos-domain borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:mysql-library .
+
+# Music domain
+chorus:music-domain borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:mysql-library .
+
+# Blog domain
+chorus:blog-domain borg:usesEnvironment inst:wordpress-library, inst:mysql-library .
+
+# Search domain
+chorus:search-domain borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:chorus-index .
+
+# Cards domain
+chorus:cards-service borg:usesEnvironment inst:vikunja-library, inst:vikunja-db .
+
+# Alerts domain
+chorus:alerts-monitors-domain borg:usesEnvironment inst:prometheus-library, inst:alertmanager-library, inst:grafana-library .

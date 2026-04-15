@@ -185,6 +185,12 @@ borg:usesResource a owl:ObjectProperty ;
     rdfs:domain chorus:SubDomain ;
     rdfs:range borg:Resource .
 
+borg:usesEnvironment a owl:ObjectProperty ;
+    rdfs:label "uses environment" ;
+    rdfs:comment "This domain depends on this running service. Shown on domain-detail page Infrastructure section." ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range borg:Environment .
+
 # =============================================================================
 # 2. ALERTS & MONITORS — Coverage Scoring
 # =============================================================================

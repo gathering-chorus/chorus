@@ -3,6 +3,7 @@
 @prefix owl:      <http://www.w3.org/2002/07/owl#> .
 @prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
 @prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
 @prefix chorus:   <https://jeffbridwell.com/chorus#> .
 
 # =============================================================================
@@ -519,6 +520,61 @@ chorus:gapSeverity a owl:DatatypeProperty ;
     rdfs:label "severity" ;
     rdfs:comment "blocking, important, or nice-to-have." ;
     rdfs:domain chorus:Gap .
+
+# --- Documents (#2067) ---
+
+chorus:Document a owl:Class ;
+    rdfs:label "Document" ;
+    rdfs:comment "A doc-catalog entry — service design, ADR, research note, artifact. Tagged by product, value stream step, domain, and role. All tags are 1:N." .
+
+chorus:docHref a owl:DatatypeProperty ;
+    rdfs:label "href" ;
+    rdfs:comment "URL or path to the document." ;
+    rdfs:domain chorus:Document ;
+    rdfs:range xsd:string .
+
+chorus:docTitle a owl:DatatypeProperty ;
+    rdfs:label "title" ;
+    rdfs:domain chorus:Document ;
+    rdfs:range xsd:string .
+
+chorus:hasProduct a owl:ObjectProperty ;
+    rdfs:label "has product" ;
+    rdfs:comment "This document relates to this product. 1:N — a doc can span Gathering, Chorus, and Borg." ;
+    rdfs:domain chorus:Document ;
+    rdfs:range chorus:Product .
+
+chorus:hasValueStreamStep a owl:ObjectProperty ;
+    rdfs:label "has value stream step" ;
+    rdfs:comment "This document relates to this value stream stage. 1:N — a service design spans designing + building." ;
+    rdfs:domain chorus:Document ;
+    rdfs:range chorus:Vertebra .
+
+chorus:hasDomain a owl:ObjectProperty ;
+    rdfs:label "has domain" ;
+    rdfs:comment "This document relates to this domain. 1:N — a cross-cutting doc may tag multiple domains." ;
+    rdfs:domain chorus:Document ;
+    rdfs:range chorus:SubDomain .
+
+chorus:hasOwner a owl:ObjectProperty ;
+    rdfs:label "has owner" ;
+    rdfs:comment "This document is owned/authored by this role. 1:N — collaborative docs have multiple owners." ;
+    rdfs:domain chorus:Document ;
+    rdfs:range chorus:Role .
+
+# SHACL: every Document must have at least one domain tag
+chorus:DocumentShape a sh:NodeShape ;
+    sh:targetClass chorus:Document ;
+    sh:property [
+        sh:path chorus:hasDomain ;
+        sh:minCount 1 ;
+        sh:class chorus:SubDomain ;
+    ] ;
+    sh:property [
+        sh:path chorus:docTitle ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
 
 # =============================================================================
 # 2d. SERVICES (from product ontology)
