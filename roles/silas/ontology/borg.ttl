@@ -294,7 +294,44 @@ borg:endpointBinding a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 # =============================================================================
-# 5. SHACL SHAPES — Validation
+# 5. SURFACES — Three infrastructure perspectives
+# =============================================================================
+# Jeff's framing: compute (services, processes), storage (databases, volumes),
+# network (ports, tunnels, routes). Each surface has its own herald pattern.
+
+borg:Surface a owl:Class ;
+    rdfs:label "Surface" ;
+    rdfs:comment "An infrastructure perspective. Three surfaces: compute, storage, network. Each has entities, heralds, and failure modes." .
+
+borg:computeSurface a borg:Surface ;
+    rdfs:label "Compute" ;
+    rdfs:comment "Services, processes, runtimes. Entities: Host, Environment. What's running and where." .
+
+borg:storageSurface a borg:Surface ;
+    rdfs:label "Storage" ;
+    rdfs:comment "Databases, volumes, named graphs, tables. Entities: Resource. What data exists and how big." .
+
+borg:networkSurface a borg:Surface ;
+    rdfs:label "Network" ;
+    rdfs:comment "Ports, tunnels, routes, bindings. Entities: NetworkEndpoint. How things connect." .
+
+borg:belongsToSurface a owl:ObjectProperty ;
+    rdfs:label "belongs to surface" ;
+    rdfs:domain owl:Thing ;
+    rdfs:range borg:Surface .
+
+# Host and Environment are compute surface entities
+borg:Host borg:belongsToSurface borg:computeSurface .
+borg:Environment borg:belongsToSurface borg:computeSurface .
+
+# Resource is storage surface
+borg:Resource borg:belongsToSurface borg:storageSurface .
+
+# NetworkEndpoint is network surface
+borg:NetworkEndpoint borg:belongsToSurface borg:networkSurface .
+
+# =============================================================================
+# 6. SHACL SHAPES — Validation
 # =============================================================================
 
 borg:EngineShape a sh:NodeShape ;

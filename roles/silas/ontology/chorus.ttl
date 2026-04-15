@@ -655,7 +655,41 @@ chorus:chorusProduct a chorus:Product ;
 
 chorus:borgProduct a chorus:Product ;
     rdfs:label "Borg" ;
-    rdfs:comment "Reflection — the system sees itself. Heralds discover structure, the graph assimilates it. Peer product alongside Gathering and Chorus. Owner: Silas. PM: Wren." .
+    rdfs:comment "Reflection — the system sees itself. Heralds discover structure, the graph assimilates it. Peer product alongside Gathering and Chorus. Owner: Silas. PM: Wren." ;
+    chorus:ownedBy chorus:silas .
+
+# --- Borg Features (discover heralds) ---
+# Each herald scans a surface and writes to the instances graph.
+
+chorus:discover-code a chorus:SubProduct ;
+    rdfs:label "Discover Code" ;
+    rdfs:comment "Herald: scans filesystem, classifies source files by domain. 331 files across 28 domains. POST /api/athena/discover-code." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:discover-tests a chorus:SubProduct ;
+    rdfs:label "Discover Tests" ;
+    rdfs:comment "Herald: maps test files to the domains they cover. 98 tests across 23 domains. POST /api/athena/discover-tests." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:discover-pages a chorus:SubProduct ;
+    rdfs:label "Discover Pages" ;
+    rdfs:comment "Herald: scans EJS views, classifies UI pages by domain. 63 pages across 17 domains. POST /api/athena/discover-pages." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:discover-endpoints a chorus:SubProduct ;
+    rdfs:label "Discover Endpoints" ;
+    rdfs:comment "Herald: parses app.ts route registrations, classifies API endpoints by domain. 342 across 27 domains. POST /api/athena/discover-endpoints." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:discover-services a chorus:SubProduct ;
+    rdfs:label "Discover Services" ;
+    rdfs:comment "Herald (planned): scans LaunchAgent plists and service configs, discovers running environments. Writes borg:Environment instances. POST /api/athena/discover-services." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:belongsTo chorus:borgProduct .
 
 # --- Service Designs ---
 
@@ -1188,6 +1222,10 @@ chorus:chorusProduct chorus:hasSubProduct chorus:loom, chorus:cards-product, cho
                                          chorus:convergence-product, chorus:operating-model-product,
                                          chorus:actor-bdd-product, chorus:athena-product,
                                          chorus:pulse-domain .
+
+chorus:borgProduct chorus:hasSubProduct chorus:discover-code, chorus:discover-tests,
+                                       chorus:discover-pages, chorus:discover-endpoints,
+                                       chorus:discover-services .
 
 # --- Product → ServiceDesign ---
 
