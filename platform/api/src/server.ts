@@ -1292,6 +1292,31 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
   });
 });
 
+// --- GET /api/chorus/domain/:domain/code-files ---
+// Lightweight endpoint for domain code files (#2059 — DEC-093 compliance).
+// Returns just the code file list from instances graph — <1s vs crawl's 15s+ full traversal.
+// Used by blast-radius.ts instead of direct Fuseki SPARQL.
+app.get('/api/chorus/domain/:domain/code-files', async (req: Request, res: Response) => {
+  const domain = req.params.domain.toLowerCase();
+  const files: string[] = [];
+
+  try {
+    const domainSuffix = domain.endsWith('-domain') || domain.endsWith('-service') ? domain : `${domain}-domain`;
+    const codeQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domainSuffix}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
+    const codeResult = await athenaSparqlQuery(codeQuery);
+    files.push(...codeResult.results.bindings.map((b: any) => b.filePath.value));
+
+    // Also try -service suffix if no results
+    if (files.length === 0 && !domain.endsWith('-service')) {
+      const svcQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domain}-service> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
+      const svcResult = await athenaSparqlQuery(svcQuery);
+      files.push(...svcResult.results.bindings.map((b: any) => b.filePath.value));
+    }
+  } catch { /* graph query failed */ }
+
+  res.json({ domain, files, count: files.length });
+});
+
 /** Check if a date falls in US Eastern Daylight Time */
 function isEDT(dateStr: string): boolean {
   // Approximate: EDT is second Sunday of March to first Sunday of November

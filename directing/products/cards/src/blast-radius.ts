@@ -7,7 +7,7 @@
  */
 
 const APP_BASE = process.env.GATHERING_APP_URL || 'http://localhost:3000';
-const FUSEKI_SPARQL = process.env.FUSEKI_SPARQL_URL || 'http://localhost:3030/pods/sparql';
+const CHORUS_API = process.env.CHORUS_API || 'http://localhost:3340';
 
 // Six blast radius dimensions (DEC-072)
 interface BlastDimension {
@@ -107,27 +107,18 @@ export async function generateBlastRadius(
   const touchedFiles = new Set<string>();
   const touchedDomains = new Set<string>();
 
-  // Step 3a (#2019): If domain tag provided, query Fuseki instances graph for domain code files.
-  // Direct SPARQL is <1s vs crawl API's 15s+ full traversal.
+  // Step 3a (#2019, #2059): If domain tag provided, query Chorus API for domain code files.
+  // Uses lightweight /api/chorus/domain/:domain/code-files endpoint (DEC-093 compliant).
   if (domain) {
-    try {
-      const domainSuffix = domain.endsWith('-domain') || domain.endsWith('-service') ? domain : `${domain}-domain`;
-      const sparql = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domainSuffix}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
-      const res = await fetch(FUSEKI_SPARQL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/sparql-results+json' },
-        body: `query=${encodeURIComponent(sparql)}`,
-        signal: AbortSignal.timeout(5000),
-      });
-      if (res.ok) {
-        const result = await res.json() as any;
-        const files: string[] = (result.results?.bindings || []).map((b: any) => b.filePath?.value).filter(Boolean);
-        for (const file of files) {
-          touchedFiles.add(file);
-        }
-        if (files.length > 0) touchedDomains.add(domain);
+    const codeFiles = await fetchJson(
+      `${CHORUS_API}/api/chorus/domain/${encodeURIComponent(domain)}/code-files`
+    );
+    if (codeFiles?.files) {
+      for (const file of codeFiles.files) {
+        touchedFiles.add(file);
       }
-    } catch { /* Fuseki query failed — fall through to existing path */ }
+      if (codeFiles.files.length > 0) touchedDomains.add(domain);
+    }
   }
 
   for (const filePath of explicitFiles) {

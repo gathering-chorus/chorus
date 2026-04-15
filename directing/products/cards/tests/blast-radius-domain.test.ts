@@ -1,9 +1,8 @@
 /**
- * Blast radius from domain data — #2019
+ * Blast radius from domain data — #2019, #2059
  *
- * When a card has a domain tag, blast radius queries Fuseki's instances
- * graph for code files and test files in that domain — not just
- * regex-extracted paths from card text.
+ * When a card has a domain tag, blast radius queries the Chorus API
+ * code-files endpoint for domain code files — DEC-093 compliant.
  *
  * Tests use mocked fetch to avoid hitting live APIs.
  */
@@ -16,32 +15,11 @@ import {
 // Mock global fetch
 const originalFetch = global.fetch;
 
-// Helper: build SPARQL results JSON from a list of file paths
-function sparqlFileResults(files: string[]) {
-  return {
-    results: {
-      bindings: files.map(f => ({ filePath: { value: f } })),
-    },
-  };
-}
-
 function mockFetch(responses: Record<string, any>) {
-  global.fetch = jest.fn(async (url: any, opts?: any) => {
+  global.fetch = jest.fn(async (url: any) => {
     const urlStr = String(url);
-    // SPARQL POST: match by URL pattern, decode the query body to check domain
-    if (urlStr.includes('/pods/sparql') && opts?.body) {
-      const body = String(opts.body);
-      for (const [pattern, result] of Object.entries(responses)) {
-        if (pattern.startsWith('sparql:') && body.includes(pattern.replace('sparql:', ''))) {
-          return { ok: true, json: async () => result } as Response;
-        }
-      }
-      // No matching SPARQL pattern — return empty results
-      return { ok: true, json: async () => sparqlFileResults([]) } as Response;
-    }
-    // GET requests: match by URL substring
     for (const [pattern, body] of Object.entries(responses)) {
-      if (!pattern.startsWith('sparql:') && urlStr.includes(pattern)) {
+      if (urlStr.includes(pattern)) {
         return { ok: true, json: async () => body } as Response;
       }
     }
@@ -53,15 +31,16 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-describe('Blast radius from domain data (#2019)', () => {
+describe('Blast radius from domain data (#2019, #2059)', () => {
 
-  test('AC1: queries Fuseki instances graph for domain code files', async () => {
+  test('AC1: queries Chorus API code-files endpoint for domain files', async () => {
     mockFetch({
       '/api/codebase/topology': { domains: {} },
-      'sparql:seeds-domain': sparqlFileResults([
-        'src/handlers/seed.handler.ts',
-        'src/services/seed-capture.service.ts',
-      ]),
+      '/api/chorus/domain/seeds/code-files': {
+        domain: 'seeds',
+        files: ['src/handlers/seed.handler.ts', 'src/services/seed-capture.service.ts'],
+        count: 2,
+      },
     });
 
     const report = await generateBlastRadius(
@@ -74,20 +53,24 @@ describe('Blast radius from domain data (#2019)', () => {
     expect(report).not.toBeNull();
     expect(report!.totalFiles).toBeGreaterThan(0);
 
-    // Verify Fuseki SPARQL was called (POST to /pods/sparql)
-    const calls = (global.fetch as jest.Mock).mock.calls;
-    const sparqlCalls = calls.filter(c => String(c[0]).includes('/pods/sparql'));
-    expect(sparqlCalls.length).toBeGreaterThan(0);
+    // Verify Chorus API was called (not direct Fuseki)
+    const calls = (global.fetch as jest.Mock).mock.calls.map(c => String(c[0]));
+    expect(calls.some(u => u.includes('/api/chorus/domain/seeds/code-files'))).toBe(true);
+    expect(calls.some(u => u.includes('/pods/sparql'))).toBe(false);
   });
 
-  test('AC2: includes test files from domain graph', async () => {
+  test('AC2: includes test files from domain', async () => {
     mockFetch({
       '/api/codebase/topology': { domains: {} },
-      'sparql:seeds-domain': sparqlFileResults([
-        'src/handlers/seed.handler.ts',
-        'tests/unit/handlers/seed.handler.test.ts',
-        'tests/integration/seed-pipeline-flow.test.ts',
-      ]),
+      '/api/chorus/domain/seeds/code-files': {
+        domain: 'seeds',
+        files: [
+          'src/handlers/seed.handler.ts',
+          'tests/unit/handlers/seed.handler.test.ts',
+          'tests/integration/seed-pipeline-flow.test.ts',
+        ],
+        count: 3,
+      },
     });
 
     const report = await generateBlastRadius(
@@ -106,12 +89,16 @@ describe('Blast radius from domain data (#2019)', () => {
   test('AC3: output shows file count, test count, and lists files', async () => {
     mockFetch({
       '/api/codebase/topology': { domains: {} },
-      'sparql:seeds-domain': sparqlFileResults([
-        'src/handlers/seed.handler.ts',
-        'src/services/seed-capture.service.ts',
-        'tests/unit/handlers/seed.handler.test.ts',
-        'tests/integration/seed-pipeline-flow.test.ts',
-      ]),
+      '/api/chorus/domain/seeds/code-files': {
+        domain: 'seeds',
+        files: [
+          'src/handlers/seed.handler.ts',
+          'src/services/seed-capture.service.ts',
+          'tests/unit/handlers/seed.handler.test.ts',
+          'tests/integration/seed-pipeline-flow.test.ts',
+        ],
+        count: 4,
+      },
     });
 
     const report = await generateBlastRadius(
@@ -124,27 +111,29 @@ describe('Blast radius from domain data (#2019)', () => {
     expect(report).not.toBeNull();
     expect(report!.totalFiles).toBe(4);
 
-    // Format and check output includes files and counts
     const comment = formatBlastComment(report!);
     expect(comment).toMatch(/4 files/);
     expect(comment).toMatch(/seed\.handler\.ts/);
   });
 
   test('AC4: auto-generates from domain tag — no manual file listing needed', async () => {
-    // Card has NO file paths in description — blast radius comes entirely from Fuseki
     mockFetch({
       '/api/codebase/topology': { domains: {} },
-      'sparql:seeds-domain': sparqlFileResults([
-        'src/handlers/seed.handler.ts',
-        'src/services/seed-capture.service.ts',
-        'platform/scripts/seed-probe.sh',
-      ]),
+      '/api/chorus/domain/seeds/code-files': {
+        domain: 'seeds',
+        files: [
+          'src/handlers/seed.handler.ts',
+          'src/services/seed-capture.service.ts',
+          'platform/scripts/seed-probe.sh',
+        ],
+        count: 3,
+      },
     });
 
     const report = await generateBlastRadius(
       2019,
       'Fix seed routing',
-      'Seeds should route correctly',  // no file paths
+      'Seeds should route correctly',
       'seeds',
     );
 
@@ -167,7 +156,6 @@ describe('Blast radius from domain data (#2019)', () => {
       },
     });
 
-    // No domain param — should use existing file-path extraction from card text
     const report = await generateBlastRadius(
       100,
       'Fix seed handler',
@@ -177,15 +165,13 @@ describe('Blast radius from domain data (#2019)', () => {
     expect(report).not.toBeNull();
     expect(report!.totalFiles).toBeGreaterThan(0);
 
-    // Should NOT have called Fuseki SPARQL for domain files
-    const calls = (global.fetch as jest.Mock).mock.calls;
-    const sparqlCalls = calls.filter(c => String(c[0]).includes('/pods/sparql'));
-    expect(sparqlCalls.length).toBe(0);
+    // Should NOT have called code-files endpoint
+    const calls = (global.fetch as jest.Mock).mock.calls.map(c => String(c[0]));
+    expect(calls.some(u => u.includes('/code-files'))).toBe(false);
   });
 
-  test('Fuseki failure falls back to existing behavior', async () => {
-    // Fuseki SPARQL will return ok:false (no sparql: pattern matched, default empty)
-    // but the card text has extractable file paths
+  test('code-files API failure falls back to existing behavior', async () => {
+    // code-files endpoint returns ok:false, card text has extractable paths
     mockFetch({
       '/api/codebase/topology': { domains: { seeds: {} } },
       '/api/codebase/node/src%2Fhandlers%2Fseed.handler.ts': {
@@ -205,7 +191,6 @@ describe('Blast radius from domain data (#2019)', () => {
       'seeds',
     );
 
-    // Should still work via existing regex path extraction
     expect(report).not.toBeNull();
     expect(report!.totalFiles).toBeGreaterThan(0);
   });
