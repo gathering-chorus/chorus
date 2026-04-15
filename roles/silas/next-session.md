@@ -1,32 +1,33 @@
 # Silas — Next Session
 
-## What happened
-Post-crash recovery + 4 borg ontology cards shipped + infrastructure graph populated. Strongest ontology session yet — borg has vocabulary, product registration, surfaces, pipelines, and 15 live environments in the graph.
+## What happened (2026-04-15)
+6 cards shipped, graph substantially cleaned. Domain population pass across deploys, observability, logs. Graph hygiene collapsed 11 redundant nodes, dropped 1,825-triple legacy graph. ADR corpus refreshed — 4 retired, 4 authored. C4 diagrams match reality. 23 new integration tests.
 
-## Shipped (4 cards + 1 AC contribution)
-- **#1908** — Borg ontology v0.1.0: Engine→Environment→Resource, 7 classes, 7 domains, 3 SHACL shapes
-- **#2074** — Borg product registration: 5 heralds as SubProducts, 3 surfaces (compute/storage/network)
-- **#1911** — Pipelines domain: 4 stages, consumption edges, cards CLI label 139
-- **#1871** — Infrastructure graph: 15 environments, 11 engines, 2 hosts, 13 deps, usesEnvironment edges
-- **#2067 AC9** — chorus:Document class (6 properties, SHACL shape) for Wren
+## Shipped (6 cards)
+- **#1873** — Deploys graph: 3 deploy targets (gathering, chorus-api, launchagents), pipelines, rollback, health checks
+- **#2083** — Logs facet: 29 Promtail streams mapped, domain query predicate fix
+- **#1963** — Observability domain: 9 services, 5 integrations, 3 persistence, 3 gaps. Collapsed observability-product → domain. Reparented children.
+- **#2085** — Graph hygiene: 11 nodes collapsed, heralds-domain created, old chorus-product graph dropped (1,825 triples)
+- **#2087** — ADR+C4 refresh: ADR-019 (native services), ADR-020 (product-vs-domain), ADR-021 (enforcement model), ADR-022 (graph hygiene rules). C4 L1+L2 redrawn.
+- **#2088** — Gathering domain logs: 16 domains populated with log sources
+
+## Gate reviews
+- gate:arch + gate:ops for Kade #2082 (dependencies facet), #1910 (release history)
+- gate:arch for Wren #2040 (decisions in Fuseki), #2086 + #1875 (skills + gates)
+
+## Ontology changes
+- 3 new predicates: dependsOn, enforcedBy, enforcementLevel
+- tests-service SubDomain triple added to ontology
+- gates-service, roles-domain ownership → Wren
+- heralds-domain created under Borg (5 discover scanners as service instances)
 
 ## Ops fixed
-- session-health.sh path mapping (chorus-silas → chorus-roles-silas)
-- Vikunja token refreshed (long-lived, expires ~2027)
-- Docker no longer part of stack — app-state.sh bug carded (#2075)
+- standards-surface path bug (REPO_ROOT double-nested, 3 days silent failure)
+- Old urn:gathering:ontology:chorus-product graph dropped (ghost nodes in viz)
+- Old observability-product SubProduct deleted
 
-## Sequence — next cards
-Agreed with Wren: **#1873** (Deploys) → **#1875** (Gates) → **#1963** (Observability)
-
-## Open threads
-- **#2080** — Kade wired borg→Athena /infra endpoint same session (gated, may be accepted)
-- **#2075** — app-state.sh Docker removal (my card, Later)
-- **5 more heralds** to register when domain cards come (toolchain, storage, network, alerts, security)
-- **Bedroom services** not yet in borg-instances.ttl
-- **Wren's pipeline note** — needs 5th stage (test) between pre-push and deploy for #1910
-- **Client onboarding design** reviewed — borg fits Steps 3-4, OMG KDM added to lineage
-
-## Technical notes for next session
-- Fuseki graph load: use DELETE+POST, not PUT (PUT truncates large files)
-- Kade needs borg:environmentName (not rdfs:label) and FROM <urn:borg:instances>
-- Vikunja password: vikunja2026!
+## Next up
+- **#1772** Namespace convergence — analysis done (30.9M triples, 5 patterns), parked at Next
+- **#2089** Behavioral drift detection — carded for Wren/Loom
+- ADR-012 open concern: native services still bind 0.0.0.0
+- observability-service child of observability-domain — Jeff flagged as potentially redundant
