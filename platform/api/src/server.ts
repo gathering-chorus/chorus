@@ -1479,6 +1479,87 @@ app.get('/api/chorus/domain/:name/decisions', async (req: Request, res: Response
   }
 });
 
+// GET /api/chorus/domain/:name/radius — outward neighborhood walk (#2028)
+app.get('/api/chorus/domain/:name/radius', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdId = await resolveSubdomainId(req.params.name);
+    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+    // Walk outward: what does this domain touch?
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX borg: <urn:borg:ontology/>
+SELECT ?target ?label ?relationship ?direction WHERE {
+  {
+    GRAPH <urn:chorus:ontology> {
+      { ?parent chorus:hasDomain <${sdUri}> . ?parent rdfs:label ?label . BIND("hasDomain" AS ?relationship) BIND("parent" AS ?direction) BIND(?parent AS ?target) }
+      UNION { <${sdUri}> chorus:consumes ?target . OPTIONAL { ?target rdfs:label ?label } BIND("consumes" AS ?relationship) BIND("outbound" AS ?direction) }
+      UNION { ?target chorus:consumes <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("consumedBy" AS ?relationship) BIND("inbound" AS ?direction) }
+      UNION { ?parent chorus:contains <${sdUri}> . ?parent rdfs:label ?label . BIND("containedBy" AS ?relationship) BIND("parent" AS ?direction) BIND(?parent AS ?target) }
+    }
+  } UNION {
+    GRAPH <urn:borg:instances> {
+      { <${sdUri}> borg:usesEnvironment ?env . ?env borg:environmentName ?label . BIND("usesEnvironment" AS ?relationship) BIND("outbound" AS ?direction) BIND(?env AS ?target) }
+    }
+  }
+}`;
+    const result = await athenaSparqlQuery(query);
+    const edges = result.results.bindings.map((b: any) => ({
+      target: b.label?.value || b.target.value.split('#').pop() || '',
+      targetUri: b.target.value,
+      relationship: b.relationship.value,
+      direction: b.direction.value,
+    }));
+    res.json(athenaEnvelope('domain-radius', { subdomain: sdId, edges }, Date.now() - start, { count: edges.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-radius', { subdomain: req.params.name, edges: [] }, Date.now() - start, { count: 0 }));
+  }
+});
+
+// GET /api/chorus/domain/:name/blast-radius — inward impact walk (#2028)
+app.get('/api/chorus/domain/:name/blast-radius', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdId = await resolveSubdomainId(req.params.name);
+    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+    // Walk inward: what breaks if this domain goes down?
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX borg: <urn:borg:ontology/>
+SELECT ?target ?label ?relationship ?direction WHERE {
+  {
+    GRAPH <urn:chorus:ontology> {
+      { ?target chorus:consumes <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("consumes" AS ?relationship) BIND("dependent" AS ?direction) }
+      UNION { ?target chorus:hasDomain <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("ownerProduct" AS ?relationship) BIND("parent" AS ?direction) }
+      UNION { ?target chorus:contains <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("containedBy" AS ?relationship) BIND("parent" AS ?direction) }
+    }
+  } UNION {
+    GRAPH <urn:borg:instances> {
+      { ?otherDomain borg:usesEnvironment ?env . <${sdUri}> borg:usesEnvironment ?env . ?env borg:environmentName ?envName . FILTER(?otherDomain != <${sdUri}>) OPTIONAL { GRAPH <urn:chorus:ontology> { ?otherDomain rdfs:label ?label } } BIND("sharedInfra" AS ?relationship) BIND("co-dependent" AS ?direction) BIND(?otherDomain AS ?target) }
+    }
+  }
+}`;
+    const result = await athenaSparqlQuery(query);
+    const seen = new Set<string>();
+    const edges: any[] = [];
+    for (const b of result.results.bindings) {
+      const key = `${b.target.value}|${b.relationship.value}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        edges.push({
+          target: b.label?.value || b.target.value.split('#').pop() || '',
+          targetUri: b.target.value,
+          relationship: b.relationship.value,
+          direction: b.direction.value,
+        });
+      }
+    }
+    res.json(athenaEnvelope('domain-blast-radius', { subdomain: sdId, edges }, Date.now() - start, { count: edges.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-blast-radius', { subdomain: req.params.name, edges: [] }, Date.now() - start, { count: 0 }));
+  }
+});
+
 // GET /api/chorus/domain/:name/releases — domain-scoped deploy history (#1910)
 // Git-first: parse ACP commits, match card domain tags, return newest first.
 app.get('/api/chorus/domain/:name/releases', async (req: Request, res: Response) => {
