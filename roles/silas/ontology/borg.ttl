@@ -1,0 +1,342 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix borg:     <urn:borg:ontology/> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+
+# =============================================================================
+# Borg Ontology v0.1.0 — Reflection Product
+# =============================================================================
+#
+# The system sees itself. Borg reflects on everything it can reach — its own
+# code, its infrastructure, its health, its security posture.
+#
+# Three-layer entity model:
+#   Engine      — what technology (Fuseki 5.1.0, Node.js, Docker, Prometheus)
+#   Environment — where it runs (fuseki-pods on Library, port 3030, 2G heap)
+#   Resource    — what's inside (urn:chorus:ontology named graph, wp_posts table)
+#
+# Heralds discover structure. The graph stores topology. Time-series systems
+# measure telemetry. The graph knows WHERE to look, not WHAT it found.
+#
+# Model is provider-agnostic: no plistPath, no dockerImage. Implementation
+# details belong to the herald, not the model.
+#
+# Prior art:
+#   - Good Borg (Wren, March 2026): convergence, instrumentation, self-awareness
+#   - Borg Assimilation Pattern (Silas, March 2026): observe → assimilate → adapt → regenerate
+#   - Borg Mitosis (Wren, March 2026): Gathering → Chorus → Borg → Akasha
+#   - Emergent Evolutionary Architecture (Wren, March 2026): architecture emerges, then becomes observable
+#   - US Patent 9,552,400 B2 (Bridwell): RDF/OWL + SPARQL + workflow gates
+#
+# Service design: observability-service-design.html (2026-04-15)
+# Card: #1908
+# Version: 0.1.0
+# Date: 2026-04-15
+# =============================================================================
+
+borg: a owl:Ontology ;
+    owl:versionInfo "0.1.0" ;
+    dcterms:title "Borg — Reflection Ontology" ;
+    dcterms:description "The system sees itself. Engine → Environment → Resource hierarchy for infrastructure reflection. Provider-agnostic model with herald-based discovery." ;
+    dcterms:created "2026-04-15"^^xsd:date ;
+    rdfs:comment "v0.1.0: initial release. Engine, Environment, Resource classes. Monitor and AlertRule for coverage scoring. Seven domains registered." .
+
+# =============================================================================
+# 1. CORE ENTITY HIERARCHY: Engine → Environment → Resource
+# =============================================================================
+
+borg:Engine a owl:Class ;
+    rdfs:label "Engine" ;
+    rdfs:comment "A technology the system uses. Provider-agnostic — the model knows 'graph database,' not 'Fuseki.' Each engine may have multiple environments (instances) across hosts." .
+
+borg:engineName a owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:domain borg:Engine ;
+    rdfs:range xsd:string .
+
+borg:engineVersion a owl:DatatypeProperty ;
+    rdfs:label "version" ;
+    rdfs:domain borg:Engine ;
+    rdfs:range xsd:string .
+
+borg:engineType a owl:DatatypeProperty ;
+    rdfs:label "engine type" ;
+    rdfs:comment "Category: graph-db, relational, document-store, vector-db, container-runtime, metrics, logs, dashboards, app-runtime, data-pipeline, llm-inference, streaming, blog, tunnel." ;
+    rdfs:domain borg:Engine ;
+    rdfs:range xsd:string .
+
+borg:configLanguage a owl:DatatypeProperty ;
+    rdfs:label "config language" ;
+    rdfs:comment "How this engine is configured: yaml, xml-plist, toml, json, ini, sql, env." ;
+    rdfs:domain borg:Engine ;
+    rdfs:range xsd:string .
+
+# --- Environment: a running instance of an engine on a host ---
+
+borg:Environment a owl:Class ;
+    rdfs:label "Environment" ;
+    rdfs:comment "A running instance of an engine on a specific host. Has port, config, health endpoint. The 'where' to the engine's 'what.'" .
+
+borg:instanceOf a owl:ObjectProperty ;
+    rdfs:label "instance of" ;
+    rdfs:comment "This environment runs this engine." ;
+    rdfs:domain borg:Environment ;
+    rdfs:range borg:Engine .
+
+borg:environmentName a owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:domain borg:Environment ;
+    rdfs:range xsd:string .
+
+borg:port a owl:DatatypeProperty ;
+    rdfs:label "port" ;
+    rdfs:domain borg:Environment ;
+    rdfs:range xsd:integer .
+
+borg:host a owl:DatatypeProperty ;
+    rdfs:label "host" ;
+    rdfs:comment "Machine name or IP: Library, Bedroom, 192.168.86.36, etc." ;
+    rdfs:domain borg:Environment ;
+    rdfs:range xsd:string .
+
+borg:healthEndpoint a owl:DatatypeProperty ;
+    rdfs:label "health endpoint" ;
+    rdfs:comment "URL to check liveness. The graph stores WHERE to look, not WHAT it found." ;
+    rdfs:domain borg:Environment ;
+    rdfs:range xsd:string .
+
+borg:heapSize a owl:DatatypeProperty ;
+    rdfs:label "heap size" ;
+    rdfs:comment "Allocated memory, e.g. '2G'." ;
+    rdfs:domain borg:Environment ;
+    rdfs:range xsd:string .
+
+borg:configPath a owl:DatatypeProperty ;
+    rdfs:label "config path" ;
+    rdfs:comment "Path to this environment's config file." ;
+    rdfs:domain borg:Environment ;
+    rdfs:range xsd:string .
+
+borg:environmentStatus a owl:DatatypeProperty ;
+    rdfs:label "status" ;
+    rdfs:comment "Declared status: running, stopped, degraded, unknown." ;
+    rdfs:domain borg:Environment ;
+    rdfs:range xsd:string .
+
+borg:serviceType a owl:DatatypeProperty ;
+    rdfs:label "service type" ;
+    rdfs:comment "How this environment is managed: launchagent, docker, cron, manual." ;
+    rdfs:domain borg:Environment ;
+    rdfs:range xsd:string .
+
+# --- Dependencies between environments ---
+
+borg:dependsOn a owl:ObjectProperty ;
+    rdfs:label "depends on" ;
+    rdfs:comment "This environment requires that environment to function. Transitive: if A depends on B and B depends on C, A depends on C." ;
+    rdfs:domain borg:Environment ;
+    rdfs:range borg:Environment ;
+    a owl:TransitiveProperty .
+
+# --- Resource: what's inside an environment ---
+
+borg:Resource a owl:Class ;
+    rdfs:label "Resource" ;
+    rdfs:comment "A data resource inside an environment — named graph, database, table, collection, volume. The finest granularity of the entity model." .
+
+borg:servedBy a owl:ObjectProperty ;
+    rdfs:label "served by" ;
+    rdfs:comment "This resource is hosted in this environment." ;
+    rdfs:domain borg:Resource ;
+    rdfs:range borg:Environment .
+
+borg:resourceName a owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:domain borg:Resource ;
+    rdfs:range xsd:string .
+
+borg:resourceType a owl:DatatypeProperty ;
+    rdfs:label "resource type" ;
+    rdfs:comment "Kind: named-graph, database, table, collection, volume, log-directory." ;
+    rdfs:domain borg:Resource ;
+    rdfs:range xsd:string .
+
+borg:resourceSize a owl:DatatypeProperty ;
+    rdfs:label "size" ;
+    rdfs:comment "Data size as string, e.g. '13GB', '464MB'." ;
+    rdfs:domain borg:Resource ;
+    rdfs:range xsd:string .
+
+borg:resourceURI a owl:DatatypeProperty ;
+    rdfs:label "resource URI" ;
+    rdfs:comment "Canonical identifier, e.g. 'urn:chorus:ontology' for a named graph." ;
+    rdfs:domain borg:Resource ;
+    rdfs:range xsd:anyURI .
+
+# --- SubDomain → Resource link (replaces flat Persistence section) ---
+
+borg:usesResource a owl:ObjectProperty ;
+    rdfs:label "uses resource" ;
+    rdfs:comment "This domain depends on this data resource. Shown on domain-detail page Persistence section." ;
+    rdfs:domain chorus:SubDomain ;
+    rdfs:range borg:Resource .
+
+# =============================================================================
+# 2. ALERTS & MONITORS — Coverage Scoring
+# =============================================================================
+
+borg:Monitor a owl:Class ;
+    rdfs:label "Monitor" ;
+    rdfs:comment "Something that watches an environment — Prometheus scrape, deep-health check, Promtail stream, blackbox probe." .
+
+borg:monitorName a owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:domain borg:Monitor ;
+    rdfs:range xsd:string .
+
+borg:monitorType a owl:DatatypeProperty ;
+    rdfs:label "monitor type" ;
+    rdfs:comment "Kind: prometheus-scrape, deep-health-check, promtail-stream, blackbox-probe, cron-check." ;
+    rdfs:domain borg:Monitor ;
+    rdfs:range xsd:string .
+
+borg:monitors a owl:ObjectProperty ;
+    rdfs:label "monitors" ;
+    rdfs:comment "This monitor watches this environment." ;
+    rdfs:domain borg:Monitor ;
+    rdfs:range borg:Environment .
+
+borg:AlertRule a owl:Class ;
+    rdfs:label "Alert Rule" ;
+    rdfs:comment "A rule that fires when a monitor detects a problem. Maps to a monitor and a delivery path." .
+
+borg:alertName a owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:domain borg:AlertRule ;
+    rdfs:range xsd:string .
+
+borg:alertSeverity a owl:DatatypeProperty ;
+    rdfs:label "severity" ;
+    rdfs:comment "critical, warning, info." ;
+    rdfs:domain borg:AlertRule ;
+    rdfs:range xsd:string .
+
+borg:triggeredBy a owl:ObjectProperty ;
+    rdfs:label "triggered by" ;
+    rdfs:comment "This alert fires when this monitor detects a condition." ;
+    rdfs:domain borg:AlertRule ;
+    rdfs:range borg:Monitor .
+
+borg:alertDelivery a owl:DatatypeProperty ;
+    rdfs:label "delivery" ;
+    rdfs:comment "How the alert reaches someone: nudge, slack, email, alertmanager." ;
+    rdfs:domain borg:AlertRule ;
+    rdfs:range xsd:string .
+
+# =============================================================================
+# 3. HOST
+# =============================================================================
+
+borg:Host a owl:Class ;
+    rdfs:label "Host" ;
+    rdfs:comment "A machine in the compute surface. Today: Library and Bedroom. Tomorrow: any provider." .
+
+borg:hostName a owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:domain borg:Host ;
+    rdfs:range xsd:string .
+
+borg:hostIP a owl:DatatypeProperty ;
+    rdfs:label "IP address" ;
+    rdfs:domain borg:Host ;
+    rdfs:range xsd:string .
+
+borg:hostProvider a owl:DatatypeProperty ;
+    rdfs:label "provider" ;
+    rdfs:comment "home-cloud, aws, azure, gcp, etc." ;
+    rdfs:domain borg:Host ;
+    rdfs:range xsd:string .
+
+borg:runsOn a owl:ObjectProperty ;
+    rdfs:label "runs on" ;
+    rdfs:comment "This environment runs on this host." ;
+    rdfs:domain borg:Environment ;
+    rdfs:range borg:Host .
+
+# =============================================================================
+# 4. NETWORK ENDPOINT
+# =============================================================================
+
+borg:NetworkEndpoint a owl:Class ;
+    rdfs:label "Network Endpoint" ;
+    rdfs:comment "A network route — port binding, tunnel, LAN connection." .
+
+borg:endpointPort a owl:DatatypeProperty ;
+    rdfs:domain borg:NetworkEndpoint ;
+    rdfs:range xsd:integer .
+
+borg:endpointProtocol a owl:DatatypeProperty ;
+    rdfs:comment "tcp, udp, ssh-tunnel, cloudflare-tunnel." ;
+    rdfs:domain borg:NetworkEndpoint ;
+    rdfs:range xsd:string .
+
+borg:endpointHost a owl:DatatypeProperty ;
+    rdfs:domain borg:NetworkEndpoint ;
+    rdfs:range xsd:string .
+
+borg:endpointBinding a owl:DatatypeProperty ;
+    rdfs:comment "127.0.0.1 (local only) or 0.0.0.0 (all interfaces)." ;
+    rdfs:domain borg:NetworkEndpoint ;
+    rdfs:range xsd:string .
+
+# =============================================================================
+# 5. SHACL SHAPES — Validation
+# =============================================================================
+
+borg:EngineShape a sh:NodeShape ;
+    sh:targetClass borg:Engine ;
+    sh:property [
+        sh:path borg:engineName ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path borg:engineVersion ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path borg:engineType ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
+
+borg:EnvironmentShape a sh:NodeShape ;
+    sh:targetClass borg:Environment ;
+    sh:property [
+        sh:path borg:instanceOf ;
+        sh:minCount 1 ;
+        sh:class borg:Engine ;
+    ] ;
+    sh:property [
+        sh:path borg:environmentName ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
+
+borg:ResourceShape a sh:NodeShape ;
+    sh:targetClass borg:Resource ;
+    sh:property [
+        sh:path borg:servedBy ;
+        sh:minCount 1 ;
+        sh:class borg:Environment ;
+    ] ;
+    sh:property [
+        sh:path borg:resourceName ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .

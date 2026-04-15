@@ -653,6 +653,10 @@ chorus:chorusProduct a chorus:Product ;
     rdfs:label "Chorus (Product)" ;
     rdfs:comment "The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system." .
 
+chorus:borgProduct a chorus:Product ;
+    rdfs:label "Borg" ;
+    rdfs:comment "Reflection — the system sees itself. Heralds discover structure, the graph assimilates it. Peer product alongside Gathering and Chorus. Owner: Silas. PM: Wren." .
+
 # --- Service Designs ---
 
 chorus:gathering-service-design a chorus:ServiceDesign ;
@@ -690,8 +694,60 @@ chorus:werk-product a chorus:SubProduct ;
 
 chorus:observability-product a chorus:SubProduct ;
     rdfs:label "Observability (Product)" ;
-    rdfs:comment "Monitoring, dashboards, alerts, logs, deploys. The ability to see what's happening." ;
+    rdfs:comment "Cross-cutting health lens — the capability that prevents breaking at speed. Now a Borg domain, retained here for backward compatibility." ;
     chorus:ownedBy chorus:silas .
+
+# --- Borg Domains (7) — registered under borgProduct ---
+# Five layers + two cross-cutting capabilities. See observability-service-design.html.
+
+chorus:toolchain-domain a chorus:SubDomain ;
+    rdfs:label "Toolchain" ;
+    rdfs:comment "Engines the system uses — Fuseki, Node, Docker, Prometheus, MySQL, NiFi, Ollama. Versions, configs, known issues." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Operating ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:infrastructure-domain a chorus:SubDomain ;
+    rdfs:label "Infrastructure" ;
+    rdfs:comment "Where engines run. Three surfaces: compute (services, processes), storage (databases, volumes), network (ports, tunnels, routes). Today: home cloud." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Operating ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:commits-domain a chorus:SubDomain ;
+    rdfs:label "Commits" ;
+    rdfs:comment "How code gets versioned. git-queue.sh, pre-commit hooks, WIP gate, write-scrubber, commit lock, push/rebase flow." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Building ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:deploys-domain a chorus:SubDomain ;
+    rdfs:label "Deploys" ;
+    rdfs:comment "How code gets running. app-state.sh, bind mounts vs full deploys, rollback paths, freeze rules, deploy targets." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Operating ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:alerts-monitors-domain a chorus:SubDomain ;
+    rdfs:label "Alerts & Monitors" ;
+    rdfs:comment "What's watched and what fires. Alert coverage is to failure modes what test coverage is to code paths. Upward and downward dependency coverage." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:observability-domain a chorus:SubDomain ;
+    rdfs:label "Observability" ;
+    rdfs:comment "Cross-cutting: can we see what's happening? Aggregated health lens across all layers. Metrics, logs, dashboards, instrumentation." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:security-domain a chorus:SubDomain ;
+    rdfs:label "Security" ;
+    rdfs:comment "Cross-cutting: can someone else break it? Auth, ports, CVEs, permission models, write-scrubber. Coverage scoring for risk." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:belongsTo chorus:borgProduct .
 
 chorus:convergence-product a chorus:SubProduct ;
     rdfs:label "Convergence" ;

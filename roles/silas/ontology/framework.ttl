@@ -40,11 +40,13 @@ fw: a owl:Ontology ;
 # via owl:equivalentClass, others are new bridge concepts.
 # =============================================================================
 
-# --- Service: bridge to both borg:Service and chorus:Service ---
+# --- Service: bridge to both borg:Environment and chorus:Service ---
+# borg:Service (legacy) is now borg:Environment in borg.ttl v0.1.0.
+# fw:Service bridges the old and new models.
 fw:Service a owl:Class ;
-    owl:equivalentClass borg:Service, chorus:Service ;
+    owl:equivalentClass borg:Environment, chorus:Service ;
     rdfs:label "Service" ;
-    rdfs:comment "A managed service in the infrastructure. Bridges borg topology and chorus coordination into the framework. Has a port, a host, a lifecycle, and dependencies." .
+    rdfs:comment "A running service instance. Bridges borg:Environment (engine instance on a host) and chorus:Service (runtime component in coordination). The engine → environment → resource hierarchy lives in borg.ttl." .
 
 # --- Domain: bridge to chorus:Domain ---
 fw:Domain a owl:Class ;

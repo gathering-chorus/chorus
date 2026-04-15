@@ -35,13 +35,15 @@ fi
 
 # Map role to project directory
 case "$ROLE" in
-  silas) PROJECT_SUFFIX="chorus-silas" ;;
-  wren) PROJECT_SUFFIX="chorus-wren" ;;
-  kade) PROJECT_SUFFIX="chorus-kade" ;;
+  silas|wren|kade) ;; # valid roles
   *) echo "Unknown role: $ROLE" >&2; exit 1 ;;
 esac
 
-PROJECT_DIR=$(find "$SESSIONS_DIR" -maxdepth 1 -name "*$PROJECT_SUFFIX" -type d 2>/dev/null | head -1)
+# Try current layout first (chorus-roles-<role>), fall back to legacy paths
+PROJECT_DIR=$(find "$SESSIONS_DIR" -maxdepth 1 -type d \( \
+  -name "*chorus-roles-$ROLE" -o \
+  -name "*chorus-$ROLE" \
+\) 2>/dev/null | head -1)
 if [ -z "$PROJECT_DIR" ] || [ ! -d "$PROJECT_DIR" ]; then
   echo "No project directory found for $ROLE" >&2; exit 1
 fi
