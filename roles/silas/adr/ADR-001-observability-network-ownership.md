@@ -1,7 +1,7 @@
 # ADR-001: Observability Network Ownership Model
 
 **Date**: 2026-02-13
-**Status**: Accepted
+**Status**: Superseded by ADR-019 (Native Service Architecture) — Docker infrastructure removed 2026-03
 **Deciders**: Jeff Bridwell
 
 ## Context

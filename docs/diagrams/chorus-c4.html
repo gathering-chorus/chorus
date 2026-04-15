@@ -20,7 +20,7 @@
 <body>
 
 <h1>Chorus — C4 Architecture</h1>
-<p class="subtitle">Coordination protocol for the Gathering team. Generated from source code, 2026-04-13.</p>
+<p class="subtitle">Coordination protocol for the Gathering team. Updated 2026-04-15. All services native LaunchAgents (ADR-019).</p>
 
 <div class="nav">
   <a href="#context">L1: Context</a>
@@ -42,14 +42,17 @@ C4Context
 
     System(chorus, "Chorus", "Coordination protocol for multi-role AI team. Hooks, context search, messaging, alerting, gates, board ops.")
 
-    Boundary(b1, "External Systems") {
+    Boundary(b_internal, "Internal Services — Library Mac (native LaunchAgents)") {
+        System(fuseki, "Apache Fuseki :3030", "RDF triple store — SPARQL queries, ontology, harvest data")
+        System(vikunja, "Vikunja :3456", "Kanban board — card CRUD")
+        System(gathering_app, "Gathering App :3000", "Express app — domain pages, API, smoke tests")
+        System(grafana_stack, "Observability Stack", "Grafana :3100, Prometheus :9090, Loki :3102, Alertmanager :9093, Promtail :9080")
+    }
+
+    Boundary(b_external, "External Systems") {
         System_Ext(anthropic, "Anthropic Claude API", "Powers AI role sessions")
         System_Ext(cloudflare, "Cloudflare Tunnel", "Remote HTTPS ingress to Clearing")
-        System_Ext(fuseki, "Apache Fuseki", "RDF triple store — SPARQL queries")
-        System_Ext(vikunja, "Vikunja", "Kanban board — card CRUD")
-        System_Ext(gathering_app, "Gathering App", "Smoke tests and health checks")
-        System_Ext(bedroom, "Bedroom Mac", "Ollama embeddings, NiFi, media APIs")
-        System_Ext(grafana_stack, "Observability Stack", "Grafana, Prometheus, Alertmanager, Loki")
+        System_Ext(bedroom, "Bedroom Mac", "Promtail, Navidrome, Images API, node-exporter")
     }
 
     Rel(jeff, chorus, "Chat via Clearing, demo review, card acceptance")
@@ -59,11 +62,11 @@ C4Context
 
     Rel(chorus, anthropic, "AI role inference")
     Rel(chorus, cloudflare, "Remote access tunnel")
-    Rel(chorus, fuseki, "SPARQL queries")
-    Rel(chorus, vikunja, "Card CRUD")
-    Rel(chorus, gathering_app, "Health and smoke checks")
-    Rel(chorus, bedroom, "Embedding inference, log shipping")
-    Rel(chorus, grafana_stack, "Metrics, logs, alerts")
+    Rel(chorus, fuseki, "SPARQL queries — ontology, domain data, completeness")
+    Rel(chorus, vikunja, "Card CRUD via Cards CLI")
+    Rel(chorus, gathering_app, "Health checks, domain pages, doc-catalog")
+    Rel(chorus, bedroom, "Log shipping, health checks via SSH")
+    Rel(chorus, grafana_stack, "Metrics, logs, alerts, dashboards")
 
     UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")
   </pre>
@@ -79,13 +82,13 @@ C4Container
     Person(jeff, "Jeff", "System owner")
     Person(roles, "AI Roles", "Silas, Wren, Kade — Claude Code sessions")
 
-    System_Ext(fuseki, "Fuseki :3030", "RDF triple store")
-    System_Ext(vikunja, "Vikunja :3456", "Kanban board")
-    System_Ext(bedroom, "Bedroom Mac", "Ollama :11434, NiFi :8443")
+    System(fuseki, "Fuseki :3030", "RDF triple store — native Java LaunchAgent")
+    System(vikunja, "Vikunja :3456", "Kanban board — native LaunchAgent")
+    System(loki, "Loki :3102", "Log aggregation — native LaunchAgent")
+    System(prometheus, "Prometheus :9090", "Metrics — native LaunchAgent")
+    System(alertmanager, "Alertmanager :9093", "Alert routing — native LaunchAgent")
+    System_Ext(bedroom, "Bedroom Mac", "Promtail, Navidrome, Images API, node-exporter")
     System_Ext(cloudflare, "Cloudflare Tunnel", "HTTPS ingress")
-    System_Ext(loki, "Loki :3102", "Log aggregation")
-    System_Ext(prometheus, "Prometheus :9090", "Metrics")
-    System_Ext(alertmanager, "Alertmanager :9093", "Alert routing")
 
     Container_Boundary(chorus, "Chorus") {
 
@@ -152,7 +155,7 @@ C4Container
     Rel(deep_health, shim, "Nudge silas on failure")
     Rel(deep_health, loki, "Log freshness queries")
     Rel(embed_worker, api, "POST /api/chorus/embed batches")
-    Rel(embed_worker, bedroom, "Ollama embedding inference")
+    Rel(embed_worker, api, "Ollama embedding via localhost:11434")
   </pre>
 </div>
 

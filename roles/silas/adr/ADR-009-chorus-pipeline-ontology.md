@@ -1,7 +1,7 @@
 # ADR-009: Chorus Pipeline Ontology
 
 **Date**: 2026-02-19
-**Status**: Accepted (Wren approved 2026-02-18)
+**Status**: Deferred — accepted but not shipped. Pipeline ontology concept partially realized via Athena subdomain graph and skill/gate enforcement model (ADR-021)
 **Decider**: Wren (product), Silas (architecture)
 **References**: DEC-019 (Chorus naming), DEC-023 (Chorus pipeline as operating model), US9552400B2 (Bridwell patent — RDF/OWL + SPARQL + workflow gates)
 

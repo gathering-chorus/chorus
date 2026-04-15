@@ -8,27 +8,30 @@ C4Context
 
     System(chorus, "Chorus", "Coordination protocol for multi-role AI team. Hooks, context search, messaging, alerting, gates, board ops.")
 
-    Boundary(b1, "External Systems") {
-        System_Ext(anthropic, "Anthropic Claude API", "Powers AI role sessions")
-        System_Ext(cloudflare, "Cloudflare Tunnel", "Remote HTTPS ingress to Clearing")
-        System_Ext(fuseki, "Apache Fuseki", "RDF triple store — SPARQL queries")
-        System_Ext(vikunja, "Vikunja", "Kanban board — card CRUD")
-        System_Ext(gathering_app, "Gathering App", "Smoke tests and health checks")
-        System_Ext(bedroom, "Bedroom Mac", "Ollama embeddings, NiFi, media APIs")
-        System_Ext(grafana_stack, "Observability Stack", "Grafana, Prometheus, Alertmanager, Loki")
+    Boundary(b_internal, "Internal Services — Library Mac (native LaunchAgents)") {
+        System(fuseki, "Apache Fuseki :3030", "RDF triple store — SPARQL queries, ontology, harvest data")
+        System(vikunja, "Vikunja :3456", "Kanban board — card CRUD")
+        System(gathering_app, "Gathering App :3000", "Express app — domain pages, API, smoke tests")
+        System(grafana_stack, "Observability Stack", "Grafana :3100, Prometheus :9090, Loki :3102, Alertmanager :9093, Promtail :9080")
     }
 
-    Rel(jeff, chorus, "Chat, demo review, card acceptance")
-    Rel(silas, chorus, "Gates, search, spine events, board ops")
-    Rel(wren, chorus, "Gates, search, spine events, board ops")
-    Rel(kade, chorus, "Gates, search, spine events, board ops")
+    Boundary(b_external, "External Systems") {
+        System_Ext(anthropic, "Anthropic Claude API", "Powers AI role sessions")
+        System_Ext(cloudflare, "Cloudflare Tunnel", "Remote HTTPS ingress to Clearing")
+        System_Ext(bedroom, "Bedroom Mac", "Promtail, Navidrome, Images API, node-exporter")
+    }
+
+    Rel(jeff, chorus, "Chat via Clearing, demo review, card acceptance")
+    Rel(silas, chorus, "Infrastructure, ops gates, architecture review")
+    Rel(wren, chorus, "Coordination, product gates, board sequencing")
+    Rel(kade, chorus, "Code, quality gates, build pipeline")
 
     Rel(chorus, anthropic, "AI role inference")
     Rel(chorus, cloudflare, "Remote access tunnel")
-    Rel(chorus, fuseki, "SPARQL queries")
-    Rel(chorus, vikunja, "Card CRUD")
-    Rel(chorus, gathering_app, "Health and smoke checks")
-    Rel(chorus, bedroom, "Embedding inference, log shipping")
-    Rel(chorus, grafana_stack, "Metrics, logs, alerts")
+    Rel(chorus, fuseki, "SPARQL queries — ontology, domain data, completeness")
+    Rel(chorus, vikunja, "Card CRUD via Cards CLI")
+    Rel(chorus, gathering_app, "Health checks, domain pages, doc-catalog")
+    Rel(chorus, bedroom, "Log shipping, health checks via SSH")
+    Rel(chorus, grafana_stack, "Metrics, logs, alerts, dashboards")
 
     UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")

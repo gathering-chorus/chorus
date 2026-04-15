@@ -4,13 +4,13 @@ C4Container
     Person(jeff, "Jeff", "System owner")
     Person(roles, "AI Roles", "Silas, Wren, Kade — Claude Code sessions")
 
-    System_Ext(fuseki, "Fuseki :3030", "RDF triple store")
-    System_Ext(vikunja, "Vikunja :3456", "Kanban board")
-    System_Ext(bedroom, "Bedroom Mac", "Ollama :11434, NiFi :8443")
+    System(fuseki, "Fuseki :3030", "RDF triple store — native Java LaunchAgent")
+    System(vikunja, "Vikunja :3456", "Kanban board — native LaunchAgent")
+    System(loki, "Loki :3102", "Log aggregation — native LaunchAgent")
+    System(prometheus, "Prometheus :9090", "Metrics — native LaunchAgent")
+    System(alertmanager, "Alertmanager :9093", "Alert routing — native LaunchAgent")
+    System_Ext(bedroom, "Bedroom Mac", "Promtail, Navidrome, Images API, node-exporter")
     System_Ext(cloudflare, "Cloudflare Tunnel", "HTTPS ingress")
-    System_Ext(loki, "Loki :3102", "Log aggregation")
-    System_Ext(prometheus, "Prometheus :9090", "Metrics")
-    System_Ext(alertmanager, "Alertmanager :9093", "Alert routing")
 
     Container_Boundary(chorus, "Chorus") {
 
@@ -72,4 +72,4 @@ C4Container
     Rel(deep_health, shim, "Nudge silas on failure")
     Rel(deep_health, loki, "Log freshness queries")
     Rel(embed_worker, api, "POST /api/chorus/embed batches")
-    Rel(embed_worker, bedroom, "Ollama embedding inference")
+    Rel(embed_worker, api, "Ollama embedding via localhost:11434")

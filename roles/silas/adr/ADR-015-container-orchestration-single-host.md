@@ -1,7 +1,7 @@
 # ADR-015: Container Orchestration for Single-Host Services
 
 **Date:** 2026-02-21
-**Status:** Accepted
+**Status:** Superseded by ADR-019 (Native Service Architecture) — went further than docker-compose, removed Docker entirely 2026-03
 **Context:** Docker/Terraform simplification brief from Kade (2026-02-21), Jeff directive
 
 ## Decision

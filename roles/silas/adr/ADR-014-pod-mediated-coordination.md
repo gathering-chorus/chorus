@@ -1,6 +1,6 @@
 # ADR-014: Pod-Mediated Coordination
 
-**Status:** Accepted
+**Status:** Deferred — accepted but not shipped. Briefs remain filesystem-based. Chorus index (SQLite + LanceDB) serves the coordination role pods were intended for
 **Date:** 2026-02-20
 **Card:** #82
 **Depends on:** SOLID-Mediated AI Access spike (5e3c843), ADR-002 (ACL Graduation)

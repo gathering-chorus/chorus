@@ -1,7 +1,7 @@
 # ADR-012: Bind Docker Services to 127.0.0.1
 
 **Date**: 2026-02-19
-**Status**: **Implemented** — Kade committed config changes (2026-02-19), Silas activated via stack restarts (2026-02-19)
+**Status**: Superseded — Docker removed 2026-03. Native LaunchAgent services still bind to 0.0.0.0; localhost-only binding remains an open concern (see ADR-019)
 **Decider**: Jeff (directive), Silas (architecture)
 **References**: Network inventory (`network-inventory.md`), Secrets audit (`briefs/2026-02-16-secrets-audit.md`), ADR-011 (deployment pattern)
 

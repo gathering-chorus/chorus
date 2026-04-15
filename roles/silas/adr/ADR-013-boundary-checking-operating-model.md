@@ -1,7 +1,7 @@
 # ADR-013: Boundary Checking Operating Model
 
 **Date**: 2026-02-19
-**Status**: Proposed
+**Status**: Deferred — proposed but not implemented. Credential scrubbing landed in chorus-hooks (write_scrubber.rs); full boundary model remains future work
 **Deciders**: Jeff Bridwell, Wren (PM), Silas (Architect), Kade (Engineer)
 
 ## Context

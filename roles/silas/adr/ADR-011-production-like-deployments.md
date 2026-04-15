@@ -1,7 +1,7 @@
 # ADR-011: Production-Like Deployment Pattern
 
 **Date**: 2026-02-18
-**Status**: Accepted
+**Status**: Superseded by ADR-019 (Native Service Architecture) — Docker containers replaced by LaunchAgents 2026-03
 **Decider**: Jeff (directive), Silas (architecture)
 **References**: ADR-007 (storage topology), ADR-010 (harvest pipeline), infrastructure-constraints.md
 
