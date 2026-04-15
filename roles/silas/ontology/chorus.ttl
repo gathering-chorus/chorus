@@ -762,6 +762,41 @@ chorus:deploys-domain a chorus:SubDomain ;
     chorus:primaryStep chorus:Operating ;
     chorus:belongsTo chorus:borgProduct .
 
+chorus:pipelines-domain a chorus:SubDomain ;
+    rdfs:label "Pipelines" ;
+    rdfs:comment "The end-to-end release flow: code change → pre-commit → pre-push → deploy → health-verify. Actors: builders, gates, CI. Data: durations, pass rates, failure stages." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Operating ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:pre-commit-subdomain a chorus:SubDomain ;
+    rdfs:label "Pre-Commit" ;
+    rdfs:comment "Pipeline stage: hooks that run before commit. Write-scrubber, TypeScript lint, framework-lint, sensitive-path check." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Building ;
+    chorus:belongsTo chorus:pipelines-domain .
+
+chorus:pre-push-subdomain a chorus:SubDomain ;
+    rdfs:label "Pre-Push" ;
+    rdfs:comment "Pipeline stage: checks before push to remote. git-queue.sh lock, rebase, conflict detection." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Building ;
+    chorus:belongsTo chorus:pipelines-domain .
+
+chorus:deploy-subdomain a chorus:SubDomain ;
+    rdfs:label "Deploy" ;
+    rdfs:comment "Pipeline stage: code gets running. app-state.sh, bind mounts vs full deploy, CSS hot-reload, rollback." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Operating ;
+    chorus:belongsTo chorus:pipelines-domain .
+
+chorus:health-verify-subdomain a chorus:SubDomain ;
+    rdfs:label "Health Verify" ;
+    rdfs:comment "Pipeline stage: post-deploy verification. deep-health, smoke-check.sh, service liveness, deploy.verification.completed event." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:belongsTo chorus:pipelines-domain .
+
 chorus:alerts-monitors-domain a chorus:SubDomain ;
     rdfs:label "Alerts & Monitors" ;
     rdfs:comment "What's watched and what fires. Alert coverage is to failure modes what test coverage is to code paths. Upward and downward dependency coverage." ;
@@ -1238,6 +1273,11 @@ chorus:athena-product chorus:hasDomain chorus:athena-domain .
 
 chorus:athena-product chorus:consumes chorus:knowledge-domain, chorus:cards-service,
                                       chorus:observability-service, chorus:infra-service .
+
+# --- Pipelines consumption edges ---
+chorus:pipelines-domain chorus:consumes chorus:infrastructure-domain,
+                                        chorus:observability-domain,
+                                        chorus:gates-service .
 
 # --- Cross-cutting consumption: Properties, Security, and Time ---
 # Properties consumed by infrastructure services; Security and Time consumed by all subdomains.

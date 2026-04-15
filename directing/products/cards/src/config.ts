@@ -23,7 +23,7 @@ export const LABELS = {
     // Convergence domain
     convergence: 60,
     // Product domains
-    chorus: 61, borg: 62,
+    chorus: 61, borg: 62, pipelines: 139,
     // General domains
     app: 63, product: 64,
   } as Record<string, number>,
