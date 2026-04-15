@@ -1421,12 +1421,12 @@ app.get('/api/chorus/domain/:name/logs', async (req: Request, res: Response) => 
   try {
     const sdId = await resolveSubdomainId(req.params.name);
     const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?log ?label ?logPath ?logType WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasLogSource ?log . OPTIONAL { ?log rdfs:label ?label } OPTIONAL { ?log chorus:logPath ?logPath } OPTIONAL { ?log chorus:logType ?logType } } }`;
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?log ?label ?location ?status WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasLogSource ?log . OPTIONAL { ?log rdfs:label ?label } OPTIONAL { ?log chorus:logSourceLocation ?location } OPTIONAL { ?log chorus:logSourceStatus ?status } } }`;
     const result = await athenaSparqlQuery(query);
     const logs = result.results.bindings.map((b: any) => ({
       label: b.label?.value || b.log.value.split('#').pop(),
-      path: b.logPath?.value || null,
-      type: b.logType?.value || 'unknown',
+      location: b.location?.value || null,
+      status: b.status?.value || null,
     }));
     res.json(athenaEnvelope('domain-logs', { subdomain: sdId, logs }, Date.now() - start, { count: logs.length }));
   } catch (err: any) {
