@@ -1455,6 +1455,52 @@ app.get('/api/chorus/domain/:name/services', async (req: Request, res: Response)
   }
 });
 
+// GET /api/chorus/domain/:name/infra — borg environments for a domain (#2080)
+// Queries urn:borg:instances graph for domain-scoped environments via usesEnvironment edges.
+app.get('/api/chorus/domain/:name/infra', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const sdId = await resolveSubdomainId(req.params.name);
+    // Domain-scoped: follow usesEnvironment edges from the subdomain
+    const query = `PREFIX borg: <urn:borg:ontology/>
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT ?env ?name ?port ?health ?host ?engine ?dep WHERE {
+  GRAPH <urn:borg:instances> {
+    <https://jeffbridwell.com/chorus#${sdId}> borg:usesEnvironment ?env .
+    ?env borg:environmentName ?name .
+    OPTIONAL { ?env borg:port ?port }
+    OPTIONAL { ?env borg:healthEndpoint ?health }
+    OPTIONAL { ?env borg:runsOn/borg:hostName ?host }
+    OPTIONAL { ?env borg:instanceOf/borg:engineName ?engine }
+    OPTIONAL { ?env borg:dependsOn/borg:environmentName ?dep }
+  }
+} ORDER BY ?host ?name`;
+    const result = await athenaSparqlQuery(query);
+    // Group by environment, collect dependencies
+    const envMap = new Map<string, any>();
+    for (const b of result.results.bindings) {
+      const envName = b.name.value;
+      if (!envMap.has(envName)) {
+        envMap.set(envName, {
+          name: envName,
+          port: b.port?.value || null,
+          health: b.health?.value || null,
+          host: b.host?.value || null,
+          engine: b.engine?.value || null,
+          dependsOn: [],
+        });
+      }
+      if (b.dep?.value && !envMap.get(envName).dependsOn.includes(b.dep.value)) {
+        envMap.get(envName).dependsOn.push(b.dep.value);
+      }
+    }
+    const environments = Array.from(envMap.values());
+    res.json(athenaEnvelope('domain-infra', { subdomain: req.params.name, environments }, Date.now() - start, { count: environments.length }));
+  } catch (err: any) {
+    res.json(athenaEnvelope('domain-infra', { subdomain: req.params.name, environments: [] }, Date.now() - start, { count: 0 }));
+  }
+});
+
 // GET /api/chorus/domain/:name/pipeline — value stream lifecycle (#2069)
 // Assembles from 5 existing sources: cards, completeness, code/tests/endpoints, alerts/gates, done cards.
 app.get('/api/chorus/domain/:name/pipeline', async (req: Request, res: Response) => {
