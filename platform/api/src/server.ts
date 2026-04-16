@@ -83,6 +83,20 @@ app.get('/api/chorus/patterns/summary', async (req, res) => {
   }
 });
 
+// Borg — codebase topology proxy (Gathering owns the RDF source) — #2099
+app.get('/api/chorus/codebase/topology', async (_req, res) => {
+  try {
+    const r = await fetch('http://localhost:3000/api/codebase/topology', { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) {
+      res.status(r.status).json({ error: 'upstream ' + r.status });
+      return;
+    }
+    res.json(await r.json());
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
 // Request logging — every request writes to stdout so the log stays fresh
 app.use((req, res, next) => {
   const start = Date.now();

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Borg Assessment — Capability Maturity</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+a.back { font-size: 0.8rem; color: #4f46e5; text-decoration: none; }
+h1 { font-size: 2rem; font-weight: 300; margin: 12px 0 4px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 32px; max-width: 760px; line-height: 1.5; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; text-align: center; }
+.stat-val { font-size: 1.8rem; font-weight: 300; }
+.stat-lbl { font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; display: block; }
+table.grid { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; font-size: 0.85rem; }
+.grid th, .grid td { border-bottom: 1px solid #f0f0f0; padding: 8px 12px; text-align: left; }
+.grid th { background: #f9fafb; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: #666; }
+.grid td.dom { font-weight: 500; }
+.grid tr.group { background: #f3f4f6; }
+.grid tr.group td { font-weight: 600; padding: 10px 12px; color: #4f46e5; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 500; }
+.b-conforms { background: #dcfce7; color: #16a34a; }
+.b-refactor { background: #fef9c3; color: #ca8a04; }
+.b-build    { background: #f3f4f6; color: #6b7280; }
+.b-rewrite  { background: #fee2e2; color: #dc2626; }
+.dot-on   { color: #16a34a; font-size: 1.1rem; }
+.dot-off  { color: #d1d5db; font-size: 1.1rem; }
+.harvest-active     { color: #16a34a; }
+.harvest-complete   { color: #059669; }
+.harvest-partial    { color: #ca8a04; }
+.harvest-manual     { color: #6b7280; }
+.harvest-static     { color: #6b7280; }
+.harvest-stale      { color: #dc2626; }
+.harvest-designed   { color: #a78bfa; }
+.harvest-built      { color: #4f46e5; }
+.harvest-ai-assisted { color: #7c3aed; }
+.harvest-none       { color: #9ca3af; }
+.loading { text-align: center; padding: 40px; color: #888; }
+.error { color: #dc2626; padding: 20px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; }
+.note { background: #fffbeb; border: 1px solid #fcd34d; padding: 10px 14px; border-radius: 6px; font-size: 0.8rem; color: #92400e; margin-top: 16px; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+.meta a { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a class="back" href="/borg/">&larr; Borg</a>
+<h1>Borg Assessment</h1>
+<p class="subtitle">Capability maturity — where the model meets reality. For each domain: is it in the codebase, is it harvested, does it have a page, and does it have a graph. Topology data proxied from Gathering's codebase graph.</p>
+
+<div class="stats" id="stats">
+  <div class="loading">Loading&hellip;</div>
+</div>
+
+<table class="grid">
+  <thead><tr><th>Domain</th><th>Page</th><th>Codebase</th><th>Harvest</th><th>Graph</th><th>Status</th></tr></thead>
+  <tbody id="grid-body"></tbody>
+</table>
+
+<div class="note">Churn panel pending — admin-auth path hasn't been sorted for chorus-api. Topology above fully live.</div>
+
+<p class="meta">Chorus API &middot; /api/chorus/codebase/topology &middot; <a href="/">Chorus landing</a></p>
+
+<script>
+const TAXONOMY = {
+  'Sowing':      { domains: ['seeds'], pages: { seeds: '/capture-triage' } },
+  'Growing':     { domains: ['glimmers', 'ideas', 'projects'], pages: { glimmers: '/glimmers', ideas: '/ideas', projects: '/projects' } },
+  'Practicing':  { domains: ['cooking', 'reading', 'watching', 'todo', 'intentions'], pages: { cooking: '/cooking', reading: '/reading', watching: '/watching', todo: '/todo', intentions: '/intentions' } },
+  'Harvesting':  { domains: ['music', 'photos', 'books', 'stories', 'notes', 'blog', 'social', 'documents', 'property', 'sexuality', 'people'], pages: { music: '/music', photos: '/photos', books: '/books', stories: '/stories', notes: '/notes', blog: '/blog', social: '/social', documents: '/documents', property: '/property', sexuality: '/sexuality', people: '/people' } },
+  'Reflecting':  { domains: ['values', 'practices', 'self'], pages: { values: '/values', practices: '/practices', self: '/jeff' } },
+};
+
+const HARVEST_STATUS = {
+  seeds: 'active', music: 'complete', photos: 'active', books: 'manual',
+  stories: 'stale', notes: 'stale', blog: 'stale', social: 'static',
+  documents: 'active', property: 'manual', sexuality: 'stale', people: 'partial',
+  glimmers: 'designed', ideas: 'built', projects: 'built',
+  cooking: 'manual', reading: 'manual', watching: 'manual', todo: 'manual',
+  intentions: 'manual', values: 'manual', practices: 'manual', self: 'ai-assisted',
+};
+
+function dot(present) {
+  return present ? '<span class="dot-on">&#9679;</span>' : '<span class="dot-off">&#9675;</span>';
+}
+function badge(status) {
+  return '<span class="badge b-' + status + '">' + status.charAt(0).toUpperCase() + status.slice(1) + '</span>';
+}
+
+(async function() {
+  const body = document.getElementById('grid-body');
+  const stats = document.getElementById('stats');
+  try {
+    const resp = await fetch('/api/chorus/codebase/topology');
+    let topology = null;
+    if (resp.ok) topology = await resp.json();
+
+    const codebaseDomains = new Set();
+    if (topology && topology.spokes) {
+      Object.values(topology.spokes).forEach(function(spoke) {
+        (spoke.domains || []).forEach(function(d) { codebaseDomains.add(d); });
+      });
+    }
+
+    const counts = { conforms: 0, refactor: 0, build: 0, rewrite: 0 };
+    const rows = [];
+    Object.entries(TAXONOMY).forEach(function(entry) {
+      const stream = entry[0];
+      const def = entry[1];
+      rows.push('<tr class="group"><td colspan="6">' + stream + '</td></tr>');
+      def.domains.forEach(function(domain) {
+        const hasPage    = !!def.pages[domain];
+        const inCodebase = codebaseDomains.has(domain);
+        const harvestStatus = HARVEST_STATUS[domain] || 'none';
+        const hasHarvest = ['none', 'designed'].indexOf(harvestStatus) === -1;
+        const hasGraph   = inCodebase;
+
+        let status = 'build';
+        if (hasPage && inCodebase && hasHarvest && hasGraph) status = 'conforms';
+        else if (hasPage && hasHarvest) status = 'refactor';
+        else if (!hasPage && !inCodebase && !hasHarvest) status = 'rewrite';
+        counts[status]++;
+
+        rows.push('<tr>'
+          + '<td class="dom">' + domain + '</td>'
+          + '<td>' + dot(hasPage) + '</td>'
+          + '<td>' + dot(inCodebase) + '</td>'
+          + '<td class="harvest-' + harvestStatus + '">' + harvestStatus + '</td>'
+          + '<td>' + dot(hasGraph) + '</td>'
+          + '<td>' + badge(status) + '</td>'
+        + '</tr>');
+      });
+    });
+
+    body.innerHTML = rows.join('');
+
+    stats.innerHTML = ''
+      + statCard(counts.conforms, 'Conforms')
+      + statCard(counts.refactor, 'Refactor')
+      + statCard(counts.build, 'Build')
+      + statCard(counts.rewrite, 'Rewrite')
+      + statCard(codebaseDomains.size, 'In Codebase');
+  } catch (e) {
+    stats.innerHTML = '<div class="error">Failed to load topology: ' + String(e) + '</div>';
+  }
+
+  function statCard(val, lbl) {
+    return '<div class="stat-card"><span class="stat-val">' + val + '</span><span class="stat-lbl">' + lbl + '</span></div>';
+  }
+})();
+</script>
+
+</body>
+</html>
