@@ -1,0 +1,29 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Chorus Ontology</title>
+<script src="/d3.v7.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#fafafa;color:#1a1a1a;overflow:hidden}
+svg{width:100vw;height:100vh}
+#H{position:fixed;top:10px;left:10px;z-index:5}
+#H h1{font-size:1rem;color:#1a1a1a}
+#H p{font-size:0.65rem;color:#666}
+#F{position:fixed;top:10px;right:10px;z-index:5;display:flex;flex-wrap:wrap;gap:3px;max-width:700px}
+.b{padding:3px 8px;border-radius:3px;font-size:0.72rem;cursor:pointer;border:1px solid #ccc;background:#fff;position:relative}
+.dd{position:absolute;top:100%;right:0;background:#fff;border:1px solid #ccc;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:20;min-width:180px;max-height:300px;overflow-y:auto;display:none;padding:4px 0}
+.dd.open{display:block}
+.dd label{display:flex;align-items:center;gap:6px;padding:3px 10px;font-size:0.7rem;cursor:pointer;white-space:nowrap;color:#1a1a1a}
+.dd label:hover{background:#f3f4f6}
+.dd input[type=checkbox]{width:13px;height:13px;cursor:pointer}
+.dd .dd-all{border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:2px;font-weight:600}
+#T{position:fixed;background:#fff;border:1px solid #4f46e5;border-radius:6px;padding:8px 12px;font-size:0.72rem;color:#1a1a1a;pointer-events:none;display:none;max-width:280px;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+</style></head><body>
+<div id="V" style="position:fixed;top:10px;left:10px;z-index:6;display:flex;gap:4px;margin-bottom:6px">
+<a href="chorus-er-diagram.html"><button style="padding:3px 8px;border-radius:3px;font-size:0.72rem;cursor:pointer;border:1px solid #ccc;background:#fff">Schema (ER)</button></a>
+<button style="padding:3px 8px;border-radius:3px;font-size:0.72rem;cursor:pointer;border:1px solid #6366f1;background:#6366f1;color:#fff">Data (Explorer)</button>
+<a href="chorus-data-model.html"><button style="padding:3px 8px;border-radius:3px;font-size:0.72rem;cursor:pointer;border:1px solid #ccc;background:#fff">Reference (Cards)</button></a>
+</div>
+<div id="H" style="top:36px"><h1>Chorus Ontology</h1>
+<p>Loading from Fuseki...</p></div>
+<div id="F"></div><div id="T"></div><svg id="G"></svg>
+<script src="/chorus-instance-explorer.js?v=4.0"></script></body></html>
