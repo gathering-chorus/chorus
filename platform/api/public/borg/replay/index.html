@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Session Replay — Borg</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/rrweb-player@1.0.0-alpha.4/dist/style.css">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1400px; margin: 0 auto; }
+a.back { font-size: 0.8rem; color: #4f46e5; text-decoration: none; }
+h1 { font-size: 2rem; font-weight: 300; margin: 12px 0 4px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 24px; max-width: 760px; line-height: 1.5; }
+.layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+.session-list { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; max-height: 80vh; overflow-y: auto; }
+.session-list h2 { font-size: 0.9rem; font-weight: 500; color: #666; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.session-card { padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s; }
+.session-card:hover { border-color: #4f46e5; }
+.session-card.active { border-color: #4f46e5; background: #eef2ff; }
+.session-time { font-size: 0.82rem; }
+.session-pages { font-size: 0.72rem; color: #888; margin-top: 2px; word-break: break-all; }
+.session-events { font-size: 0.72rem; color: #666; margin-top: 4px; }
+.session-id { font-size: 0.68rem; color: #999; font-family: ui-monospace, monospace; margin-top: 2px; }
+.player-wrapper { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; min-height: 600px; padding: 16px; }
+.player-msg { text-align: center; padding: 40px; color: #888; }
+.loading { color: #888; padding: 12px; font-size: 0.85rem; font-style: italic; }
+.error { color: #dc2626; padding: 12px; font-size: 0.85rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+.meta a { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a class="back" href="/borg/">&larr; Borg</a>
+<h1>Session Replay</h1>
+<p class="subtitle">rrweb playback of recorded browser sessions. Data read from Gathering's data/sessions — viewer lives here. Pick a session on the left.</p>
+
+<div class="layout">
+  <div class="session-list" id="session-list">
+    <h2>Recent Sessions</h2>
+    <div class="loading">Loading&hellip;</div>
+  </div>
+  <div class="player-wrapper" id="player-wrapper">
+    <div class="player-msg">Select a session to replay.</div>
+  </div>
+</div>
+
+<p class="meta">Chorus API &middot; /api/chorus/sessions &middot; <a href="/">Chorus landing</a></p>
+
+<script src="https://cdn.jsdelivr.net/npm/rrweb-player@1.0.0-alpha.4/dist/index.js"></script>
+<script>
+const listEl = document.getElementById('session-list');
+const playerEl = document.getElementById('player-wrapper');
+
+function fmtTime(iso) {
+  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+async function loadSessions() {
+  try {
+    const r = await fetch('/api/chorus/sessions');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (!d.sessions || d.sessions.length === 0) {
+      listEl.innerHTML = '<h2>Recent Sessions</h2><div class="player-msg">No sessions in /data/sessions (or all older than 7 days).</div>';
+      return;
+    }
+    const cards = d.sessions.map(function(s) {
+      return '<div class="session-card" data-id="' + s.sessionId + '">'
+        + '<div class="session-time">' + fmtTime(s.startTime) + '</div>'
+        + '<div class="session-pages">' + (s.pages || []).slice(0, 3).join(' → ') + '</div>'
+        + '<div class="session-events">' + s.eventCount + ' events</div>'
+        + '<div class="session-id">' + s.sessionId + '</div>'
+        + '</div>';
+    }).join('');
+    listEl.innerHTML = '<h2>Recent Sessions (' + d.sessions.length + ')</h2>' + cards;
+    listEl.querySelectorAll('.session-card').forEach(function(card) {
+      card.addEventListener('click', function() {
+        listEl.querySelectorAll('.session-card').forEach(function(c) { c.classList.remove('active'); });
+        card.classList.add('active');
+        loadReplay(card.getAttribute('data-id'));
+      });
+    });
+  } catch (e) {
+    listEl.innerHTML = '<h2>Recent Sessions</h2><div class="error">Failed to load: ' + String(e) + '</div>';
+  }
+}
+
+async function loadReplay(id) {
+  playerEl.innerHTML = '<div class="loading">Loading replay ' + id + '&hellip;</div>';
+  try {
+    const r = await fetch('/api/chorus/sessions/' + id);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (!d.events || d.events.length === 0) {
+      playerEl.innerHTML = '<div class="player-msg">No events in this session.</div>';
+      return;
+    }
+    playerEl.innerHTML = '';
+    new rrwebPlayer({
+      target: playerEl,
+      props: {
+        events: d.events,
+        showController: true,
+        autoPlay: false,
+        width: Math.min(window.innerWidth - 380, 1100),
+        height: 600,
+      },
+    });
+  } catch (e) {
+    playerEl.innerHTML = '<div class="error">Failed to load replay: ' + String(e) + '</div>';
+  }
+}
+
+loadSessions();
+
+const autoId = new URLSearchParams(window.location.search).get('s');
+if (autoId) {
+  loadReplay(autoId);
+  setTimeout(function() {
+    const card = document.querySelector('[data-id="' + autoId + '"]');
+    if (card) card.classList.add('active');
+  }, 500);
+}
+</script>
+
+</body>
+</html>

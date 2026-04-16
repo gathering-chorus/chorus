@@ -19,6 +19,7 @@ import { getFitnessSummary } from './fitness-summary';
 import { getQualityScan, getQualityByDomain } from './quality-summary';
 import { getPatternsSummary } from './patterns-summary';
 import { getPostureStrip, getWerkActivity } from './jeff-summary';
+import { listSessions, getSession, getSessionLog, isValidSessionId } from './session-replay';
 
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
@@ -120,6 +121,30 @@ app.get('/api/chorus/werk/activity', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
   }
+});
+
+// Borg — Session replay: list — #2099
+app.get('/api/chorus/sessions', (_req, res) => {
+  try { res.json(listSessions()); }
+  catch (e) { res.status(500).json({ error: e instanceof Error ? e.message : String(e) }); }
+});
+
+// Borg — Session replay: events — #2099
+app.get('/api/chorus/sessions/:id', (req, res) => {
+  const id = String(req.params.id || '');
+  if (!isValidSessionId(id)) { res.status(400).json({ error: 'invalid session id' }); return; }
+  const session = getSession(id);
+  if (!session) { res.status(404).json({ error: 'session not found' }); return; }
+  res.json(session);
+});
+
+// Borg — Session replay: action log — #2099
+app.get('/api/chorus/sessions/:id/log', (req, res) => {
+  const id = String(req.params.id || '');
+  if (!isValidSessionId(id)) { res.status(400).json({ error: 'invalid session id' }); return; }
+  const log = getSessionLog(id);
+  if (log === null) { res.status(404).json({ error: 'log not found' }); return; }
+  res.type('text/plain').send(log);
 });
 
 // Request logging — every request writes to stdout so the log stays fresh
