@@ -5119,6 +5119,41 @@ app.get('/api/athena/subdomains/:id/test-coverage', async (req: Request, res: Re
   }
 });
 
+// GET /api/chorus/tests/:domain — unified test data per domain (#2098)
+// Proxies to Gathering app's quality scanner. One truth for quality-service page + domain-detail.
+app.get('/api/chorus/tests/:domain', async (req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const domain = req.params.domain.toLowerCase();
+    const appUrl = `http://localhost:3000/api/quality/domain/${domain}`;
+    const upstream = await fetch(appUrl, { signal: AbortSignal.timeout(5000) });
+    if (!upstream.ok) {
+      res.status(upstream.status).json({ error: `upstream returned ${upstream.status}` });
+      return;
+    }
+    const data = await upstream.json() as any;
+    res.json(athenaEnvelope('domain-tests', data, Date.now() - start, { count: data.total || 0 }));
+  } catch (err: any) {
+    res.status(502).json(athenaEnvelope('domain-tests', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
+// GET /api/chorus/tests — full scan across all domains (#2098)
+app.get('/api/chorus/tests', async (_req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const upstream = await fetch('http://localhost:3000/api/quality', { signal: AbortSignal.timeout(10000) });
+    if (!upstream.ok) {
+      res.status(upstream.status).json({ error: `upstream returned ${upstream.status}` });
+      return;
+    }
+    const data = await upstream.json() as any;
+    res.json(athenaEnvelope('quality-scan', data, Date.now() - start, { total: data.total || 0 }));
+  } catch (err: any) {
+    res.status(502).json(athenaEnvelope('quality-scan', { error: err.message }, Date.now() - start, { error: true }));
+  }
+});
+
 // POST /api/athena/discover-pages — auto-discover UI pages per domain from filesystem (#2065)
 app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
   const start = Date.now();
@@ -6777,6 +6812,114 @@ app.get('/api/chorus/rcas', (req: Request, res: Response) => {
   }));
 
   res.json({ results, total: results.length });
+});
+
+// --- Trace Envelope — #2097 (ADR-024) ---
+// Common message envelope with hop-level tracing across four call stacks.
+// Traces auto-populate domain integration maps.
+
+function ensureTraceTable(): void {
+  const db = new Database(DB_PATH);
+  db.pragma('journal_mode = WAL');
+  db.exec(`CREATE TABLE IF NOT EXISTS traces (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    correlation_id TEXT NOT NULL,
+    hop INTEGER NOT NULL,
+    call_stack TEXT NOT NULL,
+    source_domain TEXT,
+    source_service TEXT,
+    source_instance TEXT,
+    dest_domain TEXT,
+    dest_service TEXT,
+    dest_instance TEXT,
+    timestamp TEXT NOT NULL,
+    latency_ms INTEGER,
+    error_class TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL
+  )`);
+  // Indexes for fast lookup
+  const hasIdx = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_traces_corr'").get();
+  if (!hasIdx) {
+    db.exec(`CREATE INDEX idx_traces_corr ON traces(correlation_id)`);
+    db.exec(`CREATE INDEX idx_traces_domain ON traces(source_domain)`);
+  }
+  db.close();
+}
+
+let traceTableReady = false;
+
+// POST /api/chorus/trace — record a hop
+app.post('/api/chorus/trace', (req: Request, res: Response) => {
+  if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; }
+
+  const { correlationId, hop, callStack, source, destination, latencyMs, error } = req.body || {};
+
+  if (!correlationId || !hop || !callStack) {
+    res.status(400).json({ error: 'correlationId, hop, and callStack are required' });
+    return;
+  }
+
+  const now = bostonNow();
+  const db = new Database(DB_PATH);
+  db.pragma('journal_mode = WAL');
+
+  db.prepare(`
+    INSERT INTO traces (correlation_id, hop, call_stack, source_domain, source_service, source_instance, dest_domain, dest_service, dest_instance, timestamp, latency_ms, error_class, error_message, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    correlationId,
+    hop,
+    callStack,
+    source?.domain || null,
+    source?.service || null,
+    source?.instance || null,
+    destination?.domain || null,
+    destination?.service || null,
+    destination?.instance || null,
+    now,
+    latencyMs || null,
+    error?.classification || null,
+    error?.message || null,
+    now,
+  );
+
+  db.close();
+  res.json({ ok: true });
+});
+
+// GET /api/chorus/trace/:correlationId — full hop chain
+app.get('/api/chorus/trace/:correlationId', (req: Request, res: Response) => {
+  if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; }
+
+  const db = new Database(DB_PATH, { readonly: true });
+  db.pragma('journal_mode = WAL');
+
+  const hops = db.prepare(
+    'SELECT * FROM traces WHERE correlation_id = ? ORDER BY hop ASC'
+  ).all(req.params.correlationId);
+
+  db.close();
+  res.json({ correlationId: req.params.correlationId, hops });
+});
+
+// GET /api/chorus/trace/integrations/:domain — observed service pairs
+app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) => {
+  if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; }
+
+  const db = new Database(DB_PATH, { readonly: true });
+  db.pragma('journal_mode = WAL');
+
+  const integrations = db.prepare(`
+    SELECT source_service, dest_service, call_stack, COUNT(*) as frequency
+    FROM traces
+    WHERE source_domain = ? AND dest_service IS NOT NULL
+    GROUP BY source_service, dest_service, call_stack
+    ORDER BY frequency DESC
+  `).all(req.params.domain);
+
+  db.close();
+  res.json({ domain: req.params.domain, integrations });
 });
 
 process.on('uncaughtException', (err) => {

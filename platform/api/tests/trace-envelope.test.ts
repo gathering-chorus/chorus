@@ -106,7 +106,7 @@ describeIntegration('Common Message Envelope (#2097)', () => {
     expect(data.integrations.length).toBeGreaterThan(0);
 
     const edge = data.integrations.find(
-      (i: any) => i.source_service === 'twilio-webhook' && i.dest_service === 'fuseki-graph'
+      (i) => i.source_service === 'twilio-webhook' && i.dest_service === 'fuseki-graph'
     );
     expect(edge).toBeDefined();
   });
