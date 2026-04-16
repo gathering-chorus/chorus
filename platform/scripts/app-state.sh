@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# app-state.sh - Unified application and infrastructure state management
+# app-state.sh — Unified application and infrastructure state management
+# Rewritten for native LaunchAgent architecture — no Docker. (ADR-019, #2075)
+#
 # Usage: ./app-state.sh [command] [options]
 #
-# This script manages both infrastructure (Docker containers, networking) and
-# application state (starting, stopping, testing) in a single unified interface.
+# All services run as native LaunchAgents. No container runtime required.
 
 set -e
 
@@ -14,12 +15,16 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." &> /dev/null && pwd )"
-TERRAFORM_DIR="$PROJECT_ROOT/terraform/environments/dev"
 LOGS_DIR="$PROJECT_ROOT/logs"
-APP_CONTAINER="jeff-bridwell-personal-site-app"
-FUSEKI_CONTAINER="jeff-bridwell-personal-site-fuseki"
-NETWORK_NAME="jeff-bridwell-personal-site-network"
 SUPPRESS_FILE="/tmp/chorus-alert-suppress"
+
+# LaunchAgent labels
+APP_LABEL="com.gathering.app"
+FUSEKI_LABEL="com.gathering.fuseki"
+PROMETHEUS_LABEL="com.gathering.prometheus"
+GRAFANA_LABEL="com.gathering.grafana"
+LOKI_LABEL="com.gathering.loki"
+PROMTAIL_LABEL="com.gathering.promtail"
 
 # Load environment variables from .env if it exists
 if [ -f "$PROJECT_ROOT/.env" ]; then
@@ -59,203 +64,34 @@ cmd_suppress() {
 }
 
 # ============================================================================
-# PREREQUISITES
+# LAUNCHAGENT HELPERS
 # ============================================================================
 
-check_docker() {
-  if ! command -v docker &> /dev/null; then
-    log "error" "Docker is not installed. Please install Docker first."
-    exit 1
-  fi
+uid() { id -u; }
 
-  if ! docker info &>/dev/null; then
-    log "info" "Docker daemon is not running. Attempting to start..."
-    if [[ "$(uname)" == "Darwin" ]]; then
-      open -a Docker
-      local attempts=0
-      while ! docker info &>/dev/null && [ $attempts -lt 30 ]; do
-        sleep 1
-        ((attempts++))
-      done
-    fi
-
-    if ! docker info &>/dev/null; then
-      log "error" "Could not start Docker. Please start Docker manually."
-      exit 1
-    fi
-    log "info" "Docker started successfully"
-  fi
+service_running() {
+  local label="$1"
+  launchctl print "gui/$(uid)/$label" 2>/dev/null | grep -q "state = running"
 }
 
-check_observability() {
-  # Check if observability network exists
-  if ! docker network ls --format '{{.Name}}' | grep -q "^observability-network$"; then
-    log "warn" "Shared observability network not found"
-
-    # Check if observability project exists
-    if [ -d "$OBSERVABILITY_DIR" ] && [ -f "$OBSERVABILITY_DIR/scripts/observability.sh" ]; then
-      log "info" "Starting shared observability stack..."
-      "$OBSERVABILITY_DIR/scripts/observability.sh" start
-    else
-      log "warn" "Shared observability project not found at $OBSERVABILITY_DIR"
-      log "info" "Creating observability-network manually (logs/metrics may not be collected)"
-      docker network create observability-network 2>/dev/null || true
-    fi
-  else
-    log "info" "Shared observability network: OK"
-  fi
+service_start() {
+  local label="$1"
+  launchctl kickstart "gui/$(uid)/$label" 2>/dev/null || {
+    launchctl bootstrap "gui/$(uid)" ~/Library/LaunchAgents/${label}.plist 2>/dev/null
+    launchctl kickstart "gui/$(uid)/$label" 2>/dev/null
+  }
 }
 
-check_terraform() {
-  if ! command -v terraform &> /dev/null; then
-    log "error" "Terraform is not installed. Please install Terraform first."
-    exit 1
-  fi
+service_stop() {
+  local label="$1"
+  launchctl kill SIGTERM "gui/$(uid)/$label" 2>/dev/null || true
 }
 
-# ============================================================================
-# INFRASTRUCTURE MANAGEMENT
-# ============================================================================
-
-fuseki_running() {
-  docker ps --filter "name=$FUSEKI_CONTAINER" --filter "status=running" -q | grep -q .
-}
-
-init_fuseki() {
-  # Skip if Fuseki isn't running
-  if ! fuseki_running; then
-    log "info" "Fuseki not running, skipping dataset initialization"
-    return 0
-  fi
-
-  local FUSEKI_URL="${FUSEKI_URL:-http://localhost:3030}"
-  local FUSEKI_DATASET="${FUSEKI_DATASET:-pods}"
-  local FUSEKI_ADMIN_PASSWORD="${FUSEKI_ADMIN_PASSWORD:-admin123}"
-
-  log "info" "Waiting for Fuseki to be ready..."
-
-  # Wait for Fuseki to be healthy
-  local attempts=0
-  local max_attempts=30
-  while [ $attempts -lt $max_attempts ]; do
-    if curl -s -o /dev/null "$FUSEKI_URL/\$/ping" 2>/dev/null; then
-      break
-    fi
-    ((attempts++))
-    sleep 2
-  done
-
-  if [ $attempts -eq $max_attempts ]; then
-    log "warn" "Fuseki did not become ready, skipping dataset initialization"
-    return 0
-  fi
-
-  # Check if dataset exists
-  if curl -s -u "admin:$FUSEKI_ADMIN_PASSWORD" "$FUSEKI_URL/\$/datasets" 2>/dev/null | grep -q "\"/$FUSEKI_DATASET\""; then
-    log "info" "Fuseki dataset '$FUSEKI_DATASET' already exists"
-    return 0
-  fi
-
-  # Create dataset
-  log "info" "Creating Fuseki dataset '$FUSEKI_DATASET'..."
-  local response
-  response=$(curl -s -w "%{http_code}" -X POST \
-    -u "admin:$FUSEKI_ADMIN_PASSWORD" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "dbName=$FUSEKI_DATASET&dbType=tdb2" \
-    "$FUSEKI_URL/\$/datasets" 2>/dev/null)
-
-  local http_code="${response: -3}"
-  if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
-    log "info" "Fuseki dataset '$FUSEKI_DATASET' created successfully"
-  else
-    log "warn" "Failed to create Fuseki dataset (HTTP $http_code), continuing..."
-  fi
-}
-
-infra_exists() {
-  docker ps -a --filter "name=$APP_CONTAINER" --format "{{.Names}}" | grep -q "$APP_CONTAINER"
-}
-
-infra_running() {
-  docker ps --filter "name=$APP_CONTAINER" --filter "status=running" --format "{{.Names}}" | grep -q "$APP_CONTAINER"
-}
-
-create_infra() {
-  log "info" "Creating infrastructure with Terraform..."
-
-  mkdir -p "$LOGS_DIR"
-
-  cd "$TERRAFORM_DIR"
-
-  if [ ! -d ".terraform" ]; then
-    log "info" "Initializing Terraform..."
-    terraform init -input=false
-  fi
-
-  log "info" "Applying Terraform configuration..."
-  terraform apply -auto-approve
-
-  if [ $? -eq 0 ]; then
-    log "info" "Infrastructure created successfully"
-
-    # NOTE: Monitoring is provided by the shared-observability project
-    # The old embedded prometheus/ stack was removed 2026-02-22 (card #127)
-
-    # Initialize Fuseki dataset if Fuseki is running
-    init_fuseki
-
-    return 0
-  else
-    log "error" "Failed to create infrastructure"
-    return 1
-  fi
-}
-
-destroy_infra() {
-  log "info" "Destroying infrastructure..."
-
-  # NOTE: Monitoring is now provided by the shared-observability project
-  # The embedded stack in terraform/environments/dev/prometheus is deprecated
-  # To destroy it manually: cd terraform/environments/dev/prometheus && terraform destroy
-
-  # Destroy main infrastructure
-  cd "$TERRAFORM_DIR"
-  if [ -f "terraform.tfstate" ]; then
-    terraform destroy -auto-approve
-  fi
-
-  # Clean up any lingering containers
-  local lingering=$(docker ps -a --filter "name=jeff-bridwell-personal-site" -q)
-  if [ -n "$lingering" ]; then
-    log "info" "Removing lingering containers..."
-    docker rm -f $lingering 2>/dev/null || true
-  fi
-
-  # Clean up Fuseki data volume
-  local fuseki_volume="jeff-bridwell-personal-site-fuseki-data"
-  if docker volume ls -q | grep -q "^${fuseki_volume}$"; then
-    log "info" "Removing Fuseki data volume..."
-    docker volume rm "$fuseki_volume" 2>/dev/null || true
-  fi
-
-  # Clean up network if exists
-  docker network rm "$NETWORK_NAME" 2>/dev/null || true
-
-  log "info" "Infrastructure destroyed"
-}
-
-# ============================================================================
-# APPLICATION MANAGEMENT
-# ============================================================================
-
-# NOTE: nodemon runs inside the Docker container (via npm run dev).
-# No local nodemon is needed — the app container handles it.
-
-restart_container() {
-  log "info" "Restarting app container..."
-  docker restart "$APP_CONTAINER"
-  log "info" "Container restarted"
+service_restart() {
+  local label="$1"
+  service_stop "$label"
+  sleep 2
+  service_start "$label"
 }
 
 # ============================================================================
@@ -286,23 +122,15 @@ check_health() {
 
   log "info" "Checking infrastructure health..."
 
-  # Check Docker
-  if docker info &>/dev/null; then
-    log "info" "Docker: OK"
+  # Check app LaunchAgent
+  if service_running "$APP_LABEL"; then
+    log "info" "App ($APP_LABEL): RUNNING"
   else
-    log "error" "Docker: NOT RUNNING"
+    log "warn" "App ($APP_LABEL): NOT RUNNING"
     all_healthy=false
   fi
 
-  # Check containers
-  if infra_running; then
-    log "info" "App container: RUNNING"
-  else
-    log "warn" "App container: NOT RUNNING"
-    all_healthy=false
-  fi
-
-  # Check endpoints
+  # Check app endpoint
   if curl -s -o /dev/null http://localhost:3000 2>/dev/null; then
     log "info" "Express app (port 3000): RESPONDING"
   else
@@ -312,46 +140,58 @@ check_health() {
 
   # Check Fuseki
   local fuseki_url="${FUSEKI_URL:-http://localhost:3030}"
-  if docker ps --filter "name=$FUSEKI_CONTAINER" --filter "status=running" -q | grep -q .; then
-    log "info" "Fuseki container: RUNNING"
+  if service_running "$FUSEKI_LABEL"; then
+    log "info" "Fuseki ($FUSEKI_LABEL): RUNNING"
     if curl -s -o /dev/null "$fuseki_url/\$/ping" 2>/dev/null; then
       log "info" "Fuseki ($fuseki_url): RESPONDING"
     else
       log "warn" "Fuseki ($fuseki_url): NOT RESPONDING"
     fi
   else
-    log "warn" "Fuseki container: NOT RUNNING"
+    log "warn" "Fuseki ($FUSEKI_LABEL): NOT RUNNING"
   fi
 
-  # Check shared observability stack
-  if docker network ls --format '{{.Name}}' | grep -q "^observability-network$"; then
-    log "info" "Observability network: CONNECTED"
+  # Check observability services
+  if service_running "$PROMETHEUS_LABEL"; then
+    log "info" "Prometheus ($PROMETHEUS_LABEL): RUNNING"
     if curl -s -o /dev/null http://localhost:9090 2>/dev/null; then
       log "info" "Prometheus (port 9090): RESPONDING"
     else
-      log "warn" "Prometheus (port 9090): NOT RESPONDING (start shared-observability)"
+      log "warn" "Prometheus (port 9090): NOT RESPONDING"
     fi
+  else
+    log "warn" "Prometheus ($PROMETHEUS_LABEL): NOT RUNNING"
+  fi
+
+  if service_running "$GRAFANA_LABEL"; then
+    log "info" "Grafana ($GRAFANA_LABEL): RUNNING"
     if curl -s -o /dev/null http://localhost:3100 2>/dev/null; then
       log "info" "Grafana (port 3100): RESPONDING"
     else
-      log "warn" "Grafana (port 3100): NOT RESPONDING (start shared-observability)"
+      log "warn" "Grafana (port 3100): NOT RESPONDING"
     fi
+  else
+    log "warn" "Grafana ($GRAFANA_LABEL): NOT RUNNING"
+  fi
+
+  if service_running "$LOKI_LABEL"; then
+    log "info" "Loki ($LOKI_LABEL): RUNNING"
     if curl -s -o /dev/null http://localhost:3102/ready 2>/dev/null; then
       log "info" "Loki (port 3102): RESPONDING"
     else
-      log "warn" "Loki (port 3102): NOT RESPONDING (start shared-observability)"
-    fi
-    if docker ps --filter "name=promtail" --filter "status=running" -q | grep -q .; then
-      log "info" "Promtail: RUNNING"
-    else
-      log "warn" "Promtail: NOT RUNNING (logs not being shipped to Loki)"
+      log "warn" "Loki (port 3102): NOT RESPONDING"
     fi
   else
-    log "warn" "Observability network: NOT CONNECTED (run: cd ../shared-observability && ./scripts/observability.sh start)"
+    log "warn" "Loki ($LOKI_LABEL): NOT RUNNING"
+  fi
+
+  if service_running "$PROMTAIL_LABEL"; then
+    log "info" "Promtail ($PROMTAIL_LABEL): RUNNING"
+  else
+    log "warn" "Promtail ($PROMTAIL_LABEL): NOT RUNNING (logs not being shipped to Loki)"
   fi
 
   # Check Cloudflare tunnel
-  local tunnel_script="$SCRIPT_DIR/tunnel/tunnel.sh"
   local tunnel_pid_file="$PROJECT_ROOT/.cloudflared/tunnel.pid"
   if [ -f "$tunnel_pid_file" ]; then
     local tunnel_pid=$(cat "$tunnel_pid_file")
@@ -406,7 +246,6 @@ run_tests() {
 cmd_start() {
   local run_tests=false
 
-  # Parse options
   for arg in "$@"; do
     case $arg in
       --test|--with-tests)
@@ -415,66 +254,62 @@ cmd_start() {
     esac
   done
 
-  check_docker
-  check_terraform
-  check_observability
-
-  # Run tests if requested
   if $run_tests; then
     run_tests || exit 1
   fi
 
-  # Check if infrastructure exists
-  if infra_exists; then
-    if infra_running; then
-      log "info" "Infrastructure already running"
-      # Ensure Fuseki is also running
-      for container in "$FUSEKI_CONTAINER"; do
-        if docker ps -a --filter "name=$container" -q | grep -q . && \
-           ! docker ps --filter "name=$container" --filter "status=running" -q | grep -q .; then
-          log "info" "Starting stopped container: $container"
-          docker start "$container" 2>/dev/null || true
-        fi
-      done
-      wait_for_health
-    else
-      log "info" "Infrastructure exists but not running, starting containers..."
-      for container in "$APP_CONTAINER" "$FUSEKI_CONTAINER"; do
-        if docker ps -a --filter "name=$container" -q | grep -q .; then
-          log "info" "Starting $container..."
-          docker start "$container" 2>/dev/null || true
-        fi
-      done
-      init_fuseki
-      wait_for_health
+  # Start Fuseki if not running
+  if ! service_running "$FUSEKI_LABEL"; then
+    log "info" "Starting Fuseki..."
+    service_start "$FUSEKI_LABEL"
+    local i=0
+    while [ $i -lt 30 ]; do
+      if curl -sf --max-time 2 "http://localhost:3030/\$/ping" &>/dev/null; then
+        log "info" "Fuseki started — http://localhost:3030"
+        break
+      fi
+      sleep 2; ((i+=2))
+    done
+    if [ $i -ge 30 ]; then
+      log "warn" "Fuseki started but not healthy after 30s"
     fi
   else
-    log "info" "Infrastructure does not exist, creating..."
-    create_infra
-    wait_for_health
+    log "info" "Fuseki already running"
   fi
 
+  # Start app if not running
+  if service_running "$APP_LABEL"; then
+    log "info" "App already running"
+  else
+    log "info" "Starting app..."
+    service_start "$APP_LABEL"
+  fi
+
+  wait_for_health
   log "info" "App available at http://localhost:3000"
 }
 
 cmd_stop() {
-  check_docker
   write_suppress 120
 
-  # Stop all containers (but don't destroy)
   local stopped=false
-  for container in "$APP_CONTAINER" "$FUSEKI_CONTAINER"; do
-    if docker ps --filter "name=$container" --filter "status=running" -q | grep -q .; then
-      log "info" "Stopping $container..."
-      docker stop "$container" 2>/dev/null || true
-      stopped=true
-    fi
-  done
+
+  if service_running "$APP_LABEL"; then
+    log "info" "Stopping app..."
+    service_stop "$APP_LABEL"
+    stopped=true
+  fi
+
+  if service_running "$FUSEKI_LABEL"; then
+    log "info" "Stopping Fuseki..."
+    service_stop "$FUSEKI_LABEL"
+    stopped=true
+  fi
 
   if $stopped; then
-    log "info" "All containers stopped"
+    log "info" "Services stopped"
   else
-    log "info" "Containers already stopped"
+    log "info" "Services already stopped"
   fi
 }
 
@@ -493,41 +328,16 @@ cmd_restart() {
     run_tests || exit 1
   fi
 
-  # Native LaunchAgent restart (preferred path)
-  if launchctl list 2>/dev/null | grep -q "com.gathering.app"; then
-    write_suppress 120
-    log "info" "Restarting gathering-app via launchctl..."
-    launchctl kickstart -k "gui/$(id -u)/com.gathering.app"
-    wait_for_health
-    log "info" "Restart complete - app available at http://localhost:3000"
-    return 0
-  fi
+  write_suppress 120
 
-  # Docker fallback
-  check_docker
-  if infra_exists && infra_running; then
-    log "info" "Performing Docker restart..."
-    write_suppress 120
-    restart_container
-    wait_for_health
-    log "info" "Restart complete - app available at http://localhost:3000"
-  else
-    log "info" "Infrastructure not running, performing full start..."
-    cmd_start "$@"
-  fi
-}
+  log "info" "Restarting app via launchctl..."
+  service_restart "$APP_LABEL"
 
-cmd_destroy() {
-  check_docker
-  check_terraform
-
-  log "info" "This will destroy all infrastructure. Containers and networks will be removed."
-  destroy_infra
-  log "info" "All infrastructure destroyed"
+  wait_for_health
+  log "info" "Restart complete — app available at http://localhost:3000"
 }
 
 cmd_status() {
-  check_docker
   check_health
 }
 
@@ -576,9 +386,16 @@ except Exception as e:
     log "info" "Loki query: $query"
   else
     log "warn" "Loki is not reachable at $loki_url"
-    log "info" "Start observability: cd ../shared-observability && ./scripts/observability.sh start"
-    log "info" "Falling back to docker logs..."
-    docker logs --tail=100 "$APP_CONTAINER"
+    log "info" "Check Loki: launchctl print gui/$(uid)/$LOKI_LABEL"
+
+    # Fallback to local log file
+    local app_log="/tmp/gathering-app.log"
+    if [ -f "$app_log" ]; then
+      log "info" "Falling back to local log file..."
+      tail -n 50 "$app_log"
+    else
+      log "warn" "No local log file at $app_log"
+    fi
   fi
 }
 
@@ -590,44 +407,47 @@ cmd_help() {
   cat << 'EOF'
 Usage: ./app-state.sh [command] [options]
 
+All services run as native LaunchAgents. No container runtime required.
+
 Commands:
-  start [--test]    Start all containers (app, Fuseki)
-                    Creates infrastructure via Terraform if needed
+  start [--test]    Start app + Fuseki LaunchAgents
                     --test: Run tests before starting
 
-  stop              Stop all containers (preserves infrastructure)
+  stop              Stop app + Fuseki LaunchAgents
 
-  restart [--test]  Smart restart (fast if running, full if not)
+  restart [--test]  Restart the app LaunchAgent
                     --test: Run tests before restarting
-
-  destroy           Stop and destroy all infrastructure (containers, volumes, network)
 
   status            Check health of all components:
                     App, Fuseki, observability (Prometheus, Grafana, Loki,
                     Promtail), Cloudflare tunnel
 
   logs [--errors|--warn]
-                    Query logs via Loki (falls back to docker logs if Loki unavailable)
+                    Query logs via Loki (falls back to local log file)
                     --errors: Show only error-level logs
                     --warn: Show only warning-level logs
 
   test              Run full test suite (unit, integration, security, performance)
 
+  suppress [ttl]    Suppress alerts for ttl seconds (default: 120)
+
   help              Show this help message
 
-Managed containers:
-  jeff-bridwell-personal-site-app       Express application (port 3000)
-  jeff-bridwell-personal-site-fuseki    SPARQL triplestore (port 3030)
+Managed services (LaunchAgents):
+  com.gathering.app         Express application (port 3000)
+  com.gathering.fuseki      SPARQL triplestore (port 3030)
 
-External dependencies (shared-observability project):
-  Prometheus (9090), Grafana (3100), Loki (3102), Promtail
+Observability services (checked by status, not managed):
+  com.gathering.prometheus  Prometheus (port 9090)
+  com.gathering.grafana     Grafana (port 3100)
+  com.gathering.loki        Loki (port 3102)
+  com.gathering.promtail    Promtail
 
 Examples:
-  ./app-state.sh start              # Start app, create infra if needed
+  ./app-state.sh start              # Start app + Fuseki
   ./app-state.sh start --test       # Run tests, then start
-  ./app-state.sh restart            # Fast restart
-  ./app-state.sh stop               # Stop all containers
-  ./app-state.sh destroy            # Full cleanup (containers + volumes)
+  ./app-state.sh restart            # Restart app
+  ./app-state.sh stop               # Stop app + Fuseki
   ./app-state.sh logs               # Query recent logs from Loki
   ./app-state.sh logs --errors      # Query error logs from Loki
   ./app-state.sh status             # Full health check
@@ -651,9 +471,6 @@ case "${1:-help}" in
   restart)
     shift
     cmd_restart "$@"
-    ;;
-  destroy)
-    cmd_destroy
     ;;
   status)
     cmd_status
