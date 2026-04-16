@@ -46,11 +46,22 @@ fi
 indexed=0
 errors=0
 
+trace_hop() {
+  local corr="$1" hop="$2" src="$3" dst="$4" domain="$5" ms="${6:-}"
+  curl -s -X POST "$API_URL/api/chorus/trace" \
+    -H 'Content-Type: application/json' \
+    -d "{\"correlationId\":\"$corr\",\"hop\":$hop,\"callStack\":\"batch\",\"source\":{\"domain\":\"$domain\",\"service\":\"$src\"},\"destination\":{\"domain\":\"$domain\",\"service\":\"$dst\"}${ms:+,\"latencyMs\":$ms}}" \
+    --max-time 3 > /dev/null 2>&1 &
+}
+
 for domain in "${DOMAINS[@]}"; do
   # Track per-domain timing (#1885)
   domain_start=$(python3 -c "import time; print(int(time.time()*1000))")
+  TRACE_ID="crawl-${domain}-$(date +%s)"
+  trace_hop "$TRACE_ID" 1 "crawler-start" "crawl-api" "$domain"
 
   # Call crawler API
+  trace_hop "$TRACE_ID" 2 "crawl-api" "chorus-api" "$domain"
   crawl_json=$(curl -sf "$API_URL/api/chorus/crawl/$domain" 2>/dev/null) || {
     domain_end=$(python3 -c "import time; print(int(time.time()*1000))")
     duration_ms=$((domain_end - domain_start))
@@ -137,6 +148,8 @@ print('\n'.join(lines))
     continue
   fi
 
+  # Index into SQLite
+  trace_hop "$TRACE_ID" 3 "chorus-api" "sqlite-index" "$domain"
   # Delete previous snapshot for this domain (keep only latest)
   sqlite3 "$DB_PATH" "DELETE FROM messages WHERE source = 'crawler' AND channel = 'crawl:$domain';" 2>/dev/null
 
@@ -159,6 +172,7 @@ print(json.dumps(d))
 " 2>/dev/null)
   "$CHORUS_LOG" crawler.domain.indexed system domain="$domain" duration_ms="$duration_ms" 2>/dev/null || true
 
+  trace_hop "$TRACE_ID" 4 "sqlite-index" "crawl-complete" "$domain" "$duration_ms"
   ((indexed++))
   echo "Indexed: $domain ($(echo "$snapshot" | wc -l | tr -d ' ') lines, ${duration_ms}ms)"
 done
