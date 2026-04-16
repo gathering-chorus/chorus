@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>CHORUS_ROOT</key>
+		<string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+	</dict>
+	<key>Label</key>
+	<string>com.chorus.perf-baseline</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>-c</string>
+		<string>/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/scripts/perf-baseline.sh safe; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/perf-baseline-chorus.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Chorus/perf-baseline-nightly.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Chorus/perf-baseline-nightly.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>0</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+</dict>
+</plist>
