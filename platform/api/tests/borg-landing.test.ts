@@ -12,15 +12,15 @@ const API = process.env.CHORUS_API || 'http://localhost:3340';
 const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
 
 const SURFACES = [
-  { slug: 'assessment',           title: 'Borg Assessment' },
-  { slug: 'instance-explorer',    title: 'Instance Explorer' },
-  { slug: 'interaction-patterns', title: 'Interaction Patterns' },
-  { slug: 'jeff',                 title: 'Jeff Dashboard' },
-  { slug: 'session-replay',       title: 'Session Replay' },
-  { slug: 'quality-service',      title: 'Quality Service' },
-  { slug: 'fitness-functions',    title: 'Fitness Functions' },
-  { slug: 'cost',                 title: 'Cost Dashboard' },
-  { slug: 'hooks',                title: 'Hooks Dashboard' },
+  { slug: 'assessment',        title: 'Borg Assessment' },
+  { slug: 'instance-explorer', title: 'Instance Explorer' },
+  { slug: 'patterns',          title: 'Interaction Patterns' },
+  { slug: 'jeff',              title: 'Jeff Dashboard' },
+  { slug: 'replay',            title: 'Session Replay' },
+  { slug: 'quality',           title: 'Quality Service' },
+  { slug: 'fitness',           title: 'Fitness Functions' },
+  { slug: 'cost',              title: 'Cost Dashboard' },
+  { slug: 'hooks',             title: 'Hooks Dashboard' },
 ];
 
 describeIntegration('#2099: Borg landing at /borg/', () => {
