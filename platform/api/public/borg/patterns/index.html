@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Interaction Patterns — Borg</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+a.back { font-size: 0.8rem; color: #4f46e5; text-decoration: none; }
+h1 { font-size: 2rem; font-weight: 300; margin: 12px 0 4px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 24px; max-width: 760px; line-height: 1.5; }
+.range-picker { margin-bottom: 20px; }
+.range-picker button { padding: 6px 14px; margin-right: 6px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #fff; font-size: 0.82rem; }
+.range-picker button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+.panel h2 { font-size: 1rem; font-weight: 500; margin-bottom: 12px; }
+.pattern-bar { display: flex; height: 32px; border-radius: 4px; overflow: hidden; background: #f3f4f6; margin-bottom: 12px; }
+.pattern-bar div { height: 100%; }
+.bar-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8rem; }
+.bar-legend span { display: flex; align-items: center; gap: 4px; }
+.dot { display: inline-block; width: 12px; height: 12px; border-radius: 2px; }
+.insight { background: #eff6ff; border: 1px solid #bfdbfe; padding: 12px 16px; border-radius: 4px; font-size: 0.85rem; margin-top: 12px; }
+.insight .warn { color: #991b1b; }
+.insight .good { color: #065f46; }
+table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+th, td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; }
+th { background: #f9fafb; font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; color: #666; }
+.loading { color: #888; font-style: italic; padding: 20px; text-align: center; }
+.error { color: #dc2626; padding: 20px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+.meta a { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a class="back" href="/borg/">&larr; Borg</a>
+<h1>Interaction Patterns</h1>
+<p class="subtitle">How Jeff spends attention across sessions. Data from spine events (interaction.pattern.detected) via Loki.</p>
+
+<div class="range-picker">
+  <button data-days="7" class="active">7 days</button>
+  <button data-days="30">30 days</button>
+  <button data-days="90">90 days</button>
+</div>
+
+<div class="panel">
+  <h2>Distribution (<span id="total">0</span> events)</h2>
+  <div class="pattern-bar" id="bar"></div>
+  <div class="bar-legend" id="legend"></div>
+  <div class="insight" id="insight"></div>
+</div>
+
+<div class="panel">
+  <h2>By Date</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Events</th><th>Dominant</th><th>Breakdown</th></tr></thead>
+    <tbody id="date-table"></tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Pattern Definitions</h2>
+  <table>
+    <tr><th>Pattern</th><th>Signal</th><th>What it means</th></tr>
+    <tr><td style="color:#2563eb;font-weight:600">Direction</td><td>Short imperative</td><td>Jeff is giving specific commands. Operational mode.</td></tr>
+    <tr><td style="color:#7c3aed;font-weight:600">Ideation</td><td>Rapid-fire ideas</td><td>Jeff is exploring. Creative mode. Don't interrupt.</td></tr>
+    <tr><td style="color:#059669;font-weight:600">Demo</td><td>"Show me"</td><td>Jeff wants to see the thing working.</td></tr>
+    <tr><td style="color:#ea580c;font-weight:600">Triage</td><td>"What's stuck"</td><td>Jeff is scanning for blockers. Surface problems, not status.</td></tr>
+    <tr><td style="color:#dc2626;font-weight:600">SWAT</td><td>Urgent, "broken"</td><td>Something is down. Drop everything.</td></tr>
+    <tr><td style="color:#0891b2;font-weight:600">Gemba</td><td>Observing work</td><td>Jeff is watching a role work. Commentary, not silence.</td></tr>
+    <tr><td style="color:#4f46e5;font-weight:600">Clearing</td><td>All-role alignment</td><td>Multi-party conversation. Decisions get marked.</td></tr>
+    <tr><td style="color:#b45309;font-weight:600">Story</td><td>Personal memory</td><td>Jeff is sharing experience. Receive it.</td></tr>
+    <tr><td style="color:#6d28d9;font-weight:600">Reflection</td><td>Meta-process</td><td>Jeff is thinking about how the team works.</td></tr>
+  </table>
+</div>
+
+<p class="meta">Chorus API &middot; /api/chorus/patterns/summary &middot; <a href="/">Chorus landing</a></p>
+
+<script>
+const COLORS = {
+  direction: '#2563eb', ideation: '#7c3aed', demo: '#059669', triage: '#ea580c',
+  swat: '#dc2626', gemba: '#0891b2', clearing: '#4f46e5', story: '#b45309', reflection: '#6d28d9',
+};
+const REACTIVE = ['direction', 'triage', 'swat'];
+const CREATIVE = ['ideation', 'reflection', 'story'];
+
+async function load(days) {
+  try {
+    const r = await fetch('/api/chorus/patterns/summary?days=' + days);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    render(data);
+  } catch (e) {
+    document.getElementById('total').textContent = 'error';
+    document.getElementById('bar').innerHTML = '<div style="padding:12px;color:#dc2626">Failed to load: ' + e.message + '</div>';
+  }
+}
+
+function render(d) {
+  document.getElementById('total').textContent = d.total;
+
+  const bar = document.getElementById('bar');
+  bar.innerHTML = '';
+  const sorted = Object.entries(d.patterns).sort((a, b) => b[1] - a[1]);
+  for (const [p, count] of sorted) {
+    const pct = d.total > 0 ? (count / d.total * 100) : 0;
+    if (pct > 0) {
+      const div = document.createElement('div');
+      div.style.background = COLORS[p] || '#999';
+      div.style.width = pct + '%';
+      div.title = p + ': ' + count + ' (' + Math.round(pct) + '%)';
+      bar.appendChild(div);
+    }
+  }
+
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+  for (const p of Object.keys(COLORS)) {
+    const count = d.patterns[p] || 0;
+    const span = document.createElement('span');
+    span.innerHTML = '<span class="dot" style="background:' + COLORS[p] + '"></span>' + p + ' (' + count + ')';
+    legend.appendChild(span);
+  }
+
+  const reactive = REACTIVE.reduce((s, p) => s + (d.patterns[p] || 0), 0);
+  const creative = CREATIVE.reduce((s, p) => s + (d.patterns[p] || 0), 0);
+  const rPct = d.total > 0 ? Math.round(reactive / d.total * 100) : 0;
+  const cPct = d.total > 0 ? Math.round(creative / d.total * 100) : 0;
+  const insight = document.getElementById('insight');
+  let html = '<strong>Reactive</strong> (direction + triage + swat): ' + rPct + '% &middot; <strong>Creative</strong> (ideation + reflection + story): ' + cPct + '%';
+  if (rPct > cPct) html += '<br><span class="warn">Reactive patterns dominate.</span>';
+  else if (cPct > rPct) html += '<br><span class="good">Creative patterns dominate.</span>';
+  insight.innerHTML = html;
+
+  const tbody = document.getElementById('date-table');
+  tbody.innerHTML = '';
+  for (const row of d.byDate) {
+    const counts = row.counts;
+    const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    const breakdown = Object.entries(counts).map(([p, c]) => p + ':' + c).join(', ');
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + row.date + '</td><td>' + row.total + '</td><td><strong>' + (dominant ? dominant[0] : '') + '</strong> (' + (dominant ? dominant[1] : '') + ')</td><td>' + breakdown + '</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+document.querySelectorAll('.range-picker button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.range-picker button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    load(btn.dataset.days);
+  });
+});
+
+load(7);
+</script>
+
+</body>
+</html>

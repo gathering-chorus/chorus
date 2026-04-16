@@ -17,6 +17,7 @@ import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
 import { getFitnessSummary } from './fitness-summary';
 import { getQualityScan, getQualityByDomain } from './quality-summary';
+import { getPatternsSummary } from './patterns-summary';
 
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
@@ -67,6 +68,16 @@ app.get('/api/chorus/quality/summary', (_req, res) => {
 app.get('/api/chorus/quality/domain/:domain', (req, res) => {
   try {
     res.json(getQualityByDomain(String(req.params.domain || '').toLowerCase()));
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Borg — Interaction Patterns summary endpoint — #2099
+app.get('/api/chorus/patterns/summary', async (req, res) => {
+  try {
+    const days = parseInt(String(req.query.days || '30'), 10) || 30;
+    res.json(await getPatternsSummary(days));
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
   }
