@@ -5,6 +5,9 @@
  * static page + JSON endpoint. Data sourced from chorus logs directly.
  */
 
+const fs = require('fs');
+const path = require('path');
+
 const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 const API = process.env.CHORUS_API || 'http://localhost:3340';
 
@@ -61,6 +64,20 @@ describeIntegration('#2099: /api/chorus/hooks/summary', () => {
     expect(typeof s.nudges).toBe('number');
     expect(Array.isArray(s.recent)).toBe(true);
   }, 15_000);
+});
+
+describe('#2119: hook category descriptions match current enforcement', () => {
+  test('app-state-guard description references kill/launchctl and app-state.sh', () => {
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../src/hooks-summary.ts'),
+      'utf8'
+    );
+    const match = src.match(/key: 'app-state-guard'[^}]*description: '([^']+)'/);
+    expect(match).not.toBeNull();
+    const description = (match || [])[1] || '';
+    expect(description).toMatch(/kill|launchctl/i);
+    expect(description).toContain('app-state.sh');
+  });
 });
 
 describeIntegration('#2099: /borg/hooks/ static page', () => {

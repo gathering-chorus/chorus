@@ -137,7 +137,7 @@ SSH: `ssh 192.168.86.242` (do NOT use `jeff@` — config supplies username)
 - `com.gathering.node-exporter` — System metrics
 - `com.gathering.navidrome` — Music server
 
-No Docker on Bedroom. All services via LaunchAgents.
+All Bedroom services run as LaunchAgents.
 
 ### Key Ports (Library)
 | Port | Service | Health Check |
@@ -221,7 +221,7 @@ launchctl list | grep <label>
 | Alert notifier | `/tmp/alert-notifier.log` |
 | Deep health | `~/Library/Logs/Chorus/deep-health.log` |
 
-For application logs, use Loki (localhost:3102) via Grafana (localhost:3100), not `docker logs`.
+For application logs, use Loki (localhost:3102) via Grafana (localhost:3100).
 
 ---
 

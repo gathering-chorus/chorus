@@ -726,13 +726,13 @@ describeIntegration('POST /api/athena/subdomains/:id/integrations (#1923)', () =
     const res = await fetch(`${API}/api/athena/subdomains/logs-service/integrations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: 'Bedroom log shipping', source: 'Docker containers on Bedroom', path: 'stdout → Promtail → Loki tunnel → Loki', status: 'active' }),
+      body: JSON.stringify({ label: 'Bedroom log shipping', source: 'Services on Bedroom', path: 'stdout → Promtail → Loki tunnel → Loki', status: 'active' }),
     });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-integration-create');
     expect(body.data.label).toBe('Bedroom log shipping');
-    expect(body.data.source).toBe('Docker containers on Bedroom');
+    expect(body.data.source).toBe('Services on Bedroom');
     expect(body.data.path).toBe('stdout → Promtail → Loki tunnel → Loki');
     expect(body.data.status).toBe('active');
   });
@@ -796,12 +796,12 @@ describeIntegration('GET/POST /api/athena/subdomains/:id/pipeline (#1925)', () =
     expect(Array.isArray(body.data.pipelines)).toBe(true);
   });
   test('POST creates pipeline with source, harvester, icd, status', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pipeline`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Bedroom log ingest', source: 'Docker stdout', harvester: 'Promtail', icd: 'logs-icd', status: 'active' }) });
+    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pipeline`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Bedroom log ingest', source: 'service stdout', harvester: 'Promtail', icd: 'logs-icd', status: 'active' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-pipeline-create');
     expect(body.data.label).toBe('Bedroom log ingest');
-    expect(body.data.source).toBe('Docker stdout');
+    expect(body.data.source).toBe('service stdout');
   });
 });
 

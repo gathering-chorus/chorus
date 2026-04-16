@@ -46,7 +46,7 @@ Scan for these five problems, in order:
 - **Fix**: move to Won't Do with comment. These are noise if nobody's working them.
 
 **6. Memory drift** — check MEMORY.md for stale facts.
-- **Check**: scan MEMORY.md for infrastructure references (Docker, disk %, test count, deploy times). Compare against known current state.
+- **Check**: scan MEMORY.md for infrastructure references (disk %, test count, deploy times, retired tooling). Compare against known current state.
 - **Fix**: update stale entries directly. Log what changed.
 - **Don't**: rewrite memory files. Only fix facts that are provably wrong.
 

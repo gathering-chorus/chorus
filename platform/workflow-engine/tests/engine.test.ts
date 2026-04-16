@@ -397,7 +397,7 @@ describe('WorkflowEngine', () => {
   describe('full lifecycle', () => {
     it('handles a 3-step workflow end-to-end', () => {
       const wf = engine.create(
-        'Migrate WordPress to docker-compose',
+        'Migrate WordPress platform',
         'silas:Write ADR,kade:Implement migration,wren:Verify and update roadmap',
         'clearing:2026-02-22',
         118,

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # app-state.sh — Unified application and infrastructure state management
-# Rewritten for native LaunchAgent architecture — no Docker. (ADR-019, #2075)
+# Native LaunchAgent architecture. (ADR-019, #2075)
 #
 # Usage: ./app-state.sh [command] [options]
 #
