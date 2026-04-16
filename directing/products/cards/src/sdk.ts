@@ -734,7 +734,7 @@ export async function moveCard(
   emitSpineEvent('card.item.moved', role, moveFields);
   // AC1 (#1805): emit card.pulled when entering WIP — role started building
   if (/^wip$/i.test(status)) {
-    emitSpineEvent('card.pulled', role, { card_id: String(index), title, board: client.boardName });
+    emitSpineEvent('card.pulled', role, { card_id: String(index), title, board: client.boardName, hop: '1', source_service: 'board', dest_service: 'role-state', callStack: 'integration' });
     autoRoleState('building', `card=${index}`);
   }
   notifyOwnerIfDifferent(index, title, owner, `moved-to-${status}`, role);
@@ -868,7 +868,7 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
     card_id: String(index), title, board: client.boardName,
   });
   emitSpineEvent('card.accepted', role, {
-    card_id: String(index), title, board: client.boardName,
+    card_id: String(index), title, board: client.boardName, hop: '1', source_service: 'board', dest_service: 'role-state', callStack: 'integration',
   });
   autoRoleState('idle');
 

@@ -163,5 +163,38 @@ export function emit(
     const target = options.logFile ?? LOG_FILE;
     fs.appendFileSync(target, JSON.stringify(entry) + '\n');
   } catch { /* best effort */ }
+
+  // Trace hop bridge — fire-and-forget to chorus-api (#2100, ADR-024)
+  const hopNum = extra.hop ? parseInt(extra.hop, 10) : undefined;
+  if (hopNum !== undefined && !isNaN(hopNum)) {
+    const tracePayload = {
+      correlationId: entry.trace_id,
+      hop: hopNum,
+      callStack: extra.callStack || 'integration',
+      source: {
+        domain: extra.domain || entry.domain || null,
+        service: extra.source_service || event,
+        instance: extra.source_instance || null,
+      },
+      destination: extra.dest_service ? {
+        domain: extra.dest_domain || extra.domain || entry.domain || null,
+        service: extra.dest_service,
+        instance: extra.dest_instance || null,
+      } : undefined,
+      latencyMs: extra.latencyMs ? parseInt(extra.latencyMs, 10) : undefined,
+      error: extra.error_class ? {
+        classification: extra.error_class,
+        message: extra.error_message || '',
+        retryable: extra.error_class === 'transient',
+      } : undefined,
+    };
+    fetch('http://localhost:3340/api/chorus/trace', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tracePayload),
+      signal: AbortSignal.timeout(3000),
+    }).catch(() => {}); // Silent — tracing never blocks
+  }
+
   return entry;
 }
