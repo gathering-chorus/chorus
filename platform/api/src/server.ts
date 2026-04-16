@@ -33,6 +33,72 @@ const REPO_SCRIPTS = path.resolve(__dirname, '../../scripts');
 const HOME_SCRIPTS = path.join(os.homedir(), '.chorus', 'scripts');
 const SCRIPTS_DIR = fs.existsSync(REPO_SCRIPTS) ? REPO_SCRIPTS : HOME_SCRIPTS;
 
+// --- Board card cache (#2096) ---
+// Same cache pattern as health endpoint (#1978, Silas: 1566ms→2ms with 30s cache).
+// Log evidence: /api/chorus/domain/:name = 344-536ms, all other facets = 8-29ms.
+// Root cause: execAsync('cards list') shells out on every request.
+// Both /api/chorus/domain/:name and /api/athena/subdomains/:id/cards read from cache.
+
+interface CachedCard {
+  id: string;
+  title: string;
+  status: string;
+  owner: string;
+  type: string;
+  priority: string;
+  tags: string;
+}
+
+let boardCache: CachedCard[] = [];
+let boardCacheAge = 0;
+
+async function refreshBoardCache(): Promise<void> {
+  try {
+    const boardTs = path.join(REPO_SCRIPTS, 'cards');
+    const envOpts = {
+      encoding: 'utf-8' as const, timeout: 15000,
+      env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
+    };
+    const { stdout } = await execAsync(`bash ${boardTs} list 2>/dev/null`, envOpts);
+    const cards: CachedCard[] = [];
+    let currentStatus = '';
+    for (const line of stdout.split('\n')) {
+      const statusMatch = line.match(/^(WIP|Blocked|Now|Next|Later|Done|Won't Do)\s*\(\d+\)/);
+      if (statusMatch) { currentStatus = statusMatch[1]; continue; }
+      const cardMatch = line.trim().match(/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/);
+      if (cardMatch) {
+        const tags = cardMatch[3];
+        const ownerMatch = tags.match(/^(Wren|Silas|Kade|Jeff)/i);
+        const typeMatch = tags.match(/type:(\w+)/);
+        const priorityMatch = tags.match(/P([1-3])/);
+        cards.push({
+          id: cardMatch[1],
+          title: cardMatch[2].trim(),
+          status: currentStatus,
+          owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
+          type: typeMatch ? typeMatch[1] : '',
+          priority: priorityMatch ? priorityMatch[0] : '',
+          tags,
+        });
+      }
+    }
+    boardCache = cards;
+    boardCacheAge = Date.now();
+  } catch (err) {
+    console.error(`[chorus-api] board cache refresh failed: ${(err as Error).message}`);
+  }
+}
+
+function getBoardCards(): CachedCard[] {
+  if (boardCache.length === 0 && boardCacheAge === 0) {
+    refreshBoardCache();
+  }
+  return boardCache;
+}
+
+refreshBoardCache();
+setInterval(refreshBoardCache, 60_000);
+
 // --- LanceDB semantic search ---
 
 let lanceTable: lancedb.Table | null = null;
@@ -821,41 +887,24 @@ app.get('/api/chorus/domain-story/:domain', async (req: Request, res: Response) 
   const mentions: Array<{ timestamp: string; role: string; text: string }> = [];
   const timeline: Array<{ timestamp: string; source: string; text: string; role?: string; card?: number }> = [];
 
-  // 1. Cards tagged with this domain via cards CLI
-  try {
-    const cardsScript = path.resolve(__dirname, '../../scripts/cards');
-    const { stdout: listOutput } = await execAsync(
-      `bash ${cardsScript} list 2>/dev/null`,
-      { encoding: 'utf-8', timeout: 15000, env: { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
-    );
-
-    for (const line of listOutput.split('\n')) {
-      if (!line.includes(`domain:${domain}`)) continue;
-      const indexMatch = line.match(/^\s*(\d+)/);
-      if (!indexMatch) continue;
-      const cardIndex = parseInt(indexMatch[1], 10);
-      const titleMatch = line.match(/^\s*\d+\s+(.+?)\s*\[/);
-      const statusMatch = line.match(/\[(WIP|Done|Next|Later|Won't Do|Blocked)/);
-      const ownerMatch = line.match(/\[(\w+)\|/);
-
-      const card = {
-        index: cardIndex,
-        title: titleMatch ? titleMatch[1].trim() : '',
-        status: statusMatch ? statusMatch[1] : '',
-        owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
-        created: '',
-      };
-      cards.push(card);
-
-      timeline.push({
-        timestamp: '',
-        source: 'card',
-        text: `#${cardIndex} ${card.title} [${card.status}]`,
-        role: card.owner,
-        card: cardIndex,
-      });
-    }
-  } catch { /* cards CLI failed */ }
+  // 1. Cards tagged with this domain — #2096: read from board cache
+  for (const c of getBoardCards().filter(c => c.tags.includes(`domain:${domain}`))) {
+    const card = {
+      index: parseInt(c.id, 10),
+      title: c.title,
+      status: c.status,
+      owner: c.owner,
+      created: '',
+    };
+    cards.push(card);
+    timeline.push({
+      timestamp: '',
+      source: 'card',
+      text: `#${c.id} ${c.title} [${c.status}]`,
+      role: c.owner,
+      card: parseInt(c.id, 10),
+    });
+  }
 
   // 2. Conversation mentions from Chorus index
   let db: Database.Database | null = null;
@@ -964,71 +1013,36 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
   const history: { unresolved: any[]; feedback: string[]; trust_score: number; health: string } = { unresolved: [], feedback: [], trust_score: 0, health: '' };
   const timeline: any[] = [];
 
-  // Source 1: Cards tagged with this domain (via cards CLI --json boundary)
-  try {
-    const cardsScript = path.resolve(__dirname, '../../scripts/cards');
-    const { stdout: listOutput } = await execAsync(
-      `bash ${cardsScript} list 2>/dev/null`,
-      { encoding: 'utf-8', timeout: 15000, env: { ...process.env, PATH: `${NODE_PATH}:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
-    );
-
+  // Source 1: Cards tagged with this domain — #2096: read from board cache
+  {
+    const allCached = getBoardCards();
     const domainCounts: Record<string, number> = {};
 
-    for (const line of listOutput.split('\n')) {
-      // Track all domains for related calculation
-      const domainMatch = line.match(/domain:(\w+)/);
-      if (domainMatch) {
-        const d = domainMatch[1];
-        domainCounts[d] = (domainCounts[d] || 0) + 1;
-      }
+    // Build domain counts from all cards for related calculation
+    for (const c of allCached) {
+      const dm = c.tags.match(/domain:(\w+)/);
+      if (dm) domainCounts[dm[1]] = (domainCounts[dm[1]] || 0) + 1;
+    }
 
-      if (!line.includes(`domain:${domain}`)) continue;
-      const indexMatch = line.match(/^\s*(\d+)/);
-      if (!indexMatch) continue;
-      const cardIndex = parseInt(indexMatch[1], 10);
-      const titleMatch = line.match(/^\s*\d+\s+(.+?)\s*\[/);
-      const statusMatch = line.match(/\[(WIP|Done|Next|Later|Won't Do|Blocked)/);
-      const ownerMatch = line.match(/\[(\w+)\|/);
-
-      // Get full card details via --json for accurate status + code files
-      let cardStatus = '';
-      let cardOwner = ownerMatch ? ownerMatch[1].toLowerCase() : '';
-      try {
-        const { stdout: cardJson } = await execAsync(
-          `bash ${cardsScript} view ${cardIndex} --json 2>/dev/null`,
-          { encoding: 'utf-8', timeout: 10000, env: { ...process.env, PATH: `${NODE_PATH}:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
-        );
-        const parsed = JSON.parse(cardJson);
-        cardStatus = parsed.status || '';
-        cardOwner = (parsed.owner || cardOwner).toLowerCase();
-
-        // Extract file paths from description and comments
-        const allText = (parsed.description || '') + ' ' + (parsed.comments || []).map((c: any) => c.text).join(' ');
-        const fileMatches = allText.match(/[\w\-/.]+\.(ts|js|rs|sh|html|json|feature)/g) || [];
-        for (const f of fileMatches) {
-          if (!code.files.includes(f)) code.files.push(f);
-          links.push({ from_type: 'card', from: cardIndex, to_type: 'code', to: f });
-        }
-      } catch { /* card detail failed */ }
-
+    for (const c of allCached.filter(c => c.tags.includes(`domain:${domain}`))) {
+      const cardIndex = parseInt(c.id, 10);
       const card = {
         index: cardIndex,
-        title: titleMatch ? titleMatch[1].trim() : '',
-        status: cardStatus,
-        owner: cardOwner,
+        title: c.title,
+        status: c.status,
+        owner: c.owner,
       };
       cards.push(card);
-      timeline.push({ timestamp: '', source: 'card', text: `#${cardIndex} ${card.title} [${card.status}]`, role: card.owner, card: cardIndex });
+      timeline.push({ timestamp: '', source: 'card', text: `#${c.id} ${c.title} [${c.status}]`, role: c.owner, card: cardIndex });
 
-      // Track unresolved
-      if (card.status !== 'Done' && card.status !== "Won't Do") {
+      if (c.status !== 'Done' && c.status !== "Won't Do") {
         history.unresolved.push(card);
       }
     }
 
     // Related domains: any domain that shares conversation mentions
     // (calculated after mentions phase below)
-  } catch { /* cards CLI failed */ }
+  }
 
   // Source 2: Fuseki RDF triples
   try {
@@ -1579,25 +1593,16 @@ app.get('/api/chorus/domain/:name/releases', async (req: Request, res: Response)
         allAcps.push({ commit: m[1].slice(0, 8), timestamp: m[2], role: m[3], cardId: m[4], title: m[5].trim() });
       }
     }
-    // Build card→domain index from one cards list call (fast, ~1s)
+    // #2096: Build card→domain index from board cache (was execSync ~450ms, now <1ms)
     const cardsDomainIndex = new Map<string, string[]>();
-    try {
-      const cardsRaw = execSync(
-        `bash ${REPO_ROOT}/platform/scripts/cards list 2>/dev/null`,
-        { encoding: 'utf-8', timeout: 10000 }
-      );
-      for (const line of cardsRaw.split('\n')) {
-        const idMatch = line.match(/^\s+(\d+)\s/);
-        if (idMatch) {
-          const domains: string[] = [];
-          const domainMatches = line.matchAll(/domain:(\w[\w-]*)/g);
-          for (const dm of domainMatches) domains.push(dm[1]);
-          const seqMatches = line.matchAll(/sequence:(\w[\w-]*)/g);
-          for (const sm of seqMatches) domains.push(sm[1]);
-          if (domains.length > 0) cardsDomainIndex.set(idMatch[1], domains);
-        }
-      }
-    } catch { /* board down — fall back to title matching */ }
+    for (const c of getBoardCards()) {
+      const domains: string[] = [];
+      const domainMatches = c.tags.matchAll(/domain:(\w[\w-]*)/g);
+      for (const dm of domainMatches) domains.push(dm[1]);
+      const seqMatches = c.tags.matchAll(/sequence:(\w[\w-]*)/g);
+      for (const sm of seqMatches) domains.push(sm[1]);
+      if (domains.length > 0) cardsDomainIndex.set(c.id, domains);
+    }
 
     // Filter ACPs by domain using the index
     const releases: Array<{ cardId: string; title: string; commit: string; timestamp: string; role: string; gates: string }> = [];
@@ -4080,31 +4085,10 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
       env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
     };
 
-    let cards: { id: string; title: string; status: string; owner: string; type: string }[] = [];
-    try {
-      const { stdout } = await execAsync(`bash ${boardTs} list 2>/dev/null`, envOpts);
-      const output = stdout.trim();
-      let currentStatus = '';
-      for (const line of output.split('\n')) {
-        const statusMatch = line.match(/^(WIP|Blocked|Next|Later|Done|Won't Do)\s*\(\d+\)/);
-        if (statusMatch) { currentStatus = statusMatch[1]; continue; }
-        if (currentStatus === 'Done' || currentStatus === "Won't Do") continue;
-        const cardMatch = line.trim().match(/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/);
-        if (cardMatch) {
-          const tags = cardMatch[3];
-          if (!tags.includes(`domain:${name}`)) continue;
-          const ownerMatch = tags.match(/^(Wren|Silas|Kade)/i);
-          const typeMatch = tags.match(/type:(\w+)/);
-          cards.push({
-            id: cardMatch[1],
-            title: cardMatch[2].trim(),
-            status: currentStatus,
-            owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
-            type: typeMatch ? typeMatch[1] : '',
-          });
-        }
-      }
-    } catch {}
+    // #2096: read from board cache instead of shelling out (was ~450ms, now <1ms)
+    const cards = getBoardCards()
+      .filter(c => c.status !== 'Done' && c.status !== "Won't Do" && c.tags.includes(`domain:${name}`))
+      .map(c => ({ id: c.id, title: c.title, status: c.status, owner: c.owner, type: c.type }));
 
     const wip = cards.filter(c => c.status === 'WIP');
     const blocked = cards.filter(c => c.status === 'Blocked');
@@ -4749,32 +4733,11 @@ app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) 
   try {
     // Map subdomain ID to board search terms
     const domainLabel = req.params.id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
-    // Board uses domain: and sequence: labels — match either
-    const { execSync } = require('child_process');
-    const CARDS_CLI = path.join(REPO_SCRIPTS, 'cards');
-    const raw = execSync(`bash ${CARDS_CLI} list 2>/dev/null`, { encoding: 'utf-8', timeout: 10000 });
-    // Search all lanes — Jeff wants every card for the domain visible (#1931)
-    // Build ID→status map from full board output
-    const statusMap = new Map<string, string>();
-    let currentStatus = '';
-    for (const line of raw.split('\n')) {
-      const headerMatch = line.match(/^(WIP|Now|Next|Later|Done) /);
-      if (headerMatch) { currentStatus = headerMatch[1]; continue; }
-      const idMatch = line.match(/^\s+(\d+)\s/);
-      if (idMatch && currentStatus) statusMap.set(idMatch[1], currentStatus);
-    }
-    const lines = raw.split('\n').filter((l: string) => {
-      if (!l.match(/^\s+\d+/)) return false;
-      return l.includes(`domain:${domainLabel}`) || l.includes(`sequence:${domainLabel}`);
-    });
-    const cards = lines.map((l: string) => {
-      const match = l.match(/^\s+(\d+)\s+(.+?)\s+\[([^\]]*)\]/);
-      if (!match) return null;
-      const [, id, title, meta] = match;
-      const owner = meta.match(/^(Wren|Silas|Kade|Jeff)/i)?.[1]?.toLowerCase() || null;
-      const priority = meta.match(/P([1-3])/)?.[0] || null;
-      return { id, title: title.replace(/ — /g, ' — ').trim(), owner, status: statusMap.get(id!) || '', priority };
-    }).filter(Boolean);
+    // #2096: read from board cache instead of execSync (was ~600ms, now <1ms)
+    // Jeff wants every card for the domain visible (#1931) — search domain: and sequence: labels
+    const cards = getBoardCards()
+      .filter(c => c.tags.includes(`domain:${domainLabel}`) || c.tags.includes(`sequence:${domainLabel}`))
+      .map(c => ({ id: c.id, title: c.title, owner: c.owner, status: c.status, priority: c.priority }));
     res.json(athenaEnvelope('subdomain-cards', { subdomain: req.params.id, domainLabel, cards }, Date.now() - start, { count: cards.length }));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('subdomain-cards', { error: err.message }, Date.now() - start, { error: true }));
