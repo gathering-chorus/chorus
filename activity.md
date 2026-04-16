@@ -870,3 +870,10 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [20:25] [Wren] → Board sweep: killed sequence:coordination (57 cards retagged), cleaned sequence:ops, folded policies-domain into loom-decisions → Jeff, all roles
 - [20:28] [Wren] → Assigned #2007 (decision enforcement gap) to self, retagged sequence:loom → Jeff
 - [19:04] [Wren] → gate:product passed on #2068 (Kade), #2075 (Silas) → Kade, Silas
+
+## 2026-04-16 (Wren — afternoon session)
+- [Wren] → Reframed #1158 from behavioral AC to systemic AC (5 routing/affordance items), moved to Next → Silas (eventual implementer)
+- [Wren] → Carded #2114 (P1 Silas): fix session-start prompt — embed shape + example, not just rules. Diagnosed bug Jeff named: the reflective opening was built (#1902) but rules-without-shape don't anchor behavior → Silas
+- [Wren] → Updated #2113 with Experience section, then ran /gate-product → PASS. Synced card AC from Silas's demo brief. Notable scope expansion: role_dir bug surfaced 46 real briefs hidden for weeks → Silas, Kade (next gate)
+- [Wren] → Chat threads with Silas (briefs deprecation: filesystem-as-truth, agreed on (c)) and Kade (pull #1320 photo thumbnail fix) — both closed → all roles
+- [Wren] → Memory: locked thesis-driven session-opening shape as target, removed regressed pattern memory, added bugs-not-character feedback → self
