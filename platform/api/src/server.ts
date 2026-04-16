@@ -15,6 +15,7 @@ app.use(express.json());
 
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
+import { getFitnessSummary } from './fitness-summary';
 
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
@@ -38,6 +39,15 @@ app.get('/api/chorus/hooks/summary', (_req, res) => {
 app.get('/api/chorus/cost/summary', async (_req, res) => {
   try {
     res.json(await getCostSummary());
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Borg — Fitness Functions summary endpoint — #2099
+app.get('/api/chorus/fitness/summary', (_req, res) => {
+  try {
+    res.json(getFitnessSummary());
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
   }

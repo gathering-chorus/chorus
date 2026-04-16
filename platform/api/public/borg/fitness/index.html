@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fitness Functions — Borg</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+a.back { font-size: 0.8rem; color: #4f46e5; text-decoration: none; }
+h1 { font-size: 2rem; font-weight: 300; margin: 12px 0 4px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 32px; max-width: 760px; line-height: 1.5; }
+.functions { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.fn { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
+.fn-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 8px; }
+.fn h2 { font-size: 1.05rem; font-weight: 500; }
+.fn .direction { font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; background: #eef2ff; color: #3730a3; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+.fn .desc { font-size: 0.82rem; color: #666; line-height: 1.5; margin-bottom: 14px; }
+.fn-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; padding: 12px; background: #f9fafb; border-radius: 6px; margin-bottom: 12px; }
+.fn-metric { text-align: center; }
+.fn-metric .val { font-size: 1.3rem; font-weight: 300; font-variant-numeric: tabular-nums; }
+.fn-metric .lbl { font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; display: block; }
+.roles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.role { padding: 10px 12px; background: #fafafa; border: 1px solid #f0f0f0; border-radius: 6px; }
+.role-name { font-size: 0.75rem; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.role-stats { font-size: 0.78rem; color: #555; font-variant-numeric: tabular-nums; }
+.role-trend { font-size: 0.72rem; margin-top: 4px; }
+.trend-up { color: #065f46; }
+.trend-down { color: #991b1b; }
+.trend-flat { color: #888; }
+.loading { text-align: center; padding: 40px; color: #888; }
+.error { color: #dc2626; padding: 20px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+.meta a { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a class="back" href="/borg/">&larr; Borg</a>
+<h1>Fitness Functions</h1>
+<p class="subtitle">Per-role quality rates from chorus.log — JDI, decision gate, search hierarchy, retry clusters. Lower rates = roles internalizing preferences. Trends compare last 7 days vs previous 7 days.</p>
+
+<div class="functions" id="functions">
+  <div class="loading">Loading&hellip;</div>
+</div>
+
+<p class="meta">Chorus API &middot; /api/chorus/fitness/summary &middot; <a href="/">Chorus landing</a></p>
+
+<script>
+(async function() {
+  const container = document.getElementById('functions');
+  try {
+    const res = await fetch('/api/chorus/fitness/summary');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    container.innerHTML = data.functions.map(fnHtml).join('');
+  } catch (err) {
+    container.innerHTML = '<div class="error">Failed to load fitness data: ' + String(err) + '</div>';
+  }
+
+  function fnHtml(f) {
+    const roles = Object.keys(f.byRole).map(function(r) {
+      const m = f.byRole[r];
+      return ''
+        + '<div class="role">'
+        +   '<div class="role-name">' + r + '</div>'
+        +   '<div class="role-stats">rate ' + (m.rate || 0).toFixed(2) + ' (' + m.events + ' ev / ' + m.sessions + ' sess)</div>'
+        +   '<div class="role-trend ' + trendCls(m.trend) + '">' + trendArrow(m.trend) + ' ' + (m.trend >= 0 ? '+' : '') + (m.trend || 0).toFixed(2) + ' vs prev 7d</div>'
+        + '</div>';
+    }).join('');
+
+    return ''
+      + '<div class="fn">'
+      +   '<div class="fn-head">'
+      +     '<h2>' + f.label + '</h2>'
+      +     '<span class="direction">' + f.direction + '</span>'
+      +   '</div>'
+      +   '<p class="desc">' + f.description + '</p>'
+      +   '<div class="fn-metrics">'
+      +     metric(f.overallToday, 'Today')
+      +     metric(f.overall7d, '7d total')
+      +     metric((f.trend7d >= 0 ? '+' : '') + f.trend7d.toFixed(2), '7d trend')
+      +   '</div>'
+      +   '<div class="roles">' + roles + '</div>'
+      + '</div>';
+  }
+
+  function metric(val, lbl) {
+    return '<div class="fn-metric"><span class="val">' + val + '</span><span class="lbl">' + lbl + '</span></div>';
+  }
+
+  function trendCls(t) {
+    if (!t || Math.abs(t) < 0.01) return 'trend-flat';
+    return t > 0 ? 'trend-up' : 'trend-down';
+  }
+
+  function trendArrow(t) {
+    if (!t || Math.abs(t) < 0.01) return '•';
+    return t > 0 ? '↑' : '↓';
+  }
+})();
+</script>
+
+</body>
+</html>
