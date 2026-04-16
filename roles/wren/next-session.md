@@ -1,35 +1,36 @@
 # Wren — Next Session
 
-## What happened (2026-04-14)
-Record team day — 30+ cards shipped across 3 roles. Wren shipped 7: graph wiring (#2025), SPOF doc (#2031), dead code sweep (#2035), cards filter (#2051), untag fix (#2052), pair skill revision (#1830), gate:product on #2014. Gate:product on 20+ cards for Silas and Kade. Won't-do'd ~40 stale cards. Board: chorus:ops 35→~5, chorus:gates 9→3, chorus:coordination 14→9. Created sequence:convergence. DEC-1785 (no silent data loss).
+## What happened (2026-04-15)
+Recovered from Claude Code crash + Library reboot. Morning architecture session (borg service design, Werk 5-layer, pipeline as value stream) fully reconstructed from Chorus index. Afternoon: shipped 5 cards (#2071 dedup, #2067 tagging, #2086 skills, #1875 gates, #2040 decisions). Passed gate:product on 15 cards from Silas and Kade. Wrote DEC-1786 (graph-lens architecture) and the client onboarding design doc (5-step wizard). Captured Athena lineage story (Staples + Cambridge Semantics). Processed 5 LinkedIn seeds on harness engineering.
 
 ## Key lessons
-- Gate nudge brevity — state result only, don't coach or signal acceptance
-- Pull not push JX — announce URLs, let Jeff open them
-- Card count is an anti-pattern metric — outcomes matter
-- Agent code smells are real — 3 competing nudge implementations, test asserting wrong approach, 12 dead scripts
-- Athena is becoming the primary front end for both products
-- Jeff wants a training layer — corrections that compound, not decay
-- Process engine is not needed — reactive hooks on spine events instead
+- Chorus index enabled crash recovery — the system remembered what the sessions forgot
+- Went too fast on skills/gates graph, Jeff caught it — read the skill-lifecycle doc before populating
+- The enforcement gap (114/127 decisions have NONE enforcement) is now visible data, not hidden
+- Three days since hulk smash — sequences focus work, reduce blast radius per session
+- Athena naming carries 3 generations of the same pattern: Dallas Systems → Staples/Anzo → Chorus
 
-## Strategy cards created (not yet built)
-- #2040 Decisions domain — enforcement audit in Athena
-- #2041 Athena as primary front end
-- #2044 Reactive gate chain — spine events auto-trigger gates
-- #2046 Training layer — correction adoption feedback loop
-- #2047 Chorus as learning harness — product positioning
-- #2050 Agent code smells blog post
-- #2037 /rvw skill, #2038 /rca skill
+## Cards created
+- #2076 Rename jeff-bridwell-personal-site to gathering
+- #2077 Sort docs into product homes
+- #2078 Prior art endpoint (Kade built same session)
+- #2081 Wizard dry run on our own system
+- #2082 Dependencies facet (Kade built same session)
+- #2083 Logs facet (Silas built same session)
+- #2084 Whiteboard skill
+- #2086 Skills subdomain (shipped)
+- #2089 Behavioral drift detection
 
 ## Tomorrow
-- #2040 (decisions domain) — P1, feeds training layer
-- #1818 (seeds close-the-loop) — P2, in Next
-- Kade pulls #2019 (blast radius from domain data) — sequence him
-- Namespace mismatch: Silas carding quick fix (dual-namespace SPARQL) + P2 migration
-- Review chorus:strategy cards (7 on board)
-- Clearing bridge reliability (#2036 shipped, #2048/#2049 follow-ons)
+- #1795 (RCA domain) — P1, Next, mine
+- #1903 (navbar restructure) — bigger than it looks, needs product boundary thinking
+- Whiteboard session for holistic domain review (#2084)
+- Skills/gates graph enrichment — Silas added predicates, I populated, needs validation
+- Reference model update — same 8 layers, richer content per layer
+- Decisions page rendering — Kade has the endpoint, wiring when he has a gap
 
 ## Pending
-- 5 convergence cards need domain:convergence untag (Vikunja 403 fixed but tags not cleaned on those)
-- Jeff wants 20-30 card operating range long-term
-- Lindenberg LinkedIn post (harness engineering + agent memory) — validates product direction
+- Repo structure audit against canonical model — domains drive migration
+- #1772 namespace convergence — increasingly urgent as more graphs populate
+- Jeff wants to use domains to drive code migration from gathering to chorus
+- O'Neill metric: 3 days since April 12

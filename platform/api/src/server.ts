@@ -6692,6 +6692,130 @@ app.use('/api/athena', (_req: Request, res: Response) => {
   }, 0, { error: true }));
 });
 
+// --- RCA (Root Cause Analysis) domain — #1795 ---
+
+const RCA_DB_PATH = DB_PATH; // Same SQLite as chorus index
+
+function ensureRcaTable(): void {
+  const db = new Database(RCA_DB_PATH);
+  db.pragma('journal_mode = WAL');
+  db.exec(`CREATE TABLE IF NOT EXISTS rcas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    trigger_event TEXT NOT NULL,
+    timeline TEXT,
+    root_cause TEXT NOT NULL,
+    contributing_factors TEXT DEFAULT '[]',
+    corrective_actions TEXT DEFAULT '[]',
+    cards TEXT DEFAULT '[]',
+    spine_events TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'open',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  db.close();
+}
+
+// Lazy init on first use
+let rcaTableReady = false;
+
+app.post('/api/chorus/rca', (req: Request, res: Response) => {
+  if (!rcaTableReady) { ensureRcaTable(); rcaTableReady = true; }
+
+  const { title, trigger, timeline, root_cause, contributing_factors, corrective_actions, cards, spine_events } = req.body || {};
+
+  if (!title || !trigger || !root_cause) {
+    res.status(400).json({ error: 'title, trigger, and root_cause are required' });
+    return;
+  }
+
+  const validStatuses = ['open', 'verified', 'closed'];
+  const status = validStatuses.includes(req.body.status) ? req.body.status : 'open';
+  const now = bostonNow();
+
+  const db = new Database(RCA_DB_PATH);
+  db.pragma('journal_mode = WAL');
+
+  const result = db.prepare(`
+    INSERT INTO rcas (title, trigger_event, timeline, root_cause, contributing_factors, corrective_actions, cards, spine_events, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    title,
+    trigger,
+    timeline || '',
+    root_cause,
+    JSON.stringify(contributing_factors || []),
+    JSON.stringify(corrective_actions || []),
+    JSON.stringify(cards || []),
+    JSON.stringify(spine_events || []),
+    status,
+    now,
+    now,
+  );
+
+  db.close();
+
+  // Emit spine event
+  const CHORUS_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
+  const entry = JSON.stringify({
+    timestamp: now,
+    level: 'info',
+    appName: 'chorus-events',
+    component: 'rca',
+    event: 'rca.created',
+    role: 'system',
+    rca_id: String(result.lastInsertRowid),
+    cards: JSON.stringify(cards || []),
+  });
+  fs.appendFileSync(CHORUS_LOG, entry + '\n');
+
+  res.json({ ok: true, id: result.lastInsertRowid, status });
+});
+
+app.get('/api/chorus/rcas', (req: Request, res: Response) => {
+  if (!rcaTableReady) { ensureRcaTable(); rcaTableReady = true; }
+
+  const statusFilter = req.query.status as string | undefined;
+  const validStatuses = ['open', 'verified', 'closed'];
+
+  const db = new Database(RCA_DB_PATH, { readonly: true });
+  db.pragma('journal_mode = WAL');
+
+  let query = 'SELECT * FROM rcas';
+  const params: string[] = [];
+
+  if (statusFilter && validStatuses.includes(statusFilter)) {
+    query += ' WHERE status = ?';
+    params.push(statusFilter);
+  }
+
+  query += ' ORDER BY created_at DESC';
+
+  const rows = db.prepare(query).all(...params) as Array<{
+    id: number; title: string; trigger_event: string; timeline: string;
+    root_cause: string; contributing_factors: string; corrective_actions: string;
+    cards: string; spine_events: string; status: string; created_at: string; updated_at: string;
+  }>;
+  db.close();
+
+  const results = rows.map(row => ({
+    id: row.id,
+    title: row.title,
+    trigger: row.trigger_event,
+    timeline: row.timeline,
+    root_cause: row.root_cause,
+    contributing_factors: JSON.parse(row.contributing_factors),
+    corrective_actions: JSON.parse(row.corrective_actions),
+    cards: JSON.parse(row.cards),
+    spine_events: JSON.parse(row.spine_events),
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
+
+  res.json({ results, total: results.length });
+});
+
 process.on('uncaughtException', (err) => {
   console.error(`[chorus-api] FATAL uncaughtException: ${err.message}`);
   console.error(err.stack);
