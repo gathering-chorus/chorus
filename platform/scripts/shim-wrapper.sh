@@ -33,4 +33,16 @@ if [ ! -x "$SHIM" ]; then
   exit 1
 fi
 
+# Trace hop bridge for role-state transitions (#2105, ADR-024)
+if [ "$CMD" = "role-state" ] && [ -n "$1" ] && [ -n "$2" ]; then
+  ROLE="$1"
+  STATE="$2"
+  CARD_ID=$(echo "$*" | grep -oE 'card=[0-9]+' | head -1 | sed 's/card=//')
+  TRACE_ID="state-${ROLE}-${CARD_ID:-none}-$(date +%s)"
+  curl -s -X POST http://localhost:3340/api/chorus/trace \
+    -H 'Content-Type: application/json' \
+    -d "{\"correlationId\":\"${TRACE_ID}\",\"hop\":1,\"callStack\":\"integration\",\"source\":{\"domain\":\"chorus\",\"service\":\"role-state\",\"instance\":\"${ROLE}\"},\"destination\":{\"domain\":\"chorus\",\"service\":\"${STATE}\"}}" \
+    --max-time 3 > /dev/null 2>&1 &
+fi
+
 exec "$SHIM" "$CMD" "$@"
