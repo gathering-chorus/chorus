@@ -25,6 +25,13 @@ fi
 VIOLATIONS=0
 PASS_COUNT=0
 
+# Trace hop — convergence call stack (#2103, ADR-024)
+TRACE_ID="convergence-validate-$(date +%s)"
+curl -s -X POST http://localhost:3340/api/chorus/trace \
+  -H 'Content-Type: application/json' \
+  -d "{\"correlationId\":\"$TRACE_ID\",\"hop\":1,\"callStack\":\"convergence\",\"source\":{\"domain\":\"chorus\",\"service\":\"git-queue\"},\"destination\":{\"domain\":\"chorus\",\"service\":\"ontology-validate\"}}" \
+  --max-time 3 > /dev/null 2>&1 &
+
 # Parse contract and validate against TTL
 python3 - "$TTL" "$CONTRACT" <<'PYEOF'
 import json, sys, re
@@ -167,4 +174,16 @@ else:
     sys.exit(0)
 PYEOF
 
-exit $?
+RESULT=$?
+if [ $RESULT -eq 0 ]; then
+  curl -s -X POST http://localhost:3340/api/chorus/trace \
+    -H 'Content-Type: application/json' \
+    -d "{\"correlationId\":\"$TRACE_ID\",\"hop\":2,\"callStack\":\"convergence\",\"source\":{\"domain\":\"chorus\",\"service\":\"ontology-validate\"},\"destination\":{\"domain\":\"chorus\",\"service\":\"validate-pass\"}}" \
+    --max-time 3 > /dev/null 2>&1 &
+else
+  curl -s -X POST http://localhost:3340/api/chorus/trace \
+    -H 'Content-Type: application/json' \
+    -d "{\"correlationId\":\"$TRACE_ID\",\"hop\":2,\"callStack\":\"convergence\",\"source\":{\"domain\":\"chorus\",\"service\":\"ontology-validate\"},\"error\":{\"classification\":\"validation\",\"message\":\"ontology validation failed\",\"retryable\":false}}" \
+    --max-time 3 > /dev/null 2>&1 &
+fi
+exit $RESULT
