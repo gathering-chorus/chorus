@@ -1373,31 +1373,25 @@ app.get('/api/chorus/domain/:name/code', async (req: Request, res: Response) => 
   }
 });
 
-// GET /api/chorus/domain/:name/tests — test files covering a domain (#2060 AC2)
+// GET /api/chorus/domain/:name/tests — test files covering a domain (#2098: unified via quality scanner)
+// Previously queried Fuseki for TestCoverage triples. Now proxies to the quality scanner
+// so domain-detail and quality-service page show the same test data.
 app.get('/api/chorus/domain/:name/tests', async (req: Request, res: Response) => {
   const start = Date.now();
   try {
-    const sdId = await resolveSubdomainId(req.params.name);
-    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-    // First: test files from code inventory
-    const codeQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?filePath ?fileType WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . OPTIONAL { ?file chorus:fileType ?fileType } } }`;
-    const codeResult = await athenaSparqlQuery(codeQuery);
-    const codeTests = codeResult.results.bindings
-      .filter((b: any) => isTestFile(b.filePath?.value || ''))
-      .map((b: any) => ({ path: b.filePath.value, type: b.fileType?.value || path.extname(b.filePath.value).slice(1) || 'unknown' }));
-    // Second: TestCoverage triples
-    const tcQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:testFile ?testFile ; chorus:testType ?testType ; chorus:covers <${sdUri}> . } } ORDER BY ?testType ?testFile`;
-    const tcResult = await athenaSparqlQuery(tcQuery);
-    const coverageTests = tcResult.results.bindings.map((b: any) => ({ path: b.testFile.value, type: b.testType.value }));
-    // Merge and deduplicate by path
-    const seen = new Set<string>();
-    const tests: Array<{ path: string; type: string }> = [];
-    for (const t of [...codeTests, ...coverageTests]) {
-      if (!seen.has(t.path)) { seen.add(t.path); tests.push(t); }
+    // Strip subdomain suffix (e.g., chorus-domain -> chorus) for the scanner API
+    const domain = req.params.name.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    const upstream = await fetch(`http://localhost:3000/api/quality/domain/${domain}`, { signal: AbortSignal.timeout(5000) });
+    if (!upstream.ok) {
+      res.json(athenaEnvelope('domain-tests', { subdomain: req.params.name, tests: [], byType: {} }, Date.now() - start, { count: 0 }));
+      return;
     }
+    const scanData = await upstream.json() as any;
+    // Map scanner shape to domain-detail's expected shape: { tests: [{ path, type }], byType: {} }
+    const tests = (scanData.files || []).map((f: any) => ({ path: f.name, type: f.kind }));
     const byType: Record<string, number> = {};
     for (const t of tests) { byType[t.type] = (byType[t.type] || 0) + 1; }
-    res.json(athenaEnvelope('domain-tests', { subdomain: sdId, tests, byType }, Date.now() - start, { count: tests.length }));
+    res.json(athenaEnvelope('domain-tests', { subdomain: req.params.name, tests, byType, total: scanData.total || 0 }, Date.now() - start, { count: tests.length }));
   } catch (err: any) {
     res.json(athenaEnvelope('domain-tests', { subdomain: req.params.name, tests: [], byType: {} }, Date.now() - start, { count: 0 }));
   }
@@ -1474,8 +1468,11 @@ app.get('/api/chorus/domain/:name/decisions', async (req: Request, res: Response
   const start = Date.now();
   try {
     const domainName = req.params.name.replace(/-(domain|service|analytics)$/, '').replace(/-/g, '_');
-    const domainUri = `https://jeffbridwell.com/chorus#${domainName}-domain`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id ?title ?date ?status ?level ?type WHERE { GRAPH <urn:chorus:decisions> { ?s a chorus:Decision ; rdfs:label ?id ; rdfs:comment ?title ; chorus:decisionDate ?date ; chorus:decisionStatus ?status ; chorus:enforcementLevel ?level ; chorus:decisionType ?type ; chorus:hasDomain <${domainUri}> . } } ORDER BY ?type ?id`;
+    // Alias mapping: aggregation domains search additional labels (#2098)
+    const DECISION_ALIASES: Record<string, string[]> = { 'tests': ['quality'], 'code': ['code'], 'gates': ['gates'] };
+    const domainNames = [domainName, ...(DECISION_ALIASES[domainName] || [])];
+    const domainFilter = domainNames.map(n => `<https://jeffbridwell.com/chorus#${n}-domain>`).join(', ');
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id ?title ?date ?status ?level ?type WHERE { GRAPH <urn:chorus:decisions> { ?s a chorus:Decision ; rdfs:label ?id ; rdfs:comment ?title ; chorus:decisionDate ?date ; chorus:decisionStatus ?status ; chorus:enforcementLevel ?level ; chorus:decisionType ?type ; chorus:hasDomain ?dom . FILTER(?dom IN (${domainFilter})) } } ORDER BY ?type ?id`;
     const result = await athenaSparqlQuery(query);
     const decisions = result.results.bindings.map((b: any) => ({
       id: b.id.value,
@@ -4548,6 +4545,75 @@ app.get('/api/athena/products', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/chorus/products — full product hierarchy: products → subproducts → subdomains (#2093)
+app.get('/api/chorus/products', async (_req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const query = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?product ?productLabel ?subprod ?spLabel ?subdomain ?sdLabel ?owner ?ownerLabel WHERE {
+        GRAPH <urn:chorus:ontology> {
+          ?product a chorus:Product . ?product rdfs:label ?productLabel .
+          OPTIONAL {
+            ?product chorus:hasSubProduct ?subprod . ?subprod rdfs:label ?spLabel .
+            OPTIONAL { ?subprod chorus:hasDomain ?subdomain . ?subdomain rdfs:label ?sdLabel }
+            OPTIONAL { ?subprod chorus:ownedBy ?owner . ?owner rdfs:label ?ownerLabel }
+          }
+          OPTIONAL {
+            ?product chorus:hasDomain ?subdomain . ?subdomain rdfs:label ?sdLabel .
+            FILTER NOT EXISTS { ?subprod2 chorus:hasDomain ?subdomain }
+          }
+        }
+      } ORDER BY ?productLabel ?spLabel ?sdLabel`;
+    const result = await athenaSparqlQuery(query);
+    // Also query direct product→domain edges (Borg, Gathering)
+    const directQuery = `
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      SELECT ?product ?productLabel ?domain ?domainLabel WHERE {
+        GRAPH <urn:chorus:ontology> {
+          ?product a chorus:Product . ?product rdfs:label ?productLabel .
+          ?product chorus:hasDomain ?domain . ?domain rdfs:label ?domainLabel .
+        }
+      } ORDER BY ?productLabel ?domainLabel`;
+    const directResult = await athenaSparqlQuery(directQuery);
+
+    // Build nested structure
+    const products: Record<string, any> = {};
+    for (const b of result.results.bindings) {
+      const pLabel = b.productLabel?.value || '?';
+      if (!products[pLabel]) products[pLabel] = { label: pLabel, subproducts: {}, domains: [] };
+      const p = products[pLabel];
+      if (b.spLabel?.value) {
+        const spLabel = b.spLabel.value;
+        if (!p.subproducts[spLabel]) p.subproducts[spLabel] = {
+          label: spLabel, owner: b.ownerLabel?.value || null, domains: []
+        };
+        if (b.sdLabel?.value && !p.subproducts[spLabel].domains.includes(b.sdLabel.value)) {
+          p.subproducts[spLabel].domains.push(b.sdLabel.value);
+        }
+      }
+    }
+    // Add direct product→domain edges
+    for (const b of directResult.results.bindings) {
+      const pLabel = b.productLabel?.value || '?';
+      if (!products[pLabel]) products[pLabel] = { label: pLabel, subproducts: {}, domains: [] };
+      const domLabel = b.domainLabel?.value;
+      if (domLabel && !products[pLabel].domains.includes(domLabel)) {
+        products[pLabel].domains.push(domLabel);
+      }
+    }
+    // Convert to array
+    const out = Object.values(products).map((p: any) => ({
+      ...p, subproducts: Object.values(p.subproducts)
+    }));
+    res.json({ products: out, elapsed_ms: Date.now() - start });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/athena/subproducts — list sub-products with owner, domain count, consumes count
 app.get('/api/athena/subproducts', async (_req: Request, res: Response) => {
   const start = Date.now();
@@ -4733,10 +4799,17 @@ app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) 
   try {
     // Map subdomain ID to board search terms
     const domainLabel = req.params.id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    // Alias mapping: aggregation domains search additional labels (#2098)
+    const DOMAIN_ALIASES: Record<string, string[]> = {
+      'tests': ['quality'],
+      'code': ['code'],
+      'gates': ['gates'],
+    };
+    const searchLabels = [domainLabel, ...(DOMAIN_ALIASES[domainLabel] || [])];
     // #2096: read from board cache instead of execSync (was ~600ms, now <1ms)
     // Jeff wants every card for the domain visible (#1931) — search domain: and sequence: labels
     const cards = getBoardCards()
-      .filter(c => c.tags.includes(`domain:${domainLabel}`) || c.tags.includes(`sequence:${domainLabel}`))
+      .filter(c => searchLabels.some(l => c.tags.includes(`domain:${l}`) || c.tags.includes(`sequence:${l}`)))
       .map(c => ({ id: c.id, title: c.title, owner: c.owner, status: c.status, priority: c.priority }));
     res.json(athenaEnvelope('subdomain-cards', { subdomain: req.params.id, domainLabel, cards }, Date.now() - start, { count: cards.length }));
   } catch (err: any) {
@@ -5142,13 +5215,16 @@ app.get('/api/chorus/tests/:domain', async (req: Request, res: Response) => {
 app.get('/api/chorus/tests', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
-    const upstream = await fetch('http://localhost:3000/api/quality', { signal: AbortSignal.timeout(10000) });
+    const upstream = await fetch('http://localhost:3000/api/quality/scan', { signal: AbortSignal.timeout(10000) });
     if (!upstream.ok) {
       res.status(upstream.status).json({ error: `upstream returned ${upstream.status}` });
       return;
     }
     const data = await upstream.json() as any;
-    res.json(athenaEnvelope('quality-scan', data, Date.now() - start, { total: data.total || 0 }));
+    // Flatten pyramid[].files[] to root-level files[] for domain-detail compatibility (#2098)
+    const allFiles = (data.pyramid || []).flatMap((l: any) => (l.files || []).map((f: any) => ({ path: f.name, type: f.kind, domain: f.domain, count: f.count, layer: l.name })));
+    const enriched = { ...data, files: allFiles };
+    res.json(athenaEnvelope('quality-scan', enriched, Date.now() - start, { total: data.total || 0 }));
   } catch (err: any) {
     res.status(502).json(athenaEnvelope('quality-scan', { error: err.message }, Date.now() - start, { error: true }));
   }
