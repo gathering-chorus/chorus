@@ -16,6 +16,7 @@ app.use(express.json());
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
 import { getFitnessSummary } from './fitness-summary';
+import { getQualityScan, getQualityByDomain } from './quality-summary';
 
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
@@ -48,6 +49,24 @@ app.get('/api/chorus/cost/summary', async (_req, res) => {
 app.get('/api/chorus/fitness/summary', (_req, res) => {
   try {
     res.json(getFitnessSummary());
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Borg — Quality Service summary endpoint — #2099
+app.get('/api/chorus/quality/summary', (_req, res) => {
+  try {
+    res.json(getQualityScan());
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Borg — Quality by domain — #2099
+app.get('/api/chorus/quality/domain/:domain', (req, res) => {
+  try {
+    res.json(getQualityByDomain(String(req.params.domain || '').toLowerCase()));
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
   }
