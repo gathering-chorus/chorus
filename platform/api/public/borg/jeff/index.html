@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Jeff — Borg</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+a.back { font-size: 0.8rem; color: #4f46e5; text-decoration: none; }
+h1 { font-size: 2rem; font-weight: 300; margin: 12px 0 4px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 32px; max-width: 760px; line-height: 1.5; }
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+.panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
+.panel h2 { font-size: 1rem; font-weight: 500; margin-bottom: 12px; }
+.panel.wide { grid-column: 1 / -1; }
+.metric { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+.metric:last-child { border-bottom: 0; }
+.metric-label { color: #666; }
+.metric-value { color: #1a1a1a; font-variant-numeric: tabular-nums; }
+.frame-strip { display: flex; gap: 4px; overflow-x: auto; padding: 8px 0; }
+.frame { flex: 0 0 auto; text-align: center; font-size: 0.7rem; min-width: 70px; }
+.frame-time { color: #888; margin-bottom: 2px; }
+.frame-mood { font-weight: 500; color: #4f46e5; }
+.frame-posture { color: #666; font-size: 0.68rem; }
+.activity-item { padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.78rem; font-family: ui-monospace, monospace; color: #555; line-height: 1.4; }
+.activity-item:last-child { border-bottom: 0; }
+.activity-item .app { color: #4f46e5; font-size: 0.68rem; text-transform: uppercase; margin-right: 6px; }
+.activity-item .time { color: #888; margin-right: 6px; }
+.loading { color: #888; padding: 12px; font-style: italic; font-size: 0.85rem; }
+.error { color: #dc2626; padding: 10px; font-size: 0.8rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+.meta a { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a class="back" href="/borg/">&larr; Borg</a>
+<h1>Jeff Dashboard</h1>
+<p class="subtitle">Posture, voice, attention analytics — the human signal. Six panels consume the same chorus-api endpoints Jeff's Gathering dashboard already uses.</p>
+
+<div class="panels">
+  <div class="panel wide" id="posture-panel"><h2>Posture (last 7 days)</h2><div class="loading">Loading /api/chorus/jeff/posture/strip&hellip;</div></div>
+  <div class="panel" id="voice-panel"><h2>Voice Analytics</h2><div class="loading">Loading /api/chorus/voice-analytics&hellip;</div></div>
+  <div class="panel" id="attention-panel"><h2>Attention Analytics</h2><div class="loading">Loading /api/chorus/attention-analytics&hellip;</div></div>
+  <div class="panel" id="reprompt-panel"><h2>Reprompts (30d)</h2><div class="loading">Loading /api/chorus/reprompt-analytics&hellip;</div></div>
+  <div class="panel" id="cost-panel"><h2>Cost</h2><div class="loading">Loading /api/chorus/cost/summary&hellip;</div></div>
+  <div class="panel wide" id="werk-panel"><h2>Werk Activity (24h)</h2><div class="loading">Loading /api/chorus/werk/activity&hellip;</div></div>
+</div>
+
+<p class="meta">Chorus API &middot; <a href="/">Chorus landing</a></p>
+
+<script>
+async function loadPanel(url, renderer, panelId) {
+  const el = document.getElementById(panelId);
+  const h2 = el.querySelector('h2').outerHTML;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    el.innerHTML = h2 + renderer(d);
+  } catch (e) {
+    el.innerHTML = h2 + '<div class="error">Failed: ' + String(e) + '</div>';
+  }
+}
+
+function renderPosture(d) {
+  if (!d.frames || d.frames.length === 0) {
+    return '<div class="loading">No posture data in /tmp/posture-timelapse/</div>';
+  }
+  const frames = d.frames.slice(-40).reverse();
+  const strip = '<div class="frame-strip">' + frames.map(function(f) {
+    const time = (f.timestamp || '').slice(11, 16) || (f.date || '').slice(5);
+    return '<div class="frame"><div class="frame-time">' + time + '</div><div class="frame-mood">' + (f.mood || '?') + '</div><div class="frame-posture">' + (f.posture || '?') + '</div></div>';
+  }).join('') + '</div>';
+  return '<div class="metric"><span class="metric-label">Frames (7d)</span><span class="metric-value">' + d.total + '</span></div>' + strip;
+}
+
+function renderVoice(d) {
+  const keys = Object.keys(d || {}).slice(0, 8);
+  if (keys.length === 0) return '<div class="loading">no voice data</div>';
+  return keys.map(function(k) {
+    const v = d[k];
+    const val = (v && typeof v === 'object') ? JSON.stringify(v).slice(0, 40) : String(v);
+    return '<div class="metric"><span class="metric-label">' + k + '</span><span class="metric-value">' + escapeHtml(val) + '</span></div>';
+  }).join('');
+}
+
+function renderAttention(d) {
+  const keys = Object.keys(d || {}).slice(0, 8);
+  if (keys.length === 0) return '<div class="loading">no attention data</div>';
+  return keys.map(function(k) {
+    const v = d[k];
+    const val = (v && typeof v === 'object') ? JSON.stringify(v).slice(0, 40) : String(v);
+    return '<div class="metric"><span class="metric-label">' + k + '</span><span class="metric-value">' + escapeHtml(val) + '</span></div>';
+  }).join('');
+}
+
+function renderReprompt(d) {
+  const keys = Object.keys(d || {}).slice(0, 8);
+  if (keys.length === 0) return '<div class="loading">no reprompt data</div>';
+  return keys.map(function(k) {
+    const v = d[k];
+    const val = (v && typeof v === 'object') ? (Array.isArray(v) ? v.length + ' items' : JSON.stringify(v).slice(0, 40)) : String(v);
+    return '<div class="metric"><span class="metric-label">' + k + '</span><span class="metric-value">' + escapeHtml(val) + '</span></div>';
+  }).join('');
+}
+
+function renderCost(d) {
+  return ''
+    + '<div class="metric"><span class="metric-label">Fixed (Claude)</span><span class="metric-value">$' + (d.summary.fixedCost || 0).toFixed(0) + '</span></div>'
+    + '<div class="metric"><span class="metric-label">Variable (Twilio + Clearing)</span><span class="metric-value">$' + (d.summary.variableCost || 0).toFixed(2) + '</span></div>'
+    + '<div class="metric"><span class="metric-label">Total</span><span class="metric-value">$' + (d.summary.totalCost || 0).toFixed(2) + '</span></div>'
+    + '<div class="metric"><span class="metric-label">Claude burn</span><span class="metric-value">' + (d.claude ? d.claude.burnStatus : '?') + '</span></div>'
+    + '<div class="metric"><span class="metric-label">Tunnel</span><span class="metric-value">' + (d.tunnel ? d.tunnel.status : '?') + '</span></div>';
+}
+
+function renderWerk(d) {
+  if (!d.entries || d.entries.length === 0) return '<div class="loading">no activity in window</div>';
+  const items = d.entries.slice(0, 25).map(function(e) {
+    const tsMs = parseInt(e.ts, 10);
+    const time = isFinite(tsMs) ? new Date(tsMs / 1e6).toLocaleTimeString() : '?';
+    const role = e.role ? ' [' + e.role + ']' : '';
+    const evt = e.event || '?';
+    return '<div class="activity-item"><span class="app">' + e.appName + '</span><span class="time">' + time + '</span>' + evt + role + '</div>';
+  }).join('');
+  return '<div class="metric"><span class="metric-label">Total entries</span><span class="metric-value">' + d.total + '</span></div>' + items;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function(c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+loadPanel('/api/chorus/jeff/posture/strip?days=7',       renderPosture,   'posture-panel');
+loadPanel('/api/chorus/voice-analytics?days=30',         renderVoice,     'voice-panel');
+loadPanel('/api/chorus/attention-analytics',             renderAttention, 'attention-panel');
+loadPanel('/api/chorus/reprompt-analytics?days=30',      renderReprompt,  'reprompt-panel');
+loadPanel('/api/chorus/cost/summary',                    renderCost,      'cost-panel');
+loadPanel('/api/chorus/werk/activity?hours=24',          renderWerk,      'werk-panel');
+</script>
+
+</body>
+</html>

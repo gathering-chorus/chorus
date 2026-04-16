@@ -18,6 +18,7 @@ import { getCostSummary } from './cost-summary';
 import { getFitnessSummary } from './fitness-summary';
 import { getQualityScan, getQualityByDomain } from './quality-summary';
 import { getPatternsSummary } from './patterns-summary';
+import { getPostureStrip, getWerkActivity } from './jeff-summary';
 
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
@@ -94,6 +95,30 @@ app.get('/api/chorus/codebase/topology', async (_req, res) => {
     res.json(await r.json());
   } catch (e) {
     res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Borg — posture strip (Jeff dashboard) — #2099
+app.get('/api/chorus/jeff/posture/strip', (req, res) => {
+  try {
+    const days = parseInt(String(req.query.days || '7'), 10) || 7;
+    const posture = String(req.query.posture || 'all');
+    const mood = String(req.query.mood || 'all');
+    res.json(getPostureStrip(days, posture, mood));
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Borg — Werk activity (Jeff dashboard) — #2099
+app.get('/api/chorus/werk/activity', async (req, res) => {
+  try {
+    const hours = parseInt(String(req.query.hours || '24'), 10) || 24;
+    const role = String(req.query.role || '');
+    const event = String(req.query.event || '');
+    res.json(await getWerkActivity(hours, role, event));
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
   }
 });
 
