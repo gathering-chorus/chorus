@@ -6893,6 +6893,64 @@ app.get('/api/chorus/rcas', (req: Request, res: Response) => {
   res.json({ results, total: results.length });
 });
 
+// --- Spine Event Service — #2109 ---
+// Decoupled spine endpoint: Gathering POSTs here instead of importing chorus-sdk.
+// Events with hop fields auto-create trace entries.
+
+app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
+  const { event, role, ...fields } = req.body || {};
+
+  if (!event) {
+    res.status(400).json({ error: 'event is required' });
+    return;
+  }
+
+  // Write to chorus.log (same as chorus-sdk emit did in-process)
+  const entry = {
+    timestamp: bostonNow(),
+    level: 'info',
+    appName: 'chorus-events',
+    component: 'spine-service',
+    event,
+    role: role || 'system',
+    ...fields,
+  };
+  const CHORUS_LOG = `${CHORUS_ROOT}/chorus/platform/logs/chorus.log`;
+  try {
+    fs.appendFileSync(CHORUS_LOG, JSON.stringify(entry) + '\n');
+  } catch { /* best effort */ }
+
+  // Auto-create trace hop if hop field present
+  if (typeof fields.hop === 'number' && !isNaN(fields.hop)) {
+    if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; }
+    const db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    const now = bostonNow();
+    db.prepare(`
+      INSERT INTO traces (correlation_id, hop, call_stack, source_domain, source_service, source_instance, dest_domain, dest_service, dest_instance, timestamp, latency_ms, error_class, error_message, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      fields.trace_id || `spine-${Date.now()}`,
+      fields.hop,
+      fields.callStack || 'integration',
+      fields.domain || null,
+      fields.source_service || event,
+      fields.source_instance || null,
+      fields.dest_domain || fields.domain || null,
+      fields.dest_service || null,
+      fields.dest_instance || null,
+      now,
+      fields.latencyMs || null,
+      fields.error_class || null,
+      fields.error_message || null,
+      now,
+    );
+    db.close();
+  }
+
+  res.json({ ok: true });
+});
+
 // --- Trace Envelope — #2097 (ADR-024) ---
 // Common message envelope with hop-level tracing across four call stacks.
 // Traces auto-populate domain integration maps.

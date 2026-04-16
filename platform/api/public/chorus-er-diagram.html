@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Chorus Ontology — ER Diagram</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<style>
+body { font-family: -apple-system, sans-serif; margin: 20px; background: #fafafa; }
+h1 { font-size: 1.4em; color: #1a1a1a; border-bottom: 2px solid #6366f1; padding-bottom: 8px; }
+.meta { color: #666; font-size: 0.85em; margin-bottom: 16px; }
+.controls { margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.controls a button, .controls button { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer; font-size: 0.85em; }
+.controls a button:hover, .controls button:hover { background: #eef2ff; }
+.controls button.active { background: #6366f1; color: white; border-color: #6366f1; }
+.controls select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em; margin-left: 16px; }
+#diagram { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; overflow: auto; }
+.loading { text-align: center; color: #888; padding: 40px; }
+</style>
+</head><body>
+<h1>Chorus Ontology — Entity Relationship Diagram</h1>
+<div class="meta" id="meta">Loading...</div>
+<div class="controls">
+  <button class="active">Schema (ER)</button>
+  <a href="chorus-instance-explorer.html"><button>Data (Explorer)</button></a>
+  <a href="chorus-data-model.html"><button>Reference (Cards)</button></a>
+  <select id="productFilter"><option value="">All Products</option></select>
+</div>
+<div id="diagram"><div class="loading">Loading ontology...</div></div>
+<script src="chorus-er-diagram.js"></script>
+</body></html>
