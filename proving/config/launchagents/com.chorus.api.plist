@@ -8,8 +8,8 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/api/dist/server.js</string>
+    <string>/bin/bash</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-api-wrapper.sh</string>
   </array>
 
   <key>WorkingDirectory</key>
