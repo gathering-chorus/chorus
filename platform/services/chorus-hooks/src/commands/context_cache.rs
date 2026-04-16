@@ -81,13 +81,11 @@ pub fn run(args: &[String]) -> ExitCode {
             .collect::<Vec<_>>().join("\n")
     } else { String::new() };
 
-    // Handoff check
-    let handoff_log = format!("{}/proving/logs/handoffs.log", REPO_ROOT);
-    let role_s = role.to_string();
+    // Pending briefs — filesystem is truth (#2113): briefs/ top-level = pending, anything
+    // moved out (briefs/archive/ subdir or briefs-archive/ sibling) is invisible here.
     let briefs_dir_c = briefs_dir.clone();
-    let archive_dir = format!("{}/proving/workflows/archive", REPO_ROOT);
     let handoff_check = std::thread::spawn(move || {
-        check_handoffs(&handoff_log, &role_s, &briefs_dir_c, &archive_dir)
+        scan_briefs_pending(std::path::Path::new(&briefs_dir_c))
     });
 
     // Memory context from Chorus API
@@ -480,114 +478,68 @@ fn fetch_memory_context(board_ts: &str, role: &str) -> String {
     results.join("\n")
 }
 
-/// Check handoff staleness from handoffs.log
-fn check_handoffs(log_path: &str, role: &str, briefs_dir: &str, archive_dir: &str) -> String {
-    let content = match fs::read_to_string(log_path) {
-        Ok(c) => c,
-        Err(_) => return String::new(),
-    };
+// #2113: filesystem-as-truth brief scanner. handoffs.log retained for audit but
+// no longer consulted — it had no "received" writer, so pending never cleared.
+//
+// KEEP IN SYNC WITH tests/briefs_scanner.rs::{is_real_brief, scan_briefs_pending}
 
-    let mut received_ids = std::collections::HashSet::new();
-    let mut events = Vec::new();
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() { continue; }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-            if v.get("status").and_then(|s| s.as_str()) == Some("received") {
-                if let Some(id) = v.get("id").and_then(|i| i.as_str()) {
-                    received_ids.insert(id.to_string());
-                }
-            }
-            events.push(v);
-        }
+fn strip_date_prefix(name: &str) -> &str {
+    let b = name.as_bytes();
+    if b.len() >= 11
+        && b[0].is_ascii_digit() && b[1].is_ascii_digit() && b[2].is_ascii_digit() && b[3].is_ascii_digit()
+        && b[4] == b'-'
+        && b[5].is_ascii_digit() && b[6].is_ascii_digit()
+        && b[7] == b'-'
+        && b[8].is_ascii_digit() && b[9].is_ascii_digit()
+        && b[10] == b'-'
+    {
+        &name[11..]
+    } else {
+        name
     }
-
-    let mut output = Vec::new();
-    let mut pending_count = 0u32;
-    let mut stale_count = 0u32;
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-
-    for e in &events {
-        if e.get("status").and_then(|s| s.as_str()) != Some("sent") { continue; }
-        if e.get("to").and_then(|t| t.as_str()) != Some(role) { continue; }
-        let id = match e.get("id").and_then(|i| i.as_str()) { Some(i) => i, None => continue };
-        if received_ids.contains(id) { continue; }
-
-        pending_count += 1;
-
-        if let Some(ts_str) = e.get("timestamp").and_then(|t| t.as_str()) {
-            // Simple age check — parse ISO timestamp
-            if let Ok(dt) = chrono_parse_approx(ts_str) {
-                let age_hours = (now.saturating_sub(dt)) / 3600;
-                if age_hours > 4 {
-                    stale_count += 1;
-                    let from = e.get("from").and_then(|f| f.as_str()).unwrap_or("?");
-                    let artifact = e.get("artifact").and_then(|a| a.as_str())
-                        .map(|p| p.rsplit('/').next().unwrap_or(p)).unwrap_or("?");
-                    output.push(format!("STALE ({}h): {} from {} - {}", age_hours,
-                        e.get("type").and_then(|t| t.as_str()).unwrap_or("?"), from, artifact));
-                }
-            }
-        }
-    }
-
-    // Stale workflow briefs
-    let mut stale_brief_count = 0u32;
-    if let Ok(entries) = std::fs::read_dir(briefs_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_lowercase();
-            if name.contains("wf-") && name.contains("step") {
-                // Check if workflow is archived
-                if let Some(wf_num) = name.split("wf-").nth(1).and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next()) {
-                    let archive_path = format!("{}/WF-{}.json", archive_dir, wf_num.trim_start_matches('0'));
-                    if std::path::Path::new(&archive_path).exists() {
-                        stale_brief_count += 1;
-                    }
-                }
-            }
-        }
-    }
-
-    if pending_count == 0 && stale_brief_count == 0 {
-        return String::new();
-    }
-
-    let mut parts = Vec::new();
-    if pending_count > 0 { parts.push(format!("{} pending", pending_count)); }
-    if stale_count > 0 { parts.push(format!("{} stale handoff(s)", stale_count)); }
-    if stale_brief_count > 0 { parts.push(format!("{} stale brief(s)", stale_brief_count)); }
-    output.push(format!("SUMMARY:{}", parts.join(", ")));
-    output.join("\n")
 }
 
-/// Approximate ISO timestamp parse -> unix seconds (no chrono crate)
-fn chrono_parse_approx(ts: &str) -> Result<u64, ()> {
-    // Parse "2026-03-22T21:29:55Z" or similar
-    let clean = ts.replace('Z', "+00:00");
-    let parts: Vec<&str> = clean.split('T').collect();
-    if parts.len() < 2 { return Err(()); }
-    let date_parts: Vec<u32> = parts[0].split('-').filter_map(|s| s.parse().ok()).collect();
-    let time_str = parts[1].split('+').next().unwrap_or("00:00:00");
-    let time_parts: Vec<u32> = time_str.split(':').filter_map(|s| s.parse().ok()).collect();
-    if date_parts.len() < 3 || time_parts.len() < 2 { return Err(()); }
+fn is_real_brief(name: &str) -> bool {
+    if !name.ends_with(".md") { return false; }
+    let body = strip_date_prefix(name);
+    if let Some(rest) = body.strip_prefix("card-") {
+        if rest.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            return false;
+        }
+    }
+    true
+}
 
-    // Rough unix timestamp calculation (good enough for age comparison)
-    let year = date_parts[0];
-    let month = date_parts[1];
-    let day = date_parts[2];
-    let hour = time_parts[0];
-    let min = time_parts[1];
-
-    // Days since epoch (rough)
-    let mut days: u64 = 0;
-    for y in 1970..year { days += if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 }; }
-    let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    for m in 1..month { days += month_days[m as usize] as u64; }
-    if month > 2 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { days += 1; }
-    days += (day - 1) as u64;
-
-    Ok(days * 86400 + hour as u64 * 3600 + min as u64 * 60)
+fn scan_briefs_pending(briefs_dir: &std::path::Path) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let entries = match std::fs::read_dir(briefs_dir) {
+        Ok(e) => e,
+        Err(_) => return String::new(),
+    };
+    let now = SystemTime::now();
+    let mut items: Vec<(String, u64)> = Vec::new();
+    for entry in entries.flatten() {
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if !file_type.is_file() { continue; }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !is_real_brief(&name) { continue; }
+        let mtime = entry.metadata().ok()
+            .and_then(|m| m.modified().ok())
+            .unwrap_or(UNIX_EPOCH);
+        let age_hours = now.duration_since(mtime)
+            .map(|d| d.as_secs() / 3600)
+            .unwrap_or(0);
+        items.push((name, age_hours));
+    }
+    if items.is_empty() { return String::new(); }
+    items.sort_by_key(|(_, age)| *age);
+    let mut output: Vec<String> = items.iter()
+        .take(10)
+        .map(|(name, age)| format!("- {} ({}h)", name, age))
+        .collect();
+    output.push(format!("SUMMARY:{} pending", items.len()));
+    output.join("\n")
 }

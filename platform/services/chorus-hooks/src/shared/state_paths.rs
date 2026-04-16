@@ -49,12 +49,17 @@ pub const SESSION_INIT_DIR: &str = "/tmp/claude-session-init";
 /// Chat directory
 pub const CHAT_DIR: &str = "/tmp/chorus-chat";
 
-/// Role directory mapping
+/// Role directory mapping — resolves to chorus-relative path.
+/// Post DEC-1816 namespace move, roles live at `roles/<name>`. The #1794 swat
+/// updated from the old product-manager/architect/engineer names to bare
+/// wren/silas/kade but dropped the `roles/` prefix, which silently broke
+/// context_cache and session commands (they looked at /chorus/silas instead
+/// of /chorus/roles/silas). Restored here as part of #2113.
 pub fn role_dir(role: &str) -> Option<&'static str> {
     match role {
-        "wren" => Some("wren"),
-        "silas" => Some("silas"),
-        "kade" => Some("kade"),
+        "wren" => Some("roles/wren"),
+        "silas" => Some("roles/silas"),
+        "kade" => Some("roles/kade"),
         _ => None,
     }
 }
