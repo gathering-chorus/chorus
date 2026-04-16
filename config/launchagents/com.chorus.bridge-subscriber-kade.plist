@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/jeffbridwell</string>
+		<key>PATH</key>
+		<string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.chorus.bridge-subscriber-kade</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node</string>
+		<string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/bridge-subscriber.js</string>
+		<string>kade</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Chorus/bridge-subscriber-kade.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Chorus/bridge-subscriber-kade.log</string>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+</dict>
+</plist>

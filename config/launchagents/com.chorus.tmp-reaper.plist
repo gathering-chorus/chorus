@@ -17,9 +17,9 @@
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/tmp/tmp-reaper.log</string>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/tmp-reaper.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/tmp-reaper.log</string>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/tmp-reaper.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

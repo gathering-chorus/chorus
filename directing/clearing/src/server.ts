@@ -31,7 +31,11 @@ console.log(`[clearing] remote URL: http://192.168.86.36:${PORT}?token=${BRIDGE_
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server, {
+  cors: { origin: '*' },
+  pingInterval: 60000,   // 60s — subscribers are passive listeners, don't need 25s heartbeats
+  pingTimeout: 30000,    // 30s tolerance for pong response (#1964)
+});
 
 // Cookie parser (minimal — just need bridge_token) — must be before auth
 app.use((req: any, _res, next) => {
