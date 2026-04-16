@@ -13,6 +13,8 @@ const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProje
 const app = express();
 app.use(express.json());
 
+import { getHooksSummary } from './hooks-summary';
+
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
 
@@ -21,6 +23,15 @@ app.use('/docs', express.static(path.join(__dirname, '..', 'public')));
 
 // Serve Borg shaping surface — #2099
 app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
+
+// Borg — Hooks summary endpoint — #2099
+app.get('/api/chorus/hooks/summary', (_req, res) => {
+  try {
+    res.json(getHooksSummary());
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
 
 // Request logging — every request writes to stdout so the log stays fresh
 app.use((req, res, next) => {

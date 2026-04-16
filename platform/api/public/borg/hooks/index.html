@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Governance Hooks — Borg</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+a.back { font-size: 0.8rem; color: #4f46e5; text-decoration: none; }
+h1 { font-size: 2rem; font-weight: 300; margin: 12px 0 4px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 32px; max-width: 760px; line-height: 1.5; }
+.totals { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 32px; padding: 20px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
+.stat { flex: 1; min-width: 120px; }
+.stat-value { font-size: 1.8rem; font-weight: 300; line-height: 1; }
+.stat-label { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; display: block; }
+.stat.block .stat-value { color: #dc2626; }
+.stat.flag .stat-value { color: #d97706; }
+.stat.nudge .stat-value { color: #7c3aed; }
+.categories { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+.cat { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
+.cat.quiet { opacity: 0.55; }
+.cat-head { display: flex; justify-content: space-between; align-items: start; gap: 8px; margin-bottom: 8px; }
+.cat h2 { font-size: 0.95rem; font-weight: 500; }
+.enforce { font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.enforce-enforced { background: #fef2f2; color: #991b1b; }
+.enforce-advisory { background: #eef2ff; color: #3730a3; }
+.counts { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+.badge { font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; background: #f3f4f6; color: #555; }
+.badge.block { background: #fef2f2; color: #991b1b; }
+.badge.flag { background: #fffbeb; color: #92400e; }
+.badge.nudge { background: #f5f3ff; color: #6d28d9; }
+.cat-desc { font-size: 0.82rem; color: #666; line-height: 1.5; margin-top: 4px; }
+.recent { margin-top: 12px; border-top: 1px solid #f0f0f0; padding-top: 10px; }
+.recent-item { font-size: 0.72rem; color: #666; font-family: ui-monospace, monospace; margin-bottom: 4px; line-height: 1.4; }
+.recent-item .role { color: #4f46e5; }
+.loading { text-align: center; padding: 40px; color: #888; }
+.error { color: #dc2626; padding: 20px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+.meta a { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a class="back" href="/borg/">&larr; Borg</a>
+<h1>Governance Hooks</h1>
+<p class="subtitle">Forcing functions — what they catch, when they fire. Data from /api/chorus/hooks/summary (chorus.log, permission-prompts.log, command-errors.log).</p>
+
+<div class="totals" id="totals">
+  <div class="loading">Loading&hellip;</div>
+</div>
+
+<div class="categories" id="categories">
+  <div class="loading">Loading&hellip;</div>
+</div>
+
+<p class="meta">Chorus API &middot; /api/chorus/hooks/summary &middot; <a href="/">Chorus landing</a></p>
+
+<script>
+(async function() {
+  const totalsEl = document.getElementById('totals');
+  const catsEl = document.getElementById('categories');
+
+  try {
+    const res = await fetch('/api/chorus/hooks/summary');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    totalsEl.innerHTML = ''
+      + statHtml(data.totals.last7d, 'Events (7d)', '')
+      + statHtml(data.totals.today,  'Today',       '')
+      + statHtml(data.totals.blocks, 'Blocks (7d)', 'block')
+      + statHtml(data.totals.flags,  'Flags (7d)',  'flag')
+      + statHtml(data.totals.nudges, 'Nudges (7d)', 'nudge');
+
+    catsEl.innerHTML = data.summaries.map(catHtml).join('');
+  } catch (err) {
+    totalsEl.innerHTML = '<div class="error">Failed to load hooks data: ' + String(err) + '</div>';
+    catsEl.innerHTML = '';
+  }
+
+  function statHtml(value, label, cls) {
+    return '<div class="stat ' + cls + '"><span class="stat-value">' + value + '</span><span class="stat-label">' + label + '</span></div>';
+  }
+
+  function catHtml(s) {
+    const counts = [
+      '<span class="badge">' + s.last7d + ' · 7d</span>',
+      s.blocks > 0 ? '<span class="badge block">' + s.blocks + ' blocked</span>' : '',
+      s.flags  > 0 ? '<span class="badge flag">'  + s.flags  + ' flagged</span>' : '',
+      s.nudges > 0 ? '<span class="badge nudge">' + s.nudges + ' nudged</span>' : '',
+    ].filter(Boolean).join(' ');
+
+    const recent = (s.recent || []).slice(0, 5).map(function(e) {
+      const t = (e.timestamp || '').slice(11, 16);
+      return '<div class="recent-item">' + t + ' <span class="role">' + (e.role || '?') + '</span> ' + escapeHtml(e.detail || '') + '</div>';
+    }).join('') || '<div class="recent-item" style="color:#bbb">no recent events</div>';
+
+    return ''
+      + '<div class="cat ' + (s.last7d === 0 ? 'quiet' : '') + '">'
+      +   '<div class="cat-head">'
+      +     '<h2>' + s.label + '</h2>'
+      +     '<span class="enforce enforce-' + s.enforcement + '">' + s.enforcement + '</span>'
+      +   '</div>'
+      +   '<div class="counts">' + counts + '</div>'
+      +   '<p class="cat-desc">' + s.description + '</p>'
+      +   '<div class="recent">' + recent + '</div>'
+      + '</div>';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
