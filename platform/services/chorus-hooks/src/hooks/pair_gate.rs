@@ -53,39 +53,11 @@ fn has_pair_evidence_in_session(input: &HookInput, state: &AppState) -> bool {
     false
 }
 
-pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
-    let tool = input.tool_name_str();
-    if tool != "Edit" && tool != "Write" {
-        return HookResponse::allow();
-    }
-
-    let file_path = input.get_tool_input_str("file_path");
-    if !is_code_file(&file_path) {
-        return HookResponse::allow();
-    }
-
-    // Skip generated/build paths
-    if file_path.contains("/target/") || file_path.contains("/node_modules/")
-        || file_path.contains("/dist/")
-    {
-        return HookResponse::allow();
-    }
-
-    // #2009: Ops scripts don't require pairing — they're infra tooling, not app code
-    if crate::shared::file_classification::is_ops_script(&file_path) {
-        return HookResponse::allow();
-    }
-
-    // Check for active pair — either a pair file on disk or pair evidence in session
-    if has_active_pair() || has_pair_evidence_in_session(input, state) {
-        return HookResponse::allow();
-    }
-
-    HookResponse::deny(&permission_deny_json(
-        "Pair gate: no active pair session detected. \
-         Start /pair before editing code files. \
-         #1814: code cards require a pair."
-    ))
+pub fn check(_input: &HookInput, _state: &AppState) -> HookResponse {
+    // Pair gate disabled — pairing is a practice choice at /pull or /pair level,
+    // not enforced per-edit. Jeff's direction 2026-04-16: "that's a bug —
+    // the team uses either /pull or /pair, it should not be enforced below that level."
+    HookResponse::allow()
 }
 
 #[cfg(test)]
@@ -147,12 +119,11 @@ mod tests {
     }
 
     #[test]
-    fn blocks_app_code_without_pair() {
-        // Application code still requires pairing
+    fn allows_app_code_without_pair() {
+        // Pair gate disabled — pairing is a practice, not a gate
         let input = make_input("Edit", "/Users/jeff/CascadeProjects/chorus/platform/api/src/server.ts");
         let r = check(&input, &state());
-        // Without a pair session, this should block (deny has stdout)
-        assert!(r.stdout.is_some(), "app code should require pair");
+        assert!(r.stdout.is_none(), "pair gate should not block edits");
     }
 
     #[test]

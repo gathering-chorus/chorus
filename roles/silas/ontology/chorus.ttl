@@ -965,6 +965,12 @@ chorus:code-domain a chorus:SubDomain ;
     chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building .
 
+chorus:tests-domain a chorus:SubDomain ;
+    rdfs:label "Tests" ;
+    rdfs:comment "Test files, coverage, test pyramid. Discover-tests herald: 98 tests across 23 domains." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:primaryStep chorus:Building .
+
 chorus:messages-domain a chorus:SubDomain ;
     rdfs:label "Messages" ;
     rdfs:comment "Bridge messaging, nudge delivery, inter-role communication." ;
@@ -1149,16 +1155,23 @@ chorus:video-domain chorus:builtBy chorus:gatheringStream .
 # Note: code/commits/tests and pipelines are inventory sections, not domains (#1962).
 # Services (observability, logs, alerts, deploys, skills, gates) remain as sub-domains.
 
-chorus:chorusProduct chorus:hasDomain chorus:messages-domain, chorus:streams-domain,
-                                     chorus:knowledge-domain,
-                                     chorus:infrastructure-domain, chorus:code-domain,
-                                     chorus:toolchain-domain .
+# DEC-2090 #2093: All subdomains assigned to subproducts. No orphans under chorusProduct.
+# Loom: chorus-domain (meta), roles-domain (already in loom hasDomain above)
+chorus:loom chorus:hasDomain chorus:chorus-domain .
 
+# Athena: code, knowledge
+chorus:athena-product chorus:hasDomain chorus:code-domain, chorus:knowledge-domain, chorus:tests-domain .
+
+# Werk: streams
+chorus:werk-product chorus:hasDomain chorus:streams-domain .
+
+# The Clearing: messages (already declared above)
+
+# Convergence
 chorus:convergence-product chorus:hasDomain chorus:integrations-domain, chorus:convergence-domain .
 
-chorus:chorusProduct chorus:hasDomain chorus:chorus-domain,
-                                     chorus:properties-domain, chorus:security-domain,
-                                     chorus:time-domain, chorus:roles-domain .
+# Borg/Observability: infrastructure, security, toolchain, properties, time (infra concerns)
+chorus:observability-domain chorus:hasDomain chorus:properties-domain, chorus:time-domain .
 
 chorus:loom chorus:hasDomain chorus:policies-domain .
 

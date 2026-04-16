@@ -13,6 +13,9 @@ const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProje
 const app = express();
 app.use(express.json());
 
+// Serve Chorus docs (ontology views, ER diagram, data model) — #2108
+app.use('/docs', express.static(path.join(__dirname, '..', 'public')));
+
 // Request logging — every request writes to stdout so the log stays fresh
 app.use((req, res, next) => {
   const start = Date.now();
