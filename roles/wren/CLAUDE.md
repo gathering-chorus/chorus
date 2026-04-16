@@ -41,7 +41,7 @@ Two products: **Gathering** (app, `../jeff-bridwell-personal-site`) and **Chorus
 
 ## Infrastructure Operations (MANDATORY)
 
-All service lifecycle through `app-state.sh`. Never kill PIDs manually. Views/CSS are bind-mounted (no deploy). TypeScript changes need `app-state.sh deploy`. Logs via Loki (`localhost:3102`), not `docker logs`.
+All service lifecycle through `app-state.sh`. Never kill PIDs manually. TypeScript changes need `app-state.sh deploy`; static assets (HTML/CSS/JS) are served from disk — no deploy. Logs via Loki (`localhost:3102`).
 
 All shared scripts: `../../scripts/`. Commits to team repo use `git-queue.sh`. Full reference: `../../../TEAM_PROTOCOL.md`
 
@@ -55,7 +55,7 @@ Two machines: **Library** (192.168.86.36) and **Bedroom** (192.168.86.242).
 
 **Read is free.** Health checks, log reads, status queries — no card needed.
 **Write/mutate requires a card.** Log in `../../../activity.md` with machine name.
-**No raw process killing — local OR remote.** Use `launchctl kickstart` for LaunchAgents, `app-state.sh` for Docker.
+**No raw process killing — local OR remote.** Use `launchctl kickstart` for LaunchAgents, `app-state.sh` for the Gathering app lifecycle.
 **LaunchAgent changes go through Silas.**
 **Exception:** Kade may restart services via `app-state.sh` during Bedroom bulk ops (thumbnail generation, photo pipeline) without routing through Silas. Log in activity.md.
 

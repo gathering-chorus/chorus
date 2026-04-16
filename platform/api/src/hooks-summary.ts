@@ -65,7 +65,7 @@ const CATEGORIES: Array<{ key: HookCategory; label: string; description: string;
   { key: 'search-hierarchy', label: 'Search Hierarchy', description: 'Filesystem searches that should have started with Chorus or codebase graph', enforcement: 'advisory' },
   { key: 'decision-gate', label: 'Decision Gate', description: 'Questions matching known Jeff preferences — blocked or nudged', enforcement: 'advisory' },
   { key: 'jdi-gate', label: 'JDI Gate', description: 'Permission-seeking responses blocked — role should execute, not ask', enforcement: 'enforced' },
-  { key: 'app-state-guard', label: 'App State Guard', description: 'Direct docker/kill commands blocked — must use app-state.sh', enforcement: 'enforced' },
+  { key: 'app-state-guard', label: 'App State Guard', description: 'Direct kill/launchctl unload commands blocked — must use app-state.sh', enforcement: 'enforced' },
   { key: 'sparql-guard', label: 'SPARQL Guard', description: 'Bare triple pattern queries warned — use named graphs', enforcement: 'advisory' },
   { key: 'card-quality', label: 'Card Quality', description: 'Card gate violations — missing AC, blast radius failures, quality warnings', enforcement: 'enforced' },
   { key: 'deploy-gate', label: 'Deploy Gate', description: 'Deploy pipeline events — skipped deploys, freeze checks', enforcement: 'advisory' },

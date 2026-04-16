@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cost — Borg</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+a.back { font-size: 0.8rem; color: #4f46e5; text-decoration: none; }
+h1 { font-size: 2rem; font-weight: 300; margin: 12px 0 4px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 32px; max-width: 760px; line-height: 1.5; }
+.totals { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; padding: 20px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
+.stat { flex: 1; min-width: 140px; }
+.stat-value { font-size: 1.9rem; font-weight: 300; line-height: 1; }
+.stat-label { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; display: block; }
+.stat.total .stat-value { color: #7c3aed; }
+.stat.variable .stat-value { color: #d97706; }
+.panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+.panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
+.panel h2 { font-size: 1rem; font-weight: 500; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+.panel .badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; background: #f3f4f6; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+.panel .badge.pending { background: #fffbeb; color: #92400e; }
+.panel .badge.hot { background: #fef2f2; color: #991b1b; }
+.panel .badge.smooth { background: #ecfdf5; color: #065f46; }
+.panel .badge.cold { background: #eff6ff; color: #1e40af; }
+.panel .badge.up { background: #ecfdf5; color: #065f46; }
+.panel .badge.down { background: #fef2f2; color: #991b1b; }
+.panel .badge.unknown { background: #f3f4f6; color: #666; }
+.metric { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+.metric:last-child { border-bottom: 0; }
+.metric-label { color: #666; }
+.metric-value { color: #1a1a1a; font-variant-numeric: tabular-nums; }
+.records { margin-top: 10px; }
+.record { font-size: 0.75rem; color: #666; font-family: ui-monospace, monospace; padding: 2px 0; display: flex; justify-content: space-between; }
+.loading { text-align: center; padding: 40px; color: #888; }
+.error { color: #dc2626; padding: 20px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+.meta a { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a class="back" href="/borg/">&larr; Borg</a>
+<h1>Cost</h1>
+<p class="subtitle">Burn rate, variable cost, per-source spend. Fixed = Claude subscription. Variable = Twilio + Clearing sessions.</p>
+
+<div class="totals" id="totals">
+  <div class="loading">Loading&hellip;</div>
+</div>
+
+<div class="panels">
+  <div class="panel" id="claude-panel"><div class="loading">Loading Claude&hellip;</div></div>
+  <div class="panel" id="twilio-panel"><div class="loading">Loading Twilio&hellip;</div></div>
+  <div class="panel" id="clearing-panel"><div class="loading">Loading Clearing&hellip;</div></div>
+  <div class="panel" id="tunnel-panel"><div class="loading">Loading Tunnel&hellip;</div></div>
+</div>
+
+<p class="meta">Chorus API &middot; /api/chorus/cost/summary &middot; <a href="/">Chorus landing</a></p>
+
+<script>
+(async function() {
+  const totalsEl = document.getElementById('totals');
+  const panels = {
+    claude:   document.getElementById('claude-panel'),
+    twilio:   document.getElementById('twilio-panel'),
+    clearing: document.getElementById('clearing-panel'),
+    tunnel:   document.getElementById('tunnel-panel'),
+  };
+
+  try {
+    const res = await fetch('/api/chorus/cost/summary');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+
+    totalsEl.innerHTML = ''
+      + statHtml('$' + d.summary.fixedCost.toFixed(0),      'Fixed / mo',    '')
+      + statHtml('$' + d.summary.variableCost.toFixed(2),   'Variable',      'variable')
+      + statHtml('$' + d.summary.totalCost.toFixed(2),      'Total',         'total')
+      + statHtml(d.claude.burnStatus,                        'Burn Status',   '');
+
+    panels.claude.innerHTML   = claudePanel(d.claude);
+    panels.twilio.innerHTML   = twilioPanel(d.twilio);
+    panels.clearing.innerHTML = clearingPanel(d.clearing);
+    panels.tunnel.innerHTML   = tunnelPanel(d.tunnel);
+  } catch (err) {
+    totalsEl.innerHTML = '<div class="error">Failed to load cost data: ' + String(err) + '</div>';
+  }
+
+  function statHtml(value, label, cls) {
+    return '<div class="stat ' + cls + '"><span class="stat-value">' + value + '</span><span class="stat-label">' + label + '</span></div>';
+  }
+
+  function claudePanel(c) {
+    const badgeCls = (c.burnStatus || 'COLD').toLowerCase();
+    return ''
+      + '<h2>Claude <span class="badge ' + badgeCls + '">' + c.burnStatus + '</span></h2>'
+      + metric('Monthly rate',     '$' + c.monthlyRate)
+      + metric('Month progress',   c.monthProgress + '%')
+      + metric('Active days',      c.activeDays + ' / ' + c.dayOfMonth)
+      + metric('Usage intensity',  c.usageIntensity + '%')
+      + metric('Sessions (month)', c.totalSessions)
+      + metric('Messages (month)', c.totalMessages);
+  }
+
+  function twilioPanel(t) {
+    const badge = t.pending
+      ? '<span class="badge pending">pending creds</span>'
+      : '<span class="badge">' + (t.records || []).length + ' records</span>';
+    const body = t.pending
+      ? '<div class="metric"><span class="metric-label">Status</span><span class="metric-value">awaiting credential relay</span></div>'
+      : metric('Total cost (MTD)', '$' + (t.totalCost || 0).toFixed(2))
+        + '<div class="records">' + (t.records || []).slice(0, 5).map(function(r) {
+            return '<div class="record"><span>' + escapeHtml(r.description || r.category) + '</span><span>$' + parseFloat(r.price || '0').toFixed(2) + '</span></div>';
+          }).join('') + '</div>';
+    return '<h2>Twilio ' + badge + '</h2>' + body;
+  }
+
+  function clearingPanel(cl) {
+    return ''
+      + '<h2>Clearing <span class="badge">' + (cl.sessions || []).length + ' sessions</span></h2>'
+      + metric('Total cost (MTD)', '$' + (cl.totalCost || 0).toFixed(2))
+      + '<div class="records">' + (cl.sessions || []).slice(-5).reverse().map(function(s) {
+          return '<div class="record"><span>' + escapeHtml((s.date || '').slice(0, 10)) + ' · ' + s.messages + ' msg</span><span>$' + (s.cost || 0).toFixed(2) + '</span></div>';
+        }).join('') + '</div>';
+  }
+
+  function tunnelPanel(t) {
+    const cls = (t.status || 'UNKNOWN').toLowerCase();
+    return '<h2>Tunnel <span class="badge ' + cls + '">' + t.status + '</span></h2>'
+      + '<div class="metric"><span class="metric-label">Cloudflared metrics</span><span class="metric-value">127.0.0.1:20241/ready</span></div>';
+  }
+
+  function metric(label, value) {
+    return '<div class="metric"><span class="metric-label">' + label + '</span><span class="metric-value">' + value + '</span></div>';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

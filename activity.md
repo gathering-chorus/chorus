@@ -877,3 +877,4 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Wren] → Updated #2113 with Experience section, then ran /gate-product → PASS. Synced card AC from Silas's demo brief. Notable scope expansion: role_dir bug surfaced 46 real briefs hidden for weeks → Silas, Kade (next gate)
 - [Wren] → Chat threads with Silas (briefs deprecation: filesystem-as-truth, agreed on (c)) and Kade (pull #1320 photo thumbnail fix) — both closed → all roles
 - [Wren] → Memory: locked thesis-driven session-opening shape as target, removed regressed pattern memory, added bugs-not-character feedback → self
+- [Wren] → brief to Silas → add TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN to com.chorus.api.plist env (unblocks #2099 Cost live data)

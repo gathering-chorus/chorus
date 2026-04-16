@@ -14,6 +14,7 @@ const app = express();
 app.use(express.json());
 
 import { getHooksSummary } from './hooks-summary';
+import { getCostSummary } from './cost-summary';
 
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
@@ -28,6 +29,15 @@ app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
 app.get('/api/chorus/hooks/summary', (_req, res) => {
   try {
     res.json(getHooksSummary());
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Borg — Cost summary endpoint — #2099
+app.get('/api/chorus/cost/summary', async (_req, res) => {
+  try {
+    res.json(await getCostSummary());
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
   }
@@ -4081,7 +4091,7 @@ const DOMAIN_REGISTRY: Record<string, { product: string; step: string; descripti
   self:      { product: 'gathering', step: 'reflecting', description: 'Jeff\'s self domain. Ontology from spring 2024 sketch.' },
   search:    { product: 'gathering', step: 'practicing', description: 'Full-text search across all domains. Semantic embeddings.' },
   chorus:    { product: 'chorus',    step: 'building', description: 'Team coordination product. Hooks, gates, pulse, Clearing.' },
-  infrastructure: { product: 'chorus', step: 'building', description: 'Servers, LaunchAgents, Docker, deploy, disk, network. Two machines.' },
+  infrastructure: { product: 'chorus', step: 'building', description: 'Servers, LaunchAgents, deploy, disk, network. Two machines.' },
   'knowledge-graph': { product: 'gathering', step: 'practicing', description: 'RDF/SPARQL semantic layer. Fuseki, ontologies, SHACL validation.' },
   observability: { product: 'chorus', step: 'building', description: 'Grafana, Loki, Promtail, alerts. Operational visibility.' },
   loom:      { product: 'chorus',    step: 'directing', description: 'Team coordination surface. Roles, cards, briefs, decisions.' },
