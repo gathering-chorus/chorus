@@ -1,30 +1,39 @@
 # Wren — Next Session
 
-## What happened (2026-04-15 evening)
-Shipped #1795 (RCA domain) — POST/GET endpoints in server.ts, SQLite table, 8 integration tests, loom-rcas sub-domain populated with actors/scenarios/prior art, 2 real RCAs seeded (#1665 five-round demo, attention contract failures). All gates passed, committed and pushed.
+## What shipped (2026-04-16)
+- DEC-2090: Demo briefs dropped for single-card demos
+- #2092: Ontology consolidated 10→5 subproducts, Borg restructured, 1475→1374 triples
+- #2093: All artifacts mapped to product homes, /api/chorus/products endpoint live
+- #2095: Explorer rewrite — dropdown filters, cascade visibility, 52 permutation tests
+- #2107: Three ontology views linked (ER/Explorer/Cards), 7 stale docs bannered
+- #2108: Chorus front end bootstrap — 3 views served from chorus-api at 3340
+- #2111: Blockverse blog at localhost:8082, two posts published
+- Pair gate disabled (per Jeff — pairing is practice, not enforcement)
+- Gate:product passed on #1884, #1914, #1777, #2090, #2096, #2097, #2098, #2100, #2101, #2102, #2104
 
-Major board sweep: killed `sequence:coordination` entirely (57 cards retagged to loom/ops/athena/clearing/strategy). Cleaned `sequence:ops` active set to 5 cards. Folded empty `policies-domain` into `loom-decisions` in Fuseki. Reviewed `sequence:quality` — kept separate (5 cards, all Kade's test infra).
+## WIP
+- #2094: Chorus front end product designs. Landing page live at 3340/docs/.
+  - AC1 done (inventory). AC2 partial — landing page + ontology views done.
+  - Next: make tiles clickable to subpages, migrate /chorus from Gathering to 3340
 
-Passed gate:product on #2068 (Kade's demo pre-flight fix) and #2075 (Silas's Docker removal). Gave feedback on #2057 (/tmp reaper).
+## Key decisions & concepts
+- **Shaping surface** (not "control plane") — observe and act on same API, no hierarchy
+- **Anti-Gestell** — neither humans nor agents reduced to standing-reserve
+- **WYSIWYG for facets** — wired+data=show, wired+empty=show(0), not wired=hide
+- **Aggregation domains** — Code and Tests show ALL files, not domain-scoped
+- **Spine decoupling** (#2109 shipped) — service call replaces library import
 
-## Key lessons
-- Done cards don't matter for board hygiene — Jeff caught me reviewing all statuses instead of active only
-- `sequence-tag` replaces the sequence but doesn't always remove the old label on Done cards — need explicit `untag`
-- Policies and decisions are the same thing at different ages — no need for separate sub-domains
+## Captured
+- Jeff's OACO values and purpose (7 values + life purpose statement)
+- Sridhar Singirikonda, Staples team (MQ viewer, ESB, 4hr reviews)
+- Unmesh Deolekar (Mumbai call, immigration, OACO)
+- Blockverse origin (Susskind block universe via Aubrey)
+- Bridget Snell / FastX Partners consulting framework
+- 37 notes themes from Jeff's 2025-2026 archive
 
-## Cards shipped
-- #1795 RCA domain (built + accepted)
-
-## Cards created
-- None
-
-## Tomorrow
-- #2007 (decision enforcement gap) — now mine, P1, sequence:loom. Audit which DECs need hard enforcement
-- #2038 (RCA skill /rca) — skill wrapper around #1795's endpoints, next step in RCA chain
-- Fold Operating Model and Werk products into Loom in the graph (discussed but not executed)
-- Brief drain — 78 pending demo briefs, mostly from Kade and Silas shipping hard last 4 days
-- O'Neill metric: 3 days since April 12
-
-## Pending
-- Operating Model + Werk → Loom consolidation (Jeff agreed in principle, graph change not done)
-- #1798 Kade building 40 BDD scenarios (WIP during session)
+## For next session
+- Finish #2094 — wire product tiles to subpages
+- Migrate /chorus page from Gathering (3000) to Chorus (3340)
+- #2099 (Borg front end) — 9 pages identified for migration
+- Runtime service registry — discussed but not carded
+- Blockverse needs theme customization

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chorus</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 40px; }
+.products { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+.product { border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; background: #fff; }
+.product h2 { font-size: 1.1rem; font-weight: 500; margin-bottom: 4px; }
+.product .owner { font-size: 0.8rem; color: #888; margin-bottom: 12px; }
+.product .desc { font-size: 0.85rem; color: #555; margin-bottom: 16px; line-height: 1.5; }
+.product .domains { font-size: 0.78rem; color: #666; }
+.product .domains span { display: inline-block; background: #f3f4f6; padding: 2px 8px; border-radius: 4px; margin: 2px 4px 2px 0; }
+.product .links { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.product .links a { font-size: 0.82rem; color: #4f46e5; margin-right: 12px; text-decoration: none; }
+.product .links a:hover { text-decoration: underline; }
+.product.borg { border-color: #a78bfa; }
+.product.loom { border-color: #4f46e5; }
+.product.athena { border-color: #4f46e5; }
+.product.werk { border-color: #4f46e5; }
+.product.clearing { border-color: #4f46e5; }
+.product.convergence { border-color: #4f46e5; }
+.section { margin-top: 40px; }
+.section h2 { font-size: 1rem; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Chorus</h1>
+<p class="subtitle">Shaping surfaces — observe and act on the same data. Live from Fuseki.</p>
+
+<div class="products" id="products"></div>
+
+<div class="section">
+<h2>Ontology Views</h2>
+<div class="products">
+  <div class="product">
+    <h2>Schema (ER Diagram)</h2>
+    <div class="desc">Entity relationships, class hierarchy, SHACL constraints. Filter by product.</div>
+    <div class="links"><a href="/docs/chorus-er-diagram.html">Open</a></div>
+  </div>
+  <div class="product">
+    <h2>Data (Instance Explorer)</h2>
+    <div class="desc">Live graph visualization. Drag, filter, cascade. Every node from Fuseki.</div>
+    <div class="links"><a href="/docs/chorus-instance-explorer.html">Open</a></div>
+  </div>
+  <div class="product">
+    <h2>Reference (Data Model Cards)</h2>
+    <div class="desc">Per-class properties, types, descriptions. The ontology as a reference card deck.</div>
+    <div class="links"><a href="/docs/chorus-data-model.html">Open</a></div>
+  </div>
+</div>
+</div>
+
+<div class="meta" id="meta">Loading...</div>
+
+<script>
+(async function() {
+  try {
+    const res = await fetch('/api/chorus/products');
+    const data = await res.json();
+    const container = document.getElementById('products');
+
+    const descriptions = {
+      'Loom': 'Coordination substrate — principles, practices, decisions, roles, cards, skills, gates. How the team works.',
+      'Athena': 'Knowledge surface — domain pages, SPARQL queries, doc catalog, CMDB. What the system knows.',
+      'Convergence': 'Integration layer — ICDs, harvesters, data pipelines. How data flows between domains.',
+      'Werk': 'Operating model — spine events, value streams, sequences, state machine. How work moves.',
+      'The Clearing': 'Multi-role alignment — group chat, decisions, transcripts. How the team aligns.',
+      'Borg': 'Reflection — observability, heralds, behavioral drift, health. How the system sees itself.',
+      'Gathering': 'Personal knowledge graph — 13 content domains. What Jeff collects and cultivates.',
+    };
+
+    const pageLinks = {
+      'Loom': [{ label: 'Loom Dashboard', href: 'http://localhost:3000/loom' }],
+      'Athena': [
+        { label: 'Domain Detail', href: 'http://localhost:3000/gathering-docs/domain-detail.html' },
+        { label: 'Step Detail', href: 'http://localhost:3000/gathering-docs/step-detail.html' },
+      ],
+      'Werk': [{ label: 'Werk Dashboard', href: 'http://localhost:3000/werk' }],
+      'The Clearing': [{ label: 'The Clearing', href: 'http://localhost:3470' }],
+      'Borg': [
+        { label: 'Quality Service', href: 'http://localhost:3000/quality-service' },
+        { label: 'Hooks Dashboard', href: 'http://localhost:3000/hooks' },
+      ],
+    };
+
+    for (const p of data.products) {
+      const div = document.createElement('div');
+      const cls = p.label.toLowerCase().replace(/[^a-z]/g, '');
+      div.className = 'product ' + (cls === 'chorusproduct' ? '' : cls);
+
+      let domainsHtml = '';
+      if (p.subproducts && p.subproducts.length > 0) {
+        for (const sp of p.subproducts) {
+          domainsHtml += '<div style="margin-bottom:8px"><strong>' + sp.label + '</strong>';
+          if (sp.owner) domainsHtml += ' <span style="font-size:0.75rem;color:#888">(' + sp.owner + ')</span>';
+          domainsHtml += '<br/>';
+          for (const d of sp.domains) domainsHtml += '<span>' + d + '</span>';
+          domainsHtml += '</div>';
+        }
+      }
+      if (p.domains && p.domains.length > 0) {
+        domainsHtml += '<div class="domains">';
+        for (const d of p.domains) domainsHtml += '<span>' + d + '</span>';
+        domainsHtml += '</div>';
+      }
+
+      let linksHtml = '';
+      const links = pageLinks[p.label] || (p.subproducts || []).flatMap(sp => pageLinks[sp.label] || []);
+      if (links.length > 0) {
+        linksHtml = '<div class="links">' + links.map(l => '<a href="' + l.href + '">' + l.label + '</a>').join('') + '</div>';
+      }
+
+      div.innerHTML = '<h2>' + p.label + '</h2>'
+        + '<div class="desc">' + (descriptions[p.label] || '') + '</div>'
+        + domainsHtml
+        + linksHtml;
+
+      // Skip the parent Chorus product — show subproducts directly
+      if (p.label === 'Chorus (Product)') {
+        for (const sp of p.subproducts) {
+          const spDiv = document.createElement('div');
+          spDiv.className = 'product ' + sp.label.toLowerCase().replace(/[^a-z]/g, '');
+          let spDomains = sp.domains.map(d => '<span>' + d + '</span>').join('');
+          let spLinks = (pageLinks[sp.label] || []).map(l => '<a href="' + l.href + '">' + l.label + '</a>').join('');
+          spDiv.innerHTML = '<h2>' + sp.label + '</h2>'
+            + (sp.owner ? '<div class="owner">' + sp.owner + '</div>' : '')
+            + '<div class="desc">' + (descriptions[sp.label] || '') + '</div>'
+            + '<div class="domains">' + spDomains + '</div>'
+            + (spLinks ? '<div class="links">' + spLinks + '</div>' : '');
+          container.appendChild(spDiv);
+        }
+      } else {
+        container.appendChild(div);
+      }
+    }
+
+    document.getElementById('meta').textContent = 'Chorus — ' + data.products.length + ' products, ' + data.elapsed_ms + 'ms from Fuseki';
+  } catch (err) {
+    document.getElementById('meta').textContent = 'Failed to load: ' + err.message;
+  }
+})();
+</script>
+
+</body>
+</html>
