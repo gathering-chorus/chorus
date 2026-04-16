@@ -1,9 +1,9 @@
 # Current Work
 
-Last updated: 2026-04-13 13:02 Boston
+Last updated: 2026-04-15 18:40 Boston
 
 ## WIP
-- None
+- #2068 Demo skill blocks if AC unchecked or demo brief missing — pre-flight before gate request
 
 ## Queue
 - #1883 Expand crawler domain list from 7 to 41
