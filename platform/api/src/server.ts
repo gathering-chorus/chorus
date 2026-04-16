@@ -13,8 +13,12 @@ const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProje
 const app = express();
 app.use(express.json());
 
-// Serve Chorus docs (ontology views, ER diagram, data model) — #2108
+// Serve Chorus landing + docs (ontology views, ER diagram, data model) — #2108
+// /docs retained as alias; will be deprecated after #2116 (/chorus migration)
 app.use('/docs', express.static(path.join(__dirname, '..', 'public')));
+
+// Serve Borg shaping surface — #2099
+app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
 
 // Request logging — every request writes to stdout so the log stays fresh
 app.use((req, res, next) => {

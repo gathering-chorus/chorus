@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Borg — Shaping Surface</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 40px; max-width: 720px; line-height: 1.5; }
+.surfaces { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+.surface { border: 1px solid #e5e7eb; border-left: 3px solid #a78bfa; border-radius: 8px; padding: 20px; background: #fff; text-decoration: none; color: inherit; display: block; transition: border-left-color 0.15s ease; }
+.surface:hover { border-left-color: #7c3aed; }
+.surface h2 { font-size: 1rem; font-weight: 500; margin-bottom: 4px; }
+.surface .slug { font-size: 0.75rem; color: #888; font-family: ui-monospace, monospace; margin-bottom: 10px; }
+.surface .desc { font-size: 0.85rem; color: #555; line-height: 1.5; }
+.surface .status { font-size: 0.72rem; color: #999; margin-top: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.surface.pending { border-left-color: #d4d4d8; }
+.surface.pending .status { color: #b4b4b8; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+.meta a { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<h1>Borg</h1>
+<p class="subtitle">Reflection — observability, heralds, behavioral drift, health. How the system sees itself. Nine surfaces, one shaping API.</p>
+
+<div class="surfaces">
+
+  <a class="surface pending" href="http://localhost:3000/borg-assessment">
+    <h2>Borg Assessment</h2>
+    <div class="slug">/borg/assessment</div>
+    <div class="desc">Capability maturity — where the model meets reality.</div>
+    <div class="status">pending migration — opens in Gathering</div>
+  </a>
+
+  <a class="surface pending" href="http://localhost:3000/gathering-docs/chorus-instance-explorer.html">
+    <h2>Instance Explorer</h2>
+    <div class="slug">/borg/instance-explorer</div>
+    <div class="desc">Graph viz of ontology instances and their relationships.</div>
+    <div class="status">pending migration — opens in Gathering</div>
+  </a>
+
+  <a class="surface pending" href="http://localhost:3000/interaction-patterns">
+    <h2>Interaction Patterns</h2>
+    <div class="slug">/borg/interaction-patterns</div>
+    <div class="desc">Spine pattern detection — how Jeff and roles actually work.</div>
+    <div class="status">pending migration — opens in Gathering</div>
+  </a>
+
+  <a class="surface pending" href="http://localhost:3000/jeff">
+    <h2>Jeff Dashboard</h2>
+    <div class="slug">/borg/jeff</div>
+    <div class="desc">Posture, voice, attention analytics — the human signal.</div>
+    <div class="status">pending migration — opens in Gathering</div>
+  </a>
+
+  <a class="surface pending" href="http://localhost:3000/system/replay">
+    <h2>Session Replay</h2>
+    <div class="slug">/borg/session-replay</div>
+    <div class="desc">rrweb playback of role sessions — see what happened.</div>
+    <div class="status">pending migration — opens in Gathering</div>
+  </a>
+
+  <a class="surface pending" href="http://localhost:3000/quality-service">
+    <h2>Quality Service</h2>
+    <div class="slug">/borg/quality-service</div>
+    <div class="desc">Test pyramid by domain — where coverage breathes.</div>
+    <div class="status">pending migration — opens in Gathering</div>
+  </a>
+
+  <a class="surface pending" href="http://localhost:3000/fitness-functions">
+    <h2>Fitness Functions</h2>
+    <div class="slug">/borg/fitness-functions</div>
+    <div class="desc">Per-role quality rates — gate pass, regression, escape.</div>
+    <div class="status">pending migration — opens in Gathering</div>
+  </a>
+
+  <a class="surface pending" href="http://localhost:3000/cost">
+    <h2>Cost Dashboard</h2>
+    <div class="slug">/borg/cost</div>
+    <div class="desc">Burn rate, variable cost, per-role spend.</div>
+    <div class="status">pending migration — opens in Gathering</div>
+  </a>
+
+  <a class="surface pending" href="http://localhost:3000/hooks">
+    <h2>Hooks Dashboard</h2>
+    <div class="slug">/borg/hooks</div>
+    <div class="desc">Gate blocks, flags, nudges — the harness working.</div>
+    <div class="status">pending migration — opens in Gathering</div>
+  </a>
+
+</div>
+
+<p class="meta">Chorus API &middot; localhost:3340/borg &middot; <a href="/docs/">&larr; Chorus landing</a></p>
+
+</body>
+</html>
