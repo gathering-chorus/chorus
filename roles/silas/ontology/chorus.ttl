@@ -709,42 +709,22 @@ chorus:chorusProduct a chorus:Product ;
     rdfs:label "Chorus (Product)" ;
     rdfs:comment "The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system." .
 
+# Borg is its own product, incubating inside Chorus.
 chorus:borgProduct a chorus:Product ;
     rdfs:label "Borg" ;
-    rdfs:comment "Reflection — the system sees itself. Heralds discover structure, the graph assimilates it. Peer product alongside Gathering and Chorus. Owner: Silas. PM: Wren." ;
+    rdfs:comment "Reflection — the system sees itself. Heralds discover structure, observability surfaces health, the graph assimilates it. Incubating inside Chorus. Owner: Silas. PM: Wren." ;
     chorus:ownedBy chorus:silas .
 
 # --- Borg Features (discover heralds) ---
 # Each herald scans a surface and writes to the instances graph.
 
-chorus:discover-code a chorus:SubProduct ;
-    rdfs:label "Discover Code" ;
-    rdfs:comment "Herald: scans filesystem, classifies source files by domain. 331 files across 28 domains. POST /api/athena/discover-code." ;
-    chorus:ownedBy chorus:kade ;
-    chorus:belongsTo chorus:borgProduct .
+# DEC-2090: Five discover heralds grouped under one "Heralds" subdomain of Borg.
 
-chorus:discover-tests a chorus:SubProduct ;
-    rdfs:label "Discover Tests" ;
-    rdfs:comment "Herald: maps test files to the domains they cover. 98 tests across 23 domains. POST /api/athena/discover-tests." ;
+chorus:heralds-domain a chorus:SubDomain ;
+    rdfs:label "Heralds" ;
+    rdfs:comment "Discovery agents that scan surfaces and write to the instances graph. Five heralds: code, tests, pages, endpoints, services. The system seeing itself." ;
     chorus:ownedBy chorus:kade ;
-    chorus:belongsTo chorus:borgProduct .
-
-chorus:discover-pages a chorus:SubProduct ;
-    rdfs:label "Discover Pages" ;
-    rdfs:comment "Herald: scans EJS views, classifies UI pages by domain. 63 pages across 17 domains. POST /api/athena/discover-pages." ;
-    chorus:ownedBy chorus:kade ;
-    chorus:belongsTo chorus:borgProduct .
-
-chorus:discover-endpoints a chorus:SubProduct ;
-    rdfs:label "Discover Endpoints" ;
-    rdfs:comment "Herald: parses app.ts route registrations, classifies API endpoints by domain. 342 across 27 domains. POST /api/athena/discover-endpoints." ;
-    chorus:ownedBy chorus:kade ;
-    chorus:belongsTo chorus:borgProduct .
-
-chorus:discover-services a chorus:SubProduct ;
-    rdfs:label "Discover Services" ;
-    rdfs:comment "Herald (planned): scans LaunchAgent plists and service configs, discovers running environments. Writes borg:Environment instances. POST /api/athena/discover-services." ;
-    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Reflecting ;
     chorus:belongsTo chorus:borgProduct .
 
 # --- Service Designs ---
@@ -767,10 +747,7 @@ chorus:loom a chorus:SubProduct ;
                      chorus:roles-domain, chorus:loom-rcas, chorus:loom-metrics,
                      chorus:loom-analytics, chorus:policies-domain .
 
-chorus:cards-product a chorus:SubProduct ;
-    rdfs:label "Cards (Product)" ;
-    rdfs:comment "The kanban work coordination system — board-ts CLI, Vikunja API, card lifecycle." ;
-    chorus:ownedBy chorus:wren .
+# cards-product absorbed into Loom (DEC-2090 consolidation) — cards is a Loom capability
 
 chorus:clearing-product a chorus:SubProduct ;
     rdfs:label "The Clearing" ;
@@ -782,112 +759,77 @@ chorus:werk-product a chorus:SubProduct ;
     rdfs:comment "Workflow engine — sequences decisions into steps across roles. IS the spine." ;
     chorus:ownedBy chorus:wren .
 
-chorus:observability-product a chorus:SubProduct ;
-    rdfs:label "Observability (Product)" ;
-    rdfs:comment "Cross-cutting health lens — the capability that prevents breaking at speed. Now a Borg domain, retained here for backward compatibility." ;
-    chorus:ownedBy chorus:silas .
+# observability-product absorbed into Borg (DEC-2090 consolidation) — observability is a Borg capability
 
-# --- Borg Domains (7) — registered under borgProduct ---
-# Five layers + two cross-cutting capabilities. See observability-service-design.html.
+# --- Borg Domains — DEC-2090 restructure ---
+# Observability is THE domain of Borg. Everything else is a subdomain of it.
+# Heralds is a separate domain (discovery agents).
+
+chorus:observability-domain a chorus:SubDomain ;
+    rdfs:label "Observability" ;
+    rdfs:comment "The system seeing itself. Aggregated health lens: metrics, logs, dashboards, instrumentation, infrastructure, security, pulse (agent vital signs). The domain that makes Borg a product." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:belongsTo chorus:borgProduct .
 
 chorus:toolchain-domain a chorus:SubDomain ;
     rdfs:label "Toolchain" ;
-    rdfs:comment "Engines the system uses — Fuseki, Node, Docker, Prometheus, MySQL, NiFi, Ollama. Versions, configs, known issues." ;
+    rdfs:comment "Engines the system uses — Fuseki, Node, Prometheus, MySQL, Ollama. Versions, configs, known issues." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Operating ;
-    chorus:belongsTo chorus:borgProduct .
+    chorus:belongsTo chorus:observability-domain .
 
 chorus:infrastructure-domain a chorus:SubDomain ;
     rdfs:label "Infrastructure" ;
     rdfs:comment "Where engines run. Three surfaces: compute (services, processes), storage (databases, volumes), network (ports, tunnels, routes). Today: home cloud." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Operating ;
-    chorus:belongsTo chorus:borgProduct .
+    chorus:belongsTo chorus:observability-domain .
 
 chorus:commits-domain a chorus:SubDomain ;
     rdfs:label "Commits" ;
     rdfs:comment "How code gets versioned. git-queue.sh, pre-commit hooks, WIP gate, write-scrubber, commit lock, push/rebase flow." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Building ;
-    chorus:belongsTo chorus:borgProduct .
+    chorus:belongsTo chorus:observability-domain .
 
 chorus:deploys-domain a chorus:SubDomain ;
     rdfs:label "Deploys" ;
     rdfs:comment "How code gets running. app-state.sh, bind mounts vs full deploys, rollback paths, freeze rules, deploy targets." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Operating ;
-    chorus:belongsTo chorus:borgProduct .
+    chorus:belongsTo chorus:observability-domain .
 
 chorus:pipelines-domain a chorus:SubDomain ;
     rdfs:label "Pipelines" ;
-    rdfs:comment "The end-to-end release flow: code change → pre-commit → pre-push → deploy → health-verify. Actors: builders, gates, CI. Data: durations, pass rates, failure stages." ;
+    rdfs:comment "End-to-end release flow. Four stages: Pre-Commit (write-scrubber, lint, sensitive-path), Pre-Push (git-queue lock, rebase, conflict), Deploy (app-state.sh, bind mounts, rollback), Health Verify (deep-health, smoke-check, liveness)." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Operating ;
-    chorus:belongsTo chorus:borgProduct .
-
-chorus:pre-commit-subdomain a chorus:SubDomain ;
-    rdfs:label "Pre-Commit" ;
-    rdfs:comment "Pipeline stage: hooks that run before commit. Write-scrubber, TypeScript lint, framework-lint, sensitive-path check." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Building ;
-    chorus:belongsTo chorus:pipelines-domain .
-
-chorus:pre-push-subdomain a chorus:SubDomain ;
-    rdfs:label "Pre-Push" ;
-    rdfs:comment "Pipeline stage: checks before push to remote. git-queue.sh lock, rebase, conflict detection." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Building ;
-    chorus:belongsTo chorus:pipelines-domain .
-
-chorus:deploy-subdomain a chorus:SubDomain ;
-    rdfs:label "Deploy" ;
-    rdfs:comment "Pipeline stage: code gets running. app-state.sh, bind mounts vs full deploy, CSS hot-reload, rollback." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Operating ;
-    chorus:belongsTo chorus:pipelines-domain .
-
-chorus:health-verify-subdomain a chorus:SubDomain ;
-    rdfs:label "Health Verify" ;
-    rdfs:comment "Pipeline stage: post-deploy verification. deep-health, smoke-check.sh, service liveness, deploy.verification.completed event." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:belongsTo chorus:pipelines-domain .
+    chorus:belongsTo chorus:observability-domain .
+# DEC-2090: pipeline stages (pre-commit, pre-push, deploy, health-verify) flattened into Pipelines comment. Stages are lifecycle phases, not domains.
 
 chorus:alerts-monitors-domain a chorus:SubDomain ;
     rdfs:label "Alerts & Monitors" ;
-    rdfs:comment "What's watched and what fires. Alert coverage is to failure modes what test coverage is to code paths. Upward and downward dependency coverage." ;
+    rdfs:comment "What's watched and what fires. Alert coverage is to failure modes what test coverage is to code paths." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
-    chorus:belongsTo chorus:borgProduct .
-
-chorus:observability-domain a chorus:SubDomain ;
-    rdfs:label "Observability" ;
-    rdfs:comment "Cross-cutting: can we see what's happening? Aggregated health lens across all layers. Metrics, logs, dashboards, instrumentation." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:belongsTo chorus:borgProduct .
+    chorus:belongsTo chorus:observability-domain .
 
 chorus:security-domain a chorus:SubDomain ;
     rdfs:label "Security" ;
-    rdfs:comment "Cross-cutting: can someone else break it? Auth, ports, CVEs, permission models, write-scrubber. Coverage scoring for risk." ;
+    rdfs:comment "Cross-cutting: auth, ports, CVEs, permission models, write-scrubber." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
-    chorus:belongsTo chorus:borgProduct .
+    chorus:belongsTo chorus:observability-domain .
 
 chorus:convergence-product a chorus:SubProduct ;
     rdfs:label "Convergence" ;
     rdfs:comment "Cross-domain integration — ICDs, harvesters, data pipelines." ;
     chorus:ownedBy chorus:wren .
 
-chorus:operating-model-product a chorus:SubProduct ;
-    rdfs:label "Operating Model" ;
-    rdfs:comment "Pipelines, skills, gates — the machinery that moves work through the spine." ;
-    chorus:ownedBy chorus:wren .
+# operating-model-product absorbed into Loom (DEC-2090 consolidation) — skills/gates are Loom capabilities
 
-chorus:actor-bdd-product a chorus:SubProduct ;
-    rdfs:label "Actor + BDD" ;
-    rdfs:comment "Domain modeling framework — actor definitions, behavior-driven development, test scaffolding." ;
-    chorus:ownedBy chorus:wren .
+# actor-bdd-product absorbed into Athena (DEC-2090 consolidation) — domain modeling is an Athena capability
 
 chorus:athena-product a chorus:SubProduct ;
     rdfs:label "Athena" ;
@@ -940,43 +882,18 @@ chorus:loom-analytics a chorus:SubDomain ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Shaping .
 
-# --- Shared Services (consumed by multiple products) ---
+# --- DEC-2090: Old shared services removed. Canonical versions live under Borg/Observability. ---
+# infra-service → infrastructure-domain (under observability-domain)
+# logs-service → logs-domain (new, under observability-domain)
+# alerts-service → alerts-monitors-domain (under observability-domain)
+# deploys-service → deploys-domain (under observability-domain)
 
-chorus:observability-service a chorus:SubDomain ;
-    rdfs:label "Observability (Service)" ;
-    rdfs:comment "Grafana dashboards, metrics, health surfaces. Consumed at different steps by different products." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library .
-
-chorus:infra-service a chorus:SubDomain ;
-    rdfs:label "Infrastructure (Service)" ;
-    rdfs:comment "Machines, containers, storage, network, LaunchAgents." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library, chorus:bedroom .
-
-chorus:logs-service a chorus:SubDomain ;
+chorus:logs-domain a chorus:SubDomain ;
     rdfs:label "Logs" ;
     rdfs:comment "Loki log aggregation. Structured logging pipeline." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library .
-# --- Log sub-domains removed (#1962) — App Logs, Chorus Operations, Spine Events, Infrastructure Logs, Role Session Logs are detail within Logs, not separate sub-domains. ---
-
-chorus:alerts-service a chorus:SubDomain ;
-    rdfs:label "Alerts" ;
-    rdfs:comment "Alert rules, alert-runner, Alertmanager, macOS notifications." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library .
-
-chorus:deploys-service a chorus:SubDomain ;
-    rdfs:label "Deploys" ;
-    rdfs:comment "app-state.sh, deploy freeze, build pipeline, container lifecycle." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library .
+    chorus:belongsTo chorus:observability-domain .
 
 chorus:cards-service a chorus:SubDomain ;
     rdfs:label "Cards (Service)" ;
@@ -1060,11 +977,7 @@ chorus:streams-domain a chorus:SubDomain ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving .
 
-chorus:pulse-domain a chorus:SubProduct ;
-    rdfs:label "Pulse" ;
-    rdfs:comment "Claude Code instrumentation layer. Agent vital signs made visible to the operating model. Fires every prompt cycle. The circulatory system's heartbeat." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving .
+# pulse-domain absorbed into Borg (DEC-2090 consolidation) — pulse instrumentation is a Borg capability
 
 chorus:knowledge-domain a chorus:SubDomain ;
     rdfs:label "Knowledge" ;
@@ -1072,11 +985,7 @@ chorus:knowledge-domain a chorus:SubDomain ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Designing .
 
-chorus:pulse-metrics-domain a chorus:SubDomain ;
-    rdfs:label "Pulse Metrics" ;
-    rdfs:comment "Agent vital signs — heartbeat frequency, context usage, tool call patterns, session health." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving .
+# pulse-metrics-domain folded into observability-domain (DEC-2090). Pulse is an aspect of observability, not its own domain.
 
 chorus:integrations-domain a chorus:SubDomain ;
     rdfs:label "Integrations" ;
@@ -1090,11 +999,7 @@ chorus:policies-domain a chorus:SubDomain ;
     chorus:ownedBy chorus:jeff ;
     chorus:primaryStep chorus:Shaping .
 
-chorus:toolschain-domain a chorus:SubDomain ;
-    rdfs:label "ToolsChain" ;
-    rdfs:comment "Build tools, linters, formatters, CI infrastructure." ;
-    chorus:ownedBy chorus:kade ;
-    chorus:primaryStep chorus:Building .
+# toolschain-domain removed — duplicate of toolchain-domain (DEC-2090)
 
 chorus:domains-domain a chorus:SubDomain ;
     rdfs:label "Domains" ;
@@ -1218,7 +1123,7 @@ chorus:video-domain a chorus:SubDomain ;
 # Chorus domains → chorusStream
 chorus:code-domain chorus:builtBy chorus:chorusStream .
 chorus:gates-service chorus:builtBy chorus:chorusStream .
-chorus:toolschain-domain chorus:builtBy chorus:chorusStream .
+chorus:toolchain-domain chorus:builtBy chorus:chorusStream .
 chorus:domains-domain chorus:builtBy chorus:chorusStream .
 chorus:services-domain chorus:builtBy chorus:chorusStream .
 chorus:chorus-domain chorus:builtBy chorus:chorusStream .
@@ -1246,8 +1151,8 @@ chorus:video-domain chorus:builtBy chorus:gatheringStream .
 
 chorus:chorusProduct chorus:hasDomain chorus:messages-domain, chorus:streams-domain,
                                      chorus:knowledge-domain,
-                                     chorus:infra-service, chorus:code-domain,
-                                     chorus:toolschain-domain .
+                                     chorus:infrastructure-domain, chorus:code-domain,
+                                     chorus:toolchain-domain .
 
 chorus:convergence-product chorus:hasDomain chorus:integrations-domain, chorus:convergence-domain .
 
@@ -1257,20 +1162,24 @@ chorus:chorusProduct chorus:hasDomain chorus:chorus-domain,
 
 chorus:loom chorus:hasDomain chorus:policies-domain .
 
-chorus:actor-bdd-product chorus:hasDomain chorus:domains-domain, chorus:services-domain .
+# actor-bdd-product domains moved to athena-product
+chorus:athena-product chorus:hasDomain chorus:domains-domain, chorus:services-domain .
 
-chorus:observability-product chorus:hasDomain chorus:observability-service, chorus:logs-service,
-                                              chorus:alerts-service, chorus:deploys-service .
+# Borg has two domains: Observability and Heralds (DEC-2090)
+chorus:borgProduct chorus:hasDomain chorus:observability-domain .
 
-chorus:cards-product chorus:hasDomain chorus:cards-service .
+# cards-product domain moved to loom
+chorus:loom chorus:hasDomain chorus:cards-service .
 
 chorus:clearing-product chorus:hasDomain chorus:messages-domain .
 
-chorus:operating-model-product chorus:hasDomain chorus:skills-service, chorus:gates-service .
+# operating-model-product domains moved to loom
+chorus:loom chorus:hasDomain chorus:skills-service, chorus:gates-service .
 
 chorus:werk-product chorus:hasDomain chorus:spine-service .
 
-chorus:pulse-domain chorus:hasDomain chorus:pulse-metrics-domain .
+# pulse-metrics now a subdomain of observability-domain
+# pulse-metrics-domain removed — folded into observability-domain
 
 # --- Gathering content domains ---
 
@@ -1284,39 +1193,38 @@ chorus:gathering chorus:hasDomain chorus:music-domain, chorus:photos-domain, cho
 
 chorus:loom chorus:consumes chorus:cards-service, chorus:skills-service,
                             chorus:gates-service, chorus:spine-service,
-                            chorus:observability-service, chorus:infra-service .
+                            chorus:observability-domain, chorus:infrastructure-domain .
 
 chorus:werk-product chorus:consumes chorus:cards-service, chorus:spine-service,
-                                    chorus:observability-service, chorus:infra-service .
+                                    chorus:observability-domain, chorus:infrastructure-domain .
 
 chorus:clearing-product chorus:consumes chorus:cards-service, chorus:spine-service,
-                                       chorus:observability-service, chorus:infra-service .
+                                       chorus:observability-domain, chorus:infrastructure-domain .
 
-chorus:cards-product chorus:consumes chorus:observability-service, chorus:infra-service,
-                                   chorus:spine-service .
+# cards-product consumes moved to loom (already has consumes edges, these merge)
+chorus:loom chorus:consumes chorus:spine-service .
 
-chorus:observability-product chorus:consumes chorus:infra-service, chorus:logs-service,
-                                             chorus:alerts-service, chorus:deploys-service .
+# observability-product consumes moved to borgProduct
+chorus:borgProduct chorus:consumes chorus:infrastructure-domain, chorus:logs-domain,
+                                   chorus:alerts-monitors-domain, chorus:deploys-domain .
 
 # --- Product → Service provision edges ---
 
-chorus:chorusProduct chorus:provides chorus:observability-service, chorus:infra-service,
-                                     chorus:logs-service, chorus:alerts-service,
-                                     chorus:deploys-service, chorus:cards-service,
+chorus:chorusProduct chorus:provides chorus:observability-domain, chorus:infrastructure-domain,
+                                     chorus:logs-domain, chorus:alerts-monitors-domain,
+                                     chorus:deploys-domain, chorus:cards-service,
                                      chorus:skills-service, chorus:gates-service,
                                      chorus:spine-service .
 
 # --- Product → SubProduct containment (hasSubProduct) ---
 
-chorus:chorusProduct chorus:hasSubProduct chorus:loom, chorus:cards-product, chorus:clearing-product,
-                                         chorus:werk-product, chorus:observability-product,
-                                         chorus:convergence-product, chorus:operating-model-product,
-                                         chorus:actor-bdd-product, chorus:athena-product,
-                                         chorus:pulse-domain .
+# DEC-2090 consolidation: 10 → 6 subproducts. Strays absorbed as capabilities.
+chorus:chorusProduct chorus:hasSubProduct chorus:loom, chorus:clearing-product,
+                                         chorus:werk-product, chorus:convergence-product,
+                                         chorus:athena-product .
 
-chorus:borgProduct chorus:hasSubProduct chorus:discover-code, chorus:discover-tests,
-                                       chorus:discover-pages, chorus:discover-endpoints,
-                                       chorus:discover-services .
+# Borg heralds grouped as single subdomain (DEC-2090)
+chorus:borgProduct chorus:hasDomain chorus:heralds-domain .
 
 # --- Product → ServiceDesign ---
 
@@ -1328,7 +1236,7 @@ chorus:chorusProduct chorus:hasServiceDesign chorus:chorus-api-service-design .
 chorus:athena-product chorus:hasDomain chorus:athena-domain .
 
 chorus:athena-product chorus:consumes chorus:knowledge-domain, chorus:cards-service,
-                                      chorus:observability-service, chorus:infra-service .
+                                      chorus:observability-domain, chorus:infrastructure-domain .
 
 # --- Pipelines consumption edges ---
 chorus:pipelines-domain chorus:consumes chorus:infrastructure-domain,
@@ -1339,14 +1247,14 @@ chorus:pipelines-domain chorus:consumes chorus:infrastructure-domain,
 # Properties consumed by infrastructure services; Security and Time consumed by all subdomains.
 
 chorus:cards-service chorus:consumes chorus:properties-domain .
-chorus:observability-service chorus:consumes chorus:properties-domain .
-chorus:infra-service chorus:consumes chorus:properties-domain .
-chorus:deploys-service chorus:consumes chorus:properties-domain .
-chorus:logs-service chorus:consumes chorus:properties-domain .
+chorus:observability-domain chorus:consumes chorus:properties-domain .
+chorus:infrastructure-domain chorus:consumes chorus:properties-domain .
+chorus:deploys-domain chorus:consumes chorus:properties-domain .
+chorus:logs-domain chorus:consumes chorus:properties-domain .
 
 chorus:code-domain chorus:consumes chorus:security-domain .
 chorus:gates-service chorus:consumes chorus:security-domain .
-chorus:toolschain-domain chorus:consumes chorus:security-domain .
+chorus:toolchain-domain chorus:consumes chorus:security-domain .
 chorus:athena-domain chorus:consumes chorus:security-domain .
 chorus:convergence-domain chorus:consumes chorus:security-domain .
 chorus:domains-domain chorus:consumes chorus:security-domain .
@@ -1354,15 +1262,15 @@ chorus:integrations-domain chorus:consumes chorus:security-domain .
 chorus:knowledge-domain chorus:consumes chorus:security-domain .
 chorus:services-domain chorus:consumes chorus:security-domain .
 chorus:cards-service chorus:consumes chorus:security-domain .
-chorus:alerts-service chorus:consumes chorus:security-domain .
+chorus:alerts-monitors-domain chorus:consumes chorus:security-domain .
 chorus:chorus-domain chorus:consumes chorus:security-domain .
-chorus:deploys-service chorus:consumes chorus:security-domain .
-chorus:infra-service chorus:consumes chorus:security-domain .
-chorus:logs-service chorus:consumes chorus:security-domain .
+chorus:deploys-domain chorus:consumes chorus:security-domain .
+chorus:infrastructure-domain chorus:consumes chorus:security-domain .
+chorus:logs-domain chorus:consumes chorus:security-domain .
 chorus:messages-domain chorus:consumes chorus:security-domain .
-chorus:observability-service chorus:consumes chorus:security-domain .
+chorus:observability-domain chorus:consumes chorus:security-domain .
 chorus:properties-domain chorus:consumes chorus:security-domain .
-chorus:pulse-domain chorus:consumes chorus:security-domain .
+# pulse-metrics-domain security edge removed
 chorus:loom-rcas chorus:consumes chorus:security-domain .
 chorus:streams-domain chorus:consumes chorus:security-domain .
 chorus:loom-analytics chorus:consumes chorus:security-domain .
@@ -1377,7 +1285,7 @@ chorus:roles-domain chorus:consumes chorus:security-domain .
 
 chorus:code-domain chorus:consumes chorus:time-domain .
 chorus:gates-service chorus:consumes chorus:time-domain .
-chorus:toolschain-domain chorus:consumes chorus:time-domain .
+chorus:toolchain-domain chorus:consumes chorus:time-domain .
 chorus:athena-domain chorus:consumes chorus:time-domain .
 chorus:convergence-domain chorus:consumes chorus:time-domain .
 chorus:domains-domain chorus:consumes chorus:time-domain .
@@ -1385,16 +1293,16 @@ chorus:integrations-domain chorus:consumes chorus:time-domain .
 chorus:knowledge-domain chorus:consumes chorus:time-domain .
 chorus:services-domain chorus:consumes chorus:time-domain .
 chorus:cards-service chorus:consumes chorus:time-domain .
-chorus:alerts-service chorus:consumes chorus:time-domain .
+chorus:alerts-monitors-domain chorus:consumes chorus:time-domain .
 chorus:chorus-domain chorus:consumes chorus:time-domain .
-chorus:deploys-service chorus:consumes chorus:time-domain .
-chorus:infra-service chorus:consumes chorus:time-domain .
-chorus:logs-service chorus:consumes chorus:time-domain .
+chorus:deploys-domain chorus:consumes chorus:time-domain .
+chorus:infrastructure-domain chorus:consumes chorus:time-domain .
+chorus:logs-domain chorus:consumes chorus:time-domain .
 chorus:messages-domain chorus:consumes chorus:time-domain .
-chorus:observability-service chorus:consumes chorus:time-domain .
+chorus:observability-domain chorus:consumes chorus:time-domain .
 chorus:properties-domain chorus:consumes chorus:time-domain .
 chorus:security-domain chorus:consumes chorus:time-domain .
-chorus:pulse-domain chorus:consumes chorus:time-domain .
+# pulse-metrics-domain time edge removed
 chorus:loom-rcas chorus:consumes chorus:time-domain .
 chorus:streams-domain chorus:consumes chorus:time-domain .
 chorus:loom-analytics chorus:consumes chorus:time-domain .

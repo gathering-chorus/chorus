@@ -1,5 +1,13 @@
 # Decision Log
 
+## DEC-2090: Demo briefs — drop files for single-card demos, keep for pipelines
+- **Date**: 2026-04-16
+- **Context**: 357 briefs archived, 75% auto-generated demo briefs. Wren archives 100% without reading — the information duplicates spine events and card comments. Briefs were the only inter-role channel before nudge existed; now nudge handles immediacy, spine handles provenance, card comments handle evidence. Kade confirmed #2068 made the brief file load-bearing for gate:product (demo evidence check), but the spine event `demo.preflight.completed` already carries the AC count and gate passes are already card comments.
+- **Decision**: (1) Single-card demos stop generating brief files. Gate evidence is a card comment (`demo:preflight-pass ac=N/N`) + existing spine event. (2) Multi-card pipeline demos keep brief files for the consolidated cross-card view. (3) Substantive role-to-role briefs (review requests, technical handoffs) remain unchanged.
+- **Rationale**: The brief file was doing three jobs (notification, provenance, evidence) because it was the only mechanism. Nudge, spine events, and card comments now cover all three. Keeping files for pipelines preserves the one case where a consolidated artifact adds value. Cuts ~95% of brief volume; the remaining 5% are briefs someone actually reads.
+- **Card**: #2090
+- **Status**: Active
+
 ## DEC-1784: Clean commit standard — what a good commit looks like
 - **Date**: 2026-04-08
 - **Context**: Board had 158 test artifact cards from BDD/CLI tests creating real cards. Commit history full of undeclared work — roles committing without WIP cards pulled. Test data polluting production state. Jeff: "the commits tell a scary story about process discipline."
