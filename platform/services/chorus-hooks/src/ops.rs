@@ -49,7 +49,6 @@ const FALSE_POSITIVES: &[&str] = &[
     "infra-guardrails",
     "uncommitted files",
     "activity.md has no entries",
-    "unhealthy containers.*promtail",
     "chorus-audit",
     "grafana-alerts",
     "INFO Fuseki.*PUT",
@@ -58,7 +57,6 @@ const FALSE_POSITIVES: &[&str] = &[
     "traffic spike",
     "Deploy time",
     "Build time exceeds",
-    "container unhealthy.*transient",
     "SPARQL query.*slow",
     "SPARQL query.*degraded",
     "XA crash recov",
@@ -861,21 +859,11 @@ fn do_errors(config: &Config) -> Result<(), String> {
 #[derive(Serialize)]
 struct HealthContext {
     timestamp: String,
-    containers: ContainerInfo,
     alerts: AlertInfo,
     errors: ErrorInfo,
     disk: DiskInfo,
     board: BoardInfo,
     previous_findings: Vec<Finding>,
-}
-
-#[derive(Serialize)]
-struct ContainerInfo {
-    total: u32,
-    running: u32,
-    unhealthy: Vec<String>,
-    stopped: Vec<String>,
-    missing: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -915,26 +903,6 @@ struct BoardInfo {
     summary: String,
 }
 
-const EXPECTED_CONTAINERS: &[&str] = &[
-    "jeff-bridwell-personal-site-app",
-    "jeff-bridwell-personal-site-fuseki",
-    "jeff-bridwell-personal-site-navidrome",
-    "jeff-bridwell-personal-site-css",
-    "jeff-bridwell-personal-site-webvowl",
-    "prometheus",
-    "alertmanager",
-    "grafana",
-    "loki",
-    "promtail",
-    "blackbox-exporter",
-    "mysqld-exporter",
-    "node-exporter",
-    "vikunja",
-    "wordpress-mysql",
-    "wordpress-blog",
-    "wordpress-mailhog",
-];
-
 fn do_health(config: &Config) -> Result<(), String> {
     if config.verbose {
         log_msg("Phase 1: Pre-fetching system state");
@@ -942,20 +910,6 @@ fn do_health(config: &Config) -> Result<(), String> {
 
     // Parallel pre-fetch using threads
     let (tx, rx) = mpsc::channel();
-
-    // Docker ps
-    {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let out = Command::new("docker")
-                .args(["ps", "-a", "--format", "json"])
-                .output()
-                .ok()
-                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-                .unwrap_or_default();
-            let _ = tx.send(("docker", out));
-        });
-    }
 
     // Alertmanager
     {
@@ -1035,7 +989,6 @@ fn do_health(config: &Config) -> Result<(), String> {
     }
 
     // Assemble context
-    let container_info = parse_containers(fetched.get("docker").map(|s| s.as_str()).unwrap_or(""));
     let alert_info = parse_alerts(fetched.get("alerts").map(|s| s.as_str()).unwrap_or("[]"));
     let error_info = parse_errors(
         fetched.get("loki_errors").map(|s| s.as_str()).unwrap_or(""),
@@ -1054,7 +1007,6 @@ fn do_health(config: &Config) -> Result<(), String> {
 
     let context = HealthContext {
         timestamp: Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        containers: container_info,
         alerts: alert_info,
         errors: error_info,
         disk: disk_info,
@@ -1328,61 +1280,6 @@ fn emit_chorus_log(config: &Config, args: &[&str]) {
 }
 
 // --- Pre-fetch parsers ---
-
-fn parse_containers(docker_output: &str) -> ContainerInfo {
-    let mut info = ContainerInfo {
-        total: 0,
-        running: 0,
-        unhealthy: Vec::new(),
-        stopped: Vec::new(),
-        missing: Vec::new(),
-    };
-    let mut running_names: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    for line in docker_output.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Ok(c) = serde_json::from_str::<serde_json::Value>(line) {
-            info.total += 1;
-            let name = c
-                .get("Names")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-            let state = c
-                .get("State")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_lowercase();
-            let status = c
-                .get("Status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_lowercase();
-
-            running_names.insert(name.clone());
-            if state == "running" {
-                info.running += 1;
-                if status.contains("unhealthy") {
-                    info.unhealthy.push(name);
-                }
-            } else {
-                info.stopped.push(name);
-            }
-        }
-    }
-
-    info.missing = EXPECTED_CONTAINERS
-        .iter()
-        .filter(|name| !running_names.contains(**name))
-        .map(|s| s.to_string())
-        .collect();
-    info.missing.sort();
-
-    info
-}
 
 fn parse_alerts(alerts_json: &str) -> AlertInfo {
     let mut info = AlertInfo {

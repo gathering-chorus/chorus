@@ -67,19 +67,19 @@ fi
 
 # --- Test 3: PreToolUse blocks dangerous commands ---
 echo ""
-echo "Test 3: PreToolUse blocks docker stop"
+echo "Test 3: PreToolUse blocks manual kill"
 if [ -S "$SOCKET" ]; then
-  response=$(echo '{"tool_name":"Bash","tool_input":{"command":"docker stop mycontainer"},"cwd":"${CHORUS_ROOT}/engineer"}' | \
+  response=$(echo '{"tool_name":"Bash","tool_input":{"command":"kill -9 12345"},"cwd":"${CHORUS_ROOT}/engineer"}' | \
     curl -s --unix-socket "$SOCKET" -X POST \
       -H "Content-Type: application/json" \
       -d @- http://localhost/pre-tool-use 2>&1) || true
   # Should have stdout with deny
   has_deny=$(echo "$response" | grep -c "deny" 2>/dev/null) || has_deny=0
   if [ "$has_deny" -gt 0 ]; then
-    echo "  PASS: PreToolUse blocks docker stop"
+    echo "  PASS: PreToolUse blocks kill -9"
     ((PASS++))
   else
-    echo "  FAIL: PreToolUse should block docker stop (response: $response)"
+    echo "  FAIL: PreToolUse should block kill -9 (response: $response)"
     ((FAIL++))
   fi
 else

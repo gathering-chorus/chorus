@@ -131,7 +131,7 @@ hook_to_keywords = {
     "log_first_gate": ["Log-first"],
     "accept_gate": ["No self-service"],
     "search_hierarchy": ["Search hierarchy"],
-    "infra_guardrails": ["Docker CLI guard"],
+    "infra_guardrails": ["Manual kill guard", "Git in team repo", "Terraform apply/destroy"],
     "sensitive_paths": ["No secrets"],
     "write_scrubber": ["credentials"],
     "pair_gate": ["Pair enforcement"],

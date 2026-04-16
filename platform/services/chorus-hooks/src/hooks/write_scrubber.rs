@@ -35,12 +35,6 @@ static LOCALHOST_PORT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"localhost:[0-9]{4,5}").unwrap()
 });
 
-/// Full 64-char docker container IDs only. The old 12-64 range matched
-/// git SHAs, UUIDs, and hex constants — constant false positive noise.
-static CONTAINER_ID_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b[a-f0-9]{64}\b").unwrap()
-});
-
 fn is_shared_file(path: &str) -> bool {
     path.ends_with("/activity.md")
         || path.ends_with("/MEMORY.md")
@@ -122,9 +116,6 @@ pub async fn check(input: &HookInput) -> HookResponse {
     }
     if LOCALHOST_PORT_RE.is_match(&content) {
         log_scrub("warn", "internal", "localhost-port", &file_path).await;
-    }
-    if CONTAINER_ID_RE.is_match(&content) {
-        log_scrub("warn", "internal", "container-id", &file_path).await;
     }
 
     HookResponse::allow()
@@ -315,14 +306,6 @@ mod tests {
     #[tokio::test]
     async fn test_warn_localhost_port_allows() {
         let input = make_write_input("/x/activity.md", "running on localhost:3456");
-        let r = check(&input).await;
-        assert!(r.stdout.is_none());
-        assert_eq!(r.exit_code, 0);
-    }
-
-    #[tokio::test]
-    async fn test_warn_container_id_allows() {
-        let input = make_write_input("/x/activity.md", "container abcdef123456");
         let r = check(&input).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);

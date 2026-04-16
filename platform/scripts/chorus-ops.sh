@@ -658,8 +658,6 @@ do_health() {
     tmp_dir=$(mktemp -d)
 
     # Parallel pre-fetch
-    docker ps -a --format json > "$tmp_dir/containers.jsonl" 2>/dev/null &
-
     curl -s --max-time 5 "${ALERTMANAGER_URL}/api/v2/alerts?active=true" \
         > "$tmp_dir/alerts.json" 2>/dev/null &
 

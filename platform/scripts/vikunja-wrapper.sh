@@ -1,6 +1,5 @@
 #!/bin/bash
 # vikunja-wrapper.sh — Sets environment and runs Vikunja as LaunchAgent
-# Data stays in the same location as Docker volume mounts
 
 export VIKUNJA_DATABASE_PATH=/Users/jeffbridwell/.chorus/vikunja/db/vikunja.db
 export VIKUNJA_SERVICE_PUBLICURL=http://localhost:3456

@@ -9,7 +9,7 @@ DATA_DIR="/Users/jeffbridwell/CascadeProjects/shared-observability/data/alertman
 # Load env for SLACK_BOT_TOKEN
 source /Users/jeffbridwell/CascadeProjects/shared-observability/.env
 
-# Template the config (same sed as Docker entrypoint)
+# Template the config
 sed "s|SLACK_BOT_TOKEN_PLACEHOLDER|${SLACK_BOT_TOKEN}|g" "$CONFIG_SRC" > "$CONFIG_RENDERED"
 
 mkdir -p "$DATA_DIR"

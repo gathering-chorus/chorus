@@ -4,36 +4,8 @@ use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookRes
 use regex::Regex;
 use std::sync::LazyLock;
 
-static DOCKER_EXEC_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\bdocker\s+exec\b").unwrap()
-});
-
-static DOCKER_LOGS_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\bdocker\s+logs\b").unwrap()
-});
-
-static DOCKER_LOGS_FOLLOW_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\s(-f|--follow)\b").unwrap()
-});
-
-static DOCKER_LOGS_TAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"--tail[= ](\d+)").unwrap()
-});
-
 static KILL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b(kill|pkill|killall)\s").unwrap()
-});
-
-static DOCKER_LIFECYCLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\bdocker\s+(stop|rm|restart|kill)\b").unwrap()
-});
-
-static DOCKER_COMPOSE_LIFECYCLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\bdocker[\s-]compose\s+(up|down|stop|restart|rm|kill|create|build)\b").unwrap()
-});
-
-static DOCKER_COMPOSE_FLAGS_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\bdocker[\s-]compose\s+--\S+").unwrap()
 });
 
 static GIT_COMMIT_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -48,20 +20,14 @@ static HEREDOC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<<['"]?EOF"#).unwrap()
 });
 
-static DOCKER_RUN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\bdocker\s+run\b").unwrap()
-});
-
 static TERRAFORM_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bterraform\s+(apply|destroy)\b").unwrap()
 });
 
 fn team_repo_root() -> &'static str { chorus_root() }
 
-/// Blocks dangerous infra commands for all roles (#1714, #2020)
-/// Docker is fully retired — all services are LaunchAgents.
-/// CSS (Solid) was the last Docker container, now a LaunchAgent (com.gathering.css).
-/// Docker guards remain to prevent accidental Docker usage.
+/// Blocks dangerous infra commands for all roles (#1714, #2020, #2119)
+/// All services are LaunchAgents — no container runtime, no Terraform-managed infra.
 pub async fn check(input: &HookInput) -> HookResponse {
     if input.tool_name_str() != "Bash" {
         return HookResponse::allow();
@@ -93,38 +59,6 @@ pub async fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
 
-    // docker exec
-    if DOCKER_EXEC_RE.is_match(&cmd) {
-        log_guardrail("deny", "docker-exec").await;
-        return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use agent-state.sh for service lifecycle."
-        ));
-    }
-
-    // docker logs
-    if DOCKER_LOGS_RE.is_match(&cmd) {
-        if DOCKER_LOGS_FOLLOW_RE.is_match(&cmd) {
-            log_guardrail("deny", "docker-logs-follow").await;
-            return HookResponse::deny(&permission_deny_json(
-                "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use Loki for log streaming."
-            ));
-        }
-
-        if let Some(caps) = DOCKER_LOGS_TAIL_RE.captures(&cmd) {
-            if let Ok(n) = caps[1].parse::<u32>() {
-                if n <= 50 {
-                    log_guardrail("allow", "docker-logs-tail").await;
-                    return HookResponse::allow();
-                }
-            }
-        }
-
-        log_guardrail("deny", "docker-logs").await;
-        return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use Loki for log search."
-        ));
-    }
-
     // kill/pkill/killall — exempt signal-0 (liveness check, read-only) (#2047)
     if KILL_RE.is_match(&cmd) {
         let is_signal_0 = cmd.contains("kill -0 ") || cmd.contains("kill --signal 0 ");
@@ -135,30 +69,6 @@ pub async fn check(input: &HookInput) -> HookResponse {
             ));
         }
         log_guardrail("allow", "kill-signal-0").await;
-    }
-
-    // docker stop/rm/restart/kill
-    if DOCKER_LIFECYCLE_RE.is_match(&cmd) {
-        log_guardrail("deny", "docker-lifecycle").await;
-        return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use agent-state.sh for service lifecycle."
-        ));
-    }
-
-    // docker compose lifecycle (up/down/stop/restart/rm/kill/create/build)
-    if DOCKER_COMPOSE_LIFECYCLE_RE.is_match(&cmd) {
-        log_guardrail("deny", "docker-compose-lifecycle").await;
-        return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). Use agent-state.sh for service lifecycle."
-        ));
-    }
-
-    // docker compose flags (--force-recreate, etc.)
-    if DOCKER_COMPOSE_FLAGS_RE.is_match(&cmd) {
-        log_guardrail("deny", "docker-compose-flags").await;
-        return HookResponse::deny(&permission_deny_json(
-            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020)."
-        ));
     }
 
     // git commit/add in team repo only
@@ -186,14 +96,6 @@ pub async fn check(input: &HookInput) -> HookResponse {
                 }
             }
         }
-    }
-
-    // docker run (ask, not deny)
-    if DOCKER_RUN_RE.is_match(&cmd) {
-        log_guardrail("ask", "docker-run").await;
-        return HookResponse::deny(&permission_ask_json(
-            "BLOCKED: Docker is not used — all services are LaunchAgents (#2020). No containers to run."
-        ));
     }
 
     // terraform apply/destroy (ask, not deny)
@@ -257,168 +159,20 @@ mod tests {
         }
     }
 
-    // === Role gating: all roles blocked (#1714) ===
-
-    #[tokio::test]
-    async fn test_silas_blocked_by_docker_exec() {
-        let input = silas_bash("docker exec -it mycontainer bash");
-        let r = check(&input).await;
-        // All roles are blocked from docker exec — use app-state.sh
-        assert!(r.stdout.is_some(), "docker exec should be denied for silas");
-        assert!(r.stdout.unwrap().contains("deny"));
-    }
-
-    // === docker exec ===
-
-    #[tokio::test]
-    async fn test_deny_docker_exec() {
-        let input = kade_bash("docker exec -it gathering-app bash");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    // === docker logs ===
-
-    #[tokio::test]
-    async fn test_deny_docker_logs_follow() {
-        let input = kade_bash("docker logs -f gathering-app");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    #[tokio::test]
-    async fn test_deny_docker_logs_no_tail() {
-        let input = kade_bash("docker logs gathering-app");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    #[tokio::test]
-    async fn test_allow_docker_logs_tail_20() {
-        let input = kade_bash("docker logs --tail 20 gathering-app");
-        let r = check(&input).await;
-        assert!(r.stdout.is_none());
-        assert_eq!(r.exit_code, 0);
-    }
-
-    #[tokio::test]
-    async fn test_deny_docker_logs_tail_100() {
-        let input = kade_bash("docker logs --tail 100 gathering-app");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    // === kill/pkill/killall ===
-
-    #[tokio::test]
-    async fn test_deny_kill() {
-        let input = kade_bash("kill -9 12345");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Manual process killing"));
-    }
-
-    #[tokio::test]
-    async fn test_deny_pkill() {
-        let input = kade_bash("pkill node");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Manual process killing"));
-    }
-
-    #[tokio::test]
-    async fn test_deny_killall() {
-        let input = kade_bash("killall node");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Manual process killing"));
-    }
-
-    // === docker lifecycle ===
-
-    #[tokio::test]
-    async fn test_deny_docker_stop() {
-        let input = kade_bash("docker stop gathering-app");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    #[tokio::test]
-    async fn test_deny_docker_rm() {
-        let input = kade_bash("docker rm gathering-app");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    #[tokio::test]
-    async fn test_deny_docker_restart() {
-        let input = kade_bash("docker restart gathering-app");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    // === docker compose lifecycle (absorbed from app_state_guard #1862) ===
-
-    #[tokio::test]
-    async fn test_deny_docker_compose_down() {
-        let input = kade_bash("docker compose down");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    #[tokio::test]
-    async fn test_deny_docker_compose_up() {
-        let input = kade_bash("docker compose up -d");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    #[tokio::test]
-    async fn test_deny_docker_compose_restart() {
-        let input = kade_bash("docker compose restart app");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    #[tokio::test]
-    async fn test_deny_docker_dash_compose_down() {
-        let input = kade_bash("docker-compose down");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
-    #[tokio::test]
-    async fn test_deny_docker_compose_flags() {
-        let input = kade_bash("docker compose --force-recreate up");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
     // === heredoc/echo skip (absorbed from app_state_guard #1862) ===
+    // Uses `kill -9` as the would-be-blocked command to verify the skip path.
 
     #[tokio::test]
-    async fn test_allow_heredoc_with_docker() {
-        let input = kade_bash("cat <<EOF\ndocker compose up\nEOF");
+    async fn test_allow_heredoc_skip() {
+        let input = kade_bash("cat <<EOF\nkill -9 1234\nEOF");
         let r = check(&input).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);
     }
 
     #[tokio::test]
-    async fn test_allow_echo_with_docker() {
-        let input = kade_bash("echo 'docker compose up -d'");
+    async fn test_allow_echo_skip() {
+        let input = kade_bash("echo 'kill -9 1234'");
         let r = check(&input).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);
@@ -460,16 +214,6 @@ mod tests {
         assert_eq!(r.exit_code, 0);
     }
 
-    // === docker run (ask, not deny) ===
-
-    #[tokio::test]
-    async fn test_ask_docker_run() {
-        let input = kade_bash("docker run -d nginx");
-        let r = check(&input).await;
-        assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("Docker is not used"));
-    }
-
     // === terraform (ask, not deny) ===
 
     #[tokio::test]
@@ -486,6 +230,14 @@ mod tests {
         let r = check(&input).await;
         assert!(r.stdout.is_some());
         assert!(r.stdout.unwrap().contains("terraform"));
+    }
+
+    #[tokio::test]
+    async fn test_terraform_message_references_launchagents() {
+        let input = kade_bash("terraform apply");
+        let r = check(&input).await;
+        let msg = r.stdout.unwrap();
+        assert!(msg.contains("LaunchAgents"), "should reference LaunchAgents");
     }
 
     // === #2047: signal-0 liveness check exemption ===
@@ -530,26 +282,6 @@ mod tests {
         let r = check(&input).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);
-    }
-
-    // === #1866: Updated Docker messages reference docker-compose, not app-state.sh ===
-
-    #[tokio::test]
-    async fn test_docker_exec_message_references_launchagents() {
-        let input = kade_bash("docker exec -it mycontainer bash");
-        let r = check(&input).await;
-        let msg = r.stdout.unwrap();
-        assert!(msg.contains("LaunchAgents"), "should reference LaunchAgents");
-        assert!(!msg.contains("docker-compose"), "should not reference docker-compose");
-    }
-
-    #[tokio::test]
-    async fn test_terraform_message_references_launchagents() {
-        let input = kade_bash("terraform apply");
-        let r = check(&input).await;
-        let msg = r.stdout.unwrap();
-        assert!(msg.contains("LaunchAgents"), "should reference LaunchAgents");
-        assert!(!msg.contains("docker-compose"), "should not reference docker-compose");
     }
 
     // === Non-Bash tool bypass ===

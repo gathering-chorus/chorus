@@ -1,12 +1,11 @@
 #!/bin/bash
-# app-wrapper.sh — Loads .env and runs the Express app as a LaunchAgent
-# Replaces Docker container for the personal site app (#1390)
+# app-wrapper.sh — Loads .env and runs the Express app as a LaunchAgent (#1390)
 
 set -euo pipefail
 
 APP_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
 
-# Load environment from .env (same vars Docker compose injected)
+# Load environment from .env
 if [ -f "$APP_DIR/.env" ]; then
   set -a
   source "$APP_DIR/.env"
@@ -15,7 +14,7 @@ fi
 
 cd "$APP_DIR"
 
-# Override Docker-specific paths from .env with host paths
+# Host-path overrides for pod storage (were container paths pre-#1390)
 export POD_STORAGE_PATH="$APP_DIR/data/pods"
 export POD_BASE_URL="/pods"
 

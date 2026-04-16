@@ -52,7 +52,6 @@ ssh jeffbridwell@192.168.86.242 "df -h"
 ```
 
 ### Service Registry (Library LaunchAgents)
-- `com.chorus.docker-services` — Boot-order for remaining Docker services: Vikunja, Navidrome, webvowl (run-once)
 - `com.chorus.api` — Chorus context index HTTP API (KeepAlive)
 - `com.chorus.alert-notifier` — Alert notifications (KeepAlive)
 - `com.chorus.session-watcher` — Ambient index daemon (KeepAlive)
@@ -151,7 +150,7 @@ CLI (`cards`) for mutations. API is read-only.
 | Project | Location | Machine | Role |
 |---------|----------|---------|------|
 | jeff-bridwell-personal-site | `../jeff-bridwell-personal-site` | Primary | App — SOLID pods, Express, TypeScript, RDF/Fuseki |
-| wordpress-blog | `../wordpress-blog` | Primary | Content — WordPress, Docker, Terraform |
+| wordpress-blog | `../wordpress-blog` | Primary | Content — WordPress, LaunchAgent-managed |
 | shared-observability | `../shared-observability` | Primary | Monitoring — Prometheus, Grafana, Loki |
 | images-api | (secondary Mac) | Secondary | Media serving — ~178TB video/photo library |
 | chorus | `../../` | Primary | Protocol service — bridge, scripts, hooks, board |
