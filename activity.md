@@ -866,3 +866,7 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [18:14] [Kade] → #2028 domain radius + blast radius from ontology + decisions section wired → Jeff, all roles
 - [18:14] [Kade] → Reviewed client onboarding design brief, contributed builder perspective to Wren/Silas chat → Wren, Silas
 - [18:14] [Kade] → Gated Silas cards: #1908, #2074, #1911, #1871, #2080, #2085, #2087. Gated Wren #2067 → Silas, Wren
+- [18:52] [Wren] → Shipped #1795 RCA domain — POST/GET endpoints, 8 tests, 2 real RCAs, loom-rcas sub-domain populated → Jeff, all roles
+- [20:25] [Wren] → Board sweep: killed sequence:coordination (57 cards retagged), cleaned sequence:ops, folded policies-domain into loom-decisions → Jeff, all roles
+- [20:28] [Wren] → Assigned #2007 (decision enforcement gap) to self, retagged sequence:loom → Jeff
+- [19:04] [Wren] → gate:product passed on #2068 (Kade), #2075 (Silas) → Kade, Silas
