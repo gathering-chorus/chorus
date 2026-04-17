@@ -1498,7 +1498,7 @@ chorus:Practice a owl:Class ;
     rdfs:label "Practice" ;
     rdfs:comment "A repeatable discipline derived from principles. How the team works." .
 
-# --- 7 Principles (from team-architecture.md) ---
+# --- 11 Principles (7 from team-architecture.md + 4 from 2026-04-17 session) ---
 
 chorus:principle-protect-attention a chorus:Principle ;
     rdfs:label "Protect Jeff's attention" ;
@@ -1527,6 +1527,22 @@ chorus:principle-ship-small a chorus:Principle ;
 chorus:principle-self-healing a chorus:Principle ;
     rdfs:label "The system should be self-healing" ;
     rdfs:comment "Synchronization brings roles current without Jeff recapping. Any role should reconstruct state from artifacts alone." .
+
+chorus:principle-focus-is-infrastructure a chorus:Principle ;
+    rdfs:label "Focus is infrastructure" ;
+    rdfs:comment "Focus windows are infrastructure, not preference. Every interruption has a cost; make the cost visible. Interruption is a last resort, not a default." .
+
+chorus:principle-quality-at-source a chorus:Principle ;
+    rdfs:label "Quality at the source" ;
+    rdfs:comment "Build quality in at construction, not at inspection. No staging means the shortcut that skips thinking is the bug that costs more than the thinking would have." .
+
+chorus:principle-speed-and-quality-correlate a chorus:Principle ;
+    rdfs:label "Speed and quality correlate" ;
+    rdfs:comment "Speed and quality both come from uninterrupted thinking — they are not a trade-off. Skipping review does not produce speed; it produces rework plus the interruption load that rework generates." .
+
+chorus:principle-comprehension-is-the-rate-limit a chorus:Principle ;
+    rdfs:label "Comprehension is the rate limit" ;
+    rdfs:comment "The team's real throughput is set by what can be understood, not what can be generated. Output beyond the rate of comprehension is debt disguised as speed. You own what you understand, not what you produced." .
 
 # --- 7 Practices (from team-architecture.md) ---
 
@@ -1563,7 +1579,10 @@ chorus:practice-api-first a chorus:Practice ;
 chorus:loom-principles chorus:contains chorus:principle-protect-attention,
     chorus:principle-enforce, chorus:principle-no-dark-work,
     chorus:principle-artifacts, chorus:principle-owner-sets-direction,
-    chorus:principle-ship-small, chorus:principle-self-healing .
+    chorus:principle-ship-small, chorus:principle-self-healing,
+    chorus:principle-focus-is-infrastructure, chorus:principle-quality-at-source,
+    chorus:principle-speed-and-quality-correlate,
+    chorus:principle-comprehension-is-the-rate-limit .
 
 chorus:loom-practices chorus:contains chorus:practice-actor-bdd,
     chorus:practice-domain-first, chorus:practice-service-next,
