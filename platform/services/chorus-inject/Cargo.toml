@@ -4,6 +4,16 @@ version = "0.1.0"
 edition = "2021"
 description = "Stable binary for osascript keystroke injection — isolated from chorus-hooks rebuild cycle"
 
+# Binary target delegates to lib for all pure logic (#2167). Lets unit tests
+# register against source-level coverage instead of 4% bin-only.
+[lib]
+name = "chorus_inject"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chorus-inject"
+path = "src/main.rs"
+
 [profile.release]
 opt-level = 3
 lto = true

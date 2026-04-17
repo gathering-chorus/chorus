@@ -29,12 +29,15 @@ const INJECT_BIN: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/se
 const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge";
 
 // --- AC1: keystroke + key code 36, not do script ---
+//
+// Post-#2167 the script is built in lib.rs, not main.rs. These assertions
+// still read source to lint the shipped AppleScript body.
 
 #[test]
 fn inject_source_uses_keystroke_not_do_script() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/src/main.rs"
-    ).expect("can't read main.rs");
+        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/src/lib.rs"
+    ).expect("can't read lib.rs");
 
     assert!(
         source.contains("key code 36"),
