@@ -38,32 +38,36 @@ elif [ "$LINT_WARNINGS" -gt 10 ] 2>/dev/null; then
   ISSUES+="**Lint:** ${LINT_WARNINGS} warnings (ceiling: 10)\n"
 fi
 
-# --- Test suite ---
-TEST_OUTPUT=$(cd "$APP_DIR" && npx jest --passWithNoTests --silent 2>&1 | tail -3 || true)
-TEST_SUMMARY=$(echo "$TEST_OUTPUT" | grep -E "Tests:|Test Suites:" || echo "Tests: unknown")
-if echo "$TEST_OUTPUT" | grep -q "failed"; then
+# --- All test suites (#2142) ---
+# Every npm/cargo/shell suite discovered by nightly-suites.sh runs here.
+# Per-suite lines: SUITE|<kind>|<path>|<owner>|<status>|<summary>
+SUITES_OUT=$(bash "${SCRIPT_DIR}/nightly-suites.sh" --run-all 2>&1 || true)
+TEST_SUMMARY=""
+KADE_FAILS=""
+SILAS_FAILS=""
+SUITE_PASS=0
+SUITE_FAIL=0
+while IFS='|' read -r marker kind path owner status summary; do
+  [ "$marker" = "SUITE" ] || continue
+  name=$(basename "$path")
+  case "$status" in
+    pass) SUITE_PASS=$((SUITE_PASS+1)) ;;
+    fail)
+      SUITE_FAIL=$((SUITE_FAIL+1))
+      line="${kind}:${name}: ${summary}"
+      if [ "$owner" = "kade" ]; then
+        KADE_FAILS+="${line}\n"
+      else
+        SILAS_FAILS+="${line}\n"
+      fi
+      ;;
+  esac
+done <<< "$SUITES_OUT"
+TEST_SUMMARY="${SUITE_PASS} suites pass, ${SUITE_FAIL} fail"
+if [ "$SUITE_FAIL" -gt 0 ]; then
   STATUS="red"
   ISSUES+="**Tests:** $TEST_SUMMARY\n"
 fi
-
-# --- Rust services test suite (#2117) ---
-# Runs cargo test for each Rust service under platform/services/.
-# On failure, collects failing test names, flags STATUS red, and nudges Silas
-# separately from Kade (ops nudges Silas, quality nudges Kade — DEC-2243).
-RUST_FAIL_DETAIL=""
-for RUST_SVC in chorus-hooks chorus-inject; do
-  RUST_DIR="${CHORUS_ROOT}/platform/services/${RUST_SVC}"
-  [ -f "${RUST_DIR}/Cargo.toml" ] || continue
-  CARGO_OUT=$(cd "$RUST_DIR" && cargo test --release 2>&1 || true)
-  # `|| true` at end of pipe so no-match (all passed) doesn't trip pipefail
-  CARGO_FAILS=$(echo "$CARGO_OUT" | grep -E '^test [A-Za-z0-9_:]+ \.\.\. FAILED$' | awk '{print $2}' | sort -u | head -10 || true)
-  if [ -n "$CARGO_FAILS" ]; then
-    STATUS="red"
-    FAIL_COUNT=$(echo "$CARGO_FAILS" | wc -l | tr -d ' ')
-    ISSUES+="**Rust (${RUST_SVC}):** ${FAIL_COUNT} failing\n"
-    RUST_FAIL_DETAIL+="${RUST_SVC}: $(echo "$CARGO_FAILS" | tr '\n' ' ')\n"
-  fi
-done
 
 # --- Build summary ---
 if [ "$STATUS" = "green" ]; then
@@ -78,16 +82,19 @@ fi
 "$CHORUS_LOG" quality.review.completed silas status=$STATUS >/dev/null 2>&1 || true
 
 
-# --- Nudge Kade on quality failures (frontend: smoke/lint/jest) ---
+# --- Owner-routed nudges (#2142) ---
+# Smoke + lint go to Kade (frontend quality). Per-suite fails route by owner.
 NUDGE="$SCRIPT_DIR/nudge"
-if [ "$STATUS" = "red" ]; then
-  "$NUDGE" kade "[quality] $TIMESTAMP — $( echo -e "$ISSUES" | head -3 )" --force >/dev/null 2>&1 || true
+if [ "$STATUS" = "red" ] && [ "$SMOKE_FAIL" -gt 0 ] 2>/dev/null; then
+  "$NUDGE" kade "[quality] $TIMESTAMP — smoke: ${SMOKE_FAIL} fail" --force >/dev/null 2>&1 || true
 fi
-
-# --- Nudge Silas on Rust test failures + emit spine event (#2117) ---
-if [ -n "$RUST_FAIL_DETAIL" ]; then
-  "$NUDGE" silas "[nightly-tests] $TIMESTAMP — $( echo -e "$RUST_FAIL_DETAIL" | head -5 )" --force >/dev/null 2>&1 || true
-  "$CHORUS_LOG" test.nightly.failed silas detail="$(echo -e "$RUST_FAIL_DETAIL" | tr '\n' ';' | head -c 400)" >/dev/null 2>&1 || true
+if [ -n "${KADE_FAILS:-}" ]; then
+  "$NUDGE" kade "[nightly-tests] $TIMESTAMP — $( echo -e "$KADE_FAILS" | head -5 )" --force >/dev/null 2>&1 || true
+  "$CHORUS_LOG" test.nightly.failed kade detail="$(echo -e "$KADE_FAILS" | tr '\n' ';' | head -c 400)" >/dev/null 2>&1 || true
+fi
+if [ -n "${SILAS_FAILS:-}" ]; then
+  "$NUDGE" silas "[nightly-tests] $TIMESTAMP — $( echo -e "$SILAS_FAILS" | head -5 )" --force >/dev/null 2>&1 || true
+  "$CHORUS_LOG" test.nightly.failed silas detail="$(echo -e "$SILAS_FAILS" | tr '\n' ';' | head -c 400)" >/dev/null 2>&1 || true
 fi
 
 echo -e "$BODY"
