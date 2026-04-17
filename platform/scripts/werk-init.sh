@@ -94,7 +94,7 @@ auto_error_dedup() {
 # SCAN MODE — per-turn nudge drain + brief check
 # ============================================================
 if $SCAN_MODE; then
-  CACHE_DIR="/tmp/claude-team-scan"
+  CACHE_DIR="${CACHE_DIR:-/tmp/claude-team-scan}"
   BRIEFS_DIR="${ROLE_DIR}/briefs"
   mkdir -p "$CACHE_DIR"
 
