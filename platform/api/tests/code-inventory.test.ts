@@ -14,7 +14,9 @@ describeIntegration('#1932: Code inventory excludes node_modules, splits tests',
   });
 
   test('code inventory returns separate tests array', async () => {
-    const res = await fetch(API + '/api/athena/subdomains/athena-domain/code');
+    // Use chorus-domain — populated with both files and tests.
+    // Was athena-domain which no longer carries scanned code in the graph.
+    const res = await fetch(API + '/api/athena/subdomains/chorus-domain/code');
     const body = await res.json();
     expect(Array.isArray(body.data.tests)).toBe(true);
     expect(body.data.tests.length).toBeGreaterThanOrEqual(1);

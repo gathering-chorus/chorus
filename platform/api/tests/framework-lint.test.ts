@@ -16,12 +16,13 @@ describe('#1909: Framework lint — Athena endpoint patterns', () => {
     expect(rawUpdateCalls.length).toBe(0);
   });
 
-  test('every Athena POST endpoint validates required fields', () => {
-    // Find all POST /api/athena handlers
-    const postHandlers = SERVER_SRC.match(/app\.post\('\/api\/athena\/[^']+'/g) || [];
+  test('every Athena POST endpoint that reads a body validates required fields', () => {
+    // Find all POST /api/athena handlers whose first arg is `req` (not `_req`).
+    // Handlers using `_req: Request` signal they don't read the body (discover-*,
+    // reload, etc.), so field validation isn't applicable.
+    const postHandlers = SERVER_SRC.match(/app\.post\('\/api\/athena\/[^']+',\s*async\s*\(req:/g) || [];
     expect(postHandlers.length).toBeGreaterThan(0);
 
-    // Each POST handler block should contain a 400 status for missing fields
     for (const handler of postHandlers) {
       const handlerStart = SERVER_SRC.indexOf(handler);
       const handlerBlock = SERVER_SRC.slice(handlerStart, handlerStart + 3000);
