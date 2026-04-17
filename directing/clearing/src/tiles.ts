@@ -1,7 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 
-const SCAN_DIR = '/tmp/claude-team-scan';
+// #2167: env-configurable so tests can point at a fixture directory.
+const SCAN_DIR = process.env.CLEARING_SCAN_DIR || '/tmp/claude-team-scan';
+const PULSE_FILE = process.env.CLEARING_PULSE_FILE || '/tmp/pulse-latest.json';
 const ROLES = ['jeff', 'wren', 'silas', 'kade'] as const;
 
 export interface RoleTile {
@@ -64,7 +66,7 @@ export class TilePoller {
   /** Read Pulse snapshot (#1881) */
   private readPulse(): PulseState | null {
     try {
-      const content = fs.readFileSync('/tmp/pulse-latest.json', 'utf-8');
+      const content = fs.readFileSync(PULSE_FILE, 'utf-8');
       const data = JSON.parse(content);
       return {
         alertsToday: data.alerts?.count || 0,
