@@ -92,6 +92,89 @@ fn query_chorus_hybrid(query: &str) -> Vec<(String, String, String)> {
     results
 }
 
+/// Read the latest pulse snapshot and return a compact summary block.
+/// Returns None if the snapshot file is missing or unparseable.
+fn read_pulse_snapshot() -> Option<String> {
+    let body = std::fs::read_to_string("/tmp/pulse-latest.json").ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+
+    let mut out = String::new();
+    if let Some(status) = v.pointer("/health/status").and_then(|s| s.as_str()) {
+        let failures = v.pointer("/health/failures").and_then(|f| f.as_i64()).unwrap_or(0);
+        let warns = v.pointer("/health/warning_count").and_then(|f| f.as_i64()).unwrap_or(0);
+        out.push_str(&format!("  health: {} (failures={}, warnings={})\n", status, failures, warns));
+    }
+    if let Some(wip) = v.pointer("/board/wip_cards").and_then(|c| c.as_array()) {
+        out.push_str(&format!("  wip_cards: {}\n", wip.len()));
+        for card in wip.iter().take(5) {
+            let id = card.get("id").and_then(|i| i.as_i64()).unwrap_or(0);
+            let title = card.get("title").and_then(|t| t.as_str()).unwrap_or("");
+            let owner = card.get("owner").and_then(|o| o.as_str()).unwrap_or("");
+            let short: String = title.chars().take(80).collect();
+            out.push_str(&format!("    #{} [{}] {}\n", id, owner, short));
+        }
+    }
+    if let Some(roles) = v.pointer("/roles").and_then(|r| r.as_object()) {
+        for (role, data) in roles.iter().take(3) {
+            let state = data.get("state").and_then(|s| s.as_str()).unwrap_or("?");
+            let card = data.get("card").and_then(|c| c.as_i64()).map(|i| format!("#{}", i)).unwrap_or_default();
+            out.push_str(&format!("  role {}: state={} card={}\n", role, state, card));
+        }
+    }
+    if out.is_empty() { None } else { Some(out) }
+}
+
+/// Query the Chorus API for the N most-recent spine events.
+fn query_recent_spine(limit: usize) -> Vec<(String, String, String)> {
+    let url = format!("http://localhost:3340/api/chorus/events/recent?limit={}", limit);
+    let resp = match ureq::get(&url).timeout(std::time::Duration::from_millis(500)).call() {
+        Ok(r) => r,
+        Err(_) => return vec![],
+    };
+    let body: serde_json::Value = match resp.into_json() { Ok(v) => v, Err(_) => return vec![] };
+    let items = match body.get("events").and_then(|e| e.as_array()) {
+        Some(a) => a,
+        None => return vec![],
+    };
+    let mut out = Vec::new();
+    for item in items.iter().take(limit) {
+        let ts = item.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").chars().take(19).collect::<String>();
+        let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let event = item.get("event").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if !event.is_empty() {
+            out.push((ts, role, event));
+        }
+    }
+    out
+}
+
+/// Query Athena for the role's current domain context. Reads the role's WIP card
+/// domain label from /tmp/pulse-latest.json, then fetches the domain description.
+fn query_athena_domain(role: &str) -> Option<String> {
+    let body = std::fs::read_to_string("/tmp/pulse-latest.json").ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+
+    // Find this role's WIP card, pull domain from its labels
+    let wip = v.pointer("/board/wip_cards")?.as_array()?;
+    let card = wip.iter().find(|c| {
+        c.get("owner").and_then(|o| o.as_str()).map(|s| s.to_lowercase()) == Some(role.to_lowercase())
+    })?;
+    let domain = card.get("domain").and_then(|d| d.as_str())?;
+
+    let url = format!("http://localhost:3340/api/chorus/domain/{}", domain);
+    let resp = ureq::get(&url).timeout(std::time::Duration::from_millis(500)).call().ok()?;
+    let body: serde_json::Value = resp.into_json().ok()?;
+    let desc = body.get("description").and_then(|d| d.as_str()).unwrap_or("");
+    let cards_total = body.pointer("/cards/total").and_then(|c| c.as_i64()).unwrap_or(0);
+    let cards_wip = body.pointer("/cards/wip").and_then(|c| c.as_i64()).unwrap_or(0);
+    let mut out = format!("  domain: {} ({} cards total, {} WIP)\n", domain, cards_total, cards_wip);
+    if !desc.is_empty() {
+        let short: String = desc.chars().take(200).collect();
+        out.push_str(&format!("  {}\n", short));
+    }
+    Some(out)
+}
+
 /// Scan memory files for related decisions and feedback
 fn scan_memory(keywords: &[String]) -> Vec<String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
@@ -171,20 +254,39 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // Scan memory files
     let memory_hits = scan_memory(&keywords);
 
-    // If nothing found, don't inject noise
-    if chorus_results.is_empty() && memory_hits.is_empty() {
-        info!(
-            gate = "context-inject",
-            event = "no-results",
-            role = %role_name,
-            query = %query,
-        );
-        return HookResponse::allow();
-    }
+    // Foundational context primitives — read every prompt, not just when search
+    // returns hits. These are the team's shared present tense: team state,
+    // recent events, active domain. Jeff has asked repeatedly for them on every
+    // envelope; the spec test in platform/tests/context-inject-envelope-spec.bats
+    // locks that contract.
+    let pulse_block = read_pulse_snapshot();
+    let spine_events = query_recent_spine(8);
+    let athena_block = query_athena_domain(&role_name);
 
-    // Build the context block
+    // Build the context block — always inject the three primitives if any are
+    // present, regardless of whether search turned up hits.
     let mut context = String::from("\n<context-synthesis>\n");
     context.push_str(&format!("Keywords: {}\n", query));
+
+    if let Some(pulse) = &pulse_block {
+        context.push_str("\n");
+        context.push_str("## Pulse\n");
+        context.push_str(pulse);
+    }
+
+    if !spine_events.is_empty() {
+        context.push_str("\n");
+        context.push_str(&format!("## Spine ({} recent events)\n", spine_events.len()));
+        for (ts, role, event) in &spine_events {
+            context.push_str(&format!("  [{}] {} → {}\n", ts, role, event));
+        }
+    }
+
+    if let Some(athena) = &athena_block {
+        context.push_str("\n");
+        context.push_str("## Athena\n");
+        context.push_str(athena);
+    }
 
     if !chorus_results.is_empty() {
         context.push_str(&format!("\nChorus hybrid ({} hits):\n", chorus_results.len()));
@@ -200,6 +302,18 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         for hit in &memory_hits {
             context.push_str(&format!("  {}\n", hit));
         }
+    }
+
+    // If every source is empty, skip injection entirely.
+    if pulse_block.is_none() && spine_events.is_empty() && athena_block.is_none()
+        && chorus_results.is_empty() && memory_hits.is_empty() {
+        info!(
+            gate = "context-inject",
+            event = "no-results",
+            role = %role_name,
+            query = %query,
+        );
+        return HookResponse::allow();
     }
 
     context.push_str("\nMANDATORY: You MUST reference this context before responding. Do not search filesystem or git for information already provided here. If Chorus returned results, cite them. Ignoring injected context is a protocol violation.\n");
