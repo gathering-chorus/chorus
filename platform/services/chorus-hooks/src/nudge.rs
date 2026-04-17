@@ -459,35 +459,21 @@ fn health_check() -> ExitCode {
     let roles = [("wren", "wren"), ("silas", "silas"), ("kade", "kade")];
     let mut failures = 0;
 
-    for (role, pattern) in &roles {
-        let script = format!(
-            r#"tell application "Terminal"
-    set matchCount to 0
-    set matchName to ""
-    set winCount to count of windows
-    repeat with i from 1 to winCount
-        try
-            set w to window i
-            set winName to name of w
-            if winName contains "{p}" and winName contains "claude" then
-                set matchCount to matchCount + 1
-                set matchName to winName
-            end if
-        end try
-    end repeat
-    return (matchCount as text) & "::" & matchName
-end tell"#,
-            p = pattern
-        );
+    // #2077 collapse: all osascript routes through chorus-inject (one TCC grant).
+    let inject_bin = format!(
+        "{}/platform/services/chorus-inject/target/release/chorus-inject",
+        crate::shared::state_paths::chorus_root()
+    );
 
-        let output = Command::new("osascript")
-            .args(["-e", &script])
+    for (role, pattern) in &roles {
+        let output = Command::new(&inject_bin)
+            .args(["--count-windows", pattern])
             .output();
 
         let result = match output {
             Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
             Err(e) => {
-                println!("ALERT: {} — osascript failed: {}", role, e);
+                println!("ALERT: {} — chorus-inject failed: {}", role, e);
                 failures += 1;
                 continue;
             }

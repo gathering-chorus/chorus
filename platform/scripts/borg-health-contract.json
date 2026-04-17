@@ -1,0 +1,54 @@
+{
+  "_comment": "Contract for Borg page deep-health probes (#2124). Each entry probes the backing API, not the HTML (200 means nothing — pages render with empty panels). Assertion is a python expression evaluated against the parsed JSON response, bound as `d`.",
+  "_version": 1,
+  "probes": [
+    {
+      "page": "/borg/cost/",
+      "api": "/api/chorus/cost/summary",
+      "assert": "isinstance(d.get('summary'), dict) and float(d['summary'].get('totalCost', 0)) > 0",
+      "why": "Cost page renders empty if any of claude/twilio/clearing aggregators error — summary.totalCost sums all four"
+    },
+    {
+      "page": "/borg/hooks/",
+      "api": "/api/chorus/hooks/summary",
+      "assert": "isinstance(d.get('summaries'), list) and len(d['summaries']) >= 10",
+      "why": "13 active hook scripts at last count; allow ±3 for natural churn. Empty list = summary handler broken"
+    },
+    {
+      "page": "/borg/fitness/",
+      "api": "/api/chorus/fitness/summary",
+      "assert": "isinstance(d.get('functions'), list) and len(d['functions']) >= 3",
+      "why": "4 fitness functions defined; floor at 3 for safety"
+    },
+    {
+      "page": "/borg/quality/",
+      "api": "/api/chorus/quality/summary",
+      "assert": "isinstance(d.get('total'), int) and d['total'] > 0",
+      "why": "Quality rollup across repos; zero means scan hasn't run or all repos empty"
+    },
+    {
+      "page": "/borg/patterns/",
+      "api": "/api/chorus/patterns/summary",
+      "assert": "isinstance(d.get('patterns'), dict) and len(d['patterns']) > 0",
+      "why": "Patterns is a dict keyed by pattern type; empty means the pattern-detection job never ran or indexer is broken"
+    },
+    {
+      "page": "/borg/replay/",
+      "api": "/api/chorus/sessions",
+      "assert": "isinstance(d.get('sessions'), list) and len(d['sessions']) > 0",
+      "why": "Replay requires at least one indexed session; zero means session-watcher is dead"
+    },
+    {
+      "page": "/borg/assessment/",
+      "api": "/api/chorus/codebase/topology",
+      "assert": "isinstance(d.get('summary'), dict) and d['summary'].get('domains', 0) > 0 and d['summary'].get('nodes', 0) > 0",
+      "why": "Topology summary carries domain+node counts; both zero means the codebase graph never built or watcher is dead"
+    },
+    {
+      "page": "/borg/jeff/",
+      "api": "/api/chorus/jeff/posture/strip",
+      "assert": "isinstance(d.get('frames'), list) and d.get('total', 0) > 0",
+      "why": "Posture strip returns JSON with frames + total; zero frames means posture-capture cron is dead"
+    }
+  ]
+}

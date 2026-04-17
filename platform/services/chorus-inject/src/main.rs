@@ -1,24 +1,31 @@
-//! chorus-inject — Stable binary for osascript keystroke injection.
+//! chorus-inject — Stable binary for all osascript operations.
 //!
 //! This binary exists separately from chorus-hook-shim so that TCC
-//! (Accessibility) permissions are not revoked when the shim is rebuilt.
-//! It rarely changes — only the injection logic lives here.
+//! (Accessibility + Automation) permissions are not revoked when the shim
+//! is rebuilt. ALL osascript goes through here — one binary, one grant.
 //!
-//! Usage: chorus-inject <role> <text>
-//!   role: wren, silas, kade
-//!   text: message to inject into the role's Terminal window
+//! Usage:
+//!   chorus-inject <role> <text>              Inject text into role's Terminal window
+//!   chorus-inject --count-windows <pattern>  Count Terminal windows matching "<pattern> + claude"
+//!                                            Stdout: <count>::<first-matching-window-name>
 //!
-//! Exit codes: 0 = injected, 1 = failed (role unknown, window not found, etc.)
+//! Exit codes: 0 = success, 1 = failed
 
 use std::process::{Command, ExitCode};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
+    if args.len() == 2 && args[0] == "--count-windows" {
+        return match count_windows(&args[1]) {
+            Ok(s) => { println!("{}", s); ExitCode::SUCCESS }
+            Err(e) => { eprintln!("{}", e); ExitCode::from(1) }
+        };
+    }
+
     if args.len() < 2 {
         eprintln!("Usage: chorus-inject <role> <text>");
-        eprintln!("  role: wren, silas, kade");
-        eprintln!("  Injects text into the role's Terminal window via osascript.");
+        eprintln!("       chorus-inject --count-windows <pattern>");
         return ExitCode::from(1);
     }
 
@@ -32,6 +39,36 @@ fn main() -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+/// Count Terminal windows whose name contains both `pattern` and "claude".
+/// Returns "<count>::<first-matching-name>" on stdout.
+fn count_windows(pattern: &str) -> Result<String, String> {
+    let safe = pattern.replace('"', "");
+    let script = format!(
+        r#"tell application "Terminal"
+    set matchCount to 0
+    set matchName to ""
+    set winCount to count of windows
+    repeat with i from 1 to winCount
+        try
+            set w to window i
+            set winName to name of w
+            if winName contains "{p}" and winName contains "claude" then
+                set matchCount to matchCount + 1
+                set matchName to winName
+            end if
+        end try
+    end repeat
+    return (matchCount as text) & "::" & matchName
+end tell"#,
+        p = safe
+    );
+    let output = Command::new("osascript")
+        .args(["-e", &script])
+        .output()
+        .map_err(|e| format!("osascript spawn failed: {}", e))?;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 fn role_pattern(role: &str) -> Option<&'static str> {

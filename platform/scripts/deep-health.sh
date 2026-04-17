@@ -318,6 +318,21 @@ else
   FAILURES+=("standards-surface: chorus-standards.html not found — run generate-standards-surface.sh first")
 fi
 
+# --- 15b. Borg page data-present probes (#2124) ---
+# /borg/* pages return 200 even when aggregators error. borg-health-check.sh
+# probes each backing API against a contract and alerts when data assertions
+# fail, not just when HTTP fails.
+BORG_HEALTH="${CHORUS_ROOT}/platform/scripts/borg-health-check.sh"
+if [ -x "$BORG_HEALTH" ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      FAIL*)
+        FAILURES+=("borg-health: ${line#FAIL }")
+        ;;
+    esac
+  done < <("$BORG_HEALTH" 2>/dev/null || true)
+fi
+
 # --- 16. Shadow logs in /tmp/ (DEC-101) ---
 TMP_LOGS=$(find /tmp -maxdepth 1 -name "*.log" -size +0c 2>/dev/null | wc -l | tr -d ' ')
 if [ "$TMP_LOGS" -gt 0 ]; then
