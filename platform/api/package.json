@@ -9,7 +9,9 @@
   "scripts": {
     "build": "tsc && rm -rf dist/sparql && cp -r src/sparql dist/sparql",
     "start": "node dist/server.js",
-    "dev": "tsx src/server.ts"
+    "dev": "tsx src/server.ts",
+    "test": "jest",
+    "test:coverage": "RUN_INTEGRATION=true jest --coverage"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.26.2",
