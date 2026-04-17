@@ -15,7 +15,8 @@ import * as os from 'os';
 
 const GATHERING_ROOT = process.env.GATHERING_ROOT || path.join(os.homedir(), 'CascadeProjects', 'jeff-bridwell-personal-site');
 const CHORUS_ROOT = process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects', 'chorus');
-const CACHE_PATH = path.join(os.homedir(), '.chorus', 'quality-cache.json');
+// #2167 test seam — overridable so tests can use a tempdir.
+const CACHE_PATH = process.env.QUALITY_CACHE_PATH || path.join(os.homedir(), '.chorus', 'quality-cache.json');
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export type TestKind = 'api' | 'ui' | 'other';
