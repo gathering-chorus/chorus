@@ -7210,16 +7210,20 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
+// Only bind when run as the main module. Under jest (require.main !== module)
+// tests import `app` and exercise routes in-process (#2167).
 const BIND_HOST = process.env.CHORUS_BIND || '0.0.0.0';
-app.listen(PORT, BIND_HOST, () => {
-  console.log(`[chorus-api] Listening on ${BIND_HOST}:${PORT}`);
-  console.log(`[chorus-api] Database: ${DB_PATH}`);
-  // Init LanceDB async (non-blocking)
-  initLance().catch(err => console.error(`[chorus-api] LanceDB init error: ${err}`));
+if (require.main === module) {
+  app.listen(PORT, BIND_HOST, () => {
+    console.log(`[chorus-api] Listening on ${BIND_HOST}:${PORT}`);
+    console.log(`[chorus-api] Database: ${DB_PATH}`);
+    // Init LanceDB async (non-blocking)
+    initLance().catch(err => console.error(`[chorus-api] LanceDB init error: ${err}`));
 
-  // Embed sync moved to standalone worker (chorus-embed-worker.sh) — #1978
-  // The in-process timer was blocking the API with 100+ sequential Ollama calls per cycle.
-  // POST /api/chorus/embed still works for on-demand batches.
-});
+    // Embed sync moved to standalone worker (chorus-embed-worker.sh) — #1978
+    // The in-process timer was blocking the API with 100+ sequential Ollama calls per cycle.
+    // POST /api/chorus/embed still works for on-demand batches.
+  });
+}
 
 export default app;

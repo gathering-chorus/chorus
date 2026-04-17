@@ -53,6 +53,16 @@ module.exports = {
     'src/quality-summary.ts': {
       branches: 60, functions: 75, lines: 80, statements: 80,
     },
+    // server.ts — 7225 lines, 136 route handlers, lifted from 0% to ~9% by
+    // the in-process smoke suite (#2167). Reaching 60/75/80 requires
+    // converting the ~40 existing HTTP integration tests in tests/ to use
+    // the imported `app` via the require.main guard + hitting a larger
+    // share of the 136 routes with downstream mocks. Per-file threshold is
+    // set at the current floor so regressions trip the build; raising
+    // it is its own multi-file conversion effort.
+    'src/server.ts': {
+      branches: 1, functions: 1, lines: 5, statements: 5,
+    },
   },
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/**/*.test.ts'],
 };
