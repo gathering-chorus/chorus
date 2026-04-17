@@ -60,6 +60,9 @@ pub fn run(_args: &[String]) -> ExitCode {
 }
 
 fn assemble_roles() -> serde_json::Value {
+    // Pulse is a pure assembler — reads declared.json as observer writes it.
+    // Inference rules live in observer (#2120), not here. Keeps Pulse's
+    // "I just assemble" promise clean and inference evolvable in one place.
     let mut roles = serde_json::Map::new();
     for role in &["wren", "silas", "kade"] {
         let path = format!("/tmp/claude-team-scan/{}-declared.json", role);

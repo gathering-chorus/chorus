@@ -4,6 +4,13 @@ pub mod shared;
 mod state;
 mod types;
 
+// #2120 — re-use commands::pulse so post_tool_use can refresh /tmp/pulse-latest.json
+// in-process instead of shelling out. pulse.rs depends on process::wall_clock.
+mod process;
+mod commands {
+    pub mod pulse;
+}
+
 use axum::{
     extract::{DefaultBodyLimit, State},
     routing::{get, post},
@@ -487,6 +494,13 @@ async fn post_tool_use(
     let input_clone = input.clone();
     tokio::spawn(async move {
         hooks::observer::observe(&input_clone, &state_clone).await;
+    });
+
+    // #2120 — refresh /tmp/pulse-latest.json on every post-tool-use so the team
+    // state snapshot is always current. Readers (tiles.ts, The Clearing) poll
+    // pulse; this makes their view sub-second instead of 5-minute.
+    tokio::task::spawn_blocking(|| {
+        let _ = crate::commands::pulse::run(&[]);
     });
 
     // Ops awareness (#2003 AC3) — surface degraded system state

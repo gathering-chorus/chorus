@@ -107,6 +107,8 @@
   .tile-top { display: flex; justify-content: space-between; align-items: center; }
   .tile-name { font-weight: 700; font-size: 0.9rem; }
   .tile-card { color: var(--text-muted); font-size: 0.8rem; }
+  .tile-card.divergent { color: var(--orange); font-weight: 600; }
+  .tile-card .card-arrow { opacity: 0.6; margin: 0 2px; }
   .tile-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 0.4rem; }
   .tile-state { font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
   .tile-state .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
@@ -791,7 +793,7 @@ function renderTiles(tiles) {
       <div class="tile tile-${t.role}${locked ? ' tile-locked' : ''}${foldRole === t.role ? ' tile-folded' : ''}" onclick="toggleLock('${t.role}')">
         <div class="tile-top">
           <span class="tile-name">${t.role.charAt(0).toUpperCase() + t.role.slice(1)}${locked ? ' ◀' : ''}</span>
-          <span class="tile-card">${t.card || '—'}</span>
+          <span class="tile-card${t.divergent ? ' divergent' : ''}" title="${t.divergent ? 'declared: #' + t.cardDeclared + ' — inferred from activity: #' + t.cardInferred : ''}">${t.divergent ? '#' + t.cardDeclared + '<span class="card-arrow">→</span>#' + t.cardInferred : (t.card || '—')}</span>
         </div>
         <div class="tile-bottom">
           <span class="tile-state"><span class="dot" style="background:${stateColor}"></span> ${t.state}</span>

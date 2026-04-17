@@ -55,7 +55,16 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
         return;
     }
 
-    let card = read_role_card(role.as_str());
+    // #2120 — Prefer inference from this tool call; fall back to declared state
+    let inferred = infer_card_from_input(input);
+    let card = inferred.clone().or_else(|| read_role_card(role.as_str()));
+
+    // #2120 — Inline subsecond reconciliation: if this tool call carries a
+    // strong card signal and it differs from declared state, flip declared.json
+    // immediately (respecting a brief manual-override window).
+    if let Some(inferred_card) = inferred.as_deref() {
+        reconcile_declared_state(role.as_str(), inferred_card);
+    }
 
     let obs = Observation {
         ts: Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%z").to_string(),
@@ -67,6 +76,169 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
     };
 
     write_observation(&obs).await;
+}
+
+/// #2120 — The card a role is working on is the WIP card they own on the
+/// board. Period. Commenting on someone else's card, writing a brief, or
+/// mentioning a card in a commit doesn't count as "working on" — only
+/// ownership does. If a role has no WIP card, their card state is blank.
+///
+/// Reads /tmp/board-wip-snapshot.json (maintained by pulse::assemble_board).
+pub fn wip_card_owned_by(role: &str) -> Option<String> {
+    let content = std::fs::read_to_string("/tmp/board-wip-snapshot.json").ok()?;
+    let arr = serde_json::from_str::<serde_json::Value>(&content).ok()?;
+    for card in arr.as_array()? {
+        let owner = card.get("owner")?.as_str()?.to_lowercase();
+        if owner == role.to_lowercase() {
+            let id = card.get("id")?.as_u64()?;
+            return Some(id.to_string());
+        }
+    }
+    None
+}
+
+/// #2120 — Card = board WIP ownership. No ownership, no card.
+pub fn infer_card_from_input(input: &HookInput) -> Option<String> {
+    let role = input.role();
+    if role == crate::types::Role::Unknown {
+        return None;
+    }
+    wip_card_owned_by(role.as_str())
+}
+
+/// Retained for its future utility but unused in the live path after
+/// Jeff's 2026-04-17 direction: no card fallback from tool-call patterns.
+/// If ownership says no card, that IS the state. Kept behind `#[cfg(test)]`
+/// so the regex coverage doesn't rot if we ever want it as a weak signal.
+#[cfg(test)]
+fn infer_card_from_tool_patterns(input: &HookInput) -> Option<String> {
+    use regex::Regex;
+    let tool = input.tool_name_str();
+
+    match tool {
+        "Bash" => {
+            let cmd = input.get_tool_input_str("command");
+            if cmd.is_empty() {
+                return None;
+            }
+
+            let cards_op = Regex::new(
+                r"\bcards\s+(?:move|comment|done|demo|reject|block)\s+(\d{3,6})\b"
+            ).ok()?;
+            if let Some(c) = cards_op.captures(&cmd).and_then(|c| c.get(1)) {
+                return Some(c.as_str().to_string());
+            }
+
+            let commit_hash = Regex::new(r#"-m\s+["']?[^"']*?#(\d{3,6})\b"#).ok()?;
+            if let Some(c) = commit_hash.captures(&cmd).and_then(|c| c.get(1)) {
+                return Some(c.as_str().to_string());
+            }
+
+            let chat_topic = Regex::new(r#"chat(?:\.sh)?\s+\S+\s+\S+\s+["']?#(\d{3,6})\b"#).ok()?;
+            if let Some(c) = chat_topic.captures(&cmd).and_then(|c| c.get(1)) {
+                return Some(c.as_str().to_string());
+            }
+
+            None
+        }
+        "Write" | "Edit" => {
+            let path = input.get_tool_input_str("file_path");
+            if path.is_empty() || !path.contains("/briefs/") {
+                return None;
+            }
+            let brief = Regex::new(r"/briefs/[^/]*?(?:demo|card)-(\d{3,6})").ok()?;
+            brief
+                .captures(&path)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string())
+        }
+        _ => None,
+    }
+}
+
+/// #2120 — Inline reconciliation: rewrite declared.json when a tool call's
+/// inferred card differs from the declared one. Subsecond, not polled.
+///
+/// Preserves a short manual-override window (MANUAL_OVERRIDE_SECS) so that a
+/// human `role-state` call gets a brief moment to stand before inference
+/// takes over again. The declared file mtime is the window anchor — a fresh
+/// manual write suppresses reconciliation for that interval.
+///
+/// Uses atomic tmp-file-then-rename to survive concurrent tool calls.
+fn reconcile_declared_state(role: &str, inferred_card: &str) {
+    const MANUAL_OVERRIDE_SECS: u64 = 60;
+    let path = format!("{}/{}-declared.json", SCAN_DIR, role);
+    let tmp = format!("{}/{}-declared.json.tmp.{}", SCAN_DIR, role, std::process::id());
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return, // no declared state — nothing to reconcile
+    };
+    let mut parsed: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    // Respect manual-override window: if last write was recent AND not from
+    // reconciler, leave it alone. The declared file's own ts field is the
+    // authoritative source (wall-clock independent of filesystem mtime drift).
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let last_ts = parsed.get("ts").and_then(|v| v.as_u64()).unwrap_or(0);
+    let last_source = parsed.get("source").and_then(|v| v.as_str()).unwrap_or("");
+    if last_source != "reconciler" && now.saturating_sub(last_ts) < MANUAL_OVERRIDE_SECS {
+        return;
+    }
+
+    // Extract current declared card for comparison
+    let declared_card = parsed
+        .get("card")
+        .map(|v| {
+            if v.is_number() {
+                v.to_string()
+            } else {
+                v.as_str().unwrap_or("").to_string()
+            }
+        })
+        .unwrap_or_default();
+
+    if declared_card == inferred_card {
+        return; // already in sync, nothing to do
+    }
+
+    // Flip declared.json — preserve everything else, stamp card_declared +
+    // card_inferred + source=reconciler so UIs can surface divergence.
+    let card_num: serde_json::Value = match inferred_card.parse::<i64>() {
+        Ok(n) => serde_json::Value::Number(n.into()),
+        Err(_) => serde_json::Value::String(inferred_card.to_string()),
+    };
+
+    if let Some(obj) = parsed.as_object_mut() {
+        let prev = obj.get("card").cloned().unwrap_or(serde_json::Value::Null);
+        obj.insert("card_declared".to_string(), prev);
+        obj.insert("card_inferred".to_string(), card_num.clone());
+        obj.insert("card".to_string(), card_num);
+        obj.insert(
+            "source".to_string(),
+            serde_json::Value::String("reconciler".to_string()),
+        );
+        obj.insert(
+            "ts".to_string(),
+            serde_json::Value::Number(now.into()),
+        );
+    }
+
+    let out = match serde_json::to_string(&parsed) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    // Atomic write: tmp + rename
+    if std::fs::write(&tmp, &out).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
 }
 
 /// Digest a tool call into a compact human-readable summary
@@ -567,5 +739,147 @@ mod tests {
     fn test_load_since_nonexistent() {
         let result = load_since("nonexistent_role_xyz", "2026-01-01T00:00:00Z");
         assert!(result.is_empty());
+    }
+
+    // === #2120 — infer_card_from_input ===
+
+    #[test]
+    fn test_infer_card_from_cards_move() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "bash /path/to/cards move 1234 WIP"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("1234".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_cards_comment() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "cards comment 2119 'acp brief'"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("2119".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_cards_done() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "bash cards done 2117"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("2117".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_cards_demo() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "cards demo 2120"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("2120".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_cards_reject() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "cards reject 1999 'blocked by X'"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("1999".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_cards_block() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "cards block 1998 'waiting on Y'"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("1998".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_commit_hash_marker() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "git-queue.sh commit foo.rs -- -m \"silas: acp #2114 ship thing\""}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("2114".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_acp_phrase() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "bash git-queue commit -- -m 'acp #2117 — extend daily-review'"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("2117".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_swat_phrase() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "git-queue.sh commit -- -m 'silas: swat #2130 stale test'"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("2130".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_chat_topic() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "bash chat.sh start kade '#1847 buildout review'"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("1847".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_brief_demo_path() {
+        let input = make_post_input(
+            "Write",
+            json!({"file_path": "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs/2026-04-16-demo-2114.md", "content": "x"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("2114".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_from_brief_card_path() {
+        let input = make_post_input(
+            "Write",
+            json!({"file_path": "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade/briefs/2026-04-11-card-1832-done.md", "content": "x"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), Some("1832".to_string()));
+    }
+
+    #[test]
+    fn test_infer_card_none_for_generic_bash() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "ls -la /tmp && df -h"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), None);
+    }
+
+    #[test]
+    fn test_infer_card_none_for_generic_write() {
+        let input = make_post_input(
+            "Write",
+            json!({"file_path": "/tmp/scratch.md", "content": "x"}),
+            "/tmp",
+        );
+        assert_eq!(infer_card_from_tool_patterns(&input), None);
     }
 }

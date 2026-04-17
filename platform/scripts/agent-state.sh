@@ -157,21 +157,24 @@ cmd_orphans() {
   echo "Scanning for orphan processes (ppid=1) on known service ports..."
   echo ""
 
-  declare -A PORT_MAP=(
-    [3340]="chorus-api"
-    [3456]="vikunja"
-    [3100]="grafana"
-    [3102]="loki"
-    [3470]="bridge"
-    [3475]="messaging"
-    [9090]="prometheus"
-    [9100]="node-exporter"
-    [3030]="fuseki"
+  # bash-3 compatible: plain indexed array with port:name pairs (macOS default bash is 3.2)
+  local PORT_MAP=(
+    "3340:chorus-api"
+    "3456:vikunja"
+    "3100:grafana"
+    "3102:loki"
+    "3470:bridge"
+    "3475:messaging"
+    "9090:prometheus"
+    "9100:node-exporter"
+    "3030:fuseki"
   )
 
   local found=0
-  for port in "${!PORT_MAP[@]}"; do
-    local service="${PORT_MAP[$port]}"
+  local entry port service
+  for entry in "${PORT_MAP[@]}"; do
+    port="${entry%%:*}"
+    service="${entry##*:}"
     while read -r pid; do
       if [[ -z "$pid" ]]; then continue; fi
       local ppid
@@ -195,6 +198,28 @@ cmd_orphans() {
         fi
       fi
     done < <(lsof -ti :"$port" 2>/dev/null)
+  done
+
+  # Socket-based services (not on TCP ports) — scan by binary path
+  local SOCKET_MAP=(
+    "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hooks:hooks"
+  )
+  local bin name
+  for entry in "${SOCKET_MAP[@]}"; do
+    bin="${entry%%:*}"
+    name="${entry##*:}"
+    while read -r pid; do
+      [[ -z "$pid" ]] && continue
+      local ppid
+      ppid=$(ps -p "$pid" -o ppid= 2>/dev/null | tr -d ' ')
+      if [[ "$ppid" == "1" ]]; then
+        echo -e "${RED}ORPHAN${NC} socket-service=$name pid=$pid"
+        found=$((found + 1))
+        if [[ "$FORCE" == "true" ]]; then
+          kill "$pid" 2>/dev/null && echo -e "  ${GREEN}Killed${NC}" || echo -e "  ${RED}Failed${NC}"
+        fi
+      fi
+    done < <(pgrep -f "$bin$" 2>/dev/null)
   done
 
   if [[ $found -eq 0 ]]; then

@@ -11,6 +11,12 @@ export interface RoleTile {
   lastAction: string;
   lastActionAge: string;
   sessionAlive: boolean;
+  /** #2120 — reconciler-written card (from observations) when it diverges from declared */
+  cardInferred?: string;
+  /** #2120 — card the role last manually declared */
+  cardDeclared?: string;
+  /** #2120 — true when inferred differs from declared and reconciler flipped it */
+  divergent?: boolean;
 }
 
 export interface PulseState {
@@ -111,6 +117,13 @@ export class TilePoller {
       tile.state = data.state || 'idle';
       tile.card = data.card ? `#${data.card}` : '';
       tile.sessionAlive = data.session_alive !== false;
+
+      // #2120 — surface divergence when reconciler has flipped the card
+      if (data.source === 'reconciler' && data.card_declared) {
+        tile.cardDeclared = String(data.card_declared);
+        tile.cardInferred = String(data.card_inferred || data.card);
+        tile.divergent = tile.cardDeclared !== tile.cardInferred;
+      }
 
       if (data.ts) {
         const ageSecs = Math.floor(Date.now() / 1000) - data.ts;
