@@ -44,6 +44,7 @@ print(p.get('assert_content_type',''))
   if [ -n "$ctype_prefix" ]; then
     headers=$(curl -sI --max-time 5 "$url" 2>/dev/null || true)
     code=$(echo "$headers" | head -1 | awk '{print $2}')
+    code=${code:-000}
     ctype=$(echo "$headers" | awk 'tolower($1) == "content-type:" {print $2}' | tr -d '\r\n')
     if [ "$code" != "200" ]; then
       echo "FAIL $page — $api returned ${code:-000}"
@@ -63,7 +64,8 @@ print(p.get('assert_content_type',''))
   fi
 
   body_file=$(mktemp)
-  code=$(curl -s --max-time 5 -o "$body_file" -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+  code=$(curl -s --max-time 5 -o "$body_file" -w "%{http_code}" "$url" 2>/dev/null)
+  code=${code:-000}
   if [ "$code" != "200" ]; then
     echo "FAIL $page — $api returned $code"
     FAILURES=$((FAILURES + 1))
