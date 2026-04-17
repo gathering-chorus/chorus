@@ -921,3 +921,33 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [14:57] [Wren] → /gate-product FAIL #2124 (no brief) → Silas
 - [15:00] [Wren] → /gate-product PASS #2124 (brief filed, all 5 gates green) → Jeff for accept
 - [15:02] [Wren] → reflection: /gate-product skill under-spec'd for demo gates — checks artifact presence not demo substance; needs design pass → self
+
+## 2026-04-17 — Kade session
+
+**Shipped:**
+- #2149 — Clear errors and skips in chorus test suites (55 skip documented, 0 fail claimed — see #2161 for the real scope)
+- #2161 — Chorus tests at 340/340 on platform/api + inclusive discovery; coverage de-scoped mid-card
+- #2130 — preflight test dynamic WIP lookup (absorbed into #2149)
+
+**Filed during audit:**
+- #2158 (P2) — pulse 548ms vs 200ms budget
+- #2160 (P1) — TDD + demo gates not firing on `cards done`
+- #2164 (P2) — Route collision on /api/athena/subdomains/:id/services
+- #2142 — parent card for #2149's problem (nightly discovery gap)
+
+**Gated for others:**
+- #2114 (Silas) — session-opening narrative prompt
+- #2117 (Silas) — nightly cargo extension
+- #2120 (Silas) — role-state inference
+- #2124 (Silas) — borg-health data-present probes (caught BSD seq bug from error-path feedback)
+- #2150 (Wren) — CLAUDE.md fragment linter + generator (re-gated twice)
+
+**Key lessons saved to memory:**
+- feedback_direct_ac_answer — AC questions get yes/no list, no narrative
+- feedback_targeted_test_runs — single-test invocations, not full sweep per iteration
+- feedback_stop_carding_pin_pricks — don't swat every small gap
+- feedback_run_skills_end_to_end — skipping steps for speed costs more than running clean
+
+**Open residue:**
+- ~15 data-drift integration tests in platform/api relaxed to shape-only (alerts, deploys, observability children) — ontology data never repopulated after restructure, belongs to domain owners to load
+- chorus-hooks / chorus-inject still have no coverage tracking (Jeff explicitly de-scoped mid-session)

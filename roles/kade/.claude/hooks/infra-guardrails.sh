@@ -5,14 +5,12 @@
 # This enforces rules from engineer/CLAUDE.md and ADR-011.
 #
 # Prohibited commands and their correct alternatives:
-#   docker exec    → Fix code and redeploy (ADR-011). Read-only inspection: ask Jeff first.
-#   docker logs    → Use Loki via Grafana (http://localhost:3100 → Explore → Loki)
 #   kill/pkill     → Use app-state.sh stop
-#   docker stop    → Use app-state.sh stop
-#   docker rm      → Use app-state.sh stop (Terraform manages containers)
-#   docker restart → Use app-state.sh restart
 #   git commit     → Use git-queue.sh (serializes cross-role commits)
 #   git add        → Use git-queue.sh (atomic add+commit)
+#
+# Docker blocks removed 2026-04-17 (#2119): Docker is retired per #2020.
+# Services run as native LaunchAgents; no docker commands reach production.
 
 set -euo pipefail
 
@@ -67,44 +65,9 @@ ask() {
   exit 0
 }
 
-# ── BLOCKED: docker exec (no modifying running containers) ──
-# ADR-011: "No more docker exec to fix things. If it's broken, fix the code and deploy."
-# Exception: read-only inspection requires Jeff's explicit approval.
-if echo "$COMMAND" | grep -qE '\bdocker\s+exec\b'; then
-  deny "BLOCKED: docker exec is prohibited (ADR-011). Fix the code and redeploy using app-state.sh deploy. If you need read-only inspection for debugging, ask Jeff for permission first." "docker-exec"
-fi
-
-# ── BLOCKED: docker logs (use Loki) ──
-# Escape hatch: --tail N (≤50 lines, no --follow/-f) allowed for crash diagnostics
-# when container dies before Promtail can scrape.
-if echo "$COMMAND" | grep -qE '\bdocker\s+logs\b'; then
-  # Block --follow / -f (streaming is never needed)
-  if echo "$COMMAND" | grep -qE '\s(-f|--follow)\b'; then
-    deny "BLOCKED: docker logs --follow is prohibited. Use Loki for real-time log streaming. For crash diagnostics, use: docker logs --tail 20 <container>" "docker-logs-follow"
-  fi
-  # Allow --tail N where N ≤ 50 (read-only crash diagnostics)
-  TAIL_N=$(echo "$COMMAND" | sed -n 's/.*--tail[= ]\([0-9][0-9]*\).*/\1/p')
-  if [ -n "$TAIL_N" ] && [ "$TAIL_N" -le 50 ] 2>/dev/null; then
-    log_guardrail "allow" "docker-logs-tail"
-    exit 0
-  fi
-  # Block all other docker logs usage
-  deny "BLOCKED: docker logs without --tail is prohibited. Use Loki for log search: Grafana at http://localhost:3100 → Explore → Loki. For crash diagnostics (container died before Promtail scraped): docker logs --tail 20 <container>" "docker-logs"
-fi
-
 # ── BLOCKED: kill / pkill / killall (use app-state.sh) ──
 if echo "$COMMAND" | grep -qE '\b(kill|pkill|killall)\s'; then
   deny "BLOCKED: Manual process killing is prohibited. Use app-state.sh stop for graceful shutdown. Manual PID killing causes orphaned processes, port conflicts, and cascading failures. If app-state.sh can't stop a process, that's a bug to fix in the script." "kill"
-fi
-
-# ── BLOCKED: docker stop / docker rm / docker restart (use app-state.sh) ──
-if echo "$COMMAND" | grep -qE '\bdocker\s+(stop|rm|restart|kill)\b'; then
-  deny "BLOCKED: Direct Docker lifecycle commands are prohibited. Use app-state.sh (start|stop|restart|status) which manages containers through docker-compose. Direct Docker commands bypass the deployment pipeline and create drift." "docker-lifecycle"
-fi
-
-# ── BLOCKED: docker compose down / docker-compose down ──
-if echo "$COMMAND" | grep -qE '\bdocker[\s-]compose\s+down\b'; then
-  deny "BLOCKED: docker compose down is prohibited. Use app-state.sh stop which manages graceful teardown." "docker-compose-down"
 fi
 
 # ── BLOCKED: git commit / git add in team repo only (use git-queue.sh) ──
@@ -137,11 +100,6 @@ if echo "$COMMAND" | grep -qE '\bgit\s+(commit|add)\b'; then
     fi
   fi
   # Outside team repo — allow normal git operations
-fi
-
-# ── ASK: docker run (should use app-state.sh deploy or Terraform) ──
-if echo "$COMMAND" | grep -qE '\bdocker\s+run\b'; then
-  ask "docker run detected. Containers should be managed through app-state.sh and Terraform, not run directly. Is this a temporary test container? If so, Jeff must approve." "docker-run"
 fi
 
 # ── ASK: terraform commands (should go through app-state.sh) ──
