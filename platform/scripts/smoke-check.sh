@@ -137,6 +137,11 @@ check_page() {
     # Permanent redirect — route exists, redirecting to canonical URL
     printf "${GREEN}PASS${NC}  %-25s  301 → redirect (canonical)\n" "$path"
     pass=$((pass + 1))
+  elif [ "$raw_status" = "308" ]; then
+    # Permanent redirect (method-preserving) — #2122 Caddy edge-proxy redirects
+    # for Borg pages migrated to chorus-api (/borg/*). Path still resolves.
+    printf "${GREEN}PASS${NC}  %-25s  308 → redirect (migrated)\n" "$path"
+    pass=$((pass + 1))
   elif [ "$raw_status" = "200" ] && [ "$body_size" -gt "$min_size" ] && [ -z "$has_error" ]; then
     printf "${GREEN}PASS${NC}  %-25s  %s %s bytes\n" "$path" "$raw_status" "$body_size"
     pass=$((pass + 1))

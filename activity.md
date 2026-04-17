@@ -878,3 +878,11 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Wren] → Chat threads with Silas (briefs deprecation: filesystem-as-truth, agreed on (c)) and Kade (pull #1320 photo thumbnail fix) — both closed → all roles
 - [Wren] → Memory: locked thesis-driven session-opening shape as target, removed regressed pattern memory, added bugs-not-character feedback → self
 - [Wren] → brief to Silas → add TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN to com.chorus.api.plist env (unblocks #2099 Cost live data)
+
+## 2026-04-16 (Kade session 14:43–20:05)
+- [Kade] → Shipped #2119 swat (docker purge, -1300+ lines, 5 commits) → Silas for remainder
+- [Kade] → Shipped #2099 AC4 (9 Express redirects) → reverted on c80998c once Caddy landed
+- [Kade] → Ran #2122 demo; gathering-app port swap + test fixes (3 commits)
+- [Kade] → Ran gate:code + gate:quality on #2099 (70/70 tests); triaged to #2126/2127/2128 via Wren
+- [Kade] → Created #2129 (Caddy preflight for integration runs) per Silas review offer
+- [Kade] → Memory: rigor at gates, no time estimates
