@@ -1498,7 +1498,7 @@ chorus:Practice a owl:Class ;
     rdfs:label "Practice" ;
     rdfs:comment "A repeatable discipline derived from principles. How the team works." .
 
-# --- 11 Principles (7 from team-architecture.md + 4 from 2026-04-17 session) ---
+# --- 12 Principles (7 from team-architecture.md + 5 from 2026-04-17 session) ---
 
 chorus:principle-protect-attention a chorus:Principle ;
     rdfs:label "Protect Jeff's attention" ;
@@ -1544,6 +1544,10 @@ chorus:principle-comprehension-is-the-rate-limit a chorus:Principle ;
     rdfs:label "Comprehension is the rate limit" ;
     rdfs:comment "The team's real throughput is set by what can be understood, not what can be generated. Output beyond the rate of comprehension is debt disguised as speed. You own what you understand, not what you produced." .
 
+chorus:principle-interrogate-the-data a chorus:Principle ;
+    rdfs:label "Give a fuck about data quality" ;
+    rdfs:comment "Interrogate the data you touch before repeating or acting on it. Every claim you relay is a claim you own. Check provenance, verify fossils, refuse to narrate over gaps. The failure mode is storytelling — coherent-sounding prose that papers over what the data actually shows." .
+
 # --- 7 Practices (from team-architecture.md) ---
 
 chorus:practice-actor-bdd a chorus:Practice ;
@@ -1582,7 +1586,8 @@ chorus:loom-principles chorus:contains chorus:principle-protect-attention,
     chorus:principle-ship-small, chorus:principle-self-healing,
     chorus:principle-focus-is-infrastructure, chorus:principle-quality-at-source,
     chorus:principle-speed-and-quality-correlate,
-    chorus:principle-comprehension-is-the-rate-limit .
+    chorus:principle-comprehension-is-the-rate-limit,
+    chorus:principle-interrogate-the-data .
 
 chorus:loom-practices chorus:contains chorus:practice-actor-bdd,
     chorus:practice-domain-first, chorus:practice-service-next,
