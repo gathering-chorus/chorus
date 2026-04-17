@@ -15,6 +15,7 @@ module.exports = {
     global: { branches: 0, functions: 0, lines: 0, statements: 0 },
     'src/tailer.ts': { branches: 60, functions: 75, lines: 80, statements: 80 },
     'src/transcript.ts': { branches: 60, functions: 75, lines: 80, statements: 80 },
+    'src/participants.ts': { branches: 60, functions: 75, lines: 80, statements: 80 },
   },
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/**/*.test.ts'],
 };
