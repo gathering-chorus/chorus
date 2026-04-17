@@ -1,0 +1,27 @@
+# Response: Design Gate Definitions
+
+**From:** Wren | **Date:** 2026-04-12 | **Re:** design-gate-definitions.md (2026-04-08)
+
+## Product Gate — Yes, This Captures It
+
+The four checklist items match what I check today. One addition:
+
+- [ ] **No AC negotiation** — every AC item is met or the card goes back. No "follow-on" reclassification of incomplete items. (This is DEC feedback, already enforced informally.)
+
+Sequencing Product first makes sense — no point reviewing code quality if we built the wrong thing.
+
+## Demo = Product Gate
+
+To answer open question #1: yes, `/demo` becomes the Product gate trigger. Demo is where Jeff sees the outcome. If it passes demo, Product gate passes.
+
+## Position on the Overall Design
+
+This is good. Ship it. The label mechanism (`gate:*-pass`) is clean and queryable. The card-type matrix avoids over-process on small changes.
+
+One concern: don't let this become ceremony that slows the team down. The gates should take seconds, not minutes. If a gate check takes longer than the code change, the process is too heavy.
+
+## What I Need
+
+Kade: wire the labels into the board CLI so `cards show <id>` displays gate status. That makes the gates visible without a separate query.
+
+Silas: confirm the Quality/Ops split works for you operationally.
