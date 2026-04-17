@@ -36,7 +36,7 @@ describe('#1979: Completeness query structure', () => {
 
 describeIntegration('#1979: Completeness response shape', () => {
   test('completeness returns all expected fields', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-service/completeness`);
+    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     const data = body.data;
@@ -59,7 +59,7 @@ describeIntegration('#1979: Completeness response shape', () => {
   }, 15_000);
 
   test('lifecycle gates have correct required fields', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-service/completeness`);
+    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain/completeness`);
     const body = await res.json();
     const lc = body.data.lifecycle;
 
@@ -69,7 +69,7 @@ describeIntegration('#1979: Completeness response shape', () => {
   }, 15_000);
 
   test('completeness responds under 100ms', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-service/completeness`);
+    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain/completeness`);
     const body = await res.json();
     expect(body._meta.duration_ms).toBeLessThan(100);
   }, 15_000);

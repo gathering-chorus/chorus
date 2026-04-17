@@ -81,7 +81,7 @@ describeIntegration('AC6: Observability sub-domains as children', () => {
     const childIds = body.data.domains.map(d => d.id);
     expect(childIds).toContain('observability-service');
     expect(childIds).toContain('alerts-monitors-domain');
-    expect(childIds).toContain('logs-service');
+    expect(childIds).toContain('logs-domain');
   });
 });
 

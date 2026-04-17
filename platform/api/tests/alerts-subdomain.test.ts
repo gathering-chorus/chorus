@@ -13,16 +13,16 @@ const API = process.env.CHORUS_API || 'http://localhost:3340';
 const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
 
 describeIntegration('Alerts sub-domain graph (#1870)', () => {
-  test('alerts-service has 14+ alert rule instances', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-service`);
+  test('alerts-monitors-domain has 14+ alert rule instances', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain`);
     expect(res.status).toBe(200);
     const body = await res.json();
     const instances = body.data.instances || [];
     expect(instances.length).toBeGreaterThanOrEqual(14);
   }, 15_000);
 
-  test('alerts-service has no child sub-domains (flat collection)', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-service`);
+  test('alerts-monitors-domain has no child sub-domains (flat collection)', async () => {
+    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain`);
     const body = await res.json();
     expect((body.data.domains || []).length).toBe(0);
   }, 15_000);

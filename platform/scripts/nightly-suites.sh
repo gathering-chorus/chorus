@@ -25,22 +25,27 @@ APP_ROOT="${APP_ROOT:-/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal
 # --- Discovery ---
 
 list_npm() {
-  # Every package.json (excluding node_modules) whose scripts.test is defined.
-  # Emit the package dir path.
+  # Every package dir that contains a .test.ts/.test.js file somewhere within.
+  # Previous version only counted packages with scripts.test in package.json —
+  # that silently missed platform/api (356 tests, 0 wired), platform/pulse,
+  # and anywhere else tests exist but nobody added the npm script.
+  # "Every test" means every test FILE, not every test script.
   for root in "$CHORUS_ROOT" "$APP_ROOT"; do
     [ -d "$root" ] || continue
-    while IFS= read -r pj; do
-      [ -z "$pj" ] && continue
-      has_test=$(python3 -c "
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-    print('yes' if 'test' in d.get('scripts', {}) else 'no')
-except Exception:
-    print('no')
-" "$pj" 2>/dev/null)
-      [ "$has_test" = "yes" ] && dirname "$pj"
-    done < <(find "$root" -name package.json -not -path "*/node_modules/*" -not -path "*/ghost_content/*" 2>/dev/null)
+    find "$root" \( -name "*.test.ts" -o -name "*.test.js" -o -name "*.spec.ts" -o -name "*.spec.js" \) \
+         -not -path "*/node_modules/*" \
+         -not -path "*/ghost_content/*" \
+         -not -path "*/dist/*" \
+         -not -path "*/target/*" 2>/dev/null | while IFS= read -r tf; do
+      dir=$(dirname "$tf")
+      while [ "$dir" != "/" ]; do
+        if [ -f "$dir/package.json" ]; then
+          echo "$dir"
+          break
+        fi
+        dir=$(dirname "$dir")
+      done
+    done | sort -u
   done
 }
 

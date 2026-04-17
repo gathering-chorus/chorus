@@ -9,7 +9,7 @@ const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
 describeIntegration('#1956: API data survives ontology reload', () => {
   test('POST actor, reload ontology, actor still exists', async () => {
     // Create
-    const create = await fetch(`${API}/api/athena/subdomains/logs-service/actors`, {
+    const create = await fetch(`${API}/api/athena/subdomains/logs-domain/actors`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: 'Reload Survivor', role: 'kade', action: 'tests graph separation' }),
@@ -21,12 +21,12 @@ describeIntegration('#1956: API data survives ontology reload', () => {
     expect(reload.status).toBe(200);
 
     // Verify actor survives
-    const get = await fetch(`${API}/api/athena/subdomains/logs-service/actors`);
+    const get = await fetch(`${API}/api/athena/subdomains/logs-domain/actors`);
     const body = await get.json();
     const survivor = body.data.actors.find(function(a) { return a.label === 'Reload Survivor'; });
     expect(survivor).toBeDefined();
 
     // Clean up
-    await fetch(`${API}/api/athena/subdomains/logs-service/actors/logs-service-actor-reload-survivor`, { method: 'DELETE' });
+    await fetch(`${API}/api/athena/subdomains/logs-domain/actors/logs-domain-actor-reload-survivor`, { method: 'DELETE' });
   });
 });

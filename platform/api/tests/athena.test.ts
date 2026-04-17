@@ -472,11 +472,11 @@ describeIntegration('GET /api/athena/subdomains/:id/cards', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/alerts', () => {
   test('returns alert rules matching domain keyword', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/infra-service/alerts`);
+    const res = await fetch(`${API}/api/athena/subdomains/infrastructure-domain/alerts`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-alerts');
-    expect(body.data.subdomain).toBe('infra-service');
+    expect(body.data.subdomain).toBe('infrastructure-domain');
     expect(Array.isArray(body.data.alerts)).toBe(true);
   });
 
@@ -592,12 +592,12 @@ describeIntegration('POST /api/athena/validate', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/actors', () => {
   test('returns actor list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/actors`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/actors`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.source).toBe('athena');
     expect(body._meta.query_name).toBe('subdomain-actors');
-    expect(body.data.subdomain).toBe('logs-service');
+    expect(body.data.subdomain).toBe('logs-domain');
     expect(Array.isArray(body.data.actors)).toBe(true);
   });
 
@@ -609,24 +609,24 @@ describeIntegration('GET /api/athena/subdomains/:id/actors', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/scenarios', () => {
   test('returns scenario list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/scenarios`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/scenarios`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.source).toBe('athena');
     expect(body._meta.query_name).toBe('subdomain-scenarios');
-    expect(body.data.subdomain).toBe('logs-service');
+    expect(body.data.subdomain).toBe('logs-domain');
     expect(Array.isArray(body.data.scenarios)).toBe(true);
   });
 });
 
 describeIntegration('GET /api/athena/subdomains/:id/contract', () => {
   test('returns contract list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/contract`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/contract`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.source).toBe('athena');
     expect(body._meta.query_name).toBe('subdomain-contract');
-    expect(body.data.subdomain).toBe('logs-service');
+    expect(body.data.subdomain).toBe('logs-domain');
     expect(Array.isArray(body.data.endpoints)).toBe(true);
   });
 });
@@ -635,7 +635,7 @@ describeIntegration('GET /api/athena/subdomains/:id/contract', () => {
 
 describeIntegration('POST /api/athena/subdomains/:id/actors', () => {
   test('creates actor and returns it', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/actors`, {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/actors`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: 'Test Actor', role: 'silas', action: 'verifies log flow' }),
@@ -650,7 +650,7 @@ describeIntegration('POST /api/athena/subdomains/:id/actors', () => {
 
 describeIntegration('POST /api/athena/subdomains/:id/scenarios (#1922)', () => {
   test('creates scenario with separate given/when/then/notes fields', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/scenarios`, {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/scenarios`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: 'Test Scenario Split', given: 'logs are flowing', when: 'Loki is queried', then: 'entries appear', notes: 'requires tunnel' }),
@@ -668,7 +668,7 @@ describeIntegration('POST /api/athena/subdomains/:id/scenarios (#1922)', () => {
 
 describeIntegration('POST /api/athena/subdomains/:id/contract (#1922)', () => {
   test('creates contract with path and description fields', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/contract`, {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/contract`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: 'Test Endpoint V2', path: '/api/chorus/logs/test', method: 'GET', description: 'Query log entries' }),
@@ -684,18 +684,18 @@ describeIntegration('POST /api/athena/subdomains/:id/contract (#1922)', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/pages (#1923)', () => {
   test('returns pages list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pages`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/pages`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-pages');
-    expect(body.data.subdomain).toBe('logs-service');
+    expect(body.data.subdomain).toBe('logs-domain');
     expect(Array.isArray(body.data.pages)).toBe(true);
   });
 });
 
 describeIntegration('POST /api/athena/subdomains/:id/pages (#1923)', () => {
   test('creates page with route, description, status', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pages`, {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/pages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: 'Log Explorer', route: '/logs', description: 'Browse log entries by container', status: 'design' }),
@@ -712,18 +712,18 @@ describeIntegration('POST /api/athena/subdomains/:id/pages (#1923)', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/integrations (#1923)', () => {
   test('returns integrations list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/integrations`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/integrations`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-integrations');
-    expect(body.data.subdomain).toBe('logs-service');
+    expect(body.data.subdomain).toBe('logs-domain');
     expect(Array.isArray(body.data.integrations)).toBe(true);
   });
 });
 
 describeIntegration('POST /api/athena/subdomains/:id/integrations (#1923)', () => {
   test('creates integration with source, path, status', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/integrations`, {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/integrations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: 'Bedroom log shipping', source: 'Services on Bedroom', path: 'stdout → Promtail → Loki tunnel → Loki', status: 'active' }),
@@ -740,18 +740,18 @@ describeIntegration('POST /api/athena/subdomains/:id/integrations (#1923)', () =
 
 describeIntegration('GET /api/athena/subdomains/:id/persistence (#1923)', () => {
   test('returns persistence stores list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/persistence`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/persistence`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-persistence');
-    expect(body.data.subdomain).toBe('logs-service');
+    expect(body.data.subdomain).toBe('logs-domain');
     expect(Array.isArray(body.data.stores)).toBe(true);
   });
 });
 
 describeIntegration('POST /api/athena/subdomains/:id/persistence (#1923)', () => {
   test('creates persistence store with type, namespace, records, status', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/persistence`, {
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/persistence`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: 'Loki', type: 'Loki', namespace: '{container_name=~".*"}', records: '500000', status: 'active' }),
@@ -770,14 +770,14 @@ describeIntegration('POST /api/athena/subdomains/:id/persistence (#1923)', () =>
 
 describeIntegration('GET/POST /api/athena/subdomains/:id/services (#1924)', () => {
   test('GET returns services list', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/services`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/services`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-services');
     expect(Array.isArray(body.data.services)).toBe(true);
   });
   test('POST creates service with type, host, status, health_endpoint', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/services`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Loki', type: 'container', host: 'Library', status: 'running', health_endpoint: 'http://localhost:3102/ready' }) });
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/services`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Loki', type: 'container', host: 'Library', status: 'running', health_endpoint: 'http://localhost:3102/ready' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-service-create');
@@ -789,14 +789,14 @@ describeIntegration('GET/POST /api/athena/subdomains/:id/services (#1924)', () =
 
 describeIntegration('GET/POST /api/athena/subdomains/:id/pipeline (#1925)', () => {
   test('GET returns pipeline list', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pipeline`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/pipeline`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-pipeline');
     expect(Array.isArray(body.data.pipelines)).toBe(true);
   });
   test('POST creates pipeline with source, harvester, icd, status', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/pipeline`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Bedroom log ingest', source: 'service stdout', harvester: 'Promtail', icd: 'logs-icd', status: 'active' }) });
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/pipeline`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Bedroom log ingest', source: 'service stdout', harvester: 'Promtail', icd: 'logs-icd', status: 'active' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-pipeline-create');
@@ -807,14 +807,14 @@ describeIntegration('GET/POST /api/athena/subdomains/:id/pipeline (#1925)', () =
 
 describeIntegration('GET/POST /api/athena/subdomains/:id/logs (#1926)', () => {
   test('GET returns log sources list', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/logs`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/logs`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-logs');
     expect(Array.isArray(body.data.logs)).toBe(true);
   });
   test('POST creates log source with location, retention, status', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/logs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Bedroom containers', location: '{container_name=~".*bedroom.*"}', retention: '30', status: 'active' }) });
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/logs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Bedroom containers', location: '{container_name=~".*bedroom.*"}', retention: '30', status: 'active' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-log-create');
@@ -825,14 +825,14 @@ describeIntegration('GET/POST /api/athena/subdomains/:id/logs (#1926)', () => {
 
 describeIntegration('GET/POST /api/athena/subdomains/:id/gaps (#1926)', () => {
   test('GET returns gaps list', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/gaps`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/gaps`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-gaps');
     expect(Array.isArray(body.data.gaps)).toBe(true);
   });
   test('POST creates gap with type, description, severity', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/gaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Missing retention policy', type: 'gap', description: 'No automated log rotation configured', severity: 'important' }) });
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/gaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Missing retention policy', type: 'gap', description: 'No automated log rotation configured', severity: 'important' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-gap-create');
@@ -845,32 +845,32 @@ describeIntegration('GET/POST /api/athena/subdomains/:id/gaps (#1926)', () => {
 
 describeIntegration('PUT /api/athena/subdomains/:id/actors/:entityId (#1929)', () => {
   test('updates actor fields', async () => {
-    await fetch(`${API}/api/athena/subdomains/logs-service/actors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'PUT Test Actor', role: 'kade', action: 'original action' }) });
-    const put = await fetch(`${API}/api/athena/subdomains/logs-service/actors/logs-service-actor-put-test-actor`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'PUT Test Actor Updated', role: 'silas', action: 'updated action' }) });
+    await fetch(`${API}/api/athena/subdomains/logs-domain/actors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'PUT Test Actor', role: 'kade', action: 'original action' }) });
+    const put = await fetch(`${API}/api/athena/subdomains/logs-domain/actors/logs-domain-actor-put-test-actor`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'PUT Test Actor Updated', role: 'silas', action: 'updated action' }) });
     expect(put.status).toBe(200);
     const body = await put.json();
     expect(body.data.label).toBe('PUT Test Actor Updated');
     expect(body.data.role).toBe('silas');
     expect(body.data.action).toBe('updated action');
-    await fetch(`${API}/api/athena/subdomains/logs-service/actors/logs-service-actor-put-test-actor`, { method: 'DELETE' });
+    await fetch(`${API}/api/athena/subdomains/logs-domain/actors/logs-domain-actor-put-test-actor`, { method: 'DELETE' });
   });
 });
 
 describeIntegration('DELETE /api/athena/subdomains/:id/:section/:entityId (#1929)', () => {
   test('deletes actor and returns 204', async () => {
-    await fetch(`${API}/api/athena/subdomains/logs-service/actors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Delete Test Actor' }) });
-    const del = await fetch(`${API}/api/athena/subdomains/logs-service/actors/logs-service-actor-delete-test-actor`, { method: 'DELETE' });
+    await fetch(`${API}/api/athena/subdomains/logs-domain/actors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Delete Test Actor' }) });
+    const del = await fetch(`${API}/api/athena/subdomains/logs-domain/actors/logs-domain-actor-delete-test-actor`, { method: 'DELETE' });
     expect(del.status).toBe(204);
   });
 
   test('deletes gap and returns 204', async () => {
-    await fetch(`${API}/api/athena/subdomains/logs-service/gaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Delete Test Gap', severity: 'nice-to-have' }) });
-    const del = await fetch(`${API}/api/athena/subdomains/logs-service/gaps/logs-service-gap-delete-test-gap`, { method: 'DELETE' });
+    await fetch(`${API}/api/athena/subdomains/logs-domain/gaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Delete Test Gap', severity: 'nice-to-have' }) });
+    const del = await fetch(`${API}/api/athena/subdomains/logs-domain/gaps/logs-domain-gap-delete-test-gap`, { method: 'DELETE' });
     expect(del.status).toBe(204);
   });
 
   test('returns 400 for unknown section', async () => {
-    const del = await fetch(`${API}/api/athena/subdomains/logs-service/bogus/some-id`, { method: 'DELETE' });
+    const del = await fetch(`${API}/api/athena/subdomains/logs-domain/bogus/some-id`, { method: 'DELETE' });
     expect(del.status).toBe(400);
   });
 });
@@ -879,12 +879,12 @@ describeIntegration('DELETE /api/athena/subdomains/:id/:section/:entityId (#1929
 
 describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
   test('returns completeness score with sections, present, missing, percentage', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/completeness`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.source).toBe('athena');
     expect(body._meta.query_name).toBe('subdomain-completeness');
-    expect(body.data.subdomain).toBe('logs-service');
+    expect(body.data.subdomain).toBe('logs-domain');
     expect(body.data.sections).toBeDefined();
     expect(Array.isArray(body.data.present)).toBe(true);
     expect(Array.isArray(body.data.missing)).toBe(true);
@@ -894,7 +894,7 @@ describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
   });
 
   test('returns lifecycle gates with create/wip/done stages', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/completeness`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/completeness`);
     const body = await res.json();
     expect(body.data.lifecycle).toBeDefined();
     expect(body.data.lifecycle.create).toBeDefined();
@@ -912,7 +912,7 @@ describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
   });
 
   test('present and missing arrays match sections boolean map (#1900)', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-service/completeness`);
+    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/completeness`);
     const body = await res.json();
     const sections = body.data.sections;
     const present = body.data.present;
