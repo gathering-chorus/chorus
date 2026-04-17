@@ -163,8 +163,16 @@ if ! curl -sf --max-time 5 http://localhost:3340/api/chorus/health > /dev/null 2
 fi
 
 # --- 8. Gathering app reachable ---
-if ! curl -sf --max-time 5 http://localhost:3000/health > /dev/null 2>&1; then
-  FAILURES+=("gathering-app: localhost:3000 unreachable — app down")
+# Post #2122: Gathering lives on :3001; Caddy edge-proxy owns :3000. /health
+# returns 401 unauthorized by design (auth-gated), so check / for 200/301/302.
+GATHERING_CODE=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://localhost:3002/ 2>/dev/null)
+if ! [[ "$GATHERING_CODE" =~ ^(200|204|301|302)$ ]]; then
+  FAILURES+=("gathering-app: localhost:3002 returned ${GATHERING_CODE:-000} — app down (post-#2122 moved from :3000 to :3002 when Caddy took :3000)")
+fi
+# Caddy edge-proxy (#2122) fronts :3000, routes /borg/* to chorus-api.
+CADDY_CODE=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://localhost:3000/ 2>/dev/null)
+if ! [[ "$CADDY_CODE" =~ ^(200|204|301|302)$ ]]; then
+  FAILURES+=("caddy-edge: localhost:3000 returned ${CADDY_CODE:-000} — edge proxy down, inbound bookmarks broken")
 fi
 
 # --- 9. Nudge delivery ---

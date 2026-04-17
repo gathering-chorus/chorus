@@ -44,19 +44,34 @@ If skipped, emit: `gate.ops.skipped` spine event. Exit.
 ### 1. Service health
 
 ```bash
-# Check all registered service endpoints respond
+# Check all registered service endpoints respond.
+# Includes the Chorus product surface (#2099): landing + /borg/* nine pages.
 ENDPOINTS=(
-  "http://localhost:3000|app"
+  "http://localhost:3000|caddy-edge"
+  "http://localhost:2019/config/|caddy-admin"
+  "http://localhost:3002|gathering-app"
   "http://localhost:3030/\$/ping|fuseki"
   "http://localhost:3340/api/athena/health|chorus-api"
+  "http://localhost:3340/|chorus-landing"
+  "http://localhost:3340/borg/|borg-landing"
+  "http://localhost:3340/borg/assessment|borg-assessment"
+  "http://localhost:3340/borg/instance-explorer/|borg-instance-explorer"
+  "http://localhost:3340/borg/patterns/|borg-patterns"
+  "http://localhost:3340/borg/jeff/|borg-jeff"
+  "http://localhost:3340/borg/replay/|borg-replay"
+  "http://localhost:3340/borg/quality/|borg-quality"
+  "http://localhost:3340/borg/fitness/|borg-fitness"
+  "http://localhost:3340/borg/cost/|borg-cost"
+  "http://localhost:3340/borg/hooks/|borg-hooks"
   "http://localhost:3102/ready|loki"
-  "http://localhost:3470/api/health|bridge"
+  "http://localhost:3470/health|bridge"
 )
 for EP in "${ENDPOINTS[@]}"; do
   URL="${EP%%|*}"
   NAME="${EP##*|}"
-  CODE=$(curl -sf --max-time 3 -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null || echo "000")
-  if [[ "$CODE" =~ ^(200|204|301|302)$ ]]; then
+  CODE=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null)
+  [ -z "$CODE" ] && CODE="000"
+  if [[ "$CODE" =~ ^(200|204|301|302|308)$ ]]; then
     echo "PASS: $NAME ($CODE)"
   else
     echo "FAIL: $NAME ($CODE)"

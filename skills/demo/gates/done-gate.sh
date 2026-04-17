@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../../../.." && pwd)}"
+CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
 CARDS="$CHORUS_ROOT/platform/scripts/cards"
 
 CARD_ID="${1:-}"

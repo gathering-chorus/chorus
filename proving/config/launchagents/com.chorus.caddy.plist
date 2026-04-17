@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.caddy</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/opt/caddy/bin/caddy</string>
+    <string>run</string>
+    <string>--config</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/proving/config/caddy/Caddyfile</string>
+    <string>--adapter</string>
+    <string>caddyfile</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/jeffbridwell/CascadeProjects/chorus/proving/config/caddy</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/caddy-stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/caddy-stderr.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>XDG_DATA_HOME</key>
+    <string>/opt/homebrew/var/lib</string>
+    <key>HOME</key>
+    <string>/Users/jeffbridwell</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
