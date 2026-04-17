@@ -72,14 +72,23 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 # Lock 3: docker absent from live code paths (#2020 retirement, #2119 purge)
 # ---------------------------------------------------------------------------
 
-@test "lock: inject tests are hermetic by default — cargo test must not fire live keystrokes" {
+@test "lock: chorus-hooks inject tests use CHORUS_INJECT_DRY_RUN seam, not a skip-gate" {
   cd "$CHORUS_ROOT"
-  # process.rs hermetic_skip must check RUN_LIVE_INJECT (opt-in), not
-  # HERMETIC_TEST_MODE (opt-out). The wrong polarity stormed Jeff's terminal
-  # on 2026-04-17 when someone ran `cargo test` without the env var.
-  guard=$(grep -n "RUN_LIVE_INJECT" platform/services/chorus-hooks/src/process.rs || true)
-  [ -n "$guard" ] || {
-    echo "Hermetic-default guard missing in process.rs — RUN_LIVE_INJECT opt-in must gate inject tests" >&2
+  # On 2026-04-17 a global "skip unless opt-in" polarity flip meant nudge
+  # delivery tests never ran; a global "fire unless opt-out" polarity stormed
+  # Jeff's terminal. The correct shape (matching chorus-inject integration
+  # tests): set CHORUS_INJECT_DRY_RUN in the test so the subprocess runs the
+  # real path but short-circuits before osascript. Both fire-by-default and
+  # skip-by-default are regressions.
+  file=platform/services/chorus-hooks/src/process.rs
+  has_seam=$(grep -c "CHORUS_INJECT_DRY_RUN" "$file" || true)
+  has_skip_polarity=$(grep -cE 'RUN_LIVE_INJECT|HERMETIC_TEST_MODE' "$file" || true)
+  [ "$has_seam" -ge 1 ] || {
+    echo "Missing CHORUS_INJECT_DRY_RUN test seam in $file" >&2
+    false
+  }
+  [ "$has_skip_polarity" -eq 0 ] || {
+    echo "Skip-polarity gate reintroduced in $file (RUN_LIVE_INJECT or HERMETIC_TEST_MODE) — use dry-run seam instead" >&2
     false
   }
 }

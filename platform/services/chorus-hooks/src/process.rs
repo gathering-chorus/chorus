@@ -133,22 +133,20 @@ mod tests {
     // History: #2100 inlined it, #2229 tried bash, both reverted. Binary delegation
     // is the stable path. This test was stale since re-introduction of the binary.
 
-    // Polarity flip matching #2165: hermetic by default. inject_by_tab_name
-    // delegates to chorus-inject which drives osascript keystroke injection
-    // into a role's live terminal — running `cargo test` without opting in
-    // storms Jeff's session (seen 2026-04-17). Set RUN_LIVE_INJECT=1 to opt
-    // INTO live-fire. Anything else skips.
-    fn hermetic_skip(name: &str) -> bool {
-        if std::env::var("RUN_LIVE_INJECT").is_ok() {
-            return false;
-        }
-        eprintln!("SKIP {}: hermetic by default — set RUN_LIVE_INJECT=1 to opt in", name);
-        true
+    // Test seam (matches chorus-inject/tests/inject_integration.rs pattern):
+    // set CHORUS_INJECT_DRY_RUN=1 before calling inject_by_tab_name. The real
+    // code path runs — subprocess spawn, argv, role validation, escape, exit
+    // code handling — but chorus-inject's main.rs hits its dry-run branch and
+    // returns Ok without firing osascript. This exercises the nudge delivery
+    // path on every `cargo test` without storming Jeff's terminal (the opt-in
+    // polarity flip from earlier was wrong — it meant these tests never ran).
+    fn dry_run_env() {
+        std::env::set_var("CHORUS_INJECT_DRY_RUN", "1");
     }
 
     #[test]
     fn inject_by_tab_name_delegates_to_chorus_inject_binary() {
-        if hermetic_skip("inject_by_tab_name_delegates_to_chorus_inject_binary") { return; }
+        dry_run_env();
         let result = inject_by_tab_name("silas", "structural-test");
         if let Err(e) = result {
             assert!(!e.is_empty(), "error should have a message");
@@ -163,7 +161,7 @@ mod tests {
 
     #[test]
     fn inject_by_tab_name_escapes_double_quotes() {
-        if hermetic_skip("inject_by_tab_name_escapes_double_quotes") { return; }
+        dry_run_env();
         let result = inject_by_tab_name("silas", "test with \"quotes\" inside");
         assert!(result.is_err() || result.is_ok());
     }
