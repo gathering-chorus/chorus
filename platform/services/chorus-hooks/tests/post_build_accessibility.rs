@@ -6,7 +6,6 @@
 
 use std::process::Command;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
 const POST_BUILD: &str = "/Users/jeffbridwell/CascadeProjects/chorus/proving/scripts/post-cargo-build.sh";
 
 #[test]
@@ -34,21 +33,6 @@ fn post_build_script_passes_when_accessibility_granted() {
     assert!(stdout.contains("Accessibility permission OK"), "should print OK message, got: {}", stdout);
 }
 
-#[test]
-fn shim_nudge_inject_works_after_build() {
-    // TEMP skip: hermetic-test gate — see #2131.
-    if std::env::var("HERMETIC_TEST_MODE").is_ok() {
-        eprintln!("SKIP shim_nudge_inject_works_after_build: hermetic-test gate — #2131");
-        return;
-    }
-    // AC2: nudge --force inject works immediately after rebuild
-    let output = Command::new(SHIM)
-        .args(["nudge", "silas", "post-build accessibility test", "--force"])
-        .output()
-        .expect("failed to run nudge");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Should deliver, not fail with inject error
-    assert!(stdout.contains("DELIVERED"), "nudge should deliver after build, got: {}", stdout);
-    assert!(!stdout.contains("INJECT FAILED"), "inject should not fail, got: {}", stdout);
-}
+// (`shim_nudge_inject_works_after_build` removed per #2166 — the accessibility
+// regression from #2059 is caught by `post_build_script_passes_when_accessibility_granted`
+// above without firing a live inject. Previously gated behind HERMETIC_TEST_MODE.)

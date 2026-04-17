@@ -333,7 +333,12 @@ pub fn run(args: &[String]) -> ExitCode {
     // info     = queue only (ambient, drain on next prompt)
     // DEC-107: persist AND deliver on every nudge — level controls the 'deliver' method.
     // --dry-run: persist (curl POST) but skip ALL delivery (inject + queue).
+    // #2166: CHORUS_INJECT_DRY_RUN=1 env var also triggers dry-run. The env var lets
+    // tests (and callers without CLI control) opt out of osascript without threading
+    // a flag through every layer. Shim-level gate — guarantees no osascript call.
     // Queue feeds drain-on-prompt which is a delivery path, not just persist.
+    let env_dry_run = std::env::var("CHORUS_INJECT_DRY_RUN").is_ok();
+    let dry_run = dry_run || env_dry_run;
     let mode;
 
     if dry_run {

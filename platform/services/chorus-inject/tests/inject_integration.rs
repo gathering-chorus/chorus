@@ -8,12 +8,13 @@
 //!   asserts it contains "keystroke" + "key code 36" + no "do script".
 //!   Fails on rename, passes on semantic bugs. Treat as clippy-lite.
 //!
-//! **Integration (exercises the real binary, non-hermetic)** — gated
-//! behind HERMETIC_TEST_MODE=1 per #2131:
+//! **Integration (exercises the real binary, hermetic via dry-run)** — per #2166:
 //! - `inject_delivers_to_silas` / `_to_wren` / `_to_kade` — exec
-//!   chorus-inject with osascript-driven keystroke injection into live
-//!   role terminals. Sends real nudges as side effects.
-//! - `nudge_e2e_delivers` — exec nudge script end-to-end.
+//!   chorus-inject with CHORUS_INJECT_DRY_RUN=1. Validates argv parse,
+//!   role lookup, escape, and success exit without firing osascript.
+//! - `nudge_e2e_delivers` — exec nudge script end-to-end with the same
+//!   env seam propagated; shim routes through chorus-inject (#2077) so
+//!   the dry-run fires all the way down.
 //!
 //! **CLI contract** (hermetic, exercises argv parsing only):
 //! - `rejects_unknown_role` — unknown role → non-zero exit, "unknown role".
@@ -54,82 +55,69 @@ fn inject_source_uses_keystroke_not_do_script() {
     );
 }
 
-// --- AC3 + AC4: live delivery to each role ---
-
-// TEMP skip: hermetic-test gate — see #2131.
-// These tests exec the real chorus-inject binary and the real nudge script,
-// both of which drive osascript keystroke injection into every role's live
-// terminal. Set HERMETIC_TEST_MODE=1 to gate them. Durable fix: Silas's shim
-// kill-switch + Wren's mock-to-capture work.
-fn hermetic_skip(name: &str) -> bool {
-    if std::env::var("HERMETIC_TEST_MODE").is_ok() {
-        eprintln!("SKIP {}: hermetic-test gate — #2131", name);
-        return true;
-    }
-    false
-}
+// --- AC3 + AC4: delivery path per role (dry-run — hermetic, no side effects) ---
 
 #[test]
 fn inject_delivers_to_silas() {
-    if hermetic_skip("inject_delivers_to_silas") { return; }
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_DRY_RUN", "1")
         .args(["silas", "[cargo-test] AC4 silas inject"])
         .output()
         .expect("failed to run chorus-inject");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() {
-        assert!(
-            stderr.contains("no claude window"),
-            "should fail with 'no window' not TCC error: {}", stderr
-        );
-    }
+    assert!(output.status.success(), "dry-run inject should succeed for silas");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("DRY-RUN inject role=silas pattern=silas"),
+        "dry-run stdout should describe what would inject: {}", stdout
+    );
 }
 
 #[test]
 fn inject_delivers_to_wren() {
-    if hermetic_skip("inject_delivers_to_wren") { return; }
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_DRY_RUN", "1")
         .args(["wren", "[cargo-test] AC4 wren inject"])
         .output()
         .expect("failed to run chorus-inject");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() {
-        assert!(
-            stderr.contains("no claude window"),
-            "should fail with 'no window' not TCC error: {}", stderr
-        );
-    }
+    assert!(output.status.success(), "dry-run inject should succeed for wren");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("DRY-RUN inject role=wren pattern=wren"),
+        "dry-run stdout should describe what would inject: {}", stdout
+    );
 }
 
 #[test]
 fn inject_delivers_to_kade() {
-    if hermetic_skip("inject_delivers_to_kade") { return; }
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_DRY_RUN", "1")
         .args(["kade", "[cargo-test] AC4 kade inject"])
         .output()
         .expect("failed to run chorus-inject");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() {
-        assert!(
-            stderr.contains("no claude window"),
-            "should fail with 'no window' not TCC error: {}", stderr
-        );
-    }
+    assert!(output.status.success(), "dry-run inject should succeed for kade");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("DRY-RUN inject role=kade pattern=kade"),
+        "dry-run stdout should describe what would inject: {}", stdout
+    );
 }
 
-// --- AC5: nudge e2e regression ---
+// --- AC5: nudge e2e regression (dry-run via shim env-gate, #2166) ---
 
 #[test]
 fn nudge_e2e_delivers() {
-    if hermetic_skip("nudge_e2e_delivers") { return; }
+    // CHORUS_INJECT_DRY_RUN fires the shim's dry-run branch (nudge.rs), which
+    // prints "DRY-RUN: would inject to <target>..." and skips osascript.
     let output = Command::new("bash")
+        .env("CHORUS_INJECT_DRY_RUN", "1")
         .args([NUDGE_SCRIPT, "silas", "[cargo-test] AC5 nudge e2e", "--force"])
         .output()
         .expect("failed to run nudge");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("DELIVERED"),
-        "nudge e2e should deliver: {}", stdout
+        stdout.contains("DRY-RUN: would inject to silas"),
+        "nudge e2e under CHORUS_INJECT_DRY_RUN should dry-run at shim level, got: {}",
+        stdout
     );
 }
 

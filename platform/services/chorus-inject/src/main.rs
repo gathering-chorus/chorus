@@ -80,20 +80,45 @@ fn role_pattern(role: &str) -> Option<&'static str> {
     }
 }
 
-fn inject(role: &str, text: &str) -> Result<(), String> {
-    let pattern = role_pattern(role)
-        .ok_or_else(|| format!("unknown role: {}", role))?;
-
-    // Escape for AppleScript double-quoted strings
-    let escaped = text
-        .replace('\\', "\\\\")
+/// Escape a user string for embedding inside an AppleScript double-quoted literal.
+///
+/// Rules:
+///   - backslash → `\\` (must be first — other rules insert backslashes)
+///   - double-quote → `\"`
+///   - newline → space (AppleScript string literals cannot span lines)
+///   - em-dash (U+2014) → `--` (AppleScript doesn't render unicode dashes reliably)
+///   - smart single quotes (U+2018/U+2019) → regular `'` (passes through AS fine)
+///   - smart double quotes (U+201C/U+201D) → escaped `\"`
+///
+/// Regression coverage:
+///   - #2078: "this doesn't break anymore" — regular apostrophe must pass through
+///     unchanged (AppleScript double-quoted strings accept `'` as literal).
+fn escape_for_applescript(text: &str) -> String {
+    text.replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', " ")
         .replace('\u{2014}', "--")
         .replace('\u{2018}', "'")
         .replace('\u{2019}', "'")
         .replace('\u{201C}', "\\\"")
-        .replace('\u{201D}', "\\\"");
+        .replace('\u{201D}', "\\\"")
+}
+
+fn inject(role: &str, text: &str) -> Result<(), String> {
+    let pattern = role_pattern(role)
+        .ok_or_else(|| format!("unknown role: {}", role))?;
+
+    let escaped = escape_for_applescript(text);
+
+    // Test seam: CHORUS_INJECT_DRY_RUN=1 skips the osascript call and prints what
+    // would have been injected. Added #2166 so integration tests can exercise the
+    // full binary path (argv parse, role validation, escape) without firing real
+    // keystrokes into live terminals. Because #2077 routes every osascript call
+    // through chorus-inject, this env var also gates the shim's nudge path.
+    if std::env::var("CHORUS_INJECT_DRY_RUN").is_ok() {
+        println!("DRY-RUN inject role={} pattern={} escaped={}", role, pattern, escaped);
+        return Ok(());
+    }
 
     // #2029: revert to keystroke + key code 36 (Return).
     // #2245 switched to "do script" for overnight delivery but broke auto-submit —
@@ -143,5 +168,55 @@ end tell"#,
         Ok(())
     } else {
         Err(format!("{} stderr: {}", result, stderr))
+    }
+}
+
+#[cfg(test)]
+mod escape_tests {
+    use super::escape_for_applescript as esc;
+
+    #[test]
+    fn plain_text_passes_through() {
+        assert_eq!(esc("hello world"), "hello world");
+    }
+
+    #[test]
+    fn regular_apostrophe_passes_through() {
+        // #2078 regression — "doesn't" must not crash AppleScript parser.
+        // Inside AS double-quoted strings, `'` is a literal character.
+        assert_eq!(esc("this doesn't break anymore"), "this doesn't break anymore");
+    }
+
+    #[test]
+    fn double_quote_is_escaped() {
+        assert_eq!(esc(r#"with "quotes""#), r#"with \"quotes\""#);
+    }
+
+    #[test]
+    fn backslash_is_doubled_first() {
+        // Backslash must be escaped before other rules, otherwise a `\"` in
+        // input would become `\\\"` then `\\\\\"` etc.
+        assert_eq!(esc(r"back\slash"), r"back\\slash");
+        assert_eq!(esc(r#"\""#), r#"\\\""#);
+    }
+
+    #[test]
+    fn newline_becomes_space() {
+        assert_eq!(esc("line1\nline2"), "line1 line2");
+    }
+
+    #[test]
+    fn em_dash_becomes_double_hyphen() {
+        assert_eq!(esc("em\u{2014}dash"), "em--dash");
+    }
+
+    #[test]
+    fn smart_single_quotes_become_regular() {
+        assert_eq!(esc("smart \u{2018}quote\u{2019}"), "smart 'quote'");
+    }
+
+    #[test]
+    fn smart_double_quotes_become_escaped() {
+        assert_eq!(esc("smart \u{201C}quote\u{201D}"), r#"smart \"quote\""#);
     }
 }

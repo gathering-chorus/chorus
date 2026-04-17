@@ -18,36 +18,31 @@ const NUDGE_BINARY = '/Users/jeffbridwell/CascadeProjects/chorus/platform/servic
 const INBOX_DIR = '/tmp/voice-inbox';
 const EXCHANGE_DIR = '/tmp/nudge-exchanges';
 
-// Live-fire opt-in gate — see #2131, #2157, #2165.
+// Hermetic via CHORUS_INJECT_DRY_RUN — see #2131, #2157, #2165, #2166.
 //
-// Hermetic by default (`d` = describe.skip). Set RUN_LIVE_NUDGE=1 to opt in.
+// All shim nudge calls below set CHORUS_INJECT_DRY_RUN=1 (see runNudge helper),
+// which short-circuits `inject_by_tab_name` in chorus-hooks/src/nudge.rs before
+// any osascript fires. The shim prints "DRY-RUN: would inject to <target>..."
+// and exits success — assertions match that shape, not "delivered to X".
 //
-//   AC #3.1 — All role pairs: runNudge() invokes the real chorus-hook-shim
-//             which osascript-injects into every role's live terminal.
-//   AC #3.2 — Delivery verification: same live-inject path.
-//   AC #3.3 — Exchange tracking: same live-inject path.
+// History:
+//   #2149 blanket-gated every AC block behind HERMETIC_TEST_MODE=describe.skip.
+//   #2165 flipped to RUN_LIVE_NUDGE opt-in after a 17-nudge storm at 15:46.
+//   #2166 removed the gate entirely — dry-run replaces describe.skip.
 //
-//   These fire real side effects — every role's live terminal gets a nudge
-//   per test. Running `npm test` on this file used to storm the team (17
-//   injected nudges per run, confirmed in chorus.log 2026-04-17 15:46).
-//   #2165 flipped polarity so tests opt IN to the storm instead of opting
-//   out. Durable fix is #2131 (mock nudge binary); when that lands, these
-//   become unconditional again.
-//
-// Unconditional (plain `describe`):
-//   Precondition — binary existence + usage-on-no-args.
-//   AC #3.4 — WIP state detection: fs.readFileSync of hook source + grep.
-//   AC #3.5 — Spine events: fs.readFileSync of nudge.rs + grep.
-//   Source-inspection only. No side effects.
-const d = process.env.RUN_LIVE_NUDGE ? describe : describe.skip;
+// No env var needed to run the suite hermetically. To exercise live delivery
+// (e.g., before shipping changes to the osascript path itself), unset
+// CHORUS_INJECT_DRY_RUN and run explicitly — never in CI.
 
-// Helper: run nudge command and capture output
+// Helper: run nudge command and capture output. Injects CHORUS_INJECT_DRY_RUN=1
+// so the shim's nudge path skips osascript delivery (#2166).
 function runNudge(args: string, env: Record<string, string> = {}): { stdout: string; stderr: string; exitCode: number } {
   try {
     const stdout = execSync(`${NUDGE_BINARY} nudge ${args}`, {
       encoding: 'utf-8',
       env: {
         ...process.env,
+        CHORUS_INJECT_DRY_RUN: '1',
         ...env,
       },
       timeout: 15000,
@@ -100,7 +95,7 @@ describe('Precondition: nudge binary', () => {
 // 1. ALL ROLE PAIRS — every directional pair delivers
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC #3.1: All role pairs — nudge queues for every valid pair', () => {
+describe('AC #3.1: All role pairs — nudge queues for every valid pair', () => {
   const pairs = [
     ['wren', 'silas'],
     ['wren', 'kade'],
@@ -124,7 +119,7 @@ d('AC #3.1: All role pairs — nudge queues for every valid pair', () => {
       { DEPLOY_ROLE: sender },
     );
     expect(exitCode).toBe(0);
-    expect(stdout.toLowerCase()).toContain(`delivered to ${target}`);
+    expect(stdout).toContain(`DRY-RUN: would inject to ${target}`);
     // Note: inbox contents not checked here — live sessions may drain
     // before we read. Delivery confirmation via stdout is sufficient.
   });
@@ -152,33 +147,37 @@ d('AC #3.1: All role pairs — nudge queues for every valid pair', () => {
 // 2. DELIVERY VERIFICATION — nudge arrives in target inbox
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC #3.2: Delivery verification — nudge content arrives intact', () => {
+describe('AC #3.2: Delivery verification — nudge content arrives intact', () => {
   test('nudge prefix includes sender identity and Boston timestamp', () => {
-    // osascript inject is the delivery path — verify via stdout confirmation
+    // Dry-run confirms the shim routed to the right target.
     const { stdout } = runNudge('silas "Check the deploy" --from wren', { DEPLOY_ROLE: 'wren' });
-    expect(stdout.toLowerCase()).toContain('delivered to silas');
+    expect(stdout).toContain('DRY-RUN: would inject to silas');
+    // The shim's dry-run stdout includes the constructed nudge text — verify the
+    // sender + Boston timestamp prefix is present on the would-be inject.
+    expect(stdout).toMatch(/\[nudge from wren \| \d{4}-\d{2}-\d{2} \d{2}:\d{2} Boston\]/);
   });
 
   test('nudge message body is preserved in queue', () => {
-    // Verify delivery succeeds with long message content
     const longMessage = 'Bridge integration tests are failing — attribution shows jeff instead of wren on PM thinking messages. Need to check session-tailer.ts line 238.';
     const { stdout, exitCode } = runNudge(`kade "${longMessage}" --from silas`, { DEPLOY_ROLE: 'silas' });
     expect(exitCode).toBe(0);
-    expect(stdout.toLowerCase()).toContain('delivered to kade');
+    expect(stdout).toContain('DRY-RUN: would inject to kade');
+    // Body should appear (truncated at 120 chars per shim's preview)
+    expect(stdout).toContain('Bridge integration tests are failing');
   });
 
   test('reply-expected nudges add REPLY EXPECTED suffix', () => {
-    // Question marks trigger REPLY EXPECTED — verify via Rust unit tests (nudge.rs)
-    // Integration: verify delivery succeeds
     const { stdout, exitCode } = runNudge('kade "What do you think about this approach?" --from wren', { DEPLOY_ROLE: 'wren' });
     expect(exitCode).toBe(0);
-    expect(stdout.toLowerCase()).toContain('delivered to kade');
+    expect(stdout).toContain('DRY-RUN: would inject to kade');
+    expect(stdout).toContain('REPLY EXPECTED');
   });
 
   test('non-question nudges deliver without REPLY EXPECTED', () => {
     const { stdout, exitCode } = runNudge('kade "Brief in your inbox." --from wren', { DEPLOY_ROLE: 'wren' });
     expect(exitCode).toBe(0);
-    expect(stdout.toLowerCase()).toContain('delivered to kade');
+    expect(stdout).toContain('DRY-RUN: would inject to kade');
+    expect(stdout).not.toContain('REPLY EXPECTED');
   });
 
   test('drain returns queued messages and clears inbox', () => {
@@ -215,7 +214,7 @@ d('AC #3.2: Delivery verification — nudge content arrives intact', () => {
 // 3. EXCHANGE TRACKING — pair key is alphabetical, 30min reset
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC #3.3: Exchange tracking — pair key mechanics', () => {
+describe('AC #3.3: Exchange tracking — pair key mechanics', () => {
   test('exchange file uses alphabetical pair key (kade-silas, not silas-kade)', () => {
     // Clear exchange
     const exchangeFile = path.join(EXCHANGE_DIR, 'kade-silas');

@@ -1,37 +1,14 @@
-//! #2078 — AppleScript single-quote escaping + git detection heuristic
+//! #2078 — git detection heuristic.
 //!
-//! Bug 1: nudge with apostrophe breaks AppleScript (-2741 syntax error)
-//! Bug 2: git detection assumes team repo when no cd command present
+//! Bug 2: git detection assumes team repo when no cd command present.
+//!
+//! (Bug 1 — #2078 AppleScript single-quote escaping — moved to a unit test
+//! on `escape_for_applescript` in chorus-inject/src/main.rs per #2166.)
 
 use std::process::Command;
 use serde_json::json;
 
 const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
-const INJECT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/target/release/chorus-inject";
-
-// === Bug 1: single-quote escaping ===
-
-#[test]
-fn inject_with_apostrophe_does_not_crash() {
-    // TEMP skip: hermetic-test gate — see #2131.
-    if std::env::var("HERMETIC_TEST_MODE").is_ok() {
-        eprintln!("SKIP inject_with_apostrophe_does_not_crash: hermetic-test gate — #2131");
-        return;
-    }
-    // "doesn't" caused -2741 syntax error before fix
-    let output = Command::new(INJECT)
-        .args(["silas", "this doesn't break anymore"])
-        .output()
-        .expect("chorus-inject should run");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    // Should NOT contain AppleScript syntax error
-    assert!(
-        !stderr.contains("-2741") && !stderr.contains("syntax error"),
-        "apostrophe should not cause AppleScript syntax error, stderr: {}",
-        stderr
-    );
-}
 
 // === Bug 2: git detection ===
 
