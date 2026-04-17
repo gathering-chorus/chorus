@@ -5,24 +5,28 @@
  * Every test verifies a user-visible behavior.
  */
 
-jest.setTimeout(15000);
+jest.setTimeout(20000);
 
-import { execSync } from 'child_process';
+import { execSync, spawn, ChildProcess } from 'child_process';
 import * as http from 'http';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
 
-const CLEARING_URL = 'http://localhost:3470';
+// Ephemeral test Clearing — #2166.
+// Spawn a dedicated Clearing server on a random ephemeral port in beforeAll,
+// kill in afterAll. Tests POST against the test instance instead of Jeff's
+// live Clearing at :3470, so marker noise doesn't land in his feed and socket
+// fanout stays scoped. The mock nudge script below prevents any nudge from
+// firing even if a code path tries. HERMETIC_TEST_MODE and the old
+// describe.skip gate are removed.
+//
+// Random port per run avoids EADDRINUSE when a prior aborted run leaves a
+// zombie holding a fixed port (hook blocks manual kill cleanup).
+const TEST_PORT = 11000 + Math.floor(Math.random() * 8000);
+const TEST_HTTPS_PORT = 21000 + Math.floor(Math.random() * 8000);
+const CLEARING_URL = `http://localhost:${TEST_PORT}`;
 const REAL_NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
-
-// TEMP skip: hermeticity gate — see #2131. AC1-AC8 blocks in this file POST
-// directly to the live Clearing at http://localhost:3470/api/message, emit
-// on the live Socket.IO, or shell out to the real chat.sh binary. Every one
-// of those writes lands in Jeff's browser view of the Clearing during test
-// runs. Set HERMETIC_TEST_MODE=1 to gate the live-write blocks. Durable fix:
-// stand up a test-mode Clearing instance or a mock API (#2131).
-// Precondition + source-inspecting blocks (Page structure / Message rendering
-// via API / API endpoints / Error states) stay unconditional.
-const d = process.env.HERMETIC_TEST_MODE ? describe.skip : describe;
+const CLEARING_SERVER = '/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/dist/server.js';
+let clearingProc: ChildProcess | null = null;
 
 // Mock nudge script — writes to temp file instead of osascript injection.
 // Tests verify Clearing filters, not nudge delivery (that's nudge-integration.test.ts).
@@ -31,7 +35,7 @@ const MOCK_NUDGE_SCRIPT = '/tmp/clearing-test-mock-nudge';
 import * as fs from 'fs';
 import * as path from 'path';
 
-beforeAll(() => {
+beforeAll(async () => {
   // Create mock nudge that logs but doesn't inject
   fs.mkdirSync(MOCK_NUDGE_DIR, { recursive: true });
   fs.writeFileSync(MOCK_NUDGE_SCRIPT, `#!/bin/bash
@@ -40,11 +44,44 @@ TARGET="\$1"; shift; MSG="\$*"
 echo "\$(date +%s) | \$TARGET | \$MSG" >> ${MOCK_NUDGE_DIR}/nudge.log
 echo "DELIVERED to \$TARGET at \$(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
 `, { mode: 0o755 });
+
+  // Spawn test-mode Clearing on TEST_PORT (#2166).
+  clearingProc = spawn('node', [CLEARING_SERVER], {
+    env: {
+      ...process.env,
+      COMMAND_CHANNEL_PORT: String(TEST_PORT),
+      CLEARING_HTTPS_PORT: String(TEST_HTTPS_PORT),
+      CHORUS_INJECT_DRY_RUN: '1',  // belt-and-suspenders for any inject path
+    },
+    stdio: 'pipe',
+    detached: false,
+  });
+  const spawnLog: string[] = [];
+  clearingProc.stderr?.on('data', (d) => spawnLog.push(`[err] ${d.toString()}`));
+  clearingProc.stdout?.on('data', (d) => spawnLog.push(`[out] ${d.toString()}`));
+  clearingProc.on('exit', (code, signal) => spawnLog.push(`[exit] code=${code} signal=${signal}`));
+
+  // Wait for /health to respond 200 (up to 10s)
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    try {
+      const code = execSync(`curl -sf -o /dev/null -w "%{http_code}" ${CLEARING_URL}/health`, { encoding: 'utf-8', timeout: 1000 }).trim();
+      if (code === '200') return;
+    } catch {}
+    await new Promise(r => setTimeout(r, 200));
+  }
+  throw new Error(`test Clearing failed to start on port ${TEST_PORT} within 10s:\n${spawnLog.join('')}`);
 });
 
-afterAll(() => {
+afterAll(async () => {
   try { fs.unlinkSync(MOCK_NUDGE_SCRIPT); } catch {}
   try { fs.rmSync(MOCK_NUDGE_DIR, { recursive: true }); } catch {}
+  if (clearingProc && !clearingProc.killed) {
+    clearingProc.kill('SIGTERM');
+    // Give it a moment to shut down gracefully
+    await new Promise(r => setTimeout(r, 300));
+    if (!clearingProc.killed) clearingProc.kill('SIGKILL');
+  }
 });
 
 const NUDGE_SCRIPT = MOCK_NUDGE_SCRIPT;
@@ -107,7 +144,7 @@ function clearingIsUp(): boolean {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Precondition: Clearing service', () => {
-  test('Clearing is running on port 3470', () => {
+  test(`test Clearing is running on ephemeral port ${TEST_PORT}`, () => {
     expect(clearingIsUp()).toBe(true);
   });
 });
@@ -116,7 +153,7 @@ describe('Precondition: Clearing service', () => {
 // AC2: Role-to-role nudges do NOT appear in Clearing UI
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC2: Role-to-role nudges do NOT appear in Clearing messages', () => {
+describe('AC2: Role-to-role nudges do NOT appear in Clearing messages', () => {
   test('nudge from kade to silas does not leak into Clearing messages', async () => {
     const marker = `AC2-TEST-${Date.now()}`;
     // Post a role-to-role nudge with [nudge from] prefix — must be filtered
@@ -191,7 +228,7 @@ function postMessage(from: string, text: string): Promise<number> {
   });
 }
 
-d('AC4: No feedback loop — messages appear exactly once', () => {
+describe('AC4: No feedback loop — messages appear exactly once', () => {
   test('message posted via /api/message appears exactly once', async () => {
     const marker = `AC4-ECHO-${Date.now()}`;
 
@@ -260,7 +297,7 @@ d('AC4: No feedback loop — messages appear exactly once', () => {
 // AC3: Role-to-role /chat messages do NOT appear in Clearing send box
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
+describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
   const CHAT_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh';
 
   test('chat.sh message between roles does not leak into Clearing', async () => {
@@ -328,7 +365,7 @@ d('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
 // AC5: Guest identity — role names display correctly, not "Guest"
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC5: Guest identity displays correctly', () => {
+describe('AC5: Guest identity displays correctly', () => {
   test('message from role via /api/message shows role name as sender', async () => {
     const marker = `AC5-ROLE-${Date.now()}`;
 
@@ -402,7 +439,7 @@ d('AC5: Guest identity displays correctly', () => {
 // AC1: Jeff sends message → correct role receives, response in stream
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC1: Jeff sends message → role receives, response appears in stream', () => {
+describe('AC1: Jeff sends message → role receives, response appears in stream', () => {
   test('jeff message is recorded in message stream', async () => {
     const marker = `AC1-SEND-${Date.now()}`;
 
@@ -428,17 +465,38 @@ d('AC1: Jeff sends message → role receives, response appears in stream', () =>
     expect(match.from).toBe('wren');
   });
 
-  // KNOWN BUG: Socket.IO jeff-message with @mention triggers nudge osascript
-  // injection which steals focus and creates feedback loops. Cannot test Socket.IO
-  // message path without side effects. Tracked in #1802 / #1813.
-  test.skip('jeff-message via Socket.IO triggers injection to correct role (BLOCKED: osascript side effects)', () => {});
+  // Previously skipped (#1802/#1813): Socket.IO jeff-message with @mention triggered
+  // real osascript injection. Unblocked #2166 — test-mode Clearing spawns with
+  // CHORUS_INJECT_DRY_RUN=1 so the shim short-circuits before inject_by_tab_name.
+  test('jeff-message via Socket.IO emits to target role (no side effects under dry-run)', async () => {
+    const marker = `AC1-SOCKET-${Date.now()}`;
+    const client: ClientSocket = createClient();
+
+    await new Promise<void>((resolve, reject) => {
+      client.on('connect', () => resolve());
+      client.on('connect_error', reject);
+      setTimeout(() => reject(new Error('connect timeout')), 5000);
+    });
+
+    // Emit jeff-message with @kade mention
+    client.emit('jeff-message', { text: `@kade ${marker}` });
+
+    // Give server time to process + persist
+    await new Promise(r => setTimeout(r, 1500));
+    client.disconnect();
+
+    // Verify the message was persisted to the stream
+    const messages = await getMessages(50);
+    const match = messages.find((m: any) => (m.text || '').includes(marker));
+    expect(match).toBeDefined();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AC6: Reconnect — no duplicates, no lost messages
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC6: Reconnect after disconnect — no duplicates, no lost messages', () => {
+describe('AC6: Reconnect after disconnect — no duplicates, no lost messages', () => {
   test('messages before and after reconnect each appear exactly once', async () => {
     const marker = `AC6-RECON-${Date.now()}`;
 
@@ -502,7 +560,7 @@ d('AC6: Reconnect after disconnect — no duplicates, no lost messages', () => {
 // AC8: Session tailer whitelist — only Jeff-facing content passes through
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC8: Session tailer whitelist — only Jeff-facing content', () => {
+describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
   // These tests verify the filter logic in session-tailer.ts by checking
   // what actually appears in the Clearing after various message types.
 
@@ -605,7 +663,7 @@ d('AC8: Session tailer whitelist — only Jeff-facing content', () => {
 // AC7: Background image renders, OG tags correct
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC7: Background image and OG tags', () => {
+describe('AC7: Background image and OG tags', () => {
   function getHtml(): Promise<string> {
     return new Promise((resolve, reject) => {
       http.get(`${CLEARING_URL}/`, (res) => {
@@ -846,7 +904,7 @@ describe('API endpoints', () => {
       }).on('error', reject);
     });
     expect(result.status).toBe('ok');
-    expect(result.port).toBe(3470);
+    expect(result.port).toBe(TEST_PORT);
   });
 
   test('GET /api/messages returns array', async () => {
