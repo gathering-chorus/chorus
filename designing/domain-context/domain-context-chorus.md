@@ -1,6 +1,11 @@
 # Domain Context: Chorus
 
-Last updated: 2026-03-27 by Silas (#1773)
+Last updated: 2026-04-17 by Wren (#2159)
+- 2026-04-17: loom-principles 7 → 12 (4 principles landed from session + 1 Silas/Jeff-approved `interrogate-the-data`)
+- 2026-04-17: Vikunja `VIKUNJA_SERVICE_JWTSECRET` pinned (`~/.chorus/secrets/vikunja-jwt-secret`, mode 600) — restarts no longer invalidate tokens; runbook recovery step now obsolete
+- 2026-04-17: `com.chorus.session-health` LaunchAgent retired (plist removed, script preserved for revival) — was creating alarm-fatigue without proportionate signal
+- 2026-04-17: Roles sub-product service design at `designing/docs/roles-service-design.md` + rendered HTML at gathering-docs/; chorus-hooks is the runtime substrate hosting Pulse/Roles/Observer/Scrubber/Context-Cache sibling products
+
 
 ## Architecture Overview
 
