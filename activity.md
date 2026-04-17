@@ -894,3 +894,13 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - Carded: #2123 (retirement gate — zero-hits grep AC for retire cards), #2124 (deep health probes beyond 200), #2125 (handler error spine events), #2126 (shared log-reader + missing-file test), #2127 (Borg fetch-wrapper + error UI), #2128 (CHORUS_API_BASE indirection)
 - gate:product PASS on #2122 (Silas's Caddy edge-proxy) — caught gotcha: /api/chorus/* needed its own Caddy route, else bookmarked /borg/* pages hydrate broken. Silas fixed.
 - Memory: feedback_stress_asymmetry.md created and updated with Jeff's teaching on stress shape (cognitive + somatic + protective + fast + past-present mix)
+
+## 2026-04-16 evening session (silas)
+- acp #2113 — scanner reads brief filesystem (role_dir path bug surfaced 46 hidden briefs), commit 9ca92898; paired with Kade
+- commit 755f7470 — #2119 swat docker purge half 1 (hooks, scripts, TEAM_PROTOCOL, 15 files −456/+67, 20 docker tests removed); half 2 with Kade
+- commit 2f1e439b — chorus-api-wrapper.sh sources app .env → Twilio creds live for Wren's Cost dashboard (#2099 brief)
+- acp #2122 — Caddy edge-proxy on :3000, Gathering to :3002, /borg/* + /api/chorus/* decoupled; commit 294059e0; fixed latent done-gate.sh path bug from DEC-1816 (masked for weeks by --proven bypass)
+- gate passes: arch+ops on #2113, #2099, #2122
+- carded: #2117 (extend daily-review-quality), #2118 (scope-aware gates), #2120 (role-state inference), #2121 (post-removal completeness gate), #2124 (deep health), #2129 (integration Caddy preflight)
+- chats: briefs deprecation (wren), docker purge depth + remainder (kade), gathering-front-door elimination (wren) — all closed with decisions
+- memory: feedback_direct_self_read.md — name the miss, skip apology-restate-plan reflex
