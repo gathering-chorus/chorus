@@ -21,6 +21,12 @@ import * as os from 'os';
 const CLAUDE_MONTHLY_RATE = parseInt(process.env.CLAUDE_MONTHLY_RATE || '200', 10);
 const TWILIO_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// #2167 test seams — default to the real ~/.claude paths, overridable in tests.
+const CLAUDE_STATS_CACHE = process.env.CLAUDE_STATS_CACHE
+  || path.join(os.homedir(), '.claude', 'stats-cache.json');
+const CLEARING_TRANSCRIPTS_DIR = process.env.CLEARING_TRANSCRIPTS_DIR
+  || path.join(os.homedir(), 'CascadeProjects', 'chorus', 'clearing', 'transcripts');
+
 interface DailyActivity {
   date: string;
   messageCount: number;
@@ -87,9 +93,8 @@ export interface CostSummaryResponse {
 let twilioCache: { data: TwilioUsageRecord[]; fetchedAt: number } | null = null;
 
 function getClaudeStats(): ClaudeStats {
-  const statsPath = path.join(os.homedir(), '.claude', 'stats-cache.json');
   try {
-    const raw = fs.readFileSync(statsPath, 'utf-8');
+    const raw = fs.readFileSync(CLAUDE_STATS_CACHE, 'utf-8');
     const stats = JSON.parse(raw);
 
     const now = new Date();
@@ -205,7 +210,7 @@ function getTunnelStatus(): Promise<TunnelStatus> {
 }
 
 function getClearingCosts(): ClearingCostResult {
-  const transcriptDir = path.join(os.homedir(), 'CascadeProjects', 'chorus', 'clearing', 'transcripts');
+  const transcriptDir = CLEARING_TRANSCRIPTS_DIR;
   try {
     if (!fs.existsSync(transcriptDir)) return { sessions: [], totalCost: 0 };
     const now = new Date();
