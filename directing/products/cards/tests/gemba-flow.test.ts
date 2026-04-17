@@ -79,20 +79,6 @@ describe('Flow: Gemba tail', () => {
 // 3. ROLE STATE — observing state declaration
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe.skip('Flow: Gemba state [migrated to Rust] transitions', () => {
-  test('role-state accepts observing state with gemba target', () => {
-    try {
-      const output = execSync(
-        `${SCRIPTS_DIR}/role-state silas observing gemba=kade 2>/dev/null`,
-        { encoding: 'utf-8', timeout: 5000 }
-      );
-      expect(typeof output).toBe('string');
-    } catch {
-      // May fail if no TTY — acceptable in test
-      expect(true).toBe(true);
-    }
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 4. SPINE EVENTS — gemba emits start/exit events

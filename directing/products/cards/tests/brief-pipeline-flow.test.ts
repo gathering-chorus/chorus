@@ -109,36 +109,6 @@ describe('Flow: Brief content format', () => {
 // 3. SESSION HOOK DETECTION — werk-init.sh finds new briefs
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe.skip('Flow: Session hook brief [migrated to Rust] detection', () => {
-  test('werk-init.sh exists and references briefs directory', () => {
-    const werkInit = path.join(SCRIPTS_DIR, 'werk-init.sh');
-    expect(fs.existsSync(werkInit)).toBe(true);
-    const content = fs.readFileSync(werkInit, 'utf-8');
-    expect(content).toContain('BRIEFS_DIR');
-    expect(content).toContain('briefs');
-  });
-
-  test('werk-init.sh uses brief marker for freshness detection', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'werk-init.sh'), 'utf-8');
-    expect(content).toContain('BRIEF_MARKER');
-    expect(content).toMatch(/newer/);
-  });
-
-  test('werk-init.sh emits brief.handoff.read spine event', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'werk-init.sh'), 'utf-8');
-    expect(content).toContain('brief.handoff.read');
-  });
-
-  test('werk-init.sh emits brief.handoff.acknowledged spine event', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'werk-init.sh'), 'utf-8');
-    expect(content).toContain('brief.handoff.acknowledged');
-  });
-
-  test('werk-init.sh lists up to 5 recent briefs', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'werk-init.sh'), 'utf-8');
-    expect(content).toMatch(/head -5/);
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 4. BRIEF APPEARS IN SESSION CONTEXT — session-start file includes briefs

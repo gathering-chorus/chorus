@@ -29,14 +29,24 @@ echo ""
 echo "Test 1: Server handler accepts ack callback"
 assert_contains "ack callback in handler signature" "callback\|ack" "$SERVER"
 
-# --- Test 2: Server calls callback with status ---
-echo "Test 2: Server calls callback with delivery status"
-assert_contains "callback called with status" "status.*sent\|status.*delivered" "$SERVER"
+# --- Test 2: Server calls callback with delivery result ---
+# Current shape (#1934): ack?.({ ok: boolean, error?: string }). Older fixture
+# asserted "status: sent|delivered" — that API shape changed but the test
+# wasn't updated.
+echo "Test 2: Server calls callback with delivery result"
+if grep -E "ack\??\.\(\{.*ok:" "$SERVER" 2>/dev/null | grep -q .; then
+  echo "  PASS: callback invoked with { ok: ... }"
+  ((PASS++))
+else
+  echo "  FAIL: callback called with { ok: ... } (expected in server.ts)"
+  ((FAIL++))
+fi
 
 # --- Test 3: Client emit includes callback ---
+# grep -E takes | as alternation directly; the old \| was literal backslash-pipe
+# and never matched. Emit in client uses both function(result) and (ack) => styles.
 echo "Test 3: Client emit includes ack callback"
-# The emit should have a third argument (the callback function)
-if grep -E "socket\.emit\('jeff-message'.*function\|socket\.emit\('jeff-message'.*=>" "$CLIENT" 2>/dev/null | grep -q .; then
+if grep -E "socket\.emit\('jeff-message'.*(function|=>)" "$CLIENT" 2>/dev/null | grep -q .; then
   echo "  PASS: emit has callback"
   ((PASS++))
 else

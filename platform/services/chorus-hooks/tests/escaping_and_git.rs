@@ -13,6 +13,11 @@ const INJECT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/servic
 
 #[test]
 fn inject_with_apostrophe_does_not_crash() {
+    // TEMP skip: hermetic-test gate — see #2131.
+    if std::env::var("HERMETIC_TEST_MODE").is_ok() {
+        eprintln!("SKIP inject_with_apostrophe_does_not_crash: hermetic-test gate — #2131");
+        return;
+    }
     // "doesn't" caused -2741 syntax error before fix
     let output = Command::new(INJECT)
         .args(["silas", "this doesn't break anymore"])

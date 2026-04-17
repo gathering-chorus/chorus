@@ -1,6 +1,7 @@
 #!/bin/bash
-# test-api-health.sh — Tests for /api/chorus/health endpoint (#2011)
-# AC: Health endpoint returns db status, uptime, vector count, hook status
+# test-api-health.sh — Tests for /api/chorus/health endpoints (#2011, #1978)
+# After #1978: /health is liveness (status, uptime, timestamp) — no expensive queries.
+# Deep fields (db, vectors, hooks) moved to /health/detail.
 
 set -uo pipefail
 
@@ -48,21 +49,32 @@ echo "Test 3: Body contains status field"
 body=$(curl -s "$API/api/chorus/health" 2>/dev/null)
 assert_contains "has status" '"status"' "$body"
 
-# --- Test 4: Has db field ---
-echo "Test 4: Body contains db field"
-assert_contains "has db" '"db"' "$body"
-
-# --- Test 5: Has uptime field ---
-echo "Test 5: Body contains uptime field"
+# --- Test 4: Has uptime field (liveness) ---
+echo "Test 4: Body contains uptime field"
 assert_contains "has uptime" '"uptime"' "$body"
 
-# --- Test 6: Has vectors field ---
-echo "Test 6: Body contains vectors field"
-assert_contains "has vectors" '"vectors"' "$body"
+# --- Test 5: Has timestamp field (liveness) ---
+echo "Test 5: Body contains timestamp field"
+assert_contains "has timestamp" '"timestamp"' "$body"
 
-# --- Test 7: Vectors count > 0 ---
-echo "Test 7: Vector count is positive"
-vectors=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('vectors',0))" 2>/dev/null)
+# ── /health/detail (deep health, #1978) ──
+
+echo ""
+echo "=== /api/chorus/health/detail tests ==="
+echo ""
+detail=$(curl -s "$API/api/chorus/health/detail" 2>/dev/null)
+
+# --- Test 6: Has db field ---
+echo "Test 6: Body contains db field"
+assert_contains "has db" '"db"' "$detail"
+
+# --- Test 7: Has vectors field ---
+echo "Test 7: Body contains vectors field"
+assert_contains "has vectors" '"vectors"' "$detail"
+
+# --- Test 8: Vectors count > 0 ---
+echo "Test 8: Vector count is positive"
+vectors=$(echo "$detail" | python3 -c "import json,sys; print(json.load(sys.stdin).get('vectors',0))" 2>/dev/null)
 if [ -n "$vectors" ] && [ "$vectors" -gt 0 ] 2>/dev/null; then
   echo "  PASS: vectors=$vectors"
   ((PASS++))
@@ -71,9 +83,9 @@ else
   ((FAIL++))
 fi
 
-# --- Test 8: Has hooks field ---
-echo "Test 8: Body contains hooks field"
-assert_contains "has hooks" '"hooks"' "$body"
+# --- Test 9: Has hooks field ---
+echo "Test 9: Body contains hooks field"
+assert_contains "has hooks" '"hooks"' "$detail"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

@@ -133,38 +133,6 @@ print('')
 // 1. HOOK INFRASTRUCTURE — script exists and parses
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe.skip('Flow: JDI gate [migrated to Rust] infrastructure', () => {
-  test('jdi-gate-hook.sh exists and is executable', () => {
-    // jdi-gate-hook.sh was merged into autonomy-guard.sh (#1306)
-    const script = path.join(SCRIPTS_DIR, 'autonomy-guard.sh');
-    expect(fs.existsSync(script)).toBe(true);
-    const stat = fs.statSync(script);
-    expect(stat.mode & 0o111).toBeGreaterThan(0);
-  });
-
-  test('jdi-gate-hook.sh uses set -euo pipefail', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'autonomy-guard.sh'), 'utf-8');
-    expect(content).toContain('set -uo pipefail');
-  });
-
-  test('jdi-gate-hook.sh exits 0 on stop_hook_active (no infinite loops)', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'autonomy-guard.sh'), 'utf-8');
-    expect(content).toContain('stop_hook_active');
-    expect(content).toMatch(/exit 0/);
-  });
-
-  test('jdi-gate-hook.sh exits 2 to block permission-seeking', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'autonomy-guard.sh'), 'utf-8');
-    expect(content).toContain('exit 2');
-  });
-
-  test('jdi-gate-hook.sh derives role from CWD', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'autonomy-guard.sh'), 'utf-8');
-    expect(content).toContain('product-manager');
-    expect(content).toContain('architect');
-    expect(content).toContain('engineer');
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. SEEKING PATTERN DETECTION — catches permission-seeking text
@@ -349,33 +317,3 @@ describe('Flow: Code block stripping', () => {
 // 7. HOOK WIRING — events and feedback
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe.skip('Flow: Hook event [migrated to Rust] wiring', () => {
-  test('hook emits decision.gate.matched for preference matches', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'autonomy-guard.sh'), 'utf-8');
-    expect(content).toContain('decision.gate.matched');
-    expect(content).toContain('source=response_text');
-  });
-
-  test('hook emits decision.gate.text_leak for generic seeking', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'autonomy-guard.sh'), 'utf-8');
-    expect(content).toContain('decision.gate.text_leak');
-  });
-
-  test('hook references jeff-preferences.json', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'autonomy-guard.sh'), 'utf-8');
-    expect(content).toContain('jeff-preferences.json');
-  });
-
-  test('hook feedback includes preference ID and source when matched', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'autonomy-guard.sh'), 'utf-8');
-    expect(content).toContain('PREF_ID');
-    expect(content).toContain('PREF_TEXT');
-    expect(content).toContain('PREF_SOURCE');
-  });
-
-  test('hook feedback falls back to generic DEC-025 when no preference matched', () => {
-    const content = fs.readFileSync(path.join(SCRIPTS_DIR, 'autonomy-guard.sh'), 'utf-8');
-    expect(content).toContain('DEC-025 gate');
-    expect(content).toContain('DEC-069 gate');
-  });
-});

@@ -80,25 +80,6 @@ describe('Integration: Gathering board', () => {
   });
 });
 
-describe.skip('Integration: Self board — project ID 5 not found after DB rebuild', () => {
-  test('list returns tasks', async () => {
-    if (skipIfNoConnection()) return;
-    const client = new BoardClient(env.url, env.token, SELF);
-    const tasks = await client.list();
-    expect(Array.isArray(tasks)).toBe(true);
-  });
-
-  test('view returns task details', async () => {
-    if (skipIfNoConnection()) return;
-    const client = new BoardClient(env.url, env.token, SELF);
-    const tasks = await client.list();
-    if (tasks.length === 0) return;
-    // View the first task
-    const task = await client.view(tasks[0].index);
-    expect(task.title).toBe(tasks[0].title);
-    expect(task.status).toBeDefined();
-  });
-});
 
 describe('Integration: Error handling', () => {
   test('bad token returns auth error', async () => {

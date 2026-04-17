@@ -26,13 +26,42 @@ fn full_path() -> String {
     )
 }
 
+/// Pick the first currently-WIP card id dynamically (#2130 fix).
+/// Hardcoded card ids go stale the moment their card accepts — the old
+/// test blocked on "#1995 is in Done". Calling the cards CLI here is
+/// slow but deterministic and never ages out.
+fn first_wip_card_id() -> Option<String> {
+    let output = Command::new("bash")
+        .args([&format!("{}/platform/scripts/cards", chorus_root()), "list", "--status", "WIP"])
+        .env("HOME", home())
+        .env("PATH", full_path())
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Lines look like "  2149  Clear all errors..." — grab the first numeric token.
+    for line in stdout.lines() {
+        let trimmed = line.trim_start();
+        if let Some(first_tok) = trimmed.split_whitespace().next() {
+            if first_tok.chars().all(|c| c.is_ascii_digit()) && first_tok.len() >= 3 {
+                return Some(first_tok.to_string());
+            }
+        }
+    }
+    None
+}
+
 #[test]
 fn preflight_fails_without_path() {
-    // Current behavior: no PATH → cards CLI fails → preflight blocks
-    // Use a known WIP card (1995 is WIP right now)
+    let wip = match first_wip_card_id() {
+        Some(id) => id,
+        None => {
+            eprintln!("SKIP: no WIP card available — cannot run preflight against a moving target");
+            return;
+        }
+    };
     let script = format!("{}/skills/demo/gates/preflight.sh", chorus_root());
     let output = Command::new("bash")
-        .args([&script, "1995"])
+        .args([&script, &wip])
         .env("CHORUS_ROOT", chorus_root())
         .env_remove("PATH")
         .output()
@@ -48,10 +77,16 @@ fn preflight_fails_without_path() {
 
 #[test]
 fn preflight_passes_with_path() {
-    // Fixed behavior: with PATH → cards CLI works → preflight passes for valid WIP card
+    let wip = match first_wip_card_id() {
+        Some(id) => id,
+        None => {
+            eprintln!("SKIP: no WIP card available — cannot run preflight against a moving target");
+            return;
+        }
+    };
     let script = format!("{}/skills/demo/gates/preflight.sh", chorus_root());
     let output = Command::new("bash")
-        .args([&script, "1995"])
+        .args([&script, &wip])
         .env("CHORUS_ROOT", chorus_root())
         .env("HOME", home())
         .env("PATH", full_path())
@@ -60,7 +95,8 @@ fn preflight_passes_with_path() {
 
     assert!(
         output.status.success(),
-        "preflight.sh should pass with PATH set for WIP card. stderr: {}",
+        "preflight.sh should pass with PATH set for WIP card #{}. stderr: {}",
+        wip,
         String::from_utf8_lossy(&output.stderr)
     );
 }

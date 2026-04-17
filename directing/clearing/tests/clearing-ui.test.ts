@@ -14,6 +14,16 @@ import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
 const CLEARING_URL = 'http://localhost:3470';
 const REAL_NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
 
+// TEMP skip: hermeticity gate — see #2131. AC1-AC8 blocks in this file POST
+// directly to the live Clearing at http://localhost:3470/api/message, emit
+// on the live Socket.IO, or shell out to the real chat.sh binary. Every one
+// of those writes lands in Jeff's browser view of the Clearing during test
+// runs. Set HERMETIC_TEST_MODE=1 to gate the live-write blocks. Durable fix:
+// stand up a test-mode Clearing instance or a mock API (#2131).
+// Precondition + source-inspecting blocks (Page structure / Message rendering
+// via API / API endpoints / Error states) stay unconditional.
+const d = process.env.HERMETIC_TEST_MODE ? describe.skip : describe;
+
 // Mock nudge script — writes to temp file instead of osascript injection.
 // Tests verify Clearing filters, not nudge delivery (that's nudge-integration.test.ts).
 const MOCK_NUDGE_DIR = '/tmp/clearing-test-nudges';
@@ -73,17 +83,23 @@ function getMessages(limit = 10): Promise<any[]> {
   });
 }
 
-// Helper: check if Clearing is running
+// Helper: check if Clearing is running.
+// Retries up to 5 times with 10s per-attempt timeout — jest workers running
+// peer suites in parallel can starve the curl process momentarily, causing
+// false precondition failures even when the service is healthy.
 function clearingIsUp(): boolean {
-  try {
-    const result = execSync(`curl -sf -o /dev/null -w "%{http_code}" ${CLEARING_URL}/health`, {
-      encoding: 'utf-8',
-      timeout: 3000,
-    });
-    return result.trim() === '200';
-  } catch {
-    return false;
+  for (let i = 0; i < 5; i++) {
+    try {
+      const result = execSync(
+        `curl -sf -o /dev/null -w "%{http_code}" ${CLEARING_URL}/health`,
+        { encoding: 'utf-8', timeout: 10000 }
+      );
+      if (result.trim() === '200') return true;
+    } catch {
+      // fall through and retry
+    }
   }
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -100,7 +116,7 @@ describe('Precondition: Clearing service', () => {
 // AC2: Role-to-role nudges do NOT appear in Clearing UI
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC2: Role-to-role nudges do NOT appear in Clearing messages', () => {
+d('AC2: Role-to-role nudges do NOT appear in Clearing messages', () => {
   test('nudge from kade to silas does not leak into Clearing messages', async () => {
     const marker = `AC2-TEST-${Date.now()}`;
     // Post a role-to-role nudge with [nudge from] prefix — must be filtered
@@ -175,7 +191,7 @@ function postMessage(from: string, text: string): Promise<number> {
   });
 }
 
-describe('AC4: No feedback loop — messages appear exactly once', () => {
+d('AC4: No feedback loop — messages appear exactly once', () => {
   test('message posted via /api/message appears exactly once', async () => {
     const marker = `AC4-ECHO-${Date.now()}`;
 
@@ -244,7 +260,7 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
 // AC3: Role-to-role /chat messages do NOT appear in Clearing send box
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
+d('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
   const CHAT_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh';
 
   test('chat.sh message between roles does not leak into Clearing', async () => {
@@ -312,7 +328,7 @@ describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
 // AC5: Guest identity — role names display correctly, not "Guest"
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC5: Guest identity displays correctly', () => {
+d('AC5: Guest identity displays correctly', () => {
   test('message from role via /api/message shows role name as sender', async () => {
     const marker = `AC5-ROLE-${Date.now()}`;
 
@@ -386,7 +402,7 @@ describe('AC5: Guest identity displays correctly', () => {
 // AC1: Jeff sends message → correct role receives, response in stream
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC1: Jeff sends message → role receives, response appears in stream', () => {
+d('AC1: Jeff sends message → role receives, response appears in stream', () => {
   test('jeff message is recorded in message stream', async () => {
     const marker = `AC1-SEND-${Date.now()}`;
 
@@ -422,7 +438,7 @@ describe('AC1: Jeff sends message → role receives, response appears in stream'
 // AC6: Reconnect — no duplicates, no lost messages
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC6: Reconnect after disconnect — no duplicates, no lost messages', () => {
+d('AC6: Reconnect after disconnect — no duplicates, no lost messages', () => {
   test('messages before and after reconnect each appear exactly once', async () => {
     const marker = `AC6-RECON-${Date.now()}`;
 
@@ -486,7 +502,7 @@ describe('AC6: Reconnect after disconnect — no duplicates, no lost messages', 
 // AC8: Session tailer whitelist — only Jeff-facing content passes through
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
+d('AC8: Session tailer whitelist — only Jeff-facing content', () => {
   // These tests verify the filter logic in session-tailer.ts by checking
   // what actually appears in the Clearing after various message types.
 
@@ -589,7 +605,7 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
 // AC7: Background image renders, OG tags correct
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC7: Background image and OG tags', () => {
+d('AC7: Background image and OG tags', () => {
   function getHtml(): Promise<string> {
     return new Promise((resolve, reject) => {
       http.get(`${CLEARING_URL}/`, (res) => {

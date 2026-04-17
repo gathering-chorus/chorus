@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 const LOG_FILE = path.resolve(__dirname, '../../logs/chorus.log');
-const SCHEMA_FILE = path.resolve(__dirname, '../../schemas/spine-events.json');
+const SCHEMA_FILE = path.resolve(__dirname, '../../../designing/schemas/spine-events.json');
 
 // ── Event → vertebra lookup from spine schema (lazy loaded) ──
 

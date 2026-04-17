@@ -7,7 +7,7 @@
 use std::process::Command;
 
 const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
-const POST_BUILD: &str = "/Users/jeffbridwell/CascadeProjects/chorus/scripts/post-cargo-build.sh";
+const POST_BUILD: &str = "/Users/jeffbridwell/CascadeProjects/chorus/proving/scripts/post-cargo-build.sh";
 
 #[test]
 fn post_build_script_exists_and_is_executable() {
@@ -36,6 +36,11 @@ fn post_build_script_passes_when_accessibility_granted() {
 
 #[test]
 fn shim_nudge_inject_works_after_build() {
+    // TEMP skip: hermetic-test gate — see #2131.
+    if std::env::var("HERMETIC_TEST_MODE").is_ok() {
+        eprintln!("SKIP shim_nudge_inject_works_after_build: hermetic-test gate — #2131");
+        return;
+    }
     // AC2: nudge --force inject works immediately after rebuild
     let output = Command::new(SHIM)
         .args(["nudge", "silas", "post-build accessibility test", "--force"])

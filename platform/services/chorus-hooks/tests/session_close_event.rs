@@ -58,7 +58,7 @@ fn session_close_emits_role_ended_with_duration() {
 
 #[test]
 fn nudge_stale_alert_rule_exists() {
-    let rule_path = "/Users/jeffbridwell/CascadeProjects/chorus/alerting/nudge-stale.yml";
+    let rule_path = "/Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts/nudge-stale.yml";
     assert!(
         std::path::Path::new(rule_path).exists(),
         "nudge-stale.yml alert rule must exist at {}",

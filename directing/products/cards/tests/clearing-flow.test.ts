@@ -57,30 +57,6 @@ describe('Flow: Clearing infrastructure', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Flow: Clearing session port', () => {
-  test.skip('default port is 3470 (from LaunchAgent config) — plist needs Silas update', () => {
-    // Check if the LaunchAgent plist defines port 3470
-    const plistDir = path.join(
-      process.env.HOME || '/Users/jeffbridwell',
-      'Library/LaunchAgents'
-    );
-    const plistFile = path.join(plistDir, 'com.chorus.clearing.plist');
-    if (fs.existsSync(plistFile)) {
-      const content = fs.readFileSync(plistFile, 'utf-8');
-      expect(content).toContain('3470');
-    } else {
-      // Clearing may not have a LaunchAgent — check the skill file
-      const skillFile = path.join(
-        process.env.HOME || '/Users/jeffbridwell',
-        '.claude/skills/clearing/SKILL.md'
-      );
-      if (fs.existsSync(skillFile)) {
-        const content = fs.readFileSync(skillFile, 'utf-8');
-        expect(content).toMatch(/3470|port/i);
-      } else {
-        expect(true).toBe(true);
-      }
-    }
-  });
 
   test('clearing skill file exists', () => {
     const skillFile = path.join(
@@ -183,10 +159,6 @@ describe('Flow: Transcript indexing', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Flow: Clearing session cleanup', () => {
-  test.skip('clearing server handles guest mode — not yet implemented', () => {
-    const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
-    expect(content).toContain('guest');
-  });
 
   test('clearing server has health endpoint', () => {
     const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
@@ -203,8 +175,4 @@ describe('Flow: Clearing session cleanup', () => {
     expect(content).toContain('KeepAlive');
   });
 
-  test.skip('clearing server supports context injection — not yet implemented', () => {
-    const content = fs.readFileSync(CLEARING_SERVER, 'utf-8');
-    expect(content).toContain('context');
-  });
 });

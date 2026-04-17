@@ -3,6 +3,11 @@
 # Card #1766 | DEC-107 compliant (no osascript)
 set -euo pipefail
 
+# Hermeticity gate (#2131, #2149): nightly runs must not fire real nudges,
+# bridge writes, or terminal injections. Test files honoring this env var
+# skip their real-I/O describes. Interactive runs (/demo smoke) unset it.
+export HERMETIC_TEST_MODE=1
+
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

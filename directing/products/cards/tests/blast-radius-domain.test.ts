@@ -36,10 +36,13 @@ describe('Blast radius from domain data (#2019, #2059)', () => {
   test('AC1: queries Chorus API code-files endpoint for domain files', async () => {
     mockFetch({
       '/api/codebase/topology': { domains: {} },
-      '/api/chorus/domain/seeds/code-files': {
-        domain: 'seeds',
-        files: ['src/handlers/seed.handler.ts', 'src/services/seed-capture.service.ts'],
-        count: 2,
+      '/api/chorus/domain/seeds/code': {
+        data: {
+          files: [
+            { path: 'src/handlers/seed.handler.ts' },
+            { path: 'src/services/seed-capture.service.ts' },
+          ],
+        },
       },
     });
 
@@ -55,21 +58,21 @@ describe('Blast radius from domain data (#2019, #2059)', () => {
 
     // Verify Chorus API was called (not direct Fuseki)
     const calls = (global.fetch as jest.Mock).mock.calls.map(c => String(c[0]));
-    expect(calls.some(u => u.includes('/api/chorus/domain/seeds/code-files'))).toBe(true);
+    expect(calls.some(u => u.includes('/api/chorus/domain/seeds/code'))).toBe(true);
     expect(calls.some(u => u.includes('/pods/sparql'))).toBe(false);
   });
 
   test('AC2: includes test files from domain', async () => {
     mockFetch({
       '/api/codebase/topology': { domains: {} },
-      '/api/chorus/domain/seeds/code-files': {
-        domain: 'seeds',
-        files: [
-          'src/handlers/seed.handler.ts',
-          'tests/unit/handlers/seed.handler.test.ts',
-          'tests/integration/seed-pipeline-flow.test.ts',
-        ],
-        count: 3,
+      '/api/chorus/domain/seeds/code': {
+        data: {
+          files: [
+            { path: 'src/handlers/seed.handler.ts' },
+            { path: 'tests/unit/handlers/seed.handler.test.ts' },
+            { path: 'tests/integration/seed-pipeline-flow.test.ts' },
+          ],
+        },
       },
     });
 
@@ -89,15 +92,15 @@ describe('Blast radius from domain data (#2019, #2059)', () => {
   test('AC3: output shows file count, test count, and lists files', async () => {
     mockFetch({
       '/api/codebase/topology': { domains: {} },
-      '/api/chorus/domain/seeds/code-files': {
-        domain: 'seeds',
-        files: [
-          'src/handlers/seed.handler.ts',
-          'src/services/seed-capture.service.ts',
-          'tests/unit/handlers/seed.handler.test.ts',
-          'tests/integration/seed-pipeline-flow.test.ts',
-        ],
-        count: 4,
+      '/api/chorus/domain/seeds/code': {
+        data: {
+          files: [
+            { path: 'src/handlers/seed.handler.ts' },
+            { path: 'src/services/seed-capture.service.ts' },
+            { path: 'tests/unit/handlers/seed.handler.test.ts' },
+            { path: 'tests/integration/seed-pipeline-flow.test.ts' },
+          ],
+        },
       },
     });
 
@@ -119,14 +122,14 @@ describe('Blast radius from domain data (#2019, #2059)', () => {
   test('AC4: auto-generates from domain tag — no manual file listing needed', async () => {
     mockFetch({
       '/api/codebase/topology': { domains: {} },
-      '/api/chorus/domain/seeds/code-files': {
-        domain: 'seeds',
-        files: [
-          'src/handlers/seed.handler.ts',
-          'src/services/seed-capture.service.ts',
-          'platform/scripts/seed-probe.sh',
-        ],
-        count: 3,
+      '/api/chorus/domain/seeds/code': {
+        data: {
+          files: [
+            { path: 'src/handlers/seed.handler.ts' },
+            { path: 'src/services/seed-capture.service.ts' },
+            { path: 'platform/scripts/seed-probe.sh' },
+          ],
+        },
       },
     });
 
@@ -165,9 +168,9 @@ describe('Blast radius from domain data (#2019, #2059)', () => {
     expect(report).not.toBeNull();
     expect(report!.totalFiles).toBeGreaterThan(0);
 
-    // Should NOT have called code-files endpoint
+    // Should NOT have called the /code endpoint (no domain provided)
     const calls = (global.fetch as jest.Mock).mock.calls.map(c => String(c[0]));
-    expect(calls.some(u => u.includes('/code-files'))).toBe(false);
+    expect(calls.some(u => u.includes('/api/chorus/domain/seeds/code'))).toBe(false);
   });
 
   test('code-files API failure falls back to existing behavior', async () => {

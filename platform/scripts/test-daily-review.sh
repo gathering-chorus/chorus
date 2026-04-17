@@ -90,10 +90,13 @@ else
 fi
 
 echo ""
-echo "Test 7: all three scripts use bridge_post instead of raw curl"
-assert_contains "ops sources bridge-post" "bridge-post.sh" "$OPS_SCRIPT"
-assert_contains "quality sources bridge-post" "bridge-post.sh" "$QUALITY_SCRIPT"
+echo "Test 7: summary posts to Bridge; ops + quality nudge roles directly (DEC-2243)"
+# Per #2243: only the summary posts to Bridge. Ops nudges Silas, quality nudges Kade.
+# Old fixture required all three to source bridge-post — stale after DEC-2243.
 assert_contains "summary sources bridge-post" "bridge-post.sh" "$SUMMARY_SCRIPT"
+# Single-line regex for the nudge call: $NUDGE silas ... (DEC-2243 routing).
+assert_contains "ops nudges silas" '\$NUDGE" silas' "$OPS_SCRIPT"
+assert_contains "quality nudges kade" '\$NUDGE" kade' "$QUALITY_SCRIPT"
 
 # --- AC3: ops.health.checked event with pass/fail status ---
 echo ""
@@ -104,7 +107,7 @@ assert_contains "status param in health event" "status=" "$OPS_SCRIPT"
 # --- AC4: Alert rule — daily review didn't fire by 6:30am ---
 echo ""
 echo "Test 9: alert rule file exists with correct content"
-ALERT_FILE="${CHORUS_ROOT}/platform/alerting/daily-review-missing.yml"
+ALERT_FILE="${CHORUS_ROOT}/proving/domains/alerts/daily-review-missing.yml"
 if [ -f "$ALERT_FILE" ]; then
   ALERT_CONTENT=$(cat "$ALERT_FILE")
   assert_contains "alert references daily.review.completed" "daily.review.completed" "$ALERT_CONTENT"

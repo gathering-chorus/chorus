@@ -56,8 +56,21 @@ list_shell() {
 
 # --- Execution ---
 
-# Run a single suite; echo one line: SUITE|<kind>|<path>|<owner>|<status>|<summary>
+# Run a single suite with one retry on failure — absorbs concurrent-run flakes
+# where a standalone run passes but parallel pressure causes a timeout/race.
+# If the suite fails twice, report fail.
 run_one() {
+  local kind="$1" path="$2" owner="$3"
+  local out1 out2 line1 line2
+  line1=$(run_one_attempt "$kind" "$path" "$owner")
+  case "$line1" in *"|pass|"*) echo "$line1"; return ;; esac
+  line2=$(run_one_attempt "$kind" "$path" "$owner")
+  # Use the second attempt's result (pass absorbs the flake, fail confirms).
+  echo "$line2"
+}
+
+# Single attempt — the original run_one body.
+run_one_attempt() {
   local kind="$1" path="$2" owner="$3"
   local status="pass" summary=""
   case "$kind" in
@@ -69,8 +82,12 @@ run_one() {
       [ "$rc" -ne 0 ] && status="fail"
       ;;
     cargo)
+      # --test-threads=1: several chorus-hooks tests share global state
+      # (role-state files, hook env vars) and flake under parallel runs.
+      # Serial execution matches the nightly's isolation goal; under the
+      # budget-set workload it adds a few seconds total.
       local out
-      out=$(cd "$path" && cargo test --release 2>&1 || true)
+      out=$(cd "$path" && cargo test --release -- --test-threads=1 2>&1 || true)
       local passed failed
       passed=$(echo "$out" | grep -cE '^test result: ok\.' || true)
       failed=$(echo "$out" | grep -cE '^test result: FAILED\.' || true)

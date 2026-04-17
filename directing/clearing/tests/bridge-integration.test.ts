@@ -109,9 +109,13 @@ describe('AC #2.2: Delivery — messages reach the correct stream', () => {
   });
 
   test('accept request is visible in Jeff stream', () => {
+    // Per d74aa238 (#2049 follow-up): role text alone is not auto-classified
+    // as accept-request — sender must set type explicitly (e.g., Wren's
+    // gate-product flow), or message comes from Jeff with /acp or "Accepted #N".
     const msg = ingestAndGet(router, {
       from: 'silas',
       text: '#1671 ready for accept — all tests green.',
+      type: 'accept-request',
     });
     expect(msg.visible).toBe(true);
     expect(msg.type).toBe('accept-request');

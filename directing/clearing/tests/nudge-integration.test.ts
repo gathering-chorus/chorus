@@ -18,6 +18,14 @@ const NUDGE_BINARY = '/Users/jeffbridwell/CascadeProjects/chorus/platform/servic
 const INBOX_DIR = '/tmp/voice-inbox';
 const EXCHANGE_DIR = '/tmp/nudge-exchanges';
 
+// TEMP skip: hermeticity gate — see #2131.
+// Tests below invoke the real chorus-hook-shim nudge binary, which fires
+// real terminal injections, bridge writes, and chat messages into every
+// role's live terminal. Until #2131 durable mock lands, run with
+// HERMETIC_TEST_MODE=1 to gate them. Precondition checks (just binary
+// existence + usage output) stay unconditional. Gated tests: 22.
+const d = process.env.HERMETIC_TEST_MODE ? describe.skip : describe;
+
 // Helper: run nudge command and capture output
 function runNudge(args: string, env: Record<string, string> = {}): { stdout: string; stderr: string; exitCode: number } {
   try {
@@ -77,7 +85,7 @@ describe('Precondition: nudge binary', () => {
 // 1. ALL ROLE PAIRS — every directional pair delivers
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC #3.1: All role pairs — nudge queues for every valid pair', () => {
+d('AC #3.1: All role pairs — nudge queues for every valid pair', () => {
   const pairs = [
     ['wren', 'silas'],
     ['wren', 'kade'],
@@ -129,7 +137,7 @@ describe('AC #3.1: All role pairs — nudge queues for every valid pair', () => 
 // 2. DELIVERY VERIFICATION — nudge arrives in target inbox
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC #3.2: Delivery verification — nudge content arrives intact', () => {
+d('AC #3.2: Delivery verification — nudge content arrives intact', () => {
   test('nudge prefix includes sender identity and Boston timestamp', () => {
     // osascript inject is the delivery path — verify via stdout confirmation
     const { stdout } = runNudge('silas "Check the deploy" --from wren', { DEPLOY_ROLE: 'wren' });
@@ -192,7 +200,7 @@ describe('AC #3.2: Delivery verification — nudge content arrives intact', () =
 // 3. EXCHANGE TRACKING — pair key is alphabetical, 30min reset
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC #3.3: Exchange tracking — pair key mechanics', () => {
+d('AC #3.3: Exchange tracking — pair key mechanics', () => {
   test('exchange file uses alphabetical pair key (kade-silas, not silas-kade)', () => {
     // Clear exchange
     const exchangeFile = path.join(EXCHANGE_DIR, 'kade-silas');
@@ -222,7 +230,7 @@ describe('AC #3.3: Exchange tracking — pair key mechanics', () => {
 // 4. WIP STATE DETECTION — blast radius warning (#1658)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC #3.4: WIP state detection — blast radius warning', () => {
+d('AC #3.4: WIP state detection — blast radius warning', () => {
   const ROLE_STATE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state';
 
   test('role-state binary exists for WIP detection', () => {
@@ -288,7 +296,7 @@ describe('AC #3.4: WIP state detection — blast radius warning', () => {
 // 5. SPINE EVENTS — nudge lifecycle emits observability events
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC #3.5: Spine events — nudge lifecycle is observable', () => {
+d('AC #3.5: Spine events — nudge lifecycle is observable', () => {
   test('nudge binary emits role.nudge.sent event', () => {
     const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
     const content = fs.readFileSync(nudgeSource, 'utf-8');

@@ -133,11 +133,24 @@ mod tests {
     // History: #2100 inlined it, #2229 tried bash, both reverted. Binary delegation
     // is the stable path. This test was stale since re-introduction of the binary.
 
+    // TEMP skip: hermetic-test gate — see #2131.
+    // inject_by_tab_name delegates to the real chorus-inject binary which
+    // drives osascript keystroke injection into every role's live terminal.
+    // Set HERMETIC_TEST_MODE=1 to skip (Silas's shim kill-switch is the
+    // durable fix). rejects_unknown_role is safe — returns error before
+    // driving inject.
+    fn hermetic_skip(name: &str) -> bool {
+        if std::env::var("HERMETIC_TEST_MODE").is_ok() {
+            eprintln!("SKIP {}: hermetic-test gate — #2131", name);
+            return true;
+        }
+        false
+    }
+
     #[test]
     fn inject_by_tab_name_delegates_to_chorus_inject_binary() {
+        if hermetic_skip("inject_by_tab_name_delegates_to_chorus_inject_binary") { return; }
         let result = inject_by_tab_name("silas", "structural-test");
-        // Either succeeds (window found) or fails with an error from the
-        // inject binary — both valid in test context.
         if let Err(e) = result {
             assert!(!e.is_empty(), "error should have a message");
         }
@@ -151,11 +164,8 @@ mod tests {
 
     #[test]
     fn inject_by_tab_name_escapes_double_quotes() {
-        // Can't test actual injection without Terminal, but verify the function
-        // handles a role that won't have a window — should return an error about
-        // no window found, not a crash or unescaped quote error.
+        if hermetic_skip("inject_by_tab_name_escapes_double_quotes") { return; }
         let result = inject_by_tab_name("silas", "test with \"quotes\" inside");
-        // Will fail (no matching window in test context) but shouldn't panic
         assert!(result.is_err() || result.is_ok());
     }
 }
