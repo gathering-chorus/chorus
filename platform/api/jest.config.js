@@ -41,6 +41,9 @@ module.exports = {
     'src/jeff-summary.ts': {
       branches: 60, functions: 75, lines: 80, statements: 80,
     },
+    'src/hooks-summary.ts': {
+      branches: 60, functions: 75, lines: 80, statements: 80,
+    },
   },
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/**/*.test.ts'],
 };
