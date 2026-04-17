@@ -10,7 +10,8 @@ import fs from 'fs';
 import path from 'path';
 import { MessageRouter } from './router';
 
-const PROJECTS_DIR = '/Users/jeffbridwell/.claude/projects';
+// #2167: env-configurable so tests can point at a fixture directory.
+const PROJECTS_DIR = process.env.CLEARING_PROJECTS_DIR || '/Users/jeffbridwell/.claude/projects';
 const POLL_INTERVAL = 30000; // 30s fallback — primary delivery is fs.watch
 const ROLES = ['wren', 'silas', 'kade'] as const;
 
