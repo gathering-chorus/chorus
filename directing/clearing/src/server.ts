@@ -929,26 +929,34 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`The Clearing listening on http://localhost:${PORT}`);
-});
+// Export for tests (#2167) — tests import `app` and `server` and spin up
+// on an ephemeral port themselves, so importing the module doesn't bind :3470.
+export { app, server, io, tilePoller, messageRouter, clearingChat };
 
-// HTTPS server for LAN mic access — getUserMedia requires secure context (#1782)
-// Shares the same express app — all routes and Socket.IO handlers work on both.
-const HTTPS_PORT = parseInt(process.env.CLEARING_HTTPS_PORT || '3471');
-const certDir = `${require('os').homedir()}/.chorus/certs`;
-try {
-  const fs = require('fs');
-  const key = fs.readFileSync(`${certDir}/clearing-key.pem`);
-  const cert = fs.readFileSync(`${certDir}/clearing-cert.pem`);
-  const httpsServer = createHttpsServer({ key, cert }, app);
-  // Attach Socket.IO to HTTPS server too — same handlers via shared app
-  io.attach(httpsServer);
-  httpsServer.listen(HTTPS_PORT, () => {
-    console.log(`The Clearing HTTPS listening on https://192.168.86.36:${HTTPS_PORT} (mic-enabled)`);
+// Only bind when run as the main module. Under jest (require.main !== module)
+// tests control the listener lifecycle.
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`The Clearing listening on http://localhost:${PORT}`);
   });
-} catch (err: any) {
-  console.log(`[clearing] HTTPS not available: ${err.message} — mic requires tunnel URL`);
+
+  // HTTPS server for LAN mic access — getUserMedia requires secure context (#1782)
+  // Shares the same express app — all routes and Socket.IO handlers work on both.
+  const HTTPS_PORT = parseInt(process.env.CLEARING_HTTPS_PORT || '3471');
+  const certDir = `${require('os').homedir()}/.chorus/certs`;
+  try {
+    const fs = require('fs');
+    const key = fs.readFileSync(`${certDir}/clearing-key.pem`);
+    const cert = fs.readFileSync(`${certDir}/clearing-cert.pem`);
+    const httpsServer = createHttpsServer({ key, cert }, app);
+    // Attach Socket.IO to HTTPS server too — same handlers via shared app
+    io.attach(httpsServer);
+    httpsServer.listen(HTTPS_PORT, () => {
+      console.log(`The Clearing HTTPS listening on https://192.168.86.36:${HTTPS_PORT} (mic-enabled)`);
+    });
+  } catch (err: any) {
+    console.log(`[clearing] HTTPS not available: ${err.message} — mic requires tunnel URL`);
+  }
 }
 
 /** Parse @mention to determine target role. Default: wren */
