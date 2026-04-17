@@ -911,3 +911,13 @@
 - **Decision**: Every pipeline hop must succeed visibly or fail visibly. No silent drops. No pipeline expansion until existing hose-to-bucket path is proven end-to-end for that domain. New data integration cards blocked until target domain's observability is leak-proof.
 - **Enforcement**: Soft — skill text in /pull. Future: hard gate checking domain observability completeness before pipeline cards enter WIP.
 - **Source**: #2006 (converted from card to decision)
+
+## DEC-1571: Attention Contract — announce means announce + continue
+**Context:** Role behavior pattern: on completing work (AC, card, pipeline step), roles went idle waiting for re-trigger. Jeff became the relay, costing ~13 touches per card instead of the 2-touch target (start + accept).
+**Decision:** Announce means announce + continue, not announce + wait. After completing anything, the role owns the next action: nudge the accepting role, pull next work, or declare `idle`. Silence is a failure, not a neutral state. Pair partners respond within 60s or emit a status. Roles poll each other; Jeff should never be first to notice a stall.
+**Applies to:** all roles; enforced behaviorally, observable via role-state + andon telemetry.
+
+## DEC-1674: TDD Discipline — AC → tests → code → green → demo
+**Context:** Repeated pattern (#1665 among others) of Jeff acting as the live test suite — 5+ fix cycles where tests were backfilled after code, or not written at all. Tests that passed by definition masked real gaps.
+**Decision:** Every code card follows: read AC, write tests that describe Jeff's experience (UI behavior, API responses, delivery confirmation — not internal state), run them red, write minimum code to pass, run tests after each change, demo only when all green. Tests ship as part of the deliverable. Integration tests that run must be gated behind HERMETIC_TEST_MODE / INTEGRATION env.
+**Applies to:** all code-owning roles (Kade, Silas for scripts); enforced at gate:code + gate:quality.

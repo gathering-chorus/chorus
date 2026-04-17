@@ -61,3 +61,43 @@ print(out)
   run python3 "$CHORUS_ROOT/platform/scripts/claudemd-gen.py" "$MANIFEST" "$CLAUDEMD_DIR" validate "" ""
   [ "$status" -eq 0 ]
 }
+
+# --- Blocking enforcement (#2150 follow-on, same card) ---
+# R4 asymmetric fragments and R5 dangling DEC citations must block generation.
+# R6 line-count variance must NOT block. CLAUDEMD_LINT_SOFT=1 bypasses.
+
+setup_blocking_fixture() {
+  # Build a full repo layout so generator validation passes before the linter runs.
+  # Fixture structure: $BASE/designing/claudemd/ (claudemd_dir) + $BASE/roles/{wren,silas,kade}/
+  # Then remove working-with-jeff.md from wren's fragments + drop it from manifest,
+  # leaving asymmetry (silas + kade have it, wren does not) — the linter catches this.
+  BASE=$(mktemp -d)
+  mkdir -p "$BASE/designing" "$BASE/roles/wren" "$BASE/roles/silas" "$BASE/roles/kade"
+  cp -r "$CLAUDEMD_DIR" "$BASE/designing/claudemd"
+  rm -f "$BASE/designing/claudemd/roles/wren/working-with-jeff.md"
+  python3 -c "
+import json
+m = json.load(open('$BASE/designing/claudemd/manifest.json'))
+m['roles']['wren']['sections'] = [s for s in m['roles']['wren']['sections'] if 'working-with-jeff' not in s]
+json.dump(m, open('$BASE/designing/claudemd/manifest.json', 'w'), indent=2)
+"
+  echo "$BASE"
+}
+
+@test "generator exits non-zero when R4 asymmetry present (generate)" {
+  BASE=$(setup_blocking_fixture)
+  run python3 "$CHORUS_ROOT/platform/scripts/claudemd-gen.py" "$BASE/designing/claudemd/manifest.json" "$BASE/designing/claudemd" generate "" ""
+  rm -rf "$BASE"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"blocking finding"* ]] || [[ "$output" == *"R4"* ]]
+}
+
+@test "CLAUDEMD_LINT_SOFT=1 bypasses blocking on R4 errors" {
+  BASE=$(setup_blocking_fixture)
+  CLAUDEMD_LINT_SOFT=1 run python3 "$CHORUS_ROOT/platform/scripts/claudemd-gen.py" "$BASE/designing/claudemd/manifest.json" "$BASE/designing/claudemd" generate "" ""
+  STATUS=$status
+  OUT="$output"
+  rm -rf "$BASE"
+  [ "$STATUS" -ne 2 ]
+  [[ "$OUT" == *"LINT BYPASS"* ]]
+}
