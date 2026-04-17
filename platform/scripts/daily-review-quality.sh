@@ -46,6 +46,25 @@ if echo "$TEST_OUTPUT" | grep -q "failed"; then
   ISSUES+="**Tests:** $TEST_SUMMARY\n"
 fi
 
+# --- Rust services test suite (#2117) ---
+# Runs cargo test for each Rust service under platform/services/.
+# On failure, collects failing test names, flags STATUS red, and nudges Silas
+# separately from Kade (ops nudges Silas, quality nudges Kade — DEC-2243).
+RUST_FAIL_DETAIL=""
+for RUST_SVC in chorus-hooks chorus-inject; do
+  RUST_DIR="${CHORUS_ROOT}/platform/services/${RUST_SVC}"
+  [ -f "${RUST_DIR}/Cargo.toml" ] || continue
+  CARGO_OUT=$(cd "$RUST_DIR" && cargo test --release 2>&1 || true)
+  # `|| true` at end of pipe so no-match (all passed) doesn't trip pipefail
+  CARGO_FAILS=$(echo "$CARGO_OUT" | grep -E '^test [A-Za-z0-9_:]+ \.\.\. FAILED$' | awk '{print $2}' | sort -u | head -10 || true)
+  if [ -n "$CARGO_FAILS" ]; then
+    STATUS="red"
+    FAIL_COUNT=$(echo "$CARGO_FAILS" | wc -l | tr -d ' ')
+    ISSUES+="**Rust (${RUST_SVC}):** ${FAIL_COUNT} failing\n"
+    RUST_FAIL_DETAIL+="${RUST_SVC}: $(echo "$CARGO_FAILS" | tr '\n' ' ')\n"
+  fi
+done
+
 # --- Build summary ---
 if [ "$STATUS" = "green" ]; then
   BODY="🟢 **Quality Review** — $TIMESTAMP\n\nSmoke: ${SMOKE_PASS} pass. Lint: ${LINT_WARNINGS:-?} warnings. $TEST_SUMMARY"
@@ -59,10 +78,16 @@ fi
 "$CHORUS_LOG" quality.review.completed silas status=$STATUS >/dev/null 2>&1 || true
 
 
-# --- Nudge Kade on quality failures ---
+# --- Nudge Kade on quality failures (frontend: smoke/lint/jest) ---
 NUDGE="$SCRIPT_DIR/nudge"
 if [ "$STATUS" = "red" ]; then
   "$NUDGE" kade "[quality] $TIMESTAMP — $( echo -e "$ISSUES" | head -3 )" --force >/dev/null 2>&1 || true
+fi
+
+# --- Nudge Silas on Rust test failures + emit spine event (#2117) ---
+if [ -n "$RUST_FAIL_DETAIL" ]; then
+  "$NUDGE" silas "[nightly-tests] $TIMESTAMP — $( echo -e "$RUST_FAIL_DETAIL" | head -5 )" --force >/dev/null 2>&1 || true
+  "$CHORUS_LOG" test.nightly.failed silas detail="$(echo -e "$RUST_FAIL_DETAIL" | tr '\n' ';' | head -c 400)" >/dev/null 2>&1 || true
 fi
 
 echo -e "$BODY"
