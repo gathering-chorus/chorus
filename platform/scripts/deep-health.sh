@@ -327,7 +327,12 @@ if [ -x "$BORG_HEALTH" ]; then
   while IFS= read -r line; do
     case "$line" in
       FAIL*)
+        # New, untracked failure — real alert
         FAILURES+=("borg-health: ${line#FAIL }")
+        ;;
+      WARN*)
+        # Known failure, tracked by a card — status visible, no nudge
+        WARNINGS+=("borg-health: ${line#WARN }")
         ;;
     esac
   done < <("$BORG_HEALTH" 2>/dev/null || true)

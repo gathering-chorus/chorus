@@ -34,12 +34,19 @@ print(p.get('page',''))
 print(p.get('api',''))
 print(p.get('assert',''))
 print(p.get('assert_content_type',''))
+print(p.get('tracking_card',''))
 ")
   page=$(echo "$entry" | sed -n '1p')
   api=$(echo "$entry"  | sed -n '2p')
   assertion=$(echo "$entry" | sed -n '3p')
   ctype_prefix=$(echo "$entry" | sed -n '4p')
+  tracking_card=$(echo "$entry" | sed -n '5p')
   url="${API_BASE}${api}"
+
+  # A tracking card means this failure is known and being tracked — report as WARN
+  # not FAIL so downstream alerting doesn't treat it as a new issue.
+  fail_label="FAIL"
+  [ -n "$tracking_card" ] && fail_label="WARN"
 
   if [ -n "$ctype_prefix" ]; then
     headers=$(curl -sI --max-time 5 "$url" 2>/dev/null || true)
@@ -47,7 +54,7 @@ print(p.get('assert_content_type',''))
     code=${code:-000}
     ctype=$(echo "$headers" | awk 'tolower($1) == "content-type:" {print $2}' | tr -d '\r\n')
     if [ "$code" != "200" ]; then
-      echo "FAIL $page — $api returned ${code:-000}"
+      echo "$fail_label $page — $api returned ${code:-000}"
       FAILURES=$((FAILURES + 1))
       continue
     fi
@@ -56,7 +63,7 @@ print(p.get('assert_content_type',''))
         echo "PASS $page — content-type $ctype"
         ;;
       *)
-        echo "FAIL $page — content-type '$ctype' does not start with '$ctype_prefix'"
+        echo "$fail_label $page — content-type '$ctype' does not start with '$ctype_prefix'"
         FAILURES=$((FAILURES + 1))
         ;;
     esac
@@ -67,7 +74,7 @@ print(p.get('assert_content_type',''))
   code=$(curl -s --max-time 5 -o "$body_file" -w "%{http_code}" "$url" 2>/dev/null)
   code=${code:-000}
   if [ "$code" != "200" ]; then
-    echo "FAIL $page — $api returned $code"
+    echo "$fail_label $page — $api returned $code"
     FAILURES=$((FAILURES + 1))
     rm -f "$body_file"
     continue
@@ -95,11 +102,11 @@ PY
       echo "PASS $page — $assertion"
       ;;
     NO)
-      echo "FAIL $page — assertion false: $assertion"
+      echo "$fail_label $page — assertion false: $assertion"
       FAILURES=$((FAILURES + 1))
       ;;
     *)
-      echo "FAIL $page — $result"
+      echo "$fail_label $page — $result"
       FAILURES=$((FAILURES + 1))
       ;;
   esac

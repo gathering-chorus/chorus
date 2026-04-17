@@ -36,13 +36,15 @@
       "page": "/borg/replay/",
       "api": "/api/chorus/sessions",
       "assert": "isinstance(d.get('sessions'), list) and len(d['sessions']) > 0",
-      "why": "Replay requires at least one indexed session; zero means session-watcher is dead"
+      "why": "Replay requires at least one indexed session; zero means session-watcher is dead",
+      "tracking_card": 2162
     },
     {
       "page": "/borg/assessment/",
       "api": "/api/chorus/codebase/topology",
       "assert": "isinstance(d.get('summary'), dict) and d['summary'].get('domains', 0) > 0 and d['summary'].get('nodes', 0) > 0",
-      "why": "Topology summary carries domain+node counts; both zero means the codebase graph never built or watcher is dead"
+      "why": "Topology summary carries domain+node counts; both zero means the codebase graph never built or watcher is dead",
+      "tracking_card": 2163
     },
     {
       "page": "/borg/jeff/",
