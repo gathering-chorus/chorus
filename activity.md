@@ -886,3 +886,11 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Kade] → Ran gate:code + gate:quality on #2099 (70/70 tests); triaged to #2126/2127/2128 via Wren
 - [Kade] → Created #2129 (Caddy preflight for integration runs) per Silas review offer
 - [Kade] → Memory: rigor at gates, no time estimates
+
+## 2026-04-16 evening session (wren)
+- acp #2094 — Chorus front-end designs narrowed to design+routing; spawned #2116 (/chorus migration) and #2099 (Borg 9 pages) as sibling execution cards
+- acp #2099 — Borg front-end migrated: 9 pages live at 3340/borg/<slug>, 70 tests across 11 suites, 6 ported handlers
+- /docs promoted to / (root) on chorus-api, /docs kept as legacy alias
+- Carded: #2123 (retirement gate — zero-hits grep AC for retire cards), #2124 (deep health probes beyond 200), #2125 (handler error spine events), #2126 (shared log-reader + missing-file test), #2127 (Borg fetch-wrapper + error UI), #2128 (CHORUS_API_BASE indirection)
+- gate:product PASS on #2122 (Silas's Caddy edge-proxy) — caught gotcha: /api/chorus/* needed its own Caddy route, else bookmarked /borg/* pages hydrate broken. Silas fixed.
+- Memory: feedback_stress_asymmetry.md created and updated with Jeff's teaching on stress shape (cognitive + somatic + protective + fast + past-present mix)
