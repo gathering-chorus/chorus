@@ -20,8 +20,10 @@ ENV_FILE="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env"
 APP_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 BACKUP_DIR="$CHORUS_ROOT/roles/silas/backups"
-VOLUME_NAME="jeff-bridwell-personal-site-fuseki-data"
-CONTAINER_NAME="jeff-bridwell-personal-site-fuseki"
+# #2119 — Fuseki now runs as a native LaunchAgent (com.gathering.fuseki).
+# TDB2 data lives on the host filesystem, managed via launchctl, not docker.
+FUSEKI_DATA_DIR="${HOME}/.gathering/data/fuseki-pods"
+FUSEKI_LABEL="com.gathering.fuseki"
 CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 
 RED='\033[0;31m'
@@ -65,13 +67,15 @@ cmd_check() {
     exit 2
   fi
 
-  # 2. Container status
-  local status
-  status=$(docker ps --filter "name=$CONTAINER_NAME" --format "{{.Status}}" 2>/dev/null)
-  if echo "$status" | grep -q "(healthy)"; then
-    echo -e "  ${GREEN}PASS${NC}  Container healthy — $status"
+  # 2. LaunchAgent status (#2119 — migrated from docker ps)
+  local la_status
+  la_status=$(launchctl list 2>/dev/null | awk -v label="$FUSEKI_LABEL" '$3 == label {print $1 "|" $2}')
+  local la_pid="${la_status%%|*}"
+  local la_exit="${la_status##*|}"
+  if [ "$la_pid" != "-" ] && [ -n "$la_pid" ]; then
+    echo -e "  ${GREEN}PASS${NC}  LaunchAgent running — pid=$la_pid"
   else
-    echo -e "  ${YELLOW}WARN${NC}  Container status: $status"
+    echo -e "  ${YELLOW}WARN${NC}  LaunchAgent not running (last exit=$la_exit)"
   fi
 
   # 3. Store stats
@@ -240,14 +244,14 @@ cmd_backup() {
   timestamp=$(date '+%Y%m%d-%H%M')
   local backup_file="$BACKUP_DIR/fuseki-backup-$timestamp.tar.gz"
 
-  # Check volume exists
-  if ! docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
-    echo -e "  ${RED}FAIL${NC}  Volume $VOLUME_NAME not found"
+  # #2119 — native TDB2 directory backup (no docker volume)
+  if [ ! -d "$FUSEKI_DATA_DIR" ]; then
+    echo -e "  ${RED}FAIL${NC}  Data directory $FUSEKI_DATA_DIR not found"
     exit 2
   fi
 
-  echo "  Backing up $VOLUME_NAME to $backup_file..."
-  docker run --rm -v "$VOLUME_NAME":/data busybox tar czf - /data > "$backup_file" 2>/dev/null
+  echo "  Backing up $FUSEKI_DATA_DIR to $backup_file..."
+  tar czf "$backup_file" -C "$(dirname "$FUSEKI_DATA_DIR")" "$(basename "$FUSEKI_DATA_DIR")" 2>/dev/null
 
   local size
   size=$(ls -lh "$backup_file" | awk '{print $5}')
@@ -284,51 +288,37 @@ cmd_rebuild() {
 
   log_event "ops.fuseki.rebuild.started" "reason=manual"
 
-  echo "  1/4  Stopping Fuseki..."
-  cd "$APP_DIR" && docker compose stop fuseki 2>&1 | grep -v '^$'
+  # #2119 — native rebuild via launchctl, not docker compose
+  echo "  1/3  Stopping Fuseki LaunchAgent..."
+  bash "$CHORUS_ROOT/platform/scripts/agent-state.sh" stop fuseki 2>&1 | grep -v '^$' || true
 
-  echo "  2/4  Removing container..."
-  cd "$APP_DIR" && docker compose rm -f fuseki 2>&1 | grep -v '^$'
+  echo "  2/3  Deleting TDB2 data directory..."
+  if [ -d "$FUSEKI_DATA_DIR" ]; then
+    rm -rf "$FUSEKI_DATA_DIR"
+  fi
 
-  echo "  3/4  Deleting volume..."
-  docker volume rm "$VOLUME_NAME" 2>&1 || true
+  echo "  3/3  Starting Fuseki LaunchAgent (fresh store)..."
+  bash "$CHORUS_ROOT/platform/scripts/agent-state.sh" start fuseki 2>&1 | grep -v '^$'
 
-  echo "  4/4  Starting Fuseki (fresh store)..."
-  cd "$APP_DIR" && docker compose up -d fuseki 2>&1 | grep -v '^$'
-
-  # Wait for healthy
-  echo "  Waiting for healthy..."
+  # #2119 — wait for healthy via HTTP ping (no docker healthcheck)
+  echo "  Waiting for Fuseki to respond..."
   local elapsed=0
   while [ $elapsed -lt 120 ]; do
     sleep 5
     elapsed=$((elapsed + 5))
-    local status
-    status=$(docker ps --filter "name=$CONTAINER_NAME" --format "{{.Status}}" 2>/dev/null)
-    if echo "$status" | grep -q "(healthy)"; then
+    local ping_code
+    ping_code=$(curl -sf --max-time 3 -o /dev/null -w '%{http_code}' "http://localhost:3030/\$/ping" 2>/dev/null)
+    if [ "$ping_code" = "200" ]; then
       echo -e "  ${GREEN}OK${NC}  Fuseki healthy after ${elapsed}s"
-
-      # Fix configuration dir permissions (known issue on fresh volume)
-      docker run --rm -v "$VOLUME_NAME":/fuseki busybox chown 100:101 /fuseki/configuration 2>/dev/null || true
-
       log_event "ops.fuseki.rebuild.completed" "duration=${elapsed}s"
       echo ""
       echo "  Store is empty. App will auto-sync pod data on next request."
       echo "  For sexuality data: run architect/scripts/harvest-media.sh"
       return 0
     fi
-
-    # Check for config error (fresh volume permission issue)
-    if docker logs "$CONTAINER_NAME" 2>&1 | grep -q "Not writable: /fuseki/configuration"; then
-      echo "  Fixing configuration directory permissions..."
-      docker compose stop fuseki 2>&1 | grep -v '^$'
-      docker compose rm -f fuseki 2>&1 | grep -v '^$'
-      docker run --rm -v "$VOLUME_NAME":/fuseki busybox chown 100:101 /fuseki/configuration 2>/dev/null
-      docker compose up -d fuseki 2>&1 | grep -v '^$'
-      elapsed=0  # reset wait
-    fi
   done
 
-  echo -e "  ${RED}TIMEOUT${NC}  Fuseki not healthy after 120s. Check logs."
+  echo -e "  ${RED}TIMEOUT${NC}  Fuseki not healthy after 120s. Check logs: ~/Library/Logs/Gathering/fuseki.log"
   exit 2
 }
 
@@ -338,14 +328,12 @@ cmd_text_index() {
   echo "========================="
   echo ""
 
-  # Delete the sentinel file so entrypoint rebuilds on next restart
+  # #2119 — delete sentinel on native filesystem, restart via launchctl
   echo "  Removing text index sentinel to trigger rebuild on next restart..."
-  docker run --rm -v "$VOLUME_NAME":/fuseki busybox rm -f /fuseki/databases/.text-index-built 2>/dev/null
+  rm -f "$FUSEKI_DATA_DIR/databases/.text-index-built" 2>/dev/null
 
-  echo "  Restarting Fuseki to trigger index rebuild..."
-  cd "$APP_DIR" && docker compose stop fuseki 2>&1 | grep -v '^$'
-  cd "$APP_DIR" && docker compose rm -f fuseki 2>&1 | grep -v '^$'
-  cd "$APP_DIR" && docker compose up -d fuseki 2>&1 | grep -v '^$'
+  echo "  Restarting Fuseki LaunchAgent to trigger index rebuild..."
+  bash "$CHORUS_ROOT/platform/scripts/agent-state.sh" restart fuseki 2>&1 | grep -v '^$'
 
   echo -e "  ${GREEN}OK${NC}  Fuseki restarting — entrypoint will rebuild Lucene index before serving."
   echo "  This may take 1-5 minutes depending on store size."

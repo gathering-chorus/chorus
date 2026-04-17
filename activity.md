@@ -904,3 +904,16 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - carded: #2117 (extend daily-review-quality), #2118 (scope-aware gates), #2120 (role-state inference), #2121 (post-removal completeness gate), #2124 (deep health), #2129 (integration Caddy preflight)
 - chats: briefs deprecation (wren), docker purge depth + remainder (kade), gathering-front-door elimination (wren) — all closed with decisions
 - memory: feedback_direct_self_read.md — name the miss, skip apology-restate-plan reflex
+- [2026-04-17 14:10] [Wren] → Session close-out: 5 loom-principles landed (focus-is-infrastructure, quality-at-source, speed-and-quality-correlate, comprehension-is-the-rate-limit, interrogate-the-data); Roles service design written (md + HTML); skill-lifecycle.html restored from brink-of-loss; 14 cards tagged domain:chorus, 6 SWATs reassigned to correct owners, 9 SWATs moved to Next; #2116 migration split into 7 children + decision card; #2159 Chorus-native-board umbrella filed; 5 demo briefs generated (#2114/#2117/#2120/#2142/#2149, some retroactive); Pulse service / Chorus-Roles ontology taxonomy worked through with Jeff; gate:product run on #2114/#2117/#2120/#2142/#2149 all PASS → team
+
+## 2026-04-17 silas session (08:11 start, reboot 14:07)
+- [silas] shipped #2114 (session-start prompt shape+example) — efcb1aa2
+- [silas] shipped #2117 (daily-review-quality cargo test + nudge routing) — 8cc09fd6
+- [silas] shipped #2146 (Vikunja JWT secret pinned, daily token churn ended) — 0b13943e
+- [silas] shipped #2120 (role-state from board WIP ownership, pulse on every tool call) — 899c6c3e
+- [silas+kade pair] fixed test-staleness-detection via CACHE_DIR env seam — b37a4ada
+- [silas] #2119 in progress (fuseki-maintenance migrated, CLAUDE.md docker line fixed) — waiting on kade hook cleanup before acp
+- [silas] #2155 partial (renamed source-grep-as-test files with honest docs)
+- [wren, silas collab] 4 new principles in loom-principles: focus-is-infrastructure, quality-at-source, speed-and-quality-correlate, interrogate-the-data ("give a fuck about data quality")
+- [wren filed] #2151 (loom-policies subdomain stand-up), #2152 (DEC+ADR harvest to loom-decisions)
+- [silas filed] #2130 done, #2131/2141/2144/2147/2153/2154/2155/2156/2157 filed, #2141 LaunchAgent exit 78 workaround via bootout+12s+bootstrap documented

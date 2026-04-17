@@ -36,7 +36,7 @@ Six projects across two machines. See `infrastructure-constraints.md` for topolo
 
 ## Infrastructure Operations (MANDATORY)
 
-All service lifecycle through `app-state.sh`. Never kill PIDs manually. Views/CSS are bind-mounted (no deploy). TypeScript changes need `app-state.sh deploy`. Logs via Loki (`localhost:3102`), not `docker logs`.
+All service lifecycle through `app-state.sh` (frontend) or `agent-state.sh` (LaunchAgents). Never kill PIDs manually. Views/CSS reload live (no deploy). TypeScript changes need `app-state.sh deploy`. Logs via Loki (`localhost:3102`) or `~/Library/Logs/Gathering/` for LaunchAgent stdout/stderr.
 
 All shared scripts: `../../scripts/`. Commits to team repo use `git-queue.sh`. Full reference: `../../../TEAM_PROTOCOL.md`
 

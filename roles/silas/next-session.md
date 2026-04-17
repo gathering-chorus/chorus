@@ -1,49 +1,52 @@
-# Silas — Next Session
+# Silas — next session (written 2026-04-17 14:07 Boston)
 
-## What happened (2026-04-16)
+## What shipped this session
 
-Ops-heavy session. Seven cards touched, two shipped end-to-end by me:
+- **#2114 accepted** — session-start prompt now carries the 5-beat shape + inline example (commit `efcb1aa2`).
+- **#2117 accepted** — daily-review-quality.sh extended with cargo test for Rust services + Silas-routed failure nudges + test.nightly.failed spine event (commit `8cc09fd6`).
+- **#2146 accepted** — Vikunja JWT secret pinned in vikunja-wrapper.sh; daily token-rotation toil ended (commit `0b13943e`). Secret at `~/.chorus/secrets/vikunja-jwt-secret`.
+- **#2120 accepted** — role-state now derived from board WIP ownership (no regex fallback per Jeff); observer writes declared.json inline subsecond; pulse wired to fire on every post-tool-use; agent-state.sh bash-3 fix + socket orphan scan (commit `899c6c3e`).
+- **#2130 moved to Done** — stale-card test already had dynamic lookup fix in tree.
+- **#2119 in progress** — fuseki-maintenance.sh migrated from docker to native LaunchAgent + TDB2 dir; Silas CLAUDE.md line 39 stale docker ref fixed. AC 7/7 checked. **Waiting on Kade's hook file cleanup (roles/kade/.claude/hooks/infra-guardrails.sh) before acp — Jeff directive was 'wait until kade is done'.**
+- **#2149 pair** — co-shipped fix for test-staleness-detection.sh with Kade (Silas navigator, Kade driver). CACHE_DIR env seam in werk-init.sh + fixture-per-test refactor (commit `b37a4ada`). Gate chain complete on my side (arch + ops). Waiting on Wren's gate:product.
+- **#2155 partial** — renamed nudge_force.rs → nudge_force_source_gate.rs and inject_test.rs → inject_integration.rs with honest module-level docs distinguishing source-gate from behavior tests. Uncommitted, landing with this reboot.
 
-- **#2113** — Scanner reads brief filesystem, deprecates handoffs.log tracking. Paired with Kade, fixed role_dir path bug that had been hiding 46 real briefs. Accepted, committed `9ca92898`.
-- **#2119** — Swat docker purge half 1 (hooks, scripts, TEAM_PROTOCOL). 15 files, -456/+67 lines. 20 docker tests removed. Committed `755f7470`.
-- **#2122** — Caddy edge-proxy on :3000, Gathering to :3002, `/borg/*` + `/api/chorus/*` decoupled. Gathering no longer the required front door for Chorus surfaces. Committed `294059e0`. Bonus: fixed latent done-gate.sh `CHORUS_ROOT` path walk bug from DEC-1816 (`../../../..` → `../../..`, masked until today by --proven bypass).
-- Brief from Wren: Twilio creds for chorus-api Cost dashboard. Delivered via `chorus-api-wrapper.sh` pattern (sources app .env, no secrets in repo). Committed `2f1e439b`.
-- Gate passes logged: arch+ops on #2113, #2099, #2122.
+## Principles landed in loom
 
-## Cards filed (waiting)
+Four new principles this session (loom-principles went 7 → 12):
+- focus-is-infrastructure
+- quality-at-source
+- speed-and-quality-correlate
+- interrogate-the-data ("Give a fuck about data quality")
 
-- **#2117** Extend daily-review-quality — cargo test + nudge-on-fail (P1, me, Next). Rescoped from "new runner" after Jeff pointed out daily-review-quality already fires at 06:03.
-- **#2118** Scope-aware gates — route tests by commit diff (P2, Kade, blocked by #2117).
-- **#2120** Role-state inference — parse card from tool calls, reconcile declared.json from observations (P1, me, Next). Surfaced by Kade's 22-min state drift today.
-- **#2121** Post-removal completeness gate — grep removed term before card closes (P2, Kade). Pattern from #2020 leaving 100+ refs behind.
-- **#2124** Deep health probes beyond 200 (P2, me). From my #2099 feedback.
-- **#2129** Integration runner Caddy preflight (P3, Kade). Review offer taken.
+Wren owns ongoing loom work: #2151 (stand up loom-policies subdomain), #2152 (harvest DEC-NNN + ADR-NNN into loom-decisions).
 
-## Still open at close
+## Open threads for next session
 
-- **#2119** half 2 — Kade owns. Rust test file delete, app tests audit, kade's CLAUDE.md stale Docker line. He was executing architecture-docs rewrite (INFRASTRUCTURE.md, SYSTEM_ARCHITECTURE.md) at close per our chat `kade-silas-1776376857`. May have shipped since.
-- **Wren's AC on #2099** — all landed (gates passed, card accepted via demo).
+1. **#2119 acp** — ping Kade, verify his infra-guardrails.sh docker cleanup landed, then acp.
+2. **#2149 umbrella** — not closed by the pair. Broader hermeticity work still in flight (chorus-inject #2131, clearing UI #2149 scope). Wren owns gate:product; after that, Kade accepts the umbrella.
+3. **Test rigor swats filed but not executed** — #2153 (jest.config.js + coverage for platform/api, Wren), #2154 (pulse store.test.ts migration to jest, Silas), #2156 (unified test runner, Silas — half-written at /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/run-all-tests.sh, has an accounting bug, NOT COMMITTED, delete or finish), #2157 (hermetic-by-default principle, Wren).
+4. **#2131** — chorus-inject tests still non-hermetic, Wren owns durable fix via Kade.
+5. **#2141** — com.chorus.hooks LaunchAgent exit 78 diagnosis still owed. Workaround pattern: `launchctl bootout → wait 12s → launchctl bootstrap` (throttle-clear). Orphan management via agent-state.sh orphans is now working post-bash-3 fix.
+6. **#2144** — deploy-aware alert suppression, Wren. Every service restart still alerts the restarting role.
+7. **#2145** — stop-the-line PostToolUse hook, Wren (ownership by outcome). I draft the Rust when pulled.
 
-## Active chats (ended cleanly this session)
+## Memories saved this session
 
-- `silas-wren-1776365808` briefs deprecation — aligned on filesystem-as-truth
-- `kade-silas-1776376255` docker purge depth — hybrid rewrite-maps/preserve-transitions rule
-- `kade-silas-1776376857` docker purge remainder — 5-step plan, Kade executing
-- `wren-silas-1776377929` eliminate gathering front door dependency — produced #2122
+- `feedback_dont_park_midflow.md` — Flag concerns as notes, keep building; idle time ≠ context pressure
+- `feedback_same_day_promises_decay.md` — "I'll handle it today" from any role mid-WIP = polite defer. All of us. Wait for the artifact.
 
-## Key observations for next session
+## Friction named this session
 
-1. **Role-state declaration is a bug, not hygiene.** Every observation logger call stamps the declared card from a 22-min-stale file. Pulse, The Clearing, and gemba all lie together. #2120 addresses.
-2. **Removal cards ship with debris.** #2020 "Done" left 100+ refs that surfaced during #2119. #2121 gate would have caught it.
-3. **Gate chain misses latent bugs through bypasses.** The --proven flag for #1916 masked the done-gate.sh path bug for weeks. Worth auditing what else the bypass paths hide.
-4. **Caddy is now a trust boundary.** If it goes down, a lot of test surface fails in confusing ways. gate-ops probes it, #2129 adds runner-level preflight.
+- Alarm fatigue: deep-health + test nudges + routing tests land at same priority, receiver can't triage (parallel to hospital alarm fatigue). Jeff: patient is overwhelmed too.
+- Agent cognitive load under legitimate interruption: context-switching flattens architectural reasoning into plumbing. Reconstructing a clear read costs more than holding it would have.
+- `/effort` on Opus 4.7: scales thinking token quantity, doesn't scale judgment. No `/common-sense` knob.
+- Extended thinking on Opus 4.7 is architecturally always-on — no off-switch, only intensity trim via `/effort low`.
 
-## Open ops concerns
+## State at reboot
 
-- Pre-existing `demo_preflight_env::preflight_passes_with_path` test failure (card #1995 is Done, test expects WIP). Unrelated drift, not mine.
-- Loki `container_name` label still in place for Gathering. Post-docker-purge it's a misnomer but harmless. Future cleanup card if it matters.
-- CSS on :3001 is load-bearing — Caddyfile catchall routes everything else to :3002 Gathering. Adding a third service would need a dedicated port, not :3001.
-
-## Memory additions this session
-
-- `feedback_direct_self_read.md` — Name the miss and prior pattern it violates; skip apology-and-restate-plan. Jeff reinforced 2026-04-16.
+- WIP: #2119 (mine, waiting on Kade hook cleanup), #2149 (Kade's, gate chain closing).
+- Hooks daemon: running, socket live.
+- Vikunja: JWT pinned, tokens rotated, 387d long tokens live.
+- Fuseki: native LaunchAgent, data at `~/.gathering/data/fuseki-pods/`.
+- All 4 roles can see correct declared state via board-ownership reconciliation.
