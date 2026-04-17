@@ -1,6 +1,9 @@
 /**
- * Messaging Store Tests (#1755)
- * Nudge, chat, dead-letter delivery paths
+ * Messaging Store Tests (#1755, migrated to jest in #2154)
+ * Nudge, chat, dead-letter delivery paths.
+ *
+ * Each test gets a fresh DB via beforeEach; afterEach closes the store and
+ * unlinks the file so failures don't leave artifacts on disk.
  */
 
 import { MessageStore } from './store';
@@ -9,145 +12,147 @@ import * as path from 'path';
 
 const TEST_DB = path.join(__dirname, '..', 'test-messages.db');
 
-function freshStore(): MessageStore {
+let store: MessageStore;
+
+beforeEach(() => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
-  return new MessageStore(TEST_DB);
-}
+  store = new MessageStore(TEST_DB);
+});
 
-let pass = 0;
-let fail = 0;
+afterEach(() => {
+  try { store.close(); } catch { /* already closed */ }
+  if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
+});
 
-function check(name: string, result: boolean): void {
-  if (result) { console.log(`  PASS: ${name}`); pass++; }
-  else { console.log(`  FAIL: ${name}`); fail++; }
-}
+describe('Nudge delivery', () => {
+  test('creates a nudge with a positive id', () => {
+    const id = store.sendNudge('silas', 'wren', 'test nudge');
+    expect(id).toBeGreaterThan(0);
+  });
 
-// --- Nudge Tests ---
-console.log('--- Nudge delivery ---');
-{
-  const store = freshStore();
-  const id = store.sendNudge('silas', 'wren', 'test nudge');
-  check('Nudge created with ID', id > 0);
+  test('recipient has exactly one pending nudge after send', () => {
+    store.sendNudge('silas', 'wren', 'test nudge');
+    const pending = store.getPendingNudges('wren');
+    expect(pending).toHaveLength(1);
+    expect(pending[0].content).toBe('test nudge');
+    expect(pending[0].from).toBe('silas');
+  });
 
-  const pending = store.getPendingNudges('wren');
-  check('Wren has 1 pending nudge', pending.length === 1);
-  check('Nudge content correct', pending[0].content === 'test nudge');
-  check('Nudge from silas', pending[0].from === 'silas');
+  test('non-recipient has zero pending', () => {
+    store.sendNudge('silas', 'wren', 'test nudge');
+    expect(store.getPendingNudges('silas')).toHaveLength(0);
+  });
 
-  const silasPending = store.getPendingNudges('silas');
-  check('Silas has 0 pending', silasPending.length === 0);
+  test('acknowledge clears pending', () => {
+    const id = store.sendNudge('silas', 'wren', 'test nudge');
+    store.acknowledgeNudge(id);
+    expect(store.getPendingNudges('wren')).toHaveLength(0);
+  });
+});
 
-  store.acknowledgeNudge(id);
-  const afterAck = store.getPendingNudges('wren');
-  check('After ack: 0 pending', afterAck.length === 0);
-  store.close();
-}
+describe('Multiple nudges + ack-all', () => {
+  test('three pending, ack-all returns 3, pending cleared', () => {
+    store.sendNudge('wren', 'kade', 'nudge 1');
+    store.sendNudge('silas', 'kade', 'nudge 2');
+    store.sendNudge('wren', 'kade', 'nudge 3');
+    expect(store.getPendingNudges('kade')).toHaveLength(3);
 
-// --- Multiple nudges + ack-all ---
-console.log('\n--- Multiple nudges ---');
-{
-  const store = freshStore();
-  store.sendNudge('wren', 'kade', 'nudge 1');
-  store.sendNudge('silas', 'kade', 'nudge 2');
-  store.sendNudge('wren', 'kade', 'nudge 3');
+    const acked = store.acknowledgeAllNudges('kade');
+    expect(acked).toBe(3);
+    expect(store.getPendingNudges('kade')).toHaveLength(0);
+  });
+});
 
-  check('Kade has 3 pending', store.getPendingNudges('kade').length === 3);
+describe('Dead letter', () => {
+  test('third delivery attempt dead-letters the nudge', () => {
+    const id = store.sendNudge('silas', 'wren', 'will fail');
+    expect(store.recordDeliveryAttempt(id).deadLettered).toBe(false);
+    expect(store.recordDeliveryAttempt(id).deadLettered).toBe(false);
+    expect(store.recordDeliveryAttempt(id).deadLettered).toBe(true);
 
-  const acked = store.acknowledgeAllNudges('kade');
-  check('Ack-all returned 3', acked === 3);
-  check('Kade has 0 pending after ack-all', store.getPendingNudges('kade').length === 0);
-  store.close();
-}
+    expect(store.getPendingNudges('wren')).toHaveLength(0);
+    const dl = store.getDeadLetters();
+    expect(dl).toHaveLength(1);
+    expect(dl[0].delivery_attempts).toBe(3);
+  });
 
-// --- Dead Letter ---
-console.log('\n--- Dead letter ---');
-{
-  const store = freshStore();
-  const id = store.sendNudge('silas', 'wren', 'will fail');
+  test('replay restores the nudge to pending and clears dead-letter', () => {
+    const id = store.sendNudge('silas', 'wren', 'will fail');
+    store.recordDeliveryAttempt(id);
+    store.recordDeliveryAttempt(id);
+    store.recordDeliveryAttempt(id);
 
-  const r1 = store.recordDeliveryAttempt(id);
-  check('Attempt 1: not dead-lettered', !r1.deadLettered);
+    store.replayDeadLetter(id);
+    expect(store.getDeadLetters()).toHaveLength(0);
+    expect(store.getPendingNudges('wren')).toHaveLength(1);
+  });
+});
 
-  const r2 = store.recordDeliveryAttempt(id);
-  check('Attempt 2: not dead-lettered', !r2.deadLettered);
+describe('Chat', () => {
+  test('chat id is namespaced by the participant pair', () => {
+    const chatId = store.startChat('silas', 'kade', 'test topic');
+    expect(chatId).toContain('silas-kade');
+  });
 
-  const r3 = store.recordDeliveryAttempt(id);
-  check('Attempt 3: dead-lettered', r3.deadLettered);
+  test('messages append in order and are retrievable', () => {
+    const chatId = store.startChat('silas', 'kade', 'test topic');
+    store.chatMessage(chatId, 'silas', 'hello kade');
+    store.chatMessage(chatId, 'kade', 'hello silas');
+    store.chatMessage(chatId, 'silas', 'how are you');
 
-  check('Pending is 0 (dead-lettered)', store.getPendingNudges('wren').length === 0);
+    const msgs = store.getChatMessages(chatId);
+    expect(msgs).toHaveLength(3);
+    expect(msgs[0].from).toBe('silas');
+    expect(msgs[1].from).toBe('kade');
+  });
 
-  const dl = store.getDeadLetters();
-  check('1 dead letter', dl.length === 1);
-  check('Dead letter has 3 attempts', dl[0].delivery_attempts === 3);
+  test('since cursor returns messages after the given id', () => {
+    const chatId = store.startChat('silas', 'kade', 'test topic');
+    store.chatMessage(chatId, 'silas', 'hello kade');
+    store.chatMessage(chatId, 'kade', 'hello silas');
+    store.chatMessage(chatId, 'silas', 'how are you');
 
-  store.replayDeadLetter(id);
-  check('After replay: 0 dead letters', store.getDeadLetters().length === 0);
-  check('After replay: 1 pending', store.getPendingNudges('wren').length === 1);
-  store.close();
-}
+    const msgs = store.getChatMessages(chatId);
+    const since = store.getChatMessages(chatId, msgs[1].id);
+    expect(since).toHaveLength(1);
+    expect(since[0].from).toBe('silas');
+  });
+});
 
-// --- Chat ---
-console.log('\n--- Chat ---');
-{
-  const store = freshStore();
-  const chatId = store.startChat('silas', 'kade', 'test topic');
-  check('Chat ID created', chatId.includes('silas-kade'));
+describe('Role state', () => {
+  test('setRoleState records state and card', () => {
+    store.setRoleState('silas', 'building', '1755');
+    const state = store.getRoleState('silas');
+    expect(state?.state).toBe('building');
+    expect(state?.card).toBe('1755');
+  });
 
-  store.chatMessage(chatId, 'silas', 'hello kade');
-  store.chatMessage(chatId, 'kade', 'hello silas');
-  store.chatMessage(chatId, 'silas', 'how are you');
+  test('transitioning to idle clears the card', () => {
+    store.setRoleState('silas', 'building', '1755');
+    store.setRoleState('silas', 'idle');
+    const updated = store.getRoleState('silas');
+    expect(updated?.state).toBe('idle');
+    expect(updated?.card).toBeNull();
+  });
+});
 
-  const msgs = store.getChatMessages(chatId);
-  check('3 chat messages', msgs.length === 3);
-  check('First message from silas', msgs[0].from === 'silas');
-  check('Second message from kade', msgs[1].from === 'kade');
+describe('Query', () => {
+  test('queryMessages filters by recipient and sender', () => {
+    store.sendNudge('silas', 'wren', 'nudge A');
+    store.sendNudge('kade', 'wren', 'nudge B');
+    store.sendNudge('silas', 'kade', 'nudge C');
 
-  const since = store.getChatMessages(chatId, msgs[1].id);
-  check('Since msg 2: 1 message', since.length === 1);
-  check('Since msg 2: from silas', since[0].from === 'silas');
+    expect(store.queryMessages({ to: 'wren' })).toHaveLength(2);
+    expect(store.queryMessages({ from: 'silas' })).toHaveLength(2);
+  });
 
-  store.endChat(chatId);
-  store.close();
-}
+  test('stats reflects total and pending counts', () => {
+    store.sendNudge('silas', 'wren', 'nudge A');
+    store.sendNudge('kade', 'wren', 'nudge B');
+    store.sendNudge('silas', 'kade', 'nudge C');
 
-// --- Role State ---
-console.log('\n--- Role state ---');
-{
-  const store = freshStore();
-  store.setRoleState('silas', 'building', '1755');
-  const state = store.getRoleState('silas');
-  check('State is building', state?.state === 'building');
-  check('Card is 1755', state?.card === '1755');
-
-  store.setRoleState('silas', 'idle');
-  const updated = store.getRoleState('silas');
-  check('State updated to idle', updated?.state === 'idle');
-  check('Card cleared', updated?.card === null);
-  store.close();
-}
-
-// --- Query ---
-console.log('\n--- Query ---');
-{
-  const store = freshStore();
-  store.sendNudge('silas', 'wren', 'nudge A');
-  store.sendNudge('kade', 'wren', 'nudge B');
-  store.sendNudge('silas', 'kade', 'nudge C');
-
-  const toWren = store.queryMessages({ to: 'wren' });
-  check('Query to=wren: 2 results', toWren.length === 2);
-
-  const fromSilas = store.queryMessages({ from: 'silas' });
-  check('Query from=silas: 2 results', fromSilas.length === 2);
-
-  const stats = store.getStats();
-  check('Stats total: 3', stats.total === 3);
-  check('Stats pending: 3', stats.pending === 3);
-  store.close();
-}
-
-// --- Cleanup ---
-if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
-
-console.log(`\n=== Results: ${pass} pass, ${fail} fail ===`);
-process.exit(fail > 0 ? 1 : 0);
+    const stats = store.getStats();
+    expect(stats.total).toBe(3);
+    expect(stats.pending).toBe(3);
+  });
+});
