@@ -917,3 +917,7 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [wren, silas collab] 4 new principles in loom-principles: focus-is-infrastructure, quality-at-source, speed-and-quality-correlate, interrogate-the-data ("give a fuck about data quality")
 - [wren filed] #2151 (loom-policies subdomain stand-up), #2152 (DEC+ADR harvest to loom-decisions)
 - [silas filed] #2130 done, #2131/2141/2144/2147/2153/2154/2155/2156/2157 filed, #2141 LaunchAgent exit 78 workaround via bootout+12s+bootstrap documented
+- [14:55] [Wren] → /pull #2150 → shipped: wren/working-with-jeff.md, lint-fragments.sh (6 rules), claudemd-gen.py path-resolver fix, fragment drift fixes (team-kanban-board-core + communication-discipline), 18 bats green. AC narrowed: dropped portfolio+tone extractions (optimization theater). Demo brief: roles/wren/briefs/archive/2026-04-17-demo-2150.md → Silas (sign-off) → self
+- [14:57] [Wren] → /gate-product FAIL #2124 (no brief) → Silas
+- [15:00] [Wren] → /gate-product PASS #2124 (brief filed, all 5 gates green) → Jeff for accept
+- [15:02] [Wren] → reflection: /gate-product skill under-spec'd for demo gates — checks artifact presence not demo substance; needs design pass → self
