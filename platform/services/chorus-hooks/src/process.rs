@@ -133,18 +133,17 @@ mod tests {
     // History: #2100 inlined it, #2229 tried bash, both reverted. Binary delegation
     // is the stable path. This test was stale since re-introduction of the binary.
 
-    // TEMP skip: hermetic-test gate — see #2131.
-    // inject_by_tab_name delegates to the real chorus-inject binary which
-    // drives osascript keystroke injection into every role's live terminal.
-    // Set HERMETIC_TEST_MODE=1 to skip (Silas's shim kill-switch is the
-    // durable fix). rejects_unknown_role is safe — returns error before
-    // driving inject.
+    // Polarity flip matching #2165: hermetic by default. inject_by_tab_name
+    // delegates to chorus-inject which drives osascript keystroke injection
+    // into a role's live terminal — running `cargo test` without opting in
+    // storms Jeff's session (seen 2026-04-17). Set RUN_LIVE_INJECT=1 to opt
+    // INTO live-fire. Anything else skips.
     fn hermetic_skip(name: &str) -> bool {
-        if std::env::var("HERMETIC_TEST_MODE").is_ok() {
-            eprintln!("SKIP {}: hermetic-test gate — #2131", name);
-            return true;
+        if std::env::var("RUN_LIVE_INJECT").is_ok() {
+            return false;
         }
-        false
+        eprintln!("SKIP {}: hermetic by default — set RUN_LIVE_INJECT=1 to opt in", name);
+        true
     }
 
     #[test]

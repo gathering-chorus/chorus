@@ -72,6 +72,18 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 # Lock 3: docker absent from live code paths (#2020 retirement, #2119 purge)
 # ---------------------------------------------------------------------------
 
+@test "lock: inject tests are hermetic by default — cargo test must not fire live keystrokes" {
+  cd "$CHORUS_ROOT"
+  # process.rs hermetic_skip must check RUN_LIVE_INJECT (opt-in), not
+  # HERMETIC_TEST_MODE (opt-out). The wrong polarity stormed Jeff's terminal
+  # on 2026-04-17 when someone ran `cargo test` without the env var.
+  guard=$(grep -n "RUN_LIVE_INJECT" platform/services/chorus-hooks/src/process.rs || true)
+  [ -n "$guard" ] || {
+    echo "Hermetic-default guard missing in process.rs — RUN_LIVE_INJECT opt-in must gate inject tests" >&2
+    false
+  }
+}
+
 @test "lock: no 'docker' in live code paths (ADRs, journal, knowledge docs exempted)" {
   cd "$CHORUS_ROOT"
   # Scan live code paths only: platform/scripts, platform/services, platform/api.
