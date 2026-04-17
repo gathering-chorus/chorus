@@ -1,0 +1,28 @@
+# tarpaulin config for chorus-hooks — #2167
+#
+# Floor: 25%. Baseline 2026-04-17: 28.08% (1780/6338 lines).
+#
+# Why not 60/75/80? chorus-hooks is a two-bin crate (chorus-hooks daemon +
+# chorus-hook-shim CLI) with three major coverage gaps:
+#
+#   1. main.rs     — 0/300  — bin entry + argv dispatch (needs lib split)
+#   2. shim.rs     — 0/459  — bin entry + Claude Code hook dispatch (needs lib split)
+#   3. ops.rs      — 0/831  — chorus-ops Rust port, zero tests (#TBD)
+#
+# Together those three files are 1590 uncovered lines — 25% of the crate.
+# The tested modules (hooks/*, nudge.rs, process.rs, role_state.rs, state.rs,
+# shared/*, session_cache.rs, types.rs) average 60-95% individually. Gate is
+# calibrated to catch regressions in the tested surface, not demand the
+# structural refactor that a true 80% target would require.
+#
+# Raising the floor is a separate scope:
+#   - lib.rs split (#TBD) lets main.rs + shim.rs get instrumented
+#   - ops.rs test coverage is its own card (#TBD)
+
+[default]
+run-types = ["Tests"]
+fail-under = 25
+exclude-files = ["tests/*"]
+# --test-threads=1 matches nightly-suites.sh. Several hook tests share global
+# state (role-state files, hook env vars) and flake under parallel runs.
+args = ["--test-threads=1"]
