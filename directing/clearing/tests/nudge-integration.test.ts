@@ -18,13 +18,28 @@ const NUDGE_BINARY = '/Users/jeffbridwell/CascadeProjects/chorus/platform/servic
 const INBOX_DIR = '/tmp/voice-inbox';
 const EXCHANGE_DIR = '/tmp/nudge-exchanges';
 
-// TEMP skip: hermeticity gate — see #2131.
-// Tests below invoke the real chorus-hook-shim nudge binary, which fires
-// real terminal injections, bridge writes, and chat messages into every
-// role's live terminal. Until #2131 durable mock lands, run with
-// HERMETIC_TEST_MODE=1 to gate them. Precondition checks (just binary
-// existence + usage output) stay unconditional. Gated tests: 22.
-const d = process.env.HERMETIC_TEST_MODE ? describe.skip : describe;
+// Live-fire opt-in gate — see #2131, #2157, #2165.
+//
+// Hermetic by default (`d` = describe.skip). Set RUN_LIVE_NUDGE=1 to opt in.
+//
+//   AC #3.1 — All role pairs: runNudge() invokes the real chorus-hook-shim
+//             which osascript-injects into every role's live terminal.
+//   AC #3.2 — Delivery verification: same live-inject path.
+//   AC #3.3 — Exchange tracking: same live-inject path.
+//
+//   These fire real side effects — every role's live terminal gets a nudge
+//   per test. Running `npm test` on this file used to storm the team (17
+//   injected nudges per run, confirmed in chorus.log 2026-04-17 15:46).
+//   #2165 flipped polarity so tests opt IN to the storm instead of opting
+//   out. Durable fix is #2131 (mock nudge binary); when that lands, these
+//   become unconditional again.
+//
+// Unconditional (plain `describe`):
+//   Precondition — binary existence + usage-on-no-args.
+//   AC #3.4 — WIP state detection: fs.readFileSync of hook source + grep.
+//   AC #3.5 — Spine events: fs.readFileSync of nudge.rs + grep.
+//   Source-inspection only. No side effects.
+const d = process.env.RUN_LIVE_NUDGE ? describe : describe.skip;
 
 // Helper: run nudge command and capture output
 function runNudge(args: string, env: Record<string, string> = {}): { stdout: string; stderr: string; exitCode: number } {
@@ -230,7 +245,7 @@ d('AC #3.3: Exchange tracking — pair key mechanics', () => {
 // 4. WIP STATE DETECTION — blast radius warning (#1658)
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC #3.4: WIP state detection — blast radius warning', () => {
+describe('AC #3.4: WIP state detection — blast radius warning', () => {
   const ROLE_STATE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state';
 
   test('role-state binary exists for WIP detection', () => {
@@ -296,7 +311,7 @@ d('AC #3.4: WIP state detection — blast radius warning', () => {
 // 5. SPINE EVENTS — nudge lifecycle emits observability events
 // ═══════════════════════════════════════════════════════════════════════════
 
-d('AC #3.5: Spine events — nudge lifecycle is observable', () => {
+describe('AC #3.5: Spine events — nudge lifecycle is observable', () => {
   test('nudge binary emits role.nudge.sent event', () => {
     const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
     const content = fs.readFileSync(nudgeSource, 'utf-8');
