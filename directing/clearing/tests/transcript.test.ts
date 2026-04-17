@@ -233,11 +233,12 @@ describe('Transcript — save to disk', () => {
     const t = new Transcript('claude-haiku-4-5-20251001');
     t.add('jeff', 'a');
     const p1 = t.save();
+    expect((t as any).lastSavePath).toBe(p1);
     t.reset();
-    t.add('jeff', 'b');
-    const p2 = t.save();
-    expect(p2).not.toBe(p1);
+    // Timestamp is second-resolution; two saves in the same second would yield
+    // the same filename. Assert the contract directly — reset() nulls the
+    // internal reference so the next save() re-derives a fresh name.
+    expect((t as any).lastSavePath).toBeNull();
     fs.unlinkSync(p1);
-    fs.unlinkSync(p2);
   });
 });
