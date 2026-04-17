@@ -391,6 +391,21 @@ done
 
 echo "$MSG"
 echo "$(date '+%Y-%m-%d %H:%M') $MSG" >> "$HOME/Library/Logs/Chorus/deep-health.log"
-"$NUDGE" "$ALERT_ROLE" "$MSG" --force 2>/dev/null || true
+
+# Edge-triggered alerting (#2124 follow-up):
+# Only nudge when the failure set changes (new failure added or existing one
+# resolved). Steady-state repeated failures are logged but not re-injected —
+# they're already tracked by swat cards and the status is visible in pulse.
+STATE_FILE="/tmp/deep-health-last-failures.txt"
+CURRENT=$(printf '%s\n' "${FAILURES[@]}" | sort)
+LAST=""
+[ -f "$STATE_FILE" ] && LAST=$(cat "$STATE_FILE")
+printf '%s' "$CURRENT" > "$STATE_FILE"
+
+if [ "$CURRENT" = "$LAST" ]; then
+  echo "deep-health: failure set unchanged — alert suppressed (see $STATE_FILE)"
+else
+  "$NUDGE" "$ALERT_ROLE" "$MSG" --force 2>/dev/null || true
+fi
 "$CHORUS_LOG" ops.health.deep_check_failed "$ALERT_ROLE" failures="${#FAILURES[@]}" 2>/dev/null || true
 exit 1
