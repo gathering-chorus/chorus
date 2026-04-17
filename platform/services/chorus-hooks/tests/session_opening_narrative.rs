@@ -9,32 +9,22 @@ use std::fs;
 
 const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
 
-/// Boot instruction guides narrative synthesis with arc, pace, friction framing
-#[test]
-fn boot_instruction_guides_narrative_synthesis() {
-    // Build fresh context cache
+/// Build fresh context cache for silas — required setup for every test reading the file.
+/// Each test calls this (idempotent) so ordering doesn't matter.
+fn build_silas_cache() {
     let output = std::process::Command::new(SHIM)
         .args(["context-cache", "silas"])
         .output()
         .expect("context-cache should execute");
     assert!(output.status.success(), "context-cache should succeed");
-
-    let content = fs::read_to_string("/tmp/session-context-silas.md")
-        .expect("session-context-silas.md should exist");
-
-    // AC1: must guide toward arc, pace, friction — not just "synthesize"
-    assert!(
-        content.contains("Arc") && content.contains("Pace") && content.contains("Friction"),
-        "boot instruction must frame synthesis around arc, pace, and friction — got boot section: {}",
-        extract_boot_section(&content)
-    );
 }
 
 /// Boot instruction explicitly discourages dashboard readout patterns
 #[test]
 fn boot_instruction_discourages_readout() {
+    build_silas_cache();
     let content = fs::read_to_string("/tmp/session-context-silas.md")
-        .expect("session-context-silas.md should exist (run narrative_synthesis test first)");
+        .expect("session-context-silas.md should exist");
 
     // AC1+AC3: template must explicitly say no card lists, no metric bullet points
     let boot = extract_boot_section(&content);
@@ -53,6 +43,7 @@ fn boot_instruction_discourages_readout() {
 /// Boot instruction requires positions on problems, not bare facts
 #[test]
 fn boot_instruction_requires_positions() {
+    build_silas_cache();
     let content = fs::read_to_string("/tmp/session-context-silas.md")
         .expect("session-context-silas.md should exist");
 
@@ -68,6 +59,7 @@ fn boot_instruction_requires_positions() {
 /// Boot section header changed from "Synthesize Before Speaking" to something less mechanical
 #[test]
 fn boot_header_not_mechanical() {
+    build_silas_cache();
     let content = fs::read_to_string("/tmp/session-context-silas.md")
         .expect("session-context-silas.md should exist");
 
@@ -76,6 +68,70 @@ fn boot_header_not_mechanical() {
         !content.contains("## Boot: Synthesize Before Speaking"),
         "boot header should not be the old mechanical 'Synthesize Before Speaking' — template needs structural update"
     );
+}
+
+/// #2114 — Boot prompt includes 5-beat shape (thesis, reframe, friction-with-position, flinch, single-question close)
+#[test]
+fn boot_includes_five_beat_shape() {
+    build_silas_cache();
+    let content = fs::read_to_string("/tmp/session-context-silas.md")
+        .expect("session-context-silas.md should exist");
+    let boot = extract_boot_section(&content);
+
+    for beat in ["thesis", "reframe", "flinch"] {
+        assert!(
+            boot.to_lowercase().contains(beat),
+            "boot must name the '{}' beat — got: {}", beat, boot
+        );
+    }
+    assert!(
+        boot.to_lowercase().contains("one question") || boot.to_lowercase().contains("single question") || boot.to_lowercase().contains("one-question"),
+        "boot must describe the single-question close — got: {}", boot
+    );
+}
+
+/// #2114 — Boot prompt includes an inline example opening so agent has concrete pattern
+#[test]
+fn boot_includes_inline_example() {
+    build_silas_cache();
+    let content = fs::read_to_string("/tmp/session-context-silas.md")
+        .expect("session-context-silas.md should exist");
+    let boot = extract_boot_section(&content);
+
+    assert!(
+        boot.to_lowercase().contains("example"),
+        "boot must include a labeled example opening — got: {}", boot
+    );
+    assert!(
+        boot.contains("Example") || boot.contains("example opening") || boot.contains("example:"),
+        "boot must present a concrete example opening — got: {}", boot
+    );
+}
+
+/// #2114 — All three roles render the new prompt
+#[test]
+fn all_three_roles_render_shape_and_example() {
+    for role in ["wren", "silas", "kade"] {
+        let output = std::process::Command::new(SHIM)
+            .args(["context-cache", role])
+            .output()
+            .expect("context-cache should execute");
+        assert!(output.status.success(), "context-cache should succeed for {}", role);
+
+        let path = format!("/tmp/session-context-{}.md", role);
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("{} should exist", path));
+        let boot = extract_boot_section(&content);
+
+        assert!(
+            boot.to_lowercase().contains("thesis"),
+            "{}: boot must include thesis beat", role
+        );
+        assert!(
+            boot.to_lowercase().contains("example"),
+            "{}: boot must include inline example", role
+        );
+    }
 }
 
 /// Extract the boot instruction section from session context

@@ -195,18 +195,20 @@ pub fn run(args: &[String]) -> ExitCode {
          cat /tmp/pulse-latest.json\n\
          curl -s \"http://localhost:3340/api/chorus/search?q={role}+last+session+shipped+friction+decisions&limit=10\"\n\
          ```\n\n\
-         Then **synthesize into a narrative opening** — not a status report. Your opening should answer:\n\
-         - **Arc:** What's the trajectory of recent work? What shipped, what's in motion, what stalled?\n\
-         - **Pace:** Is the team accelerating, grinding, or stuck? What does the WIP/done ratio say?\n\
-         - **Friction:** Where are things dragging? Stale handoffs, repeated alerts, blocked cards — what do they mean?\n\n\
-         **Rules for the opening:**\n\
-         - Lead with what you're *thinking about*, not what you *see in the data*.\n\
-         - Every problem gets a position: \"X is stale — I'd do Y\" not \"X is stale.\"\n\
-         - No card lists. No health metric bullet points. No section headers from this file.\n\
-         - Stale handoffs and alerts are process signals — say what they mean for the work.\n\
-         - If Pulse shows index_freshness with critical/dead sources, note it naturally: \
-         your recall may be incomplete.\n\
-         - Sound like a colleague who was here yesterday and has been thinking about the work overnight.\n"
+         Then write a thesis-driven opening — not a status report. Five beats, prose only, no headers or bullets, ~200–300 words total:\n\n\
+         1. **What you've been thinking about.** Lead with the thought, not the data. Name a threshold, shift, reframe, or meaning the day carries. One thesis sentence, then the evidence that earns it.\n\n\
+         2. **Reframe an active card through the thesis.** \"That reframes #X. On the surface it's [mundane frame]. It's actually [deeper frame]. I want it done before Y because Z.\"\n\n\
+         3. **Quieter, older friction — with a position.** Not the loud stuff — the second-order thing that's been sitting. Name what it actually is. State your position on what to do.\n\n\
+         4. **The thing you keep flinching at.** A card, a pattern, an avoidance of your own. Name the flinch honestly — the avoidance itself is the signal.\n\n\
+         5. **One-question close.** Offer directions without assuming one. \"Where do you want to start — A, B, or somewhere I'm not looking?\"\n\n\
+         **Rules:**\n\
+         - No card lists, no pulse bullets, no section headers from this file in your opening.\n\
+         - Every problem named gets a position: \"X is stale — I'd do Y,\" not \"X is stale.\"\n\
+         - If Pulse shows index_freshness critical/dead, note it naturally — your recall may be incomplete.\n\
+         - If you cannot write the thesis sentence in beat 1, you have not synthesized. Read more before opening.\n\
+         - Sound like a colleague who was here yesterday and has been thinking about the work overnight.\n\n\
+         **Example shape** (illustrative — yours should come from today's actual state):\n\n\
+         > Thinking overnight about what shipped last night: Borg crossed from \"reflection collection\" to a real product surface. Caddy at the edge, 9 pages decoupled from Gathering — that changes what \"the next pull\" means. It reframes #2116. On the surface it's a content migration; it's actually the closing move on the URL-layer decoupling, and I want it done before any new Chorus surface lands so the pattern holds. Quieter friction I'd call out: the retire-card residue Jeff flagged last night. #2123 is the systemic fix, but per-card vigilance is mine until it ships — \"retire\" should carry the same rigor as \"ship.\" The thing I keep flinching at: I routed an engineering call back to Jeff last night when I should have made it. That's #1158 at a new scale — still relaying instead of holding. Where do you want to start — pull #2116, sit with the retire-gate work, or somewhere I'm not looking?\n"
     , role=role));
 
     // 2. Active Work — WIP + Now + Ops + Later only (no Done wall)
