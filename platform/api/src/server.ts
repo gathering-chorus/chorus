@@ -4470,6 +4470,10 @@ function athenaEnvelope(queryName: string, data: any, durationMs: number, extra:
 import { fetchAthenaHealth } from './handlers/athena-health';
 import { fetchAthenaValidate } from './handlers/athena-validate';
 import { fetchAthenaProducts } from './handlers/athena-products';
+import { fetchAthenaSubproducts } from './handlers/athena-subproducts';
+import { fetchAthenaSteps } from './handlers/athena-steps';
+import { fetchAthenaOwners } from './handlers/athena-owners';
+import { fetchAthenaMachines } from './handlers/athena-machines';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
     sparql: athenaSparqlQuery,
@@ -4556,20 +4560,8 @@ app.get('/api/chorus/products', async (_req: Request, res: Response) => {
 
 // GET /api/athena/subproducts — list sub-products with owner, domain count, consumes count
 app.get('/api/athena/subproducts', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const result = await athenaSparqlQuery(loadSparql('subproducts'));
-    const subproducts = result.results.bindings.map((b: any) => ({
-      uri: b.sp.value,
-      label: b.label?.value || b.sp.value.split('#').pop(),
-      owner: b.ownerLabel?.value || null,
-      domainCount: parseInt(b.domainCount?.value || '0', 10),
-      consumesCount: parseInt(b.consumesCount?.value || '0', 10),
-    }));
-    res.json(athenaEnvelope('subproducts', subproducts, Date.now() - start, { count: subproducts.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subproducts', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubproducts({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains — list sub-domains with owner, step. Filter: ?owner, ?step
@@ -4664,73 +4656,20 @@ app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
 
 // GET /api/athena/steps — value stream steps with sub-domains at each step
 app.get('/api/athena/steps', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const result = await athenaSparqlQuery(loadSparql('steps'));
-    const stepMap = new Map<string, { uri: string; label: string; domainCount: number; subdomains: { uri: string; label: string; owner: string | null }[] }>();
-    for (const b of result.results.bindings) {
-      const key = b.step.value;
-      if (!stepMap.has(key)) {
-        stepMap.set(key, { uri: key, label: b.stepLabel?.value || key.split('#').pop()!, domainCount: 0, subdomains: [] });
-      }
-      if (b.sd) {
-        const entry = stepMap.get(key)!;
-        entry.subdomains.push({ uri: b.sd.value, label: b.sdLabel?.value || b.sd.value.split('#').pop()!, owner: b.sdOwnerLabel?.value || null });
-        entry.domainCount = entry.subdomains.length;
-      }
-    }
-    const steps = Array.from(stepMap.values());
-    res.json(athenaEnvelope('steps', steps, Date.now() - start, { count: steps.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('steps', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSteps({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/owners — owners with sub-domain counts
 app.get('/api/athena/owners', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const result = await athenaSparqlQuery(loadSparql('owners'));
-    const owners = result.results.bindings.map((b: any) => ({
-      uri: b.owner.value,
-      label: b.label?.value || b.owner.value.split('#').pop(),
-      subdomainCount: parseInt(b.count.value, 10),
-    }));
-    res.json(athenaEnvelope('owners', owners, Date.now() - start, { count: owners.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('owners', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaOwners({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/machines — machines with running services
 app.get('/api/athena/machines', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const result = await athenaSparqlQuery(loadSparql('machines'));
-    const machineMap = new Map<string, { uri: string; label: string; ip: string | null; role: string | null; services: { uri: string; label: string }[] }>();
-    for (const b of result.results.bindings) {
-      const uri = b.machine.value;
-      if (!machineMap.has(uri)) {
-        machineMap.set(uri, {
-          uri,
-          label: b.label?.value || uri.split('#').pop(),
-          ip: b.ip?.value || null,
-          role: b.role?.value || null,
-          services: [],
-        });
-      }
-      if (b.service) {
-        machineMap.get(uri)!.services.push({
-          uri: b.service.value,
-          label: b.serviceLabel?.value || b.service.value.split('#').pop(),
-        });
-      }
-    }
-    const machines = Array.from(machineMap.values());
-    res.json(athenaEnvelope('machines', machines, Date.now() - start, { count: machines.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('machines', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaMachines({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/cards — active board cards for this domain

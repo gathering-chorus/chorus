@@ -49,9 +49,14 @@ describe('#1909: Framework lint — Athena endpoint patterns', () => {
   });
 
   test('Athena SPARQL catch blocks use athenaEnvelope for error responses', () => {
-    // Find catch blocks in /api/athena/ route handlers (GET and POST with SPARQL)
-    // Exclude utility endpoints (open, reload) that don't use SPARQL
-    const athenaRoutes = SERVER_SRC.match(/app\.(get|post)\('\/api\/athena\/[^']+',[\s\S]*?catch\s*\(err:\s*any\)\s*\{[^}]+\}/g) || [];
+    // Find catch blocks in /api/athena/ route handlers (GET and POST with SPARQL).
+    // Post-#2180 note: extracted handlers (≤4-line adapters in server.ts)
+    // don't have their own catch blocks — errors are handled in handlers/*.ts.
+    // The non-greedy span MUST be route-scoped to not cross into the next
+    // route's body; otherwise naked catches in non-Athena routes get falsely
+    // attributed to Athena adapters above them. Negative lookahead on the
+    // next app.(get|post)( opening bounds the span to the current route.
+    const athenaRoutes = SERVER_SRC.match(/app\.(get|post)\('\/api\/athena\/[^']+',(?:(?!app\.(?:get|post)\()[\s\S])*?catch\s*\(err:\s*any\)\s*\{[^}]+\}/g) || [];
     expect(athenaRoutes.length).toBeGreaterThan(0);
     const nakedCatches = athenaRoutes.filter(b => {
       const catchBlock = b.match(/catch\s*\(err:\s*any\)\s*\{[^}]+\}/)?.[0] || '';
