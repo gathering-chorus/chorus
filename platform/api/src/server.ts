@@ -859,104 +859,25 @@ app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
 // --- GET /api/chorus/domain-story/:domain ---
 // Memory domain — institutional memory for a domain. Cards + conversation mentions + spine events. #1947
 
+import { fetchChorusDomainStory } from './handlers/chorus-domain-story';
 app.get('/api/chorus/domain-story/:domain', async (req: Request, res: Response) => {
-  const domain = req.params.domain.toLowerCase();
-  const limit = Math.min(parseInt(req.query.limit as string || '100', 10), 500);
-
-  const cards: Array<{ index: number; title: string; status: string; owner: string; created: string }> = [];
-  const mentions: Array<{ timestamp: string; role: string; text: string }> = [];
-  const timeline: Array<{ timestamp: string; source: string; text: string; role?: string; card?: number }> = [];
-
-  // 1. Cards tagged with this domain — #2096: read from board cache
-  for (const c of getBoardCards().filter(c => c.tags.includes(`domain:${domain}`))) {
-    const card = {
-      index: parseInt(c.id, 10),
-      title: c.title,
-      status: c.status,
-      owner: c.owner,
-      created: '',
-    };
-    cards.push(card);
-    timeline.push({
-      timestamp: '',
-      source: 'card',
-      text: `#${c.id} ${c.title} [${c.status}]`,
-      role: c.owner,
-      card: parseInt(c.id, 10),
-    });
-  }
-
-  // 2. Conversation mentions from Chorus index
+  const logPath = path.resolve(__dirname, '../../logs/chorus.log');
   let db: Database.Database | null = null;
+  try { db = getDb(); } catch { /* db optional */ }
   try {
-    db = getDb();
-    const rows = db.prepare(`
-      SELECT author, content, timestamp, role
-      FROM messages
-      WHERE content LIKE ?
-      ORDER BY timestamp ASC
-      LIMIT ?
-    `).all(`%${domain}%`, limit) as Array<{ author: string; content: string; timestamp: string; role: string }>;
-
-    for (const m of rows) {
-      const text = m.content.trim();
-      if (text.startsWith('<system-reminder>')) continue;
-      if (text.startsWith('Base directory for this skill:')) continue;
-      if (text.length < 20) continue;
-
-      const mention = {
-        timestamp: m.timestamp,
-        role: m.author === 'user' ? 'jeff' : m.role,
-        text: text.slice(0, 300),
-      };
-      mentions.push(mention);
-
-      timeline.push({
-        timestamp: m.timestamp,
-        source: 'chorus-index',
-        text: text.slice(0, 300),
-        role: mention.role,
-      });
-    }
-  } catch { /* db not available */ }
-  finally { if (db) db.close(); }
-
-  // 3. Spine events for cards in this domain
-  try {
-    const logPath = path.resolve(__dirname, '../../logs/chorus.log');
-    if (fs.existsSync(logPath)) {
-      const lines = fs.readFileSync(logPath, 'utf-8').split('\n');
-      const cardIds = new Set(cards.map(c => c.index));
-      for (const line of lines) {
-        try {
-          const parsed = JSON.parse(line);
-          if (!parsed.event || !parsed.event.startsWith('card.')) continue;
-          const cardId = parseInt(parsed.card || '0', 10);
-          if (!cardIds.has(cardId)) continue;
-          timeline.push({
-            timestamp: parsed.timestamp,
-            source: 'spine',
-            text: parsed.event,
-            role: parsed.role,
-            card: cardId,
-          });
-        } catch { /* skip */ }
-      }
-    }
-  } catch { /* log not readable */ }
-
-  // Sort timeline chronologically
-  timeline.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
-
-  res.json({
-    domain,
-    cards,
-    mentions,
-    timeline,
-    count: timeline.length,
-    card_count: cards.length,
-    mention_count: mentions.length,
-  });
+    const r = fetchChorusDomainStory(
+      {
+        getCards: () => getBoardCards(),
+        db,
+        readLog: () => fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf-8') : null,
+      },
+      req.params.domain,
+      req.query.limit as string | undefined,
+    );
+    res.status(r.status).json(r.body);
+  } finally {
+    if (db) db.close();
+  }
 });
 
 // --- GET /api/chorus/crawl/:domain ---
