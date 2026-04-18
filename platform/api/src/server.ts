@@ -1983,86 +1983,27 @@ async function indexAllSources(): Promise<Record<string, any>> {
 
 const SELF_SOURCE_WHITELIST = new Set(['memory', 'story', 'decision', 'brief', 'adr']);
 
+import { fetchSelf } from './handlers/chorus-self';
 app.get('/api/chorus/self', async (req: Request, res: Response) => {
-  const q = req.query.q as string;
-  if (!q) {
-    res.status(400).json({ error: 'Missing required parameter: q' });
-    return;
-  }
-
-  const limit = Math.min(parseInt(req.query.limit as string || '10', 10), 50);
-  const searchStart = Date.now();
-
   let db: Database.Database;
-  try {
-    db = getDb();
-  } catch (e) {
+  try { db = getDb(); } catch (e) {
     if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
     throw e;
   }
-
   try {
-    // FTS with source filter — only whitelisted sources
-    const sourceList = Array.from(SELF_SOURCE_WHITELIST).map(s => `'${s}'`).join(',');
-    const ftsQuery = q.replace(/-/g, ' ');
-    let ftsResults: any[];
-    try {
-      ftsResults = db.prepare(`
-        SELECT m.id, m.source, m.channel, m.role, m.content, m.timestamp,
-               snippet(messages_fts, 0, '<b>', '</b>', '...', 40) as snippet
-        FROM messages_fts f
-        JOIN messages m ON f.rowid = m.id
-        WHERE messages_fts MATCH ?
-        AND m.source IN (${sourceList})
-        ORDER BY m.timestamp DESC
-        LIMIT ?
-      `).all(ftsQuery, limit);
-    } catch {
-      ftsResults = db.prepare(`
-        SELECT id, source, channel, role, content, timestamp, NULL as snippet
-        FROM messages
-        WHERE content LIKE ?
-        AND source IN (${sourceList})
-        ORDER BY timestamp DESC
-        LIMIT ?
-      `).all(`%${q}%`, limit);
-    }
-
-    // Semantic search — filter results to whitelisted sources
-    let semResults: SemanticResult[] = [];
-    if (lanceTable) {
-      try {
-        const rawSem = await semanticSearch(q, limit * 3); // over-fetch, then filter
-        semResults = rawSem.filter(r => SELF_SOURCE_WHITELIST.has(r.source)).slice(0, limit);
-      } catch { /* semantic unavailable */ }
-    }
-
-    // SPARQL — always included (RDF entities are curated, not raw sessions)
-    let sparqlResults: SparqlResult[] = [];
-    try {
-      sparqlResults = await sparqlSearch(q, limit);
-    } catch { /* sparql unavailable */ }
-
-    // Merge via RRF
-    const merged = mergeUnified(ftsResults, semResults, sparqlResults, limit);
-
-    emitSearchEvent({
-      system: 'chorus-self', query: q.slice(0, 200), mode: 'self',
-      result_count: merged.length,
-      sources: `fts=${ftsResults.length},semantic=${semResults.length},sparql=${sparqlResults.length}`,
-      duration_ms: Date.now() - searchStart,
-    });
-
-    res.json({
-      results: merged,
-      total: merged.length,
-      mode: 'self',
-      sources: { fts: ftsResults.length, semantic: semResults.length, sparql: sparqlResults.length },
-      filter: { whitelist: Array.from(SELF_SOURCE_WHITELIST) },
-    });
-  } finally {
-    db.close();
-  }
+    const r = await fetchSelf(
+      {
+        db,
+        semanticSearch: lanceTable ? (semanticSearch as unknown as import('./handlers/chorus-self').SemanticSearchFn) : undefined,
+        sparqlSearch: sparqlSearch as unknown as import('./handlers/chorus-self').SparqlSearchFn,
+        mergeUnified: mergeUnified as unknown as import('./handlers/chorus-self').MergeUnifiedFn,
+        emitSearchEvent,
+        whitelist: SELF_SOURCE_WHITELIST,
+      },
+      { q: req.query.q as string | undefined, limit: req.query.limit as string | undefined },
+    );
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
 
 // --- POST /api/chorus/embed (trigger embed-delta on demand) ---
