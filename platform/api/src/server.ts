@@ -4424,42 +4424,15 @@ app.get('/api/athena/subdomains/:id/test-coverage', async (req: Request, res: Re
   res.status(r.status).json(r.body);
 });
 
-// GET /api/chorus/tests/:domain — unified test data per domain (#2098)
-// Proxies to Gathering app's quality scanner. One truth for quality-service page + domain-detail.
+// GET /api/chorus/tests/:domain + /api/chorus/tests — proxies to Gathering quality scanner (#2098, extracted #2189)
+import { fetchTestsByDomain, fetchTestsAll } from './handlers/chorus-tests';
 app.get('/api/chorus/tests/:domain', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const domain = req.params.domain.toLowerCase();
-    const appUrl = `http://localhost:3000/api/quality/domain/${domain}`;
-    const upstream = await fetch(appUrl, { signal: AbortSignal.timeout(5000) });
-    if (!upstream.ok) {
-      res.status(upstream.status).json({ error: `upstream returned ${upstream.status}` });
-      return;
-    }
-    const data = await upstream.json() as any;
-    res.json(athenaEnvelope('domain-tests', data, Date.now() - start, { count: data.total || 0 }));
-  } catch (err: any) {
-    res.status(502).json(athenaEnvelope('domain-tests', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchTestsByDomain(req.params.domain, { envelope: athenaEnvelope });
+  res.status(r.status).json(r.body);
 });
-
-// GET /api/chorus/tests — full scan across all domains (#2098)
 app.get('/api/chorus/tests', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const upstream = await fetch('http://localhost:3000/api/quality/scan', { signal: AbortSignal.timeout(10000) });
-    if (!upstream.ok) {
-      res.status(upstream.status).json({ error: `upstream returned ${upstream.status}` });
-      return;
-    }
-    const data = await upstream.json() as any;
-    // Flatten pyramid[].files[] to root-level files[] for domain-detail compatibility (#2098)
-    const allFiles = (data.pyramid || []).flatMap((l: any) => (l.files || []).map((f: any) => ({ path: f.name, type: f.kind, domain: f.domain, count: f.count, layer: l.name })));
-    const enriched = { ...data, files: allFiles };
-    res.json(athenaEnvelope('quality-scan', enriched, Date.now() - start, { total: data.total || 0 }));
-  } catch (err: any) {
-    res.status(502).json(athenaEnvelope('quality-scan', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchTestsAll({ envelope: athenaEnvelope });
+  res.status(r.status).json(r.body);
 });
 
 // POST /api/athena/discover-pages — auto-discover UI pages per domain from filesystem (#2065)
