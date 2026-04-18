@@ -115,13 +115,40 @@ export async function fetchSubdomainEntities(
 // INSERT {entity type, label, hasX edge from subdomain, optional props}
 // into urn:chorus:instances. Spec maps request-body fields to chorus: predicates.
 
+export interface PropertyDescriptor {
+  /** Full predicate QName. Short form (no colon) → 'chorus:<value>'. */
+  predicate: string;
+  /** 'literal' (default) → "value"; 'uri' → <chorus#value>. */
+  kind?: 'literal' | 'uri';
+}
+
 export interface CreateEntitySpec {
   envelopeName: string;          // 'subdomain-service-create'
   uriSegment: string;            // 'service' — used in URI slug and type name
   typeClass: string;             // 'chorus:Service'
   hasPredicate: string;          // 'chorus:hasService'
-  /** Map of request-body-field → chorus: predicate (without prefix). */
-  propertyMap: Record<string, string>;
+  /**
+   * Map of request-body-field → predicate.
+   * String form: literal triple on chorus:<value>. Descriptor form: full
+   * predicate + kind (literal vs uri ref).
+   */
+  propertyMap: Record<string, string | PropertyDescriptor>;
+  /** Optional normalization on the request body before triples are built. */
+  normalize?: (body: Record<string, unknown>) => Record<string, unknown>;
+}
+
+function resolveDescriptor(d: string | PropertyDescriptor): PropertyDescriptor {
+  if (typeof d === 'string') {
+    return { predicate: d.includes(':') ? d : `chorus:${d}`, kind: 'literal' };
+  }
+  return { kind: 'literal', ...d };
+}
+
+function serializeTriple(entityUri: string, desc: PropertyDescriptor, value: string): string {
+  if (desc.kind === 'uri') {
+    return `<${entityUri}> ${desc.predicate} <https://jeffbridwell.com/chorus#${value}> .`;
+  }
+  return `<${entityUri}> ${desc.predicate} "${escapeLiteral(value)}" .`;
 }
 
 export interface WriteDeps extends DomainFacetDeps {
@@ -145,7 +172,8 @@ export async function createSubdomainEntity(
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const b = (body || {}) as Record<string, string | undefined>;
+    const rawBody = (body || {}) as Record<string, unknown>;
+    const b = (spec.normalize ? spec.normalize(rawBody) : rawBody) as Record<string, unknown>;
     const label = b.label;
     if (!label || typeof label !== 'string') {
       return {
@@ -159,10 +187,10 @@ export async function createSubdomainEntity(
 
     const propTriples = Object.entries(spec.propertyMap)
       .map(([bodyField, predicate]) => {
-        const v = (b as Record<string, unknown>)[bodyField];
+        const v = b[bodyField];
         if (v === undefined || v === null || v === '') return '';
         const s = typeof v === 'string' ? v : String(v);
-        return `<${entityUri}> chorus:${predicate} "${escapeLiteral(s)}" .`;
+        return serializeTriple(entityUri, resolveDescriptor(predicate), s);
       })
       .filter(Boolean)
       .join(' ');
@@ -177,7 +205,7 @@ export async function createSubdomainEntity(
       label,
     };
     for (const field of Object.keys(spec.propertyMap)) {
-      responseData[field] = b[field] || null;
+      responseData[field] = b[field] ?? null;
     }
 
     return {
@@ -318,7 +346,9 @@ export interface UpdateEntitySpec {
   typeClass: string;          // 'chorus:Service'
   hasPredicate: string;       // 'chorus:hasService'
   /** Same shape as CreateEntitySpec.propertyMap. */
-  propertyMap: Record<string, string>;
+  propertyMap: Record<string, string | PropertyDescriptor>;
+  /** Optional normalization on the request body before triples are built. */
+  normalize?: (body: Record<string, unknown>) => Record<string, unknown>;
 }
 
 export async function updateSubdomainEntity(
@@ -331,7 +361,8 @@ export async function updateSubdomainEntity(
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const b = (body || {}) as Record<string, unknown>;
+    const rawBody = (body || {}) as Record<string, unknown>;
+    const b = (spec.normalize ? spec.normalize(rawBody) : rawBody) as Record<string, unknown>;
     const label = b.label;
     if (!label || typeof label !== 'string') {
       return {
@@ -349,9 +380,8 @@ export async function updateSubdomainEntity(
       .map(([bodyField, predicate]) => {
         const v = b[bodyField];
         if (v === null || v === undefined || v === '') return '';
-        // Numbers (e.g. records count) are serialized as strings in the triple.
         const s = typeof v === 'string' ? v : String(v);
-        return `<${entityUri}> chorus:${predicate} "${escapeLiteral(s)}" .`;
+        return serializeTriple(entityUri, resolveDescriptor(predicate), s);
       })
       .filter(Boolean)
       .join(' ');
@@ -575,3 +605,91 @@ export const gapsSpec: EntitySpec = {
 
 export const fetchSubdomainGapsList = (deps: DomainFacetDeps, id: string) =>
   fetchSubdomainEntities(deps, id, gapsSpec);
+
+// --- Heterogeneous-property kinds: actor (URI ref), contract (path alias), prior-art (rdfs:comment) ---
+
+const normalizeContractBody = (b: Record<string, unknown>): Record<string, unknown> => {
+  // contract accepts `endpoint` as an alias for `path` (legacy).
+  if ((b.endpoint && !b.path)) return { ...b, path: b.endpoint };
+  return b;
+};
+
+export const createActorSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-actor-create',
+  uriSegment: 'actor',
+  typeClass: 'chorus:Actor',
+  hasPredicate: 'chorus:hasActor',
+  propertyMap: {
+    role: { predicate: 'chorus:actorRole', kind: 'uri' },
+    action: 'actorAction',
+  },
+};
+
+export const createContractSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-contract-create',
+  uriSegment: 'contract',
+  typeClass: 'chorus:Contract',
+  hasPredicate: 'chorus:hasContract',
+  normalize: normalizeContractBody,
+  propertyMap: {
+    path: { predicate: 'chorus:endpoint' },
+    method: { predicate: 'chorus:httpMethod' },
+    description: { predicate: 'chorus:contractDescription' },
+  },
+};
+
+export const createPriorArtSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-prior-art-create',
+  uriSegment: 'prior-art',
+  typeClass: 'chorus:PriorArt',
+  hasPredicate: 'chorus:hasPriorArt',
+  propertyMap: {
+    path: 'filePath',
+    description: { predicate: 'rdfs:comment' },
+  },
+};
+
+export const updateActorSpec: UpdateEntitySpec = {
+  envelopeName: 'actor-update',
+  typeClass: 'chorus:Actor',
+  hasPredicate: 'chorus:hasActor',
+  propertyMap: createActorSpec.propertyMap,
+};
+
+export const updateScenarioSpec: UpdateEntitySpec = {
+  envelopeName: 'scenario-update',
+  typeClass: 'chorus:Scenario',
+  hasPredicate: 'chorus:hasScenario',
+  propertyMap: createScenarioSpec.propertyMap,
+};
+
+export const updateContractSpec: UpdateEntitySpec = {
+  envelopeName: 'contract-update',
+  typeClass: 'chorus:Contract',
+  hasPredicate: 'chorus:hasContract',
+  normalize: normalizeContractBody,
+  propertyMap: createContractSpec.propertyMap,
+};
+
+export const updatePriorArtSpec: UpdateEntitySpec = {
+  envelopeName: 'prior-art-update',
+  typeClass: 'chorus:PriorArt',
+  hasPredicate: 'chorus:hasPriorArt',
+  propertyMap: createPriorArtSpec.propertyMap,
+};
+
+export const createSubdomainActor = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createActorSpec);
+export const createSubdomainContract = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createContractSpec);
+export const createSubdomainPriorArt = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createPriorArtSpec);
+
+export const updateSubdomainActor = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updateActorSpec);
+export const updateSubdomainScenario = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updateScenarioSpec);
+export const updateSubdomainContract = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updateContractSpec);
+export const updateSubdomainPriorArt = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updatePriorArtSpec);

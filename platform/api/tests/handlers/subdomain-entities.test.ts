@@ -32,6 +32,13 @@ import {
   updateSubdomainPage,
   updateSubdomainIntegration,
   updateSubdomainPersistence,
+  createSubdomainActor,
+  createSubdomainContract,
+  createSubdomainPriorArt,
+  updateSubdomainActor,
+  updateSubdomainScenario,
+  updateSubdomainContract,
+  updateSubdomainPriorArt,
   type WriteDeps,
 } from '../../src/handlers/subdomain-entities';
 import type { DomainFacetDeps } from '../../src/handlers/domain-facets';
@@ -600,6 +607,126 @@ describe('updateSubdomainPipeline', () => {
     });
     expect(d.updates[1]).toContain('chorus:pipelineSource "fuseki"');
     expect(d.updates[1]).toContain('chorus:pipelineICD "ingest-v1"');
+  });
+});
+
+// --- Actor / Contract / PriorArt: heterogeneous property shapes (#2180 wave 2) ---
+
+describe('createSubdomainActor', () => {
+  test('missing label returns 400', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainActor(d, 'chorus-domain', {});
+    expect(r.status).toBe(400);
+  });
+
+  test('serializes actorRole as URI ref, not literal', async () => {
+    const d = writeDeps();
+    await createSubdomainActor(d, 'chorus-domain', { label: 'harvester', role: 'ServiceActor', action: 'harvests' });
+    expect(d.lastUpdate.value).toContain('a chorus:Actor');
+    expect(d.lastUpdate.value).toContain('chorus:hasActor');
+    expect(d.lastUpdate.value).toContain('chorus:actorRole <https://jeffbridwell.com/chorus#ServiceActor>');
+    expect(d.lastUpdate.value).not.toContain('chorus:actorRole "ServiceActor"');
+    expect(d.lastUpdate.value).toContain('chorus:actorAction "harvests"');
+  });
+
+  test('omits role triple when role is absent', async () => {
+    const d = writeDeps();
+    await createSubdomainActor(d, 'chorus-domain', { label: 'bare' });
+    expect(d.lastUpdate.value).not.toContain('chorus:actorRole');
+  });
+});
+
+describe('createSubdomainContract', () => {
+  test('endpoint literal + httpMethod literal', async () => {
+    const d = writeDeps();
+    await createSubdomainContract(d, 'chorus-domain', { label: 'get-foo', path: '/api/foo', method: 'GET', description: 'fetch foo' });
+    expect(d.lastUpdate.value).toContain('a chorus:Contract');
+    expect(d.lastUpdate.value).toContain('chorus:hasContract');
+    expect(d.lastUpdate.value).toContain('chorus:endpoint "/api/foo"');
+    expect(d.lastUpdate.value).toContain('chorus:httpMethod "GET"');
+    expect(d.lastUpdate.value).toContain('chorus:contractDescription "fetch foo"');
+  });
+
+  test('accepts `endpoint` as alias for `path`', async () => {
+    const d = writeDeps();
+    await createSubdomainContract(d, 'chorus-domain', { label: 'e', endpoint: '/api/e' });
+    expect(d.lastUpdate.value).toContain('chorus:endpoint "/api/e"');
+  });
+});
+
+describe('createSubdomainPriorArt', () => {
+  test('uses rdfs:comment (not chorus:) for description', async () => {
+    const d = writeDeps();
+    await createSubdomainPriorArt(d, 'chorus-domain', { label: 'wms', path: '/docs/wms.md', description: 'Dallas WMS' });
+    expect(d.lastUpdate.value).toContain('a chorus:PriorArt');
+    expect(d.lastUpdate.value).toContain('chorus:hasPriorArt');
+    expect(d.lastUpdate.value).toContain('chorus:filePath "/docs/wms.md"');
+    expect(d.lastUpdate.value).toContain('rdfs:comment "Dallas WMS"');
+    expect(d.lastUpdate.value).not.toContain('chorus:description');
+  });
+
+  test('missing label returns 400', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainPriorArt(d, 'chorus-domain', {});
+    expect(r.status).toBe(400);
+  });
+});
+
+describe('updateSubdomainActor (PUT)', () => {
+  test('DELETE-then-INSERT pattern with URI-kind role', async () => {
+    const d = writeDepsMulti();
+    await updateSubdomainActor(d, 'chorus-domain', 'chorus-domain-actor-harvester', {
+      label: 'harvester', role: 'ServiceActor', action: 'harvests',
+    });
+    expect(d.updates).toHaveLength(2);
+    expect(d.updates[0]).toContain('DELETE');
+    expect(d.updates[1]).toContain('INSERT DATA');
+    expect(d.updates[1]).toContain('chorus:actorRole <https://jeffbridwell.com/chorus#ServiceActor>');
+  });
+
+  test('missing label returns 400', async () => {
+    const d = writeDepsMulti();
+    const r = await updateSubdomainActor(d, 'chorus-domain', 'ent', {});
+    expect(r.status).toBe(400);
+  });
+});
+
+describe('updateSubdomainScenario (PUT)', () => {
+  test('all four BDD predicates serialized as literals', async () => {
+    const d = writeDepsMulti();
+    await updateSubdomainScenario(d, 'chorus-domain', 'chorus-domain-scenario-x', {
+      label: 'login', given: 'user', when: 'click', then: 'dashboard', notes: 'nb',
+    });
+    expect(d.updates[1]).toContain('a chorus:Scenario');
+    expect(d.updates[1]).toContain('chorus:scenarioGiven "user"');
+    expect(d.updates[1]).toContain('chorus:scenarioWhen "click"');
+    expect(d.updates[1]).toContain('chorus:scenarioThen "dashboard"');
+    expect(d.updates[1]).toContain('chorus:scenarioNotes "nb"');
+  });
+});
+
+describe('updateSubdomainContract (PUT)', () => {
+  test('endpoint + httpMethod + description', async () => {
+    const d = writeDepsMulti();
+    await updateSubdomainContract(d, 'chorus-domain', 'chorus-domain-contract-x', {
+      label: 'c', path: '/api/c', method: 'POST', description: 'd',
+    });
+    expect(d.updates[1]).toContain('a chorus:Contract');
+    expect(d.updates[1]).toContain('chorus:endpoint "/api/c"');
+    expect(d.updates[1]).toContain('chorus:httpMethod "POST"');
+    expect(d.updates[1]).toContain('chorus:contractDescription "d"');
+  });
+});
+
+describe('updateSubdomainPriorArt (PUT)', () => {
+  test('filePath + rdfs:comment', async () => {
+    const d = writeDepsMulti();
+    await updateSubdomainPriorArt(d, 'chorus-domain', 'chorus-domain-prior-art-x', {
+      label: 'pa', path: '/docs/pa.md', description: 'legacy',
+    });
+    expect(d.updates[1]).toContain('a chorus:PriorArt');
+    expect(d.updates[1]).toContain('chorus:filePath "/docs/pa.md"');
+    expect(d.updates[1]).toContain('rdfs:comment "legacy"');
   });
 });
 
