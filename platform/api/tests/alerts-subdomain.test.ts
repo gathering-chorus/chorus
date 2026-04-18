@@ -1,34 +1,34 @@
 /**
  * Alerts sub-domain graph tests — #1870
  *
- * Integration tests — hit live Athena API at localhost:3340.
  * Alerts is a flat collection: 14 rules + notification channel as instances,
  * each rule with a monitors edge to the domain it watches.
  * No child sub-domains — Jeff's direction: keep it flat like code or tests.
+ *
+ * Converted to in-process harness (#2173 AC4). Still requires live Fuseki
+ * on 3030 (handlers hit SPARQL directly); mocking at the handler seam lands
+ * with Silas's decomposition design.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('Alerts sub-domain graph (#1870)', () => {
+  let harness: TestApp;
 
-describeIntegration('Alerts sub-domain graph (#1870)', () => {
-  // Alert rule instances were 14+ at #1870. Current graph has zero — the data
-  // hasn't been repopulated into the new urn:chorus:ontology structure. Tests
-  // shape-check the endpoint, not specific counts, until data is reloaded.
-  // Fuseki-direct tests (via /pods/query) were dropped per "no raw Fuseki"
-  // principle — should go through the API layer.
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
+
   test('alerts-monitors-domain endpoint returns valid structure', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/alerts-monitors-domain`);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as { data?: { instances?: unknown[] } };
     expect(body.data).toBeDefined();
-    expect(Array.isArray(body.data.instances)).toBe(true);
+    expect(Array.isArray(body.data?.instances)).toBe(true);
   }, 15_000);
 
   test('alerts-monitors-domain has no child sub-domains (flat collection)', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain`);
-    const body = await res.json();
-    expect((body.data.domains || []).length).toBe(0);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/alerts-monitors-domain`);
+    const body = (await res.json()) as { data?: { domains?: unknown[] } };
+    expect((body.data?.domains || []).length).toBe(0);
   }, 15_000);
 });

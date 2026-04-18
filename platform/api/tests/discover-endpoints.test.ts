@@ -5,22 +5,24 @@
  * Prior work: follows discover-code (#1868) and discover-pages (#2065) pattern.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('Discover endpoints (#2066)', () => {
 
-describeIntegration('Discover endpoints (#2066)', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('POST /api/athena/discover-endpoints returns endpoint count > 0', async () => {
-    const res = await fetch(`${API}/api/athena/discover-endpoints`, { method: 'POST' });
+    const res = await fetch(`${harness.baseUrl}/api/athena/discover-endpoints`, { method: 'POST' });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.count).toBeGreaterThan(0);
   }, 30_000);
 
   test('discovered endpoints have method, path, handler, and domainId', async () => {
-    const res = await fetch(`${API}/api/athena/discover-endpoints`, { method: 'POST' });
+    const res = await fetch(`${harness.baseUrl}/api/athena/discover-endpoints`, { method: 'POST' });
     const body = await res.json();
     const entries = body.data?.entries || [];
     expect(entries.length).toBeGreaterThan(0);
@@ -32,7 +34,7 @@ describeIntegration('Discover endpoints (#2066)', () => {
   }, 30_000);
 
   test('seed routes map to seeds-domain', async () => {
-    const res = await fetch(`${API}/api/athena/discover-endpoints`, { method: 'POST' });
+    const res = await fetch(`${harness.baseUrl}/api/athena/discover-endpoints`, { method: 'POST' });
     const body = await res.json();
     const entries = body.data?.entries || [];
     const seedRoutes = entries.filter((e: any) => e.domainId === 'seeds-domain');
@@ -41,8 +43,8 @@ describeIntegration('Discover endpoints (#2066)', () => {
   }, 30_000);
 
   test('GET /api/athena/subdomains/:id/services returns endpoints for populated domain', async () => {
-    await fetch(`${API}/api/athena/discover-endpoints`, { method: 'POST' });
-    const res = await fetch(`${API}/api/athena/subdomains/seeds-domain/services`);
+    await fetch(`${harness.baseUrl}/api/athena/discover-endpoints`, { method: 'POST' });
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/seeds-domain/services`);
     expect(res.status).toBe(200);
     const body = await res.json();
     const endpoints = body.data?.endpoints || [];
@@ -52,7 +54,7 @@ describeIntegration('Discover endpoints (#2066)', () => {
   }, 30_000);
 
   test('endpoints include multiple HTTP methods', async () => {
-    const res = await fetch(`${API}/api/athena/discover-endpoints`, { method: 'POST' });
+    const res = await fetch(`${harness.baseUrl}/api/athena/discover-endpoints`, { method: 'POST' });
     const body = await res.json();
     const entries = body.data?.entries || [];
     const methods = new Set(entries.map((e: any) => e.method));

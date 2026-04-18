@@ -4,29 +4,29 @@
  * Bug: API responses show UTC timestamps (.toISOString()) instead of Boston time.
  * Jeff sees "2026-04-11T18:30:00.000Z" when it's 2:30pm in Boston.
  *
- * Integration tests — hit live Chorus API at localhost:3340.
+ * Converted to in-process harness (#2173 AC4).
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('#1826: API timestamps show Boston time, not UTC', () => {
+  let harness: TestApp;
 
-describeIntegration('#1826: API timestamps show Boston time, not UTC', () => {
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
+
   test('freshness endpoint timestamp is not UTC ISO format', async () => {
-    const res = await fetch(`${API}/api/chorus/freshness`);
-    const body = await res.json();
-    // Bug: timestamp ends with Z (UTC) — should show Boston time
+    const res = await fetch(`${harness.baseUrl}/api/chorus/freshness`);
+    const body = (await res.json()) as { timestamp?: string };
     expect(body.timestamp).toBeDefined();
     expect(body.timestamp).not.toMatch(/Z$/);
     expect(body.timestamp).not.toMatch(/\.\d{3}Z$/);
   });
 
   test('athena envelope timestamp is Boston time', async () => {
-    const res = await fetch(`${API}/api/athena/health`);
-    const body = await res.json();
-    expect(body._meta.timestamp).toBeDefined();
-    // Should not end with Z (UTC)
-    expect(body._meta.timestamp).not.toMatch(/\.\d{3}Z$/);
+    const res = await fetch(`${harness.baseUrl}/api/athena/health`);
+    const body = (await res.json()) as { _meta?: { timestamp?: string } };
+    expect(body._meta?.timestamp).toBeDefined();
+    expect(body._meta?.timestamp).not.toMatch(/\.\d{3}Z$/);
   });
 });

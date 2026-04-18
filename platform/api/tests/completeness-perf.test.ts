@@ -7,15 +7,18 @@
  * stays under budget.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
+
 const fs = require('fs');
 const path = require('path');
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
-
 // Structural test — no integration needed
 describe('#1979: Completeness query structure', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('no single SPARQL query has more than 2 OPTIONAL cross-graph joins', () => {
     const serverSrc = fs.readFileSync(
       path.join(__dirname, '..', 'src', 'server.ts'), 'utf-8'
@@ -34,9 +37,14 @@ describe('#1979: Completeness query structure', () => {
   });
 });
 
-describeIntegration('#1979: Completeness response shape', () => {
+describe('#1979: Completeness response shape', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('completeness returns all expected fields', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/alerts-monitors-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     const data = body.data;
@@ -59,7 +67,7 @@ describeIntegration('#1979: Completeness response shape', () => {
   }, 15_000);
 
   test('lifecycle gates have correct required fields', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/alerts-monitors-domain/completeness`);
     const body = await res.json();
     const lc = body.data.lifecycle;
 
@@ -69,13 +77,13 @@ describeIntegration('#1979: Completeness response shape', () => {
   }, 15_000);
 
   test('completeness responds under 100ms', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/alerts-monitors-domain/completeness`);
     const body = await res.json();
     expect(body._meta.duration_ms).toBeLessThan(100);
   }, 15_000);
 
   test('404 for nonexistent subdomain', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/nonexistent-xyz/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/nonexistent-xyz/completeness`);
     expect(res.status).toBe(404);
   }, 15_000);
 });

@@ -14,58 +14,56 @@
  * at demo time, not overnight.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
-const APP = process.env.GATHERING_APP || 'http://localhost:3000';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+const APP = process.env.GATHERING_APP || 'http://localhost:3000';
 
 const SD = 'chorus-domain'; // representative subdomain for facet tests
 
 // --- Athena top-level endpoints (20-30ms measured) ---
 const ATHENA_TOP_LEVEL = [
-  ['athena health', `${API}/api/athena/health`, 100],
-  ['athena products', `${API}/api/athena/products`, 500],
-  ['athena subproducts', `${API}/api/athena/subproducts`, 100],
-  ['athena subdomains', `${API}/api/athena/subdomains`, 200],
-  ['athena steps', `${API}/api/athena/steps`, 100],
-  ['athena owners', `${API}/api/athena/owners`, 100],
-  ['athena machines', `${API}/api/athena/machines`, 100],
-  ['athena validate', `${API}/api/athena/validate`, 200],
+  ['athena health', `${harness.baseUrl}/api/athena/health`, 100],
+  ['athena products', `${harness.baseUrl}/api/athena/products`, 500],
+  ['athena subproducts', `${harness.baseUrl}/api/athena/subproducts`, 100],
+  ['athena subdomains', `${harness.baseUrl}/api/athena/subdomains`, 200],
+  ['athena steps', `${harness.baseUrl}/api/athena/steps`, 100],
+  ['athena owners', `${harness.baseUrl}/api/athena/owners`, 100],
+  ['athena machines', `${harness.baseUrl}/api/athena/machines`, 100],
+  ['athena validate', `${harness.baseUrl}/api/athena/validate`, 200],
 ];
 
 // --- Athena subdomain detail + facets (20-40ms measured, except cards at 600ms) ---
 const ATHENA_SUBDOMAIN = [
-  ['subdomain detail', `${API}/api/athena/subdomains/${SD}`, 100],
-  ['completeness', `${API}/api/athena/subdomains/${SD}/completeness`, 100],
-  ['blast radius', `${API}/api/athena/subdomains/${SD}/blast-radius`, 200],
-  ['cards', `${API}/api/athena/subdomains/${SD}/cards`, 1000],
-  ['alerts', `${API}/api/athena/subdomains/${SD}/alerts`, 100],
-  ['code', `${API}/api/athena/subdomains/${SD}/code`, 100],
-  ['coverage', `${API}/api/athena/subdomains/${SD}/coverage`, 100],
-  ['test coverage', `${API}/api/athena/subdomains/${SD}/test-coverage`, 100],
-  ['pages', `${API}/api/athena/subdomains/${SD}/pages`, 100],
-  ['services', `${API}/api/athena/subdomains/${SD}/services`, 100],
-  ['actors', `${API}/api/athena/subdomains/${SD}/actors`, 100],
-  ['scenarios', `${API}/api/athena/subdomains/${SD}/scenarios`, 100],
-  ['contract', `${API}/api/athena/subdomains/${SD}/contract`, 100],
-  ['integrations', `${API}/api/athena/subdomains/${SD}/integrations`, 100],
-  ['persistence', `${API}/api/athena/subdomains/${SD}/persistence`, 100],
+  ['subdomain detail', `${harness.baseUrl}/api/athena/subdomains/${SD}`, 100],
+  ['completeness', `${harness.baseUrl}/api/athena/subdomains/${SD}/completeness`, 100],
+  ['blast radius', `${harness.baseUrl}/api/athena/subdomains/${SD}/blast-radius`, 200],
+  ['cards', `${harness.baseUrl}/api/athena/subdomains/${SD}/cards`, 1000],
+  ['alerts', `${harness.baseUrl}/api/athena/subdomains/${SD}/alerts`, 100],
+  ['code', `${harness.baseUrl}/api/athena/subdomains/${SD}/code`, 100],
+  ['coverage', `${harness.baseUrl}/api/athena/subdomains/${SD}/coverage`, 100],
+  ['test coverage', `${harness.baseUrl}/api/athena/subdomains/${SD}/test-coverage`, 100],
+  ['pages', `${harness.baseUrl}/api/athena/subdomains/${SD}/pages`, 100],
+  ['services', `${harness.baseUrl}/api/athena/subdomains/${SD}/services`, 100],
+  ['actors', `${harness.baseUrl}/api/athena/subdomains/${SD}/actors`, 100],
+  ['scenarios', `${harness.baseUrl}/api/athena/subdomains/${SD}/scenarios`, 100],
+  ['contract', `${harness.baseUrl}/api/athena/subdomains/${SD}/contract`, 100],
+  ['integrations', `${harness.baseUrl}/api/athena/subdomains/${SD}/integrations`, 100],
+  ['persistence', `${harness.baseUrl}/api/athena/subdomains/${SD}/persistence`, 100],
 ];
 
 // --- Chorus domain detail (450-520ms measured — the sluggish ones) ---
 const DOMAIN_DETAIL = [
-  ['domain detail (chorus)', `${API}/api/chorus/domain/chorus`, 1000],
-  ['domain detail (seeds)', `${API}/api/chorus/domain/seeds`, 1000],
-  ['domain detail (music)', `${API}/api/chorus/domain/music`, 1000],
-  ['domain detail (photos)', `${API}/api/chorus/domain/photos`, 1000],
+  ['domain detail (chorus)', `${harness.baseUrl}/api/chorus/domain/chorus`, 1000],
+  ['domain detail (seeds)', `${harness.baseUrl}/api/chorus/domain/seeds`, 1000],
+  ['domain detail (music)', `${harness.baseUrl}/api/chorus/domain/music`, 1000],
+  ['domain detail (photos)', `${harness.baseUrl}/api/chorus/domain/photos`, 1000],
 ];
 
 // --- Other Chorus API endpoints ---
 const CHORUS_API = [
-  ['chorus health', `${API}/api/chorus/health`, 100],
-  ['chorus search', `${API}/api/chorus/search?q=test&limit=5`, 1500],
-  ['chorus rcas', `${API}/api/chorus/rcas`, 200],
+  ['chorus health', `${harness.baseUrl}/api/chorus/health`, 100],
+  ['chorus search', `${harness.baseUrl}/api/chorus/search?q=test&limit=5`, 1500],
+  ['chorus rcas', `${harness.baseUrl}/api/chorus/rcas`, 200],
 ];
 
 // --- Page loads (static HTML shells, all <20ms) ---
@@ -91,7 +89,12 @@ async function measureEndpoint(url, thresholdMs) {
 }
 
 function budgetSuite(suiteName, budgets) {
-  describeIntegration(suiteName, () => {
+  describe(suiteName, () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
     for (const [name, url, threshold] of budgets) {
       test(`${name} responds within ${threshold}ms`, async () => {
         const result = await measureEndpoint(url, threshold);
@@ -106,7 +109,7 @@ function budgetSuite(suiteName, budgets) {
 
 // Warmup: first fetch in a Jest process pays Node DNS/connection setup cost
 beforeAll(async () => {
-  await fetch(`${API}/api/chorus/health`).catch(() => {});
+  await fetch(`${harness.baseUrl}/api/chorus/health`).catch(() => {});
 }, 10_000);
 
 budgetSuite('Athena top-level (#1777)', ATHENA_TOP_LEVEL);

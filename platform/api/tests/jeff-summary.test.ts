@@ -6,15 +6,17 @@
  * native endpoints (voice, attention, reprompt, cost) plus the two new ones.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('#2099: /api/chorus/jeff/posture/strip', () => {
 
-describeIntegration('#2099: /api/chorus/jeff/posture/strip', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('returns 200 with frames, total, filtered, days', async () => {
-    const res = await fetch(`${API}/api/chorus/jeff/posture/strip?days=7`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/jeff/posture/strip?days=7`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.frames)).toBe(true);
@@ -24,16 +26,21 @@ describeIntegration('#2099: /api/chorus/jeff/posture/strip', () => {
   }, 10_000);
 
   test('days clamps to max 30', async () => {
-    const res = await fetch(`${API}/api/chorus/jeff/posture/strip?days=100`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/jeff/posture/strip?days=100`);
     const body = await res.json();
     expect(body.days).toBe(30);
   }, 10_000);
 });
 
-describeIntegration('#2099: /api/chorus/werk/activity', () => {
+describe('#2099: /api/chorus/werk/activity', () => {
 
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('returns 200 with entries, total, hours, sources', async () => {
-    const res = await fetch(`${API}/api/chorus/werk/activity?hours=6`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/werk/activity?hours=6`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.entries)).toBe(true);
@@ -43,21 +50,26 @@ describeIntegration('#2099: /api/chorus/werk/activity', () => {
   }, 15_000);
 
   test('hours clamps to [1, 168]', async () => {
-    const res = await fetch(`${API}/api/chorus/werk/activity?hours=500`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/werk/activity?hours=500`);
     const body = await res.json();
     expect(body.hours).toBe(168);
   }, 15_000);
 });
 
-describeIntegration('#2099: /borg/jeff/ static page', () => {
+describe('#2099: /borg/jeff/ static page', () => {
 
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /borg/jeff/ returns 200', async () => {
-    const res = await fetch(`${API}/borg/jeff/`);
+    const res = await fetch(`${harness.baseUrl}/borg/jeff/`);
     expect(res.status).toBe(200);
   }, 10_000);
 
   test('page references 5 chorus-api endpoints', async () => {
-    const res = await fetch(`${API}/borg/jeff/`);
+    const res = await fetch(`${harness.baseUrl}/borg/jeff/`);
     const html = await res.text();
     expect(html).toContain('/api/chorus/voice-analytics');
     expect(html).toContain('/api/chorus/attention-analytics');
@@ -67,7 +79,7 @@ describeIntegration('#2099: /borg/jeff/ static page', () => {
   }, 10_000);
 
   test('page has posture, voice, attention, reprompt, cost, werk panel containers', async () => {
-    const res = await fetch(`${API}/borg/jeff/`);
+    const res = await fetch(`${harness.baseUrl}/borg/jeff/`);
     const html = await res.text();
     expect(html).toContain('id="posture-panel"');
     expect(html).toContain('id="voice-panel"');

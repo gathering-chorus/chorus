@@ -6,10 +6,7 @@
  * (removed/renamed keys) are caught before they degrade crawler snapshots.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
-
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+import { startTestApp, type TestApp } from './lib/test-app';
 
 const EXPECTED_KEYS = [
   'alerts', 'cards', 'code', 'codeScan', 'count',
@@ -22,13 +19,23 @@ const OBJECT_KEYS = ['code', 'codeScan', 'history', 'infra', 'owl', 'rdf'];
 
 const TEST_DOMAINS = ['seeds', 'music', 'blog'];
 
-describeIntegration('Crawl API response shape (#1884)', () => {
+describe('Crawl API response shape (#1884)', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   for (const domain of TEST_DOMAINS) {
     describe(`GET /api/chorus/crawl/${domain}`, () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
       let body;
 
       beforeAll(async () => {
-        const res = await fetch(`${API}/api/chorus/crawl/${domain}`);
+        const res = await fetch(`${harness.baseUrl}/api/chorus/crawl/${domain}`);
         expect(res.status).toBe(200);
         body = await res.json();
       }, 60_000);
@@ -63,7 +70,7 @@ describeIntegration('Crawl API response shape (#1884)', () => {
   }
 
   test('unknown domain returns 404, not 500', async () => {
-    const res = await fetch(`${API}/api/chorus/crawl/nonexistent-test-domain`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/crawl/nonexistent-test-domain`);
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error).toBeDefined();

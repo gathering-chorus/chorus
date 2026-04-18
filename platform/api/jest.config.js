@@ -2,10 +2,17 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ['**/tests/**/*.test.ts'],
-  // Integration tests hit the live chorus-api on :3340 — parallel workers
-  // contend for the server and cause spurious timeouts/404 flakes. Single
-  // worker keeps the suite deterministic at the cost of total runtime.
-  maxWorkers: 1,
+  // maxWorkers history:
+  //   6734fe2d (#2161): pinned to 1 — parallel workers hit shared :3340, caused
+  //     flakes. 50 tests moved from fail to pass under serial.
+  //   #2173 AC4 (this session): tests moved off live :3340 onto the in-process
+  //     harness (tests/lib/test-app.ts). Each worker gets its own ephemeral
+  //     port from app.listen(0). Empirical: 101s serial → 38s at 8 workers
+  //     across 393 passing tests. Lifted to 50% as a conservative step
+  //     because a handful of tests still hit real Fuseki/SQLite with
+  //     state-mutating writes; those get mocked at handler seams as
+  //     decomposition lands. If flakes return, lower, don't re-pin to 1.
+  maxWorkers: '50%',
   // ts-jest diagnostics off — type checking is tsc's job, not the test runner's.
   // Tests in this dir were written for default-jest (no strict TS) and use
   // `body.data` style access on `unknown`-typed `res.json()` returns.

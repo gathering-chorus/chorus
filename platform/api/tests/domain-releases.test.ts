@@ -5,15 +5,17 @@
  * Each release has card ID, title, commit, timestamp, role.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('#1910: domain release history', () => {
 
-describeIntegration('#1910: domain release history', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /api/chorus/domain/:name/releases returns release list', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/releases`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/releases`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
@@ -22,7 +24,7 @@ describeIntegration('#1910: domain release history', () => {
   }, 15_000);
 
   test('each release has card, commit, timestamp, and title', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/releases`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/releases`);
     const body = await res.json();
     var release = body.data.releases[0];
     expect(release).toHaveProperty('cardId');
@@ -32,7 +34,7 @@ describeIntegration('#1910: domain release history', () => {
   }, 15_000);
 
   test('releases are ordered newest first', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/releases`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/releases`);
     const body = await res.json();
     var releases = body.data.releases;
     if (releases.length >= 2) {
@@ -43,14 +45,14 @@ describeIntegration('#1910: domain release history', () => {
   }, 15_000);
 
   test('uses athena envelope', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/releases`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/releases`);
     const body = await res.json();
     expect(body._meta).toBeDefined();
     expect(body._meta.source).toBe('athena');
   }, 15_000);
 
   test('unknown domain returns empty releases', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/nonexistent-xyz/releases`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/nonexistent-xyz/releases`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.releases).toEqual([]);

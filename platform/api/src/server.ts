@@ -4189,11 +4189,24 @@ const DOMAIN_REGISTRY: Record<string, { product: string; step: string; descripti
   loom:      { product: 'chorus',    step: 'directing', description: 'Team coordination surface. Roles, cards, briefs, decisions.' },
 };
 
+// #2175: domain endpoint is on the envelope hot path (chorus-hooks Rust helper
+// calls it every prompt with a 500ms timeout). Section queries + completeness
+// + board filter spike to >1s cold. Cache full response for 60s — same shape
+// as the existing boardCache / healthCache patterns in this file.
+const domainResponseCache = new Map<string, { body: any; ts: number }>();
+const DOMAIN_CACHE_TTL_MS = 60 * 1000;
+
 app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
   const name = _req.params.name.toLowerCase();
   const meta = DOMAIN_REGISTRY[name];
   if (!meta) {
     res.status(404).json({ error: `Unknown domain: ${name}`, validDomains: Object.keys(DOMAIN_REGISTRY) });
+    return;
+  }
+
+  const cached = domainResponseCache.get(name);
+  if (cached && Date.now() - cached.ts < DOMAIN_CACHE_TTL_MS) {
+    res.json(cached.body);
     return;
   }
 
@@ -4251,27 +4264,74 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
 
     // Fetch completeness from Athena if subdomain exists (#1899)
     let completeness: any = null;
+    let subdomainId: string | null = null;
     try {
       const sdId = `${name}-service`;
       const cRes = await fetch(`http://localhost:3340/api/athena/subdomains/${sdId}/completeness`);
       if (cRes.ok) {
         const cBody = await cRes.json() as any;
         completeness = cBody.data;
+        subdomainId = sdId;
       } else {
         // Try domain suffix
         const cRes2 = await fetch(`http://localhost:3340/api/athena/subdomains/${name}-domain/completeness`);
         if (cRes2.ok) {
           const cBody2 = await cRes2.json() as any;
           completeness = cBody2.data;
+          subdomainId = `${name}-domain`;
         }
       }
     } catch {}
+
+    // #2175: if sections empty (no legacy HTML page) and we have a subdomain,
+    // pull section labels from Fuseki via per-predicate parallel queries.
+    if (subdomainId && Object.keys(sections).length === 0) {
+      const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
+      const sectionPreds: Array<[string, string]> = [
+        ['scenarios', 'hasScenario'],
+        ['contract', 'hasContract'],
+        ['prior_art', 'hasPriorArt'],
+        ['integrations', 'hasIntegration'],
+        ['services', 'hasService'],
+        ['persistence', 'hasPersistence'],
+        ['pipeline', 'hasPipeline'],
+        ['gaps', 'hasGap'],
+        ['actors', 'hasActor'],
+        ['pages', 'hasPage'],
+        ['logs', 'hasLogSource'],
+      ];
+      try {
+        const sectionQuery = (pred: string) => `
+          PREFIX chorus: <https://jeffbridwell.com/chorus#>
+          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+          SELECT ?label WHERE {
+            GRAPH <urn:chorus:instances> {
+              <${sdUri}> chorus:${pred} ?e .
+              OPTIONAL { ?e rdfs:label ?label }
+            }
+          } LIMIT 20
+        `;
+        const results = await Promise.all(
+          sectionPreds.map(([, pred]) => athenaSparqlQuery(sectionQuery(pred)).catch(() => null))
+        );
+        sectionPreds.forEach(([key], i) => {
+          const r = results[i];
+          if (!r?.results?.bindings?.length) return;
+          const items = r.results.bindings
+            .map((b: any) => b?.label?.value)
+            .filter(Boolean);
+          if (items.length > 0) {
+            sections[key] = { title: key.replace(/_/g, ' '), items };
+          }
+        });
+      } catch {}
+    }
 
     if (completeness && completeness.percentage < 60) {
       console.warn(`[domain-completeness] ${name}: ${completeness.percentage}% — missing: ${completeness.missing?.join(', ')}`);
     }
 
-    res.json({
+    const body = {
       domain: name,
       product: meta.product,
       step: meta.step,
@@ -4291,7 +4351,9 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
       } : null,
       hasIcd: ['photos', 'stories', 'people', 'music', 'documents', 'social', 'notes', 'webmethods'].includes(name),
       icdEndpoint: `/api/icd/domains/${name}`,
-    });
+    };
+    domainResponseCache.set(name, { body, ts: Date.now() });
+    res.json(body);
   } catch (error) {
     res.status(500).json({ error: 'Failed to build domain view', detail: error instanceof Error ? error.message : String(error) });
   }
@@ -6582,43 +6644,44 @@ app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Res
       GROUP BY ?label ?comment ?ownerLabel ?stepLabel
     `;
 
-    // Query 2: Instance counts — single graph, no cross-graph joins (#1979)
-    const countsQuery = `
+    // #2175: 11 OPTIONAL joins in one query explode combinatorially on Fuseki
+    // TDB2 once any predicate has >1 result (>60s on populated domains).
+    // Split into 11 trivial per-predicate COUNTs and run in parallel — each
+    // is O(matches), no join cost. Total latency = slowest single query (~10ms).
+    const countPreds = [
+      ['actorCount',       'hasActor'],
+      ['scenarioCount',    'hasScenario'],
+      ['contractCount',    'hasContract'],
+      ['priorArtCount',    'hasPriorArt'],
+      ['pageCount',        'hasPage'],
+      ['integrationCount', 'hasIntegration'],
+      ['serviceCount',     'hasService'],
+      ['persistenceCount', 'hasPersistence'],
+      ['pipelineCount',    'hasPipeline'],
+      ['logSourceCount',   'hasLogSource'],
+      ['gapCount',         'hasGap'],
+    ] as const;
+    const countQuery = (predicate: string) => `
       PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      SELECT
-        (COUNT(DISTINCT ?actor) AS ?actorCount)
-        (COUNT(DISTINCT ?scenario) AS ?scenarioCount)
-        (COUNT(DISTINCT ?contract) AS ?contractCount)
-        (COUNT(DISTINCT ?priorArt) AS ?priorArtCount)
-        (COUNT(DISTINCT ?page) AS ?pageCount)
-        (COUNT(DISTINCT ?integration) AS ?integrationCount)
-        (COUNT(DISTINCT ?service) AS ?serviceCount)
-        (COUNT(DISTINCT ?persistence) AS ?persistenceCount)
-        (COUNT(DISTINCT ?pipeline) AS ?pipelineCount)
-        (COUNT(DISTINCT ?logSource) AS ?logSourceCount)
-        (COUNT(DISTINCT ?gap) AS ?gapCount)
-      WHERE {
+      SELECT (COUNT(DISTINCT ?e) AS ?n) WHERE {
         GRAPH <urn:chorus:instances> {
-          OPTIONAL { <${sdUri}> chorus:hasActor ?actor }
-          OPTIONAL { <${sdUri}> chorus:hasScenario ?scenario }
-          OPTIONAL { <${sdUri}> chorus:hasContract ?contract }
-          OPTIONAL { <${sdUri}> chorus:hasPriorArt ?priorArt }
-          OPTIONAL { <${sdUri}> chorus:hasPage ?page }
-          OPTIONAL { <${sdUri}> chorus:hasIntegration ?integration }
-          OPTIONAL { <${sdUri}> chorus:hasService ?service }
-          OPTIONAL { <${sdUri}> chorus:hasPersistence ?persistence }
-          OPTIONAL { <${sdUri}> chorus:hasPipeline ?pipeline }
-          OPTIONAL { <${sdUri}> chorus:hasLogSource ?logSource }
-          OPTIONAL { <${sdUri}> chorus:hasGap ?gap }
+          <${sdUri}> chorus:${predicate} ?e
         }
       }
     `;
 
-    // Run both queries in parallel — no cross-graph join in either
-    const [metaResult, countsResult] = await Promise.all([
+    const [metaResult, ...countResults] = await Promise.all([
       athenaSparqlQuery(metaQuery),
-      athenaSparqlQuery(countsQuery),
+      ...countPreds.map(([, pred]) => athenaSparqlQuery(countQuery(pred))),
     ]);
+
+    // Reassemble countsResult in the shape the downstream code expects
+    const countsBinding: Record<string, { value: string }> = {};
+    countPreds.forEach(([key], i) => {
+      const n = countResults[i]?.results?.bindings?.[0]?.n?.value || '0';
+      countsBinding[key] = { value: n };
+    });
+    const countsResult = { results: { bindings: [countsBinding] } };
 
     const b = metaResult.results.bindings[0];
     if (!b) {

@@ -5,26 +5,17 @@
  * Requires RUN_INTEGRATION=true, Chorus API running, Fuseki on 3030.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-let apiUp = false;
 
-beforeAll(async () => {
-  if (!INTEGRATION_ENABLED) return;
-  try {
-    const res = await fetch(`${API}/api/chorus/health`);
-    apiUp = res.ok;
-  } catch {
-    apiUp = false;
-  }
-});
+describe('POST /api/chorus/rca', () => {
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+  let harness: TestApp;
 
-describeIntegration('POST /api/chorus/rca', () => {
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('creates RCA entry with required fields', async () => {
-    const res = await fetch(`${API}/api/chorus/rca`, {
+    const res = await fetch(`${harness.baseUrl}/api/chorus/rca`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -46,7 +37,7 @@ describeIntegration('POST /api/chorus/rca', () => {
   });
 
   test('rejects RCA missing required fields', async () => {
-    const res = await fetch(`${API}/api/chorus/rca`, {
+    const res = await fetch(`${harness.baseUrl}/api/chorus/rca`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Incomplete RCA' }),
@@ -57,7 +48,7 @@ describeIntegration('POST /api/chorus/rca', () => {
   });
 
   test('links RCA to card IDs and spine events', async () => {
-    const createRes = await fetch(`${API}/api/chorus/rca`, {
+    const createRes = await fetch(`${harness.baseUrl}/api/chorus/rca`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -75,7 +66,7 @@ describeIntegration('POST /api/chorus/rca', () => {
     const created = await createRes.json();
 
     // Verify the links are queryable via GET
-    const listRes = await fetch(`${API}/api/chorus/rcas`);
+    const listRes = await fetch(`${harness.baseUrl}/api/chorus/rcas`);
     const list = await listRes.json();
     const rca = list.results.find(r => r.id === created.id);
     expect(rca).toBeDefined();
@@ -85,9 +76,14 @@ describeIntegration('POST /api/chorus/rca', () => {
   });
 });
 
-describeIntegration('GET /api/chorus/rcas', () => {
+describe('GET /api/chorus/rcas', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('returns list with status field', async () => {
-    const res = await fetch(`${API}/api/chorus/rcas`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/rcas`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.results)).toBe(true);
@@ -102,7 +98,7 @@ describeIntegration('GET /api/chorus/rcas', () => {
   });
 
   test('filters by status query param', async () => {
-    const res = await fetch(`${API}/api/chorus/rcas?status=open`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/rcas?status=open`);
     expect(res.status).toBe(200);
     const body = await res.json();
     for (const rca of body.results) {
@@ -111,7 +107,7 @@ describeIntegration('GET /api/chorus/rcas', () => {
   });
 
   test('returns total count', async () => {
-    const res = await fetch(`${API}/api/chorus/rcas`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/rcas`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(typeof body.total).toBe('number');
@@ -119,9 +115,14 @@ describeIntegration('GET /api/chorus/rcas', () => {
   });
 });
 
-describeIntegration('RCA sub-domain in Athena', () => {
+describe('RCA sub-domain in Athena', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('loom-rcas sub-domain exists with actors and scenarios', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/loom-rcas/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/loom-rcas/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.label).toMatch(/rca/i);
@@ -130,9 +131,14 @@ describeIntegration('RCA sub-domain in Athena', () => {
   });
 });
 
-describeIntegration('Real RCA entries populated', () => {
+describe('Real RCA entries populated', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('at least 2 RCAs exist from real incidents', async () => {
-    const res = await fetch(`${API}/api/chorus/rcas`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/rcas`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.total).toBeGreaterThanOrEqual(2);

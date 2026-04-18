@@ -5,13 +5,10 @@
  * static page + JSON endpoint. Data sourced from chorus logs directly.
  */
 
+import { startTestApp, type TestApp } from './lib/test-app';
+
 const fs = require('fs');
 const path = require('path');
-
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
-
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
 
 const CATEGORIES = [
   'search-hierarchy', 'decision-gate', 'jdi-gate', 'app-state-guard',
@@ -19,16 +16,21 @@ const CATEGORIES = [
   'credential-guard', 'ops-health', 'nudge', 'build-gate', 'permission-logger',
 ];
 
-describeIntegration('#2099: /api/chorus/hooks/summary', () => {
+describe('#2099: /api/chorus/hooks/summary', () => {
 
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('returns 200 and JSON', async () => {
-    const res = await fetch(`${API}/api/chorus/hooks/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/hooks/summary`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/json/);
   }, 15_000);
 
   test('response has summaries array and totals object', async () => {
-    const res = await fetch(`${API}/api/chorus/hooks/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/hooks/summary`);
     const body = await res.json();
     expect(Array.isArray(body.summaries)).toBe(true);
     expect(body.totals).toBeDefined();
@@ -40,7 +42,7 @@ describeIntegration('#2099: /api/chorus/hooks/summary', () => {
   }, 15_000);
 
   test('summaries cover all 13 hook categories', async () => {
-    const res = await fetch(`${API}/api/chorus/hooks/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/hooks/summary`);
     const body = await res.json();
     const returned = body.summaries.map(s => s.category);
     for (const cat of CATEGORIES) {
@@ -49,7 +51,7 @@ describeIntegration('#2099: /api/chorus/hooks/summary', () => {
   }, 15_000);
 
   test('each summary has label, description, enforcement, counts', async () => {
-    const res = await fetch(`${API}/api/chorus/hooks/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/hooks/summary`);
     const body = await res.json();
     const s = body.summaries[0];
     expect(s).toHaveProperty('category');
@@ -67,6 +69,11 @@ describeIntegration('#2099: /api/chorus/hooks/summary', () => {
 });
 
 describe('#2119: hook category descriptions match current enforcement', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('app-state-guard description references kill/launchctl and app-state.sh', () => {
     const src = fs.readFileSync(
       path.resolve(__dirname, '../src/hooks-summary.ts'),
@@ -80,22 +87,27 @@ describe('#2119: hook category descriptions match current enforcement', () => {
   });
 });
 
-describeIntegration('#2099: /borg/hooks/ static page', () => {
+describe('#2099: /borg/hooks/ static page', () => {
 
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /borg/hooks/ returns 200', async () => {
-    const res = await fetch(`${API}/borg/hooks/`);
+    const res = await fetch(`${harness.baseUrl}/borg/hooks/`);
     expect(res.status).toBe(200);
   }, 10_000);
 
   test('page contains Governance Hooks heading and summary endpoint reference', async () => {
-    const res = await fetch(`${API}/borg/hooks/`);
+    const res = await fetch(`${harness.baseUrl}/borg/hooks/`);
     const html = await res.text();
     expect(html).toContain('Governance Hooks');
     expect(html).toContain('/api/chorus/hooks/summary');
   }, 10_000);
 
   test('page has totals bar and category grid containers', async () => {
-    const res = await fetch(`${API}/borg/hooks/`);
+    const res = await fetch(`${harness.baseUrl}/borg/hooks/`);
     const html = await res.text();
     expect(html).toContain('id="totals"');
     expect(html).toContain('id="categories"');

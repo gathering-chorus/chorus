@@ -4,16 +4,18 @@
  * Run: RUN_INTEGRATION=true npx jest tests/trace-convergence-callstack.test.ts
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('Convergence Call Stack Tracing (#2103)', () => {
 
-describeIntegration('Convergence Call Stack Tracing (#2103)', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('Convergence trace has callStack=convergence', async () => {
     const correlationId = 'convergence-test-' + Date.now();
-    await fetch(API + '/api/chorus/trace', {
+    await fetch(harness.baseUrl + '/api/chorus/trace', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -25,7 +27,7 @@ describeIntegration('Convergence Call Stack Tracing (#2103)', () => {
       }),
     });
 
-    const res = await fetch(API + '/api/chorus/trace/' + correlationId);
+    const res = await fetch(harness.baseUrl + '/api/chorus/trace/' + correlationId);
     const data = await res.json();
     expect(data.hops).toHaveLength(1);
     expect(data.hops[0].call_stack).toBe('convergence');
@@ -33,7 +35,7 @@ describeIntegration('Convergence Call Stack Tracing (#2103)', () => {
 
   test('SHACL validation failure creates error hop', async () => {
     const correlationId = 'convergence-fail-' + Date.now();
-    await fetch(API + '/api/chorus/trace', {
+    await fetch(harness.baseUrl + '/api/chorus/trace', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -45,14 +47,14 @@ describeIntegration('Convergence Call Stack Tracing (#2103)', () => {
       }),
     });
 
-    const res = await fetch(API + '/api/chorus/trace/' + correlationId);
+    const res = await fetch(harness.baseUrl + '/api/chorus/trace/' + correlationId);
     const data = await res.json();
     expect(data.hops[0].error_class).toBe('validation');
     expect(data.hops[0].error_message).toContain('ownedBy');
   });
 
   test('Convergence traces queryable by domain', async () => {
-    const res = await fetch(API + '/api/chorus/trace/integrations/chorus');
+    const res = await fetch(harness.baseUrl + '/api/chorus/trace/integrations/chorus');
     expect(res.status).toBe(200);
     const data = await res.json();
     const convEdges = data.integrations.filter(function(i) { return i.call_stack === 'convergence'; });

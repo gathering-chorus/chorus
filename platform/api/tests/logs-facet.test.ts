@@ -5,41 +5,32 @@
  * Requires RUN_INTEGRATION=true, Chorus API running, Fuseki on 3030.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-let apiUp = false;
-
-beforeAll(async () => {
-  if (!INTEGRATION_ENABLED) return;
-  try {
-    const res = await fetch(`${API}/api/athena/health`);
-    apiUp = res.ok;
-  } catch {
-    apiUp = false;
-  }
-});
-
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
 
 // AC1: Chorus domain subdomains have log sources mapped
-describeIntegration('AC1: Chorus subdomains have log sources', () => {
+describe('AC1: Chorus subdomains have log sources', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('spine-service has log sources', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/spine-service/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/spine-service/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.logs).toBe(true);
   });
 
   test('chorus-domain has log sources', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/chorus-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/chorus-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.logs).toBe(true);
   });
 
   test('alerts-monitors-domain has log sources', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/alerts-monitors-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/alerts-monitors-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.logs).toBe(true);
@@ -47,9 +38,14 @@ describeIntegration('AC1: Chorus subdomains have log sources', () => {
 });
 
 // AC2: Observability domain has monitoring log sources
-describeIntegration('AC2: Observability has monitoring log sources', () => {
+describe('AC2: Observability has monitoring log sources', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('observability-domain has log sources', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/observability-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.logs).toBe(true);
@@ -57,9 +53,14 @@ describeIntegration('AC2: Observability has monitoring log sources', () => {
 });
 
 // AC3: Infrastructure domain has compute service log sources
-describeIntegration('AC3: Infrastructure has compute log sources', () => {
+describe('AC3: Infrastructure has compute log sources', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('infrastructure-domain has log sources', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/infrastructure-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/infrastructure-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.logs).toBe(true);
@@ -67,9 +68,14 @@ describeIntegration('AC3: Infrastructure has compute log sources', () => {
 });
 
 // AC4: GET /api/chorus/domain/chorus/logs returns populated log sources
-describeIntegration('AC4: Domain logs facet returns data', () => {
+describe('AC4: Domain logs facet returns data', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('chorus domain logs facet returns non-empty list', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/logs`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/logs`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('domain-logs');
@@ -78,9 +84,14 @@ describeIntegration('AC4: Domain logs facet returns data', () => {
 });
 
 // AC5: Each log source includes label, location, and status
-describeIntegration('AC5: Log source metadata complete', () => {
+describe('AC5: Log source metadata complete', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('chorus-domain log sources have label and location', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/chorus-domain/logs`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/chorus-domain/logs`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.logs.length).toBeGreaterThan(0);

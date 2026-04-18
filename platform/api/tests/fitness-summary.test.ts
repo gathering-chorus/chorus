@@ -6,30 +6,32 @@
  * rate, search-hierarchy rate, retry-cluster rate.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
-
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+import { startTestApp, type TestApp } from './lib/test-app';
 
 const EXPECTED_IDS = ['jdi-rate', 'decision-gate-rate', 'search-hierarchy-rate', 'retry-rate'];
 
-describeIntegration('#2099: /api/chorus/fitness/summary', () => {
+describe('#2099: /api/chorus/fitness/summary', () => {
 
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('returns 200 and JSON', async () => {
-    const res = await fetch(`${API}/api/chorus/fitness/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/fitness/summary`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/json/);
   }, 15_000);
 
   test('response has functions array', async () => {
-    const res = await fetch(`${API}/api/chorus/fitness/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/fitness/summary`);
     const body = await res.json();
     expect(Array.isArray(body.functions)).toBe(true);
     expect(body.functions.length).toBe(4);
   }, 15_000);
 
   test('functions cover all 4 fitness metrics', async () => {
-    const res = await fetch(`${API}/api/chorus/fitness/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/fitness/summary`);
     const body = await res.json();
     const ids = body.functions.map(f => f.id);
     for (const id of EXPECTED_IDS) {
@@ -38,7 +40,7 @@ describeIntegration('#2099: /api/chorus/fitness/summary', () => {
   }, 15_000);
 
   test('each function has byRole, trend7d, overall7d, direction', async () => {
-    const res = await fetch(`${API}/api/chorus/fitness/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/fitness/summary`);
     const body = await res.json();
     const f = body.functions[0];
     expect(f).toHaveProperty('id');
@@ -53,7 +55,7 @@ describeIntegration('#2099: /api/chorus/fitness/summary', () => {
   }, 15_000);
 
   test('byRole covers silas, wren, kade', async () => {
-    const res = await fetch(`${API}/api/chorus/fitness/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/fitness/summary`);
     const body = await res.json();
     const f = body.functions[0];
     expect(f.byRole).toHaveProperty('silas');
@@ -64,22 +66,27 @@ describeIntegration('#2099: /api/chorus/fitness/summary', () => {
   }, 15_000);
 });
 
-describeIntegration('#2099: /borg/fitness/ static page', () => {
+describe('#2099: /borg/fitness/ static page', () => {
 
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /borg/fitness/ returns 200', async () => {
-    const res = await fetch(`${API}/borg/fitness/`);
+    const res = await fetch(`${harness.baseUrl}/borg/fitness/`);
     expect(res.status).toBe(200);
   }, 10_000);
 
   test('page contains Fitness Functions heading and summary endpoint', async () => {
-    const res = await fetch(`${API}/borg/fitness/`);
+    const res = await fetch(`${harness.baseUrl}/borg/fitness/`);
     const html = await res.text();
     expect(html).toContain('Fitness Functions');
     expect(html).toContain('/api/chorus/fitness/summary');
   }, 10_000);
 
   test('page has functions container', async () => {
-    const res = await fetch(`${API}/borg/fitness/`);
+    const res = await fetch(`${harness.baseUrl}/borg/fitness/`);
     const html = await res.text();
     expect(html).toContain('id="functions"');
   }, 10_000);

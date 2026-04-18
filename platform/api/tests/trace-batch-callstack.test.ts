@@ -4,19 +4,21 @@
  * Run: RUN_INTEGRATION=true npx jest tests/trace-batch-callstack.test.ts
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('Batch Call Stack Tracing (#2102)', () => {
 
-describeIntegration('Batch Call Stack Tracing (#2102)', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('Crawler trace has 4 hops per domain (start, query, index, complete)', async () => {
     const correlationId = 'crawl-test-' + Date.now();
 
     for (let hop = 1; hop <= 4; hop++) {
       const services = ['crawler-start', 'crawl-api', 'sqlite-index', 'crawl-complete'];
-      await fetch(API + '/api/chorus/trace', {
+      await fetch(harness.baseUrl + '/api/chorus/trace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -30,7 +32,7 @@ describeIntegration('Batch Call Stack Tracing (#2102)', () => {
       });
     }
 
-    const res = await fetch(API + '/api/chorus/trace/' + correlationId);
+    const res = await fetch(harness.baseUrl + '/api/chorus/trace/' + correlationId);
     const data = await res.json();
     expect(data.hops).toHaveLength(4);
     expect(data.hops[0].call_stack).toBe('batch');
@@ -38,7 +40,7 @@ describeIntegration('Batch Call Stack Tracing (#2102)', () => {
   });
 
   test('Batch traces queryable by domain via integrations endpoint', async () => {
-    const res = await fetch(API + '/api/chorus/trace/integrations/music');
+    const res = await fetch(harness.baseUrl + '/api/chorus/trace/integrations/music');
     expect(res.status).toBe(200);
     const data = await res.json();
     const batchEdges = data.integrations.filter(function(i) { return i.call_stack === 'batch'; });
@@ -48,7 +50,7 @@ describeIntegration('Batch Call Stack Tracing (#2102)', () => {
   test('Batch callStack distinguishes from integration traces', async () => {
     const correlationId = 'batch-vs-integ-' + Date.now();
 
-    await fetch(API + '/api/chorus/trace', {
+    await fetch(harness.baseUrl + '/api/chorus/trace', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -59,7 +61,7 @@ describeIntegration('Batch Call Stack Tracing (#2102)', () => {
       }),
     });
 
-    const res = await fetch(API + '/api/chorus/trace/' + correlationId);
+    const res = await fetch(harness.baseUrl + '/api/chorus/trace/' + correlationId);
     const data = await res.json();
     expect(data.hops[0].call_stack).toBe('batch');
   });

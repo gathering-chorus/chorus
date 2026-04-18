@@ -6,6 +6,8 @@
  * needed). Companion to the existing integration suite in patterns-summary.test.ts.
  */
 
+import { startTestApp, type TestApp } from './lib/test-app';
+
 import { getPatternsSummary } from '../src/patterns-summary';
 
 const realFetch = global.fetch;
@@ -27,6 +29,11 @@ afterEach(() => {
 });
 
 describe('getPatternsSummary', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('empty Loki response → zero counts and empty byDate', async () => {
     mockFetch(() => makeLokiResponse([]));
     const r = await getPatternsSummary(7);

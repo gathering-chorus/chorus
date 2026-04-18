@@ -6,17 +6,19 @@
  * gets it during /pull. AX = UX.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('#2060: consolidated domain API', () => {
 
-describeIntegration('#2060: consolidated domain API', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   // --- /code ---
 
   test('GET /api/chorus/domain/:name/code returns code files', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/code`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/code`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
@@ -27,7 +29,7 @@ describeIntegration('#2060: consolidated domain API', () => {
   }, 10_000);
 
   test('/code does not include test files — tests have own endpoint', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/code`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/code`);
     const body = await res.json();
     const testFiles = body.data.files.filter(function(f) {
       return /\/(tests?|__tests__)\//.test(f.path) || /\.(test|spec)\./.test(f.path);
@@ -36,8 +38,8 @@ describeIntegration('#2060: consolidated domain API', () => {
   }, 10_000);
 
   test('/code accepts domain name with or without suffix', async () => {
-    const r1 = await fetch(`${API}/api/chorus/domain/seeds/code`);
-    const r2 = await fetch(`${API}/api/chorus/domain/seeds-domain/code`);
+    const r1 = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/code`);
+    const r2 = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds-domain/code`);
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);
     const b1 = await r1.json();
@@ -48,7 +50,7 @@ describeIntegration('#2060: consolidated domain API', () => {
   // --- /tests ---
 
   test('GET /api/chorus/domain/:name/tests returns test coverage', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/tests`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/tests`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
@@ -60,7 +62,7 @@ describeIntegration('#2060: consolidated domain API', () => {
   // --- /alerts ---
 
   test('GET /api/chorus/domain/:name/alerts returns alert rules', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/alerts`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/alerts`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
@@ -71,7 +73,7 @@ describeIntegration('#2060: consolidated domain API', () => {
   // --- /logs ---
 
   test('GET /api/chorus/domain/:name/logs returns log sources', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/logs`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/logs`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
@@ -81,7 +83,7 @@ describeIntegration('#2060: consolidated domain API', () => {
   // --- /services ---
 
   test('GET /api/chorus/domain/:name/services returns endpoints', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/services`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/services`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
@@ -94,7 +96,7 @@ describeIntegration('#2060: consolidated domain API', () => {
   test('all five facet endpoints use identical envelope shape', async () => {
     const facets = ['code', 'tests', 'alerts', 'logs', 'services'];
     const responses = await Promise.all(
-      facets.map(f => fetch(`${API}/api/chorus/domain/seeds/${f}`).then(r => r.json()))
+      facets.map(f => fetch(`${harness.baseUrl}/api/chorus/domain/seeds/${f}`).then(r => r.json()))
     );
     for (const body of responses) {
       expect(body).toHaveProperty('_meta');
@@ -107,7 +109,7 @@ describeIntegration('#2060: consolidated domain API', () => {
   // --- Blast radius consumer ---
 
   test('blast radius can use /code endpoint — files have path strings', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/code`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/code`);
     const body = await res.json();
     const filePaths = body.data.files.map(function(f) { return f.path; });
     expect(Array.isArray(filePaths)).toBe(true);
@@ -118,7 +120,7 @@ describeIntegration('#2060: consolidated domain API', () => {
   // --- Empty result for unknown domain ---
 
   test('returns empty data for unknown domain, not 500', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/nonexistent-xyz/code`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/nonexistent-xyz/code`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.files).toEqual([]);

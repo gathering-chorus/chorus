@@ -6,21 +6,23 @@
  * cases per layer, classifies each by kind (api/ui/other) and domain.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('#2099: /api/chorus/quality/summary', () => {
 
-describeIntegration('#2099: /api/chorus/quality/summary', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('returns 200 and JSON', async () => {
-    const res = await fetch(`${API}/api/chorus/quality/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/quality/summary`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/json/);
   }, 30_000);
 
   test('response has total, pyramid, repos, scannedAt', async () => {
-    const res = await fetch(`${API}/api/chorus/quality/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/quality/summary`);
     const body = await res.json();
     expect(typeof body.total).toBe('number');
     expect(Array.isArray(body.pyramid)).toBe(true);
@@ -29,13 +31,13 @@ describeIntegration('#2099: /api/chorus/quality/summary', () => {
   }, 30_000);
 
   test('total is positive (real test files exist)', async () => {
-    const res = await fetch(`${API}/api/chorus/quality/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/quality/summary`);
     const body = await res.json();
     expect(body.total).toBeGreaterThan(0);
   }, 30_000);
 
   test('repos include Gathering App and Chorus Platform', async () => {
-    const res = await fetch(`${API}/api/chorus/quality/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/quality/summary`);
     const body = await res.json();
     const names = body.repos.map(r => r.name);
     expect(names).toContain('Gathering App');
@@ -43,7 +45,7 @@ describeIntegration('#2099: /api/chorus/quality/summary', () => {
   }, 30_000);
 
   test('pyramid layers have name, key, count, fileCount, color, files', async () => {
-    const res = await fetch(`${API}/api/chorus/quality/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/quality/summary`);
     const body = await res.json();
     const layer = body.pyramid[0];
     expect(layer).toHaveProperty('name');
@@ -55,10 +57,15 @@ describeIntegration('#2099: /api/chorus/quality/summary', () => {
   }, 30_000);
 });
 
-describeIntegration('#2099: /api/chorus/quality/domain/:domain', () => {
+describe('#2099: /api/chorus/quality/domain/:domain', () => {
 
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /api/chorus/quality/domain/chorus returns domain filter', async () => {
-    const res = await fetch(`${API}/api/chorus/quality/domain/chorus`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/quality/domain/chorus`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.domain).toBe('chorus');
@@ -67,22 +74,27 @@ describeIntegration('#2099: /api/chorus/quality/domain/:domain', () => {
   }, 30_000);
 });
 
-describeIntegration('#2099: /borg/quality/ static page', () => {
+describe('#2099: /borg/quality/ static page', () => {
 
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /borg/quality/ returns 200', async () => {
-    const res = await fetch(`${API}/borg/quality/`);
+    const res = await fetch(`${harness.baseUrl}/borg/quality/`);
     expect(res.status).toBe(200);
   }, 10_000);
 
   test('page contains Quality heading and summary endpoint', async () => {
-    const res = await fetch(`${API}/borg/quality/`);
+    const res = await fetch(`${harness.baseUrl}/borg/quality/`);
     const html = await res.text();
     expect(html).toContain('Quality');
     expect(html).toContain('/api/chorus/quality/summary');
   }, 10_000);
 
   test('page has pyramid container', async () => {
-    const res = await fetch(`${API}/borg/quality/`);
+    const res = await fetch(`${harness.baseUrl}/borg/quality/`);
     const html = await res.text();
     expect(html).toContain('id="pyramid"');
   }, 10_000);

@@ -4,15 +4,17 @@
  * Wire borg:Environment instances into domain-detail services section.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('#2080: borg services on domain page', () => {
 
-describeIntegration('#2080: borg services on domain page', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /api/chorus/domain/:name/infra returns borg environments', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/infra`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/infra`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
@@ -21,7 +23,7 @@ describeIntegration('#2080: borg services on domain page', () => {
   }, 10_000);
 
   test('each environment has name, port, engine, host', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/infra`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/infra`);
     const body = await res.json();
     const env = body.data.environments[0];
     expect(env).toHaveProperty('name');
@@ -30,21 +32,21 @@ describeIntegration('#2080: borg services on domain page', () => {
   }, 10_000);
 
   test('dependency chains are included', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/infra`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/infra`);
     const body = await res.json();
     var withDeps = body.data.environments.filter(function(e) { return e.dependsOn && e.dependsOn.length > 0; });
     expect(withDeps.length).toBeGreaterThan(0);
   }, 10_000);
 
   test('uses athena envelope', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/infra`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/infra`);
     const body = await res.json();
     expect(body._meta).toBeDefined();
     expect(body._meta.source).toBe('athena');
   }, 10_000);
 
   test('returns 200 for any domain — infra is system-wide', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/nonexistent-xyz/infra`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/nonexistent-xyz/infra`);
     expect(res.status).toBe(200);
     const body = await res.json();
     // Borg environments are system-wide, not domain-scoped

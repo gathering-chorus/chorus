@@ -4,11 +4,18 @@
  * Run: RUN_INTEGRATION=true npx jest tests/trace-envelope.test.ts
  */
 
+import { startTestApp, type TestApp } from './lib/test-app';
+
 const CHORUS_API = process.env.CHORUS_API || 'http://localhost:3340';
 
 const describeIntegration = process.env.RUN_INTEGRATION === 'true' ? describe : describe.skip;
 
-describeIntegration('Common Message Envelope (#2097)', () => {
+describe('Common Message Envelope (#2097)', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   // AC #2: Envelope type defined — test via trace creation
   test('POST /api/chorus/trace creates a hop with all envelope fields', async () => {
     const correlationId = `test-${Date.now()}`;

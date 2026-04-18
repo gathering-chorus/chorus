@@ -4,15 +4,17 @@
  * Run: RUN_INTEGRATION=true npx jest tests/spine-event-endpoint.test.ts
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('POST /api/chorus/spine-event (#2109)', () => {
 
-describeIntegration('POST /api/chorus/spine-event (#2109)', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('accepts a spine event with envelope fields', async () => {
-    const res = await fetch(`${API}/api/chorus/spine-event`, {
+    const res = await fetch(`${harness.baseUrl}/api/chorus/spine-event`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -30,7 +32,7 @@ describeIntegration('POST /api/chorus/spine-event (#2109)', () => {
 
   test('event with hop field auto-creates trace entry', async () => {
     const traceId = `test-spine-hop-${Date.now()}`;
-    await fetch(`${API}/api/chorus/spine-event`, {
+    await fetch(`${harness.baseUrl}/api/chorus/spine-event`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -44,7 +46,7 @@ describeIntegration('POST /api/chorus/spine-event (#2109)', () => {
       }),
     });
 
-    const trace = await fetch(`${API}/api/chorus/trace/${traceId}`);
+    const trace = await fetch(`${harness.baseUrl}/api/chorus/trace/${traceId}`);
     const data = await trace.json();
     expect(data.hops.length).toBeGreaterThan(0);
     expect(data.hops[0].source_service).toBe('twilio-webhook');
@@ -52,7 +54,7 @@ describeIntegration('POST /api/chorus/spine-event (#2109)', () => {
 
   test('event without hop does not create trace entry', async () => {
     const traceId = `test-spine-nohop-${Date.now()}`;
-    await fetch(`${API}/api/chorus/spine-event`, {
+    await fetch(`${harness.baseUrl}/api/chorus/spine-event`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -62,13 +64,13 @@ describeIntegration('POST /api/chorus/spine-event (#2109)', () => {
       }),
     });
 
-    const trace = await fetch(`${API}/api/chorus/trace/${traceId}`);
+    const trace = await fetch(`${harness.baseUrl}/api/chorus/trace/${traceId}`);
     const data = await trace.json();
     expect(data.hops).toHaveLength(0);
   });
 
   test('missing event field returns 400', async () => {
-    const res = await fetch(`${API}/api/chorus/spine-event`, {
+    const res = await fetch(`${harness.baseUrl}/api/chorus/spine-event`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'system' }),

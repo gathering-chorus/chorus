@@ -4,17 +4,19 @@
  * Run: RUN_INTEGRATION=true npx jest tests/trace-integration-callstack.test.ts
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('Integration Call Stack Tracing (#2100)', () => {
 
-describeIntegration('Integration Call Stack Tracing (#2100)', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   // AC #1: Nudge delivery creates trace hops
   test('POST trace with integration callStack for nudge persist hop', async () => {
     const correlationId = `nudge-test-${Date.now()}`;
-    const res = await fetch(`${API}/api/chorus/trace`, {
+    const res = await fetch(`${harness.baseUrl}/api/chorus/trace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -29,7 +31,7 @@ describeIntegration('Integration Call Stack Tracing (#2100)', () => {
     expect(res.status).toBe(200);
 
     // Add deliver hop
-    await fetch(`${API}/api/chorus/trace`, {
+    await fetch(`${harness.baseUrl}/api/chorus/trace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -42,7 +44,7 @@ describeIntegration('Integration Call Stack Tracing (#2100)', () => {
       }),
     });
 
-    const trace = await fetch(`${API}/api/chorus/trace/${correlationId}`);
+    const trace = await fetch(`${harness.baseUrl}/api/chorus/trace/${correlationId}`);
     const data = await trace.json();
     expect(data.hops).toHaveLength(2);
     expect(data.hops[0].source_service).toBe('nudge-persist');
@@ -52,7 +54,7 @@ describeIntegration('Integration Call Stack Tracing (#2100)', () => {
   // AC #2: Board events carry correlation ID + hops
   test('Board event trace has correlation ID and hop metadata', async () => {
     const correlationId = `board-test-${Date.now()}`;
-    const res = await fetch(`${API}/api/chorus/trace`, {
+    const res = await fetch(`${harness.baseUrl}/api/chorus/trace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -65,7 +67,7 @@ describeIntegration('Integration Call Stack Tracing (#2100)', () => {
     });
     expect(res.status).toBe(200);
 
-    const trace = await fetch(`${API}/api/chorus/trace/${correlationId}`);
+    const trace = await fetch(`${harness.baseUrl}/api/chorus/trace/${correlationId}`);
     const data = await trace.json();
     expect(data.hops[0].call_stack).toBe('integration');
     expect(data.hops[0].source_service).toBe('board');
@@ -79,7 +81,7 @@ describeIntegration('Integration Call Stack Tracing (#2100)', () => {
     // 3-hop nudge flow: emit → persist → deliver
     for (let hop = 1; hop <= 3; hop++) {
       const services = ['spine-emit', 'nudge-persist', 'terminal-inject'];
-      await fetch(`${API}/api/chorus/trace`, {
+      await fetch(`${harness.baseUrl}/api/chorus/trace`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -92,7 +94,7 @@ describeIntegration('Integration Call Stack Tracing (#2100)', () => {
       });
     }
 
-    const trace = await fetch(`${API}/api/chorus/trace/${correlationId}`);
+    const trace = await fetch(`${harness.baseUrl}/api/chorus/trace/${correlationId}`);
     const data = await trace.json();
     expect(data.hops).toHaveLength(3);
     expect(data.hops[0].hop).toBe(1);
@@ -105,7 +107,7 @@ describeIntegration('Integration Call Stack Tracing (#2100)', () => {
 
   // Integration edges include nudge services
   test('Integrations endpoint shows nudge service pairs', async () => {
-    const res = await fetch(`${API}/api/chorus/trace/integrations/chorus`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/trace/integrations/chorus`);
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.integrations.length).toBeGreaterThan(0);

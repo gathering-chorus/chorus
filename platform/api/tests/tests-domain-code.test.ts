@@ -1,38 +1,39 @@
 /**
  * Tests domain code inventory — #2054
  *
- * The tests-domain domain page should show all test files
- * from both repos via the /code endpoint.
+ * The tests-domain domain page should show all test files from both repos via
+ * the /code endpoint.
+ *
+ * Converted to in-process harness (#2173 AC4).
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('#2054: tests-domain code endpoint', () => {
+  let harness: TestApp;
 
-describeIntegration('#2054: tests-domain code endpoint', () => {
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
+
   test('returns test files from filesystem scan', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/tests-domain/code`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/tests-domain/code`);
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body._meta.test_count).toBeGreaterThan(100);
+    const body = (await res.json()) as { _meta?: { test_count?: number } };
+    expect(body._meta?.test_count).toBeGreaterThan(100);
   }, 15_000);
 
   test('includes both gathering and chorus test files', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/tests-domain/code`);
-    const body = await res.json();
-    const paths = body.data.tests.map(function(f) { return f.path; });
-    // Path shape: "gathering/tests/..." / "chorus/..." (was colon-separated before restructure).
-    const hasGathering = paths.some(function(p) { return p.startsWith('gathering/'); });
-    const hasChorus = paths.some(function(p) { return p.startsWith('chorus/'); });
-    expect(hasGathering).toBe(true);
-    expect(hasChorus).toBe(true);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/tests-domain/code`);
+    const body = (await res.json()) as { data?: { tests?: Array<{ path: string }> } };
+    const paths = (body.data?.tests || []).map((f) => f.path);
+    expect(paths.some((p) => p.startsWith('gathering/'))).toBe(true);
+    expect(paths.some((p) => p.startsWith('chorus/'))).toBe(true);
   }, 15_000);
 
   test('byType includes ts and bats', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/tests-domain/code`);
-    const body = await res.json();
-    const types = Object.keys(body.data.byType);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/tests-domain/code`);
+    const body = (await res.json()) as { data?: { byType?: Record<string, unknown> } };
+    const types = Object.keys(body.data?.byType || {});
     expect(types).toEqual(expect.arrayContaining(['ts', 'bats']));
   }, 15_000);
 });

@@ -4,12 +4,11 @@
  * Borg front-end shaping surface: 9 observability/reflection pages migrated
  * from Gathering, served at 3340/borg/*. This suite covers the landing at
  * /borg/ — future suites cover per-page migrations.
+ *
+ * Converted to in-process harness (#2173 AC4).
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
-
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+import { startTestApp, type TestApp } from './lib/test-app';
 
 const SURFACES = [
   { slug: 'assessment',        title: 'Borg Assessment' },
@@ -23,26 +22,30 @@ const SURFACES = [
   { slug: 'hooks',             title: 'Hooks Dashboard' },
 ];
 
-describeIntegration('#2099: Borg landing at /borg/', () => {
+describe('#2099: Borg landing at /borg/', () => {
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
 
   test('GET /borg/ returns 200', async () => {
-    const res = await fetch(`${API}/borg/`);
+    const res = await fetch(`${harness.baseUrl}/borg/`);
     expect(res.status).toBe(200);
-  }, 10_000);
+  });
 
   test('landing lists all 9 surface slugs', async () => {
-    const res = await fetch(`${API}/borg/`);
+    const res = await fetch(`${harness.baseUrl}/borg/`);
     const html = await res.text();
     for (const s of SURFACES) {
       expect(html).toContain(`/borg/${s.slug}`);
     }
-  }, 10_000);
+  });
 
   test('landing shows all 9 surface titles', async () => {
-    const res = await fetch(`${API}/borg/`);
+    const res = await fetch(`${harness.baseUrl}/borg/`);
     const html = await res.text();
     for (const s of SURFACES) {
       expect(html).toContain(s.title);
     }
-  }, 10_000);
+  });
 });

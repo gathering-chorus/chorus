@@ -6,21 +6,23 @@
  * (transcript files), tunnel (cloudflared metrics).
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('#2099: /api/chorus/cost/summary', () => {
 
-describeIntegration('#2099: /api/chorus/cost/summary', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('returns 200 and JSON', async () => {
-    const res = await fetch(`${API}/api/chorus/cost/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/cost/summary`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/json/);
   }, 15_000);
 
   test('response has claude, twilio, clearing, tunnel, summary', async () => {
-    const res = await fetch(`${API}/api/chorus/cost/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/cost/summary`);
     const body = await res.json();
     expect(body).toHaveProperty('claude');
     expect(body).toHaveProperty('twilio');
@@ -30,7 +32,7 @@ describeIntegration('#2099: /api/chorus/cost/summary', () => {
   }, 15_000);
 
   test('summary has fixedCost, variableCost, totalCost', async () => {
-    const res = await fetch(`${API}/api/chorus/cost/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/cost/summary`);
     const body = await res.json();
     expect(typeof body.summary.fixedCost).toBe('number');
     expect(typeof body.summary.variableCost).toBe('number');
@@ -39,7 +41,7 @@ describeIntegration('#2099: /api/chorus/cost/summary', () => {
   }, 15_000);
 
   test('twilio reports pending=true when creds absent', async () => {
-    const res = await fetch(`${API}/api/chorus/cost/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/cost/summary`);
     const body = await res.json();
     expect(body.twilio).toHaveProperty('totalCost');
     expect(Array.isArray(body.twilio.records)).toBe(true);
@@ -47,35 +49,40 @@ describeIntegration('#2099: /api/chorus/cost/summary', () => {
   }, 15_000);
 
   test('claude has monthlyRate and burnStatus', async () => {
-    const res = await fetch(`${API}/api/chorus/cost/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/cost/summary`);
     const body = await res.json();
     expect(typeof body.claude.monthlyRate).toBe('number');
     expect(['HOT', 'SMOOTH', 'COLD']).toContain(body.claude.burnStatus);
   }, 15_000);
 
   test('tunnel status is UP, DOWN, or UNKNOWN', async () => {
-    const res = await fetch(`${API}/api/chorus/cost/summary`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/cost/summary`);
     const body = await res.json();
     expect(['UP', 'DOWN', 'UNKNOWN']).toContain(body.tunnel.status);
   }, 15_000);
 });
 
-describeIntegration('#2099: /borg/cost/ static page', () => {
+describe('#2099: /borg/cost/ static page', () => {
 
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /borg/cost/ returns 200', async () => {
-    const res = await fetch(`${API}/borg/cost/`);
+    const res = await fetch(`${harness.baseUrl}/borg/cost/`);
     expect(res.status).toBe(200);
   }, 10_000);
 
   test('page references cost summary endpoint and shows Cost heading', async () => {
-    const res = await fetch(`${API}/borg/cost/`);
+    const res = await fetch(`${harness.baseUrl}/borg/cost/`);
     const html = await res.text();
     expect(html).toContain('Cost');
     expect(html).toContain('/api/chorus/cost/summary');
   }, 10_000);
 
   test('page has claude, twilio, clearing, tunnel panel containers', async () => {
-    const res = await fetch(`${API}/borg/cost/`);
+    const res = await fetch(`${harness.baseUrl}/borg/cost/`);
     const html = await res.text();
     expect(html).toContain('id="claude-panel"');
     expect(html).toContain('id="twilio-panel"');

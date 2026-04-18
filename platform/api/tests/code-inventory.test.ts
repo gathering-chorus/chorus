@@ -1,24 +1,29 @@
 /**
  * Code inventory — #1932
+ *
  * Verifies node_modules are excluded and tests array is separate.
+ *
+ * Converted to in-process harness (#2173 AC4).
  */
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
 
-describeIntegration('#1932: Code inventory excludes node_modules, splits tests', () => {
+import { startTestApp, type TestApp } from './lib/test-app';
+
+describe('#1932: Code inventory excludes node_modules, splits tests', () => {
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
+
   test('cards-service code inventory has fewer than 500 source files', async () => {
-    const res = await fetch(API + '/api/athena/subdomains/cards-service/code');
-    const body = await res.json();
-    expect(body.data.files.length).toBeLessThan(500);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/cards-service/code`);
+    const body = (await res.json()) as { data?: { files?: unknown[] } };
+    expect((body.data?.files || []).length).toBeLessThan(500);
   });
 
   test('code inventory returns separate tests array', async () => {
-    // Use chorus-domain — populated with both files and tests.
-    // Was athena-domain which no longer carries scanned code in the graph.
-    const res = await fetch(API + '/api/athena/subdomains/chorus-domain/code');
-    const body = await res.json();
-    expect(Array.isArray(body.data.tests)).toBe(true);
-    expect(body.data.tests.length).toBeGreaterThanOrEqual(1);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/chorus-domain/code`);
+    const body = (await res.json()) as { data?: { tests?: unknown[] } };
+    expect(Array.isArray(body.data?.tests)).toBe(true);
+    expect((body.data?.tests || []).length).toBeGreaterThanOrEqual(1);
   });
 });

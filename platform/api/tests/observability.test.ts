@@ -5,27 +5,18 @@
  * Requires RUN_INTEGRATION=true, Chorus API running, Fuseki on 3030.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-let apiUp = false;
-
-beforeAll(async () => {
-  if (!INTEGRATION_ENABLED) return;
-  try {
-    const res = await fetch(`${API}/api/athena/health`);
-    apiUp = res.ok;
-  } catch {
-    apiUp = false;
-  }
-});
-
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
 
 // AC1: All observability services populated
-describeIntegration('AC1: Observability services', () => {
+describe('AC1: Observability services', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('observability-domain has services section populated', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/observability-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.services).toBe(true);
@@ -33,9 +24,14 @@ describeIntegration('AC1: Observability services', () => {
 });
 
 // AC2: All integrations populated
-describeIntegration('AC2: Observability integrations', () => {
+describe('AC2: Observability integrations', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('observability-domain has integrations section populated', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/observability-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.integrations).toBe(true);
@@ -43,9 +39,14 @@ describeIntegration('AC2: Observability integrations', () => {
 });
 
 // AC3: All persistence stores populated
-describeIntegration('AC3: Observability persistence', () => {
+describe('AC3: Observability persistence', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('observability-domain has persistence section populated', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/observability-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.persistence).toBe(true);
@@ -53,9 +54,14 @@ describeIntegration('AC3: Observability persistence', () => {
 });
 
 // AC4: Log sources populated (done in #2083, verify still present)
-describeIntegration('AC4: Observability logs', () => {
+describe('AC4: Observability logs', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('observability-domain has logs section populated', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/observability-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.logs).toBe(true);
@@ -63,9 +69,14 @@ describeIntegration('AC4: Observability logs', () => {
 });
 
 // AC5: Gaps populated
-describeIntegration('AC5: Observability gaps', () => {
+describe('AC5: Observability gaps', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('observability-domain has gaps section populated', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/observability-domain/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.sections.gaps).toBe(true);
@@ -73,13 +84,18 @@ describeIntegration('AC5: Observability gaps', () => {
 });
 
 // AC6: Sub-domains populated with children
-describeIntegration('AC6: Observability sub-domains as children', () => {
+describe('AC6: Observability sub-domains as children', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('observability-domain has child domains', async () => {
     // Graph structure drifted since #1870 — specific children moved out of the
     // observability-domain hierarchy (alerts-monitors-domain and logs-domain
     // became peers). Assertion kept as "has any children" to preserve intent
     // (observability is a parent domain) without pinning to the specific ids.
-    const res = await fetch(`${API}/api/athena/subdomains/observability-domain`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-domain`);
     expect(res.status).toBe(200);
     const body = await res.json();
     const childIds = body.data.domains.map(d => d.id);
@@ -88,9 +104,14 @@ describeIntegration('AC6: Observability sub-domains as children', () => {
 });
 
 // Bonus: observability-product collapsed — no longer a SubProduct
-describeIntegration('Graph restructure: product collapsed', () => {
+describe('Graph restructure: product collapsed', () => {
+
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('observability-product is no longer a SubProduct', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/observability-product/completeness`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-product/completeness`);
     // Should be 404 — the SubProduct node has been removed
     expect(res.status).toBe(404);
   });

@@ -7,14 +7,16 @@
  * exposed via GET /api/athena/validate. Shapes in shapes.ttl.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('SHACL ontology validation (#2014)', () => {
 
-describeIntegration('SHACL ontology validation (#2014)', () => {
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /api/athena/validate returns validation report', async () => {
-    const res = await fetch(`${API}/api/athena/validate`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/validate`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(typeof body.valid).toBe('boolean');
@@ -25,7 +27,7 @@ describeIntegration('SHACL ontology validation (#2014)', () => {
   }, 15_000);
 
   test('violations have node, constraint, severity, message', async () => {
-    const res = await fetch(`${API}/api/athena/validate`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/validate`);
     const body = await res.json();
     if (body.violations.length > 0) {
       const v = body.violations[0];
@@ -37,7 +39,7 @@ describeIntegration('SHACL ontology validation (#2014)', () => {
   }, 15_000);
 
   test('warnings have severity "warning"', async () => {
-    const res = await fetch(`${API}/api/athena/validate`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/validate`);
     const body = await res.json();
     if (body.warnings.length > 0) {
       expect(body.warnings[0].severity).toBe('warning');
@@ -45,7 +47,7 @@ describeIntegration('SHACL ontology validation (#2014)', () => {
   }, 15_000);
 
   test('validation checks all 6 constraint types', async () => {
-    const res = await fetch(`${API}/api/athena/validate`);
+    const res = await fetch(`${harness.baseUrl}/api/athena/validate`);
     const body = await res.json();
     expect(body.checked).toBe(6);
   }, 15_000);

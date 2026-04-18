@@ -5,15 +5,17 @@
  * + inferred shared-infrastructure edges from borg.
  */
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const API = process.env.CHORUS_API || 'http://localhost:3340';
+import { startTestApp, type TestApp } from './lib/test-app';
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+describe('#2082: domain dependencies facet', () => {
 
-describeIntegration('#2082: domain dependencies facet', () => {
 
+  let harness: TestApp;
+
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
   test('GET /api/chorus/domain/:name/dependencies returns direct and shared', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/dependencies`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/dependencies`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
@@ -22,7 +24,7 @@ describeIntegration('#2082: domain dependencies facet', () => {
   }, 10_000);
 
   test('direct dependencies have consumes and consumedBy', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/chorus/dependencies`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/dependencies`);
     const body = await res.json();
     expect(body.data.direct).toHaveProperty('consumes');
     expect(body.data.direct).toHaveProperty('consumedBy');
@@ -30,7 +32,7 @@ describeIntegration('#2082: domain dependencies facet', () => {
   }, 10_000);
 
   test('shared infrastructure shows domains sharing environments', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/dependencies`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/dependencies`);
     const body = await res.json();
     expect(Array.isArray(body.data.shared)).toBe(true);
     // Seeds shares fuseki-library with other domains
@@ -41,14 +43,14 @@ describeIntegration('#2082: domain dependencies facet', () => {
   }, 10_000);
 
   test('uses athena envelope', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/seeds/dependencies`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/dependencies`);
     const body = await res.json();
     expect(body._meta).toBeDefined();
     expect(body._meta.source).toBe('athena');
   }, 10_000);
 
   test('unknown domain returns empty, not error', async () => {
-    const res = await fetch(`${API}/api/chorus/domain/nonexistent-xyz/dependencies`);
+    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/nonexistent-xyz/dependencies`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.direct.consumes).toEqual([]);
