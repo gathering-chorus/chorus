@@ -958,3 +958,11 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [18:35] [Kade] → Rescoped #2167 title after Jeff caught the aggregate math (server.ts 84% of platform/api LOC at 9% = aggregate ~22%, not 80%). Wren retracted gate:product → I rescoped → Wren re-passed. Landed as "Wire coverage tooling + per-file gates + documented structural exceptions". → Jeff, Wren
 - [18:35] [Kade] → Reboot → Jeff
 - [Silas] → accepted #2168 (envelope) + #2175 (Athena populate) + #2174 (AX quality) + #2154 (pulse jest) + #2155 (source-grep split) → Jeff
+
+## 2026-04-18 — Kade (close-out)
+
+- [11:30] [Kade] → Shipped #2167 ACP (coverage tooling) + #2173 ACP (Quality service design — AC1+AC2+AC6). Filed #2180/#2181/#2182 for remaining AC → Wren, Silas
+- [11:30] [Kade] → #2180 WIP: 39 handler extractions into platform/api/src/handlers/, 110 unit tests, pattern scales via Entity/Create/Update/Delete specs → Silas (pattern precedent), Wren (review)
+- [11:30] [Kade] → Chorus-wide coverage 40 → 54.8% this session; platform/api 0 → 54.26%; jest 101s → 32s → Jeff
+- [11:30] [Kade] → Gated Silas #2151/#2154/#2155/#2168/#2174/#2175 and Wren #2176 → board
+- [11:30] [Kade] → Drafted test-value policy at roles/kade/policies/test-value-draft.md (#2173 AC2) — defines positive test + 3 smell signals → Wren (review), loom-policies when #2151 substrate ready
