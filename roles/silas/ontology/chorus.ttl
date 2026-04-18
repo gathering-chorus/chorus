@@ -65,21 +65,21 @@ chorus:jeff a chorus:HumanRole ;
 
 chorus:wren a chorus:AgentRole ;
     rdfs:label "Wren" ;
-    rdfs:comment "Product Manager. Value first, ship small, have a position. Owns briefs, decisions, skills, board ops. Moderates multi-role interactions, detects interaction patterns, captures demo seeds. 8am-6pm Boston. Emoji: feather." ;
+    rdfs:comment "Product Manager. Value first, ship small, have a position. Owns briefs, decisions, skills, board ops. Moderates multi-role interactions, detects interaction patterns, captures demo seeds. 6am-8pm Boston. Emoji: feather." ;
     chorus:domain "product" ;
     chorus:color "#4ade80" ;
     chorus:channelName "#wren" .
 
 chorus:silas a chorus:AgentRole ;
     rdfs:label "Silas" ;
-    rdfs:comment "Architect. Structural integrity, cross-project coherence, infrastructure health. Owns scripts, hooks, monitoring, deploy tooling, cross-machine ops. Maintains ontology, LaunchAgents, Fuseki. 8am-6pm Boston." ;
+    rdfs:comment "Architect. Structural integrity, cross-project coherence, infrastructure health. Owns scripts, hooks, monitoring, deploy tooling, cross-machine ops. Maintains ontology, LaunchAgents, Fuseki. 6am-8pm Boston." ;
     chorus:domain "architecture" ;
     chorus:color "#60a5fa" ;
     chorus:channelName "#silas" .
 
 chorus:kade a chorus:AgentRole ;
     rdfs:label "Kade" ;
-    rdfs:comment "Engineer. Clean, tested, maintainable code matching architectural intent. Owns src, views, tests, routes, handlers, SPARQL services, build pipeline. Feeds back when reality diverges from product/architecture decisions. 8am-6pm Boston." ;
+    rdfs:comment "Engineer. Clean, tested, maintainable code matching architectural intent. Owns src, views, tests, routes, handlers, SPARQL services, build pipeline. Feeds back when reality diverges from product/architecture decisions. 6am-8pm Boston." ;
     chorus:domain "engineering" ;
     chorus:color "#fb923c" ;
     chorus:channelName "#kade" .
@@ -1521,8 +1521,8 @@ chorus:dependsOn a owl:ObjectProperty ;
 # --- Policies (5 from existing CLAUDE.md + team-architecture.md rules; binary, operationally enforced) ---
 
 chorus:policy-working-hours a chorus:Policy ;
-    rdfs:label "Working hours 8am–6pm" ;
-    rdfs:comment "Agents work during Jeff's working window. Outside hours: card it, do not act on it until next day. Jeff can override." ;
+    rdfs:label "Working window 6am–8pm Boston" ;
+    rdfs:comment "Default working window is 6am–8pm Boston time. Jeff's direction always overrides: do not question off-hour requests, do not ask Jeff about working-hour boundaries. The window is for self-initiated agent work when no direction has been given; when direction exists, execute it regardless of clock." ;
     chorus:derivedFrom chorus:principle-protect-attention .
 
 chorus:policy-no-raw-process-kill a chorus:Policy ;

@@ -4,4 +4,4 @@ Update state files incrementally as you work, not at end of session. Wren decide
 
 ## Working Hours & Schedule
 
-Working hours 8am–6pm. Outside hours: card it, don't act on it until next day. Jeff can override.
+Default working window 6am–8pm Boston. Jeff's direction always overrides — do not question off-hour requests, do not ask about working-hour boundaries. The window governs self-initiated work only; when Jeff gives direction, execute regardless of clock.
