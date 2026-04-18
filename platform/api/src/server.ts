@@ -2042,19 +2042,14 @@ app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
 // --- GET /api/chorus/pulse/latest (#1881) ---
 // Returns most recent Pulse team state snapshot
 
+import { fetchChorusPulseLatest } from './handlers/chorus-pulse-latest';
 app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
-  const pulsePath = '/tmp/pulse-latest.json';
-  try {
-    if (!fs.existsSync(pulsePath)) {
-      res.status(404).json({ error: 'No pulse snapshot available. Run chorus-hook-shim pulse first.' });
-      return;
-    }
-    const content = fs.readFileSync(pulsePath, 'utf-8');
-    const pulse = JSON.parse(content);
-    res.json(pulse);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+  const r = fetchChorusPulseLatest({
+    readPulse: () => fs.existsSync('/tmp/pulse-latest.json')
+      ? fs.readFileSync('/tmp/pulse-latest.json', 'utf-8')
+      : null,
+  });
+  res.status(r.status).json(r.body);
 });
 
 // --- POST /api/chorus/reindex (#1879) ---
