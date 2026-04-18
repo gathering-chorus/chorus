@@ -795,124 +795,27 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
 // Returns a readable conversation thread between participants in a time range.
 // Memory domain — team recall, not search. #1946
 
+import { fetchChorusConversation } from './handlers/chorus-conversation';
 app.get('/api/chorus/conversation', (req: Request, res: Response) => {
-  const rolesParam = req.query.roles as string;
-  if (!rolesParam) {
-    res.status(400).json({ error: 'Missing required parameter: roles (comma-separated, e.g. jeff,wren)' });
-    return;
-  }
-
-  const roles = rolesParam.split(',').map(r => r.trim().toLowerCase());
-  const date = req.query.date as string || new Date().toISOString().slice(0, 10);
-  const tz = req.query.tz as string || 'America/New_York';
-  const afterTime = req.query.after as string; // HH:MM in local tz
-  const beforeTime = req.query.before as string; // HH:MM in local tz
-  const limit = Math.min(parseInt(req.query.limit as string || '500', 10), 2000);
-
   let db: Database.Database;
-  try {
-    db = getDb();
-  } catch (e) {
+  try { db = getDb(); } catch (e) {
     if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
     throw e;
   }
-
   try {
-    // Find sessions for the requested roles on the given date
-    // A conversation between jeff and wren = messages where role is wren
-    // (Jeff's words are author='user' in wren's session)
-    const roleFilter = roles.filter(r => r !== 'jeff');
-    if (roleFilter.length === 0) {
-      res.status(400).json({ error: 'At least one non-jeff role required (jeff is always a participant via user messages)' });
-      return;
-    }
-
-    const placeholders = roleFilter.map(() => '?').join(',');
-
-    // Build time range — convert local time to query bounds
-    let afterISO = `${date}T00:00:00`;
-    let beforeISO = `${date}T23:59:59`;
-
-    if (afterTime) {
-      // Convert Boston time to UTC for query
-      // Boston is UTC-4 (EDT) or UTC-5 (EST)
-      const offsetHours = isEDT(date) ? 4 : 5;
-      const [h, m] = afterTime.split(':').map(Number);
-      const utcH = h + offsetHours;
-      afterISO = `${date}T${String(utcH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
-    }
-    if (beforeTime) {
-      const offsetHours = isEDT(date) ? 4 : 5;
-      const [h, m] = beforeTime.split(':').map(Number);
-      const utcH = h + offsetHours;
-      // Handle day rollover
-      if (utcH >= 24) {
-        const nextDate = new Date(date);
-        nextDate.setDate(nextDate.getDate() + 1);
-        const nd = nextDate.toISOString().slice(0, 10);
-        beforeISO = `${nd}T${String(utcH - 24).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
-      } else {
-        beforeISO = `${date}T${String(utcH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
-      }
-    }
-
-    const rows = db.prepare(`
-      SELECT author, content, timestamp, role, session_id
-      FROM messages
-      WHERE role IN (${placeholders})
-      AND timestamp >= ?
-      AND timestamp <= ?
-      ORDER BY timestamp ASC
-      LIMIT ?
-    `).all(...roleFilter, afterISO, beforeISO, limit) as Array<{
-      author: string; content: string; timestamp: string; role: string; session_id: string;
-    }>;
-
-    // Convert to conversation thread
-    const thread = rows
-      .filter(row => {
-        const text = row.content.trim();
-        // Filter out system noise
-        if (text.startsWith('<system-reminder>')) return false;
-        if (text.startsWith('<task-')) return false;
-        if (text.startsWith('Base directory for this skill:')) return false;
-        if (text.startsWith('[Request interrupted')) return false;
-        if (text.length < 2) return false;
-        return true;
-      })
-      .map(row => {
-        const speaker = row.author === 'user' ? 'jeff' : row.role;
-        const time = convertToLocal(row.timestamp, tz);
-        return {
-          speaker,
-          text: row.content.trim(),
-          time,
-        };
-      });
-
-    // If time filter was in local time, re-filter by local time
-    // (the UTC conversion is approximate — DST edge cases)
-    let filteredThread = thread;
-    if (afterTime || beforeTime) {
-      filteredThread = thread.filter(msg => {
-        const localHM = msg.time.split(' ')[1] || msg.time.slice(11, 16);
-        if (afterTime && localHM < afterTime) return false;
-        if (beforeTime && localHM >= beforeTime) return false;
-        return true;
-      });
-    }
-
-    res.json({
-      thread: filteredThread,
-      participants: roles,
-      date,
-      timezone: tz,
-      count: filteredThread.length,
-    });
-
-  } finally {
-    db.close();
-  }
+    const r = fetchChorusConversation(
+      { db, isEDT, convertToLocal },
+      {
+        roles: req.query.roles as string | undefined,
+        date: req.query.date as string | undefined,
+        tz: req.query.tz as string | undefined,
+        after: req.query.after as string | undefined,
+        before: req.query.before as string | undefined,
+        limit: req.query.limit as string | undefined,
+      },
+    );
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
 
 // --- GET /api/chorus/card-story/:id ---
