@@ -2489,133 +2489,18 @@ app.get('/api/chorus/voice-analytics', (req: Request, res: Response) => {
 
 // --- GET /api/chorus/reprompt-analytics ---
 
+import { fetchChorusRepromptAnalytics } from './handlers/chorus-reprompt-analytics';
 app.get('/api/chorus/reprompt-analytics', (req: Request, res: Response) => {
-  const days = Math.min(Math.max(parseInt(req.query.days as string || '30', 10), 1), 365);
-  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-
   let db: Database.Database;
-  try {
-    db = getDb();
-  } catch (e) {
+  try { db = getDb(); } catch (e) {
     if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
     throw e;
   }
-
   try {
     addStaleHeader(res, db);
-
-    const rows = db.prepare(`
-      SELECT content, channel, timestamp FROM messages
-      WHERE author='user' AND source='claude'
-        AND channel IN ('session:wren','session:silas','session:kade')
-        AND timestamp >= ?
-      ORDER BY timestamp ASC
-    `).all(cutoff) as { content: string; channel: string; timestamp: string }[];
-
-    const filtered = rows.map(r => {
-      const cleaned = r.content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
-      return { ...r, content: cleaned };
-    }).filter(r => {
-      const c = r.content;
-      if (!c || c.length > 500) return false;
-      if (c.startsWith('<') || c.startsWith('{') || c.startsWith('[')) return false;
-      if (/^\/Users\/|^\/tmp\/|^\/opt\//.test(c)) return false;
-      if (/^(exit|y|n|yes|no)$/i.test(c.trim())) return false;
-      return true;
-    });
-
-    // Re-prompt signal patterns
-    const REPROMPT_KEYWORDS = /\bagain\b|\bstill\b|\balready said\b|\btold you\b|\bsame thing\b|\blike i said\b|\brepeat\b|\bi just said\b|\bjust told\b|\bsaid this\b/i;
-    const APPROVAL_BIGRAMS = /\byes please\b|\byes go\b|\byes do\b|\bgo ahead\b|\byes that\b|\byes card\b/i;
-    const CORRECTION_PATTERNS = /\bno[\s,]|\bwrong\b|\bthat'?s not\b|\bnot what i\b|\bstop\b|\bdon'?t\b|\bnever\b/i;
-
-    // Classify each message
-    type RepromptEvent = {
-      text: string;
-      role: string;
-      timestamp: string;
-      type: 'reprompt' | 'approval' | 'correction';
-    };
-
-    const events: RepromptEvent[] = [];
-    const dailyCounts: Record<string, { reprompt: number; approval: number; correction: number; total: number }> = {};
-    const roleCounts: Record<string, { reprompt: number; approval: number; correction: number }> = {
-      wren: { reprompt: 0, approval: 0, correction: 0 },
-      silas: { reprompt: 0, approval: 0, correction: 0 },
-      kade: { reprompt: 0, approval: 0, correction: 0 },
-    };
-
-    for (const r of filtered) {
-      const text = r.content.toLowerCase().trim();
-      const role = r.channel.replace('session:', '') as string;
-      const day = r.timestamp.substring(0, 10);
-      if (!dailyCounts[day]) dailyCounts[day] = { reprompt: 0, approval: 0, correction: 0, total: 0 };
-      dailyCounts[day].total++;
-
-      let type: RepromptEvent['type'] | null = null;
-
-      if (REPROMPT_KEYWORDS.test(text)) {
-        // Filter false positives: "run it again" after a test is not a re-prompt
-        if (!/run.*(again|it)|try.*(again|it)|again\?$/.test(text)) {
-          type = 'reprompt';
-        }
-      } else if (APPROVAL_BIGRAMS.test(text)) {
-        type = 'approval' as RepromptEvent['type'];
-      } else if (CORRECTION_PATTERNS.test(text) && text.length < 100) {
-        type = 'correction';
-      }
-
-      if (type) {
-        events.push({ text: r.content.substring(0, 120), role, timestamp: r.timestamp, type });
-        dailyCounts[day][type]++;
-        if (roleCounts[role]) roleCounts[role][type]++;
-      }
-    }
-
-    // Build daily trend (sorted)
-    const sortedDays = Object.keys(dailyCounts).sort();
-    const trend = sortedDays.map(day => ({
-      date: day,
-      ...dailyCounts[day],
-      attentionCost: dailyCounts[day].reprompt * 3 + dailyCounts[day].approval + dailyCounts[day].correction * 2,
-    }));
-
-    // Headline stats
-    const totalMessages = filtered.length;
-    const totalSignals = events.length;
-    const repromptCount = events.filter(e => e.type === 'reprompt').length;
-    const approvalCount = events.filter(e => e.type === 'approval').length;
-    const correctionCount = events.filter(e => e.type === 'correction').length;
-
-    // Top re-prompt phrases (normalized)
-    const phraseCount: Record<string, number> = {};
-    for (const e of events) {
-      const normalized = e.text.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '').substring(0, 60);
-      phraseCount[normalized] = (phraseCount[normalized] || 0) + 1;
-    }
-    const topPhrases = Object.entries(phraseCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 15)
-      .map(([phrase, count]) => ({ phrase, count }));
-
-    res.json({
-      headline: {
-        totalMessages,
-        totalSignals,
-        signalRate: totalMessages > 0 ? Math.round((totalSignals / totalMessages) * 100) : 0,
-        reprompt: repromptCount,
-        approvalOverhead: approvalCount,
-        correction: correctionCount,
-      },
-      byRole: roleCounts,
-      trend,
-      topPhrases,
-      recentEvents: events.slice(-20).reverse(),
-      meta: { days, cutoff, messagesAnalyzed: filtered.length },
-    });
-  } finally {
-    db.close();
-  }
+    const r = fetchChorusRepromptAnalytics({ db }, { days: req.query.days as string | undefined });
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
 
 // --- GET /api/chorus/attention-analytics ---
