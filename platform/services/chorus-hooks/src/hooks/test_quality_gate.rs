@@ -118,25 +118,36 @@ fn production_symbols(source: &str) -> HashSet<String> {
     set
 }
 
-/// Scan source for test() / it() / test.skip(…) / it.only(…) blocks
-/// and return each body paired with its name string. Uses brace matching
-/// from the opening `=>` or `function(` body start.
+/// Scan source for test() / it() / test.skip(…) / it.only(…) /
+/// test.each(...)(name,fn) / it.each(...)(name,fn) blocks and return each
+/// body paired with its name string. Uses brace matching from the opening
+/// `=>` or `function(` body start.
+///
+/// Parameterized form (#2216): `test.each(cases)(name, fn)` — two paren
+/// groups. The first holds data, the second holds (name, fn). Parser
+/// skips past the data paren group and extracts the body from the second.
 fn extract_test_blocks(source: &str) -> Vec<TestBlock> {
     let mut blocks = Vec::new();
     let bytes = source.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
-        // Look for `test(` / `test.skip(` / `test.only(` / `it(` / `it.skip(` / `it.only(`
         let rest = &source[i..];
-        let found = ["test(", "test.skip(", "test.only(", "it(", "it.skip(", "it.only("]
+        // Order longer prefixes first so `test.each(` isn't shadowed by `test(`.
+        let kws = [
+            "test.each(", "it.each(",
+            "test.skip(", "test.only(",
+            "it.skip(", "it.only(",
+            "test(", "it(",
+        ];
+        let found = kws
             .iter()
-            .filter_map(|kw| rest.find(kw).map(|pos| (pos, kw.len())))
+            .filter_map(|kw| rest.find(kw).map(|pos| (pos, *kw)))
             .min_by_key(|(pos, _)| *pos);
-        let (rel_pos, kw_len) = match found {
+        let (rel_pos, kw) = match found {
             Some(x) => x,
             None => break,
         };
-        // Ensure the keyword boundary is a non-identifier char (avoid matching `mytest(`)
+        let kw_len = kw.len();
         let abs = i + rel_pos;
         if abs > 0 {
             let prev = bytes[abs - 1];
@@ -145,7 +156,30 @@ fn extract_test_blocks(source: &str) -> Vec<TestBlock> {
                 continue;
             }
         }
-        let after_paren = abs + kw_len;
+        let mut after_paren = abs + kw_len;
+
+        // Parameterized form: skip past the data paren group first.
+        let is_parameterized = kw == "test.each(" || kw == "it.each(";
+        if is_parameterized {
+            let data_close = match match_paren(source, abs + kw_len - 1) {
+                Some(p) => p,
+                None => {
+                    i = after_paren;
+                    continue;
+                }
+            };
+            // After the data `)`, expect `(` opening the (name, fn) paren.
+            let mut j = data_close + 1;
+            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n' || bytes[j] == b'\r') {
+                j += 1;
+            }
+            if j >= bytes.len() || bytes[j] != b'(' {
+                i = after_paren;
+                continue;
+            }
+            after_paren = j + 1;
+        }
+
         // Extract name literal (first '...' or "..." or `...`)
         let name_slice = &source[after_paren..];
         let name = extract_first_string(name_slice).unwrap_or_default();
@@ -169,6 +203,71 @@ fn extract_test_blocks(source: &str) -> Vec<TestBlock> {
         i = body_close + 1;
     }
     blocks
+}
+
+/// Match the paren at `open` to its closing `)`, respecting strings,
+/// line/block comments, and nested parens. Used by the parameterized-form
+/// parser to skip over the data-array argument group.
+fn match_paren(source: &str, open: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mut depth = 0;
+    let mut i = open;
+    let mut in_str: Option<u8> = None;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_line_comment {
+            if c == b'\n' {
+                in_line_comment = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_block_comment {
+            if c == b'*' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                in_block_comment = false;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+        if let Some(q) = in_str {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == q {
+                in_str = None;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'/' => {
+                in_line_comment = true;
+                i += 2;
+                continue;
+            }
+            b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'*' => {
+                in_block_comment = true;
+                i += 2;
+                continue;
+            }
+            b'\'' | b'"' | b'`' => in_str = Some(c),
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 fn extract_first_string(s: &str) -> Option<String> {
@@ -345,9 +444,21 @@ fn block_calls_production_symbol(body: &str, prod: &HashSet<String>) -> bool {
 /// Used by parser diagnostics (#2210): if the source clearly contains test
 /// keywords but extract_test_blocks() returned zero blocks, the parser hit a
 /// malformed region and we must fail closed rather than silently allow.
+///
+/// #2216: includes the parameterized forms `test.each(` / `it.each(`. A file
+/// whose only tests are parameterized must not silently pass the quality
+/// check because keyword count was 0.
 fn count_test_keyword_occurrences(source: &str) -> usize {
     let bytes = source.as_bytes();
-    let kws = ["test(", "test.skip(", "test.only(", "it(", "it.skip(", "it.only("];
+    // These keywords don't share prefixes in a problematic way: test.each,
+    // test.skip, test.only are distinct from test(, and it(/it.each etc.
+    // likewise. Each occurrence at a word boundary is counted once.
+    let kws = [
+        "test.each(", "it.each(",
+        "test.skip(", "test.only(",
+        "it.skip(", "it.only(",
+        "test(", "it(",
+    ];
     let mut count = 0;
     for kw in &kws {
         let mut pos = 0;
@@ -1077,6 +1188,127 @@ mod tests {
     // block_signature = name + body, not name alone. A future optimization
     // that collapses signature to name-only would silently break
     // diff_grandfathers_existing_bad_block.
+
+    // --- #2216: parameterized test.each / it.each parser coverage ---
+
+    #[test]
+    fn extracts_test_each_block() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            test.each([[1, 2], [3, 4]])('%i + %i works', (a, b) => {
+                const r = realFn(a, b);
+                expect(r).toBeDefined();
+            });
+        "#;
+        let blocks = extract_test_blocks(src);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].name, "%i + %i works");
+        assert!(blocks[0].body.contains("realFn(a, b)"));
+    }
+
+    #[test]
+    fn extracts_it_each_block() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            it.each(['a', 'b'])('handles %s', (val) => {
+                expect(realFn(val)).toBeDefined();
+            });
+        "#;
+        let blocks = extract_test_blocks(src);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].name, "handles %s");
+    }
+
+    #[test]
+    fn counts_test_each_as_keyword() {
+        assert_eq!(count_test_keyword_occurrences("test.each([])('x', fn)"), 1);
+        assert_eq!(count_test_keyword_occurrences("it.each([])('x', fn)"), 1);
+        // mytest.each(...) is not a word-boundary match.
+        assert_eq!(count_test_keyword_occurrences("mytest.each([])"), 0);
+    }
+
+    #[test]
+    fn parameterized_good_test_passes() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            test.each([1, 2, 3])('case %i', (n) => {
+                const r = realFn(n);
+                expect(r).toBe(n * 2);
+            });
+        "#;
+        assert!(analyse(src).is_ok());
+    }
+
+    #[test]
+    fn parameterized_hollow_body_fails() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            test.each([1, 2, 3])('case %i', (n) => {
+                realFn(n);
+            });
+        "#;
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("no assertion mechanism"));
+    }
+
+    #[test]
+    fn parameterized_no_production_call_fails() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            test.each([1, 2, 3])('case %i', (n) => {
+                expect(n + 1).toBe(n + 1);
+            });
+        "#;
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("no invocation of any imported production symbol"));
+    }
+
+    #[test]
+    fn mixed_plain_and_each_blocks_all_checked() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            test('plain good', () => {
+                expect(realFn()).toBe(1);
+            });
+            test.each([1, 2])('each bad %i', (n) => {
+                realFn(n);
+            });
+        "#;
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("each bad"));
+    }
+
+    #[test]
+    fn test_each_with_nested_array_parens_parses() {
+        // Data arg contains nested arrays — match_paren must handle nesting.
+        let src = r#"
+            import { realFn } from '../src/real';
+            test.each([[1, 2], [3, 4], [5, 6]])('adds %i + %i', (a, b) => {
+                expect(realFn(a, b)).toBe(a + b);
+            });
+        "#;
+        let blocks = extract_test_blocks(src);
+        assert_eq!(blocks.len(), 1);
+    }
+
+    #[test]
+    fn test_each_only_file_not_silent_pass() {
+        // File with only parameterized tests that are all hollow. #2216 regression:
+        // previously the keyword counter didn't see test.each, so this source
+        // hit analyse() with blocks.is_empty() = false (good parse) but no
+        // block-level check either — actually extract_test_blocks also
+        // returned empty. Either way the file passed silently. With #2216
+        // both are fixed.
+        let src = r#"
+            import { realFn } from '../src/real';
+            test.each([1, 2, 3])('case %i', (n) => {
+                realFn(n);
+            });
+        "#;
+        let err = analyse(src).unwrap_err();
+        // Bad block produces a quality-level error.
+        assert!(err.contains("no assertion"));
+    }
 
     #[test]
     fn diff_rejects_same_name_hollowed_body() {
