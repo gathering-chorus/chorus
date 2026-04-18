@@ -270,6 +270,62 @@ SELECT ?target ?label ?relationship ?direction WHERE {
   }
 }
 
+// --- infra: borg environments via urn:borg:instances usesEnvironment edges ---
+
+export async function fetchDomainInfra(
+  deps: DomainFacetDeps,
+  subdomainName: string,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const start = now();
+  try {
+    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const query = `PREFIX borg: <urn:borg:ontology/>
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT ?env ?name ?port ?health ?host ?engine ?dep WHERE {
+  GRAPH <urn:borg:instances> {
+    <https://jeffbridwell.com/chorus#${sdId}> borg:usesEnvironment ?env .
+    ?env borg:environmentName ?name .
+    OPTIONAL { ?env borg:port ?port }
+    OPTIONAL { ?env borg:healthEndpoint ?health }
+    OPTIONAL { ?env borg:runsOn/borg:hostName ?host }
+    OPTIONAL { ?env borg:instanceOf/borg:engineName ?engine }
+    OPTIONAL { ?env borg:dependsOn/borg:environmentName ?dep }
+  }
+} ORDER BY ?host ?name`;
+    const result = await deps.sparql(query);
+    interface Env { name: string; port: string | null; health: string | null; host: string | null; engine: string | null; dependsOn: string[]; }
+    const envMap = new Map<string, Env>();
+    for (const b of result.results.bindings) {
+      const envName = b.name?.value || '';
+      if (!envName) continue;
+      if (!envMap.has(envName)) {
+        envMap.set(envName, {
+          name: envName,
+          port: b.port?.value || null,
+          health: b.health?.value || null,
+          host: b.host?.value || null,
+          engine: b.engine?.value || null,
+          dependsOn: [],
+        });
+      }
+      const dep = b.dep?.value;
+      const entry = envMap.get(envName)!;
+      if (dep && !entry.dependsOn.includes(dep)) entry.dependsOn.push(dep);
+    }
+    const environments = Array.from(envMap.values());
+    return {
+      status: 200,
+      body: deps.envelope('domain-infra', { subdomain: subdomainName, environments }, now() - start, { count: environments.length }),
+    };
+  } catch {
+    return {
+      status: 200,
+      body: deps.envelope('domain-infra', { subdomain: subdomainName, environments: [] }, now() - start, { count: 0 }),
+    };
+  }
+}
+
 // --- decisions: SPARQL against urn:chorus:decisions with alias mapping ---
 
 const DECISION_ALIASES: Record<string, string[]> = {

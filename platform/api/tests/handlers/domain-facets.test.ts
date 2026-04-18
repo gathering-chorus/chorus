@@ -16,6 +16,7 @@ import {
   fetchDomainRadius,
   fetchDomainBlastRadius,
   fetchDomainAlerts,
+  fetchDomainInfra,
   type DomainFacetDeps,
   type DomainAlertsDeps,
 } from '../../src/handlers/domain-facets';
@@ -278,6 +279,53 @@ describe('fetchDomainAlerts', () => {
     expect(r.status).toBe(200);
     const body = r.body as { data: { alerts: unknown[] } };
     expect(body.data.alerts).toEqual([]);
+  });
+});
+
+// --- fetchDomainInfra ---
+
+describe('fetchDomainInfra', () => {
+  test('groups rows by envName and collects dependsOn', async () => {
+    const result = {
+      results: {
+        bindings: [
+          { env: { value: 'e1' }, name: { value: 'fuseki' }, port: { value: '3030' }, host: { value: 'library' }, engine: { value: 'jena' }, dep: { value: 'sqlite' } },
+          { env: { value: 'e1' }, name: { value: 'fuseki' }, port: { value: '3030' }, host: { value: 'library' }, engine: { value: 'jena' }, dep: { value: 'filesystem' } },
+          { env: { value: 'e2' }, name: { value: 'chorus-api' }, port: { value: '3340' }, host: { value: 'library' }, engine: { value: 'node' } },
+        ],
+      },
+    };
+    const d = deps({ sparql: async () => result });
+    const r = await fetchDomainInfra(d, 'chorus-domain');
+    const body = r.body as { data: { environments: Array<{ name: string; dependsOn: string[] }> } };
+    expect(body.data.environments.length).toBe(2);
+    const fuseki = body.data.environments.find((e) => e.name === 'fuseki')!;
+    expect(fuseki.dependsOn.sort()).toEqual(['filesystem', 'sqlite']);
+    const api = body.data.environments.find((e) => e.name === 'chorus-api')!;
+    expect(api.dependsOn).toEqual([]);
+  });
+
+  test('missing optional fields default to null', async () => {
+    const result = {
+      results: {
+        bindings: [
+          { env: { value: 'e1' }, name: { value: 'minimal' } },
+        ],
+      },
+    };
+    const d = deps({ sparql: async () => result });
+    const r = await fetchDomainInfra(d, 'x');
+    const body = r.body as { data: { environments: Array<{ port: string | null; health: string | null }> } };
+    expect(body.data.environments[0].port).toBeNull();
+    expect(body.data.environments[0].health).toBeNull();
+  });
+
+  test('throw returns empty envelope', async () => {
+    const d = deps({ sparql: async () => { throw new Error(''); } });
+    const r = await fetchDomainInfra(d, 'x');
+    expect(r.status).toBe(200);
+    const body = r.body as { data: { environments: unknown[] } };
+    expect(body.data.environments).toEqual([]);
   });
 });
 
