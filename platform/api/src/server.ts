@@ -627,7 +627,29 @@ function buildSearchMeta(results: any[], db?: Database.Database): Record<string,
     sources[src] = (sources[src] || 0) + 1;
   }
 
-  return { domain_coverage: Math.round(domain_coverage * 100) / 100, newest_result_age_s, stale, sources };
+  return { domain_coverage: Math.round(domain_coverage * 100) / 100, newest_result_age_s, stale, sources, schema_version: '1.0.0' };
+}
+
+// #2174 AC-1: per-hit freshness. Structured so agents don't re-parse content
+// for timestamp (AC-2 semantic).
+function enrichHit(r: any, now: number): any {
+  const ts = r?.timestamp;
+  let freshness_s = 0;
+  if (ts) {
+    const t = new Date(ts).getTime();
+    if (!isNaN(t)) freshness_s = Math.max(0, Math.round((now - t) / 1000));
+  }
+  return { ...r, freshness_s };
+}
+
+// #2174 AC-6: small default limit for token economy; caller override up to 100.
+const SEARCH_DEFAULT_LIMIT = 5;
+const SEARCH_MAX_LIMIT = 100;
+function resolveSearchLimit(raw: string | undefined): { limit: number; explicit: boolean } {
+  if (raw === undefined) return { limit: SEARCH_DEFAULT_LIMIT, explicit: false };
+  const n = parseInt(raw, 10);
+  if (isNaN(n) || n < 1) return { limit: SEARCH_DEFAULT_LIMIT, explicit: false };
+  return { limit: Math.min(n, SEARCH_MAX_LIMIT), explicit: true };
 }
 
 // --- GET /api/chorus/search ---
@@ -640,22 +662,39 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
     return;
   }
 
-  const limit = Math.min(parseInt(req.query.limit as string || '20', 10), 100);
+  const { limit, explicit: limitExplicit } = resolveSearchLimit(req.query.limit as string | undefined);
   const role = req.query.role as string | undefined;
   const mode = (req.query.mode as string || 'fts').toLowerCase();
 
   const searchStart = Date.now();
 
+  // #2174 AC-1, AC-6: enrich hits + finalize response shape in one place.
+  // Over-fetch by 1 under the hood to detect truncation; trim before send.
+  const fetchLimit = limit + 1;
+  const formatResponse = (rawResults: any[], resolvedMode: string, db?: Database.Database, extra: Record<string, any> = {}) => {
+    const truncated = rawResults.length > limit;
+    const trimmed = rawResults.slice(0, limit);
+    const now = Date.now();
+    const enriched = trimmed.map(r => enrichHit(r, now));
+    const meta = {
+      ...buildSearchMeta(enriched, db),
+      limit_applied: limit,
+      limit_default: !limitExplicit,
+      truncated,
+    };
+    return { results: enriched, total: enriched.length, mode: resolvedMode, _meta: meta, ...extra };
+  };
+
   // Semantic-only mode
   if (mode === 'semantic') {
     if (!lanceTable) {
-      res.json({ results: [], total: 0, mode: 'semantic', error: 'Semantic index not available' });
+      res.json({ results: [], total: 0, mode: 'semantic', error: 'Semantic index not available', _meta: { ...buildSearchMeta([]), limit_applied: limit, limit_default: !limitExplicit, truncated: false } });
       return;
     }
     try {
-      const results = await semanticSearch(q, limit, role);
+      const results = await semanticSearch(q, fetchLimit, role);
       emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'semantic', result_count: results.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-      res.json({ results, total: results.length, mode: 'semantic', _meta: buildSearchMeta(results) });
+      res.json(formatResponse(results, 'semantic'));
     } catch (err) {
       res.status(500).json({ error: `Semantic search failed: ${err}` });
     }
@@ -674,13 +713,15 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
     addStaleHeader(res, db);
 
     // FTS5 search — replace hyphens with spaces for tokenizer compat
+    // #2174 AC-4: mode=relevance ranks by FTS bm25 (default is timestamp DESC = recency)
     const ftsQuery = q.replace(/-/g, ' ');
     let roleFilter = '';
-    const params: any[] = [ftsQuery, limit];
+    const params: any[] = [ftsQuery, fetchLimit];
     if (role) {
       roleFilter = 'AND m.role = ?';
       params.splice(1, 0, role);
     }
+    const ftsOrderBy = mode === 'relevance' ? 'bm25(messages_fts) ASC' : 'm.timestamp DESC';
 
     let ftsResults: any[];
     try {
@@ -691,12 +732,12 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
         JOIN messages m ON f.rowid = m.id
         WHERE messages_fts MATCH ?
         ${roleFilter}
-        ORDER BY m.timestamp DESC
+        ORDER BY ${ftsOrderBy}
         LIMIT ?
       `).all(...params);
     } catch {
       // FTS5 syntax error — fall back to LIKE
-      const likeParams: any[] = [`%${q}%`, limit];
+      const likeParams: any[] = [`%${q}%`, fetchLimit];
       let likeRoleFilter = '';
       if (role) {
         likeRoleFilter = 'AND role = ?';
@@ -716,12 +757,12 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
     if (mode === 'unified') {
       try {
         const [semResults, sparqlResults] = await Promise.all([
-          lanceTable ? semanticSearch(q, limit, role) : Promise.resolve([]),
-          sparqlSearch(q, limit),
+          lanceTable ? semanticSearch(q, fetchLimit, role) : Promise.resolve([]),
+          sparqlSearch(q, fetchLimit),
         ]);
-        const merged = mergeUnified(ftsResults, semResults, sparqlResults, limit);
+        const merged = mergeUnified(ftsResults, semResults, sparqlResults, fetchLimit);
         emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'unified', result_count: merged.length, sources: `fts=${ftsResults.length},semantic=${semResults.length},sparql=${sparqlResults.length}`, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-        res.json({ results: merged, total: merged.length, mode: 'unified', sources: { fts: ftsResults.length, semantic: semResults.length, sparql: sparqlResults.length }, _meta: buildSearchMeta(merged, db) });
+        res.json(formatResponse(merged, 'unified', db, { sources: { fts: ftsResults.length, semantic: semResults.length, sparql: sparqlResults.length } }));
         return;
       } catch {
         // Fall through to FTS-only
@@ -731,18 +772,20 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
     // Hybrid mode: merge FTS + semantic via RRF
     if (mode === 'hybrid' && lanceTable) {
       try {
-        const semResults = await semanticSearch(q, limit, role);
-        const merged = mergeRRF(ftsResults, semResults, limit, q);
+        const semResults = await semanticSearch(q, fetchLimit, role);
+        const merged = mergeRRF(ftsResults, semResults, fetchLimit, q);
         emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'hybrid', result_count: merged.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-        res.json({ results: merged, total: merged.length, mode: 'hybrid', _meta: buildSearchMeta(merged, db) });
+        res.json(formatResponse(merged, 'hybrid', db));
         return;
       } catch {
         // Semantic failed — fall through to FTS-only
       }
     }
 
-    emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'fts', result_count: ftsResults.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-    res.json({ results: ftsResults, total: ftsResults.length, mode: 'fts', _meta: buildSearchMeta(ftsResults, db) });
+    // FTS-only path (includes mode=fts, mode=recency, mode=relevance)
+    const resolvedMode = (mode === 'recency' || mode === 'relevance') ? mode : 'fts';
+    emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: resolvedMode, result_count: ftsResults.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
+    res.json(formatResponse(ftsResults, resolvedMode, db));
   } finally {
     db.close();
   }
