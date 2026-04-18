@@ -4184,18 +4184,11 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
               <${sdUri}> chorus:${pred} ?e .
               OPTIONAL { ?e rdfs:label ?label }
               OPTIONAL { ?e rdfs:comment ?comment }
-              OPTIONAL { ?e chorus:ownedBy ?ownerEnt }
-              OPTIONAL { ?e chorus:reads ?readTarget }
-              OPTIONAL { ?e chorus:writes ?writeTarget }
-              OPTIONAL { ?e chorus:consumes ?consumesTarget }
+              OPTIONAL { ?e chorus:ownedBy ?ownerEnt . OPTIONAL { ?ownerEnt rdfs:label ?ownerLabel } }
+              OPTIONAL { ?e chorus:reads ?readTarget . OPTIONAL { ?readTarget rdfs:label ?readLabel } }
+              OPTIONAL { ?e chorus:writes ?writeTarget . OPTIONAL { ?writeTarget rdfs:label ?writeLabel } }
+              OPTIONAL { ?e chorus:consumes ?consumesTarget . OPTIONAL { ?consumesTarget rdfs:label ?consumesLabel } }
             }
-            # Target labels may live in urn:chorus:ontology (role URIs like
-            # chorus:wren / chorus:silas) or urn:chorus:instances (persistence
-            # stores). GRAPH ?g wildcard matches either graph.
-            OPTIONAL { GRAPH ?og { ?ownerEnt rdfs:label ?ownerLabel } }
-            OPTIONAL { GRAPH ?rg { ?readTarget rdfs:label ?readLabel } }
-            OPTIONAL { GRAPH ?wg { ?writeTarget rdfs:label ?writeLabel } }
-            OPTIONAL { GRAPH ?cg { ?consumesTarget rdfs:label ?consumesLabel } }
           }
           GROUP BY ?e ?label ?comment
           LIMIT 20
