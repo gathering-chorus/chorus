@@ -48,9 +48,9 @@ describe('fetchChorusDomainStory (#2188)', () => {
 
   test('cards filtered to matching domain tag only', () => {
     const cards: BoardCard[] = [
-      { id: '1', title: 'A', status: 'WIP', owner: 'wren', tags: ['domain:photos'] },
-      { id: '2', title: 'B', status: 'Done', owner: 'silas', tags: ['domain:music'] },
-      { id: '3', title: 'C', status: 'Next', owner: 'kade', tags: ['domain:photos', 'type:enhance'] },
+      { id: '1', title: 'A', status: 'WIP', owner: 'wren', tags: 'domain:photos' },
+      { id: '2', title: 'B', status: 'Done', owner: 'silas', tags: 'domain:music' },
+      { id: '3', title: 'C', status: 'Next', owner: 'kade', tags: 'domain:photos type:enhance' },
     ];
     const body = fetchChorusDomainStory(defaultDeps({ getCards: () => cards }), 'photos').body as {
       cards: Array<{ index: number }>; card_count: number;
@@ -81,7 +81,7 @@ describe('fetchChorusDomainStory (#2188)', () => {
 
   test('spine events filtered to cards in the domain', () => {
     const cards: BoardCard[] = [
-      { id: '42', title: 'A', status: 'WIP', owner: 'wren', tags: ['domain:photos'] },
+      { id: '42', title: 'A', status: 'WIP', owner: 'wren', tags: 'domain:photos' },
     ];
     const log = [
       JSON.stringify({ event: 'card.moved.to.WIP', card: '42', role: 'wren', timestamp: '2026-04-18T10:00:00' }),
@@ -100,7 +100,7 @@ describe('fetchChorusDomainStory (#2188)', () => {
 
   test('timeline sorts empty-timestamp cards first (legacy behavior)', () => {
     const cards: BoardCard[] = [
-      { id: '1', title: 'A', status: 'WIP', owner: 'wren', tags: ['domain:photos'] },
+      { id: '1', title: 'A', status: 'WIP', owner: 'wren', tags: 'domain:photos' },
     ];
     const db = seedDb();
     const body = fetchChorusDomainStory(
@@ -121,7 +121,7 @@ describe('fetchChorusDomainStory (#2188)', () => {
   });
 
   test('null readLog → skip spine section, no throw', () => {
-    const cards: BoardCard[] = [{ id: '1', title: 'A', status: 'WIP', owner: 'wren', tags: ['domain:photos'] }];
+    const cards: BoardCard[] = [{ id: '1', title: 'A', status: 'WIP', owner: 'wren', tags: 'domain:photos' }];
     const body = fetchChorusDomainStory(defaultDeps({ getCards: () => cards, readLog: () => null }), 'photos').body as {
       timeline: Array<{ source: string }>;
     };

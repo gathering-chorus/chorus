@@ -21,7 +21,7 @@ export interface BoardCard {
   title: string;
   status: string;
   owner: string;
-  tags: string[];
+  tags: string; // space/comma-delimited; matched via substring
 }
 
 export interface ChorusDomainStoryDeps {
