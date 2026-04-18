@@ -5496,38 +5496,25 @@ app.post('/api/chorus/trace', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-// GET /api/chorus/trace/:correlationId — full hop chain
+// /api/chorus/trace/* — correlation-id hop chain + observed integrations (extracted #2189)
+import { fetchTraceByCorrelation, fetchTraceIntegrations } from './handlers/chorus-trace';
 app.get('/api/chorus/trace/:correlationId', (req: Request, res: Response) => {
   if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; }
-
   const db = new Database(DB_PATH, { readonly: true });
   db.pragma('journal_mode = WAL');
-
-  const hops = db.prepare(
-    'SELECT * FROM traces WHERE correlation_id = ? ORDER BY hop ASC'
-  ).all(req.params.correlationId);
-
-  db.close();
-  res.json({ correlationId: req.params.correlationId, hops });
+  try {
+    const r = fetchTraceByCorrelation(req.params.correlationId, { db });
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
-
-// GET /api/chorus/trace/integrations/:domain — observed service pairs
 app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) => {
   if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; }
-
   const db = new Database(DB_PATH, { readonly: true });
   db.pragma('journal_mode = WAL');
-
-  const integrations = db.prepare(`
-    SELECT source_service, dest_service, call_stack, COUNT(*) as frequency
-    FROM traces
-    WHERE source_domain = ? AND dest_service IS NOT NULL
-    GROUP BY source_service, dest_service, call_stack
-    ORDER BY frequency DESC
-  `).all(req.params.domain);
-
-  db.close();
-  res.json({ domain: req.params.domain, integrations });
+  try {
+    const r = fetchTraceIntegrations(req.params.domain, { db });
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
 
 process.on('uncaughtException', (err) => {
