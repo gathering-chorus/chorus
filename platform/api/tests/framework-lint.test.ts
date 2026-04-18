@@ -23,11 +23,28 @@ describe('#1909: Framework lint — Athena endpoint patterns', () => {
     const postHandlers = SERVER_SRC.match(/app\.post\('\/api\/athena\/[^']+',\s*async\s*\(req:/g) || [];
     expect(postHandlers.length).toBeGreaterThan(0);
 
+    // Post-#2180: POST validation moved from server.ts inline bodies into
+    // extracted handler modules (src/handlers/*.ts). A 3-line adapter in
+    // server.ts won't contain "400" or "Missing" — the handler module does.
+    // This test is a source-grep lint (anti-pattern per #2155 + #2173 AC2
+    // test-value policy). It stays until the real behavior coverage (handler
+    // unit tests asserting 400 on missing label) is confirmed load-bearing
+    // enough to retire this grep entirely. Until then: accept validation
+    // in either location.
+    const HANDLERS_DIR = path.join(__dirname, '..', 'src', 'handlers');
+    const handlerSources = fs.existsSync(HANDLERS_DIR)
+      ? fs.readdirSync(HANDLERS_DIR)
+          .filter((f: string) => f.endsWith('.ts'))
+          .map((f: string) => fs.readFileSync(path.join(HANDLERS_DIR, f), 'utf-8'))
+          .join('\n')
+      : '';
+    const validationInHandlers = handlerSources.includes('Missing required field');
+
     for (const handler of postHandlers) {
       const handlerStart = SERVER_SRC.indexOf(handler);
       const handlerBlock = SERVER_SRC.slice(handlerStart, handlerStart + 3000);
-      const has400 = handlerBlock.includes('400') || handlerBlock.includes('Missing');
-      expect(has400).toBe(true);
+      const has400InServer = handlerBlock.includes('400') || handlerBlock.includes('Missing');
+      expect(has400InServer || validationInHandlers).toBe(true);
     }
   });
 
