@@ -4161,8 +4161,10 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
           PREFIX chorus: <https://jeffbridwell.com/chorus#>
           PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
           SELECT ?ownerLabel WHERE {
-            <${sdUri}> chorus:ownedBy ?owner .
-            OPTIONAL { ?owner rdfs:label ?ownerLabel }
+            GRAPH <urn:chorus:ontology> {
+              <${sdUri}> chorus:ownedBy ?owner .
+              OPTIONAL { ?owner rdfs:label ?ownerLabel }
+            }
           } LIMIT 1
         `;
         const parentOwnerResult = await athenaSparqlQuery(parentOwnerQuery).catch(() => null);
