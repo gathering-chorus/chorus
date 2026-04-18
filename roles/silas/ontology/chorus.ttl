@@ -1498,6 +1498,16 @@ chorus:Practice a owl:Class ;
     rdfs:label "Practice" ;
     rdfs:comment "A repeatable discipline derived from principles. How the team works." .
 
+chorus:Policy a owl:Class ;
+    rdfs:label "Policy" ;
+    rdfs:comment "A binary team rule — allowed/blocked, in-bounds/out-of-bounds. Derived from principles but enforceable as yes/no (unlike practices, which are disciplines). Examples: working hours, WIP limits, response windows, touch-count targets." .
+
+chorus:derivedFrom a owl:ObjectProperty ;
+    rdfs:label "derived from" ;
+    rdfs:comment "A practice or policy traces back to the principle(s) that motivate it." ;
+    rdfs:domain chorus:Practice, chorus:Policy ;
+    rdfs:range chorus:Principle .
+
 # --- 12 Principles (7 from team-architecture.md + 5 from 2026-04-17 session) ---
 
 chorus:principle-protect-attention a chorus:Principle ;
