@@ -1880,93 +1880,18 @@ export { hasExactToken, mergeRRF };
 
 // --- GET /api/chorus/reconcile ---
 
+import { fetchChorusReconcile } from './handlers/chorus-reconcile';
 app.get('/api/chorus/reconcile', (req: Request, res: Response) => {
-  const role = req.query.role as string;
-  if (!role || !['wren', 'silas', 'kade'].includes(role)) {
-    res.status(400).json({ error: 'Missing or invalid parameter: role (wren|silas|kade)' });
-    return;
-  }
-
   let db: Database.Database;
-  try {
-    db = getDb();
-  } catch (e) {
+  try { db = getDb(); } catch (e) {
     if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
     throw e;
   }
-
   try {
     addStaleHeader(res, db);
-
-    // Find last session end for this role
-    const lastSession = db.prepare(`
-      SELECT MAX(timestamp) as ts FROM messages
-      WHERE source = 'claude' AND channel = ? AND author = 'assistant'
-    `).get(`session:${role}`) as { ts: string | null };
-
-    // Default to 24h ago if no prior session
-    let cutoff: string;
-    if (lastSession?.ts) {
-      cutoff = lastSession.ts;
-    } else {
-      cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    }
-
-    // Slack messages since cutoff (grouped by channel)
-    const slackMessages = db.prepare(`
-      SELECT channel, role, author, content, timestamp FROM messages
-      WHERE source = 'slack' AND timestamp > ?
-        AND NOT (is_bridge = 1 AND role = ?)
-      ORDER BY timestamp ASC
-    `).all(cutoff, role) as any[];
-
-    // Group slack by channel, limit 5 per channel
-    const slackByChannel: Record<string, any[]> = {};
-    for (const msg of slackMessages) {
-      if (!slackByChannel[msg.channel]) slackByChannel[msg.channel] = [];
-      if (slackByChannel[msg.channel].length < 5) {
-        slackByChannel[msg.channel].push(msg);
-      }
-    }
-
-    // Other roles' session counts
-    const sessionRows = db.prepare(`
-      SELECT channel, COUNT(*) as count FROM messages
-      WHERE source = 'claude' AND channel != ? AND timestamp > ?
-      GROUP BY channel
-    `).all(`session:${role}`, cutoff) as any[];
-
-    const sessions: Record<string, number> = {};
-    for (const row of sessionRows) {
-      const roleName = row.channel.replace('session:', '');
-      sessions[roleName] = row.count;
-    }
-
-    // Jeff's direction (user messages in other role sessions)
-    const jeffDirection = db.prepare(`
-      SELECT channel, content, timestamp FROM messages
-      WHERE source = 'claude' AND author = 'user' AND timestamp > ?
-      ORDER BY timestamp DESC
-      LIMIT 10
-    `).all(cutoff) as any[];
-
-    // Stats
-    const total = (db.prepare(`SELECT COUNT(*) as c FROM messages`).get() as any).c;
-    const bySourceRows = db.prepare(
-      `SELECT source, COUNT(*) as c FROM messages GROUP BY source`
-    ).all() as any[];
-    const bySource: Record<string, number> = {};
-    for (const row of bySourceRows) bySource[row.source] = row.c;
-
-    res.json({
-      slack: slackByChannel,
-      sessions,
-      jeffDirection,
-      stats: { total, bySource }
-    });
-  } finally {
-    db.close();
-  }
+    const r = fetchChorusReconcile({ db }, { role: req.query.role as string | undefined });
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
 
 // --- GET /api/chorus/refs ---
@@ -4436,6 +4361,7 @@ import { fetchAthenaSubproducts } from './handlers/athena-subproducts';
 import { fetchAthenaSteps } from './handlers/athena-steps';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
+import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
     sparql: athenaSparqlQuery,
@@ -4528,25 +4454,11 @@ app.get('/api/athena/subproducts', async (_req: Request, res: Response) => {
 
 // GET /api/athena/subdomains — list sub-domains with owner, step. Filter: ?owner, ?step
 app.get('/api/athena/subdomains', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    let query = loadSparql('subdomains');
-    const filters: string[] = [];
-    if (req.query.owner) filters.push(`FILTER(LCASE(STR(?ownerLabel)) = "${String(req.query.owner).toLowerCase()}")`);
-    if (req.query.step) filters.push(`FILTER(LCASE(STR(?stepLabel)) = "${String(req.query.step).toLowerCase()}")`);
-    if (filters.length) query = query.replace('} ORDER BY', `${filters.join('\n  ')}\n} ORDER BY`);
-    const result = await athenaSparqlQuery(query);
-    const subdomains = result.results.bindings.map((b: any) => ({
-      uri: b.sd.value,
-      id: b.sd.value.split('#').pop(),
-      label: b.label?.value || b.sd.value.split('#').pop(),
-      owner: b.ownerLabel?.value || null,
-      step: b.stepLabel?.value || null,
-    }));
-    res.json(athenaEnvelope('subdomains', subdomains, Date.now() - start, { count: subdomains.length, filters: { owner: req.query.owner || null, step: req.query.step || null } }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomains', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomains(
+    { sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope },
+    { owner: req.query.owner as string | undefined, step: req.query.step as string | undefined },
+  );
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/blast-radius — what breaks if this sub-domain fails
