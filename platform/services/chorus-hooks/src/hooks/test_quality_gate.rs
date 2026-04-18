@@ -25,6 +25,7 @@ use crate::types::{permission_deny_json, HookInput, HookResponse};
 use std::collections::HashSet;
 
 const GOOD_EXAMPLE: &str = "platform/api/tests/handlers/athena-validate.test.ts";
+const BINARY_RULE_DOC: &str = "/TEST.md (binary rule: every test file is hermetic-always OR integration-gated-at-file-level)";
 
 /// A single test() / it() block extracted from source.
 #[derive(Debug)]
@@ -378,6 +379,51 @@ fn block_signature(block: &TestBlock) -> String {
     format!("{}|{}", block.name, normalized)
 }
 
+/// Detect env-var-conditional branching between describe/test/it invocations
+/// (the TEST.md binary-rule violation, #2215). Returns Err(line_no, snippet)
+/// on the first match; Ok(()) if the file's env-var usage is limited to
+/// assignment or top-level describe.skip.
+///
+/// Rejected shapes:
+///   `process.env.X ? describe : describe.skip`
+///   `process.env.X === 'y' ? describe : describe.skip`
+///   `process.env.X ? it : it.skip`
+///   `if (process.env.X) { describe(...) }`        (if-branch wrapping a describe/test/it call)
+///   `if (!process.env.X) { test(...) }`           (same, negated)
+///
+/// Allowed shapes:
+///   `const N = process.env.X;`                    (simple assignment)
+///   `const N = process.env.X || 'default';`       (default-value short-circuit)
+///   `expect(process.env.X).toBe(...)`             (value position in assertion)
+///   `describe.skip('…', …)`                       (unconditional file-level skip)
+pub(crate) fn check_binary_rule(source: &str) -> Result<(), (usize, String)> {
+    // Regex 1: ternary routing between describe/it/test and its .skip variant.
+    let ternary = regex::Regex::new(
+        r"process\.env\.\w+(?:\s*[!=]==?\s*[^\s?]+)?\s*\?\s*(describe|it|test)\b[^:]*:\s*(describe|it|test)\.(skip|only)\b",
+    )
+    .unwrap();
+    if let Some(m) = ternary.find(source) {
+        let line = 1 + source[..m.start()].matches('\n').count();
+        let snippet = source[m.start()..m.end().min(m.start() + 120)].to_string();
+        return Err((line, snippet));
+    }
+
+    // Regex 2: if (process.env.X) block that wraps a describe/test/it call within
+    // a short window. Captures both positive and negated conditions.
+    let if_branch = regex::Regex::new(
+        r"(?s)\bif\s*\(\s*!?\s*process\.env\.\w+[^)]{0,120}\)\s*\{[^{}]{0,400}?\b(describe|it|test)\s*\(",
+    )
+    .unwrap();
+    if let Some(m) = if_branch.find(source) {
+        let line = 1 + source[..m.start()].matches('\n').count();
+        let snippet_end = m.end().min(m.start() + 140);
+        let snippet = source[m.start()..snippet_end].to_string();
+        return Err((line, snippet));
+    }
+
+    Ok(())
+}
+
 /// Backwards-compat single-source analyse — treats the whole source as newly
 /// introduced (no grandfathered blocks). Used by the Write-on-new-file path and
 /// by the existing unit tests from #2196.
@@ -396,6 +442,25 @@ pub(crate) fn analyse(source: &str) -> Result<(), String> {
 /// keywords, reject the write with a parser-error message rather than
 /// silently allowing.
 pub(crate) fn analyse_incoming(existing: &str, incoming: &str) -> Result<(), String> {
+    // #2215 binary-rule check runs before block-level checks. Violation here
+    // is a structural issue — the fix isn't to edit the test bodies, it's to
+    // split the file.
+    if let Err((line, snippet)) = check_binary_rule(incoming) {
+        // Grandfather: if the existing file already has the same violation,
+        // don't re-reject on an unrelated edit to the same file.
+        let existing_has_it = check_binary_rule(existing).is_err();
+        if !existing_has_it {
+            return Err(format!(
+                "line {}: env-var-conditional routing between describe/test blocks — \
+                 violates binary rule. Split the file into hermetic-always + \
+                 integration-gated-at-file-level per {}. Offending snippet: `{}`",
+                line,
+                BINARY_RULE_DOC,
+                snippet.replace('\n', " ").trim()
+            ));
+        }
+    }
+
     let incoming_blocks = extract_test_blocks(incoming);
     let keyword_count = count_test_keyword_occurrences(incoming);
 
@@ -870,6 +935,167 @@ mod tests {
         assert_eq!(count_test_keyword_occurrences("testing(x"), 0);
         assert_eq!(count_test_keyword_occurrences("it('x', () => {})"), 1);
         assert_eq!(count_test_keyword_occurrences("unit('x', () => {})"), 0);
+    }
+
+    // --- #2215: binary-rule (env-var conditional) check ---
+
+    #[test]
+    fn binary_rule_rejects_ternary_describe_or_skip() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            const d = process.env.RUN_INTEGRATION === 'true' ? describe : describe.skip;
+            d('integration', () => {
+                test('x', () => { expect(realFn()).toBe(1); });
+            });
+        "#;
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("env-var-conditional"));
+        assert!(err.contains("binary rule"));
+        assert!(err.contains("TEST.md"));
+    }
+
+    #[test]
+    fn binary_rule_rejects_ternary_it_or_skip() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            const runIt = process.env.X ? it : it.skip;
+            describe('x', () => {
+                runIt('y', () => { expect(realFn()).toBe(1); });
+            });
+        "#;
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("env-var-conditional"));
+    }
+
+    #[test]
+    fn binary_rule_rejects_if_branch_wrapping_describe() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            if (process.env.RUN_INTEGRATION) {
+                describe('integration', () => {
+                    test('x', () => { expect(realFn()).toBe(1); });
+                });
+            }
+        "#;
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("env-var-conditional"));
+    }
+
+    #[test]
+    fn binary_rule_rejects_negated_if_branch() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            if (!process.env.HERMETIC_ONLY) {
+                test('x', () => { expect(realFn()).toBe(1); });
+            }
+        "#;
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("env-var-conditional"));
+    }
+
+    #[test]
+    fn binary_rule_allows_simple_env_assignment() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            const SERVICE_URL = process.env.SERVICE_URL;
+            test('x', () => {
+                const r = realFn(SERVICE_URL);
+                expect(r).toBeDefined();
+            });
+        "#;
+        assert!(analyse(src).is_ok());
+    }
+
+    #[test]
+    fn binary_rule_allows_default_value_short_circuit() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            const URL = process.env.SERVICE_URL || 'http://localhost';
+            test('x', () => {
+                expect(realFn(URL)).toBeDefined();
+            });
+        "#;
+        assert!(analyse(src).is_ok());
+    }
+
+    #[test]
+    fn binary_rule_allows_env_read_inside_test_body() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            test('reads env as data', () => {
+                const val = process.env.SOME_FLAG;
+                expect(realFn(val)).toBeDefined();
+            });
+        "#;
+        assert!(analyse(src).is_ok());
+    }
+
+    #[test]
+    fn binary_rule_allows_unconditional_describe_skip() {
+        let src = r#"
+            import { realFn } from '../src/real';
+            describe.skip('known-broken — tracked in #9999', () => {
+                test('x', () => { expect(realFn()).toBe(1); });
+            });
+        "#;
+        assert!(analyse(src).is_ok());
+    }
+
+    #[test]
+    fn binary_rule_error_points_at_test_md() {
+        let src = r#"
+            const d = process.env.X ? describe : describe.skip;
+            d('x', () => {});
+        "#;
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("TEST.md"));
+    }
+
+    #[test]
+    fn binary_rule_grandfathers_existing_violation() {
+        // If the existing file ALREADY contained the violation, don't re-reject
+        // on an unrelated edit. Forces a cleanup sweep (via #2214), not a
+        // blocking gate on every edit to a legacy file.
+        let existing = r#"
+            import { realFn } from '../src/real';
+            const d = process.env.X ? describe : describe.skip;
+            d('x', () => { test('y', () => { expect(realFn()).toBe(1); }); });
+        "#;
+        // Incoming preserves the violation (still there) but adds a good test.
+        let incoming = r#"
+            import { realFn } from '../src/real';
+            const d = process.env.X ? describe : describe.skip;
+            d('x', () => { test('y', () => { expect(realFn()).toBe(1); }); });
+            test('added good', () => { expect(realFn()).toBe(2); });
+        "#;
+        // Should be Ok — existing violation grandfathered, new block passes quality.
+        assert!(analyse_incoming(existing, incoming).is_ok());
+    }
+
+    // --- #2215: named drift-check for signature sensitivity ---
+    // Silas review (2026-04-18 18:32, point 1): lock the invariant that
+    // block_signature = name + body, not name alone. A future optimization
+    // that collapses signature to name-only would silently break
+    // diff_grandfathers_existing_bad_block.
+
+    #[test]
+    fn diff_rejects_same_name_hollowed_body() {
+        let existing = r#"
+            import { realFn } from '../src/real';
+            test('foo', () => {
+                const r = realFn();
+                expect(r).toBe(1);
+            });
+        "#;
+        // Same test name, body hollowed to a stub.
+        let incoming = r#"
+            import { realFn } from '../src/real';
+            test('foo', () => {
+                // stub
+            });
+        "#;
+        let err = analyse_incoming(existing, incoming).unwrap_err();
+        assert!(err.contains("foo"));
     }
 
     #[test]
