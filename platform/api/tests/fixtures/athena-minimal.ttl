@@ -9,7 +9,16 @@ chorus:SubProduct a owl:Class ; rdfs:label "Sub-product" .
 chorus:SubDomain a owl:Class ; rdfs:label "Sub-domain" .
 chorus:Service a owl:Class ; rdfs:label "Service" .
 chorus:Persistence a owl:Class ; rdfs:label "Persistence" .
-chorus:Step a owl:Class ; rdfs:label "Step" .
+chorus:Vertebra a owl:Class ; rdfs:label "Step" .
+chorus:Machine a owl:Class ; rdfs:label "Machine" .
+
+# Machines
+chorus:demo-machine-library a chorus:Machine ;
+  rdfs:label "library" ;
+  chorus:ipAddress "192.168.86.36" ;
+  chorus:machineRole "primary" .
+
+chorus:demo-alpha-service-reader chorus:runsOn chorus:demo-machine-library .
 
 chorus:hasSubProduct a owl:ObjectProperty ; rdfs:label "has sub-product" .
 chorus:hasDomain a owl:ObjectProperty ; rdfs:label "has domain" .
@@ -25,8 +34,8 @@ chorus:writes a owl:ObjectProperty ; rdfs:domain chorus:Service ; rdfs:range cho
   rdfs:comment "Service writes to a Persistence resource." .
 
 # Value-stream steps
-chorus:harvesting a chorus:Step ; rdfs:label "harvesting" .
-chorus:building a chorus:Step ; rdfs:label "building" .
+chorus:harvesting a chorus:Vertebra ; rdfs:label "harvesting" .
+chorus:building a chorus:Vertebra ; rdfs:label "building" .
 
 # Owners
 chorus:wren-owner a chorus:Role ; rdfs:label "Wren" .

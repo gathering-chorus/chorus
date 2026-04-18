@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "health",
+    "graph": "urn:chorus:ontology"
+  },
+  "data": {
+    "status": "ok",
+    "tripleCount": 86,
+    "endpoint": "http://localhost:3030/pods/sparql",
+    "queries": [
+      {
+        "name": "health",
+        "path": "/api/athena/health",
+        "description": "Ontology health — triple count, endpoint status"
+      },
+      {
+        "name": "products",
+        "path": "/api/athena/products",
+        "description": "List all products"
+      },
+      {
+        "name": "subproducts",
+        "path": "/api/athena/subproducts",
+        "description": "List sub-products with owner, domain count, consumes count"
+      },
+      {
+        "name": "subdomains",
+        "path": "/api/athena/subdomains",
+        "description": "List sub-domains with owner, step. Filter: ?owner, ?step"
+      },
+      {
+        "name": "blast-radius",
+        "path": "/api/athena/subdomains/:id/blast-radius",
+        "description": "Which sub-products consume a given sub-domain"
+      },
+      {
+        "name": "steps",
+        "path": "/api/athena/steps",
+        "description": "Value stream steps with sub-domains at each step"
+      },
+      {
+        "name": "owners",
+        "path": "/api/athena/owners",
+        "description": "Owners with sub-domain counts"
+      },
+      {
+        "name": "machines",
+        "path": "/api/athena/machines",
+        "description": "Machines with running services"
+      }
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "machines",
+    "graph": "urn:chorus:ontology",
+    "count": 1
+  },
+  "data": [
+    {
+      "uri": "https://jeffbridwell.com/chorus#demo-machine-library",
+      "label": "library",
+      "ip": "192.168.86.36",
+      "role": "primary",
+      "services": [
+        {
+          "uri": "https://jeffbridwell.com/chorus#demo-alpha-service-reader",
+          "label": "Alpha Reader"
+        }
+      ]
+    }
+  ]
+}

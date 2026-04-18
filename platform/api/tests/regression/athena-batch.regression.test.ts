@@ -11,6 +11,9 @@ import { fetchAthenaProducts } from '../../src/handlers/athena-products';
 import { fetchAthenaSubproducts } from '../../src/handlers/athena-subproducts';
 import { fetchAthenaOwners } from '../../src/handlers/athena-owners';
 import { fetchAthenaBlastRadius } from '../../src/handlers/athena-blast-radius';
+import { fetchAthenaSteps } from '../../src/handlers/athena-steps';
+import { fetchAthenaMachines } from '../../src/handlers/athena-machines';
+import { fetchAthenaHealth } from '../../src/handlers/athena-health';
 import { makeSparqlFromTtl } from '../fixtures/oxigraph-sparql';
 
 const FIXTURE_TTL = path.join(__dirname, '..', 'fixtures', 'athena-minimal.ttl');
@@ -71,5 +74,23 @@ describe('#2208 data regression — athena batch', () => {
     const r = await fetchAthenaBlastRadius(deps, 'demo-alpha-domain');
     expect(r.status).toBe(200);
     await assertGolden('athena-blast-radius', stripVolatile(r.body));
+  });
+
+  test('/api/athena/steps', async () => {
+    const r = await fetchAthenaSteps(deps);
+    expect(r.status).toBe(200);
+    await assertGolden('athena-steps', stripVolatile(r.body));
+  });
+
+  test('/api/athena/machines', async () => {
+    const r = await fetchAthenaMachines(deps);
+    expect(r.status).toBe(200);
+    await assertGolden('athena-machines', stripVolatile(r.body));
+  });
+
+  test('/api/athena/health', async () => {
+    const r = await fetchAthenaHealth(deps);
+    expect(r.status).toBe(200);
+    await assertGolden('athena-health', stripVolatile(r.body));
   });
 });

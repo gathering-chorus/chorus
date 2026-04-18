@@ -921,3 +921,8 @@
 **Context:** Repeated pattern (#1665 among others) of Jeff acting as the live test suite — 5+ fix cycles where tests were backfilled after code, or not written at all. Tests that passed by definition masked real gaps.
 **Decision:** Every code card follows: read AC, write tests that describe Jeff's experience (UI behavior, API responses, delivery confirmation — not internal state), run them red, write minimum code to pass, run tests after each change, demo only when all green. Tests ship as part of the deliverable. Integration tests that run must be gated behind HERMETIC_TEST_MODE / INTEGRATION env.
 **Applies to:** all code-owning roles (Kade, Silas for scripts); enforced at gate:code + gate:quality.
+
+## DEC-2208: Data-driven regression required for API shape changes
+**Context:** #2178 shipped live-graph SPARQL writes with all unit tests green because the tests faked SPARQL bindings. The ontology contract drifted past the test suite. Jeff's position: 'we shouldn't be changing data behaviors in our api without a rich data-driven regression.'
+**Decision:** Every shape-changing merge to /api/athena/* or /api/chorus/domain/* must add or update a regression test under tests/regression/ that uses the fixture-driven harness (oxigraph + TTL + golden JSON) at tests/fixtures/oxigraph-sparql.ts. The regression asserts the response body against a committed golden file. Drift fails the test; UPDATE_GOLDEN=true regenerates when the change is intentional. Handler unit tests with faked bindings remain necessary but no longer sufficient.
+**Applies to:** Wren (Athena vertical owner). Kade and Silas review at gate:code / gate:arch that a regression exists when the diff touches athena-* or chorus-domain handlers.

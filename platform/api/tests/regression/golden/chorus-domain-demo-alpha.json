@@ -1,0 +1,52 @@
+{
+  "domain": "demo-alpha",
+  "product": "demo",
+  "step": "harvesting",
+  "description": "Fixture domain.",
+  "sections": {
+    "services": {
+      "title": "services",
+      "items": [
+        "Alpha Reader"
+      ],
+      "itemDetails": [
+        {
+          "label": "Alpha Reader",
+          "description": "Reads the Alpha store and emits records.",
+          "owner": "Wren",
+          "reads": [
+            "Alpha Store"
+          ]
+        }
+      ]
+    },
+    "persistence": {
+      "title": "persistence",
+      "items": [
+        "Alpha Store"
+      ],
+      "itemDetails": [
+        {
+          "label": "Alpha Store",
+          "description": "SQLite-backed cache for Alpha data.",
+          "owner": "Wren",
+          "ownerInherited": true
+        }
+      ]
+    }
+  },
+  "cards": {
+    "total": 0,
+    "wip": 0,
+    "blocked": 0,
+    "items": []
+  },
+  "completeness": {
+    "percentage": 50,
+    "present": [],
+    "missing": [],
+    "lifecycle": {}
+  },
+  "hasIcd": false,
+  "icdEndpoint": "/api/icd/domains/demo-alpha"
+}
