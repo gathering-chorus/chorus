@@ -7,6 +7,12 @@
  * if no semanticSearch fn is provided. SPARQL is best-effort; throws swallow.
  *
  * Dependencies injected — testable without a live DB/lance/fuseki.
+ *
+ * NOTE (Silas feedback #2189): semanticSearch / sparqlSearch / mergeUnified /
+ * emitSearchEvent are injected as typed-fn deps because they're currently
+ * private to server.ts. Acceptable while there's only one consumer.
+ * If a second handler needs any of these helpers, extract to src/lib/search.ts
+ * and have both consumers import directly — do not propagate the injection.
  */
 import type Database from 'better-sqlite3';
 

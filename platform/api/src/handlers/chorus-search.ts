@@ -11,6 +11,14 @@
  *
  * Over-fetches by 1 to detect truncation, trims before returning.
  * Every dep injected so tests don't need real db/lance/fuseki/embed.
+ *
+ * NOTE (Silas feedback #2189): mergeUnified / mergeRRF / semanticSearch /
+ * sparqlSearch / emitSearchEvent / buildSearchMeta / enrichHit /
+ * resolveSearchLimit are injected as typed-fn deps because they're currently
+ * private to server.ts. /chorus/self also consumes this pattern — we already
+ * have 2 handlers sharing these. Next time any of these get touched for a
+ * real change, extract to src/lib/search.ts and switch both to direct import.
+ * The injection is fine for one or two consumers; don't propagate further.
  */
 import type Database from 'better-sqlite3';
 
