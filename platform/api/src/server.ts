@@ -4341,12 +4341,11 @@ async function refreshHealthCache(): Promise<void> {
   healthCache.ts = Date.now();
 }
 
-setTimeout(() => refreshHealthCache(), 2000);
-setInterval(() => refreshHealthCache(), 30_000);
-
 // Scheduled reindex — keep index_freshness sources current (#1960)
 // indexAllSources() is SQLite-only (no Ollama), safe in-process unlike embedDelta (#1978).
 // Runs every 15 min. First run after 60s startup delay to avoid boot contention.
+// The timer starts are at the bottom of this file inside `require.main === module`
+// (#2173 AC4) — fn declaration lives here so the start can reference it.
 const REINDEX_INTERVAL = 15 * 60_000;
 let reindexRunning = false;
 async function scheduledReindex(): Promise<void> {
@@ -4362,10 +4361,6 @@ async function scheduledReindex(): Promise<void> {
     reindexRunning = false;
   }
 }
-setTimeout(() => {
-  scheduledReindex();
-  setInterval(() => scheduledReindex(), REINDEX_INTERVAL);
-}, 60_000);
 
 // SHACL validation — check ontology integrity (#2014)
 app.get('/api/athena/validate', async (_req: Request, res: Response) => {
@@ -7198,10 +7193,23 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-// Only bind when run as the main module. Under jest (require.main !== module)
-// tests import `app` and exercise routes in-process (#2167).
+// Only bind + start background timers when run as the main module. Under jest
+// (require.main !== module) tests import `app` and exercise routes in-process
+// (#2167 landed the listen guard; #2173 AC4 moved the timers in here too —
+// setInterval/setTimeout at module-load kept jest alive forever, masking
+// that the harness worked at all).
 const BIND_HOST = process.env.CHORUS_BIND || '0.0.0.0';
 if (require.main === module) {
+  // Health cache refresh — runs every 30s under the live server only.
+  setTimeout(() => refreshHealthCache(), 2000);
+  setInterval(() => refreshHealthCache(), 30_000);
+
+  // Scheduled reindex — live server only. First run after 60s startup delay.
+  setTimeout(() => {
+    scheduledReindex();
+    setInterval(() => scheduledReindex(), REINDEX_INTERVAL);
+  }, 60_000);
+
   app.listen(PORT, BIND_HOST, () => {
     console.log(`[chorus-api] Listening on ${BIND_HOST}:${PORT}`);
     console.log(`[chorus-api] Database: ${DB_PATH}`);
