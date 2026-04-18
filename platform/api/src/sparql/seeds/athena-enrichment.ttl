@@ -1,3 +1,19 @@
 # Athena envelope enrichment seed — appended by POST /api/athena/subdomains/.../description,reads,writes,consumes (#2206)
 # Load into Fuseki instance graph at init.
 
+<https://jeffbridwell.com/chorus#chorus-domain-service-pulse> <http://www.w3.org/2000/01/rdf-schema#comment> "Reads role-declared.json and role-inferred.json, writes pulse-latest.json." .
+<https://jeffbridwell.com/chorus#chorus-domain-service-observer> <http://www.w3.org/2000/01/rdf-schema#comment> "Infers role state from tool-call activity; writes to role-inferred.json." .
+<https://jeffbridwell.com/chorus#chorus-domain-service-context-cache> <http://www.w3.org/2000/01/rdf-schema#comment> "Pulse snapshot cache used by chorus-inject to build prompt envelopes." .
+<https://jeffbridwell.com/chorus#chorus-domain-service-write-scrubber> <http://www.w3.org/2000/01/rdf-schema#comment> "Rust PreToolUse hook that blocks credential writes to shared files." .
+<https://jeffbridwell.com/chorus#chorus-domain-service-stop-the-line> <http://www.w3.org/2000/01/rdf-schema#comment> "Andon pattern hook that halts a session when a tool errors mid-flow." .
+<https://jeffbridwell.com/chorus#chorus-domain-service-chorus-api> <http://www.w3.org/2000/01/rdf-schema#comment> "Node/Express service at localhost:3340 hosting the /api/chorus/* and /api/athena/* endpoints." .
+<https://jeffbridwell.com/chorus#chorus-domain-service-clearing> <http://www.w3.org/2000/01/rdf-schema#comment> "Browser-based multi-role chat surface — real-time alignment between Jeff and roles." .
+<https://jeffbridwell.com/chorus#chorus-domain-store-role-declared-json> <http://www.w3.org/2000/01/rdf-schema#comment> "Explicit role state declared via role-state CLI. JSON at /tmp/claude-team-scan/$role-declared.json." .
+<https://jeffbridwell.com/chorus#chorus-domain-store-role-inferred-json> <http://www.w3.org/2000/01/rdf-schema#comment> "Inferred role state from observer tool-call analysis. Overwrites if more recent than declared." .
+<https://jeffbridwell.com/chorus#chorus-domain-store-pulse-latest-json> <http://www.w3.org/2000/01/rdf-schema#comment> "Latest team pulse snapshot assembled from declared + inferred state. Read by chorus-inject envelope." .
+<https://jeffbridwell.com/chorus#chorus-domain-service-pulse> <https://jeffbridwell.com/chorus#reads> <https://jeffbridwell.com/chorus#chorus-domain-store-role-declared-json> .
+<https://jeffbridwell.com/chorus#chorus-domain-service-pulse> <https://jeffbridwell.com/chorus#reads> <https://jeffbridwell.com/chorus#chorus-domain-store-role-inferred-json> .
+<https://jeffbridwell.com/chorus#chorus-domain-service-pulse> <https://jeffbridwell.com/chorus#writes> <https://jeffbridwell.com/chorus#chorus-domain-store-pulse-latest-json> .
+<https://jeffbridwell.com/chorus#chorus-domain-service-observer> <https://jeffbridwell.com/chorus#reads> <https://jeffbridwell.com/chorus#chorus-domain-store-role-declared-json> .
+<https://jeffbridwell.com/chorus#chorus-domain-service-observer> <https://jeffbridwell.com/chorus#writes> <https://jeffbridwell.com/chorus#chorus-domain-store-role-inferred-json> .
+<https://jeffbridwell.com/chorus#chorus-domain-service-clearing> <https://jeffbridwell.com/chorus#reads> <https://jeffbridwell.com/chorus#chorus-domain-store-pulse-latest-json> .

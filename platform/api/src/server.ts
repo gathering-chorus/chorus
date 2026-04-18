@@ -3107,10 +3107,18 @@ import {
   fetchAthenaPersistenceDescription,
   fetchAthenaServiceEdge,
 } from './handlers/athena-enrichment-write';
-const ENRICHMENT_SEED_PATH = path.resolve(__dirname, 'sparql', 'seeds', 'athena-enrichment.ttl');
+// Seed lives in src/sparql/seeds/ — always version-controlled, never in dist.
+// Resolve from ../src so this works whether server runs from src (ts-node/jest) or dist (compiled).
+const ENRICHMENT_SEED_PATH = path.resolve(__dirname, '..', 'src', 'sparql', 'seeds', 'athena-enrichment.ttl');
 const enrichmentDeps = () => ({
   sparqlUpdate: athenaSparqlUpdate,
-  appendSeed: (triple: string) => fs.appendFileSync(ENRICHMENT_SEED_PATH, triple + '\n'),
+  appendSeed: (triple: string) => {
+    try {
+      fs.appendFileSync(ENRICHMENT_SEED_PATH, triple + '\n');
+    } catch (err) {
+      console.error(`[enrichment] appendSeed failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  },
 });
 
 app.post('/api/athena/subdomains/:id/services/:eid/description', async (req: Request, res: Response) => {
