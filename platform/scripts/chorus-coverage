@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# chorus-coverage — one deterministic script, two honest numbers (#2197).
+#
+# Outputs chorus-wide TypeScript coverage and Rust coverage using the
+# same definition in both languages: covered statements/lines divided by
+# ALL source statements/lines in every source file (not just the subset
+# tests happen to import).
+#
+# Usage:
+#   chorus-coverage           # report last run's numbers (fast, <1s if cached)
+#   chorus-coverage --run     # re-run jest + cargo llvm-cov before reporting
+#   chorus-coverage --json    # machine-readable JSON to stdout
+#
+# Exit codes:
+#   0   both numbers computed
+#   1   TS or Rust measurement failed; partial output still printed
+#
+# "Chorus at 80%" target: TS ≥80% AND Rust ≥80%. Each stands alone —
+# the script never averages them into one misleading headline number.
+set -euo pipefail
+
+ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+TS="${ROOT}/platform/scripts/coverage-ts.py"
+RUST="${ROOT}/platform/scripts/coverage-rust.py"
+
+MODE="report"
+JSON="false"
+for arg in "$@"; do
+  case "$arg" in
+    --run) MODE="run" ;;
+    --json) JSON="true" ;;
+    -h|--help)
+      sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) echo "chorus-coverage: unknown arg $arg" >&2; exit 2 ;;
+  esac
+done
+
+RUN_FLAG=""
+[ "$MODE" = "run" ] && RUN_FLAG="--run"
+
+if [ "$JSON" = "true" ]; then
+  TS_JSON=$(python3 "$TS" $RUN_FLAG --json 2>/dev/null || echo '{"language":"ts","error":"failed"}')
+  RUST_JSON=$(python3 "$RUST" $RUN_FLAG --json 2>/dev/null || echo '{"language":"rust","error":"failed"}')
+  printf '{"ts":%s,"rust":%s}\n' "$TS_JSON" "$RUST_JSON"
+  exit 0
+fi
+
+echo "=== Chorus Coverage ==="
+echo
+python3 "$TS" $RUN_FLAG || echo "[coverage-ts] failed"
+echo
+python3 "$RUST" $RUN_FLAG || echo "[coverage-rust] failed"
+echo
+echo "Target: TS ≥80% AND Rust ≥80%. Both stand alone — no average."
