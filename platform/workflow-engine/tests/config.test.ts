@@ -53,10 +53,10 @@ describe('config', () => {
     });
 
     it('has brief dirs for all roles', () => {
-      expect(DEFAULT_CONFIG.briefDirs['silas']).toContain('architect/briefs');
-      expect(DEFAULT_CONFIG.briefDirs['kade']).toContain('engineer/briefs');
-      expect(DEFAULT_CONFIG.briefDirs['wren']).toContain('product-manager/briefs');
-      expect(DEFAULT_CONFIG.briefDirs['jeff']).toContain('product-manager/briefs');
+      expect(DEFAULT_CONFIG.briefDirs['silas']).toContain('roles/silas/briefs');
+      expect(DEFAULT_CONFIG.briefDirs['kade']).toContain('roles/kade/briefs');
+      expect(DEFAULT_CONFIG.briefDirs['wren']).toContain('roles/wren/briefs');
+      expect(DEFAULT_CONFIG.briefDirs['jeff']).toContain('roles/wren/briefs');
     });
   });
 });

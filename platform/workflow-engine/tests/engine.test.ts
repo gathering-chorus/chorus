@@ -1,6 +1,6 @@
 import { WorkflowEngine } from '../src/engine';
 import { WorkflowEngineConfig, WorkflowManifest } from '../src/types';
-import { mkdirSync, rmSync, existsSync, readdirSync, readFileSync } from 'fs';
+import { mkdirSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -428,5 +428,31 @@ describe('WorkflowEngine', () => {
       expect(history.length).toBeGreaterThanOrEqual(7);
       expect(history[history.length - 1].event).toBe('workflow_completed');
     });
+  });
+
+  describe('edge cases', () => {
+    it('advance throws when no active step remains', () => {
+      const cfg = tempConfig();
+      const engine = new WorkflowEngine(cfg);
+      const wf = engine.create('Stuck decision', 'silas:Write');
+      // Force all steps to non-advanceable status directly on disk
+      const manifestPath = join(cfg.activeDir, `${wf.id}.json`);
+      const raw = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      raw.steps[0].status = 'blocked';
+      writeFileSync(manifestPath, JSON.stringify(raw));
+      expect(() => engine.advance(wf.id)).toThrow(/No active step/);
+      rmSync(cfg.activeDir, { recursive: true, force: true });
+    });
+
+    it('status(wfId) loads a single workflow', () => {
+      const cfg = tempConfig();
+      const engine = new WorkflowEngine(cfg);
+      const wf = engine.create('Single lookup', 'kade:Do it');
+      const loaded = engine.status(wf.id) as WorkflowManifest;
+      expect(loaded.id).toBe(wf.id);
+      expect(loaded.decision).toBe('Single lookup');
+      rmSync(cfg.activeDir, { recursive: true, force: true });
+    });
+
   });
 });
