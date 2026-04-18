@@ -2511,22 +2511,10 @@ app.get('/api/chorus/health', (_req: Request, res: Response) => {
 });
 
 // Health cache exposed via /api/chorus/health/detail for deep-health (#1978)
+import { fetchHealthDetail } from './handlers/chorus-health-detail';
 app.get('/api/chorus/health/detail', async (_req: Request, res: Response) => {
-  // Ollama availability check (#1980)
-  let ollamaStatus = 'unknown';
-  try {
-    const ollamaRes = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(3000) });
-    ollamaStatus = ollamaRes.ok ? 'up' : 'degraded';
-  } catch { ollamaStatus = 'down'; }
-
-  res.json({
-    db: { status: healthCache.dbStatus, rows: healthCache.dbRows },
-    vectors: healthCache.vectors,
-    unembedded: healthCache.unembedded,
-    hooks: { status: healthCache.hooksStatus },
-    ollama: { status: ollamaStatus },
-    timestamp: bostonNow(),
-  });
+  const r = await fetchHealthDetail({ healthCache, ollamaUrl: OLLAMA_URL, timestamp: bostonNow });
+  res.status(r.status).json(r.body);
 });
 
 // --- GET /api/chorus/hooks/metrics (#2277) ---
