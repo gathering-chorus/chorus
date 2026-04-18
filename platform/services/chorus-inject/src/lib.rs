@@ -1,13 +1,23 @@
-//! chorus-inject library — pure logic for osascript injection.
+//! chorus-inject library — pure + testable logic for osascript injection.
 //!
-//! The binary (main.rs) is a thin argv parser. All testable logic lives here:
+//! Script builders (pure):
 //!   - `escape_for_applescript` — escape user text for AS double-quoted literals
 //!   - `role_pattern` — map role name → Terminal window name pattern
 //!   - `build_inject_script` — construct the AppleScript for keystroke delivery
 //!   - `build_count_windows_script` — construct the window-counting AppleScript
 //!
-//! The impure pieces stay in main.rs: osascript spawning, stdout parsing,
-//! dry-run env check. Those aren't testable without real macOS Accessibility.
+//! Behavior (testable via `OsaRunner`):
+//!   - `inject` — role validation, escape, dry-run branch, runner dispatch, ok/err parse
+//!   - `count_windows` — runner dispatch, stdout trim
+//!   - `dispatch` — argv parsing, usage handling, outcome mapping
+//!
+//! main.rs is a thin shell over `dispatch` — it wires `std::env::args`,
+//! `CHORUS_INJECT_DRY_RUN`, and `RealOsaRunner` to the library entry point.
+//! #2167 retired the prior "bin is structurally uncoverable" framing by
+//! routing every branch through the runner seam; tests use a FakeRunner.
+
+use std::io;
+use std::process::{Command, Output};
 
 /// Escape a user string for embedding inside an AppleScript double-quoted literal.
 ///
@@ -47,7 +57,6 @@ pub fn role_pattern(role: &str) -> Option<&'static str> {
 /// Build the AppleScript that counts Terminal windows matching a pattern + "claude".
 /// Returns the script body; caller feeds it to osascript -e.
 pub fn build_count_windows_script(pattern: &str) -> String {
-    // Strip double-quotes from the pattern — it's interpolated inside an AS literal.
     let safe = pattern.replace('"', "");
     format!(
         r#"tell application "Terminal"
@@ -71,10 +80,6 @@ end tell"#,
 }
 
 /// Build the AppleScript for keystroke injection into a Terminal window.
-///
-/// `pattern` is the window-name fragment (e.g. "silas"); `escaped_text` is the
-/// already-escaped payload (see `escape_for_applescript`); `role` is used for
-/// the "no window" error message.
 ///
 /// #2029: uses keystroke + key code 36 (Return). do script breaks auto-submit.
 /// #1764 / DEC-107: saves and restores frontmost app to prevent focus theft.
@@ -110,6 +115,115 @@ end tell"#,
         text = escaped_text,
         role = role
     )
+}
+
+/// Seam for osascript execution. `RealOsaRunner` shells out; tests use a fake.
+pub trait OsaRunner {
+    fn run(&self, script: &str) -> io::Result<Output>;
+}
+
+/// Production runner — invokes `osascript -e <script>`.
+pub struct RealOsaRunner;
+
+impl OsaRunner for RealOsaRunner {
+    fn run(&self, script: &str) -> io::Result<Output> {
+        Command::new("osascript").args(["-e", script]).output()
+    }
+}
+
+/// Build the count-windows script, run it, trim stdout.
+pub fn count_windows<R: OsaRunner>(runner: &R, pattern: &str) -> Result<String, String> {
+    let script = build_count_windows_script(pattern);
+    let output = runner
+        .run(&script)
+        .map_err(|e| format!("osascript spawn failed: {}", e))?;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Inject `text` into `role`'s Terminal window via `runner`.
+///
+/// Behavior:
+///   - unknown role → Err("unknown role: <role>"), runner not invoked
+///   - `dry_run` = true → writes DRY-RUN line to `writer`, returns Ok(()) without invoking runner
+///   - runner Ok + stdout "ok" → Ok(())
+///   - runner Ok + stdout other → Err("<stdout> stderr: <stderr>")
+///   - runner Err → Err("osascript spawn failed: ...")
+pub fn inject<R: OsaRunner, W: io::Write>(
+    runner: &R,
+    writer: &mut W,
+    role: &str,
+    text: &str,
+    dry_run: bool,
+) -> Result<(), String> {
+    let pattern = role_pattern(role).ok_or_else(|| format!("unknown role: {}", role))?;
+    let escaped = escape_for_applescript(text);
+
+    if dry_run {
+        writeln!(
+            writer,
+            "DRY-RUN inject role={} pattern={} escaped={}",
+            role, pattern, escaped
+        )
+        .map_err(|e| format!("write failed: {}", e))?;
+        return Ok(());
+    }
+
+    let script = build_inject_script(pattern, &escaped, role);
+    let output = runner
+        .run(&script)
+        .map_err(|e| format!("osascript spawn failed: {}", e))?;
+
+    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if result == "ok" {
+        Ok(())
+    } else {
+        Err(format!("{} stderr: {}", result, stderr))
+    }
+}
+
+/// Outcome of `dispatch` — main.rs maps this to ExitCode + stdout/stderr.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Dispatch {
+    /// Print the string to stdout, exit 0.
+    PrintOut(String),
+    /// Exit 0 (inject already wrote to `writer` if dry-run).
+    Ok,
+    /// Print the string to stderr, exit 1.
+    Err(String),
+}
+
+/// Single entry point: parse `args` (post-argv[0]), run the right operation.
+///
+/// `writer` captures inject's dry-run output. In production this is
+/// `io::stdout().lock()`; tests use a `Vec<u8>`.
+pub fn dispatch<R: OsaRunner, W: io::Write>(
+    runner: &R,
+    writer: &mut W,
+    args: &[String],
+    dry_run: bool,
+) -> Dispatch {
+    if args.len() == 2 && args[0] == "--count-windows" {
+        return match count_windows(runner, &args[1]) {
+            Ok(s) => Dispatch::PrintOut(s),
+            Err(e) => Dispatch::Err(e),
+        };
+    }
+
+    if args.len() < 2 {
+        return Dispatch::Err(
+            "Usage: chorus-inject <role> <text>\n       chorus-inject --count-windows <pattern>"
+                .to_string(),
+        );
+    }
+
+    let role = &args[0];
+    let text = args[1..].join(" ");
+
+    match inject(runner, writer, role, &text, dry_run) {
+        Ok(()) => Dispatch::Ok,
+        Err(e) => Dispatch::Err(e),
+    }
 }
 
 #[cfg(test)]
@@ -204,7 +318,6 @@ mod count_windows_script_tests {
 
     #[test]
     fn strips_double_quotes_from_pattern() {
-        // Defense against a quoted pattern breaking the enclosing AS literal.
         let s = build(r#"wr"en"#);
         assert!(s.contains("wren"));
         assert!(!s.contains(r#""wr"en""#));
@@ -265,7 +378,6 @@ mod inject_script_tests {
 
     #[test]
     fn escaped_text_embeds_verbatim() {
-        // Caller already escaped — we interpolate as-is.
         let s = build("wren", r#"hi \"quoted\""#, "wren");
         assert!(s.contains(r#"keystroke "hi \"quoted\"""#));
     }

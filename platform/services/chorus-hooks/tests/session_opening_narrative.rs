@@ -7,7 +7,7 @@
 
 use std::fs;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
 /// Build fresh context cache for silas — required setup for every test reading the file.
 /// Each test calls this (idempotent) so ordering doesn't matter.

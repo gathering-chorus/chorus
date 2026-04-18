@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::Path;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
 /// Session-start regenerates pulse-latest.json with fresh data
 #[test]

@@ -1,19 +1,20 @@
 # tarpaulin config for chorus-inject — #2167
 #
-# Floor: 20%.
+# Floor: 80%. Baseline: 2026-04-17 — 98.48% (65/66 lines).
 #
-# Why not 80%? chorus-inject is a bin crate. main.rs (42 lines) is argv
-# dispatch + Command::new("osascript") — intrinsically uncoverable in a unit
-# test environment (requires real macOS Accessibility permission). The lib
-# target is 100% covered (13/13). Cap is ~24% until we mock the Command
-# runner or accept bin-wrapper as uncoverable (standard for platform shims).
+# History: prior floor was 20% with a "bin wrapper is uncoverable without real
+# Accessibility" rationale. That conflated "requires macOS permission to run
+# for real" with "cannot be unit tested." #2167 moved the impure path behind
+# an `OsaRunner` trait — FakeRunner exercises every branch (unknown role,
+# dry-run short-circuit, spawn failure, ok stdout, non-ok stdout, argv
+# dispatch). main.rs is reached by integration tests via CARGO_BIN_EXE so
+# tarpaulin instruments it. The only uncovered line is a macro-internal
+# sub-expression inside writeln! that tarpaulin can't reach.
 #
-# If tarpaulin reports below 20%, the pure logic in lib.rs has regressed.
-# That's the signal this gate catches.
-#
-# Baseline: 2026-04-17 — 23.64% (13 lib / 55 total lines).
+# If tarpaulin reports below 80%, real behavior has regressed. The lib target
+# must stay near 100%; the bin shell must stay covered by integration tests.
 
 [default]
 run-types = ["Tests"]
-fail-under = 20
+fail-under = 80
 exclude-files = ["tests/*"]

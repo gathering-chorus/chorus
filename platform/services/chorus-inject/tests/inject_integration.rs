@@ -25,7 +25,12 @@
 
 use std::process::Command;
 
-const INJECT_BIN: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/target/release/chorus-inject";
+// CARGO_BIN_EXE_chorus-inject points to the cargo-built binary for the current
+// profile — debug during `cargo test`, which is what tarpaulin instruments.
+// Previously this was a hardcoded release-binary path; that path is still
+// used by scripts that assume an installed release build (nudge e2e below
+// still shells out through the release binary via the nudge script).
+const INJECT_BIN: &str = env!("CARGO_BIN_EXE_chorus-inject");
 const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge";
 
 // --- AC1: keystroke + key code 36, not do script ---
@@ -135,6 +140,26 @@ fn rejects_unknown_role() {
     assert!(!output.status.success(), "unknown role should fail");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("unknown role"), "should say unknown role: {}", stderr);
+}
+
+// --- AC: --count-windows CLI path (hermetic — no matching pattern → "0::") ---
+
+#[test]
+fn count_windows_cli_returns_zero_for_nonmatching_pattern() {
+    // Exercises the PrintOut arm in main.rs via the real binary. Uses a
+    // pattern that can't appear in a Terminal window name, so stdout is "0::"
+    // regardless of host state.
+    let output = Command::new(INJECT_BIN)
+        .args(["--count-windows", "zzzz_no_such_window_zzzz"])
+        .output()
+        .expect("failed to run chorus-inject");
+    assert!(output.status.success(), "--count-windows should exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.trim().starts_with("0::"),
+        "non-matching pattern should return 0::, got: {}",
+        stdout
+    );
 }
 
 // --- Binary exists ---

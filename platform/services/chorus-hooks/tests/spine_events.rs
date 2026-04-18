@@ -6,7 +6,7 @@
 use std::fs;
 use std::process::Command;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
 
 fn log_tail(n: usize) -> String {

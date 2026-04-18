@@ -1574,3 +1574,637 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+mod pure_tests {
+    //! Tests for pure/deterministic helpers in ops.rs. #2167 — coverage push.
+    //!
+    //! These are the functions that don't touch HTTP, disk state, or process
+    //! spawning: pattern normalization, hash, false-positive matching, tier
+    //! classification, window-seconds parsing, alertmanager/loki response
+    //! parsing, disk-output parsing, cooldown check, argv parsing, help text.
+    //!
+    //! Orchestrator coverage (do_errors, do_health, do_status) is separate —
+    //! needs Loki/Command seams that the next wave of the 80% push introduces.
+
+    use super::*;
+
+    // --- normalize_pattern ---
+
+    #[test]
+    fn normalize_pattern_redacts_iso_timestamp() {
+        let out = normalize_pattern("2026-04-17T18:42:01.123Z error: something");
+        assert!(out.contains("<TS>"), "got: {}", out);
+        assert!(!out.contains("2026-04-17"));
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_uuid() {
+        let out = normalize_pattern("trace 550e8400-e29b-41d4-a716-446655440000 failed");
+        assert!(out.contains("<UUID>"), "got: {}", out);
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_long_hex() {
+        let out = normalize_pattern("sha 0123456789abcdef0123456789abcdef boom");
+        assert!(out.contains("<HEX>"), "got: {}", out);
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_memory_address() {
+        let out = normalize_pattern("dereferenced 0xdeadbeef panic");
+        assert!(out.contains("<ADDR>"), "got: {}", out);
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_filesystem_path() {
+        let out = normalize_pattern("read /Users/jeff/project/file.rs failed");
+        assert!(out.contains("<PATH>"), "got: {}", out);
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_url_when_path_regex_does_not_consume_it() {
+        // Paths are redacted before URLs, so most URLs with multi-segment
+        // paths get hit by the path regex first. A bare URL with no path
+        // (scheme + host + port, ending at whitespace) takes the URL branch.
+        let out = normalize_pattern(r#"fetch http://host "done""#);
+        // Either <URL> or nothing — but the original URL is gone.
+        assert!(!out.contains("http://host"), "got: {}", out);
+        assert!(out.contains("<URL>") || out.contains("<PATH>"), "got: {}", out);
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_goroutine_id() {
+        let out = normalize_pattern("goroutine 47 stuck");
+        assert!(out.contains("goroutine <N>"), "got: {}", out);
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_stack_dump() {
+        let out = normalize_pattern(r#"panic stack="main.go:42 foo.go:8" over"#);
+        assert!(out.contains(r#"stack="<STACK>""#), "got: {}", out);
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_message_id() {
+        let out = normalize_pattern("delivering message 7a3b-8c21-ef00 to queue");
+        assert!(out.contains("message <ID>"), "got: {}", out);
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_watermill_poisoned_fields() {
+        let out = normalize_pattern(
+            r#"handler_poisoned=hX topic_poisoned=tY subscriber_poisoned=sZ reason_poisoned=boom"#,
+        );
+        assert!(out.contains("handler_poisoned=<H>"));
+        assert!(out.contains("topic_poisoned=<T>"));
+        assert!(out.contains("subscriber_poisoned=<S>"));
+        assert!(out.contains("reason_poisoned=<REASON>"));
+    }
+
+    #[test]
+    fn normalize_pattern_redacts_port() {
+        let out = normalize_pattern("connect :3340 refused");
+        assert!(out.contains(":<PORT>"), "got: {}", out);
+    }
+
+    #[test]
+    fn normalize_pattern_collapses_whitespace() {
+        let out = normalize_pattern("  multiple   spaces   here   ");
+        assert_eq!(out, "multiple spaces here");
+    }
+
+    #[test]
+    fn normalize_pattern_is_stable_for_equivalent_inputs() {
+        // Two log lines that differ only in timestamp/port should normalize equal.
+        let a = normalize_pattern("2026-04-17T10:00:00Z conn :3000 refused");
+        let b = normalize_pattern("2026-04-17T11:22:33Z conn :9999 refused");
+        assert_eq!(a, b);
+    }
+
+    // --- hash_pattern ---
+
+    #[test]
+    fn hash_pattern_is_deterministic() {
+        let a = hash_pattern("loki", "panic: OOM");
+        let b = hash_pattern("loki", "panic: OOM");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn hash_pattern_differs_on_pattern() {
+        let a = hash_pattern("loki", "panic: OOM");
+        let b = hash_pattern("loki", "panic: segfault");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn hash_pattern_differs_on_source() {
+        let a = hash_pattern("loki", "panic: OOM");
+        let b = hash_pattern("chorus", "panic: OOM");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn hash_pattern_is_hex_8_bytes_equals_16_chars() {
+        // Truncated to first 8 bytes → 16 hex chars.
+        let h = hash_pattern("x", "y");
+        assert_eq!(h.len(), 16);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    // --- is_false_positive ---
+
+    #[test]
+    fn is_false_positive_matches_plain_line() {
+        let fps = compile_false_positives();
+        assert!(is_false_positive("errorsmith test run", &fps));
+    }
+
+    #[test]
+    fn is_false_positive_rejects_real_errors() {
+        let fps = compile_false_positives();
+        assert!(!is_false_positive("FATAL: database connection lost", &fps));
+    }
+
+    #[test]
+    fn is_false_positive_matches_against_json_appname_message() {
+        let fps = compile_false_positives();
+        let line = r#"{"appName":"chorus-audit","message":"nightly run complete","level":"error"}"#;
+        assert!(is_false_positive(line, &fps), "should match chorus-audit in JSON");
+    }
+
+    #[test]
+    fn is_false_positive_handles_malformed_json_gracefully() {
+        let fps = compile_false_positives();
+        assert!(!is_false_positive("{not valid json", &fps));
+    }
+
+    // --- classify_tier ---
+
+    #[test]
+    fn classify_tier_panic_is_critical() {
+        // \bpanic\b requires a word boundary after "panic" — "panicked" has
+        // none (k is still a word char), so use "panic:" for the bare word.
+        let re = Regex::new(CRITICAL_PATTERN).unwrap();
+        assert_eq!(classify_tier("panic: runtime error", &re), "critical");
+    }
+
+    #[test]
+    fn classify_tier_oom_is_critical() {
+        let re = Regex::new(CRITICAL_PATTERN).unwrap();
+        assert_eq!(classify_tier("killed: OOM", &re), "critical");
+    }
+
+    #[test]
+    fn classify_tier_plain_error_is_warning() {
+        let re = Regex::new(CRITICAL_PATTERN).unwrap();
+        assert_eq!(classify_tier("failed to parse config", &re), "warning");
+    }
+
+    // --- compile_false_positives ---
+
+    #[test]
+    fn compile_false_positives_produces_one_regex_per_entry() {
+        let fps = compile_false_positives();
+        assert_eq!(fps.len(), FALSE_POSITIVES.len());
+    }
+
+    #[test]
+    fn compile_false_positives_is_case_insensitive() {
+        let fps = compile_false_positives();
+        // "errorsmith" entry should match upper-case variants.
+        assert!(is_false_positive("ERRORSMITH active", &fps));
+    }
+
+    // --- parse_window_seconds ---
+
+    #[test]
+    fn parse_window_seconds_minutes() {
+        assert_eq!(parse_window_seconds("5m"), 300);
+        assert_eq!(parse_window_seconds("30m"), 1800);
+    }
+
+    #[test]
+    fn parse_window_seconds_hours() {
+        assert_eq!(parse_window_seconds("1h"), 3600);
+        assert_eq!(parse_window_seconds("24h"), 86400);
+    }
+
+    #[test]
+    fn parse_window_seconds_days() {
+        assert_eq!(parse_window_seconds("1d"), 86400);
+        assert_eq!(parse_window_seconds("7d"), 7 * 86400);
+    }
+
+    #[test]
+    fn parse_window_seconds_falls_back_to_5m_default() {
+        assert_eq!(parse_window_seconds("garbage"), 300);
+        assert_eq!(parse_window_seconds(""), 300);
+    }
+
+    #[test]
+    fn parse_window_seconds_unparseable_suffix_falls_back() {
+        // "abcm" → strips "m", "abc".parse::<u64>() fails, default 5 * 60.
+        assert_eq!(parse_window_seconds("abcm"), 300);
+    }
+
+    // --- empty_loki_result ---
+
+    #[test]
+    fn empty_loki_result_has_data_result_empty_array() {
+        let v = empty_loki_result();
+        let arr = v
+            .pointer("/data/result")
+            .and_then(|v| v.as_array())
+            .expect("data.result present");
+        assert_eq!(arr.len(), 0);
+    }
+
+    // --- parse_result_field ---
+
+    #[test]
+    fn parse_result_field_unwraps_string_json_payload() {
+        let r = serde_json::json!({"result": "{\"ok\": true}"});
+        let parsed = parse_result_field(&r).unwrap();
+        assert_eq!(parsed["ok"], true);
+    }
+
+    #[test]
+    fn parse_result_field_strips_markdown_code_fence() {
+        let r = serde_json::json!({"result": "```json\n{\"x\": 1}\n```"});
+        let parsed = parse_result_field(&r).unwrap();
+        assert_eq!(parsed["x"], 1);
+    }
+
+    #[test]
+    fn parse_result_field_returns_object_as_is() {
+        let r = serde_json::json!({"result": {"y": 2}});
+        let parsed = parse_result_field(&r).unwrap();
+        assert_eq!(parsed["y"], 2);
+    }
+
+    #[test]
+    fn parse_result_field_missing_returns_whole_response() {
+        let r = serde_json::json!({"other": "field"});
+        let parsed = parse_result_field(&r).unwrap();
+        assert_eq!(parsed["other"], "field");
+    }
+
+    #[test]
+    fn parse_result_field_malformed_string_errors() {
+        let r = serde_json::json!({"result": "not { valid json"});
+        assert!(parse_result_field(&r).is_err());
+    }
+
+    // --- is_on_cooldown ---
+
+    #[test]
+    fn is_on_cooldown_false_when_category_absent() {
+        let carded = HashMap::new();
+        assert!(!is_on_cooldown("disk", &carded));
+    }
+
+    #[test]
+    fn is_on_cooldown_true_for_recent_timestamp_rfc3339() {
+        let mut carded = HashMap::new();
+        let now = Utc::now().to_rfc3339();
+        carded.insert("disk".to_string(), now);
+        assert!(is_on_cooldown("disk", &carded));
+    }
+
+    #[test]
+    fn is_on_cooldown_false_for_old_timestamp() {
+        let mut carded = HashMap::new();
+        // 48h ago — past the 24h window.
+        let old = (Utc::now() - chrono::Duration::hours(48)).to_rfc3339();
+        carded.insert("disk".to_string(), old);
+        assert!(!is_on_cooldown("disk", &carded));
+    }
+
+    #[test]
+    fn is_on_cooldown_handles_z_suffix_timestamp() {
+        let mut carded = HashMap::new();
+        // "Z" style — the code substitutes "+00:00" before parsing.
+        let ts = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        carded.insert("disk".to_string(), ts);
+        assert!(is_on_cooldown("disk", &carded));
+    }
+
+    #[test]
+    fn is_on_cooldown_handles_naive_timestamp_fallback() {
+        let mut carded = HashMap::new();
+        // No timezone at all — hits the NaiveDateTime fallback branch.
+        let ts = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+        carded.insert("disk".to_string(), ts);
+        assert!(is_on_cooldown("disk", &carded));
+    }
+
+    #[test]
+    fn is_on_cooldown_false_for_unparseable_timestamp() {
+        let mut carded = HashMap::new();
+        carded.insert("disk".to_string(), "not a date".to_string());
+        assert!(!is_on_cooldown("disk", &carded));
+    }
+
+    // --- parse_alerts ---
+
+    #[test]
+    fn parse_alerts_empty_array_gives_no_firing() {
+        let info = parse_alerts("[]");
+        assert_eq!(info.firing.len(), 0);
+    }
+
+    #[test]
+    fn parse_alerts_malformed_json_gives_no_firing() {
+        let info = parse_alerts("{not json");
+        assert_eq!(info.firing.len(), 0);
+    }
+
+    #[test]
+    fn parse_alerts_extracts_alertname_severity_summary() {
+        let json = r#"[
+            {
+                "labels": {"alertname": "DiskFull", "severity": "critical"},
+                "annotations": {"summary": "root partition 99% full"}
+            }
+        ]"#;
+        let info = parse_alerts(json);
+        assert_eq!(info.firing.len(), 1);
+        assert_eq!(info.firing[0].alertname, "DiskFull");
+        assert_eq!(info.firing[0].severity, "critical");
+        assert_eq!(info.firing[0].summary, "root partition 99% full");
+    }
+
+    #[test]
+    fn parse_alerts_falls_back_to_description_when_no_summary() {
+        let json = r#"[
+            {
+                "labels": {"alertname": "X", "severity": "warning"},
+                "annotations": {"description": "from description"}
+            }
+        ]"#;
+        let info = parse_alerts(json);
+        assert_eq!(info.firing[0].summary, "from description");
+    }
+
+    #[test]
+    fn parse_alerts_missing_labels_defaults_to_unknown() {
+        let json = r#"[{"annotations": {"summary": "x"}}]"#;
+        let info = parse_alerts(json);
+        assert_eq!(info.firing[0].alertname, "unknown");
+        assert_eq!(info.firing[0].severity, "unknown");
+    }
+
+    #[test]
+    fn parse_alerts_truncates_summary_to_200_chars() {
+        let long = "a".repeat(500);
+        let json = format!(
+            r#"[{{"labels":{{"alertname":"x","severity":"s"}},"annotations":{{"summary":"{}"}}}}]"#,
+            long
+        );
+        let info = parse_alerts(&json);
+        assert_eq!(info.firing[0].summary.chars().count(), 200);
+    }
+
+    // --- parse_errors ---
+
+    #[test]
+    fn parse_errors_empty_input_gives_zero_counts() {
+        let info = parse_errors("{}", "{}");
+        assert_eq!(info.total_30m, 0);
+        assert_eq!(info.by_container.len(), 0);
+        assert!(!info.sync_storm.detected);
+    }
+
+    #[test]
+    fn parse_errors_aggregates_by_container() {
+        let errors = r#"{
+            "data": {"result": [
+                {"metric": {"container_name": "api"}, "value": [0, "5"]},
+                {"metric": {"container_name": "worker"}, "value": [0, "3"]}
+            ]}
+        }"#;
+        let info = parse_errors(errors, "{}");
+        assert_eq!(info.total_30m, 8);
+        assert_eq!(info.by_container.get("api"), Some(&5));
+        assert_eq!(info.by_container.get("worker"), Some(&3));
+    }
+
+    #[test]
+    fn parse_errors_detects_sync_storm_above_threshold() {
+        let sync = r#"{
+            "data": {"result": [
+                {"metric": {"container_name": "chorus"}, "value": [0, "25"]}
+            ]}
+        }"#;
+        let info = parse_errors("{}", sync);
+        assert!(info.sync_storm.detected);
+        assert_eq!(info.sync_storm.container.as_deref(), Some("chorus"));
+        assert_eq!(info.sync_storm.count, 25);
+    }
+
+    #[test]
+    fn parse_errors_no_sync_storm_below_threshold() {
+        // threshold is > 10, so 10 exactly does not trigger.
+        let sync = r#"{
+            "data": {"result": [
+                {"metric": {"container_name": "x"}, "value": [0, "10"]}
+            ]}
+        }"#;
+        let info = parse_errors("{}", sync);
+        assert!(!info.sync_storm.detected);
+    }
+
+    #[test]
+    fn parse_errors_missing_container_name_defaults_to_unknown() {
+        let errors = r#"{
+            "data": {"result": [
+                {"metric": {}, "value": [0, "1"]}
+            ]}
+        }"#;
+        let info = parse_errors(errors, "{}");
+        assert_eq!(info.by_container.get("unknown"), Some(&1));
+    }
+
+    // --- parse_disk_diskutil ---
+
+    #[test]
+    fn parse_disk_diskutil_computes_pct_and_available_gb() {
+        // Total 2GB, free 1GB → 50% used, 1.0 GB available.
+        let out = "\
+Container Total Space:     2.0 GB (2147483648 Bytes)
+Container Free Space:      1.0 GB (1073741824 Bytes)
+";
+        let info = parse_disk_diskutil(out);
+        assert_eq!(info.usage_pct, 50);
+        assert_eq!(info.available_gb, 1.0);
+    }
+
+    #[test]
+    fn parse_disk_diskutil_empty_output_gives_zeros() {
+        let info = parse_disk_diskutil("");
+        assert_eq!(info.usage_pct, 0);
+        assert_eq!(info.available_gb, 0.0);
+    }
+
+    #[test]
+    fn parse_disk_diskutil_rounds_to_one_decimal() {
+        // 1.23 GB free → should render as 1.2.
+        let gb_bytes = 1_320_000_000u64;
+        let total = 2_147_483_648u64;
+        let out = format!(
+            "\
+Container Total Space:     2.0 GB ({} Bytes)
+Container Free Space:      1.23 GB ({} Bytes)
+",
+            total, gb_bytes
+        );
+        let info = parse_disk_diskutil(&out);
+        // 1_320_000_000 / 1_073_741_824 ≈ 1.2294; rounded to 1.2.
+        assert_eq!(info.available_gb, 1.2);
+    }
+
+    // --- parse_args ---
+
+    fn sv(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// `Config` deliberately doesn't implement `Debug` (it holds paths that we
+    /// don't want spraying into assert messages). These helpers avoid the
+    /// Debug bound that `unwrap`/`unwrap_err` would otherwise require.
+    fn cfg(r: Result<Config, String>) -> Config {
+        match r {
+            Ok(c) => c,
+            Err(e) => panic!("expected Ok(Config), got Err({})", e),
+        }
+    }
+    fn err(r: Result<Config, String>) -> String {
+        match r {
+            Ok(_) => panic!("expected Err, got Ok(Config)"),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn parse_args_empty_returns_usage_error() {
+        let e = err(parse_args(&sv(&[])));
+        assert!(e.contains("Usage:"));
+    }
+
+    #[test]
+    fn parse_args_errors_subcommand() {
+        let c = cfg(parse_args(&sv(&["errors"])));
+        assert_eq!(c.subcommand, "errors");
+        assert_eq!(c.window, DEFAULT_WINDOW);
+    }
+
+    #[test]
+    fn parse_args_defects_aliases_to_errors() {
+        let c = cfg(parse_args(&sv(&["defects"])));
+        assert_eq!(c.subcommand, "errors");
+    }
+
+    #[test]
+    fn parse_args_health_subcommand() {
+        let c = cfg(parse_args(&sv(&["health"])));
+        assert_eq!(c.subcommand, "health");
+    }
+
+    #[test]
+    fn parse_args_window_flag_overrides_default() {
+        let c = cfg(parse_args(&sv(&["errors", "--window", "1h"])));
+        assert_eq!(c.window, "1h");
+    }
+
+    #[test]
+    fn parse_args_model_and_budget_flags() {
+        let c = cfg(parse_args(&sv(&["health", "--model", "sonnet", "--budget", "0.25"])));
+        assert_eq!(c.model, "sonnet");
+        assert_eq!(c.budget, "0.25");
+    }
+
+    #[test]
+    fn parse_args_verbose_flag() {
+        let c = cfg(parse_args(&sv(&["all", "--verbose"])));
+        assert!(c.verbose);
+    }
+
+    #[test]
+    fn parse_args_unknown_flag_errors() {
+        let e = err(parse_args(&sv(&["errors", "--nope"])));
+        assert!(e.contains("Unknown arg: --nope"));
+    }
+
+    #[test]
+    fn parse_args_window_missing_value_errors() {
+        let e = err(parse_args(&sv(&["errors", "--window"])));
+        assert!(e.contains("--window requires a value"));
+    }
+
+    #[test]
+    fn parse_args_help_flag_returns_help_text_as_err() {
+        // `parse_args` uses Err to signal "print and exit" for --help.
+        let e = err(parse_args(&sv(&["--help"])));
+        assert!(e.contains("chorus-ops"));
+        assert!(e.contains("Subcommands:"));
+    }
+
+    #[test]
+    fn parse_args_help_flag_after_subcommand() {
+        let e = err(parse_args(&sv(&["errors", "--help"])));
+        assert!(e.contains("Subcommands:"));
+    }
+
+    // --- help_text ---
+
+    #[test]
+    fn help_text_describes_subcommands() {
+        let t = help_text();
+        assert!(t.contains("errors"));
+        assert!(t.contains("health"));
+        assert!(t.contains("status"));
+        assert!(t.contains("dry-run"));
+    }
+
+    #[test]
+    fn help_text_lists_window_option() {
+        assert!(help_text().contains("--window"));
+    }
+
+    // --- load_state / save_state roundtrip (filesystem but hermetic via tempfile) ---
+
+    #[test]
+    fn load_state_missing_file_returns_default() {
+        let s = load_state(Path::new("/tmp/__does_not_exist_for_chorus_test"));
+        assert_eq!(s.all_invocation_count, 0);
+        assert_eq!(s.defects.len(), 0);
+    }
+
+    #[test]
+    fn save_state_then_load_state_roundtrips() {
+        let tmp = std::env::temp_dir().join(format!("chorus-ops-test-{}.json", std::process::id()));
+        let mut s = OpsState::default();
+        s.all_invocation_count = 42;
+        s.last_errors_poll = "2026-04-17T18:00:00Z".to_string();
+        save_state(&tmp, &s);
+
+        let loaded = load_state(&tmp);
+        assert_eq!(loaded.all_invocation_count, 42);
+        assert_eq!(loaded.last_errors_poll, "2026-04-17T18:00:00Z");
+
+        let _ = fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn load_state_malformed_json_returns_default() {
+        let tmp = std::env::temp_dir().join(format!("chorus-ops-bad-{}.json", std::process::id()));
+        fs::write(&tmp, "{not json").unwrap();
+
+        let loaded = load_state(&tmp);
+        assert_eq!(loaded.all_invocation_count, 0);
+
+        let _ = fs::remove_file(&tmp);
+    }
+}

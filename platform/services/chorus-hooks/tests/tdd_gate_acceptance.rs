@@ -8,7 +8,7 @@ use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
-const SHIM: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
+const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
 /// Helper: simulate a PreToolUse hook check via the shim
 fn hook_check_with_role(tool: &str, input: serde_json::Value, role: &str) -> String {

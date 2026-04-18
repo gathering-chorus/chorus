@@ -9,7 +9,7 @@ use std::path::Path;
 fn pulse_writes_output_file() {
     let _ = fs::remove_file("/tmp/pulse-latest.json");
     let output = std::process::Command::new(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+        env!("CARGO_BIN_EXE_chorus-hook-shim")
     ).arg("pulse").output();
 
     assert!(output.is_ok(), "pulse command should execute");
@@ -21,7 +21,7 @@ fn pulse_writes_output_file() {
 fn pulse_contains_required_sections() {
     // Run pulse
     let _ = std::process::Command::new(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+        env!("CARGO_BIN_EXE_chorus-hook-shim")
     ).arg("pulse").output();
 
     let content = fs::read_to_string("/tmp/pulse-latest.json")
@@ -45,7 +45,7 @@ fn pulse_contains_required_sections() {
 #[test]
 fn pulse_has_all_three_roles() {
     let _ = std::process::Command::new(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+        env!("CARGO_BIN_EXE_chorus-hook-shim")
     ).arg("pulse").output();
 
     let content = fs::read_to_string("/tmp/pulse-latest.json").unwrap();
@@ -67,7 +67,7 @@ fn pulse_has_all_three_roles() {
 #[test]
 fn pulse_runs_under_budget() {
     let _ = std::process::Command::new(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+        env!("CARGO_BIN_EXE_chorus-hook-shim")
     ).arg("pulse").output();
 
     let content = fs::read_to_string("/tmp/pulse-latest.json").unwrap();
@@ -81,7 +81,7 @@ fn pulse_runs_under_budget() {
 #[test]
 fn pulse_nudges_per_role() {
     let _ = std::process::Command::new(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+        env!("CARGO_BIN_EXE_chorus-hook-shim")
     ).arg("pulse").output();
 
     let content = fs::read_to_string("/tmp/pulse-latest.json").unwrap();
@@ -99,7 +99,7 @@ fn pulse_nudges_per_role() {
 #[test]
 fn pulse_alerts_fired_today() {
     let _ = std::process::Command::new(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+        env!("CARGO_BIN_EXE_chorus-hook-shim")
     ).arg("pulse").output();
 
     let content = fs::read_to_string("/tmp/pulse-latest.json").unwrap();
