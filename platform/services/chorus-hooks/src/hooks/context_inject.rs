@@ -176,6 +176,24 @@ fn query_athena_domain(role: &str) -> Option<String> {
         let short: String = desc.chars().take(200).collect();
         out.push_str(&format!("  {}\n", short));
     }
+
+    // #2175: surface populated section summaries so the envelope carries
+    // reasoning-surface data, not just a one-line description.
+    if let Some(sections) = body.get("sections").and_then(|s| s.as_object()) {
+        const KEYS: &[&str] = &["services", "integrations", "persistence", "pipeline", "scenarios", "contract", "gaps"];
+        for key in KEYS {
+            let Some(section) = sections.get(*key) else { continue };
+            let Some(items) = section.get("items").and_then(|i| i.as_array()) else { continue };
+            if items.is_empty() { continue }
+            let labels: Vec<String> = items.iter().take(4)
+                .filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+            if labels.is_empty() { continue }
+            let more = if items.len() > labels.len() {
+                format!(" (+{} more)", items.len() - labels.len())
+            } else { String::new() };
+            out.push_str(&format!("  {}: {}{}\n", key, labels.join(", "), more));
+        }
+    }
     Some(out)
 }
 
