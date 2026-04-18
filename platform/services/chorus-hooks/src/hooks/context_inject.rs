@@ -177,21 +177,65 @@ fn query_athena_domain(role: &str) -> Option<String> {
         out.push_str(&format!("  {}\n", short));
     }
 
-    // #2175: surface populated section summaries so the envelope carries
-    // reasoning-surface data, not just a one-line description.
+    // #2178: render each entity with owner + short description + reads/writes.
+    // Prefers itemDetails (rich entity records from the enriched API); falls
+    // back to items (label array) only if itemDetails is absent. AC-8
+    // retire-as-you-add: the fallback exists as a safety net for older
+    // chorus-api deployments that haven't shipped #2178 yet; once chorus-api
+    // is pinned at >= 998e33ab the fallback is dead code and gets removed.
     if let Some(sections) = body.get("sections").and_then(|s| s.as_object()) {
         const KEYS: &[&str] = &["services", "integrations", "persistence", "pipeline", "scenarios", "contract", "gaps"];
         for key in KEYS {
             let Some(section) = sections.get(*key) else { continue };
-            let Some(items) = section.get("items").and_then(|i| i.as_array()) else { continue };
-            if items.is_empty() { continue }
-            let labels: Vec<String> = items.iter().take(4)
-                .filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
-            if labels.is_empty() { continue }
-            let more = if items.len() > labels.len() {
-                format!(" (+{} more)", items.len() - labels.len())
-            } else { String::new() };
-            out.push_str(&format!("  {}: {}{}\n", key, labels.join(", "), more));
+            if let Some(details) = section.get("itemDetails").and_then(|d| d.as_array()) {
+                if details.is_empty() { continue }
+                out.push_str(&format!("  {}:\n", key));
+                for d in details.iter().take(4) {
+                    let label = d.get("label").and_then(|l| l.as_str()).unwrap_or("?");
+                    let owner = d.get("owner").and_then(|o| {
+                        if let Some(s) = o.as_str() { Some(s.to_string()) }
+                        else if let Some(a) = o.as_array() {
+                            Some(a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>().join("+"))
+                        } else { None }
+                    });
+                    let inherited = d.get("ownerInherited").and_then(|b| b.as_bool()).unwrap_or(false);
+                    let owner_tag = match owner {
+                        Some(o) if inherited => format!(" ({} inherited)", o),
+                        Some(o) => format!(" ({})", o),
+                        None => String::new(),
+                    };
+                    let desc = d.get("description").and_then(|c| c.as_str()).map(|s| {
+                        let short: String = s.chars().take(80).collect();
+                        format!(" — {}", short)
+                    }).unwrap_or_default();
+                    let flow = {
+                        let reads = d.get("reads").and_then(|r| r.as_array())
+                            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "));
+                        let writes = d.get("writes").and_then(|w| w.as_array())
+                            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "));
+                        match (reads.as_deref().filter(|s| !s.is_empty()), writes.as_deref().filter(|s| !s.is_empty())) {
+                            (Some(r), Some(w)) => format!(" [reads {} / writes {}]", r, w),
+                            (Some(r), None) => format!(" [reads {}]", r),
+                            (None, Some(w)) => format!(" [writes {}]", w),
+                            _ => String::new(),
+                        }
+                    };
+                    out.push_str(&format!("    - {}{}{}{}\n", label, owner_tag, desc, flow));
+                }
+                if details.len() > 4 {
+                    out.push_str(&format!("    (+{} more)\n", details.len() - 4));
+                }
+            } else if let Some(items) = section.get("items").and_then(|i| i.as_array()) {
+                // Fallback: older chorus-api without itemDetails — label-only.
+                if items.is_empty() { continue }
+                let labels: Vec<String> = items.iter().take(4)
+                    .filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                if labels.is_empty() { continue }
+                let more = if items.len() > labels.len() {
+                    format!(" (+{} more)", items.len() - labels.len())
+                } else { String::new() };
+                out.push_str(&format!("  {}: {}{}\n", key, labels.join(", "), more));
+            }
         }
     }
     Some(out)
