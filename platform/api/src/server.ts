@@ -121,27 +121,34 @@ app.get('/api/chorus/werk/activity', async (req, res) => {
 });
 
 // Borg — Session replay: list — #2099
+// Extracted to handlers/sessions.ts (#2173 AC4). Three handlers share a deps
+// object bound to session-replay.ts. The log endpoint uses the contentType
+// field on FetchResult — default json applies everywhere else.
+import {
+  fetchSessionList,
+  fetchSessionById,
+  fetchSessionLog,
+} from './handlers/sessions';
+
+const sessionDeps = { listSessions, getSession, getSessionLog, isValidSessionId };
+
 app.get('/api/chorus/sessions', (_req, res) => {
-  try { res.json(listSessions()); }
-  catch (e) { res.status(500).json({ error: e instanceof Error ? e.message : String(e) }); }
+  const r = fetchSessionList(sessionDeps);
+  res.status(r.status).json(r.body);
 });
 
-// Borg — Session replay: events — #2099
 app.get('/api/chorus/sessions/:id', (req, res) => {
-  const id = String(req.params.id || '');
-  if (!isValidSessionId(id)) { res.status(400).json({ error: 'invalid session id' }); return; }
-  const session = getSession(id);
-  if (!session) { res.status(404).json({ error: 'session not found' }); return; }
-  res.json(session);
+  const r = fetchSessionById(sessionDeps, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
-// Borg — Session replay: action log — #2099
 app.get('/api/chorus/sessions/:id/log', (req, res) => {
-  const id = String(req.params.id || '');
-  if (!isValidSessionId(id)) { res.status(400).json({ error: 'invalid session id' }); return; }
-  const log = getSessionLog(id);
-  if (log === null) { res.status(404).json({ error: 'log not found' }); return; }
-  res.type('text/plain').send(log);
+  const r = fetchSessionLog(sessionDeps, req.params.id);
+  if (r.contentType === 'text/plain') {
+    res.status(r.status).type('text/plain').send(r.body);
+    return;
+  }
+  res.status(r.status).json(r.body);
 });
 
 // Request logging — every request writes to stdout so the log stays fresh
