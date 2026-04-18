@@ -1466,89 +1466,22 @@ app.get('/api/chorus/domain/:name/infra', async (req: Request, res: Response) =>
 
 // GET /api/chorus/domain/:name/pipeline — value stream lifecycle (#2069)
 // Assembles from 5 existing sources: cards, completeness, code/tests/endpoints, alerts/gates, done cards.
+import { fetchChorusDomainPipeline } from './handlers/chorus-domain-pipeline';
 app.get('/api/chorus/domain/:name/pipeline', async (req: Request, res: Response) => {
-  const start = Date.now();
-  const name = req.params.name;
-  try {
-    const sdId = await resolveSubdomainId(name);
-    const domainLabel = sdId.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
-
-    // Parallel fetch from all existing sources
-    const [cardsRes, compRes, codeRes, testsRes, endpointsRes, alertsRes] = await Promise.all([
-      fetch(`http://localhost:3340/api/athena/subdomains/${sdId}/cards`).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch(`http://localhost:3340/api/athena/subdomains/${sdId}/completeness`).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch(`http://localhost:3340/api/chorus/domain/${name}/code`).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch(`http://localhost:3340/api/chorus/domain/${name}/tests`).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch(`http://localhost:3340/api/chorus/domain/${name}/services`).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch(`http://localhost:3340/api/chorus/domain/${name}/alerts`).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]);
-
-    // Extract counts
-    const cards = (cardsRes as any)?.data?.cards || (cardsRes as any)?.data || [];
-    const totalCards = cards.length;
-    const doneCards = cards.filter((c: any) => c.status === 'Done').length;
-    const wipCards = cards.filter((c: any) => c.status === 'WIP').length;
-    const completeness = (compRes as any)?.data?.percentage ?? 0;
-    const compPresent = (compRes as any)?.data?.present || [];
-    const compMissing = (compRes as any)?.data?.missing || [];
-    const codeCount = (codeRes as any)?._meta?.source_count ?? 0;
-    const testCount = (testsRes as any)?._meta?.count ?? 0;
-    const endpointCount = (endpointsRes as any)?._meta?.count ?? 0;
-    const alertCount = (alertsRes as any)?._meta?.count ?? 0;
-
-    // Build evidence counts
-    const buildEvidence = codeCount + testCount + endpointCount;
-
-    // Determine status per stage
-    const stageStatus = (evidence: number, threshold: number = 1) =>
-      evidence === 0 ? 'not_started' : evidence >= threshold ? 'complete' : 'in_progress';
-
-    const stages = [
-      {
-        name: 'shape',
-        status: totalCards === 0 ? 'not_started' : totalCards >= 5 ? 'complete' : 'in_progress',
-        evidence: totalCards,
-        detail: { total_cards: totalCards, wip: wipCards, done: doneCards },
-        summary: totalCards === 0 ? 'No cards' : `${totalCards} cards (${wipCards} WIP, ${doneCards} done)`,
+  const r = await fetchChorusDomainPipeline(
+    {
+      fetcher: async (relUrl) => {
+        try {
+          const resp = await fetch(`http://localhost:3340${relUrl}`);
+          return resp.ok ? await resp.json() : null;
+        } catch { return null; }
       },
-      {
-        name: 'design',
-        status: completeness === 0 ? 'not_started' : completeness >= 80 ? 'complete' : 'in_progress',
-        evidence: completeness,
-        detail: { percentage: completeness, present: compPresent, missing: compMissing },
-        summary: completeness === 0 ? 'Not started' : `${completeness}% — ${compPresent.length} present, ${compMissing.length} missing`,
-      },
-      {
-        name: 'build',
-        status: stageStatus(buildEvidence, 3),
-        evidence: buildEvidence,
-        detail: { code: codeCount, tests: testCount, endpoints: endpointCount },
-        summary: buildEvidence === 0 ? 'No code discovered' : `${codeCount} source, ${testCount} tests, ${endpointCount} endpoints`,
-      },
-      {
-        name: 'prove',
-        status: stageStatus(alertCount),
-        evidence: alertCount,
-        detail: { alerts: alertCount },
-        summary: alertCount === 0 ? 'No alert coverage' : `${alertCount} alert rules`,
-      },
-      {
-        name: 'ship',
-        status: doneCards === 0 ? 'not_started' : doneCards >= totalCards * 0.5 ? 'complete' : 'in_progress',
-        evidence: doneCards,
-        detail: { done: doneCards, total: totalCards, ratio: totalCards > 0 ? Math.round(doneCards / totalCards * 100) : 0 },
-        summary: doneCards === 0 ? 'Nothing shipped' : `${doneCards}/${totalCards} cards shipped (${totalCards > 0 ? Math.round(doneCards / totalCards * 100) : 0}%)`,
-      },
-    ];
-
-    res.json(athenaEnvelope('domain-pipeline', { subdomain: sdId, stages }, Date.now() - start, { count: 5 }));
-  } catch (err: any) {
-    // Return empty pipeline, not error
-    const emptyStages = ['shape', 'design', 'build', 'prove', 'ship'].map(name => ({
-      name, status: 'not_started', evidence: 0, detail: {}, summary: 'No data',
-    }));
-    res.json(athenaEnvelope('domain-pipeline', { subdomain: name, stages: emptyStages }, Date.now() - start, { count: 5 }));
-  }
+      resolveSubdomainId,
+      envelope: athenaEnvelope,
+    },
+    req.params.name,
+  );
+  res.status(r.status).json(r.body);
 });
 
 /** Check if a date falls in US Eastern Daylight Time */
