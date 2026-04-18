@@ -4150,15 +4150,31 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
         ['logs', 'hasLogSource'],
       ];
       try {
+        // #2178 — surface ownership + description + reads/writes/consumes
+        // alongside labels. items string[] preserved for existing consumers;
+        // itemDetails adds provenance. Ownership is the core reason: agent
+        // reading Athena sees who owns each entity, not just its label.
         const sectionQuery = (pred: string) => `
           PREFIX chorus: <https://jeffbridwell.com/chorus#>
           PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-          SELECT ?label WHERE {
+          SELECT ?e ?label ?comment
+                 (GROUP_CONCAT(DISTINCT ?ownerLabel; separator="||") AS ?owners)
+                 (GROUP_CONCAT(DISTINCT ?readLabel; separator="||") AS ?reads)
+                 (GROUP_CONCAT(DISTINCT ?writeLabel; separator="||") AS ?writes)
+                 (GROUP_CONCAT(DISTINCT ?consumesLabel; separator="||") AS ?consumes)
+          WHERE {
             GRAPH <urn:chorus:instances> {
               <${sdUri}> chorus:${pred} ?e .
               OPTIONAL { ?e rdfs:label ?label }
+              OPTIONAL { ?e rdfs:comment ?comment }
+              OPTIONAL { ?e chorus:ownedBy ?ownerEnt . OPTIONAL { ?ownerEnt rdfs:label ?ownerLabel } }
+              OPTIONAL { ?e chorus:reads ?readTarget . OPTIONAL { ?readTarget rdfs:label ?readLabel } }
+              OPTIONAL { ?e chorus:writes ?writeTarget . OPTIONAL { ?writeTarget rdfs:label ?writeLabel } }
+              OPTIONAL { ?e chorus:consumes ?consumesTarget . OPTIONAL { ?consumesTarget rdfs:label ?consumesLabel } }
             }
-          } LIMIT 20
+          }
+          GROUP BY ?e ?label ?comment
+          LIMIT 20
         `;
         const results = await Promise.all(
           sectionPreds.map(([, pred]) => athenaSparqlQuery(sectionQuery(pred)).catch(() => null))
@@ -4166,11 +4182,27 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
         sectionPreds.forEach(([key], i) => {
           const r = results[i];
           if (!r?.results?.bindings?.length) return;
-          const items = r.results.bindings
-            .map((b: any) => b?.label?.value)
-            .filter(Boolean);
+          const items: string[] = [];
+          const itemDetails: any[] = [];
+          for (const b of r.results.bindings as any[]) {
+            const label = b?.label?.value;
+            if (!label) continue;
+            items.push(label);
+            const split = (v: string | undefined) => (v ? v.split('||').filter(Boolean) : []);
+            const detail: any = { label };
+            if (b?.comment?.value) detail.description = b.comment.value;
+            const owners = split(b?.owners?.value);
+            const reads = split(b?.reads?.value);
+            const writes = split(b?.writes?.value);
+            const consumes = split(b?.consumes?.value);
+            if (owners.length) detail.owner = owners.length === 1 ? owners[0] : owners;
+            if (reads.length) detail.reads = reads;
+            if (writes.length) detail.writes = writes;
+            if (consumes.length) detail.consumes = consumes;
+            itemDetails.push(detail);
+          }
           if (items.length > 0) {
-            sections[key] = { title: key.replace(/_/g, ' '), items };
+            sections[key] = { title: key.replace(/_/g, ' '), items, itemDetails };
           }
         });
       } catch {}

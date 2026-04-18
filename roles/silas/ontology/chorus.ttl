@@ -1518,6 +1518,14 @@ chorus:dependsOn a owl:ObjectProperty ;
     rdfs:label "depends on" ;
     rdfs:comment "A sub-product or sub-domain depends on another for its function — if the target is unavailable or broken, the source is degraded. Distinct from chorus:consumes (read-only data flow). Dependency implies lifecycle coupling." .
 
+chorus:reads a owl:ObjectProperty ;
+    rdfs:label "reads" ;
+    rdfs:comment "A service reads state from a persistence or another service. Read-only, no mutation. #2178 — turns the Athena envelope from labels into a graph an agent can traverse." .
+
+chorus:writes a owl:ObjectProperty ;
+    rdfs:label "writes" ;
+    rdfs:comment "A service writes state to a persistence or emits events consumed by another service. Distinguishes data production from data consumption at the service level. #2178." .
+
 # --- Policies (5 from existing CLAUDE.md + team-architecture.md rules; binary, operationally enforced) ---
 
 chorus:policy-working-hours a chorus:Policy ;
