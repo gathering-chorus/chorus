@@ -1135,24 +1135,13 @@ async function resolveSubdomainId(name: string): Promise<string> {
 const isTestFile = (p: string) => /\/(tests?|__tests__)\//i.test(p) || /\.(test|spec)\./i.test(p) || /\.bats$/i.test(p) || /_test\.rs$/i.test(p) || /\.feature$/i.test(p);
 
 // GET /api/chorus/domain/:name/code — source files for a domain (#2060 AC1)
+import { fetchChorusDomainCode } from './handlers/chorus-domain-code';
 app.get('/api/chorus/domain/:name/code', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdId = await resolveSubdomainId(req.params.name);
-    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?file ?label ?filePath ?fileType ?description WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasCodeFile ?file . OPTIONAL { ?file rdfs:label ?label } OPTIONAL { ?file chorus:filePath ?filePath } OPTIONAL { ?file chorus:fileType ?fileType } OPTIONAL { ?file rdfs:comment ?description } } }`;
-    const result = await athenaSparqlQuery(query);
-    const allFiles = result.results.bindings.map((b: any) => ({
-      path: b.filePath?.value || b.label?.value || b.file.value.split('#').pop(),
-      type: b.fileType?.value || path.extname(b.filePath?.value || '').slice(1) || 'unknown',
-      description: b.description?.value || null,
-    }));
-    const source = allFiles.filter((f: any) => !isTestFile(f.path));
-    const byType = source.reduce((acc: Record<string, number>, f: any) => { acc[f.type] = (acc[f.type] || 0) + 1; return acc; }, {});
-    res.json(athenaEnvelope('domain-code', { subdomain: sdId, files: source, byType }, Date.now() - start, { count: allFiles.length, source_count: source.length, test_count: allFiles.length - source.length }));
-  } catch (err: any) {
-    res.json(athenaEnvelope('domain-code', { subdomain: req.params.name, files: [], byType: {} }, Date.now() - start, { count: 0, source_count: 0, test_count: 0 }));
-  }
+  const r = await fetchChorusDomainCode(
+    { sparql: athenaSparqlQuery, resolveSubdomainId, envelope: athenaEnvelope },
+    req.params.name,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/domain/:name/tests — test files covering a domain (#2098: unified via quality scanner)
