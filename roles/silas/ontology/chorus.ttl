@@ -1508,6 +1508,33 @@ chorus:derivedFrom a owl:ObjectProperty ;
     rdfs:domain chorus:Practice, chorus:Policy ;
     rdfs:range chorus:Principle .
 
+# --- Policies (5 from existing CLAUDE.md + team-architecture.md rules; binary, operationally enforced) ---
+
+chorus:policy-working-hours a chorus:Policy ;
+    rdfs:label "Working hours 8am–6pm" ;
+    rdfs:comment "Agents work during Jeff's working window. Outside hours: card it, do not act on it until next day. Jeff can override." ;
+    chorus:derivedFrom chorus:principle-protect-attention .
+
+chorus:policy-no-raw-process-kill a chorus:Policy ;
+    rdfs:label "No raw process killing" ;
+    rdfs:comment "Never `kill` PIDs directly, local or remote. Use launchctl kickstart for LaunchAgents, app-state.sh for the Gathering app lifecycle. LaunchAgent changes route through Silas." ;
+    chorus:derivedFrom chorus:principle-enforce .
+
+chorus:policy-response-window-60s a chorus:Policy ;
+    rdfs:label "60-second pair heartbeat" ;
+    rdfs:comment "If your pair partner completes an AC item, you respond within 60 seconds. If you can't, emit a status (thinking, blocked on X). Silence = stall. DEC-1571 Attention Contract." ;
+    chorus:derivedFrom chorus:principle-protect-attention .
+
+chorus:policy-no-self-acp a chorus:Policy ;
+    rdfs:label "No self-accept on code cards" ;
+    rdfs:comment "Only Wren or Jeff can accept. The builder CANNOT mark their own code card Done. DEC-048 Proving Gate." ;
+    chorus:derivedFrom chorus:principle-enforce .
+
+chorus:policy-chorus-search-first a chorus:Policy ;
+    rdfs:label "Chorus search before filesystem" ;
+    rdfs:comment "Search order: Chorus (/chorus search) → codebase graph → filesystem (Grep/Glob). Guard hook enforces. DEC-074." ;
+    chorus:derivedFrom chorus:principle-enforce .
+
 # --- 12 Principles (7 from team-architecture.md + 5 from 2026-04-17 session) ---
 
 chorus:principle-protect-attention a chorus:Principle ;
