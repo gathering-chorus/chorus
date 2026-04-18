@@ -1,0 +1,35 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "subdomains",
+    "graph": "urn:chorus:ontology",
+    "count": 3,
+    "filters": {
+      "owner": null,
+      "step": null
+    }
+  },
+  "data": [
+    {
+      "uri": "https://jeffbridwell.com/chorus#demo-beta-domain",
+      "id": "demo-beta-domain",
+      "label": "Beta",
+      "owner": "Wren",
+      "step": "building"
+    },
+    {
+      "uri": "https://jeffbridwell.com/chorus#demo-gamma-domain",
+      "id": "demo-gamma-domain",
+      "label": "Gamma",
+      "owner": "Silas",
+      "step": "building"
+    },
+    {
+      "uri": "https://jeffbridwell.com/chorus#demo-alpha-domain",
+      "id": "demo-alpha-domain",
+      "label": "Alpha",
+      "owner": "Wren",
+      "step": "harvesting"
+    }
+  ]
+}

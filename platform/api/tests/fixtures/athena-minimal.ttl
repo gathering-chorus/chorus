@@ -1,0 +1,78 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+# Ontology classes + properties
+chorus:Product a owl:Class ; rdfs:label "Product" .
+chorus:SubProduct a owl:Class ; rdfs:label "Sub-product" .
+chorus:SubDomain a owl:Class ; rdfs:label "Sub-domain" .
+chorus:Service a owl:Class ; rdfs:label "Service" .
+chorus:Persistence a owl:Class ; rdfs:label "Persistence" .
+chorus:Step a owl:Class ; rdfs:label "Step" .
+
+chorus:hasSubProduct a owl:ObjectProperty ; rdfs:label "has sub-product" .
+chorus:hasDomain a owl:ObjectProperty ; rdfs:label "has domain" .
+chorus:ownedBy a owl:ObjectProperty ; rdfs:label "owned by" .
+chorus:hasService a owl:ObjectProperty ; rdfs:label "has service" .
+chorus:hasPersistence a owl:ObjectProperty ; rdfs:label "has persistence" .
+chorus:primaryStep a owl:ObjectProperty ; rdfs:label "has step" .
+chorus:reads a owl:ObjectProperty ; rdfs:domain chorus:Service ; rdfs:range chorus:Persistence ;
+  rdfs:label "reads" ;
+  rdfs:comment "Service reads from a Persistence resource." .
+chorus:writes a owl:ObjectProperty ; rdfs:domain chorus:Service ; rdfs:range chorus:Persistence ;
+  rdfs:label "writes" ;
+  rdfs:comment "Service writes to a Persistence resource." .
+
+# Value-stream steps
+chorus:harvesting a chorus:Step ; rdfs:label "harvesting" .
+chorus:building a chorus:Step ; rdfs:label "building" .
+
+# Owners
+chorus:wren-owner a chorus:Role ; rdfs:label "Wren" .
+chorus:silas-owner a chorus:Role ; rdfs:label "Silas" .
+
+# Product + sub-products + sub-domains
+chorus:demo-product a chorus:Product ;
+  rdfs:label "Demo" ;
+  rdfs:comment "Fixture product for data regression tests." ;
+  chorus:hasSubProduct chorus:demo-subproduct-a, chorus:demo-subproduct-b .
+
+chorus:demo-subproduct-a a chorus:SubProduct ;
+  rdfs:label "Demo SubA" ;
+  chorus:ownedBy chorus:wren-owner ;
+  chorus:hasDomain chorus:demo-alpha-domain, chorus:demo-beta-domain .
+
+chorus:demo-subproduct-b a chorus:SubProduct ;
+  rdfs:label "Demo SubB" ;
+  chorus:ownedBy chorus:silas-owner ;
+  chorus:hasDomain chorus:demo-gamma-domain .
+
+chorus:demo-alpha-domain a chorus:SubDomain ;
+  rdfs:label "Alpha" ;
+  rdfs:comment "First demo sub-domain." ;
+  chorus:ownedBy chorus:wren-owner ;
+  chorus:primaryStep chorus:harvesting ;
+  chorus:hasService chorus:demo-alpha-service-reader ;
+  chorus:hasPersistence chorus:demo-alpha-store .
+
+chorus:demo-beta-domain a chorus:SubDomain ;
+  rdfs:label "Beta" ;
+  chorus:ownedBy chorus:wren-owner ;
+  chorus:primaryStep chorus:building .
+
+chorus:demo-gamma-domain a chorus:SubDomain ;
+  rdfs:label "Gamma" ;
+  chorus:ownedBy chorus:silas-owner ;
+  chorus:primaryStep chorus:building .
+
+# Service entity with enrichment
+chorus:demo-alpha-service-reader a chorus:Service ;
+  rdfs:label "Alpha Reader" ;
+  rdfs:comment "Reads the Alpha store and emits records." ;
+  chorus:ownedBy chorus:wren-owner ;
+  chorus:reads chorus:demo-alpha-store .
+
+chorus:demo-alpha-store a chorus:Persistence ;
+  rdfs:label "Alpha Store" ;
+  rdfs:comment "SQLite-backed cache for Alpha data." .
