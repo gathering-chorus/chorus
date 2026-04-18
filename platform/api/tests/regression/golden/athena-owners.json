@@ -1,0 +1,20 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "owners",
+    "graph": "urn:chorus:ontology",
+    "count": 2
+  },
+  "data": [
+    {
+      "uri": "https://jeffbridwell.com/chorus#wren-owner",
+      "label": "Wren",
+      "subdomainCount": 4
+    },
+    {
+      "uri": "https://jeffbridwell.com/chorus#silas-owner",
+      "label": "Silas",
+      "subdomainCount": 2
+    }
+  ]
+}

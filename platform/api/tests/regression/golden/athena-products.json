@@ -1,0 +1,14 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "products",
+    "graph": "urn:chorus:ontology",
+    "count": 1
+  },
+  "data": [
+    {
+      "uri": "https://jeffbridwell.com/chorus#demo-product",
+      "label": "Demo"
+    }
+  ]
+}
