@@ -355,7 +355,23 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number; ollama
 const EMBED_MAX_RETRIES = 3;
 const EMBED_BACKOFF_MS = [1000, 2000, 4000];
 
+// #2168 AC-14: LRU cache for query embeddings. Ollama embed is ~1s per call;
+// envelope queries repeat or have minor variants. 128 entries / 10min TTL.
+const EMBED_CACHE_MAX = 128;
+const EMBED_CACHE_TTL_MS = 10 * 60 * 1000;
+const embedCache = new Map<string, { vec: number[]; ts: number }>();
+
 async function embedQuery(text: string): Promise<number[]> {
+  const key = text.trim().toLowerCase();
+  const now = Date.now();
+  const hit = embedCache.get(key);
+  if (hit && now - hit.ts < EMBED_CACHE_TTL_MS) {
+    // Touch (LRU): delete and re-set
+    embedCache.delete(key);
+    embedCache.set(key, hit);
+    return hit.vec;
+  }
+
   let lastErr: Error | null = null;
   for (let attempt = 0; attempt < EMBED_MAX_RETRIES; attempt++) {
     try {
@@ -367,6 +383,12 @@ async function embedQuery(text: string): Promise<number[]> {
       });
       if (!res.ok) throw new Error(`Ollama embed failed: ${res.status}`);
       const data = await res.json() as { embedding: number[] };
+      // Cache + evict oldest if over cap
+      embedCache.set(key, { vec: data.embedding, ts: now });
+      if (embedCache.size > EMBED_CACHE_MAX) {
+        const oldest = embedCache.keys().next().value;
+        if (oldest) embedCache.delete(oldest);
+      }
       return data.embedding;
     } catch (err: any) {
       lastErr = err;
@@ -732,7 +754,7 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
     if (mode === 'hybrid' && lanceTable) {
       try {
         const semResults = await semanticSearch(q, limit, role);
-        const merged = mergeRRF(ftsResults, semResults, limit);
+        const merged = mergeRRF(ftsResults, semResults, limit, q);
         emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'hybrid', result_count: merged.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
         res.json({ results: merged, total: merged.length, mode: 'hybrid', _meta: buildSearchMeta(merged, db) });
         return;
@@ -2002,44 +2024,10 @@ function convertToLocal(isoTimestamp: string, _tz: string): string {
 }
 
 /** Reciprocal Rank Fusion — merge FTS + semantic results by message ID */
-function mergeRRF(ftsResults: any[], semResults: SemanticResult[], limit: number, k = 60): any[] {
-  const scoreMap = new Map<number, { score: number; result: any }>();
-
-  // Score FTS results by rank position
-  ftsResults.forEach((r, i) => {
-    const key = r.id || r.msg_id;
-    const rrfScore = 1 / (k + i + 1);
-    scoreMap.set(key, { score: rrfScore, result: r });
-  });
-
-  // Score semantic results and merge
-  semResults.forEach((r, i) => {
-    const key = r.msg_id;
-    const rrfScore = 1 / (k + i + 1);
-    const existing = scoreMap.get(key);
-    if (existing) {
-      existing.score += rrfScore; // boosted by appearing in both
-    } else {
-      scoreMap.set(key, {
-        score: rrfScore,
-        result: {
-          source: r.source,
-          channel: r.channel,
-          role: r.role,
-          content: r.content,
-          timestamp: r.timestamp,
-          snippet: null,
-          _semantic_score: r.score,
-        }
-      });
-    }
-  });
-
-  return Array.from(scoreMap.values())
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(e => ({ ...e.result, _rrf_score: e.score }));
-}
+// #2168 AC-14: query-aware RRF weighting extracted to ./search-rrf.ts
+// so it can be unit-tested without pulling the whole server module.
+import { hasExactToken, mergeRRF } from './search-rrf';
+export { hasExactToken, mergeRRF };
 
 // --- GET /api/chorus/reconcile ---
 
