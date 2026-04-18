@@ -3325,23 +3325,18 @@ app.get('/api/chorus/seeds', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
-// --- Seed media serving (#2007) ---
+// --- Seed media serving (#2007, extracted #2189) ---
 
 const SEED_MEDIA_DIR = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site/data/pods/jeff/capture/media');
 
+import { resolveSeedMedia } from './handlers/chorus-seed-media';
 app.get('/api/chorus/seed-media/:filename', (req: Request, res: Response) => {
-  const filename = req.params.filename;
-  // Validate: only alphanumeric, hyphens, dots — no path traversal
-  if (!/^[a-zA-Z0-9._-]+$/.test(filename)) {
-    res.status(400).json({ error: 'Invalid filename' });
-    return;
-  }
-  const filePath = path.join(SEED_MEDIA_DIR, filename);
-  if (!fs.existsSync(filePath)) {
-    res.status(404).json({ error: 'Media not found' });
-    return;
-  }
-  res.sendFile(filePath);
+  const r = resolveSeedMedia(req.params.filename, {
+    baseDir: SEED_MEDIA_DIR,
+    exists: (p) => fs.existsSync(p),
+  });
+  if (r.status === 200) { res.sendFile(r.filePath); return; }
+  res.status(r.status).json(r.body);
 });
 
 // --- Health check ---
