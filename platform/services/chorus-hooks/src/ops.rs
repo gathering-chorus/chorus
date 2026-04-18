@@ -69,9 +69,19 @@ const FALSE_POSITIVES: &[&str] = &[
 // trait so tests can swap in a FakeCommandRunner that captures argv and
 // returns canned Output without spawning real processes.
 
-/// Seam for spawning external CLI tools (cards, chorus-log, etc.).
+/// Seam for spawning external CLI tools (cards, chorus-log, claude, etc.).
 pub(crate) trait CommandRunner {
     fn run(&self, bin: &Path, args: &[&str]) -> std::io::Result<Output>;
+
+    /// Like `run` but writes `stdin_data` to the child's stdin before waiting.
+    /// Used by the claude agent invocation which feeds the context JSON via
+    /// stdin rather than argv (too large, and argv would leak via ps).
+    fn run_with_stdin(
+        &self,
+        bin: &Path,
+        args: &[&str],
+        stdin_data: &[u8],
+    ) -> std::io::Result<Output>;
 }
 
 /// Production runner — shells out via `std::process::Command`.
@@ -80,6 +90,25 @@ pub(crate) struct RealCommandRunner;
 impl CommandRunner for RealCommandRunner {
     fn run(&self, bin: &Path, args: &[&str]) -> std::io::Result<Output> {
         Command::new(bin).args(args).output()
+    }
+
+    fn run_with_stdin(
+        &self,
+        bin: &Path,
+        args: &[&str],
+        stdin_data: &[u8],
+    ) -> std::io::Result<Output> {
+        let mut child = Command::new(bin)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .env_remove("CLAUDECODE")
+            .spawn()?;
+        if let Some(ref mut stdin) = child.stdin {
+            let _ = stdin.write_all(stdin_data);
+        }
+        child.wait_with_output()
     }
 }
 
@@ -907,43 +936,51 @@ fn do_errors(config: &Config) -> Result<(), String> {
         results.insert(label, data);
     }
 
-    // Build regex caches
+    let runner = RealCommandRunner;
+    let now_iso = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    do_errors_post_prefetch(results, config, &runner, &now_iso)
+}
+
+/// Everything in do_errors after the parallel Loki fetch completes:
+///   - compile regex caches
+///   - load state + expire entries older than DEDUP_WINDOW_HOURS
+///   - process_error_streams (classify into new/updated defects)
+///   - decide_actions + execute card/comment via cmd
+///   - save state + print summary
+pub(crate) fn do_errors_post_prefetch<C: CommandRunner>(
+    results: HashMap<&str, serde_json::Value>,
+    config: &Config,
+    cmd: &C,
+    now_iso: &str,
+) -> Result<(), String> {
     let fp_regexes = compile_false_positives();
     let critical_re = Regex::new(CRITICAL_PATTERN).unwrap();
 
-    // Load state
     let mut state = load_state(&config.state_file);
-    let now_iso = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
-    // Expire old entries
     let cutoff = (Utc::now() - chrono::Duration::hours(DEDUP_WINDOW_HOURS))
         .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
     state.defects.retain(|_, d| d.last_seen >= cutoff);
 
-    // Parse results — extracted to process_error_streams (#2167).
     let (new_defects, updated_defects) =
-        process_error_streams(&results, &mut state, &fp_regexes, &critical_re, &now_iso);
+        process_error_streams(&results, &mut state, &fp_regexes, &critical_re, now_iso);
 
-    // Decide + execute — extracted to decide_actions / execute_*_action (#2167).
     let actions = decide_actions(&new_defects, &updated_defects, &state);
-    let runner = RealCommandRunner;
     let mut carded = 0u32;
     for act in &actions {
         if act.action_type == "card" {
-            if execute_card_action(act, &mut state, config, &runner) {
+            if execute_card_action(act, &mut state, config, cmd) {
                 carded += 1;
             }
         } else if act.action_type == "comment" {
-            execute_comment_action(act, &state, config, &runner);
+            execute_comment_action(act, &state, config, cmd);
         }
     }
 
-    // Save state
-    state.last_errors_poll = now_iso;
+    state.last_errors_poll = now_iso.to_string();
     save_state(&config.state_file, &state);
 
-    // Summary
     let total = new_defects.len() + updated_defects.len();
     if total > 0 || carded > 0 {
         println!(
@@ -1076,6 +1113,82 @@ pub(crate) fn process_health_findings<C: CommandRunner>(
     }
 
     (cards_created, carded_categories)
+}
+
+/// Turn raw pre-fetched strings (alerts JSON, loki JSON, disk text, board text)
+/// into a structured HealthContext. Pure — no I/O, no subprocess.
+///
+/// The caller supplies `timestamp` and `previous_findings` since those come
+/// from clock + state respectively (orchestrator concerns).
+pub(crate) fn assemble_health_context(
+    fetched: &HashMap<String, String>,
+    previous_findings: Vec<Finding>,
+    timestamp: String,
+) -> HealthContext {
+    let alert_info = parse_alerts(fetched.get("alerts").map(|s| s.as_str()).unwrap_or("[]"));
+    let error_info = parse_errors(
+        fetched.get("loki_errors").map(|s| s.as_str()).unwrap_or(""),
+        fetched.get("loki_sync").map(|s| s.as_str()).unwrap_or(""),
+    );
+    let disk_info = parse_disk_diskutil(fetched.get("disk").map(|s| s.as_str()).unwrap_or(""));
+    let board_info = BoardInfo {
+        summary: fetched
+            .get("board")
+            .map(|s| s.chars().take(2000).collect())
+            .unwrap_or_default(),
+    };
+
+    HealthContext {
+        timestamp,
+        alerts: alert_info,
+        errors: error_info,
+        disk: disk_info,
+        board: board_info,
+        previous_findings,
+    }
+}
+
+/// Invoke `claude -p` with the given system prompt + context payload via stdin.
+/// Returns the raw stdout on success, or an error string on failure.
+///
+/// The Command::new leaf goes through the `CommandRunner` trait so tests can
+/// feed a canned response without spawning the real claude binary.
+pub(crate) fn run_claude_agent<C: CommandRunner>(
+    config: &Config,
+    context_json: &str,
+    system_prompt: &str,
+    cmd: &C,
+) -> Result<String, String> {
+    let json_schema = r#"{"type":"object","properties":{"status":{"type":"string"},"findings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"severity":{"type":"string"},"category":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"action":{"type":"string"},"is_repeat":{"type":"boolean"}},"required":["id","severity","category","title","description","action","is_repeat"]}},"summary":{"type":"string"}},"required":["status","findings","summary"]}"#;
+
+    let args = [
+        "-p",
+        "--model",
+        config.model.as_str(),
+        "--permission-mode",
+        "dontAsk",
+        "--no-session-persistence",
+        "--max-budget-usd",
+        config.budget.as_str(),
+        "--output-format",
+        "json",
+        "--json-schema",
+        json_schema,
+        "--disallowedTools",
+        "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
+        "--system-prompt",
+        system_prompt,
+    ];
+    let output = cmd.run_with_stdin(Path::new("claude"), &args, context_json.as_bytes());
+
+    match output {
+        Ok(out) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).to_string()),
+        Ok(out) => Err(format!(
+            "claude -p failed (exit code {:?})",
+            out.status.code()
+        )),
+        Err(e) => Err(format!("claude -p spawn failed: {}", e)),
+    }
 }
 
 // --- HEALTH subcommand ---
@@ -1213,33 +1326,35 @@ fn do_health(config: &Config) -> Result<(), String> {
         log_msg("Phase 1: Pre-fetch complete");
     }
 
-    // Assemble context
-    let alert_info = parse_alerts(fetched.get("alerts").map(|s| s.as_str()).unwrap_or("[]"));
-    let error_info = parse_errors(
-        fetched.get("loki_errors").map(|s| s.as_str()).unwrap_or(""),
-        fetched.get("loki_sync").map(|s| s.as_str()).unwrap_or(""),
-    );
-    let disk_info = parse_disk_diskutil(fetched.get("disk").map(|s| s.as_str()).unwrap_or(""));
-    let board_info = BoardInfo {
-        summary: fetched
-            .get("board")
-            .map(|s| s.chars().take(2000).collect())
-            .unwrap_or_default(),
-    };
+    let runner = RealCommandRunner;
+    let now_iso = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    do_health_post_prefetch(fetched, config, &runner, &now_iso)
+}
 
-    let state = load_state(&config.state_file);
+/// Everything in do_health after the parallel pre-fetch completes:
+///   - assemble HealthContext
+///   - dry-run short-circuit
+///   - read system prompt from config.prompt_file
+///   - invoke claude via run_claude_agent
+///   - parse the envelope
+///   - process findings (creating cards via cmd)
+///   - save state + emit spine event
+///
+/// Extracted so tests can drive the entire post-fetch flow with canned data
+/// + a FakeCommandRunner that returns a scripted claude response.
+pub(crate) fn do_health_post_prefetch<C: CommandRunner>(
+    fetched: HashMap<String, String>,
+    config: &Config,
+    cmd: &C,
+    now_iso: &str,
+) -> Result<(), String> {
+    // Assemble context.
+    let mut state = load_state(&config.state_file);
     let previous_findings = state.health.findings.clone();
+    let context =
+        assemble_health_context(&fetched, previous_findings, now_iso.to_string());
 
-    let context = HealthContext {
-        timestamp: Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        alerts: alert_info,
-        errors: error_info,
-        disk: disk_info,
-        board: board_info,
-        previous_findings,
-    };
-
-    // Dry run: show context and exit
+    // Dry run: show context and exit.
     if config.dry_run {
         println!("[health] Dry run — context JSON:");
         if let Ok(json) = serde_json::to_string_pretty(&context) {
@@ -1248,7 +1363,6 @@ fn do_health(config: &Config) -> Result<(), String> {
         return Ok(());
     }
 
-    // Phase 2: Claude reasoning
     if config.verbose {
         log_msg(&format!(
             "Phase 2: Calling claude -p (model={}, budget={})",
@@ -1269,49 +1383,19 @@ fn do_health(config: &Config) -> Result<(), String> {
 
     let context_json = serde_json::to_string(&context).map_err(|e| e.to_string())?;
 
-    let json_schema = r#"{"type":"object","properties":{"status":{"type":"string"},"findings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"severity":{"type":"string"},"category":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"action":{"type":"string"},"is_repeat":{"type":"boolean"}},"required":["id","severity","category","title","description","action","is_repeat"]}},"summary":{"type":"string"}},"required":["status","findings","summary"]}"#;
-
-    let claude_output = Command::new("claude")
-        .args([
-            "-p",
-            "--model",
-            &config.model,
-            "--permission-mode",
-            "dontAsk",
-            "--no-session-persistence",
-            "--max-budget-usd",
-            &config.budget,
-            "--output-format",
-            "json",
-            "--json-schema",
-            json_schema,
-            "--disallowedTools",
-            "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
-            "--system-prompt",
-            &system_prompt,
-        ])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .env_remove("CLAUDECODE")
-        .spawn()
-        .and_then(|mut child| {
-            if let Some(ref mut stdin) = child.stdin {
-                let _ = stdin.write_all(context_json.as_bytes());
-            }
-            child.wait_with_output()
-        });
-
-    let response_raw = match claude_output {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).to_string(),
-        Ok(out) => {
-            log_msg(&format!("ERROR: claude -p failed (exit code {:?})", out.status.code()));
-            emit_chorus_log(config, &["ops.agent.completed", "system", "status=error", &format!("model={}", config.model)]);
-            return Err("claude -p failed".to_string());
-        }
+    let response_raw = match run_claude_agent(config, &context_json, &system_prompt, cmd) {
+        Ok(s) => s,
         Err(e) => {
-            log_msg(&format!("ERROR: claude -p spawn failed: {}", e));
-            return Err(e.to_string());
+            log_msg(&format!("ERROR: {}", e));
+            if e.contains("failed") {
+                let status_arg = "status=error".to_string();
+                let model_arg = format!("model={}", config.model);
+                let _ = cmd.run(
+                    &config.chorus_log_bin,
+                    &["ops.agent.completed", "system", &status_arg, &model_arg],
+                );
+            }
+            return Err(e);
         }
     };
 
@@ -1320,12 +1404,27 @@ fn do_health(config: &Config) -> Result<(), String> {
             "ERROR: Claude response too small ({} bytes)",
             response_raw.len()
         ));
-        emit_chorus_log(config, &["ops.agent.completed", "system", "status=error", &format!("model={}", config.model), "error=empty_response"]);
+        let status_arg = "status=error".to_string();
+        let model_arg = format!("model={}", config.model);
+        let _ = cmd.run(
+            &config.chorus_log_bin,
+            &[
+                "ops.agent.completed",
+                "system",
+                &status_arg,
+                &model_arg,
+                "error=empty_response",
+            ],
+        );
         return Err("Empty response".to_string());
     }
 
-    // Save last response for debugging
-    let _ = fs::write("/Users/jeffbridwell/Library/Logs/Chorus/chorus-ops-last-health-response.json", &response_raw);
+    // Best-effort debug dump — ignore failure (test environments may lack
+    // the ~/Library/Logs/Chorus path).
+    let _ = fs::write(
+        "/Users/jeffbridwell/Library/Logs/Chorus/chorus-ops-last-health-response.json",
+        &response_raw,
+    );
 
     if config.verbose {
         log_msg(&format!(
@@ -1336,31 +1435,34 @@ fn do_health(config: &Config) -> Result<(), String> {
 
     let (status, findings, summary) = parse_agent_response(&response_raw)?;
 
-    // Phase 3: Act on findings
     if config.verbose {
         log_msg("Phase 3: Processing findings");
     }
 
-    let mut state = load_state(&config.state_file);
-    let now_iso = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let runner = RealCommandRunner;
     let (cards_created, carded_categories) =
-        process_health_findings(&findings, &mut state, config, &runner, &now_iso);
+        process_health_findings(&findings, &mut state, config, cmd, now_iso);
 
-    // Emit spine event
-    emit_chorus_log(config, &[
-        "ops.agent.completed",
-        "system",
-        &format!("status={}", status),
-        &format!("findings={}", findings.len()),
-        &format!("cards={}", cards_created),
-        &format!("model={}", config.model),
-        &format!("summary={}", &summary[..summary.len().min(100)]),
-    ]);
+    // Spine event.
+    let status_arg = format!("status={}", status);
+    let findings_arg = format!("findings={}", findings.len());
+    let cards_arg = format!("cards={}", cards_created);
+    let model_arg = format!("model={}", config.model);
+    let summary_arg = format!("summary={}", &summary[..summary.len().min(100)]);
+    let _ = cmd.run(
+        &config.chorus_log_bin,
+        &[
+            "ops.agent.completed",
+            "system",
+            &status_arg,
+            &findings_arg,
+            &cards_arg,
+            &model_arg,
+            &summary_arg,
+        ],
+    );
 
-    // Save health state
     state.health = HealthState {
-        last_run: now_iso,
+        last_run: now_iso.to_string(),
         findings,
         cards_created: state.health.cards_created + cards_created,
         last_status: status.clone(),
@@ -2410,12 +2512,21 @@ mod orchestrator_tests {
                 args.iter().map(|s| s.to_string()).collect(),
             ));
             if self.queue.borrow().is_empty() {
-                // Default successful empty output — keeps execute_actions
-                // from panicking when tests don't preload enough responses.
                 Ok(mk_output("", ""))
             } else {
                 self.queue.borrow_mut().remove(0)
             }
+        }
+
+        fn run_with_stdin(
+            &self,
+            bin: &Path,
+            args: &[&str],
+            _stdin_data: &[u8],
+        ) -> std::io::Result<Output> {
+            // Same shape as run — stdin is captured by the StdinCapturingRunner
+            // wrapper when the test cares about it.
+            self.run(bin, args)
         }
     }
 
@@ -3129,6 +3240,581 @@ mod orchestrator_tests {
         let _ = fs::remove_file(&tmp);
     }
 
+    // --- assemble_health_context ---
+
+    #[test]
+    fn assemble_health_context_wires_parsed_substructures() {
+        let mut fetched = HashMap::new();
+        fetched.insert(
+            "alerts".to_string(),
+            r#"[{"labels":{"alertname":"X","severity":"critical"},"annotations":{"summary":"disk full"}}]"#
+                .to_string(),
+        );
+        fetched.insert(
+            "loki_errors".to_string(),
+            r#"{"data":{"result":[{"metric":{"container_name":"api"},"value":[0,"3"]}]}}"#
+                .to_string(),
+        );
+        fetched.insert("loki_sync".to_string(), "{}".to_string());
+        fetched.insert(
+            "disk".to_string(),
+            "Container Total Space: 2.0 GB (2147483648 Bytes)\nContainer Free Space: 1.0 GB (1073741824 Bytes)\n"
+                .to_string(),
+        );
+        fetched.insert("board".to_string(), "board output".to_string());
+
+        let ctx = assemble_health_context(&fetched, vec![], "2026-04-18T10:00:00Z".to_string());
+        assert_eq!(ctx.timestamp, "2026-04-18T10:00:00Z");
+        assert_eq!(ctx.alerts.firing.len(), 1);
+        assert_eq!(ctx.errors.total_30m, 3);
+        assert_eq!(ctx.disk.usage_pct, 50);
+        assert_eq!(ctx.board.summary, "board output");
+    }
+
+    #[test]
+    fn assemble_health_context_defaults_on_empty_map() {
+        let fetched = HashMap::new();
+        let ctx = assemble_health_context(&fetched, vec![], "t".to_string());
+        assert_eq!(ctx.alerts.firing.len(), 0);
+        assert_eq!(ctx.errors.total_30m, 0);
+        assert_eq!(ctx.disk.usage_pct, 0);
+        assert_eq!(ctx.board.summary, "");
+    }
+
+    #[test]
+    fn assemble_health_context_truncates_board_to_2000_chars() {
+        let mut fetched = HashMap::new();
+        fetched.insert("board".to_string(), "a".repeat(5000));
+        let ctx = assemble_health_context(&fetched, vec![], "t".to_string());
+        assert_eq!(ctx.board.summary.chars().count(), 2000);
+    }
+
+    #[test]
+    fn assemble_health_context_forwards_previous_findings() {
+        let fetched = HashMap::new();
+        let prev = vec![mk_finding("f1", "warning", "disk", "log", true)];
+        let ctx = assemble_health_context(&fetched, prev.clone(), "t".to_string());
+        assert_eq!(ctx.previous_findings.len(), 1);
+        assert_eq!(ctx.previous_findings[0].id, "f1");
+    }
+
+    // --- run_claude_agent ---
+    //
+    // The real claude binary would run and return real JSON. We swap it out
+    // via `run_with_stdin` on the FakeCommandRunner.
+
+    /// Extend FakeCommandRunner with stdin-capturing behavior. Tracked as a
+    /// separate Vec so test assertions can inspect what got piped to claude.
+    struct StdinCapturingRunner {
+        inner: FakeCommandRunner,
+        stdin: RefCell<Vec<Vec<u8>>>,
+    }
+
+    impl StdinCapturingRunner {
+        fn from_output(stdout: &str) -> Self {
+            StdinCapturingRunner {
+                inner: FakeCommandRunner::always_ok(stdout),
+                stdin: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn from_results(results: Vec<std::io::Result<Output>>) -> Self {
+            StdinCapturingRunner {
+                inner: FakeCommandRunner::new(results),
+                stdin: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl CommandRunner for StdinCapturingRunner {
+        fn run(&self, bin: &Path, args: &[&str]) -> std::io::Result<Output> {
+            self.inner.run(bin, args)
+        }
+        fn run_with_stdin(
+            &self,
+            bin: &Path,
+            args: &[&str],
+            stdin_data: &[u8],
+        ) -> std::io::Result<Output> {
+            self.stdin.borrow_mut().push(stdin_data.to_vec());
+            self.inner.run(bin, args)
+        }
+    }
+
+    #[test]
+    fn run_claude_agent_returns_stdout_on_success() {
+        let config = test_config();
+        let payload = r#"{"structured_output":{"status":"ok","findings":[],"summary":"green"}}"#;
+        let cmd = StdinCapturingRunner::from_output(payload);
+        let out = run_claude_agent(&config, r#"{"ctx":"..."}"#, "you are an agent", &cmd).unwrap();
+        assert!(out.contains("structured_output"));
+    }
+
+    #[test]
+    fn run_claude_agent_forwards_context_via_stdin() {
+        let config = test_config();
+        let cmd = StdinCapturingRunner::from_output("{}");
+        run_claude_agent(&config, r#"{"ctx":"hello"}"#, "sysprompt", &cmd).unwrap();
+        let captured = &cmd.stdin.borrow()[0];
+        let s = String::from_utf8_lossy(captured);
+        assert!(s.contains(r#""ctx":"hello""#));
+    }
+
+    #[test]
+    fn run_claude_agent_passes_model_and_budget_as_argv() {
+        let mut config = test_config();
+        config.model = "sonnet".to_string();
+        config.budget = "0.50".to_string();
+        let cmd = StdinCapturingRunner::from_output("{}");
+        run_claude_agent(&config, "{}", "sp", &cmd).unwrap();
+        let calls = cmd.inner.calls.borrow();
+        let argv = &calls[0].1;
+        // --model <config.model> and --max-budget-usd <config.budget> must be present.
+        let model_idx = argv.iter().position(|s| s == "--model").unwrap();
+        assert_eq!(argv[model_idx + 1], "sonnet");
+        let budget_idx = argv.iter().position(|s| s == "--max-budget-usd").unwrap();
+        assert_eq!(argv[budget_idx + 1], "0.50");
+    }
+
+    #[test]
+    fn run_claude_agent_rejects_failed_exit_code() {
+        use std::os::unix::process::ExitStatusExt;
+        let config = test_config();
+        // Non-zero exit from claude → Err "failed".
+        let failed_output = Output {
+            status: std::process::ExitStatus::from_raw(256), // exit 1
+            stdout: Vec::new(),
+            stderr: b"budget exceeded".to_vec(),
+        };
+        let cmd = StdinCapturingRunner::from_results(vec![Ok(failed_output)]);
+        let err = run_claude_agent(&config, "{}", "sp", &cmd).unwrap_err();
+        assert!(err.contains("claude -p failed"), "got: {}", err);
+    }
+
+    #[test]
+    fn run_claude_agent_reports_spawn_failure() {
+        let config = test_config();
+        let cmd = StdinCapturingRunner::from_results(vec![Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "binary missing",
+        ))]);
+        let err = run_claude_agent(&config, "{}", "sp", &cmd).unwrap_err();
+        assert!(err.contains("spawn failed"), "got: {}", err);
+    }
+
+    // --- do_errors_post_prefetch (full post-Loki orchestrator) ---
+
+    #[test]
+    fn do_errors_post_prefetch_empty_results_saves_clean_state() {
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-estate-empty-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.state_file = state.clone();
+
+        let cmd = FakeCommandRunner::never();
+        let results: HashMap<&str, serde_json::Value> = HashMap::new();
+        let r = do_errors_post_prefetch(results, &config, &cmd, "2026-04-18T10:00:00Z");
+        assert!(r.is_ok());
+
+        let saved = load_state(&state);
+        assert_eq!(saved.last_errors_poll, "2026-04-18T10:00:00Z");
+        assert_eq!(saved.defects.len(), 0);
+
+        let _ = fs::remove_file(&state);
+    }
+
+    #[test]
+    fn do_errors_post_prefetch_new_defect_creates_card_and_saves_state() {
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-estate-new-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.state_file = state.clone();
+
+        let cmd = FakeCommandRunner::new(vec![
+            Ok(mk_output("Added #4000\n", "")),
+            Ok(mk_output("", "")),
+        ]);
+
+        let line = r#"{"level":"error","appName":"api","message":"db timeout 5s"}"#;
+        let mut results = HashMap::new();
+        results.insert(
+            "structured",
+            loki_response(vec![("api", "api", vec![line])]),
+        );
+
+        let r = do_errors_post_prefetch(results, &config, &cmd, "2026-04-18T10:00:00Z");
+        assert!(r.is_ok());
+
+        let saved = load_state(&state);
+        assert_eq!(saved.defects.len(), 1);
+        // The new defect should now have a card_id set (from "#4000" parsed).
+        let d = saved.defects.values().next().unwrap();
+        assert_eq!(d.card_id.as_deref(), Some("4000"));
+
+        let _ = fs::remove_file(&state);
+    }
+
+    #[test]
+    fn do_errors_post_prefetch_expires_old_defects_before_processing() {
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-estate-expire-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.state_file = state.clone();
+
+        // Seed state with a defect last_seen > DEDUP_WINDOW_HOURS ago.
+        let mut seeded = OpsState::default();
+        let old = (Utc::now() - chrono::Duration::hours(DEDUP_WINDOW_HOURS + 1))
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+        seed_defect(&mut seeded, "old-hash", "warning", 5, Some("111"));
+        if let Some(d) = seeded.defects.get_mut("old-hash") {
+            d.last_seen = old;
+        }
+        save_state(&state, &seeded);
+
+        let cmd = FakeCommandRunner::never();
+        let r = do_errors_post_prefetch(
+            HashMap::new(),
+            &config,
+            &cmd,
+            "2026-04-18T10:00:00Z",
+        );
+        assert!(r.is_ok());
+
+        let saved = load_state(&state);
+        assert!(!saved.defects.contains_key("old-hash"));
+
+        let _ = fs::remove_file(&state);
+    }
+
+    #[test]
+    fn do_errors_post_prefetch_comment_action_flows_through() {
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-estate-comment-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.state_file = state.clone();
+
+        // Seed a defect with a card_id at count=9 so the next observation
+        // bumps it to 10 → comment action.
+        let mut seeded = OpsState::default();
+        let line = r#"{"level":"error","appName":"api","message":"db timeout 5s"}"#;
+        let hash = hash_pattern("api", &normalize_pattern("db timeout 5s"));
+        seeded.defects.insert(
+            hash.clone(),
+            Defect {
+                hash: hash.clone(),
+                source: "api".to_string(),
+                pattern: normalize_pattern("db timeout 5s"),
+                sample: "db timeout 5s".to_string(),
+                tier: "warning".to_string(),
+                count: 9,
+                first_seen: "2026-04-18T09:00:00Z".to_string(),
+                last_seen: "2026-04-18T09:59:00Z".to_string(),
+                card_id: Some("3333".to_string()),
+            },
+        );
+        save_state(&state, &seeded);
+
+        let cmd = FakeCommandRunner::always_ok("");
+        let mut results = HashMap::new();
+        results.insert(
+            "structured",
+            loki_response(vec![("api", "api", vec![line])]),
+        );
+
+        let r = do_errors_post_prefetch(results, &config, &cmd, "2026-04-18T10:00:00Z");
+        assert!(r.is_ok());
+
+        // At least one call: `cards comment 3333 ...`.
+        let calls = cmd.calls.borrow();
+        assert!(calls.iter().any(|(_, args)| args.first().map(|s| s.as_str()) == Some("comment")));
+
+        let _ = fs::remove_file(&state);
+    }
+
+    // --- do_health_post_prefetch (full post-prefetch orchestrator) ---
+
+    fn write_tmp_prompt(body: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "chorus-ops-prompt-{}-{}.md",
+            std::process::id(),
+            rand_suffix()
+        ));
+        fs::write(&path, body).unwrap();
+        path
+    }
+
+    fn rand_suffix() -> String {
+        // Small, not cryptographically random — just enough to avoid test collisions.
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        format!("{}", n)
+    }
+
+    #[test]
+    fn do_health_post_prefetch_dry_run_short_circuits() {
+        let prompt = write_tmp_prompt("test prompt");
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-hstate-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.prompt_file = prompt.clone();
+        config.state_file = state.clone();
+        config.dry_run = true;
+
+        let cmd = FakeCommandRunner::never();
+        let result = do_health_post_prefetch(
+            HashMap::new(),
+            &config,
+            &cmd,
+            "2026-04-18T10:00:00Z",
+        );
+
+        assert!(result.is_ok());
+        // Dry-run must not invoke claude or any card command.
+        assert_eq!(cmd.calls.borrow().len(), 0);
+
+        let _ = fs::remove_file(&prompt);
+        let _ = fs::remove_file(&state);
+    }
+
+    #[test]
+    fn do_health_post_prefetch_missing_prompt_file_errors() {
+        let mut config = test_config();
+        config.prompt_file = PathBuf::from("/does/not/exist/prompt.md");
+        config.state_file = std::env::temp_dir().join(format!(
+            "chorus-ops-hstate-missing-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+
+        let cmd = FakeCommandRunner::never();
+        let err = do_health_post_prefetch(
+            HashMap::new(),
+            &config,
+            &cmd,
+            "2026-04-18T10:00:00Z",
+        )
+        .unwrap_err();
+        assert!(err.contains("Missing prompt file"));
+    }
+
+    #[test]
+    fn do_health_post_prefetch_successful_flow_saves_state_and_creates_card() {
+        let prompt = write_tmp_prompt("you are an ops agent");
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-hstate-ok-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.prompt_file = prompt.clone();
+        config.state_file = state.clone();
+
+        // Canned claude response with one action=card finding.
+        let claude_response = r#"{
+            "structured_output": {
+                "status": "critical",
+                "findings": [{
+                    "id": "f1",
+                    "severity": "critical",
+                    "category": "disk",
+                    "title": "Disk 99%",
+                    "description": "root full",
+                    "action": "card",
+                    "is_repeat": false
+                }],
+                "summary": "disk full"
+            }
+        }"#;
+
+        // Runner sees: claude (stdin), cards add, chorus-log spine event.
+        let cmd = FakeCommandRunner::new(vec![
+            Ok(mk_output(claude_response, "")), // run_with_stdin → claude
+            Ok(mk_output("Added #3500: [ops-health] Disk 99%\n", "")), // cards add
+            Ok(mk_output("", "")), // chorus-log spine event
+        ]);
+
+        let result = do_health_post_prefetch(
+            HashMap::new(),
+            &config,
+            &cmd,
+            "2026-04-18T10:00:00Z",
+        );
+        assert!(result.is_ok(), "got: {:?}", result.err());
+
+        // State file written — load it back and assert the health fields.
+        let saved = load_state(&state);
+        assert_eq!(saved.health.last_run, "2026-04-18T10:00:00Z");
+        assert_eq!(saved.health.last_status, "critical");
+        assert_eq!(saved.health.last_summary, "disk full");
+        assert_eq!(saved.health.cards_created, 1);
+        assert_eq!(saved.health.findings.len(), 1);
+        assert!(saved.health.carded_categories.contains_key("disk"));
+
+        let _ = fs::remove_file(&prompt);
+        let _ = fs::remove_file(&state);
+    }
+
+    #[test]
+    fn do_health_post_prefetch_claude_failure_emits_error_spine_event() {
+        let prompt = write_tmp_prompt("sysprompt");
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-hstate-fail-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.prompt_file = prompt.clone();
+        config.state_file = state.clone();
+
+        use std::os::unix::process::ExitStatusExt;
+        let claude_fail = Output {
+            status: std::process::ExitStatus::from_raw(256),
+            stdout: Vec::new(),
+            stderr: b"budget exceeded".to_vec(),
+        };
+        let cmd = FakeCommandRunner::new(vec![
+            Ok(claude_fail),
+            // chorus-log for the error spine event
+            Ok(mk_output("", "")),
+        ]);
+
+        let err = do_health_post_prefetch(
+            HashMap::new(),
+            &config,
+            &cmd,
+            "2026-04-18T10:00:00Z",
+        )
+        .unwrap_err();
+        assert!(err.contains("claude -p failed"));
+
+        // Second call is the chorus-log error event.
+        let calls = cmd.calls.borrow();
+        assert!(calls.len() >= 2);
+        let log_call = &calls[1];
+        assert_eq!(log_call.1[0], "ops.agent.completed");
+        assert!(log_call.1.iter().any(|s| s == "status=error"));
+
+        let _ = fs::remove_file(&prompt);
+        let _ = fs::remove_file(&state);
+    }
+
+    #[test]
+    fn do_health_post_prefetch_empty_response_errors_with_spine_event() {
+        let prompt = write_tmp_prompt("sysprompt");
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-hstate-empty-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.prompt_file = prompt.clone();
+        config.state_file = state.clone();
+
+        // Claude returns <10 bytes → "Empty response" error branch.
+        let cmd = FakeCommandRunner::new(vec![
+            Ok(mk_output("x", "")),
+            Ok(mk_output("", "")),
+        ]);
+
+        let err = do_health_post_prefetch(
+            HashMap::new(),
+            &config,
+            &cmd,
+            "2026-04-18T10:00:00Z",
+        )
+        .unwrap_err();
+        assert_eq!(err, "Empty response");
+
+        let calls = cmd.calls.borrow();
+        let log_call = &calls[1];
+        assert!(log_call.1.iter().any(|s| s == "error=empty_response"));
+
+        let _ = fs::remove_file(&prompt);
+        let _ = fs::remove_file(&state);
+    }
+
+    #[test]
+    fn do_health_post_prefetch_malformed_response_errors() {
+        let prompt = write_tmp_prompt("sysprompt");
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-hstate-bad-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.prompt_file = prompt.clone();
+        config.state_file = state.clone();
+
+        // 10+ bytes but not valid JSON → parse_agent_response errors.
+        let cmd =
+            FakeCommandRunner::new(vec![Ok(mk_output("not a json response at all", ""))]);
+
+        let err = do_health_post_prefetch(
+            HashMap::new(),
+            &config,
+            &cmd,
+            "2026-04-18T10:00:00Z",
+        )
+        .unwrap_err();
+        assert!(err.contains("JSON parse error"), "got: {}", err);
+
+        let _ = fs::remove_file(&prompt);
+        let _ = fs::remove_file(&state);
+    }
+
+    #[test]
+    fn do_health_post_prefetch_zero_findings_saves_ok_state() {
+        let prompt = write_tmp_prompt("sysprompt");
+        let state = std::env::temp_dir().join(format!(
+            "chorus-ops-hstate-green-{}-{}.json",
+            std::process::id(),
+            rand_suffix()
+        ));
+        let mut config = test_config();
+        config.prompt_file = prompt.clone();
+        config.state_file = state.clone();
+
+        let response = r#"{"structured_output":{"status":"ok","findings":[],"summary":"green"}}"#;
+        let cmd = FakeCommandRunner::new(vec![
+            Ok(mk_output(response, "")),
+            Ok(mk_output("", "")), // chorus-log spine event
+        ]);
+
+        let result = do_health_post_prefetch(
+            HashMap::new(),
+            &config,
+            &cmd,
+            "2026-04-18T10:00:00Z",
+        );
+        assert!(result.is_ok());
+
+        let saved = load_state(&state);
+        assert_eq!(saved.health.last_status, "ok");
+        assert_eq!(saved.health.cards_created, 0);
+
+        let _ = fs::remove_file(&prompt);
+        let _ = fs::remove_file(&state);
+    }
+
     // --- parse_agent_response (do_health JSON envelope extraction) ---
 
     #[test]
@@ -3220,6 +3906,79 @@ mod orchestrator_tests {
         config.state_file = tmp.clone();
         do_status(&config);
         let _ = fs::remove_file(&tmp);
+    }
+
+    // --- lock + process coverage ---
+
+    #[test]
+    fn libc_kill_for_current_process_is_true() {
+        // Our own PID is always alive while this test runs.
+        let pid = std::process::id() as i32;
+        assert!(libc_kill(pid));
+    }
+
+    #[test]
+    fn libc_kill_for_impossible_pid_is_false() {
+        // PID 0xFFFFFF is well above real pid-max on macos/linux; `kill -0`
+        // will return ESRCH → false.
+        assert!(!libc_kill(16_777_215));
+    }
+
+    #[test]
+    fn acquire_and_release_lock_roundtrip() {
+        // Lock path is hardcoded (/tmp/chorus-ops.lock). Make sure any prior
+        // state is cleared so this test reflects the acquire → release cycle,
+        // and doesn't leave residue for other tests.
+        let lock = std::path::Path::new("/tmp/chorus-ops.lock");
+        let _ = fs::remove_file(lock);
+
+        acquire_lock().expect("acquire should succeed from a clean state");
+        assert!(lock.exists(), "lock file should exist after acquire");
+
+        release_lock();
+        assert!(!lock.exists(), "lock file should be gone after release");
+    }
+
+    #[test]
+    fn acquire_lock_refuses_when_live_pid_holds_lock() {
+        let lock = std::path::Path::new("/tmp/chorus-ops.lock");
+        let _ = fs::remove_file(lock);
+        // Write our own pid as the lock holder — it's alive, so acquire
+        // should see a live holder and refuse.
+        fs::write(lock, std::process::id().to_string()).unwrap();
+
+        let result = acquire_lock();
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("Already running"), "got: {}", msg);
+
+        let _ = fs::remove_file(lock);
+    }
+
+    #[test]
+    fn acquire_lock_reclaims_stale_lock_from_dead_pid() {
+        let lock = std::path::Path::new("/tmp/chorus-ops.lock");
+        let _ = fs::remove_file(lock);
+        // An impossible pid → libc_kill returns false → acquire_lock
+        // deletes the stale file and writes our pid.
+        fs::write(lock, "16777215").unwrap();
+
+        acquire_lock().expect("stale lock should be reclaimed");
+        let content = fs::read_to_string(lock).unwrap();
+        assert_eq!(content, std::process::id().to_string());
+
+        let _ = fs::remove_file(lock);
+    }
+
+    #[test]
+    fn acquire_lock_handles_empty_pid_file() {
+        let lock = std::path::Path::new("/tmp/chorus-ops.lock");
+        let _ = fs::remove_file(lock);
+        // Empty pid file → skip the kill check, reclaim.
+        fs::write(lock, "").unwrap();
+
+        acquire_lock().expect("empty pid file should be reclaimed");
+        let _ = fs::remove_file(lock);
     }
 
     // --- run() dispatch coverage ---

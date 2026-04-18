@@ -1,27 +1,36 @@
 # tarpaulin config for chorus-hooks — #2167
 #
-# Floor: 25%. Baseline 2026-04-17: 28.08% (1780/6338 lines).
+# Floor: 45%. Baseline 2026-04-18: 48.28% (3144/6512 lines).
 #
-# Why not 60/75/80? chorus-hooks is a two-bin crate (chorus-hooks daemon +
-# chorus-hook-shim CLI) with three major coverage gaps:
+# History: floor was 25% with ops.rs at 0/831 and shim.rs at 0/459. #2167
+# drove two levers:
 #
-#   1. main.rs     — 0/300  — bin entry + argv dispatch (needs lib split)
-#   2. shim.rs     — 0/459  — bin entry + Claude Code hook dispatch (needs lib split)
-#   3. ops.rs      — 0/831  — chorus-ops Rust port, zero tests (#TBD)
+#   1. ops.rs 0% → 77.69% (714/919) via seam extractions:
+#      - CommandRunner trait (same shape as OsaRunner in chorus-inject)
+#      - process_error_streams / decide_actions / execute_*_action (pure-ish
+#        logic pulled out of do_errors)
+#      - process_health_findings / assemble_health_context / parse_agent_response /
+#        run_claude_agent / do_health_post_prefetch / do_errors_post_prefetch
+#        (same treatment for do_health)
+#      Tests drive every branch via a FakeCommandRunner + tempfile state.
+#      Uncovered tail (~200 lines): threaded Loki/alertmanager pre-fetch
+#      wrappers in do_errors + do_health, run()'s errors/health/all arms
+#      gated by acquire_lock + real subprocess calls, RealCommandRunner's
+#      run_with_stdin that spawns claude. Those are structural I/O
+#      boundaries — covering them requires HTTP + process-spawn seams
+#      beyond the CommandRunner trait.
 #
-# Together those three files are 1590 uncovered lines — 25% of the crate.
-# The tested modules (hooks/*, nudge.rs, process.rs, role_state.rs, state.rs,
-# shared/*, session_cache.rs, types.rs) average 60-95% individually. Gate is
-# calibrated to catch regressions in the tested surface, not demand the
-# structural refactor that a true 80% target would require.
+#   2. shim.rs 0% → 23.8% via CARGO_BIN_EXE rewrite of 13 integration tests
+#      (previously hardcoded to target/release/chorus-hook-shim, which
+#      tarpaulin doesn't instrument). Further shim.rs coverage belongs in
+#      the shim.rs tail push — separate work within #2167.
 #
-# Raising the floor is a separate scope:
-#   - lib.rs split (#TBD) lets main.rs + shim.rs get instrumented
-#   - ops.rs test coverage is its own card (#TBD)
+# main.rs daemon still at 0%. That's follow-on card #2170 — needs an
+# in-process Axum harness.
 
 [default]
 run-types = ["Tests"]
-fail-under = 25
+fail-under = 45
 exclude-files = ["tests/*"]
 # --test-threads=1 matches nightly-suites.sh. Several hook tests share global
 # state (role-state files, hook env vars) and flake under parallel runs.
