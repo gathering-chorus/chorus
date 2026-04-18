@@ -4315,6 +4315,21 @@ import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
 import { fetchAthenaSubdomainDetail } from './handlers/athena-subdomain-detail';
 import { fetchAthenaBlastRadius } from './handlers/athena-blast-radius';
 import { fetchAthenaSubdomainCards } from './handlers/athena-subdomain-cards';
+import { fetchAthenaSubdomainCode } from './handlers/athena-subdomain-code';
+import { fetchAthenaSubdomainAlerts } from './handlers/athena-subdomain-alerts';
+import { fetchAthenaSubdomainCoverage, fetchAthenaSubdomainTestCoverage } from './handlers/athena-subdomain-coverage';
+import { fetchAthenaSubdomainPages } from './handlers/athena-subdomain-pages';
+import { fetchAthenaSubdomainEndpoints } from './handlers/athena-subdomain-endpoints';
+import {
+  fetchAthenaSubdomainActors,
+  fetchAthenaSubdomainScenarios,
+  fetchAthenaSubdomainContract,
+  fetchAthenaSubdomainIntegrations,
+  fetchAthenaSubdomainPersistence,
+  fetchAthenaSubdomainPriorArt,
+} from './handlers/athena-subdomain-facets';
+import { fetchAthenaSubdomainCompleteness } from './handlers/athena-subdomain-completeness';
+import { fetchAthenaCardDetail } from './handlers/athena-card-detail';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
     sparql: athenaSparqlQuery,
@@ -4461,52 +4476,25 @@ app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) 
 
 // GET /api/athena/subdomains/:id/alerts — alert rules related to this domain
 app.get('/api/athena/subdomains/:id/alerts', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const domainLabel = req.params.id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
-    const ALERTS_DIR = path.join(REPO_ROOT, 'proving/domains/alerts');
-    const yaml = require('js-yaml') || null;
-    const alertFiles = fs.readdirSync(ALERTS_DIR).filter((f: string) => f.endsWith('.yml'));
-    const alerts: any[] = [];
-    for (const file of alertFiles) {
-      const content = fs.readFileSync(path.join(ALERTS_DIR, file), 'utf-8');
-      // Match by domain keyword in filename, name, description, or check script
-      const lower = content.toLowerCase();
-      if (lower.includes(domainLabel) || file.toLowerCase().includes(domainLabel)) {
-        // Parse basic fields from YAML comments and keys
-        const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file.replace('.yml', '');
-        const description = content.match(/^description:\s*(.+)/m)?.[1]?.trim() || '';
-        const severity = content.match(/^severity:\s*(.+)/m)?.[1]?.trim() || 'unknown';
-        const schedule = content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() || '';
-        alerts.push({ file, name, description, severity, schedule });
-      }
-    }
-    res.json(athenaEnvelope('subdomain-alerts', { subdomain: req.params.id, domainLabel, alerts }, Date.now() - start, { count: alerts.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-alerts', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const ALERTS_DIR = path.join(REPO_ROOT, 'proving/domains/alerts');
+  const r = await fetchAthenaSubdomainAlerts(
+    {
+      listAlertFiles: () => fs.readdirSync(ALERTS_DIR).filter((f: string) => f.endsWith('.yml')),
+      readAlertFile: (f: string) => fs.readFileSync(path.join(ALERTS_DIR, f), 'utf-8'),
+      envelope: athenaEnvelope,
+    },
+    req.params.id,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/code — code inventory from instances graph (#1868)
 app.get('/api/athena/subdomains/:id/code', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?file ?label ?filePath ?fileType ?description WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasCodeFile ?file . OPTIONAL { ?file rdfs:label ?label } OPTIONAL { ?file chorus:filePath ?filePath } OPTIONAL { ?file chorus:fileType ?fileType } OPTIONAL { ?file rdfs:comment ?description } } }`;
-    const result = await athenaSparqlQuery(query);
-    const allFiles = result.results.bindings.map((b: any) => ({
-      path: b.filePath?.value || b.label?.value || b.file.value.split('#').pop(),
-      type: b.fileType?.value || path.extname(b.filePath?.value || '').slice(1) || 'unknown',
-      description: b.description?.value || null,
-    }));
-    const isTest = (p: string) => /\/(tests?|__tests__)\//i.test(p) || /\.(test|spec)\./i.test(p) || /\.bats$/i.test(p) || /_test\.rs$/i.test(p) || /\.feature$/i.test(p);
-    const tests = allFiles.filter((f: any) => isTest(f.path));
-    const source = allFiles.filter((f: any) => !isTest(f.path));
-    const byType = allFiles.reduce((acc: Record<string, number>, f: any) => { acc[f.type] = (acc[f.type] || 0) + 1; return acc; }, {});
-    res.json(athenaEnvelope('subdomain-code', { subdomain: req.params.id, files: source, tests, byType }, Date.now() - start, { count: allFiles.length, source_count: source.length, test_count: tests.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-code', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainCode(
+    { sparql: athenaSparqlQuery, extname: path.extname, envelope: athenaEnvelope },
+    req.params.id,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // POST /api/athena/subdomains/:id/code — add code file to subdomain (#1868)
@@ -4799,39 +4787,14 @@ app.post('/api/athena/discover-tests', async (_req: Request, res: Response) => {
 
 // GET /api/athena/subdomains/:id/coverage — all test coverage for a domain (#1869)
 app.get('/api/athena/subdomains/:id/coverage', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:testFile ?testFile ; chorus:testType ?testType ; chorus:covers <${sdUri}> . } } ORDER BY ?testType ?testFile`;
-    const result = await athenaSparqlQuery(query);
-    const coverage = result.results.bindings.map((b: any) => ({
-      testFile: b.testFile.value,
-      testType: b.testType.value,
-      coversDomain: req.params.id,
-    }));
-    res.json(athenaEnvelope('subdomain-coverage', { subdomain: req.params.id, coverage }, Date.now() - start, { count: coverage.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-coverage', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainCoverage({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/test-coverage — what tests cover this domain? (#1869)
 app.get('/api/athena/subdomains/:id/test-coverage', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:testFile ?testFile ; chorus:testType ?testType ; chorus:covers <${sdUri}> . } } ORDER BY ?testType ?testFile`;
-    const result = await athenaSparqlQuery(query);
-    const tests = result.results.bindings.map((b: any) => ({
-      path: b.testFile.value,
-      type: b.testType.value,
-    }));
-    const byType: Record<string, number> = {};
-    for (const t of tests) { byType[t.type] = (byType[t.type] || 0) + 1; }
-    res.json(athenaEnvelope('subdomain-test-coverage', { subdomain: req.params.id, tests, byType }, Date.now() - start, { count: tests.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-test-coverage', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainTestCoverage({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/tests/:domain — unified test data per domain (#2098)
@@ -5042,22 +5005,8 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
 
 // GET /api/athena/subdomains/:id/pages — pages for a domain (#2065)
 app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?route ?filePath ?pageType WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasPage ?page . ?page a chorus:Page ; chorus:route ?route ; chorus:filePath ?filePath ; chorus:pageType ?pageType . } } ORDER BY ?pageType ?route`;
-    const result = await athenaSparqlQuery(query);
-    const pages = result.results.bindings.map((b: any) => ({
-      route: b.route.value,
-      path: b.filePath.value,
-      pageType: b.pageType.value,
-    }));
-    const byType: Record<string, number> = {};
-    for (const p of pages) { byType[p.pageType] = (byType[p.pageType] || 0) + 1; }
-    res.json(athenaEnvelope('subdomain-pages', { subdomain: req.params.id, pages, byType }, Date.now() - start, { count: pages.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-pages', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainPages({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 // POST /api/athena/discover-endpoints — auto-discover API endpoints per domain (#2066)
@@ -5262,130 +5211,26 @@ app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) 
 
 // GET /api/athena/subdomains/:id/services — API endpoints for a domain (#2066)
 app.get('/api/athena/subdomains/:id/services', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?method ?routePath ?filePath WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasEndpoint ?ep . ?ep a chorus:Endpoint ; chorus:httpMethod ?method ; chorus:routePath ?routePath ; chorus:filePath ?filePath . } } ORDER BY ?method ?routePath`;
-    const result = await athenaSparqlQuery(query);
-    const endpoints = result.results.bindings.map((b: any) => ({
-      method: b.method.value,
-      path: b.routePath.value,
-      handler: b.filePath.value,
-    }));
-    const byMethod: Record<string, number> = {};
-    for (const e of endpoints) { byMethod[e.method] = (byMethod[e.method] || 0) + 1; }
-    res.json(athenaEnvelope('subdomain-services', { subdomain: req.params.id, endpoints, byMethod }, Date.now() - start, { count: endpoints.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-services', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainEndpoints({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/actors — actors that interact with this subdomain (#1899)
 app.get('/api/athena/subdomains/:id/actors', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?actor ?label ?role ?action WHERE {
-        GRAPH <urn:chorus:instances> {
-          <${sdUri}> chorus:hasActor ?actor .
-          OPTIONAL { ?actor rdfs:label ?label }
-          OPTIONAL { ?actor chorus:actorRole ?role }
-          OPTIONAL { ?actor chorus:actorAction ?action }
-        }
-      }
-    `;
-    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
-    if (check.results.bindings.length === 0) {
-      return res.status(404).json(athenaEnvelope('subdomain-actors', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
-    }
-    const result = await athenaSparqlQuery(query);
-    const actors = result.results.bindings.map((b: any) => ({
-      uri: b.actor.value,
-      label: b.label?.value || b.actor.value.split('#').pop(),
-      role: b.role?.value,
-      action: b.action?.value,
-    }));
-    res.json(athenaEnvelope('subdomain-actors', { subdomain: req.params.id, actors }, Date.now() - start, { count: actors.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-actors', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainActors({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/scenarios — BDD scenarios for this subdomain (#1899)
 app.get('/api/athena/subdomains/:id/scenarios', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?scenario ?label ?given ?when ?then ?notes WHERE {
-        GRAPH <urn:chorus:instances> {
-          <${sdUri}> chorus:hasScenario ?scenario .
-          OPTIONAL { ?scenario rdfs:label ?label }
-          OPTIONAL { ?scenario chorus:scenarioGiven ?given }
-          OPTIONAL { ?scenario chorus:scenarioWhen ?when }
-          OPTIONAL { ?scenario chorus:scenarioThen ?then }
-          OPTIONAL { ?scenario chorus:scenarioNotes ?notes }
-        }
-      }
-    `;
-    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
-    if (check.results.bindings.length === 0) {
-      return res.status(404).json(athenaEnvelope('subdomain-scenarios', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
-    }
-    const result = await athenaSparqlQuery(query);
-    const scenarios = result.results.bindings.map((b: any) => ({
-      uri: b.scenario.value,
-      label: b.label?.value || b.scenario.value.split('#').pop(),
-      given: b.given?.value || null,
-      when: b.when?.value || null,
-      then: b.then?.value || null,
-      notes: b.notes?.value || null,
-    }));
-    res.json(athenaEnvelope('subdomain-scenarios', { subdomain: req.params.id, scenarios }, Date.now() - start, { count: scenarios.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-scenarios', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainScenarios({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/contract — API contract for this subdomain (#1899)
 app.get('/api/athena/subdomains/:id/contract', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?contract ?label ?endpoint ?method ?description WHERE {
-        GRAPH <urn:chorus:instances> {
-          <${sdUri}> chorus:hasContract ?contract .
-          OPTIONAL { ?contract rdfs:label ?label }
-          OPTIONAL { ?contract chorus:endpoint ?endpoint }
-          OPTIONAL { ?contract chorus:httpMethod ?method }
-          OPTIONAL { ?contract chorus:contractDescription ?description }
-        }
-      }
-    `;
-    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
-    if (check.results.bindings.length === 0) {
-      return res.status(404).json(athenaEnvelope('subdomain-contract', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
-    }
-    const result = await athenaSparqlQuery(query);
-    const endpoints = result.results.bindings.map((b: any) => ({
-      uri: b.contract.value,
-      label: b.label?.value || b.contract.value.split('#').pop(),
-      path: b.endpoint?.value || null,
-      method: b.method?.value || null,
-      description: b.description?.value || null,
-    }));
-    res.json(athenaEnvelope('subdomain-contract', { subdomain: req.params.id, endpoints }, Date.now() - start, { count: endpoints.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-contract', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainContract({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 // POST /api/chorus/open — open a file locally (#1907)
@@ -5410,41 +5255,10 @@ app.post('/api/chorus/open', (req: Request, res: Response) => {
   }
 });
 
-// GET /api/athena/subdomains/:id/pages — UI pages for this subdomain (#1923)
-app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?page ?label ?route ?description ?status WHERE {
-        GRAPH <urn:chorus:instances> {
-          <${sdUri}> chorus:hasPage ?page .
-          OPTIONAL { ?page rdfs:label ?label }
-          OPTIONAL { ?page chorus:pageRoute ?route }
-          OPTIONAL { ?page chorus:pageDescription ?description }
-          OPTIONAL { ?page chorus:pageStatus ?status }
-        }
-      }
-    `;
-    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
-    if (check.results.bindings.length === 0) {
-      return res.status(404).json(athenaEnvelope('subdomain-pages', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
-    }
-    const result = await athenaSparqlQuery(query);
-    const pages = result.results.bindings.map((b: any) => ({
-      uri: b.page.value,
-      label: b.label?.value || b.page.value.split('#').pop(),
-      route: b.route?.value || null,
-      description: b.description?.value || null,
-      status: b.status?.value || null,
-    }));
-    res.json(athenaEnvelope('subdomain-pages', { subdomain: req.params.id, pages }, Date.now() - start, { count: pages.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-pages', { error: err.message }, Date.now() - start, { error: true }));
-  }
-});
+// NOTE: duplicate GET /api/athena/subdomains/:id/pages removed (#2187).
+// Express matches routes in registration order; the earlier definition at
+// src/handlers/athena-subdomain-pages.ts handled every request for this path.
+// The second copy (different response shape) was unreachable dead code.
 
 // POST /api/athena/subdomains/:id/pages — add page to subdomain (#1923)
 app.post('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) => {
@@ -5454,38 +5268,8 @@ app.post('/api/athena/subdomains/:id/pages', async (req: Request, res: Response)
 
 // GET /api/athena/subdomains/:id/integrations — data integrations for this subdomain (#1923)
 app.get('/api/athena/subdomains/:id/integrations', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?integration ?label ?source ?path ?status WHERE {
-        GRAPH <urn:chorus:instances> {
-          <${sdUri}> chorus:hasIntegration ?integration .
-          OPTIONAL { ?integration rdfs:label ?label }
-          OPTIONAL { ?integration chorus:integrationSource ?source }
-          OPTIONAL { ?integration chorus:integrationPath ?path }
-          OPTIONAL { ?integration chorus:integrationStatus ?status }
-        }
-      }
-    `;
-    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
-    if (check.results.bindings.length === 0) {
-      return res.status(404).json(athenaEnvelope('subdomain-integrations', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
-    }
-    const result = await athenaSparqlQuery(query);
-    const integrations = result.results.bindings.map((b: any) => ({
-      uri: b.integration.value,
-      label: b.label?.value || b.integration.value.split('#').pop(),
-      source: b.source?.value || null,
-      path: b.path?.value || null,
-      status: b.status?.value || null,
-    }));
-    res.json(athenaEnvelope('subdomain-integrations', { subdomain: req.params.id, integrations }, Date.now() - start, { count: integrations.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-integrations', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainIntegrations({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 // POST /api/athena/subdomains/:id/integrations — add integration to subdomain (#1923)
@@ -5496,40 +5280,8 @@ app.post('/api/athena/subdomains/:id/integrations', async (req: Request, res: Re
 
 // GET /api/athena/subdomains/:id/persistence — persistence stores for this subdomain (#1923)
 app.get('/api/athena/subdomains/:id/persistence', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?store ?label ?type ?namespace ?records ?status WHERE {
-        GRAPH <urn:chorus:instances> {
-          <${sdUri}> chorus:hasPersistence ?store .
-          OPTIONAL { ?store rdfs:label ?label }
-          OPTIONAL { ?store chorus:storeType ?type }
-          OPTIONAL { ?store chorus:storeNamespace ?namespace }
-          OPTIONAL { ?store chorus:storeRecordCount ?records }
-          OPTIONAL { ?store chorus:storeStatus ?status }
-        }
-      }
-    `;
-    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
-    if (check.results.bindings.length === 0) {
-      return res.status(404).json(athenaEnvelope('subdomain-persistence', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
-    }
-    const result = await athenaSparqlQuery(query);
-    const stores = result.results.bindings.map((b: any) => ({
-      uri: b.store.value,
-      label: b.label?.value || b.store.value.split('#').pop(),
-      type: b.type?.value || null,
-      namespace: b.namespace?.value || null,
-      records: b.records?.value ? parseInt(b.records.value) : null,
-      status: b.status?.value || null,
-    }));
-    res.json(athenaEnvelope('subdomain-persistence', { subdomain: req.params.id, stores }, Date.now() - start, { count: stores.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-persistence', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainPersistence({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 app.post('/api/athena/subdomains/:id/persistence', async (req: Request, res: Response) => {
@@ -5624,37 +5376,8 @@ app.post('/api/athena/subdomains/:id/gaps', async (req: Request, res: Response) 
 
 // GET /api/athena/subdomains/:id/prior-art — prior art for this subdomain (#1907)
 app.get('/api/athena/subdomains/:id/prior-art', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?item ?label ?path ?description WHERE {
-        GRAPH <urn:chorus:instances> {
-          <${sdUri}> chorus:hasPriorArt ?item .
-          ?item rdfs:label ?label .
-          OPTIONAL { ?item chorus:filePath ?path }
-          OPTIONAL { ?item rdfs:comment ?description }
-        }
-      }
-      ORDER BY ?label
-    `;
-    const check = await athenaSparqlQuery(`PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`);
-    if (check.results.bindings.length === 0) {
-      return res.status(404).json(athenaEnvelope('subdomain-prior-art', { error: `Sub-domain '${req.params.id}' not found` }, Date.now() - start, { error: true }));
-    }
-    const result = await athenaSparqlQuery(query);
-    const items = result.results.bindings.map((b: any) => ({
-      uri: b.item.value,
-      label: b.label?.value || b.item.value.split('#').pop(),
-      path: b.path?.value,
-      description: b.description?.value,
-    }));
-    res.json(athenaEnvelope('subdomain-prior-art', { subdomain: req.params.id, items }, Date.now() - start, { count: items.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-prior-art', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainPriorArt({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
+  res.status(r.status).json(r.body);
 });
 
 // POST /api/athena/subdomains/:id/prior-art — add prior art to subdomain (#1907)
@@ -5748,125 +5471,11 @@ app.post('/api/athena/subdomains/:id/contract', async (req: Request, res: Respon
 // The original monolithic query had 11 OPTIONAL cross-graph joins that caused
 // Fuseki timeout on populated domains due to combinatorial explosion.
 app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-
-    // Query 1: Metadata from ontology graph (no cross-graph joins)
-    const metaQuery = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?label ?comment ?ownerLabel ?stepLabel
-        (COUNT(DISTINCT ?consumed) AS ?consumesCount)
-        (COUNT(DISTINCT ?consumer) AS ?consumedByCount)
-      WHERE {
-        GRAPH <urn:chorus:ontology> {
-          <${sdUri}> a chorus:SubDomain .
-          OPTIONAL { <${sdUri}> rdfs:label ?label }
-          OPTIONAL { <${sdUri}> rdfs:comment ?comment }
-          OPTIONAL { <${sdUri}> chorus:ownedBy ?owner . ?owner rdfs:label ?ownerLabel }
-          OPTIONAL { <${sdUri}> chorus:primaryStep ?step . ?step rdfs:label ?stepLabel }
-          OPTIONAL { <${sdUri}> chorus:consumes ?consumed }
-          OPTIONAL { ?consumer chorus:consumes <${sdUri}> }
-        }
-      }
-      GROUP BY ?label ?comment ?ownerLabel ?stepLabel
-    `;
-
-    // #2175: 11 OPTIONAL joins in one query explode combinatorially on Fuseki
-    // TDB2 once any predicate has >1 result (>60s on populated domains).
-    // Split into 11 trivial per-predicate COUNTs and run in parallel — each
-    // is O(matches), no join cost. Total latency = slowest single query (~10ms).
-    const countPreds = [
-      ['actorCount',       'hasActor'],
-      ['scenarioCount',    'hasScenario'],
-      ['contractCount',    'hasContract'],
-      ['priorArtCount',    'hasPriorArt'],
-      ['pageCount',        'hasPage'],
-      ['integrationCount', 'hasIntegration'],
-      ['serviceCount',     'hasService'],
-      ['persistenceCount', 'hasPersistence'],
-      ['pipelineCount',    'hasPipeline'],
-      ['logSourceCount',   'hasLogSource'],
-      ['gapCount',         'hasGap'],
-    ] as const;
-    const countQuery = (predicate: string) => `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      SELECT (COUNT(DISTINCT ?e) AS ?n) WHERE {
-        GRAPH <urn:chorus:instances> {
-          <${sdUri}> chorus:${predicate} ?e
-        }
-      }
-    `;
-
-    const [metaResult, ...countResults] = await Promise.all([
-      athenaSparqlQuery(metaQuery),
-      ...countPreds.map(([, pred]) => athenaSparqlQuery(countQuery(pred))),
-    ]);
-
-    // Reassemble countsResult in the shape the downstream code expects
-    const countsBinding: Record<string, { value: string }> = {};
-    countPreds.forEach(([key], i) => {
-      const n = countResults[i]?.results?.bindings?.[0]?.n?.value || '0';
-      countsBinding[key] = { value: n };
-    });
-    const countsResult = { results: { bindings: [countsBinding] } };
-
-    const b = metaResult.results.bindings[0];
-    if (!b) {
-      return res.status(404).json(athenaEnvelope('subdomain-completeness', {
-        error: `Sub-domain '${req.params.id}' not found`,
-      }, Date.now() - start, { error: true }));
-    }
-
-    const c = countsResult.results.bindings[0] || {};
-    const sections: Record<string, boolean> = {
-      label: !!b.label,
-      comment: !!b.comment,
-      owner: !!b.ownerLabel,
-      step: !!b.stepLabel,
-      actors: parseInt(c.actorCount?.value || '0') > 0,
-      scenarios: parseInt(c.scenarioCount?.value || '0') > 0,
-      contract: parseInt(c.contractCount?.value || '0') > 0,
-      prior_art: parseInt(c.priorArtCount?.value || '0') > 0,
-      pages: parseInt(c.pageCount?.value || '0') > 0,
-      integrations: parseInt(c.integrationCount?.value || '0') > 0,
-      services: parseInt(c.serviceCount?.value || '0') > 0,
-      persistence: parseInt(c.persistenceCount?.value || '0') > 0,
-      pipeline: parseInt(c.pipelineCount?.value || '0') > 0,
-      logs: parseInt(c.logSourceCount?.value || '0') > 0,
-      gaps: parseInt(c.gapCount?.value || '0') > 0,
-      edges: (parseInt(b.consumesCount?.value || '0') + parseInt(b.consumedByCount?.value || '0')) > 0,
-    };
-
-    const lifecycle: Record<string, { required: string[]; met: string[]; missing: string[]; pass: boolean }> = {
-      create: { required: ['label', 'owner', 'step', 'comment'], met: [], missing: [], pass: false },
-      wip: { required: ['actors', 'edges'], met: [], missing: [], pass: false },
-      done: { required: ['scenarios', 'contract'], met: [], missing: [], pass: false },
-    };
-    for (const [stage, gate] of Object.entries(lifecycle)) {
-      gate.met = gate.required.filter(r => sections[r]);
-      gate.missing = gate.required.filter(r => !sections[r]);
-      gate.pass = gate.missing.length === 0;
-    }
-
-    const present = Object.entries(sections).filter(([, v]) => v).map(([k]) => k);
-    const missing = Object.entries(sections).filter(([, v]) => !v).map(([k]) => k);
-    const percentage = Math.round((present.length / Object.keys(sections).length) * 100);
-
-    res.json(athenaEnvelope('subdomain-completeness', {
-      subdomain: req.params.id,
-      label: b.label?.value,
-      step: b.stepLabel?.value,
-      sections,
-      present,
-      missing,
-      percentage,
-      lifecycle,
-    }, Date.now() - start, { count: present.length, total: Object.keys(sections).length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-completeness', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainCompleteness(
+    { sparqlQuery: athenaSparqlQuery, envelope: athenaEnvelope },
+    req.params.id,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // POST /api/athena/subdomains — create a new SubDomain
@@ -6040,30 +5649,19 @@ app.post('/api/athena/validate', async (req: Request, res: Response) => {
 
 // GET /api/athena/card/:id — card detail for inline rendering (#1900)
 app.get('/api/athena/card/:id', async (req: Request, res: Response) => {
-  const start = Date.now();
-  const cardId = req.params.id;
-  try {
-    const cardsScript = path.resolve(__dirname, '../../scripts/cards');
-    const { stdout } = await execAsync(
-      `bash ${cardsScript} view ${cardId} --json 2>/dev/null`,
-      { encoding: 'utf-8', timeout: 10000, env: { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
-    );
-    const card = JSON.parse(stdout);
-    // Parse AC items from description (#1933)
-    const acItems: { text: string; checked: boolean }[] = [];
-    if (card.description) {
-      const acMatches = card.description.match(/- \[([ x])\] .+/g) || [];
-      for (const line of acMatches) {
-        const checked = line.startsWith('- [x]');
-        const text = line.replace(/^- \[[ x]\] /, '');
-        acItems.push({ text, checked });
-      }
-    }
-    card.ac_items = acItems;
-    res.json(athenaEnvelope('card-detail', card, Date.now() - start));
-  } catch (err: any) {
-    res.status(404).json(athenaEnvelope('card-detail', { error: `Card ${cardId} not found` }, Date.now() - start, { error: true }));
-  }
+  const cardsScript = path.resolve(__dirname, '../../scripts/cards');
+  const env = { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` };
+  const r = await fetchAthenaCardDetail(
+    {
+      runCardsView: async (cardId: string) => {
+        const { stdout } = await execAsync(`bash ${cardsScript} view ${cardId} --json 2>/dev/null`, { encoding: 'utf-8', timeout: 10000, env });
+        return stdout;
+      },
+      envelope: athenaEnvelope,
+    },
+    req.params.id,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // 404 handler for unknown /api/athena/* paths — agent-friendly suggestions
