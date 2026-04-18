@@ -1211,54 +1211,22 @@ app.get('/api/chorus/domain/:name/blast-radius', async (req: Request, res: Respo
 
 // GET /api/chorus/domain/:name/releases — domain-scoped deploy history (#1910)
 // Git-first: parse ACP commits, match card domain tags, return newest first.
+import { fetchChorusDomainReleases } from './handlers/chorus-domain-releases';
 app.get('/api/chorus/domain/:name/releases', async (req: Request, res: Response) => {
-  const start = Date.now();
-  const domainName = req.params.name.replace(/-(domain|service|analytics)$/, '').toLowerCase();
-  try {
-    const { execSync } = require('child_process');
-    const gitLog = execSync(
-      'git log --oneline --format="%H|%aI|%s"',
-      { cwd: REPO_ROOT, encoding: 'utf-8', timeout: 10000 }
-    );
-    const acpPattern = /^([a-f0-9]+)\|(.+?)\|(\w+): acp #(\d+)(?:.*?)— (.+)$/;
-    const allAcps: Array<{ commit: string; timestamp: string; role: string; cardId: string; title: string }> = [];
-    for (const line of gitLog.split('\n')) {
-      const m = line.match(acpPattern);
-      if (m) {
-        allAcps.push({ commit: m[1].slice(0, 8), timestamp: m[2], role: m[3], cardId: m[4], title: m[5].trim() });
-      }
-    }
-    // #2096: Build card→domain index from board cache (was execSync ~450ms, now <1ms)
-    const cardsDomainIndex = new Map<string, string[]>();
-    for (const c of getBoardCards()) {
-      const domains: string[] = [];
-      const domainMatches = c.tags.matchAll(/domain:(\w[\w-]*)/g);
-      for (const dm of domainMatches) domains.push(dm[1]);
-      const seqMatches = c.tags.matchAll(/sequence:(\w[\w-]*)/g);
-      for (const sm of seqMatches) domains.push(sm[1]);
-      if (domains.length > 0) cardsDomainIndex.set(c.id, domains);
-    }
-
-    // Filter ACPs by domain using the index
-    const releases: Array<{ cardId: string; title: string; commit: string; timestamp: string; role: string; gates: string }> = [];
-    for (const acp of allAcps) {
-      const cardDomains = cardsDomainIndex.get(acp.cardId);
-      if (cardDomains && cardDomains.includes(domainName)) {
-        releases.push({ ...acp, gates: 'passed' });
-      } else if (!cardDomains && acp.title.toLowerCase().includes(domainName)) {
-        releases.push({ ...acp, gates: 'unknown' });
-      }
-    }
-    res.json(athenaEnvelope('domain-releases', {
-      subdomain: req.params.name,
-      releases,
-    }, Date.now() - start, { count: releases.length, total_acps: allAcps.length }));
-  } catch (err: any) {
-    res.json(athenaEnvelope('domain-releases', {
-      subdomain: req.params.name,
-      releases: [],
-    }, Date.now() - start, { count: 0 }));
-  }
+  const r = fetchChorusDomainReleases(
+    {
+      gitLog: () => {
+        const { execSync } = require('child_process');
+        return execSync('git log --oneline --format="%H|%aI|%s"', {
+          cwd: REPO_ROOT, encoding: 'utf-8', timeout: 10000,
+        });
+      },
+      getCards: getBoardCards,
+      envelope: athenaEnvelope,
+    },
+    req.params.name,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/domain/:name/dependencies — upstream/downstream + shared infra (#2082)
