@@ -340,15 +340,91 @@ fn block_calls_production_symbol(body: &str, prod: &HashSet<String>) -> bool {
     false
 }
 
-/// Analyse source. Return Err(reason) if any test block fails both checks.
+/// Count how many `test(` / `it(` keyword-boundary invocations appear in source.
+/// Used by parser diagnostics (#2210): if the source clearly contains test
+/// keywords but extract_test_blocks() returned zero blocks, the parser hit a
+/// malformed region and we must fail closed rather than silently allow.
+fn count_test_keyword_occurrences(source: &str) -> usize {
+    let bytes = source.as_bytes();
+    let kws = ["test(", "test.skip(", "test.only(", "it(", "it.skip(", "it.only("];
+    let mut count = 0;
+    for kw in &kws {
+        let mut pos = 0;
+        while let Some(rel) = source[pos..].find(kw) {
+            let abs = pos + rel;
+            let is_boundary = abs == 0 || {
+                let prev = bytes[abs - 1];
+                !prev.is_ascii_alphanumeric() && prev != b'_' && prev != b'$'
+            };
+            if is_boundary {
+                count += 1;
+            }
+            pos = abs + kw.len();
+        }
+    }
+    count
+}
+
+/// Normalize a test block body for grandfather signature comparison. Strips
+/// all whitespace so that reformatting an existing block doesn't un-grandfather
+/// it. Name + normalized body forms the signature.
+fn block_signature(block: &TestBlock) -> String {
+    let mut normalized = String::with_capacity(block.body.len());
+    for c in block.body.chars() {
+        if !c.is_whitespace() {
+            normalized.push(c);
+        }
+    }
+    format!("{}|{}", block.name, normalized)
+}
+
+/// Backwards-compat single-source analyse — treats the whole source as newly
+/// introduced (no grandfathered blocks). Used by the Write-on-new-file path and
+/// by the existing unit tests from #2196.
 pub(crate) fn analyse(source: &str) -> Result<(), String> {
-    let prod = production_symbols(source);
-    let blocks = extract_test_blocks(source);
-    if blocks.is_empty() {
-        // No test() blocks — not our concern.
+    analyse_incoming("", source)
+}
+
+/// Diff-aware analyse (#2210). Compares the existing content to the incoming
+/// content at the test-block level. A block in `incoming` is subject to the
+/// quality check only if its signature is NOT already present in `existing`
+/// — grandfathered blocks stay grandfathered, newly introduced blocks must
+/// pass.
+///
+/// Fails closed on parser malformation: if `incoming` clearly contains
+/// `test(` / `it(` keyword text but the parser extracted fewer blocks than
+/// keywords, reject the write with a parser-error message rather than
+/// silently allowing.
+pub(crate) fn analyse_incoming(existing: &str, incoming: &str) -> Result<(), String> {
+    let incoming_blocks = extract_test_blocks(incoming);
+    let keyword_count = count_test_keyword_occurrences(incoming);
+
+    // Parser-diagnostic: if we see test-keyword text but can't parse matching
+    // blocks, fail closed.
+    if keyword_count > incoming_blocks.len() {
+        return Err(format!(
+            "could not parse {} test-keyword occurrence(s) — only {} block(s) matched. \
+             Run `npx tsc --noEmit` first; gate fails closed on malformed test sources.",
+            keyword_count, incoming_blocks.len()
+        ));
+    }
+
+    if incoming_blocks.is_empty() {
         return Ok(());
     }
-    for block in &blocks {
+
+    // Build grandfather signature set from existing content.
+    let existing_sigs: std::collections::HashSet<String> = extract_test_blocks(existing)
+        .iter()
+        .map(block_signature)
+        .collect();
+
+    let prod = production_symbols(incoming);
+    for block in &incoming_blocks {
+        // Grandfathered — block is unchanged from existing content, skip check.
+        if existing_sigs.contains(&block_signature(block)) {
+            continue;
+        }
         let has_assert = block_has_assertion(&block.body);
         let has_call = block_calls_production_symbol(&block.body, &prod);
         if !has_assert || !has_call {
@@ -367,30 +443,62 @@ pub(crate) fn analyse(source: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn is_new_test_file_write(input: &HookInput) -> Option<(String, String)> {
-    if input.tool_name_str() != "Write" {
-        return None;
-    }
-    let file_path = input.get_tool_input_str("file_path");
-    let lower = file_path.to_lowercase();
-    if !(lower.ends_with(".test.ts")
+/// Detect whether the file path looks like a test file we should gate on.
+fn is_test_file_path(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with(".test.ts")
         || lower.ends_with(".test.tsx")
         || lower.ends_with(".test.js")
         || lower.ends_with(".spec.ts")
-        || lower.ends_with(".spec.js"))
-    {
+        || lower.ends_with(".spec.js")
+}
+
+/// For a Write: return (path, existing_content, incoming_content).
+/// For an Edit: reconstruct incoming by applying old_string → new_string to
+/// the on-disk content, and return the same triple.
+///
+/// Returns None if the tool call isn't a test-file Write/Edit, or if the
+/// reconstruction isn't possible (Edit referencing a file that doesn't exist,
+/// or old_string not found — let other hooks surface those errors).
+fn resolve_test_file_change(input: &HookInput) -> Option<(String, String, String)> {
+    let tool = input.tool_name_str();
+    let file_path = input.get_tool_input_str("file_path");
+    if !is_test_file_path(&file_path) {
         return None;
     }
-    let content = input.get_tool_input_str("content");
-    if content.is_empty() {
-        return None;
+    let existing = std::fs::read_to_string(&file_path).unwrap_or_default();
+
+    match &*tool {
+        "Write" => {
+            let incoming = input.get_tool_input_str("content");
+            if incoming.is_empty() {
+                return None;
+            }
+            Some((file_path, existing, incoming))
+        }
+        "Edit" => {
+            let old_s = input.get_tool_input_str("old_string");
+            let new_s = input.get_tool_input_str("new_string");
+            if old_s.is_empty() || existing.is_empty() {
+                return None;
+            }
+            // Apply the edit. Single replacement — matches Edit tool semantics
+            // (the Edit tool errors on non-unique old_string, so the first
+            // occurrence is the only one).
+            let incoming = if let Some(pos) = existing.find(&old_s) {
+                let mut buf = String::with_capacity(existing.len() - old_s.len() + new_s.len());
+                buf.push_str(&existing[..pos]);
+                buf.push_str(&new_s);
+                buf.push_str(&existing[pos + old_s.len()..]);
+                buf
+            } else {
+                // Edit wouldn't apply — let the Edit tool report it; don't gate.
+                return None;
+            };
+            Some((file_path, existing, incoming))
+        }
+        _ => None,
     }
-    // Grandfather: if the file already exists, treat this Write as overwrite of
-    // an existing (pre-#2196) file. Enforcement is on new files only per AC.
-    if std::path::Path::new(&file_path).exists() {
-        return None;
-    }
-    Some((file_path.to_string(), content.to_string()))
 }
 
 pub fn check(input: &HookInput) -> HookResponse {
@@ -400,16 +508,16 @@ pub fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
 
-    let (path, content) = match is_new_test_file_write(input) {
-        Some(pair) => pair,
+    let (path, existing, incoming) = match resolve_test_file_change(input) {
+        Some(triple) => triple,
         None => return HookResponse::allow(),
     };
-    match analyse(&content) {
+    match analyse_incoming(&existing, &incoming) {
         Ok(()) => HookResponse::allow(),
         Err(reason) => {
             let fname = path.rsplit('/').next().unwrap_or(&path);
             let msg = format!(
-                "Test quality gate (#2196): {} — {}. DEC-1674: tests exercise real behavior, not presence.",
+                "Test quality gate (#2196/#2210): {} — {}. DEC-1674: tests exercise real behavior, not presence.",
                 fname, reason
             );
             HookResponse::deny(&permission_deny_json(&msg))
@@ -637,5 +745,148 @@ mod tests {
         "#;
         let err = analyse(src).unwrap_err();
         assert!(err.contains("bad"));
+    }
+
+    // --- #2210: diff-aware analyse_incoming ---
+
+    #[test]
+    fn diff_grandfathers_existing_bad_block() {
+        let existing = r#"
+            import { realFn } from '../src/real';
+            test('pre-existing bad', () => {
+                realFn();
+            });
+        "#;
+        // Incoming is the same content — no new blocks. Grandfathered.
+        assert!(analyse_incoming(existing, existing).is_ok());
+    }
+
+    #[test]
+    fn diff_rejects_newly_added_bad_block() {
+        let existing = r#"
+            import { realFn } from '../src/real';
+            test('pre-existing good', () => {
+                expect(realFn()).toBe(1);
+            });
+        "#;
+        let incoming = r#"
+            import { realFn } from '../src/real';
+            test('pre-existing good', () => {
+                expect(realFn()).toBe(1);
+            });
+            test('newly added bad', () => {
+                realFn();
+            });
+        "#;
+        let err = analyse_incoming(existing, incoming).unwrap_err();
+        assert!(err.contains("newly added bad"));
+    }
+
+    #[test]
+    fn diff_allows_newly_added_good_block() {
+        let existing = r#"
+            import { realFn } from '../src/real';
+            test('original', () => {
+                expect(realFn()).toBe(1);
+            });
+        "#;
+        let incoming = r#"
+            import { realFn } from '../src/real';
+            test('original', () => {
+                expect(realFn()).toBe(1);
+            });
+            test('added good', () => {
+                expect(realFn()).toBe(2);
+            });
+        "#;
+        assert!(analyse_incoming(existing, incoming).is_ok());
+    }
+
+    #[test]
+    fn partial_write_race_rejects_followup_bad_block() {
+        // Simulates the Silas-flagged race: Write creates an empty/stub file
+        // (no test blocks), then a subsequent Edit introduces bad tests.
+        let existing_empty_stub = "// placeholder — tests forthcoming\n";
+        let incoming_bad = r#"
+            import { realFn } from '../src/real';
+            test('smoke only', () => {
+                realFn();
+            });
+        "#;
+        let err = analyse_incoming(existing_empty_stub, incoming_bad).unwrap_err();
+        assert!(err.contains("no assertion"));
+    }
+
+    #[test]
+    fn grandfather_tolerates_whitespace_reformatting() {
+        let existing = r#"
+            import { realFn } from '../src/real';
+            test('legacy', () => {
+                realFn();
+            });
+        "#;
+        // Same block, reformatted (collapsed whitespace) — still grandfathered.
+        let incoming = r#"
+            import { realFn } from '../src/real';
+            test('legacy', () => { realFn(); });
+        "#;
+        assert!(analyse_incoming(existing, incoming).is_ok());
+    }
+
+    #[test]
+    fn parser_fails_closed_on_unmatched_braces() {
+        // Unbalanced braces: `test(` text present but the body never closes,
+        // so extract_test_blocks returns zero. Must fail closed.
+        let src = "import { realFn } from '../src/real';\ntest('broken', () => { realFn();\n";
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("could not parse"));
+    }
+
+    #[test]
+    fn parser_fails_closed_on_bodyless_it() {
+        // `it(` keyword with no callback body — parser finds the keyword but
+        // can't extract a block. Malformed; must fail closed.
+        let src = r#"
+            import { realFn } from '../src/real';
+            it('stub',
+        "#;
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("could not parse"));
+    }
+
+    #[test]
+    fn parser_diagnostic_pointer_to_tsc() {
+        let src = "test('x', () => { oops\n";
+        let err = analyse(src).unwrap_err();
+        assert!(err.contains("npx tsc --noEmit"));
+    }
+
+    #[test]
+    fn count_keyword_respects_word_boundary() {
+        // `mytest(` should NOT count; `test(` should. `testing(` should not
+        // count even though it contains `test`.
+        assert_eq!(count_test_keyword_occurrences("test(x"), 1);
+        assert_eq!(count_test_keyword_occurrences("mytest(x"), 0);
+        assert_eq!(count_test_keyword_occurrences("testing(x"), 0);
+        assert_eq!(count_test_keyword_occurrences("it('x', () => {})"), 1);
+        assert_eq!(count_test_keyword_occurrences("unit('x', () => {})"), 0);
+    }
+
+    #[test]
+    fn block_signature_ignores_whitespace_but_respects_body() {
+        let a = TestBlock {
+            name: "x".to_string(),
+            body: "  realFn();  expect(1).toBe(1);  ".to_string(),
+        };
+        let b = TestBlock {
+            name: "x".to_string(),
+            body: "realFn();expect(1).toBe(1);".to_string(),
+        };
+        let c = TestBlock {
+            name: "x".to_string(),
+            body: "realFn();expect(2).toBe(2);".to_string(),
+        };
+        assert_eq!(block_signature(&a), block_signature(&b));
+        assert_ne!(block_signature(&a), block_signature(&c));
     }
 }
