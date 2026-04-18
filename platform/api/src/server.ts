@@ -1510,25 +1510,22 @@ app.get('/api/chorus/domain/:name/code', async (req: Request, res: Response) => 
 // GET /api/chorus/domain/:name/tests — test files covering a domain (#2098: unified via quality scanner)
 // Previously queried Fuseki for TestCoverage triples. Now proxies to the quality scanner
 // so domain-detail and quality-service page show the same test data.
+// Extracted to handlers/domain-facets.ts (#2173 AC4).
+import {
+  fetchDomainTests,
+  fetchDomainLogs,
+  fetchDomainServices,
+  fetchDomainDecisions,
+} from './handlers/domain-facets';
+const domainFacetDeps = () => ({
+  sparql: athenaSparqlQuery,
+  resolveSubdomainId,
+  envelope: athenaEnvelope,
+});
+
 app.get('/api/chorus/domain/:name/tests', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    // Strip subdomain suffix (e.g., chorus-domain -> chorus) for the scanner API
-    const domain = req.params.name.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
-    const upstream = await fetch(`http://localhost:3000/api/quality/domain/${domain}`, { signal: AbortSignal.timeout(5000) });
-    if (!upstream.ok) {
-      res.json(athenaEnvelope('domain-tests', { subdomain: req.params.name, tests: [], byType: {} }, Date.now() - start, { count: 0 }));
-      return;
-    }
-    const scanData = await upstream.json() as any;
-    // Map scanner shape to domain-detail's expected shape: { tests: [{ path, type }], byType: {} }
-    const tests = (scanData.files || []).map((f: any) => ({ path: f.name, type: f.kind }));
-    const byType: Record<string, number> = {};
-    for (const t of tests) { byType[t.type] = (byType[t.type] || 0) + 1; }
-    res.json(athenaEnvelope('domain-tests', { subdomain: req.params.name, tests, byType, total: scanData.total || 0 }, Date.now() - start, { count: tests.length }));
-  } catch (err: any) {
-    res.json(athenaEnvelope('domain-tests', { subdomain: req.params.name, tests: [], byType: {} }, Date.now() - start, { count: 0 }));
-  }
+  const r = await fetchDomainTests(domainFacetDeps(), req.params.name);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/domain/:name/alerts — alert rules for a domain (#2060 AC3)
@@ -1559,69 +1556,19 @@ app.get('/api/chorus/domain/:name/alerts', async (req: Request, res: Response) =
 
 // GET /api/chorus/domain/:name/logs — log sources for a domain (#2060 AC4)
 app.get('/api/chorus/domain/:name/logs', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdId = await resolveSubdomainId(req.params.name);
-    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?log ?label ?location ?status WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasLogSource ?log . OPTIONAL { ?log rdfs:label ?label } OPTIONAL { ?log chorus:logSourceLocation ?location } OPTIONAL { ?log chorus:logSourceStatus ?status } } }`;
-    const result = await athenaSparqlQuery(query);
-    const logs = result.results.bindings.map((b: any) => ({
-      label: b.label?.value || b.log.value.split('#').pop(),
-      location: b.location?.value || null,
-      status: b.status?.value || null,
-    }));
-    res.json(athenaEnvelope('domain-logs', { subdomain: sdId, logs }, Date.now() - start, { count: logs.length }));
-  } catch (err: any) {
-    res.json(athenaEnvelope('domain-logs', { subdomain: req.params.name, logs: [] }, Date.now() - start, { count: 0 }));
-  }
+  const r = await fetchDomainLogs(domainFacetDeps(), req.params.name);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/domain/:name/services — API endpoints in a domain (#2060 AC5)
 app.get('/api/chorus/domain/:name/services', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdId = await resolveSubdomainId(req.params.name);
-    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?method ?routePath ?filePath WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasEndpoint ?ep . ?ep a chorus:Endpoint ; chorus:httpMethod ?method ; chorus:routePath ?routePath ; chorus:filePath ?filePath . } } ORDER BY ?method ?routePath`;
-    const result = await athenaSparqlQuery(query);
-    const endpoints = result.results.bindings.map((b: any) => ({
-      method: b.method.value,
-      path: b.routePath.value,
-      handler: b.filePath.value,
-    }));
-    const byMethod: Record<string, number> = {};
-    for (const e of endpoints) { byMethod[e.method] = (byMethod[e.method] || 0) + 1; }
-    res.json(athenaEnvelope('domain-services', { subdomain: sdId, endpoints, byMethod }, Date.now() - start, { count: endpoints.length }));
-  } catch (err: any) {
-    res.json(athenaEnvelope('domain-services', { subdomain: req.params.name, endpoints: [], byMethod: {} }, Date.now() - start, { count: 0 }));
-  }
+  const r = await fetchDomainServices(domainFacetDeps(), req.params.name);
+  res.status(r.status).json(r.body);
 });
 
-// GET /api/chorus/domain/:name/decisions — DECs + ADRs governing this domain (#2040)
 app.get('/api/chorus/domain/:name/decisions', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const domainName = req.params.name.replace(/-(domain|service|analytics)$/, '').replace(/-/g, '_');
-    // Alias mapping: aggregation domains search additional labels (#2098)
-    const DECISION_ALIASES: Record<string, string[]> = { 'tests': ['quality'], 'code': ['code'], 'gates': ['gates'] };
-    const domainNames = [domainName, ...(DECISION_ALIASES[domainName] || [])];
-    const domainFilter = domainNames.map(n => `<https://jeffbridwell.com/chorus#${n}-domain>`).join(', ');
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id ?title ?date ?status ?level ?type WHERE { GRAPH <urn:chorus:decisions> { ?s a chorus:Decision ; rdfs:label ?id ; rdfs:comment ?title ; chorus:decisionDate ?date ; chorus:decisionStatus ?status ; chorus:enforcementLevel ?level ; chorus:decisionType ?type ; chorus:hasDomain ?dom . FILTER(?dom IN (${domainFilter})) } } ORDER BY ?type ?id`;
-    const result = await athenaSparqlQuery(query);
-    const decisions = result.results.bindings.map((b: any) => ({
-      id: b.id.value,
-      title: b.title.value,
-      date: b.date.value,
-      status: b.status.value,
-      enforcement: b.level.value,
-      type: b.type.value,
-    }));
-    const byEnforcement: Record<string, number> = {};
-    for (const d of decisions) { byEnforcement[d.enforcement] = (byEnforcement[d.enforcement] || 0) + 1; }
-    res.json(athenaEnvelope('domain-decisions', { domain: req.params.name, decisions, byEnforcement }, Date.now() - start, { count: decisions.length }));
-  } catch (err: any) {
-    res.json(athenaEnvelope('domain-decisions', { domain: req.params.name, decisions: [], byEnforcement: {} }, Date.now() - start, { count: 0 }));
-  }
+  const r = await fetchDomainDecisions(domainFacetDeps(), req.params.name);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/domain/:name/radius — outward neighborhood walk (#2028)
