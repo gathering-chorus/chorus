@@ -22,6 +22,10 @@ import {
   createSubdomainPipeline,
   createSubdomainLog,
   createSubdomainGap,
+  createSubdomainPage,
+  createSubdomainIntegration,
+  createSubdomainPersistence,
+  createSubdomainScenario,
   updateSubdomainService,
   updateSubdomainPipeline,
   updateSubdomainPage,
@@ -336,6 +340,75 @@ describe('createSubdomainGap', () => {
     const r = await createSubdomainGap(d, 'chorus-domain', { label: 'x' });
     const body = r.body as { data: { uri: string } };
     expect(body.data.uri).toContain('-gap-x');
+  });
+});
+
+// --- More POST create kinds ---
+
+describe('createSubdomainPage', () => {
+  test('uses chorus:Page + hasPage + pageRoute', async () => {
+    const d = writeDeps();
+    await createSubdomainPage(d, 'chorus-domain', { label: 'home', route: '/' });
+    expect(d.lastUpdate.value).toContain('a chorus:Page');
+    expect(d.lastUpdate.value).toContain('chorus:hasPage');
+    expect(d.lastUpdate.value).toContain('chorus:pageRoute "/"');
+  });
+});
+
+describe('createSubdomainIntegration', () => {
+  test('uses chorus:Integration + body.path → integrationPath', async () => {
+    const d = writeDeps();
+    await createSubdomainIntegration(d, 'chorus-domain', {
+      label: 'vikunja',
+      source: 'api',
+      path: '/api/v1/projects',
+    });
+    expect(d.lastUpdate.value).toContain('a chorus:Integration');
+    expect(d.lastUpdate.value).toContain('chorus:integrationPath "/api/v1/projects"');
+  });
+});
+
+describe('createSubdomainPersistence', () => {
+  test('serializes numeric records as string literal', async () => {
+    const d = writeDeps();
+    await createSubdomainPersistence(d, 'chorus-domain', {
+      label: 'sqlite',
+      type: 'sqlite',
+      records: 4200,
+    });
+    expect(d.lastUpdate.value).toContain('chorus:storeRecordCount "4200"');
+  });
+
+  test('preserves records as-is in echo body', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainPersistence(d, 'chorus-domain', {
+      label: 'sqlite',
+      records: 4200,
+    });
+    const body = r.body as { data: { records: number } };
+    expect(body.data.records).toBe(4200);
+  });
+});
+
+describe('createSubdomainScenario', () => {
+  test('uses chorus:Scenario + Given/When/Then predicates', async () => {
+    const d = writeDeps();
+    await createSubdomainScenario(d, 'chorus-domain', {
+      label: 'login',
+      given: 'user on homepage',
+      when: 'clicks sign in',
+      then: 'lands on dashboard',
+    });
+    expect(d.lastUpdate.value).toContain('a chorus:Scenario');
+    expect(d.lastUpdate.value).toContain('chorus:scenarioGiven "user on homepage"');
+    expect(d.lastUpdate.value).toContain('chorus:scenarioWhen "clicks sign in"');
+    expect(d.lastUpdate.value).toContain('chorus:scenarioThen "lands on dashboard"');
+  });
+
+  test('missing label returns 400', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainScenario(d, 'chorus-domain', {});
+    expect(r.status).toBe(400);
   });
 });
 

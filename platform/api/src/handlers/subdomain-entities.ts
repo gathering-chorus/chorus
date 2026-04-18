@@ -159,10 +159,10 @@ export async function createSubdomainEntity(
 
     const propTriples = Object.entries(spec.propertyMap)
       .map(([bodyField, predicate]) => {
-        const v = b[bodyField];
-        return typeof v === 'string' && v.length > 0
-          ? `<${entityUri}> chorus:${predicate} "${escapeLiteral(v)}" .`
-          : '';
+        const v = (b as Record<string, unknown>)[bodyField];
+        if (v === undefined || v === null || v === '') return '';
+        const s = typeof v === 'string' ? v : String(v);
+        return `<${entityUri}> chorus:${predicate} "${escapeLiteral(s)}" .`;
       })
       .filter(Boolean)
       .join(' ');
@@ -244,6 +244,56 @@ export const createGapSpec: CreateEntitySpec = {
   },
 };
 
+export const createPageSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-page-create',
+  uriSegment: 'page',
+  typeClass: 'chorus:Page',
+  hasPredicate: 'chorus:hasPage',
+  propertyMap: {
+    route: 'pageRoute',
+    description: 'pageDescription',
+    status: 'pageStatus',
+  },
+};
+
+export const createIntegrationSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-integration-create',
+  uriSegment: 'integration',
+  typeClass: 'chorus:Integration',
+  hasPredicate: 'chorus:hasIntegration',
+  propertyMap: {
+    source: 'integrationSource',
+    path: 'integrationPath',
+    status: 'integrationStatus',
+  },
+};
+
+export const createPersistenceSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-persistence-create',
+  uriSegment: 'store', // existing URI convention uses 'store', not 'persistence'
+  typeClass: 'chorus:PersistenceStore',
+  hasPredicate: 'chorus:hasPersistence',
+  propertyMap: {
+    type: 'storeType',
+    namespace: 'storeNamespace',
+    records: 'storeRecordCount',
+    status: 'storeStatus',
+  },
+};
+
+export const createScenarioSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-scenario-create',
+  uriSegment: 'scenario',
+  typeClass: 'chorus:Scenario',
+  hasPredicate: 'chorus:hasScenario',
+  propertyMap: {
+    given: 'scenarioGiven',
+    when: 'scenarioWhen',
+    then: 'scenarioThen',
+    notes: 'scenarioNotes',
+  },
+};
+
 export const createSubdomainService = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
   createSubdomainEntity(deps, id, body, createServiceSpec);
 export const createSubdomainPipeline = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
@@ -252,6 +302,14 @@ export const createSubdomainLog = (deps: WriteDeps, id: string, body: Record<str
   createSubdomainEntity(deps, id, body, createLogSpec);
 export const createSubdomainGap = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
   createSubdomainEntity(deps, id, body, createGapSpec);
+export const createSubdomainPage = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createPageSpec);
+export const createSubdomainIntegration = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createIntegrationSpec);
+export const createSubdomainPersistence = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createPersistenceSpec);
+export const createSubdomainScenario = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createScenarioSpec);
 
 // --- PUT update: DELETE-then-INSERT against a caller-supplied entity URI ---
 

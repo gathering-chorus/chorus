@@ -4152,8 +4152,23 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
       try {
         // #2178 — surface ownership + description + reads/writes/consumes
         // alongside labels. items string[] preserved for existing consumers;
-        // itemDetails adds provenance. Ownership is the core reason: agent
-        // reading Athena sees who owns each entity, not just its label.
+        // itemDetails adds provenance. Ownership walks up from sub-domain
+        // when the entity doesn't carry chorus:ownedBy directly (Silas's
+        // call: COALESCE(direct, parent); services get re-parented, direct
+        // tags drift when sub-domain ownership changes). ownerInherited:true
+        // flags walk-up-sourced owner so consumers can distinguish.
+        const parentOwnerQuery = `
+          PREFIX chorus: <https://jeffbridwell.com/chorus#>
+          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+          SELECT ?ownerLabel WHERE {
+            <${sdUri}> chorus:ownedBy ?owner .
+            OPTIONAL { ?owner rdfs:label ?ownerLabel }
+          } LIMIT 1
+        `;
+        const parentOwnerResult = await athenaSparqlQuery(parentOwnerQuery).catch(() => null);
+        const parentOwner: string | null =
+          parentOwnerResult?.results?.bindings?.[0]?.ownerLabel?.value || null;
+
         const sectionQuery = (pred: string) => `
           PREFIX chorus: <https://jeffbridwell.com/chorus#>
           PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -4191,11 +4206,18 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
             const split = (v: string | undefined) => (v ? v.split('||').filter(Boolean) : []);
             const detail: any = { label };
             if (b?.comment?.value) detail.description = b.comment.value;
-            const owners = split(b?.owners?.value);
+            const directOwners = split(b?.owners?.value);
             const reads = split(b?.reads?.value);
             const writes = split(b?.writes?.value);
             const consumes = split(b?.consumes?.value);
-            if (owners.length) detail.owner = owners.length === 1 ? owners[0] : owners;
+            // COALESCE(direct, parent): direct owner takes precedence for
+            // genuine co-ownership cases; sub-domain walk-up is the default.
+            if (directOwners.length) {
+              detail.owner = directOwners.length === 1 ? directOwners[0] : directOwners;
+            } else if (parentOwner) {
+              detail.owner = parentOwner;
+              detail.ownerInherited = true;
+            }
             if (reads.length) detail.reads = reads;
             if (writes.length) detail.writes = writes;
             if (consumes.length) detail.consumes = consumes;
@@ -5867,32 +5889,8 @@ app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) 
 
 // POST /api/athena/subdomains/:id/pages — add page to subdomain (#1923)
 app.post('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, route, description, status } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('subdomain-page-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const pageId = `${req.params.id}-page-${label.toLowerCase().replace(/\s+/g, '-')}`;
-    const pageUri = `https://jeffbridwell.com/chorus#${pageId}`;
-    const update = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      INSERT DATA {
-        GRAPH <urn:chorus:instances> {
-          <${pageUri}> a chorus:Page ;
-            rdfs:label "${label.replace(/"/g, '\\"')}" .
-          <${sdUri}> chorus:hasPage <${pageUri}> .
-          ${route ? `<${pageUri}> chorus:pageRoute "${route.replace(/"/g, '\\"')}" .` : ''}
-          ${description ? `<${pageUri}> chorus:pageDescription "${description.replace(/"/g, '\\"')}" .` : ''}
-          ${status ? `<${pageUri}> chorus:pageStatus "${status.replace(/"/g, '\\"')}" .` : ''}
-        }
-      }
-    `;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-page-create', { subdomain: req.params.id, uri: pageUri, label, route: route || null, description: description || null, status: status || null }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-page-create', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await createSubdomainPage(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/integrations — data integrations for this subdomain (#1923)
@@ -5933,32 +5931,8 @@ app.get('/api/athena/subdomains/:id/integrations', async (req: Request, res: Res
 
 // POST /api/athena/subdomains/:id/integrations — add integration to subdomain (#1923)
 app.post('/api/athena/subdomains/:id/integrations', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, source, path: dataPath, status } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('subdomain-integration-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const intId = `${req.params.id}-integration-${label.toLowerCase().replace(/\s+/g, '-')}`;
-    const intUri = `https://jeffbridwell.com/chorus#${intId}`;
-    const update = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      INSERT DATA {
-        GRAPH <urn:chorus:instances> {
-          <${intUri}> a chorus:Integration ;
-            rdfs:label "${label.replace(/"/g, '\\"')}" .
-          <${sdUri}> chorus:hasIntegration <${intUri}> .
-          ${source ? `<${intUri}> chorus:integrationSource "${source.replace(/"/g, '\\"')}" .` : ''}
-          ${dataPath ? `<${intUri}> chorus:integrationPath "${dataPath.replace(/"/g, '\\"')}" .` : ''}
-          ${status ? `<${intUri}> chorus:integrationStatus "${status.replace(/"/g, '\\"')}" .` : ''}
-        }
-      }
-    `;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-integration-create', { subdomain: req.params.id, uri: intUri, label, source: source || null, path: dataPath || null, status: status || null }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-integration-create', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await createSubdomainIntegration(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/persistence — persistence stores for this subdomain (#1923)
@@ -5999,35 +5973,9 @@ app.get('/api/athena/subdomains/:id/persistence', async (req: Request, res: Resp
   }
 });
 
-// POST /api/athena/subdomains/:id/persistence — add persistence store to subdomain (#1923)
 app.post('/api/athena/subdomains/:id/persistence', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, type, namespace, records, status } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('subdomain-persistence-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const storeId = `${req.params.id}-store-${label.toLowerCase().replace(/\s+/g, '-')}`;
-    const storeUri = `https://jeffbridwell.com/chorus#${storeId}`;
-    const update = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      INSERT DATA {
-        GRAPH <urn:chorus:instances> {
-          <${storeUri}> a chorus:PersistenceStore ;
-            rdfs:label "${label.replace(/"/g, '\\"')}" .
-          <${sdUri}> chorus:hasPersistence <${storeUri}> .
-          ${type ? `<${storeUri}> chorus:storeType "${type.replace(/"/g, '\\"')}" .` : ''}
-          ${namespace ? `<${storeUri}> chorus:storeNamespace "${namespace.replace(/"/g, '\\"')}" .` : ''}
-          ${records != null ? `<${storeUri}> chorus:storeRecordCount "${records}" .` : ''}
-          ${status ? `<${storeUri}> chorus:storeStatus "${status.replace(/"/g, '\\"')}" .` : ''}
-        }
-      }
-    `;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-persistence-create', { subdomain: req.params.id, uri: storeUri, label, type: type || null, namespace: namespace || null, records: records != null ? parseInt(records) : null, status: status || null }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-persistence-create', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await createSubdomainPersistence(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/services — runtime services for this subdomain (#1924)
@@ -6042,6 +5990,10 @@ import {
   createSubdomainPipeline,
   createSubdomainLog,
   createSubdomainGap,
+  createSubdomainPage,
+  createSubdomainIntegration,
+  createSubdomainPersistence,
+  createSubdomainScenario,
   updateSubdomainService,
   updateSubdomainPipeline,
   updateSubdomainLog,
@@ -6328,33 +6280,8 @@ app.put('/api/athena/subdomains/:id/prior-art/:entityId', async (req: Request, r
 
 // POST /api/athena/subdomains/:id/scenarios — add BDD scenario to subdomain (#1899)
 app.post('/api/athena/subdomains/:id/scenarios', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, given, when, then: thenField, notes } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('subdomain-scenario-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const scenarioId = `${req.params.id}-scenario-${label.toLowerCase().replace(/\s+/g, '-')}`;
-    const scenarioUri = `https://jeffbridwell.com/chorus#${scenarioId}`;
-    const update = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      INSERT DATA {
-        GRAPH <urn:chorus:instances> {
-          <${scenarioUri}> a chorus:Scenario ;
-            rdfs:label "${label.replace(/"/g, '\\"')}" .
-          <${sdUri}> chorus:hasScenario <${scenarioUri}> .
-          ${given ? `<${scenarioUri}> chorus:scenarioGiven "${given.replace(/"/g, '\\"')}" .` : ''}
-          ${when ? `<${scenarioUri}> chorus:scenarioWhen "${when.replace(/"/g, '\\"')}" .` : ''}
-          ${thenField ? `<${scenarioUri}> chorus:scenarioThen "${thenField.replace(/"/g, '\\"')}" .` : ''}
-          ${notes ? `<${scenarioUri}> chorus:scenarioNotes "${notes.replace(/"/g, '\\"')}" .` : ''}
-        }
-      }
-    `;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-scenario-create', { subdomain: req.params.id, uri: scenarioUri, label, given: given || null, when: when || null, then: thenField || null, notes: notes || null }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-scenario-create', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await createSubdomainScenario(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // POST /api/athena/subdomains/:id/contract — add API contract endpoint to subdomain (#1899)
