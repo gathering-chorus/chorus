@@ -15,7 +15,9 @@ import {
   fetchDomainDecisions,
   fetchDomainRadius,
   fetchDomainBlastRadius,
+  fetchDomainAlerts,
   type DomainFacetDeps,
+  type DomainAlertsDeps,
 } from '../../src/handlers/domain-facets';
 import type { SparqlResult } from '../../src/handlers/athena-health';
 
@@ -202,6 +204,80 @@ describe('fetchDomainDecisions', () => {
     expect(r.status).toBe(200);
     const body = r.body as { data: { decisions: unknown[] } };
     expect(body.data.decisions).toEqual([]);
+  });
+});
+
+// --- fetchDomainAlerts ---
+
+function alertsDeps(overrides: Partial<DomainAlertsDeps> = {}): DomainAlertsDeps {
+  return {
+    ...deps(),
+    readAlertFiles: () => [],
+    ...overrides,
+  };
+}
+
+describe('fetchDomainAlerts', () => {
+  test('parses name/description/severity/schedule from matching yml', async () => {
+    const d = alertsDeps({
+      readAlertFiles: () => [
+        {
+          file: 'chorus-hooks-down.yml',
+          content: 'name: chorus-hooks process died\ndescription: hook daemon stopped\nseverity: critical\nschedule: "@every 60s"\n',
+        },
+      ],
+    });
+    const r = await fetchDomainAlerts(d, 'chorus-domain');
+    expect(r.status).toBe(200);
+    const body = r.body as { data: { alerts: Array<{ name: string; severity: string; schedule: string }> } };
+    expect(body.data.alerts.length).toBe(1);
+    expect(body.data.alerts[0].name).toBe('chorus-hooks process died');
+    expect(body.data.alerts[0].severity).toBe('critical');
+    expect(body.data.alerts[0].schedule).toBe('@every 60s');
+  });
+
+  test('matches on domain label in filename when content does not mention it', async () => {
+    const d = alertsDeps({
+      readAlertFiles: () => [
+        { file: 'chorus-alert.yml', content: 'name: unrelated\ndescription: x\nseverity: warn\nschedule: "*/5 * * * *"' },
+      ],
+    });
+    const r = await fetchDomainAlerts(d, 'chorus-domain');
+    const body = r.body as { data: { alerts: unknown[] } };
+    expect(body.data.alerts.length).toBe(1);
+  });
+
+  test('skips files that do not mention the domain', async () => {
+    const d = alertsDeps({
+      readAlertFiles: () => [
+        { file: 'unrelated.yml', content: 'name: something\ndescription: x\nseverity: warn' },
+      ],
+    });
+    const r = await fetchDomainAlerts(d, 'chorus-domain');
+    const body = r.body as { data: { alerts: unknown[] } };
+    expect(body.data.alerts).toEqual([]);
+  });
+
+  test('missing fields default sensibly', async () => {
+    const d = alertsDeps({
+      readAlertFiles: () => [
+        { file: 'chorus-bare.yml', content: '# chorus alert with no structured fields\n' },
+      ],
+    });
+    const r = await fetchDomainAlerts(d, 'chorus-domain');
+    const body = r.body as { data: { alerts: Array<{ name: string; severity: string }> } };
+    expect(body.data.alerts[0].name).toBe('chorus-bare'); // file minus .yml
+    expect(body.data.alerts[0].severity).toBe('unknown');
+  });
+
+  test('readAlertFiles throw returns empty envelope', async () => {
+    const d = alertsDeps({
+      readAlertFiles: () => { throw new Error('EACCES'); },
+    });
+    const r = await fetchDomainAlerts(d, 'chorus-domain');
+    expect(r.status).toBe(200);
+    const body = r.body as { data: { alerts: unknown[] } };
+    expect(body.data.alerts).toEqual([]);
   });
 });
 

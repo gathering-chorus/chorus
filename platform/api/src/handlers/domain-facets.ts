@@ -124,6 +124,49 @@ export async function fetchDomainServices(
   }
 }
 
+// --- alerts: filesystem scan of proving/domains/alerts/*.yml ---
+
+export interface AlertFile {
+  file: string;
+  content: string;
+}
+
+export interface DomainAlertsDeps extends DomainFacetDeps {
+  readAlertFiles: () => AlertFile[];
+}
+
+export async function fetchDomainAlerts(
+  deps: DomainAlertsDeps,
+  subdomainName: string,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const start = now();
+  try {
+    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const domainLabel = sdId.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    const alerts: Array<{ file: string; name: string; description: string; severity: string; schedule: string }> = [];
+    for (const { file, content } of deps.readAlertFiles()) {
+      const lower = content.toLowerCase();
+      if (lower.includes(domainLabel) || file.toLowerCase().includes(domainLabel)) {
+        const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file.replace('.yml', '');
+        const description = content.match(/^description:\s*(.+)/m)?.[1]?.trim() || '';
+        const severity = content.match(/^severity:\s*(.+)/m)?.[1]?.trim() || 'unknown';
+        const schedule = content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() || '';
+        alerts.push({ file, name, description, severity, schedule });
+      }
+    }
+    return {
+      status: 200,
+      body: deps.envelope('domain-alerts', { subdomain: sdId, domainLabel, alerts }, now() - start, { count: alerts.length }),
+    };
+  } catch {
+    return {
+      status: 200,
+      body: deps.envelope('domain-alerts', { subdomain: subdomainName, alerts: [] }, now() - start, { count: 0 }),
+    };
+  }
+}
+
 // --- radius: outward neighborhood walk (#2028) ---
 
 export async function fetchDomainRadius(

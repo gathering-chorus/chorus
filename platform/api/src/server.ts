@@ -1561,7 +1561,15 @@ import {
   fetchDomainDecisions,
   fetchDomainRadius,
   fetchDomainBlastRadius,
+  fetchDomainAlerts,
 } from './handlers/domain-facets';
+
+function readAlertFiles(): Array<{ file: string; content: string }> {
+  const ALERTS_DIR = path.join(REPO_ROOT, 'proving/domains/alerts');
+  return fs.readdirSync(ALERTS_DIR)
+    .filter((f: string) => f.endsWith('.yml'))
+    .map((f: string) => ({ file: f, content: fs.readFileSync(path.join(ALERTS_DIR, f), 'utf-8') }));
+}
 const domainFacetDeps = () => ({
   sparql: athenaSparqlQuery,
   resolveSubdomainId,
@@ -1575,28 +1583,8 @@ app.get('/api/chorus/domain/:name/tests', async (req: Request, res: Response) =>
 
 // GET /api/chorus/domain/:name/alerts — alert rules for a domain (#2060 AC3)
 app.get('/api/chorus/domain/:name/alerts', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdId = await resolveSubdomainId(req.params.name);
-    const domainLabel = sdId.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
-    const ALERTS_DIR = path.join(REPO_ROOT, 'proving/domains/alerts');
-    const alertFiles = fs.readdirSync(ALERTS_DIR).filter((f: string) => f.endsWith('.yml'));
-    const alerts: any[] = [];
-    for (const file of alertFiles) {
-      const content = fs.readFileSync(path.join(ALERTS_DIR, file), 'utf-8');
-      const lower = content.toLowerCase();
-      if (lower.includes(domainLabel) || file.toLowerCase().includes(domainLabel)) {
-        const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file.replace('.yml', '');
-        const description = content.match(/^description:\s*(.+)/m)?.[1]?.trim() || '';
-        const severity = content.match(/^severity:\s*(.+)/m)?.[1]?.trim() || 'unknown';
-        const schedule = content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() || '';
-        alerts.push({ file, name, description, severity, schedule });
-      }
-    }
-    res.json(athenaEnvelope('domain-alerts', { subdomain: sdId, domainLabel, alerts }, Date.now() - start, { count: alerts.length }));
-  } catch (err: any) {
-    res.json(athenaEnvelope('domain-alerts', { subdomain: req.params.name, alerts: [] }, Date.now() - start, { count: 0 }));
-  }
+  const r = await fetchDomainAlerts({ ...domainFacetDeps(), readAlertFiles }, req.params.name);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/domain/:name/logs — log sources for a domain (#2060 AC4)
