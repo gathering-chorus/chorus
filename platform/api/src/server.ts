@@ -3455,56 +3455,11 @@ app.get('/api/chorus/services', (_req: Request, res: Response) => {
   });
 });
 
-// --- GET /api/chorus/disk — Disk usage summary (#1485) ---
-
-app.get('/api/chorus/disk', (_req: Request, res: Response) => {
-  // Two data sources: diskutil for container total, osascript for Finder free (includes purgeable)
-  execFile('/usr/sbin/diskutil', ['info', '/'], { timeout: 10000 }, (diskErr, diskStdout) => {
-    if (diskErr) {
-      res.status(500).json({ error: 'diskutil info failed', detail: diskErr.message });
-      return;
-    }
-
-    const extract = (label: string): string | null => {
-      const match = diskStdout.match(new RegExp(`${label}:\\s*(.+)`));
-      return match ? match[1].trim() : null;
-    };
-
-    const totalSize = extract('Container Total Space');
-    const containerFreeSize = extract('Container Free Space');
-
-    const parseBytes = (s: string | null): number | null => {
-      if (!s) return null;
-      const m = s.match(/\((\d+)\s*Bytes\)/);
-      return m ? parseInt(m[1], 10) : null;
-    };
-
-    const totalBytes = parseBytes(totalSize);
-    const containerFreeBytes = parseBytes(containerFreeSize);
-
-    // Finder free space includes purgeable — matches what Jeff sees in Finder
-    execFile('/usr/bin/osascript', ['-e', 'tell application "Finder" to get free space of startup disk'],
-      { timeout: 5000 }, (finderErr, finderStdout) => {
-      const finderFreeBytes = finderErr ? null : Math.round(parseFloat(finderStdout.trim()));
-      const freeBytes = finderFreeBytes ?? containerFreeBytes;
-      const usedBytes = totalBytes && freeBytes ? totalBytes - freeBytes : null;
-      const usedPct = totalBytes && usedBytes ? Math.round((usedBytes / totalBytes) * 100) : null;
-
-      res.json({
-        machine: 'Library',
-        total: totalSize,
-        free: containerFreeSize,
-        total_bytes: totalBytes,
-        container_free_bytes: containerFreeBytes,
-        finder_free_bytes: finderFreeBytes,
-        free_bytes: freeBytes,
-        used_bytes: usedBytes,
-        used_pct: usedPct,
-        warning: usedPct !== null && usedPct >= 90,
-        critical: usedPct !== null && usedPct >= 95,
-      });
-    });
-  });
+// --- GET /api/chorus/disk — Disk usage summary (#1485, extracted #2189) ---
+import { fetchDisk } from './handlers/chorus-disk';
+app.get('/api/chorus/disk', async (_req: Request, res: Response) => {
+  const r = await fetchDisk();
+  res.status(r.status).json(r.body);
 });
 
 // --- GET /api/chorus/harvest — Harvest pipeline status (#1485) ---
@@ -4362,6 +4317,7 @@ import { fetchAthenaSteps } from './handlers/athena-steps';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
+import { fetchAthenaSubdomainDetail } from './handlers/athena-subdomain-detail';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
     sparql: athenaSparqlQuery,
@@ -4480,52 +4436,11 @@ app.get('/api/athena/subdomains/:id/blast-radius', async (req: Request, res: Res
 
 // GET /api/athena/subdomains/:id — single sub-domain detail
 app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = loadSparql('subdomain-detail').split('$URI').join(sdUri);
-    const result = await athenaSparqlQuery(query);
-    const bindings = result.results.bindings;
-    if (bindings.length === 0) {
-      return res.status(404).json(athenaEnvelope('subdomain-detail', {
-        error: `Sub-domain '${req.params.id}' not found`,
-        suggestion: 'Use GET /api/athena/subdomains to list all available sub-domains.',
-      }, Date.now() - start, { error: true }));
-    }
-    const first = bindings[0];
-    const consumers = [...new Set(bindings.filter((b: any) => b.consumer).map((b: any) => JSON.stringify({ uri: b.consumer.value, label: b.consumerLabel?.value || b.consumer.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
-    const consumes = [...new Set(bindings.filter((b: any) => b.consumed).map((b: any) => JSON.stringify({ uri: b.consumed.value, label: b.consumedLabel?.value || b.consumed.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
-    const domains = [...new Set(bindings.filter((b: any) => b.child).map((b: any) => JSON.stringify({ uri: b.child.value, id: b.child.value.split('#').pop(), label: b.childLabel?.value || b.child.value.split('#').pop() })))].map((s: any) => JSON.parse(s));
-    const instanceMap = new Map<string, { uri: string; id: string; label: string; comment: string | null; type: string | null }>();
-    for (const b of bindings) {
-      if (!b.instance) continue;
-      const uri = b.instance.value;
-      if (!instanceMap.has(uri)) {
-        instanceMap.set(uri, {
-          uri,
-          id: uri.split('#').pop() || '',
-          label: b.instanceLabel?.value || uri.split('#').pop() || '',
-          comment: b.instanceComment?.value || null,
-          type: b.instanceTypeLabel?.value || b.instanceType?.value?.split('#').pop() || null,
-        });
-      }
-    }
-    const instances = [...instanceMap.values()];
-    res.json(athenaEnvelope('subdomain-detail', {
-      uri: sdUri,
-      id: req.params.id,
-      label: first.label?.value || req.params.id,
-      owner: first.ownerLabel?.value || null,
-      step: first.stepLabel?.value || null,
-      comment: first.comment?.value || null,
-      consumedBy: consumers,
-      consumes,
-      domains,
-      instances,
-    }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-detail', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainDetail(
+    { sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope },
+    req.params.id,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/steps — value stream steps with sub-domains at each step
