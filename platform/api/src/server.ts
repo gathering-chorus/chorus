@@ -655,140 +655,36 @@ function resolveSearchLimit(raw: string | undefined): { limit: number; explicit:
 // --- GET /api/chorus/search ---
 // Supports mode=fts (default), mode=semantic, mode=hybrid
 
+import { fetchSearch } from './handlers/chorus-search';
 app.get('/api/chorus/search', async (req: Request, res: Response) => {
-  const q = req.query.q as string;
-  if (!q) {
-    res.status(400).json({ error: 'Missing required parameter: q' });
-    return;
-  }
-
-  const { limit, explicit: limitExplicit } = resolveSearchLimit(req.query.limit as string | undefined);
-  const role = req.query.role as string | undefined;
-  const mode = (req.query.mode as string || 'fts').toLowerCase();
-
-  const searchStart = Date.now();
-
-  // #2174 AC-1, AC-6: enrich hits + finalize response shape in one place.
-  // Over-fetch by 1 under the hood to detect truncation; trim before send.
-  const fetchLimit = limit + 1;
-  const formatResponse = (rawResults: any[], resolvedMode: string, db?: Database.Database, extra: Record<string, any> = {}) => {
-    const truncated = rawResults.length > limit;
-    const trimmed = rawResults.slice(0, limit);
-    const now = Date.now();
-    const enriched = trimmed.map(r => enrichHit(r, now));
-    const meta = {
-      ...buildSearchMeta(enriched, db),
-      limit_applied: limit,
-      limit_default: !limitExplicit,
-      truncated,
-    };
-    return { results: enriched, total: enriched.length, mode: resolvedMode, _meta: meta, ...extra };
-  };
-
-  // Semantic-only mode
-  if (mode === 'semantic') {
-    if (!lanceTable) {
-      res.json({ results: [], total: 0, mode: 'semantic', error: 'Semantic index not available', _meta: { ...buildSearchMeta([]), limit_applied: limit, limit_default: !limitExplicit, truncated: false } });
-      return;
-    }
-    try {
-      const results = await semanticSearch(q, fetchLimit, role);
-      emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'semantic', result_count: results.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-      res.json(formatResponse(results, 'semantic'));
-    } catch (err) {
-      res.status(500).json({ error: `Semantic search failed: ${err}` });
-    }
-    return;
-  }
-
   let db: Database.Database;
-  try {
-    db = getDb();
-  } catch (e) {
+  try { db = getDb(); } catch (e) {
     if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
     throw e;
   }
-
   try {
     addStaleHeader(res, db);
-
-    // FTS5 search — replace hyphens with spaces for tokenizer compat
-    // #2174 AC-4: mode=relevance ranks by FTS bm25 (default is timestamp DESC = recency)
-    const ftsQuery = q.replace(/-/g, ' ');
-    let roleFilter = '';
-    const params: any[] = [ftsQuery, fetchLimit];
-    if (role) {
-      roleFilter = 'AND m.role = ?';
-      params.splice(1, 0, role);
-    }
-    const ftsOrderBy = mode === 'relevance' ? 'bm25(messages_fts) ASC' : 'm.timestamp DESC';
-
-    let ftsResults: any[];
-    try {
-      ftsResults = db.prepare(`
-        SELECT m.id, m.source, m.channel, m.role, m.author, m.content, m.timestamp,
-               snippet(messages_fts, 0, '<b>', '</b>', '...', 40) as snippet
-        FROM messages_fts f
-        JOIN messages m ON f.rowid = m.id
-        WHERE messages_fts MATCH ?
-        ${roleFilter}
-        ORDER BY ${ftsOrderBy}
-        LIMIT ?
-      `).all(...params);
-    } catch {
-      // FTS5 syntax error — fall back to LIKE
-      const likeParams: any[] = [`%${q}%`, fetchLimit];
-      let likeRoleFilter = '';
-      if (role) {
-        likeRoleFilter = 'AND role = ?';
-        likeParams.splice(1, 0, role);
-      }
-      ftsResults = db.prepare(`
-        SELECT id, source, channel, role, author, content, timestamp, NULL as snippet
-        FROM messages
-        WHERE content LIKE ?
-        ${likeRoleFilter}
-        ORDER BY timestamp DESC
-        LIMIT ?
-      `).all(...likeParams);
-    }
-
-    // Unified mode: FTS + semantic + SPARQL via RRF
-    if (mode === 'unified') {
-      try {
-        const [semResults, sparqlResults] = await Promise.all([
-          lanceTable ? semanticSearch(q, fetchLimit, role) : Promise.resolve([]),
-          sparqlSearch(q, fetchLimit),
-        ]);
-        const merged = mergeUnified(ftsResults, semResults, sparqlResults, fetchLimit);
-        emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'unified', result_count: merged.length, sources: `fts=${ftsResults.length},semantic=${semResults.length},sparql=${sparqlResults.length}`, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-        res.json(formatResponse(merged, 'unified', db, { sources: { fts: ftsResults.length, semantic: semResults.length, sparql: sparqlResults.length } }));
-        return;
-      } catch {
-        // Fall through to FTS-only
-      }
-    }
-
-    // Hybrid mode: merge FTS + semantic via RRF
-    if (mode === 'hybrid' && lanceTable) {
-      try {
-        const semResults = await semanticSearch(q, fetchLimit, role);
-        const merged = mergeRRF(ftsResults, semResults, fetchLimit, q);
-        emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: 'hybrid', result_count: merged.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-        res.json(formatResponse(merged, 'hybrid', db));
-        return;
-      } catch {
-        // Semantic failed — fall through to FTS-only
-      }
-    }
-
-    // FTS-only path (includes mode=fts, mode=recency, mode=relevance)
-    const resolvedMode = (mode === 'recency' || mode === 'relevance') ? mode : 'fts';
-    emitSearchEvent({ system: 'chorus-api', query: q.slice(0, 200), mode: resolvedMode, result_count: ftsResults.length, duration_ms: Date.now() - searchStart, ...(role ? { role_filter: role } : {}) });
-    res.json(formatResponse(ftsResults, resolvedMode, db));
-  } finally {
-    db.close();
-  }
+    const r = await fetchSearch(
+      {
+        db,
+        semanticSearch: lanceTable ? (semanticSearch as unknown as import('./handlers/chorus-search').SemanticSearchFn) : undefined,
+        sparqlSearch: sparqlSearch as unknown as import('./handlers/chorus-search').SparqlSearchFn,
+        mergeUnified: mergeUnified as unknown as import('./handlers/chorus-search').MergeUnifiedFn,
+        mergeRRF: mergeRRF as unknown as import('./handlers/chorus-search').MergeRRFFn,
+        emitSearchEvent,
+        buildSearchMeta,
+        enrichHit,
+        resolveSearchLimit,
+      },
+      {
+        q: req.query.q as string | undefined,
+        limit: req.query.limit as string | undefined,
+        role: req.query.role as string | undefined,
+        mode: req.query.mode as string | undefined,
+      },
+    );
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
 
 // --- GET /api/chorus/conversation ---
