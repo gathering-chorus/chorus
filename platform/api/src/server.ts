@@ -1971,72 +1971,23 @@ app.get('/api/chorus/reconcile', (req: Request, res: Response) => {
 
 // --- GET /api/chorus/refs ---
 
+import { fetchChorusRefs } from './handlers/chorus-refs';
 app.get('/api/chorus/refs', (req: Request, res: Response) => {
-  const card = req.query.card as string | undefined;
-  const wf = req.query.wf as string | undefined;
-  const type = req.query.type as string | undefined;
-  const entityId = req.query.id as string | undefined;
-
-  // At least one filter required
-  if (!card && !wf && !type && !entityId) {
-    res.status(400).json({ error: 'At least one filter required: card, wf, type, or id' });
-    return;
-  }
-
   let db: Database.Database;
-  try {
-    db = getDb();
-  } catch (e) {
+  try { db = getDb(); } catch (e) {
     if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
     throw e;
   }
-
   try {
     addStaleHeader(res, db);
-
-    let where: string[] = [];
-    let params: any[] = [];
-
-    if (card) {
-      where.push('r.entity_type = ? AND r.entity_id = ?');
-      // entity_id stores with # prefix (e.g., "#30")
-      params.push('card', card.startsWith('#') ? card : `#${card}`);
-    } else if (wf) {
-      where.push('r.entity_type = ? AND r.entity_id = ?');
-      // entity_id stores with WF- prefix (e.g., "WF-004")
-      params.push('workflow', wf.startsWith('WF-') ? wf : `WF-${wf}`);
-    } else {
-      if (type) { where.push('r.entity_type = ?'); params.push(type); }
-      if (entityId) { where.push('r.entity_id = ?'); params.push(entityId); }
-    }
-
-    const refs = db.prepare(`
-      SELECT r.entity_type, r.entity_id, r.relationship,
-             m.content, m.timestamp, m.role, m.source, m.channel
-      FROM refs r
-      JOIN messages m ON r.message_id = m.id
-      WHERE ${where.join(' AND ')}
-      ORDER BY m.timestamp DESC
-      LIMIT 50
-    `).all(...params) as any[];
-
-    const formatted = refs.map(r => ({
-      entity_type: r.entity_type,
-      entity_id: r.entity_id,
-      relationship: r.relationship,
-      message: {
-        content: r.content?.substring(0, 500),
-        timestamp: r.timestamp,
-        role: r.role,
-        source: r.source,
-        channel: r.channel
-      }
-    }));
-
-    res.json({ refs: formatted });
-  } finally {
-    db.close();
-  }
+    const r = fetchChorusRefs({ db }, {
+      card: req.query.card as string | undefined,
+      wf: req.query.wf as string | undefined,
+      type: req.query.type as string | undefined,
+      entityId: req.query.id as string | undefined,
+    });
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
 
 // --- GET /api/chorus/stats ---
@@ -4518,6 +4469,7 @@ function athenaEnvelope(queryName: string, data: any, durationMs: number, extra:
 // loader are injected so unit tests run without Fuseki.
 import { fetchAthenaHealth } from './handlers/athena-health';
 import { fetchAthenaValidate } from './handlers/athena-validate';
+import { fetchAthenaProducts } from './handlers/athena-products';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
     sparql: athenaSparqlQuery,
@@ -4529,17 +4481,8 @@ app.get('/api/athena/health', async (_req: Request, res: Response) => {
 
 // GET /api/athena/products — list all products
 app.get('/api/athena/products', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const result = await athenaSparqlQuery(loadSparql('products'));
-    const products = result.results.bindings.map((b: any) => ({
-      uri: b.product.value,
-      label: b.label?.value || b.product.value.split('#').pop(),
-    }));
-    res.json(athenaEnvelope('products', products, Date.now() - start, { count: products.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('products', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaProducts({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/products — full product hierarchy: products → subproducts → subdomains (#2093)
