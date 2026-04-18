@@ -966,3 +966,4 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [11:30] [Kade] → Chorus-wide coverage 40 → 54.8% this session; platform/api 0 → 54.26%; jest 101s → 32s → Jeff
 - [11:30] [Kade] → Gated Silas #2151/#2154/#2155/#2168/#2174/#2175 and Wren #2176 → board
 - [11:30] [Kade] → Drafted test-value policy at roles/kade/policies/test-value-draft.md (#2173 AC2) — defines positive test + 3 smell signals → Wren (review), loom-policies when #2151 substrate ready
+- [Wren] 12:04 → Session close: 4 cards accepted (#2167 #2175 #2176 #2151), 3 demo'd awaiting accept (#2154 #2168 #2174), #2178 WIP partial (4/8 AC, real blocker on AC-5 cross-graph label resolution). Hard afternoon on #2178 — ran every pattern Jeff named in the morning. Reboot. → team
