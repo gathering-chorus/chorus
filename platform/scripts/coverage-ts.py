@@ -1,170 +1,193 @@
 #!/usr/bin/env python3
 """TypeScript coverage aggregator for chorus (#2197).
 
-Walks every project with a package.json that has a jest config, counts
-every .ts source statement across all source files, counts covered
-statements from the coverage-final.json produced by `jest --coverage`,
-and reports one deterministic number: covered / total.
+Drives jest natively in each project with `--coverageReporters=json-summary`,
+reads each project's `coverage/coverage-summary.json`, and aggregates the
+statement counts across all projects using jest's own definition of
+"covered statement" and jest's own collectCoverageFrom expansion.
 
-The key difference from jest's built-in "All files" summary: jest only
-counts files in the coverage denominator if SOME test imported them.
-This script counts every .ts source file regardless of whether any
-test touched it — the number reflects real coverage of the codebase,
-not the test-visible subset.
+Every TS project's jest.config.js already has `collectCoverageFrom` set
+to include every src/**/*.ts file regardless of whether a test imports
+it, so the denominator reflects real source coverage — not just the
+test-visible subset. No bespoke counting.
 
 Usage:
-    coverage-ts.py [--run]
+    coverage-ts.py [--run] [--json]
 
-    --run   run `jest --coverage --coverageReporters=json-summary`
-            per project before aggregating (slower). Default is to
-            use the coverage-final.json already on disk from the last
-            jest --coverage invocation.
-
-Output (stdout, one line per project plus totals):
-    project      src_stmts  tested  covered  real_pct
-    ...
-    TOTAL        N          N       N        X.X%
+    --run   re-run jest --coverage in each project before reading
+            coverage-summary.json. Without --run, uses the cached
+            summary from the last jest invocation if present.
+    --json  emit machine-readable JSON to stdout
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 CHORUS_ROOT = Path(os.environ.get("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"))
 
+# Projects with a jest.config.js. Excludes platform/tests (cucumber-js).
 PROJECTS = [
     "directing/clearing",
     "directing/products/cards",
     "platform/workflow-engine",
-    "platform/tests",
     "platform/chorus-sdk",
     "platform/pulse",
     "platform/api",
 ]
 
-# Statement-like pattern: count non-blank, non-comment-only lines in .ts files
-# outside tests. Uses line-count as a proxy for jest's statement count — the
-# ratio is stable enough (lines ≈ statements in TS) and deterministic per
-# commit. True AST-based counts would require ts-morph; line-count ties the
-# denominator to something the script computes itself.
-SOURCE_EXTS = {".ts"}
-EXCLUDE_SUFFIXES = (".d.ts", ".test.ts", ".spec.ts")
-EXCLUDE_DIRS = {"node_modules", "dist", "coverage", ".next", "build"}
 
+def run_jest_coverage(project_root: Path) -> bool:
+    """Run jest --coverage --coverageReporters=json-summary in the project.
 
-def count_source_statements(project_root: Path) -> int:
-    """Count non-blank, non-pure-comment lines in .ts source files."""
-    src_dir = project_root / "src"
-    if not src_dir.is_dir():
-        return 0
-    total = 0
-    for root, dirs, files in os.walk(src_dir):
-        dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
-        for f in files:
-            if not f.endswith(".ts"):
-                continue
-            if any(f.endswith(s) for s in EXCLUDE_SUFFIXES):
-                continue
-            path = Path(root) / f
-            try:
-                with path.open("r", errors="replace") as fh:
-                    for line in fh:
-                        stripped = line.strip()
-                        if not stripped:
-                            continue
-                        if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
-                            continue
-                        total += 1
-            except OSError:
-                continue
-    return total
-
-
-def read_covered_statements(project_root: Path) -> tuple[int, int]:
-    """Read jest's coverage-final.json; return (covered_stmts, stmts_in_tested_files)."""
-    cov_path = project_root / "coverage" / "coverage-final.json"
-    if not cov_path.is_file():
-        return 0, 0
+    Measurement success = "coverage-summary.json was produced." A non-zero
+    jest exit from a coverageThreshold trip is NOT a measurement failure
+    — we still got the number, and the threshold fail should inform the
+    user but not block reporting. Only treat as failure if no summary
+    was written (implies tests crashed or config is broken).
+    """
+    summary_path = project_root / "coverage" / "coverage-summary.json"
+    mtime_before = summary_path.stat().st_mtime if summary_path.is_file() else 0
     try:
-        with cov_path.open("r") as fh:
-            cov = json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        return 0, 0
-    tested = 0
-    covered = 0
-    for _, data in cov.items():
-        statements = data.get("s", {})
-        tested += len(statements)
-        covered += sum(1 for v in statements.values() if isinstance(v, int) and v > 0)
-    return covered, tested
-
-
-def run_jest_coverage(project_root: Path) -> None:
-    """Run `npx jest --coverage` in the project. Leaves coverage-final.json on disk."""
-    try:
-        subprocess.run(
-            ["npx", "jest", "--coverage", "--silent", "--coverageReporters=json"],
+        result = subprocess.run(
+            ["npx", "jest", "--coverage", "--silent", "--coverageReporters=json-summary"],
             cwd=project_root,
             check=False,
             capture_output=True,
-            timeout=300,
+            timeout=600,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except (subprocess.TimeoutExpired, OSError) as e:
+        print(f"[coverage-ts] {project_root.name}: {e}", file=sys.stderr)
+        return False
+    # Did jest write a fresh summary? That's the measurement success criterion.
+    if not summary_path.is_file() or summary_path.stat().st_mtime <= mtime_before:
+        print(f"[coverage-ts] {project_root.name}: jest exit {result.returncode}, no fresh coverage-summary.json", file=sys.stderr)
+        return False
+    if result.returncode != 0:
+        # Common case: coverageThreshold tripped. Not a measurement failure.
+        print(f"[coverage-ts] {project_root.name}: jest exit {result.returncode} (threshold or warning — summary written)", file=sys.stderr)
+    stamp_commit(project_root / "coverage")
+    return True
+
+
+def stamp_commit(cov_dir: Path) -> None:
+    """Write .commit alongside coverage artifacts — HEAD SHA at time of run."""
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=CHORUS_ROOT, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        cov_dir.mkdir(parents=True, exist_ok=True)
+        (cov_dir / ".commit").write_text(sha + "\n")
+    except (subprocess.CalledProcessError, OSError):
         pass
+
+
+def cache_is_fresh(project_root: Path) -> bool:
+    """Cached coverage is fresh iff .commit matches HEAD."""
+    stamp = project_root / "coverage" / ".commit"
+    if not stamp.is_file():
+        return False
+    try:
+        stamped = stamp.read_text().strip()
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=CHORUS_ROOT, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        return stamped == head
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
+def read_summary(project_root: Path) -> dict | None:
+    """Read coverage/coverage-summary.json → total statement counts.
+
+    Returns None if the summary doesn't exist or is malformed.
+    """
+    path = project_root / "coverage" / "coverage-summary.json"
+    if not path.is_file():
+        return None
+    try:
+        with path.open("r") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    total = data.get("total", {}).get("statements")
+    if not total:
+        return None
+    return {
+        "covered": int(total.get("covered", 0)),
+        "total": int(total.get("total", 0)),
+        "pct": float(total.get("pct", 0.0)),
+    }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run", action="store_true", help="run jest --coverage per project first")
-    ap.add_argument("--json", action="store_true", help="emit machine-readable JSON to stdout")
+    ap.add_argument("--run", action="store_true", help="run jest --coverage per project before reading")
+    ap.add_argument("--json", action="store_true", help="machine-readable JSON output")
     args = ap.parse_args()
 
     rows = []
-    total_src = 0
-    total_tested = 0
+    total_stmts = 0
     total_covered = 0
+    missing: list[str] = []
+    failures: list[str] = []
 
     for proj_rel in PROJECTS:
         proj_root = CHORUS_ROOT / proj_rel
-        if not proj_root.is_dir():
+        if not (proj_root / "jest.config.js").is_file():
             continue
         if args.run:
-            run_jest_coverage(proj_root)
-        src_stmts = count_source_statements(proj_root)
-        covered, tested = read_covered_statements(proj_root)
-        total_src += src_stmts
-        total_tested += tested
-        total_covered += covered
-        real_pct = 100.0 * covered / src_stmts if src_stmts else 0.0
+            if not run_jest_coverage(proj_root):
+                failures.append(proj_rel)
+                rows.append({"project": proj_rel, "covered": 0, "total": 0, "pct": 0.0, "error": "jest run failed"})
+                continue
+        elif not cache_is_fresh(proj_root):
+            missing.append(proj_rel)
+            rows.append({"project": proj_rel, "covered": 0, "total": 0, "pct": 0.0, "error": "stale cache (commit != HEAD) — rerun with --run"})
+            continue
+        summary = read_summary(proj_root)
+        if summary is None:
+            missing.append(proj_rel)
+            rows.append({"project": proj_rel, "covered": 0, "total": 0, "pct": 0.0, "error": "no coverage-summary.json"})
+            continue
+        total_stmts += summary["total"]
+        total_covered += summary["covered"]
         rows.append({
             "project": proj_rel,
-            "src_stmts": src_stmts,
-            "tested": tested,
-            "covered": covered,
-            "real_pct": round(real_pct, 2),
+            "covered": summary["covered"],
+            "total": summary["total"],
+            "pct": summary["pct"],
         })
 
-    real_total = 100.0 * total_covered / total_src if total_src else 0.0
+    real_total = 100.0 * total_covered / total_stmts if total_stmts else 0.0
 
     if args.json:
         print(json.dumps({
             "language": "ts",
             "projects": rows,
-            "total": {"src_stmts": total_src, "tested": total_tested, "covered": total_covered, "real_pct": round(real_total, 2)},
+            "total": {"covered": total_covered, "total": total_stmts, "pct": round(real_total, 2)},
+            "missing_summaries": missing,
         }, indent=2))
         return 0
 
-    print(f"{'project':32s} {'src':>8s} {'tested':>8s} {'covered':>8s} {'real %':>8s}")
-    print("-" * 72)
+    print(f"{'project':32s} {'covered':>10s} {'total':>10s} {'pct':>8s}")
+    print("-" * 64)
     for r in rows:
-        print(f"{r['project']:32s} {r['src_stmts']:>8d} {r['tested']:>8d} {r['covered']:>8d} {r['real_pct']:>7.1f}%")
-    print("-" * 72)
-    print(f"{'TS TOTAL':32s} {total_src:>8d} {total_tested:>8d} {total_covered:>8d} {real_total:>7.1f}%")
+        err = r.get("error", "")
+        print(f"{r['project']:32s} {r['covered']:>10d} {r['total']:>10d} {r['pct']:>7.2f}%  {err}")
+    print("-" * 64)
+    print(f"{'TS TOTAL':32s} {total_covered:>10d} {total_stmts:>10d} {real_total:>7.2f}%")
+    if missing:
+        print()
+        print(f"Note: {len(missing)} project(s) missing or stale — re-run with --run to refresh.")
+    if failures:
+        print()
+        print(f"ERROR: {len(failures)} project(s) failed: {', '.join(failures)}")
+        return 1
     return 0
 
 

@@ -48,8 +48,15 @@ fi
 
 echo "=== Chorus Coverage ==="
 echo
-python3 "$TS" $RUN_FLAG || echo "[coverage-ts] failed"
+TS_RC=0
+RUST_RC=0
+python3 "$TS" $RUN_FLAG || TS_RC=$?
 echo
-python3 "$RUST" $RUN_FLAG || echo "[coverage-rust] failed"
+python3 "$RUST" $RUN_FLAG || RUST_RC=$?
 echo
 echo "Target: TS ≥80% AND Rust ≥80%. Both stand alone — no average."
+if [ "$TS_RC" -ne 0 ] || [ "$RUST_RC" -ne 0 ]; then
+  echo
+  echo "ERROR: coverage run incomplete (ts=$TS_RC rust=$RUST_RC)." >&2
+  exit 1
+fi

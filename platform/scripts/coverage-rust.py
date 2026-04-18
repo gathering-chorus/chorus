@@ -24,7 +24,57 @@ import subprocess
 import sys
 from pathlib import Path
 
-CHORUS_ROOT = Path(os.environ.get("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"))
+def _resolve_chorus_root() -> Path:
+    env = os.environ.get("CHORUS_ROOT")
+    if env:
+        return Path(env)
+    try:
+        top = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"], text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        if top:
+            return Path(top)
+    except (subprocess.CalledProcessError, OSError):
+        pass
+    return Path("/Users/jeffbridwell/CascadeProjects/chorus")
+
+
+CHORUS_ROOT = _resolve_chorus_root()
+
+
+def _head_sha() -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=CHORUS_ROOT, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+
+
+def _stamp_path(crate_dir: Path) -> Path:
+    return crate_dir / "target" / "llvm-cov" / ".commit"
+
+
+def stamp_commit(crate_dir: Path) -> None:
+    sha = _head_sha()
+    if not sha:
+        return
+    p = _stamp_path(crate_dir)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(sha + "\n")
+    except OSError:
+        pass
+
+
+def cache_sha(crate_dir: Path) -> str | None:
+    p = _stamp_path(crate_dir)
+    if not p.is_file():
+        return None
+    try:
+        return p.read_text().strip()
+    except OSError:
+        return None
 
 
 def find_crates() -> list[Path]:
@@ -105,22 +155,32 @@ def main() -> int:
     rows = []
     total_lines = 0
     total_covered = 0
+    failures: list[str] = []
+    head = _head_sha()
 
+    # Rust has no cheap "read-from-disk" coverage cache equivalent to jest's
+    # coverage-summary.json. llvm-cov always recompiles. If not --run, we
+    # fall through to running anyway — but honestly stamp each run.
     for crate_dir in crates:
         result = run_llvm_cov(crate_dir)
         if result is None:
-            rows.append({"crate": crate_dir.name, "src_lines": 0, "covered": 0, "real_pct": 0.0, "error": "run failed"})
+            failures.append(crate_dir.name)
+            rows.append({"crate": crate_dir.name, "src_lines": 0, "covered": 0, "real_pct": 0.0, "error": "cargo llvm-cov failed"})
             continue
+        stamp_commit(crate_dir)
         covered, count = result
         total_lines += count
         total_covered += covered
         real_pct = 100.0 * covered / count if count else 0.0
+        stamp = cache_sha(crate_dir)
         rows.append({
             "crate": crate_dir.name,
             "path": str(crate_dir.relative_to(CHORUS_ROOT)),
             "src_lines": count,
             "covered": covered,
             "real_pct": round(real_pct, 2),
+            "stamp": stamp,
+            "stamp_matches_head": stamp == head,
         })
 
     real_total = 100.0 * total_covered / total_lines if total_lines else 0.0
@@ -136,9 +196,14 @@ def main() -> int:
     print(f"{'crate':32s} {'src':>8s} {'covered':>8s} {'real %':>8s}")
     print("-" * 64)
     for r in rows:
-        print(f"{r['crate']:32s} {r['src_lines']:>8d} {r['covered']:>8d} {r['real_pct']:>7.1f}%")
+        err = r.get("error", "")
+        print(f"{r['crate']:32s} {r['src_lines']:>8d} {r['covered']:>8d} {r['real_pct']:>7.1f}%  {err}")
     print("-" * 64)
     print(f"{'RUST TOTAL':32s} {total_lines:>8d} {total_covered:>8d} {real_total:>7.1f}%")
+    if failures:
+        print()
+        print(f"ERROR: {len(failures)} crate(s) failed: {', '.join(failures)}")
+        return 1
     return 0
 
 
