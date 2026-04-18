@@ -13,6 +13,19 @@ module.exports = {
   //     state-mutating writes; those get mocked at handler seams as
   //     decomposition lands. If flakes return, lower, don't re-pin to 1.
   maxWorkers: '50%',
+  // Integration-masquerading suites — quarantined from default run (#2180).
+  // These boot the full server, hit Fuseki, or assume seeded live state;
+  // they violate the card AC ("no harness, no real HTTP, no live deps").
+  // Run them explicitly with RUN_INTEGRATION=true (same signal the coverage
+  // script already uses). Coverage for their code paths is recovered by
+  // handler-level unit tests written during extraction.
+  testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
+    '/node_modules/',
+    '<rootDir>/tests/server-unit\\.test\\.ts$',
+    '<rootDir>/tests/rca\\.test\\.ts$',
+    '<rootDir>/tests/completeness-perf\\.test\\.ts$',
+    '<rootDir>/tests/graph-separation\\.test\\.ts$',
+  ],
   // ts-jest diagnostics off — type checking is tsc's job, not the test runner's.
   // Tests in this dir were written for default-jest (no strict TS) and use
   // `body.data` style access on `unknown`-typed `res.json()` returns.
