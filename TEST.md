@@ -96,3 +96,9 @@ This document does not change when:
 - A single test migrates hermetic — that's just running the migration.
 - A project adopts the pattern — the mode contract already applies by default.
 - Someone wants to "quarantine" something temporarily. That path is not available; fix or delete.
+
+## Drift Prevention
+
+**When the binary rule or quality-gate rules in this document change, the corresponding hook (`test_quality_gate.rs`, `tdd_gate.rs`) and its unit tests must change in the same PR.** The human contract and the machine enforcement are two surfaces of the same rule; they stay in sync by landing together at merge time, not by the gate reading the doc at runtime (which would make prose executable and brittle).
+
+Drift signal: the hook's own test suite. A rule change that updates this doc without updating the hook tests fails CI. A hook test update that doesn't match the doc gets caught in review.
