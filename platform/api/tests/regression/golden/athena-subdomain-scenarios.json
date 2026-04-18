@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "subdomain-scenarios",
+    "graph": "urn:chorus:ontology",
+    "count": 0
+  },
+  "data": {
+    "subdomain": "demo-alpha-domain",
+    "scenarios": []
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "subdomain-code",
+    "graph": "urn:chorus:ontology",
+    "count": 0,
+    "source_count": 0,
+    "test_count": 0
+  },
+  "data": {
+    "subdomain": "demo-alpha-domain",
+    "files": [],
+    "tests": [],
+    "byType": {}
+  }
+}

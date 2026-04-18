@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "subdomain-contract",
+    "graph": "urn:chorus:ontology",
+    "count": 0
+  },
+  "data": {
+    "subdomain": "demo-alpha-domain",
+    "endpoints": []
+  }
+}

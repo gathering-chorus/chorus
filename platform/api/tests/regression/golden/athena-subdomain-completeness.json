@@ -1,0 +1,95 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "subdomain-completeness",
+    "graph": "urn:chorus:ontology",
+    "count": 4,
+    "total": 16
+  },
+  "data": {
+    "subdomain": "demo-alpha-domain",
+    "label": "Alpha",
+    "step": "harvesting",
+    "sections": {
+      "label": true,
+      "comment": true,
+      "owner": true,
+      "step": true,
+      "actors": false,
+      "scenarios": false,
+      "contract": false,
+      "prior_art": false,
+      "pages": false,
+      "integrations": false,
+      "services": false,
+      "persistence": false,
+      "pipeline": false,
+      "logs": false,
+      "gaps": false,
+      "edges": false
+    },
+    "present": [
+      "label",
+      "comment",
+      "owner",
+      "step"
+    ],
+    "missing": [
+      "actors",
+      "scenarios",
+      "contract",
+      "prior_art",
+      "pages",
+      "integrations",
+      "services",
+      "persistence",
+      "pipeline",
+      "logs",
+      "gaps",
+      "edges"
+    ],
+    "percentage": 25,
+    "lifecycle": {
+      "create": {
+        "required": [
+          "label",
+          "owner",
+          "step",
+          "comment"
+        ],
+        "met": [
+          "label",
+          "owner",
+          "step",
+          "comment"
+        ],
+        "missing": [],
+        "pass": true
+      },
+      "wip": {
+        "required": [
+          "actors",
+          "edges"
+        ],
+        "met": [],
+        "missing": [
+          "actors",
+          "edges"
+        ],
+        "pass": false
+      },
+      "done": {
+        "required": [
+          "scenarios",
+          "contract"
+        ],
+        "met": [],
+        "missing": [
+          "scenarios",
+          "contract"
+        ],
+        "pass": false
+      }
+    }
+  }
+}

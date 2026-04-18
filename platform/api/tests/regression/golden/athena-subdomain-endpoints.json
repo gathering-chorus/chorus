@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "source": "athena",
+    "query_name": "subdomain-services",
+    "graph": "urn:chorus:ontology",
+    "count": 0
+  },
+  "data": {
+    "subdomain": "demo-alpha-domain",
+    "endpoints": [],
+    "byMethod": {}
+  }
+}
