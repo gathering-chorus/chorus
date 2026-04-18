@@ -43,8 +43,8 @@ There is no **mixed file**. No `const d = process.env.RUN_INTEGRATION === 'true'
 Rationale: mixed files hide skipped tests from the default run. A reader of the test file can't tell which blocks ran without inspecting env-var state. The binary rule forces the split to the filesystem, where `grep -l "describe"` tells the truth.
 
 Enforcement:
-- `tdd_gate.rs` (hook): rejects new test files that violate the binary rule ([#2215](../../)).
-- `test_quality_gate.rs` (hook): rejects tests without both an imported-production-symbol call and an assertion mechanism ([#2196](../../), [#2210](../../)).
+- `test_quality_gate.rs` (hook): rejects tests without both an imported-production-symbol call and an assertion mechanism ([#2196](../../), [#2210](../../)); extended in [#2215](../../) to reject env-var conditionals inside a test file (binary-rule enforcement).
+- `tdd_gate.rs` (hook): enforces test-first discipline per DEC-1674.
 
 ## Fixture Pattern for Migration
 
@@ -62,7 +62,7 @@ The integration-mode test count **shrinks over time** as hermetic rewrites land.
 
 | Project           | Hermetic (default) | Integration-mode | Failing |
 |-------------------|-------------------:|-----------------:|--------:|
-| platform/api      | 778                | 346              | 50      |
+| platform/api      | 778                | 346              | 48      |
 | directing/clearing| 390                | 9                | 2       |
 
 Target: integration-mode count → 0 for any project where the integration tests have hermetic equivalents. Projects with legitimately non-hermetic concerns (e.g., network reachability probes) keep a small integration suite; that count is the "real" integration surface.
