@@ -85,3 +85,10 @@ chorus:demo-alpha-service-reader a chorus:Service ;
 chorus:demo-alpha-store a chorus:Persistence ;
   rdfs:label "Alpha Store" ;
   rdfs:comment "SQLite-backed cache for Alpha data." .
+
+# Canonical-naming pair for #2206 enrichment-write tests.
+# Handler URI convention: <subdomainId>-service-<eid>, <subdomainId>-store-<eid>.
+chorus:demo-alpha-domain-service-reader a chorus:Service ;
+  rdfs:label "Alpha Reader v2" ;
+  chorus:ownedBy chorus:wren-owner .
+chorus:demo-alpha-domain chorus:hasService chorus:demo-alpha-domain-service-reader .

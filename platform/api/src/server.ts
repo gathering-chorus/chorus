@@ -3099,6 +3099,43 @@ app.post('/api/athena/subdomains/:id/services', async (req: Request, res: Respon
   res.status(r.status).json(r.body);
 });
 
+// Envelope enrichment writes (#2206) — POST description + reads/writes/consumes edges.
+// Pairs with #2208 data regression. Writes go to Fuseki via athenaSparqlUpdate AND
+// append to a checked-in TTL seed so enrichment survives Fuseki rebuild.
+import {
+  fetchAthenaServiceDescription,
+  fetchAthenaPersistenceDescription,
+  fetchAthenaServiceEdge,
+} from './handlers/athena-enrichment-write';
+const ENRICHMENT_SEED_PATH = path.resolve(__dirname, 'sparql', 'seeds', 'athena-enrichment.ttl');
+const enrichmentDeps = () => ({
+  sparqlUpdate: athenaSparqlUpdate,
+  appendSeed: (triple: string) => fs.appendFileSync(ENRICHMENT_SEED_PATH, triple + '\n'),
+});
+
+app.post('/api/athena/subdomains/:id/services/:eid/description', async (req: Request, res: Response) => {
+  const r = await fetchAthenaServiceDescription(enrichmentDeps(), {
+    subdomainId: req.params.id, entityId: req.params.eid, body: req.body || {},
+  });
+  res.status(r.status).json(r.body);
+});
+
+app.post('/api/athena/subdomains/:id/persistence/:eid/description', async (req: Request, res: Response) => {
+  const r = await fetchAthenaPersistenceDescription(enrichmentDeps(), {
+    subdomainId: req.params.id, entityId: req.params.eid, body: req.body || {},
+  });
+  res.status(r.status).json(r.body);
+});
+
+for (const pred of ['reads', 'writes', 'consumes'] as const) {
+  app.post(`/api/athena/subdomains/:id/services/:eid/${pred}`, async (req: Request, res: Response) => {
+    const r = await fetchAthenaServiceEdge(enrichmentDeps(), {
+      subdomainId: req.params.id, entityId: req.params.eid, predicate: pred, body: req.body || {},
+    });
+    res.status(r.status).json(r.body);
+  });
+}
+
 // GET /api/athena/subdomains/:id/pipeline — data pipeline for this subdomain (#1925)
 app.get('/api/athena/subdomains/:id/pipeline', async (req: Request, res: Response) => {
   const r = await fetchSubdomainPipelineList(domainFacetDeps(), req.params.id);

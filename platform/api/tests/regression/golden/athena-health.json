@@ -6,7 +6,7 @@
   },
   "data": {
     "status": "ok",
-    "tripleCount": 86,
+    "tripleCount": 90,
     "endpoint": "http://localhost:3030/pods/sparql",
     "queries": [
       {

@@ -1,0 +1,3 @@
+# Athena envelope enrichment seed — appended by POST /api/athena/subdomains/.../description,reads,writes,consumes (#2206)
+# Load into Fuseki instance graph at init.
+
