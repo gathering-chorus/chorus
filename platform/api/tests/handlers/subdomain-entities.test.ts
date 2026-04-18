@@ -26,6 +26,7 @@ import {
   createSubdomainIntegration,
   createSubdomainPersistence,
   createSubdomainScenario,
+  deleteSubdomainEntity,
   updateSubdomainService,
   updateSubdomainPipeline,
   updateSubdomainPage,
@@ -409,6 +410,59 @@ describe('createSubdomainScenario', () => {
     const d = writeDeps();
     const r = await createSubdomainScenario(d, 'chorus-domain', {});
     expect(r.status).toBe(400);
+  });
+});
+
+// --- DELETE handler (generic section dispatch) ---
+
+describe('deleteSubdomainEntity', () => {
+  test('known section → 204 no-content + DELETE fires', async () => {
+    const d = writeDeps();
+    const r = await deleteSubdomainEntity(d, 'chorus-domain', 'services', 'some-svc');
+    expect(r.status).toBe(204);
+    expect(r.body).toBeNull();
+    expect(d.lastUpdate.value).toContain('DELETE');
+    expect(d.lastUpdate.value).toContain('<https://jeffbridwell.com/chorus#some-svc>');
+    expect(d.lastUpdate.value).toContain('chorus:hasService');
+  });
+
+  test('unknown section → 400 with helpful error', async () => {
+    const d = writeDeps();
+    const r = await deleteSubdomainEntity(d, 'chorus-domain', 'widgets', 'some-widget');
+    expect(r.status).toBe(400);
+    const body = r.body as { data: { error: string } };
+    expect(body.data.error).toContain('Unknown section: widgets');
+    // And the runner should NOT be called.
+    expect(d.lastUpdate.value).toBe('');
+  });
+
+  test('each known section maps to the right hasPredicate', async () => {
+    const sections: Array<[string, string]> = [
+      ['actors', 'chorus:hasActor'],
+      ['scenarios', 'chorus:hasScenario'],
+      ['pages', 'chorus:hasPage'],
+      ['integrations', 'chorus:hasIntegration'],
+      ['persistence', 'chorus:hasPersistence'],
+      ['pipeline', 'chorus:hasPipeline'],
+      ['logs', 'chorus:hasLogSource'],
+      ['gaps', 'chorus:hasGap'],
+    ];
+    for (const [section, predicate] of sections) {
+      const d = writeDeps();
+      await deleteSubdomainEntity(d, 'chorus-domain', section, 'some-entity');
+      expect(d.lastUpdate.value).toContain(predicate);
+    }
+  });
+
+  test('sparqlUpdate throw → 500 with error message', async () => {
+    const d: WriteDeps = {
+      ...deps(),
+      sparqlUpdate: async () => { throw new Error('delete race'); },
+    };
+    const r = await deleteSubdomainEntity(d, 'chorus-domain', 'services', 'some-svc');
+    expect(r.status).toBe(500);
+    const body = r.body as { data: { error: string } };
+    expect(body.data.error).toBe('delete race');
   });
 });
 

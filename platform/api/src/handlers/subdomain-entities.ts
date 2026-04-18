@@ -438,6 +438,54 @@ export const updatePersistenceSpec: UpdateEntitySpec = {
   },
 };
 
+// --- DELETE: generic section-aware entity removal (#1929) ---
+
+/** Maps URL section slug → (hasPredicate short name, class name). */
+export const ENTITY_SECTIONS: Record<string, { hasProperty: string; class: string }> = {
+  actors: { hasProperty: 'hasActor', class: 'Actor' },
+  scenarios: { hasProperty: 'hasScenario', class: 'Scenario' },
+  contract: { hasProperty: 'hasContract', class: 'Contract' },
+  'prior-art': { hasProperty: 'hasPriorArt', class: 'PriorArt' },
+  pages: { hasProperty: 'hasPage', class: 'Page' },
+  integrations: { hasProperty: 'hasIntegration', class: 'Integration' },
+  persistence: { hasProperty: 'hasPersistence', class: 'PersistenceStore' },
+  services: { hasProperty: 'hasService', class: 'Service' },
+  pipeline: { hasProperty: 'hasPipeline', class: 'Pipeline' },
+  logs: { hasProperty: 'hasLogSource', class: 'LogSource' },
+  gaps: { hasProperty: 'hasGap', class: 'Gap' },
+};
+
+export async function deleteSubdomainEntity(
+  deps: WriteDeps,
+  subdomainId: string,
+  section: string,
+  entityId: string,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const start = now();
+  const sectionMeta = ENTITY_SECTIONS[section];
+  if (!sectionMeta) {
+    return {
+      status: 400,
+      body: deps.envelope('entity-delete', { error: `Unknown section: ${section}` }, now() - start, { error: true }),
+    };
+  }
+  try {
+    const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
+    const entityUri = `https://jeffbridwell.com/chorus#${entityId}`;
+    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . <${sdUri}> chorus:${sectionMeta.hasProperty} <${entityUri}> . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`;
+    await deps.sparqlUpdate(update);
+    // Empty body for 204 signal (adapter converts to .send() with no content).
+    return { status: 204, body: null };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      status: 500,
+      body: deps.envelope('entity-delete', { error: message }, now() - start, { error: true }),
+    };
+  }
+}
+
 export const updateSubdomainService = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
   updateSubdomainEntity(deps, id, entityId, body, updateServiceSpec);
 export const updateSubdomainPipeline = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>

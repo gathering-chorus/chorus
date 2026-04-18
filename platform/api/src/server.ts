@@ -6151,34 +6151,14 @@ app.post('/api/athena/subdomains/:id/actors', async (req: Request, res: Response
   }
 });
 
-// DELETE /api/athena/subdomains/:id/:section/:entityId — remove entity from graph (#1929)
-// Generic handler for all entity types
-const ENTITY_SECTIONS: Record<string, { hasProperty: string; class: string }> = {
-  actors: { hasProperty: 'hasActor', class: 'Actor' },
-  scenarios: { hasProperty: 'hasScenario', class: 'Scenario' },
-  contract: { hasProperty: 'hasContract', class: 'Contract' },
-  'prior-art': { hasProperty: 'hasPriorArt', class: 'PriorArt' },
-  pages: { hasProperty: 'hasPage', class: 'Page' },
-  integrations: { hasProperty: 'hasIntegration', class: 'Integration' },
-  persistence: { hasProperty: 'hasPersistence', class: 'PersistenceStore' },
-  services: { hasProperty: 'hasService', class: 'Service' },
-  pipeline: { hasProperty: 'hasPipeline', class: 'Pipeline' },
-  logs: { hasProperty: 'hasLogSource', class: 'LogSource' },
-  gaps: { hasProperty: 'hasGap', class: 'Gap' },
-};
-
+// DELETE /api/athena/subdomains/:id/:section/:entityId — extracted to
+// handlers/subdomain-entities.ts::deleteSubdomainEntity (#2180). The
+// section→class/predicate table (ENTITY_SECTIONS) now lives in the
+// handler module too.
 app.delete('/api/athena/subdomains/:id/:section/:entityId', async (req: Request, res: Response) => {
-  const start = Date.now();
-  const { id, section, entityId } = req.params;
-  const sectionMeta = ENTITY_SECTIONS[section];
-  if (!sectionMeta) return res.status(400).json(athenaEnvelope('entity-delete', { error: `Unknown section: ${section}` }, Date.now() - start, { error: true }));
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${id}`;
-    const entityUri = `https://jeffbridwell.com/chorus#${entityId}`;
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . <${sdUri}> chorus:${sectionMeta.hasProperty} <${entityUri}> . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`;
-    await athenaSparqlUpdate(update);
-    res.status(204).send();
-  } catch (err: any) { res.status(500).json(athenaEnvelope('entity-delete', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await deleteSubdomainEntity(subdomainWriteDeps(), req.params.id, req.params.section, req.params.entityId);
+  if (r.status === 204) { res.status(204).send(); return; }
+  res.status(r.status).json(r.body);
 });
 
 // PUT /api/athena/subdomains/:id/actors/:entityId — update actor (#1929)
