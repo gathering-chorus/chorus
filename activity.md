@@ -967,3 +967,7 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [11:30] [Kade] → Gated Silas #2151/#2154/#2155/#2168/#2174/#2175 and Wren #2176 → board
 - [11:30] [Kade] → Drafted test-value policy at roles/kade/policies/test-value-draft.md (#2173 AC2) — defines positive test + 3 smell signals → Wren (review), loom-policies when #2151 substrate ready
 - [Wren] 12:04 → Session close: 4 cards accepted (#2167 #2175 #2176 #2151), 3 demo'd awaiting accept (#2154 #2168 #2174), #2178 WIP partial (4/8 AC, real blocker on AC-5 cross-graph label resolution). Hard afternoon on #2178 — ran every pattern Jeff named in the morning. Reboot. → team
+- [2026-04-18] [Kade] → Shipped #2194 (gemba-tick delta mode). Replaces per-minute bash-string noise with delta-only output → Jeff, Wren
+- [2026-04-18] [Kade] → Shipped #2189 (18 handlers extracted from server.ts via dep-injection pattern; 7225→4190 lines, −42%; 188 new tests) → Jeff, Wren
+- [2026-04-18] [Kade] → Gate:code + gate:quality posted on #2187 (Silas Athena) and #2188 (Wren chorus-domain) → Silas, Wren
+- [2026-04-18] [Kade] → Filed #2193 P1 (shared-state coherence + drift alarm), #2199 P3 (extract search helpers), #2200 P3 (TS↔Rust contract tests, owner Silas) → Board
