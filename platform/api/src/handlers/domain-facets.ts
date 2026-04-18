@@ -124,6 +124,109 @@ export async function fetchDomainServices(
   }
 }
 
+// --- radius: outward neighborhood walk (#2028) ---
+
+export async function fetchDomainRadius(
+  deps: DomainFacetDeps,
+  subdomainName: string,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const start = now();
+  try {
+    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX borg: <urn:borg:ontology/>
+SELECT ?target ?label ?relationship ?direction WHERE {
+  {
+    GRAPH <urn:chorus:ontology> {
+      { ?parent chorus:hasDomain <${sdUri}> . ?parent rdfs:label ?label . BIND("hasDomain" AS ?relationship) BIND("parent" AS ?direction) BIND(?parent AS ?target) }
+      UNION { <${sdUri}> chorus:consumes ?target . OPTIONAL { ?target rdfs:label ?label } BIND("consumes" AS ?relationship) BIND("outbound" AS ?direction) }
+      UNION { ?target chorus:consumes <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("consumedBy" AS ?relationship) BIND("inbound" AS ?direction) }
+      UNION { ?parent chorus:contains <${sdUri}> . ?parent rdfs:label ?label . BIND("containedBy" AS ?relationship) BIND("parent" AS ?direction) BIND(?parent AS ?target) }
+    }
+  } UNION {
+    GRAPH <urn:borg:instances> {
+      { <${sdUri}> borg:usesEnvironment ?env . ?env borg:environmentName ?label . BIND("usesEnvironment" AS ?relationship) BIND("outbound" AS ?direction) BIND(?env AS ?target) }
+    }
+  }
+}`;
+    const result = await deps.sparql(query);
+    const edges = result.results.bindings.map((b) => ({
+      target: b.label?.value || (b.target?.value || '').split('#').pop() || '',
+      targetUri: b.target?.value || '',
+      relationship: b.relationship?.value || '',
+      direction: b.direction?.value || '',
+    }));
+    return {
+      status: 200,
+      body: deps.envelope('domain-radius', { subdomain: sdId, edges }, now() - start, { count: edges.length }),
+    };
+  } catch {
+    return {
+      status: 200,
+      body: deps.envelope('domain-radius', { subdomain: subdomainName, edges: [] }, now() - start, { count: 0 }),
+    };
+  }
+}
+
+// --- blast-radius: inward impact walk (#2028) ---
+
+export async function fetchDomainBlastRadius(
+  deps: DomainFacetDeps,
+  subdomainName: string,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const start = now();
+  try {
+    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX borg: <urn:borg:ontology/>
+SELECT ?target ?label ?relationship ?direction WHERE {
+  {
+    GRAPH <urn:chorus:ontology> {
+      { ?target chorus:consumes <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("consumes" AS ?relationship) BIND("dependent" AS ?direction) }
+      UNION { ?target chorus:hasDomain <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("ownerProduct" AS ?relationship) BIND("parent" AS ?direction) }
+      UNION { ?target chorus:contains <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("containedBy" AS ?relationship) BIND("parent" AS ?direction) }
+    }
+  } UNION {
+    GRAPH <urn:borg:instances> {
+      { ?otherDomain borg:usesEnvironment ?env . <${sdUri}> borg:usesEnvironment ?env . ?env borg:environmentName ?envName . FILTER(?otherDomain != <${sdUri}>) OPTIONAL { GRAPH <urn:chorus:ontology> { ?otherDomain rdfs:label ?label } } BIND("sharedInfra" AS ?relationship) BIND("co-dependent" AS ?direction) BIND(?otherDomain AS ?target) }
+    }
+  }
+}`;
+    const result = await deps.sparql(query);
+    const seen = new Set<string>();
+    const edges: Array<{ target: string; targetUri: string; relationship: string; direction: string }> = [];
+    for (const b of result.results.bindings) {
+      const targetUri = b.target?.value || '';
+      const relationship = b.relationship?.value || '';
+      const key = `${targetUri}|${relationship}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        edges.push({
+          target: b.label?.value || targetUri.split('#').pop() || '',
+          targetUri,
+          relationship,
+          direction: b.direction?.value || '',
+        });
+      }
+    }
+    return {
+      status: 200,
+      body: deps.envelope('domain-blast-radius', { subdomain: sdId, edges }, now() - start, { count: edges.length }),
+    };
+  } catch {
+    return {
+      status: 200,
+      body: deps.envelope('domain-blast-radius', { subdomain: subdomainName, edges: [] }, now() - start, { count: 0 }),
+    };
+  }
+}
+
 // --- decisions: SPARQL against urn:chorus:decisions with alias mapping ---
 
 const DECISION_ALIASES: Record<string, string[]> = {

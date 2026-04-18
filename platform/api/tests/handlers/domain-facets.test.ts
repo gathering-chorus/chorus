@@ -13,6 +13,8 @@ import {
   fetchDomainLogs,
   fetchDomainServices,
   fetchDomainDecisions,
+  fetchDomainRadius,
+  fetchDomainBlastRadius,
   type DomainFacetDeps,
 } from '../../src/handlers/domain-facets';
 import type { SparqlResult } from '../../src/handlers/athena-health';
@@ -200,5 +202,71 @@ describe('fetchDomainDecisions', () => {
     expect(r.status).toBe(200);
     const body = r.body as { data: { decisions: unknown[] } };
     expect(body.data.decisions).toEqual([]);
+  });
+});
+
+// --- fetchDomainRadius ---
+
+describe('fetchDomainRadius', () => {
+  test('shapes edges with label/uri/relationship/direction', async () => {
+    const result = {
+      results: {
+        bindings: [
+          { target: { value: 'https://jeffbridwell.com/chorus#api-domain' }, label: { value: 'API' }, relationship: { value: 'consumes' }, direction: { value: 'outbound' } },
+          { target: { value: 'https://jeffbridwell.com/chorus#storage-domain' }, relationship: { value: 'hasDomain' }, direction: { value: 'parent' } },
+        ],
+      },
+    };
+    const d = deps({ sparql: async () => result });
+    const r = await fetchDomainRadius(d, 'chorus-domain');
+    const body = r.body as { data: { edges: Array<{ target: string; relationship: string; direction: string }> } };
+    expect(body.data.edges.length).toBe(2);
+    expect(body.data.edges[0].target).toBe('API');
+    expect(body.data.edges[0].direction).toBe('outbound');
+    expect(body.data.edges[1].target).toBe('storage-domain'); // label missing → uri tail
+  });
+
+  test('throw returns empty envelope', async () => {
+    const d = deps({ sparql: async () => { throw new Error(''); } });
+    const r = await fetchDomainRadius(d, 'x');
+    expect(r.status).toBe(200);
+    const body = r.body as { data: { edges: unknown[] } };
+    expect(body.data.edges).toEqual([]);
+  });
+});
+
+// --- fetchDomainBlastRadius ---
+
+describe('fetchDomainBlastRadius', () => {
+  test('dedups edges by target+relationship key', async () => {
+    const result = {
+      results: {
+        bindings: [
+          { target: { value: 'https://jeffbridwell.com/chorus#a' }, label: { value: 'A' }, relationship: { value: 'consumes' }, direction: { value: 'dependent' } },
+          { target: { value: 'https://jeffbridwell.com/chorus#a' }, label: { value: 'A' }, relationship: { value: 'consumes' }, direction: { value: 'dependent' } },
+          { target: { value: 'https://jeffbridwell.com/chorus#a' }, label: { value: 'A' }, relationship: { value: 'ownerProduct' }, direction: { value: 'parent' } },
+        ],
+      },
+    };
+    const d = deps({ sparql: async () => result });
+    const r = await fetchDomainBlastRadius(d, 'chorus-domain');
+    const body = r.body as { data: { edges: unknown[] } };
+    // duplicate of (a|consumes) should collapse; (a|ownerProduct) is distinct
+    expect(body.data.edges.length).toBe(2);
+  });
+
+  test('empty bindings → empty envelope', async () => {
+    const d = deps();
+    const r = await fetchDomainBlastRadius(d, 'chorus-domain');
+    const body = r.body as { data: { edges: unknown[] } };
+    expect(body.data.edges).toEqual([]);
+  });
+
+  test('resolveSubdomainId throw returns empty envelope', async () => {
+    const d = deps({ resolveSubdomainId: async () => { throw new Error(''); } });
+    const r = await fetchDomainBlastRadius(d, 'nonexistent');
+    expect(r.status).toBe(200);
+    const body = r.body as { data: { edges: unknown[] } };
+    expect(body.data.edges).toEqual([]);
   });
 });
