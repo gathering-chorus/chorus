@@ -4314,6 +4314,7 @@ import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
 import { fetchAthenaSubdomainDetail } from './handlers/athena-subdomain-detail';
 import { fetchAthenaBlastRadius } from './handlers/athena-blast-radius';
+import { fetchAthenaSubdomainCards } from './handlers/athena-subdomain-cards';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
     sparql: athenaSparqlQuery,
@@ -4451,26 +4452,11 @@ app.get('/api/athena/machines', async (_req: Request, res: Response) => {
 
 // GET /api/athena/subdomains/:id/cards — active board cards for this domain
 app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    // Map subdomain ID to board search terms
-    const domainLabel = req.params.id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
-    // Alias mapping: aggregation domains search additional labels (#2098)
-    const DOMAIN_ALIASES: Record<string, string[]> = {
-      'tests': ['quality'],
-      'code': ['code'],
-      'gates': ['gates'],
-    };
-    const searchLabels = [domainLabel, ...(DOMAIN_ALIASES[domainLabel] || [])];
-    // #2096: read from board cache instead of execSync (was ~600ms, now <1ms)
-    // Jeff wants every card for the domain visible (#1931) — search domain: and sequence: labels
-    const cards = getBoardCards()
-      .filter(c => searchLabels.some(l => c.tags.includes(`domain:${l}`) || c.tags.includes(`sequence:${l}`)))
-      .map(c => ({ id: c.id, title: c.title, owner: c.owner, status: c.status, priority: c.priority }));
-    res.json(athenaEnvelope('subdomain-cards', { subdomain: req.params.id, domainLabel, cards }, Date.now() - start, { count: cards.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-cards', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaSubdomainCards(
+    { getBoardCards, envelope: athenaEnvelope },
+    req.params.id,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/alerts — alert rules related to this domain
