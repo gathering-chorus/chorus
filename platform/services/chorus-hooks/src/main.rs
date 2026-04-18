@@ -306,6 +306,13 @@ async fn pre_tool_use_inner(
                 return (_last_module.clone(), r);
             }
 
+            // Test quality gate (#2196) — block new .test.ts files whose
+            // test() blocks lack both a production-symbol call AND an assertion.
+            _last_module = "test_quality_gate".into(); let r = hooks::test_quality_gate::check(&input);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (_last_module.clone(), r);
+            }
+
             // Pair gate (#1814) — block code edits without active pair
             _last_module = "pair_gate".into(); let r = hooks::pair_gate::check(&input, &state);
             if r.stdout.is_some() || r.exit_code != 0 {

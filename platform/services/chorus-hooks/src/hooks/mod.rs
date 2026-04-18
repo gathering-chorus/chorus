@@ -25,6 +25,7 @@ pub mod icd_pre_read;
 pub mod nifi_discipline;
 pub mod memory_gate;
 pub mod tdd_gate;
+pub mod test_quality_gate;
 pub mod pair_gate;
 pub mod demo_gate;
 pub mod context_inject;
