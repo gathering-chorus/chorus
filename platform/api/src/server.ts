@@ -1992,56 +1992,18 @@ app.get('/api/chorus/refs', (req: Request, res: Response) => {
 
 // --- GET /api/chorus/stats ---
 
+import { fetchChorusStats } from './handlers/chorus-stats';
 app.get('/api/chorus/stats', (_req: Request, res: Response) => {
   let db: Database.Database;
-  try {
-    db = getDb();
-  } catch (e) {
+  try { db = getDb(); } catch (e) {
     if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
     throw e;
   }
-
   try {
     addStaleHeader(res, db);
-
-    const total = (db.prepare(`SELECT COUNT(*) as c FROM messages`).get() as any).c;
-
-    const bySourceRows = db.prepare(
-      `SELECT source, COUNT(*) as c FROM messages GROUP BY source ORDER BY c DESC`
-    ).all() as any[];
-    const bySource: Record<string, number> = {};
-    for (const row of bySourceRows) bySource[row.source] = row.c;
-
-    const byRoleRows = db.prepare(
-      `SELECT role, COUNT(*) as c FROM messages GROUP BY role ORDER BY c DESC`
-    ).all() as any[];
-    const byRole: Record<string, number> = {};
-    for (const row of byRoleRows) byRole[row.role] = row.c;
-
-    const dateRange = db.prepare(
-      `SELECT MIN(timestamp) as earliest, MAX(timestamp) as latest FROM messages`
-    ).get() as any;
-
-    const watermarks = db.prepare(
-      `SELECT source, last_indexed FROM watermarks ORDER BY last_indexed DESC`
-    ).all() as any[];
-
-    const lastIndexed = watermarks.length > 0 ? watermarks[0].last_indexed : null;
-
-    const refCount = (db.prepare(`SELECT COUNT(*) as c FROM refs`).get() as any).c;
-
-    res.json({
-      total,
-      bySource,
-      byRole,
-      dateRange: { earliest: dateRange.earliest, latest: dateRange.latest },
-      lastIndexed,
-      watermarks,
-      refs: refCount
-    });
-  } finally {
-    db.close();
-  }
+    const r = fetchChorusStats({ db });
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
 
 // --- GET /api/chorus/freshness (#1879) ---
