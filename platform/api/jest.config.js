@@ -19,12 +19,56 @@ module.exports = {
   // Run them explicitly with RUN_INTEGRATION=true (same signal the coverage
   // script already uses). Coverage for their code paths is recovered by
   // handler-level unit tests written during extraction.
+  // Wave 1 (04a996f3): 4 suites. Wave 2 (this commit): +39, absorbs #2184.
+  // Triage classified each file by: import of startTestApp/app, presence of
+  // mocks, and density of live-service smells (localhost:3030/3100/3340,
+  // athenaSparql, Fuseki, ontology, /pods/). Files listed here had live
+  // deps in every test block.
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
     '/node_modules/',
     '<rootDir>/tests/server-unit\\.test\\.ts$',
     '<rootDir>/tests/rca\\.test\\.ts$',
     '<rootDir>/tests/completeness-perf\\.test\\.ts$',
     '<rootDir>/tests/graph-separation\\.test\\.ts$',
+    '<rootDir>/tests/observability\\.test\\.ts$',
+    '<rootDir>/tests/logs-facet\\.test\\.ts$',
+    '<rootDir>/tests/deploys\\.test\\.ts$',
+    '<rootDir>/tests/shacl-validation\\.test\\.ts$',
+    '<rootDir>/tests/crawl-shape\\.test\\.ts$',
+    '<rootDir>/tests/hooks-summary\\.test\\.ts$',
+    '<rootDir>/tests/jeff-summary\\.test\\.ts$',
+    '<rootDir>/tests/quality-summary\\.test\\.ts$',
+    '<rootDir>/tests/trace-convergence-callstack\\.test\\.ts$',
+    '<rootDir>/tests/alerts-subdomain\\.test\\.ts$',
+    '<rootDir>/tests/assessment\\.test\\.ts$',
+    '<rootDir>/tests/cost-summary\\.test\\.ts$',
+    '<rootDir>/tests/discover-endpoints\\.test\\.ts$',
+    '<rootDir>/tests/discover-pages\\.test\\.ts$',
+    '<rootDir>/tests/domain-dependencies\\.test\\.ts$',
+    '<rootDir>/tests/fitness-summary\\.test\\.ts$',
+    '<rootDir>/tests/ollama-resilience\\.test\\.ts$',
+    '<rootDir>/tests/patterns-summary\\.test\\.ts$',
+    '<rootDir>/tests/scheduled-reindex\\.test\\.ts$',
+    '<rootDir>/tests/search-freshness\\.test\\.ts$',
+    '<rootDir>/tests/session-replay\\.test\\.ts$',
+    '<rootDir>/tests/trace-envelope\\.test\\.ts$',
+    '<rootDir>/tests/borg-landing\\.test\\.ts$',
+    '<rootDir>/tests/chorus-landing\\.test\\.ts$',
+    '<rootDir>/tests/code-inventory\\.test\\.ts$',
+    '<rootDir>/tests/crawl-validation\\.test\\.ts$',
+    '<rootDir>/tests/domain-api-consolidated\\.test\\.ts$',
+    '<rootDir>/tests/domain-borg-services\\.test\\.ts$',
+    '<rootDir>/tests/domain-pipeline\\.test\\.ts$',
+    '<rootDir>/tests/domain-radius\\.test\\.ts$',
+    '<rootDir>/tests/domain-releases\\.test\\.ts$',
+    '<rootDir>/tests/domain-section-enrichment\\.test\\.ts$',
+    '<rootDir>/tests/in-process-harness\\.test\\.ts$',
+    '<rootDir>/tests/instance-explorer\\.test\\.ts$',
+    '<rootDir>/tests/spine-event-endpoint\\.test\\.ts$',
+    '<rootDir>/tests/tests-domain-code\\.test\\.ts$',
+    '<rootDir>/tests/timestamp\\.test\\.ts$',
+    '<rootDir>/tests/trace-batch-callstack\\.test\\.ts$',
+    '<rootDir>/tests/trace-integration-callstack\\.test\\.ts$',
   ],
   // ts-jest diagnostics off — type checking is tsc's job, not the test runner's.
   // Tests in this dir were written for default-jest (no strict TS) and use
