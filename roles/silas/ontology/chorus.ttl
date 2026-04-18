@@ -745,7 +745,7 @@ chorus:loom a chorus:SubProduct ;
     chorus:ownedBy chorus:jeff ;
     chorus:hasDomain chorus:loom-principles, chorus:loom-practices, chorus:loom-decisions,
                      chorus:roles-domain, chorus:loom-rcas, chorus:loom-metrics,
-                     chorus:loom-analytics, chorus:policies-domain .
+                     chorus:loom-analytics, chorus:loom-policies .
 
 # cards-product absorbed into Loom (DEC-2090 consolidation) — cards is a Loom capability
 
@@ -1005,7 +1005,7 @@ chorus:integrations-domain a chorus:SubDomain ;
     chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Designing .
 
-chorus:policies-domain a chorus:SubDomain ;
+chorus:loom-policies a chorus:SubDomain ;
     rdfs:label "Policies" ;
     rdfs:comment "Team policies — working hours, WIP limits, response windows." ;
     chorus:ownedBy chorus:jeff ;
@@ -1179,7 +1179,7 @@ chorus:convergence-product chorus:hasDomain chorus:integrations-domain, chorus:c
 # Borg/Observability: infrastructure, security, toolchain, properties, time (infra concerns)
 chorus:observability-domain chorus:hasDomain chorus:properties-domain, chorus:time-domain .
 
-chorus:loom chorus:hasDomain chorus:policies-domain .
+chorus:loom chorus:hasDomain chorus:loom-policies .
 
 # actor-bdd-product domains moved to athena-product
 chorus:athena-product chorus:hasDomain chorus:domains-domain, chorus:services-domain .
@@ -1295,7 +1295,7 @@ chorus:streams-domain chorus:consumes chorus:security-domain .
 chorus:loom-analytics chorus:consumes chorus:security-domain .
 chorus:loom-decisions chorus:consumes chorus:security-domain .
 chorus:loom-metrics chorus:consumes chorus:security-domain .
-chorus:policies-domain chorus:consumes chorus:security-domain .
+chorus:loom-policies chorus:consumes chorus:security-domain .
 chorus:loom-practices chorus:consumes chorus:security-domain .
 chorus:loom-principles chorus:consumes chorus:security-domain .
 chorus:skills-service chorus:consumes chorus:security-domain .
@@ -1327,7 +1327,7 @@ chorus:streams-domain chorus:consumes chorus:time-domain .
 chorus:loom-analytics chorus:consumes chorus:time-domain .
 chorus:loom-decisions chorus:consumes chorus:time-domain .
 chorus:loom-metrics chorus:consumes chorus:time-domain .
-chorus:policies-domain chorus:consumes chorus:time-domain .
+chorus:loom-policies chorus:consumes chorus:time-domain .
 chorus:loom-practices chorus:consumes chorus:time-domain .
 chorus:loom-principles chorus:consumes chorus:time-domain .
 chorus:skills-service chorus:consumes chorus:time-domain .
