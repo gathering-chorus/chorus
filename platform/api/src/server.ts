@@ -3901,76 +3901,18 @@ app.get('/api/chorus/health/detail', async (_req: Request, res: Response) => {
 let hooksMetricsCache: { data: any; ts: number } | null = null;
 const HOOKS_CACHE_TTL = 60_000; // 60s
 
+import { fetchChorusHooksMetrics } from './handlers/chorus-hooks-metrics';
 app.get('/api/chorus/hooks/metrics', (_req: Request, res: Response) => {
   if (hooksMetricsCache && (Date.now() - hooksMetricsCache.ts) < HOOKS_CACHE_TTL) {
     res.json(hooksMetricsCache.data);
     return;
   }
-
   const HOOKS_LOG = path.join(os.homedir(), 'Library/Logs/Gathering/hooks.log');
-
-  if (!fs.existsSync(HOOKS_LOG)) {
-    res.status(503).json({ error: 'hooks.log not found' });
-    return;
-  }
-
-  try {
-    const raw = fs.readFileSync(HOOKS_LOG, 'utf-8');
-    const lines = raw.trim().split('\n');
-
-    // Filter to last 7 days
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 7);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-
-    const modules: Record<string, { allow: number; deny: number; warn: number; total: number }> = {};
-    let totalDecisions = 0;
-
-    for (const line of lines) {
-      // Format: timestamp | hook_type | tool | role | module | decision | duration | session_id | context
-      const parts = line.split('|').map(s => s.trim());
-      if (parts.length < 6) continue;
-
-      const timestamp = parts[0].slice(0, 10);
-      if (timestamp < cutoffStr) continue;
-
-      const moduleName = parts[4];
-      const decision = parts[5].toLowerCase();
-
-      // Skip internal entries (enter, no module)
-      if (!moduleName || moduleName === '-' || moduleName === 'none' || decision === 'enter') continue;
-
-      if (!modules[moduleName]) {
-        modules[moduleName] = { allow: 0, deny: 0, warn: 0, total: 0 };
-      }
-
-      modules[moduleName].total++;
-      totalDecisions++;
-
-      if (decision === 'allow') modules[moduleName].allow++;
-      else if (decision === 'deny' || decision === 'block') modules[moduleName].deny++;
-      else if (decision === 'warn') modules[moduleName].warn++;
-    }
-
-    // Enforced = modules with at least one deny
-    const enforcedModules = Object.keys(modules).filter(m => modules[m].deny > 0).length;
-    const totalModules = Object.keys(modules).length;
-    const enforcementPercent = totalModules > 0 ? Math.round((enforcedModules / totalModules) * 100) : 0;
-
-    const result = {
-      totalDecisions,
-      totalModules,
-      enforcedModules,
-      enforcementPercent,
-      periodDays: 7,
-      modules,
-      generatedAt: new Date().toISOString(),
-    };
-    hooksMetricsCache = { data: result, ts: Date.now() };
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to parse hooks log' });
-  }
+  const r = fetchChorusHooksMetrics({
+    readLog: () => fs.existsSync(HOOKS_LOG) ? fs.readFileSync(HOOKS_LOG, 'utf-8') : null,
+  });
+  if (r.status === 200) hooksMetricsCache = { data: r.body, ts: Date.now() };
+  res.status(r.status).json(r.body);
 });
 
 // --- Crash handlers: log + alert before dying ---
