@@ -1936,220 +1936,37 @@ const DOMAIN_REGISTRY: Record<string, { product: string; step: string; descripti
 const domainResponseCache = new Map<string, { body: any; ts: number }>();
 const DOMAIN_CACHE_TTL_MS = 60 * 1000;
 
+import { fetchChorusDomain } from './handlers/chorus-domain';
 app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
   const name = _req.params.name.toLowerCase();
-  const meta = DOMAIN_REGISTRY[name];
-  if (!meta) {
-    res.status(404).json({ error: `Unknown domain: ${name}`, validDomains: Object.keys(DOMAIN_REGISTRY) });
-    return;
-  }
-
   const cached = domainResponseCache.get(name);
   if (cached && Date.now() - cached.ts < DOMAIN_CACHE_TTL_MS) {
     res.json(cached.body);
     return;
   }
-
   try {
-    const boardTs = `${CHORUS_ROOT}/platform/scripts/cards`;
-    const envOpts = {
-      encoding: 'utf-8' as const, timeout: 15000,
-      env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
-    };
-
-    // #2096: read from board cache instead of shelling out (was ~450ms, now <1ms)
-    const cards = getBoardCards()
-      .filter(c => c.status !== 'Done' && c.status !== "Won't Do" && c.tags.includes(`domain:${name}`))
-      .map(c => ({ id: c.id, title: c.title, status: c.status, owner: c.owner, type: c.type }));
-
-    const wip = cards.filter(c => c.status === 'WIP');
-    const blocked = cards.filter(c => c.status === 'Blocked');
-
-    // Parse domain HTML page for structured sections
-    const fs = require('fs');
-    const domainHtmlPath = `${CHORUS_ROOT}/platform/roles/product-manager/artifacts/domain-${name}.html`;
-    let sections: Record<string, any> = {};
-    try {
-      if (fs.existsSync(domainHtmlPath)) {
-        const html = fs.readFileSync(domainHtmlPath, 'utf-8');
-        // Split by h2, extract section name and table rows
-        const h2Parts = html.split(/<h2>/);
-        for (const part of h2Parts.slice(1)) {
-          const titleMatch = part.match(/^([^<]+)<\/h2>/);
-          if (!titleMatch) continue;
-          const sectionName = titleMatch[1].trim().toLowerCase().replace(/\s+/g, '_');
-
-          // Extract table rows as arrays
-          const rows: string[][] = [];
-          const trMatches = part.match(/<tr>([\s\S]*?)<\/tr>/g) || [];
-          for (const tr of trMatches) {
-            const cells = (tr.match(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g) || [])
-              .map((cell: string) => cell.replace(/<[^>]+>/g, '').trim());
-            if (cells.length > 0) rows.push(cells);
-          }
-
-          // Extract list items
-          const listItems = (part.match(/<li[^>]*>([\s\S]*?)<\/li>/g) || [])
-            .map((li: string) => li.replace(/<[^>]+>/g, '').trim())
-            .filter((s: string) => s.length > 0);
-
-          sections[sectionName] = {
-            title: titleMatch[1].trim(),
-            table: rows.length > 0 ? rows : undefined,
-            items: listItems.length > 0 ? listItems : undefined,
-          };
-        }
-      }
-    } catch {}
-
-    // Fetch completeness from Athena if subdomain exists (#1899)
-    let completeness: any = null;
-    let subdomainId: string | null = null;
-    try {
-      const sdId = `${name}-service`;
-      const cRes = await fetch(`http://localhost:3340/api/athena/subdomains/${sdId}/completeness`);
-      if (cRes.ok) {
-        const cBody = await cRes.json() as any;
-        completeness = cBody.data;
-        subdomainId = sdId;
-      } else {
-        // Try domain suffix
-        const cRes2 = await fetch(`http://localhost:3340/api/athena/subdomains/${name}-domain/completeness`);
-        if (cRes2.ok) {
-          const cBody2 = await cRes2.json() as any;
-          completeness = cBody2.data;
-          subdomainId = `${name}-domain`;
-        }
-      }
-    } catch {}
-
-    // #2175: if sections empty (no legacy HTML page) and we have a subdomain,
-    // pull section labels from Fuseki via per-predicate parallel queries.
-    if (subdomainId && Object.keys(sections).length === 0) {
-      const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
-      const sectionPreds: Array<[string, string]> = [
-        ['scenarios', 'hasScenario'],
-        ['contract', 'hasContract'],
-        ['prior_art', 'hasPriorArt'],
-        ['integrations', 'hasIntegration'],
-        ['services', 'hasService'],
-        ['persistence', 'hasPersistence'],
-        ['pipeline', 'hasPipeline'],
-        ['gaps', 'hasGap'],
-        ['actors', 'hasActor'],
-        ['pages', 'hasPage'],
-        ['logs', 'hasLogSource'],
-      ];
-      try {
-        // #2178 — surface ownership + description + reads/writes/consumes
-        // alongside labels. items string[] preserved for existing consumers;
-        // itemDetails adds provenance. Ownership walks up from sub-domain
-        // when the entity doesn't carry chorus:ownedBy directly (Silas's
-        // call: COALESCE(direct, parent); services get re-parented, direct
-        // tags drift when sub-domain ownership changes). ownerInherited:true
-        // flags walk-up-sourced owner so consumers can distinguish.
-        const parentOwnerQuery = `
-          PREFIX chorus: <https://jeffbridwell.com/chorus#>
-          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-          SELECT ?ownerLabel WHERE {
-            GRAPH <urn:chorus:ontology> {
-              <${sdUri}> chorus:ownedBy ?owner .
-              OPTIONAL { ?owner rdfs:label ?ownerLabel }
-            }
-          } LIMIT 1
-        `;
-        const parentOwnerResult = await athenaSparqlQuery(parentOwnerQuery).catch(() => null);
-        const parentOwner: string | null =
-          parentOwnerResult?.results?.bindings?.[0]?.ownerLabel?.value || null;
-
-        const sectionQuery = (pred: string) => `
-          PREFIX chorus: <https://jeffbridwell.com/chorus#>
-          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-          SELECT ?e ?label ?comment
-                 (GROUP_CONCAT(DISTINCT ?ownerLabel; separator="||") AS ?owners)
-                 (GROUP_CONCAT(DISTINCT ?readLabel; separator="||") AS ?reads)
-                 (GROUP_CONCAT(DISTINCT ?writeLabel; separator="||") AS ?writes)
-                 (GROUP_CONCAT(DISTINCT ?consumesLabel; separator="||") AS ?consumes)
-          WHERE {
-            GRAPH <urn:chorus:instances> {
-              <${sdUri}> chorus:${pred} ?e .
-              OPTIONAL { ?e rdfs:label ?label }
-              OPTIONAL { ?e rdfs:comment ?comment }
-              OPTIONAL { ?e chorus:ownedBy ?ownerEnt . OPTIONAL { ?ownerEnt rdfs:label ?ownerLabel } }
-              OPTIONAL { ?e chorus:reads ?readTarget . OPTIONAL { ?readTarget rdfs:label ?readLabel } }
-              OPTIONAL { ?e chorus:writes ?writeTarget . OPTIONAL { ?writeTarget rdfs:label ?writeLabel } }
-              OPTIONAL { ?e chorus:consumes ?consumesTarget . OPTIONAL { ?consumesTarget rdfs:label ?consumesLabel } }
-            }
-          }
-          GROUP BY ?e ?label ?comment
-          LIMIT 20
-        `;
-        const results = await Promise.all(
-          sectionPreds.map(([, pred]) => athenaSparqlQuery(sectionQuery(pred)).catch(() => null))
-        );
-        sectionPreds.forEach(([key], i) => {
-          const r = results[i];
-          if (!r?.results?.bindings?.length) return;
-          const items: string[] = [];
-          const itemDetails: any[] = [];
-          for (const b of r.results.bindings as any[]) {
-            const label = b?.label?.value;
-            if (!label) continue;
-            items.push(label);
-            const split = (v: string | undefined) => (v ? v.split('||').filter(Boolean) : []);
-            const detail: any = { label };
-            if (b?.comment?.value) detail.description = b.comment.value;
-            const directOwners = split(b?.owners?.value);
-            const reads = split(b?.reads?.value);
-            const writes = split(b?.writes?.value);
-            const consumes = split(b?.consumes?.value);
-            // COALESCE(direct, parent): direct owner takes precedence for
-            // genuine co-ownership cases; sub-domain walk-up is the default.
-            if (directOwners.length) {
-              detail.owner = directOwners.length === 1 ? directOwners[0] : directOwners;
-            } else if (parentOwner) {
-              detail.owner = parentOwner;
-              detail.ownerInherited = true;
-            }
-            if (reads.length) detail.reads = reads;
-            if (writes.length) detail.writes = writes;
-            if (consumes.length) detail.consumes = consumes;
-            itemDetails.push(detail);
-          }
-          if (items.length > 0) {
-            sections[key] = { title: key.replace(/_/g, ' '), items, itemDetails };
-          }
-        });
-      } catch {}
-    }
-
-    if (completeness && completeness.percentage < 60) {
-      console.warn(`[domain-completeness] ${name}: ${completeness.percentage}% — missing: ${completeness.missing?.join(', ')}`);
-    }
-
-    const body = {
-      domain: name,
-      product: meta.product,
-      step: meta.step,
-      description: meta.description,
-      sections,
-      cards: {
-        total: cards.length,
-        wip: wip.length,
-        blocked: blocked.length,
-        items: cards,
+    const r = await fetchChorusDomain(
+      {
+        domainRegistry: DOMAIN_REGISTRY,
+        getCards: getBoardCards,
+        readDomainHtml: (d: string) => {
+          const p = `${CHORUS_ROOT}/platform/roles/product-manager/artifacts/domain-${d}.html`;
+          return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null;
+        },
+        fetchCompleteness: async (sdId: string) => {
+          try {
+            const resp = await fetch(`http://localhost:3340/api/athena/subdomains/${sdId}/completeness`);
+            if (!resp.ok) return null;
+            const body = await resp.json() as any;
+            return body.data || null;
+          } catch { return null; }
+        },
+        sparql: athenaSparqlQuery,
       },
-      completeness: completeness ? {
-        percentage: completeness.percentage,
-        present: completeness.present,
-        missing: completeness.missing,
-        lifecycle: completeness.lifecycle,
-      } : null,
-      hasIcd: ['photos', 'stories', 'people', 'music', 'documents', 'social', 'notes', 'webmethods'].includes(name),
-      icdEndpoint: `/api/icd/domains/${name}`,
-    };
-    domainResponseCache.set(name, { body, ts: Date.now() });
-    res.json(body);
+      _req.params.name,
+    );
+    if (r.status === 200) domainResponseCache.set(name, { body: r.body, ts: Date.now() });
+    res.status(r.status).json(r.body);
   } catch (error) {
     res.status(500).json({ error: 'Failed to build domain view', detail: error instanceof Error ? error.message : String(error) });
   }
