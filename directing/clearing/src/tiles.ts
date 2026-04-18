@@ -13,6 +13,9 @@ export interface RoleTile {
   lastAction: string;
   lastActionAge: string;
   sessionAlive: boolean;
+  /** #2168 — ALL WIP cards owned by this role, sourced from pulse.board.wip_cards.
+   *  Tile must surface every card the role owns, not just their declared one. */
+  cards?: string[];
   /** #2120 — reconciler-written card (from observations) when it diverges from declared */
   cardInferred?: string;
   /** #2120 — card the role last manually declared */
@@ -120,19 +123,39 @@ export class TilePoller {
       tile.card = data.card ? `#${data.card}` : '';
       tile.sessionAlive = data.session_alive !== false;
 
-      // #2120 — surface divergence when reconciler has flipped the card
-      if (data.source === 'reconciler' && data.card_declared) {
-        tile.cardDeclared = String(data.card_declared);
-        tile.cardInferred = String(data.card_inferred || data.card);
-        tile.divergent = tile.cardDeclared !== tile.cardInferred;
-      }
-
       if (data.ts) {
         const ageSecs = Math.floor(Date.now() / 1000) - data.ts;
         tile.lastActionAge = formatAge(ageSecs);
       }
     } catch {
       // File doesn't exist or is malformed
+    }
+
+    // #2168 — surface ALL WIP cards owned by this role, not just declared.
+    // Pulse is the source of truth for board state; it composes wip_cards with
+    // owner, and tiles.ts reads that to render the full set. Also populates
+    // divergence flags from pulse.roles.<role> (pulse already composes declared
+    // + inferred per #2168 AC-9).
+    try {
+      const pulseContent = fs.readFileSync(PULSE_FILE, 'utf-8');
+      const pulseData = JSON.parse(pulseContent);
+      const wipCards: Array<{ id: number; owner?: string }> = pulseData?.board?.wip_cards || [];
+      const ownedIds = wipCards
+        .filter((c) => (c.owner || '').toLowerCase() === role.toLowerCase())
+        .map((c) => `#${c.id}`);
+      if (ownedIds.length > 0) {
+        tile.cards = ownedIds;
+        // Fallback primary card if declared file didn't yield one.
+        if (!tile.card) tile.card = ownedIds[0];
+      }
+      const roleComposed = pulseData?.roles?.[role];
+      if (roleComposed?.divergent) {
+        tile.cardDeclared = roleComposed.card_declared ? String(roleComposed.card_declared) : undefined;
+        tile.cardInferred = roleComposed.card_inferred ? String(roleComposed.card_inferred) : undefined;
+        tile.divergent = true;
+      }
+    } catch {
+      // Pulse file absent or malformed — tile renders with declared-only view.
     }
 
     // Read last observation for action summary

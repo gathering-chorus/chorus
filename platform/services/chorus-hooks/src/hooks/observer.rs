@@ -63,7 +63,7 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
     // strong card signal and it differs from declared state, flip declared.json
     // immediately (respecting a brief manual-override window).
     if let Some(inferred_card) = inferred.as_deref() {
-        reconcile_declared_state(role.as_str(), inferred_card);
+        write_inferred_state(role.as_str(), inferred_card);
     }
 
     let obs = Observation {
@@ -156,81 +156,63 @@ fn infer_card_from_tool_patterns(input: &HookInput) -> Option<String> {
     }
 }
 
-/// #2120 — Inline reconciliation: rewrite declared.json when a tool call's
-/// inferred card differs from the declared one. Subsecond, not polled.
+/// #2168 AC-9 — Reconciler writes to `<role>-inferred.json` exclusively.
+/// Never touches `<role>-declared.json` (that's role_state.rs territory).
 ///
-/// Preserves a short manual-override window (MANUAL_OVERRIDE_SECS) so that a
-/// human `role-state` call gets a brief moment to stand before inference
-/// takes over again. The declared file mtime is the window anchor — a fresh
-/// manual write suppresses reconciliation for that interval.
+/// Schema: {role, card, ts, source:"inferred"} — minimal. Filename carries
+/// the writer-identity semantic, so no card_declared/card_inferred sub-fields.
+/// `ts` also serves as last_emit for readers: treat inferred.json as stale
+/// if ts older than ~5 min (role has gone quiet, inferred card is historical).
+/// TTL is enforced by readers, not the writer.
 ///
-/// Uses atomic tmp-file-then-rename to survive concurrent tool calls.
-fn reconcile_declared_state(role: &str, inferred_card: &str) {
-    const MANUAL_OVERRIDE_SECS: u64 = 60;
-    let path = format!("{}/{}-declared.json", SCAN_DIR, role);
-    let tmp = format!("{}/{}-declared.json.tmp.{}", SCAN_DIR, role, std::process::id());
+/// De-dup: skip write when prev inferred.card equals the new one. Atomic
+/// tmp-then-rename to survive concurrent tool calls.
+///
+/// #2120 predecessor mutated declared.json and enforced a manual-override
+/// window. Override logic is now a read-side concern — pulse/tile combine
+/// declared + inferred and surface divergence.
+fn write_inferred_state(role: &str, inferred_card: &str) {
+    let path = format!("{}/{}-inferred.json", SCAN_DIR, role);
+    let tmp = format!("{}/{}-inferred.json.tmp.{}", SCAN_DIR, role, std::process::id());
 
-    let content = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return, // no declared state — nothing to reconcile
-    };
-    let mut parsed: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-
-    // Respect manual-override window: if last write was recent AND not from
-    // reconciler, leave it alone. The declared file's own ts field is the
-    // authoritative source (wall-clock independent of filesystem mtime drift).
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let last_ts = parsed.get("ts").and_then(|v| v.as_u64()).unwrap_or(0);
-    let last_source = parsed.get("source").and_then(|v| v.as_str()).unwrap_or("");
-    if last_source != "reconciler" && now.saturating_sub(last_ts) < MANUAL_OVERRIDE_SECS {
-        return;
-    }
 
-    // Extract current declared card for comparison
-    let declared_card = parsed
-        .get("card")
-        .map(|v| {
-            if v.is_number() {
-                v.to_string()
-            } else {
-                v.as_str().unwrap_or("").to_string()
+    // De-dup: skip write if prev inferred.card matches. Tolerate absent or
+    // unparseable prev — any failure in read path means we write fresh.
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(prev) = serde_json::from_str::<serde_json::Value>(&content) {
+            let prev_card = prev
+                .get("card")
+                .map(|v| {
+                    if v.is_number() {
+                        v.to_string()
+                    } else {
+                        v.as_str().unwrap_or("").to_string()
+                    }
+                })
+                .unwrap_or_default();
+            if prev_card == inferred_card {
+                return;
             }
-        })
-        .unwrap_or_default();
-
-    if declared_card == inferred_card {
-        return; // already in sync, nothing to do
+        }
     }
 
-    // Flip declared.json — preserve everything else, stamp card_declared +
-    // card_inferred + source=reconciler so UIs can surface divergence.
-    let card_num: serde_json::Value = match inferred_card.parse::<i64>() {
+    let card_val: serde_json::Value = match inferred_card.parse::<i64>() {
         Ok(n) => serde_json::Value::Number(n.into()),
         Err(_) => serde_json::Value::String(inferred_card.to_string()),
     };
 
-    if let Some(obj) = parsed.as_object_mut() {
-        let prev = obj.get("card").cloned().unwrap_or(serde_json::Value::Null);
-        obj.insert("card_declared".to_string(), prev);
-        obj.insert("card_inferred".to_string(), card_num.clone());
-        obj.insert("card".to_string(), card_num);
-        obj.insert(
-            "source".to_string(),
-            serde_json::Value::String("reconciler".to_string()),
-        );
-        obj.insert(
-            "ts".to_string(),
-            serde_json::Value::Number(now.into()),
-        );
-    }
+    let json = serde_json::json!({
+        "role": role,
+        "card": card_val,
+        "ts": now,
+        "source": "inferred",
+    });
 
-    let out = match serde_json::to_string(&parsed) {
+    let out = match serde_json::to_string(&json) {
         Ok(s) => s,
         Err(_) => return,
     };

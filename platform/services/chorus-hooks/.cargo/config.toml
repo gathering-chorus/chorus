@@ -1,0 +1,8 @@
+# #2168 AC-9: chorus-hooks test suite runs single-threaded by default.
+#
+# Shared /tmp/claude-team-scan/<role>-declared.json and /tmp/pulse-latest.json
+# state across tests causes parallel contamination (pre-existing before #2168,
+# exposed during role-state source-stamping work). Until tests are refactored
+# to per-test tempdirs, serialize. Override with `cargo test -- --test-threads=N`.
+[env]
+RUST_TEST_THREADS = "1"

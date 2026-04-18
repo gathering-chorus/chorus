@@ -124,27 +124,31 @@ fn read_pulse_snapshot() -> Option<String> {
     if out.is_empty() { None } else { Some(out) }
 }
 
-/// Query the Chorus API for the N most-recent spine events.
+/// Read the last N spine events directly from chorus.log. The spine is the
+/// durable append-only event stream; no HTTP round-trip needed. Each line is
+/// a JSON object with timestamp/role/event fields.
 fn query_recent_spine(limit: usize) -> Vec<(String, String, String)> {
-    let url = format!("http://localhost:3340/api/chorus/events/recent?limit={}", limit);
-    let resp = match ureq::get(&url).timeout(std::time::Duration::from_millis(500)).call() {
-        Ok(r) => r,
+    let log_path = format!("{}/platform/logs/chorus.log",
+        crate::shared::state_paths::REPO_ROOT);
+    let content = match std::fs::read_to_string(&log_path) {
+        Ok(s) => s,
         Err(_) => return vec![],
     };
-    let body: serde_json::Value = match resp.into_json() { Ok(v) => v, Err(_) => return vec![] };
-    let items = match body.get("events").and_then(|e| e.as_array()) {
-        Some(a) => a,
-        None => return vec![],
-    };
     let mut out = Vec::new();
-    for item in items.iter().take(limit) {
-        let ts = item.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").chars().take(19).collect::<String>();
-        let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let event = item.get("event").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    for line in content.lines().rev() {
+        if out.len() >= limit { break; }
+        let v: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let ts = v.get("timestamp").and_then(|s| s.as_str()).unwrap_or("").chars().take(19).collect::<String>();
+        let role = v.get("role").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        let event = v.get("event").and_then(|s| s.as_str()).unwrap_or("").to_string();
         if !event.is_empty() {
             out.push((ts, role, event));
         }
     }
+    out.reverse(); // oldest → newest for display
     out
 }
 

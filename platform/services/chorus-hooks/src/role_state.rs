@@ -91,10 +91,10 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 
-    // Carry forward card from previous state only for building/blocked
-    // (states where the role is still working on a card).
-    // waiting/idle/observing = no active card — clear it. (#2058)
-    if card.is_empty() && (state == "building" || state == "blocked") {
+    // Carry forward card from previous state for building/blocked/waiting
+    // — role is still pointing at a card ("waiting on #N for review" is valid).
+    // idle/observing = no role-own card — clear it. (#2058, #2168 AC-8)
+    if card.is_empty() && (state == "building" || state == "blocked" || state == "waiting") {
         let prev_file = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));
         if let Ok(content) = fs::read_to_string(&prev_file) {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -122,8 +122,11 @@ pub fn run(args: &[String]) -> ExitCode {
     let session_alive = pid.is_some();
     let last_emit = last_spine_emit(role).unwrap_or_else(|| wall.clone());
 
+    // #2168 AC-7: unconditional source="declared" stamp. Semantic pair:
+    // "declared" = this file reflects a stated intent (human or session-start hook).
+    // "inferred" = reconciler-stamped from tool-call observation.
     let mut json = format!(
-        r#"{{"role":"{}","state":"{}","ts":{},"last_emit":"{}","session_alive":{},"wall_clock":"{}""#,
+        r#"{{"role":"{}","state":"{}","ts":{},"last_emit":"{}","session_alive":{},"wall_clock":"{}","source":"declared""#,
         role, state, ts, last_emit, session_alive, wall
     );
     if let Some(p) = pid {

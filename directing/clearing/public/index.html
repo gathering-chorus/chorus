@@ -793,7 +793,7 @@ function renderTiles(tiles) {
       <div class="tile tile-${t.role}${locked ? ' tile-locked' : ''}${foldRole === t.role ? ' tile-folded' : ''}" onclick="toggleLock('${t.role}')">
         <div class="tile-top">
           <span class="tile-name">${t.role.charAt(0).toUpperCase() + t.role.slice(1)}${locked ? ' ◀' : ''}</span>
-          <span class="tile-card${t.divergent ? ' divergent' : ''}" title="${t.divergent ? 'declared: #' + t.cardDeclared + ' — inferred from activity: #' + t.cardInferred : ''}">${t.divergent ? '#' + t.cardDeclared + '<span class="card-arrow">→</span>#' + t.cardInferred : (t.card || '—')}</span>
+          <span class="tile-card${t.divergent ? ' divergent' : ''}" title="${t.divergent ? 'declared: #' + t.cardDeclared + ' — inferred from activity: #' + t.cardInferred : ((t.cards && t.cards.length > 1) ? 'all WIP cards owned by ' + t.role : '')}">${t.divergent ? '#' + t.cardDeclared + '<span class="card-arrow">→</span>#' + t.cardInferred : ((t.cards && t.cards.length > 0) ? t.cards.join(' ') : (t.card || '—'))}</span>
         </div>
         <div class="tile-bottom">
           <span class="tile-state"><span class="dot" style="background:${stateColor}"></span> ${t.state}</span>

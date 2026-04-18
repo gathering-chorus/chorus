@@ -17,36 +17,50 @@ pub fn run(_args: &[String]) -> ExitCode {
     let clock_short: String = clock.chars().take(19).collect();
     pulse.insert("timestamp".into(), serde_json::Value::String(clock_short));
 
+    // #2168 AC-12 — per-section timings for profiling. Each assemble_* is
+    // wrapped so we can see where the pulse-assembly budget is spent.
+    let mut timings = serde_json::Map::new();
+    macro_rules! timed {
+        ($name:expr, $expr:expr) => {{
+            let t0 = std::time::Instant::now();
+            let v = $expr;
+            timings.insert($name.to_string(),
+                serde_json::Value::Number(serde_json::Number::from(t0.elapsed().as_millis() as u64)));
+            v
+        }};
+    }
+
     // 1. Role states — read 3 JSON files from /tmp/claude-team-scan/
-    let roles = assemble_roles();
+    let roles = timed!("roles_ms", assemble_roles());
     pulse.insert("roles".into(), roles);
 
     // 2. Spine events — last 60s from chorus.log
-    let events = assemble_recent_events();
+    let events = timed!("events_ms", assemble_recent_events());
     pulse.insert("events".into(), events);
 
     // 3. Index freshness — compute early so alerts can cross-reference
-    let freshness = assemble_freshness();
+    let freshness = timed!("freshness_ms", assemble_freshness());
     pulse.insert("index_freshness".into(), freshness.clone());
 
     // 4. Alerts — check cooldown files, filter resolved freshness alerts
-    let alerts = assemble_alerts(&freshness);
+    let alerts = timed!("alerts_ms", assemble_alerts(&freshness));
     pulse.insert("alerts".into(), alerts);
 
     // 5. Nudges — pending counts per role
-    let nudges = assemble_nudges();
+    let nudges = timed!("nudges_ms", assemble_nudges());
     pulse.insert("nudges".into(), nudges);
 
     // 6. Health — service endpoints (cached, not live)
-    let health = assemble_health();
+    let health = timed!("health_ms", assemble_health());
     pulse.insert("health".into(), health);
 
     // 7. Board — WIP from cached snapshot
-    let board = assemble_board();
+    let board = timed!("board_ms", assemble_board());
     pulse.insert("board".into(), board);
 
     let elapsed_ms = start.elapsed().as_millis();
     pulse.insert("elapsed_ms".into(), serde_json::Value::Number(serde_json::Number::from(elapsed_ms as u64)));
+    pulse.insert("timings".into(), serde_json::Value::Object(timings));
 
     let json = serde_json::Value::Object(pulse);
     let out = serde_json::to_string_pretty(&json).unwrap_or_default();
@@ -60,16 +74,54 @@ pub fn run(_args: &[String]) -> ExitCode {
 }
 
 fn assemble_roles() -> serde_json::Value {
-    // Pulse is a pure assembler — reads declared.json as observer writes it.
-    // Inference rules live in observer (#2120), not here. Keeps Pulse's
-    // "I just assemble" promise clean and inference evolvable in one place.
+    // #2168 AC-9: compose declared + inferred into one flat role entry.
+    // declared.json is primary (top-level state, card, ts, source="declared"
+    // — backward-compat for tiles.ts). inferred.json surfaces as
+    // card_inferred + divergent + inferred_stale flags.
+    // Freshness window is 5 min — enforced here, not in the observer writer.
+    const INFERRED_TTL_SECS: u64 = 300;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
     let mut roles = serde_json::Map::new();
     for role in &["wren", "silas", "kade"] {
-        let path = format!("/tmp/claude-team-scan/{}-declared.json", role);
-        let state = fs::read_to_string(&path).ok()
+        let decl_path = format!("/tmp/claude-team-scan/{}-declared.json", role);
+        let declared = fs::read_to_string(&decl_path).ok()
             .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
             .unwrap_or_else(|| serde_json::json!({"state": "unknown"}));
-        roles.insert(role.to_string(), state);
+
+        let inf_path = format!("/tmp/claude-team-scan/{}-inferred.json", role);
+        let inferred = fs::read_to_string(&inf_path).ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok());
+
+        let declared_card = declared.get("card").cloned();
+        let (card_inferred, inferred_stale) = match inferred.as_ref() {
+            Some(v) => {
+                let ts = v.get("ts").and_then(|t| t.as_u64()).unwrap_or(0);
+                let stale = now.saturating_sub(ts) > INFERRED_TTL_SECS;
+                (v.get("card").cloned(), stale)
+            }
+            None => (None, true),
+        };
+        let divergent = match (&declared_card, &card_inferred, inferred_stale) {
+            (Some(d), Some(i), false) => d != i,
+            _ => false,
+        };
+
+        let mut composed = declared.clone();
+        if let Some(obj) = composed.as_object_mut() {
+            if let Some(c) = declared_card {
+                obj.insert("card_declared".into(), c);
+            }
+            if let Some(c) = card_inferred {
+                obj.insert("card_inferred".into(), c);
+            }
+            obj.insert("divergent".into(), serde_json::Value::Bool(divergent));
+            obj.insert("inferred_stale".into(), serde_json::Value::Bool(inferred_stale));
+        }
+        roles.insert(role.to_string(), composed);
     }
     serde_json::Value::Object(roles)
 }
@@ -184,11 +236,35 @@ fn assemble_health() -> serde_json::Value {
 }
 
 fn assemble_board() -> serde_json::Value {
-    // Live query via cards CLI, fall back to cached snapshot (#1889)
+    // #2168 AC-12 — cache-primary read path. Shell-out to `cards list` is
+    // ~390ms (Vikunja round-trip), far over the sub-100ms budget. Read
+    // snapshot first; only refresh when stale. Cards CLI also writes the
+    // snapshot on its own mutations, so staleness is bounded by pulse cadence.
+    const SNAPSHOT_TTL_SECS: u64 = 10;
     let snapshot_file = "/tmp/board-wip-snapshot.json";
-    let board_ts = format!("{}/platform/scripts/cards", REPO_ROOT);
 
-    // Try live query first
+    // Fast path: fresh snapshot.
+    let snapshot_age = fs::metadata(snapshot_file).ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.elapsed().ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(u64::MAX);
+
+    if snapshot_age <= SNAPSHOT_TTL_SECS {
+        if let Ok(content) = fs::read_to_string(snapshot_file) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(cards) = v.as_array() {
+                    return serde_json::json!({
+                        "wip_count": cards.len(),
+                        "wip_cards": cards,
+                    });
+                }
+            }
+        }
+    }
+
+    // Stale path: refresh via cards CLI, update snapshot as side effect.
+    let board_ts = format!("{}/platform/scripts/cards", REPO_ROOT);
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     if let Ok(output) = std::process::Command::new("bash")
         .args(["-l", "-c", &format!("{} list 2>/dev/null", board_ts)])
@@ -201,7 +277,6 @@ fn assemble_board() -> serde_json::Value {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let wip_cards = parse_wip_list(&stdout);
             if !wip_cards.is_empty() {
-                // Update cache for other consumers
                 let _ = fs::write(snapshot_file, serde_json::to_string(&wip_cards).unwrap_or_default());
                 return serde_json::json!({
                     "wip_count": wip_cards.len(),
@@ -211,13 +286,14 @@ fn assemble_board() -> serde_json::Value {
         }
     }
 
-    // Fall back to cached snapshot
+    // Last resort: stale-but-present snapshot is better than "unknown."
     if let Ok(content) = fs::read_to_string(snapshot_file) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(cards) = v.as_array() {
                 return serde_json::json!({
                     "wip_count": cards.len(),
                     "wip_cards": cards,
+                    "snapshot_stale": true,
                 });
             }
         }
@@ -272,7 +348,29 @@ fn parse_wip_list(stdout: &str) -> Vec<serde_json::Value> {
 }
 
 fn assemble_freshness() -> serde_json::Value {
-    // Quick HTTP fetch from Chorus API — timeout 500ms
+    // #2168 AC-12 — cache-primary read path, 30s TTL. The /api/chorus/freshness
+    // endpoint itself is 259-418ms per call; freshness data updates on indexing
+    // cadence (minutes/hours), so a 30s stale snapshot is well within tolerance.
+    // Same pattern as assemble_board. Endpoint-side latency fix is out of scope.
+    const FRESHNESS_TTL_SECS: u64 = 30;
+    let snapshot_file = "/tmp/freshness-snapshot.json";
+
+    let snapshot_age = fs::metadata(snapshot_file).ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.elapsed().ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(u64::MAX);
+
+    // Fast path: fresh snapshot.
+    if snapshot_age <= FRESHNESS_TTL_SECS {
+        if let Ok(content) = fs::read_to_string(snapshot_file) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                return v;
+            }
+        }
+    }
+
+    // Stale path: refresh via endpoint, cache the summary.
     let result = std::process::Command::new("curl")
         .args(["-sf", "--max-time", "0.5", "http://localhost:3340/api/chorus/freshness"])
         .output().ok()
@@ -281,7 +379,18 @@ fn assemble_freshness() -> serde_json::Value {
 
     if let Some(v) = result {
         if let Some(summary) = v.get("summary") {
-            return summary.clone();
+            let summary_clone = summary.clone();
+            if let Ok(out) = serde_json::to_string(&summary_clone) {
+                let _ = fs::write(snapshot_file, out);
+            }
+            return summary_clone;
+        }
+    }
+
+    // Last resort: stale snapshot is better than "unavailable".
+    if let Ok(content) = fs::read_to_string(snapshot_file) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+            return v;
         }
     }
     serde_json::json!({"status": "unavailable"})
