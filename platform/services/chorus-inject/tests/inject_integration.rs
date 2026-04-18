@@ -1,12 +1,10 @@
-//! chorus-inject integration + source-gate tests. Renamed 2026-04-17 per
-//! #2155 from inject_test.rs to reflect that this file is mixed-purpose.
+//! chorus-inject integration tests. Behavior-only — exercises the real
+//! chorus-inject binary under hermetic dry-run or pure-CLI paths.
 //!
-//! Tests by type (honest naming matters — see loom-principles:quality-at-source):
-//!
-//! **Source gate** (build-time lint, NOT behavior):
-//! - `inject_source_uses_keystroke_not_do_script` — reads main.rs and
-//!   asserts it contains "keystroke" + "key code 36" + no "do script".
-//!   Fails on rename, passes on semantic bugs. Treat as clippy-lite.
+//! Source-grep lints (build-time literal-string checks) live separately in
+//! `inject_source_gate.rs`. Every file under `tests/` is either behavior
+//! or a build-time lint — never mixed. See loom-principles:quality-at-source
+//! and #2155 for the honest-label discipline.
 //!
 //! **Integration (exercises the real binary, hermetic via dry-run)** — per #2166:
 //! - `inject_delivers_to_silas` / `_to_wren` / `_to_kade` — exec
@@ -33,35 +31,7 @@ use std::process::Command;
 const INJECT_BIN: &str = env!("CARGO_BIN_EXE_chorus-inject");
 const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge";
 
-// --- AC1: keystroke + key code 36, not do script ---
-//
-// Post-#2167 the script is built in lib.rs, not main.rs. These assertions
-// still read source to lint the shipped AppleScript body.
-
-#[test]
-fn inject_source_uses_keystroke_not_do_script() {
-    let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/src/lib.rs"
-    ).expect("can't read lib.rs");
-
-    assert!(
-        source.contains("key code 36"),
-        "inject must use 'key code 36' (Return) for auto-submit"
-    );
-    assert!(
-        source.contains("keystroke"),
-        "inject must use 'keystroke' for text delivery"
-    );
-    // do script breaks auto-submit (#2029). Only comments should reference it.
-    let code_lines: Vec<&str> = source.lines()
-        .filter(|l| !l.trim_start().starts_with("//") && !l.trim_start().starts_with("//!"))
-        .collect();
-    let code_only = code_lines.join("\n");
-    assert!(
-        !code_only.contains("do script"),
-        "inject must NOT use 'do script' — breaks auto-submit (#2029)"
-    );
-}
+// AC1 (source-gate) moved to inject_source_gate.rs per #2155.
 
 // --- AC3 + AC4: delivery path per role (dry-run — hermetic, no side effects) ---
 
