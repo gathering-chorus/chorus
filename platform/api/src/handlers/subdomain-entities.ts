@@ -253,6 +253,148 @@ export const createSubdomainLog = (deps: WriteDeps, id: string, body: Record<str
 export const createSubdomainGap = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
   createSubdomainEntity(deps, id, body, createGapSpec);
 
+// --- PUT update: DELETE-then-INSERT against a caller-supplied entity URI ---
+
+export interface UpdateEntitySpec {
+  envelopeName: string;       // 'service-update'
+  typeClass: string;          // 'chorus:Service'
+  hasPredicate: string;       // 'chorus:hasService'
+  /** Same shape as CreateEntitySpec.propertyMap. */
+  propertyMap: Record<string, string>;
+}
+
+export async function updateSubdomainEntity(
+  deps: WriteDeps,
+  subdomainId: string,
+  entityId: string,
+  body: Record<string, unknown> | null | undefined,
+  spec: UpdateEntitySpec,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const start = now();
+  try {
+    const b = (body || {}) as Record<string, unknown>;
+    const label = b.label;
+    if (!label || typeof label !== 'string') {
+      return {
+        status: 400,
+        body: deps.envelope(spec.envelopeName, { error: 'Missing required field: label' }, now() - start, { error: true }),
+      };
+    }
+    const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
+    const entityUri = `https://jeffbridwell.com/chorus#${entityId}`;
+
+    const deleteQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`;
+    await deps.sparqlUpdate(deleteQuery);
+
+    const propTriples = Object.entries(spec.propertyMap)
+      .map(([bodyField, predicate]) => {
+        const v = b[bodyField];
+        if (v === null || v === undefined || v === '') return '';
+        // Numbers (e.g. records count) are serialized as strings in the triple.
+        const s = typeof v === 'string' ? v : String(v);
+        return `<${entityUri}> chorus:${predicate} "${escapeLiteral(s)}" .`;
+      })
+      .filter(Boolean)
+      .join(' ');
+
+    const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
+    await deps.sparqlUpdate(insert);
+
+    const responseData: Record<string, unknown> = {
+      subdomain: subdomainId,
+      uri: entityUri,
+      label,
+    };
+    for (const field of Object.keys(spec.propertyMap)) {
+      const v = b[field];
+      responseData[field] = v === undefined || v === null || v === '' ? null : v;
+    }
+
+    return {
+      status: 200,
+      body: deps.envelope(spec.envelopeName, responseData, now() - start),
+    };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      status: 500,
+      body: deps.envelope(spec.envelopeName, { error: message }, now() - start, { error: true }),
+    };
+  }
+}
+
+export const updateServiceSpec: UpdateEntitySpec = {
+  envelopeName: 'service-update',
+  typeClass: 'chorus:Service',
+  hasPredicate: 'chorus:hasService',
+  propertyMap: createServiceSpec.propertyMap,
+};
+export const updatePipelineSpec: UpdateEntitySpec = {
+  envelopeName: 'pipeline-update',
+  typeClass: 'chorus:Pipeline',
+  hasPredicate: 'chorus:hasPipeline',
+  propertyMap: createPipelineSpec.propertyMap,
+};
+export const updateLogSpec: UpdateEntitySpec = {
+  envelopeName: 'log-update',
+  typeClass: 'chorus:LogSource',
+  hasPredicate: 'chorus:hasLogSource',
+  propertyMap: createLogSpec.propertyMap,
+};
+export const updateGapSpec: UpdateEntitySpec = {
+  envelopeName: 'gap-update',
+  typeClass: 'chorus:Gap',
+  hasPredicate: 'chorus:hasGap',
+  propertyMap: createGapSpec.propertyMap,
+};
+export const updatePageSpec: UpdateEntitySpec = {
+  envelopeName: 'page-update',
+  typeClass: 'chorus:Page',
+  hasPredicate: 'chorus:hasPage',
+  propertyMap: {
+    route: 'pageRoute',
+    description: 'pageDescription',
+    status: 'pageStatus',
+  },
+};
+export const updateIntegrationSpec: UpdateEntitySpec = {
+  envelopeName: 'integration-update',
+  typeClass: 'chorus:Integration',
+  hasPredicate: 'chorus:hasIntegration',
+  propertyMap: {
+    source: 'integrationSource',
+    path: 'integrationPath',
+    status: 'integrationStatus',
+  },
+};
+export const updatePersistenceSpec: UpdateEntitySpec = {
+  envelopeName: 'persistence-update',
+  typeClass: 'chorus:PersistenceStore',
+  hasPredicate: 'chorus:hasPersistence',
+  propertyMap: {
+    type: 'storeType',
+    namespace: 'storeNamespace',
+    records: 'storeRecordCount',
+    status: 'storeStatus',
+  },
+};
+
+export const updateSubdomainService = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updateServiceSpec);
+export const updateSubdomainPipeline = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updatePipelineSpec);
+export const updateSubdomainLog = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updateLogSpec);
+export const updateSubdomainGap = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updateGapSpec);
+export const updateSubdomainPage = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updatePageSpec);
+export const updateSubdomainIntegration = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updateIntegrationSpec);
+export const updateSubdomainPersistence = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updatePersistenceSpec);
+
 // --- Services: chorus:hasService → {label, type, host, status, health_endpoint} ---
 
 export const servicesSpec: EntitySpec = {

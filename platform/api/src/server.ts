@@ -6010,6 +6010,13 @@ import {
   createSubdomainPipeline,
   createSubdomainLog,
   createSubdomainGap,
+  updateSubdomainService,
+  updateSubdomainPipeline,
+  updateSubdomainLog,
+  updateSubdomainGap,
+  updateSubdomainPage,
+  updateSubdomainIntegration,
+  updateSubdomainPersistence,
 } from './handlers/subdomain-entities';
 
 const subdomainWriteDeps = () => ({
@@ -6241,101 +6248,36 @@ app.put('/api/athena/subdomains/:id/contract/:entityId', async (req: Request, re
 });
 
 // PUT /api/athena/subdomains/:id/pages/:entityId (#1929)
+// PUT adapters — 7 handlers, each 3 lines (#2180).
 app.put('/api/athena/subdomains/:id/pages/:entityId', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, route, description, status } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('page-update', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const entityUri = `https://jeffbridwell.com/chorus#${req.params.entityId}`;
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`);
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a chorus:Page ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasPage <${entityUri}> . ${route ? `<${entityUri}> chorus:pageRoute "${route.replace(/"/g, '\\"')}" .` : ''} ${description ? `<${entityUri}> chorus:pageDescription "${description.replace(/"/g, '\\"')}" .` : ''} ${status ? `<${entityUri}> chorus:pageStatus "${status.replace(/"/g, '\\"')}" .` : ''} } }`);
-    res.json(athenaEnvelope('page-update', { subdomain: req.params.id, uri: entityUri, label, route: route || null, description: description || null, status: status || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('page-update', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await updateSubdomainPage(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
+  res.status(r.status).json(r.body);
 });
-
-// PUT /api/athena/subdomains/:id/integrations/:entityId (#1929)
 app.put('/api/athena/subdomains/:id/integrations/:entityId', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, source, path: dataPath, status } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('integration-update', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const entityUri = `https://jeffbridwell.com/chorus#${req.params.entityId}`;
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`);
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a chorus:Integration ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasIntegration <${entityUri}> . ${source ? `<${entityUri}> chorus:integrationSource "${source.replace(/"/g, '\\"')}" .` : ''} ${dataPath ? `<${entityUri}> chorus:integrationPath "${dataPath.replace(/"/g, '\\"')}" .` : ''} ${status ? `<${entityUri}> chorus:integrationStatus "${status.replace(/"/g, '\\"')}" .` : ''} } }`);
-    res.json(athenaEnvelope('integration-update', { subdomain: req.params.id, uri: entityUri, label, source: source || null, path: dataPath || null, status: status || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('integration-update', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await updateSubdomainIntegration(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
+  res.status(r.status).json(r.body);
 });
-
-// PUT /api/athena/subdomains/:id/persistence/:entityId (#1929)
 app.put('/api/athena/subdomains/:id/persistence/:entityId', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, type, namespace, records, status } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('persistence-update', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const entityUri = `https://jeffbridwell.com/chorus#${req.params.entityId}`;
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`);
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a chorus:PersistenceStore ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasPersistence <${entityUri}> . ${type ? `<${entityUri}> chorus:storeType "${type.replace(/"/g, '\\"')}" .` : ''} ${namespace ? `<${entityUri}> chorus:storeNamespace "${namespace.replace(/"/g, '\\"')}" .` : ''} ${records != null ? `<${entityUri}> chorus:storeRecordCount "${records}" .` : ''} ${status ? `<${entityUri}> chorus:storeStatus "${status.replace(/"/g, '\\"')}" .` : ''} } }`);
-    res.json(athenaEnvelope('persistence-update', { subdomain: req.params.id, uri: entityUri, label, type: type || null, namespace: namespace || null, records: records != null ? parseInt(records) : null, status: status || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('persistence-update', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await updateSubdomainPersistence(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
+  res.status(r.status).json(r.body);
 });
-
-// PUT /api/athena/subdomains/:id/services/:entityId (#1929)
 app.put('/api/athena/subdomains/:id/services/:entityId', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, type, host, status, health_endpoint } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('service-update', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const entityUri = `https://jeffbridwell.com/chorus#${req.params.entityId}`;
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`);
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a chorus:Service ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasService <${entityUri}> . ${type ? `<${entityUri}> chorus:serviceType "${type.replace(/"/g, '\\"')}" .` : ''} ${host ? `<${entityUri}> chorus:serviceHost "${host.replace(/"/g, '\\"')}" .` : ''} ${status ? `<${entityUri}> chorus:serviceStatus "${status.replace(/"/g, '\\"')}" .` : ''} ${health_endpoint ? `<${entityUri}> chorus:healthEndpoint "${health_endpoint.replace(/"/g, '\\"')}" .` : ''} } }`);
-    res.json(athenaEnvelope('service-update', { subdomain: req.params.id, uri: entityUri, label, type: type || null, host: host || null, status: status || null, health_endpoint: health_endpoint || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('service-update', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await updateSubdomainService(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
+  res.status(r.status).json(r.body);
 });
-
-// PUT /api/athena/subdomains/:id/pipeline/:entityId (#1929)
 app.put('/api/athena/subdomains/:id/pipeline/:entityId', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, source, harvester, icd, status, last_run } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('pipeline-update', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const entityUri = `https://jeffbridwell.com/chorus#${req.params.entityId}`;
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`);
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a chorus:Pipeline ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasPipeline <${entityUri}> . ${source ? `<${entityUri}> chorus:pipelineSource "${source.replace(/"/g, '\\"')}" .` : ''} ${harvester ? `<${entityUri}> chorus:pipelineHarvester "${harvester.replace(/"/g, '\\"')}" .` : ''} ${icd ? `<${entityUri}> chorus:pipelineICD "${icd.replace(/"/g, '\\"')}" .` : ''} ${status ? `<${entityUri}> chorus:pipelineStatus "${status.replace(/"/g, '\\"')}" .` : ''} ${last_run ? `<${entityUri}> chorus:pipelineLastRun "${last_run}" .` : ''} } }`);
-    res.json(athenaEnvelope('pipeline-update', { subdomain: req.params.id, uri: entityUri, label, source: source || null, harvester: harvester || null, icd: icd || null, status: status || null, last_run: last_run || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('pipeline-update', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await updateSubdomainPipeline(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // PUT /api/athena/subdomains/:id/logs/:entityId (#1929)
 app.put('/api/athena/subdomains/:id/logs/:entityId', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, location, retention, status } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('log-update', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const entityUri = `https://jeffbridwell.com/chorus#${req.params.entityId}`;
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`);
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a chorus:LogSource ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasLogSource <${entityUri}> . ${location ? `<${entityUri}> chorus:logSourceLocation "${location.replace(/"/g, '\\"')}" .` : ''} ${retention ? `<${entityUri}> chorus:logSourceRetention "${retention}" .` : ''} ${status ? `<${entityUri}> chorus:logSourceStatus "${status.replace(/"/g, '\\"')}" .` : ''} } }`);
-    res.json(athenaEnvelope('log-update', { subdomain: req.params.id, uri: entityUri, label, location: location || null, retention: retention || null, status: status || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('log-update', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await updateSubdomainLog(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
+  res.status(r.status).json(r.body);
 });
-
-// PUT /api/athena/subdomains/:id/gaps/:entityId (#1929)
 app.put('/api/athena/subdomains/:id/gaps/:entityId', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, type, description, severity } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('gap-update', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const entityUri = `https://jeffbridwell.com/chorus#${req.params.entityId}`;
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`);
-    await athenaSparqlUpdate(`PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a chorus:Gap ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasGap <${entityUri}> . ${type ? `<${entityUri}> chorus:gapType "${type.replace(/"/g, '\\"')}" .` : ''} ${description ? `<${entityUri}> chorus:gapDescription "${description.replace(/"/g, '\\"')}" .` : ''} ${severity ? `<${entityUri}> chorus:gapSeverity "${severity.replace(/"/g, '\\"')}" .` : ''} } }`);
-    res.json(athenaEnvelope('gap-update', { subdomain: req.params.id, uri: entityUri, label, type: type || null, description: description || null, severity: severity || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('gap-update', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await updateSubdomainGap(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // PUT /api/athena/subdomains/:id/prior-art/:entityId (#1929)

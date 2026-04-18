@@ -22,6 +22,11 @@ import {
   createSubdomainPipeline,
   createSubdomainLog,
   createSubdomainGap,
+  updateSubdomainService,
+  updateSubdomainPipeline,
+  updateSubdomainPage,
+  updateSubdomainIntegration,
+  updateSubdomainPersistence,
   type WriteDeps,
 } from '../../src/handlers/subdomain-entities';
 import type { DomainFacetDeps } from '../../src/handlers/domain-facets';
@@ -331,6 +336,143 @@ describe('createSubdomainGap', () => {
     const r = await createSubdomainGap(d, 'chorus-domain', { label: 'x' });
     const body = r.body as { data: { uri: string } };
     expect(body.data.uri).toContain('-gap-x');
+  });
+});
+
+// --- PUT update handlers ---
+
+function writeDepsMulti(): WriteDeps & { updates: string[] } {
+  const updates: string[] = [];
+  const base: WriteDeps = {
+    ...deps(),
+    sparqlUpdate: async (u: string) => { updates.push(u); },
+  };
+  return { ...base, updates };
+}
+
+describe('updateSubdomainService (PUT)', () => {
+  test('missing label returns 400', async () => {
+    const d = writeDepsMulti();
+    const r = await updateSubdomainService(d, 'chorus-domain', 'my-svc', {});
+    expect(r.status).toBe(400);
+  });
+
+  test('happy path fires DELETE then INSERT', async () => {
+    const d = writeDepsMulti();
+    const r = await updateSubdomainService(d, 'chorus-domain', 'my-svc', {
+      label: 'renamed',
+      type: 'grpc',
+    });
+    expect(r.status).toBe(200);
+    expect(d.updates.length).toBe(2);
+    expect(d.updates[0]).toContain('DELETE');
+    expect(d.updates[0]).toContain('<https://jeffbridwell.com/chorus#my-svc>');
+    expect(d.updates[1]).toContain('INSERT DATA');
+    expect(d.updates[1]).toContain('a chorus:Service');
+    expect(d.updates[1]).toContain('rdfs:label "renamed"');
+    expect(d.updates[1]).toContain('chorus:serviceType "grpc"');
+  });
+
+  test('uses entityId as-is, not slugified label', async () => {
+    const d = writeDepsMulti();
+    // entityId already set (e.g. 'chorus-domain-service-old-name'); label can
+    // change without renaming the URI.
+    const r = await updateSubdomainService(d, 'chorus-domain', 'chorus-domain-service-old-name', {
+      label: 'Completely New Label',
+    });
+    const body = r.body as { data: { uri: string } };
+    expect(body.data.uri).toBe('https://jeffbridwell.com/chorus#chorus-domain-service-old-name');
+  });
+
+  test('DELETE throw propagates to 500', async () => {
+    let call = 0;
+    const d: WriteDeps = {
+      ...deps(),
+      sparqlUpdate: async () => {
+        call++;
+        if (call === 1) throw new Error('delete failed');
+      },
+    };
+    const r = await updateSubdomainService(d, 'chorus-domain', 'x', { label: 'y' });
+    expect(r.status).toBe(500);
+    const body = r.body as { data: { error: string } };
+    expect(body.data.error).toBe('delete failed');
+  });
+
+  test('INSERT throw (after DELETE succeeds) propagates to 500', async () => {
+    let call = 0;
+    const d: WriteDeps = {
+      ...deps(),
+      sparqlUpdate: async () => {
+        call++;
+        if (call === 2) throw new Error('insert failed');
+      },
+    };
+    const r = await updateSubdomainService(d, 'chorus-domain', 'x', { label: 'y' });
+    expect(r.status).toBe(500);
+    const body = r.body as { data: { error: string } };
+    expect(body.data.error).toBe('insert failed');
+  });
+});
+
+describe('updateSubdomainPage', () => {
+  test('uses chorus:Page type and chorus:hasPage edge', async () => {
+    const d = writeDepsMulti();
+    await updateSubdomainPage(d, 'chorus-domain', 'some-page', {
+      label: 'home',
+      route: '/',
+    });
+    expect(d.updates[1]).toContain('a chorus:Page');
+    expect(d.updates[1]).toContain('chorus:hasPage');
+    expect(d.updates[1]).toContain('chorus:pageRoute "/"');
+  });
+});
+
+describe('updateSubdomainIntegration', () => {
+  test('maps body.path → chorus:integrationPath', async () => {
+    const d = writeDepsMulti();
+    await updateSubdomainIntegration(d, 'chorus-domain', 'some-int', {
+      label: 'vikunja',
+      source: 'api',
+      path: '/api/v1/projects',
+    });
+    expect(d.updates[1]).toContain('chorus:integrationSource "api"');
+    expect(d.updates[1]).toContain('chorus:integrationPath "/api/v1/projects"');
+  });
+});
+
+describe('updateSubdomainPersistence', () => {
+  test('serializes numeric records as string literal', async () => {
+    const d = writeDepsMulti();
+    await updateSubdomainPersistence(d, 'chorus-domain', 'some-store', {
+      label: 'sqlite',
+      type: 'sqlite',
+      records: 4200,
+    });
+    expect(d.updates[1]).toContain('chorus:storeRecordCount "4200"');
+  });
+
+  test('preserves records as-is in echo body', async () => {
+    const d = writeDepsMulti();
+    const r = await updateSubdomainPersistence(d, 'chorus-domain', 'some-store', {
+      label: 'sqlite',
+      records: 4200,
+    });
+    const body = r.body as { data: { records: number } };
+    expect(body.data.records).toBe(4200);
+  });
+});
+
+describe('updateSubdomainPipeline', () => {
+  test('pipeline-specific predicates land in INSERT', async () => {
+    const d = writeDepsMulti();
+    await updateSubdomainPipeline(d, 'chorus-domain', 'some-pipe', {
+      label: 'sync',
+      source: 'fuseki',
+      icd: 'ingest-v1',
+    });
+    expect(d.updates[1]).toContain('chorus:pipelineSource "fuseki"');
+    expect(d.updates[1]).toContain('chorus:pipelineICD "ingest-v1"');
   });
 });
 
