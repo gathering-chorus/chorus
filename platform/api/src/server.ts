@@ -4313,6 +4313,7 @@ import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
 import { fetchAthenaSubdomainDetail } from './handlers/athena-subdomain-detail';
+import { fetchAthenaBlastRadius } from './handlers/athena-blast-radius';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
     sparql: athenaSparqlQuery,
@@ -4414,19 +4415,11 @@ app.get('/api/athena/subdomains', async (req: Request, res: Response) => {
 
 // GET /api/athena/subdomains/:id/blast-radius — what breaks if this sub-domain fails
 app.get('/api/athena/subdomains/:id/blast-radius', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const query = loadSparql('blast-radius').replace('$URI', sdUri);
-    const result = await athenaSparqlQuery(query);
-    const consumers = result.results.bindings.map((b: any) => ({
-      uri: b.consumer.value,
-      label: b.consumerLabel?.value || b.consumer.value.split('#').pop(),
-    }));
-    res.json(athenaEnvelope('blast-radius', { subdomain: req.params.id, consumers }, Date.now() - start, { count: consumers.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('blast-radius', { error: err.message }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaBlastRadius(
+    { sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope },
+    req.params.id,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id — single sub-domain detail
@@ -6176,48 +6169,15 @@ app.post('/api/chorus/rca', (req: Request, res: Response) => {
   res.json({ ok: true, id: result.lastInsertRowid, status });
 });
 
+import { fetchChorusRcas } from './handlers/chorus-rcas';
 app.get('/api/chorus/rcas', (req: Request, res: Response) => {
   if (!rcaTableReady) { ensureRcaTable(); rcaTableReady = true; }
-
-  const statusFilter = req.query.status as string | undefined;
-  const validStatuses = ['open', 'verified', 'closed'];
-
   const db = new Database(RCA_DB_PATH, { readonly: true });
   db.pragma('journal_mode = WAL');
-
-  let query = 'SELECT * FROM rcas';
-  const params: string[] = [];
-
-  if (statusFilter && validStatuses.includes(statusFilter)) {
-    query += ' WHERE status = ?';
-    params.push(statusFilter);
-  }
-
-  query += ' ORDER BY created_at DESC';
-
-  const rows = db.prepare(query).all(...params) as Array<{
-    id: number; title: string; trigger_event: string; timeline: string;
-    root_cause: string; contributing_factors: string; corrective_actions: string;
-    cards: string; spine_events: string; status: string; created_at: string; updated_at: string;
-  }>;
-  db.close();
-
-  const results = rows.map(row => ({
-    id: row.id,
-    title: row.title,
-    trigger: row.trigger_event,
-    timeline: row.timeline,
-    root_cause: row.root_cause,
-    contributing_factors: JSON.parse(row.contributing_factors),
-    corrective_actions: JSON.parse(row.corrective_actions),
-    cards: JSON.parse(row.cards),
-    spine_events: JSON.parse(row.spine_events),
-    status: row.status,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }));
-
-  res.json({ results, total: results.length });
+  try {
+    const r = fetchChorusRcas({ db }, { status: req.query.status as string | undefined });
+    res.status(r.status).json(r.body);
+  } finally { db.close(); }
 });
 
 // --- Spine Event Service — #2109 ---
