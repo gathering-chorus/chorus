@@ -31,58 +31,40 @@ app.use('/docs', express.static(path.join(__dirname, '..', 'public')));
 app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
 
 // Borg — Hooks summary endpoint — #2099
-app.get('/api/chorus/hooks/summary', (_req, res) => {
-  try {
-    res.json(getHooksSummary());
-  } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-  }
+// Borg summary delegates — #2173 AC4: uniform run() wrapper replaces
+// per-handler try/catch boilerplate. Each adapter is one line.
+import { run } from './handlers/util';
+
+app.get('/api/chorus/hooks/summary', async (_req, res) => {
+  const r = await run(() => getHooksSummary());
+  res.status(r.status).json(r.body);
 });
 
-// Borg — Cost summary endpoint — #2099
 app.get('/api/chorus/cost/summary', async (_req, res) => {
-  try {
-    res.json(await getCostSummary());
-  } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-  }
+  const r = await run(() => getCostSummary());
+  res.status(r.status).json(r.body);
 });
 
-// Borg — Fitness Functions summary endpoint — #2099
-app.get('/api/chorus/fitness/summary', (_req, res) => {
-  try {
-    res.json(getFitnessSummary());
-  } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-  }
+app.get('/api/chorus/fitness/summary', async (_req, res) => {
+  const r = await run(() => getFitnessSummary());
+  res.status(r.status).json(r.body);
 });
 
-// Borg — Quality Service summary endpoint — #2099
-app.get('/api/chorus/quality/summary', (_req, res) => {
-  try {
-    res.json(getQualityScan());
-  } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-  }
+app.get('/api/chorus/quality/summary', async (_req, res) => {
+  const r = await run(() => getQualityScan());
+  res.status(r.status).json(r.body);
 });
 
-// Borg — Quality by domain — #2099
-app.get('/api/chorus/quality/domain/:domain', (req, res) => {
-  try {
-    res.json(getQualityByDomain(String(req.params.domain || '').toLowerCase()));
-  } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-  }
+app.get('/api/chorus/quality/domain/:domain', async (req, res) => {
+  const domain = String(req.params.domain || '').toLowerCase();
+  const r = await run(() => getQualityByDomain(domain));
+  res.status(r.status).json(r.body);
 });
 
-// Borg — Interaction Patterns summary endpoint — #2099
 app.get('/api/chorus/patterns/summary', async (req, res) => {
-  try {
-    const days = parseInt(String(req.query.days || '30'), 10) || 30;
-    res.json(await getPatternsSummary(days));
-  } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-  }
+  const days = parseInt(String(req.query.days || '30'), 10) || 30;
+  const r = await run(() => getPatternsSummary(days));
+  res.status(r.status).json(r.body);
 });
 
 // Borg — codebase topology proxy (Gathering owns the RDF source) — #2099
@@ -96,28 +78,20 @@ app.get('/api/chorus/codebase/topology', async (_req, res) => {
   res.status(r.status).json(r.body);
 });
 
-// Borg — posture strip (Jeff dashboard) — #2099
-app.get('/api/chorus/jeff/posture/strip', (req, res) => {
-  try {
-    const days = parseInt(String(req.query.days || '7'), 10) || 7;
-    const posture = String(req.query.posture || 'all');
-    const mood = String(req.query.mood || 'all');
-    res.json(getPostureStrip(days, posture, mood));
-  } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-  }
+app.get('/api/chorus/jeff/posture/strip', async (req, res) => {
+  const days = parseInt(String(req.query.days || '7'), 10) || 7;
+  const posture = String(req.query.posture || 'all');
+  const mood = String(req.query.mood || 'all');
+  const r = await run(() => getPostureStrip(days, posture, mood));
+  res.status(r.status).json(r.body);
 });
 
-// Borg — Werk activity (Jeff dashboard) — #2099
 app.get('/api/chorus/werk/activity', async (req, res) => {
-  try {
-    const hours = parseInt(String(req.query.hours || '24'), 10) || 24;
-    const role = String(req.query.role || '');
-    const event = String(req.query.event || '');
-    res.json(await getWerkActivity(hours, role, event));
-  } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-  }
+  const hours = parseInt(String(req.query.hours || '24'), 10) || 24;
+  const role = String(req.query.role || '');
+  const event = String(req.query.event || '');
+  const r = await run(() => getWerkActivity(hours, role, event));
+  res.status(r.status).json(r.body);
 });
 
 // Borg — Session replay: list — #2099
