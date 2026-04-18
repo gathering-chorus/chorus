@@ -1262,69 +1262,13 @@ app.get('/api/chorus/domain/:name/releases', async (req: Request, res: Response)
 });
 
 // GET /api/chorus/domain/:name/dependencies — upstream/downstream + shared infra (#2082)
+import { fetchChorusDomainDependencies } from './handlers/chorus-domain-dependencies';
 app.get('/api/chorus/domain/:name/dependencies', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sdId = await resolveSubdomainId(req.params.name);
-    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-
-    // Layer 1: explicit ontology edges (consumes/consumedBy)
-    const directQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?dir ?other ?label WHERE {
-  GRAPH <urn:chorus:ontology> {
-    { <${sdUri}> chorus:consumes ?other . BIND("consumes" AS ?dir) }
-    UNION
-    { ?other chorus:consumes <${sdUri}> . BIND("consumedBy" AS ?dir) }
-    OPTIONAL { ?other rdfs:label ?label }
-  }
-}`;
-    const directResult = await athenaSparqlQuery(directQuery);
-    const consumes: Array<{ id: string; label: string }> = [];
-    const consumedBy: Array<{ id: string; label: string }> = [];
-    for (const b of directResult.results.bindings) {
-      const entry = { id: b.other.value.split('#').pop() || '', label: b.label?.value || b.other.value.split('#').pop() || '' };
-      if (b.dir.value === 'consumes') consumes.push(entry);
-      else consumedBy.push(entry);
-    }
-
-    // Layer 2: shared infrastructure — domains that share borg:Environment instances
-    const sharedQuery = `PREFIX borg: <urn:borg:ontology/>
-PREFIX chorus: <https://jeffbridwell.com/chorus#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?otherDomain ?otherLabel ?envName WHERE {
-  GRAPH <urn:borg:instances> {
-    <${sdUri}> borg:usesEnvironment ?env .
-    ?otherDomain borg:usesEnvironment ?env .
-    ?env borg:environmentName ?envName .
-    FILTER(?otherDomain != <${sdUri}>)
-  }
-  OPTIONAL { GRAPH <urn:chorus:ontology> { ?otherDomain rdfs:label ?otherLabel } }
-}`;
-    const sharedResult = await athenaSparqlQuery(sharedQuery);
-    // Group by domain, collect shared environments
-    const sharedMap = new Map<string, { domain: string; label: string; sharedVia: string[] }>();
-    for (const b of sharedResult.results.bindings) {
-      const domId = b.otherDomain.value.split('#').pop() || '';
-      const label = b.otherLabel?.value || domId;
-      const env = b.envName.value;
-      if (!sharedMap.has(domId)) sharedMap.set(domId, { domain: domId, label, sharedVia: [] });
-      const entry = sharedMap.get(domId)!;
-      if (!entry.sharedVia.includes(env)) entry.sharedVia.push(env);
-    }
-    const shared = Array.from(sharedMap.values());
-
-    res.json(athenaEnvelope('domain-dependencies', {
-      subdomain: sdId,
-      direct: { consumes, consumedBy },
-      shared,
-    }, Date.now() - start, { direct_count: consumes.length + consumedBy.length, shared_count: shared.length }));
-  } catch (err: any) {
-    res.json(athenaEnvelope('domain-dependencies', {
-      subdomain: req.params.name,
-      direct: { consumes: [], consumedBy: [] },
-      shared: [],
-    }, Date.now() - start, { direct_count: 0, shared_count: 0 }));
-  }
+  const r = await fetchChorusDomainDependencies(
+    { sparql: athenaSparqlQuery, resolveSubdomainId, envelope: athenaEnvelope },
+    req.params.name,
+  );
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/domain/:name/infra — borg environments for a domain (#2080)
