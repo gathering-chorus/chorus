@@ -18,6 +18,11 @@ import {
   fetchSubdomainEntities,
   servicesSpec,
   pipelineSpec,
+  createSubdomainService,
+  createSubdomainPipeline,
+  createSubdomainLog,
+  createSubdomainGap,
+  type WriteDeps,
 } from '../../src/handlers/subdomain-entities';
 import type { DomainFacetDeps } from '../../src/handlers/domain-facets';
 import type { SparqlResult } from '../../src/handlers/athena-health';
@@ -185,6 +190,147 @@ describe('per-kind predicate wiring', () => {
     await fetchSubdomainGapsList(d, 'x');
     expect(lastQuery).toContain('chorus:hasGap');
     expect(lastQuery).toContain('?gap');
+  });
+});
+
+// --- POST create handlers ---
+
+function writeDeps(overrides: Partial<WriteDeps> = {}): WriteDeps & { lastUpdate: { value: string } } {
+  const lastUpdate = { value: '' };
+  const base: WriteDeps = {
+    ...deps(),
+    sparqlUpdate: async (u: string) => { lastUpdate.value = u; },
+    ...overrides,
+  };
+  return { ...base, lastUpdate };
+}
+
+describe('createSubdomainService', () => {
+  test('missing label returns 400', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainService(d, 'chorus-domain', {});
+    expect(r.status).toBe(400);
+    const body = r.body as { data: { error: string } };
+    expect(body.data.error).toContain('Missing required field: label');
+  });
+
+  test('null body treated as missing label', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainService(d, 'chorus-domain', null);
+    expect(r.status).toBe(400);
+  });
+
+  test('happy path returns 200 with uri + echo of props', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainService(d, 'chorus-domain', {
+      label: 'chorus-api',
+      type: 'http',
+      host: 'localhost',
+      status: 'healthy',
+      health_endpoint: '/health',
+    });
+    expect(r.status).toBe(200);
+    const body = r.body as { data: { uri: string; label: string; type: string; host: string } };
+    expect(body.data.uri).toBe('https://jeffbridwell.com/chorus#chorus-domain-service-chorus-api');
+    expect(body.data.label).toBe('chorus-api');
+    expect(body.data.type).toBe('http');
+    expect(body.data.host).toBe('localhost');
+  });
+
+  test('slugifies label into URI (spaces → hyphens, lowercased)', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainService(d, 'chorus-domain', { label: 'My Fancy Service' });
+    const body = r.body as { data: { uri: string } };
+    expect(body.data.uri).toBe('https://jeffbridwell.com/chorus#chorus-domain-service-my-fancy-service');
+  });
+
+  test('escapes double quotes in label to avoid SPARQL injection', async () => {
+    const d = writeDeps();
+    await createSubdomainService(d, 'chorus-domain', { label: 'evil "quoted" name' });
+    expect(d.lastUpdate.value).toContain('rdfs:label "evil \\"quoted\\" name"');
+  });
+
+  test('omits property triples for undefined fields', async () => {
+    const d = writeDeps();
+    await createSubdomainService(d, 'chorus-domain', { label: 'bare' });
+    expect(d.lastUpdate.value).not.toContain('chorus:serviceType');
+    expect(d.lastUpdate.value).not.toContain('chorus:serviceHost');
+    expect(d.lastUpdate.value).toContain('chorus:hasService');
+  });
+
+  test('update throw maps to 500 with error body', async () => {
+    const d = writeDeps({
+      sparqlUpdate: async () => { throw new Error('fuseki write failed'); },
+    });
+    const r = await createSubdomainService(d, 'chorus-domain', { label: 'x' });
+    expect(r.status).toBe(500);
+    const body = r.body as { data: { error: string } };
+    expect(body.data.error).toBe('fuseki write failed');
+  });
+
+  test('update contains chorus:Service type and hasService edge', async () => {
+    const d = writeDeps();
+    await createSubdomainService(d, 'chorus-domain', { label: 'svc' });
+    expect(d.lastUpdate.value).toContain('a chorus:Service');
+    expect(d.lastUpdate.value).toContain('chorus:hasService');
+  });
+});
+
+describe('createSubdomainPipeline', () => {
+  test('includes chorus:Pipeline type + pipeline-specific predicates', async () => {
+    const d = writeDeps();
+    await createSubdomainPipeline(d, 'chorus-domain', {
+      label: 'kg sync',
+      source: 'fuseki',
+      harvester: 'nifi',
+    });
+    expect(d.lastUpdate.value).toContain('a chorus:Pipeline');
+    expect(d.lastUpdate.value).toContain('chorus:hasPipeline');
+    expect(d.lastUpdate.value).toContain('chorus:pipelineSource "fuseki"');
+    expect(d.lastUpdate.value).toContain('chorus:pipelineHarvester "nifi"');
+  });
+
+  test('missing label returns 400', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainPipeline(d, 'chorus-domain', {});
+    expect(r.status).toBe(400);
+  });
+});
+
+describe('createSubdomainLog', () => {
+  test('includes chorus:LogSource type + log-specific predicates', async () => {
+    const d = writeDeps();
+    await createSubdomainLog(d, 'chorus-domain', {
+      label: 'api-log',
+      location: '/var/log/chorus-api',
+      retention: '7d',
+    });
+    expect(d.lastUpdate.value).toContain('a chorus:LogSource');
+    expect(d.lastUpdate.value).toContain('chorus:hasLogSource');
+    expect(d.lastUpdate.value).toContain('chorus:logSourceLocation "/var/log/chorus-api"');
+    expect(d.lastUpdate.value).toContain('chorus:logSourceRetention "7d"');
+  });
+});
+
+describe('createSubdomainGap', () => {
+  test('includes chorus:Gap type + gap-specific predicates', async () => {
+    const d = writeDeps();
+    await createSubdomainGap(d, 'chorus-domain', {
+      label: 'no e2e tests',
+      severity: 'high',
+      description: 'Missing end-to-end test coverage',
+    });
+    expect(d.lastUpdate.value).toContain('a chorus:Gap');
+    expect(d.lastUpdate.value).toContain('chorus:hasGap');
+    expect(d.lastUpdate.value).toContain('chorus:gapSeverity "high"');
+    expect(d.lastUpdate.value).toContain('chorus:gapDescription "Missing end-to-end test coverage"');
+  });
+
+  test('URI segment is "gap" (not "gaps")', async () => {
+    const d = writeDeps();
+    const r = await createSubdomainGap(d, 'chorus-domain', { label: 'x' });
+    const body = r.body as { data: { uri: string } };
+    expect(body.data.uri).toContain('-gap-x');
   });
 });
 

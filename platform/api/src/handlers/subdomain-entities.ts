@@ -109,6 +109,150 @@ export async function fetchSubdomainEntities(
   }
 }
 
+// --- POST create: shared write-path ---
+//
+// All four entity POSTs share: validate `label`, mint URI from label slug,
+// INSERT {entity type, label, hasX edge from subdomain, optional props}
+// into urn:chorus:instances. Spec maps request-body fields to chorus: predicates.
+
+export interface CreateEntitySpec {
+  envelopeName: string;          // 'subdomain-service-create'
+  uriSegment: string;            // 'service' — used in URI slug and type name
+  typeClass: string;             // 'chorus:Service'
+  hasPredicate: string;          // 'chorus:hasService'
+  /** Map of request-body-field → chorus: predicate (without prefix). */
+  propertyMap: Record<string, string>;
+}
+
+export interface WriteDeps extends DomainFacetDeps {
+  sparqlUpdate: (update: string) => Promise<void>;
+}
+
+function escapeLiteral(s: string): string {
+  return s.replace(/"/g, '\\"');
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, '-');
+}
+
+export async function createSubdomainEntity(
+  deps: WriteDeps,
+  subdomainId: string,
+  body: Record<string, unknown> | null | undefined,
+  spec: CreateEntitySpec,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const start = now();
+  try {
+    const b = (body || {}) as Record<string, string | undefined>;
+    const label = b.label;
+    if (!label || typeof label !== 'string') {
+      return {
+        status: 400,
+        body: deps.envelope(spec.envelopeName, { error: 'Missing required field: label' }, now() - start, { error: true }),
+      };
+    }
+    const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
+    const entityId = `${subdomainId}-${spec.uriSegment}-${slugify(label)}`;
+    const entityUri = `https://jeffbridwell.com/chorus#${entityId}`;
+
+    const propTriples = Object.entries(spec.propertyMap)
+      .map(([bodyField, predicate]) => {
+        const v = b[bodyField];
+        return typeof v === 'string' && v.length > 0
+          ? `<${entityUri}> chorus:${predicate} "${escapeLiteral(v)}" .`
+          : '';
+      })
+      .filter(Boolean)
+      .join(' ');
+
+    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
+
+    await deps.sparqlUpdate(update);
+
+    const responseData: Record<string, unknown> = {
+      subdomain: subdomainId,
+      uri: entityUri,
+      label,
+    };
+    for (const field of Object.keys(spec.propertyMap)) {
+      responseData[field] = b[field] || null;
+    }
+
+    return {
+      status: 200,
+      body: deps.envelope(spec.envelopeName, responseData, now() - start),
+    };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      status: 500,
+      body: deps.envelope(spec.envelopeName, { error: message }, now() - start, { error: true }),
+    };
+  }
+}
+
+export const createServiceSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-service-create',
+  uriSegment: 'service',
+  typeClass: 'chorus:Service',
+  hasPredicate: 'chorus:hasService',
+  propertyMap: {
+    type: 'serviceType',
+    host: 'serviceHost',
+    status: 'serviceStatus',
+    health_endpoint: 'healthEndpoint',
+  },
+};
+
+export const createPipelineSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-pipeline-create',
+  uriSegment: 'pipeline',
+  typeClass: 'chorus:Pipeline',
+  hasPredicate: 'chorus:hasPipeline',
+  propertyMap: {
+    source: 'pipelineSource',
+    harvester: 'pipelineHarvester',
+    icd: 'pipelineICD',
+    status: 'pipelineStatus',
+    last_run: 'pipelineLastRun',
+  },
+};
+
+export const createLogSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-log-create',
+  uriSegment: 'log',
+  typeClass: 'chorus:LogSource',
+  hasPredicate: 'chorus:hasLogSource',
+  propertyMap: {
+    location: 'logSourceLocation',
+    retention: 'logSourceRetention',
+    status: 'logSourceStatus',
+  },
+};
+
+export const createGapSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-gap-create',
+  uriSegment: 'gap',
+  typeClass: 'chorus:Gap',
+  hasPredicate: 'chorus:hasGap',
+  propertyMap: {
+    type: 'gapType',
+    description: 'gapDescription',
+    severity: 'gapSeverity',
+  },
+};
+
+export const createSubdomainService = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createServiceSpec);
+export const createSubdomainPipeline = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createPipelineSpec);
+export const createSubdomainLog = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createLogSpec);
+export const createSubdomainGap = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createGapSpec);
+
 // --- Services: chorus:hasService → {label, type, host, status, health_endpoint} ---
 
 export const servicesSpec: EntitySpec = {

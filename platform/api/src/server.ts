@@ -6006,7 +6006,16 @@ import {
   fetchSubdomainPipelineList,
   fetchSubdomainLogsList,
   fetchSubdomainGapsList,
+  createSubdomainService,
+  createSubdomainPipeline,
+  createSubdomainLog,
+  createSubdomainGap,
 } from './handlers/subdomain-entities';
+
+const subdomainWriteDeps = () => ({
+  ...domainFacetDeps(),
+  sparqlUpdate: athenaSparqlUpdate,
+});
 
 app.get('/api/athena/subdomains/:id/services', async (req: Request, res: Response) => {
   const r = await fetchSubdomainServicesList(domainFacetDeps(), req.params.id);
@@ -6015,17 +6024,8 @@ app.get('/api/athena/subdomains/:id/services', async (req: Request, res: Respons
 
 // POST /api/athena/subdomains/:id/services — add service to subdomain (#1924)
 app.post('/api/athena/subdomains/:id/services', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, type, host, status, health_endpoint } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('subdomain-service-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const svcId = `${req.params.id}-service-${label.toLowerCase().replace(/\s+/g, '-')}`;
-    const svcUri = `https://jeffbridwell.com/chorus#${svcId}`;
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${svcUri}> a chorus:Service ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasService <${svcUri}> . ${type ? `<${svcUri}> chorus:serviceType "${type.replace(/"/g, '\\"')}" .` : ''} ${host ? `<${svcUri}> chorus:serviceHost "${host.replace(/"/g, '\\"')}" .` : ''} ${status ? `<${svcUri}> chorus:serviceStatus "${status.replace(/"/g, '\\"')}" .` : ''} ${health_endpoint ? `<${svcUri}> chorus:healthEndpoint "${health_endpoint.replace(/"/g, '\\"')}" .` : ''} } }`;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-service-create', { subdomain: req.params.id, uri: svcUri, label, type: type || null, host: host || null, status: status || null, health_endpoint: health_endpoint || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('subdomain-service-create', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await createSubdomainService(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/pipeline — data pipeline for this subdomain (#1925)
@@ -6036,17 +6036,8 @@ app.get('/api/athena/subdomains/:id/pipeline', async (req: Request, res: Respons
 
 // POST /api/athena/subdomains/:id/pipeline — add pipeline to subdomain (#1925)
 app.post('/api/athena/subdomains/:id/pipeline', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, source, harvester, icd, status, last_run } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('subdomain-pipeline-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const pipeId = `${req.params.id}-pipeline-${label.toLowerCase().replace(/\s+/g, '-')}`;
-    const pipeUri = `https://jeffbridwell.com/chorus#${pipeId}`;
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${pipeUri}> a chorus:Pipeline ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasPipeline <${pipeUri}> . ${source ? `<${pipeUri}> chorus:pipelineSource "${source.replace(/"/g, '\\"')}" .` : ''} ${harvester ? `<${pipeUri}> chorus:pipelineHarvester "${harvester.replace(/"/g, '\\"')}" .` : ''} ${icd ? `<${pipeUri}> chorus:pipelineICD "${icd.replace(/"/g, '\\"')}" .` : ''} ${status ? `<${pipeUri}> chorus:pipelineStatus "${status.replace(/"/g, '\\"')}" .` : ''} ${last_run ? `<${pipeUri}> chorus:pipelineLastRun "${last_run}" .` : ''} } }`;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-pipeline-create', { subdomain: req.params.id, uri: pipeUri, label, source: source || null, harvester: harvester || null, icd: icd || null, status: status || null, last_run: last_run || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('subdomain-pipeline-create', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await createSubdomainPipeline(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/logs — log sources for this subdomain (#1926)
@@ -6057,17 +6048,8 @@ app.get('/api/athena/subdomains/:id/logs', async (req: Request, res: Response) =
 
 // POST /api/athena/subdomains/:id/logs — add log source to subdomain (#1926)
 app.post('/api/athena/subdomains/:id/logs', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, location, retention, status } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('subdomain-log-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const logId = `${req.params.id}-log-${label.toLowerCase().replace(/\s+/g, '-')}`;
-    const logUri = `https://jeffbridwell.com/chorus#${logId}`;
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${logUri}> a chorus:LogSource ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasLogSource <${logUri}> . ${location ? `<${logUri}> chorus:logSourceLocation "${location.replace(/"/g, '\\"')}" .` : ''} ${retention ? `<${logUri}> chorus:logSourceRetention "${retention}" .` : ''} ${status ? `<${logUri}> chorus:logSourceStatus "${status.replace(/"/g, '\\"')}" .` : ''} } }`;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-log-create', { subdomain: req.params.id, uri: logUri, label, location: location || null, retention: retention || null, status: status || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('subdomain-log-create', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await createSubdomainLog(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/gaps — known gaps for this subdomain (#1926)
@@ -6078,17 +6060,8 @@ app.get('/api/athena/subdomains/:id/gaps', async (req: Request, res: Response) =
 
 // POST /api/athena/subdomains/:id/gaps — add gap to subdomain (#1926)
 app.post('/api/athena/subdomains/:id/gaps', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, type, description, severity } = req.body || {};
-    if (!label) return res.status(400).json(athenaEnvelope('subdomain-gap-create', { error: 'Missing required field: label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const gapId = `${req.params.id}-gap-${label.toLowerCase().replace(/\s+/g, '-')}`;
-    const gapUri = `https://jeffbridwell.com/chorus#${gapId}`;
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${gapUri}> a chorus:Gap ; rdfs:label "${label.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasGap <${gapUri}> . ${type ? `<${gapUri}> chorus:gapType "${type.replace(/"/g, '\\"')}" .` : ''} ${description ? `<${gapUri}> chorus:gapDescription "${description.replace(/"/g, '\\"')}" .` : ''} ${severity ? `<${gapUri}> chorus:gapSeverity "${severity.replace(/"/g, '\\"')}" .` : ''} } }`;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-gap-create', { subdomain: req.params.id, uri: gapUri, label, type: type || null, description: description || null, severity: severity || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('subdomain-gap-create', { error: err.message }, Date.now() - start, { error: true })); }
+  const r = await createSubdomainGap(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subdomains/:id/prior-art — prior art for this subdomain (#1907)
