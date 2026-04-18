@@ -1,0 +1,21 @@
+{
+  "domain": "alpha",
+  "product": "demo",
+  "step": "harvesting",
+  "description": "Fixture domain.",
+  "sections": {},
+  "cards": {
+    "total": 0,
+    "wip": 0,
+    "blocked": 0,
+    "items": []
+  },
+  "completeness": {
+    "percentage": 50,
+    "present": [],
+    "missing": [],
+    "lifecycle": {}
+  },
+  "hasIcd": false,
+  "icdEndpoint": "/api/icd/domains/alpha"
+}
