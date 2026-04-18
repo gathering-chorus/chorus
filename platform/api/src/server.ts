@@ -4695,15 +4695,16 @@ function athenaEnvelope(queryName: string, data: any, durationMs: number, extra:
 }
 
 // GET /api/athena/health — discovery endpoint, lists available queries
+// Extracted to handlers/athena-health.ts (#2173 AC4). SPARQL client + query
+// loader are injected so unit tests run without Fuseki.
+import { fetchAthenaHealth } from './handlers/athena-health';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const result = await athenaSparqlQuery(loadSparql('health'));
-    const count = parseInt(result.results.bindings[0]?.count?.value || '0', 10);
-    res.json(athenaEnvelope('health', { status: 'ok', tripleCount: count, endpoint: ATHENA_SPARQL, queries: ATHENA_QUERIES }, Date.now() - start));
-  } catch (err: any) {
-    res.status(503).json(athenaEnvelope('health', { status: 'error', message: err.message, queries: ATHENA_QUERIES }, Date.now() - start, { error: true }));
-  }
+  const r = await fetchAthenaHealth({
+    sparql: athenaSparqlQuery,
+    loadQuery: loadSparql,
+    envelope: athenaEnvelope,
+  });
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/products — list all products
