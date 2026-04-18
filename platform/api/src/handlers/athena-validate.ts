@@ -6,7 +6,7 @@
  * treated as violations or warnings depending on configured severity.
  *
  * Dependencies injected explicitly so the handler is testable without a
- * SPARQL endpoint:
+ * SPARQL endpoint / live HTTP:
  *   - sparql: runs a SPARQL SELECT query, returns bindings
  *   - now:      returns current epoch ms (default Date.now)
  *   - timestamp: returns wall-clock string for the response envelope
@@ -28,12 +28,6 @@ export interface SparqlNodeBinding {
 
 export interface SparqlBindingsResult {
   results: { bindings: SparqlNodeBinding[] };
-}
-
-export interface AthenaValidateDeps {
-  sparql: (query: string) => Promise<SparqlBindingsResult>;
-  now?: () => number;
-  timestamp?: () => string;
 }
 
 interface Check {
@@ -108,15 +102,20 @@ const CHECKS: Check[] = [
   },
 ];
 
+export interface AthenaValidateDeps {
+  sparql: (query: string) => Promise<SparqlBindingsResult>;
+  now?: () => number;
+  timestamp?: () => string;
+}
+
 export async function fetchAthenaValidate(deps: AthenaValidateDeps): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const timestamp = deps.timestamp ?? (() => new Date().toISOString());
   const start = now();
 
-  const violations: Entry[] = [];
-  const warnings: Entry[] = [];
-
   try {
+    const violations: Entry[] = [];
+    const warnings: Entry[] = [];
     for (const check of CHECKS) {
       const result = await deps.sparql(check.query);
       for (const b of result.results.bindings) {

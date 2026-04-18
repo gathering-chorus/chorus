@@ -26,13 +26,6 @@ export interface SparqlResult {
   results: { bindings: SparqlBinding[] };
 }
 
-export interface AthenaHealthDeps {
-  sparql: (query: string) => Promise<SparqlResult>;
-  loadQuery: (name: string) => string;
-  now?: () => number;
-  envelope?: (name: string, data: unknown, durationMs: number, extra?: Record<string, unknown>) => unknown;
-}
-
 const DEFAULT_ENDPOINT = 'http://localhost:3030/pods/sparql';
 
 const DEFAULT_QUERIES = [
@@ -51,6 +44,13 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
     _meta: { source: 'athena', query_name: name, duration_ms: durationMs, ...extra },
     data,
   };
+}
+
+export interface AthenaHealthDeps {
+  sparql: (query: string) => Promise<SparqlResult>;
+  loadQuery: (name: string) => string;
+  now?: () => number;
+  envelope?: (name: string, data: unknown, durationMs: number, extra?: Record<string, unknown>) => unknown;
 }
 
 export async function fetchAthenaHealth(deps: AthenaHealthDeps): Promise<FetchResult> {
