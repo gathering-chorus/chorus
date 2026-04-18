@@ -821,139 +821,39 @@ app.get('/api/chorus/conversation', (req: Request, res: Response) => {
 // --- GET /api/chorus/card-story/:id ---
 // Memory domain — join six data sources into a card timeline. #1947
 
+import { fetchChorusCardStory, type CardMeta, type NudgeMessage } from './handlers/chorus-card-story';
 app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
-  const cardId = parseInt(req.params.id, 10);
-  if (isNaN(cardId)) {
-    res.status(400).json({ error: 'Invalid card ID' });
-    return;
-  }
-
-  const VIKUNJA_URL = 'http://localhost:3456';
-  const VIKUNJA_TOKEN = process.env.VIKUNJA_TOKEN || '';
+  const cardsScript = path.resolve(__dirname, '../../scripts/cards');
   const MESSAGING_URL = 'http://localhost:3475';
+  const logPath = path.resolve(__dirname, '../../logs/chorus.log');
 
-  const timeline: Array<{ timestamp: string; source: string; text: string; role?: string; event?: string }> = [];
-  let title = '';
-  let owner = '';
-  let status = '';
-  let domain = '';
-
-  // 1. Card metadata + comments via cards CLI (boundary: never bypass to Vikunja)
-  try {
-    const cardsScript = path.resolve(__dirname, '../../scripts/cards');
-    const { stdout: cardJson } = await execAsync(
-      `bash ${cardsScript} view ${cardId} --json 2>/dev/null`,
-      { encoding: 'utf-8', timeout: 10000, env: { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } }
-    );
-    const card = JSON.parse(cardJson);
-
-    title = card.title || '';
-    owner = (card.owner || '').toLowerCase();
-    status = card.status || '';
-
-    // Extract domain from domains array
-    for (const d of card.domains || []) {
-      const m = d.match(/domain:(\w+)/i);
-      if (m) domain = m[1];
-    }
-
-    // Add comments to timeline
-    for (const c of card.comments || []) {
-      if (c.text && c.text.length > 5) {
-        timeline.push({
-          timestamp: c.created || card.created || '',
-          source: 'vikunja',
-          text: c.text.slice(0, 500),
-          role: c.author,
-        });
-      }
-    }
-  } catch (e: any) {
-    // Log the error so we can diagnose LaunchAgent PATH issues
-    console.error(`[card-story] cards CLI failed for #${cardId}: ${e.message?.slice(0, 200)}`);
-  }
-
-  // 2. Chorus index mentions
   let db: Database.Database | null = null;
+  try { db = getDb(); } catch { /* db optional */ }
+
   try {
-    db = getDb();
-    const mentions = db.prepare(`
-      SELECT author, content, timestamp, role
-      FROM messages
-      WHERE content LIKE ?
-      ORDER BY timestamp ASC
-      LIMIT 50
-    `).all(`%#${cardId}%`) as Array<{ author: string; content: string; timestamp: string; role: string }>;
-
-    for (const m of mentions) {
-      const text = m.content.trim();
-      if (text.startsWith('<system-reminder>')) continue;
-      if (text.startsWith('Base directory for this skill:')) continue;
-      if (text.length < 10) continue;
-      timeline.push({
-        timestamp: m.timestamp,
-        source: 'chorus-index',
-        text: text.slice(0, 500),
-        role: m.author === 'user' ? 'jeff' : m.role,
-      });
-    }
-  } catch { /* db not available */ }
-  finally { if (db) db.close(); }
-
-  // 3. Spine events from chorus.log
-  try {
-    const logPath = path.resolve(__dirname, '../../logs/chorus.log');
-    if (fs.existsSync(logPath)) {
-      const lines = fs.readFileSync(logPath, 'utf-8').split('\n');
-      for (const line of lines) {
-        if (!line.includes(`card=${cardId}`) && !line.includes(`"card":"${cardId}"`)) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.event && parsed.event.startsWith('card.')) {
-            timeline.push({
-              timestamp: parsed.timestamp,
-              source: 'spine',
-              text: `${parsed.event}`,
-              role: parsed.role,
-              event: parsed.event,
-            });
-          }
-        } catch { /* skip malformed lines */ }
-      }
-    }
-  } catch { /* log not readable */ }
-
-  // 4. Nudges referencing this card
-  try {
-    const nudgeResp = await fetch(`${MESSAGING_URL}/api/messages?limit=100`);
-    if (nudgeResp.ok) {
-      const messages = await nudgeResp.json() as Array<{ from: string; to: string; text: string; timestamp: string }>;
-      for (const msg of messages) {
-        if (msg.text && msg.text.includes(`#${cardId}`)) {
-          timeline.push({
-            timestamp: msg.timestamp,
-            source: 'nudge',
-            text: msg.text.slice(0, 500),
-            role: msg.from,
-          });
-        }
-      }
-    }
-  } catch { /* messaging tier not available */ }
-
-  // Sort timeline chronologically
-  timeline.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
-  res.json({
-    card: cardId,
-    title,
-    owner,
-    status,
-    domain,
-    timeline,
-    sources: [...new Set(timeline.map(e => e.source))],
-    count: timeline.length,
-  });
+    const r = await fetchChorusCardStory(
+      {
+        loadCard: async (cardId) => {
+          const { stdout } = await execAsync(
+            `bash ${cardsScript} view ${cardId} --json 2>/dev/null`,
+            { encoding: 'utf-8', timeout: 10000, env: { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } },
+          );
+          return JSON.parse(stdout) as CardMeta;
+        },
+        db,
+        readLog: () => fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf-8') : null,
+        loadNudges: async () => {
+          const resp = await fetch(`${MESSAGING_URL}/api/messages?limit=100`);
+          if (!resp.ok) return [];
+          return (await resp.json()) as NudgeMessage[];
+        },
+      },
+      req.params.id,
+    );
+    res.status(r.status).json(r.body);
+  } finally {
+    if (db) db.close();
+  }
 });
 
 // --- GET /api/chorus/domain-story/:domain ---
