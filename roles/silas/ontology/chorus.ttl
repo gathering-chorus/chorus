@@ -754,6 +754,12 @@ chorus:clearing-product a chorus:SubProduct ;
     rdfs:comment "Multi-party real-time alignment — browser chat with Jeff and all three AI roles." ;
     chorus:ownedBy chorus:wren .
 
+chorus:quality-product a chorus:SubProduct ;
+    rdfs:label "Quality" ;
+    rdfs:comment "Horizontal quality discipline — test pyramid, coverage measurement, gates, test-value policy. Defines what 'works' means for Chorus and enforces it at the right moments. Measurement + model; enforcement is other sub-products consuming it (assembler-not-generator shape, same as Pulse and Roles)." ;
+    chorus:ownedBy chorus:kade ;
+    chorus:dependsOn chorus:gates-service, chorus:spine-service .
+
 chorus:werk-product a chorus:SubProduct ;
     rdfs:label "Werk" ;
     rdfs:comment "Workflow engine — sequences decisions into steps across roles. IS the spine." ;
@@ -1234,7 +1240,7 @@ chorus:chorusProduct chorus:provides chorus:observability-domain, chorus:infrast
 # DEC-2090 consolidation: 10 → 6 subproducts. Strays absorbed as capabilities.
 chorus:chorusProduct chorus:hasSubProduct chorus:loom, chorus:clearing-product,
                                          chorus:werk-product, chorus:convergence-product,
-                                         chorus:athena-product .
+                                         chorus:athena-product, chorus:quality-product .
 
 # Borg heralds grouped as single subdomain (DEC-2090)
 chorus:borgProduct chorus:hasDomain chorus:heralds-domain .
@@ -1507,6 +1513,10 @@ chorus:derivedFrom a owl:ObjectProperty ;
     rdfs:comment "A practice or policy traces back to the principle(s) that motivate it." ;
     rdfs:domain chorus:Practice, chorus:Policy ;
     rdfs:range chorus:Principle .
+
+chorus:dependsOn a owl:ObjectProperty ;
+    rdfs:label "depends on" ;
+    rdfs:comment "A sub-product or sub-domain depends on another for its function — if the target is unavailable or broken, the source is degraded. Distinct from chorus:consumes (read-only data flow). Dependency implies lifecycle coupling." .
 
 # --- Policies (5 from existing CLAUDE.md + team-architecture.md rules; binary, operationally enforced) ---
 
