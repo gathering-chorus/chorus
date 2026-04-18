@@ -1,0 +1,73 @@
+<https://jeffbridwell.com/chorus#writes>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "Service writes to a Persistence resource. Paired with chorus:reads to render service-data flow in the envelope Athena block." , "A service writes state to a persistence or emits events consumed by another service. Distinguishes data production from data consumption at the service level. #2178.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                <https://jeffbridwell.com/chorus#Service>;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                <https://jeffbridwell.com/chorus#Persistence> .
+
+<https://jeffbridwell.com/chorus#reads>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "Service reads from a Persistence resource (database, file, cache). Used in /api/chorus/domain/:name itemDetails to surface data dependencies." , "A service reads state from a persistence or another service. Read-only, no mutation. #2178 — turns the Athena envelope from labels into a graph an agent can traverse.";
+        <http://www.w3.org/2000/01/rdf-schema#domain>
+                <https://jeffbridwell.com/chorus#Service>;
+        <http://www.w3.org/2000/01/rdf-schema#range>
+                <https://jeffbridwell.com/chorus#Persistence> .
+
+<https://jeffbridwell.com/chorus#chorus-domain-store-fuseki-tdb2-(urn:chorus:ontology,-urn:chorus:instances)>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "Triple store backing the chorus + borg ontologies. Ontology graph (types, predicates, SHACL shapes) and instances graph (Service, Persistence, Scenario data). SPARQL endpoint at localhost:3030/pods/sparql." .
+
+<https://jeffbridwell.com/chorus#chorus-domain-store-pulse-latest.json>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "/tmp/pulse-latest.json — assembled team state. Written by pulse subcommand, read by context_inject hook, tiles.ts, gemba scripts, and any consumer asking 'what is role X doing.'" .
+
+<https://jeffbridwell.com/chorus#chorus-domain-store-role-inferred.json>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "/tmp/claude-team-scan/<role>-inferred.json — reconciler-inferred role state from tool-call observations. Written ONLY by observer.rs write_inferred_state. source='inferred' on every write (#2168)." .
+
+<https://jeffbridwell.com/chorus#chorus-domain-store-role-declared.json>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "/tmp/claude-team-scan/<role>-declared.json — human-stated role state. Written ONLY by role_state.rs apply_state. source='declared' on every write (#2168)." .
+
+<https://jeffbridwell.com/chorus#chorus-domain-store-chorus-index-(sqlite-fts)>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "Full-text search index over team messages (Slack, Claude sessions, spine events). Powers /api/chorus/search — FTS5 tokenizer with snippet + bm25 ranking. Refreshed by scheduled reindex every 15min." .
+
+<https://jeffbridwell.com/chorus#chorus-domain-service-clearing>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "Multi-role browser chat at :3470. Renders role tiles (pulse-backed), message stream, domain sidebar. Jeff's primary view into team state.";
+        <https://jeffbridwell.com/chorus#reads>
+                <https://jeffbridwell.com/chorus#chorus-domain-store-pulse-latest.json> .
+
+<https://jeffbridwell.com/chorus#chorus-domain-service-chorus-api>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "HTTP API on :3340. Hybrid search (FTS + semantic + RRF), domain endpoints, freshness, events. Serves pulse composition + Athena + #2174 AX response schema." .
+
+<https://jeffbridwell.com/chorus#chorus-domain-service-stop-the-line>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "PostToolUse hook that blocks the turn when a tool errors, forcing explicit resolve/card/defer. DEC: when something breaks, stop — don't narrate past it." .
+
+<https://jeffbridwell.com/chorus#chorus-domain-service-write_scrubber>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "PreToolUse hook that blocks writes to shared files if they contain credential-shaped content (env vars, API keys, tokens). Data-safety gate." .
+
+<https://jeffbridwell.com/chorus#chorus-domain-service-context_cache>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "Generates session-start-<role>.md at session boot with pulse snapshot + memory + recent search results. Not per-prompt; boot-time only." .
+
+<https://jeffbridwell.com/chorus#chorus-domain-service-observer>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "Watches PostToolUse events, infers active card from tool calls, writes <role>-inferred.json. Never touches declared.json (#2168 AC-9 single-writer invariant).";
+        <https://jeffbridwell.com/chorus#reads>
+                <https://jeffbridwell.com/chorus#chorus-domain-store-role-declared.json>;
+        <https://jeffbridwell.com/chorus#writes>
+                <https://jeffbridwell.com/chorus#chorus-domain-store-role-inferred.json> .
+
+<https://jeffbridwell.com/chorus#chorus-domain-service-pulse>
+        <http://www.w3.org/2000/01/rdf-schema#comment>
+                "Team-state assembler. Reads declared.json + inferred.json + board snapshot + freshness cache, composes roles.<role> + board.wip_cards. 14ms warm. Pure passthrough; no inference here.";
+        <https://jeffbridwell.com/chorus#reads>
+                <https://jeffbridwell.com/chorus#chorus-domain-store-role-inferred.json> , <https://jeffbridwell.com/chorus#chorus-domain-store-role-declared.json>;
+        <https://jeffbridwell.com/chorus#writes>
+                <https://jeffbridwell.com/chorus#chorus-domain-store-pulse-latest.json> .
