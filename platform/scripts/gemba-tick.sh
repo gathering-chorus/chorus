@@ -1,155 +1,79 @@
 #!/usr/bin/env bash
 # gemba-tick.sh — Deterministic gemba tick
-# Outputs: new activity since last check for observed role
-# Usage: gemba-tick.sh <role> [start_epoch]
+# #2176: Reads pulse as single source of truth. Previously had the same
+# 5-fallback chain as gemba-start.sh; retired.
 set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-
 ROLE="${1:?Usage: gemba-tick.sh <role>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PULSE_FILE="${PULSE_FILE:-/tmp/pulse-latest.json}"
+TILES_API="${TILES_API:-http://localhost:3470/api/tiles}"
 EPOCH_FILE="/tmp/gemba-start-epoch-${ROLE}"
+LAST_CHECK_FILE="/tmp/gemba-last-check-${ROLE}"
 NOW=$(date +%s)
 if [ ! -f "$EPOCH_FILE" ]; then
   echo "$NOW" > "$EPOCH_FILE"
 fi
 START_EPOCH=$(cat "$EPOCH_FILE")
 ELAPSED=$(( NOW - START_EPOCH ))
-LAST_CHECK_FILE="/tmp/gemba-last-check-${ROLE}"
 
 echo "=== GEMBA TICK: $ROLE ==="
 echo "--- $(TZ=America/New_York date '+%Y-%m-%d %H:%M') Boston | ${ELAPSED}s elapsed ---"
 echo ""
 
-# 1. Role state (new JSON format, fallback to old)
-STATE_JSON="/tmp/claude-team-scan/${ROLE}-declared.json"
-STATE_FILE="/tmp/role-state-${ROLE}"
-echo "## State"
-if [ -f "$STATE_JSON" ]; then
-  STATE=$(python3 -c "
+# 1. Role state + last action — pulse + tiles API, no chain.
+if [ -f "$PULSE_FILE" ]; then
+  python3 - "$PULSE_FILE" "$ROLE" <<'PY'
 import json, sys
-d = json.load(open('$STATE_JSON'))
-card = d.get('card', '')
-state = d.get('state', 'unknown')
-ts = d.get('last_emit', '?')
-print(f'{state} card=#{card} (declared {ts})')
-" 2>/dev/null || cat "$STATE_JSON")
-  echo "$STATE"
-elif [ -f "$STATE_FILE" ]; then
-  cat "$STATE_FILE"
+pulse_file, role = sys.argv[1], sys.argv[2]
+try:
+    pulse = json.load(open(pulse_file))
+except Exception as e:
+    print(f"## State\nunknown (pulse unreadable: {e})\n")
+    sys.exit(0)
+r = pulse.get('roles', {}).get(role, {})
+print("## State")
+print(f"  state: {r.get('state','unknown')}")
+card = r.get('card', '')
+if card: print(f"  card:  {card}")
+if r.get('divergent'):
+    print(f"  divergent: declared={r.get('card_declared')} inferred={r.get('card_inferred')}")
+print()
+PY
 else
-  echo "unknown (no state file)"
+  echo "## State"
+  echo "unknown (no pulse at $PULSE_FILE)"
+  echo ""
 fi
+
+# 2. Last action — Clearing tiles API is the live surface.
+echo "## Last Action"
+curl -sf --max-time 2 "$TILES_API" 2>/dev/null | python3 -c "
+import sys, json
+try:
+    tiles = json.load(sys.stdin)
+    for t in tiles:
+        if t.get('role') == '$ROLE':
+            age = t.get('lastActionAge','')
+            action = t.get('lastAction','')[:140]
+            print(f'  {age}: {action}' if action else f'  {age}: (no recent action)')
+            break
+    else:
+        print('  (role not in tiles)')
+except: print('  (tiles API unreachable)')
+" 2>/dev/null || echo "  (tiles API unreachable)"
 echo ""
 
-# 2. New activity since last check
-DB_PATH="${CHORUS_DB:-$HOME/.chorus/index.db}"
-LAST_CHECK="1970-01-01"
-if [ -f "$LAST_CHECK_FILE" ]; then
-  LAST_CHECK=$(cat "$LAST_CHECK_FILE")
-fi
-
-echo "## New Activity"
-RESULTS=""
-
-# Direct session JSONL — fastest path, no indexer dependency (#2021)
-# Find the most recently modified project dir matching the role name
-SESSION_DIR=$(ls -dt "$HOME/.claude/projects/"*chorus*"$ROLE"* 2>/dev/null | head -1)
-
-if [ -n "$SESSION_DIR" ] && [ -d "$SESSION_DIR" ]; then
-  LATEST_JSONL=$(ls -t "$SESSION_DIR"/*.jsonl 2>/dev/null | head -1)
-  if [ -n "$LATEST_JSONL" ]; then
-    RESULTS=$(tail -20 "$LATEST_JSONL" | python3 -c "
-import sys, json
-for line in sys.stdin:
-    try:
-        d = json.loads(line.strip())
-        msg_type = d.get('type','')
-        from datetime import datetime, timezone, timedelta
-        raw_ts = d.get('timestamp','')[:19] or ''
-        try:
-            utc = datetime.fromisoformat(raw_ts.replace('Z','+00:00')).replace(tzinfo=timezone.utc)
-            eastern = utc.astimezone(timezone(timedelta(hours=-4)))
-            ts = eastern.strftime('%H:%M')
-        except: ts = raw_ts[:16]
-        if msg_type == 'assistant':
-            for block in d.get('message',{}).get('content',[]):
-                if block.get('type') == 'tool_use':
-                    name = block.get('name','?')
-                    inp = block.get('input',{})
-                    if name == 'Bash':
-                        cmd = inp.get('command','')[:100]
-                        desc = inp.get('description','')
-                        label = desc if desc else f'bash: {cmd}'
-                        # Detect board ops
-                        if 'cards ' in cmd or 'board-ts ' in cmd:
-                            label = f'board op: {cmd[:90]}'
-                        print(f'{ts}|{label}')
-                    elif name == 'Read':
-                        path = inp.get('file_path','')
-                        print(f'{ts}|reading {path.split("/")[-1]}')
-                    elif name == 'Edit' or name == 'Write':
-                        path = inp.get('file_path','')
-                        print(f'{ts}|editing {path.split("/")[-1]}')
-                    elif name == 'Grep':
-                        print(f'{ts}|searching: {inp.get("pattern","")}')
-                    else:
-                        print(f'{ts}|{name}')
-        elif msg_type == 'human':
-            content = d.get('message',{}).get('content','')
-            if isinstance(content, str) and len(content) > 5 and not content.startswith('<'):
-                print(f'{ts}|user: {content[:100]}')
-    except: pass
-" 2>/dev/null || true)
-  fi
-fi
-
-# Fallback 1: observer JSONL (written by PostToolUse hook)
-OBS_FILE="/tmp/claude-team-scan/${ROLE}-observations.jsonl"
-if [ -z "$RESULTS" ] && [ -f "$OBS_FILE" ]; then
-  RESULTS=$(tail -10 "$OBS_FILE" | python3 -c "
-import sys, json
-for line in sys.stdin:
-    try:
-        d = json.loads(line.strip())
-        ts = d.get('ts','?')[:16]
-        digest = d.get('digest','')[:120]
-        if digest:
-            print(f'{ts}|{digest}')
-    except: pass
-" 2>/dev/null || true)
-fi
-
-# Fallback: Chorus SQLite index
-if [ -z "$RESULTS" ] && [ -f "$DB_PATH" ]; then
-  RESULTS=$(sqlite3 "$DB_PATH" "
-    SELECT datetime(timestamp, 'localtime') as ts, substr(content, 1, 150) as line
-    FROM messages
-    WHERE role = '${ROLE}'
-      AND timestamp > '${LAST_CHECK}'
-    ORDER BY timestamp DESC
-    LIMIT 10;
-  " 2>/dev/null || true)
-fi
-
-if [ -n "$RESULTS" ]; then
-  echo "$RESULTS"
-else
-  echo "(no new activity from observer or index)"
-fi
-echo ""
-
-# 3. Recent file changes by this role (live signal)
-echo "## Recent Files Changed"
+# 3. Uncommitted changes in role's working dirs (git is its own source of truth — not overlapping pulse).
+echo "## Uncommitted Changes"
 ROLE_DIR=""
 case "$ROLE" in
   silas) ROLE_DIR="${CHORUS_ROOT}/roles/silas" ;;
   kade)  ROLE_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site" ;;
-  wren)  ROLE_DIR="${CHORUS_ROOT}/chorus/roles/wren" ;;
+  wren)  ROLE_DIR="${CHORUS_ROOT}/roles/wren" ;;
 esac
-
-# Check git for uncommitted changes in role's working dirs
-for DIR in "$ROLE_DIR" ${CHORUS_ROOT}/chorus; do
+for DIR in "$ROLE_DIR" "${CHORUS_ROOT}"; do
   if [ -n "$DIR" ] && [ -d "$DIR/.git" ]; then
     CHANGES=$(cd "$DIR" && git diff --name-only --diff-filter=M 2>/dev/null | head -5)
     if [ -n "$CHANGES" ]; then
@@ -158,14 +82,9 @@ for DIR in "$ROLE_DIR" ${CHORUS_ROOT}/chorus; do
     fi
   fi
 done
-
-# Check for recently modified files (last 2 min) in role's session artifacts
-find /tmp -maxdepth 1 -name "*${ROLE}*" -newer "$LAST_CHECK_FILE" 2>/dev/null | head -5 | while read -r f; do
-  echo "  $(basename "$f") ($(stat -f '%Sm' -t '%H:%M' "$f" 2>/dev/null))"
-done
 echo ""
 
-# 4. Role screen capture (live view)
+# 4. Role screen capture (live visual).
 echo "## Role Screen"
 SCREENSHOT=$("$SCRIPT_DIR/role-screenshot.sh" "$ROLE" 2>/dev/null || true)
 if [ -n "$SCREENSHOT" ] && [ -f "$SCREENSHOT" ]; then
@@ -175,10 +94,10 @@ else
 fi
 echo ""
 
-# 5. Save checkpoint
+# 5. Checkpoint
 TZ=America/New_York date '+%Y-%m-%dT%H:%M:%S' > "$LAST_CHECK_FILE"
 
-# 4. TTL check
+# 6. TTL check
 if [ "$START_EPOCH" -gt 0 ] && [ "$ELAPSED" -gt 600 ]; then
   echo "## TTL EXPIRED"
   echo "Observation window: ${ELAPSED}s (limit: 600s)"
