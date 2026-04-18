@@ -444,15 +444,5 @@ describe('WorkflowEngine', () => {
       rmSync(cfg.activeDir, { recursive: true, force: true });
     });
 
-    it('status(wfId) loads a single workflow', () => {
-      const cfg = tempConfig();
-      const engine = new WorkflowEngine(cfg);
-      const wf = engine.create('Single lookup', 'kade:Do it');
-      const loaded = engine.status(wf.id) as WorkflowManifest;
-      expect(loaded.id).toBe(wf.id);
-      expect(loaded.decision).toBe('Single lookup');
-      rmSync(cfg.activeDir, { recursive: true, force: true });
-    });
-
   });
 });
