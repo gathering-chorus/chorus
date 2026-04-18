@@ -86,17 +86,14 @@ app.get('/api/chorus/patterns/summary', async (req, res) => {
 });
 
 // Borg — codebase topology proxy (Gathering owns the RDF source) — #2099
+// Extracted to handlers/codebase-topology.ts (#2173 AC4). The adapter is the
+// uniform shape for all extracted handlers: call the pure fn, map its
+// {status, body} to res.status().json(). No try/catch — the pure fn already
+// maps throws to {status: 502, body: {error}}.
+import { fetchTopology } from './handlers/codebase-topology';
 app.get('/api/chorus/codebase/topology', async (_req, res) => {
-  try {
-    const r = await fetch('http://localhost:3000/api/codebase/topology', { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) {
-      res.status(r.status).json({ error: 'upstream ' + r.status });
-      return;
-    }
-    res.json(await r.json());
-  } catch (e) {
-    res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
-  }
+  const r = await fetchTopology();
+  res.status(r.status).json(r.body);
 });
 
 // Borg — posture strip (Jeff dashboard) — #2099
