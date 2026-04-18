@@ -1949,6 +1949,7 @@ const SOURCE_CADENCE: Record<string, number> = {
   journal: 604800,     // 7d
 };
 
+import { fetchFreshness } from './handlers/chorus-freshness';
 app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
   if (!fs.existsSync(DB_PATH)) {
     res.status(503).json({ error: 'Index database not found' });
@@ -1956,84 +1957,16 @@ app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
   }
   const db = new Database(DB_PATH, { readonly: true });
   db.pragma('journal_mode = WAL');
-
   try {
-    const watermarks = db.prepare(
-      `SELECT source, last_indexed FROM watermarks ORDER BY source`
-    ).all() as Array<{ source: string; last_indexed: string }>;
-
-    const now = Date.now();
-    // Aggregate by source prefix — watermarks has per-file entries (artifact:adr:ADR-001...)
-    // Roll up to source type level (claude, spine, brief, artifact:adr, etc.)
-    const aggregated = new Map<string, string>();
-    for (const w of watermarks) {
-      const parts = w.source.split(':');
-      const key = parts[0] === 'artifact' ? parts.slice(0, 2).join(':') : parts[0];
-      const existing = aggregated.get(key);
-      if (!existing || w.last_indexed > existing) {
-        aggregated.set(key, w.last_indexed);
-      }
-    }
-
-    // Drift counts for countable sources (#1959)
-    // Count indexed vs total session messages (#1959)
-    const claudeIndexed = (db.prepare("SELECT COUNT(*) as cnt FROM messages WHERE source='claude'").get() as { cnt: number }).cnt;
-    // On-disk count: approximate from watermark coverage vs total unique sessions
-    const claudeWatermarks = (db.prepare("SELECT COUNT(*) as cnt FROM watermarks WHERE source LIKE 'claude:%'").get() as { cnt: number }).cnt;
-    const claudeOnDisk = claudeWatermarks; // When fully indexed, these match — drift = 0
-    const spineOnDisk = fs.existsSync(path.join(REPO_ROOT, 'platform/logs/chorus.log'))
-      ? fs.readFileSync(path.join(REPO_ROOT, 'platform/logs/chorus.log'), 'utf-8').split('\n').length
-      : 0;
-    const spineIndexed = (db.prepare("SELECT COUNT(*) as cnt FROM messages WHERE source='spine'").get() as { cnt: number }).cnt;
-
-    const driftMap: Record<string, { onDisk: number; indexed: number }> = {
-      claude: { onDisk: claudeOnDisk, indexed: claudeIndexed },
-      spine: { onDisk: spineOnDisk, indexed: spineIndexed },
-    };
-
-    const sources = Array.from(aggregated.entries()).map(([source, lastIndexed]) => {
-      const lastMs = new Date(lastIndexed).getTime();
-      const ageSecs = Math.floor((now - lastMs) / 1000);
-      const cadenceKey = source.split(':')[0];
-      const cadence = SOURCE_CADENCE[cadenceKey] || SOURCE_CADENCE[source] || 86400;
-      const ratio = ageSecs / cadence;
-
-      const drift = driftMap[cadenceKey];
-      let level: string;
-      let unindexed = 0;
-      if (drift) {
-        unindexed = Math.max(0, drift.onDisk - drift.indexed);
-        if (unindexed === 0) level = 'fresh';
-        else if (unindexed < 100) level = 'warn';
-        else if (unindexed < 1000) level = 'critical';
-        else level = 'dead';
-      } else {
-        if (ratio <= 1.5) level = 'fresh';
-        else if (ratio <= 3) level = 'warn';
-        else if (ratio <= 7) level = 'critical';
-        else level = 'dead';
-      }
-
-      return {
-        source,
-        last_indexed: lastIndexed,
-        age_seconds: ageSecs,
-        expected_cadence: cadence,
-        staleness_ratio: Math.round(ratio * 10) / 10,
-        unindexed,
-        level,
-      };
+    const r = fetchFreshness({
+      db,
+      exists: (p) => fs.existsSync(p),
+      readFile: (p, enc) => fs.readFileSync(p, enc),
+      spineLogPath: path.join(REPO_ROOT, 'platform/logs/chorus.log'),
+      cadence: SOURCE_CADENCE,
+      timestamp: bostonNow,
     });
-
-    const summary = {
-      total_sources: sources.length,
-      fresh: sources.filter(s => s.level === 'fresh').length,
-      warn: sources.filter(s => s.level === 'warn').length,
-      critical: sources.filter(s => s.level === 'critical').length,
-      dead: sources.filter(s => s.level === 'dead').length,
-    };
-
-    res.json({ sources, summary, timestamp: bostonNow() });
+    res.status(r.status).json(r.body);
   } finally {
     db.close();
   }
@@ -3346,108 +3279,18 @@ app.post('/api/chorus/voice/:role', express.raw({ type: 'audio/*', limit: '10mb'
 
 const PERF_SCRIPT = path.join(os.homedir(), 'CascadeProjects/jeff-bridwell-personal-site/scripts/perf-baseline.sh');
 
-app.get('/api/chorus/perf', (_req: Request, res: Response) => {
-  execFile('bash', [PERF_SCRIPT, 'summary'], { timeout: 30000 }, (err, stdout, stderr) => {
-    if (err) {
-      res.status(500).json({ error: 'perf-baseline.sh failed', detail: stderr.trim() });
-      return;
-    }
-    // Parse tabular output: "Function  Today  Yesterday  Delta  Status"
-    const lines = stdout.trim().split('\n');
-    const headerLine = lines.findIndex(l => /^Function\s/.test(l));
-    const dateLine = lines.find(l => /^Perf Baseline/.test(l));
-    const summaryLine = lines.find(l => /passed/.test(l));
-
-    const date = dateLine?.replace('Perf Baseline — ', '').trim() || null;
-    const results: { function: string; today_ms: number; yesterday_ms: number; delta_pct: string; status: string }[] = [];
-
-    if (headerLine >= 0) {
-      for (let i = headerLine + 2; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line || /passed/.test(line)) continue;
-        // Parse: "fuseki:graph_count  3,432ms  2,653ms  ▲+29% !  PASS"
-        const match = line.match(/^(\S+)\s+([\d,]+)ms\s+([\d,]+)ms\s+(.+?)\s+(PASS|FAIL)\s*$/);
-        if (match) {
-          results.push({
-            function: match[1],
-            today_ms: parseInt(match[2].replace(/,/g, ''), 10),
-            yesterday_ms: parseInt(match[3].replace(/,/g, ''), 10),
-            delta_pct: match[4].trim(),
-            status: match[5],
-          });
-        }
-      }
-    }
-
-    const passed = results.filter(r => r.status === 'PASS').length;
-    const total = results.length;
-
-    res.json({
-      date,
-      summary: summaryLine?.trim() || `${passed}/${total} passed`,
-      passed,
-      total,
-      results,
-    });
-  });
+import { fetchPerf } from './handlers/chorus-perf';
+app.get('/api/chorus/perf', async (_req: Request, res: Response) => {
+  const r = await fetchPerf({ scriptPath: PERF_SCRIPT });
+  res.status(r.status).json(r.body);
 });
 
 // --- GET /api/chorus/services — LaunchAgent service status (#1485) ---
 
-app.get('/api/chorus/services', (_req: Request, res: Response) => {
-  execFile('launchctl', ['list'], { timeout: 10000 }, (err, stdout) => {
-    if (err) {
-      res.status(500).json({ error: 'launchctl list failed' });
-      return;
-    }
-
-    const services: { label: string; pid: number | null; status: number }[] = [];
-    for (const line of stdout.trim().split('\n').slice(1)) {
-      const parts = line.split('\t');
-      if (parts.length < 3) continue;
-      const label = parts[2];
-      if (!label.startsWith('com.chorus.') && !label.startsWith('com.gathering.')) continue;
-      services.push({
-        label,
-        pid: parts[0] === '-' ? null : parseInt(parts[0], 10),
-        status: parseInt(parts[1], 10),
-      });
-    }
-
-    // Get RSS for running services (by PID)
-    const pids = services.filter(s => s.pid).map(s => s.pid!);
-    if (pids.length === 0) {
-      res.json({ services, running: 0, total: services.length });
-      return;
-    }
-
-    execFile('ps', ['-o', 'pid=,rss=', '-p', pids.join(',')], { timeout: 5000 }, (psErr, psOut) => {
-      const rssMap = new Map<number, number>();
-      if (!psErr && psOut) {
-        for (const line of psOut.trim().split('\n')) {
-          const [pidStr, rssStr] = line.trim().split(/\s+/);
-          if (pidStr && rssStr) {
-            rssMap.set(parseInt(pidStr, 10), Math.round(parseInt(rssStr, 10) / 1024)); // KB → MB
-          }
-        }
-      }
-
-      const enriched = services.map(s => ({
-        ...s,
-        rss_mb: s.pid ? (rssMap.get(s.pid) || null) : null,
-      }));
-
-      const running = enriched.filter(s => s.pid !== null).length;
-      const totalRss = enriched.reduce((sum, s) => sum + (s.rss_mb || 0), 0);
-
-      res.json({
-        services: enriched,
-        running,
-        total: enriched.length,
-        total_rss_mb: totalRss,
-      });
-    });
-  });
+import { fetchServices } from './handlers/chorus-services';
+app.get('/api/chorus/services', async (_req: Request, res: Response) => {
+  const r = await fetchServices();
+  res.status(r.status).json(r.body);
 });
 
 // --- GET /api/chorus/disk — Disk usage summary (#1485, extracted #2189) ---
@@ -3457,125 +3300,29 @@ app.get('/api/chorus/disk', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
-// --- GET /api/chorus/harvest — Harvest pipeline status (#1485) ---
-
-const HARVEST_EXPORTER = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/harvest-exporter.sh');
-
-app.get('/api/chorus/harvest', (_req: Request, res: Response) => {
-  // Query Fuseki for graph counts per domain
-  const sparql = `
-    SELECT ?g (COUNT(*) AS ?count) WHERE {
-      GRAPH ?g { ?s ?p ?o }
-    } GROUP BY ?g ORDER BY DESC(?count)
-  `;
-
-  fetch(`${FUSEKI_URL}?query=${encodeURIComponent(sparql)}`, {
-    headers: { 'Accept': 'application/sparql-results+json' },
-    signal: AbortSignal.timeout(30000),
-  })
-    .then(r => { if (!r.ok) throw new Error(`Fuseki: ${r.status}`); return r.json(); })
-    .then((data: any) => {
-      const graphs: { name: string; triples: number }[] = [];
-      let totalTriples = 0;
-      for (const b of data.results.bindings) {
-        const name = (b.g?.value || '').split('/').pop() || '';
-        const count = parseInt(b.count?.value || '0', 10);
-        graphs.push({ name, triples: count });
-        totalTriples += count;
-      }
-
-      // Aggregate by domain prefix
-      const domains: Record<string, { graphs: number; triples: number }> = {};
-      for (const g of graphs) {
-        // Extract domain from graph name patterns like "music-albums.ttl", "photos-2024.ttl"
-        const domain = g.name.replace(/[-_].*$/, '').replace(/\.ttl$/, '').toLowerCase();
-        if (!domains[domain]) domains[domain] = { graphs: 0, triples: 0 };
-        domains[domain].graphs++;
-        domains[domain].triples += g.triples;
-      }
-
-      res.json({
-        total_graphs: graphs.length,
-        total_triples: totalTriples,
-        domains: Object.entries(domains)
-          .sort((a, b) => b[1].triples - a[1].triples)
-          .map(([name, d]) => ({ name, ...d })),
-      });
-    })
-    .catch(err => {
-      res.status(500).json({ error: 'Fuseki query failed', detail: String(err) });
-    });
+// --- GET /api/chorus/harvest — Harvest pipeline status (#1485, extracted #2189) ---
+import { fetchHarvest } from './handlers/chorus-harvest';
+app.get('/api/chorus/harvest', async (_req: Request, res: Response) => {
+  const r = await fetchHarvest({ fusekiUrl: FUSEKI_URL });
+  res.status(r.status).json(r.body);
 });
 
 // --- GET /api/chorus/cost — Cost summary (#1485) ---
 
 const COST_SCRIPT = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/cost-report.sh');
 
-app.get('/api/chorus/cost', (req: Request, res: Response) => {
+import { fetchCost } from './handlers/chorus-cost';
+app.get('/api/chorus/cost', async (req: Request, res: Response) => {
   const period = (req.query.period as string) || 'summary';
-  execFile('bash', [COST_SCRIPT, period], { timeout: 15000, env: { ...process.env, HOME: os.homedir() } }, (err, stdout, stderr) => {
-    // Cost script may fail due to missing data — still return what we got
-    const output = (stdout || '').trim();
-    const errors = (stderr || '').trim();
-    if (!output && err) {
-      res.status(500).json({ error: 'cost-report.sh failed', detail: errors });
-      return;
-    }
-    res.json({
-      period,
-      output,
-      partial: !!errors,
-    });
-  });
+  const r = await fetchCost(period, { scriptPath: COST_SCRIPT });
+  res.status(r.status).json(r.body);
 });
 
-// --- Seeds endpoint (#1869) ---
-
+// --- Seeds endpoint (#1869, extracted #2189) ---
+import { fetchSeeds } from './handlers/chorus-seeds';
 app.get('/api/chorus/seeds', async (_req: Request, res: Response) => {
-  try {
-    const fusekiUrl = process.env.FUSEKI_URL || 'http://localhost:3030';
-    const query = `
-      PREFIX jb: <https://jeffbridwell.com/ontology#>
-      SELECT DISTINCT ?slug ?content ?seedUrl ?linkTitle ?seededAt ?routedTo
-      WHERE {
-        GRAPH <urn:jb:seeds/> {
-          ?s jb:slug ?slug .
-          OPTIONAL { ?s jb:seedContent ?content }
-          OPTIONAL { ?s jb:seedUrl ?seedUrl }
-          OPTIONAL { ?s jb:linkTitle ?linkTitle }
-          OPTIONAL { ?s jb:seededAt ?seededAt }
-          OPTIONAL { ?s jb:routedTo ?routedTo }
-        }
-      }
-      LIMIT 50
-    `;
-    const url = `${fusekiUrl}/pods/query`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-      body: `query=${encodeURIComponent(query)}`,
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!response.ok) {
-      res.status(502).json({ error: 'Fuseki query failed', status: response.status });
-      return;
-    }
-    const data = await response.json() as { results: { bindings: Array<Record<string, { value: string }>> } };
-    const seeds = data.results.bindings.map(b => ({
-      slug: b.slug?.value,
-      content: b.content?.value?.substring(0, 200),
-      seedUrl: b.seedUrl?.value,
-      linkTitle: b.linkTitle?.value,
-      status: b.status?.value || 'pending',
-      type: b.type?.value,
-      source: b.source?.value,
-      seededAt: b.seededAt?.value,
-      routedTo: b.routedTo?.value,
-    }));
-    res.json({ seeds, total: seeds.length });
-  } catch (err) {
-    res.status(500).json({ error: 'Seeds query failed', detail: err instanceof Error ? err.message : String(err) });
-  }
+  const r = await fetchSeeds();
+  res.status(r.status).json(r.body);
 });
 
 // --- Seed media serving (#2007) ---
@@ -4345,73 +4092,11 @@ app.get('/api/athena/products', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
-// GET /api/chorus/products — full product hierarchy: products → subproducts → subdomains (#2093)
+// GET /api/chorus/products — full product hierarchy: products → subproducts → subdomains (#2093, extracted #2189)
+import { fetchChorusProducts } from './handlers/chorus-products';
 app.get('/api/chorus/products', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const query = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?product ?productLabel ?subprod ?spLabel ?subdomain ?sdLabel ?owner ?ownerLabel WHERE {
-        GRAPH <urn:chorus:ontology> {
-          ?product a chorus:Product . ?product rdfs:label ?productLabel .
-          OPTIONAL {
-            ?product chorus:hasSubProduct ?subprod . ?subprod rdfs:label ?spLabel .
-            OPTIONAL { ?subprod chorus:hasDomain ?subdomain . ?subdomain rdfs:label ?sdLabel }
-            OPTIONAL { ?subprod chorus:ownedBy ?owner . ?owner rdfs:label ?ownerLabel }
-          }
-          OPTIONAL {
-            ?product chorus:hasDomain ?subdomain . ?subdomain rdfs:label ?sdLabel .
-            FILTER NOT EXISTS { ?subprod2 chorus:hasDomain ?subdomain }
-          }
-        }
-      } ORDER BY ?productLabel ?spLabel ?sdLabel`;
-    const result = await athenaSparqlQuery(query);
-    // Also query direct product→domain edges (Borg, Gathering)
-    const directQuery = `
-      PREFIX chorus: <https://jeffbridwell.com/chorus#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?product ?productLabel ?domain ?domainLabel WHERE {
-        GRAPH <urn:chorus:ontology> {
-          ?product a chorus:Product . ?product rdfs:label ?productLabel .
-          ?product chorus:hasDomain ?domain . ?domain rdfs:label ?domainLabel .
-        }
-      } ORDER BY ?productLabel ?domainLabel`;
-    const directResult = await athenaSparqlQuery(directQuery);
-
-    // Build nested structure
-    const products: Record<string, any> = {};
-    for (const b of result.results.bindings) {
-      const pLabel = b.productLabel?.value || '?';
-      if (!products[pLabel]) products[pLabel] = { label: pLabel, subproducts: {}, domains: [] };
-      const p = products[pLabel];
-      if (b.spLabel?.value) {
-        const spLabel = b.spLabel.value;
-        if (!p.subproducts[spLabel]) p.subproducts[spLabel] = {
-          label: spLabel, owner: b.ownerLabel?.value || null, domains: []
-        };
-        if (b.sdLabel?.value && !p.subproducts[spLabel].domains.includes(b.sdLabel.value)) {
-          p.subproducts[spLabel].domains.push(b.sdLabel.value);
-        }
-      }
-    }
-    // Add direct product→domain edges
-    for (const b of directResult.results.bindings) {
-      const pLabel = b.productLabel?.value || '?';
-      if (!products[pLabel]) products[pLabel] = { label: pLabel, subproducts: {}, domains: [] };
-      const domLabel = b.domainLabel?.value;
-      if (domLabel && !products[pLabel].domains.includes(domLabel)) {
-        products[pLabel].domains.push(domLabel);
-      }
-    }
-    // Convert to array
-    const out = Object.values(products).map((p: any) => ({
-      ...p, subproducts: Object.values(p.subproducts)
-    }));
-    res.json({ products: out, elapsed_ms: Date.now() - start });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+  const r = await fetchChorusProducts({ sparql: athenaSparqlQuery });
+  res.status(r.status).json(r.body);
 });
 
 // GET /api/athena/subproducts — list sub-products with owner, domain count, consumes count
