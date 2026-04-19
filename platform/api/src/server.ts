@@ -527,23 +527,11 @@ app.get('/api/chorus/domain/:domain/code-files', async (req: Request, res: Respo
 // One endpoint per facet under /api/chorus/domain/:name/.
 // AX = UX: same shape whether rendering for Jeff or briefing a role on /pull.
 
-/** Resolve a domain name to its subdomain ID in the ontology.
- *  "seeds" → "seeds-domain", "seeds-domain" → "seeds-domain", "tests-service" → "tests-service" */
-async function resolveSubdomainId(name: string): Promise<string> {
-  const lower = name.toLowerCase();
-  if (lower.endsWith('-domain') || lower.endsWith('-service')) return lower;
-  // Try -domain first (most common), then -service
-  const domainId = `${lower}-domain`;
-  const svcId = `${lower}-service`;
-  const checkQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <urn:chorus:ontology> { <https://jeffbridwell.com/chorus#${domainId}> a chorus:SubDomain } }`;
-  try {
-    const result = await athenaSparqlQuery(checkQuery);
-    if (result.boolean) return domainId;
-  } catch { /* fall through */ }
-  return svcId;
-}
-
-const isTestFile = (p: string) => /\/(tests?|__tests__)\//i.test(p) || /\.(test|spec)\./i.test(p) || /\.bats$/i.test(p) || /_test\.rs$/i.test(p) || /\.feature$/i.test(p);
+// resolveSubdomainId + isTestFile moved to src/subdomain-resolver.ts (#2205 wave 10).
+// The sparql dep is lazy-bound — athenaSparqlQuery is declared further down
+// in the module (post-#2205 wave 8), so an eager capture would TDZ here.
+import { createSubdomainResolver, isTestFile } from './subdomain-resolver';
+const resolveSubdomainId = createSubdomainResolver({ sparql: (q: string) => athenaSparqlQuery(q) });
 
 // GET /api/chorus/domain/:name/code — source files for a domain (#2060 AC1)
 import { fetchChorusDomainCode } from './handlers/chorus-domain-code';
