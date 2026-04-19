@@ -187,98 +187,24 @@ async function initLance(): Promise<void> {
 const MIN_EMBED_LENGTH = 100;
 const EMBED_PAGE_SIZE = 100;  // Process one page per cycle, timer handles the rest (#1920)
 
+// embedDelta extracted to src/embed-delta.ts (#2205 wave 16).
+// Lance init is still called here — the extracted delta takes the store as a dep.
+import { createEmbedDelta } from './embed-delta';
+const _embedDeltaInner = createEmbedDelta({
+  dbPath: DB_PATH,
+  DatabaseCtor: Database as any,
+  getLanceStore: () => ({ db: lanceDb as any, table: lanceTable as any }),
+  setLanceTable: (t) => { lanceTable = t as lancedb.Table; },
+  embed: (t: string) => embedQuery(t),
+  minLength: MIN_EMBED_LENGTH,
+  pageSize: EMBED_PAGE_SIZE,
+});
 async function embedDelta(): Promise<{ embedded: number; skipped: number; ollama_failures: number }> {
   if (!lanceDb) {
     await initLance();
     if (!lanceDb) return { embedded: 0, skipped: 0, ollama_failures: 0 };
   }
-
-  const db = new Database(DB_PATH, { readonly: true });
-  db.pragma('journal_mode = WAL');
-
-  try {
-    // Track embedded state in SQLite — add column if missing (#1920)
-    // Using a writable connection for the schema check only
-    const rwDb = new Database(DB_PATH);
-    rwDb.pragma('journal_mode = WAL');
-    try {
-      rwDb.exec(`ALTER TABLE messages ADD COLUMN embedded INTEGER DEFAULT 0`);
-    } catch { /* column already exists */ }
-    rwDb.close();
-
-    // Page through unembedded messages — one page per call (#1920)
-    const page = db.prepare(`
-      SELECT id, source, channel, role, content, timestamp
-      FROM messages
-      WHERE embedded = 0 AND LENGTH(content) >= ?
-      ORDER BY id ASC
-      LIMIT ?
-    `).all(MIN_EMBED_LENGTH, EMBED_PAGE_SIZE) as Array<{
-      id: number; source: string; channel: string; role: string; content: string; timestamp: string;
-    }>;
-
-    if (page.length === 0) return { embedded: 0, skipped: 0, ollama_failures: 0 };
-
-    // Count total remaining for logging
-    const countRow = db.prepare(`
-      SELECT COUNT(*) as cnt FROM messages WHERE embedded = 0 AND LENGTH(content) >= ?
-    `).get(MIN_EMBED_LENGTH) as { cnt: number };
-
-    const records: Array<{
-      msg_id: number; source: string; channel: string; role: string;
-      content: string; timestamp: string; vector: number[];
-    }> = [];
-    let skipped = 0;
-
-    let ollamaFailures = 0;
-    for (const msg of page) {
-      try {
-        const text = `[${msg.source}/${msg.role}] ${msg.content.slice(0, 2000)}`;
-        const vector = await embedQuery(text);
-        records.push({
-          msg_id: msg.id,
-          source: msg.source,
-          channel: msg.channel,
-          role: msg.role,
-          content: msg.content.slice(0, 2000),
-          timestamp: msg.timestamp,
-          vector,
-        });
-      } catch (err: any) {
-        skipped++;
-        ollamaFailures++;
-        console.error(`[embed-delta] Ollama failure for msg ${msg.id}: ${err.message}`);
-      }
-    }
-
-    if (records.length === 0) return { embedded: 0, skipped, ollama_failures: ollamaFailures };
-
-    // Write page to LanceDB — incremental, restartable
-    if (lanceTable) {
-      await lanceTable.add(records);
-    } else if (lanceDb) {
-      lanceTable = await lanceDb.createTable('messages', records);
-    }
-
-    // Mark as embedded in SQLite so we don't reprocess (#1920)
-    const markDb = new Database(DB_PATH);
-    markDb.pragma('journal_mode = WAL');
-    const markStmt = markDb.prepare(`UPDATE messages SET embedded = 1 WHERE id = ?`);
-    const markMany = markDb.transaction((ids: number[]) => {
-      for (const id of ids) markStmt.run(id);
-    });
-    markMany(records.map(r => r.msg_id));
-    markDb.close();
-
-    if (ollamaFailures > 0) {
-      console.log(`[embed-delta] Embedded ${records.length}/${countRow.cnt} remaining, skipped ${skipped}, ollama_failures ${ollamaFailures}`);
-    } else {
-      console.log(`[embed-delta] Embedded ${records.length}/${countRow.cnt} remaining, skipped ${skipped}`);
-    }
-    return { embedded: records.length, skipped, ollama_failures: ollamaFailures };
-  } finally {
-    db.close();
-  }
+  return _embedDeltaInner();
 }
 
 // Embed query helper (extracted to src/embed-query.ts in #2205 wave 2).
