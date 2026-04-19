@@ -636,7 +636,7 @@ export async function addCard(
   if (!opts.quick) {
     const desc = (opts.description || '').trim();
     if (!desc) {
-      errors.push('Missing --desc with acceptance criteria (use --quick/-q to skip)');
+      errors.push('Missing --desc with acceptance criteria (use --quick/-q to skip, or --desc-file <path>, or --desc - for stdin)');
     } else {
       const hasAC =
         /acceptance\s*criteria/i.test(desc) ||

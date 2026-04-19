@@ -1,4 +1,5 @@
 /**
+ * #2143 — #2223 follow-on: three-variant description test, error message coverage.
  * #2223 — cards CLI add ergonomics.
  *
  * Tests:
@@ -11,6 +12,7 @@
  * via integration, not unit (dispatch layer).
  */
 import { parseAddArgs } from '../src/cli-add-helpers';
+import { addCard } from '../src/sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -51,5 +53,32 @@ describe('#2223 parseAddArgs', () => {
   test('no desc at all returns empty string', () => {
     const parsed = parseAddArgs(['my title']);
     expect(parsed.description).toBe('');
+  });
+
+  test('#2143 missing-desc error names --desc-file and stdin alternatives', async () => {
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit'); });
+    const errSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const logSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const mockClient = { boardName: 'chorus', create: jest.fn(), listLabels: jest.fn().mockResolvedValue([]), createLabel: jest.fn().mockResolvedValue({ id: 1, title: 'x' }) } as any;
+    try {
+      await addCard(mockClient, 'test title', { owner: 'wren', priority: 'P3', domain: 'chorus', type: 'fix', origin: 'reactive', quick: false, description: '' });
+    } catch {}
+    const output = logSpy.mock.calls.map(c => c.join(' ')).join(' ') + errSpy.mock.calls.map(c => c.join(' ')).join(' ');
+    expect(output).toMatch(/--desc-file/);
+    expect(output).toMatch(/stdin/);
+    exitSpy.mockRestore(); errSpy.mockRestore(); logSpy.mockRestore();
+  });
+
+  test('#2143 inline and --desc-file produce identical description content', () => {
+    const tmpFile = path.join(os.tmpdir(), `cards-3var-${Date.now()}.md`);
+    const content = '## AC\n- [ ] thing one\n- [ ] thing two';
+    fs.writeFileSync(tmpFile, content);
+    try {
+      const fromInline = parseAddArgs(['title', '--desc', content]);
+      const fromFile = parseAddArgs(['title', '--desc-file', tmpFile]);
+      expect(fromInline.description).toBe(fromFile.description);
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
   });
 });
