@@ -32,6 +32,7 @@ import { BoardClient } from './client';
 import { GATHERING, SELF, LABELS, loadEnv, detectRole } from './config';
 import { BoardConfig } from './types';
 import { emitSpineEvent } from './events';
+import { formatCommentForView } from './cli-view-helpers';
 import {
   addCard, moveCard, doneCard, demoCard, rejectCard,
   blockCard, unblockCard, updateCard, commentCard, tagCard, untagCard,
@@ -225,9 +226,10 @@ async function cmdMine(client: BoardClient, args: string[], label: string) {
 }
 
 async function cmdView(client: BoardClient, args: string[]) {
-  if (!args[0]) die('Usage: cards view <id> [--json]');
+  if (!args[0]) die('Usage: cards view <id> [--json] [--verbose|-v]');
   const jsonFlag = args.includes('--json');
-  const index = parseInt(args.filter(a => a !== '--json')[0], 10);
+  const verbose = args.includes('--verbose') || args.includes('-v');
+  const index = parseInt(args.filter(a => !a.startsWith('-'))[0], 10);
   const task = await client.view(index);
 
   if (jsonFlag) {
@@ -303,7 +305,10 @@ async function cmdView(client: BoardClient, args: string[]) {
   if (comments.length > 0) {
     console.log(`  Comments (${comments.length}):`);
     for (const c of comments) {
-      console.log(`    [${c.author}] ${c.text}`);
+      const rendered = formatCommentForView(c.text, verbose);
+      // formatCommentForView may return multi-line; indent each line to match style
+      const indented = rendered.split('\n').map((l, i) => i === 0 ? `    [${c.author}] ${l}` : `    ${l}`).join('\n');
+      console.log(indented);
     }
   }
 }
