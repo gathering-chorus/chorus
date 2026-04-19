@@ -13,4 +13,8 @@ module.exports = {
     '!src/cli.ts',
     '!src/index.ts',
   ],
+  // Quiet reporter by default (#2225). JEST_VERBOSE=true for full output.
+  reporters: process.env.JEST_VERBOSE === 'true'
+    ? ['default']
+    : [['summary', { summaryThreshold: 0 }]],
 };

@@ -129,4 +129,10 @@ module.exports = {
     },
   },
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/**/*.test.ts'],
+  // Quiet reporter by default (#2225). Cuts TTY progress chatter; failures
+  // still surface via summary with summaryThreshold: 0. Set JEST_VERBOSE=true
+  // to fall back to the default reporter for debugging.
+  reporters: process.env.JEST_VERBOSE === 'true'
+    ? ['default']
+    : [['summary', { summaryThreshold: 0 }]],
 };
