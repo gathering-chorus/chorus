@@ -46,7 +46,7 @@ afterAll((done) => {
 
 async function get(p: string, opts: RequestInit = {}) {
   try {
-    const res = await fetch(`${baseUrl}${p}`, { ...opts, signal: AbortSignal.timeout(5000) } as any);
+    const res = await fetch(`${baseUrl}${p}`, { ...opts, signal: AbortSignal.timeout(3000) } as any);
     let body: any = null;
     const ct = res.headers.get('content-type') || '';
     if (ct.includes('json')) { try { body = await res.json(); } catch {} }
