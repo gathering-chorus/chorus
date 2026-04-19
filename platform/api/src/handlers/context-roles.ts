@@ -47,6 +47,9 @@ export interface ContextRolesDeps {
   now?: () => Date;
 }
 
+/** Roles older than 15 min without a spine event are marked stale. */
+const STALE_THRESHOLD_MS = 15 * 60 * 1000;
+
 export interface ContextRolesRow {
   name: string;
   state: string;
@@ -54,6 +57,8 @@ export interface ContextRolesRow {
   gemba: string | null;
   lastActivity: string | null;
   lastEvent: string | null;
+  /** true when lastActivity is absent or older than STALE_THRESHOLD_MS */
+  stale: boolean;
 }
 
 export interface ContextRolesResponse {
@@ -66,16 +71,22 @@ export async function fetchContextRoles(
   sourceUrl: string,
 ): Promise<ContextRolesResponse> {
   const header = await stampHeader(deps.sparql, null);
+  const nowMs = (deps.now?.() ?? new Date()).getTime();
   const rows: ContextRolesRow[] = KNOWN_ROLES.map((name) => {
     const st = deps.readState(name);
     const sp = deps.tailSpine(name);
+    const lastActivity = sp?.timestamp ?? null;
+    const stale = lastActivity === null
+      ? true
+      : nowMs - new Date(lastActivity).getTime() > STALE_THRESHOLD_MS;
     return {
       name,
       state: st?.state ?? 'unknown',
       card: st?.card ?? null,
       gemba: st?.gemba ?? null,
-      lastActivity: sp?.timestamp ?? null,
+      lastActivity,
       lastEvent: sp?.event ?? null,
+      stale,
     };
   });
   const envelope = buildEnvelope(header, sourceUrl, { roles: rows });

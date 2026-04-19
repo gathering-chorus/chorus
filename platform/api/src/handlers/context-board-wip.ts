@@ -37,7 +37,6 @@ export interface WipCard {
   title: string;
   priority: string;
   domain?: string;
-  valueStream?: string;
   step?: string;
   createdAt?: string;
   updatedAt?: string;
