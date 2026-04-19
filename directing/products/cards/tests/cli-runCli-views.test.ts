@@ -254,4 +254,60 @@ describe('runCli — mine and now', () => {
     } finally { cap.restore(); }
     expect(mock.calls.find((c) => c.method === 'now')?.args[0]).toBe('kade');
   });
+
+  it('now <role> with tasks prints per-task lines', async () => {
+    const mock = new MockClient();
+    // Override now to return a populated list for this role
+    (mock as unknown as { now: (r: string) => Promise<unknown[]> }).now =
+      async (_r: string) => [
+        { index: 42, title: 'active-now', priority: 'P1' },
+        { index: 43, title: 'also-now', priority: '' },
+      ];
+    const cap = silence();
+    try {
+      await runCli(['node', 'cards', 'now', 'kade'], factory(mock));
+    } finally { cap.restore(); }
+    const joined = cap.logs.join('\n');
+    expect(joined).toMatch(/Kade — Now \(2\)/);
+    expect(joined).toMatch(/active-now/);
+    expect(joined).toMatch(/also-now/);
+  });
+});
+
+describe('runCli — set-limit error paths', () => {
+  it('set-limit <bucket> with non-numeric limit dies', async () => {
+    const mock = new MockClient();
+    const origExit = process.exit;
+    const calls: number[] = [];
+    process.exit = ((code?: number) => {
+      calls.push(code ?? 0);
+      throw new Error(`exit(${code})`);
+    }) as typeof process.exit;
+    const cap = silence();
+    try {
+      await runCli(['node', 'cards', 'set-limit', 'now', 'abc'], factory(mock)).catch(() => {});
+    } finally {
+      process.exit = origExit;
+      cap.restore();
+    }
+    expect(calls).toEqual([1]);
+  });
+
+  it('set-limit with unknown bucket name dies', async () => {
+    const mock = new MockClient();
+    const origExit = process.exit;
+    const calls: number[] = [];
+    process.exit = ((code?: number) => {
+      calls.push(code ?? 0);
+      throw new Error(`exit(${code})`);
+    }) as typeof process.exit;
+    const cap = silence();
+    try {
+      await runCli(['node', 'cards', 'set-limit', 'not-a-bucket', '5'], factory(mock)).catch(() => {});
+    } finally {
+      process.exit = origExit;
+      cap.restore();
+    }
+    expect(calls).toEqual([1]);
+  });
 });
