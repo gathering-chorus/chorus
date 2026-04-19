@@ -1466,124 +1466,19 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/athena/discover-tests — map test files to domains they cover (#1869)
+// discover-tests moved to src/discover-tests.ts (#2205 wave 24).
+import { createDiscoverTests } from './discover-tests';
+const _discoverTests = createDiscoverTests({
+  sparqlClient: { query: (q: string) => athenaSparqlQuery(q), update: (u: string) => athenaSparqlUpdate(u) },
+  fs: fs as any, path: path as any,
+  gatheringRoot: path.resolve(__dirname, '../../../../jeff-bridwell-personal-site'),
+  chorusRoot: path.resolve(__dirname, '../../..'),
+});
 app.post('/api/athena/discover-tests', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
-    // 1. Get all SubDomains for domain→alias mapping (reuse from discover-code)
-    const sdQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }`;
-    const sdResult = await athenaSparqlQuery(sdQuery);
-    const domains = sdResult.results.bindings.map((b: any) => ({
-      id: b.sd.value.split('#').pop() as string,
-      label: (b.label.value as string).toLowerCase(),
-    }));
-
-    // Build reverse alias map: alias → domainId
-    const genericBases = new Set(['services', 'service', 'domains', 'domain', 'code', 'loom', 'time', 'streams', 'stream', 'messages', 'message', 'policies', 'policy']);
-    const aliasToId: Record<string, string> = {};
-    for (const d of domains) {
-      const base = d.id.replace(/-(domain|service)$/, '');
-      if (genericBases.has(base)) continue;
-      aliasToId[base] = d.id;
-      if (base.endsWith('s') && !base.endsWith('ss')) {
-        if (base.endsWith('ies')) aliasToId[base.replace(/ies$/, 'y')] = d.id;
-        else aliasToId[base.replace(/s$/, '')] = d.id;
-      }
-    }
-    // Special cases
-    aliasToId['wordpress'] = 'blog-domain';
-    aliasToId['socialpost'] = 'social-domain';
-    aliasToId['sms-seed'] = 'seeds-domain';
-    aliasToId['self-ai'] = 'sexuality-domain';
-    aliasToId['ontology'] = 'convergence-domain';
-
-    // 2. Scan test directories
-    const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
-    const CHORUS_ROOT = path.resolve(__dirname, '../../..');
-    const testEntries: Array<{ testFile: string; testType: string; coversDomain: string }> = [];
-
-    const classifyTestType = (relPath: string): string => {
-      if (/\/e2e\//i.test(relPath) || /\.e2e\./i.test(relPath)) return 'e2e';
-      if (/\/integration\//i.test(relPath)) return 'integration';
-      if (/\/performance\//i.test(relPath)) return 'performance';
-      if (/\/security\//i.test(relPath)) return 'security';
-      if (/\.bats$/i.test(relPath)) return 'bdd';
-      if (/\.feature$/i.test(relPath)) return 'bdd';
-      return 'unit';
-    };
-
-    const inferDomain = (filePath: string): string | null => {
-      const basename = path.basename(filePath).toLowerCase();
-      const pathLower = filePath.toLowerCase();
-      for (const [alias, domainId] of Object.entries(aliasToId)) {
-        if (basename.includes(alias) || pathLower.split('/').some(p => p === alias || p === alias + 's')) {
-          return domainId;
-        }
-      }
-      return null;
-    };
-
-    const scanTests = (dir: string, repoRoot: string) => {
-      if (!fs.existsSync(dir)) return;
-      const prefix = repoRoot === GATHERING_ROOT ? 'gathering' : 'chorus';
-      const entries = fs.readdirSync(dir, { recursive: true }) as string[];
-      for (const entry of entries) {
-        const entryStr = String(entry);
-        if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) continue;
-        const fullPath = path.join(dir, entryStr);
-        try { if (!fs.statSync(fullPath).isFile()) continue; } catch { continue; }
-        if (!/\.(test|spec)\.(ts|js)$|\.bats$|\.feature$/i.test(entryStr)) continue;
-        const relPath = path.relative(repoRoot, fullPath);
-        const qualifiedPath = `${prefix}/${relPath}`;
-        const testType = classifyTestType(relPath);
-        const coversDomain = inferDomain(relPath);
-        if (coversDomain) {
-          testEntries.push({ testFile: qualifiedPath, testType, coversDomain });
-        }
-      }
-    };
-
-    scanTests(path.join(GATHERING_ROOT, 'tests'), GATHERING_ROOT);
-    scanTests(path.join(CHORUS_ROOT, 'platform/api/tests'), CHORUS_ROOT);
-    scanTests(path.join(CHORUS_ROOT, 'platform/services/chorus-hooks/tests'), CHORUS_ROOT);
-    scanTests(path.join(CHORUS_ROOT, 'proving'), CHORUS_ROOT);
-    scanTests(path.join(CHORUS_ROOT, 'docs/diagrams'), CHORUS_ROOT);
-
-    // 3. Clear existing test coverage triples and repopulate
-    const clearQuery = `DELETE WHERE { GRAPH <urn:chorus:instances> { ?t a <https://jeffbridwell.com/chorus#TestCoverage> ; ?p ?o . } }`;
-    await athenaSparqlUpdate(clearQuery);
-
-    // 4. Write to graph in batches
-    const batchSize = 50;
-    let written = 0;
-    for (let i = 0; i < testEntries.length; i += batchSize) {
-      const batch = testEntries.slice(i, i + batchSize);
-      const triples = batch.map(t => {
-        const tcId = `test-coverage-${t.testFile.replace(/[\/\.]/g, '-').toLowerCase()}`;
-        const tcUri = `https://jeffbridwell.com/chorus#${tcId}`;
-        const sdUri = `https://jeffbridwell.com/chorus#${t.coversDomain}`;
-        return `<${tcUri}> a chorus:TestCoverage ; chorus:testFile "${t.testFile.replace(/"/g, '\\"')}" ; chorus:testType "${t.testType}" ; chorus:covers <${sdUri}> .`;
-      }).join('\n');
-      const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} } }`;
-      await athenaSparqlUpdate(insert);
-      written += batch.length;
-    }
-
-    // 5. Summary
-    const byType: Record<string, number> = {};
-    const byDomain: Record<string, number> = {};
-    for (const t of testEntries) {
-      byType[t.testType] = (byType[t.testType] || 0) + 1;
-      byDomain[t.coversDomain] = (byDomain[t.coversDomain] || 0) + 1;
-    }
-
-    res.json(athenaEnvelope('discover-tests', {
-      total_tests: testEntries.length,
-      total_domains_covered: Object.keys(byDomain).length,
-      by_type: byType,
-      by_domain: byDomain,
-      written,
-    }, Date.now() - start, { count: testEntries.length }));
+    const data = await _discoverTests();
+    res.json(athenaEnvelope('discover-tests', data, Date.now() - start, { count: data.total_tests }));
   } catch (err: any) {
     res.status(500).json(athenaEnvelope('discover-tests', { error: err.message }, Date.now() - start, { error: true }));
   }
