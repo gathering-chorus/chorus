@@ -1768,43 +1768,15 @@ const ATHENA_QUERIES = [
   { name: 'machines', path: '/api/athena/machines', description: 'Machines with running services' },
 ];
 
-function loadSparql(name: string): string {
-  return fs.readFileSync(path.join(SPARQL_DIR, `${name}.sparql`), 'utf-8').trim();
-}
-
-async function athenaSparqlQuery(query: string): Promise<any> {
-  const res = await fetch(ATHENA_SPARQL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/sparql-query', 'Accept': 'application/sparql-results+json' },
-    body: query,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Fuseki ${res.status}: ${text.slice(0, 200)}`);
-  }
-  return res.json();
-}
-
+// Athena SPARQL client + envelope + loader extracted to
+// src/athena-sparql.ts (#2205 wave 8).
 const ATHENA_UPDATE = 'http://localhost:3030/pods/update';
-
-async function athenaSparqlUpdate(update: string): Promise<void> {
-  const res = await fetch(ATHENA_UPDATE, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/sparql-update' },
-    body: update,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Fuseki update ${res.status}: ${text.slice(0, 200)}`);
-  }
-}
-
-function athenaEnvelope(queryName: string, data: any, durationMs: number, extra: Record<string, any> = {}) {
-  return {
-    _meta: { source: 'athena', query_name: queryName, graph: ATHENA_GRAPH, duration_ms: durationMs, cached: false, timestamp: bostonNow(), ...extra },
-    data,
-  };
-}
+import { createAthenaSparqlClient, createEnvelopeBuilder, createSparqlLoader } from './athena-sparql';
+const _athena = createAthenaSparqlClient({ sparqlUrl: ATHENA_SPARQL, updateUrl: ATHENA_UPDATE });
+const athenaSparqlQuery = _athena.query;
+const athenaSparqlUpdate = _athena.update;
+const athenaEnvelope = createEnvelopeBuilder({ graph: ATHENA_GRAPH, now: bostonNow });
+const loadSparql = createSparqlLoader({ fs, sparqlDir: SPARQL_DIR });
 
 // GET /api/athena/health — discovery endpoint, lists available queries
 // Extracted to handlers/athena-health.ts (#2173 AC4). SPARQL client + query
