@@ -10,7 +10,22 @@
 
 use crate::state::{AppState, ContextSearchResults};
 use crate::types::{HookInput, HookResponse};
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 use tracing::info;
+
+// #2231: per-turn cost tuning — caches for expensive context primitives.
+// Injection output stays byte-identical for same inputs within TTL.
+const PULSE_STALE_THRESHOLD: Duration = Duration::from_secs(30);
+const HYBRID_CACHE_TTL: Duration = Duration::from_secs(30);
+const ATHENA_CACHE_TTL: Duration = Duration::from_secs(60);
+
+static HYBRID_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Vec<(String, String, String)>)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static ATHENA_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Option<String>)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Stop words — don't search for these alone
 const STOP_WORDS: &[&str] = &[
@@ -43,6 +58,62 @@ fn extract_keywords(prompt: &str) -> Vec<String> {
     keywords.dedup();
     keywords.truncate(6); // Max 6 keywords
     keywords
+}
+
+/// Return true when /tmp/pulse-latest.json is missing or older than the
+/// staleness threshold. Used to gate the per-prompt pulse rebuild spawn —
+/// the daemon (#1881) already refreshes on its own schedule.
+fn pulse_snapshot_stale() -> bool {
+    std::fs::metadata("/tmp/pulse-latest.json")
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .map(|age| age > PULSE_STALE_THRESHOLD)
+        .unwrap_or(true)
+}
+
+/// Cached wrapper around `query_chorus_hybrid`. Keyed by role + sorted
+/// keywords so two prompts with the same meaningful tokens share results
+/// within HYBRID_CACHE_TTL.
+fn cached_query_chorus_hybrid(
+    role: &str,
+    keywords: &[String],
+    query: &str,
+) -> Vec<(String, String, String)> {
+    let mut sorted = keywords.to_vec();
+    sorted.sort();
+    let key = format!("{}|{}", role, sorted.join(","));
+
+    if let Ok(cache) = HYBRID_CACHE.lock() {
+        if let Some((stamp, results)) = cache.get(&key) {
+            if stamp.elapsed() < HYBRID_CACHE_TTL {
+                return results.clone();
+            }
+        }
+    }
+
+    let results = query_chorus_hybrid(query);
+    if let Ok(mut cache) = HYBRID_CACHE.lock() {
+        cache.insert(key, (Instant::now(), results.clone()));
+    }
+    results
+}
+
+/// Cached wrapper around `query_athena_domain`. Keyed by role with
+/// ATHENA_CACHE_TTL — the role's WIP domain rarely changes within a minute.
+fn cached_query_athena_domain(role: &str) -> Option<String> {
+    if let Ok(cache) = ATHENA_CACHE.lock() {
+        if let Some((stamp, value)) = cache.get(role) {
+            if stamp.elapsed() < ATHENA_CACHE_TTL {
+                return value.clone();
+            }
+        }
+    }
+    let value = query_athena_domain(role);
+    if let Ok(mut cache) = ATHENA_CACHE.lock() {
+        cache.insert(role.to_string(), (Instant::now(), value.clone()));
+    }
+    value
 }
 
 /// Query Chorus API hybrid search — FTS + semantic + SPARQL via RRF (#2003)
@@ -305,17 +376,23 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let role_name = format!("{:?}", input.role()).to_lowercase();
     let query = keywords.join(" ");
 
-    // Pulse: assemble team state snapshot on every prompt cycle (#1881)
-    // Spawn shim binary — context_inject runs in the Axum server, Pulse is in the shim
-    let shim = format!("{}/platform/services/chorus-hooks/target/release/chorus-hook-shim",
-        crate::shared::state_paths::REPO_ROOT);
-    let _ = std::process::Command::new(&shim).arg("pulse")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+    // Pulse: assemble team state snapshot. A background daemon already refreshes
+    // /tmp/pulse-latest.json on schedule (#1881); only spawn a rebuild when the
+    // snapshot is stale past PULSE_STALE_THRESHOLD. Pre-#2231 this spawned
+    // unconditionally on every prompt, ~200ms of redundant work per turn.
+    if pulse_snapshot_stale() {
+        let shim = format!("{}/platform/services/chorus-hooks/target/release/chorus-hook-shim",
+            crate::shared::state_paths::REPO_ROOT);
+        let _ = std::process::Command::new(&shim).arg("pulse")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
 
-    // Search Chorus API — hybrid mode (FTS + semantic + SPARQL)
-    let chorus_results = query_chorus_hybrid(&query);
+    // Search Chorus API — hybrid mode (FTS + semantic + SPARQL). Cached per
+    // (role, keywords-hash) with HYBRID_CACHE_TTL so successive prompts that
+    // share keywords don't re-query.
+    let chorus_results = cached_query_chorus_hybrid(&role_name, &keywords, &query);
 
     // Scan memory files
     let memory_hits = scan_memory(&keywords);
@@ -327,7 +404,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // locks that contract.
     let pulse_block = read_pulse_snapshot();
     let spine_events = query_recent_spine(8);
-    let athena_block = query_athena_domain(&role_name);
+    let athena_block = cached_query_athena_domain(&role_name);
 
     // Build the context block — always inject the three primitives if any are
     // present, regardless of whether search turned up hits.
