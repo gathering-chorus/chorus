@@ -109,6 +109,8 @@ cmd_start() {
     return 1
   fi
   echo "Starting $label..."
+  # Clear suppress markers immediately — a failed start should not leave alerts dark
+  rm -f "/tmp/deploy-in-progress-${label}.marker" "/tmp/chorus-alert-suppress"
   launchctl kickstart -k "gui/$UID_NUM/$label" 2>&1
   sleep 1
   local info
@@ -117,8 +119,6 @@ cmd_start() {
   pid=$(echo "$info" | grep '"PID"' | grep -o '[0-9]*')
   if [[ -n "$pid" ]]; then
     echo -e "${GREEN}Started${NC} $label (PID $pid)"
-    # Clear deploy suppression marker — service is up, alerts can resume
-    rm -f "/tmp/deploy-in-progress-${label}.marker" "/tmp/chorus-alert-suppress"
   else
     echo -e "${YELLOW}Started but no PID${NC} $label — may be a periodic agent"
   fi
@@ -134,7 +134,7 @@ cmd_stop() {
   fi
   echo "Stopping $label..."
   # Write deploy suppression marker — prevents deep-health alerts during restart window
-  echo $(( $(date +%s) + 60 )) > "/tmp/chorus-alert-suppress"
+  echo $(( $(date +%s) + 90 )) > "/tmp/chorus-alert-suppress"
   touch "/tmp/deploy-in-progress-${label}.marker"
   local pid
   pid=$(launchctl list "$label" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*')
