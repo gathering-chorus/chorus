@@ -105,7 +105,7 @@ Print summary:
 
 1. Emit spine event: `gate.arch.passed` with card ID
 2. Add card comment: "gate:arch-pass — Silas"
-3. Nudge self: "arch passed — run /gate-ops after deploy"
+3. Prompt: "Run /gate-ops next after deploy." (#2222 — intra-role, no nudge to self; Silas's own terminal surfaces this)
 
 ## On Fail
 

@@ -165,7 +165,7 @@ Print summary:
 
 1. Emit spine event: `gate.ops.passed` with card ID
 2. Add card comment: "gate:ops-pass — Silas"
-3. Nudge Wren: "gate:ops passed on #<card-id> — run /gate-product"
+3. Prompt: "Chain complete. Next: whoever is running /demo or /acp will see all 5 gate passes on the card and proceed." (#2222 — demo-caller is already watching the card; no nudge needed)
 
 ## On Fail
 

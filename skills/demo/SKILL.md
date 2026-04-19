@@ -123,7 +123,7 @@ Emit spine event:
 2. **Run `/gate-code <card-id>`** — tests green, build clean, no new warnings, pattern match. Kade runs this.
 3. **Run `/gate-quality <card-id>`** — hooks pass, regression clean, no console.log, debt check. Kade runs this. On pass, auto-nudges Silas for arch review.
 4. **Wait for `/gate-arch` pass from Silas** — system fit, namespace conventions, domain boundaries. Silas runs this after receiving the nudge.
-5. **Run `/gate-ops <card-id>`** — health checks, log flow, rollback path, disk health. Silas runs this. On pass, auto-nudges Wren for gate-product (already done in step 1) or confirms chain complete.
+5. **Run `/gate-ops <card-id>`** — health checks, log flow, rollback path, disk health. Silas runs this. On pass, posts comment only — chain is complete, no nudge (per #2222: demo-caller is already watching the card).
 
 Check for gate results via card comments:
 ```bash
