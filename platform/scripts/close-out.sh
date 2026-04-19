@@ -66,7 +66,7 @@ if [ -z "$PARAGRAPH" ]; then
 fi
 
 NEXT_SESSION="${CHORUS_ROOT}/roles/${ROLE}/next-session.md"
-ACTIVITY="${CHORUS_ROOT}/activity.md"
+ACTIVITY="${CHORUS_ROOT}/../activity.md"
 TODAY=$(date '+%Y-%m-%d')
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
 JOURNAL_DIR="${CHORUS_ROOT}/roles/${ROLE}/journal"
