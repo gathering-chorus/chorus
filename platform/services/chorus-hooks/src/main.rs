@@ -251,11 +251,7 @@ async fn pre_tool_use_inner(
                 return (_last_module.clone(), r);
             }
 
-            // Demo gate (#1814) — block done without demo evidence
-            _last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input);
-            if r.stdout.is_some() || r.exit_code != 0 {
-                return (_last_module.clone(), r);
-            }
+            // #2270: demo gate removed from hook chain — cards CLI SDK is single enforcement point
 
             // Batch progress (#1656) — detect run_in_background in PreToolUse
             // PostToolUse doesn't fire until background task completes
@@ -342,11 +338,7 @@ async fn pre_tool_use_inner(
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
-            // Demo gate (#1814) — block done without demo evidence
-            _last_module = "demo_gate".into(); let r = hooks::demo_gate::check(&input);
-            if r.stdout.is_some() || r.exit_code != 0 {
-                return (_last_module.clone(), r);
-            }
+            // #2270: demo gate removed from hook chain — cards CLI SDK is single enforcement point
             // Quality gate (#1717) — agent review of AC before demo
             _last_module = "quality_gate".into(); let r = hooks::quality_gate::pre_demo_check(&input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
