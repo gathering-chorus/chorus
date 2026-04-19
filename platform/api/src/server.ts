@@ -325,7 +325,7 @@ async function semanticSearch(query: string, limit: number, role?: string): Prom
     score: r._distance != null ? 1 / (1 + r._distance) : 0,
   }));
 }
-const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+// STALE_THRESHOLD_MS moved to src/search-meta.ts (#2205 wave 5).
 const FUSEKI_URL = process.env.FUSEKI_URL || 'http://localhost:3030/pods/query';
 
 // --- SPARQL text search ---
@@ -361,72 +361,8 @@ class DbNotFoundError extends Error {
   constructor() { super('Chorus index database not found'); }
 }
 
-// --- Staleness check middleware ---
-
-function addStaleHeader(res: Response, db: Database.Database): void {
-  const row = db.prepare(
-    `SELECT MAX(last_indexed) as latest FROM watermarks`
-  ).get() as { latest: string } | undefined;
-
-  if (row?.latest) {
-    const lastIndexed = new Date(row.latest).getTime();
-    if (Date.now() - lastIndexed > STALE_THRESHOLD_MS) {
-      res.setHeader('X-Chorus-Stale', 'true');
-    }
-  }
-}
-
-// --- Search freshness metadata (#1878) ---
-
-function buildSearchMeta(results: any[], db?: Database.Database): Record<string, any> {
-  // Coverage: proportion of indexed sources within 2x their expected cadence (#1879)
-  let domain_coverage = 1;
-  if (db) {
-    try {
-      const watermarks = db.prepare('SELECT source, last_indexed FROM watermarks ORDER BY source').all() as Array<{ source: string; last_indexed: string }>;
-      const aggregated = new Map<string, string>();
-      for (const w of watermarks) {
-        const parts = w.source.split(':');
-        const key = parts[0] === 'artifact' ? parts.slice(0, 2).join(':') : parts[0];
-        const existing = aggregated.get(key);
-        if (!existing || w.last_indexed > existing) aggregated.set(key, w.last_indexed);
-      }
-      const now = Date.now();
-      let total = 0, contributing = 0;
-      for (const [source, lastIndexed] of aggregated) {
-        total++;
-        const ageSecs = (now - new Date(lastIndexed).getTime()) / 1000;
-        const cadenceKey = source.split(':')[0];
-        const cadence = SOURCE_CADENCE[cadenceKey] || SOURCE_CADENCE[source] || 86400;
-        if (ageSecs / cadence <= 2) contributing++;
-      }
-      domain_coverage = total > 0 ? contributing / total : 1;
-    } catch { /* default to 1 */ }
-  }
-
-  let newest_result_age_s = 0;
-  if (results.length > 0) {
-    const timestamps = results
-      .map((r: any) => r.timestamp)
-      .filter(Boolean)
-      .map((t: string) => new Date(t).getTime())
-      .filter((t: number) => !isNaN(t));
-    if (timestamps.length > 0) {
-      const newest = Math.max(...timestamps);
-      newest_result_age_s = Math.round((Date.now() - newest) / 1000);
-    }
-  }
-
-  const stale = newest_result_age_s > 86400 || domain_coverage < 0.5;
-
-  const sources: Record<string, number> = {};
-  for (const r of results) {
-    const src = r.source || r.domain || 'unknown';
-    sources[src] = (sources[src] || 0) + 1;
-  }
-
-  return { domain_coverage: Math.round(domain_coverage * 100) / 100, newest_result_age_s, stale, sources, schema_version: '1.0.0' };
-}
+// Staleness middleware + search meta extracted to src/search-meta.ts (#2205 wave 5).
+import { addStaleHeader, buildSearchMeta } from './search-meta';
 
 // enrichHit + resolveSearchLimit + SEARCH_* constants moved to search-fusion.ts.
 import { enrichHit, resolveSearchLimit } from './search-fusion';
@@ -846,22 +782,8 @@ app.get('/api/chorus/stats', (_req: Request, res: Response) => {
 });
 
 // --- GET /api/chorus/freshness (#1879) ---
-// Per-source freshness with graduated staleness levels
-
-const SOURCE_CADENCE: Record<string, number> = {
-  claude: 3600,        // 1h — session data should be near-realtime
-  spine: 3600,         // 1h
-  brief: 86400,        // 24h
-  decision: 86400,     // 24h
-  clearing: 86400,     // 24h
-  memory: 86400,       // 24h
-  story: 86400,        // 24h
-  adr: 604800,         // 7d
-  activity: 86400,     // 24h
-  state: 86400,        // 24h
-  crawler: 86400,      // 24h
-  journal: 604800,     // 7d
-};
+// SOURCE_CADENCE moved to src/search-meta.ts (#2205 wave 5) — imported below if still referenced here.
+import { SOURCE_CADENCE } from './search-meta';
 
 import { fetchFreshness } from './handlers/chorus-freshness';
 app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
