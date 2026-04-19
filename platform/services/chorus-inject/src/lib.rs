@@ -82,19 +82,15 @@ end tell"#,
 /// Build the AppleScript for keystroke injection into a Terminal window.
 ///
 /// #2029: uses keystroke + key code 36 (Return). do script breaks auto-submit.
-/// #1764 / DEC-107: saves and restores frontmost app to prevent focus theft.
+/// #2277: no app-level activate — set frontmost on the window only, never steal focus.
 pub fn build_inject_script(pattern: &str, escaped_text: &str, role: &str) -> String {
     format!(
-        r#"tell application "System Events"
-    set originalApp to name of first application process whose frontmost is true
-end tell
-tell application "Terminal"
+        r#"tell application "Terminal"
     set winCount to count of windows
     repeat with i from 1 to winCount
         set w to window i
         set winName to name of w
         if winName contains "{pattern}" and winName contains "claude" then
-            activate
             set frontmost of w to true
             delay 0.15
             tell application "System Events"
@@ -105,7 +101,6 @@ tell application "Terminal"
                 end tell
             end tell
             delay 0.3
-            tell application originalApp to activate
             return "ok"
         end if
     end repeat
@@ -335,11 +330,11 @@ mod inject_script_tests {
     use super::build_inject_script as build;
 
     #[test]
-    fn saves_and_restores_frontmost_app() {
-        // #1764 / DEC-107 — no focus theft.
+    fn no_app_level_activate() {
+        // #2277 — never activate Terminal app-level; set frontmost on window only.
         let s = build("silas", "hello", "silas");
-        assert!(s.contains("originalApp"));
-        assert!(s.contains("tell application originalApp to activate"));
+        assert!(!s.contains("activate"));
+        assert!(s.contains("set frontmost of w to true"));
     }
 
     #[test]
