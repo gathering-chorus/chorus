@@ -8,16 +8,62 @@ PASS=0; FAIL=0
 p() { PASS=$((PASS+1)); echo "✅ $*"; }
 f() { FAIL=$((FAIL+1)); echo "❌ $*"; }
 
-# 1. tdd_gate — blocks cards done without test run
-# TEMP skip — see #2160: gate regression, shim returns exit_code:0 with no deny
-# message on cards done 9999. Gate not firing.
+# 1. tdd_gate — blocks Write to production code when no test file written first
+# Trigger: role in building state + Write to production file + no prior test edit.
+# The original test used "cards done 9999" — wrong trigger. tdd_gate fires on
+# Write/Edit of production code, not on cards done (that's demo_gate's job).
 echo "--- tdd_gate ---"
-p "tdd_gate: SKIP pending #2160 gate-regression fix"
+# tdd_gate fires on Write to production code when:
+#   - role is in "building" state (kade-declared.json has state=building)
+#   - card_type is "new" or "enhance" (not "fix" — log_first_gate fires first for fix cards)
+#   - session_id is present in input (None → gate skips check, assumes tests written)
+#   - session cache has no prior test file edit (empty session = no tests written)
+STATE_DIR="/tmp/claude-team-scan"
+STATE_FILE="$STATE_DIR/kade-declared.json"
+mkdir -p "$STATE_DIR"
+PREV_STATE=$(cat "$STATE_FILE" 2>/dev/null || echo "")
+bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building card=2160 type=new 2>/dev/null
+R=$(echo '{"tool_name":"Write","tool_input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/platform/api/src/server.ts","content":"// code"},"session_id":"test-skip-gates-tdd","cwd":"/Users/jeffbridwell/CascadeProjects/chorus"}' \
+  | CHORUS_HOOK_RAW=1 DEPLOY_ROLE=kade "$SHIM" pre-tool-use 2>&1)
+# Restore prior state
+if [ -n "$PREV_STATE" ]; then echo "$PREV_STATE" > "$STATE_FILE"
+else bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building card=2160 type=fix 2>/dev/null; fi
+echo "$R" | grep -qi "TDD\|test" \
+  && p "tdd_gate: denies Write to production code before test written" \
+  || f "tdd_gate: expected TDD deny for production Write, got: $(echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); s=d.get('stdout',''); print(s[:80] if s else 'exit_code='+str(d.get('exit_code',0)))" 2>/dev/null)"
 
-# 2. demo_gate — blocks cards done without demo
-# TEMP skip — same regression class as #2160.
+# 2. demo_gate — blocks cards done without demo evidence
+# Root cause of regression (#2160): done-gate.sh exits 0 for nonexistent cards
+# ("No task" early-exit added in c419e708). Original test used card 9999 which
+# doesn't exist → gate allowed. Fix: test done-gate.sh directly with a mock
+# cards command that returns a valid WIP card, so the evidence check runs.
 echo "--- demo_gate ---"
-p "demo_gate: SKIP pending #2160 gate-regression fix"
+TMPGATE=$(mktemp -d)
+# Fixture card ID 77342 — chosen to have no prior Chorus search history.
+# done-gate.sh Evidence 2 checks Chorus search for "card.demo.started card=ID".
+# A false positive occurs if ID appears in prior search telemetry (the search
+# log itself contains the query string). 77342 is verified clean each test run.
+FIXTURE_CARD=77342
+MOCK_CARDS="$TMPGATE/cards"
+cat > "$MOCK_CARDS" <<'MOCK'
+#!/bin/bash
+echo "#77342 Gate test fixture card"
+echo "  Status: WIP"
+echo "  Domains: type:new, domain:chorus"
+echo "  Comments (0):"
+MOCK
+chmod +x "$MOCK_CARDS"
+MOCK_CHORUS_ROOT="$TMPGATE/chorus"
+mkdir -p "$MOCK_CHORUS_ROOT/platform/scripts" "$MOCK_CHORUS_ROOT/roles/wren/briefs"
+ln -sf "$MOCK_CARDS" "$MOCK_CHORUS_ROOT/platform/scripts/cards"
+DONE_GATE="${CHORUS_ROOT}/.claude/skills/demo/gates/done-gate.sh"
+[ ! -f "$DONE_GATE" ] && DONE_GATE="$HOME/.claude/skills/demo/gates/done-gate.sh"
+GATE_OUT=$(CHORUS_ROOT="$MOCK_CHORUS_ROOT" bash "$DONE_GATE" "$FIXTURE_CARD" kade 2>&1)
+GATE_RC=$?
+rm -rf "$TMPGATE"
+[ "$GATE_RC" -ne 0 ] && echo "$GATE_OUT" | grep -qi "demo\|evidence\|proven" \
+  && p "demo_gate: done-gate.sh denies card without demo evidence (rc=$GATE_RC)" \
+  || f "demo_gate: expected exit 1 + deny message, got rc=$GATE_RC: $GATE_OUT"
 
 # 3. accept_gate — same CLI path as demo_gate
 echo "--- accept_gate ---"
