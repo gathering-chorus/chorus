@@ -269,13 +269,11 @@ import { enrichHit, resolveSearchLimit } from './search-fusion';
 // Supports mode=fts (default), mode=semantic, mode=hybrid
 
 import { fetchSearch } from './handlers/chorus-search';
+import { createWithDb } from './with-db';
+const withDb = createWithDb<Database.Database>(() => getDb());
+
 app.get('/api/chorus/search', async (req: Request, res: Response) => {
-  let db: Database.Database;
-  try { db = getDb(); } catch (e) {
-    if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
-    throw e;
-  }
-  try {
+  await withDb(res, async (db) => {
     addStaleHeader(res, db);
     const r = await fetchSearch(
       {
@@ -297,7 +295,7 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
       },
     );
     res.status(r.status).json(r.body);
-  } finally { db.close(); }
+  });
 });
 
 // --- GET /api/chorus/conversation ---
@@ -305,13 +303,8 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
 // Memory domain — team recall, not search. #1946
 
 import { fetchChorusConversation } from './handlers/chorus-conversation';
-app.get('/api/chorus/conversation', (req: Request, res: Response) => {
-  let db: Database.Database;
-  try { db = getDb(); } catch (e) {
-    if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
-    throw e;
-  }
-  try {
+app.get('/api/chorus/conversation', async (req: Request, res: Response) => {
+  await withDb(res, (db) => {
     const r = fetchChorusConversation(
       { db, isEDT, convertToLocal },
       {
@@ -324,7 +317,7 @@ app.get('/api/chorus/conversation', (req: Request, res: Response) => {
       },
     );
     res.status(r.status).json(r.body);
-  } finally { db.close(); }
+  });
 });
 
 // --- GET /api/chorus/card-story/:id ---
@@ -576,29 +569,19 @@ export { hasExactToken, mergeRRF };
 // --- GET /api/chorus/reconcile ---
 
 import { fetchChorusReconcile } from './handlers/chorus-reconcile';
-app.get('/api/chorus/reconcile', (req: Request, res: Response) => {
-  let db: Database.Database;
-  try { db = getDb(); } catch (e) {
-    if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
-    throw e;
-  }
-  try {
+app.get('/api/chorus/reconcile', async (req: Request, res: Response) => {
+  await withDb(res, (db) => {
     addStaleHeader(res, db);
     const r = fetchChorusReconcile({ db }, { role: req.query.role as string | undefined });
     res.status(r.status).json(r.body);
-  } finally { db.close(); }
+  });
 });
 
 // --- GET /api/chorus/refs ---
 
 import { fetchChorusRefs } from './handlers/chorus-refs';
-app.get('/api/chorus/refs', (req: Request, res: Response) => {
-  let db: Database.Database;
-  try { db = getDb(); } catch (e) {
-    if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
-    throw e;
-  }
-  try {
+app.get('/api/chorus/refs', async (req: Request, res: Response) => {
+  await withDb(res, (db) => {
     addStaleHeader(res, db);
     const r = fetchChorusRefs({ db }, {
       card: req.query.card as string | undefined,
@@ -607,23 +590,18 @@ app.get('/api/chorus/refs', (req: Request, res: Response) => {
       entityId: req.query.id as string | undefined,
     });
     res.status(r.status).json(r.body);
-  } finally { db.close(); }
+  });
 });
 
 // --- GET /api/chorus/stats ---
 
 import { fetchChorusStats } from './handlers/chorus-stats';
-app.get('/api/chorus/stats', (_req: Request, res: Response) => {
-  let db: Database.Database;
-  try { db = getDb(); } catch (e) {
-    if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
-    throw e;
-  }
-  try {
+app.get('/api/chorus/stats', async (_req: Request, res: Response) => {
+  await withDb(res, (db) => {
     addStaleHeader(res, db);
     const r = fetchChorusStats({ db });
     res.status(r.status).json(r.body);
-  } finally { db.close(); }
+  });
 });
 
 // --- GET /api/chorus/freshness (#1879) ---
@@ -942,12 +920,7 @@ const SELF_SOURCE_WHITELIST = new Set(['memory', 'story', 'decision', 'brief', '
 
 import { fetchSelf } from './handlers/chorus-self';
 app.get('/api/chorus/self', async (req: Request, res: Response) => {
-  let db: Database.Database;
-  try { db = getDb(); } catch (e) {
-    if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
-    throw e;
-  }
-  try {
+  await withDb(res, async (db) => {
     const r = await fetchSelf(
       {
         db,
@@ -960,7 +933,7 @@ app.get('/api/chorus/self', async (req: Request, res: Response) => {
       { q: req.query.q as string | undefined, limit: req.query.limit as string | undefined },
     );
     res.status(r.status).json(r.body);
-  } finally { db.close(); }
+  });
 });
 
 // --- POST /api/chorus/embed (trigger embed-delta on demand) ---
@@ -1095,33 +1068,23 @@ app.post('/api/chorus/alert', (req: Request, res: Response) => {
 // --- GET /api/chorus/voice-analytics ---
 
 import { fetchChorusVoiceAnalytics } from './handlers/chorus-voice-analytics';
-app.get('/api/chorus/voice-analytics', (req: Request, res: Response) => {
-  let db: Database.Database;
-  try { db = getDb(); } catch (e) {
-    if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
-    throw e;
-  }
-  try {
+app.get('/api/chorus/voice-analytics', async (req: Request, res: Response) => {
+  await withDb(res, (db) => {
     addStaleHeader(res, db);
     const r = fetchChorusVoiceAnalytics({ db, isEDT }, { days: req.query.days as string | undefined });
     res.status(r.status).json(r.body);
-  } finally { db.close(); }
+  });
 });
 
 // --- GET /api/chorus/reprompt-analytics ---
 
 import { fetchChorusRepromptAnalytics } from './handlers/chorus-reprompt-analytics';
-app.get('/api/chorus/reprompt-analytics', (req: Request, res: Response) => {
-  let db: Database.Database;
-  try { db = getDb(); } catch (e) {
-    if (e instanceof DbNotFoundError) { res.status(503).json({ error: e.message }); return; }
-    throw e;
-  }
-  try {
+app.get('/api/chorus/reprompt-analytics', async (req: Request, res: Response) => {
+  await withDb(res, (db) => {
     addStaleHeader(res, db);
     const r = fetchChorusRepromptAnalytics({ db }, { days: req.query.days as string | undefined });
     res.status(r.status).json(r.body);
-  } finally { db.close(); }
+  });
 });
 
 // --- GET /api/chorus/attention-analytics (extracted #2189) ---
