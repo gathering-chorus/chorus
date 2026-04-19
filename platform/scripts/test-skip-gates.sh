@@ -58,7 +58,7 @@ mkdir -p "$MOCK_CHORUS_ROOT/platform/scripts" "$MOCK_CHORUS_ROOT/roles/wren/brie
 ln -sf "$MOCK_CARDS" "$MOCK_CHORUS_ROOT/platform/scripts/cards"
 DONE_GATE="${CHORUS_ROOT}/.claude/skills/demo/gates/done-gate.sh"
 [ ! -f "$DONE_GATE" ] && DONE_GATE="$HOME/.claude/skills/demo/gates/done-gate.sh"
-GATE_OUT=$(CHORUS_ROOT="$MOCK_CHORUS_ROOT" bash "$DONE_GATE" "$FIXTURE_CARD" kade 2>&1)
+GATE_OUT=$(CHORUS_ROOT="$MOCK_CHORUS_ROOT" DONE_GATE_SKIP_SEARCH=1 bash "$DONE_GATE" "$FIXTURE_CARD" kade 2>&1)
 GATE_RC=$?
 rm -rf "$TMPGATE"
 [ "$GATE_RC" -ne 0 ] && echo "$GATE_OUT" | grep -qi "demo\|evidence\|proven" \
