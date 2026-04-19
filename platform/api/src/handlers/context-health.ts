@@ -31,7 +31,8 @@ export type CheckStatus = 'ok' | 'warning' | 'error' | 'unknown';
 export interface HealthCheck {
   name: string;
   status: CheckStatus;
-  detail?: string;
+  /** Human-readable reason this check is non-ok. Absent when status=ok. */
+  reason?: string;
   latencyMs?: number;
   lastCheck?: string;
 }
@@ -40,7 +41,6 @@ export interface ContextHealthData {
   status: HealthStatus;
   failures: number;
   warnings: number;
-  summary: string;
   checks: HealthCheck[];
 }
 
@@ -71,14 +71,13 @@ export async function fetchContextHealth(
   const status = toHealthStatus(healthRaw.status);
   const failures = numericOr(healthRaw.failures, 0);
   const warnings = numericOr(healthRaw.warning_count ?? healthRaw.warnings, 0);
-  const summary = typeof healthRaw.summary === 'string' ? healthRaw.summary : '';
   const checks = Array.isArray(healthRaw.checks)
     ? healthRaw.checks
         .filter((c: unknown): c is Record<string, unknown> => !!c && typeof c === 'object')
         .map(shapeCheck)
     : [];
 
-  const data: ContextHealthData = { status, failures, warnings, summary, checks };
+  const data: ContextHealthData = { status, failures, warnings, checks };
   return { status: 200, body: buildEnvelope(header, sourceUrl, data) };
 }
 
@@ -101,8 +100,8 @@ function shapeCheck(raw: Record<string, unknown>): HealthCheck {
     name: str('name') ?? 'unknown',
     status,
   };
-  const detail = str('detail');
-  if (detail) check.detail = detail;
+  const reason = str('detail') ?? str('reason');
+  if (reason) check.reason = reason;
   const last = str('lastCheck') ?? str('last_check');
   if (last) check.lastCheck = last;
   if (typeof raw.latencyMs === 'number') check.latencyMs = raw.latencyMs;

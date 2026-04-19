@@ -176,14 +176,10 @@ fn read_pulse_snapshot() -> Option<String> {
         out.push_str(&format!("  health: {} (failures={}, warnings={})\n", status, failures, warns));
     }
     if let Some(wip) = v.pointer("/board/wip_cards").and_then(|c| c.as_array()) {
-        out.push_str(&format!("  wip_cards: {}\n", wip.len()));
-        for card in wip.iter().take(5) {
-            let id = card.get("id").and_then(|i| i.as_i64()).unwrap_or(0);
-            let title = card.get("title").and_then(|t| t.as_str()).unwrap_or("");
-            let owner = card.get("owner").and_then(|o| o.as_str()).unwrap_or("");
-            let short: String = title.chars().take(80).collect();
-            out.push_str(&format!("    #{} [{}] {}\n", id, owner, short));
-        }
+        // #2234 Step 6 prototype: surface count + pull-pointer instead of inlining card titles.
+        // Full card detail is available at /api/chorus/context/board/wip — agents that need it
+        // fetch and cite. This removes ~5 card-title lines (~300 bytes) per turn.
+        out.push_str(&format!("  board.wip: {} cards → GET /api/chorus/context/board/wip\n", wip.len()));
     }
     if let Some(roles) = v.pointer("/roles").and_then(|r| r.as_object()) {
         for (role, data) in roles.iter().take(3) {
@@ -415,6 +411,14 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         context.push_str("\n");
         context.push_str("## Pulse\n");
         context.push_str(pulse);
+        // #2234 Step 6 prototype: endpoint manifest for Context API pull.
+        // Cite what you read: "per /api/chorus/context/board/wip @ HH:MM, ..."
+        context.push_str("  context api:\n");
+        context.push_str("    board:  GET /api/chorus/context/board/wip?role=");
+        context.push_str(&role_name);
+        context.push_str("\n");
+        context.push_str("    roles:  GET /api/chorus/context/roles\n");
+        context.push_str("    health: GET /api/chorus/context/health\n");
     }
 
     if !spine_events.is_empty() {

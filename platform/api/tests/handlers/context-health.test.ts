@@ -46,16 +46,15 @@ describe('fetchContextHealth', () => {
     );
     const body = r.body as {
       data: {
-        status: string; failures: number; warnings: number; summary: string;
-        checks: Array<{ name: string; status: string; detail?: string; latencyMs?: number }>;
+        status: string; failures: number; warnings: number;
+        checks: Array<{ name: string; status: string; reason?: string; latencyMs?: number }>;
       };
     };
     expect(body.data.status).toBe('degraded');
     expect(body.data.failures).toBe(1);
     expect(body.data.warnings).toBe(2);
-    expect(body.data.summary).toBe('chorus-api degraded');
     expect(body.data.checks).toHaveLength(2);
-    expect(body.data.checks[1].detail).toBe('slow');
+    expect(body.data.checks[1].reason).toBe('slow');
     expect(body.data.checks[0].latencyMs).toBe(12);
   });
 
@@ -73,6 +72,36 @@ describe('fetchContextHealth', () => {
       '/api/chorus/context/health',
     );
     expect(r.status).toBe(500);
+  });
+
+  it('response carries no summary field — checks array speaks for itself', async () => {
+    const pulse = JSON.stringify({
+      health: { status: 'ok', failures: 0, warning_count: 0, summary: 'all clear', checks: [] },
+    });
+    const r = await fetchContextHealth(
+      { sparql: stubSparql(), readPulse: () => pulse },
+      '/api/chorus/context/health',
+    );
+    const body = r.body as { data: Record<string, unknown> };
+    expect(Object.keys(body.data)).not.toContain('summary');
+  });
+
+  it('non-ok check exposes reason field, not detail', async () => {
+    const pulse = JSON.stringify({
+      health: {
+        status: 'warning',
+        failures: 0,
+        warning_count: 1,
+        checks: [{ name: 'loki', status: 'warning', detail: 'slow response' }],
+      },
+    });
+    const r = await fetchContextHealth(
+      { sparql: stubSparql(), readPulse: () => pulse },
+      '/api/chorus/context/health',
+    );
+    const body = r.body as { data: { checks: Array<Record<string, unknown>> } };
+    expect(body.data.checks[0]).toHaveProperty('reason', 'slow response');
+    expect(body.data.checks[0]).not.toHaveProperty('detail');
   });
 
   it('pulse without health section → 200, defaults (unknown status, zero counts)', async () => {
