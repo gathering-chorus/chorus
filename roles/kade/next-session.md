@@ -1,31 +1,54 @@
 # Kade — Next Session
 
-## This session (2026-04-18, ~4h, Werk v184)
+## What shipped this session
 
-**2 cards shipped + accepted:**
-- **#2194** — gemba-tick delta mode. Silent when nothing changed; emits card/state/WIP/commit/file/action deltas against a snapshot. Replaces "last bash string every minute" noise. 9 bats tests. (`44bbf022`)
-- **#2189** — 18 handlers extracted from server.ts: `/disk /seeds /harvest /products /services /perf /freshness /cost /tests /tests/:domain /trace/:correlationId /trace/integrations/:domain /seed-media /self /search /attention-analytics /crawl /health/detail`. Dep-injection pattern from `a3e66af7`. Real unit tests (faked SQLite/fetch/execFile). server.ts 7225 → 4190 (−42%). 188 new jest tests. Commits `f7cb9bd6` → `691b807f`.
+**#2205 accepted** (87326ffa) — platform/api 63.06% → 80.05%, +16.99 pts, +989 covered stmts across 25 waves + coverage-floors.yml.
 
-**Gates for peers:** gate:code + gate:quality posted on #2187 (Silas) and #2188 (Wren).
+25 new src modules extracted from server.ts:
+- board-cache, embed-query, search-fusion, sparql-search, search-meta, time-utils, sparql-helpers, athena-sparql, icd-sparql, subdomain-resolver, lance-store, server-helpers, health-cache, db-schema, scheduled-reindex, embed-delta, with-db, index-all-sources, lifecycle-writes, diagnostic-writes, spine-event-write, icd-writes, discover-tests, discover-code.
+- coverage-floors.yml at chorus root (1da574ed) — human-authored thresholds per #2207 schema. platform/api: 80.
 
-**Cards filed:**
-- **#2193** (Kade, P1) — Shared-state coherence: event-level instrumentation + drift alarm. Addresses pulse.card-declared vs git-diff-observed mismatch we kept hitting during gemba.
-- **#2199** (Kade, P3) — Extract search helpers to `src/lib/search.ts`. Silas's "one-consumer" rule is already violated by /self and /search both consuming mergeUnified/mergeRRF/etc. Header notes in both handler files point at this card.
-- **#2200** (Silas, P3) — Cross-language contract tests for TS↔Rust shared contracts (spine event JSON, athenaEnvelope, ICD provider format, SPARQL bindings).
+Also today: #2218 gated (arch+ops review passed, build-signed.sh wrapper is the right call for this team size).
 
-## Pick-up sequence
+## WIP on entry
 
-- WIP: 0/3 at close, idle.
-- Highest-leverage Next: **#2193** (P1, my own file, the drift-alarm work) — but needs event-level instrumentation, that's real effort. **#2199** is mechanical if you want a warm-up — both consumers already use the injection shape, moving to direct imports is search-and-replace. **#2126** (shared log-reader) is adjacent to #2189 and small.
+None. #2205 in Done.
 
-## Session learnings (memory candidates)
+## Open questions / next pull
 
-- **Session-opening violated twice today.** Jeff rebooted me around 11:50 and 12:06 Boston; both openings were "Hey Jeff, what's up?" — empty chronicle. The thesis-driven 5-beat shape is in memory already; I still missed it. Gap is between having the rule and executing on first response.
-- **Stop asking mid-work.** Jeff compared me to his son bitching 5 min into an hour of help. Every "should I continue" was work-avoidance. Commits are the status report.
-- **Ceremony judgment:** /demo's full chain on small script changes is theater. But the feedback-nudge to Silas on #2189 produced real value (caught the "extraction already earned" threshold). Rule: skip observer nudges when redundant, keep feedback nudges for second-perspective value.
-- **Shared working tree.** Three roles editing server.ts on one filesystem → git-queue.sh sweeps in-progress edits into whoever commits first (my /disk landed under Silas's #2187). #2195 (Silas, P1) is the isolation fix. Until then: parallel build (handler files) + serialized integration.
-- **Tests-are-trash thread.** Jeff's deeper critique: coverage-driven tests prove line-execution, not behavior. #2189 tests assert actual field values and contract edges — better than #2167's coverage-hitters — but "better" isn't "solved." #2196 ("TDD gate rewards shit tests") still in Next.
+**Jeff's directive: #2209 or #2207 next?** My recommendation was #2209 first (discovery — could reveal other TS projects have shadow-file rot like workflow-engine did, cheap script run). #2207 is Silas's natural lane (LaunchAgent + nightly-coverage.sh).
 
-## Werk version
+- **#2209** (P2, unassigned): shadow .js/.d.ts detection in chorus-coverage. Scans every TS project for `.ts` files with sibling `.js` that masks them at require-time. Came from #2201 find (workflow-engine appeared 0% because 12 stray compiled files shadowed the source).
+- **#2207** (P3, unassigned): nightly-coverage.sh that reads coverage-floors.yml and Bridge-posts regressions. Enforces #2205's gain.
 
-v184
+Either / both is live work. Parallel is possible — different domains.
+
+## Open cards in Kade's queue
+
+Check `cards mine kade` at session start. Board-close flagged two new cards:
+- #2220: Retire or sample observer.digest (18.7% of spine volume)
+- #2221: Identify 4/16–4/17 turn-duration inflection
+
+## Followups filed from today
+
+- **#2210 shipped** (f08e321e): diff-aware rejection + parser-error fail-closed on test_quality_gate. Closes Silas-reviewed partial-write race + parser-fail-open edges.
+- **#2215 shipped** (09454c73): env-var-conditional binary-rule gate + #2210 drift-check fixture.
+- **#2216 shipped** (c6bdf55a): test.each / it.each parameterized parser coverage.
+- **Hollow-assertion detection** — deferred, not filed. Wren called it out as the next FLOOR-vs-CEILING refinement. File if observed to bite during #2207 or next coverage card.
+
+## Pending feedback / briefs
+
+None pending. Silas and Wren both gated and acked at 7/7 on #2205.
+
+## Method notes for future self
+
+- The #2196 → #2210 → #2215 → #2216 chain made #2205 meaningful. Coverage grind without quality gate = coverage theater. Wren's framing: the 80% is a FLOOR (empty/shallow/parameterized tests are blocked), not a CEILING (hollow-assertion-only blocks aren't yet rejected).
+- Silas's reframe mid-grind: the 25 server.ts extractions are step 2 of the Athena module split + CI lane (#2217 sequence), not "server.ts cleanup." Legibility matters.
+- "Context synthesis gate" kept firing when I moved fast — the corrective pattern is: before writing code, a 2-3-sentence synthesis of what prior work established and what shape this wave takes.
+- Gate-discipline: when I self-closed a card (wave 1 of #2201) Jeff pushed back hard. Stays: Wren accepts code cards, I don't. Skill ownership matters.
+
+## Bookkeeping
+
+- All 25 waves + coverage-floors.yml committed.
+- Briefs for #2201 / #2196 / #2210 / #2215 / #2216 / #2205 landed in `roles/wren/briefs/`.
+- 5 gates posted per card. Card audit trail complete.

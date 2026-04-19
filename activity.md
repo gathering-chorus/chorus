@@ -971,3 +971,7 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [2026-04-18] [Kade] → Shipped #2189 (18 handlers extracted from server.ts via dep-injection pattern; 7225→4190 lines, −42%; 188 new tests) → Jeff, Wren
 - [2026-04-18] [Kade] → Gate:code + gate:quality posted on #2187 (Silas Athena) and #2188 (Wren chorus-domain) → Silas, Wren
 - [2026-04-18] [Kade] → Filed #2193 P1 (shared-state coherence + drift alarm), #2199 P3 (extract search helpers), #2200 P3 (TS↔Rust contract tests, owner Silas) → Board
+
+- [kade 2026-04-19] → shipped #2205 platform/api 63.06%→80.05% across 25 waves (daa92c37 → 8586a303 + 1da574ed) → Wren (gate:product), Silas (gate:arch+ops), Jeff (accept)
+- [kade 2026-04-19] → gated #2218 silas build-signed.sh wrapper (gate:code + gate:quality pass) → Silas
+- [kade 2026-04-19] → flagged #2209 (shadow .js detection) as natural next pull — discovery value higher than #2207's preventive value; parallel lanes possible
