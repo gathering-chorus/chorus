@@ -317,25 +317,21 @@ import { mergeUnified, UnifiedResult } from './search-fusion';
 // --- Spine event emitter (fire-and-forget to chorus-log.sh) ---
 const CHORUS_LOG = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/chorus-log');
 
-function emitSearchEvent(fields: Record<string, string | number>): void {
-  const args = ['search.query.executed', 'system', ...Object.entries(fields).map(([k, v]) => `${k}=${v}`)];
-  execFile(CHORUS_LOG, args, { timeout: 5000 }, () => {});
-}
-
-// --- Database helper ---
-
-function getDb(): Database.Database {
-  if (!fs.existsSync(DB_PATH)) {
-    throw new DbNotFoundError();
-  }
-  const db = new Database(DB_PATH, { readonly: true });
-  db.pragma('journal_mode = WAL');
-  return db;
-}
-
-class DbNotFoundError extends Error {
-  constructor() { super('Chorus index database not found'); }
-}
+// emitSearchEvent + getDb + DbNotFoundError moved to src/server-helpers.ts (#2205 wave 12).
+import {
+  createDbOpener,
+  DbNotFoundError,
+  createSearchEventEmitter,
+} from './server-helpers';
+const getDb = createDbOpener<Database.Database>({
+  dbPath: DB_PATH,
+  exists: (p) => fs.existsSync(p),
+  DatabaseCtor: Database as any,
+});
+const emitSearchEvent = createSearchEventEmitter({
+  chorusLogPath: CHORUS_LOG,
+  execFileFn: execFile as any,
+});
 
 // Staleness middleware + search meta extracted to src/search-meta.ts (#2205 wave 5).
 import { addStaleHeader, buildSearchMeta } from './search-meta';
@@ -534,12 +530,12 @@ import {
   fetchDomainInfra,
 } from './handlers/domain-facets';
 
-function readAlertFiles(): Array<{ file: string; content: string }> {
-  const ALERTS_DIR = path.join(REPO_ROOT, 'proving/domains/alerts');
-  return fs.readdirSync(ALERTS_DIR)
-    .filter((f: string) => f.endsWith('.yml'))
-    .map((f: string) => ({ file: f, content: fs.readFileSync(path.join(ALERTS_DIR, f), 'utf-8') }));
-}
+// readAlertFiles moved to src/server-helpers.ts (#2205 wave 12).
+import { createAlertFilesReader, crashAlert } from './server-helpers';
+const readAlertFiles = createAlertFilesReader({
+  fs: fs as any,
+  alertsDir: path.join(REPO_ROOT, 'proving/domains/alerts'),
+});
 const domainFacetDeps = () => ({
   sparql: athenaSparqlQuery,
   resolveSubdomainId,
@@ -1678,10 +1674,7 @@ app.get('/api/chorus/hooks/metrics', (_req: Request, res: Response) => {
 // --- Crash handlers: log + alert before dying ---
 const NUDGE_PATH = path.resolve(__dirname, '../../scripts/nudge');
 
-function crashAlert(reason: string): void {
-  // Log only — no nudges, no notifications. Silas checks the log at session start.
-  console.error(`[chorus-api] CRASH LOGGED: ${reason}`);
-}
+// crashAlert moved to src/server-helpers.ts (#2205 wave 12); imported above.
 
 // ── Athena CMDB API ──────────────────────────────────────────────
 // Named SPARQL queries against the Chorus ontology in Fuseki.
