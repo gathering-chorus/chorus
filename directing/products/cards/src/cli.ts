@@ -613,14 +613,25 @@ Examples:
 
 // ── Main dispatch ──
 
-async function main() {
-  const args = process.argv.slice(2);
+/**
+ * Run the cards CLI with the given argv (process-argv shape: first two
+ * entries are node + script path, actual args follow). Exported so tests
+ * can drive the dispatcher without spawning a subprocess. Pass
+ * `clientFactory` to inject a mock `BoardClient`; default constructs one
+ * from env.
+ */
+export async function runCli(
+  argv: string[],
+  clientFactory?: (cfg: BoardConfig) => BoardClient,
+): Promise<void> {
+  const args = argv.slice(2);
   if (args.length === 0) { printUsage(); return; }
 
   const { boardSelection, productFilter, rest } = parseGlobalFlags(args);
-  const { url, token } = loadEnv();
   const boardConfig = boardSelection === 'self' ? SELF : GATHERING;
-  const client = new BoardClient(url, token, boardConfig);
+  const client = clientFactory
+    ? clientFactory(boardConfig)
+    : (() => { const { url, token } = loadEnv(); return new BoardClient(url, token, boardConfig); })();
   const boardLabel = boardSelection === 'self' ? 'Self' : 'Gathering';
 
   const cmd = rest[0]?.toLowerCase();
@@ -920,7 +931,12 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error(`ERROR: ${err.message || err}`);
-  process.exit(1);
-});
+// Run as a CLI only when this file is the process entrypoint. Tests import
+// `runCli` directly and never invoke the top-level promise.
+/* istanbul ignore next */
+if (require.main === module) {
+  runCli(process.argv).catch((err) => {
+    console.error(`ERROR: ${err.message || err}`);
+    process.exit(1);
+  });
+}
