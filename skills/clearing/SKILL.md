@@ -16,7 +16,7 @@ Assemble Chorus context by running these in parallel:
 
 ```bash
 # Board state (WIP + Now)
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts list 2>/dev/null | head -30
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards list 2>/dev/null | head -30
 
 # Recent decisions (last 10)
 grep -E '^## DEC-' /Users/jeffbridwell/CascadeProjects/chorus/roles/wren/decisions.md | tail -10
@@ -47,7 +47,7 @@ For card demos (DEC-048 proving gate). Auto-assembles card context:
 
 ```bash
 # Get card details
-CARD=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view <card-id> 2>/dev/null)
+CARD=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view <card-id> 2>/dev/null)
 ```
 
 Build context from card details + recent commits + briefs, then POST to `/api/sessions` with a demo protocol context that enforces: **builder presents → PM verifies AC → Jeff reacts → accept/reject/iterate.**

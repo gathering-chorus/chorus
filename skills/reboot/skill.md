@@ -18,7 +18,7 @@ When Jeff types `/reboot`, run the Hard 4 close-out and exit so a fresh session 
    - Prompt: "You touched files in domain:{X}. domain-context-{X}.md was last updated {date}. Update needed?"
    - This is targeted — only domains you actually worked in, not all domains.
 
-2. **Board audit** — `board-ts audit-close <role>`. Cards you finished → Done. Cards continuing → note in description.
+2. **Board audit** — `cards audit-close <role>`. Cards you finished → Done. Cards continuing → note in description.
 
 3. **Activity log** — append session summary to `../../../activity.md`: what you did, briefs sent/received, decisions made.
 

@@ -32,7 +32,7 @@ If **Jeff or Wren** is running /acp, they are the accepting authority — procee
 ## Step 1: Accept the card
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts done ${CARD_ID}
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards done ${CARD_ID}
 ```
 
 ## Step 2: Emit spine event

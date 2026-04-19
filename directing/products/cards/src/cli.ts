@@ -33,6 +33,7 @@ import { GATHERING, SELF, LABELS, loadEnv, detectRole } from './config';
 import { BoardConfig } from './types';
 import { emitSpineEvent } from './events';
 import { formatCommentForView } from './cli-view-helpers';
+import { parseAddArgs as parseAddArgsShared } from './cli-add-helpers';
 import {
   addCard, moveCard, doneCard, demoCard, rejectCard,
   blockCard, unblockCard, updateCard, commentCard, tagCard, untagCard,
@@ -77,33 +78,11 @@ function parseAddArgs(args: string[]): {
   domain: string; description: string; product: string; chunk: string; sequence: string;
   type: string; origin: string; quick: boolean;
 } {
-  let title = '', status = 'later', owner = '', priority = '';
-  let domain = '', description = '', product = '', chunk = '', sequence = '', type = '', origin = '';
-  let quick = false;
-
-  let i = 0;
-  while (i < args.length) {
-    switch (args[i]) {
-      case '--status': status = args[++i]; break;
-      case '--owner': owner = args[++i]; break;
-      case '--priority': priority = args[++i]; break;
-      case '--domain': domain = args[++i]; break;
-      case '--description': case '--desc': description = args[++i]; break;
-      case '--product': case '-p': product = args[++i]; break;
-      case '--chunk': chunk = args[++i]; break;
-      case '--sequence': case '--seq': sequence = args[++i]; break;
-      case '--type': case '-t': type = args[++i]; break;
-      case '--origin': origin = args[++i]; break;
-      case '--quick': case '-q': quick = true; break;
-      default:
-        if (!title) title = args[i];
-        else die(`Unexpected argument: ${args[i]}`);
-    }
-    i++;
+  try {
+    return parseAddArgsShared(args);
+  } catch (err: any) {
+    die(err.message || String(err));
   }
-
-  if (!title) die('Usage: cards add "title" [--status S] [--owner O] [--priority P] [--domain D] [--product P] [--chunk C] [--sequence S] [--type T] [--origin O] [--desc D] [--quick]');
-  return { title, status, owner, priority, domain, description, product, chunk, sequence, type, origin, quick };
 }
 
 function parseUpdateArgs(args: string[]): { index: number; title?: string; description?: string; domain?: string; chunk?: string; sequence?: string; owner?: string } {
@@ -580,7 +559,7 @@ Usage: cards [--self] <command> [args]
 
 Commands:
   list                           Show all tasks by status
-  add "title" [options]          Create a task
+  add "title" [options]          Create a task (alias: create)
   move <id> <status>             Change task status (incl. "won't do" or "wd")
   done <id>                      Mark as Done (emits card.accepted)
   demo <id>                      Log demo started (DEC-048 Proving gate)
@@ -619,7 +598,17 @@ Options:
   --chunk C                      Chunk label (spine/ops/memory/music/senses/strategy/app)
   --sequence S, --seq S          Sequence label (${Object.keys(LABELS.sequence).join('/')})
   --desc D                       Description text (required — must include AC)
-  --quick, -q                    Skip description/AC requirement only (type/domain/priority still required)`);
+  --desc-file PATH               Read description from a file (avoids HEREDOC escaping)
+  --desc -                       Read description from stdin
+  --quick, -q                    Skip description/AC requirement (type/domain/priority/origin still required)
+                                 Use for quick-capture cards where AC comes later.
+                                 Example: cards add "Retire X" --owner wren --priority P2 --domain chorus \\
+                                          --type chore --origin reflective --quick
+
+Examples:
+  cards add "Fix thing" --owner wren --priority P1 --domain chorus --type fix --origin reactive \\
+    --desc-file /tmp/card-desc.md
+  cards create "New feature" --owner kade --priority P2 --domain chorus --type new --origin reflective -q`);
 }
 
 // ── Main dispatch ──
@@ -640,6 +629,7 @@ async function main() {
   switch (cmd) {
     case 'list': await cmdList(client, boardLabel, productFilter); break;
 
+    case 'create':  // #2223 alias — 'create' is the more common verb habit
     case 'add': {
       const opts = parseAddArgs(cmdArgs);
       if (productFilter && !opts.product) opts.product = productFilter;

@@ -90,7 +90,7 @@ If the card IS already in WIP (pulled earlier or by another role), skip to Step 
 
 1. **Card context** — both roles read the card:
    ```bash
-   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts view <card-id>
+   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view <card-id>
    ```
 
 2. **Shared scratch file** — create `/tmp/pair-<card-id>.md`:

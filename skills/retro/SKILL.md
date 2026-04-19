@@ -19,7 +19,7 @@ Pull from all available sources in parallel:
 1. **Chorus logs** — `curl -s "http://localhost:3340/api/chorus/search?q=<relevant terms>"` for patterns, corrections, redirects
 2. **Feedback memories** — scan `~/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory/feedback_*.md` for related entries
 3. **Session context** — what happened in this conversation (corrections, pivots, repeated friction)
-4. **Board activity** — cards shipped, rejected, redirected via `board-ts`
+4. **Board activity** — cards shipped, rejected, redirected via `cards`
 
 ### Step 2: Identify patterns
 
@@ -60,7 +60,7 @@ Style: clean, printable, no frameworks. Jeff prints these and marks them up.
 
 For each pattern where a gate is feasible and doesn't exist yet:
 - **Feedback memory missing?** Write it.
-- **Card needed?** Create it with `board-ts add ... -q`.
+- **Card needed?** Create it with `cards add ... -q`.
 - **Hook needed?** Card it for Silas.
 
 Don't propose. Execute. The retro's value is measured by gates created, not patterns named.

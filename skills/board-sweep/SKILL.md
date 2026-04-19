@@ -19,7 +19,7 @@ Scan the board for hygiene issues. Fix what you can, report what you find. No re
 ### Step 1: Pull the full board
 
 ```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/board-ts list 2>&1
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards list 2>&1
 ```
 
 ### Step 2: Check for issues
@@ -31,11 +31,11 @@ Scan for these five problems, in order:
 - **Don't**: reimagine existing chunks or create new ones. Use the valid set: spine, ops, memory, music, senses, strategy, app, sexuality.
 
 **2. Duplicate cards** — two cards with the same intent in active columns.
-- **Fix**: close the newer one with a comment linking to the original. `board-ts comment <id> "Duplicate of #<original>. Closed in board sweep."`
+- **Fix**: close the newer one with a comment linking to the original. `cards comment <id> "Duplicate of #<original>. Closed in board sweep."`
 - **Don't**: merge descriptions or try to pick the "better" one. Close the dupe, keep the original.
 
 **3. Stale blocked cards** — cards in Blocked for >7 days with no recent comment.
-- **Fix**: comment asking if the blocker is still real. `board-ts comment <id> "Blocked >7 days — is the blocker still active?"`
+- **Fix**: comment asking if the blocker is still real. `cards comment <id> "Blocked >7 days — is the blocker still active?"`
 - **Don't**: unblock or move them. Flag for Jeff.
 
 **4. Ownerless Now cards** — cards in Now with no `owner:` label.

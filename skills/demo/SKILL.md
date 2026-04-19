@@ -368,8 +368,8 @@ Emit spine event:
 
 **Only Wren or Jeff can accept.** The builder CANNOT mark their own code card Done.
 
-- **Accept:** `board-ts done <card-id>` + emit `card.accepted` spine event
-- **Reject:** `board-ts reject <card-id> "reason"` + emit `card.rejected` spine event. Builder gets the reason and iterates.
+- **Accept:** `cards done <card-id>` + emit `card.accepted` spine event
+- **Reject:** `cards reject <card-id> "reason"` + emit `card.rejected` spine event. Builder gets the reason and iterates.
 
 ## Rules
 

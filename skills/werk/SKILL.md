@@ -4,7 +4,7 @@ The Werk skill gives Jeff the full picture in one command — board state (WIP, 
 
 ## How It Works
 
-When Jeff invokes `/werk`, show **board + chain state together**. The skill wraps `board-ts`.
+When Jeff invokes `/werk`, show **board + chain state together**. The skill wraps `cards`.
 
 ### Init — Assemble live role context
 
@@ -23,8 +23,8 @@ Where `<role>` is `silas`, `wren`, or `kade`. This replaces MEMORY.md — it que
 Run board commands:
 
 ```bash
-board-ts list
-board-ts ready
+cards list
+cards ready
 ```
 
 Present a combined summary with three sections:
@@ -39,7 +39,7 @@ Keep it tight — one table or short list per section. This is Jeff's "state of 
 If Jeff says `/werk 1635` or `/werk chain 1635`:
 
 ```bash
-board-ts chain 1635
+cards chain 1635
 ```
 
 Shows the full dependency chain with per-card status, gap detection for Won't Do cards.
@@ -48,7 +48,7 @@ Shows the full dependency chain with per-card status, gap detection for Won't Do
 
 If Jeff describes a decision and wants to orchestrate it as a card chain:
 
-1. Create cards with `board-ts add`
+1. Create cards with `cards add`
 2. Wire dependencies with `board set <id> after=<dep-id>`
 3. Show the chain with `board chain <root-id>`
 
@@ -57,7 +57,7 @@ See `/pipeline` skill for the full orchestration protocol.
 ### Checking what's ready
 
 ```bash
-board-ts ready
+cards ready
 ```
 
 Shows all cards whose dependencies are Done — ready to pull. This replaces `workflow.sh pending`.
