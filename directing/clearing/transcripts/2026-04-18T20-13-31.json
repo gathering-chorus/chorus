@@ -1,0 +1,39 @@
+{
+  "session": {
+    "started": "2026-04-18T20:13:01.286Z",
+    "ended": "2026-04-18T20:13:31.287Z",
+    "participants": [
+      "Jeff"
+    ],
+    "model": "claude-haiku-4-5-20251001",
+    "totalTokens": {
+      "input": 0,
+      "output": 0
+    },
+    "estimatedCost": 0,
+    "messageCount": 3,
+    "decisionCount": 0
+  },
+  "decisions": [],
+  "archiveLink": "/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/transcripts/2026-04-18T20-13-31.json",
+  "messages": [
+    {
+      "id": "1",
+      "sender": "Jeff",
+      "content": "a",
+      "timestamp": 1776543181286
+    },
+    {
+      "id": "2",
+      "sender": "Jeff",
+      "content": "b",
+      "timestamp": 1776543181286
+    },
+    {
+      "id": "3",
+      "sender": "Jeff",
+      "content": "c",
+      "timestamp": 1776543181286
+    }
+  ]
+}

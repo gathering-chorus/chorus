@@ -71,11 +71,14 @@ export class ClearingChat {
     return { sessionId: this.sessionId };
   }
 
-  /** End current session, save transcript */
+  /** End current session, abort in-flight API streams, save transcript */
   endSession(reason: string): void {
     if (!this.sessionActive) return;
     this.stopAutoSave();
     this.sessionActive = false;
+    this.participants.abort();
+    const label = reason === 'client-disconnected' ? 'host disconnected' : reason;
+    console.log(`[chat] Clearing session ended — ${label}`);
 
     const msgs = this.transcript.getMessages();
     if (msgs.length > 0) {

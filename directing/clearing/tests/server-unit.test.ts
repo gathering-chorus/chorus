@@ -21,6 +21,7 @@ jest.mock('../src/participants', () => {
     getRoleByName(n: string) { return this.roles.find((r) => r.name.toLowerCase() === n.toLowerCase()); }
     updateContext() {}
     setGuestMode() {}
+    abort = jest.fn();
     getResponse = jest.fn().mockResolvedValue({ content: 'ok', inputTokens: 1, outputTokens: 1 });
   }
   return { Participants: MockParticipants };
@@ -46,7 +47,7 @@ process.env.CLEARING_PROJECTS_DIR = TMP;
 process.env.CHORUS_ROOT = TMP;
 
 // Now import — listener is guarded.
-import { app, server, io } from '../src/server';
+import { app, server, io, clearingChat } from '../src/server';
 
 let baseUrl: string;
 
@@ -673,6 +674,28 @@ describe('server — Socket.IO connection handler', () => {
   });
 });
 
+// #2266: log evidence — clearing.session.started at 14:35, no session.ended, server
+// ran at 84% CPU until force-quit. Fix: socket disconnect must trigger endSession.
+describe('zy — socket disconnect ends clearing session (#2266)', () => {
+  test('last client disconnect triggers clearingChat.endSession when session is active', async () => {
+    const { io: ioClient } = require('socket.io-client');
+
+    clearingChat.startSession('disconnect test');
+    expect(clearingChat.getState().active).toBe(true);
+
+    const endSpy = jest.spyOn(clearingChat, 'endSession');
+
+    const client = ioClient(baseUrl, { forceNew: true, transports: ['polling'] });
+    await new Promise<void>((resolve) => client.on('connect', resolve));
+    client.disconnect();
+
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(endSpy).toHaveBeenCalledWith(expect.stringContaining('disconnect'));
+    endSpy.mockRestore();
+  });
+});
+
 // --- Must run last: /api/restart closes io + server ---
 describe('zz — final: restart (destructive)', () => {
   test('POST /api/restart exercises shutdown path (exit mocked)', async () => {
@@ -685,3 +708,4 @@ describe('zz — final: restart (destructive)', () => {
     exitSpy.mockRestore();
   });
 });
+

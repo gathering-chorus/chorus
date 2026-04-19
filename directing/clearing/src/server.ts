@@ -771,6 +771,15 @@ io.on('connection', (socket) => {
   // Client heartbeat — respond to ping with pong (#2036)
   socket.on('ping', () => { socket.emit('pong'); });
 
+  // #2266: end chat session when last client disconnects so in-flight
+  // Anthropic streams abort and the server stops spinning.
+  socket.on('disconnect', () => {
+    const remaining = io.sockets.sockets.size;
+    if (remaining === 0 && clearingChat.getState().active) {
+      clearingChat.endSession('client-disconnected');
+    }
+  });
+
   // Message from The Clearing UI — Jeff or guest (#1719, #1802 reverted to working state)
   socket.on('jeff-message', (data: { text: string; from?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
     const { text } = data;

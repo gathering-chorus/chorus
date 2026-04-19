@@ -147,6 +147,14 @@ export class Participants {
   private model: string;
   private maxTokens: number;
   private roles: Role[];
+  private activeStream: ReturnType<Anthropic['messages']['stream']> | null = null;
+
+  abort(): void {
+    if (this.activeStream) {
+      this.activeStream.abort();
+      this.activeStream = null;
+    }
+  }
 
   constructor(model: string, maxTokens: number, sessionContext?: string, guestMode?: boolean) {
     this.client = new Anthropic();
@@ -227,7 +235,7 @@ export class Participants {
     transcript: string,
     onToken: (token: string) => void
   ): Promise<RoleResponse> {
-    const stream = this.client.messages.stream({
+    const stream = this.activeStream = this.client.messages.stream({
       model: this.model,
       max_tokens: this.maxTokens,
       system: role.systemPrompt,
@@ -247,6 +255,7 @@ export class Participants {
     });
 
     const finalMessage = await stream.finalMessage();
+    this.activeStream = null;
 
     return {
       content,

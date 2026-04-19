@@ -1,5 +1,5 @@
 {
-  "name": "bridge",
+  "name": "clearing",
   "version": "1.0.0",
   "description": "Single UI for Jeff — filtered role interaction, role-to-role coordination behind the glass",
   "main": "dist/server.js",

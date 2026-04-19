@@ -21,6 +21,7 @@ class MockParticipants {
   setGuestMode() {}
   getRoleByName(n: string) { return this.roles.find((r) => r.name.toLowerCase() === n.toLowerCase()); }
   getResponse = jest.fn();
+  abort = jest.fn();
 }
 
 jest.mock('../src/participants', () => ({
@@ -84,6 +85,18 @@ describe('ClearingChat — sessions', () => {
     (chat as any).transcript.add('Jeff', 'hi');
     chat.endSession('test');
     expect(chat.getState().messageCount).toBe(0);
+  });
+
+  // #2266 — endSession must abort in-flight API streams so the server stops
+  // spinning when the browser tab closes (84% CPU symptom)
+  test('endSession calls participants.abort() to cancel in-flight API streams', () => {
+    const io = makeIo();
+    const chat = new ClearingChat(io as any);
+    chat.startSession();
+    const abortSpy = jest.fn();
+    (chat as any).participants.abort = abortSpy;
+    chat.endSession('client-disconnected');
+    expect(abortSpy).toHaveBeenCalled();
   });
 });
 
