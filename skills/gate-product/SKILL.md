@@ -57,25 +57,21 @@ fi
 **Pass:** All AC checkboxes are `[x]`.
 **Fail:** Any unchecked `[ ]` items — list them.
 
-### 2. Demo evidence (#2090)
+### 2. Demo evidence
 
 ```bash
-# Check for demo evidence: card comment OR brief file (multi-card pipelines)
-CARD_VIEW=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view ${CARD_ID} 2>/dev/null)
-DEMO_COMMENT=$(echo "$CARD_VIEW" | grep -c 'demo:preflight-pass')
-DEMO_BRIEF=$(ls /Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs/*demo*${CARD_ID}* 2>/dev/null | head -1)
+# Check for demo evidence in Comments section only (not description body)
+DEMO_COMMENT=$(echo "$CARD_VIEW" | sed -n '/^  Comments/,$ p' | grep -c 'demo:preflight-pass')
 
 if [ "$DEMO_COMMENT" -gt 0 ]; then
   echo "PASS: demo evidence found — card comment demo:preflight-pass"
-elif [ -n "$DEMO_BRIEF" ]; then
-  echo "PASS: demo evidence found — brief file $DEMO_BRIEF"
 else
-  echo "FAIL: no demo evidence for #${CARD_ID} (no card comment or brief file)"
+  echo "FAIL: no demo evidence for #${CARD_ID} — add 'demo:preflight-pass' comment to card after demo"
 fi
 ```
 
-**Pass:** Card has a `demo:preflight-pass` comment (single-card) OR a demo brief file exists in `wren/briefs/` (multi-card pipeline).
-**Fail:** Neither found. Demo pre-flight must happen before product gate passes.
+**Pass:** Card has a `demo:preflight-pass` comment.
+**Fail:** No comment found. Run the demo, then add `demo:preflight-pass` as a card comment before re-running gate.
 
 ### 3. Description fidelity
 
