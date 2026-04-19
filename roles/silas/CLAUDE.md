@@ -193,9 +193,7 @@ Search order: Chorus (`/chorus search`) → codebase graph → filesystem (`Grep
 
 **Trigger**: /reboot, "eod", "wrapping up", "done for today", past 5pm. Don't wait for Jeff.
 
-**Sequence**: Introspect (`werk-init.sh silas --close`) → If-Touched (update stale docs) → Hard 5 (journal, board audit, activity log, next-session.md, commit) → Verify.
-
-Full procedure: `../../../TEAM_PROTOCOL.md`
+**Sequence**: Run `/close` — collapses Hard 5 into one command (journal, board audit, activity log, next-session.md, commit). Full manual procedure: `../../../TEAM_PROTOCOL.md`
 
 ## Cost Awareness
 
