@@ -267,6 +267,15 @@ elif [ -z "$(find "$VIKUNJA_LOG" -mmin -60 2>/dev/null)" ]; then
   WARNINGS+=("vikunja: log not updated in 1h — service may be stalled")
 fi
 
+# --- 11d. Vikunja auth probe — cards CLI 401 detection (#2147) ---
+CARDS_OUT=$(cards list --limit 1 2>&1)
+CARDS_EXIT=$?
+if echo "$CARDS_OUT" | grep -qE "401|403|Unauthorized|Forbidden"; then
+  FAILURES+=("vikunja-auth: cards CLI auth failure — check VIKUNJA_API_TOKEN (env unset, token expired, or wrapper edited)")
+elif [ "$CARDS_EXIT" -ne 0 ]; then
+  FAILURES+=("vikunja-auth: cards CLI non-zero exit (${CARDS_EXIT}) — Vikunja may be down or token invalid")
+fi
+
 for entry in "${HEALTH_ENDPOINTS[@]}"; do
   IFS='|' read -r url name desc <<< "$entry"
   if ! curl -sf --max-time 5 "$url" > /dev/null 2>&1; then
