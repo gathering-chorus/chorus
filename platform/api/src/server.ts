@@ -1374,13 +1374,8 @@ const FUSEKI_QUERY_URL = process.env.FUSEKI_QUERY_URL || 'http://localhost:3030/
 const ICD_GRAPH = 'https://jeffbridwell.com/icd/current';
 const ICD_PFX = 'PREFIX icd: <https://jeffbridwell.com/icd#>';
 
-function escSparql(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '');
-}
-
-function icdSlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
+// escSparql + icdSlug moved to src/sparql-helpers.ts (#2205 wave 7).
+import { escSparql, icdSlug } from './sparql-helpers';
 
 async function icdSparqlUpdate(update: string): Promise<void> {
   const resp = await fetch(FUSEKI_UPDATE_URL, {
