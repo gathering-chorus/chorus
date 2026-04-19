@@ -77,6 +77,32 @@ describe('fetchContextRoles', () => {
     expect(r.body.source).toBe('/api/chorus/context/roles');
   });
 
+  it('stale=false when lastActivity is just under 15min threshold', async () => {
+    const now = new Date('2026-04-19T12:00:00Z');
+    const justFresh = new Date(now.getTime() - 14 * 60 * 1000 - 59000).toISOString(); // 14:59 ago
+    const r = await fetchContextRoles({
+      sparql: stubSparql(),
+      readState: () => ({ role: 'silas', state: 'building' }),
+      tailSpine: (role) => role === 'silas' ? { timestamp: justFresh, role: 'silas', event: 'tool' } : null,
+      now: () => now,
+    }, '/api/chorus/context/roles');
+    const silas = r.body.data.roles.find((x) => x.name === 'silas')!;
+    expect(silas.stale).toBe(false);
+  });
+
+  it('stale=true when lastActivity is just over 15min threshold', async () => {
+    const now = new Date('2026-04-19T12:00:00Z');
+    const justStale = new Date(now.getTime() - 15 * 60 * 1000 - 1000).toISOString(); // 15:01 ago
+    const r = await fetchContextRoles({
+      sparql: stubSparql(),
+      readState: () => ({ role: 'silas', state: 'building' }),
+      tailSpine: (role) => role === 'silas' ? { timestamp: justStale, role: 'silas', event: 'tool' } : null,
+      now: () => now,
+    }, '/api/chorus/context/roles');
+    const silas = r.body.data.roles.find((x) => x.name === 'silas')!;
+    expect(silas.stale).toBe(true);
+  });
+
   it('state with gemba surfaces gemba field', async () => {
     const r = await fetchContextRoles({
       sparql: stubSparql(),
