@@ -65,14 +65,16 @@ export class TilePoller {
   }
 
   private refreshBoardFromApi(): void {
-    Promise.all([
+    Promise.allSettled([
       fetch(`${CHORUS_API}/api/chorus/context/board/wip`).then((r) => r.ok ? r.json() : null).catch(() => null),
       fetch(`${CHORUS_API}/api/chorus/context/board/swat`).then((r) => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([wipData, swatData]) => {
+    ]).then(([wipResult, swatResult]) => {
+      const wipData = wipResult.status === 'fulfilled' ? wipResult.value : null;
+      const swatData = swatResult.status === 'fulfilled' ? swatResult.value : null;
       const wip: BoardCard[] = (wipData?.data?.cards ?? []).map((c: BoardCard) => ({ ...c, status: 'WIP' }));
       const swat: BoardCard[] = (swatData?.data?.cards ?? []).map((c: BoardCard) => ({ ...c, status: 'SWAT' }));
       this.boardCache = { wip_cards: wip, swat_cards: swat, ts: Date.now() };
-    }).catch(() => {});
+    });
   }
 
   getTiles(): RoleTile[] {
@@ -172,10 +174,10 @@ export class TilePoller {
       const pulseContent = fs.readFileSync(PULSE_FILE, 'utf-8');
       const pulseData = JSON.parse(pulseContent);
       const roleComposed = pulseData?.roles?.[role];
-      if (roleComposed?.divergent) {
+      tile.divergent = roleComposed?.divergent === true;
+      if (tile.divergent) {
         tile.cardDeclared = roleComposed.card_declared ? String(roleComposed.card_declared) : undefined;
         tile.cardInferred = roleComposed.card_inferred ? String(roleComposed.card_inferred) : undefined;
-        tile.divergent = true;
       }
     } catch {
       // Pulse file absent or malformed — tile renders with declared-only view.

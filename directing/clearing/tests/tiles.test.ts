@@ -95,13 +95,8 @@ describe('TilePoller — role declared state', () => {
   });
 
   test('reconciler divergence surfaces declared vs inferred', () => {
-    writeState('silas', {
-      state: 'building',
-      card: '2200',
-      source: 'reconciler',
-      card_declared: '2100',
-      card_inferred: '2200',
-    });
+    writeState('silas', { state: 'building', card: '2200', session_alive: true, ts: Math.floor(Date.now() / 1000) });
+    writePulse({ roles: { silas: { divergent: true, card_declared: 2100, card_inferred: 2200 } } });
     const { TilePoller } = loadTiles();
     const t = new TilePoller().getTiles().find((x: any) => x.role === 'silas');
     expect(t.cardDeclared).toBe('2100');
@@ -110,10 +105,8 @@ describe('TilePoller — role declared state', () => {
   });
 
   test('reconciler with matching declared=inferred is non-divergent', () => {
-    writeState('wren', {
-      source: 'reconciler', card: '50',
-      card_declared: '50', card_inferred: '50',
-    });
+    writeState('wren', { state: 'building', card: '50', session_alive: true, ts: Math.floor(Date.now() / 1000) });
+    writePulse({ roles: { wren: { divergent: false, card_declared: 50, card_inferred: 50 } } });
     const { TilePoller } = loadTiles();
     const t = new TilePoller().getTiles().find((x: any) => x.role === 'wren');
     expect(t.divergent).toBe(false);
@@ -286,6 +279,28 @@ describe('TilePoller — formatAge via lastActionAge', () => {
     const { TilePoller } = loadTiles();
     const t = new TilePoller().getTiles().find((x: any) => x.role === 'kade');
     expect(t.lastActionAge).toBe('just now');
+  });
+});
+
+describe('TilePoller — board refresh resilience', () => {
+  let originalFetch: any;
+  beforeEach(() => { clear(); jest.resetModules(); originalFetch = (global as any).fetch; });
+  afterEach(() => { (global as any).fetch = originalFetch; });
+
+  test('WIP cards render when swat endpoint rejects', async () => {
+    const wipData = { data: { cards: [{ id: 123, owner: 'wren', title: 'test card' }] } };
+    (global as any).fetch = jest.fn().mockImplementation((url: string) => {
+      if ((url as string).includes('/swat')) return Promise.reject(new Error('swat down'));
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(wipData) });
+    });
+    writeState('wren', { state: 'building', card: '123', session_alive: true, ts: Math.floor(Date.now() / 1000) });
+    writePulse({});
+    const { TilePoller } = loadTiles();
+    const p = new TilePoller();
+    await new Promise((r) => setTimeout(r, 10)); // let refreshBoardFromApi complete
+    p.poll(); // re-read tiles synchronously from updated boardCache
+    const wren = p.getTiles().find((t: any) => t.role === 'wren');
+    expect(wren.cards).toContain('#123');
   });
 });
 
