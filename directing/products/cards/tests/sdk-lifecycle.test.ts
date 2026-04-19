@@ -197,6 +197,63 @@ describe('addCard — validation', () => {
     expect(tagCalls.some((c) => c.args[1] === 'origin')).toBe(true);
   });
 
+  it('unknown origin value → error', async () => {
+    const mock = new MockClient();
+    const cap = silenceConsole();
+    const exit = interceptExit();
+    try {
+      await addCard(asBoardClient(mock), 'photograph something', {
+        domain: 'chorus', priority: 'P1', type: 'new', origin: 'whimsical', quick: true,
+      }).catch(() => {});
+    } finally {
+      exit.restore();
+      cap.restore();
+    }
+    expect(exit.calls).toEqual([1]);
+    expect(cap.errs.join('\n')).toMatch(/Unknown origin "whimsical"/);
+  });
+
+  it('non-quick with description + AC checkbox passes without error', async () => {
+    const mock = new MockClient();
+    const cap = silenceConsole();
+    try {
+      await addCard(asBoardClient(mock), 'fix thing', {
+        domain: 'chorus', priority: 'P1',
+        description: '## Experience\nJeff sees\n## AC\n- [ ] first\n- [ ] second',
+      });
+    } finally { cap.restore(); }
+    expect(mock.calls.find((c) => c.method === 'add')).toBeDefined();
+  });
+
+  it('non-quick with numbered-list AC also passes', async () => {
+    const mock = new MockClient();
+    const cap = silenceConsole();
+    try {
+      await addCard(asBoardClient(mock), 'fix thing', {
+        domain: 'chorus', priority: 'P1',
+        description: '## Experience\nok\n1. first\n2. second',
+      });
+    } finally { cap.restore(); }
+    expect(mock.calls.find((c) => c.method === 'add')).toBeDefined();
+  });
+
+  it('non-quick without AC in description → error', async () => {
+    const mock = new MockClient();
+    const cap = silenceConsole();
+    const exit = interceptExit();
+    try {
+      await addCard(asBoardClient(mock), 'fix thing', {
+        domain: 'chorus', priority: 'P1',
+        description: 'just prose, no AC markers',
+      }).catch(() => {});
+    } finally {
+      exit.restore();
+      cap.restore();
+    }
+    expect(exit.calls).toEqual([1]);
+    expect(cap.errs.join('\n')).toMatch(/missing acceptance criteria/);
+  });
+
   it('unknown type value → error', async () => {
     const mock = new MockClient();
     const cap = silenceConsole();

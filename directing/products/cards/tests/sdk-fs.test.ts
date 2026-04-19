@@ -333,6 +333,30 @@ describe('auditStart', () => {
     expect(result.nowCount).toBe(2);
   });
 
+  it('renders SWAT bucket when role has SWAT tasks', async () => {
+    const mock = new MockClient();
+    mock.tasks = [mkTask({ index: 1, owner: 'Kade', status: 'SWAT', title: 'urgent' })];
+    const cap = silence();
+    try { await auditStart(asBoardClient(mock), 'kade'); } finally { cap.restore(); }
+    expect(cap.logs.some((l) => /SWAT \(1\)/.test(l))).toBe(true);
+  });
+
+  it('renders Harvesting bucket when role has Harvesting tasks', async () => {
+    const mock = new MockClient();
+    mock.tasks = [mkTask({ index: 1, owner: 'Kade', status: 'Harvesting', title: 'photo-run' })];
+    const cap = silence();
+    try { await auditStart(asBoardClient(mock), 'kade'); } finally { cap.restore(); }
+    expect(cap.logs.some((l) => /Harvesting \(1\)/.test(l))).toBe(true);
+  });
+
+  it('renders Blocked bucket when role has Blocked tasks', async () => {
+    const mock = new MockClient();
+    mock.tasks = [mkTask({ index: 1, owner: 'Kade', status: 'Blocked', title: 'waiting' })];
+    const cap = silence();
+    try { await auditStart(asBoardClient(mock), 'kade'); } finally { cap.restore(); }
+    expect(cap.logs.some((l) => /Blocked \(1\)/.test(l))).toBe(true);
+  });
+
   it('prints "no active items" when role has neither Now nor Next', async () => {
     const mock = new MockClient();
     mock.tasks = [];
