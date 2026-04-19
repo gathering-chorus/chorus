@@ -1,0 +1,38 @@
+# Coverage floors — human-authored thresholds (per #2207 AC1).
+#
+# This file is the source of truth for per-project / per-crate coverage
+# minimums. Only Jeff edits it. Automation reads it, compares against
+# standard tool output (npx jest --coverage, cargo llvm-cov), and emits
+# Bridge signals on regression.
+#
+# DO NOT copy these values into jest.config.js coverageThreshold or
+# tarpaulin.toml fail-under — those can be tuned by roles. Keep the
+# authoritative floors here so a role cannot silently relax the bar.
+#
+# Schema:
+#   ts:   <project-path>: <pct 0-100>      # npx jest statements %
+#   rust: <crate-path>: <pct 0-100>        # cargo llvm-cov lines %
+#
+# Baseline established 2026-04-19 per #2205 acceptance. Each value is
+# the floor — current coverage must stay at or above the number.
+# Raise the number when real improvement lands; do not lower without
+# explicit discussion + a decision record.
+
+ts:
+  directing/clearing: 85
+  directing/products/cards: 29     # low baseline; own lift card when scoped
+  platform/workflow-engine: 90
+  platform/chorus-sdk: 50          # low baseline; own lift card when scoped
+  platform/pulse: 30               # low baseline; own lift card when scoped
+  platform/api: 80                 # set by #2205 (delivered 80.05% 2026-04-19)
+
+rust:
+  platform/services/chorus-hooks: 45
+  platform/services/chorus-inject: 80
+
+# When this file changes:
+# - The enforcing automation (#2207 nightly-coverage.sh) must be updated in
+#   the same PR if the schema shape changes. Value edits alone don't require
+#   a script change.
+# - If a floor is lowered, an accompanying commit message must state why
+#   (e.g., "temporary: test harness refactor, reverted by <date>").
