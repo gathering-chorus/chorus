@@ -287,53 +287,12 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number; ollama
   }
 }
 
-const EMBED_MAX_RETRIES = 3;
-const EMBED_BACKOFF_MS = [1000, 2000, 4000];
+// Embed query helper (extracted to src/embed-query.ts in #2205 wave 2).
+// Retry + LRU cache + TTL live there; server.ts wires the Ollama URL + model.
 
-// #2168 AC-14: LRU cache for query embeddings. Ollama embed is ~1s per call;
-// envelope queries repeat or have minor variants. 128 entries / 10min TTL.
-const EMBED_CACHE_MAX = 128;
-const EMBED_CACHE_TTL_MS = 10 * 60 * 1000;
-const embedCache = new Map<string, { vec: number[]; ts: number }>();
+import { createEmbedder } from './embed-query';
 
-async function embedQuery(text: string): Promise<number[]> {
-  const key = text.trim().toLowerCase();
-  const now = Date.now();
-  const hit = embedCache.get(key);
-  if (hit && now - hit.ts < EMBED_CACHE_TTL_MS) {
-    // Touch (LRU): delete and re-set
-    embedCache.delete(key);
-    embedCache.set(key, hit);
-    return hit.vec;
-  }
-
-  let lastErr: Error | null = null;
-  for (let attempt = 0; attempt < EMBED_MAX_RETRIES; attempt++) {
-    try {
-      const res = await fetch(`${OLLAMA_URL}/api/embeddings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: EMBED_MODEL, prompt: text }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) throw new Error(`Ollama embed failed: ${res.status}`);
-      const data = await res.json() as { embedding: number[] };
-      // Cache + evict oldest if over cap
-      embedCache.set(key, { vec: data.embedding, ts: now });
-      if (embedCache.size > EMBED_CACHE_MAX) {
-        const oldest = embedCache.keys().next().value;
-        if (oldest) embedCache.delete(oldest);
-      }
-      return data.embedding;
-    } catch (err: any) {
-      lastErr = err;
-      if (attempt < EMBED_MAX_RETRIES - 1) {
-        await new Promise(r => setTimeout(r, EMBED_BACKOFF_MS[attempt]));
-      }
-    }
-  }
-  throw lastErr || new Error('Ollama embed failed after retries');
-}
+const embedQuery = createEmbedder({ ollamaUrl: OLLAMA_URL, model: EMBED_MODEL });
 
 interface SemanticResult {
   msg_id: number;
