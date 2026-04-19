@@ -3507,10 +3507,20 @@ mod orchestrator_tests {
         config.state_file = state.clone();
 
         // Seed a defect with a card_id at count=9 so the next observation
-        // bumps it to 10 → comment action.
+        // bumps it to 10 → comment action. Timestamps are relative to now so
+        // the seeded defect never expires past DEDUP_WINDOW_HOURS (24h) as
+        // wall clock drifts — hardcoded dates are time bombs (#2235).
         let mut seeded = OpsState::default();
         let line = r#"{"level":"error","appName":"api","message":"db timeout 5s"}"#;
         let hash = hash_pattern("api", &normalize_pattern("db timeout 5s"));
+        let now = Utc::now();
+        let one_hour_ago = (now - chrono::Duration::hours(1))
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+        let two_hours_ago = (now - chrono::Duration::hours(2))
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+        let now_iso = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
         seeded.defects.insert(
             hash.clone(),
             Defect {
@@ -3520,8 +3530,8 @@ mod orchestrator_tests {
                 sample: "db timeout 5s".to_string(),
                 tier: "warning".to_string(),
                 count: 9,
-                first_seen: "2026-04-18T09:00:00Z".to_string(),
-                last_seen: "2026-04-18T09:59:00Z".to_string(),
+                first_seen: two_hours_ago,
+                last_seen: one_hour_ago,
                 card_id: Some("3333".to_string()),
             },
         );
@@ -3534,7 +3544,7 @@ mod orchestrator_tests {
             loki_response(vec![("api", "api", vec![line])]),
         );
 
-        let r = do_errors_post_prefetch(results, &config, &cmd, "2026-04-18T10:00:00Z");
+        let r = do_errors_post_prefetch(results, &config, &cmd, &now_iso);
         assert!(r.is_ok());
 
         // At least one call: `cards comment 3333 ...`.
