@@ -168,24 +168,18 @@ const getBoardCards = (): CachedCard[] => boardCache.getCards();
 void boardCache.refresh();
 setInterval(() => { void boardCache.refresh(); }, 60_000);
 
-// --- LanceDB semantic search ---
+// --- LanceDB semantic search (#2205 wave 11: init + search extracted) ---
 
 let lanceTable: lancedb.Table | null = null;
 let lanceDb: lancedb.Connection | null = null;
 
+import { createLanceInit, searchInTable } from './lance-store';
+const _lanceInit = createLanceInit({ fs, lancedb, lanceDir: LANCE_DIR });
+
 async function initLance(): Promise<void> {
-  if (!fs.existsSync(LANCE_DIR)) return;
-  try {
-    lanceDb = await lancedb.connect(LANCE_DIR);
-    const tables = await lanceDb.tableNames();
-    if (tables.includes('messages')) {
-      lanceTable = await lanceDb.openTable('messages');
-      const count = await lanceTable.countRows();
-      console.log(`[chorus-api] LanceDB: ${count} vectors loaded`);
-    }
-  } catch (err) {
-    console.error(`[chorus-api] LanceDB init failed (non-fatal): ${err}`);
-  }
+  const r = await _lanceInit();
+  lanceDb = r.db as lancedb.Connection | null;
+  lanceTable = r.table as lancedb.Table | null;
 }
 
 // --- Embed-at-ingest: embed new messages after indexing ---
@@ -305,25 +299,7 @@ interface SemanticResult {
 }
 
 async function semanticSearch(query: string, limit: number, role?: string): Promise<SemanticResult[]> {
-  if (!lanceTable) return [];
-  const queryVec = await embedQuery(query);
-  let builder = lanceTable.vectorSearch(queryVec).limit(limit * 2); // over-fetch for filtering
-  const results = await builder.toArray();
-
-  let filtered = results;
-  if (role) {
-    filtered = results.filter((r: any) => r.role === role);
-  }
-
-  return filtered.slice(0, limit).map((r: any) => ({
-    msg_id: r.msg_id,
-    source: r.source || '',
-    channel: r.channel || '',
-    role: r.role || '',
-    content: r.content || '',
-    timestamp: r.timestamp || '',
-    score: r._distance != null ? 1 / (1 + r._distance) : 0,
-  }));
+  return searchInTable(lanceTable as any, embedQuery, query, limit, role);
 }
 // STALE_THRESHOLD_MS moved to src/search-meta.ts (#2205 wave 5).
 const FUSEKI_URL = process.env.FUSEKI_URL || 'http://localhost:3030/pods/query';
