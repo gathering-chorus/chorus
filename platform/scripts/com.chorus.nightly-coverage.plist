@@ -14,7 +14,7 @@
         <key>Hour</key>
         <integer>2</integer>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>30</integer>
     </dict>
     <key>StandardOutPath</key>
     <string>/Users/jeffbridwell/Library/Logs/Chorus/nightly-coverage.log</string>
