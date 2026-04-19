@@ -2618,57 +2618,16 @@ const ensureRcaTable = createRcaTableEnsurer({ dbPath: RCA_DB_PATH, DatabaseCtor
 // Lazy init on first use
 let rcaTableReady = false;
 
+// RCA + trace create handlers moved to src/diagnostic-writes.ts (#2205 wave 20).
+import { handleRcaCreate, handleTraceCreate } from './diagnostic-writes';
 app.post('/api/chorus/rca', (req: Request, res: Response) => {
-  if (!rcaTableReady) { ensureRcaTable(); rcaTableReady = true; }
-
-  const { title, trigger, timeline, root_cause, contributing_factors, corrective_actions, cards, spine_events } = req.body || {};
-
-  if (!title || !trigger || !root_cause) {
-    res.status(400).json({ error: 'title, trigger, and root_cause are required' });
-    return;
-  }
-
-  const validStatuses = ['open', 'verified', 'closed'];
-  const status = validStatuses.includes(req.body.status) ? req.body.status : 'open';
-  const now = bostonNow();
-
-  const db = new Database(RCA_DB_PATH);
-  db.pragma('journal_mode = WAL');
-
-  const result = db.prepare(`
-    INSERT INTO rcas (title, trigger_event, timeline, root_cause, contributing_factors, corrective_actions, cards, spine_events, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    title,
-    trigger,
-    timeline || '',
-    root_cause,
-    JSON.stringify(contributing_factors || []),
-    JSON.stringify(corrective_actions || []),
-    JSON.stringify(cards || []),
-    JSON.stringify(spine_events || []),
-    status,
-    now,
-    now,
-  );
-
-  db.close();
-
-  // Emit spine event
-  const CHORUS_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
-  const entry = JSON.stringify({
-    timestamp: now,
-    level: 'info',
-    appName: 'chorus-events',
-    component: 'rca',
-    event: 'rca.created',
-    role: 'system',
-    rca_id: String(result.lastInsertRowid),
-    cards: JSON.stringify(cards || []),
+  handleRcaCreate(req, res, {
+    dbPath: RCA_DB_PATH, DatabaseCtor: Database as any,
+    ensureTable: () => { if (!rcaTableReady) { ensureRcaTable(); rcaTableReady = true; } },
+    appendFileSync: fs.appendFileSync as any,
+    chorusLogPath: LIFECYCLE_LOG,
+    now: bostonNow,
   });
-  fs.appendFileSync(CHORUS_LOG, entry + '\n');
-
-  res.json({ ok: true, id: result.lastInsertRowid, status });
 });
 
 import { fetchChorusRcas } from './handlers/chorus-rcas';
@@ -2751,41 +2710,11 @@ let traceTableReady = false;
 
 // POST /api/chorus/trace — record a hop
 app.post('/api/chorus/trace', (req: Request, res: Response) => {
-  if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; }
-
-  const { correlationId, hop, callStack, source, destination, latencyMs, error } = req.body || {};
-
-  if (!correlationId || !hop || !callStack) {
-    res.status(400).json({ error: 'correlationId, hop, and callStack are required' });
-    return;
-  }
-
-  const now = bostonNow();
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-
-  db.prepare(`
-    INSERT INTO traces (correlation_id, hop, call_stack, source_domain, source_service, source_instance, dest_domain, dest_service, dest_instance, timestamp, latency_ms, error_class, error_message, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    correlationId,
-    hop,
-    callStack,
-    source?.domain || null,
-    source?.service || null,
-    source?.instance || null,
-    destination?.domain || null,
-    destination?.service || null,
-    destination?.instance || null,
-    now,
-    latencyMs || null,
-    error?.classification || null,
-    error?.message || null,
-    now,
-  );
-
-  db.close();
-  res.json({ ok: true });
+  handleTraceCreate(req, res, {
+    dbPath: DB_PATH, DatabaseCtor: Database as any,
+    ensureTable: () => { if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; } },
+    now: bostonNow,
+  });
 });
 
 // /api/chorus/trace/* — correlation-id hop chain + observed integrations (extracted #2189)
