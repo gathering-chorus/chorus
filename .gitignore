@@ -4,6 +4,22 @@ dist/
 target/
 coverage/
 *.js.map
+
+# Compiled TS artifacts shadowing source (#2201, #2209)
+# ts-jest instruments .js first when a .ts sibling exists — stale compiled
+# output causes silent test failures and miscounted coverage.
+platform/api/src/**/*.js
+platform/api/src/**/*.d.ts
+platform/chorus-sdk/src/**/*.js
+platform/chorus-sdk/src/**/*.d.ts
+platform/pulse/src/**/*.js
+platform/pulse/src/**/*.d.ts
+platform/workflow-engine/src/**/*.js
+platform/workflow-engine/src/**/*.d.ts
+directing/clearing/src/**/*.js
+directing/clearing/src/**/*.d.ts
+directing/products/cards/src/**/*.js
+directing/products/cards/src/**/*.d.ts
 .env
 .env.*
 package-lock.json
