@@ -5,52 +5,58 @@
  * CLI wrappers (nudge, chat.sh) call this API.
  */
 
-import express from 'express';
+import express, { Express } from 'express';
 import { MessageStore } from './store';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 
 const PORT = parseInt(process.env.MESSAGING_PORT || '3475');
-const app = express();
-app.use(express.json());
 
-const store = new MessageStore();
+/**
+ * Build an Express app bound to the given MessageStore. Factored out of the
+ * top-level listener so tests can run against an in-memory store without
+ * opening a port. `app.listen()` is called only when this module is the
+ * process entrypoint (`require.main === module`).
+ */
+export function createApp(store: MessageStore): Express {
+  const app = express();
+  app.use(express.json());
 
-// --- Prometheus metrics ---
-const register = new Registry();
-collectDefaultMetrics({ register });
+  // Each createApp gets its own metrics registry so tests can reset between runs.
+  const register = new Registry();
+  collectDefaultMetrics({ register });
 
-const httpRequestDuration = new Histogram({
-  name: 'messaging_http_request_duration_seconds',
-  help: 'HTTP request duration in seconds',
-  labelNames: ['method', 'path', 'status'],
-  buckets: [0.01, 0.05, 0.1, 0.5, 1, 5],
-  registers: [register],
-});
+  const httpRequestDuration = new Histogram({
+    name: 'messaging_http_request_duration_seconds',
+    help: 'HTTP request duration in seconds',
+    labelNames: ['method', 'path', 'status'],
+    buckets: [0.01, 0.05, 0.1, 0.5, 1, 5],
+    registers: [register],
+  });
 
-const nudgesReceived = new Counter({
-  name: 'messaging_nudges_received_total',
-  help: 'Total nudges received',
-  labelNames: ['from', 'to'],
-  registers: [register],
-});
+  const nudgesReceived = new Counter({
+    name: 'messaging_nudges_received_total',
+    help: 'Total nudges received',
+    labelNames: ['from', 'to'],
+    registers: [register],
+  });
 
-const nudgesAcked = new Counter({
-  name: 'messaging_nudges_acknowledged_total',
-  help: 'Total nudges acknowledged',
-  registers: [register],
-});
+  const nudgesAcked = new Counter({
+    name: 'messaging_nudges_acknowledged_total',
+    help: 'Total nudges acknowledged',
+    registers: [register],
+  });
 
-const nudgeQueueDepth = new Gauge({
-  name: 'messaging_nudge_queue_depth',
-  help: 'Number of unacknowledged nudges',
-  registers: [register],
-});
+  const nudgeQueueDepth = new Gauge({
+    name: 'messaging_nudge_queue_depth',
+    help: 'Number of unacknowledged nudges',
+    registers: [register],
+  });
 
-const deadLetterCount = new Counter({
-  name: 'messaging_dead_letter_total',
-  help: 'Total messages dead-lettered',
-  registers: [register],
-});
+  const deadLetterCount = new Counter({
+    name: 'messaging_dead_letter_total',
+    help: 'Total messages dead-lettered',
+    registers: [register],
+  });
 
 // --- Structured logging ---
 function log(level: string, event: string, data?: Record<string, unknown>): void {
@@ -215,11 +221,18 @@ app.get('/api/stats', (_req, res) => {
   res.json(store.getStats());
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => { log('info', 'shutdown', { signal: 'SIGTERM' }); store.close(); process.exit(0); });
-process.on('SIGINT', () => { log('info', 'shutdown', { signal: 'SIGINT' }); store.close(); process.exit(0); });
+  return app;
+}
 
-app.listen(PORT, () => {
-  const stats = store.getStats();
-  log('info', 'startup', { port: PORT, ...stats });
-});
+// Run as a server only when this file is the process entrypoint. Tests import
+// `createApp` and do not call `app.listen()`.
+/* istanbul ignore next */
+if (require.main === module) {
+  const store = new MessageStore();
+  const app = createApp(store);
+  process.on('SIGTERM', () => { store.close(); process.exit(0); });
+  process.on('SIGINT', () => { store.close(); process.exit(0); });
+  app.listen(PORT, () => {
+    process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, ...store.getStats() }) + '\n');
+  });
+}
