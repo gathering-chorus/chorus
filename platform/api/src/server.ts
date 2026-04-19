@@ -145,71 +145,28 @@ const REPO_SCRIPTS = path.resolve(__dirname, '../../scripts');
 const HOME_SCRIPTS = path.join(os.homedir(), '.chorus', 'scripts');
 const SCRIPTS_DIR = fs.existsSync(REPO_SCRIPTS) ? REPO_SCRIPTS : HOME_SCRIPTS;
 
-// --- Board card cache (#2096) ---
-// Same cache pattern as health endpoint (#1978, Silas: 1566ms→2ms with 30s cache).
-// Log evidence: /api/chorus/domain/:name = 344-536ms, all other facets = 8-29ms.
-// Root cause: execAsync('cards list') shells out on every request.
-// Both /api/chorus/domain/:name and /api/athena/subdomains/:id/cards read from cache.
+// --- Board card cache (#2096, extracted to src/board-cache.ts in #2205) ---
+// Logic + types + hermetic tests live in src/board-cache.ts. Server.ts
+// retains only the runner wiring (which binary, which env, refresh cadence).
 
-interface CachedCard {
-  id: string;
-  title: string;
-  status: string;
-  owner: string;
-  type: string;
-  priority: string;
-  tags: string;
-}
+import { createBoardCache, CachedCard } from './board-cache';
 
-let boardCache: CachedCard[] = [];
-let boardCacheAge = 0;
-
-async function refreshBoardCache(): Promise<void> {
-  try {
+const boardCache = createBoardCache({
+  run: async () => {
     const boardTs = path.join(REPO_SCRIPTS, 'cards');
     const envOpts = {
       encoding: 'utf-8' as const, timeout: 15000,
       env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
     };
     const { stdout } = await execAsync(`bash ${boardTs} list 2>/dev/null`, envOpts);
-    const cards: CachedCard[] = [];
-    let currentStatus = '';
-    for (const line of stdout.split('\n')) {
-      const statusMatch = line.match(/^(WIP|Blocked|Now|Next|Later|Done|Won't Do)\s*\(\d+\)/);
-      if (statusMatch) { currentStatus = statusMatch[1]; continue; }
-      const cardMatch = line.trim().match(/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/);
-      if (cardMatch) {
-        const tags = cardMatch[3];
-        const ownerMatch = tags.match(/^(Wren|Silas|Kade|Jeff)/i);
-        const typeMatch = tags.match(/type:(\w+)/);
-        const priorityMatch = tags.match(/P([1-3])/);
-        cards.push({
-          id: cardMatch[1],
-          title: cardMatch[2].trim(),
-          status: currentStatus,
-          owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
-          type: typeMatch ? typeMatch[1] : '',
-          priority: priorityMatch ? priorityMatch[0] : '',
-          tags,
-        });
-      }
-    }
-    boardCache = cards;
-    boardCacheAge = Date.now();
-  } catch (err) {
-    console.error(`[chorus-api] board cache refresh failed: ${(err as Error).message}`);
-  }
-}
+    return stdout;
+  },
+});
 
-function getBoardCards(): CachedCard[] {
-  if (boardCache.length === 0 && boardCacheAge === 0) {
-    refreshBoardCache();
-  }
-  return boardCache;
-}
+const getBoardCards = (): CachedCard[] => boardCache.getCards();
 
-refreshBoardCache();
-setInterval(refreshBoardCache, 60_000);
+void boardCache.refresh();
+setInterval(() => { void boardCache.refresh(); }, 60_000);
 
 // --- LanceDB semantic search ---
 
