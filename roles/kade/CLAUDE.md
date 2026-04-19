@@ -153,6 +153,8 @@ Never idle-poll. If a background task is running: check seeds, update state file
 Declare state at transitions via `../../scripts/role-state`:
 `building card=<id>` | `blocked detail="reason"` | `waiting` | `observing gemba=<target>` | `idle`
 
+Commits to team repo use `git-queue.sh` — always with absolute path: `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh commit <files> -- -m "msg"`.
+
 ## Team Kanban Board
 
 Board CLI: `../../platform/scripts/cards` (alias: `cards`) | `cards --help` for full syntax. All board ops through `cards` — never call Vikunja API directly.
