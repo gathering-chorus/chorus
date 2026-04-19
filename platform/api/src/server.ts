@@ -390,71 +390,8 @@ async function sparqlSearch(query: string, limit: number): Promise<SparqlResult[
 }
 
 // --- Unified search: merge all sources via RRF ---
-
-interface UnifiedResult {
-  id?: number;
-  uri?: string;
-  source: string;
-  type?: string;
-  domain?: string;
-  role?: string;
-  content: string;
-  timestamp?: string;
-  label?: string;
-  _rrf_score: number;
-  _sources: string[];
-}
-
-function mergeUnified(
-  ftsResults: any[],
-  semanticResults: SemanticResult[],
-  sparqlResults: SparqlResult[],
-  limit: number,
-  k: number = 60
-): UnifiedResult[] {
-  const scoreMap = new Map<string, UnifiedResult>();
-
-  // Score FTS results
-  ftsResults.forEach((r, i) => {
-    const key = `chorus:${r.id}`;
-    const entry = scoreMap.get(key) || {
-      id: r.id, source: r.source || 'chorus', role: r.role, content: r.content,
-      timestamp: r.timestamp, _rrf_score: 0, _sources: [] as string[],
-    };
-    entry._rrf_score += 1 / (k + i + 1);
-    if (!entry._sources.includes('fts')) entry._sources.push('fts');
-    scoreMap.set(key, entry);
-  });
-
-  // Score semantic results
-  semanticResults.forEach((r, i) => {
-    const key = `chorus:${r.msg_id}`;
-    const entry = scoreMap.get(key) || {
-      id: r.msg_id, source: r.source || 'chorus', role: r.role, content: r.content,
-      timestamp: r.timestamp, _rrf_score: 0, _sources: [] as string[],
-    };
-    entry._rrf_score += 1 / (k + i + 1);
-    if (!entry._sources.includes('semantic')) entry._sources.push('semantic');
-    scoreMap.set(key, entry);
-  });
-
-  // Score SPARQL results
-  sparqlResults.forEach((r, i) => {
-    const key = `sparql:${r.uri}`;
-    const entry = scoreMap.get(key) || {
-      uri: r.uri, source: 'sparql', type: r.type, domain: r.domain,
-      label: r.label, content: r.content,
-      _rrf_score: 0, _sources: [] as string[],
-    };
-    entry._rrf_score += 1 / (k + i + 1);
-    if (!entry._sources.includes('sparql')) entry._sources.push('sparql');
-    scoreMap.set(key, entry);
-  });
-
-  return Array.from(scoreMap.values())
-    .sort((a, b) => b._rrf_score - a._rrf_score)
-    .slice(0, limit);
-}
+// RRF fusion + types moved to src/search-fusion.ts (#2205 wave 3).
+import { mergeUnified, UnifiedResult } from './search-fusion';
 
 // --- Spine event emitter (fire-and-forget to chorus-log.sh) ---
 const CHORUS_LOG = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/chorus-log');
@@ -546,27 +483,8 @@ function buildSearchMeta(results: any[], db?: Database.Database): Record<string,
   return { domain_coverage: Math.round(domain_coverage * 100) / 100, newest_result_age_s, stale, sources, schema_version: '1.0.0' };
 }
 
-// #2174 AC-1: per-hit freshness. Structured so agents don't re-parse content
-// for timestamp (AC-2 semantic).
-function enrichHit(r: any, now: number): any {
-  const ts = r?.timestamp;
-  let freshness_s = 0;
-  if (ts) {
-    const t = new Date(ts).getTime();
-    if (!isNaN(t)) freshness_s = Math.max(0, Math.round((now - t) / 1000));
-  }
-  return { ...r, freshness_s };
-}
-
-// #2174 AC-6: small default limit for token economy; caller override up to 100.
-const SEARCH_DEFAULT_LIMIT = 5;
-const SEARCH_MAX_LIMIT = 100;
-function resolveSearchLimit(raw: string | undefined): { limit: number; explicit: boolean } {
-  if (raw === undefined) return { limit: SEARCH_DEFAULT_LIMIT, explicit: false };
-  const n = parseInt(raw, 10);
-  if (isNaN(n) || n < 1) return { limit: SEARCH_DEFAULT_LIMIT, explicit: false };
-  return { limit: Math.min(n, SEARCH_MAX_LIMIT), explicit: true };
-}
+// enrichHit + resolveSearchLimit + SEARCH_* constants moved to search-fusion.ts.
+import { enrichHit, resolveSearchLimit } from './search-fusion';
 
 // --- GET /api/chorus/search ---
 // Supports mode=fts (default), mode=semantic, mode=hybrid
