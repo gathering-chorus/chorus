@@ -1,0 +1,59 @@
+{
+  "cases": [
+    { "id": "view-valid",        "args": ["view", "1"],        "exitCode": 0, "stdoutMatch": "Build feature A" },
+    { "id": "view-invalid-id",   "args": ["view", "999"],      "exitCode": 0, "stdoutMatch": null, "expectCall": "view" },
+    { "id": "view-json",         "args": ["view", "1", "--json"], "exitCode": 0, "stdoutMatch": null, "expectCall": "view" },
+
+    { "id": "move-valid",        "args": ["move", "2", "WIP"],  "exitCode": 0, "expectCall": "move" },
+    { "id": "move-invalid-status","args": ["move", "2", "BOGUS"],"exitCode": 0, "stdoutMatch": null },
+    { "id": "move-missing-id",   "args": ["move"],              "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "done-valid",        "args": ["done", "1"],         "exitCode": 0, "expectCall": "done" },
+    { "id": "done-missing-id",   "args": ["done"],              "exitCode": 0, "stdoutMatch": null },
+    { "id": "done-string-id",    "args": ["done", "abc"],       "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "comment-valid",     "args": ["comment", "1", "looks good"], "exitCode": 0, "expectCall": "comment" },
+    { "id": "comment-missing-text","args": ["comment", "1"],    "exitCode": 0, "stdoutMatch": null },
+    { "id": "comment-missing-id","args": ["comment"],           "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "update-title",      "args": ["update", "1", "--title", "New title"], "exitCode": 0, "expectCall": "update" },
+    { "id": "update-desc",       "args": ["update", "1", "--desc", "New desc"],   "exitCode": 0, "expectCall": "update" },
+    { "id": "update-missing-id", "args": ["update"],            "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "tag-removed",       "args": ["tag", "1", "domain:gathering"], "exitCode": 0, "stdoutMatch": null },
+    { "id": "tag-missing-chunk", "args": ["tag", "1"],          "exitCode": 0, "stdoutMatch": null },
+    { "id": "tag-invalid-id",    "args": ["tag", "abc", "ops"], "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "untag-valid",       "args": ["untag", "1", "domain:chorus"], "exitCode": 0, "expectCall": "untag" },
+    { "id": "untag-missing-label","args": ["untag", "1"],       "exitCode": 0, "stdoutMatch": null },
+    { "id": "untag-missing-id",  "args": ["untag"],             "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "reassign-valid",    "args": ["reassign", "1", "kade"], "exitCode": 0, "expectCall": "reassignOwner" },
+    { "id": "reassign-invalid-role","args": ["reassign", "1", "nobody"], "exitCode": 0, "stdoutMatch": null },
+    { "id": "reassign-missing",  "args": ["reassign"],          "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "reject-valid",      "args": ["reject", "1", "not ready"], "exitCode": 0, "expectCall": "view" },
+    { "id": "reject-missing-reason","args": ["reject", "1"],   "exitCode": 0, "stdoutMatch": null },
+    { "id": "reject-missing-id", "args": ["reject"],            "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "block-valid",       "args": ["block", "1", "waiting on silas"], "exitCode": 0, "expectCall": "block" },
+    { "id": "block-missing-reason","args": ["block", "1"],      "exitCode": 0, "stdoutMatch": null },
+    { "id": "block-missing-id",  "args": ["block"],             "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "unblock-valid",     "args": ["unblock", "1"],      "exitCode": 0, "expectCall": "unblock" },
+    { "id": "unblock-missing-id","args": ["unblock"],           "exitCode": 0, "stdoutMatch": null },
+    { "id": "unblock-invalid-id","args": ["unblock", "xyz"],    "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "bulk-move-valid",   "args": ["bulk-move", "1,2", "Next"], "exitCode": 0, "expectCall": "move" },
+    { "id": "bulk-move-missing-ids","args": ["bulk-move"],      "exitCode": 0, "stdoutMatch": null },
+    { "id": "bulk-move-invalid-status","args": ["bulk-move", "1,2", "BOGUS"], "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "label-list",        "args": ["label", "list"],     "exitCode": 0, "expectCall": "listLabels" },
+    { "id": "label-create",      "args": ["label", "create", "my-label"], "exitCode": 0, "expectCall": "createLabel" },
+    { "id": "label-unknown-sub", "args": ["label", "bogus"],    "exitCode": 0, "stdoutMatch": null },
+
+    { "id": "unknown-command",   "args": ["boguscommand"],      "exitCode": 0, "stdoutMatch": null },
+    { "id": "no-args",           "args": [],                    "exitCode": 0, "stdoutMatch": "Usage" },
+    { "id": "help",              "args": ["help"],              "exitCode": 0, "stdoutMatch": "Usage" }
+  ]
+}

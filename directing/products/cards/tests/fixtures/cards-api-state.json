@@ -1,0 +1,22 @@
+{
+  "tasks": [
+    {
+      "index": 1, "title": "Build feature A", "description": "## Experience\nSees it.\n\n## AC\n- [ ] item one",
+      "status": "WIP", "owner": "Wren", "priority": "P1",
+      "domains": ["domain:chorus", "type:new", "sequence:protocol", "chunk:ops", "origin:reflective"],
+      "product": "chorus", "apiId": 101
+    },
+    {
+      "index": 2, "title": "Fix bug B", "description": "## Experience\nNo crash.\n\n## AC\n- [ ] fix it",
+      "status": "Next", "owner": "Silas", "priority": "P2",
+      "domains": ["domain:chorus", "type:fix", "chunk:ops", "origin:reactive"],
+      "product": "chorus", "apiId": 102
+    },
+    {
+      "index": 3, "title": "Review docs C", "description": "## Experience\nReviewed.\n\n## AC\n- [x] done",
+      "status": "Done", "owner": "Kade", "priority": "P3",
+      "domains": ["domain:chorus", "type:chore", "chunk:ops", "origin:reflective"],
+      "product": "chorus", "apiId": 103
+    }
+  ]
+}
