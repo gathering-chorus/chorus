@@ -354,6 +354,59 @@ fn scan_memory(keywords: &[String]) -> Vec<String> {
     hits
 }
 
+/// Manifest envelope for CONTEXT_PUSH_MODE=manifest (#2249 Phase 1).
+/// ~2KB identity + orientation + endpoint list. No pre-synthesized blobs.
+pub fn build_manifest_envelope(role: &str, card: Option<&str>, health: &str, team_wip: usize, role_wip: usize) -> String {
+    let wip_line = match card {
+        Some(c) => format!("You are {}. You are currently building {}.", role, c),
+        None => format!("You are {}. You have no WIP card.", role),
+    };
+    format!(
+        "<chorus-context role=\"{}\">\n\
+        \n\
+        {}\n\
+        \n\
+        Pulse (at glance):\n\
+          health: {}\n\
+          team WIP: {} · your WIP: {}\n\
+          index freshness: ok\n\
+        \n\
+        Pull-first rule. When forming a claim about current state, query the endpoint and cite its timestamp.\n\
+        \n\
+        Context endpoints:\n\
+          GET /api/chorus/context/board/wip?role={}  — current WIP\n\
+          GET /api/chorus/context/roles              — all roles, state, card\n\
+          GET /api/chorus/context/health             — system health\n\
+          GET /api/chorus/context/alerts             — firing alerts\n\
+          GET /api/chorus/context/spine?limit=10     — recent spine events\n\
+        \n\
+        Knowledge endpoints:\n\
+          GET /api/chorus/knowledge/domains          — domain list\n\
+          GET /api/chorus/knowledge/domains/{{name}}   — full domain detail\n\
+          GET /api/chorus/knowledge/search?q=...     — graph + FTS\n\
+        </chorus-context>",
+        role, wip_line, health, team_wip, role_wip, role
+    )
+}
+
+/// Parse pulse JSON for orientation band data.
+fn parse_pulse_orientation(role: &str) -> (String, usize, usize, Option<String>) {
+    let path = "/tmp/pulse-latest.json";
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return ("unknown".into(), 0, 0, None);
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return ("unknown".into(), 0, 0, None);
+    };
+    let health = v["health"]["status"].as_str().unwrap_or("unknown").to_string();
+    let team_wip = v["board"]["wip_count"].as_u64().unwrap_or(0) as usize;
+    let role_wip = v["board"]["wip_cards"].as_array()
+        .map(|arr| arr.iter().filter(|c| c["owner"].as_str().unwrap_or("").to_lowercase() == role).count())
+        .unwrap_or(0);
+    let card = v["roles"][role]["card"].as_u64().map(|id| format!("#{}", id));
+    (health, team_wip, role_wip, card)
+}
+
 /// Main hook: extract keywords, search, synthesize, inject
 /// Stores results in AppState so other hooks can read them (#2225)
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
@@ -371,6 +424,13 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     let role_name = format!("{:?}", input.role()).to_lowercase();
     let query = keywords.join(" ");
+
+    // #2249 Phase 1: manifest mode behind CONTEXT_PUSH_MODE=manifest env var.
+    if std::env::var("CONTEXT_PUSH_MODE").as_deref() == Ok("manifest") {
+        let (health, team_wip, role_wip, card) = parse_pulse_orientation(&role_name);
+        let envelope = build_manifest_envelope(&role_name, card.as_deref(), &health, team_wip, role_wip);
+        return HookResponse::warn_stderr(&format!("\n{}\n", envelope));
+    }
 
     // Pulse: assemble team state snapshot. A background daemon already refreshes
     // /tmp/pulse-latest.json on schedule (#1881); only spawn a rebuild when the
