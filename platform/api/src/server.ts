@@ -1377,32 +1377,12 @@ const ICD_PFX = 'PREFIX icd: <https://jeffbridwell.com/icd#>';
 // escSparql + icdSlug moved to src/sparql-helpers.ts (#2205 wave 7).
 import { escSparql, icdSlug } from './sparql-helpers';
 
-async function icdSparqlUpdate(update: string): Promise<void> {
-  const resp = await fetch(FUSEKI_UPDATE_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/sparql-update' },
-    body: update,
-  });
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`SPARQL update failed: ${resp.status} — ${body}`);
-  }
-}
-
-async function icdSparqlQuery(query: string): Promise<any> {
-  const resp = await fetch(`${FUSEKI_QUERY_URL}?query=${encodeURIComponent(query)}`, {
-    headers: { Accept: 'application/sparql-results+json' },
-  });
-  if (!resp.ok) throw new Error(`SPARQL query failed: ${resp.status}`);
-  return resp.json();
-}
-
-async function resolveIcdDomain(domainId: string): Promise<string | null> {
-  const r = await icdSparqlQuery(`${ICD_PFX} SELECT ?d WHERE { GRAPH <${ICD_GRAPH}> { ?d a icd:Domain ; icd:domainId ?did . FILTER(?did = "domain-${domainId}") } } LIMIT 1`);
-  if (r.results.bindings.length > 0) return r.results.bindings[0].d.value;
-  const r2 = await icdSparqlQuery(`${ICD_PFX} SELECT ?d WHERE { GRAPH <${ICD_GRAPH}> { ?d a icd:Domain ; icd:domainName ?name . FILTER(LCASE(?name) = "${domainId.toLowerCase()}") } } LIMIT 1`);
-  return r2.results.bindings.length > 0 ? r2.results.bindings[0].d.value : null;
-}
+// ICD SPARQL client + domain resolver moved to src/icd-sparql.ts (#2205 wave 9).
+import { createIcdSparqlClient, createIcdDomainResolver } from './icd-sparql';
+const _icd = createIcdSparqlClient({ queryUrl: FUSEKI_QUERY_URL, updateUrl: FUSEKI_UPDATE_URL });
+const icdSparqlQuery = _icd.query;
+const icdSparqlUpdate = _icd.update;
+const resolveIcdDomain = createIcdDomainResolver({ client: _icd, pfx: ICD_PFX, graph: ICD_GRAPH });
 
 // POST /api/icd/domains/:id/fields
 app.post('/api/icd/domains/:id/fields', async (req: Request, res: Response) => {
