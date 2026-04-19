@@ -253,10 +253,21 @@ fn assemble_board() -> serde_json::Value {
     if snapshot_age <= SNAPSHOT_TTL_SECS {
         if let Ok(content) = fs::read_to_string(snapshot_file) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(cards) = v.as_array() {
+                if let Some(obj) = v.as_object() {
+                    // New snapshot format: {wip_cards: [...], swat_cards: [...]}
+                    let wip = obj.get("wip_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+                    let swat = obj.get("swat_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+                    return serde_json::json!({
+                        "wip_count": wip.len(),
+                        "wip_cards": wip,
+                        "swat_cards": swat,
+                    });
+                } else if let Some(cards) = v.as_array() {
+                    // Legacy snapshot format: flat array of wip_cards only
                     return serde_json::json!({
                         "wip_count": cards.len(),
                         "wip_cards": cards,
+                        "swat_cards": [],
                     });
                 }
             }
@@ -276,11 +287,14 @@ fn assemble_board() -> serde_json::Value {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let wip_cards = parse_wip_list(&stdout);
-            if !wip_cards.is_empty() {
-                let _ = fs::write(snapshot_file, serde_json::to_string(&wip_cards).unwrap_or_default());
+            let swat_cards = parse_section_list(&stdout, "SWAT");
+            if !wip_cards.is_empty() || !swat_cards.is_empty() {
+                let snapshot = serde_json::json!({"wip_cards": &wip_cards, "swat_cards": &swat_cards});
+                let _ = fs::write(snapshot_file, serde_json::to_string(&snapshot).unwrap_or_default());
                 return serde_json::json!({
                     "wip_count": wip_cards.len(),
                     "wip_cards": wip_cards,
+                    "swat_cards": swat_cards,
                 });
             }
         }
@@ -293,13 +307,14 @@ fn assemble_board() -> serde_json::Value {
                 return serde_json::json!({
                     "wip_count": cards.len(),
                     "wip_cards": cards,
+                    "swat_cards": [],
                     "snapshot_stale": true,
                 });
             }
         }
     }
 
-    serde_json::json!({"wip_count": "unknown", "note": "board snapshot not found"})
+    serde_json::json!({"wip_count": "unknown", "swat_cards": [], "note": "board snapshot not found"})
 }
 
 /// Parse `cards list` stdout into WIP card records.
@@ -342,6 +357,49 @@ fn parse_wip_list(stdout: &str) -> Vec<serde_json::Value> {
             }));
         } else if in_wip && !line.starts_with("  ") {
             in_wip = false;
+        }
+    }
+    out
+}
+
+/// Parse a named section (e.g. "SWAT") from `cards list` stdout.
+/// Same line shape as parse_wip_list but parameterized on section header.
+fn parse_section_list(stdout: &str, section: &str) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    let mut in_section = false;
+    for line in stdout.lines() {
+        if line.starts_with(section) {
+            in_section = true;
+            continue;
+        }
+        if in_section && line.starts_with("  ") && !line.trim().is_empty() {
+            let trimmed = line.trim();
+            let Some(id_end) = trimmed.find(|c: char| !c.is_ascii_digit()) else { continue };
+            let id = &trimmed[..id_end];
+            if id.is_empty() { continue }
+            let rest = trimmed[id_end..].trim();
+            let (title, owner, domain) = match rest.rsplit_once('[') {
+                Some((title_part, meta)) => {
+                    let meta = meta.trim_end_matches(']');
+                    let mut parts = meta.split('|').map(|s| s.trim());
+                    let owner = parts.next().unwrap_or("").to_string();
+                    let domain = parts
+                        .find_map(|p| p.strip_prefix("domain:"))
+                        .unwrap_or("")
+                        .to_string();
+                    (title_part.trim().to_string(), owner, domain)
+                }
+                None => (rest.to_string(), String::new(), String::new()),
+            };
+            out.push(serde_json::json!({
+                "id": id.parse::<u64>().unwrap_or(0),
+                "title": title,
+                "owner": owner,
+                "domain": domain,
+                "status": section,
+            }));
+        } else if in_section && !line.starts_with("  ") {
+            in_section = false;
         }
     }
     out

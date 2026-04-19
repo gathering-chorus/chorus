@@ -546,7 +546,7 @@ app.get('/api/flow', (_req, res) => {
     const cards: any[] = [];
     let currentStatus = '';
     for (const line of output.split('\n')) {
-      const statusMatch = line.match(/^(WIP|Blocked|Harvesting|Next|Later|Done|Won't Do)\s*\(\d+\)/);
+      const statusMatch = line.match(/^(WIP|SWAT|Blocked|Harvesting|Next|Later|Done|Won't Do)\s*\(\d+\)/);
       if (statusMatch) { currentStatus = statusMatch[1]; continue; }
       if (currentStatus === 'Done' || currentStatus === "Won't Do") continue;
       const cardMatch = line.trim().match(/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/);

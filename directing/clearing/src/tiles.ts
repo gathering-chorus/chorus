@@ -4,7 +4,10 @@ import path from 'path';
 // #2167: env-configurable so tests can point at a fixture directory.
 const SCAN_DIR = process.env.CLEARING_SCAN_DIR || '/tmp/claude-team-scan';
 const PULSE_FILE = process.env.CLEARING_PULSE_FILE || '/tmp/pulse-latest.json';
+const CHORUS_API = process.env.CHORUS_API_BASE || 'http://localhost:3340';
 const ROLES = ['jeff', 'wren', 'silas', 'kade'] as const;
+
+interface BoardCard { id: number; owner?: string; status?: string; title?: string; domain?: string; }
 
 export interface RoleTile {
   role: string;
@@ -35,6 +38,7 @@ export interface PulseState {
 export class TilePoller {
   private tiles: Map<string, RoleTile> = new Map();
   private pulse: PulseState | null = null;
+  private boardCache: { wip_cards: BoardCard[]; swat_cards: BoardCard[]; ts: number } = { wip_cards: [], swat_cards: [], ts: 0 };
 
   constructor() {
     for (const role of ROLES) {
@@ -48,6 +52,7 @@ export class TilePoller {
       });
     }
     this.poll();
+    this.refreshBoardFromApi();
   }
 
   poll(): void {
@@ -56,6 +61,18 @@ export class TilePoller {
       this.tiles.set(role, tile);
     }
     this.pulse = this.readPulse();
+    this.refreshBoardFromApi();
+  }
+
+  private refreshBoardFromApi(): void {
+    Promise.all([
+      fetch(`${CHORUS_API}/api/chorus/context/board/wip`).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${CHORUS_API}/api/chorus/context/board/swat`).then((r) => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([wipData, swatData]) => {
+      const wip: BoardCard[] = (wipData?.data?.cards ?? []).map((c: BoardCard) => ({ ...c, status: 'WIP' }));
+      const swat: BoardCard[] = (swatData?.data?.cards ?? []).map((c: BoardCard) => ({ ...c, status: 'SWAT' }));
+      this.boardCache = { wip_cards: wip, swat_cards: swat, ts: Date.now() };
+    }).catch(() => {});
   }
 
   getTiles(): RoleTile[] {
@@ -137,17 +154,23 @@ export class TilePoller {
     // divergence flags from pulse.roles.<role> (pulse already composes declared
     // + inferred per #2168 AC-9).
     try {
-      const pulseContent = fs.readFileSync(PULSE_FILE, 'utf-8');
-      const pulseData = JSON.parse(pulseContent);
-      const wipCards: Array<{ id: number; owner?: string }> = pulseData?.board?.wip_cards || [];
-      const ownedIds = wipCards
+      // Board state from API cache (#2261) — no more /tmp file polling
+      const wipCards = this.boardCache.wip_cards;
+      const swatCards = this.boardCache.swat_cards;
+      const ownedWip = wipCards
         .filter((c) => (c.owner || '').toLowerCase() === role.toLowerCase())
         .map((c) => `#${c.id}`);
+      const ownedSwat = swatCards
+        .filter((c) => (c.owner || '').toLowerCase() === role.toLowerCase())
+        .map((c) => `#${c.id}[swat]`);
+      const ownedIds = [...ownedWip, ...ownedSwat];
       if (ownedIds.length > 0) {
         tile.cards = ownedIds;
-        // Fallback primary card if declared file didn't yield one.
-        if (!tile.card) tile.card = ownedIds[0];
+        if (!tile.card) tile.card = ownedWip[0] ?? ownedIds[0];
       }
+      // Role divergence still from pulse file (roles API not yet migrated)
+      const pulseContent = fs.readFileSync(PULSE_FILE, 'utf-8');
+      const pulseData = JSON.parse(pulseContent);
       const roleComposed = pulseData?.roles?.[role];
       if (roleComposed?.divergent) {
         tile.cardDeclared = roleComposed.card_declared ? String(roleComposed.card_declared) : undefined;

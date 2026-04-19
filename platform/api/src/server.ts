@@ -649,6 +649,7 @@ app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
 // Three endpoints for the proof-of-shape: board/wip, roles, health.
 
 import { fetchContextBoardWip } from './handlers/context-board-wip';
+import { fetchContextBoardSwat } from './handlers/context-board-swat';
 import { fetchContextRoles } from './handlers/context-roles';
 import { fetchContextHealth } from './handlers/context-health';
 
@@ -713,6 +714,16 @@ const tailSpineForRole = (role: string): { timestamp: string; role: string; even
 app.get('/api/chorus/context/board/wip', async (req: Request, res: Response) => {
   const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined;
   const r = await fetchContextBoardWip(
+    { sparql: _athena, readPulse: readPulseFile },
+    req.originalUrl,
+    roleFilter,
+  );
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/context/board/swat', async (req: Request, res: Response) => {
+  const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined;
+  const r = await fetchContextBoardSwat(
     { sparql: _athena, readPulse: readPulseFile },
     req.originalUrl,
     roleFilter,
