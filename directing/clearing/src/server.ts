@@ -591,12 +591,16 @@ app.get('/api/flow', (_req, res) => {
       }
     } catch {}
 
-    // Group by domain with counts
+    // Group by top-level product (chorus or gathering), sub-domain preserved on card
+    const CHORUS_DOMAINS = new Set(['chorus', 'roles', 'borg']);
     const byDomain: Record<string, any> = {};
     for (const card of cards) {
       for (const domain of card.domains) {
-        if (!byDomain[domain]) byDomain[domain] = { cards: [], counts: { wip: 0, next: 0, blocked: 0, activeCards: 0, activeWorkflows: 0, activeTotal: 0 } };
-        byDomain[domain].cards.push(card);
+        const topLevel = CHORUS_DOMAINS.has(domain) ? 'chorus' : 'gathering';
+        if (!byDomain[topLevel]) byDomain[topLevel] = { cards: [], counts: { wip: 0, next: 0, blocked: 0, activeCards: 0, activeWorkflows: 0, activeTotal: 0 } };
+        // Attach sub-domain so UI can nest further if needed
+        const enriched = { ...card, subDomain: CHORUS_DOMAINS.has(domain) ? undefined : domain };
+        byDomain[topLevel].cards.push(enriched);
       }
     }
 
