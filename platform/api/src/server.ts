@@ -3030,25 +3030,9 @@ app.use('/api/athena', (_req: Request, res: Response) => {
 
 const RCA_DB_PATH = DB_PATH; // Same SQLite as chorus index
 
-function ensureRcaTable(): void {
-  const db = new Database(RCA_DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.exec(`CREATE TABLE IF NOT EXISTS rcas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    trigger_event TEXT NOT NULL,
-    timeline TEXT,
-    root_cause TEXT NOT NULL,
-    contributing_factors TEXT DEFAULT '[]',
-    corrective_actions TEXT DEFAULT '[]',
-    cards TEXT DEFAULT '[]',
-    spine_events TEXT DEFAULT '[]',
-    status TEXT DEFAULT 'open',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`);
-  db.close();
-}
+// ensureRcaTable moved to src/db-schema.ts (#2205 wave 14).
+import { createRcaTableEnsurer, createTraceTableEnsurer } from './db-schema';
+const ensureRcaTable = createRcaTableEnsurer({ dbPath: RCA_DB_PATH, DatabaseCtor: Database as any });
 
 // Lazy init on first use
 let rcaTableReady = false;
@@ -3179,34 +3163,8 @@ app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
 // Common message envelope with hop-level tracing across four call stacks.
 // Traces auto-populate domain integration maps.
 
-function ensureTraceTable(): void {
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.exec(`CREATE TABLE IF NOT EXISTS traces (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    correlation_id TEXT NOT NULL,
-    hop INTEGER NOT NULL,
-    call_stack TEXT NOT NULL,
-    source_domain TEXT,
-    source_service TEXT,
-    source_instance TEXT,
-    dest_domain TEXT,
-    dest_service TEXT,
-    dest_instance TEXT,
-    timestamp TEXT NOT NULL,
-    latency_ms INTEGER,
-    error_class TEXT,
-    error_message TEXT,
-    created_at TEXT NOT NULL
-  )`);
-  // Indexes for fast lookup
-  const hasIdx = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_traces_corr'").get();
-  if (!hasIdx) {
-    db.exec(`CREATE INDEX idx_traces_corr ON traces(correlation_id)`);
-    db.exec(`CREATE INDEX idx_traces_domain ON traces(source_domain)`);
-  }
-  db.close();
-}
+// ensureTraceTable moved to src/db-schema.ts (#2205 wave 14).
+const ensureTraceTable = createTraceTableEnsurer({ dbPath: DB_PATH, DatabaseCtor: Database as any });
 
 let traceTableReady = false;
 
