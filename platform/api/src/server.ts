@@ -329,65 +329,10 @@ const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 const FUSEKI_URL = process.env.FUSEKI_URL || 'http://localhost:3030/pods/query';
 
 // --- SPARQL text search ---
+// Extracted to src/sparql-search.ts (#2205 wave 4).
+import { createSparqlSearch, SparqlResult } from './sparql-search';
 
-interface SparqlResult {
-  uri: string;
-  type: string;
-  domain: string;
-  label: string;
-  content: string;
-  score: number;
-}
-
-async function sparqlSearch(query: string, limit: number): Promise<SparqlResult[]> {
-  const terms = query.split(/\s+/).filter(t => t.length > 2);
-  if (terms.length === 0) return [];
-
-  // Build FILTER with CONTAINS for each term (case-insensitive via LCASE)
-  // AND for multi-term: require all terms present (tighter relevance)
-  const filters = terms.map((_, i) => `CONTAINS(LCASE(?text), LCASE(?term${i}))`).join(' && ');
-  const binds = terms.map((t, i) => `BIND("${t.replace(/"/g, '\\"')}" AS ?term${i})`).join('\n    ');
-
-  const sparql = `
-    PREFIX jb: <https://jeffbridwell.com/ontology#>
-    PREFIX dcterms: <http://purl.org/dc/terms/>
-    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    PREFIX schema: <https://schema.org/>
-
-    SELECT DISTINCT ?s ?type ?domain ?label ?text WHERE {
-      GRAPH ?g {
-        ?s a ?type .
-        { ?s dcterms:title ?label } UNION { ?s rdfs:label ?label } UNION { ?s schema:name ?label }
-        OPTIONAL { ?s dcterms:description ?desc }
-        BIND(COALESCE(CONCAT(STR(?label), " ", COALESCE(STR(?desc), "")), STR(?label)) AS ?text)
-        ${binds}
-        FILTER(${filters})
-      }
-      BIND(REPLACE(STR(?g), "http://localhost:3000/pods/jeff/([^/]+)/.*", "$1") AS ?domain)
-    }
-    LIMIT ${Math.min(limit, 50)}
-  `;
-
-  try {
-    const res = await fetch(`${FUSEKI_URL}?query=${encodeURIComponent(sparql)}`, {
-      headers: { 'Accept': 'application/sparql-results+json' },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as { results: { bindings: any[] } };
-
-    return data.results.bindings.map((b: any) => ({
-      uri: b.s?.value || '',
-      type: (b.type?.value || '').replace(/.*[#/]/, ''),
-      domain: b.domain?.value || '',
-      label: b.label?.value || '',
-      content: b.text?.value || b.label?.value || '',
-      score: 0.5, // baseline score for RRF merge
-    }));
-  } catch {
-    return [];
-  }
-}
+const sparqlSearch = createSparqlSearch({ fusekiUrl: FUSEKI_URL });
 
 // --- Unified search: merge all sources via RRF ---
 // RRF fusion + types moved to src/search-fusion.ts (#2205 wave 3).
