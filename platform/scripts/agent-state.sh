@@ -117,6 +117,8 @@ cmd_start() {
   pid=$(echo "$info" | grep '"PID"' | grep -o '[0-9]*')
   if [[ -n "$pid" ]]; then
     echo -e "${GREEN}Started${NC} $label (PID $pid)"
+    # Clear deploy suppression marker — service is up, alerts can resume
+    rm -f "/tmp/deploy-in-progress-${label}.marker" "/tmp/chorus-alert-suppress"
   else
     echo -e "${YELLOW}Started but no PID${NC} $label — may be a periodic agent"
   fi
@@ -131,6 +133,9 @@ cmd_stop() {
     return 1
   fi
   echo "Stopping $label..."
+  # Write deploy suppression marker — prevents deep-health alerts during restart window
+  echo $(( $(date +%s) + 60 )) > "/tmp/chorus-alert-suppress"
+  touch "/tmp/deploy-in-progress-${label}.marker"
   local pid
   pid=$(launchctl list "$label" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*')
   if [[ -n "$pid" ]]; then
@@ -180,6 +185,12 @@ cmd_orphans() {
       local ppid
       ppid=$(ps -p "$pid" -o ppid= 2>/dev/null | tr -d ' ')
       if [[ "$ppid" == "1" ]]; then
+        # Skip if managed by launchd — ppid=1 is normal for LaunchAgent processes
+        local bin
+        bin=$(ps -p "$pid" -o command= 2>/dev/null | awk '{print $1}')
+        if launchctl list | grep -q "$service" 2>/dev/null; then
+          continue
+        fi
         local cmd
         cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -c 80)
         echo -e "${RED}ORPHAN${NC} port=$port service=$service pid=$pid"
@@ -213,6 +224,10 @@ cmd_orphans() {
       local ppid
       ppid=$(ps -p "$pid" -o ppid= 2>/dev/null | tr -d ' ')
       if [[ "$ppid" == "1" ]]; then
+        # Skip if managed by launchd — ppid=1 is normal for LaunchAgent processes
+        if launchctl list | grep -q "com.chorus.${name}" 2>/dev/null; then
+          continue
+        fi
         echo -e "${RED}ORPHAN${NC} socket-service=$name pid=$pid"
         found=$((found + 1))
         if [[ "$FORCE" == "true" ]]; then
