@@ -1,55 +1,32 @@
 # Silas — Next Session
 
-Generated: 2026-04-19 by session reboot
+Generated: 2026-04-19 11:39 Boston by session reboot
 
 ## What shipped this session
 
-- **#2234 Move chorus API from attic to workbench** — WIP, demo'd, awaiting Wren gate:product + accept
-  - 5 design docs in designing/docs/ (chorus-overview refresh, context-service-design, endpoint audit, schemas, envelope reshape)
-  - 3 live Context endpoints: GET /api/chorus/context/{board/wip, roles, health}
-  - Common envelope: step + product + domain + subdomain, async SPARQL from Athena named graph
-  - Staleness field on /context/roles (15min threshold, 14:59/15:01 boundary tests)
-  - Health: dropped summary field, renamed detail→reason
-  - Inject prototype: board.wip pull pointer + manifest in Pulse section
-  - 9 follow-on cards filed (#2248–#2256)
+- **#2234 Move chorus API from attic to workbench** — Accepted by Jeff, committed and pushed
+  - 5 design docs in designing/docs/ committed
+  - 3 live Context endpoints active
+  - Common envelope schema locked
 
-- **#2218 Codesign chorus-hook-shim** — WIP, demo'd, all 5 gates passed, awaiting Wren accept
-
-- Gates posted: #2205, #2209, #2217, #2225, #2226, #2228, #2229, #2230, #2231, #2235, #2237, #2239
+- **#2218 Codesign chorus-hook-shim** — Still WIP, awaiting Wren accept
 
 ## WIP (mine)
 
-- **#2218** — awaiting Wren gate:product + accept
-- **#2234** — awaiting Wren gate:product + accept (brief at roles/wren/briefs/2026-04-19-demo-2234.md)
+- **#2218** — demo'd, gated, awaiting Wren gate:product + accept
 
-## Ops events
+## First tasks next session
 
-- **Bedroom Mac kernel panic** — logd watchdog timeout (~09:22). Suspected: NiFi JSON writer error spam. **NiFi UI fix needed**: JSON Writer → Output Grouping → `output-array` (not `OUTPUT_ARRAY`). Until fixed, Bedroom may panic again on NiFi restart.
-- Loki resource limit ×2 (fix: launchctl kickstart -k com.gathering.loki). Pattern noted in #2254.
-- chorus-api hung ~14h (kicked at 08:35). bare-cargo stripped chorus-hook-shim identifier ×2 (build-signed.sh restored both).
+1. Check if Wren accepted #2218. If yes, pull from Next queue.
+2. Fix NiFi JSON writer on Bedroom (Output Grouping → `output-array`) — prevents kernel panic recurrence.
+3. Pull #2141 (LaunchAgent exit-78) + #2144 (deploy-aware alert suppression) — sequentially dependent, both P1.
 
-## Design decisions locked this session
+## Ops watch
 
-- Chorus API sub-domains: Memory / Context / Knowledge (chorus-overview.md refreshed)
-- Common envelope: step + product + domain + subdomain. "domain" = sub-product in reference model.
-- stampHeader reads from Athena named graph (Fuseki /pods), NOT DOMAIN_REGISTRY TS object
-- Alert model: host-down before service-specific when all probes from a host fail simultaneously (#2254)
-- Interface design as practice: OpenAPI fragment + gate:interface per new endpoint (#2256)
+- NiFi JSON writer misconfiguration on Bedroom still live — kernel panic risk on NiFi restart
+- vikunja-auth-failure firing (#2147 is the health-probe fix, sitting in Next)
+- chorus-hooks LaunchAgent fragility (#2141) — every restart triggers alert storm (#2144)
 
-## Follow-on series (#2248–#2256, all Later)
+## Follow-on series (#2248–#2256)
 
-| # | Title | Owner |
-|---|-------|-------|
-| 2248 | DOMAIN_REGISTRY → TTL seed (P1) | Kade |
-| 2249 | Full push-envelope replacement (P1) | Silas |
-| 2250 | Knowledge endpoints (P2) | Kade |
-| 2251 | Memory endpoints (P2) | Kade |
-| 2252 | Remaining Context endpoints (P2) | Kade |
-| 2253 | Memory + Knowledge service designs (P2) | Wren |
-| 2254 | Alerts domain + deep-health redesign (P2) | Silas |
-| 2255 | Consumption measurement (P2) | Silas |
-| 2256 | gate:interface (P2) | Silas |
-
-## First task next session
-
-Check if Wren accepted #2234 + #2218. If yes, pull #2248 (DOMAIN_REGISTRY → TTL). Also fix NiFi JSON writer on Bedroom.
+Blocked behind #2218 accept. All Later. Full table in previous next-session.md (now consumed).

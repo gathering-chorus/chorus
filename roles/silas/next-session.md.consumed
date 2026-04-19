@@ -1,45 +1,55 @@
 # Silas — Next Session
 
-## What happened (2026-04-16)
-Massive session — 14 cards shipped. Common message envelope designed and rolled out across all 4 call stacks. Seed pipeline fixed (Twilio credits). Bridge subscribers stabilized. Spine decoupled from Gathering. Ontology views generated. Multiple ops fixes.
+Generated: 2026-04-19 by session reboot
 
-## Shipped (14 cards)
-- **#2075** — app-state.sh Docker removal, native LaunchAgent health checks
-- **#2057** — /tmp reaper, daily cleanup LaunchAgent
-- **#2008** — Observability blind spot sweep, WordPress log moved, ADR-023
-- **#1964** — Bridge subscriber ping fix (server 60s, client 120s, ThrottleInterval)
-- **#1914** — Chorus perf baseline, 4 endpoints nightly
-- **#2097** — Common message envelope spike — ADR-024, trace table, 3 endpoints, seeds instrumented
-- **#2100** — Integration call stack — chorus-sdk hop bridge, cards SDK instrumented
-- **#2105** — role-state trace gap — shim-wrapper bridge
-- **#2109** — Spine decoupling — Gathering POSTs to chorus-api, 126→30 lines
-- **#2102** — Batch call stack — crawler 4 hops per domain
-- **#2103** — Convergence call stack — ontology validation traces
-- **#2091** — Card type hygiene card created (type:gap)
-- **#2106** — Completeness parity card created (logs+monitors = code+tests)
-- **#2112** — NiFi trace bridge card created
+## What shipped this session
 
-## Gate reviews
-- gate:arch + gate:ops for Kade #1795 (RCA), #2068 (demo preflight), #1884 (crawl shapes), #1777 (perf budgets), #2090 (drop demo briefs), #2096 (board cache), #2098 (unified test API), #2101 (UI traces), #2104 (herald auto-wiring)
+- **#2234 Move chorus API from attic to workbench** — WIP, demo'd, awaiting Wren gate:product + accept
+  - 5 design docs in designing/docs/ (chorus-overview refresh, context-service-design, endpoint audit, schemas, envelope reshape)
+  - 3 live Context endpoints: GET /api/chorus/context/{board/wip, roles, health}
+  - Common envelope: step + product + domain + subdomain, async SPARQL from Athena named graph
+  - Staleness field on /context/roles (15min threshold, 14:59/15:01 boundary tests)
+  - Health: dropped summary field, renamed detail→reason
+  - Inject prototype: board.wip pull pointer + manifest in Pulse section
+  - 9 follow-on cards filed (#2248–#2256)
 
-## Key decisions
-- DEC-101: No raw Fuseki queries — use API layer
-- ADR-023: Stdout-only logging, machine-wide
-- ADR-024: Common message envelope — one header, four call stacks
-- Convergence = data integration + coherence (Jeff's Staples ESB lineage)
+- **#2218 Codesign chorus-hook-shim** — WIP, demo'd, all 5 gates passed, awaiting Wren accept
 
-## RCAs
-- RCA #16/#17: Seed pipeline — Twilio trial credits exhausted (-$1.78). Fixed with personal account + $20.
+- Gates posted: #2205, #2209, #2217, #2225, #2226, #2228, #2229, #2230, #2231, #2235, #2237, #2239
 
-## Ops fixed
-- Twilio seed pipeline restored
-- Bridge subscriber ping timeout (55 disconnects → 0)
-- WordPress debug log moved from /tmp/ to ~/Library/Logs/
-- harvest-exporter stdout path added
-- tmp-reaper log path corrected (was /tmp/, now ~/Library/Logs/Chorus/)
+## WIP (mine)
 
-## Next up
-- #2110 — Spine decoupling fully landed but Gathering linter reverted the file. Need to re-apply after linter config update.
-- #2112 — NiFi pipeline trace bridge (Bedroom, cross-machine)
-- Ontology ER diagram renders on chorus-api (3340/docs/) but needs Wren to finish #2108 nav/audit
-- Fuseki false alarm pattern (DEC-101) — may need a hook to enforce
+- **#2218** — awaiting Wren gate:product + accept
+- **#2234** — awaiting Wren gate:product + accept (brief at roles/wren/briefs/2026-04-19-demo-2234.md)
+
+## Ops events
+
+- **Bedroom Mac kernel panic** — logd watchdog timeout (~09:22). Suspected: NiFi JSON writer error spam. **NiFi UI fix needed**: JSON Writer → Output Grouping → `output-array` (not `OUTPUT_ARRAY`). Until fixed, Bedroom may panic again on NiFi restart.
+- Loki resource limit ×2 (fix: launchctl kickstart -k com.gathering.loki). Pattern noted in #2254.
+- chorus-api hung ~14h (kicked at 08:35). bare-cargo stripped chorus-hook-shim identifier ×2 (build-signed.sh restored both).
+
+## Design decisions locked this session
+
+- Chorus API sub-domains: Memory / Context / Knowledge (chorus-overview.md refreshed)
+- Common envelope: step + product + domain + subdomain. "domain" = sub-product in reference model.
+- stampHeader reads from Athena named graph (Fuseki /pods), NOT DOMAIN_REGISTRY TS object
+- Alert model: host-down before service-specific when all probes from a host fail simultaneously (#2254)
+- Interface design as practice: OpenAPI fragment + gate:interface per new endpoint (#2256)
+
+## Follow-on series (#2248–#2256, all Later)
+
+| # | Title | Owner |
+|---|-------|-------|
+| 2248 | DOMAIN_REGISTRY → TTL seed (P1) | Kade |
+| 2249 | Full push-envelope replacement (P1) | Silas |
+| 2250 | Knowledge endpoints (P2) | Kade |
+| 2251 | Memory endpoints (P2) | Kade |
+| 2252 | Remaining Context endpoints (P2) | Kade |
+| 2253 | Memory + Knowledge service designs (P2) | Wren |
+| 2254 | Alerts domain + deep-health redesign (P2) | Silas |
+| 2255 | Consumption measurement (P2) | Silas |
+| 2256 | gate:interface (P2) | Silas |
+
+## First task next session
+
+Check if Wren accepted #2234 + #2218. If yes, pull #2248 (DOMAIN_REGISTRY → TTL). Also fix NiFi JSON writer on Bedroom.
