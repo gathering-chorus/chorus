@@ -49,10 +49,14 @@ if echo "$CHANGED" | grep -q 'chorus-hooks'; then
   cd platform/services/chorus-hooks && cargo test 2>&1
 fi
 
-# TypeScript tests (cards, app)
-if echo "$CHANGED" | grep -q 'cards/\|services/'; then
-  cd directing/products/cards && npm test 2>&1
-fi
+# TypeScript tests — scoped per changed file, auto-fallback to full (#2226).
+# Uses jest --findRelatedTests in each project with .ts changes.
+# Falls through to full suite if: --full flag, >20 changed files, or 0 changes.
+# Demo pre-flight (step 3 of /demo) still runs full — this is for gate:code only.
+# Set GATE_CODE_FULL=true to force full suite (e.g., broad refactor not caught by threshold).
+FULL_ARG=""
+if [ "${GATE_CODE_FULL:-}" = "true" ]; then FULL_ARG="--full"; fi
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gate-code-tests.sh "$DIFF_BASE" $FULL_ARG
 ```
 
 **Pass:** All test suites exit 0.
