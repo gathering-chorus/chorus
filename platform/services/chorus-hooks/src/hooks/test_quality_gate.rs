@@ -20,6 +20,15 @@
 //! new files only."
 //!
 //! Skip for chore/swat/fix — reactive work, same pattern as tdd_gate.
+//!
+//! ## Known parser limits
+//! Tests dispatched through user-defined wrappers are NOT gate-checked —
+//! e.g. `const myTest = withAuth(test); myTest('name', fn)`. The regex
+//! parser recognizes jest's built-in constructs (test, it, test.skip,
+//! test.only, test.each, it.each, and their parameterized forms) but
+//! cannot follow JS-semantic indirection. If a rewrap is semantic-free,
+//! prefer calling test() directly. If a wrapper is essential, its name
+//! would need to be added to the keyword list to be gate-covered.
 
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 use std::collections::HashSet;
