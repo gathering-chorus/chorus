@@ -946,104 +946,20 @@ app.post('/api/icd/domains/:id/fields', async (req: Request, res: Response) => {
 });
 
 // POST /api/icd/domains/:id/mappings
+import { handleIcdMappingUpsert, handleIcdSectionPut } from './icd-writes';
+const icdDeps = () => ({
+  resolveDomain: resolveIcdDomain,
+  client: { query: icdSparqlQuery, update: icdSparqlUpdate },
+  pfx: ICD_PFX, graph: ICD_GRAPH,
+  icdSlug, escSparql,
+});
 app.post('/api/icd/domains/:id/mappings', async (req: Request, res: Response) => {
-  try {
-    const { providerId, sourceField, mapsTo, confidence, transform, description, coverageLabel, coverageClass, order } = req.body;
-    if (!providerId || !sourceField || !mapsTo || !confidence) {
-      res.status(400).json({ error: 'providerId, sourceField, mapsTo, and confidence are required' }); return;
-    }
-
-    const domainUri = await resolveIcdDomain(req.params.id);
-    if (!domainUri) { res.status(404).json({ error: `Domain '${req.params.id}' not found` }); return; }
-
-    const slug = icdSlug(req.params.id);
-    const provSlug = icdSlug(providerId);
-    const provUri = `https://jeffbridwell.com/icd/provider/${slug}/${provSlug}`;
-    const mappingSlug = icdSlug(sourceField);
-    const mappingUri = `https://jeffbridwell.com/icd/mapping/${slug}/${mappingSlug}`;
-    const mapsToSlug = icdSlug(mapsTo.split(',')[0].trim());
-    const fieldUri = `https://jeffbridwell.com/icd/field/${slug}/${mapsToSlug}`;
-
-    const provExists = await icdSparqlQuery(`${ICD_PFX} SELECT ?p WHERE { GRAPH <${ICD_GRAPH}> { <${provUri}> a icd:Provider } } LIMIT 1`);
-    if (provExists.results.bindings.length === 0) { res.status(404).json({ error: `Provider '${providerId}' not found` }); return; }
-
-    const exists = await icdSparqlQuery(`${ICD_PFX} SELECT ?m WHERE { GRAPH <${ICD_GRAPH}> { <${mappingUri}> a icd:FieldMapping } } LIMIT 1`);
-    const isNew = exists.results.bindings.length === 0;
-
-    await icdSparqlUpdate(`${ICD_PFX}
-      DELETE WHERE { GRAPH <${ICD_GRAPH}> { <${mappingUri}> ?p ?o } };
-      INSERT DATA { GRAPH <${ICD_GRAPH}> {
-        <${mappingUri}> a icd:FieldMapping ;
-          icd:mappingOrder ${order ?? 0} ; icd:sourceTable "${escSparql(providerId)}" ;
-          icd:sourceField "${escSparql(sourceField)}" ; icd:mapsTo <${fieldUri}> ;
-          icd:mapsToName "${escSparql(mapsTo)}" ; icd:confidence "${escSparql(confidence)}" ;
-          icd:fromProvider <${provUri}> .
-        ${transform ? `<${mappingUri}> icd:transform "${escSparql(transform)}" .` : ''}
-        ${description ? `<${mappingUri}> icd:fieldDescription "${escSparql(description)}" .` : ''}
-        ${coverageLabel ? `<${mappingUri}> icd:fieldCoverageLabel "${escSparql(coverageLabel)}" .` : ''}
-        ${coverageClass ? `<${mappingUri}> icd:fieldCoverageClass "${escSparql(coverageClass)}" .` : ''}
-        <${provUri}> icd:hasMapping <${mappingUri}> .
-      } }`);
-
-    res.status(isNew ? 201 : 200).json({ ok: true, domain: req.params.id, provider: providerId, sourceField, created: isNew });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to upsert ICD mapping', detail: String(err) });
-  }
+  await handleIcdMappingUpsert(req as any, res as any, icdDeps());
 });
 
 // PUT /api/icd/domains/:id/providers/:pid/sections
 app.put('/api/icd/domains/:id/providers/:pid/sections', async (req: Request, res: Response) => {
-  try {
-    const { title, type, paragraphs, risks, nonFunctionals, mermaid } = req.body;
-    if (!title) { res.status(400).json({ error: 'title is required' }); return; }
-
-    const domainUri = await resolveIcdDomain(req.params.id);
-    if (!domainUri) { res.status(404).json({ error: `Domain '${req.params.id}' not found` }); return; }
-
-    const slug = icdSlug(req.params.id);
-    const provSlug = icdSlug(req.params.pid);
-    const secSlug = icdSlug(title);
-    const provUri = `https://jeffbridwell.com/icd/provider/${slug}/${provSlug}`;
-    const secUri = `https://jeffbridwell.com/icd/section/${slug}/${secSlug}`;
-
-    const provExists = await icdSparqlQuery(`${ICD_PFX} SELECT ?p WHERE { GRAPH <${ICD_GRAPH}> { <${provUri}> a icd:Provider } } LIMIT 1`);
-    if (provExists.results.bindings.length === 0) { res.status(404).json({ error: `Provider '${req.params.pid}' not found` }); return; }
-
-    // Delete existing section + sub-resources
-    await icdSparqlUpdate(`${ICD_PFX}
-      DELETE WHERE { GRAPH <${ICD_GRAPH}> { <${secUri}> icd:hasParagraph ?para . ?para ?pp ?po . } };
-      DELETE WHERE { GRAPH <${ICD_GRAPH}> { <${secUri}> icd:hasRiskItem ?risk . ?risk ?rp ?ro . } };
-      DELETE WHERE { GRAPH <${ICD_GRAPH}> { <${secUri}> ?p ?o } }`);
-
-    // Build section triples
-    const sType = type || 'content';
-    let triples = `<${secUri}> a icd:Section ; icd:sectionTitle "${escSparql(title)}" ; icd:sectionType "${escSparql(sType)}" ; icd:sectionOrder 0 . <${provUri}> icd:hasSection <${secUri}> .`;
-
-    if (paragraphs) {
-      for (let i = 0; i < paragraphs.length; i++) {
-        const pUri = `${secUri}/para-${i}`;
-        triples += ` <${secUri}> icd:hasParagraph <${pUri}> . <${pUri}> a icd:Paragraph ; icd:paragraphOrder ${i} ; icd:paragraphLabel "" ; icd:paragraphText "${escSparql(paragraphs[i])}" .`;
-      }
-    }
-    if (risks) {
-      for (let i = 0; i < risks.length; i++) {
-        const rUri = `${secUri}/risk-${i}`;
-        triples += ` <${secUri}> icd:hasRiskItem <${rUri}> . <${rUri}> a icd:RiskItem ; icd:riskOrder ${i} ; icd:riskStatus "${escSparql(risks[i].status)}" ; icd:riskText "${escSparql(risks[i].text)}" .`;
-      }
-    }
-    if (nonFunctionals) {
-      const nf = nonFunctionals;
-      triples += ` <${secUri}> icd:nfVolume "${escSparql(nf.volume)}" ; icd:nfFreshness "${escSparql(nf.freshness)}" ; icd:nfLatency "${escSparql(nf.latency)}" ; icd:nfAuth "${escSparql(nf.auth)}" .`;
-    }
-    if (mermaid) {
-      triples += ` <${secUri}> icd:mermaidSource """${mermaid}""" .`;
-    }
-
-    await icdSparqlUpdate(`${ICD_PFX} INSERT DATA { GRAPH <${ICD_GRAPH}> { ${triples} } }`);
-    res.json({ ok: true, domain: req.params.id, provider: req.params.pid, section: title });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update ICD section', detail: String(err) });
-  }
+  await handleIcdSectionPut(req as any, res as any, icdDeps());
 });
 
 // --- Error handler ---
