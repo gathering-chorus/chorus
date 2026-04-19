@@ -268,7 +268,7 @@ elif [ -z "$(find "$VIKUNJA_LOG" -mmin -60 2>/dev/null)" ]; then
 fi
 
 # --- 11d. Vikunja auth probe — cards CLI 401 detection (#2147) ---
-CARDS_OUT=$(cards list --limit 1 2>&1)
+CARDS_OUT=$(timeout 8 cards list --limit 1 2>&1)
 CARDS_EXIT=$?
 if echo "$CARDS_OUT" | grep -qE "401|403|Unauthorized|Forbidden"; then
   FAILURES+=("vikunja-auth: cards CLI auth failure — check VIKUNJA_API_TOKEN (env unset, token expired, or wrapper edited)")
