@@ -727,120 +727,42 @@ app.post('/api/chorus/embed', async (_req: Request, res: Response) => {
 
 // --- POST /api/chorus/pulse (spine event emission — replaces chorus-log.sh) ---
 
+// Lifecycle-write handlers (pulse / role-state / alert) moved to
+// src/lifecycle-writes.ts (#2205 wave 19).
+import { handlePulse, handleRoleState, handleAlert } from './lifecycle-writes';
+const LIFECYCLE_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
 app.post('/api/chorus/pulse', (req: Request, res: Response) => {
-  const CHORUS_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
-  const { event, role, level, ...extras } = req.body || {};
-
-  if (!event || !role) {
-    res.status(400).json({ error: 'event and role are required' });
-    return;
-  }
-
-  const validLevels = ['info', 'warn', 'critical'];
-  const safeLevel = validLevels.includes(level) ? level : 'info';
-
-  const entry: Record<string, string> = {
-    timestamp: bostonNow(),
-    level: safeLevel,
-    appName: 'chorus-events',
-    component: 'lifecycle',
-    event,
-    role,
-  };
-
-  // Merge extra key-value pairs (card, domain, etc.)
-  for (const [k, v] of Object.entries(extras)) {
-    if (typeof v === 'string' || typeof v === 'number') {
-      entry[k] = String(v);
-    }
-  }
-
-  const line = JSON.stringify(entry);
-  fs.appendFileSync(CHORUS_LOG, line + '\n');
-
-  res.json({ ok: true, event, role, level: safeLevel });
+  handlePulse(req, res, {
+    appendFileSync: fs.appendFileSync as any,
+    chorusLogPath: LIFECYCLE_LOG,
+    now: bostonNow,
+  });
 });
 
 // --- POST /api/chorus/role-state (replaces role-state.sh) ---
 
 app.post('/api/chorus/role-state', (req: Request, res: Response) => {
-  const { role, state, card, type: cardType } = req.body || {};
-
-  if (!role || !state) {
-    res.status(400).json({ error: 'role and state are required' });
-    return;
-  }
-
-  const validStates = ['building', 'blocked', 'waiting', 'observing', 'idle'];
-  if (!validStates.includes(state)) {
-    res.status(400).json({ error: `Invalid state '${state}'. Use: ${validStates.join(', ')}` });
-    return;
-  }
-
-  const stateFile = `/tmp/role-state-${role}.json`;
-  const ts = new Date().toISOString();
-  const stateData = { role, state, card: card || null, type: cardType || null, updated: ts };
-
-  fs.writeFileSync(stateFile, JSON.stringify(stateData, null, 2));
-
-  // Also emit as spine event
-  const CHORUS_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
-  const entry = JSON.stringify({
-    timestamp: ts,
-    level: 'info',
-    appName: 'chorus-events',
-    component: 'lifecycle',
-    event: 'role.state.changed',
-    role,
-    state,
-    ...(card ? { card: String(card) } : {}),
-    ...(cardType ? { type: cardType } : {}),
+  handleRoleState(req, res, {
+    appendFileSync: fs.appendFileSync as any,
+    writeFileSync: fs.writeFileSync as any,
+    chorusLogPath: LIFECYCLE_LOG,
   });
-  fs.appendFileSync(CHORUS_LOG, entry + '\n');
-
-  res.json({ ok: true, role, state, card: card || null });
 });
 
 // --- POST /api/chorus/alert (Grafana webhook receiver) ---
 
 app.post('/api/chorus/alert', (req: Request, res: Response) => {
-  const CHORUS_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
-  const alerts = req.body?.alerts || [];
-  const ts = new Date().toISOString();
-
-  for (const alert of alerts) {
-    const severity = alert.labels?.severity || 'unknown';
-    const alertname = alert.labels?.alertname || 'unknown';
-    const status = alert.status || 'unknown'; // firing or resolved
-    const summary = alert.annotations?.summary || '';
-    const description = alert.annotations?.description || '';
-
-    const entry = JSON.stringify({
-      timestamp: ts,
-      level: severity === 'critical' ? 'error' : 'warn',
-      appName: 'grafana-alerts',
-      component: 'alertmanager',
-      event: `alert_${status}`,
-      role: 'system',
-      alertname,
-      severity,
-      summary,
-      description: description.substring(0, 500),
-    });
-
-    fs.appendFileSync(CHORUS_LOG, entry + '\n');
-
-    // macOS desktop notification for critical/firing alerts
-    if (severity === 'critical' && status === 'firing') {
-      const notifTitle = `ALERT: ${alertname}`;
-      const notifMsg = summary || description.substring(0, 100);
-      execFile('osascript', ['-e',
-        `display notification "${notifMsg.replace(/"/g, '\\"')}" with title "${notifTitle.replace(/"/g, '\\"')}" sound name "Basso"`
-      ], (err) => { if (err) console.error('Notification failed:', err.message); });
-    }
-  }
-
-  res.json({ received: alerts.length });
+  handleAlert(req, res, {
+    appendFileSync: fs.appendFileSync as any,
+    notify: (title, message) => {
+      execFile(
+        'osascript',
+        ['-e', `display notification "${message.replace(/"/g, '\\"')}" with title "${title.replace(/"/g, '\\"')}" sound name "Basso"`],
+        (err) => { if (err) console.error('Notification failed:', err.message); },
+      );
+    },
+    chorusLogPath: LIFECYCLE_LOG,
+  });
 });
 
 // --- GET /api/chorus/voice-analytics ---
