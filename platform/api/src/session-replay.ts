@@ -11,7 +11,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-const SESSIONS_DIR = process.env.SESSIONS_DIR || path.join(os.homedir(), 'CascadeProjects', 'jeff-bridwell-personal-site', 'data', 'sessions');
+function getSessionsDir() {
+  return process.env.SESSIONS_DIR || path.join(os.homedir(), 'CascadeProjects', 'jeff-bridwell-personal-site', 'data', 'sessions');
+}
 const MAX_SESSION_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
 interface SessionMeta {
@@ -36,14 +38,14 @@ export function isValidSessionId(id: string): boolean {
 }
 
 export function listSessions(): SessionListResponse {
-  if (!fs.existsSync(SESSIONS_DIR)) return { sessions: [] };
+  if (!fs.existsSync(getSessionsDir())) return { sessions: [] };
   const now = Date.now();
   const sessions: SessionMeta[] = [];
   try {
-    for (const file of fs.readdirSync(SESSIONS_DIR)) {
+    for (const file of fs.readdirSync(getSessionsDir())) {
       if (!file.endsWith('.json')) continue;
       try {
-        const filePath = path.join(SESSIONS_DIR, file);
+        const filePath = path.join(getSessionsDir(), file);
         const stat = fs.statSync(filePath);
         if (now - stat.mtimeMs > MAX_SESSION_AGE_MS) continue;
         const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -57,7 +59,7 @@ export function listSessions(): SessionListResponse {
 
 export function getSession(sessionId: string): SessionDetailResponse | null {
   if (!isValidSessionId(sessionId)) return null;
-  const filePath = path.join(SESSIONS_DIR, `${sessionId}.json`);
+  const filePath = path.join(getSessionsDir(), `${sessionId}.json`);
   if (!fs.existsSync(filePath)) return null;
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -68,7 +70,7 @@ export function getSession(sessionId: string): SessionDetailResponse | null {
 
 export function getSessionLog(sessionId: string): string | null {
   if (!isValidSessionId(sessionId)) return null;
-  const filePath = path.join(SESSIONS_DIR, `${sessionId}.log`);
+  const filePath = path.join(getSessionsDir(), `${sessionId}.log`);
   if (!fs.existsSync(filePath)) return null;
   try {
     return fs.readFileSync(filePath, 'utf-8');

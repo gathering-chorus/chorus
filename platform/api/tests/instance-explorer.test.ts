@@ -14,7 +14,7 @@ describe('#2099: /borg/instance-explorer/', () => {
   let harness: TestApp;
 
   beforeAll(async () => { harness = await startTestApp(); });
-  afterAll(async () => { if (harness) await harness.close(); });
+  afterAll(async () => { if (harness) await harness.close(); }, 15000);
 
   test('GET /borg/instance-explorer/ returns 200', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/instance-explorer/`);

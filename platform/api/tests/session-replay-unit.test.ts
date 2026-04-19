@@ -11,8 +11,10 @@ import * as path from 'path';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'session-replay-test-'));
 process.env.SESSIONS_DIR = TMP;
 
+import { listSessions, getSession, getSessionLog, isValidSessionId } from '../src/session-replay';
+
 function load() {
-  return require('../src/session-replay');
+  return { listSessions, getSession, getSessionLog, isValidSessionId };
 }
 
 afterAll(() => {
@@ -75,9 +77,9 @@ describe('session-replay — listSessions', () => {
       sessionId: 'ses_old_x', startTime: '2020-01-01T00:00:00Z',
       lastActivity: '2020-01-01T00:00:00Z', pages: [], eventCount: 0,
     });
-    // Set mtime to 8 days ago
+    // Set mtime to 91 days ago (MAX_SESSION_AGE_MS = 90 days per #2162)
     const oldPath = path.join(TMP, 'ses_old_x.json');
-    const oldTime = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    const oldTime = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000);
     fs.utimesSync(oldPath, oldTime, oldTime);
 
     makeSessionFile('ses_new_y', {
