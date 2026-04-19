@@ -644,6 +644,98 @@ app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
+// --- Context API (#2234 Step 3) ---
+// Pull-model endpoints with common envelope + Athena-graph-stamped headers.
+// Three endpoints for the proof-of-shape: board/wip, roles, health.
+
+import { fetchContextBoardWip } from './handlers/context-board-wip';
+import { fetchContextRoles } from './handlers/context-roles';
+import { fetchContextHealth } from './handlers/context-health';
+
+const readPulseFile = (): string | null =>
+  fs.existsSync('/tmp/pulse-latest.json')
+    ? fs.readFileSync('/tmp/pulse-latest.json', 'utf-8')
+    : null;
+
+const readRoleStateFile = (role: string): { role: string; state: string; card?: number | null; gemba?: string | null; detail?: string | null } | null => {
+  const p = `/tmp/claude-team-scan/${role}-declared.json`;
+  try {
+    if (!fs.existsSync(p)) return null;
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    return {
+      role,
+      state: typeof parsed.state === 'string' ? parsed.state : 'unknown',
+      card: typeof parsed.card === 'number' ? parsed.card : null,
+      gemba: typeof parsed.gemba === 'string' ? parsed.gemba : null,
+      detail: typeof parsed.detail === 'string' ? parsed.detail : null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const tailSpineForRole = (role: string): { timestamp: string; role: string; event: string } | null => {
+  // CHORUS_ROOT points to chorus/ in prod (LaunchAgent) and to its parent in
+  // dev fallback; try both candidates without branching on shape.
+  const candidates = [
+    `${CHORUS_ROOT}/platform/logs/chorus.log`,
+    `${CHORUS_ROOT}/chorus/platform/logs/chorus.log`,
+  ];
+  const logPath = candidates.find((p) => fs.existsSync(p));
+  if (!logPath) return null;
+  try {
+    if (!fs.existsSync(logPath)) return null;
+    // Read the tail; spine log is append-only JSONL. Reading last 64KB is
+    // enough to find the most recent per-role event without scanning the whole file.
+    const stat = fs.statSync(logPath);
+    const start = Math.max(0, stat.size - 64 * 1024);
+    const fd = fs.openSync(logPath, 'r');
+    const buf = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    fs.closeSync(fd);
+    const lines = buf.toString('utf-8').split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const parsed = JSON.parse(lines[i]);
+        if (parsed.role === role && typeof parsed.event === 'string') {
+          return {
+            timestamp: typeof parsed.timestamp === 'string' ? parsed.timestamp : '',
+            role,
+            event: parsed.event,
+          };
+        }
+      } catch { /* skip malformed */ }
+    }
+  } catch { /* best effort */ }
+  return null;
+};
+
+app.get('/api/chorus/context/board/wip', async (req: Request, res: Response) => {
+  const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined;
+  const r = await fetchContextBoardWip(
+    { sparql: _athena, readPulse: readPulseFile },
+    req.originalUrl,
+    roleFilter,
+  );
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/context/roles', async (req: Request, res: Response) => {
+  const r = await fetchContextRoles(
+    { sparql: _athena, readState: readRoleStateFile, tailSpine: tailSpineForRole },
+    req.originalUrl,
+  );
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/context/health', async (req: Request, res: Response) => {
+  const r = await fetchContextHealth(
+    { sparql: _athena, readPulse: readPulseFile },
+    req.originalUrl,
+  );
+  res.status(r.status).json(r.body);
+});
+
 // --- POST /api/chorus/reindex (#1879) ---
 // Trigger full re-index + re-embed without app restart
 
