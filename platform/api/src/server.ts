@@ -1599,21 +1599,13 @@ const healthCache = _healthCache.snapshot();
 // Runs every 15 min. First run after 60s startup delay to avoid boot contention.
 // The timer starts are at the bottom of this file inside `require.main === module`
 // (#2173 AC4) — fn declaration lives here so the start can reference it.
+// scheduledReindex extracted to src/scheduled-reindex.ts (#2205 wave 15).
+// indexAllSources is declared further down; lazy-wrapper defers the capture.
 const REINDEX_INTERVAL = 15 * 60_000;
-let reindexRunning = false;
-async function scheduledReindex(): Promise<void> {
-  if (reindexRunning) return;
-  reindexRunning = true;
-  try {
-    const result = await indexAllSources();
-    const total = Object.values(result).filter(v => typeof v === 'string' && v.startsWith('indexed')).length;
-    console.log(`[reindex] scheduled run complete — ${total} sources indexed`);
-  } catch (err: any) {
-    console.error(`[reindex] scheduled run failed: ${err.message}`);
-  } finally {
-    reindexRunning = false;
-  }
-}
+import { createScheduledReindex } from './scheduled-reindex';
+const scheduledReindex = createScheduledReindex({
+  indexAllSources: () => indexAllSources(),
+});
 
 // SHACL validation — check ontology integrity (#2014).
 // Extracted to handlers/athena-validate.ts (#2180).
