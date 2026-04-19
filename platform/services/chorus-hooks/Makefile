@@ -8,9 +8,7 @@ deploy: build restart verify
 	@echo "✓ Built, restarted, verified."
 
 build:
-	cargo build --release
-	@codesign --force --sign "Chorus Local Signing" target/release/chorus-hooks 2>/dev/null && echo "✓ chorus-hooks signed" || echo "WARN: codesign failed (cert missing?)"
-	@codesign --force --sign "Chorus Local Signing" target/release/chorus-hook-shim 2>/dev/null && echo "✓ chorus-hook-shim signed" || echo "WARN: codesign failed (cert missing?)"
+	bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/build-signed.sh chorus-hooks
 
 restart:
 	@launchctl kickstart -k gui/$$(id -u)/com.chorus.hooks 2>/dev/null || true
