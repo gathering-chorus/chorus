@@ -1581,35 +1581,18 @@ app.get('/api/chorus/domains', (_req: Request, res: Response) => {
 
 const startTime = Date.now();
 
-// Cache expensive counts — refresh every 30s, serve from cache (#1978)
-let healthCache = { dbRows: 0, unembedded: 0, vectors: 0, dbStatus: 'unknown', hooksStatus: 'unknown', ts: 0 };
-
-async function refreshHealthCache(): Promise<void> {
-  try {
-    const db = new Database(DB_PATH, { readonly: true });
-    const row = db.prepare('SELECT COUNT(*) as cnt FROM messages').get() as { cnt: number };
-    healthCache.dbRows = row.cnt;
-    healthCache.dbStatus = 'ok';
-    try {
-      const uRow = db.prepare('SELECT COUNT(*) as cnt FROM messages WHERE embedded = 0 AND LENGTH(content) >= 100').get() as { cnt: number };
-      healthCache.unembedded = uRow.cnt;
-    } catch { /* column may not exist yet */ }
-    db.close();
-  } catch {
-    healthCache.dbStatus = 'error';
-  }
-  try {
-    if (lanceTable) healthCache.vectors = await lanceTable.countRows();
-  } catch { /* non-fatal */ }
-  const hookBinary = path.resolve(__dirname, '../../services/chorus-hooks/target/release/chorus-hooks');
-  try {
-    if (fs.existsSync(hookBinary)) {
-      const stat = fs.statSync(hookBinary);
-      healthCache.hooksStatus = (Date.now() - stat.mtimeMs) / 3600000 < 24 ? 'active' : 'stale';
-    } else { healthCache.hooksStatus = 'missing'; }
-  } catch { healthCache.hooksStatus = 'error'; }
-  healthCache.ts = Date.now();
-}
+// Health cache moved to src/health-cache.ts (#2205 wave 13).
+import { createHealthCache } from './health-cache';
+const _healthCache = createHealthCache({
+  dbPath: DB_PATH,
+  DatabaseCtor: Database as any,
+  getLanceTable: () => lanceTable as any,
+  fs: { existsSync: (p) => fs.existsSync(p), statSync: (p) => fs.statSync(p) },
+  hookBinaryPath: path.resolve(__dirname, '../../services/chorus-hooks/target/release/chorus-hooks'),
+});
+const refreshHealthCache = () => _healthCache.refresh();
+// Legacy export for existing handler deps — returns the live snapshot object.
+const healthCache = _healthCache.snapshot();
 
 // Scheduled reindex — keep index_freshness sources current (#1960)
 // indexAllSources() is SQLite-only (no Ollama), safe in-process unlike embedDelta (#1978).
