@@ -934,43 +934,15 @@ const icdSparqlUpdate = _icd.update;
 const resolveIcdDomain = createIcdDomainResolver({ client: _icd, pfx: ICD_PFX, graph: ICD_GRAPH });
 
 // POST /api/icd/domains/:id/fields
+// ICD field upsert handler moved to src/icd-writes.ts (#2205 wave 22).
+import { handleIcdFieldUpsert } from './icd-writes';
 app.post('/api/icd/domains/:id/fields', async (req: Request, res: Response) => {
-  try {
-    const { name, severity, datatype, constraint, cardinality, bestSource, description, order } = req.body;
-    if (!name || !severity) { res.status(400).json({ error: 'name and severity are required' }); return; }
-    const validSev = ['violation', 'enrichment', 'warning', 'info'];
-    if (!validSev.includes(severity)) { res.status(400).json({ error: `severity must be one of: ${validSev.join(', ')}` }); return; }
-
-    const domainUri = await resolveIcdDomain(req.params.id);
-    if (!domainUri) { res.status(404).json({ error: `Domain '${req.params.id}' not found` }); return; }
-
-    const slug = icdSlug(req.params.id);
-    const fieldSlug = icdSlug(name);
-    const fieldUri = `https://jeffbridwell.com/icd/field/${slug}/${fieldSlug}`;
-    const typeUri = `https://jeffbridwell.com/icd/type/${slug}`;
-    const sevMap: Record<string, string> = { violation: 'icd:Violation', enrichment: 'icd:Enrichment', warning: 'icd:Warning', info: 'icd:Info' };
-
-    const exists = await icdSparqlQuery(`${ICD_PFX} SELECT ?f WHERE { GRAPH <${ICD_GRAPH}> { <${fieldUri}> a icd:CanonicalField } } LIMIT 1`);
-    const isNew = exists.results.bindings.length === 0;
-
-    await icdSparqlUpdate(`${ICD_PFX}
-      DELETE WHERE { GRAPH <${ICD_GRAPH}> { <${fieldUri}> ?p ?o } };
-      INSERT DATA { GRAPH <${ICD_GRAPH}> {
-        <${fieldUri}> a icd:CanonicalField ;
-          icd:canonicalName "${escSparql(name)}" ; icd:displayName "${escSparql(name)}" ;
-          icd:severity ${sevMap[severity]} ; icd:datatype "${escSparql(datatype || 'xsd:string')}" ;
-          icd:cardinality "${escSparql(cardinality || '1')}" ; icd:fieldOrder ${order ?? 0} ;
-          icd:inDomain <${domainUri}> ; icd:inConsumerType <${typeUri}> .
-        ${constraint ? `<${fieldUri}> icd:constraint "${escSparql(constraint)}" .` : ''}
-        ${bestSource ? `<${fieldUri}> icd:bestSource "${escSparql(bestSource)}" .` : ''}
-        ${description ? `<${fieldUri}> icd:fieldTypeDescription "${escSparql(description)}" .` : ''}
-        <${typeUri}> icd:hasCanonicalField <${fieldUri}> .
-      } }`);
-
-    res.status(isNew ? 201 : 200).json({ ok: true, domain: req.params.id, field: name, created: isNew });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to upsert ICD field', detail: String(err) });
-  }
+  await handleIcdFieldUpsert(req as any, res as any, {
+    resolveDomain: resolveIcdDomain,
+    client: { query: icdSparqlQuery, update: icdSparqlUpdate },
+    pfx: ICD_PFX, graph: ICD_GRAPH,
+    icdSlug, escSparql,
+  });
 });
 
 // POST /api/icd/domains/:id/mappings
