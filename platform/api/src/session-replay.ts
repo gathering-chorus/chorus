@@ -12,7 +12,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 const SESSIONS_DIR = process.env.SESSIONS_DIR || path.join(os.homedir(), 'CascadeProjects', 'jeff-bridwell-personal-site', 'data', 'sessions');
-const MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_SESSION_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
 interface SessionMeta {
   sessionId: string;
