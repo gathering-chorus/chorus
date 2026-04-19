@@ -162,6 +162,8 @@ check_page() {
 # Parse arguments
 pages=()
 mode="custom"
+scope_files=""
+scope_card=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -169,6 +171,8 @@ for arg in "$@"; do
     --nav)        mode="nav" ;;
     --auth-only)  mode="auth" ;;
     --public-only) mode="public" ;;
+    --card=*)     scope_card="${arg#--card=}" ;;
+    --files=*)    scope_files="${arg#--files=}" ;;
     --help|-h)
       echo "smoke-check.sh — page verification"
       echo ""
@@ -177,6 +181,12 @@ for arg in "$@"; do
       echo "  smoke-check.sh --all            Check all known pages"
       echo "  smoke-check.sh --auth-only      Check auth-gated pages only"
       echo "  smoke-check.sh --public-only    Check public pages only"
+      echo "  smoke-check.sh --card <id>      Scope smoke by card's blast radius (#2229)"
+      echo "  smoke-check.sh --files <paths>  Scope smoke by explicit file list"
+      echo ""
+      echo "Scope logic (--card / --files):"
+      echo "  - If any file affects app pages (views, chorus-api handlers) → run --all"
+      echo "  - If all files are non-app (scripts/hooks/rust/skills/configs/docs) → skip"
       exit 0
       ;;
     /*)           pages+=("$arg") ;;
@@ -229,6 +239,69 @@ check_external() {
     fail=$((fail + 1))
   fi
 }
+
+# --- Blast-radius scoping (#2229) ---
+# file_affects_app: return 0 if file path could affect a user-facing page,
+# 1 if clearly non-app (scripts, hooks, skills, configs, rust, docs).
+# Patterns match anywhere in the path via leading-asterisk.
+file_affects_app() {
+  local f="$1"
+  case "$f" in
+    # Non-app: no user-facing page affected
+    *platform/scripts/*) return 1 ;;
+    *chorus-hooks/*) return 1 ;;
+    *chorus-inject/*) return 1 ;;
+    *skills/*) return 1 ;;
+    *designing/*) return 1 ;;
+    *roles/*) return 1 ;;
+    *briefs/*) return 1 ;;
+    *decisions/*) return 1 ;;
+    *seeds/*) return 1 ;;
+    *.md) return 1 ;;
+    *jest.config.js) return 1 ;;
+    *.toml) return 1 ;;
+    *.rs) return 1 ;;
+    # Config files that can affect build output reaching the app
+    *package.json) return 0 ;;
+    # App-affecting: views, routes, handlers, config for app
+    *jeff-bridwell-personal-site/*) return 0 ;;
+    *platform/api/src/*) return 0 ;;
+    *directing/clearing/src/*) return 0 ;;
+    *platform/apps/*) return 0 ;;
+    *) return 1 ;;  # default: non-app, conservative
+  esac
+}
+
+# If --card given, resolve to file list via blast-radius comment
+if [ -n "$scope_card" ]; then
+  CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  blast=$(bash "$CHORUS_ROOT/platform/scripts/cards" view "$scope_card" 2>/dev/null | grep -A 200 'Blast Radius' | grep -E '^\s+[a-z]' | head -100 || true)
+  if [ -n "$blast" ]; then
+    scope_files=$(echo "$blast" | tr -s ' ' '\n' | grep -E '\.' | head -50 | tr '\n' ' ')
+  fi
+fi
+
+# If we have a file scope, decide: all | skip
+if [ -n "$scope_files" ]; then
+  any_app=0
+  file_count=0
+  for f in $scope_files; do
+    file_count=$((file_count + 1))
+    if file_affects_app "$f"; then
+      any_app=1
+      break
+    fi
+  done
+  if [ "$any_app" = "0" ]; then
+    echo "smoke-check: $file_count file(s) in scope, none affect app pages — skipping smoke"
+    echo "  (scripts / hooks / skills / rust / configs / docs do not need page verification)"
+    exit 0
+  else
+    # Conservative: if any file might touch app, run full smoke
+    echo "smoke-check: $file_count file(s) in scope, app-affecting detected — running --all"
+    mode="all"
+  fi
+fi
 
 # Build page list based on mode
 case "$mode" in

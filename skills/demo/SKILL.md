@@ -183,8 +183,17 @@ OPS_PASS=$(echo "$CARD_COMMENTS" | grep -c 'gate:ops-pass')
 **Run the automated smoke check first.** This is a gate — non-zero exit blocks the demo.
 
 ```bash
-# For code cards that touch app pages: run smoke-check.sh
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh --all
+# For code cards that touch app pages: run smoke-check.sh (#2229 scoped)
+# --card reads the card's blast-radius, classifies files:
+#   - Any app-affecting file (views, platform/api/src, etc) → runs --all
+#   - All files non-app (scripts, hooks, skills, rust, configs, docs) → skips smoke
+# Override via --all if card is tagged type:swat or impact:wide.
+CARD_TAGS=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards view ${CARD_ID} 2>/dev/null | grep -E "Domains:" | head -1)
+if echo "$CARD_TAGS" | grep -qE "type:swat|impact:wide"; then
+  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh --all
+else
+  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh --card=${CARD_ID}
+fi
 ```
 
 **Gate logic:**
