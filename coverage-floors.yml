@@ -20,7 +20,7 @@
 
 ts:
   directing/clearing: 85
-  directing/products/cards: 29     # low baseline; own lift card when scoped
+  directing/products/cards: 80     # raised from 29 by #2262 (delivered 81.17% 2026-04-19)
   platform/workflow-engine: 90
   platform/chorus-sdk: 85          # raised from 50 by #2239 (delivered 87.36% 2026-04-19)
   platform/pulse: 95               # raised from 30 by #2237 (delivered 98.37% 2026-04-19)
