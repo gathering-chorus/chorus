@@ -678,49 +678,8 @@ app.get('/api/chorus/domain/:name/pipeline', async (req: Request, res: Response)
 });
 
 /** Check if a date falls in US Eastern Daylight Time */
-function isEDT(dateStr: string): boolean {
-  // Approximate: EDT is second Sunday of March to first Sunday of November
-  const d = new Date(dateStr);
-  const month = d.getMonth(); // 0-indexed
-  if (month > 2 && month < 10) return true; // Apr-Oct always EDT
-  if (month === 2) {
-    // March: EDT starts second Sunday
-    const firstDay = new Date(d.getFullYear(), 2, 1).getDay();
-    const secondSunday = firstDay === 0 ? 8 : 15 - firstDay;
-    return d.getDate() >= secondSunday;
-  }
-  if (month === 10) {
-    // November: EDT ends first Sunday
-    const firstDay = new Date(d.getFullYear(), 10, 1).getDay();
-    const firstSunday = firstDay === 0 ? 1 : 8 - firstDay;
-    return d.getDate() < firstSunday;
-  }
-  return false; // Dec-Feb always EST
-}
-
-/** Boston timestamp — one conversion point for all display (#1826) */
-function bostonNow(): string {
-  return convertToLocal(new Date().toISOString(), 'America/New_York');
-}
-
-/** Convert ISO timestamp to local time string */
-function convertToLocal(isoTimestamp: string, _tz: string): string {
-  try {
-    const d = new Date(isoTimestamp);
-    // Use Intl for proper timezone conversion
-    const fmt = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/New_York',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false,
-    });
-    const parts = fmt.formatToParts(d);
-    const get = (type: string) => parts.find(p => p.type === type)?.value || '';
-    return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
-  } catch {
-    return isoTimestamp;
-  }
-}
+// Time utilities moved to src/time-utils.ts (#2205 wave 6).
+import { isEDT, bostonNow, convertToLocal } from './time-utils';
 
 /** Reciprocal Rank Fusion — merge FTS + semantic results by message ID */
 // #2168 AC-14: query-aware RRF weighting extracted to ./search-rrf.ts
