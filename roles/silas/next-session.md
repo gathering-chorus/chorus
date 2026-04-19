@@ -1,36 +1,55 @@
-# Silas — next session pickup
+# Silas — Next Session
 
-## Session 2026-04-18 (this one) — accomplishments
+Generated: 2026-04-19 by session reboot
 
-**#2168 accepted** — pulse+spine+athena per-prompt envelope. Landed parser fix + source stamping + two-file split (declared/inferred) + multi-WIP observer + sub-100ms pulse (14ms warm) + semantic-first hybrid search (AC-14) + LRU embed cache. 14 AC.
+## What shipped this session
 
-**#2175 accepted** — chorus domain populated in Athena. 8 previously-missing sections filled (scenarios/contract/prior_art/integrations/services/persistence/pipeline/gaps). Fixed 11-OPTIONAL SPARQL perf bug (60s timeout → 22-73ms warm) + domain endpoint 60s cache (313-1500ms → 1-2ms). Envelope Athena now carries 7 section types.
+- **#2234 Move chorus API from attic to workbench** — WIP, demo'd, awaiting Wren gate:product + accept
+  - 5 design docs in designing/docs/ (chorus-overview refresh, context-service-design, endpoint audit, schemas, envelope reshape)
+  - 3 live Context endpoints: GET /api/chorus/context/{board/wip, roles, health}
+  - Common envelope: step + product + domain + subdomain, async SPARQL from Athena named graph
+  - Staleness field on /context/roles (15min threshold, 14:59/15:01 boundary tests)
+  - Health: dropped summary field, renamed detail→reason
+  - Inject prototype: board.wip pull pointer + manifest in Pulse section
+  - 9 follow-on cards filed (#2248–#2256)
 
-**#2174 accepted** — Chorus response quality for AX. Per-hit freshness_s, structured metadata, versioned schema (1.0.0), default limit 5 + truncated flag, mode=recency + mode=relevance. 9 jest tests.
+- **#2218 Codesign chorus-hook-shim** — WIP, demo'd, all 5 gates passed, awaiting Wren accept
 
-**#2154 accepted** — pulse jest migration (work shipped in prior session as 4d614fbb, just confirmed + gated this session).
+- Gates posted: #2205, #2209, #2217, #2225, #2226, #2228, #2229, #2230, #2231, #2235, #2237, #2239
 
-**#2155 accepted** — split source-grep lints from behavior tests. Extracted inject_source_gate.rs, stubbed nudge_force.rs + inject_test.rs (git-queue can't pure-delete, flagged as follow-up).
+## WIP (mine)
 
-**Cross-role:** /gate-arch + /gate-ops passed on #2167 (Kade), #2176 (Wren), #2151 (Wren). Reloaded `urn:chorus:ontology` twice via DROP+PUT pattern (TDB2 NodeTableTRDF/Read bug workaround — worth turning into a script or filing upstream).
+- **#2218** — awaiting Wren gate:product + accept
+- **#2234** — awaiting Wren gate:product + accept (brief at roles/wren/briefs/2026-04-19-demo-2234.md)
 
-## Filed for later (mine)
+## Ops events
 
-- **#2178** (Wren-owned) — Athena envelope enrichment: entity descriptions + chorus:reads/writes/consumes edges + cross-domain view. Labels-only today → reasoning-surface next.
-- **#2179** — Search mode downgrade transparency (`_meta.downgraded` when hybrid/semantic silently falls to fts). Kade caught during #2174 gemba. P2 Later.
+- **Bedroom Mac kernel panic** — logd watchdog timeout (~09:22). Suspected: NiFi JSON writer error spam. **NiFi UI fix needed**: JSON Writer → Output Grouping → `output-array` (not `OUTPUT_ARRAY`). Until fixed, Bedroom may panic again on NiFi restart.
+- Loki resource limit ×2 (fix: launchctl kickstart -k com.gathering.loki). Pattern noted in #2254.
+- chorus-api hung ~14h (kicked at 08:35). bare-cargo stripped chorus-hook-shim identifier ×2 (build-signed.sh restored both).
 
-## Followups to remember
+## Design decisions locked this session
 
-- **git-queue.sh can't deletion-commit** — `git add <deleted-path>` errors. Workaround today: stub files with module-doc pointing to successor. Worth fixing (add `-A` or teach a `rm` subcommand).
-- **Fuseki TDB2 DROP+PUT pattern** — reload chorus.ttl always fails with NodeTableTRDF/Read on replace-in-place. Use DROP GRAPH then PUT. Used 3x today. Script it or file upstream.
-- **API design principle** Jeff named: "API endpoints = assemblers of parallel simple reads, cached at the seam." Rediscovered per-endpoint (boardCache, healthCache, embedCache, completeness split, domain cache). Worth making a first-class principle.
+- Chorus API sub-domains: Memory / Context / Knowledge (chorus-overview.md refreshed)
+- Common envelope: step + product + domain + subdomain. "domain" = sub-product in reference model.
+- stampHeader reads from Athena named graph (Fuseki /pods), NOT DOMAIN_REGISTRY TS object
+- Alert model: host-down before service-specific when all probes from a host fail simultaneously (#2254)
+- Interface design as practice: OpenAPI fragment + gate:interface per new endpoint (#2256)
 
-## Behavioral notes
+## Follow-on series (#2248–#2256, all Later)
 
-Jeff caught thrash mid-session ("i cant even comprehend what u are doing"). Velocity outran comprehension for ~10 minutes; walls of text, pair compounded. New memory saved: `feedback_human_reading_speed.md`. Hold it next session — short updates, landing places when he surfaces.
+| # | Title | Owner |
+|---|-------|-------|
+| 2248 | DOMAIN_REGISTRY → TTL seed (P1) | Kade |
+| 2249 | Full push-envelope replacement (P1) | Silas |
+| 2250 | Knowledge endpoints (P2) | Kade |
+| 2251 | Memory endpoints (P2) | Kade |
+| 2252 | Remaining Context endpoints (P2) | Kade |
+| 2253 | Memory + Knowledge service designs (P2) | Wren |
+| 2254 | Alerts domain + deep-health redesign (P2) | Silas |
+| 2255 | Consumption measurement (P2) | Silas |
+| 2256 | gate:interface (P2) | Silas |
 
-## Current state
+## First task next session
 
-- WIP: none (all accepted)
-- Gates owed to others: none pending
-- Push: up to date
+Check if Wren accepted #2234 + #2218. If yes, pull #2248 (DOMAIN_REGISTRY → TTL). Also fix NiFi JSON writer on Bedroom.

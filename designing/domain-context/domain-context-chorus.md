@@ -1,6 +1,12 @@
 # Domain Context: Chorus
 
-Last updated: 2026-04-17 by Wren (#2159)
+Last updated: 2026-04-19 by Silas (#2234)
+- 2026-04-19: Chorus API sub-domain decomposition: Memory / Context / Knowledge. Service designs at designing/docs/context-service-design.md + chorus-overview.md refreshed.
+- 2026-04-19: Context API surface shipped — GET /api/chorus/context/{board/wip, roles, health}. Common envelope: step+product+domain+subdomain (graph-stamped, graceful-absent). stampHeader is async SPARQL against Athena named graph.
+- 2026-04-19: DOMAIN_REGISTRY in server.ts is NOT the canonical source — data is in OWL/RDF (Athena named graph, Fuseki /pods). stampHeader already reads graph; migration card #2248.
+- 2026-04-19: context_inject.rs prototype: board.wip inline listing replaced with pull pointer; context api manifest appended to Pulse section. Envelope ~4KB.
+- 2026-04-19: chorus-overview.md fully refreshed: three sub-domains, verticals (Services/Quality, Kade-owned), trinity (reliable/reused/valuable), attic/workbench, interface design as practice.
+- 2026-04-19: Follow-on card series: #2248–#2256 (DOMAIN_REGISTRY→TTL, full envelope replacement, Knowledge/Memory endpoints, service designs, alerts domain, consumption measurement, gate:interface).
 - 2026-04-17: loom-principles 7 → 12 (4 principles landed from session + 1 Silas/Jeff-approved `interrogate-the-data`)
 - 2026-04-17: Vikunja `VIKUNJA_SERVICE_JWTSECRET` pinned (`~/.chorus/secrets/vikunja-jwt-secret`, mode 600) — restarts no longer invalidate tokens; runbook recovery step now obsolete
 - 2026-04-17: `com.chorus.session-health` LaunchAgent retired (plist removed, script preserved for revival) — was creating alarm-fatigue without proportionate signal
