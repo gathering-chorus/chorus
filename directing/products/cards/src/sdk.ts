@@ -19,14 +19,48 @@ function autoRoleState(state: string, extra: string = ''): void {
 import { generateBlastRadius, formatBlastComment } from './blast-radius';
 import { LABELS } from './config';
 
-const SNAPSHOT_DIR = path.join(__dirname, '../../logs');
-const WORKFLOWS_ACTIVE_DIR = path.join(__dirname, '../../workflows/active');
-const WORKFLOWS_ARCHIVE_DIR = path.join(__dirname, '../../workflows/archive');
-const BRIEF_DIRS: Record<string, string> = {
+// Paths are `let` so hermetic tests can point them at a temp dir via
+// `__setTestPaths`. Defaults match the pre-override production layout.
+// #2241 wave 3 refactor — dep-injection via module-scope override rather
+// than threading deps through every function signature.
+const DEFAULT_SNAPSHOT_DIR = path.join(__dirname, '../../logs');
+const DEFAULT_WORKFLOWS_ACTIVE_DIR = path.join(__dirname, '../../workflows/active');
+const DEFAULT_WORKFLOWS_ARCHIVE_DIR = path.join(__dirname, '../../workflows/archive');
+const DEFAULT_BRIEF_DIRS: Record<string, string> = {
   silas: path.join(__dirname, '../../roles/silas/briefs'),
   kade: path.join(__dirname, '../../roles/kade/briefs'),
   wren: path.join(__dirname, '../../roles/wren/briefs'),
 };
+
+let SNAPSHOT_DIR = DEFAULT_SNAPSHOT_DIR;
+let WORKFLOWS_ACTIVE_DIR = DEFAULT_WORKFLOWS_ACTIVE_DIR;
+let WORKFLOWS_ARCHIVE_DIR = DEFAULT_WORKFLOWS_ARCHIVE_DIR;
+let BRIEF_DIRS: Record<string, string> = DEFAULT_BRIEF_DIRS;
+
+/**
+ * Test-only hook: override the module-level paths so hermetic tests can
+ * read/write a temp directory instead of the real role/briefs/workflows
+ * trees. Call `__resetTestPaths()` in afterEach to restore defaults.
+ */
+export function __setTestPaths(overrides: {
+  snapshotDir?: string;
+  workflowsActiveDir?: string;
+  workflowsArchiveDir?: string;
+  briefDirs?: Record<string, string>;
+}): void {
+  if (overrides.snapshotDir) SNAPSHOT_DIR = overrides.snapshotDir;
+  if (overrides.workflowsActiveDir) WORKFLOWS_ACTIVE_DIR = overrides.workflowsActiveDir;
+  if (overrides.workflowsArchiveDir) WORKFLOWS_ARCHIVE_DIR = overrides.workflowsArchiveDir;
+  if (overrides.briefDirs) BRIEF_DIRS = overrides.briefDirs;
+}
+
+/** Test-only: restore module-level paths to their production defaults. */
+export function __resetTestPaths(): void {
+  SNAPSHOT_DIR = DEFAULT_SNAPSHOT_DIR;
+  WORKFLOWS_ACTIVE_DIR = DEFAULT_WORKFLOWS_ACTIVE_DIR;
+  WORKFLOWS_ARCHIVE_DIR = DEFAULT_WORKFLOWS_ARCHIVE_DIR;
+  BRIEF_DIRS = DEFAULT_BRIEF_DIRS;
+}
 
 // Import from compiled dist to avoid rootDir conflicts
 const { WorkflowEngine } = require('../../../../platform/workflow-engine/dist/engine');
