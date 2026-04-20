@@ -9,9 +9,6 @@ use std::process::Command;
 const CHAT_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh";
 const CHAT_DIR: &str = "/tmp/chorus-chat";
 
-fn chat_id(from: &str, to: &str, ts: u64) -> String {
-    format!("{}-{}-{}", from, to, ts)
-}
 
 fn run_chat(args: &[&str]) -> (String, String, bool) {
     let out = Command::new("bash")
