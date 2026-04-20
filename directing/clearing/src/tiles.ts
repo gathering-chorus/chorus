@@ -35,12 +35,26 @@ export interface PulseState {
   elapsed_ms: number;
 }
 
+export interface TilePollerOptions {
+  scanDir?: string;
+  pulseFile?: string;
+  chorusApi?: string;
+}
+
 export class TilePoller {
   private tiles: Map<string, RoleTile> = new Map();
   private pulse: PulseState | null = null;
   private boardCache: { wip_cards: BoardCard[]; swat_cards: BoardCard[]; ts: number } = { wip_cards: [], swat_cards: [], ts: 0 };
+  // #2273: exposed so tests can await the board refresh instead of using setTimeout
+  boardRefresh: Promise<void> = Promise.resolve();
+  private readonly scanDir: string;
+  private readonly pulseFile: string;
+  private readonly chorusApi: string;
 
-  constructor() {
+  constructor(opts: TilePollerOptions = {}) {
+    this.scanDir = opts.scanDir ?? SCAN_DIR;
+    this.pulseFile = opts.pulseFile ?? PULSE_FILE;
+    this.chorusApi = opts.chorusApi ?? CHORUS_API;
     for (const role of ROLES) {
       this.tiles.set(role, {
         role,
@@ -65,9 +79,9 @@ export class TilePoller {
   }
 
   private refreshBoardFromApi(): void {
-    Promise.allSettled([
-      fetch(`${CHORUS_API}/api/chorus/context/board/wip`).then((r) => r.ok ? r.json() : null).catch(() => null),
-      fetch(`${CHORUS_API}/api/chorus/context/board/swat`).then((r) => r.ok ? r.json() : null).catch(() => null),
+    this.boardRefresh = Promise.allSettled([
+      fetch(`${this.chorusApi}/api/chorus/context/board/wip`).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${this.chorusApi}/api/chorus/context/board/swat`).then((r) => r.ok ? r.json() : null).catch(() => null),
     ]).then(([wipResult, swatResult]) => {
       const wipData = wipResult.status === 'fulfilled' ? wipResult.value : null;
       const swatData = swatResult.status === 'fulfilled' ? swatResult.value : null;
@@ -88,7 +102,7 @@ export class TilePoller {
   /** Read Pulse snapshot (#1881) */
   private readPulse(): PulseState | null {
     try {
-      const content = fs.readFileSync(PULSE_FILE, 'utf-8');
+      const content = fs.readFileSync(this.pulseFile, 'utf-8');
       const data = JSON.parse(content);
       return {
         alertsToday: data.alerts?.count || 0,
@@ -104,7 +118,7 @@ export class TilePoller {
 
   /** Clear card from role state on acceptance (#2286) */
   clearCard(role: string): void {
-    const stateFile = path.join(SCAN_DIR, `${role}-declared.json`);
+    const stateFile = path.join(this.scanDir, `${role}-declared.json`);
     try {
       const content = fs.readFileSync(stateFile, 'utf-8');
       const data = JSON.parse(content);
@@ -134,7 +148,7 @@ export class TilePoller {
     }
 
     // Read andon state
-    const stateFile = path.join(SCAN_DIR, `${role}-declared.json`);
+    const stateFile = path.join(this.scanDir, `${role}-declared.json`);
     try {
       const content = fs.readFileSync(stateFile, 'utf-8');
       const data = JSON.parse(content);
@@ -171,7 +185,7 @@ export class TilePoller {
         if (!tile.card) tile.card = ownedWip[0] ?? ownedIds[0];
       }
       // Role divergence still from pulse file (roles API not yet migrated)
-      const pulseContent = fs.readFileSync(PULSE_FILE, 'utf-8');
+      const pulseContent = fs.readFileSync(this.pulseFile, 'utf-8');
       const pulseData = JSON.parse(pulseContent);
       const roleComposed = pulseData?.roles?.[role];
       tile.divergent = roleComposed?.divergent === true;
@@ -184,7 +198,7 @@ export class TilePoller {
     }
 
     // Read last observation for action summary
-    const obsFile = path.join(SCAN_DIR, `${role}-observations.jsonl`);
+    const obsFile = path.join(this.scanDir, `${role}-observations.jsonl`);
     try {
       const content = fs.readFileSync(obsFile, 'utf-8');
       const lines = content.trim().split('\n').filter(Boolean);
@@ -215,7 +229,7 @@ export class TilePoller {
       sessionAlive: false,
     };
 
-    const stateFile = path.join(SCAN_DIR, 'jeff-input.json');
+    const stateFile = path.join(this.scanDir, 'jeff-input.json');
     try {
       const content = fs.readFileSync(stateFile, 'utf-8');
       const data = JSON.parse(content);
