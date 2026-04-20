@@ -1,6 +1,6 @@
 {
   "version": "215",
-  "archived_at": "2026-04-20 16:54",
+  "archived_at": "2026-04-20 17:38",
   "roles": {
     "wren": {
       "sections": [
@@ -31,7 +31,7 @@
       ],
       "fragments": {
         "roles/wren/title.md": "737ba9e22cf5bf016d6ce06dcd9dfe2bd34ca736d2785fcc5bf65ff9357e6df9",
-        "shared/chorus-prompt.md": "2f6de14b5f218973100a922126130b380f2e3e2065cf339944b4f751d735c084",
+        "shared/chorus-prompt.md": "b401b40216c768e301db9a8b400e8193e15c80afa799685ce4285f72f9ca610d",
         "roles/wren/principles.md": "683aef3456b8be6bd669358390dddcd8d1aa365e4696b275c697ad28cdc3d0a0",
         "roles/wren/how-you-operate.md": "fb9965451c5f6758da0aa10b97fbeceb386896afc0cf1bac6a59b95ce0f3668f",
         "roles/wren/portfolio.md": "691b305b0fa9f6f3382af6e2fb5a60c2142ba1faf9e19e93181a92d512921cb3",
@@ -86,7 +86,7 @@
       ],
       "fragments": {
         "roles/silas/title.md": "f642e4fa3e43c3ba28cc8c8528147eddbcbd4da0b0cd55d0b75076033370d592",
-        "shared/chorus-prompt.md": "2f6de14b5f218973100a922126130b380f2e3e2065cf339944b4f751d735c084",
+        "shared/chorus-prompt.md": "b401b40216c768e301db9a8b400e8193e15c80afa799685ce4285f72f9ca610d",
         "roles/silas/principles.md": "8a31fec99a90a89d37d9e729e20e9cab70bb2be2c0dd4108d8826ce4e25c5414",
         "roles/silas/how-you-operate.md": "39dd210b681dd9ea77fa781fa6fed805c54cd9a985a3405e721905fc56470663",
         "roles/silas/portfolio.md": "a58dd1387e0b2edcc8b3d7862e9f2f0893ad086724e1ba0c42301d8abb60cfdc",
@@ -140,7 +140,7 @@
       ],
       "fragments": {
         "roles/kade/title.md": "f0a9d01c90c15a34d2b4bed06df0dd7060a35efaaef41d2f6dc262da3f30de73",
-        "shared/chorus-prompt.md": "2f6de14b5f218973100a922126130b380f2e3e2065cf339944b4f751d735c084",
+        "shared/chorus-prompt.md": "b401b40216c768e301db9a8b400e8193e15c80afa799685ce4285f72f9ca610d",
         "roles/kade/principles.md": "8dc097ccaca0440d42319892936456db6ddf198b4d3d8da8fadd99335c0ee9a7",
         "roles/kade/how-you-operate.md": "d1e8a9e52c2455badad1dc6b1e6340d400f4e8fb74e88a3e6661f20ceb17394c",
         "roles/kade/portfolio.md": "e22148cb23f2a51db0c4657c35d084e6f569daeeb53e039685e81b216119db45",

@@ -1,11 +1,11 @@
 {
   "wren": {
-    "input_hash": "08164b1b6d2ac50cbd3631ca439409290923a40ad704719559b829886454ddf6",
+    "input_hash": "87e39189221ccb0e1196e07f0fb6cbb6230c7dc8cb7b3a7db6d9c18d60bc0457",
     "var_hash": "fa8be4e2820d85c43f130a5ddad27b4150c9b840f4fccfcf4a4c8b571fa86873",
     "config_hash": "dac2f3666b4cb0db82e5a64553d282675b4497b2efa3359884e2c9848615ba38",
     "fragments": {
       "roles/wren/title.md": "737ba9e22cf5bf016d6ce06dcd9dfe2bd34ca736d2785fcc5bf65ff9357e6df9",
-      "shared/chorus-prompt.md": "2f6de14b5f218973100a922126130b380f2e3e2065cf339944b4f751d735c084",
+      "shared/chorus-prompt.md": "b401b40216c768e301db9a8b400e8193e15c80afa799685ce4285f72f9ca610d",
       "roles/wren/principles.md": "683aef3456b8be6bd669358390dddcd8d1aa365e4696b275c697ad28cdc3d0a0",
       "roles/wren/how-you-operate.md": "fb9965451c5f6758da0aa10b97fbeceb386896afc0cf1bac6a59b95ce0f3668f",
       "roles/wren/portfolio.md": "691b305b0fa9f6f3382af6e2fb5a60c2142ba1faf9e19e93181a92d512921cb3",
@@ -29,16 +29,16 @@
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
       "roles/wren/state-files.md": "db298378771fcfa6f8a805d18c039d28256f6909b30b415247bb1d0b085d28d0"
     },
-    "generated_at": "2026-04-20 16:54",
+    "generated_at": "2026-04-20 17:38",
     "version": "215"
   },
   "silas": {
-    "input_hash": "848102700fc1eb55a1c5434612cf14d9fedc75ffb44801f0b66d497b47dd8c86",
+    "input_hash": "f6de0ce1822c6eed8885eabac1dc2ebcca12be80ec2a7616663180332c4a099f",
     "var_hash": "c39808cd9be74efa19467bee3b771a61328f816af567dae76bb34562ecc2109a",
     "config_hash": "f64bb6094135f5fac978249efd832dbe8f1954d8348d9f38655c81bd2cfdba0e",
     "fragments": {
       "roles/silas/title.md": "f642e4fa3e43c3ba28cc8c8528147eddbcbd4da0b0cd55d0b75076033370d592",
-      "shared/chorus-prompt.md": "2f6de14b5f218973100a922126130b380f2e3e2065cf339944b4f751d735c084",
+      "shared/chorus-prompt.md": "b401b40216c768e301db9a8b400e8193e15c80afa799685ce4285f72f9ca610d",
       "roles/silas/principles.md": "8a31fec99a90a89d37d9e729e20e9cab70bb2be2c0dd4108d8826ce4e25c5414",
       "roles/silas/how-you-operate.md": "39dd210b681dd9ea77fa781fa6fed805c54cd9a985a3405e721905fc56470663",
       "roles/silas/portfolio.md": "a58dd1387e0b2edcc8b3d7862e9f2f0893ad086724e1ba0c42301d8abb60cfdc",
@@ -62,16 +62,16 @@
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
       "roles/silas/state-files.md": "3013233db35095d2270d6592f34c149401f4fe1b115a365b98042539575f092f"
     },
-    "generated_at": "2026-04-20 16:54",
+    "generated_at": "2026-04-20 17:38",
     "version": "215"
   },
   "kade": {
-    "input_hash": "0f68b0b47536a2520edecbbfb15832631dea4e3fbf0c9ff62b8489543fb0f71f",
+    "input_hash": "db0ead418813fd9b45aabc4e5c8856f8c418d02e93c452245b726490706a29fc",
     "var_hash": "d9407bddc1af5c38e5924ad184ba7a8322a5e2d952c3be5cfb72f756d0dc61ec",
     "config_hash": "5ae8188978842262dcab33c4d1d2608ee8c04f0166a7b26f0cead669e6930261",
     "fragments": {
       "roles/kade/title.md": "f0a9d01c90c15a34d2b4bed06df0dd7060a35efaaef41d2f6dc262da3f30de73",
-      "shared/chorus-prompt.md": "2f6de14b5f218973100a922126130b380f2e3e2065cf339944b4f751d735c084",
+      "shared/chorus-prompt.md": "b401b40216c768e301db9a8b400e8193e15c80afa799685ce4285f72f9ca610d",
       "roles/kade/principles.md": "8dc097ccaca0440d42319892936456db6ddf198b4d3d8da8fadd99335c0ee9a7",
       "roles/kade/how-you-operate.md": "d1e8a9e52c2455badad1dc6b1e6340d400f4e8fb74e88a3e6661f20ceb17394c",
       "roles/kade/portfolio.md": "e22148cb23f2a51db0c4657c35d084e6f569daeeb53e039685e81b216119db45",
@@ -94,9 +94,9 @@
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
       "roles/kade/state-files.md": "a2c3cb49faa0b00736be5100f09b1ac2d08f441afd7a972e3d2266b3d782731c"
     },
-    "generated_at": "2026-04-20 16:54",
+    "generated_at": "2026-04-20 17:38",
     "version": "215"
   },
-  "_protocol_core_hash": "b2538e66f4f914a99326e66347977e634b131fab1f60d216019a30c0608293bd",
-  "_protocol_version": "2.1"
+  "_protocol_core_hash": "fb5e39d07b83f36c4c8200abd3ff033db3a4275dae4adf0cd64a1bde4fcf8d6c",
+  "_protocol_version": "2.2"
 }

@@ -990,3 +990,6 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Kade] → 2026-04-20 16:04 → Gated Silas #2301 DEPLOY_ROLE settings.json (gate:code + gate:quality pass, caught absolute-path test gap, verified fix) → Silas
 - [Kade] → 2026-04-20 16:04 → Reboot
 - [Wren] → session close 16:05 — shipped #2289 /chat-tick, #2303 loom-principle rename, gate:product on #2301; follow-ons #2309/#2310 filed → all roles
+
+- [silas] 2026-04-20 17:40 → #2311 fragment fix: collapsed header to single-slot Werk vN (sourced from manifest.json). Removed redundant chorus-prompt/X.Y slot that the card itself had introduced. Regenerated all three CLAUDE.mds. Protocol suite 20/20. Card stays WIP pending live three-role reboot verification. → Wren/Kade (next session boot is the gate)
+

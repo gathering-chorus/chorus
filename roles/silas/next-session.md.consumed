@@ -1,32 +1,37 @@
-# Silas — Next Session
+# Next Session — Silas
 
-Generated: 2026-04-19 11:39 Boston by session reboot
+## Open at top: #2311 re-gate is still pending
 
-## What shipped this session
+Card is WIP. Revised AC added in comment (gate:product FAIL #3 section). Code changes landed this session:
 
-- **#2234 Move chorus API from attic to workbench** — Accepted by Jeff, committed and pushed
-  - 5 design docs in designing/docs/ committed
-  - 3 live Context endpoints active
-  - Common envelope schema locked
+- `roles/{silas,wren,kade}/.claude/settings.json` — added `hooks.SessionStart` invoking `chorus-hook-shim session-start <role>`
+- `platform/services/chorus-hooks/tests/deploy_role_settings.rs` — new test `role_settings_register_session_start_hook`
 
-- **#2218 Codesign chorus-hook-shim** — Still WIP, awaiting Wren accept
+**What's verified (this session, live):**
+- Manual `chorus-hook-shim session-start silas` writes `/tmp/claude-session-init/silas.pending`
+- With `.pending` + no `.done`: next Bash/Edit/Write is denied by `session_init_gate` with the "Read /tmp/session-start-silas.md first" message
+- Read of that file creates `.done` and unblocks
 
-## WIP (mine)
+**What's NOT verified:**
+- Claude Code actually fires the registered SessionStart hook on fresh session boot for all three roles. This is the final revised AC item and needs a cold reboot of silas, wren, and kade with observation of the gate blocking the first non-exempt tool call.
 
-- **#2218** — demo'd, gated, awaiting Wren gate:product + accept
+If your first Bash this session gets denied with the session-init-gate message — good, the hook fired. Read `/tmp/session-start-silas.md`, then proceed. If your first Bash succeeds without any session-init-gate message, the hook didn't fire and #2311 still fails — check `~/.claude/settings.json` and per-role `.claude/settings.json` for regressions.
 
-## First tasks next session
+## Known pre-existing failure (not mine to fix on this card)
 
-1. Check if Wren accepted #2218. If yes, pull from Next queue.
-2. Fix NiFi JSON writer on Bedroom (Output Grouping → `output-array`) — prevents kernel panic recurrence.
-3. Pull #2141 (LaunchAgent exit-78) + #2144 (deploy-aware alert suppression) — sequentially dependent, both P1.
+`cargo test --test nudge_force_source_gate` fails — source gate asserts `let force = true;` must be in `nudge.rs`, but `#2283` removed it. Two decisions (DEC-107 force-always and #2283 "unused force") contradict. Someone has to pick which stays. Filed as a flag in activity.md, not as a swat card — would be a pin-prick.
 
-## Ops watch
+## Nudge reply owed
 
-- NiFi JSON writer misconfiguration on Bedroom still live — kernel panic risk on NiFi restart
-- vikunja-auth-failure firing (#2147 is the health-probe fix, sitting in Next)
-- chorus-hooks LaunchAgent fragility (#2141) — every restart triggers alert storm (#2144)
+Wren sent a nudge at 17:06 (gate:product FAIL #3) that still says REPLY EXPECTED. If you pick this up before they see the activity-log entry, nudge them back pointing at this file + the two new commits.
 
-## Follow-on series (#2248–#2256)
+## Alerts still warm
 
-Blocked behind #2218 accept. All Later. Full table in previous next-session.md (now consumed).
+Pulse at 17:11 showed 5 alerts fired today:
+- `crawler-failure-2026-04-20`
+- `fuseki-harvest-stale-2026-04`
+- `index-freshness-2026-04` (critical)
+- `lancedb-stale-2026-04`
+- `vikunja-auth-failure-2026-04`
+
+Index-freshness critical means recall is degraded for the next session. Triage after #2311 re-gates.
