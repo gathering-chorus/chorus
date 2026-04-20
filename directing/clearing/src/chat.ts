@@ -6,7 +6,7 @@
  */
 
 import { Server as SocketServer } from 'socket.io';
-import { Participants, RoleResponse } from './participants';
+import { Participants } from './participants';
 import { Transcript, ChatMessage } from './transcript';
 
 const MODEL = process.env.CLEARING_MODEL || 'claude-haiku-4-5-20251001';

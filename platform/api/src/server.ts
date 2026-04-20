@@ -232,13 +232,13 @@ const FUSEKI_URL = process.env.FUSEKI_URL || 'http://localhost:3030/pods/query';
 
 // --- SPARQL text search ---
 // Extracted to src/sparql-search.ts (#2205 wave 4).
-import { createSparqlSearch, SparqlResult } from './sparql-search';
+import { createSparqlSearch } from './sparql-search';
 
 const sparqlSearch = createSparqlSearch({ fusekiUrl: FUSEKI_URL });
 
 // --- Unified search: merge all sources via RRF ---
 // RRF fusion + types moved to src/search-fusion.ts (#2205 wave 3).
-import { mergeUnified, UnifiedResult } from './search-fusion';
+import { mergeUnified } from './search-fusion';
 
 // --- Spine event emitter (fire-and-forget to chorus-log.sh) ---
 const CHORUS_LOG = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/chorus-log');
@@ -246,7 +246,6 @@ const CHORUS_LOG = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 
 // emitSearchEvent + getDb + DbNotFoundError moved to src/server-helpers.ts (#2205 wave 12).
 import {
   createDbOpener,
-  DbNotFoundError,
   createSearchEventEmitter,
 } from './server-helpers';
 const getDb = createDbOpener<Database.Database>({
@@ -421,7 +420,7 @@ app.get('/api/chorus/domain/:domain/code-files', async (req: Request, res: Respo
 // resolveSubdomainId + isTestFile moved to src/subdomain-resolver.ts (#2205 wave 10).
 // The sparql dep is lazy-bound — athenaSparqlQuery is declared further down
 // in the module (post-#2205 wave 8), so an eager capture would TDZ here.
-import { createSubdomainResolver, isTestFile } from './subdomain-resolver';
+import { createSubdomainResolver } from './subdomain-resolver';
 const resolveSubdomainId = createSubdomainResolver({ sparql: (q: string) => athenaSparqlQuery(q) });
 
 // GET /api/chorus/domain/:name/code — source files for a domain (#2060 AC1)
@@ -927,7 +926,7 @@ app.post('/api/chorus/voice/:role', express.raw({ type: 'audio/*', limit: '10mb'
   const scriptPath = path.join(SCRIPTS_DIR, 'voice-to-session.sh');
   const start = Date.now();
 
-  execFile('bash', [scriptPath, role, audioPath], { timeout: 30000 }, (err, stdout, stderr) => {
+  execFile('bash', [scriptPath, role, audioPath], { timeout: 30000 }, (err, _stdout, stderr) => {
     const elapsed = Date.now() - start;
     // Clean up audio file
     try { fs.unlinkSync(audioPath); } catch { /* ignore */ }
@@ -1227,7 +1226,6 @@ app.get('/api/chorus/hooks/metrics', (_req: Request, res: Response) => {
 });
 
 // --- Crash handlers: log + alert before dying ---
-const NUDGE_PATH = path.resolve(__dirname, '../../scripts/nudge');
 
 // crashAlert moved to src/server-helpers.ts (#2205 wave 12); imported above.
 
@@ -2265,7 +2263,7 @@ app.delete('/api/athena/subdomains/:id/consumes/:targetId', async (req: Request,
 });
 
 // POST /api/athena/reload — reload ontology from TTL into Fuseki
-app.post('/api/athena/reload', async (req: Request, res: Response) => {
+app.post('/api/athena/reload', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
     const ttlPath = path.join(REPO_ROOT, 'roles/silas/ontology/chorus.ttl');
