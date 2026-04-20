@@ -8,11 +8,8 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>open</string>
-    <string>-a</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/apps/PostureCapture.app</string>
-    <string>--args</string>
-    <string>--background</string>
+    <string>/bin/bash</string>
+    <string>/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/scripts/posture-capture.sh</string>
   </array>
 
   <!-- Run every 5 minutes -->
