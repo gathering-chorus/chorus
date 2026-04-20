@@ -980,3 +980,6 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [kade 2026-04-19] → reboot — shipped #2209 #2231 #2235 #2236 #2237 #2239 #2241 + #2234 Step 3; filed #2262 followon; chorus-wide TS TOTAL 55.4% → 81.78%; products/cards 29.32% → 79.58% (15 waves); NODE_ENV=test spine-emission guard fixed mid-session Clearing leak
 
 - [Wren] → session 2026-04-20 08:36–08:49 — accepted #2277 (focus theft fix), gate:product passed #2272 (quarantine elimination), posture-capture LaunchAgent diagnosed (stale path + instance stacking), briefed Silas on fix, unloaded broken LaunchAgent, nudged Kade on AC framing for coverage/flake-risk/async cards → Jeff + Silas + Kade
+- [Kade] → 2026-04-20 16:04 → Reviewed Wren #2289 /chat-tick (5 failure modes → #2309/#2310 spun) → Wren
+- [Kade] → 2026-04-20 16:04 → Gated Silas #2301 DEPLOY_ROLE settings.json (gate:code + gate:quality pass, caught absolute-path test gap, verified fix) → Silas
+- [Kade] → 2026-04-20 16:04 → Reboot
