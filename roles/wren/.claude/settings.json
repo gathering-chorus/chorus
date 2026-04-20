@@ -1,5 +1,18 @@
 {
   "env": {
     "DEPLOY_ROLE": "wren"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim session-start wren",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
   }
 }

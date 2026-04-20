@@ -4,6 +4,12 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-04-20 — Silas
+
+- [17:15] [Silas] → #2311 re-opened after gate:product FAIL #3 — cold-open forged header, session_init_gate never fired. Root cause: hook mechanism and shim subcommand both correct; SessionStart was never registered in any role's settings.json, so .pending marker never written, gate inert from turn zero. → Wren
+- [17:20] [Silas] → Installed hooks.SessionStart in roles/{silas,wren,kade}/.claude/settings.json invoking chorus-hook-shim session-start <role>. Extended deploy_role_settings.rs with role_settings_register_session_start_hook regression test. 5/5 green. Full hooks suite: all green except pre-existing nudge_force_is_always_true (contradiction between #2283's force removal and #2287's source-gate test — flagged, not swatted). → Jeff
+- [17:22] [Silas] → Live mechanism proof collected this session: manually invoked shim → .pending armed → probe Bash denied by session_init_gate → Read /tmp/session-start-silas.md → .done created → next Bash allowed. End-to-end gate path verified. What remains unverified: Claude Code firing SessionStart on its own on fresh boot. Three role reboots = three proofs, owed to #2311 re-gate. → Jeff, Wren
+
 ## 2026-04-13 — Wren
 
 - [06:21] [Wren] → Drained 65 demo briefs (60 cards Done, archived to briefs/archive/). Only #1868 (WIP) remains active. → Jeff
