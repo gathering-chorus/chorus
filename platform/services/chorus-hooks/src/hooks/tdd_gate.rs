@@ -69,6 +69,65 @@ fn is_code_edit(input: &HookInput) -> bool {
     is_production_code(&file_path)
 }
 
+/// Is this path a config/tooling file (not runtime code)?
+/// Writes to these have no behavioral signature — they're not runtime logic.
+fn is_config_file(path: &str) -> bool {
+    let base = path.rsplit('/').next().unwrap_or(path);
+    // tsconfig variants, eslint configs, prettier, clippy, rustfmt, editorconfig
+    base == "tsconfig.json" || base.starts_with("tsconfig.") && base.ends_with(".json")
+        || base.starts_with("eslint.config.") || base == ".eslintrc.json" || base == ".eslintrc.js"
+        || base == ".prettierrc" || base.starts_with(".prettierrc.")
+        || base == ".clippy.toml" || base == "rustfmt.toml" || base == ".rustfmt.toml"
+        || base == ".editorconfig"
+}
+
+/// Does the string contain any non-import, non-comment, non-blank line?
+/// Used to classify edit strings as "purely imports/comments/whitespace" or not.
+fn has_behavioral_content(s: &str) -> bool {
+    for raw in s.lines() {
+        let line = raw.trim();
+        if line.is_empty() { continue; }
+        // Comment forms: // /* * */ #
+        if line.starts_with("//") || line.starts_with("/*") || line.starts_with("*")
+            || line.starts_with("#") || line == "*/" {
+            continue;
+        }
+        // Import statements (TS/JS/Rust)
+        if line.starts_with("import ") || line.starts_with("export type ")
+            || line.starts_with("export { ") || line.starts_with("use ")
+            || line.starts_with("pub use ") {
+            continue;
+        }
+        // Anything else = behavior
+        return true;
+    }
+    false
+}
+
+/// #2286: edits with no behavioral signature are exempt from the TDD gate.
+/// Returns true for: unused import deletion, comment-only edits,
+/// config file writes (tsconfig, eslint, clippy, rustfmt, etc).
+/// Returns false for: logic changes, new functions, mixed import+code edits.
+pub fn is_no_signature_edit(input: &HookInput) -> bool {
+    let tool = input.tool_name_str();
+    let file_path = input.get_tool_input_str("file_path");
+
+    // Config file writes are exempt — the whole file is configuration.
+    if is_config_file(&file_path) {
+        return true;
+    }
+
+    // For Edits: the edit is exempt only if neither side has behavioral content.
+    if tool == "Edit" {
+        let old_string = input.get_tool_input_str("old_string");
+        let new_string = input.get_tool_input_str("new_string");
+        return !has_behavioral_content(&old_string) && !has_behavioral_content(&new_string);
+    }
+
+    // Writes to non-config files are never exempt — Write replaces the entire file.
+    false
+}
+
 /// Scan session for test file edits BEFORE the current point
 fn has_test_file_edit(input: &HookInput, state: &AppState) -> bool {
     let session_id = match &input.session_id {
@@ -177,6 +236,12 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // Skip TDD for chore and swat cards
     let card_type = crate::types::card_type_for_role(input.role().as_str());
     if card_type == "chore" || card_type == "swat" {
+        return HookResponse::allow();
+    }
+
+    // #2286: edits with no behavioral signature (unused imports, config flags,
+    // comment-only) bypass the TDD gate — there's no behavior to test.
+    if is_no_signature_edit(input) {
         return HookResponse::allow();
     }
 
@@ -329,5 +394,88 @@ mod tests {
         assert!(!is_production_code("alerting/synthetic-test.yml"));
         assert!(!is_production_code("config/profiles/base.json"));
         assert!(!is_production_code("docs/README.md"));
+    }
+
+    // ── #2286: is_no_signature_edit ──────────────────────────────────────────
+
+    fn edit(file: &str, old: &str, new: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Edit".into()),
+            tool_input: Some(serde_json::json!({
+                "file_path": file, "old_string": old, "new_string": new,
+            })),
+            tool_response: None, session_id: None, cwd: None, prompt: None,
+            stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
+        }
+    }
+    fn write(file: &str, content: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Write".into()),
+            tool_input: Some(serde_json::json!({"file_path": file, "content": content})),
+            tool_response: None, session_id: None, cwd: None, prompt: None,
+            stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
+        }
+    }
+
+    #[test]
+    fn unused_import_delete_is_exempt() {
+        let i = edit("src/app.ts", "import { foo } from './foo';", "");
+        assert!(is_no_signature_edit(&i));
+    }
+
+    #[test]
+    fn rust_use_delete_is_exempt() {
+        let i = edit("src/lib.rs", "use std::fs;", "");
+        assert!(is_no_signature_edit(&i));
+    }
+
+    #[test]
+    fn tsconfig_flag_flip_is_exempt() {
+        let i = edit("tsconfig.json", "\"noUnusedLocals\": false", "\"noUnusedLocals\": true");
+        assert!(is_no_signature_edit(&i));
+    }
+
+    #[test]
+    fn eslint_config_edit_is_exempt() {
+        let i = edit("eslint.config.js", "'warn'", "'error'");
+        assert!(is_no_signature_edit(&i));
+    }
+
+    #[test]
+    fn clippy_toml_write_is_exempt() {
+        let i = write(".clippy.toml", "msrv = \"1.70\"\n");
+        assert!(is_no_signature_edit(&i));
+    }
+
+    #[test]
+    fn comment_only_edit_is_exempt() {
+        let i = edit("src/app.ts", "// old", "// new explaining why");
+        assert!(is_no_signature_edit(&i));
+    }
+
+    #[test]
+    fn new_function_is_not_exempt() {
+        let i = edit("src/app.ts", "const x = 1;", "const x = 1;\nfunction bar() { return 2; }");
+        assert!(!is_no_signature_edit(&i));
+    }
+
+    #[test]
+    fn logic_change_is_not_exempt() {
+        let i = edit("src/app.ts", "return x + 1;", "return x + 2;");
+        assert!(!is_no_signature_edit(&i));
+    }
+
+    #[test]
+    fn mixed_import_and_logic_is_not_exempt() {
+        let i = edit("src/app.ts",
+            "import { foo } from './foo';\nconst x = 1;",
+            "import { bar } from './bar';\nconst x = foo(2);");
+        assert!(!is_no_signature_edit(&i));
+    }
+
+    #[test]
+    fn write_to_ts_source_is_not_exempt() {
+        let i = write("src/app.ts", "export function handler() { return 1; }");
+        assert!(!is_no_signature_edit(&i));
     }
 }
