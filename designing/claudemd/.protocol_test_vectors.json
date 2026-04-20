@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "description": "Cross-language parity vectors for #2311 protocol contract hash. Python (claudemd-gen.py:_hash_fragment_set) and Rust (chorus-hooks protocol_contract) MUST produce identical digests on all fixtures. Any canonicalization change = regenerate from Python, update Rust, both sides must re-agree.",
+  "algorithm": "sha256 over sorted entries; per entry: utf8(rel_path) || 0x00 || ascii(sha256_hex(content_bytes)) || 0x00",
+  "core_paths": [
+    "shared/chorus-prompt.md",
+    "shared/cross-machine-operations-core.md",
+    "shared/domain-endpoints.md",
+    "shared/error-handling-discipline.md",
+    "shared/execution-modes.md",
+    "shared/icd-gate.md",
+    "shared/idle-awareness.md",
+    "shared/intellectual-honesty.md",
+    "shared/search-hierarchy.md",
+    "shared/session-close-out-core.md",
+    "shared/tdd-discipline.md",
+    "shared/team-kanban-board-core.md",
+    "shared/team-operating-model.md"
+  ],
+  "fixtures": [
+    {
+      "name": "empty",
+      "description": "Empty fragment set \u2014 canonical 'hash of nothing fed with the algorithm'. Both sides must agree that sha256() over no input yields the same digest.",
+      "files": {},
+      "expected_core_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "expected_fragments_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "known_content",
+      "description": "Two synthetic fragments with fixed bytes. If canonicalization drifts (encoding, separator, sort order) this hash changes and both Python and Rust fail loud.",
+      "files": {
+        "shared/chorus-prompt.md": "# Chorus Prompt\nhello world\n",
+        "shared/idle-awareness.md": "## Idle\nbe idle\n"
+      },
+      "expected_core_hash": "76ae3e786c980e469c64646fb66288c5773cf3fc9610a50caccfd7a374ad4b8a",
+      "expected_fragments_hash": "76ae3e786c980e469c64646fb66288c5773cf3fc9610a50caccfd7a374ad4b8a"
+    },
+    {
+      "name": "live_core",
+      "description": "Current 13-fragment protocol core from the live repo. References paths \u2014 both Python gen and Rust hook read the real files. When any core fragment changes, this hash changes; vector must be regenerated and both sides update together.",
+      "files": null,
+      "core_paths_from_manifest": true,
+      "expected_core_hash": "b2538e66f4f914a99326e66347977e634b131fab1f60d216019a30c0608293bd",
+      "expected_fragments_hash": "b2538e66f4f914a99326e66347977e634b131fab1f60d216019a30c0608293bd"
+    }
+  ]
+}

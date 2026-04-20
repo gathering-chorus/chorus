@@ -1,3 +1,4 @@
+use crate::shared::protocol_contract;
 use crate::shared::state_paths::chorus_root;
 use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
@@ -28,7 +29,20 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             // keeps blocking all Edit/Write/Bash until gates are fixed.
             let smoke_ok = run_gate_smoke(role_str, state);
 
-            if smoke_ok {
+            // Protocol contract check (#2311): role's CLAUDE.md must declare the
+            // current chorus-prompt version + matching core/fragments hashes.
+            // If the contract fails, don't create .done — session stays blocked
+            // AND we write a PROTOCOL VIOLATION banner the model will see.
+            let protocol_ok = match protocol_contract::check(role_str) {
+                Ok(()) => true,
+                Err(v) => {
+                    write_protocol_violation_banner(role_str, &v).await;
+                    log_protocol_violation(role_str, &v);
+                    false
+                }
+            };
+
+            if smoke_ok && protocol_ok {
                 let _ = tokio::fs::create_dir_all(INIT_DIR).await;
                 let _ = tokio::fs::write(&done, "").await;
                 state.mark_session_init_done(role_str).await;
@@ -36,7 +50,9 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
                 error!(
                     gate = "session-init",
                     role = role_str,
-                    "Session boot blocked: gate smoke check failed. Fix the broken gates before working."
+                    smoke_ok,
+                    protocol_ok,
+                    "Session boot blocked: gate smoke or protocol contract check failed."
                 );
             }
         }
@@ -78,6 +94,48 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     HookResponse::allow()
+}
+
+/// #2311: Write the PROTOCOL VIOLATION / STALE banner into the role's session-start
+/// file so the model sees the failure the next time it reads the context. We prepend
+/// to a companion file `/tmp/session-start-<role>-PROTOCOL_VIOLATION.md` AND prepend
+/// into the primary session-start file if present.
+async fn write_protocol_violation_banner(role: &str, v: &protocol_contract::Violation) {
+    let banner = protocol_contract::banner(role, v);
+    let companion = format!("/tmp/session-start-{}-PROTOCOL_VIOLATION.md", role);
+    let primary = format!("/tmp/session-start-{}.md", role);
+    let _ = tokio::fs::write(&companion, &banner).await;
+    if let Ok(existing) = tokio::fs::read_to_string(&primary).await {
+        // Only prepend if banner isn't already there — idempotent per session.
+        if !existing.starts_with("## 🛑 PROTOCOL VIOLATION") && !existing.starts_with("## ⚠ STALE CLAUDE.md") {
+            let merged = format!("{}\n{}", banner, existing);
+            let _ = tokio::fs::write(&primary, merged).await;
+        }
+    }
+}
+
+/// #2311: Emit a spine event for the protocol violation so fleet-wide drift is observable.
+fn log_protocol_violation(role: &str, v: &protocol_contract::Violation) {
+    let fields = protocol_contract::event_fields(role, v);
+    let event = match v.reason() {
+        "stale" => "session.protocol.stale",
+        _ => "session.protocol.violation",
+    };
+    let mut cmd = std::process::Command::new(
+        format!("{}/platform/scripts/chorus-log", chorus_root())
+    );
+    cmd.arg(event).arg(role);
+    for (k, val) in fields {
+        if k == "role" { continue; } // already positional
+        cmd.arg(format!("{}={}", k, val));
+    }
+    let _ = cmd.output();
+    error!(
+        gate = "protocol-contract",
+        role = role,
+        reason = v.reason(),
+        "Session boot blocked: protocol contract failed."
+    );
 }
 
 /// Gate smoke check (#1929): on session boot, verify critical gates block when they should.

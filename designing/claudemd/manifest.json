@@ -515,6 +515,22 @@
       "summary": "Drift detection checksums + changelog + card linkage"
     }
   ],
+  "protocol_core": [
+    "shared/chorus-prompt.md",
+    "shared/cross-machine-operations-core.md",
+    "shared/domain-endpoints.md",
+    "shared/error-handling-discipline.md",
+    "shared/execution-modes.md",
+    "shared/icd-gate.md",
+    "shared/idle-awareness.md",
+    "shared/intellectual-honesty.md",
+    "shared/search-hierarchy.md",
+    "shared/session-close-out-core.md",
+    "shared/tdd-discipline.md",
+    "shared/team-kanban-board-core.md",
+    "shared/team-operating-model.md"
+  ],
+  "_protocol_core_rule": "Fragments every role loads identically that define the boot-time contract. Drift here = chorus-prompt/X.Y mismatch = VERSION_MISMATCH banner at SessionStart. Excludes tone/brevity (communication-discipline) and infra-ops (kade loads a different fragment — tracked in follow-on for convergence). #2311.",
   "variables": {
     "wren": {
       "ROLE_NAME": "Wren",
