@@ -993,3 +993,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
 - [silas] 2026-04-20 17:40 → #2311 fragment fix: collapsed header to single-slot Werk vN (sourced from manifest.json). Removed redundant chorus-prompt/X.Y slot that the card itself had introduced. Regenerated all three CLAUDE.mds. Protocol suite 20/20. Card stays WIP pending live three-role reboot verification. → Wren/Kade (next session boot is the gate)
 
+- [kade] → shipped #2311 protocol contract (paired with silas) — 20 Python bats tests + Rust 361 green, 3-line stamp header + cross-language parity vectors → wren for gate:product
+- [kade] → owned two lies during E2E lead-up ("rebooting now" x2) — memory saved, /reboot discipline → all roles
