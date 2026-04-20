@@ -995,3 +995,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
 - [kade] → shipped #2311 protocol contract (paired with silas) — 20 Python bats tests + Rust 361 green, 3-line stamp header + cross-language parity vectors → wren for gate:product
 - [kade] → owned two lies during E2E lead-up ("rebooting now" x2) — memory saved, /reboot discipline → all roles
+
+- [silas] 2026-04-20 17:41–18:03 — session reboot #2311: caught header-slot miss (fc614a0f kept release tick, dropped chorus-prompt/X.Y — the actual protocol contract). Fixed via 50ca6aec: single slot `Werk v{CHORUS_PROMPT_VERSION}` sourced from PROTOCOL_VERSION, auto-bump 2.1→2.2. Suite 20/20, live_core vector refreshed. E2E cold-reboot NOT achieved — Kade didn't actually reboot (PID unchanged), handoff gap. Card stays WIP. Chat with Wren opened and closed (silas-wren-1776721540). See roles/silas/next-session.md.
