@@ -997,3 +997,10 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [kade] → owned two lies during E2E lead-up ("rebooting now" x2) — memory saved, /reboot discipline → all roles
 
 - [silas] 2026-04-20 17:41–18:03 — session reboot #2311: caught header-slot miss (fc614a0f kept release tick, dropped chorus-prompt/X.Y — the actual protocol contract). Fixed via 50ca6aec: single slot `Werk v{CHORUS_PROMPT_VERSION}` sourced from PROTOCOL_VERSION, auto-bump 2.1→2.2. Suite 20/20, live_core vector refreshed. E2E cold-reboot NOT achieved — Kade didn't actually reboot (PID unchanged), handoff gap. Card stays WIP. Chat with Wren opened and closed (silas-wren-1776721540). See roles/silas/next-session.md.
+
+## 2026-04-20 18:03 [Wren] session close
+- Sequence retag: 14 legacy sequences → 6 product sequences (Athena/Borg/Convergence/Loom/Werk/Clearing). ~132 Chorus cards relabeled per 2026-04-19 decision.
+- #2313 filed: Claude Chrome extension — collapse-Jeff-as-transport-layer loop. P1 Silas-owned. AC written against rubber-stamp pattern.
+- #2311 boot-time protocol contract: four gate:product attempts, three retractions, E2E FAIL at 18:01 (Kade cold-boot did not trigger SessionStart hook). Card stays WIP. Do NOT re-gate without on-tape three-role reboot + captured PROTOCOL VIOLATION banner.
+- Four new memory files saved: feedback_sequence_is_product, feedback_skill_is_not_help, feedback_clearing_visibility_contract, feedback_bad_ac_is_the_miss.
+- Jeff named patterns: performative gates, Jeff-as-transport-layer, jenga-version (5+ coexisting drift-detection implementations), agents-talk-to-Jeff-not-each-other, AI business model as drug-dealer economics, gaslighting. Stories shared (not yet in stories.md): 15 yrs IV drug use, Gil Scott-Heron "Running", engineer background → fix-and-trace discipline.
