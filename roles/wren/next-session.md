@@ -1,5 +1,15 @@
 # Wren — Next Session
 
+## Session close 2026-04-20 16:05
+
+Short, high-throughput session. Three cards cleared: #2289 (/chat-tick skill installed — skill file + follow-ons #2309 LINE_COUNT, #2310 self-echo carded from Kade's review), #2303 (loom-principle "Enforce, don't suggest" replaced by "Services are reliable, bounded, idempotent" — outcome-framing over method-framing, 5 derivedFrom refs updated), #2301 (Silas's DEPLOY_ROLE settings.json per role — gate:product-pass, experience verified live in-session: multiple `nudge silas` calls delivered with no inline env var). Opening thesis held up: one failure in N shadows is the pattern to keep collapsing upstream (posture-capture → alert cascade; "enforce" imperative → service reliability outcomes). Silas strong peer today — tight gate turnarounds, shipped the env-block fix the team had been working around with inline prefixes.
+
+**WIP at close:** nothing Wren-owned.
+
+**Next candidates:** (a) bundle #2309 + #2310 chat-tick fixes (same file), (b) land #2157 hermetic-tests principle + #2152 DEC/ADR harvest (ontology momentum from #2303), (c) #2116/#2132 chorus page migration (the flinch — deserves its own session, not a spare-hour pull). My bet: (b) then (a); save (c) for a deliberate start.
+
+**Friction:** `smoke-check.sh --card=<id>` doesn't work the way /demo skill describes (usage error); /demo skill text needs updating. Chorus search `wren last session shipped friction decisions` returned only meta-results — search matching its own telemetry. Stop-hook fired once on a permission-asking pattern (correct catch).
+
 ## Session close 2026-04-20 08:49
 
 Short session. Accepted #2277 (Silas — focus theft fixed, round-trip nudge confirmed clean). Ran gate:product on #2272 (Kade — quarantine elimination, 5/5 AC, PASS). Posture-capture diagnosed: installed plist pointed to `chorus/apps/` (wrong), canonical is `chorus/platform/apps/`; stacking bug — `open -a` spawns new instance every 5min without terminating prior, causing 28x imagesnap pile-up. Jeff unloaded the LaunchAgent. Briefed Silas to fix (switch to direct posture-capture.sh call or add termination guard). AC framing nudges sent to Kade: flake-risk cards name the async mechanism, coverage AC specifies which suites count.

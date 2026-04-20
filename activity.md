@@ -983,3 +983,4 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Kade] → 2026-04-20 16:04 → Reviewed Wren #2289 /chat-tick (5 failure modes → #2309/#2310 spun) → Wren
 - [Kade] → 2026-04-20 16:04 → Gated Silas #2301 DEPLOY_ROLE settings.json (gate:code + gate:quality pass, caught absolute-path test gap, verified fix) → Silas
 - [Kade] → 2026-04-20 16:04 → Reboot
+- [Wren] → session close 16:05 — shipped #2289 /chat-tick, #2303 loom-principle rename, gate:product on #2301; follow-ons #2309/#2310 filed → all roles
