@@ -65,6 +65,12 @@ print(d['data'][0]['totals']['lines']['percent'])
 }
 
 # Run jest coverage for a TS project; return coverage-summary.json path.
+#
+# #2271: RUN_INTEGRATION=true is intentionally NOT set here. Adding it would run
+# athena.test.ts, but that test makes HTTP calls to an external chorus-api process —
+# Jest can't instrument src/ handlers executing in that separate process. The numbers
+# would not improve. Real fix: convert athena.test.ts to in-process startTestApp
+# harness (tracked as follow-on to #2271).
 run_ts_coverage() {
   local proj_rel="$1"
   local proj_dir="${CHORUS_ROOT}/${proj_rel}"

@@ -14,8 +14,16 @@ module.exports = {
   //     decomposition lands. If flakes return, lower, don't re-pin to 1.
   maxWorkers: '50%',
   // #2272: quarantine eliminated. Suites converted to in-process harness or deleted.
-  // athena.test.ts is a genuine integration test (live Fuseki + Chorus API) — intentionally
-  // kept behind RUN_INTEGRATION. Run: RUN_INTEGRATION=true npx jest tests/athena.test.ts
+  // athena.test.ts is the one remaining excluded suite — genuine integration test (live Fuseki
+  // + Chorus API on :3340). Run: RUN_INTEGRATION=true npx jest tests/athena.test.ts
+  //
+  // #2271: WHY this test doesn't contribute to coverage even with RUN_INTEGRATION=true —
+  // athena.test.ts makes HTTP calls to an external chorus-api process. Jest instruments code
+  // loaded in its own process; src/ handlers executing those requests run in a separate Node
+  // process (LaunchAgent) and are never touched by Jest's instrumenter. This is a subprocess
+  // boundary: no amount of RUN_INTEGRATION=true flags fixes it. To get real coverage from
+  // athena.test.ts, convert it to use the in-process startTestApp harness (same pattern as
+  // server-unit.test.ts). Tracked as follow-on to #2271.
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
     '/node_modules/',
     '<rootDir>/tests/athena\\.test\\.ts$',
