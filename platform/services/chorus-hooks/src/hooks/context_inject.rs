@@ -425,8 +425,8 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let role_name = format!("{:?}", input.role()).to_lowercase();
     let query = keywords.join(" ");
 
-    // #2249 Phase 1: manifest mode behind CONTEXT_PUSH_MODE=manifest env var.
-    if std::env::var("CONTEXT_PUSH_MODE").as_deref() == Ok("manifest") {
+    // #2249 Phase 3: manifest is default. Legacy shape behind CONTEXT_PUSH_MODE=legacy.
+    if std::env::var("CONTEXT_PUSH_MODE").as_deref() != Ok("legacy") {
         let (health, team_wip, role_wip, card) = parse_pulse_orientation(&role_name);
         let envelope = build_manifest_envelope(&role_name, card.as_deref(), &health, team_wip, role_wip);
         return HookResponse::warn_stderr(&format!("\n{}\n", envelope));
