@@ -118,25 +118,23 @@ fn full_dry_run_under_500ms() {
     );
 }
 
-/// DEPLOY_ROLE is exported by the nudge wrapper — verified behaviorally.
-/// A nudge with no DEPLOY_ROLE in env should still complete (defaults to jeff, not hang).
+/// #2287: DEPLOY_ROLE unset is a contract violation, not a supported state.
+/// The nudge binary fails loud instead of defaulting to "jeff".
 #[test]
-fn nudge_without_deploy_role_does_not_hang() {
-    // Run with a clean env — no DEPLOY_ROLE. Should complete quickly (jeff fallback).
-    let t = Instant::now();
-    Command::new("bash")
+fn nudge_without_deploy_role_fails_loud() {
+    let out = Command::new("bash")
         .arg(NUDGE_SCRIPT)
         .arg("wren")
-        .arg("no-deploy-role-test")
+        .arg("contract-test")
         .env("CHORUS_INJECT_DRY_RUN", "1")
         .env_remove("DEPLOY_ROLE")
         .output()
-        .expect("nudge script must run even without DEPLOY_ROLE");
-    let elapsed = t.elapsed().as_millis();
+        .expect("nudge script must run");
 
+    assert!(!out.status.success(), "nudge without DEPLOY_ROLE must exit non-zero (contract violation)");
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        elapsed < 500,
-        "nudge without DEPLOY_ROLE took {}ms — must not hang (jeff fallback, no lsof). (#2283)",
-        elapsed
+        stderr.contains("CONTRACT VIOLATION") && stderr.contains("DEPLOY_ROLE"),
+        "stderr must name the contract violation: {}", stderr
     );
 }

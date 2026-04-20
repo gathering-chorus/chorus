@@ -32,16 +32,23 @@ fn role_dir(role: &str) -> Option<&'static str> {
     }
 }
 
-/// Detect sender by walking PID chain to find claude process CWD
-fn detect_sender() -> String {
-    // #2283: DEPLOY_ROLE is set in every real session. lsof-based CWD detection
-    // was the 20s latency source — removed. Callers without DEPLOY_ROLE default to "jeff".
-    if let Ok(role) = std::env::var("DEPLOY_ROLE") {
-        if matches!(role.as_str(), "silas" | "wren" | "kade") {
-            return role;
-        }
+/// Detect sender from DEPLOY_ROLE env var.
+/// #2287: Contract C1 — DEPLOY_ROLE must be set to wren, silas, or kade.
+/// No silent "jeff" fallback. If the caller needs a non-role sender, use --from.
+fn detect_sender() -> Result<String, String> {
+    match std::env::var("DEPLOY_ROLE") {
+        Ok(role) if matches!(role.as_str(), "silas" | "wren" | "kade") => Ok(role),
+        Ok(role) => Err(format!(
+            "DEPLOY_ROLE={} is not a valid role (expected wren/silas/kade). \
+             Use --from <role> if calling from a non-role context.",
+            role
+        )),
+        Err(_) => Err(
+            "DEPLOY_ROLE unset — contract violation. \
+             Check session-start for the caller. \
+             Use --from <role> if calling from a non-role context.".to_string()
+        ),
     }
-    "jeff".into()
 }
 
 
@@ -216,7 +223,16 @@ pub fn run(args: &[String]) -> ExitCode {
         i += 1;
     }
 
-    let sender = explicit_sender.unwrap_or_else(detect_sender);
+    let sender = match explicit_sender {
+        Some(s) => s,
+        None => match detect_sender() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("CONTRACT VIOLATION: {}", e);
+                return ExitCode::from(1);
+            }
+        },
+    };
     let tid = trace_id();
 
     // Jeff is a valid target — route to Bridge API instead of terminal
@@ -648,5 +664,42 @@ mod tests {
 
         let _ = fs::remove_file(&inbox_file);
         let _ = fs::remove_dir(&inbox_dir);
+    }
+
+    // ── #2287: DEPLOY_ROLE contract enforcement ───────────────────────────
+    // Per chorus-contracts.md C1: DEPLOY_ROLE must be set. The nudge binary
+    // fails loud instead of defaulting to "jeff".
+    // These tests use serial env manipulation — run one at a time per thread.
+
+    #[test]
+    fn detect_sender_returns_role_when_deploy_role_is_valid() {
+        std::env::set_var("DEPLOY_ROLE", "silas");
+        assert_eq!(detect_sender().ok(), Some("silas".to_string()));
+        std::env::set_var("DEPLOY_ROLE", "wren");
+        assert_eq!(detect_sender().ok(), Some("wren".to_string()));
+        std::env::set_var("DEPLOY_ROLE", "kade");
+        assert_eq!(detect_sender().ok(), Some("kade".to_string()));
+    }
+
+    #[test]
+    fn detect_sender_errors_when_deploy_role_unset() {
+        std::env::remove_var("DEPLOY_ROLE");
+        let result = detect_sender();
+        assert!(result.is_err(), "DEPLOY_ROLE unset must be a contract violation");
+        let err = result.unwrap_err();
+        assert!(err.contains("DEPLOY_ROLE"), "error must name the contract: {}", err);
+        // Restore for other tests
+        std::env::set_var("DEPLOY_ROLE", "silas");
+    }
+
+    #[test]
+    fn detect_sender_errors_when_deploy_role_invalid() {
+        std::env::set_var("DEPLOY_ROLE", "not-a-role");
+        let result = detect_sender();
+        assert!(result.is_err(), "DEPLOY_ROLE=not-a-role must be a contract violation");
+        let err = result.unwrap_err();
+        assert!(err.contains("not-a-role") || err.contains("valid role"), "error must explain: {}", err);
+        // Restore
+        std::env::set_var("DEPLOY_ROLE", "silas");
     }
 }
