@@ -145,7 +145,8 @@ async function buildSparqlSections(
   const sectionQuery = (pred: string) => `
     PREFIX chorus: <https://jeffbridwell.com/chorus#>
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    SELECT ?e ?label ?comment
+    SELECT ?e ?label
+           (SAMPLE(?comment) AS ?comment)
            (GROUP_CONCAT(DISTINCT ?ownerLabel; separator="||") AS ?owners)
            (GROUP_CONCAT(DISTINCT ?readLabel; separator="||") AS ?reads)
            (GROUP_CONCAT(DISTINCT ?writeLabel; separator="||") AS ?writes)
@@ -161,7 +162,7 @@ async function buildSparqlSections(
         OPTIONAL { ?e chorus:consumes ?consumesTarget . OPTIONAL { ?consumesTarget rdfs:label ?consumesLabel } }
       }
     }
-    GROUP BY ?e ?label ?comment
+    GROUP BY ?e ?label
     LIMIT 20
   `;
 

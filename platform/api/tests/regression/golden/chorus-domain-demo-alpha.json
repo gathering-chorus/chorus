@@ -7,10 +7,14 @@
     "services": {
       "title": "services",
       "items": [
-        "Alpha Reader",
-        "Alpha Reader v2"
+        "Alpha Reader v2",
+        "Alpha Reader"
       ],
       "itemDetails": [
+        {
+          "label": "Alpha Reader v2",
+          "owner": "Wren"
+        },
         {
           "label": "Alpha Reader",
           "description": "Reads the Alpha store and emits records.",
@@ -18,10 +22,6 @@
           "reads": [
             "Alpha Store"
           ]
-        },
-        {
-          "label": "Alpha Reader v2",
-          "owner": "Wren"
         }
       ]
     },
