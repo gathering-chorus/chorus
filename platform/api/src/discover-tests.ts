@@ -128,7 +128,7 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
     for (let i = 0; i < testEntries.length; i += batchSize) {
       const batch = testEntries.slice(i, i + batchSize);
       const triples = batch.map(t => {
-        const tcId = `test-coverage-${t.testFile.replace(/[\/\.]/g, '-').toLowerCase()}`;
+        const tcId = `test-coverage-${t.testFile.replace(/[/.]/g, '-').toLowerCase()}`;
         const tcUri = `https://jeffbridwell.com/chorus#${tcId}`;
         const sdUri = `https://jeffbridwell.com/chorus#${t.coversDomain}`;
         return `<${tcUri}> a chorus:TestCoverage ; chorus:testFile "${t.testFile.replace(/"/g, '\\"')}" ; chorus:testType "${t.testType}" ; chorus:covers <${sdUri}> .`;

@@ -193,7 +193,7 @@ function isToolCall(text: string): boolean {
   // Git output
   if (text.match(/^\[(main|master|HEAD) [0-9a-f]/)) return true;
   // JSON responses
-  if (text.match(/^\s*[\[{].*[":]/) && text.match(/[}\]]\s*$/)) return true;
+  if (text.match(/^\s*[[{].*[":]/) && text.match(/[}\]]\s*$/)) return true;
   // ssh command patterns
   if (text.includes('jeffbridwell@192.168.86')) return true;
   // HTTP response codes

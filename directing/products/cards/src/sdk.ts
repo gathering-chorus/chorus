@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BoardClient } from './client';
 import { BoardTask } from './types';
-import { detectRole } from './config';
+import { detectRole, LABELS } from './config';
 import { emitSpineEvent, emitChorusEvent } from './events';
 import { spawnSync } from 'child_process';
 
@@ -17,7 +17,6 @@ function autoRoleState(state: string, extra: string = ''): void {
   } catch { /* non-blocking — don't break card ops if role-state fails */ }
 }
 import { generateBlastRadius, formatBlastComment } from './blast-radius';
-import { LABELS } from './config';
 
 // Paths are `let` so hermetic tests can point them at a temp dir via
 // `__setTestPaths`. Defaults match the pre-override production layout.

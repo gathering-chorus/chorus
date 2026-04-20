@@ -153,7 +153,7 @@ export function createDiscoverCode(deps: DiscoverCodeDeps) {
     for (let i = 0; i < discovered.length; i += batchSize) {
       const batch = discovered.slice(i, i + batchSize);
       const triples = batch.map(d => {
-        const fileId = `${d.domainId}-code-${d.filePath.replace(/[\/\.]/g, '-').toLowerCase()}`;
+        const fileId = `${d.domainId}-code-${d.filePath.replace(/[/.]/g, '-').toLowerCase()}`;
         const fileUri = `https://jeffbridwell.com/chorus#${fileId}`;
         const sdUri = `https://jeffbridwell.com/chorus#${d.domainId}`;
         return `<${fileUri}> a chorus:CodeFile ; rdfs:label "${d.filePath.replace(/"/g, '\\"')}" ; chorus:filePath "${d.filePath.replace(/"/g, '\\"')}" ; chorus:fileType "${d.fileType}" . <${sdUri}> chorus:hasCodeFile <${fileUri}> .`;

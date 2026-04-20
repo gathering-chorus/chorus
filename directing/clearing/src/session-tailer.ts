@@ -52,9 +52,9 @@ export class SessionTailer {
             state.watcher = fs.watch(sessionFile, () => {
               this.readNewEntries(role);
             });
-          } catch {}
+          } catch { /* ignored */ }
           this.sessions.set(role, state);
-        } catch {}
+        } catch { /* ignored */ }
       }
     }
     // Fallback poll for missed events and new session detection
@@ -102,7 +102,7 @@ export class SessionTailer {
       for (const line of completeLines) {
         this.processLine(role, line);
       }
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   private findSessionFile(role: string): string | null {
@@ -130,12 +130,12 @@ export class SessionTailer {
                 newest = file;
               }
             }
-          } catch {}
+          } catch { /* ignored */ }
         }
       }
 
       return newest ? newest.path : null;
-    } catch {}
+    } catch { /* ignored */ }
     return null;
   }
 
@@ -153,7 +153,7 @@ export class SessionTailer {
           const newState: SessionState = { file: currentFile, offset: stats.size };
           try {
             newState.watcher = fs.watch(currentFile, () => this.readNewEntries(role));
-          } catch {}
+          } catch { /* ignored */ }
           this.sessions.set(role, newState);
         } catch { continue; }
       }

@@ -79,7 +79,7 @@ export function fetchChorusHooksMetrics(deps: ChorusHooksMetricsDeps): FetchResu
         generatedAt: new Date(now()).toISOString(),
       },
     };
-  } catch (err) {
+  } catch {
     return { status: 500, body: { error: 'Failed to parse hooks log' } };
   }
 }

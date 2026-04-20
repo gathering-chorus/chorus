@@ -238,14 +238,14 @@ try {
     }
     console.log(`[clearing] restored ${Math.min(saved.length, 100)} messages from disk`);
   }
-} catch {}
+} catch { /* ignored */ }
 
 // Save messages every 10 seconds
 setInterval(() => {
   try {
     const msgs = messageRouter.getRecent(200, true);
     fs_sync.writeFileSync(MSG_FILE, JSON.stringify(msgs));
-  } catch {}
+  } catch { /* ignored */ }
 }, 10000);
 
 // Ensure upload directory survives /tmp cleanup across reboots
@@ -280,7 +280,7 @@ app.post('/api/upload', (req, res) => {
         execSync(`sips -s format jpeg "${heicPath}" --out "${jpgPath}"`, { timeout: 10000 });
         fs.unlinkSync(heicPath);
         res.json({ url: `/uploads/${ts}.jpg`, filename: `${ts}.jpg` });
-      } catch (err) {
+      } catch {
         // Fallback: serve HEIC as-is
         res.json({ url: `/uploads/${ts}.heic`, filename: `${ts}.heic` });
       }
@@ -322,7 +322,7 @@ app.post('/api/voice', (req, res) => {
       ).trim();
 
       // Clean up wav (keep webm in audio-uploads for playback persistence)
-      try { fs.unlinkSync(wavPath); } catch {}
+      try { fs.unlinkSync(wavPath); } catch { /* ignored */ }
 
       const transcript = output.replace(/^\[.*?\]\s*/gm, '').trim();
       console.log(`[voice] transcribed ${body.length} bytes → "${transcript.substring(0, 100)}"`);
@@ -330,7 +330,7 @@ app.post('/api/voice', (req, res) => {
       res.json({ transcript, audioFile: `/audio-uploads/${ts}.webm` });
     } catch (err: any) {
       console.error('[voice] transcription failed:', err.message || err);
-      try { fs.unlinkSync(wavPath); } catch {}
+      try { fs.unlinkSync(wavPath); } catch { /* ignored */ }
       res.json({ error: 'Transcription failed: ' + (err.message || 'unknown') });
     }
   });
@@ -382,9 +382,9 @@ app.get('/api/commands/:role', (req, res) => {
                       .replace(/^skill: /, '⚡ ');
         if (short.length > 70) short = short.substring(0, 67) + '...';
         lines.push(`${ts}  ${short}${card}`);
-      } catch {}
+      } catch { /* ignored */ }
     }
-  } catch {}
+  } catch { /* ignored */ }
 
   res.json({ text: lines.join('\n') || `No commands recorded for ${role}`, lines: lines.length });
 });
@@ -464,9 +464,9 @@ app.get('/api/stream', (req, res) => {
             count++;
           }
         }
-      } catch {}
+      } catch { /* ignored */ }
     }
-  } catch {}
+  } catch { /* ignored */ }
 
   // Also include observations for richer tool data
   for (const role of ['wren', 'silas', 'kade']) {
@@ -492,9 +492,9 @@ app.get('/api/stream', (req, res) => {
             text: digest,
             card: obs.card || null,
           });
-        } catch {}
+        } catch { /* ignored */ }
       }
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   // Sort by timestamp, newest last
@@ -585,9 +585,9 @@ app.get('/api/flow', (_req, res) => {
           const wf = JSON.parse(fs.readFileSync(`${wfDir}/${f}`, 'utf-8'));
           if (wf.status === 'completed' || wf.status === 'archived' || wf.status === 'cancelled') continue;
           if (wf.card) wfByCard[String(wf.card)] = (wfByCard[String(wf.card)] || 0) + 1;
-        } catch {}
+        } catch { /* ignored */ }
       }
-    } catch {}
+    } catch { /* ignored */ }
 
     // Group by top-level product (chorus or gathering), sub-domain preserved on card
     const CHORUS_DOMAINS = new Set(['chorus', 'roles', 'borg']);
@@ -627,7 +627,7 @@ app.get('/api/flow', (_req, res) => {
     const fixFeatureRatio = features > 0 ? (fixes / features).toFixed(2) : fixes > 0 ? 'all-fix' : 'n/a';
 
     res.json({ domains: byDomain, totalCards: cards.length, typeCounts, fixFeatureRatio });
-  } catch (err) {
+  } catch {
     res.json({ domains: {}, totalCards: 0 });
   }
 });
@@ -689,7 +689,7 @@ function getRoleTTY(role: string): string | null {
     const { execSync } = require('child_process');
     const tty = execSync(`ps -p ${pid} -o tty=`, { encoding: 'utf-8' }).trim();
     if (tty && tty !== '??') return `/dev/${tty}`;
-  } catch {}
+  } catch { /* ignored */ }
   return null;
 }
 

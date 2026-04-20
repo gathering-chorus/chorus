@@ -238,7 +238,7 @@ const sparqlSearch = createSparqlSearch({ fusekiUrl: FUSEKI_URL });
 
 // --- Unified search: merge all sources via RRF ---
 // RRF fusion + types moved to src/search-fusion.ts (#2205 wave 3).
-import { mergeUnified } from './search-fusion';
+import { mergeUnified, enrichHit, resolveSearchLimit } from './search-fusion';
 
 // --- Spine event emitter (fire-and-forget to chorus-log.sh) ---
 const CHORUS_LOG = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/chorus-log');
@@ -247,6 +247,8 @@ const CHORUS_LOG = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 
 import {
   createDbOpener,
   createSearchEventEmitter,
+  createAlertFilesReader,
+  crashAlert,
 } from './server-helpers';
 const getDb = createDbOpener<Database.Database>({
   dbPath: DB_PATH,
@@ -259,10 +261,10 @@ const emitSearchEvent = createSearchEventEmitter({
 });
 
 // Staleness middleware + search meta extracted to src/search-meta.ts (#2205 wave 5).
-import { addStaleHeader, buildSearchMeta } from './search-meta';
+import { addStaleHeader, buildSearchMeta, SOURCE_CADENCE } from './search-meta';
 
 // enrichHit + resolveSearchLimit + SEARCH_* constants moved to search-fusion.ts.
-import { enrichHit, resolveSearchLimit } from './search-fusion';
+// (enrichHit + resolveSearchLimit imported at line 241.)
 
 // --- GET /api/chorus/search ---
 // Supports mode=fts (default), mode=semantic, mode=hybrid
@@ -449,7 +451,7 @@ import {
 } from './handlers/domain-facets';
 
 // readAlertFiles moved to src/server-helpers.ts (#2205 wave 12).
-import { createAlertFilesReader, crashAlert } from './server-helpers';
+// (createAlertFilesReader + crashAlert imported at line 247.)
 const readAlertFiles = createAlertFilesReader({
   fs: fs as any,
   alertsDir: path.join(REPO_ROOT, 'proving/domains/alerts'),
@@ -604,8 +606,7 @@ app.get('/api/chorus/stats', async (_req: Request, res: Response) => {
 });
 
 // --- GET /api/chorus/freshness (#1879) ---
-// SOURCE_CADENCE moved to src/search-meta.ts (#2205 wave 5) — imported below if still referenced here.
-import { SOURCE_CADENCE } from './search-meta';
+// SOURCE_CADENCE moved to src/search-meta.ts (#2205 wave 5) — imported at line 264.
 
 import { fetchFreshness } from './handlers/chorus-freshness';
 app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
@@ -1037,7 +1038,7 @@ const resolveIcdDomain = createIcdDomainResolver({ client: _icd, pfx: ICD_PFX, g
 
 // POST /api/icd/domains/:id/fields
 // ICD field upsert handler moved to src/icd-writes.ts (#2205 wave 22).
-import { handleIcdFieldUpsert } from './icd-writes';
+import { handleIcdFieldUpsert, handleIcdMappingUpsert, handleIcdSectionPut } from './icd-writes';
 app.post('/api/icd/domains/:id/fields', async (req: Request, res: Response) => {
   await handleIcdFieldUpsert(req as any, res as any, {
     resolveDomain: resolveIcdDomain,
@@ -1048,7 +1049,7 @@ app.post('/api/icd/domains/:id/fields', async (req: Request, res: Response) => {
 });
 
 // POST /api/icd/domains/:id/mappings
-import { handleIcdMappingUpsert, handleIcdSectionPut } from './icd-writes';
+// (handleIcdMappingUpsert + handleIcdSectionPut imported at line 1041.)
 const icdDeps = () => ({
   resolveDomain: resolveIcdDomain,
   client: { query: icdSparqlQuery, update: icdSparqlUpdate },
@@ -1410,7 +1411,7 @@ app.post('/api/athena/subdomains/:id/code', async (req: Request, res: Response) 
     if (!filePath && !label) return res.status(400).json(athenaEnvelope('subdomain-code-create', { error: 'Missing required field: path or label' }, Date.now() - start, { error: true }));
     const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
     const name = label || filePath;
-    const fileId = `${req.params.id}-code-${name.replace(/[\/\.]/g, '-').toLowerCase()}`;
+    const fileId = `${req.params.id}-code-${name.replace(/[/.]/g, '-').toLowerCase()}`;
     const fileUri = `https://jeffbridwell.com/chorus#${fileId}`;
     const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${fileUri}> a chorus:CodeFile ; rdfs:label "${name.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasCodeFile <${fileUri}> . ${filePath ? `<${fileUri}> chorus:filePath "${filePath.replace(/"/g, '\\"')}" .` : ''} ${fileType ? `<${fileUri}> chorus:fileType "${fileType}" .` : ''} ${description ? `<${fileUri}> rdfs:comment "${description.replace(/"/g, '\\"')}" .` : ''} } }`;
     await athenaSparqlUpdate(update);
@@ -1621,7 +1622,7 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
     for (let i = 0; i < entries.length; i += batchSize) {
       const batch = entries.slice(i, i + batchSize);
       const triples = batch.map(e => {
-        const pageId = `page-${e.path.replace(/[\/\.]/g, '-').toLowerCase()}`;
+        const pageId = `page-${e.path.replace(/[/.]/g, '-').toLowerCase()}`;
         const pageUri = `https://jeffbridwell.com/chorus#${pageId}`;
         const sdUri = `https://jeffbridwell.com/chorus#${e.domainId}`;
         return `<${pageUri}> a chorus:Page ; rdfs:label "${e.route.replace(/"/g, '\\"')}" ; chorus:filePath "${e.path.replace(/"/g, '\\"')}" ; chorus:pageType "${e.pageType}" ; chorus:route "${e.route.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasPage <${pageUri}> .`;
@@ -1827,7 +1828,7 @@ app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) 
     for (let i = 0; i < entries.length; i += batchSize) {
       const batch = entries.slice(i, i + batchSize);
       const triples = batch.map(e => {
-        const epId = `endpoint-${e.method.toLowerCase()}-${e.path.replace(/[\/\.:]/g, '-').toLowerCase()}`;
+        const epId = `endpoint-${e.method.toLowerCase()}-${e.path.replace(/[/.:]/g, '-').toLowerCase()}`;
         const epUri = `https://jeffbridwell.com/chorus#${epId}`;
         const sdUri = `https://jeffbridwell.com/chorus#${e.domainId}`;
         return `<${epUri}> a chorus:Endpoint ; rdfs:label "${e.method} ${e.path.replace(/"/g, '\\"')}" ; chorus:httpMethod "${e.method}" ; chorus:routePath "${e.path.replace(/"/g, '\\"')}" ; chorus:filePath "${e.handler.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasEndpoint <${epUri}> .`;

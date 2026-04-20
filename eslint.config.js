@@ -32,6 +32,7 @@ module.exports = [
       globals: {
         ...globals.node,
         ...globals.es2021,
+        ...globals.jest,
         fetch: 'readonly',
         AbortSignal: 'readonly',
         Headers: 'readonly',
@@ -59,6 +60,9 @@ module.exports = [
         'varsIgnorePattern': '^_',
       }],
       '@typescript-eslint/no-require-imports': 'off',
+      // TypeScript handles type/import resolution better than ESLint's no-undef.
+      // Disabling prevents false positives on TS built-ins (NodeJS, BufferEncoding, RequestInit).
+      'no-undef': 'off',
       'complexity': ['error', { max: 20 }],
       'max-depth': ['warn', { max: 4 }],
       'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
