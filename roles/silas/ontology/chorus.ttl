@@ -1536,7 +1536,7 @@ chorus:policy-working-hours a chorus:Policy ;
 chorus:policy-no-raw-process-kill a chorus:Policy ;
     rdfs:label "No raw process killing" ;
     rdfs:comment "Never `kill` PIDs directly, local or remote. Use launchctl kickstart for LaunchAgents, app-state.sh for the Gathering app lifecycle. LaunchAgent changes route through Silas." ;
-    chorus:derivedFrom chorus:principle-enforce .
+    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
 
 chorus:policy-response-window-60s a chorus:Policy ;
     rdfs:label "60-second pair heartbeat" ;
@@ -1546,12 +1546,12 @@ chorus:policy-response-window-60s a chorus:Policy ;
 chorus:policy-no-self-acp a chorus:Policy ;
     rdfs:label "No self-accept on code cards" ;
     rdfs:comment "Only Wren or Jeff can accept. The builder CANNOT mark their own code card Done. DEC-048 Proving Gate." ;
-    chorus:derivedFrom chorus:principle-enforce .
+    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
 
 chorus:policy-chorus-search-first a chorus:Policy ;
     rdfs:label "Chorus search before filesystem" ;
     rdfs:comment "Search order: Chorus (/chorus search) → codebase graph → filesystem (Grep/Glob). Guard hook enforces. DEC-074." ;
-    chorus:derivedFrom chorus:principle-enforce .
+    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
 
 # --- 12 Principles (7 from team-architecture.md + 5 from 2026-04-17 session) ---
 
@@ -1559,9 +1559,9 @@ chorus:principle-protect-attention a chorus:Principle ;
     rdfs:label "Protect Jeff's attention" ;
     rdfs:comment "Jeff's attention is the scarcest resource. Every protocol, gate, and automation exists to keep coordination off his desk. Target: 2 touches per card." .
 
-chorus:principle-enforce a chorus:Principle ;
-    rdfs:label "Enforce, don't suggest" ;
-    rdfs:comment "Skills describe. Gates enforce. A hook that blocks the wrong action beats instructions that drift." .
+chorus:principle-services-reliable-bounded-idempotent a chorus:Principle ;
+    rdfs:label "Services are reliable, bounded, and idempotent" ;
+    rdfs:comment "Every Chorus service works every time (reliable), declares its edges (bounded), and behaves the same until deliberately versioned (idempotent unless changed). Enforcement — gates, hooks, contracts, tests, types — exists in service of these properties, not as an end in itself." .
 
 chorus:principle-no-dark-work a chorus:Principle ;
     rdfs:label "No dark work" ;
@@ -1636,7 +1636,7 @@ chorus:practice-api-first a chorus:Practice ;
 # --- Contains edges — domains contain their instances ---
 
 chorus:loom-principles chorus:contains chorus:principle-protect-attention,
-    chorus:principle-enforce, chorus:principle-no-dark-work,
+    chorus:principle-services-reliable-bounded-idempotent, chorus:principle-no-dark-work,
     chorus:principle-artifacts, chorus:principle-owner-sets-direction,
     chorus:principle-ship-small, chorus:principle-self-healing,
     chorus:principle-focus-is-infrastructure, chorus:principle-quality-at-source,
