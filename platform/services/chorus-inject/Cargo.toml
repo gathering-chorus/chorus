@@ -4,6 +4,17 @@ version = "0.1.0"
 edition = "2021"
 description = "Stable binary for osascript keystroke injection — isolated from chorus-hooks rebuild cycle"
 
+# #2284: explicit lint config — parity with gathering ESLint ruleset.
+[lints.rust]
+dead_code = "warn"
+unused_imports = "warn"
+unused_variables = "warn"
+unused_mut = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+
 # Binary target delegates to lib for all pure logic (#2167). Lets unit tests
 # register against source-level coverage instead of 4% bin-only.
 [lib]

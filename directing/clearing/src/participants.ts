@@ -162,7 +162,7 @@ export class Participants {
     this.maxTokens = maxTokens;
 
     // Build role prompts based on mode
-    let baseRoles = ROLES.map((r) => {
+    const baseRoles = ROLES.map((r) => {
       if (guestMode) {
         // Guest-safe: replace internal grounding rules with guest rules
         const safePrompt = r.systemPrompt.replace(GROUNDING_RULES, GUEST_GROUNDING);

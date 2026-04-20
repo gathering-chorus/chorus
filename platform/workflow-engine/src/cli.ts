@@ -3,7 +3,7 @@
 import { WorkflowEngine } from './engine';
 import { WorkflowManifest, Step } from './types';
 import { appendFileSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { resolve } from 'path';
 
 const LOG_FILE = resolve(__dirname, '../../logs/chorus.log');
 
@@ -129,7 +129,7 @@ function main(): void {
       });
       console.log(`Step ${result.completedStep.seq} completed (${result.completedStep.role}: ${result.completedStep.action})`);
       if (result.workflowCompleted) {
-        console.log(`Workflow complete — all steps done`);
+        console.log('Workflow complete — all steps done');
       } else if (result.nextStep) {
         console.log(`Step ${result.nextStep.seq} now READY for ${result.nextStep.role}: ${result.nextStep.action}`);
       }

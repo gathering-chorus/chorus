@@ -44,7 +44,7 @@ export function createEmbedDelta(deps: EmbedDeltaDeps): () => Promise<EmbedDelta
       const rwDb = new deps.DatabaseCtor(deps.dbPath);
       rwDb.pragma('journal_mode = WAL');
       try {
-        rwDb.exec(`ALTER TABLE messages ADD COLUMN embedded INTEGER DEFAULT 0`);
+        rwDb.exec('ALTER TABLE messages ADD COLUMN embedded INTEGER DEFAULT 0');
       } catch {
         /* column already exists */
       }
@@ -105,7 +105,7 @@ export function createEmbedDelta(deps: EmbedDeltaDeps): () => Promise<EmbedDelta
 
       const markDb = new deps.DatabaseCtor(deps.dbPath);
       markDb.pragma('journal_mode = WAL');
-      const markStmt = markDb.prepare(`UPDATE messages SET embedded = 1 WHERE id = ?`);
+      const markStmt = markDb.prepare('UPDATE messages SET embedded = 1 WHERE id = ?');
       const markMany = markDb.transaction((ids: number[]) => {
         for (const id of ids) markStmt.run!(id);
       });

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BoardClient } from './client';
-import { BoardConfig, BoardTask } from './types';
+import { BoardTask } from './types';
 import { detectRole } from './config';
 import { emitSpineEvent, emitChorusEvent } from './events';
 import { spawnSync } from 'child_process';
@@ -235,7 +235,7 @@ function checkDemoEvidence(cardIndex: number): boolean {
   const logPath = path.join(__dirname, '..', '..', '..', '..', 'platform', 'logs', 'chorus.log');
   try {
     const log = fs.readFileSync(logPath, 'utf-8');
-    if (log.includes(`"event":"card.demo.started"`) && log.includes(`"card_id":"${cardIndex}"`)) {
+    if (log.includes('"event":"card.demo.started"') && log.includes(`"card_id":"${cardIndex}"`)) {
       return true;
     }
   } catch { /* log may not exist */ }
@@ -305,8 +305,8 @@ export function enforceExperienceGate(index: number, title: string, description:
 
   if (!hasExperience) {
     console.error(`ERROR: Card #${index} needs an Experience section before entering WIP.`);
-    console.error(`  Add "## Experience" with 2-5 sentences in Jeff's voice describing what he sees/feels/gets.`);
-    console.error(`  Route to Wren to draft the Experience section.`);
+    console.error('  Add "## Experience" with 2-5 sentences in Jeff\'s voice describing what he sees/feels/gets.');
+    console.error('  Route to Wren to draft the Experience section.');
     emitSpineEvent('card.quality.blocked', detectRole(), {
       card_id: String(index), title, gate: 'experience_missing', stage: 'building', board,
     });
@@ -486,7 +486,7 @@ export async function auditClose(client: BoardClient, role: string): Promise<{
   const boardName = client.boardName;
   const snapFile = path.join(SNAPSHOT_DIR, `board-snapshot-${boardName}-${role}.json`);
   if (!fs.existsSync(snapFile)) {
-    console.log(`  No start-of-session snapshot found. Cannot diff.`);
+    console.log('  No start-of-session snapshot found. Cannot diff.');
     return { newCards: 0, newlyDone: 0, retroactive: 0 };
   }
 
@@ -513,7 +513,7 @@ export async function auditClose(client: BoardClient, role: string): Promise<{
 
   if (retroactive.length > 0) {
     console.log(`\n  WARN: ${retroactive.length} card(s) created AND completed in same session.`);
-    console.log(`  Card-first rule: create cards BEFORE starting work, not after.`);
+    console.log('  Card-first rule: create cards BEFORE starting work, not after.');
   }
 
   const nonDoneNew = newCards.filter(t => t.status !== 'Done');
@@ -529,7 +529,7 @@ export async function auditClose(client: BoardClient, role: string): Promise<{
   );
   const stillNow = currentTasks.filter(t => t.status === 'Now' && startNowIds.has(t.index));
   if (stillNow.length > 0) {
-    console.log(`\nStill In Progress (started before this session):`);
+    console.log('\nStill In Progress (started before this session):');
     for (const t of stillNow) {
       console.log(`  #${t.index}  ${t.title}`);
     }
@@ -650,7 +650,7 @@ export async function addCard(
     // Experience section check (#1839): warn if missing, Wren adds before WIP
     const hasExperience = /##\s*experience/i.test((opts.description || ''));
     if (!hasExperience) {
-      console.log(`  WARN: No Experience section. Wren should add "## Experience" before this card enters WIP.`);
+      console.log('  WARN: No Experience section. Wren should add "## Experience" before this card enters WIP.');
       emitSpineEvent('card.quality.warned', detectRole(), {
         title, gate: 'experience_missing_at_creation', board: client.boardName,
       });
@@ -743,8 +743,8 @@ export async function moveCard(
           const report = await generateBlastRadius(index, title, card.description || '', cardDomain);
           if (report && report.totalFiles === 0) {
             console.error(`ERROR: Blast radius: 0 files on a code card (#${index}).`);
-            console.error(`  Add explicit file paths to description (e.g. src/handlers/music.handler.ts)`);
-            console.error(`  or route to Wren for manual blast radius mapping.`);
+            console.error('  Add explicit file paths to description (e.g. src/handlers/music.handler.ts)');
+            console.error('  or route to Wren for manual blast radius mapping.');
             emitSpineEvent('card.blast_radius.zero_code', detectRole(), {
               card_id: String(index), title, board: client.boardName,
             });
@@ -783,7 +783,6 @@ export async function moveCard(
     try {
       const card = title ? await client.view(index).catch(() => null) : null;
       const desc = card?.description || '';
-      const fullText = `${title}\n${desc}`;
       const domainLabel2 = (card?.domains || []).find((d: string) => d.startsWith('domain:'));
       const cardDomain2 = domainLabel2 ? domainLabel2.replace('domain:', '') : undefined;
       const report = await generateBlastRadius(index, title, desc, cardDomain2);
@@ -846,7 +845,7 @@ export async function moveCard(
           }
 
           if (overlaps.length > 0) {
-            console.log(`  WIP overlap detected:`);
+            console.log('  WIP overlap detected:');
             overlaps.forEach(o => console.log(o));
             emitSpineEvent('card.wip_overlap.detected', role, {
               card_id: String(index), overlaps: String(overlaps.length),
@@ -1006,7 +1005,7 @@ export async function updateCard(
 
     // Block empty description writes — cards need content
     if (expectedLen === 0) {
-      console.error(`ERROR: Empty description — refusing to clear card description. Provide content or omit --desc.`);
+      console.error('ERROR: Empty description — refusing to clear card description. Provide content or omit --desc.');
       process.exit(1);
     }
 

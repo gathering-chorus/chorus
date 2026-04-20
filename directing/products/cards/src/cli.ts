@@ -36,7 +36,7 @@ import { formatCommentForView } from './cli-view-helpers';
 import { parseAddArgs as parseAddArgsShared } from './cli-add-helpers';
 import {
   addCard, moveCard, doneCard, demoCard, rejectCard,
-  blockCard, unblockCard, updateCard, commentCard, tagCard, untagCard,
+  blockCard, unblockCard, commentCard, untagCard,
   reassignCard, setCard, swatCard, snapshotBoard, auditStart, auditClose,
   bulkSequenceTag, bulkMove,
 } from './sdk';
@@ -115,7 +115,7 @@ function parseUpdateArgs(args: string[]): { index: number; title?: string; descr
 
 // ── Display-only commands (no business logic, just formatting) ──
 
-async function cmdList(client: BoardClient, label: string, productFilter?: string) {
+async function cmdList(client: BoardClient, _label: string, productFilter?: string) {
   const grouped = await client.listGrouped();
   const order = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Blocked', 'Next', 'Later', 'Jeff Tickets', 'Tech Debt', "Won't Do", 'Done'];
 
@@ -162,7 +162,7 @@ async function cmdFilter(client: BoardClient, args: string[]) {
 
   const grouped = await client.listGrouped();
   const excludeStatuses = ["Won't Do", 'Done'];
-  let results: { status: string; task: any }[] = [];
+  const results: { status: string; task: any }[] = [];
 
   for (const [status, tasks] of grouped.entries()) {
     if (excludeStatuses.includes(status)) continue;
@@ -456,7 +456,7 @@ async function cmdDomain(client: BoardClient, args: string[]) {
       }
     }
     if (LABELS.domain[name]) {
-      console.log(`⚠ Also remove from config.ts LABELS.domain and recompile`);
+      console.log('⚠ Also remove from config.ts LABELS.domain and recompile');
     }
     return;
   }
@@ -542,8 +542,8 @@ function cmdFields(board: BoardConfig) {
   const buckets = Object.keys(board.buckets).join(', ');
   console.log(`Board:    ${board.name}`);
   console.log(`Statuses: ${buckets}`);
-  console.log(`Owners:   Jeff, Wren, Silas, Kade`);
-  console.log(`Priority: P1, P2, P3`);
+  console.log('Owners:   Jeff, Wren, Silas, Kade');
+  console.log('Priority: P1, P2, P3');
   if (board.name === 'gathering') {
     console.log(`Domains:  ${Object.keys(LABELS.domain).join(', ')}`);
     console.log(`Streams:  ${Object.keys(LABELS.stream).join(', ')}`);
@@ -760,9 +760,9 @@ export async function runCli(
       const card = await client.view(depsId);
       console.log(`#${depsId} ${card.title}`);
       if (rels.blockedBy.length) console.log(`  After:  ${rels.blockedBy.map(id => `#${id}`).join(', ')}`);
-      else console.log(`  After:  (none)`);
+      else console.log('  After:  (none)');
       if (rels.blocks.length) console.log(`  Gates:  ${rels.blocks.map(id => `#${id}`).join(', ')}`);
-      else console.log(`  Gates:  (none)`);
+      else console.log('  Gates:  (none)');
       break;
     }
 
@@ -910,7 +910,7 @@ export async function runCli(
         if (!labelTitle) die('Usage: cards label create <title>');
         const result = await client.createLabel(labelTitle);
         console.log(`Created label: "${result.title}" → id: ${result.id}`);
-        console.log(`  Add to config.ts LABELS as needed.`);
+        console.log('  Add to config.ts LABELS as needed.');
       } else if (sub === 'list') {
         const labels = await client.listLabels();
         labels.sort((a, b) => a.id - b.id);

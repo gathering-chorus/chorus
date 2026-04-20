@@ -1484,7 +1484,7 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
     // 1. Get all SubDomains for domain→alias mapping (reuse pattern from discover-code)
-    const sdQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }`;
+    const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
     const sdResult = await athenaSparqlQuery(sdQuery);
     const domains = sdResult.results.bindings.map((b: any) => ({
       id: b.sd.value.split('#').pop() as string,
@@ -1612,7 +1612,7 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
     }
 
     // 4. Clear existing page data and repopulate
-    const clearQuery = `DELETE WHERE { GRAPH <urn:chorus:instances> { ?p a <https://jeffbridwell.com/chorus#Page> ; ?prop ?val . ?sd <https://jeffbridwell.com/chorus#hasPage> ?p . } }`;
+    const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?p a <https://jeffbridwell.com/chorus#Page> ; ?prop ?val . ?sd <https://jeffbridwell.com/chorus#hasPage> ?p . } }';
     await athenaSparqlUpdate(clearQuery);
 
     // 5. Write to graph in batches
@@ -1658,7 +1658,7 @@ app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) 
   const start = Date.now();
   try {
     // 1. Domain alias map (same as discover-code/discover-pages)
-    const sdQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }`;
+    const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
     const sdResult = await athenaSparqlQuery(sdQuery);
     const domains = sdResult.results.bindings.map((b: any) => ({
       id: b.sd.value.split('#').pop() as string,
@@ -1818,7 +1818,7 @@ app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) 
     }
 
     // 3. Clear existing endpoint data and repopulate
-    const clearQuery = `DELETE WHERE { GRAPH <urn:chorus:instances> { ?ep a <https://jeffbridwell.com/chorus#Endpoint> ; ?p ?o . ?sd <https://jeffbridwell.com/chorus#hasEndpoint> ?ep . } }`;
+    const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?ep a <https://jeffbridwell.com/chorus#Endpoint> ; ?p ?o . ?sd <https://jeffbridwell.com/chorus#hasEndpoint> ?ep . } }';
     await athenaSparqlUpdate(clearQuery);
 
     // 4. Write to graph in batches
@@ -2468,7 +2468,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 process.on('SIGTERM', () => {
-  console.log(`[chorus-api] Received SIGTERM — shutting down`);
+  console.log('[chorus-api] Received SIGTERM — shutting down');
   process.exit(0);
 });
 

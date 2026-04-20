@@ -75,7 +75,7 @@ export function buildCodeAliasMap(
 
 export function createDiscoverCode(deps: DiscoverCodeDeps) {
   return async function discoverCode() {
-    const sdQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }`;
+    const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
     const sdResult = await deps.sparqlClient.query(sdQuery);
     const domains = sdResult.results.bindings.map((b: any) => ({
       id: b.sd.value.split('#').pop() as string,
@@ -145,7 +145,7 @@ export function createDiscoverCode(deps: DiscoverCodeDeps) {
     scanDir(deps.path.join(deps.chorusRoot, 'skills'), deps.chorusRoot);
     scanDir(deps.path.join(deps.chorusRoot, 'proving/domains/alerts'), deps.chorusRoot);
 
-    const clearQuery = `DELETE WHERE { GRAPH <urn:chorus:instances> { ?file a <https://jeffbridwell.com/chorus#CodeFile> ; ?p ?o . ?sd <https://jeffbridwell.com/chorus#hasCodeFile> ?file . } }`;
+    const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?file a <https://jeffbridwell.com/chorus#CodeFile> ; ?p ?o . ?sd <https://jeffbridwell.com/chorus#hasCodeFile> ?file . } }';
     await deps.sparqlClient.update(clearQuery);
 
     const batchSize = 50;

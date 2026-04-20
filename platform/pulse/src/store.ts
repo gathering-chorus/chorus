@@ -80,14 +80,14 @@ export class MessageStore {
 
   sendNudge(from: string, to: string, content: string): number {
     const stmt = this.db.prepare(
-      `INSERT INTO messages (type, "from", "to", content) VALUES ('nudge', ?, ?, ?)`
+      'INSERT INTO messages (type, "from", "to", content) VALUES (\'nudge\', ?, ?, ?)'
     );
     return Number(stmt.run(from, to, content).lastInsertRowid);
   }
 
   getPendingNudges(role: string): Message[] {
     const stmt = this.db.prepare(
-      `SELECT * FROM messages WHERE type = 'nudge' AND "to" = ? AND acknowledged = 0 AND dead_letter = 0 ORDER BY created_at`
+      'SELECT * FROM messages WHERE type = \'nudge\' AND "to" = ? AND acknowledged = 0 AND dead_letter = 0 ORDER BY created_at'
     );
     return stmt.all(role) as Message[];
   }
@@ -95,10 +95,10 @@ export class MessageStore {
   /** Record a delivery attempt. After MAX_ATTEMPTS, move to dead-letter. */
   recordDeliveryAttempt(id: number): { deadLettered: boolean } {
     const MAX_ATTEMPTS = 3;
-    this.db.prepare(`UPDATE messages SET delivery_attempts = delivery_attempts + 1 WHERE id = ?`).run(id);
-    const row = this.db.prepare(`SELECT delivery_attempts FROM messages WHERE id = ?`).get(id) as any;
+    this.db.prepare('UPDATE messages SET delivery_attempts = delivery_attempts + 1 WHERE id = ?').run(id);
+    const row = this.db.prepare('SELECT delivery_attempts FROM messages WHERE id = ?').get(id) as any;
     if (row && row.delivery_attempts >= MAX_ATTEMPTS) {
-      this.db.prepare(`UPDATE messages SET dead_letter = 1, dead_lettered_at = datetime('now') WHERE id = ?`).run(id);
+      this.db.prepare('UPDATE messages SET dead_letter = 1, dead_lettered_at = datetime(\'now\') WHERE id = ?').run(id);
       return { deadLettered: true };
     }
     return { deadLettered: false };
@@ -107,26 +107,26 @@ export class MessageStore {
   getDeadLetters(opts?: { limit?: number }): Message[] {
     const limit = opts?.limit || 50;
     return this.db.prepare(
-      `SELECT * FROM messages WHERE dead_letter = 1 ORDER BY dead_lettered_at DESC LIMIT ?`
+      'SELECT * FROM messages WHERE dead_letter = 1 ORDER BY dead_lettered_at DESC LIMIT ?'
     ).all(limit) as Message[];
   }
 
   /** Replay a dead-lettered message — reset attempts and dead-letter flag */
   replayDeadLetter(id: number): void {
     this.db.prepare(
-      `UPDATE messages SET dead_letter = 0, dead_lettered_at = NULL, delivery_attempts = 0 WHERE id = ?`
+      'UPDATE messages SET dead_letter = 0, dead_lettered_at = NULL, delivery_attempts = 0 WHERE id = ?'
     ).run(id);
   }
 
   acknowledgeNudge(id: number): void {
     this.db.prepare(
-      `UPDATE messages SET acknowledged = 1, acknowledged_at = datetime('now') WHERE id = ?`
+      'UPDATE messages SET acknowledged = 1, acknowledged_at = datetime(\'now\') WHERE id = ?'
     ).run(id);
   }
 
   acknowledgeAllNudges(role: string): number {
     const result = this.db.prepare(
-      `UPDATE messages SET acknowledged = 1, acknowledged_at = datetime('now') WHERE type = 'nudge' AND "to" = ? AND acknowledged = 0`
+      'UPDATE messages SET acknowledged = 1, acknowledged_at = datetime(\'now\') WHERE type = \'nudge\' AND "to" = ? AND acknowledged = 0'
     ).run(role);
     return result.changes;
   }
@@ -136,7 +136,7 @@ export class MessageStore {
   startChat(roleA: string, roleB: string, topic: string): string {
     const id = `${roleA}-${roleB}-${Date.now()}`;
     this.db.prepare(
-      `INSERT INTO chats (id, role_a, role_b, topic) VALUES (?, ?, ?, ?)`
+      'INSERT INTO chats (id, role_a, role_b, topic) VALUES (?, ?, ?, ?)'
     ).run(id, roleA, roleB, topic);
     return id;
   }
@@ -144,7 +144,7 @@ export class MessageStore {
   chatMessage(chatId: string, from: string, content: string): number {
     const to = this.getChatPartner(chatId, from);
     const stmt = this.db.prepare(
-      `INSERT INTO messages (type, "from", "to", content, chat_id) VALUES ('chat', ?, ?, ?, ?)`
+      'INSERT INTO messages (type, "from", "to", content, chat_id) VALUES (\'chat\', ?, ?, ?, ?)'
     );
     return Number(stmt.run(from, to, content, chatId).lastInsertRowid);
   }
@@ -152,22 +152,22 @@ export class MessageStore {
   getChatMessages(chatId: string, sinceId?: number): Message[] {
     if (sinceId) {
       return this.db.prepare(
-        `SELECT * FROM messages WHERE chat_id = ? AND id > ? ORDER BY created_at`
+        'SELECT * FROM messages WHERE chat_id = ? AND id > ? ORDER BY created_at'
       ).all(chatId, sinceId) as Message[];
     }
     return this.db.prepare(
-      `SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at`
+      'SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at'
     ).all(chatId) as Message[];
   }
 
   endChat(chatId: string): void {
     this.db.prepare(
-      `UPDATE chats SET status = 'ended', ended_at = datetime('now') WHERE id = ?`
+      'UPDATE chats SET status = \'ended\', ended_at = datetime(\'now\') WHERE id = ?'
     ).run(chatId);
   }
 
   private getChatPartner(chatId: string, from: string): string {
-    const chat = this.db.prepare(`SELECT role_a, role_b FROM chats WHERE id = ?`).get(chatId) as any;
+    const chat = this.db.prepare('SELECT role_a, role_b FROM chats WHERE id = ?').get(chatId) as any;
     if (!chat) return 'unknown';
     return chat.role_a === from ? chat.role_b : chat.role_a;
   }
@@ -176,7 +176,7 @@ export class MessageStore {
 
   recordBoardEvent(from: string, content: string): number {
     const stmt = this.db.prepare(
-      `INSERT INTO messages (type, "from", "to", content) VALUES ('board-event', ?, 'all', ?)`
+      'INSERT INTO messages (type, "from", "to", content) VALUES (\'board-event\', ?, \'all\', ?)'
     );
     return Number(stmt.run(from, content).lastInsertRowid);
   }
@@ -196,7 +196,7 @@ export class MessageStore {
   }
 
   getRoleState(role: string): { state: string; card?: string; detail?: string; updatedAt: string } | null {
-    const row = this.db.prepare(`SELECT * FROM role_state WHERE role = ?`).get(role) as any;
+    const row = this.db.prepare('SELECT * FROM role_state WHERE role = ?').get(role) as any;
     if (!row) return null;
     return { state: row.state, card: row.card, detail: row.detail, updatedAt: row.updated_at };
   }

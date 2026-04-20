@@ -1,0 +1,18 @@
+{
+  "name": "chorus-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chorus workspace root — hosts shared lint config for all packages (#2284)",
+  "scripts": {
+    "lint": "eslint --max-warnings=0 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts'",
+    "lint:fix": "eslint --fix 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts'"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-security": "^3.0.0",
+    "globals": "^15.0.0"
+  }
+}

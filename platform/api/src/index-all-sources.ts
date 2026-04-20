@@ -251,8 +251,8 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
 
     // 11. Slack — deprecated
     try {
-      db.prepare(`DELETE FROM watermarks WHERE source LIKE 'slack%'`).run!();
-      db.prepare(`DELETE FROM watermarks WHERE source = 'slack'`).run!();
+      db.prepare('DELETE FROM watermarks WHERE source LIKE \'slack%\'').run!();
+      db.prepare('DELETE FROM watermarks WHERE source = \'slack\'').run!();
       results.slack = 'removed (deprecated)';
     } catch { /* ignore */ }
 

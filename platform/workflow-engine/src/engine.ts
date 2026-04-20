@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, appendFileSync, readdirSync, renameSync, mkdirSync, existsSync } from 'fs';
-import { resolve, join, dirname } from 'path';
+import { join, dirname } from 'path';
 import {
   WorkflowManifest, Step, HistoryEvent, AdvanceResult, PendingStep,
   WorkflowEngineConfig, HandoffEvent, Role, StepStatus,

@@ -40,7 +40,7 @@ export const LABELS = {
     icd: 76, werk: 77, infrastructure: 78, clearing: 79, content: 80,
     framework: 81, awareness: 82, coordination: 83, surfaces: 84, loom: 85,
     quality: 86, athena: 137, convergence: 138,
-    harness: 141, borg: 142, cards: 143, context: 144, protocol: 145,
+    harness: 141, borg: 142, cards: 143, context: 144, protocol: 145, seeds: 146,
   } as Record<string, number>,
   type: {
     new: 66, enhance: 67, fix: 68, chore: 69, swat: 70,

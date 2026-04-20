@@ -1,4 +1,4 @@
-import { resolve, dirname } from 'path';
+import { resolve } from 'path';
 import { WorkflowEngineConfig, Role } from './types';
 
 const MESSAGES_DIR = resolve(__dirname, '../..');

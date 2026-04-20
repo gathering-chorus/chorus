@@ -453,7 +453,6 @@ app.get('/api/stream', (req, res) => {
           count++;
         } else if (event === 'role.nudge.sent') {
           // Capture gemba observations sent to jeff
-          const target = (entry.target || '').split(',')[0] || '';
           const content = (entry.target || '').match(/content=(.+)/)?.[1] || '';
           if (content.includes('[gemba]')) {
             lines.push({
@@ -533,7 +532,6 @@ app.get('/api/stream', (req, res) => {
 app.get('/api/flow', (_req, res) => {
   const { execSync } = require('child_process');
   const fs = require('fs');
-  const glob = require('path');
   const envOpts = {
     encoding: 'utf-8' as const, timeout: 15000,
     env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
@@ -605,7 +603,7 @@ app.get('/api/flow', (_req, res) => {
     }
 
     // Compute counts
-    for (const [domain, data] of Object.entries(byDomain) as any[]) {
+    for (const [, data] of Object.entries(byDomain) as any[]) {
       const c = data.cards;
       data.counts.wip = c.filter((x: any) => x.status === 'WIP').length;
       data.counts.next = c.filter((x: any) => x.status === 'Next' || x.status === 'Later').length;
@@ -650,8 +648,8 @@ app.get('/api/card/:id', (_req, res) => {
     const titleMatch = output.match(/^#\d+\s+(.+)/);
     const statusMatch = output.match(/Status:\s+(\S+)/);
     const ownerMatch = output.match(/Owner:\s+(\S+)/);
-    const descMatch = output.match(/Desc:\n([\s\S]*?)(?=\n  \w+:|$)/);
-    const desc = descMatch ? descMatch[1].replace(/^    /gm, '').trim() : '';
+    const descMatch = output.match(/Desc:\n([\s\S]*?)(?=\n {2}\w+:|$)/);
+    const desc = descMatch ? descMatch[1].replace(/^ {4}/gm, '').trim() : '';
     // Extract AC items
     const acItems = (desc.match(/- \[[ x]\].+/g) || []).map((line: string) => ({
       done: line.includes('[x]'),
@@ -662,7 +660,7 @@ app.get('/api/card/:id', (_req, res) => {
     const domains = domainsMatch ? domainsMatch[1].trim() : '';
     // Extract comments (blast radius, domain radius, etc.)
     const commentsSection = output.match(/Comments \(\d+\):\n([\s\S]*?)(?=\n\*\*|$)/);
-    const comments = commentsSection ? commentsSection[1].replace(/^    /gm, '').trim() : '';
+    const comments = commentsSection ? commentsSection[1].replace(/^ {4}/gm, '').trim() : '';
     // Extract blast/domain radius sections
     const blastRadius = output.match(/\*\*Blast Radius\*\*[^\n]*\n([\s\S]*?)(?=\n\*\*|_Generated|$)/);
     const domainRadius = output.match(/\*\*Domain Radius\*\*[^\n]*(?:\n([\s\S]*?))?(?=\n\*\*|_Generated|$)/);
@@ -682,9 +680,6 @@ app.get('/api/card/:id', (_req, res) => {
     res.status(404).json({ error: 'Card not found' });
   }
 });
-
-// Role TTY map — populated on first request
-const roleTTYs: Record<string, string> = {};
 
 function getRoleTTY(role: string): string | null {
   const fs = require('fs');
@@ -807,7 +802,7 @@ io.on('connection', (socket) => {
     const cleanText = text.replace(/@(wren|silas|kade)\s*/gi, '').trim();
 
     const { execSync } = require('child_process');
-    let finalText = cleanText.replace(/\[img:(\/uploads\/[^\]]+)\]/g, `[img:http://localhost:${PORT}$1]`);
+    const finalText = cleanText.replace(/\[img:(\/uploads\/[^\]]+)\]/g, `[img:http://localhost:${PORT}$1]`);
     const safeMsg = finalText.replace(/"/g, '\\"');
 
     for (const target of targets) {

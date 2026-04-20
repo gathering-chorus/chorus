@@ -31,7 +31,7 @@ export const SOURCE_CADENCE: Record<string, number> = {
  */
 export function addStaleHeader(res: Response, db: Database.Database): void {
   const row = db.prepare(
-    `SELECT MAX(last_indexed) as latest FROM watermarks`,
+    'SELECT MAX(last_indexed) as latest FROM watermarks',
   ).get() as { latest: string } | undefined;
 
   if (row?.latest) {

@@ -148,7 +148,7 @@ export async function fetchCrawl(
     if (db) {
       const rows = db
         .prepare(
-          `SELECT author, content, timestamp, role FROM messages WHERE content LIKE ? ORDER BY timestamp ASC LIMIT 100`,
+          'SELECT author, content, timestamp, role FROM messages WHERE content LIKE ? ORDER BY timestamp ASC LIMIT 100',
         )
         .all(`%${domain}%`) as Array<{ author: string; content: string; timestamp: string; role: string }>;
       for (const m of rows) {

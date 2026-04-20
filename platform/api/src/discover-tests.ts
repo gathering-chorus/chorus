@@ -90,7 +90,7 @@ export function inferDomain(
 
 export function createDiscoverTests(deps: DiscoverTestsDeps) {
   return async function discoverTests() {
-    const sdQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }`;
+    const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
     const sdResult = await deps.sparqlClient.query(sdQuery);
     const aliasToId = buildAliasMap(sdResult.results.bindings);
 
@@ -120,7 +120,7 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
     scanTests(deps.path.join(deps.chorusRoot, 'proving'), deps.chorusRoot);
     scanTests(deps.path.join(deps.chorusRoot, 'docs/diagrams'), deps.chorusRoot);
 
-    const clearQuery = `DELETE WHERE { GRAPH <urn:chorus:instances> { ?t a <https://jeffbridwell.com/chorus#TestCoverage> ; ?p ?o . } }`;
+    const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?t a <https://jeffbridwell.com/chorus#TestCoverage> ; ?p ?o . } }';
     await deps.sparqlClient.update(clearQuery);
 
     const batchSize = 50;

@@ -59,8 +59,8 @@ export function createTraceTableEnsurer(deps: TableEnsurerDeps): () => void {
     )`);
     const hasIdx = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_traces_corr'").get();
     if (!hasIdx) {
-      db.exec(`CREATE INDEX idx_traces_corr ON traces(correlation_id)`);
-      db.exec(`CREATE INDEX idx_traces_domain ON traces(source_domain)`);
+      db.exec('CREATE INDEX idx_traces_corr ON traces(correlation_id)');
+      db.exec('CREATE INDEX idx_traces_domain ON traces(source_domain)');
     }
     db.close();
   };
