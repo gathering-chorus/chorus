@@ -237,90 +237,10 @@ fn main() -> ExitCode {
         eprint!("{}\n", stderr);
     }
 
-    // L3: drain nudge inbox on PostToolUse — exit 2 surfaces stderr to the model
-    if endpoint == "post-tool-use" {
-        if let Some(nudges) = drain_nudge_inbox() {
-            eprint!("{}\n", nudges);
-            return ExitCode::from(2);
-        }
-    }
+    // #2283: PostToolUse drain removed. UserPromptSubmit is the single drain point.
+    // Draining here caused duplicate delivery when both fired on the same queued message.
 
     ExitCode::from(exit_code as u8)
-}
-
-/// Drain nudge inbox for this role (from DEPLOY_ROLE env or parent CWD)
-fn drain_nudge_inbox() -> Option<String> {
-    let role = detect_drain_role()?;
-    let inbox = format!("/tmp/voice-inbox/{}/pending-inject.txt", role);
-    let path = std::path::Path::new(&inbox);
-    if !path.exists() { return None; }
-    // Atomic drain: rename file first, then read. New writes go to a fresh file.
-    let drain_path = format!("/tmp/voice-inbox/{}/draining-{}.txt", role, std::process::id());
-    if std::fs::rename(path, &drain_path).is_err() { return None; }
-    let content = std::fs::read_to_string(&drain_path).ok()?;
-    let _ = std::fs::remove_file(&drain_path);
-    if content.trim().is_empty() { return None; }
-    // Log consumption as spine event
-    let msg_count = content.lines().filter(|l| !l.trim().is_empty()).count();
-    let _ = std::process::Command::new(&shared::state_paths::chorus_log_script())
-        .args(["role.nudge.consumed", &role, &format!("count={}", msg_count)])
-        .output();
-    // Post consumed nudges to Bridge so Jeff sees them land
-    // Skip [bridge] events — they already came FROM Bridge, re-posting creates feedback loop
-    for line in content.lines().filter(|l| !l.trim().is_empty()) {
-        let display = line.trim().to_string();
-        if display.starts_with("[bridge]") {
-            continue;
-        }
-        let body = serde_json::json!({ "from": role, "text": display });
-        let _ = std::process::Command::new("curl")
-            .args(["-s", "-X", "POST", "http://localhost:3470/api/message",
-                   "-H", "Content-Type: application/json",
-                   "-d", &body.to_string(), "--connect-timeout", "1"])
-            .output();
-    }
-    Some(format!("<team-scan>\n{}</team-scan>", content.trim()))
-}
-
-fn detect_drain_role() -> Option<String> {
-    if let Ok(role) = std::env::var("DEPLOY_ROLE") {
-        if matches!(role.as_str(), "wren" | "silas" | "kade") {
-            return Some(role);
-        }
-    }
-    // Fall back to andon state files
-    for role in &["wren", "silas", "kade"] {
-        let state_file = format!("/tmp/claude-team-scan/{}-declared.json", role);
-        if let Ok(content) = std::fs::read_to_string(&state_file) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(pid) = v.get("pid").and_then(|p| p.as_u64()) {
-                    // Check if this shim's ancestor is that role's Claude process
-                    if is_ancestor(pid as u32) {
-                        return Some(role.to_string());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn is_ancestor(target_pid: u32) -> bool {
-    let mut pid = std::process::id();
-    for _ in 0..10 {
-        if pid == target_pid { return true; }
-        if pid <= 1 { return false; }
-        // Get parent PID
-        let output = std::process::Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "ppid="])
-            .output()
-            .ok();
-        pid = output
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0);
-    }
-    false
 }
 
 /// CLAUDE.md generator — replaces claudemd-gen.sh (#1624)

@@ -47,22 +47,16 @@ fn queue_only_in_inject_error_branch() {
     // inside an Err branch or in the non-inject paths (warn/info level).
     // It must NOT appear as a standalone call before the inject match.
 
-    // Find the critical/force block
-    let force_block_start = source.find("if level == \"critical\" || force {")
-        .expect("force branch should exist");
-    let force_block = &source[force_block_start..];
+    // #2283: level branching removed. inject_by_tab_name is always called first.
+    // queue_message must appear only after inject_by_tab_name (in the Err arm).
+    let queue_pos = source.find("queue_message(target,");
+    let inject_pos = source.find("inject_by_tab_name(target,");
 
-    // Within the force block, queue_message should not appear before inject_by_tab_name
-    let queue_in_force = force_block.find("queue_message(target,");
-    let inject_in_force = force_block.find("inject_by_tab_name(target,");
+    assert!(queue_pos.is_some(), "queue_message call should exist in nudge.rs");
+    assert!(inject_pos.is_some(), "inject_by_tab_name call should exist in nudge.rs");
 
-    if let (Some(q), Some(i)) = (queue_in_force, inject_in_force) {
-        assert!(
-            q > i,
-            "In the force/critical block, queue_message must come after inject_by_tab_name \
-             (only queue as fallback on inject failure)"
-        );
-    }
-    // If queue_message doesn't appear in the force block at all, that's also valid
-    // (means it was fully removed from the inject-success path)
+    assert!(
+        queue_pos.unwrap() > inject_pos.unwrap(),
+        "queue_message must come AFTER inject_by_tab_name (only queue on inject failure). #2283"
+    );
 }

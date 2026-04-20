@@ -4,4 +4,7 @@
 # DEC-107: --force is ALWAYS on. No background/passive path. osascript inject every time.
 # --dry-run: persist + queue + construct inject, skip osascript. For tests.
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# Export DEPLOY_ROLE so the binary's fast path fires regardless of call context.
+# Without this, callers from LaunchAgents/cron inherit no role and default to "jeff".
+export DEPLOY_ROLE="${DEPLOY_ROLE:-jeff}"
 exec "$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim" nudge "$@" --force

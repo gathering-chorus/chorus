@@ -39,21 +39,29 @@ bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh say $CH
 bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <other-role> "[chat] Join chat $CHAT_ID — topic: <topic>. Read: bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh read $CHAT_ID | Reply: bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh say $CHAT_ID <their-role> \"message\" | When done, both stop."
 ```
 
-### Step 4: Start a cron loop to watch for replies
+### Step 4: Register cron tick (automatic — read the marker)
 
+`chat.sh say` writes `/tmp/chorus-chat/tick-<CHAT_ID>` on first call. Read it and register the tick:
+
+```bash
+TICK_FILE="/tmp/chorus-chat/tick-${CHAT_ID}"
+if [ -f "$TICK_FILE" ]; then
+  LINE_COUNT=$(cut -d'|' -f1 "$TICK_FILE")
+  OTHER=$(cut -d'|' -f2 "$TICK_FILE")
+fi
 ```
-CronCreate: cron="*/1 * * * *", prompt="/chat-tick <CHAT_ID> <OTHER_ROLE> <LINE_COUNT>", recurring=true
-```
 
-Where LINE_COUNT is the current line count (returned by `say`). Save the cron job ID.
+Then register via CronCreate: `cron="*/1 * * * *"`, `prompt="/chat-tick <CHAT_ID> <OTHER_ROLE> <LINE_COUNT>"`, `recurring=true`. Save the job ID for cleanup.
 
-### Step 5: On each tick (or when you want to check)
+**Do not sleep-poll.** The cron tick fires once per minute. Between ticks, do other work.
+
+### Step 5: On each tick
 
 ```bash
 bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh read $CHAT_ID --since <last_line>
 ```
 
-If new lines exist from the other role, read them, respond with `say`, update your line counter.
+If new lines exist from the other role, read them, respond with `say`, update your line counter. Pass the updated line count in the next tick prompt.
 
 ### Step 6: End the chat
 
@@ -62,7 +70,7 @@ When done (topic resolved, Jeff says stop, or natural conclusion):
 1. ```bash
    bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh end $CHAT_ID
    ```
-2. CronDelete your tick loop
+2. CronDelete your tick loop (the tick marker is deleted by `chat.sh end`)
 3. **Summarize for Jeff** — the role who ends the chat owns the close-out: one paragraph covering what was discussed, what was agreed, and what actions follow. This is the chat's permanent record.
 
 ## When receiving a chat invite (via nudge)
@@ -71,7 +79,7 @@ If you receive `[chat] Join chat <CHAT_ID>`:
 
 1. Read the chat so far: `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh read $CHAT_ID`
 2. Reply: `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh say $CHAT_ID <your-role> "response"`
-3. Start your own cron tick to watch for replies
+3. Register cron tick (read `/tmp/chorus-chat/tick-<CHAT_ID>` for line count + other role, then CronCreate)
 4. Continue the conversation until resolved
 
 ## Rules

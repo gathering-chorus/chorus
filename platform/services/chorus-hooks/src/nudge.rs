@@ -34,48 +34,16 @@ fn role_dir(role: &str) -> Option<&'static str> {
 
 /// Detect sender by walking PID chain to find claude process CWD
 fn detect_sender() -> String {
+    // #2283: DEPLOY_ROLE is set in every real session. lsof-based CWD detection
+    // was the 20s latency source — removed. Callers without DEPLOY_ROLE default to "jeff".
     if let Ok(role) = std::env::var("DEPLOY_ROLE") {
         if matches!(role.as_str(), "silas" | "wren" | "kade") {
             return role;
         }
     }
-
-    let mut pid = std::process::id();
-    for _ in 0..5 {
-        let ppid = get_ppid(pid);
-        if ppid == 0 { break; }
-
-        if get_comm(ppid).as_deref() == Some("claude") {
-            if let Some(cwd) = process::get_cwd(ppid) {
-                if cwd.contains("roles/wren") || cwd.contains("product-manager") { return "wren".into(); }
-                if cwd.contains("roles/silas") || cwd.contains("architect") { return "silas".into(); }
-                if cwd.contains("roles/kade") || cwd.contains("engineer") { return "kade".into(); }
-            }
-        }
-        pid = ppid;
-    }
-
     "jeff".into()
 }
 
-fn get_ppid(pid: u32) -> u32 {
-    Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "ppid="])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0)
-}
-
-fn get_comm(pid: u32) -> Option<String> {
-    Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "comm="])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-}
 
 /// Queue message to inbox file
 fn queue_message(role: &str, text: &str) {
@@ -235,10 +203,9 @@ pub fn run(args: &[String]) -> ExitCode {
     // Reverts #1898 level-based delivery — all role-to-role nudges inject via osascript.
     // Log evidence: wren→silas at 11:37 delivered mode=queued despite wrapper --force.
     // Git: #1898 (3a146863) introduced the passive path. This removes it.
+    // #2283: --level and --reply-to removed. DEC-107: all nudges inject (level is always critical).
     let force = true;
     let mut dry_run = false;
-    let mut reply_to: Option<String> = None;
-    let mut level = "info".to_string();
 
     let mut i = 2;
     while i < args.len() {
@@ -249,19 +216,6 @@ pub fn run(args: &[String]) -> ExitCode {
             }
             "--force" => { /* DEC-107: force is always on, flag accepted but ignored */ }
             "--dry-run" => { dry_run = true; }
-            "--reply-to" => {
-                i += 1;
-                if i < args.len() { reply_to = Some(args[i].clone()); }
-            }
-            "--level" => {
-                i += 1;
-                if i < args.len() {
-                    let l = args[i].to_lowercase();
-                    if matches!(l.as_str(), "info" | "warn" | "critical") {
-                        level = l;
-                    }
-                }
-            }
             _ => {}
         }
         i += 1;
@@ -269,11 +223,6 @@ pub fn run(args: &[String]) -> ExitCode {
 
     let sender = explicit_sender.unwrap_or_else(detect_sender);
     let tid = trace_id();
-
-    // If --reply-to is set, POST response back to that URL (Bridge integration)
-    if let Some(ref url) = reply_to {
-        let _ = deliver_to_url(&sender, message, url);
-    }
 
     // Jeff is a valid target — route to Bridge API instead of terminal
     if target == "jeff" {
@@ -328,90 +277,47 @@ pub fn run(args: &[String]) -> ExitCode {
     );
 
     // Level-based delivery (#1898):
-    // critical = osascript inject (justified focus steal) + queue
-    // warn     = queue (drain on next prompt) + stderr hint
-    // info     = queue only (ambient, drain on next prompt)
-    // DEC-107: persist AND deliver on every nudge — level controls the 'deliver' method.
-    // --dry-run: persist (curl POST) but skip ALL delivery (inject + queue).
-    // #2166: CHORUS_INJECT_DRY_RUN=1 env var also triggers dry-run. The env var lets
-    // tests (and callers without CLI control) opt out of osascript without threading
-    // a flag through every layer. Shim-level gate — guarantees no osascript call.
-    // Queue feeds drain-on-prompt which is a delivery path, not just persist.
+    // #2283: one delivery path. DEC-107: all nudges inject — no level branching.
+    // --dry-run: persist happened above, skip inject + queue.
+    // CHORUS_INJECT_DRY_RUN=1: test seam, same effect as --dry-run.
     let env_dry_run = std::env::var("CHORUS_INJECT_DRY_RUN").is_ok();
     let dry_run = dry_run || env_dry_run;
     let mode;
 
     if dry_run {
-        // Dry-run: persist happened above (curl POST), skip queue + inject
         mode = "dry-run";
         println!("DRY-RUN: would inject to {} at {} | text={}",
             target, clock_short, &full_text.chars().take(120).collect::<String>());
     } else {
-        // Real delivery — inject first, queue only as fallback (#1811).
-        // Previous bug: queue + inject both fired, then PostToolUse drain
-        // re-delivered the queued message → every nudge arrived twice.
-
-        if level == "critical" || force {
-            // Try osascript inject first — immediate delivery
-            match process::inject_by_tab_name(target, &full_text) {
-                Ok(()) => {
-                    // Inject succeeded — do NOT queue (drain would re-deliver)
-                    mode = "injected";
-                    println!("DELIVERED to {} at {}", target, clock_short);
-                }
-                Err(e) => {
-                    // Inject failed — queue as fallback for drain-on-prompt
-                    queue_message(target, &full_text);
-                    mode = "inject-failed-queued";
-                    eprintln!("INJECT FAILED for {} (queued for drain): {}", target, e);
-                    // #2036: Print INJECT_FAILED so callers (Clearing) can detect failure.
-                    // Previously printed "DELIVERED" which masked inject failure — Jeff saw "Sent".
-                    println!("INJECT_FAILED for {} at {} (queued for drain)", target, clock_short);
-                    chorus_log(
-                        "role.nudge.inject_failed",
-                        &sender,
-                        &format!("target={},level={},error={}", target, level, e),
-                    );
-                }
+        // Inject first. Queue only on failure — drain on next UserPromptSubmit.
+        match process::inject_by_tab_name(target, &full_text) {
+            Ok(()) => {
+                mode = "injected";
+                println!("DELIVERED to {} at {}", target, clock_short);
             }
-        } else if level == "warn" {
-            mode = "queued-warn";
-            println!("DELIVERED to {} at {}", target, clock_short);
-            eprintln!("nudge to {} queued (level=warn, drain on next prompt)", target);
-        } else {
-            mode = "queued";
-            println!("DELIVERED to {} at {}", target, clock_short);
+            Err(e) => {
+                queue_message(target, &full_text);
+                mode = "inject-failed-queued";
+                eprintln!("INJECT FAILED for {} (queued for drain): {}", target, e);
+                println!("INJECT_FAILED for {} at {} (queued for drain)", target, clock_short);
+                chorus_log(
+                    "role.nudge.inject_failed",
+                    &sender,
+                    &format!("target={},error={}", target, e),
+                );
+            }
         }
     }
 
     chorus_log(
         "role.nudge.delivered",
         &sender,
-        &format!("target={},mode={},level={},trace={}", target, mode, level, tid),
+        &format!("target={},mode={},trace={}", target, mode, tid),
     );
 
     ExitCode::SUCCESS
 }
 
-/// Deliver a message to a URL (--reply-to support for Bridge/Clearing)
-fn deliver_to_url(sender: &str, message: &str, url: &str) {
-    let body = serde_json::json!({
-        "from": sender,
-        "text": message,
-    });
-
-    let _ = Command::new("curl")
-        .args([
-            "-s", "-X", "POST",
-            url,
-            "-H", "Content-Type: application/json",
-            "-d", &body.to_string(),
-            "--connect-timeout", "2",
-        ])
-        .output();
-
-    chorus_log("role.nudge.reply", sender, &format!("url={}", url));
-}
 
 /// Deliver a message to Jeff via the Bridge API (localhost:3470)
 fn deliver_to_bridge(sender: &str, message: &str) -> ExitCode {

@@ -78,6 +78,15 @@ cmd_say() {
     "$SCRIPT_DIR/nudge" "$other" "${role}: replied in chat ${chat_id}" 2>/dev/null || true
   fi
 
+  # Write tick marker on first say — signals role to register cron tick if not running.
+  # The /chat skill reads this file; cmd_end deletes it. Roles don't set up ticks manually.
+  local tick_file="$CHAT_DIR/tick-${chat_id}"
+  if [ ! -f "$tick_file" ]; then
+    local line_count
+    line_count=$(wc -l < "$chat_file" | tr -d ' ')
+    echo "${line_count}|${other}" > "$tick_file"
+  fi
+
   # Return current line count so caller can track position
   wc -l < "$chat_file" | tr -d ' '
 }
@@ -114,6 +123,9 @@ cmd_end() {
   local ts
   ts=$(TZ=America/New_York date '+%H:%M')
   printf '\n\n---\n**Chat ended:** %s\n' "$ts" >> "$chat_file"
+
+  # Delete tick marker
+  rm -f "$CHAT_DIR/tick-${chat_id}"
 
   # Remove from active list
   if [ -f "$CHAT_DIR/active.txt" ]; then
