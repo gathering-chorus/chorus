@@ -146,7 +146,7 @@ async function buildSparqlSections(
     PREFIX chorus: <https://jeffbridwell.com/chorus#>
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
     SELECT ?e ?label
-           (SAMPLE(?comment) AS ?comment)
+           (SAMPLE(?commentRaw) AS ?comment)
            (GROUP_CONCAT(DISTINCT ?ownerLabel; separator="||") AS ?owners)
            (GROUP_CONCAT(DISTINCT ?readLabel; separator="||") AS ?reads)
            (GROUP_CONCAT(DISTINCT ?writeLabel; separator="||") AS ?writes)
@@ -155,11 +155,11 @@ async function buildSparqlSections(
       GRAPH <urn:chorus:instances> {
         <${sdUri}> chorus:${pred} ?e .
         OPTIONAL { ?e rdfs:label ?label }
-        OPTIONAL { ?e rdfs:comment ?comment }
+        OPTIONAL { ?e rdfs:comment ?commentRaw }
         OPTIONAL { ?e chorus:ownedBy ?ownerEnt . OPTIONAL { ?ownerEnt rdfs:label ?ownerLabel } }
-        OPTIONAL { ?e chorus:reads ?readTarget . OPTIONAL { ?readTarget rdfs:label ?readLabel } }
-        OPTIONAL { ?e chorus:writes ?writeTarget . OPTIONAL { ?writeTarget rdfs:label ?writeLabel } }
-        OPTIONAL { ?e chorus:consumes ?consumesTarget . OPTIONAL { ?consumesTarget rdfs:label ?consumesLabel } }
+        OPTIONAL { ?e chorus:reads ?readTarget . ?readTarget rdfs:label ?readLabel }
+        OPTIONAL { ?e chorus:writes ?writeTarget . ?writeTarget rdfs:label ?writeLabel }
+        OPTIONAL { ?e chorus:consumes ?consumesTarget . ?consumesTarget rdfs:label ?consumesLabel }
       }
     }
     GROUP BY ?e ?label
