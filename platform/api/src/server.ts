@@ -678,6 +678,8 @@ import { fetchContextBoardWip } from './handlers/context-board-wip';
 import { fetchContextSpine } from './handlers/context-spine';
 import { fetchContextAlerts } from './handlers/context-alerts';
 import { fetchContextQualitySummary } from './handlers/context-quality-summary';
+import { fetchContextBoardNext } from './handlers/context-board-next';
+import { fetchContextCoverage } from './handlers/context-coverage';
 import { fetchContextBoardSwat } from './handlers/context-board-swat';
 import { fetchContextRoles } from './handlers/context-roles';
 import { fetchContextHealth } from './handlers/context-health';
@@ -784,6 +786,47 @@ app.get('/api/chorus/context/spine', async (req: Request, res: Response) => {
 app.get('/api/chorus/context/board/wip', async (req: Request, res: Response) => {
   const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined;
   const r = await fetchContextBoardWip(
+    { sparql: _athena, readPulse: readPulseFile },
+    req.originalUrl,
+    roleFilter,
+  );
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/context/coverage', async (req: Request, res: Response) => {
+  const domain = typeof req.query.domain === 'string' ? req.query.domain : undefined;
+  const r = await fetchContextCoverage(
+    {
+      sparql: _athena,
+      fetchDomainFiles: async (d: string) => {
+        const domainSuffix = d.endsWith('-domain') || d.endsWith('-service') ? d : `${d}-domain`;
+        const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domainSuffix}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
+        try {
+          const result = await athenaSparqlQuery(query);
+          return result.results.bindings.map((b: any) => b.filePath.value as string);
+        } catch {
+          return [];
+        }
+      },
+      readCoverageSummary: () => {
+        const candidates = [
+          `${CHORUS_ROOT}/platform/api/coverage/coverage-summary.json`,
+          `${CHORUS_ROOT}/chorus/platform/api/coverage/coverage-summary.json`,
+        ];
+        const p = candidates.find((c) => fs.existsSync(c));
+        if (!p) return null;
+        try { return fs.readFileSync(p, 'utf-8'); } catch { return null; }
+      },
+    },
+    req.originalUrl,
+    domain,
+  );
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/context/board/next', async (req: Request, res: Response) => {
+  const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined;
+  const r = await fetchContextBoardNext(
     { sparql: _athena, readPulse: readPulseFile },
     req.originalUrl,
     roleFilter,

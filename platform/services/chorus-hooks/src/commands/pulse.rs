@@ -262,13 +262,17 @@ fn assemble_board() -> serde_json::Value {
         if let Ok(content) = fs::read_to_string(snapshot_file) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(obj) = v.as_object() {
-                    // New snapshot format: {wip_cards: [...], swat_cards: [...]}
+                    // New snapshot format: {wip_cards, swat_cards, next_cards}.
+                    // next_cards added #2252 — symmetric with wip+swat, read
+                    // path for /api/chorus/context/board/next.
                     let wip = obj.get("wip_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
                     let swat = obj.get("swat_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+                    let next = obj.get("next_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
                     return serde_json::json!({
                         "wip_count": wip.len(),
                         "wip_cards": wip,
                         "swat_cards": swat,
+                        "next_cards": next,
                     });
                 } else if let Some(cards) = v.as_array() {
                     // Legacy snapshot format: flat array of wip_cards only
@@ -276,6 +280,7 @@ fn assemble_board() -> serde_json::Value {
                         "wip_count": cards.len(),
                         "wip_cards": cards,
                         "swat_cards": [],
+                        "next_cards": [],
                     });
                 }
             }
@@ -296,13 +301,19 @@ fn assemble_board() -> serde_json::Value {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let wip_cards = parse_wip_list(&stdout);
             let swat_cards = parse_section_list(&stdout, "SWAT");
-            if !wip_cards.is_empty() || !swat_cards.is_empty() {
-                let snapshot = serde_json::json!({"wip_cards": &wip_cards, "swat_cards": &swat_cards});
+            let next_cards = parse_section_list(&stdout, "Next");
+            if !wip_cards.is_empty() || !swat_cards.is_empty() || !next_cards.is_empty() {
+                let snapshot = serde_json::json!({
+                    "wip_cards": &wip_cards,
+                    "swat_cards": &swat_cards,
+                    "next_cards": &next_cards,
+                });
                 let _ = fs::write(snapshot_file, serde_json::to_string(&snapshot).unwrap_or_default());
                 return serde_json::json!({
                     "wip_count": wip_cards.len(),
                     "wip_cards": wip_cards,
                     "swat_cards": swat_cards,
+                    "next_cards": next_cards,
                 });
             }
         }
