@@ -55,6 +55,15 @@ app.get('/api/chorus/quality/summary', async (_req, res) => {
   res.status(r.status).json(r.body);
 });
 
+// New canonical path under /api/chorus/context/* (#2252 migration).
+app.get('/api/chorus/context/quality/summary', async (req, res) => {
+  const r = await fetchContextQualitySummary(
+    { sparql: _athena, runQuality: () => run(() => getQualityScan()) },
+    req.originalUrl,
+  );
+  res.status(r.status).json(r.body);
+});
+
 app.get('/api/chorus/quality/domain/:domain', async (req, res) => {
   const domain = String(req.params.domain || '').toLowerCase();
   const r = await run(() => getQualityByDomain(domain));
@@ -668,6 +677,7 @@ app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
 import { fetchContextBoardWip } from './handlers/context-board-wip';
 import { fetchContextSpine } from './handlers/context-spine';
 import { fetchContextAlerts } from './handlers/context-alerts';
+import { fetchContextQualitySummary } from './handlers/context-quality-summary';
 import { fetchContextBoardSwat } from './handlers/context-board-swat';
 import { fetchContextRoles } from './handlers/context-roles';
 import { fetchContextHealth } from './handlers/context-health';
@@ -1013,8 +1023,18 @@ app.post('/api/chorus/voice/:role', express.raw({ type: 'audio/*', limit: '10mb'
 const PERF_SCRIPT = path.join(os.homedir(), 'CascadeProjects/jeff-bridwell-personal-site/scripts/perf-baseline.sh');
 
 import { fetchPerf } from './handlers/chorus-perf';
+import { fetchContextPerf } from './handlers/context-perf';
 app.get('/api/chorus/perf', async (_req: Request, res: Response) => {
   const r = await fetchPerf({ scriptPath: PERF_SCRIPT });
+  res.status(r.status).json(r.body);
+});
+
+// New canonical path under /api/chorus/context/* (#2252 migration).
+app.get('/api/chorus/context/perf', async (req: Request, res: Response) => {
+  const r = await fetchContextPerf(
+    { sparql: _athena, runPerf: () => fetchPerf({ scriptPath: PERF_SCRIPT }) },
+    req.originalUrl,
+  );
   res.status(r.status).json(r.body);
 });
 
