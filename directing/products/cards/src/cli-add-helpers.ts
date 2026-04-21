@@ -27,45 +27,54 @@ const USAGE =
   '[--product P] [--chunk C] [--sequence S] [--type T] [--origin O] ' +
   '[--desc D | --desc-file PATH | --desc -] [--quick]';
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
-export function parseAddArgs(args: string[]): AddArgs {
-  let title = '', status = 'later', owner = '', priority = '';
-  let domain = '', description = '', product = '', chunk = '', sequence = '', type = '', origin = '';
-  let descFile = '';
-  let quick = false;
+const STRING_FLAGS: Record<string, keyof AddArgs> = {
+  '--status': 'status',
+  '--owner': 'owner',
+  '--priority': 'priority',
+  '--domain': 'domain',
+  '--description': 'description',
+  '--desc': 'description',
+  '--product': 'product',
+  '-p': 'product',
+  '--chunk': 'chunk',
+  '--sequence': 'sequence',
+  '--seq': 'sequence',
+  '--type': 'type',
+  '-t': 'type',
+  '--origin': 'origin',
+};
 
-  let i = 0;
-  while (i < args.length) {
-    switch (args[i]) {
-      case '--status': status = args[++i]; break;
-      case '--owner': owner = args[++i]; break;
-      case '--priority': priority = args[++i]; break;
-      case '--domain': domain = args[++i]; break;
-      case '--description': case '--desc': description = args[++i]; break;
-      case '--desc-file': descFile = args[++i]; break;
-      case '--product': case '-p': product = args[++i]; break;
-      case '--chunk': chunk = args[++i]; break;
-      case '--sequence': case '--seq': sequence = args[++i]; break;
-      case '--type': case '-t': type = args[++i]; break;
-      case '--origin': origin = args[++i]; break;
-      case '--quick': case '-q': quick = true; break;
-      default:
-        if (!title) title = args[i];
-        else throw new Error(`Unexpected argument: ${args[i]}`);
-    }
-    i++;
-  }
-
-  // --desc-file takes precedence; --desc=- reads stdin
+function resolveDescription(description: string, descFile: string): string {
   if (descFile) {
-    if (!fs.existsSync(descFile)) {
-      throw new Error(`--desc-file path does not exist: ${descFile}`);
+    if (!fs.existsSync(descFile)) throw new Error(`--desc-file path does not exist: ${descFile}`);
+    return fs.readFileSync(descFile, 'utf-8');
+  }
+  if (description === '-') return fs.readFileSync(0, 'utf-8');
+  return description;
+}
+
+export function parseAddArgs(args: string[]): AddArgs {
+  const out: AddArgs = {
+    title: '', status: 'later', owner: '', priority: '',
+    domain: '', description: '', product: '', chunk: '', sequence: '',
+    type: '', origin: '', quick: false,
+  };
+  let descFile = '';
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--desc-file') { descFile = args[++i]; continue; }
+    if (arg === '--quick' || arg === '-q') { out.quick = true; continue; }
+    const field = STRING_FLAGS[arg];
+    if (field) {
+      (out as any)[field] = args[++i];
+      continue;
     }
-    description = fs.readFileSync(descFile, 'utf-8');
-  } else if (description === '-') {
-    description = fs.readFileSync(0, 'utf-8');  // fd 0 = stdin
+    if (!out.title) out.title = arg;
+    else throw new Error(`Unexpected argument: ${arg}`);
   }
 
-  if (!title) throw new Error(USAGE);
-  return { title, status, owner, priority, domain, description, product, chunk, sequence, type, origin, quick };
+  out.description = resolveDescription(out.description, descFile);
+  if (!out.title) throw new Error(USAGE);
+  return out;
 }

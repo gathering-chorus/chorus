@@ -87,7 +87,58 @@ async function fetchJson(url: string): Promise<any> {
  * Generate blast radius report for a card.
  * Pure function — reads card data, queries graph, returns report.
  */
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+async function addDomainCodeFiles(domain: string, touchedFiles: Set<string>, touchedDomains: Set<string>): Promise<void> {
+  const codeRes = await fetchJson(`${CHORUS_API}/api/chorus/domain/${encodeURIComponent(domain)}/code`);
+  if (!codeRes?.data?.files) return;
+  for (const file of codeRes.data.files) touchedFiles.add(file.path);
+  if (codeRes.data.files.length > 0) touchedDomains.add(domain);
+}
+
+async function resolveNodeByPath(filePath: string): Promise<GraphNode | null> {
+  const direct: GraphNode | null = await fetchJson(`${APP_BASE}/api/codebase/node/${encodeURIComponent(filePath)}`);
+  if (direct) return direct;
+  if (filePath.includes('/')) return null;
+  const search = await fetchJson(`${APP_BASE}/api/codebase/search?q=${encodeURIComponent(filePath)}&limit=1`);
+  if (!search?.nodes?.[0]) return null;
+  return fetchJson(`${APP_BASE}/api/codebase/node/${encodeURIComponent(search.nodes[0].path)}`);
+}
+
+async function walkExplicitFiles(explicitFiles: string[], touchedFiles: Set<string>, touchedDomains: Set<string>): Promise<void> {
+  for (const filePath of explicitFiles) {
+    const nodeData = await resolveNodeByPath(filePath);
+    if (!nodeData) {
+      touchedFiles.add(filePath);
+      continue;
+    }
+    touchedFiles.add(nodeData.path);
+    touchedDomains.add(nodeData.domain);
+    for (const conn of nodeData.connected || []) {
+      touchedFiles.add(conn.path);
+      if (conn.domain) touchedDomains.add(conn.domain);
+    }
+  }
+}
+
+async function addMentionedDomainFiles(mentionedDomains: string[], explicitFiles: string[], touchedFiles: Set<string>, touchedDomains: Set<string>): Promise<void> {
+  for (const dom of mentionedDomains) {
+    touchedDomains.add(dom);
+    if (explicitFiles.some((f) => f.includes(dom))) continue;
+    const search = await fetchJson(`${APP_BASE}/api/codebase/search?domain=${dom}&limit=10`);
+    if (search?.nodes) for (const node of search.nodes) touchedFiles.add(node.path);
+  }
+}
+
+function buildDimensions(touchedFiles: Set<string>): BlastDimension[] {
+  const dimMap = new Map<string, string[]>();
+  for (const file of touchedFiles) {
+    const dim = classifyFile(file);
+    if (!dimMap.has(dim)) dimMap.set(dim, []);
+    dimMap.get(dim)!.push(file);
+  }
+  const dimOrder = ['UI/UX', 'API', 'OWL/RDF', 'Page pattern', 'Tests', 'Harvests'];
+  return dimOrder.filter((d) => dimMap.has(d)).map((d) => ({ label: d, files: dimMap.get(d)!.sort() }));
+}
+
 export async function generateBlastRadius(
   cardId: number,
   title: string,
@@ -95,113 +146,33 @@ export async function generateBlastRadius(
   domain?: string,
 ): Promise<BlastReport | null> {
   const fullText = `${title}\n${description}`;
-
-  // Step 1: Get known domains from graph topology
   const topology = await fetchJson(`${APP_BASE}/api/codebase/topology`);
   if (!topology) return null;
   const knownDomains = Object.keys(topology.domains || {});
-
-  // Step 2: Extract file paths and domains from card text
   const explicitFiles = extractFilePaths(fullText);
   const mentionedDomains = extractDomains(fullText, knownDomains);
 
-  // Step 3: Resolve file paths to graph nodes and walk connections
   const touchedFiles = new Set<string>();
   const touchedDomains = new Set<string>();
 
-  // Step 3a (#2019, #2059, #2060): If domain tag provided, query consolidated domain code endpoint.
-  // Uses /api/chorus/domain/:name/code — same endpoint domain page renders from (AX = UX).
-  if (domain) {
-    const codeRes = await fetchJson(
-      `${CHORUS_API}/api/chorus/domain/${encodeURIComponent(domain)}/code`
-    );
-    if (codeRes?.data?.files) {
-      for (const file of codeRes.data.files) {
-        touchedFiles.add(file.path);
-      }
-      if (codeRes.data.files.length > 0) touchedDomains.add(domain);
-    }
-  }
-
-  for (const filePath of explicitFiles) {
-    // Try exact node lookup first
-    let nodeData: GraphNode | null = await fetchJson(
-      `${APP_BASE}/api/codebase/node/${encodeURIComponent(filePath)}`
-    );
-
-    // If bare filename (no directory prefix), search graph for it
-    if (!nodeData && !filePath.includes('/')) {
-      const search = await fetchJson(
-        `${APP_BASE}/api/codebase/search?q=${encodeURIComponent(filePath)}&limit=1`
-      );
-      if (search?.nodes?.[0]) {
-        const resolved = search.nodes[0].path;
-        nodeData = await fetchJson(
-          `${APP_BASE}/api/codebase/node/${encodeURIComponent(resolved)}`
-        );
-      }
-    }
-
-    if (nodeData) {
-      touchedFiles.add(nodeData.path); // use canonical graph path
-      touchedDomains.add(nodeData.domain);
-      for (const conn of (nodeData.connected || [])) {
-        touchedFiles.add(conn.path);
-        if (conn.domain) touchedDomains.add(conn.domain);
-      }
-    } else {
-      touchedFiles.add(filePath); // keep as-is if not in graph
-    }
-  }
-
-  // Step 4: For mentioned domains without explicit files, get top files from search
-  for (const domain of mentionedDomains) {
-    touchedDomains.add(domain);
-    if (!explicitFiles.some(f => f.includes(domain))) {
-      const search = await fetchJson(`${APP_BASE}/api/codebase/search?domain=${domain}&limit=10`);
-      if (search?.nodes) {
-        for (const node of search.nodes) {
-          touchedFiles.add(node.path);
-        }
-      }
-    }
-  }
+  if (domain) await addDomainCodeFiles(domain, touchedFiles, touchedDomains);
+  await walkExplicitFiles(explicitFiles, touchedFiles, touchedDomains);
+  await addMentionedDomainFiles(mentionedDomains, explicitFiles, touchedFiles, touchedDomains);
 
   if (touchedFiles.size === 0) {
-    // No files found — card may be non-code (process, docs, etc.)
     return {
-      cardId,
-      title,
+      cardId, title,
       dimensions: [{ label: 'No codebase impact detected', files: [] }],
-      totalFiles: 0,
-      crossDomain: [],
+      totalFiles: 0, crossDomain: [],
       generated: new Date().toISOString(),
     };
   }
 
-  // Step 5: Classify files into six dimensions
-  const dimMap = new Map<string, string[]>();
-  for (const file of touchedFiles) {
-    const dim = classifyFile(file);
-    if (!dimMap.has(dim)) dimMap.set(dim, []);
-    dimMap.get(dim)!.push(file);
-  }
-
-  // Sort dimensions in canonical order
-  const dimOrder = ['UI/UX', 'API', 'OWL/RDF', 'Page pattern', 'Tests', 'Harvests'];
-  const dimensions: BlastDimension[] = dimOrder
-    .filter(d => dimMap.has(d))
-    .map(d => ({ label: d, files: dimMap.get(d)!.sort() }));
-
-  // Cross-domain connections
-  const crossDomain = Array.from(touchedDomains).sort();
-
   return {
-    cardId,
-    title,
-    dimensions,
+    cardId, title,
+    dimensions: buildDimensions(touchedFiles),
     totalFiles: touchedFiles.size,
-    crossDomain,
+    crossDomain: Array.from(touchedDomains).sort(),
     generated: new Date().toISOString(),
   };
 }

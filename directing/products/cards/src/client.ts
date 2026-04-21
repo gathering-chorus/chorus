@@ -5,6 +5,18 @@ import { LABELS, resolveBucket } from './config';
 
 const VIKUNJA_DB = process.env.VIKUNJA_DB || `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/vikunja/db/vikunja.db`;
 
+interface AddLabelOpts {
+  status?: string;
+  owner?: string;
+  priority?: string;
+  domain?: string;
+  description?: string;
+  product?: string;
+  chunk?: string;
+  sequence?: string;
+  type?: string;
+}
+
 export class BoardClient {
   private url: string;
   private token: string;
@@ -181,8 +193,25 @@ export class BoardClient {
     return this.parseTask(task, status);
   }
 
+  private async applyAddLabels(taskId: number, opts: AddLabelOpts): Promise<void> {
+    const specs: Array<[keyof AddLabelOpts, keyof typeof LABELS, (s: string) => string]> = [
+      ['owner', 'owner', (s) => s.toLowerCase()],
+      ['priority', 'priority', (s) => s.toUpperCase()],
+      ['domain', 'domain', (s) => s.toLowerCase()],
+      ['product', 'product', (s) => s.toLowerCase()],
+      ['chunk', 'chunk', (s) => s.toLowerCase()],
+      ['sequence', 'sequence', (s) => s.toLowerCase()],
+      ['type', 'type', (s) => s.toLowerCase()],
+    ];
+    for (const [field, category, caseFn] of specs) {
+      const value = opts[field];
+      if (!value) continue;
+      const labelId = (LABELS as any)[category][caseFn(value)];
+      if (labelId) await this.addLabel(taskId, labelId);
+    }
+  }
+
   /** Create a new task */
-  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
   async add(title: string, opts?: {
     status?: string;
     owner?: string;
@@ -202,35 +231,7 @@ export class BoardClient {
 
     const bucketId = resolveBucket(this.board, opts?.status || 'later');
     await this.moveToBucket(result.id, bucketId);
-
-    if (opts?.owner) {
-      const labelId = LABELS.owner[opts.owner.toLowerCase()];
-      if (labelId) await this.addLabel(result.id, labelId);
-    }
-    if (opts?.priority) {
-      const labelId = LABELS.priority[opts.priority.toUpperCase()];
-      if (labelId) await this.addLabel(result.id, labelId);
-    }
-    if (opts?.domain) {
-      const labelId = LABELS.domain[opts.domain.toLowerCase()];
-      if (labelId) await this.addLabel(result.id, labelId);
-    }
-    if (opts?.product) {
-      const labelId = LABELS.product[opts.product.toLowerCase()];
-      if (labelId) await this.addLabel(result.id, labelId);
-    }
-    if (opts?.chunk) {
-      const labelId = LABELS.chunk[opts.chunk.toLowerCase()];
-      if (labelId) await this.addLabel(result.id, labelId);
-    }
-    if (opts?.sequence) {
-      const labelId = LABELS.sequence[opts.sequence.toLowerCase()];
-      if (labelId) await this.addLabel(result.id, labelId);
-    }
-    if (opts?.type) {
-      const labelId = LABELS.type[opts.type.toLowerCase()];
-      if (labelId) await this.addLabel(result.id, labelId);
-    }
+    await this.applyAddLabels(result.id, opts || {});
 
     this.clearCache();
     const statusName = this.board.bucketNames[bucketId] || opts?.status || 'Later';
