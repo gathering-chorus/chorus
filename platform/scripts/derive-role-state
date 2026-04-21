@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# derive-role-state — write inferred role state from observed work (#2193 AC2).
+#
+# Algorithm mirrors platform/api/src/derive-role-state.ts (that's the spec —
+# hermetic tests live there). This shell wrapper is the cron-invokable entry
+# point that shells out to the real data sources.
+#
+# Sources:
+#   - WIP cards via `cards mine <role>` filtered to status=WIP
+#   - Recent commits via `git log --since="5 min ago"` filtered by role prefix
+#
+# Output: /tmp/claude-team-scan/<role>-inferred.json
+#
+# Usage: derive-role-state <role>
+#   role ∈ {wren, silas, kade}
+#
+# Run from cron every minute alongside pulse. pulse.rs reads the file with
+# a 5-minute TTL check and emits divergent=true when declared ≠ inferred.
+
+set -euo pipefail
+
+ROLE="${1:-}"
+if [ -z "$ROLE" ]; then
+  echo "Usage: derive-role-state <role>" >&2
+  exit 2
+fi
+if [[ ! "$ROLE" =~ ^(wren|silas|kade)$ ]]; then
+  echo "derive-role-state: role must be wren, silas, or kade (got: $ROLE)" >&2
+  exit 2
+fi
+
+REPO="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+OUT_DIR="/tmp/claude-team-scan"
+OUT_FILE="${OUT_DIR}/${ROLE}-inferred.json"
+mkdir -p "$OUT_DIR"
+
+# --- Source 1: WIP cards for this role ---
+# cards mine lists all cards owned by the role, prefixed by [Status].
+WIP_IDS=$(bash "$REPO/platform/scripts/cards" mine "$ROLE" 2>/dev/null \
+  | grep -E "^\s*\[WIP\]" \
+  | awk '{print $2}' || true)
+WIP_COUNT=$(printf '%s\n' "$WIP_IDS" | grep -c . || true)
+
+# --- Source 2: Recent commits by role (last 5 min) ---
+# Commit messages always prefix with "role: " per team convention.
+RECENT_COMMITS=$(cd "$REPO" && git log --since="5 minutes ago" --format="%h %s" 2>/dev/null \
+  | awk -v role="$ROLE" 'tolower($2) == tolower(role)":" { print $1 }' || true)
+RECENT_COUNT=$(printf '%s\n' "$RECENT_COMMITS" | grep -c . || true)
+
+# --- Derive ---
+NOW=$(date +%s)
+WALL=$(date +"%Y-%m-%d %H:%M:%S")
+STATE="idle"
+CARD=""
+MULTI_WIP="false"
+
+if [ "$WIP_COUNT" = "1" ]; then
+  STATE="building"
+  CARD=$(printf '%s\n' "$WIP_IDS" | head -1)
+elif [ "$WIP_COUNT" -gt 1 ]; then
+  STATE="building"
+  MULTI_WIP="true"
+elif [ "$RECENT_COUNT" -gt 0 ]; then
+  STATE="building"
+  # Extract card id from most-recent commit body (subject line contains #NNNN)
+  NEWEST_SHA=$(printf '%s\n' "$RECENT_COMMITS" | head -1)
+  MSG=$(cd "$REPO" && git log -1 --format="%s" "$NEWEST_SHA" 2>/dev/null || true)
+  if [[ "$MSG" =~ \#([0-9]+) ]]; then
+    CARD="${BASH_REMATCH[1]}"
+  fi
+fi
+
+# --- Write inferred.json ---
+python3 -c "
+import json, sys
+doc = {
+    'role': '$ROLE',
+    'state': '$STATE',
+    'ts': $NOW,
+    'wall_clock': '$WALL',
+    'source': 'inferred',
+    'wip_count': $WIP_COUNT,
+    'recent_commit_count': $RECENT_COUNT,
+}
+card = '$CARD'
+if card:
+    doc['card'] = int(card)
+if '$MULTI_WIP' == 'true':
+    doc['multi_wip'] = True
+with open('$OUT_FILE', 'w') as f:
+    json.dump(doc, f)
+"
+
+echo "derive-role-state: $ROLE → state=$STATE card=${CARD:-none} wip=$WIP_COUNT recent=$RECENT_COUNT"
