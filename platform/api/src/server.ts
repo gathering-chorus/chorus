@@ -846,7 +846,19 @@ app.get('/api/chorus/context/board/swat', async (req: Request, res: Response) =>
 
 app.get('/api/chorus/context/roles', async (req: Request, res: Response) => {
   const r = await fetchContextRoles(
-    { sparql: _athena, readState: readRoleStateFile, tailSpine: tailSpineForRole },
+    {
+      sparql: _athena,
+      readState: readRoleStateFile,
+      tailSpine: tailSpineForRole,
+      // #2193 AC5: inferred state from derive-role-state
+      readInferred: (role: string) => {
+        const p = `/tmp/claude-team-scan/${role}-inferred.json`;
+        try {
+          if (!fs.existsSync(p)) return null;
+          return JSON.parse(fs.readFileSync(p, 'utf-8'));
+        } catch { return null; }
+      },
+    },
     req.originalUrl,
   );
   res.status(r.status).json(r.body);

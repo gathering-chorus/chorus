@@ -76,6 +76,13 @@ action_age = tile.get('lastActionAge','') or ''
 
 def categorize(a):
     al = a.lower()
+    # #2193 AC4: observer.digest lines and raw bash echoes are not
+    # meaningful work events — filter them to 'noise' so gemba-tick says
+    # 'silent' instead of surfacing shell strings Jeff has to decode.
+    if 'observer.digest' in al or '"event":"observer.digest"' in al: return 'noise'
+    # bash: prefix with no subsequent verb-like content is typically a digest echo
+    if al.startswith('bash:') and not re.search(r'\b(git|npm|cargo|curl|bats|jest|npx|node|python)\b', al):
+        return 'noise'
     if any(x in al for x in ['gemba-tick','gemba-start','role-screenshot']): return 'self'
     if 'git commit' in al: return 'commit'
     if re.search(r'\b(jest|vitest|npm (run )?test|cargo test)\b', al): return 'test'
@@ -92,8 +99,10 @@ current = {
     'state':       r.get('state',''),
     'card':        r.get('card',''),
     'wip':         wip,
-    'action_key':  '' if cat == 'self' else action_raw,
-    'action':      '' if cat == 'self' else action_raw[:140],
+    # #2193 AC4: 'self' and 'noise' both suppress action surface — gemba
+    # reports silence rather than echoing raw shell strings.
+    'action_key':  '' if cat in ('self', 'noise') else action_raw,
+    'action':      '' if cat in ('self', 'noise') else action_raw[:140],
     'cat':         cat,
     'git':         git_state,
 }
@@ -126,7 +135,7 @@ for d, cur_g in current['git'].items():
     for f in sorted(cf - pf): deltas.append(f"file+ {d}: {f}")
     for f in sorted(pf - cf): deltas.append(f"file- {d}: {f}")
 
-if current['cat'] != 'self' and current['action_key'] and prev.get('action_key','') != current['action_key']:
+if current['cat'] not in ('self', 'noise') and current['action_key'] and prev.get('action_key','') != current['action_key']:
     deltas.append(f"{current['cat']} ({action_age}): {current['action']}")
 
 emit_screenshot = bool(deltas)

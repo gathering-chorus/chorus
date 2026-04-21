@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# coherence-check — fire role.state.drifted when declared/inferred disagree >60s (#2193 AC3).
+#
+# Reads /tmp/pulse-latest.json for divergent/inferred_stale flags. Tracks
+# drift-since timestamps per role in /tmp/claude-team-scan/<role>-drift-since.
+# When drift exceeds 60s, emits role.state.drifted on the spine AND nudges
+# the drifted role directly. Jeff is never notified — roles catch each other.
+#
+# Run from cron every minute after derive-role-state.
+
+set -euo pipefail
+
+REPO="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+PULSE_FILE="/tmp/pulse-latest.json"
+STATE_DIR="/tmp/claude-team-scan"
+CHORUS_LOG="$REPO/platform/scripts/chorus-log"
+NUDGE="$REPO/platform/scripts/nudge"
+THRESHOLD=60
+
+mkdir -p "$STATE_DIR"
+if [ ! -f "$PULSE_FILE" ]; then
+  echo "coherence-check: no pulse file at $PULSE_FILE" >&2
+  exit 0
+fi
+
+NOW=$(date +%s)
+
+for ROLE in wren silas kade; do
+  DRIFT_FILE="${STATE_DIR}/${ROLE}-drift-since"
+
+  # Extract role pulse entry
+  PAYLOAD=$(python3 -c "
+import json, sys
+with open('$PULSE_FILE') as f: d = json.load(f)
+r = d.get('roles',{}).get('$ROLE',{})
+print(json.dumps({
+  'divergent': bool(r.get('divergent', False)),
+  'inferred_stale': bool(r.get('inferred_stale', False)),
+  'card_declared': r.get('card_declared') or '',
+  'card_inferred': r.get('card_inferred') or '',
+}))
+" 2>/dev/null || echo '{}')
+
+  DIVERGENT=$(echo "$PAYLOAD" | python3 -c "import json,sys; print(json.load(sys.stdin).get('divergent',False))")
+  STALE=$(echo "$PAYLOAD" | python3 -c "import json,sys; print(json.load(sys.stdin).get('inferred_stale',False))")
+  DECL=$(echo "$PAYLOAD" | python3 -c "import json,sys; print(json.load(sys.stdin).get('card_declared',''))")
+  INFER=$(echo "$PAYLOAD" | python3 -c "import json,sys; print(json.load(sys.stdin).get('card_inferred',''))")
+
+  DRIFTED="False"
+  if [ "$DIVERGENT" = "True" ] || [ "$STALE" = "True" ]; then
+    DRIFTED="True"
+  fi
+
+  if [ "$DRIFTED" = "False" ]; then
+    # Coherent — clear tracker
+    rm -f "$DRIFT_FILE"
+    continue
+  fi
+
+  # Drift observed. Track or alarm.
+  if [ ! -f "$DRIFT_FILE" ]; then
+    echo "$NOW" > "$DRIFT_FILE"
+    continue
+  fi
+
+  SINCE=$(cat "$DRIFT_FILE" 2>/dev/null || echo "$NOW")
+  DURATION=$((NOW - SINCE))
+  if [ "$DURATION" -lt "$THRESHOLD" ]; then
+    continue
+  fi
+
+  KIND="divergent"
+  [ "$DIVERGENT" = "True" ] || KIND="inferred_stale"
+
+  "$CHORUS_LOG" role.state.drifted "$ROLE" \
+    "kind=${KIND}" \
+    "drift_duration_secs=${DURATION}" \
+    "card_declared=${DECL}" \
+    "card_inferred=${INFER}" >/dev/null 2>&1 || true
+
+  if [ "$KIND" = "divergent" ]; then
+    MSG="[drift] Your declared card (#${DECL:-?}) and inferred card (#${INFER:-?}) disagree for ${DURATION}s. Re-declare via role-state or commit something so observers catch up."
+  else
+    MSG="[drift] Your inferred state is stale for ${DURATION}s. Derive-role-state hasn't run recently — or you're not generating observable signal (commits, WIP card moves). Nudge the system by doing a git activity."
+  fi
+
+  "$NUDGE" "$ROLE" "$MSG" >/dev/null 2>&1 || true
+  echo "coherence-check: ALARM ${ROLE} kind=${KIND} duration=${DURATION}s"
+done

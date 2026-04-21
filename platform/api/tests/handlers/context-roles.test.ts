@@ -117,4 +117,85 @@ describe('fetchContextRoles', () => {
     expect(kade.gemba).toBe('silas');
     expect(kade.card).toBeNull();
   });
+
+  // --- #2193 AC5: derived_state + drift_state ---
+
+  it('derived_state populated when readInferred returns a record', async () => {
+    const nowMs = Date.UTC(2026, 3, 21, 12, 0, 0);
+    const r = await fetchContextRoles({
+      sparql: stubSparql(),
+      readState: (role) => ({ role, state: 'building', card: 2193 }),
+      tailSpine: () => null,
+      readInferred: (role) => role === 'kade'
+        ? { card: 2193, state: 'building', ts: Math.floor(nowMs / 1000) - 30, wip_count: 1, recent_commit_count: 2 }
+        : null,
+      now: () => new Date(nowMs),
+    }, '/api/chorus/context/roles');
+    const kade = r.body.data.roles.find((x) => x.name === 'kade')!;
+    expect(kade.derived_state).toEqual({
+      state: 'building',
+      card: 2193,
+      wip_count: 1,
+      recent_commit_count: 2,
+    });
+    expect(kade.drift_state).toEqual({
+      divergent: false,
+      inferred_stale: false,
+      card_declared: 2193,
+      card_inferred: 2193,
+    });
+  });
+
+  it('drift_state.divergent=true when declared and inferred cards disagree (and inferred is fresh)', async () => {
+    const nowMs = Date.UTC(2026, 3, 21, 12, 0, 0);
+    const r = await fetchContextRoles({
+      sparql: stubSparql(),
+      readState: (role) => ({ role, state: 'building', card: 2193 }),
+      tailSpine: () => null,
+      readInferred: () => ({ card: 2188, state: 'building', ts: Math.floor(nowMs / 1000) - 30 }),
+      now: () => new Date(nowMs),
+    }, '/api/chorus/context/roles');
+    const kade = r.body.data.roles.find((x) => x.name === 'kade')!;
+    expect(kade.drift_state.divergent).toBe(true);
+    expect(kade.drift_state.card_declared).toBe(2193);
+    expect(kade.drift_state.card_inferred).toBe(2188);
+  });
+
+  it('drift_state.inferred_stale=true when inferred.ts > 5min old', async () => {
+    const nowMs = Date.UTC(2026, 3, 21, 12, 0, 0);
+    const r = await fetchContextRoles({
+      sparql: stubSparql(),
+      readState: (role) => ({ role, state: 'building', card: 2193 }),
+      tailSpine: () => null,
+      readInferred: () => ({ card: 2193, state: 'building', ts: Math.floor(nowMs / 1000) - 400 }),  // 400s ago
+      now: () => new Date(nowMs),
+    }, '/api/chorus/context/roles');
+    const kade = r.body.data.roles.find((x) => x.name === 'kade')!;
+    expect(kade.drift_state.inferred_stale).toBe(true);
+    // Stale inferred suppresses divergent signal (can't compare stale data)
+    expect(kade.drift_state.divergent).toBe(false);
+  });
+
+  it('derived_state is null when readInferred returns null', async () => {
+    const r = await fetchContextRoles({
+      sparql: stubSparql(),
+      readState: (role) => ({ role, state: 'building', card: 2193 }),
+      tailSpine: () => null,
+      readInferred: () => null,
+    }, '/api/chorus/context/roles');
+    const kade = r.body.data.roles.find((x) => x.name === 'kade')!;
+    expect(kade.derived_state).toBeNull();
+    expect(kade.drift_state.inferred_stale).toBe(true);
+  });
+
+  it('backward-compatible — omitted readInferred behaves like null (all stale)', async () => {
+    const r = await fetchContextRoles({
+      sparql: stubSparql(),
+      readState: (role) => ({ role, state: 'building', card: 2193 }),
+      tailSpine: () => null,
+    }, '/api/chorus/context/roles');
+    const kade = r.body.data.roles.find((x) => x.name === 'kade')!;
+    expect(kade.derived_state).toBeNull();
+    expect(kade.drift_state.inferred_stale).toBe(true);
+  });
 });
