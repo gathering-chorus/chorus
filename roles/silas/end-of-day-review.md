@@ -7,7 +7,7 @@
 Run the **Hard 4** from Session Close-Out (CLAUDE.md). Before that:
 
 ### 0. Introspect
-Run `../../scripts/werk-init.sh silas --close`. Fix auto-fix items silently.
+Run `chorus-hook-shim session-close silas`. Fix auto-fix items silently.
 
 ### If-Touched Domain Docs (DEC-058)
 
@@ -31,4 +31,4 @@ Scan for staleness from this session's work. Update what changed:
 
 ### Verify
 
-`werk-init.sh silas --close` — all ok before final commit.
+`chorus-hook-shim session-close silas` — all ok before final commit.

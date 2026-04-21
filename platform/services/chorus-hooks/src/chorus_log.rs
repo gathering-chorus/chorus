@@ -31,6 +31,17 @@ fn eastern_offset() -> chrono::FixedOffset {
 }
 
 pub fn run(args: &[String]) -> ExitCode {
+    emit(args, /* silent */ false)
+}
+
+/// #2311: silent emit — writes the event to chorus.log but skips the stdout
+/// mirror. Used by session-start which owns stdout for the SessionStart
+/// hookSpecificOutput envelope.
+pub fn run_silent(args: &[String]) -> ExitCode {
+    emit(args, /* silent */ true)
+}
+
+fn emit(args: &[String], silent: bool) -> ExitCode {
     if args.len() < 2 {
         eprintln!("Usage: chorus-hook-shim log <event> <role> [key=value ...]");
         return ExitCode::from(1);
@@ -101,7 +112,9 @@ pub fn run(args: &[String]) -> ExitCode {
     match fs::OpenOptions::new().create(true).append(true).open(&path) {
         Ok(mut f) => {
             let _ = writeln!(f, "{}", line);
-            println!("{} | {}{}", event, role, display);
+            if !silent {
+                println!("{} | {}{}", event, role, display);
+            }
         }
         Err(_) => {
             eprintln!("{} | {} — FAILED to write", event, role);

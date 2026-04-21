@@ -1,8 +1,8 @@
 {
-  "version": "217",
-  "description": "Werk manifest \u2014 shared fragments + role-specific fragments \u2192 generated CLAUDE.md per role + shared TEAM_PROTOCOL.md. Version = Werk version.",
+  "_build": "217",
+  "description": "Werk manifest \u2014 shared fragments + role-specific fragments \u2192 generated CLAUDE.md per role + shared TEAM_PROTOCOL.md. _build is an internal change-detection counter; the Werk version rendered to humans resolves from PROTOCOL_VERSION (#2311 single-source-of-truth).",
   "size_budget": 35000,
-  "_versioning_rule": "Monotonic integer. Bumps on protocol changes: CLAUDE.md fragments, scripts, manifest schema, boot sequence, hooks, spine events. NOT on state files, briefs, board ops, memory edits. manifest.json is the single source of truth. DEC-036, DEC-065.",
+  "_versioning_rule": "_build is a monotonic integer that bumps on protocol changes (CLAUDE.md fragments, scripts, manifest schema, boot sequence, hooks, spine events). It is NOT a human-facing version string and must never be rendered as 'Werk v<N>'. The only source for 'Werk v' render is designing/claudemd/PROTOCOL_VERSION. DEC-036, DEC-065, #2311.",
   "changelog": [
     {
       "version": "217",

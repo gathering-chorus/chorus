@@ -3,7 +3,7 @@
 **Trigger**: /reboot, "eod", "wrapping up", "done for today", past 5pm.
 
 ### Step 0: Introspect
-Run `../../scripts/werk-init.sh <role> --close`. Scan `## Close Issues`. Run auto-fix commands silently.
+Run `chorus-hook-shim session-close <role>`. Scan `## Close Issues`. Run auto-fix commands silently.
 
 ### If-Touched (before Hard 5, only if relevant)
 Scan: "did anything I did today make these stale?" Gate — Hard 5 cannot proceed until complete.
@@ -22,4 +22,4 @@ After updates: `../../scripts/chorus-log session.docscan.completed <role> checke
 5. **Commit** — `git-queue.sh`. Message: `<role>: session close — <summary>`. Then: `role-state <role> idle`.
 
 ### Verify
-Run `werk-init.sh <role> --close` after Hard 5. All items ok. If warn, fix before commit.
+Run `chorus-hook-shim session-close <role>` after Hard 5. All items ok. If warn, fix before commit.

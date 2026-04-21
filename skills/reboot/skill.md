@@ -28,7 +28,7 @@ When Jeff types `/reboot`, run the Hard 4 close-out and exit so a fresh session 
    - Pending briefs sent/received
    - Anything the next session needs to pick up
 
-5. **Verify** — run `werk-init.sh <role> --close`. Check for warns. Fix any before committing.
+5. **Verify** — run `chorus-hook-shim session-close <role>`. Check for warns. Fix any before committing.
 
 6. **Commit + Push** — use `git-queue.sh` to commit all changes, then push:
    ```bash

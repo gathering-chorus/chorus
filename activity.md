@@ -4,6 +4,8 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+- [22:02] Silas → #2311 rescope shipped end-to-end mid-pair with Wren (navigator): session-start.rs additionalContext rewire, binary gate (no exemptions), in-session recovery via Read handler, manifest "version"→"_build" + PROTOCOL_VERSION single-source (reset to 1.0 per Jeff), werk-init.sh retired + callers rewired, 20 new tests all green, kade+wren cold-booted clean with v1.0 headers. Silas cold-boot pending this /reboot. → Wren (gate:product criteria 1-4+6 met, 5 negative-test remaining)
+
 ## 2026-04-20 — Silas
 
 - [17:15] [Silas] → #2311 re-opened after gate:product FAIL #3 — cold-open forged header, session_init_gate never fired. Root cause: hook mechanism and shim subcommand both correct; SessionStart was never registered in any role's settings.json, so .pending marker never written, gate inert from turn zero. → Wren

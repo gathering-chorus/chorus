@@ -11,10 +11,10 @@ When Jeff invokes `/werk`, show **board + chain state together**. The skill wrap
 If Jeff says `/werk init` or a role needs to bootstrap its context window:
 
 ```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/werk-init.sh <role>
+chorus-hook-shim session-start <role>
 ```
 
-Where `<role>` is `silas`, `wren`, or `kade`. This replaces MEMORY.md — it queries live sources (board, decisions, briefs, git, chorus index) and returns structured context. Use this at session start or whenever a role needs to re-orient.
+Where `<role>` is `silas`, `wren`, or `kade`. This is the same subcommand Claude Code invokes from the SessionStart hook — it emits session context into the model view via `additionalContext`, runs the protocol contract check, and writes `.done` on pass. Use for session bootstrap or mid-session recovery (#2311).
 
 **This is the CLAUDE.md inversion entry point.** Instead of 400 lines of static instructions, a thin bootstrap calls `/werk init` to assemble current state from the live system.
 

@@ -18,12 +18,12 @@ def validate_manifest(manifest, claudemd_dir, verbose=False):
     warnings = []
 
     # 1. Version is a monotonic integer (or legacy semver for history)
-    version = manifest.get("version", "")
+    version = manifest.get("_build", "")
     if not re.match(r'^\d+$', version) and not re.match(r'^\d+\.\d+\.\d+$', version):
         errors.append(f"Version '{version}' is not valid (expected integer N or legacy N.N.N)")
 
     # 2. Required top-level keys
-    for key in ("version", "variables", "roles"):
+    for key in ("_build", "variables", "roles"):
         if key not in manifest:
             errors.append(f"Missing required key: '{key}'")
 
@@ -134,7 +134,7 @@ if validation_errors:
     print(f"\nManifest validation failed ({len(validation_errors)} error(s)). Fix manifest.json before generating.", file=sys.stderr)
     sys.exit(1)
 
-version = manifest["version"]
+version = manifest["_build"]
 variables = manifest["variables"]
 roles = manifest["roles"]
 reference = manifest.get("reference", None)
@@ -218,7 +218,7 @@ def save_version_snapshot(version, roles, variables, claudemd_dir):
     """Archive fragment hashes for a version. Creates versions/ dir if needed."""
     os.makedirs(VERSIONS_DIR, exist_ok=True)
     snapshot = {
-        "version": version,
+        "_build": version,
         "archived_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "roles": {}
     }
@@ -384,7 +384,7 @@ def auto_bump_version(manifest, manifest_path, roles, variables, claudemd_dir):
     """Check if inputs changed since last generation. If yes, bump patch version."""
     stored = load_checksums()
     if not stored:
-        return manifest["version"]  # No baseline yet, don't bump on first run
+        return manifest["_build"]  # No baseline yet, don't bump on first run
 
     changed = False
     for role_name, role_config in roles.items():
@@ -395,10 +395,10 @@ def auto_bump_version(manifest, manifest_path, roles, variables, claudemd_dir):
             break
 
     if not changed:
-        return manifest["version"]
+        return manifest["_build"]
 
     # Bump version (monotonic integer)
-    cur = manifest["version"]
+    cur = manifest["_build"]
     if "." in cur:
         # Legacy semver — extract patch number and convert to plain integer
         new_version = str(int(cur.split(".")[-1]) + 1)
@@ -406,12 +406,12 @@ def auto_bump_version(manifest, manifest_path, roles, variables, claudemd_dir):
         new_version = str(int(cur) + 1)
 
     # Update manifest in memory and on disk
-    manifest["version"] = new_version
+    manifest["_build"] = new_version
 
     # Add changelog entry
     changelog = manifest.get("changelog", [])
     changelog.insert(0, {
-        "version": new_version,
+        "_build": new_version,
         "card": "#auto",
         "date": datetime.now().strftime("%Y-%m-%d"),
         "summary": "Auto-bump: fragment or variable changes detected"
@@ -680,7 +680,7 @@ if mode == "pipeline":
     # Full orchestration: validate → detect drift → generate → verify → report → attach to card
     pipeline_result = {
         "timestamp": now,
-        "version": version,
+        "_build": version,
         "card": card_ref or None,
         "steps": [],
         "status": "PASS",
@@ -781,7 +781,7 @@ if mode == "pipeline":
             "config_hash": hashlib.sha256(json.dumps(role_config, sort_keys=True).encode()).hexdigest(),
             "fragments": compute_fragment_hashes(role_name, role_config, claudemd_dir),
             "generated_at": now,
-            "version": version,
+            "_build": version,
         }
     # #2311: persist protocol-core hash alongside per-role checksums
     if protocol_core_hash:
@@ -916,7 +916,7 @@ else:
             "config_hash": hashlib.sha256(json.dumps(role_config, sort_keys=True).encode()).hexdigest(),
             "fragments": compute_fragment_hashes(role_name, role_config, claudemd_dir),
             "generated_at": now,
-            "version": version,
+            "_build": version,
         }
     # Merge with existing checksums (for single-role regeneration)
     existing = load_checksums()

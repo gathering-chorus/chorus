@@ -508,7 +508,7 @@ async fn post_tool_use(
         return Json(ops_result);
     }
 
-    // L3: nudge drain happens on UserPromptSubmit (werk-init.sh --scan), not PostToolUse
+    // L3: nudge drain happens on UserPromptSubmit (user_prompt_submit handler), not PostToolUse
     // PostToolUse stderr only surfaces on exit code 2, which signals error — wrong hook for drain
 
     Json(HookResponse::allow())

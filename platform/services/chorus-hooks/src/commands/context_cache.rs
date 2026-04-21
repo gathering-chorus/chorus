@@ -21,13 +21,13 @@ pub fn run(args: &[String]) -> ExitCode {
     let board_ts = format!("{}/platform/scripts/cards", REPO_ROOT);
     let out_path = format!("/tmp/session-context-{}.md", role);
 
-    // Werk version
-    let manifest_path = format!("{}/designing/claudemd/manifest.json", REPO_ROOT);
-    let werk_version = fs::read_to_string(&manifest_path).ok()
-        .and_then(|c| c.lines().find(|l| l.contains("\"version\"")).map(|l| {
-            l.split('"').nth(3).unwrap_or("unknown").to_string()
-        }))
-        .unwrap_or_else(|| "unknown".to_string());
+    // Werk version — #2311 AC#5: sole source is PROTOCOL_VERSION. manifest.json
+    // holds "_build" (internal change-detection counter) which must never be
+    // rendered as a human-facing Werk version.
+    let protocol_path = format!("{}/designing/claudemd/PROTOCOL_VERSION", REPO_ROOT);
+    let werk_version = fs::read_to_string(&protocol_path)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
 
     // --- Parallel data gathering via threads ---
     // Board: active cards only — filter out Done/Won't Do (#1781)

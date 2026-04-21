@@ -36,7 +36,8 @@ curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \
 | role-state | `$CHORUS_ROOT/platform/scripts/role-state <role> <state>` |
 | nudge | `$CHORUS_ROOT/platform/scripts/nudge <target> "message" --from <sender>` |
 | chorus-log | `$CHORUS_ROOT/platform/scripts/chorus-log <event> <role> key=value` |
-| werk-init.sh | `$CHORUS_ROOT/platform/scripts/werk-init.sh <role> [--close]` |
+| session-close | `chorus-hook-shim session-close <role>` (close-out introspection) |
+| session-start | `chorus-hook-shim session-start <role>` (SessionStart hook entry; also used for mid-session recovery #2311) |
 
 **CHORUS_ROOT** defaults to `/Users/jeffbridwell/CascadeProjects/chorus`. Set in LaunchAgent plists and role sessions.
 **Never use:** `gathering-team/messages/scripts/` (merged into chorus), `../messages/scripts/` (old relative path).
@@ -96,7 +97,7 @@ cards audit-close <role>                                # session close audit
 **Trigger**: /reboot, "eod", "wrapping up", "done for today", past 5pm.
 
 ### Step 0: Introspect
-Run `../../scripts/werk-init.sh <role> --close`. Scan `## Close Issues`. Run auto-fix commands silently.
+Run `chorus-hook-shim session-close <role>`. Scan `## Close Issues`. Run auto-fix commands silently.
 
 ### If-Touched (before Hard 5, only if relevant)
 Scan: "did anything I did today make these stale?" Gate — Hard 5 cannot proceed until complete.
@@ -115,7 +116,7 @@ After updates: `../../scripts/chorus-log session.docscan.completed <role> checke
 5. **Commit** — `git-queue.sh`. Message: `<role>: session close — <summary>`. Then: `role-state <role> idle`.
 
 ### Verify
-Run `werk-init.sh <role> --close` after Hard 5. All items ok. If warn, fix before commit.
+Run `chorus-hook-shim session-close <role>` after Hard 5. All items ok. If warn, fix before commit.
 
 ## Lint Ceiling Ratchet (#1282)
 

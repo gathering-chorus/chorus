@@ -1,28 +1,50 @@
 # Silas — Next Session
 
-## Carry-forward: #2311 boot-time protocol contract
+**Reboot at**: 2026-04-20 22:02 Boston mid-pair with Wren on #2311.
 
-**Status:** WIP. Code landed (50ca6aec). E2E proof still owed.
+## WIP
 
-**What shipped this session:**
-- Fixed the header-slot miss from fc614a0f. Single slot `Werk v{CHORUS_PROMPT_VERSION}` now sourced from `PROTOCOL_VERSION` (not manifest build counter). Jeff's correction: chorus-prompt/X.Y IS the werk version — not two numbers, one. Auto-bump took it 2.1→2.2.
-- Three CLAUDE.mds regenerated, protocol test suite 20/20 green, live_core vector refreshed.
-- Commit: 50ca6aec.
+**#2311 Boot-time protocol contract** — WIP, pair with Wren active (navigator). Rescope shipped this session. Remaining: final silas cold-boot demo, then gate:product re-gate.
 
-**What's still owed (gate blocker):**
-- Live three-role cold-reboot E2E. Drift a core fragment, cold-boot a role, capture SessionStart hook firing PROTOCOL VIOLATION before first response. This did NOT happen this session — Kade did not actually cold-boot when asked; his PID never changed. Not a hook bug (untested), a handoff bug.
-- Do NOT /acp #2311 until: (a) new Kade PID post-reboot, AND (b) evidence (file + banner text) that the hook fired on drift, AND (c) clean-boot confirmation after fragment restore.
+### Status of #2311 gate:product criteria (Wren's list)
+1. ✓ All three sessions cold — kade + wren verified this session (22:00, 22:01)
+2. ✓ .pending → .done transitions observed for both
+3. ✓ Werk v header sourced from PROTOCOL_VERSION (reset to 1.0 this session, not auto-bumped 2.3)
+4. Partial — screenshot side-by-side pending silas reboot (this file is silas's last pre-reboot message)
+5. Not yet — negative test (mutate fragment, regen silas only, show divergence)
+6. ✓ Kade passed cold-boot with thesis-driven opener + v1.0 header (vs earlier "hi jeff #1718 waiting" failure)
 
-## Session misses worth naming
-- I asked for permission three times where Jeff's direction was already clear. DEC-025 stop hook fired.
-- I let 4 min pass without re-nudging Wren (attention contract rule 2).
-- I coordinated with Wren instead of looping Kade in directly — Wren flagged it, I corrected.
-- Root miss at the top: fc614a0f collapsed the header the wrong way (kept release tick, dropped protocol contract). Jeff caught it; would have slipped if he hadn't.
+### What shipped this session
+- **AC#1 additionalContext rewire**: session-start.rs emits `hookSpecificOutput.additionalContext` JSON on stdout. No more "please read the file" prose step. Tests `session_start_additional_context.rs` 3/3 green.
+- **AC#2 binary gate**: session_init_gate deny-all-until-.done, all exemptions retired (TZ=, wall-clock, role-state, session-start.sh, chorus-prompt.sh, werk-init.sh). Tests `session_init_gate_binary.rs` 7/7 green.
+- **In-session recovery**: Read of `/tmp/session-start-<role>.md` when .pending armed + .done missing re-runs protocol_contract::check, writes .done on pass. No new CLI. Tests `session_init_gate_recovery.rs` 2/2 green.
+- **AC#5 version-source collapse**: manifest.json `version` → `_build`. PROTOCOL_VERSION sole source for Werk v render. `context_cache.rs` reads PROTOCOL_VERSION, not manifest. Tests `werk_version_single_source.rs` 2/2 green.
+- **AC#6/#7 wrapper retirement**: `werk-init.sh` + `test-staleness-detection.sh` physically deleted. Updated 3 CLAUDE.md fragments + 4 skills + TEAM_PROTOCOL + team-architecture + doc-drift.conf + role-config-manifest + nudge-service-design + domain-context-chorus + end-of-day-review + main.rs comment + stop_on_error.rs allowlist + tool_telemetry.rs allowlist + role-alias-cleanup.bats. Tests `retired_wrappers_grep.rs` 6/6 green.
+- **Version reset**: PROTOCOL_VERSION 2.3 → 1.0 per Jeff's directive (clean signal for first-working boot-contract). All three CLAUDE.mds regenerated with stamp v1.0.
+- **Test vector regen**: `.protocol_test_vectors.json` live_core hash updated to `51b0ba29...` matching new fragment set.
 
-## Open threads
-- 5 alerts fired today (crawler, fuseki-harvest, lancedb, index-freshness critical, vikunja-auth). Not touched this session. Own next session before pulling new work.
-- #1307 (photo harvest 20K record restore) still sitting in Later. Still flinching.
+### New tests shipped
+- `session_start_additional_context.rs` (3)
+- `session_init_gate_binary.rs` (7)
+- `session_init_gate_recovery.rs` (2)
+- `werk_version_single_source.rs` (2)
+- `retired_wrappers_grep.rs` (6)
+Total new: 20. All green. Full chorus-hooks suite: rust 361 + 222 + others all green except pre-existing `nudge_force_is_always_true` (#2283/#2287 contradiction, unrelated).
 
-## Pair state
-- Wren: chat silas-wren-1776721540 ended. Aligned on fix + E2E shape. She's green-lit me driving (2).
-- Kade: needs explicit cold-reboot. Last nudge 18:02, no PID change yet.
+### Pair (with Wren)
+Chat `silas-wren-1776728368` opened + closed with agreed rescope shape. Pair active on #2311 all session, DND on, scratch `/tmp/pair-2311.md`. Navigator heartbeat cron was killed mid-session after /pair-heartbeat-check skill unknown-errors.
+
+### Follow-on cards (not blocking #2311)
+- **#2315 opener-shape contract** — already filed by Wren; separate enforcement layer on top of #2311
+- **Reconciler: declared-card vs board status** — Kade's #1718 ghost still appears in his cold-boot header. Extends #2168. Not filed yet — should be P1.
+- **Generated-by stamp cosmetic** — `<!-- GENERATED by claudemd-gen.sh | v217 | ... -->` still shows _build counter. Wren flagged as "not pair-blocking, name the source or rename stamp." Can rename to `build:217` or source from PROTOCOL_VERSION. Cosmetic.
+- **Role-private docs with remaining werk-init refs** — chorus-method-map.md (wren), CONCEPTUAL_ARCHITECTURE.md (silas), spine-architecture.md (silas), spine-emitter-inventory.md (silas), decisions.md (wren). Each role's to update on their own cadence. Retirement-grep test exempts them.
+- **Nudge_force_is_always_true** contradiction between #2283 (force removed) and #2287 (source-gate test). Separate P3.
+
+## Next session pickup
+
+Re-open /pair with Wren on #2311 immediately on boot. First response will test the cold-boot flow for silas: markers transitioned, header v1.0, full chorus-hooks suite still green. If all three (kade + wren + silas) can show v1.0 headers side-by-side AND silas bumps cleanly through boot, Wren's gate:product criteria 1-4 + 6 are proven.
+
+Criterion 5 (negative/divergence test) is the only thing left after that: mutate a protocol-core fragment, regen silas only, cold-boot — observe silas v1.1 / wren+kade v1.0 divergence, then restore.
+
+Then gate:product from Wren, acp.

@@ -50,7 +50,7 @@ nudge <role> <message>
 - `platform/services/chorus-hooks/src/nudge.rs` — remove --level, --reply-to, artifact auto-nudge
 - `platform/services/chorus-hooks/src/shim.rs` — remove PostToolUse drain_nudge_inbox call
 - `platform/scripts/nudge` — export DEPLOY_ROLE
-- `platform/scripts/werk-init.sh` — verify drain is UserPromptSubmit only
+- `platform/services/chorus-hooks/src/main.rs` (user_prompt_submit handler) — verify drain is UserPromptSubmit only
 
 ## Decisions
 

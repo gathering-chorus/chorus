@@ -70,7 +70,7 @@ No formal ICD yet. Chorus is coordination infrastructure, not a data domain. If 
 - Spine: `chorus-log.sh` → chorus-hook-shim
 - Git: `git-queue.sh` (FIFO lock)
 - Ops: `chorus-ops.sh` (37K daemon), `daily-review-*.sh` (6am pipeline)
-- Session: `session-start-thin.sh`, `session-close-thin.sh`, `werk-init.sh`
+- Session: `chorus-hook-shim session-start <role>`, `chorus-hook-shim session-close <role>` (Rust subcommands replaced shell wrappers, #2311)
 - Role state: `role-state.sh`, `role-checkpoint.sh`
 
 ## LaunchAgents

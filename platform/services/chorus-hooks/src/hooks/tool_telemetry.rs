@@ -95,7 +95,7 @@ pub async fn post_tool_use_bash(input: &HookInput, state: &AppState) -> HookResp
         "grep", "board-ts", "/cards ", "command-errors.log", "auto-error-carded",
         "--dry-run", "--status", "chorus-test", "jest", "vitest", "npm",
         "playwright", "npx", "git commit", "git add", "git push",
-        "werk-init", "close-out", "reboot", "trivy", "Trivy scan",
+        "close-out", "reboot", "trivy", "Trivy scan",
         "pre-commit", "tail", "head", "cat", "smoke-check", "--help",
         "--version",
     ];

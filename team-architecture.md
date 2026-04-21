@@ -205,13 +205,9 @@ Every role, every session, same sequence:
 
 **1. Synchronize** (session start)
 - `git -C /Users/jeffbridwell/CascadeProjects pull --rebase` — get latest from all roles
-- **Run `session-start.sh <role>`** — one call, all reads parallel, under 1 second:
-  ```bash
-  ../../scripts/session-start.sh <role>   # wren | silas | kade
-  ```
-  This runs board reads, brief checks, state file checks, and next-session.md checks **concurrently**. All reads are independent — zero sequencing dependencies. Session context is loaded by the `SessionStart` hook to `/tmp/session-start-<role>.md`.
-  - Output to Jeff: one status line (`🟢` / `🟡` / `🔴`)
-  - Output to you: full context at `/tmp/session-start-<role>.md`
+- The `SessionStart` hook fires automatically on Claude boot and invokes `chorus-hook-shim session-start <role>` (Rust). The subcommand emits session context into the model view via `hookSpecificOutput.additionalContext`, runs the protocol contract check, and writes `/tmp/claude-session-init/<role>.done` on pass (#2311). No manual invocation required.
+  - Output to Jeff: one status line from the hook envelope
+  - Output to you: full session context injected directly into the first response window
 - Read your state files in parallel (role-specific: backlog.md, projects.md, etc.)
 - Come with a point of view — not "here's the state" but "here's what I think matters"
 
@@ -482,18 +478,9 @@ team-architecture.md          ← You are here. Shared operating principles.
 
 The team nervous system includes automated reflexes — not just rules, but behavior enforced by hooks.
 
-**`session-start.sh`** — Fast parallel session startup. Runs all reads concurrently (boards, briefs, state files, nudge inbox) in under 1 second. Outputs status line to user, full context to `/tmp/session-start-<role>.md`.
+**`chorus-hook-shim session-start <role>`** — Rust subcommand invoked by the `SessionStart` hook. Runs all reads concurrently (boards, briefs, state files, nudge inbox), runs the protocol contract check, and emits the full session context into the model view via `hookSpecificOutput.additionalContext` (#2311 — one entry point, one enforcement point, no prose intermediary).
 
-```bash
-messages/scripts/session-start.sh <role>   # wren | silas | kade
-```
-
-**`team-scan.sh`** — Per-turn scanner that checks nudge inbox, briefs, board state, and role activity. Located in `messages/scripts/`.
-
-| Mode | When | What it does |
-|------|------|-------------|
-| `scan` | Every user message (via `UserPromptSubmit` hook) | Rate-limited. Checks nudge inbox, briefs/ for new files, board state, role activity. Injects context into conversation as `<team-scan>`. |
-| `sync` | Session start (via `SessionStart` hook) | **Deprecated — use `session-start.sh` instead.** Was full synchronize but ran sequentially (~90s). Kept for backward compatibility but no longer the recommended session start path. |
+**UserPromptSubmit handler** (in `platform/services/chorus-hooks/src/main.rs`) — Per-turn scanner. Rate-limited. Checks nudge inbox, briefs/ for new files, board state, role activity. Injects context into conversation.
 
 **How it works**: Claude Code hooks fire shell scripts at lifecycle events. The script output is injected as context the agent sees. No manual "check Slack" step needed — the nervous system has reflexes.
 
@@ -551,7 +538,7 @@ All team artifacts are tracked in a single git repo rooted at `CascadeProjects/`
 6. **Conflicts**: If `git pull --rebase` hits a conflict, resolve it — don't force-push or discard. Activity.md is the most likely conflict point (multiple roles appending). Resolve by keeping both entries.
 
 **Doc-drift gate (#763):** Code-to-doc relationships are mapped in `messages/scripts/doc-drift.conf`. Two enforcement points:
-- **Close-out** (`werk-init.sh --close`): Flags stale docs as red/fail. Role must update them before committing.
+- **Close-out** (`chorus-hook-shim session-close <role>`): Flags stale docs as red/fail. Role must update them before committing.
 - **Commit** (`git-queue.sh`): Hard blocks the commit if mapped docs aren't included. Override: `DOC_DRIFT_SKIP=1` for emergencies only.
 
 No doc debt carries overnight. If you change code, update the related docs in the same commit.

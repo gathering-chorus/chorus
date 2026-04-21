@@ -45,14 +45,7 @@ SCRIPTS_DIR="${BATS_TEST_DIRNAME}/../scripts"
   }
 }
 
-@test "werk-init.sh maps wren to roles/wren" {
-  grep -q 'roles/wren' "$SCRIPTS_DIR/werk-init.sh"
-}
-
-@test "werk-init.sh maps silas to roles/silas" {
-  grep -q 'roles/silas' "$SCRIPTS_DIR/werk-init.sh"
-}
-
-@test "werk-init.sh maps kade to roles/kade" {
-  grep -q 'roles/kade' "$SCRIPTS_DIR/werk-init.sh"
-}
+# Note: prior tests asserted werk-init.sh role mapping. Retired by #2311
+# rescope — the shell wrapper was replaced by the Rust `chorus-hook-shim
+# session-start <role>` subcommand. Role-dir mapping now lives in
+# platform/services/chorus-hooks/src/shared/state_paths.rs (role_dir fn).

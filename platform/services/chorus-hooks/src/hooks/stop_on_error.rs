@@ -42,7 +42,6 @@ static EXEMPT_COMMANDS: &[&str] = &[
     "/cards ",       // board CLI alias
     "chorus-log",    // meta — don't block on logging failures
     "role-state",    // state management
-    "werk-init",     // session lifecycle
     "git commit",    // pre-commit hooks may fail, handled by git flow
     "git push",      // push failures handled by acp flow
     "git-queue",     // commit flow has own error handling

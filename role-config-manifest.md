@@ -84,6 +84,5 @@ How each role is launched, what normal looks like, and how to fix it when it bre
 | cards | `../../scripts/cards` |
 | app-state.sh | `../jeff-bridwell-personal-site/app-state.sh` |
 | git-queue.sh | `../../scripts/git-queue.sh` |
-| werk-init.sh | `../../scripts/werk-init.sh` |
 | chorus-log | `../../scripts/chorus-log` |
 | chorus-query.sh | `~/.chorus/scripts/chorus-query.sh` |

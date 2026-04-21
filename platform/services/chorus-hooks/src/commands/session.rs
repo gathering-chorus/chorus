@@ -5,6 +5,7 @@ use std::process::ExitCode;
 
 use crate::chorus_log;
 use crate::shared::state_paths::{self, REPO_ROOT};
+use crate::shared::protocol_contract;
 
 use super::context_cache;
 use super::pulse;
@@ -53,18 +54,38 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         content.push('\n');
     }
 
-    // Regenerate Pulse so session boots with fresh state (#1889)
-    let _ = pulse::run(&[]);
+    // Regenerate Pulse so session boots with fresh state (#1889).
+    // #2311: use assemble() not run() — run() prints to stdout which would
+    // corrupt our hookSpecificOutput JSON envelope below.
+    let _ = pulse::assemble();
 
-    let _ = fs::write(&out, &content);
-
-    // Set init gate
+    // #2311 rescope: run protocol contract check inline at boot. On pass,
+    // write .done so PreToolUse gate allows work. On fail, keep .pending
+    // armed and prepend PROTOCOL VIOLATION banner to content so the model
+    // sees it in additionalContext (no more "please read the file" prose).
     let _ = fs::create_dir_all(init_dir);
-    let _ = fs::remove_file(format!("{}/{}.done", init_dir, role));
-    let _ = fs::write(format!("{}/{}.pending", init_dir, role), "");
+    let done_path = format!("{}/{}.done", init_dir, role);
+    let pending_path = format!("{}/{}.pending", init_dir, role);
+    let _ = fs::remove_file(&done_path);
+    let _ = fs::write(&pending_path, "");
 
-    // Log
-    let _ = chorus_log::run(&["session.role.started".to_string(), role.to_string()]);
+    match protocol_contract::check(role) {
+        Ok(()) => {
+            let _ = fs::write(&done_path, "");
+        }
+        Err(v) => {
+            let banner = protocol_contract::banner(role, &v);
+            content = format!("{}\n{}", banner, content);
+            let _ = chorus_log::run_silent(&[
+                "session.protocol.violation".to_string(),
+                role.to_string(),
+                format!("reason={}", v.reason()),
+            ]);
+        }
+    }
+
+    // Log — silent: session-start owns stdout for the hookSpecificOutput envelope.
+    let _ = chorus_log::run_silent(&["session.role.started".to_string(), role.to_string()]);
 
     // Launch Bridge event bus subscriber (#1694)
     // Runs in background for session duration — receives card/state events from other roles
@@ -101,7 +122,7 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
     let lines = content.lines().count();
     if lines < 10 {
         // Empty or near-empty cache = something failed (#1846)
-        let _ = chorus_log::run(&[
+        let _ = chorus_log::run_silent(&[
             "session.context.error".to_string(),
             role.to_string(),
             format!("error_type=cache_empty"),
@@ -109,7 +130,19 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         ]);
         eprintln!("⚠ Context cache empty or failed ({} lines) — role booting with partial context", lines);
     }
-    println!("Boot: cached context ({} lines)", lines);
+
+    // #2311 rescope: emit Claude Code SessionStart hookSpecificOutput JSON.
+    // The harness reads `hookSpecificOutput.additionalContext` and appends it
+    // to the model's system view — no "please read /tmp/session-start-<role>.md"
+    // prose step, no dependence on the model invoking the Read tool to trigger
+    // the protocol contract check. Boot context lands in-window directly.
+    let envelope = serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": content,
+        }
+    });
+    println!("{}", envelope);
     ExitCode::SUCCESS
 }
 

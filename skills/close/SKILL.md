@@ -69,6 +69,6 @@ Concrete examples from this repo's recent sessions are in role-level `roles/<rol
 
 - `platform/scripts/close-out.sh` — implementation
 - `platform/scripts/session-close.sh` — existing audit + commit (invoked last, #1866)
-- `platform/scripts/werk-init.sh --close` — introspection helper (called separately if needed)
+- `chorus-hook-shim session-close <role>` — introspection helper (called separately if needed)
 - `platform/tests/close-out.test.sh` — hermetic tests, 5 cases
 - `/reboot` skill — uses /close internally for Hard-4 save-memory path

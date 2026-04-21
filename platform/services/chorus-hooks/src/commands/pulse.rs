@@ -7,8 +7,12 @@ use std::process::ExitCode;
 
 use crate::shared::state_paths::REPO_ROOT;
 
-/// Assemble team state snapshot and write to /tmp/pulse-latest.json
-pub fn run(_args: &[String]) -> ExitCode {
+/// Assemble team state snapshot and write to /tmp/pulse-latest.json.
+/// Returns compact JSON string. Callers that need only the side-effect
+/// (session-start under #2311 rescope — pulse file refresh without
+/// stdout pollution) use this; hook callers that pipe JSON to stdout
+/// use `run()`.
+pub fn assemble() -> String {
     let start = std::time::Instant::now();
     let mut pulse = serde_json::Map::new();
 
@@ -66,10 +70,14 @@ pub fn run(_args: &[String]) -> ExitCode {
     let out = serde_json::to_string_pretty(&json).unwrap_or_default();
     let _ = fs::write("/tmp/pulse-latest.json", &out);
 
-    // Compact one-liner to stdout for hook injection
-    let compact = serde_json::to_string(&json).unwrap_or_default();
-    println!("{}", compact);
+    serde_json::to_string(&json).unwrap_or_default()
+}
 
+/// Hook-invocation entry point. Writes pulse file and prints compact JSON
+/// to stdout for hook injection.
+pub fn run(_args: &[String]) -> ExitCode {
+    let compact = assemble();
+    println!("{}", compact);
     ExitCode::SUCCESS
 }
 

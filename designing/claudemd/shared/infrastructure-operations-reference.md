@@ -29,6 +29,6 @@ curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \
 | role-state | `../../scripts/role-state <role> <state>` |
 | nudge | `bash ../../scripts/nudge <target> "message" --from <sender>` |
 | chorus-log | `../../scripts/chorus-log <event> <role> key=value` |
-| werk-init.sh | `bash ../../scripts/werk-init.sh <role> [--close]` |
+| session-close | `chorus-hook-shim session-close <role>` (close-out introspection) |
 
 **Never use:** `/Users/jeffbridwell/CascadeProjects/chorus/scripts/nudge` (stale copy), `gathering-te../../scripts/` (wrong repo name).
