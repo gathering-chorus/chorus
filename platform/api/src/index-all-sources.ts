@@ -63,12 +63,22 @@ function indexSpine(ctx: IndexCtx): string | void {
       indexed++;
     }
   });
+  // #2323: exclude self-referential search telemetry — the index was eating
+  // its own tail (4.8% of spine volume; ~40% of a typical query result was
+  // the query-log echoing itself). Extend if another event type emits
+  // search-of-search.
+  const EXCLUDED_EVENTS = new Set([
+    'search.query.executed',
+    'search.result.returned',
+    'search.hierarchy.enrichment',
+  ]);
   const events: any[] = [];
   for (const line of lines) {
     try {
       const evt = JSON.parse(line);
       const role = evt.role || 'system';
       const event = evt.event || 'unknown';
+      if (EXCLUDED_EVENTS.has(event)) continue;
       events.push({
         source: 'spine',
         source_id: `spine-${evt.timestamp}-${event}`,
