@@ -693,6 +693,15 @@ pub fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
 
+    // #2304: mirror the #2286 exemption — edits with no behavioral signature
+    // (unused-import deletions, comment-only edits) can't introduce a new
+    // test block, so the quality scan has nothing to evaluate. Runs before
+    // the parse step so a hollowed-out reconstructed incoming source can't
+    // trip parser-fail-closed diagnostics on an otherwise trivial edit.
+    if crate::hooks::tdd_gate::is_no_signature_edit(input) {
+        return HookResponse::allow();
+    }
+
     let (path, existing, incoming) = match resolve_test_file_change(input) {
         Some(triple) => triple,
         None => return HookResponse::allow(),
@@ -1337,6 +1346,58 @@ mod tests {
         "#;
         let err = analyse_incoming(existing, incoming).unwrap_err();
         assert!(err.contains("foo"));
+    }
+
+    // ── #2304: is_no_signature_edit short-circuit in check() ────────────────
+
+    fn tq_edit(file: &str, old: &str, new: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Edit".into()),
+            tool_input: Some(serde_json::json!({
+                "file_path": file, "old_string": old, "new_string": new,
+            })),
+            tool_response: None, session_id: None, cwd: None, prompt: None,
+            stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
+        }
+    }
+    fn tq_write(file: &str, content: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Write".into()),
+            tool_input: Some(serde_json::json!({"file_path": file, "content": content})),
+            tool_response: None, session_id: None, cwd: None, prompt: None,
+            stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
+        }
+    }
+
+    #[test]
+    fn check_allows_unused_import_delete_on_test_file() {
+        // #2304 AC: a test-file edit that only removes an unused import has no
+        // behavioral signature — the quality scan has nothing to evaluate and
+        // must allow without reading the on-disk file.
+        let i = tq_edit(
+            "/tmp/nonexistent/foo.test.ts",
+            "import { bar } from '../src/bar';",
+            "",
+        );
+        let resp = check(&i);
+        assert!(resp.stdout.is_none(), "expected allow for unused-import delete, got stdout: {:?}", resp.stdout);
+    }
+
+    #[test]
+    fn check_blocks_new_test_write_with_no_assertions() {
+        // #2304 AC: the exemption must not leak to Write — a new test file
+        // with assertion-free tests is still blocked by the quality scan.
+        let content = r#"
+            import { realFn } from '../src/real';
+            test('hollow', () => {
+                realFn();
+            });
+        "#;
+        let i = tq_write("/tmp/nonexistent/hollow.test.ts", content);
+        let resp = check(&i);
+        let body = resp.stdout.as_deref().unwrap_or("");
+        assert!(body.contains("Test quality gate") || body.contains("no assertion"),
+            "expected deny with quality-gate message for assertion-free Write, got stdout: {:?}", resp.stdout);
     }
 
     #[test]
