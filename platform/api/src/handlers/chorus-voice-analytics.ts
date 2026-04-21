@@ -87,7 +87,202 @@ function emptyTones(): Record<Tone, number> {
   return Object.fromEntries(TONE_KEYS.map((k) => [k, 0])) as Record<Tone, number>;
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+type Role = 'wren' | 'silas' | 'kade';
+type Row = { content: string; channel: string; timestamp: string };
+
+interface Aggregates {
+  toneCount: Record<Tone, number>;
+  toneByRole: Record<string, Record<Tone, number>>;
+  weeklyTone: Record<string, Record<Tone, number>>;
+  weeklyRole: Record<string, { wren: number; silas: number; kade: number }>;
+  weeklyLength: Record<string, { total: number; count: number }>;
+  hourByRole: Record<string, number[]>;
+  bigramCount: Record<string, number>;
+  correctiveWords: Record<string, number>;
+  roleWordFreq: Record<string, Record<string, number>>;
+}
+
+function isNoise(c: string): boolean {
+  if (!c || c.length > 500) return true;
+  if (c.startsWith('<') || c.startsWith('{') || c.startsWith('[')) return true;
+  if (/^\/Users\/|^\/tmp\/|^\/opt\//.test(c)) return true;
+  if (/^(exit|y|n|yes|no)$/i.test(c.trim())) return true;
+  if (c.includes('Base directory for this skill:')) return true;
+  if (c.startsWith('# /') && c.includes('## ')) return true;
+  if (/^<command-/.test(c)) return true;
+  if (/^<task-notification>/.test(c)) return true;
+  if (c.startsWith('This session is being continued from')) return true;
+  if (/^ARGUMENTS:/.test(c)) return true;
+  return false;
+}
+
+function loadMessages(db: Database.Database, cutoff: string): Row[] {
+  const rows = db.prepare(`
+    SELECT content, channel, timestamp FROM messages
+    WHERE author='user' AND source='claude'
+      AND channel IN ('session:wren','session:silas','session:kade')
+      AND timestamp >= ?
+    ORDER BY timestamp ASC
+  `).all(cutoff) as Row[];
+  return rows
+    .map((r) => ({ ...r, content: r.content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim() }))
+    .filter((r) => !isNoise(r.content));
+}
+
+function weekKeyFor(d: Date): string {
+  const dayOfYear = Math.floor((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000);
+  const weekNum = Math.ceil((dayOfYear + new Date(d.getFullYear(), 0, 1).getDay() + 1) / 7);
+  return `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+}
+
+function newAggregates(): Aggregates {
+  return {
+    toneCount: emptyTones(),
+    toneByRole: { wren: emptyTones(), silas: emptyTones(), kade: emptyTones() },
+    weeklyTone: {},
+    weeklyRole: {},
+    weeklyLength: {},
+    hourByRole: {
+      wren: new Array(24).fill(0), silas: new Array(24).fill(0), kade: new Array(24).fill(0),
+    },
+    bigramCount: {},
+    correctiveWords: {},
+    roleWordFreq: { wren: {}, silas: {}, kade: {} },
+  };
+}
+
+function tokenize(text: string): string[] {
+  return text.toLowerCase().replace(/[^a-z0-9\s'-]/g, ' ').split(/\s+/).filter((w) => w.length > 1);
+}
+
+function recordBigrams(words: string[], into: Record<string, number>): void {
+  for (let i = 0; i < words.length - 1; i++) {
+    if (isValidWord(words[i]) && isValidWord(words[i + 1])) {
+      const bg = `${words[i]} ${words[i + 1]}`;
+      into[bg] = (into[bg] || 0) + 1;
+    }
+  }
+}
+
+function incrementWordMap(words: string[], into: Record<string, number>): void {
+  for (const w of words) {
+    if (isValidWord(w)) into[w] = (into[w] || 0) + 1;
+  }
+}
+
+function updateWeekly(agg: Aggregates, weekKey: string, role: Role, tone: Tone, wordCount: number): void {
+  if (!agg.weeklyTone[weekKey]) agg.weeklyTone[weekKey] = emptyTones();
+  agg.weeklyTone[weekKey][tone]++;
+
+  if (!agg.weeklyRole[weekKey]) agg.weeklyRole[weekKey] = { wren: 0, silas: 0, kade: 0 };
+  agg.weeklyRole[weekKey][role]++;
+
+  if (!agg.weeklyLength[weekKey]) agg.weeklyLength[weekKey] = { total: 0, count: 0 };
+  agg.weeklyLength[weekKey].total += wordCount;
+  agg.weeklyLength[weekKey].count++;
+}
+
+function bostonHour(d: Date, isEDT: (dateStr: string) => boolean): number {
+  const offset = isEDT(d.toISOString().slice(0, 10)) ? 4 : 5;
+  return (d.getUTCHours() - offset + 24) % 24;
+}
+
+function processRow(agg: Aggregates, row: Row, isEDT: (dateStr: string) => boolean, seen: Set<string>): void {
+  const role = row.channel.replace('session:', '') as Role;
+  const tone = classifyTone(row.content);
+  const words = tokenize(row.content);
+
+  agg.toneCount[tone]++;
+  if (agg.toneByRole[role]) agg.toneByRole[role][tone]++;
+
+  const d = new Date(row.timestamp);
+  updateWeekly(agg, weekKeyFor(d), role, tone, words.length);
+  agg.hourByRole[role][bostonHour(d, isEDT)]++;
+
+  if (!seen.has(row.content)) {
+    seen.add(row.content);
+    recordBigrams(words, agg.bigramCount);
+  }
+  if (tone === 'corrective') incrementWordMap(words, agg.correctiveWords);
+  incrementWordMap(words, agg.roleWordFreq[role]);
+}
+
+function aggregate(rows: Row[], isEDT: (dateStr: string) => boolean): Aggregates {
+  const agg = newAggregates();
+  const seen = new Set<string>();
+  for (const row of rows) processRow(agg, row, isEDT, seen);
+  return agg;
+}
+
+function headlinePct(toneCount: Record<Tone, number>, total: number): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const t of TONE_KEYS) {
+    out[t] = total > 0 ? Math.round((toneCount[t] / total) * 100) : 0;
+  }
+  return out;
+}
+
+function toneByRolePercentages(toneByRole: Record<string, Record<Tone, number>>): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const [r, counts] of Object.entries(toneByRole)) {
+    const roleTotal = Object.values(counts).reduce((a, b) => a + b, 0);
+    out[r] = {};
+    for (const [t, c] of Object.entries(counts)) {
+      out[r][t] = roleTotal > 0 ? Math.round((c / roleTotal) * 100) : 0;
+    }
+  }
+  return out;
+}
+
+function buildToneTrend(weeklyTone: Record<string, Record<Tone, number>>, weeks: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = { weeks };
+  for (const t of TONE_KEYS) out[t] = weeks.map((w) => weeklyTone[w]?.[t] || 0);
+  return out;
+}
+
+function buildRoleAttention(weeklyRole: Aggregates['weeklyRole'], weeks: string[]) {
+  return {
+    weeks,
+    wren: weeks.map((w) => weeklyRole[w]?.wren || 0),
+    silas: weeks.map((w) => weeklyRole[w]?.silas || 0),
+    kade: weeks.map((w) => weeklyRole[w]?.kade || 0),
+  };
+}
+
+function buildLengthTrend(weeklyLength: Aggregates['weeklyLength'], weeks: string[]) {
+  return {
+    weeks,
+    avgWords: weeks.map((w) => {
+      const wl = weeklyLength[w];
+      return wl && wl.count > 0 ? Math.round(wl.total / wl.count) : 0;
+    }),
+  };
+}
+
+function topBy<T>(entries: Array<[string, number]>, limit: number, map: (k: string, v: number) => T): T[] {
+  return entries.sort((a, b) => b[1] - a[1]).slice(0, limit).map(([k, v]) => map(k, v));
+}
+
+function buildDistinctiveVocab(roleWordFreq: Record<string, Record<string, number>>): Record<string, Array<{ word: string; count: number }>> {
+  const totalWordFreq: Record<string, number> = {};
+  for (const freq of Object.values(roleWordFreq)) {
+    for (const [w, c] of Object.entries(freq)) totalWordFreq[w] = (totalWordFreq[w] || 0) + c;
+  }
+  const globalTotal = Object.values(totalWordFreq).reduce((a, b) => a + b, 0);
+
+  const out: Record<string, Array<{ word: string; count: number }>> = {};
+  for (const [role, freq] of Object.entries(roleWordFreq)) {
+    const roleTotal = Object.values(freq).reduce((a, b) => a + b, 0);
+    out[role] = Object.entries(freq)
+      .filter(([w, c]) => c >= 5 && totalWordFreq[w] >= 5)
+      .map(([w, c]) => ({ word: w, count: c, ratio: (c / roleTotal) / (totalWordFreq[w] / globalTotal) }))
+      .sort((a, b) => b.ratio - a.ratio)
+      .slice(0, 10)
+      .map(({ word, count }) => ({ word, count }));
+  }
+  return out;
+}
+
 export function fetchChorusVoiceAnalytics(
   deps: ChorusVoiceAnalyticsDeps,
   query: ChorusVoiceAnalyticsQuery,
@@ -96,164 +291,10 @@ export function fetchChorusVoiceAnalytics(
   const days = Math.min(Math.max(parseInt(query.days || '30', 10), 1), 365);
   const cutoff = new Date(now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  const rows = deps.db.prepare(`
-    SELECT content, channel, timestamp FROM messages
-    WHERE author='user' AND source='claude'
-      AND channel IN ('session:wren','session:silas','session:kade')
-      AND timestamp >= ?
-    ORDER BY timestamp ASC
-  `).all(cutoff) as Array<{ content: string; channel: string; timestamp: string }>;
-
-  const filtered = rows
-    .map((r) => ({ ...r, content: r.content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim() }))
-    .filter((r) => {
-      const c = r.content;
-      if (!c || c.length > 500) return false;
-      if (c.startsWith('<') || c.startsWith('{') || c.startsWith('[')) return false;
-      if (/^\/Users\/|^\/tmp\/|^\/opt\//.test(c)) return false;
-      if (/^(exit|y|n|yes|no)$/i.test(c.trim())) return false;
-      if (c.includes('Base directory for this skill:')) return false;
-      if (c.startsWith('# /') && c.includes('## ')) return false;
-      if (/^<command-/.test(c)) return false;
-      if (/^<task-notification>/.test(c)) return false;
-      if (c.startsWith('This session is being continued from')) return false;
-      if (/^ARGUMENTS:/.test(c)) return false;
-      return true;
-    });
-
-  const toneCount = emptyTones();
-  const toneByRole: Record<string, Record<Tone, number>> = {
-    wren: emptyTones(), silas: emptyTones(), kade: emptyTones(),
-  };
-  const weeklyTone: Record<string, Record<Tone, number>> = {};
-  const weeklyRole: Record<string, { wren: number; silas: number; kade: number }> = {};
-  const weeklyLength: Record<string, { total: number; count: number }> = {};
-  const hourByRole: Record<string, number[]> = {
-    wren: new Array(24).fill(0), silas: new Array(24).fill(0), kade: new Array(24).fill(0),
-  };
-  const bigramCount: Record<string, number> = {};
-  const correctiveWords: Record<string, number> = {};
-  const roleWordFreq: Record<string, Record<string, number>> = { wren: {}, silas: {}, kade: {} };
-
-  const seenContent = new Set<string>();
-  for (const row of filtered) {
-    const role = row.channel.replace('session:', '') as 'wren' | 'silas' | 'kade';
-    const tone = classifyTone(row.content);
-    const words = row.content.toLowerCase().replace(/[^a-z0-9\s'-]/g, ' ').split(/\s+/).filter((w) => w.length > 1);
-
-    toneCount[tone]++;
-    if (toneByRole[role]) toneByRole[role][tone]++;
-
-    const d = new Date(row.timestamp);
-    const dayOfYear = Math.floor((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000);
-    const weekNum = Math.ceil((dayOfYear + new Date(d.getFullYear(), 0, 1).getDay() + 1) / 7);
-    const weekKey = `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
-
-    if (!weeklyTone[weekKey]) weeklyTone[weekKey] = emptyTones();
-    weeklyTone[weekKey][tone]++;
-
-    if (!weeklyRole[weekKey]) weeklyRole[weekKey] = { wren: 0, silas: 0, kade: 0 };
-    weeklyRole[weekKey][role]++;
-
-    if (!weeklyLength[weekKey]) weeklyLength[weekKey] = { total: 0, count: 0 };
-    weeklyLength[weekKey].total += words.length;
-    weeklyLength[weekKey].count++;
-
-    const utcHour = d.getUTCHours();
-    const offset = deps.isEDT(d.toISOString().slice(0, 10)) ? 4 : 5;
-    const bostonHour = (utcHour - offset + 24) % 24;
-    hourByRole[role][bostonHour]++;
-
-    if (!seenContent.has(row.content)) {
-      seenContent.add(row.content);
-      for (let i = 0; i < words.length - 1; i++) {
-        if (isValidWord(words[i]) && isValidWord(words[i + 1])) {
-          const bg = `${words[i]} ${words[i + 1]}`;
-          bigramCount[bg] = (bigramCount[bg] || 0) + 1;
-        }
-      }
-    }
-
-    if (tone === 'corrective') {
-      for (const w of words) {
-        if (isValidWord(w)) correctiveWords[w] = (correctiveWords[w] || 0) + 1;
-      }
-    }
-
-    for (const w of words) {
-      if (isValidWord(w)) roleWordFreq[role][w] = (roleWordFreq[role][w] || 0) + 1;
-    }
-  }
-
+  const filtered = loadMessages(deps.db, cutoff);
+  const agg = aggregate(filtered, deps.isEDT);
   const total = filtered.length;
-
-  const headline: Record<string, number> = {};
-  for (const t of TONE_KEYS) {
-    headline[t] = total > 0 ? Math.round((toneCount[t] / total) * 100) : 0;
-  }
-
-  const toneByRolePct: Record<string, Record<string, number>> = {};
-  for (const [r, counts] of Object.entries(toneByRole)) {
-    const roleTotal = Object.values(counts).reduce((a, b) => a + b, 0);
-    toneByRolePct[r] = {};
-    for (const [t, c] of Object.entries(counts)) {
-      toneByRolePct[r][t] = roleTotal > 0 ? Math.round((c / roleTotal) * 100) : 0;
-    }
-  }
-
-  const weeks = Object.keys(weeklyTone).sort();
-  const toneTrend: Record<string, unknown> = { weeks };
-  for (const t of TONE_KEYS) {
-    toneTrend[t] = weeks.map((w) => weeklyTone[w]?.[t] || 0);
-  }
-
-  const roleAttention = {
-    weeks,
-    wren: weeks.map((w) => weeklyRole[w]?.wren || 0),
-    silas: weeks.map((w) => weeklyRole[w]?.silas || 0),
-    kade: weeks.map((w) => weeklyRole[w]?.kade || 0),
-  };
-
-  const messageLengthTrend = {
-    weeks,
-    avgWords: weeks.map((w) => {
-      const wl = weeklyLength[w];
-      return wl && wl.count > 0 ? Math.round(wl.total / wl.count) : 0;
-    }),
-  };
-
-  const bigrams = Object.entries(bigramCount)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 25)
-    .map(([phrase, count]) => ({ phrase, count }));
-
-  const correctiveWordList = Object.entries(correctiveWords)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15)
-    .map(([word, count]) => ({ word, count }));
-
-  const totalWordFreq: Record<string, number> = {};
-  for (const freq of Object.values(roleWordFreq)) {
-    for (const [w, c] of Object.entries(freq)) {
-      totalWordFreq[w] = (totalWordFreq[w] || 0) + c;
-    }
-  }
-  const distinctiveVocab: Record<string, Array<{ word: string; count: number }>> = {};
-  for (const [role, freq] of Object.entries(roleWordFreq)) {
-    const roleTotal = Object.values(freq).reduce((a, b) => a + b, 0);
-    const globalTotal = Object.values(totalWordFreq).reduce((a, b) => a + b, 0);
-    const scored = Object.entries(freq)
-      .filter(([w, c]) => c >= 5 && totalWordFreq[w] >= 5)
-      .map(([w, c]) => {
-        const roleRate = c / roleTotal;
-        const globalRate = totalWordFreq[w] / globalTotal;
-        return { word: w, count: c, ratio: roleRate / globalRate };
-      })
-      .sort((a, b) => b.ratio - a.ratio)
-      .slice(0, 10)
-      .map(({ word, count }) => ({ word, count }));
-    distinctiveVocab[role] = scored;
-  }
+  const weeks = Object.keys(agg.weeklyTone).sort();
 
   const dateRange = filtered.length > 0
     ? { from: filtered[0].timestamp.split('T')[0], to: filtered[filtered.length - 1].timestamp.split('T')[0] }
@@ -263,15 +304,15 @@ export function fetchChorusVoiceAnalytics(
     status: 200,
     body: {
       meta: { messages: total, days, dateRange },
-      headline,
-      toneByRole: toneByRolePct,
-      toneTrend,
-      roleAttention,
-      messageLengthTrend,
-      hourOfDay: hourByRole,
-      bigrams,
-      correctiveWords: correctiveWordList,
-      distinctiveVocab,
+      headline: headlinePct(agg.toneCount, total),
+      toneByRole: toneByRolePercentages(agg.toneByRole),
+      toneTrend: buildToneTrend(agg.weeklyTone, weeks),
+      roleAttention: buildRoleAttention(agg.weeklyRole, weeks),
+      messageLengthTrend: buildLengthTrend(agg.weeklyLength, weeks),
+      hourOfDay: agg.hourByRole,
+      bigrams: topBy(Object.entries(agg.bigramCount), 25, (phrase, count) => ({ phrase, count })),
+      correctiveWords: topBy(Object.entries(agg.correctiveWords), 15, (word, count) => ({ word, count })),
+      distinctiveVocab: buildDistinctiveVocab(agg.roleWordFreq),
     },
   };
 }

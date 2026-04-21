@@ -170,45 +170,61 @@ async function buildSparqlSections(
     SECTION_PREDS.map(([, pred]) => deps.sparql(sectionQuery(pred)).catch(() => null)),
   );
 
-  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
   SECTION_PREDS.forEach(([key], i) => {
-    const r = results[i];
-    const bindings = (r?.results?.bindings || []) as SectionBinding[];
+    const bindings = (results[i]?.results?.bindings || []) as SectionBinding[];
     if (bindings.length === 0) return;
-
-    const items: string[] = [];
-    const itemDetails: Array<Record<string, unknown>> = [];
-    const split = (v: string | undefined) => (v ? v.split('||').filter(Boolean) : []);
-
-    for (const b of bindings) {
-      const label = b.label?.value;
-      if (!label) continue;
-      items.push(label);
-
-      const detail: Record<string, unknown> = { label };
-      if (b.comment?.value) detail.description = b.comment.value;
-
-      const directOwners = split(b.owners?.value);
-      const reads = split(b.reads?.value);
-      const writes = split(b.writes?.value);
-      const consumes = split(b.consumes?.value);
-
-      if (directOwners.length) {
-        detail.owner = directOwners.length === 1 ? directOwners[0] : directOwners;
-      } else if (parentOwner) {
-        detail.owner = parentOwner;
-        detail.ownerInherited = true;
-      }
-      if (reads.length) detail.reads = reads;
-      if (writes.length) detail.writes = writes;
-      if (consumes.length) detail.consumes = consumes;
-      itemDetails.push(detail);
-    }
-
+    const { items, itemDetails } = buildSectionItems(bindings, parentOwner);
     if (items.length > 0) {
       sections[key] = { title: key.replace(/_/g, ' '), items, itemDetails };
     }
   });
+}
+
+function splitList(v: string | undefined): string[] {
+  return v ? v.split('||').filter(Boolean) : [];
+}
+
+function ownerFor(directOwners: string[], parentOwner: string | null): { owner?: string | string[]; inherited: boolean } {
+  if (directOwners.length) {
+    return { owner: directOwners.length === 1 ? directOwners[0] : directOwners, inherited: false };
+  }
+  if (parentOwner) return { owner: parentOwner, inherited: true };
+  return { inherited: false };
+}
+
+function buildBindingDetail(b: SectionBinding, parentOwner: string | null): Record<string, unknown> | null {
+  const label = b.label?.value;
+  if (!label) return null;
+  const detail: Record<string, unknown> = { label };
+  if (b.comment?.value) detail.description = b.comment.value;
+
+  const { owner, inherited } = ownerFor(splitList(b.owners?.value), parentOwner);
+  if (owner !== undefined) {
+    detail.owner = owner;
+    if (inherited) detail.ownerInherited = true;
+  }
+  const reads = splitList(b.reads?.value);
+  const writes = splitList(b.writes?.value);
+  const consumes = splitList(b.consumes?.value);
+  if (reads.length) detail.reads = reads;
+  if (writes.length) detail.writes = writes;
+  if (consumes.length) detail.consumes = consumes;
+  return detail;
+}
+
+function buildSectionItems(
+  bindings: SectionBinding[],
+  parentOwner: string | null,
+): { items: string[]; itemDetails: Array<Record<string, unknown>> } {
+  const items: string[] = [];
+  const itemDetails: Array<Record<string, unknown>> = [];
+  for (const b of bindings) {
+    const detail = buildBindingDetail(b, parentOwner);
+    if (!detail) continue;
+    items.push(detail.label as string);
+    itemDetails.push(detail);
+  }
+  return { items, itemDetails };
 }
 
 export async function fetchChorusDomain(

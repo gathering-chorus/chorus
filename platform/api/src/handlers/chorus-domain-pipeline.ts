@@ -41,6 +41,11 @@ function stageStatus(evidence: number, threshold = 1): Stage['status'] {
   return evidence === 0 ? 'not_started' : evidence >= threshold ? 'complete' : 'in_progress';
 }
 
+function thresholdStatus(evidence: number, threshold: number): Stage['status'] {
+  if (evidence === 0) return 'not_started';
+  return evidence >= threshold ? 'complete' : 'in_progress';
+}
+
 function emptyStages(): Stage[] {
   return (['shape', 'design', 'build', 'prove', 'ship'] as const).map((name) => ({
     name,
@@ -51,7 +56,87 @@ function emptyStages(): Stage[] {
   }));
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+type CardRow = { status?: string };
+
+function extractCards(cardsRes: unknown): CardRow[] {
+  const withCards = (cardsRes as { data?: { cards?: CardRow[] } } | null)?.data?.cards;
+  if (withCards) return withCards;
+  const rawData = (cardsRes as { data?: unknown } | null)?.data;
+  return (rawData as CardRow[] | undefined) ?? [];
+}
+
+function buildShapeStage(cards: CardRow[]): Stage {
+  const total = cards.length;
+  const done = cards.filter((c) => c.status === 'Done').length;
+  const wip = cards.filter((c) => c.status === 'WIP').length;
+  return {
+    name: 'shape',
+    status: thresholdStatus(total, 5),
+    evidence: total,
+    detail: { total_cards: total, wip, done },
+    summary: total === 0 ? 'No cards' : `${total} cards (${wip} WIP, ${done} done)`,
+  };
+}
+
+function buildDesignStage(compRes: unknown): Stage {
+  const data = (compRes as { data?: { percentage?: number; present?: unknown[]; missing?: unknown[] } } | null)?.data;
+  const pct = data?.percentage ?? 0;
+  const present = data?.present ?? [];
+  const missing = data?.missing ?? [];
+  return {
+    name: 'design',
+    status: thresholdStatus(pct, 80),
+    evidence: pct,
+    detail: { percentage: pct, present, missing },
+    summary: pct === 0 ? 'Not started' : `${pct}% — ${present.length} present, ${missing.length} missing`,
+  };
+}
+
+function metaCount(res: unknown, key: 'count' | 'source_count' = 'count'): number {
+  return (res as { _meta?: Record<string, number> } | null)?._meta?.[key] ?? 0;
+}
+
+function buildBuildStage(codeRes: unknown, testsRes: unknown, endpointsRes: unknown): Stage {
+  const code = metaCount(codeRes, 'source_count');
+  const tests = metaCount(testsRes);
+  const endpoints = metaCount(endpointsRes);
+  const total = code + tests + endpoints;
+  return {
+    name: 'build',
+    status: stageStatus(total, 3),
+    evidence: total,
+    detail: { code, tests, endpoints },
+    summary: total === 0 ? 'No code discovered' : `${code} source, ${tests} tests, ${endpoints} endpoints`,
+  };
+}
+
+function buildProveStage(alertsRes: unknown): Stage {
+  const count = metaCount(alertsRes);
+  return {
+    name: 'prove',
+    status: stageStatus(count),
+    evidence: count,
+    detail: { alerts: count },
+    summary: count === 0 ? 'No alert coverage' : `${count} alert rules`,
+  };
+}
+
+function buildShipStage(cards: CardRow[]): Stage {
+  const total = cards.length;
+  const done = cards.filter((c) => c.status === 'Done').length;
+  const ratio = total > 0 ? Math.round((done / total) * 100) : 0;
+  let status: Stage['status'] = 'in_progress';
+  if (done === 0) status = 'not_started';
+  else if (done >= total * 0.5) status = 'complete';
+  return {
+    name: 'ship',
+    status,
+    evidence: done,
+    detail: { done, total, ratio },
+    summary: done === 0 ? 'Nothing shipped' : `${done}/${total} cards shipped (${ratio}%)`,
+  };
+}
+
 export async function fetchChorusDomainPipeline(
   deps: ChorusDomainPipelineDeps,
   name: string,
@@ -83,73 +168,13 @@ export async function fetchChorusDomainPipeline(
     deps.fetcher(`/api/chorus/domain/${name}/alerts`),
   ]);
 
-  type CardRow = { status?: string };
-  const cards: CardRow[] =
-    ((cardsRes as { data?: { cards?: CardRow[] } } | null)?.data?.cards) ??
-    (((cardsRes as { data?: unknown } | null)?.data) as CardRow[] | undefined) ??
-    [];
-  const totalCards = cards.length;
-  const doneCards = cards.filter((c) => c.status === 'Done').length;
-  const wipCards = cards.filter((c) => c.status === 'WIP').length;
-
-  const compData = (compRes as { data?: { percentage?: number; present?: unknown[]; missing?: unknown[] } } | null)?.data;
-  const completeness = compData?.percentage ?? 0;
-  const compPresent = compData?.present ?? [];
-  const compMissing = compData?.missing ?? [];
-
-  const codeCount = (codeRes as { _meta?: { source_count?: number } } | null)?._meta?.source_count ?? 0;
-  const testCount = (testsRes as { _meta?: { count?: number } } | null)?._meta?.count ?? 0;
-  const endpointCount = (endpointsRes as { _meta?: { count?: number } } | null)?._meta?.count ?? 0;
-  const alertCount = (alertsRes as { _meta?: { count?: number } } | null)?._meta?.count ?? 0;
-  const buildEvidence = codeCount + testCount + endpointCount;
-
+  const cards = extractCards(cardsRes);
   const stages: Stage[] = [
-    {
-      name: 'shape',
-      status: totalCards === 0 ? 'not_started' : totalCards >= 5 ? 'complete' : 'in_progress',
-      evidence: totalCards,
-      detail: { total_cards: totalCards, wip: wipCards, done: doneCards },
-      summary: totalCards === 0 ? 'No cards' : `${totalCards} cards (${wipCards} WIP, ${doneCards} done)`,
-    },
-    {
-      name: 'design',
-      status: completeness === 0 ? 'not_started' : completeness >= 80 ? 'complete' : 'in_progress',
-      evidence: completeness,
-      detail: { percentage: completeness, present: compPresent, missing: compMissing },
-      summary: completeness === 0 ? 'Not started' : `${completeness}% — ${compPresent.length} present, ${compMissing.length} missing`,
-    },
-    {
-      name: 'build',
-      status: stageStatus(buildEvidence, 3),
-      evidence: buildEvidence,
-      detail: { code: codeCount, tests: testCount, endpoints: endpointCount },
-      summary: buildEvidence === 0 ? 'No code discovered' : `${codeCount} source, ${testCount} tests, ${endpointCount} endpoints`,
-    },
-    {
-      name: 'prove',
-      status: stageStatus(alertCount),
-      evidence: alertCount,
-      detail: { alerts: alertCount },
-      summary: alertCount === 0 ? 'No alert coverage' : `${alertCount} alert rules`,
-    },
-    {
-      name: 'ship',
-      status:
-        doneCards === 0
-          ? 'not_started'
-          : doneCards >= totalCards * 0.5
-          ? 'complete'
-          : 'in_progress',
-      evidence: doneCards,
-      detail: {
-        done: doneCards,
-        total: totalCards,
-        ratio: totalCards > 0 ? Math.round((doneCards / totalCards) * 100) : 0,
-      },
-      summary: doneCards === 0
-        ? 'Nothing shipped'
-        : `${doneCards}/${totalCards} cards shipped (${totalCards > 0 ? Math.round((doneCards / totalCards) * 100) : 0}%)`,
-    },
+    buildShapeStage(cards),
+    buildDesignStage(compRes),
+    buildBuildStage(codeRes, testsRes, endpointsRes),
+    buildProveStage(alertsRes),
+    buildShipStage(cards),
   ];
 
   return {

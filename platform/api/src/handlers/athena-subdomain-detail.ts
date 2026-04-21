@@ -83,7 +83,53 @@ function dedupByUri<T extends { uri: string }>(entries: T[]): T[] {
   return out;
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+type Binding = Awaited<ReturnType<AthenaSubdomainDetailDeps['sparql']>>['results']['bindings'][number];
+
+function extractConsumers(bindings: Binding[]): UriLabel[] {
+  return dedupByUri(
+    bindings
+      .filter((b) => b.consumer)
+      .map((b) => ({ uri: b.consumer!.value, label: b.consumerLabel?.value ?? fallbackId(b.consumer!.value) })),
+  );
+}
+
+function extractConsumes(bindings: Binding[]): UriLabel[] {
+  return dedupByUri(
+    bindings
+      .filter((b) => b.consumed)
+      .map((b) => ({ uri: b.consumed!.value, label: b.consumedLabel?.value ?? fallbackId(b.consumed!.value) })),
+  );
+}
+
+function extractChildDomains(bindings: Binding[]): ChildDomain[] {
+  return dedupByUri(
+    bindings
+      .filter((b) => b.child)
+      .map((b) => ({
+        uri: b.child!.value,
+        id: fallbackId(b.child!.value),
+        label: b.childLabel?.value ?? fallbackId(b.child!.value),
+      })),
+  );
+}
+
+function extractInstances(bindings: Binding[]): Instance[] {
+  const instanceMap = new Map<string, Instance>();
+  for (const b of bindings) {
+    if (!b.instance) continue;
+    const uri = b.instance.value;
+    if (instanceMap.has(uri)) continue;
+    instanceMap.set(uri, {
+      uri,
+      id: fallbackId(uri),
+      label: b.instanceLabel?.value ?? fallbackId(uri),
+      comment: b.instanceComment?.value ?? null,
+      type: b.instanceTypeLabel?.value ?? (b.instanceType?.value ? fallbackId(b.instanceType.value) : null),
+    });
+  }
+  return Array.from(instanceMap.values());
+}
+
 export async function fetchAthenaSubdomainDetail(
   deps: AthenaSubdomainDetailDeps,
   id: string,
@@ -114,41 +160,6 @@ export async function fetchAthenaSubdomainDetail(
     }
 
     const first = bindings[0];
-
-    const consumers: UriLabel[] = dedupByUri(
-      bindings
-        .filter((b) => b.consumer)
-        .map((b) => ({ uri: b.consumer!.value, label: b.consumerLabel?.value ?? fallbackId(b.consumer!.value) })),
-    );
-    const consumes: UriLabel[] = dedupByUri(
-      bindings
-        .filter((b) => b.consumed)
-        .map((b) => ({ uri: b.consumed!.value, label: b.consumedLabel?.value ?? fallbackId(b.consumed!.value) })),
-    );
-    const domains: ChildDomain[] = dedupByUri(
-      bindings
-        .filter((b) => b.child)
-        .map((b) => ({
-          uri: b.child!.value,
-          id: fallbackId(b.child!.value),
-          label: b.childLabel?.value ?? fallbackId(b.child!.value),
-        })),
-    );
-
-    const instanceMap = new Map<string, Instance>();
-    for (const b of bindings) {
-      if (!b.instance) continue;
-      const uri = b.instance.value;
-      if (instanceMap.has(uri)) continue;
-      instanceMap.set(uri, {
-        uri,
-        id: fallbackId(uri),
-        label: b.instanceLabel?.value ?? fallbackId(uri),
-        comment: b.instanceComment?.value ?? null,
-        type: b.instanceTypeLabel?.value ?? (b.instanceType?.value ? fallbackId(b.instanceType.value) : null),
-      });
-    }
-
     return {
       status: 200,
       body: envelope(
@@ -160,10 +171,10 @@ export async function fetchAthenaSubdomainDetail(
           owner: first.ownerLabel?.value ?? null,
           step: first.stepLabel?.value ?? null,
           comment: first.comment?.value ?? null,
-          consumedBy: consumers,
-          consumes,
-          domains,
-          instances: Array.from(instanceMap.values()),
+          consumedBy: extractConsumers(bindings),
+          consumes: extractConsumes(bindings),
+          domains: extractChildDomains(bindings),
+          instances: extractInstances(bindings),
         },
         now() - start,
       ),
