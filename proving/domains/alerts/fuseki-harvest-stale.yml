@@ -11,19 +11,11 @@ severity: warning
 schedule: "0 8 * * *"  # daily at 8am
 
 check: |
-  # Count triples modified in photo graphs in the last 7 days
-  # Since Fuseki doesn't track insert timestamps natively,
-  # check if the harvest pipeline process group has any output
-  RESULT=$(curl -sf --max-time 10 "http://localhost:3030/pods/query" \
-    --data-urlencode "query=PREFIX jb: <https://jeffbridwell.com/ontology#> SELECT (COUNT(*) AS ?c) WHERE { GRAPH ?g { ?s jb:dateTaken ?d } FILTER(STRSTARTS(STR(?g), 'urn:gathering:photos')) }" \
-    -H "Accept: application/json" 2>/dev/null)
-  COUNT=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['results']['bindings'][0]['c']['value'])" 2>/dev/null || echo "0")
-  if [ "$COUNT" -gt 0 ]; then
-    echo "ok:$COUNT photos in Fuseki"
-    exit 0
-  fi
-  echo "fuseki-harvest-empty"
-  exit 1
+  # #2327 — extracted to a script so three states (unreachable/empty/ok) are
+  # distinguished: curl failure → exit 0 (skip, log), count=0 → exit 1 (fire),
+  # count>0 → exit 0 (ok). Prior version conflated unreachable with empty.
+  export FUSEKI_SKIP_LOG="/tmp/fuseki-harvest-skip.log"
+  /Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts/fuseki-harvest-stale.check.sh
 
 action: |
   COOLDOWN="/tmp/alert-fuseki-harvest-stale-$(date '+%Y-%m-%d')"
