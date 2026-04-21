@@ -856,8 +856,16 @@ async function cmdLabel(ctx: CliCtx) {
     if (!Number.isFinite(id)) die(`Invalid card id: ${idArg}`);
     const { labelId, created } = await ctx.client.applyLabelByName(id, labelName);
     console.log(`Labeled #${id} with "${labelName}" (id=${labelId})${created ? ' — created' : ''}`);
+  } else if (sub === 'remove') {
+    const idArg = ctx.cmdArgs[1];
+    const labelName = ctx.cmdArgs.slice(2).join(' ');
+    if (!idArg || !labelName) die('Usage: cards label remove <id> <label-name>');
+    const id = parseInt(idArg, 10);
+    if (!Number.isFinite(id)) die(`Invalid card id: ${idArg}`);
+    const { removed } = await ctx.client.removeLabelByName(id, labelName);
+    console.log(removed ? `Removed "${labelName}" from #${id}` : `Label "${labelName}" not found — no-op`);
   } else {
-    die('Usage: cards label create <title> | cards label list | cards label add <id> <name>');
+    die('Usage: cards label create <title> | cards label list | cards label add <id> <name> | cards label remove <id> <name>');
   }
 }
 
@@ -901,6 +909,12 @@ function buildCliHandlers(): Record<string, (ctx: CliCtx) => void | Promise<unkn
     },
     tag: () => { die('Removed: use "cards set <id> domain=X", "cards set <id> sequence=X", or "cards sequence-tag <ids> <seq>"'); },
     untag: cmdUntag,
+    delete: (ctx) => {
+      if (!ctx.cmdArgs[0]) die('Usage: cards delete <id>');
+      const id = parseInt(ctx.cmdArgs[0], 10);
+      if (!Number.isFinite(id)) die(`Invalid card id: ${ctx.cmdArgs[0]}`);
+      return ctx.client.deleteTask(id).then(() => console.log(`Deleted #${id}`));
+    },
     deps: cmdDeps,
     blocked: cmdBlocked,
     ready: cmdReady,

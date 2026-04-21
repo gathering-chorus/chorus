@@ -484,6 +484,36 @@ export class BoardClient {
     return { labelId: label.id, created };
   }
 
+  /** Remove a label by name from a display-index card. No-op if label missing. (#2428) */
+  async removeLabelByName(index: number, labelName: string): Promise<{ removed: boolean }> {
+    const apiId = await this.resolveIndex(index);
+    const labels = await this.listLabels();
+    const label = labels.find((l) => l.title === labelName);
+    if (!label) return { removed: false };
+    await this.removeLabel(apiId, label.id);
+    this.clearCache();
+    return { removed: true };
+  }
+
+  /** Hard-delete a task by display index. Irreversible — use for test fixture cleanup only. (#2428) */
+  async deleteTask(index: number): Promise<void> {
+    const apiId = await this.resolveIndex(index);
+    await this.api('DELETE', `/tasks/${apiId}`, undefined);
+    this.clearCache();
+  }
+
+  /** Find cards whose title starts with a prefix. Returns display indices. (#2428 sentinel lookup) */
+  async findByTitlePrefix(prefix: string): Promise<number[]> {
+    const map = await this.buildTaskMap();
+    const tasks = await Promise.all(
+      Array.from(map).map(async ([displayIdx, apiId]) => {
+        const task = await this.fetchTask(apiId).catch(() => null);
+        return { displayIdx, title: task?.title || '' };
+      })
+    );
+    return tasks.filter((t) => t.title.startsWith(prefix)).map((t) => t.displayIdx).sort((a, b) => a - b);
+  }
+
   async removeLabel(apiId: number, labelId: number): Promise<void> {
     await this.api('DELETE', `/tasks/${apiId}/labels/${labelId}`, undefined);
   }
