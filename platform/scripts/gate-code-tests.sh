@@ -39,6 +39,55 @@ REPO=/Users/jeffbridwell/CascadeProjects/chorus
 BASE="HEAD~3"
 FULL=0
 
+# #2193: test.delta emission. Captures jest JSON output per project, diffs
+# against prior run, emits one test.delta event per project + one aggregate.
+# Prior-run state at /tmp/chorus-test-delta-<suite>.json.
+CHORUS_LOG="$REPO/platform/scripts/chorus-log"
+ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-$(basename "$HOME")}}"
+RUN_ID="$(date +%s)-${ROLE}"
+
+emit_test_delta() {
+  local suite="$1"
+  local passed="$2"
+  local failed="$3"
+  local prior_file="/tmp/chorus-test-delta-${suite}.json"
+  local prior_passed=0
+  local prior_failed=0
+  if [ -f "$prior_file" ]; then
+    prior_passed=$(python3 -c "import json; d=json.load(open('$prior_file')); print(d.get('passed',0))" 2>/dev/null || echo 0)
+    prior_failed=$(python3 -c "import json; d=json.load(open('$prior_file')); print(d.get('failed',0))" 2>/dev/null || echo 0)
+  fi
+  local delta_passed=$((passed - prior_passed))
+  local delta_failed=$((failed - prior_failed))
+  "$CHORUS_LOG" test.delta "$ROLE" \
+    "run_id=${RUN_ID}" \
+    "suite=${suite}" \
+    "passed=${passed}" \
+    "failed=${failed}" \
+    "delta_passed=${delta_passed}" \
+    "delta_failed=${delta_failed}" \
+    "role=${ROLE}" >/dev/null 2>&1 || true
+  # Rotate prior for next run
+  printf '{"passed":%s,"failed":%s,"run_id":"%s"}\n' "$passed" "$failed" "$RUN_ID" > "$prior_file" 2>/dev/null || true
+}
+
+# Run jest in a project and emit test.delta. Returns jest exit code.
+run_jest_with_delta() {
+  local proj="$1"
+  shift
+  local json_file="/tmp/chorus-jest-${proj//\//-}-${RUN_ID}.json"
+  local jest_exit=0
+  (cd "$REPO/$proj" && npx jest --json --outputFile="$json_file" "$@") || jest_exit=$?
+  if [ -f "$json_file" ]; then
+    local passed failed
+    passed=$(python3 -c "import json; d=json.load(open('$json_file')); print(d.get('numPassedTests',0))" 2>/dev/null || echo 0)
+    failed=$(python3 -c "import json; d=json.load(open('$json_file')); print(d.get('numFailedTests',0))" 2>/dev/null || echo 0)
+    emit_test_delta "${proj//\//-}" "$passed" "$failed"
+    rm -f "$json_file"
+  fi
+  return $jest_exit
+}
+
 # Parse args (positional BASE + --full flag in any order)
 for arg in "$@"; do
   case "$arg" in
@@ -116,7 +165,7 @@ if [ "$run_full" = "1" ]; then
   for proj in "${PROJECTS[@]}"; do
     if [ ! -d "$REPO/$proj" ]; then continue; fi
     echo "--- $proj (full suite) ---"
-    if ! (cd "$REPO/$proj" && npx jest); then
+    if ! run_jest_with_delta "$proj"; then
       exit_code=1
     fi
   done
@@ -140,7 +189,7 @@ for proj in "${PROJECTS[@]}"; do
   # Passing test files directly also works (jest runs them)
   any_scoped=1
   # shellcheck disable=SC2046
-  if ! (cd "$REPO/$proj" && npx jest --findRelatedTests $(printf '%s ' $REL)); then
+  if ! run_jest_with_delta "$proj" --findRelatedTests $(printf '%s ' $REL); then
     exit_code=1
   fi
 done

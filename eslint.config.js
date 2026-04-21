@@ -77,6 +77,16 @@ module.exports = [
   },
   {
     files: ['**/tests/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+      globals: {
+        ...globals.node,
+        ...globals.es2021,
+        ...globals.jest,
+        fetch: 'readonly',
+      },
+    },
     rules: {
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/ban-ts-comment': 'off',
