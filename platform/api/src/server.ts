@@ -649,6 +649,7 @@ app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
 // Three endpoints for the proof-of-shape: board/wip, roles, health.
 
 import { fetchContextBoardWip } from './handlers/context-board-wip';
+import { fetchContextSpine } from './handlers/context-spine';
 import { fetchContextBoardSwat } from './handlers/context-board-swat';
 import { fetchContextRoles } from './handlers/context-roles';
 import { fetchContextHealth } from './handlers/context-health';
@@ -710,6 +711,25 @@ const tailSpineForRole = (role: string): { timestamp: string; role: string; even
   } catch { /* best effort */ }
   return null;
 };
+
+app.get('/api/chorus/context/spine', async (req: Request, res: Response) => {
+  const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+  const readLog = () => {
+    const candidates = [
+      `${CHORUS_ROOT}/platform/logs/chorus.log`,
+      `${CHORUS_ROOT}/chorus/platform/logs/chorus.log`,
+    ];
+    const logPath = candidates.find((p) => fs.existsSync(p));
+    if (!logPath) return null;
+    try {
+      return fs.readFileSync(logPath, 'utf-8');
+    } catch {
+      return null;
+    }
+  };
+  const r = await fetchContextSpine({ sparql: _athena, readLog }, req.originalUrl, limit);
+  res.status(r.status).json(r.body);
+});
 
 app.get('/api/chorus/context/board/wip', async (req: Request, res: Response) => {
   const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined;
@@ -1280,6 +1300,7 @@ import { fetchAthenaSteps } from './handlers/athena-steps';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchLoomPrinciples } from './handlers/loom-principles';
+import { fetchLoomPolicies } from './handlers/loom-policies';
 import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
 import { fetchAthenaSubdomainDetail } from './handlers/athena-subdomain-detail';
 import { fetchAthenaBlastRadius } from './handlers/athena-blast-radius';
@@ -1375,6 +1396,12 @@ app.get('/api/athena/machines', async (_req: Request, res: Response) => {
 // GET /api/loom/principles — all chorus:Principle instances, product-facing alias (#2337)
 app.get('/api/loom/principles', async (_req: Request, res: Response) => {
   const r = await fetchLoomPrinciples({ sparql: athenaSparqlQuery, loadQuery: loadSparql });
+  res.status(r.status).json(r.body);
+});
+
+// GET /api/loom/policies — all chorus:Policy instances + enforces edges (#2339)
+app.get('/api/loom/policies', async (_req: Request, res: Response) => {
+  const r = await fetchLoomPolicies({ sparql: athenaSparqlQuery, loadQuery: loadSparql });
   res.status(r.status).json(r.body);
 });
 
