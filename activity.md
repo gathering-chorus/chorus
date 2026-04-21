@@ -1036,3 +1036,9 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zones). Sentinel test-fixture pattern (#2428) stopped card-ID inflation. Observer.digest narrowing (#2220). CORS narrowing caught on #2431 gate:arch. Pair with Wren on #2430 (55min, unified domain-identity resolver). Followed-on: #2433 dist-sync gate, #2434 quality-scanner, #2436 CORS consistency sweep.
 
 - [wren] 2026-04-21 session (~10h). Accepted 11 cards (#2288, #2326, #2327, #2325, #2328, #2321, #2337, #2252, #2339, #2193, #2431). Two pair sessions: #2430 with Silas (unified domain-identity resolver), #2431 with Kade (generic instance-render fold). Gate:product on 6 additional cards shipped by Silas/Kade. Filed 16 cards including the Loom triangle (#2337/#2339/#2348), permaculture framing, and #2435 reshape to heartbeat-as-primary-delivery. Two personal stories captured to Fuseki via #2321 fix. Session thesis: ritual → contract → composition-of-many-things (anti-Gestell Loom).
+
+## 2026-04-21 Kade session (7 cards Done)
+- Shipped: #2288 (29 complexity refactors), #2328 (23 max-depth/lines parity), #2252 (Context API 7 endpoints + pulse next_cards), #2193 (shared-state coherence + 4 spine events + coherence alarm), #2431 (generic instance-render fold, Kade+Wren pair)
+- Filed: #2338 (filter test fix), #2433 (dist-sync gate prevention)
+- Gates posted: #2321, #2323, #2324, #2325, #2326, #2327, #2337, #2339, #2414, #2415, #2416, #2428, #2430, #2220
+- Three discipline patterns composed: AC matches shipped state, no artifacts without consumers, test-green ≠ deploy-live
