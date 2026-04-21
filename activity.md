@@ -1005,3 +1005,9 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - Four new memory files saved: feedback_sequence_is_product, feedback_skill_is_not_help, feedback_clearing_visibility_contract, feedback_bad_ac_is_the_miss.
 - Jeff named patterns: performative gates, Jeff-as-transport-layer, jenga-version (5+ coexisting drift-detection implementations), agents-talk-to-Jeff-not-each-other, AI business model as drug-dealer economics, gaslighting. Stories shared (not yet in stories.md): 15 yrs IV drug use, Gil Scott-Heron "Running", engineer background → fix-and-trace discipline.
 - [Kade] → Session reboot — discovered SessionStart marker write bug (kade.done missing despite payload success), Silas shipped Read-tool recovery path on #2311. Tried #2288 → still blocked by #2304. Pulled #2304, parked back when Silas in WIP on same crate (#2311). → Silas, Jeff
+
+- [Wren 21:5x] → Paired with Silas on #2311 rescope (AC#1-7 green, ready for live three-role cold-reboot demo as gate:product) → Silas drives demo
+- [Wren 21:5x] → Landed loom-principle chorus:principle-no-competing-implementations in chorus.ttl; root cause: weak APIs → all roles
+- [Wren 21:5x] → Wrote DEC-2311 (hook decomposition: guard/injector/observer/scheduler/validator); pending loom-decisions API for proper landing → board
+- [Wren 21:5x] → Filed #2314/2316/2317/2318 and parent #2319 — loom write surfaces sweep (principles/stories/heartbeat/decisions APIs all missing, same jenga shape) → Wren owned
+- [Wren 21:5x] → Convergence sequence 23→7; retagged 16 cards (11 werk, 2 borg, 3 athena). Reverted 26-card gathering retag after Clearing UI screenshot showed wrong taxonomy → board

@@ -1603,6 +1603,10 @@ chorus:principle-interrogate-the-data a chorus:Principle ;
     rdfs:label "Give a fuck about data quality" ;
     rdfs:comment "Interrogate the data you touch before repeating or acting on it. Every claim you relay is a claim you own. Check provenance, verify fossils, refuse to narrate over gaps. The failure mode is storytelling — coherent-sounding prose that papers over what the data actually shows." .
 
+chorus:principle-no-competing-implementations a chorus:Principle ;
+    rdfs:label "No competing implementations" ;
+    rdfs:comment "One concept, one implementation. When the same idea lives in multiple surfaces — two version sources, three drift detectors, three boot-enforcement attempts — they drift out of phase and nobody knows which is load-bearing. Root cause is weak APIs: when the contract is prose or convention instead of a callable surface, every new attempt adds a parallel implementation rather than replacing the prior one. Every new implementation must retire its predecessor; if you cannot retire it, the contract is not strong enough — fix the API first. The #2311 jenga pattern (5+ prior attempts at drift detection, none removed) is this principle's canonical violation." .
+
 # --- 7 Practices (from team-architecture.md) ---
 
 chorus:practice-actor-bdd a chorus:Practice ;
@@ -1642,7 +1646,8 @@ chorus:loom-principles chorus:contains chorus:principle-protect-attention,
     chorus:principle-focus-is-infrastructure, chorus:principle-quality-at-source,
     chorus:principle-speed-and-quality-correlate,
     chorus:principle-comprehension-is-the-rate-limit,
-    chorus:principle-interrogate-the-data .
+    chorus:principle-interrogate-the-data,
+    chorus:principle-no-competing-implementations .
 
 chorus:loom-practices chorus:contains chorus:practice-actor-bdd,
     chorus:practice-domain-first, chorus:practice-service-next,
