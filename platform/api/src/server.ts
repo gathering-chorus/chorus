@@ -650,6 +650,7 @@ app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
 
 import { fetchContextBoardWip } from './handlers/context-board-wip';
 import { fetchContextSpine } from './handlers/context-spine';
+import { fetchContextAlerts } from './handlers/context-alerts';
 import { fetchContextBoardSwat } from './handlers/context-board-swat';
 import { fetchContextRoles } from './handlers/context-roles';
 import { fetchContextHealth } from './handlers/context-health';
@@ -711,6 +712,28 @@ const tailSpineForRole = (role: string): { timestamp: string; role: string; even
   } catch { /* best effort */ }
   return null;
 };
+
+app.get('/api/chorus/context/alerts', async (req: Request, res: Response) => {
+  const alertDir = [
+    `${CHORUS_ROOT}/proving/domains/alerts`,
+    `${CHORUS_ROOT}/chorus/proving/domains/alerts`,
+  ].find((p) => fs.existsSync(p));
+  const r = await fetchContextAlerts(
+    {
+      sparql: _athena,
+      readPulse: readPulseFile,
+      listAlertFiles: () => {
+        try { return alertDir ? fs.readdirSync(alertDir) : []; } catch { return []; }
+      },
+      readAlertFile: (name) => {
+        if (!alertDir) return null;
+        try { return fs.readFileSync(path.join(alertDir, name), 'utf-8'); } catch { return null; }
+      },
+    },
+    req.originalUrl,
+  );
+  res.status(r.status).json(r.body);
+});
 
 app.get('/api/chorus/context/spine', async (req: Request, res: Response) => {
   const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;

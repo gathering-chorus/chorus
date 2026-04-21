@@ -75,7 +75,7 @@ export function buildCodeAliasMap(
 
 type Discovered = { domainId: string; filePath: string; fileType: string };
 
-function classifyEntry(entryStr: string, basename: string, pathParts: string[], ext: string, aliasMap: Record<string, string[]>, qualifiedPath: string): Discovered | null {
+function classifyEntry(_entryStr: string, basename: string, pathParts: string[], ext: string, aliasMap: Record<string, string[]>, qualifiedPath: string): Discovered | null {
   for (const [domainId, aliases] of Object.entries(aliasMap)) {
     for (const alias of aliases) {
       const nameMatch = basename.includes(alias) || basename.startsWith(alias + '.') || basename.startsWith(alias + '-');
