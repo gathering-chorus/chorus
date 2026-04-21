@@ -93,118 +93,116 @@ function parseArgs(argv: string[]): { command: string; args: string[]; flags: Re
   return { command, args, flags };
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+function cmdCreate(engine: WorkflowEngine, args: string[], flags: Record<string, string>): void {
+  const decision = args[0];
+  if (!decision) die('Usage: workflow-ts create "decision" --steps role:action,...');
+  const steps = flags['steps'];
+  if (!steps) die('--steps is required');
+  const card = flags['card'] ? parseInt(flags['card'], 10) : undefined;
+  const wf = engine.create(decision, steps, flags['source'] || 'manual', card);
+  log('workflow.manifest.created', { id: wf.id, decision: wf.decision });
+  console.log(`Created: ${wf.id}`);
+  wf.steps.forEach((s) => console.log(formatStep(s)));
+}
+
+function cmdAdvance(engine: WorkflowEngine, args: string[], flags: Record<string, string>): void {
+  const wfId = args[0];
+  if (!wfId) die('Usage: workflow-ts advance WF-NNN [--notes "..."] [--artifacts "..."]');
+  const result = engine.advance(wfId, flags['notes'], flags['artifacts']);
+  log('workflow.step.completed', {
+    id: result.manifest.id,
+    step: String(result.completedStep.seq),
+    role: result.completedStep.role,
+  });
+  console.log(`Step ${result.completedStep.seq} completed (${result.completedStep.role}: ${result.completedStep.action})`);
+  if (result.workflowCompleted) {
+    console.log('Workflow complete — all steps done');
+  } else if (result.nextStep) {
+    console.log(`Step ${result.nextStep.seq} now READY for ${result.nextStep.role}: ${result.nextStep.action}`);
+  }
+  if (result.briefPath) console.log(`Handoff brief sent: ${result.briefPath}`);
+}
+
+function printWorkflowDetail(wf: WorkflowManifest): void {
+  console.log(formatWorkflow(wf));
+  wf.steps.forEach((s) => console.log(formatStep(s)));
+  if (wf.card) console.log(`\n  Card: #${wf.card}`);
+  console.log(`  Source: ${wf.source}`);
+  console.log(`  Created: ${wf.created}`);
+  console.log(`  Updated: ${wf.updated}`);
+}
+
+function cmdStatus(engine: WorkflowEngine, args: string[]): void {
+  const wfId = args[0];
+  if (wfId) {
+    printWorkflowDetail(engine.status(wfId) as WorkflowManifest);
+    return;
+  }
+  const workflows = engine.status() as WorkflowManifest[];
+  if (workflows.length === 0) {
+    console.log('No active workflows');
+    return;
+  }
+  workflows.forEach((wf) => {
+    console.log(formatWorkflow(wf));
+    wf.steps.forEach((s) => console.log(formatStep(s)));
+    console.log();
+  });
+}
+
+function cmdList(engine: WorkflowEngine, flags: Record<string, string>): void {
+  const all = flags['all'] === 'true';
+  const workflows = engine.list(all);
+  if (workflows.length === 0) {
+    console.log(all ? 'No workflows' : 'No active workflows');
+    return;
+  }
+  workflows.forEach((wf) => console.log(formatWorkflow(wf)));
+}
+
+function cmdPending(engine: WorkflowEngine, args: string[]): void {
+  const role = args[0];
+  if (!role) die('Usage: workflow-ts pending <role>');
+  const items = engine.pending(role);
+  if (items.length === 0) {
+    console.log(`No pending steps for ${role}`);
+    return;
+  }
+  items.forEach((item) => {
+    console.log(`${item.workflowId}: ${item.step.action}`);
+    console.log(`  Decision: ${item.decision}`);
+    if (item.card) console.log(`  Card: #${item.card}`);
+  });
+}
+
+function cmdHistory(engine: WorkflowEngine, args: string[]): void {
+  const wfId = args[0];
+  if (!wfId) die('Usage: workflow-ts history WF-NNN');
+  engine.history(wfId).forEach((e) => {
+    console.log(`${e.timestamp} | ${e.role} | ${e.event} | ${e.detail}`);
+  });
+}
+
 function main(): void {
   const rawArgs = process.argv.slice(2);
-
   if (rawArgs.length === 0 || rawArgs[0] === '--help' || rawArgs[0] === '-h') {
     usage();
     return;
   }
-
   const { command, args, flags } = parseArgs(rawArgs);
   const engine = new WorkflowEngine();
 
-  switch (command) {
-    case 'create': {
-      const decision = args[0];
-      if (!decision) die('Usage: workflow-ts create "decision" --steps role:action,...');
-      const steps = flags['steps'];
-      if (!steps) die('--steps is required');
-      const card = flags['card'] ? parseInt(flags['card'], 10) : undefined;
-      const wf = engine.create(decision, steps, flags['source'] || 'manual', card);
-      log('workflow.manifest.created', { id: wf.id, decision: wf.decision });
-      console.log(`Created: ${wf.id}`);
-      wf.steps.forEach(s => console.log(formatStep(s)));
-      break;
-    }
-
-    case 'advance': {
-      const wfId = args[0];
-      if (!wfId) die('Usage: workflow-ts advance WF-NNN [--notes "..."] [--artifacts "..."]');
-      const result = engine.advance(wfId, flags['notes'], flags['artifacts']);
-      log('workflow.step.completed', {
-        id: result.manifest.id,
-        step: String(result.completedStep.seq),
-        role: result.completedStep.role,
-      });
-      console.log(`Step ${result.completedStep.seq} completed (${result.completedStep.role}: ${result.completedStep.action})`);
-      if (result.workflowCompleted) {
-        console.log('Workflow complete — all steps done');
-      } else if (result.nextStep) {
-        console.log(`Step ${result.nextStep.seq} now READY for ${result.nextStep.role}: ${result.nextStep.action}`);
-      }
-      if (result.briefPath) {
-        console.log(`Handoff brief sent: ${result.briefPath}`);
-      }
-      break;
-    }
-
-    case 'status': {
-      const wfId = args[0];
-      if (wfId) {
-        const wf = engine.status(wfId) as WorkflowManifest;
-        console.log(formatWorkflow(wf));
-        wf.steps.forEach(s => console.log(formatStep(s)));
-        if (wf.card) console.log(`\n  Card: #${wf.card}`);
-        console.log(`  Source: ${wf.source}`);
-        console.log(`  Created: ${wf.created}`);
-        console.log(`  Updated: ${wf.updated}`);
-      } else {
-        const workflows = engine.status() as WorkflowManifest[];
-        if (workflows.length === 0) {
-          console.log('No active workflows');
-        } else {
-          workflows.forEach(wf => {
-            console.log(formatWorkflow(wf));
-            wf.steps.forEach(s => console.log(formatStep(s)));
-            console.log();
-          });
-        }
-      }
-      break;
-    }
-
-    case 'list': {
-      const all = flags['all'] === 'true';
-      const workflows = engine.list(all);
-      if (workflows.length === 0) {
-        console.log(all ? 'No workflows' : 'No active workflows');
-      } else {
-        workflows.forEach(wf => console.log(formatWorkflow(wf)));
-      }
-      break;
-    }
-
-    case 'pending': {
-      const role = args[0];
-      if (!role) die('Usage: workflow-ts pending <role>');
-      const items = engine.pending(role);
-      if (items.length === 0) {
-        console.log(`No pending steps for ${role}`);
-      } else {
-        items.forEach(item => {
-          console.log(`${item.workflowId}: ${item.step.action}`);
-          console.log(`  Decision: ${item.decision}`);
-          if (item.card) console.log(`  Card: #${item.card}`);
-        });
-      }
-      break;
-    }
-
-    case 'history': {
-      const wfId = args[0];
-      if (!wfId) die('Usage: workflow-ts history WF-NNN');
-      const events = engine.history(wfId);
-      events.forEach(e => {
-        console.log(`${e.timestamp} | ${e.role} | ${e.event} | ${e.detail}`);
-      });
-      break;
-    }
-
-    default:
-      die(`Unknown command: ${command}. Run workflow-ts --help`);
-  }
+  const handlers: Record<string, () => void> = {
+    create: () => cmdCreate(engine, args, flags),
+    advance: () => cmdAdvance(engine, args, flags),
+    status: () => cmdStatus(engine, args),
+    list: () => cmdList(engine, flags),
+    pending: () => cmdPending(engine, args),
+    history: () => cmdHistory(engine, args),
+  };
+  const handler = handlers[command];
+  if (handler) handler();
+  else die(`Unknown command: ${command}. Run workflow-ts --help`);
 }
 
 main();

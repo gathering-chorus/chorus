@@ -1481,137 +1481,118 @@ app.get('/api/chorus/tests', async (_req: Request, res: Response) => {
 });
 
 // POST /api/athena/discover-pages — auto-discover UI pages per domain from filesystem (#2065)
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+type PageEntry = { route: string; path: string; pageType: string; domainId: string };
+
+const DISCOVER_PAGES_GENERIC_BASES = new Set(['services', 'service', 'domains', 'domain', 'code', 'loom', 'time', 'streams', 'stream', 'messages', 'message', 'policies', 'policy']);
+
+const DISCOVER_PAGES_ALIAS_OVERRIDES: Record<string, string> = {
+  blog: 'blog-domain', wordpress: 'blog-domain',
+  social: 'social-domain', socialpost: 'social-domain',
+  seed: 'seeds-domain', seeds: 'seeds-domain',
+  'self-ai': 'sexuality-domain', ontology: 'convergence-domain',
+  chorus: 'chorus-domain', werk: 'chorus-domain', flow: 'chorus-domain',
+  garden: 'property-domain', gardening: 'property-domain',
+};
+
+async function buildPageAliasMap(): Promise<Record<string, string>> {
+  const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
+  const sdResult = await athenaSparqlQuery(sdQuery);
+  const domains = sdResult.results.bindings.map((b: any) => ({
+    id: b.sd.value.split('#').pop() as string,
+  }));
+  const aliasToId: Record<string, string> = {};
+  for (const d of domains) {
+    const base = d.id.replace(/-(domain|service)$/, '');
+    if (DISCOVER_PAGES_GENERIC_BASES.has(base)) continue;
+    aliasToId[base] = d.id;
+    if (base.endsWith('s') && !base.endsWith('ss')) {
+      if (base.endsWith('ies')) aliasToId[base.replace(/ies$/, 'y')] = d.id;
+      else aliasToId[base.replace(/s$/, '')] = d.id;
+    }
+  }
+  return { ...aliasToId, ...DISCOVER_PAGES_ALIAS_OVERRIDES };
+}
+
+function classifyEjsView(name: string, aliasToId: Record<string, string>): PageEntry | null {
+  const collectionMatch = name.match(/^collection-(.+?)(-list)?$/);
+  if (collectionMatch) {
+    const domainId = aliasToId[collectionMatch[1]];
+    if (domainId) return { route: `/${collectionMatch[1]}`, path: '', pageType: 'collection', domainId };
+  }
+  const detailMatch = name.match(/^(.+?)-(detail|album|artist|artists|create)$/);
+  if (detailMatch) {
+    const domainId = aliasToId[detailMatch[1]];
+    if (domainId) return { route: `/${detailMatch[1]}/:slug`, path: '', pageType: 'detail', domainId };
+  }
+  const adminMatch = name.match(/^admin-(?:harvest-)?(.+?)(?:-add)?$/);
+  if (adminMatch) {
+    const domainId = aliasToId[adminMatch[1]];
+    if (domainId) return { route: `/admin/${name.replace('admin-', '')}`, path: '', pageType: 'admin', domainId };
+  }
+  const direct = aliasToId[name];
+  if (direct) return { route: `/${name}`, path: '', pageType: 'page', domainId: direct };
+  for (const [alias, did] of Object.entries(aliasToId)) {
+    if (name.startsWith(alias + '-') || name === alias) {
+      return { route: `/${name}`, path: '', pageType: 'page', domainId: did };
+    }
+  }
+  return null;
+}
+
+function scanEjsViews(viewsDir: string, aliasToId: Record<string, string>): PageEntry[] {
+  const entries: PageEntry[] = [];
+  if (!fs.existsSync(viewsDir)) return entries;
+  for (const file of fs.readdirSync(viewsDir).filter((f) => f.endsWith('.ejs'))) {
+    const classified = classifyEjsView(file.replace('.ejs', ''), aliasToId);
+    if (classified) entries.push({ ...classified, path: `gathering/views/${file}` });
+  }
+  const ontologyDir = path.join(viewsDir, 'ontology-views');
+  if (fs.existsSync(ontologyDir)) {
+    for (const file of fs.readdirSync(ontologyDir).filter((f) => f.endsWith('.ejs'))) {
+      const name = file.replace('.ejs', '');
+      const domainId = aliasToId[name];
+      if (domainId) {
+        entries.push({ route: `/ontology-views/${name}`, path: `gathering/views/ontology-views/${file}`, pageType: 'ontology', domainId });
+      }
+    }
+  }
+  return entries;
+}
+
+function classifyDocHtml(name: string, aliasToId: Record<string, string>): { domainId: string; pageType: string } | null {
+  const domainMatch = name.match(/^domain-(.+)$/);
+  if (domainMatch && aliasToId[domainMatch[1]]) return { domainId: aliasToId[domainMatch[1]], pageType: 'doc' };
+  const serviceMatch = name.match(/^(.+?)-service-design$/);
+  if (serviceMatch && aliasToId[serviceMatch[1]]) return { domainId: aliasToId[serviceMatch[1]], pageType: 'service-design' };
+  return null;
+}
+
+function scanDocHtml(docsDir: string, aliasToId: Record<string, string>): PageEntry[] {
+  const entries: PageEntry[] = [];
+  if (!fs.existsSync(docsDir)) return entries;
+  for (const file of fs.readdirSync(docsDir).filter((f) => f.endsWith('.html'))) {
+    const classified = classifyDocHtml(file.replace('.html', ''), aliasToId);
+    if (classified) {
+      entries.push({
+        route: `/gathering-docs/${file}`,
+        path: `gathering/public/gathering-docs/${file}`,
+        pageType: classified.pageType,
+        domainId: classified.domainId,
+      });
+    }
+  }
+  return entries;
+}
+
 app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
-    // 1. Get all SubDomains for domain→alias mapping (reuse pattern from discover-code)
-    const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
-    const sdResult = await athenaSparqlQuery(sdQuery);
-    const domains = sdResult.results.bindings.map((b: any) => ({
-      id: b.sd.value.split('#').pop() as string,
-      label: (b.label.value as string).toLowerCase(),
-    }));
-
-    const genericBases = new Set(['services', 'service', 'domains', 'domain', 'code', 'loom', 'time', 'streams', 'stream', 'messages', 'message', 'policies', 'policy']);
-    const aliasToId: Record<string, string> = {};
-    for (const d of domains) {
-      const base = d.id.replace(/-(domain|service)$/, '');
-      if (genericBases.has(base)) continue;
-      aliasToId[base] = d.id;
-      if (base.endsWith('s') && !base.endsWith('ss')) {
-        if (base.endsWith('ies')) aliasToId[base.replace(/ies$/, 'y')] = d.id;
-        else aliasToId[base.replace(/s$/, '')] = d.id;
-      }
-    }
-    aliasToId['blog'] = 'blog-domain';
-    aliasToId['wordpress'] = 'blog-domain';
-    aliasToId['social'] = 'social-domain';
-    aliasToId['socialpost'] = 'social-domain';
-    aliasToId['seed'] = 'seeds-domain';
-    aliasToId['seeds'] = 'seeds-domain';
-    aliasToId['self-ai'] = 'sexuality-domain';
-    aliasToId['ontology'] = 'convergence-domain';
-    aliasToId['chorus'] = 'chorus-domain';
-    aliasToId['werk'] = 'chorus-domain';
-    aliasToId['flow'] = 'chorus-domain';
-    aliasToId['garden'] = 'property-domain';
-    aliasToId['gardening'] = 'property-domain';
-
+    const aliasToId = await buildPageAliasMap();
     const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
-    const entries: Array<{ route: string; path: string; pageType: string; domainId: string }> = [];
-
-    // 2. Scan EJS views — classify by naming convention
-    const viewsDir = path.join(GATHERING_ROOT, 'views');
-    if (fs.existsSync(viewsDir)) {
-      const viewFiles = fs.readdirSync(viewsDir).filter(f => f.endsWith('.ejs'));
-      for (const file of viewFiles) {
-        const name = file.replace('.ejs', '');
-        let pageType = 'page';
-        let domainId: string | null = null;
-
-        // collection-{domain}.ejs
-        const collectionMatch = name.match(/^collection-(.+?)(-list)?$/);
-        if (collectionMatch) {
-          pageType = 'collection';
-          const alias = collectionMatch[1];
-          domainId = aliasToId[alias] || null;
-        }
-        // {domain}-detail.ejs or {domain}-album.ejs
-        const detailMatch = name.match(/^(.+?)-(detail|album|artist|artists|create)$/);
-        if (!domainId && detailMatch) {
-          pageType = 'detail';
-          domainId = aliasToId[detailMatch[1]] || null;
-        }
-        // admin-{domain}-add.ejs or admin-harvest-{domain}.ejs
-        const adminMatch = name.match(/^admin-(?:harvest-)?(.+?)(?:-add)?$/);
-        if (!domainId && adminMatch) {
-          pageType = 'admin';
-          domainId = aliasToId[adminMatch[1]] || null;
-        }
-        // Direct domain name match or prefix match (e.g., seed-pipeline → seeds-domain)
-        if (!domainId) {
-          domainId = aliasToId[name] || null;
-          if (!domainId) {
-            for (const [alias, did] of Object.entries(aliasToId)) {
-              if (name.startsWith(alias + '-') || name === alias) {
-                domainId = did;
-                break;
-              }
-            }
-          }
-        }
-
-        if (domainId) {
-          const route = pageType === 'collection' ? `/${collectionMatch![1]}` :
-                        pageType === 'detail' ? `/${detailMatch![1]}/:slug` :
-                        pageType === 'admin' ? `/admin/${name.replace('admin-', '')}` :
-                        `/${name}`;
-          entries.push({ route, path: `gathering/views/${file}`, pageType, domainId });
-        }
-      }
-
-      // Ontology views
-      const ontologyDir = path.join(viewsDir, 'ontology-views');
-      if (fs.existsSync(ontologyDir)) {
-        const ontologyFiles = fs.readdirSync(ontologyDir).filter(f => f.endsWith('.ejs'));
-        for (const file of ontologyFiles) {
-          const name = file.replace('.ejs', '');
-          const domainId = aliasToId[name] || null;
-          if (domainId) {
-            entries.push({ route: `/ontology-views/${name}`, path: `gathering/views/ontology-views/${file}`, pageType: 'ontology', domainId });
-          }
-        }
-      }
-    }
-
-    // 3. Scan static HTML — gathering-docs/domain-*.html and service designs
-    const docsDir = path.join(GATHERING_ROOT, 'public/gathering-docs');
-    if (fs.existsSync(docsDir)) {
-      const htmlFiles = fs.readdirSync(docsDir).filter(f => f.endsWith('.html'));
-      for (const file of htmlFiles) {
-        const name = file.replace('.html', '');
-        let domainId: string | null = null;
-        let pageType = 'doc';
-
-        // domain-{domain}.html
-        const domainMatch = name.match(/^domain-(.+)$/);
-        if (domainMatch) {
-          domainId = aliasToId[domainMatch[1]] || null;
-          pageType = 'doc';
-        }
-        // {domain}-service-design.html
-        const serviceMatch = name.match(/^(.+?)-service-design$/);
-        if (!domainId && serviceMatch) {
-          domainId = aliasToId[serviceMatch[1]] || null;
-          pageType = 'service-design';
-        }
-
-        if (domainId) {
-          entries.push({ route: `/gathering-docs/${file}`, path: `gathering/public/gathering-docs/${file}`, pageType, domainId });
-        }
-      }
-    }
+    const entries: PageEntry[] = [
+      ...scanEjsViews(path.join(GATHERING_ROOT, 'views'), aliasToId),
+      ...scanDocHtml(path.join(GATHERING_ROOT, 'public/gathering-docs'), aliasToId),
+    ];
 
     // 4. Clear existing page data and repopulate
     const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?p a <https://jeffbridwell.com/chorus#Page> ; ?prop ?val . ?sd <https://jeffbridwell.com/chorus#hasPage> ?p . } }';
