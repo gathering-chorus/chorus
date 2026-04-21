@@ -1279,6 +1279,7 @@ import { fetchAthenaSubproducts } from './handlers/athena-subproducts';
 import { fetchAthenaSteps } from './handlers/athena-steps';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
+import { fetchLoomPrinciples } from './handlers/loom-principles';
 import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
 import { fetchAthenaSubdomainDetail } from './handlers/athena-subdomain-detail';
 import { fetchAthenaBlastRadius } from './handlers/athena-blast-radius';
@@ -1368,6 +1369,12 @@ app.get('/api/athena/owners', async (_req: Request, res: Response) => {
 // GET /api/athena/machines — machines with running services
 app.get('/api/athena/machines', async (_req: Request, res: Response) => {
   const r = await fetchAthenaMachines({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
+  res.status(r.status).json(r.body);
+});
+
+// GET /api/loom/principles — all chorus:Principle instances, product-facing alias (#2337)
+app.get('/api/loom/principles', async (_req: Request, res: Response) => {
+  const r = await fetchLoomPrinciples({ sparql: athenaSparqlQuery, loadQuery: loadSparql });
   res.status(r.status).json(r.body);
 });
 

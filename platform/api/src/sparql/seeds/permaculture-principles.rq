@@ -1,0 +1,154 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+INSERT DATA {
+  GRAPH <urn:chorus:ontology> {
+
+    chorus:principle-observe-and-interact
+      a chorus:Principle ;
+      rdfs:label "Observe and interact" ;
+      rdfs:comment "Spend time with the land before changing it; each site is particular and reveals itself through attention." ;
+      chorus:techReading "Gemba, dashboards, mutual attention. Watch a role work before directing it. Read the board before acting on it." ;
+      chorus:jeffReading "Jeff reads the board, looks at the screenshot, listens to stories before committing to a move. Decision-making starts with watching." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-catch-and-store-energy
+      a chorus:Principle ;
+      rdfs:label "Catch and store energy" ;
+      rdfs:comment "Harvest flows when they are abundant; preserve for lean times when the system cannot produce." ;
+      chorus:techReading "Capture context, insight, and decisions while warm — Chorus index, spine events, memory records, stories to TTL." ;
+      chorus:jeffReading "When Jeff has a live insight (shower thoughts, walks, reading), he cards or seeds it right then. The 2am notes are capture-while-warm, not discipline." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-obtain-a-yield
+      a chorus:Principle ;
+      rdfs:label "Obtain a yield" ;
+      rdfs:comment "Every system must produce observable output. Work that yields nothing is not worth the energy." ;
+      chorus:techReading "Visible yield per card, per session. No dark work. The demo is the learning moment." ;
+      chorus:jeffReading "Jeff measures himself by what ships, not what he knows. The 'no dark work' principle is his." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-apply-self-regulation-and-accept-feedback
+      a chorus:Principle ;
+      rdfs:label "Apply self-regulation and accept feedback" ;
+      rdfs:comment "Systems that correct themselves from their own signal. Unwanted feedback is still information." ;
+      chorus:techReading "Gates, hooks, ceremony ROI audits, three-role interaction as mutual correction. The seams between roles generate the corrections." ;
+      chorus:jeffReading "Jeff models this — he will say 'I was wrong about X' and redirect without defending the prior position. Invites pushback rather than fending it off." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-use-and-value-renewable-resources
+      a chorus:Principle ;
+      rdfs:label "Use and value renewable resources" ;
+      rdfs:comment "Prefer renewable energy and materials over extractive ones. Renewables compound; extractives deplete." ;
+      chorus:techReading "Patterns, skills, hooks, memory — recurring value — over one-shot human effort. Invest in the pattern, not the individual fix." ;
+      chorus:jeffReading "Jeff treats his attention as the renewable-but-finite resource the whole team is designed to protect. 'Focus is infrastructure' is this in practice." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-produce-no-waste
+      a chorus:Principle ;
+      rdfs:label "Produce no waste" ;
+      rdfs:comment "Every output of one element is input to another. Nothing discarded; loops closed." ;
+      chorus:techReading "Ceremony ROI audits, retirement gates, hermetic tests, loop-closing. Retire anything that does not earn its place." ;
+      chorus:jeffReading "Jeff retires things — principles, cards, protocols, names — when they stop producing. Little sentimental attachment to prior shapes." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-design-from-patterns-to-details
+      a chorus:Principle ;
+      rdfs:label "Design from patterns to details" ;
+      rdfs:comment "A broad pattern language shapes site-specific decisions. Details without pattern context are arbitrary." ;
+      chorus:techReading "Loom principles → architecture → code. Pattern cards before implementation cards. Composition before primitives." ;
+      chorus:jeffReading "Jeff moves from narrative to detail. Resists 'give me the first step' when the shape isn't clear yet — and rightly so." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-integrate-rather-than-segregate
+      a chorus:Principle ;
+      rdfs:label "Integrate rather than segregate" ;
+      rdfs:comment "Diverse elements in relationship produce more than the sum of each alone. The relationship is the value." ;
+      chorus:techReading "Roles compose, not isolate. Gates stay in-role (not in subagents). The Clearing. Pair work. Briefs move between roles directly." ;
+      chorus:jeffReading "Jeff uses the team as a thinking partner, not as executors. Asks all three roles and composes the answers rather than directing one." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-use-small-and-slow-solutions
+      a chorus:Principle ;
+      rdfs:label "Use small and slow solutions" ;
+      rdfs:comment "Smaller interventions are easier to maintain and adjust. Slow change lets the system adapt without shock." ;
+      chorus:techReading "Ship small, narrow blast radius, bounded services, deploy rings. Smallest card that teaches, not largest card that ships." ;
+      chorus:jeffReading "Jeff cards a tiny fix rather than a big reorg when he can. Prefers a pattern learned over a pattern imposed." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-use-and-value-diversity
+      a chorus:Principle ;
+      rdfs:label "Use and value diversity" ;
+      rdfs:comment "Diverse systems are resilient; monocultures fail together. Variation is insurance." ;
+      chorus:techReading "Distinct role voices, multiple tests, multiple memory sources. Reduce-to-single is a lossy default (see loom-principle)." ;
+      chorus:jeffReading "Jeff shaped the three roles to be distinct, not interchangeable — a diversity choice, not an efficiency one. Their different instincts are the asset." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-use-edges-and-value-the-marginal
+      a chorus:Principle ;
+      rdfs:label "Use edges and value the marginal" ;
+      rdfs:comment "Edges — hedgerows, pond margins, forest boundaries — are the most productive zones in any ecosystem." ;
+      chorus:techReading "Seams between roles generate patterns. Margin of the spec produces new cards. The Clearing IS an edge between roles." ;
+      chorus:jeffReading "Jeff's best ideas come in the margins — the 'what if' during a demo, the story dropped between cards, the side comment that reshapes a roadmap." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    chorus:principle-creatively-use-and-respond-to-change
+      a chorus:Principle ;
+      rdfs:label "Creatively use and respond to change" ;
+      rdfs:comment "Change is inevitable. Design systems that use it as input rather than fighting it as disruption." ;
+      chorus:techReading "Refactor, retire, rename. The 10-week zero-to-self-healing Chorus delta is this principle in action." ;
+      chorus:jeffReading "Jeff rebrands things (Bridge → Clearing, multiple Werk generations, Chorus rewrites) without sentimental attachment. The name is less important than the fit." ;
+      chorus:derivedFromSource "Toby Hemenway, Gaia's Garden (2nd ed.)" ;
+      chorus:isPermacultureParent true .
+
+    # Specialization edges: existing 12 Chorus principles → permaculture parents
+    chorus:principle-focus-is-infrastructure
+      skos:broader chorus:principle-use-and-value-renewable-resources .
+
+    chorus:principle-quality-at-source
+      skos:broader chorus:principle-catch-and-store-energy .
+
+    chorus:principle-no-dark-work
+      skos:broader chorus:principle-obtain-a-yield .
+
+    chorus:principle-services-reliable-bounded-idempotent
+      skos:broader chorus:principle-use-small-and-slow-solutions ;
+      skos:broader chorus:principle-apply-self-regulation-and-accept-feedback .
+
+    chorus:principle-protect-attention
+      skos:broader chorus:principle-use-and-value-renewable-resources .
+
+    chorus:principle-self-healing
+      skos:broader chorus:principle-apply-self-regulation-and-accept-feedback .
+
+    chorus:principle-artifacts
+      skos:broader chorus:principle-catch-and-store-energy .
+
+    chorus:principle-owner-sets-direction
+      skos:broader chorus:principle-integrate-rather-than-segregate .
+
+    chorus:principle-ship-small
+      skos:broader chorus:principle-use-small-and-slow-solutions .
+
+    chorus:principle-speed-and-quality-correlate
+      skos:broader chorus:principle-use-and-value-renewable-resources .
+
+    chorus:principle-comprehension-is-the-rate-limit
+      skos:broader chorus:principle-design-from-patterns-to-details .
+
+    chorus:principle-interrogate-the-data
+      skos:broader chorus:principle-observe-and-interact .
+  }
+}
