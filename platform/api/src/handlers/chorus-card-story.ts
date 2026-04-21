@@ -53,115 +53,104 @@ interface TimelineEntry {
   event?: string;
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+type StoryMeta = { title: string; owner: string; status: string; domain: string };
+
+async function collectCardData(deps: ChorusCardStoryDeps, cardId: number, timeline: TimelineEntry[]): Promise<StoryMeta> {
+  const meta: StoryMeta = { title: '', owner: '', status: '', domain: '' };
+  try {
+    const card = await deps.loadCard(cardId);
+    if (!card) return meta;
+    meta.title = card.title || '';
+    meta.owner = (card.owner || '').toLowerCase();
+    meta.status = card.status || '';
+    for (const d of card.domains || []) {
+      const m = d.match(/domain:(\w+)/i);
+      if (m) meta.domain = m[1];
+    }
+    for (const c of card.comments || []) {
+      if (c.text && c.text.length > 5) {
+        timeline.push({
+          timestamp: c.created || card.created || '',
+          source: 'vikunja',
+          text: c.text.slice(0, 500),
+          role: c.author,
+        });
+      }
+    }
+  } catch { /* card unavailable */ }
+  return meta;
+}
+
+function collectIndexMentions(deps: ChorusCardStoryDeps, cardId: number, timeline: TimelineEntry[]): void {
+  if (!deps.db) return;
+  try {
+    const rows = deps.db.prepare(
+      'SELECT author, content, timestamp, role FROM messages WHERE content LIKE ? ORDER BY timestamp ASC LIMIT 50',
+    ).all(`%#${cardId}%`) as Array<{ author: string; content: string; timestamp: string; role: string }>;
+    for (const m of rows) {
+      const text = m.content.trim();
+      if (text.startsWith('<system-reminder>') || text.startsWith('Base directory for this skill:') || text.length < 10) continue;
+      timeline.push({
+        timestamp: m.timestamp,
+        source: 'chorus-index',
+        text: text.slice(0, 500),
+        role: m.author === 'user' ? 'jeff' : m.role,
+      });
+    }
+  } catch { /* db read failed */ }
+}
+
+function collectSpineEvents(deps: ChorusCardStoryDeps, cardId: number, timeline: TimelineEntry[]): void {
+  let log: string | null;
+  try { log = deps.readLog(); } catch { return; }
+  if (log === null) return;
+  for (const line of log.split('\n')) {
+    if (!line.includes(`card=${cardId}`) && !line.includes(`"card":"${cardId}"`)) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed.event && String(parsed.event).startsWith('card.')) {
+        timeline.push({
+          timestamp: parsed.timestamp,
+          source: 'spine',
+          text: String(parsed.event),
+          role: parsed.role,
+          event: parsed.event,
+        });
+      }
+    } catch { /* skip malformed line */ }
+  }
+}
+
+async function collectNudges(deps: ChorusCardStoryDeps, cardId: number, timeline: TimelineEntry[]): Promise<void> {
+  try {
+    const nudges = await deps.loadNudges();
+    for (const msg of nudges) {
+      if (msg.text?.includes(`#${cardId}`)) {
+        timeline.push({ timestamp: msg.timestamp, source: 'nudge', text: msg.text.slice(0, 500), role: msg.from });
+      }
+    }
+  } catch { /* messaging unavailable */ }
+}
+
 export async function fetchChorusCardStory(
   deps: ChorusCardStoryDeps,
   cardIdParam: string,
 ): Promise<FetchResult> {
   const cardId = parseInt(cardIdParam, 10);
-  if (isNaN(cardId)) {
-    return { status: 400, body: { error: 'Invalid card ID' } };
-  }
+  if (isNaN(cardId)) return { status: 400, body: { error: 'Invalid card ID' } };
 
   const timeline: TimelineEntry[] = [];
-  let title = '';
-  let owner = '';
-  let status = '';
-  let domain = '';
-
-  try {
-    const card = await deps.loadCard(cardId);
-    if (card) {
-      title = card.title || '';
-      owner = (card.owner || '').toLowerCase();
-      status = card.status || '';
-      for (const d of card.domains || []) {
-        const m = d.match(/domain:(\w+)/i);
-        if (m) domain = m[1];
-      }
-      for (const c of card.comments || []) {
-        if (c.text && c.text.length > 5) {
-          timeline.push({
-            timestamp: c.created || card.created || '',
-            source: 'vikunja',
-            text: c.text.slice(0, 500),
-            role: c.author,
-          });
-        }
-      }
-    }
-  } catch { /* card unavailable */ }
-
-  if (deps.db) {
-    try {
-      const mentions = deps.db.prepare(`
-        SELECT author, content, timestamp, role
-        FROM messages
-        WHERE content LIKE ?
-        ORDER BY timestamp ASC
-        LIMIT 50
-      `).all(`%#${cardId}%`) as Array<{ author: string; content: string; timestamp: string; role: string }>;
-
-      for (const m of mentions) {
-        const text = m.content.trim();
-        if (text.startsWith('<system-reminder>')) continue;
-        if (text.startsWith('Base directory for this skill:')) continue;
-        if (text.length < 10) continue;
-        timeline.push({
-          timestamp: m.timestamp,
-          source: 'chorus-index',
-          text: text.slice(0, 500),
-          role: m.author === 'user' ? 'jeff' : m.role,
-        });
-      }
-    } catch { /* db read failed */ }
-  }
-
-  try {
-    const log = deps.readLog();
-    if (log !== null) {
-      for (const line of log.split('\n')) {
-        if (!line.includes(`card=${cardId}`) && !line.includes(`"card":"${cardId}"`)) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.event && String(parsed.event).startsWith('card.')) {
-            timeline.push({
-              timestamp: parsed.timestamp,
-              source: 'spine',
-              text: String(parsed.event),
-              role: parsed.role,
-              event: parsed.event,
-            });
-          }
-        } catch { /* skip malformed line */ }
-      }
-    }
-  } catch { /* log unreadable */ }
-
-  try {
-    const nudges = await deps.loadNudges();
-    for (const msg of nudges) {
-      if (msg.text && msg.text.includes(`#${cardId}`)) {
-        timeline.push({
-          timestamp: msg.timestamp,
-          source: 'nudge',
-          text: msg.text.slice(0, 500),
-          role: msg.from,
-        });
-      }
-    }
-  } catch { /* messaging unavailable */ }
-
+  const meta = await collectCardData(deps, cardId, timeline);
+  collectIndexMentions(deps, cardId, timeline);
+  collectSpineEvents(deps, cardId, timeline);
+  await collectNudges(deps, cardId, timeline);
   timeline.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   return {
     status: 200,
     body: {
       card: cardId,
-      title,
-      owner,
-      status,
-      domain,
+      ...meta,
       timeline,
       sources: [...new Set(timeline.map((e) => e.source))],
       count: timeline.length,

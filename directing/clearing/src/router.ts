@@ -63,104 +63,65 @@ export class MessageRouter extends EventEmitter {
   }
 
   /** Classify a message: determine type and visibility */
-  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
   private classify(raw: { from: string; text: string; ts: string; type?: string; level?: string }): ChannelMessage {
     const { from, text, ts } = raw;
-
-    // Synthetic probe messages — hidden (#1933)
-    if (raw.type === 'probe' || from === 'probe') {
-      return { from, text, ts, type: 'probe', visible: false };
+    for (const rule of classificationRules) {
+      const hit = rule(raw);
+      if (hit) return { from, text: hit.text ?? text, ts, type: hit.type, visible: hit.visible };
     }
-
-    // Batch progress / chorus-query system messages — hidden from message stream (#1706)
-    if (text.includes('[progress]') || text.includes('[batch]') || text.includes('[batch-complete]')) {
-      return { from, text, ts, type: 'role-to-role', visible: false };
-    }
-
-    // Filter bridge-subscriber echo — these are duplicates of events already shown (#1700)
-    if (text.startsWith('[bridge]')) {
-      return { from, text, ts, type: 'role-to-role', visible: false };
-    }
-
-    // Filter system noise — suppress raw protocol artifacts
-    if (isSystemNoise(text)) {
-      return { from, text, ts, type: 'role-to-role', visible: false };
-    }
-
-    // PM thinking — role commentary appears in messages, tool calls filtered (#1720)
-    if (raw.type === 'pm-thinking') {
-      if (isToolCall(text)) {
-        return { from, text, ts, type: 'pm-thinking', visible: false };
-      }
-      // #2049: Filter structured skill output — machine actions, not role thinking.
-      // Jeff wants role commentary, not "Done: #2048" or "Moved #2049 to WIP".
-      if (isSkillOutput(text)) {
-        return { from, text, ts, type: 'pm-thinking', visible: false };
-      }
-      return { from, text, ts, type: 'pm-thinking', visible: true };
-    }
-
-    // Accept request / acceptance — only from Jeff or explicit accept-request type (#2049)
-    // Role output like "Accepted #2049 — ..." must NOT show as Jeff's message.
-    const fromJeff = from === 'jeff' || from.toLowerCase().startsWith('jeff');
-    if (raw.type === 'accept-request' || (fromJeff && (text.includes('/acp') || text.match(/^Accepted #\d+/)))) {
-      const cleanText = fromJeff ? stripSpineMetadata(text) : text;
-      return { from, text: cleanText, ts, type: 'accept-request', visible: true };
-    }
-
-    // Clearing input — any message tagged jeff-input at source is always visible (#1934)
-    if (raw.type === 'jeff-input') {
-      const cleanText = stripSpineMetadata(text);
-      return { from, text: cleanText, ts, type: 'jeff-input', visible: true };
-    }
-
-    // Jeff's input is always visible — strip spine metadata suffix
-    if (from === 'jeff' || from.toLowerCase().startsWith('jeff')) {
-      const cleanText = stripSpineMetadata(text);
-      return { from, text: cleanText, ts, type: 'jeff-input', visible: true };
-    }
-
-    // System errors always visible
-    if (raw.type === 'system-error') {
-      return { from, text, ts, type: 'system-error', visible: true };
-    }
-
-    // Demo ready — always visible
-    if (text.includes('[demo]') || text.toLowerCase().includes('demo ready')) {
-      return { from, text, ts, type: 'demo-ready', visible: true };
-    }
-
-    // Note: accept-request check moved above jeff-input to ensure styling
-
-    // Blocked — always visible
-    if (text.includes('blocked') || text.includes('BLOCKED')) {
-      return { from, text, ts, type: 'blocked', visible: true };
-    }
-
-    // Decision needed — always visible
-    if (text.includes('[decision]') || text.includes('decision needed')) {
-      return { from, text, ts, type: 'role-response', visible: true };
-    }
-
-    // Gemba observations — always visible
-    if (text.includes('[gemba]')) {
-      return { from, text: text.replace('[gemba] ', '👁 '), ts, type: 'role-response', visible: true };
-    }
-
-    // Role-to-role nudges — hidden (check BEFORE role-response to catch coordination noise)
-    if (isRoleToRole(from, text)) {
-      return { from, text, ts, type: 'role-to-role', visible: false };
-    }
-
-    // Role responding to Jeff — visible (must be explicitly tagged AND not caught by role-to-role)
-    if (raw.type === 'role-response') {
-      return { from, text, ts, type: 'role-response', visible: true };
-    }
-
-    // Default: HIDDEN — whitelist only. If not explicitly matched above, Jeff doesn't see it.
     return { from, text: stripSpineMetadata(text), ts, type: 'role-to-role', visible: false };
   }
 }
+
+type RawMessage = { from: string; text: string; ts: string; type?: string; level?: string };
+type ClassificationHit = { type: ChannelMessage['type']; visible: boolean; text?: string };
+type ClassificationRule = (raw: RawMessage) => ClassificationHit | null;
+
+const classificationRules: ClassificationRule[] = [
+  // Synthetic probe messages — hidden (#1933)
+  (r) => (r.type === 'probe' || r.from === 'probe') ? { type: 'probe', visible: false } : null,
+  // Batch progress / chorus-query system messages — hidden (#1706)
+  (r) => /\[(progress|batch|batch-complete)\]/.test(r.text) ? { type: 'role-to-role', visible: false } : null,
+  // Filter bridge-subscriber echo (#1700)
+  (r) => r.text.startsWith('[bridge]') ? { type: 'role-to-role', visible: false } : null,
+  // Filter system noise
+  (r) => isSystemNoise(r.text) ? { type: 'role-to-role', visible: false } : null,
+  // PM thinking (#1720, #2049: filter tool calls + skill output)
+  (r) => r.type === 'pm-thinking'
+    ? { type: 'pm-thinking', visible: !(isToolCall(r.text) || isSkillOutput(r.text)) }
+    : null,
+  // Accept request / acceptance — Jeff or accept-request type (#2049)
+  (r) => {
+    const fromJeff = r.from === 'jeff' || r.from.toLowerCase().startsWith('jeff');
+    const isAccept = r.type === 'accept-request' || (fromJeff && (r.text.includes('/acp') || /^Accepted #\d+/.test(r.text)));
+    if (!isAccept) return null;
+    return { type: 'accept-request', visible: true, text: fromJeff ? stripSpineMetadata(r.text) : r.text };
+  },
+  // Clearing input — tagged jeff-input (#1934)
+  (r) => r.type === 'jeff-input' ? { type: 'jeff-input', visible: true, text: stripSpineMetadata(r.text) } : null,
+  // Jeff's input — always visible, strip spine metadata
+  (r) => (r.from === 'jeff' || r.from.toLowerCase().startsWith('jeff'))
+    ? { type: 'jeff-input', visible: true, text: stripSpineMetadata(r.text) }
+    : null,
+  // System errors
+  (r) => r.type === 'system-error' ? { type: 'system-error', visible: true } : null,
+  // Demo ready
+  (r) => (r.text.includes('[demo]') || r.text.toLowerCase().includes('demo ready'))
+    ? { type: 'demo-ready', visible: true } : null,
+  // Blocked
+  (r) => (r.text.includes('blocked') || r.text.includes('BLOCKED')) ? { type: 'blocked', visible: true } : null,
+  // Decision needed
+  (r) => (r.text.includes('[decision]') || r.text.includes('decision needed'))
+    ? { type: 'role-response', visible: true } : null,
+  // Gemba observations
+  (r) => r.text.includes('[gemba]')
+    ? { type: 'role-response', visible: true, text: r.text.replace('[gemba] ', '👁 ') }
+    : null,
+  // Role-to-role nudges — hidden
+  (r) => isRoleToRole(r.from, r.text) ? { type: 'role-to-role', visible: false } : null,
+  // Role responding to Jeff — tagged explicitly
+  (r) => r.type === 'role-response' ? { type: 'role-response', visible: true } : null,
+];
 
 /** Strip spine metadata suffix from messages (e.g., " | tools: none | 0.0s") */
 function stripSpineMetadata(text: string): string {

@@ -71,52 +71,45 @@ interface ProductAccum {
   domains: string[];
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+function ensureProduct(products: Record<string, ProductAccum>, pLabel: string): ProductAccum {
+  if (!products[pLabel]) products[pLabel] = { label: pLabel, subproducts: {}, domains: [] };
+  return products[pLabel];
+}
+
+function mergeNestedBinding(products: Record<string, ProductAccum>, b: Record<string, { value: string } | undefined>): void {
+  const p = ensureProduct(products, b.productLabel?.value || '?');
+  const spLabel = b.spLabel?.value;
+  if (!spLabel) return;
+  if (!p.subproducts[spLabel]) {
+    p.subproducts[spLabel] = { label: spLabel, owner: b.ownerLabel?.value || null, domains: [] };
+  }
+  const sd = b.sdLabel?.value;
+  if (sd && !p.subproducts[spLabel].domains.includes(sd)) {
+    p.subproducts[spLabel].domains.push(sd);
+  }
+}
+
+function mergeDirectBinding(products: Record<string, ProductAccum>, b: Record<string, { value: string } | undefined>): void {
+  const p = ensureProduct(products, b.productLabel?.value || '?');
+  const dom = b.domainLabel?.value;
+  if (dom && !p.domains.includes(dom)) p.domains.push(dom);
+}
+
 export async function fetchChorusProducts({
   sparql,
   now = Date.now,
 }: ChorusProductsDeps): Promise<ChorusProductsResult> {
   const start = now();
   try {
-    const result = await sparql(NESTED_QUERY);
-    const directResult = await sparql(DIRECT_QUERY);
-
+    const [nested, direct] = await Promise.all([sparql(NESTED_QUERY), sparql(DIRECT_QUERY)]);
     const products: Record<string, ProductAccum> = {};
-
-    for (const b of result.results.bindings) {
-      const pLabel = b.productLabel?.value || '?';
-      if (!products[pLabel]) products[pLabel] = { label: pLabel, subproducts: {}, domains: [] };
-      const p = products[pLabel];
-      if (b.spLabel?.value) {
-        const spLabel = b.spLabel.value;
-        if (!p.subproducts[spLabel]) {
-          p.subproducts[spLabel] = {
-            label: spLabel,
-            owner: b.ownerLabel?.value || null,
-            domains: [],
-          };
-        }
-        if (b.sdLabel?.value && !p.subproducts[spLabel].domains.includes(b.sdLabel.value)) {
-          p.subproducts[spLabel].domains.push(b.sdLabel.value);
-        }
-      }
-    }
-
-    for (const b of directResult.results.bindings) {
-      const pLabel = b.productLabel?.value || '?';
-      if (!products[pLabel]) products[pLabel] = { label: pLabel, subproducts: {}, domains: [] };
-      const domLabel = b.domainLabel?.value;
-      if (domLabel && !products[pLabel].domains.includes(domLabel)) {
-        products[pLabel].domains.push(domLabel);
-      }
-    }
-
+    nested.results.bindings.forEach((b) => mergeNestedBinding(products, b));
+    direct.results.bindings.forEach((b) => mergeDirectBinding(products, b));
     const out = Object.values(products).map((p) => ({
       label: p.label,
       subproducts: Object.values(p.subproducts),
       domains: p.domains,
     }));
-
     return { status: 200, body: { products: out, elapsed_ms: now() - start } };
   } catch (err) {
     return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } };
