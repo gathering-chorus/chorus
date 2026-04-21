@@ -1481,7 +1481,7 @@ app.get('/api/chorus/tests', async (_req: Request, res: Response) => {
 });
 
 // POST /api/athena/discover-pages — auto-discover UI pages per domain from filesystem (#2065)
-// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
@@ -1552,11 +1552,8 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
         // Direct domain name match or prefix match (e.g., seed-pipeline → seeds-domain)
         if (!domainId) {
           domainId = aliasToId[name] || null;
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (!domainId) {
-            // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
             for (const [alias, did] of Object.entries(aliasToId)) {
-              // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
               if (name.startsWith(alias + '-') || name === alias) {
                 domainId = did;
                 break;
@@ -1581,7 +1578,6 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
         for (const file of ontologyFiles) {
           const name = file.replace('.ejs', '');
           const domainId = aliasToId[name] || null;
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (domainId) {
             entries.push({ route: `/ontology-views/${name}`, path: `gathering/views/ontology-views/${file}`, pageType: 'ontology', domainId });
           }
@@ -1660,7 +1656,6 @@ app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) 
 });
 
 // POST /api/athena/discover-endpoints — auto-discover API endpoints per domain (#2066)
-// eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
@@ -1805,9 +1800,7 @@ app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) 
         }
         if (!domainId) {
           // Try route prefix matching
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           for (const [prefix, did] of Object.entries(routePrefixToDomain)) {
-            // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
             if (routePath.startsWith(prefix)) {
               domainId = did;
               break;

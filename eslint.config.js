@@ -64,8 +64,13 @@ module.exports = [
       // Disabling prevents false positives on TS built-ins (NodeJS, BufferEncoding, RequestInit).
       'no-undef': 'off',
       'complexity': ['error', { max: 20 }],
-      'max-depth': ['warn', { max: 4 }],
-      'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
+      // #2288 baseline: raised from 4/80 to 7/274 (max observed at baseline).
+      // Budgets block NEW regressions beyond the existing worst-case without
+      // forcing a sweep of pre-existing functions. Tighten via follow-on
+      // refactor card. Complexity stays at 20 (AC2 permits inline
+      // suppression with justification for the pre-existing 60 sites).
+      'max-depth': ['warn', { max: 7 }],
+      'max-lines-per-function': ['warn', { max: 274, skipBlankLines: true, skipComments: true }],
       'no-console': 'off',
       'no-debugger': 'error',
       'no-duplicate-imports': 'error',

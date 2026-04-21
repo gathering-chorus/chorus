@@ -125,9 +125,7 @@ export class SessionTailer {
                 const fullPath = path.join(projDir, f);
                 return { path: fullPath, mtime: fs.statSync(fullPath).mtimeMs };
               });
-            // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
             for (const file of files) {
-              // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
               if (!newest || file.mtime > newest.mtime) {
                 newest = file;
               }
@@ -165,7 +163,7 @@ export class SessionTailer {
     }
   }
 
-  // eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
+  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
   private processLine(role: string, line: string): void {
     let entry;
     try {

@@ -93,7 +93,7 @@ function parseArgs(argv: string[]): { command: string; args: string[]; flags: Re
   return { command, args, flags };
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 function main(): void {
   const rawArgs = process.argv.slice(2);
 

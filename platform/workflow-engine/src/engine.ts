@@ -146,7 +146,6 @@ export class WorkflowEngine {
     return manifest;
   }
 
-  // eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
   advance(wfId: string, notes?: string, artifacts?: string): AdvanceResult {
     const manifest = this.load(wfId);
 

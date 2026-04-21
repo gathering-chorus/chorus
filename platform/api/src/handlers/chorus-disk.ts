@@ -42,6 +42,7 @@ export async function fetchDisk({ execFile = defaultExecFile }: DiskDeps = {}): 
   }
 
   const extract = (label: string): string | null => {
+    // eslint-disable-next-line security/detect-non-literal-regexp -- label comes from hardcoded call sites, not user input.
     const match = diskStdout.match(new RegExp(`${label}:\\s*(.+)`));
     return match ? match[1].trim() : null;
   };

@@ -62,7 +62,7 @@ const KNOWN_DOMAINS = [
   'observability', 'loom', 'search',
 ];
 
-// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 export async function fetchCrawl(
   domainRaw: string,
   {
@@ -164,12 +164,10 @@ export async function fetchCrawl(
         const domainRefs = text.match(/domain:(\w+)/g) || [];
         for (const ref of domainRefs) {
           const d = ref.replace('domain:', '');
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (d !== domain) relatedDomainCounts[d] = (relatedDomainCounts[d] || 0) + 1;
         }
         const lower = text.toLowerCase();
         for (const kd of KNOWN_DOMAINS) {
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (kd !== domain && lower.includes(kd)) {
             relatedDomainCounts[kd] = (relatedDomainCounts[kd] || 0) + 1;
           }
@@ -191,10 +189,8 @@ export async function fetchCrawl(
       for (const line of lines) {
         try {
           const parsed = JSON.parse(line);
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (!parsed.event || !parsed.event.startsWith('card.')) continue;
           const cardId = parseInt(parsed.card || '0', 10);
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (!cardIds.has(cardId)) continue;
           spine.push({ timestamp: parsed.timestamp, event: parsed.event, role: parsed.role, card: cardId });
           timeline.push({ timestamp: parsed.timestamp, source: 'spine', text: parsed.event, role: parsed.role, card: cardId });

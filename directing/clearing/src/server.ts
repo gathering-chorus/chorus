@@ -392,7 +392,7 @@ app.get('/api/commands/:role', (req, res) => {
 });
 
 // API: unified activity stream — all roles interleaved by time
-// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 app.get('/api/stream', (req, res) => {
   const fs = require('fs');
   const logFile = `${CHORUS_ROOT}/platform/logs/chorus.log`;
@@ -417,7 +417,6 @@ app.get('/api/stream', (req, res) => {
           const action = entry.action || '';
           // Compact: just the tool + short description
           let display = summary;
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (action === 'Bash') display = summary.replace(/^Bash: /, '→ ');
           else if (action === 'Edit') display = summary.replace(/^Edit: /, '✏️ ');
           else if (action === 'Write') display = summary.replace(/^Write: /, '📝 ');
@@ -533,7 +532,7 @@ app.get('/api/stream', (req, res) => {
 });
 
 // API: board flow state — grouped by domain, matching /flow page sort
-// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 app.get('/api/flow', (_req, res) => {
   const { execSync } = require('child_process');
   const fs = require('fs');
@@ -565,7 +564,6 @@ app.get('/api/flow', (_req, res) => {
         if (!sequence) {
           const parts = tags.split('|').map((s: string) => s.trim());
           const bareTag = parts.find((p: string) => p && !/^(Wren|Silas|Kade|Jeff|P[123]$)/.test(p) && !p.includes(':'));
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (bareTag) sequence = bareTag;
         }
         cards.push({
@@ -589,9 +587,7 @@ app.get('/api/flow', (_req, res) => {
       for (const f of files) {
         try {
           const wf = JSON.parse(fs.readFileSync(`${wfDir}/${f}`, 'utf-8'));
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (wf.status === 'completed' || wf.status === 'archived' || wf.status === 'cancelled') continue;
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (wf.card) wfByCard[String(wf.card)] = (wfByCard[String(wf.card)] || 0) + 1;
         } catch { /* ignored */ }
       }

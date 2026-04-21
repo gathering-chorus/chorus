@@ -73,7 +73,7 @@ export interface SearchResult {
   body: unknown;
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 export async function fetchSearch(
   {
     db,

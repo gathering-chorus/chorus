@@ -47,9 +47,7 @@ export async function getPatternsSummary(days: number): Promise<PatternsSummaryR
           const pattern = obj.pattern || 'unknown';
           const date = (obj.timestamp || '').slice(0, 10);
           patterns[pattern] = (patterns[pattern] || 0) + 1;
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (date) {
-            // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
             if (!byDate[date]) byDate[date] = {};
             byDate[date][pattern] = (byDate[date][pattern] || 0) + 1;
           }

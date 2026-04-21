@@ -912,16 +912,13 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
         // Check if ALL blockers of the gated card are now Done
         let allDone = true;
         for (const blockerId of gatedRels.blockedBy) {
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           try {
             const blockerCard = await client.view(blockerId);
-            // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
             if (blockerCard.status !== 'Done') { allDone = false; break; }
           } catch { allDone = false; break; }
         }
         if (allDone) {
           const gatedCard = await client.view(gatedId);
-          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (gatedCard.status === 'Later') {
             await client.move(gatedId, 'Next');
             console.log(`  Unblocked #${gatedId} — moved Later → Next`);

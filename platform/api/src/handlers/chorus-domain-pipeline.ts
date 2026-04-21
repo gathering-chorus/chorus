@@ -51,7 +51,7 @@ function emptyStages(): Stage[] {
   }));
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 export async function fetchChorusDomainPipeline(
   deps: ChorusDomainPipelineDeps,
   name: string,

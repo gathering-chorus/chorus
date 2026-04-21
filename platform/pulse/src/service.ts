@@ -17,7 +17,6 @@ const PORT = parseInt(process.env.MESSAGING_PORT || '3475');
  * opening a port. `app.listen()` is called only when this module is the
  * process entrypoint (`require.main === module`).
  */
-// eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export function createApp(store: MessageStore): Express {
   const app = express();
   app.use(express.json());

@@ -44,7 +44,6 @@ interface MessageRow {
   session_id: string;
 }
 
-// eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export function fetchChorusConversation(
   deps: ChorusConversationDeps,
   query: ChorusConversationQuery,

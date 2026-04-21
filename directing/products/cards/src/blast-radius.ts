@@ -87,7 +87,7 @@ async function fetchJson(url: string): Promise<any> {
  * Generate blast radius report for a card.
  * Pure function — reads card data, queries graph, returns report.
  */
-// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 export async function generateBlastRadius(
   cardId: number,
   title: string,
