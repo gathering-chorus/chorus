@@ -44,6 +44,33 @@ interface MessageRow {
   session_id: string;
 }
 
+function computeUtcISOForHour(date: string, time: string, offsetHours: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const utcH = h + offsetHours;
+  if (utcH < 24) return `${date}T${String(utcH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + 1);
+  const nd = nextDate.toISOString().slice(0, 10);
+  return `${nd}T${String(utcH - 24).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
+}
+
+function computeWindow(date: string, afterTime: string | undefined, beforeTime: string | undefined, isEDT: (d: string) => boolean): { afterISO: string; beforeISO: string } {
+  const offsetHours = isEDT(date) ? 4 : 5;
+  return {
+    afterISO: afterTime ? computeUtcISOForHour(date, afterTime, offsetHours) : `${date}T00:00:00`,
+    beforeISO: beforeTime ? computeUtcISOForHour(date, beforeTime, offsetHours) : `${date}T23:59:59`,
+  };
+}
+
+function isNoiseRow(text: string): boolean {
+  if (text.startsWith('<system-reminder>')) return true;
+  if (text.startsWith('<task-')) return true;
+  if (text.startsWith('Base directory for this skill:')) return true;
+  if (text.startsWith('[Request interrupted')) return true;
+  if (text.length < 2) return true;
+  return false;
+}
+
 export function fetchChorusConversation(
   deps: ChorusConversationDeps,
   query: ChorusConversationQuery,
@@ -73,29 +100,7 @@ export function fetchChorusConversation(
   }
 
   const placeholders = roleFilter.map(() => '?').join(',');
-
-  let afterISO = `${date}T00:00:00`;
-  let beforeISO = `${date}T23:59:59`;
-
-  if (afterTime) {
-    const offsetHours = deps.isEDT(date) ? 4 : 5;
-    const [h, m] = afterTime.split(':').map(Number);
-    const utcH = h + offsetHours;
-    afterISO = `${date}T${String(utcH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
-  }
-  if (beforeTime) {
-    const offsetHours = deps.isEDT(date) ? 4 : 5;
-    const [h, m] = beforeTime.split(':').map(Number);
-    const utcH = h + offsetHours;
-    if (utcH >= 24) {
-      const nextDate = new Date(date);
-      nextDate.setDate(nextDate.getDate() + 1);
-      const nd = nextDate.toISOString().slice(0, 10);
-      beforeISO = `${nd}T${String(utcH - 24).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
-    } else {
-      beforeISO = `${date}T${String(utcH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`;
-    }
-  }
+  const { afterISO, beforeISO } = computeWindow(date, afterTime, beforeTime, deps.isEDT);
 
   const rows = deps.db.prepare(`
     SELECT author, content, timestamp, role, session_id
@@ -108,15 +113,7 @@ export function fetchChorusConversation(
   `).all(...roleFilter, afterISO, beforeISO, limit) as MessageRow[];
 
   const thread = rows
-    .filter((row) => {
-      const text = row.content.trim();
-      if (text.startsWith('<system-reminder>')) return false;
-      if (text.startsWith('<task-')) return false;
-      if (text.startsWith('Base directory for this skill:')) return false;
-      if (text.startsWith('[Request interrupted')) return false;
-      if (text.length < 2) return false;
-      return true;
-    })
+    .filter((row) => !isNoiseRow(row.content.trim()))
     .map((row) => ({
       speaker: row.author === 'user' ? 'jeff' : row.role,
       text: row.content.trim(),

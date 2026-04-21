@@ -48,12 +48,54 @@ export interface SelfResult {
 
 const DEFAULT_WHITELIST = new Set(['memory', 'story', 'decision', 'brief', 'adr']);
 
+function runFtsSearch(db: SelfDeps['db'], q: string, whitelist: Set<string>, limit: number): unknown[] {
+  const sourceList = Array.from(whitelist).map((s) => `'${s}'`).join(',');
+  const ftsQuery = q.replace(/-/g, ' ');
+  try {
+    return db.prepare(
+      `SELECT m.id, m.source, m.channel, m.role, m.content, m.timestamp,
+              snippet(messages_fts, 0, '<b>', '</b>', '...', 40) as snippet
+       FROM messages_fts f
+       JOIN messages m ON f.rowid = m.id
+       WHERE messages_fts MATCH ?
+       AND m.source IN (${sourceList})
+       ORDER BY m.timestamp DESC
+       LIMIT ?`,
+    ).all(ftsQuery, limit);
+  } catch {
+    return db.prepare(
+      `SELECT id, source, channel, role, content, timestamp, NULL as snippet
+       FROM messages
+       WHERE content LIKE ?
+       AND source IN (${sourceList})
+       ORDER BY timestamp DESC
+       LIMIT ?`,
+    ).all(`%${q}%`, limit);
+  }
+}
+
+async function runSemanticSearch(semanticSearch: SelfDeps['semanticSearch'], q: string, whitelist: Set<string>, limit: number): Promise<unknown[]> {
+  if (!semanticSearch) return [];
+  try {
+    const rawSem = await semanticSearch(q, limit * 3);
+    return rawSem.filter((r) => whitelist.has(r.source || '')).slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
+async function runSparqlSearch(sparqlSearch: SelfDeps['sparqlSearch'], q: string, limit: number): Promise<unknown[]> {
+  if (!sparqlSearch) return [];
+  try {
+    return await sparqlSearch(q, limit);
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchSelf(
   {
-    db,
-    semanticSearch,
-    sparqlSearch,
-    mergeUnified,
+    db, semanticSearch, sparqlSearch, mergeUnified,
     emitSearchEvent = () => {},
     whitelist = DEFAULT_WHITELIST,
     now = Date.now,
@@ -63,59 +105,12 @@ export async function fetchSelf(
   if (!q) {
     return { status: 400, body: { error: 'Missing required parameter: q' } };
   }
-
   const limit = Math.min(parseInt(limitRaw || '10', 10) || 10, 50);
   const searchStart = now();
 
-  const sourceList = Array.from(whitelist).map((s) => `'${s}'`).join(',');
-  const ftsQuery = q.replace(/-/g, ' ');
-
-  let ftsResults: unknown[];
-  try {
-    ftsResults = db
-      .prepare(
-        `SELECT m.id, m.source, m.channel, m.role, m.content, m.timestamp,
-                snippet(messages_fts, 0, '<b>', '</b>', '...', 40) as snippet
-         FROM messages_fts f
-         JOIN messages m ON f.rowid = m.id
-         WHERE messages_fts MATCH ?
-         AND m.source IN (${sourceList})
-         ORDER BY m.timestamp DESC
-         LIMIT ?`,
-      )
-      .all(ftsQuery, limit);
-  } catch {
-    ftsResults = db
-      .prepare(
-        `SELECT id, source, channel, role, content, timestamp, NULL as snippet
-         FROM messages
-         WHERE content LIKE ?
-         AND source IN (${sourceList})
-         ORDER BY timestamp DESC
-         LIMIT ?`,
-      )
-      .all(`%${q}%`, limit);
-  }
-
-  let semResults: unknown[] = [];
-  if (semanticSearch) {
-    try {
-      const rawSem = await semanticSearch(q, limit * 3);
-      semResults = rawSem.filter((r) => whitelist.has(r.source || '')).slice(0, limit);
-    } catch {
-      /* semantic unavailable */
-    }
-  }
-
-  let sparqlResults: unknown[] = [];
-  if (sparqlSearch) {
-    try {
-      sparqlResults = await sparqlSearch(q, limit);
-    } catch {
-      /* sparql unavailable */
-    }
-  }
-
+  const ftsResults = runFtsSearch(db, q, whitelist, limit);
+  const semResults = await runSemanticSearch(semanticSearch, q, whitelist, limit);
+  const sparqlResults = await runSparqlSearch(sparqlSearch, q, limit);
   const merged = mergeUnified(ftsResults, semResults, sparqlResults, limit);
 
   emitSearchEvent({

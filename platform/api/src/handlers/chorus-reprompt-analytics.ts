@@ -39,6 +39,38 @@ interface RepromptEvent {
   type: EventType;
 }
 
+function isNoiseContent(c: string): boolean {
+  if (!c || c.length > 500) return true;
+  if (c.startsWith('<') || c.startsWith('{') || c.startsWith('[')) return true;
+  if (/^\/Users\/|^\/tmp\/|^\/opt\//.test(c)) return true;
+  if (/^(exit|y|n|yes|no)$/i.test(c.trim())) return true;
+  return false;
+}
+
+function loadFilteredMessages(db: ChorusRepromptAnalyticsDeps['db'], cutoff: string): Array<{ content: string; channel: string; timestamp: string }> {
+  const rows = db.prepare(`
+    SELECT content, channel, timestamp FROM messages
+    WHERE author='user' AND source='claude'
+      AND channel IN ('session:wren','session:silas','session:kade')
+      AND timestamp >= ?
+    ORDER BY timestamp ASC
+  `).all(cutoff) as Array<{ content: string; channel: string; timestamp: string }>;
+
+  return rows
+    .map((r) => ({ ...r, content: r.content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim() }))
+    .filter((r) => !isNoiseContent(r.content));
+}
+
+function classifyEventType(text: string): EventType | null {
+  if (REPROMPT_KEYWORDS.test(text)) {
+    if (/run.*(again|it)|try.*(again|it)|again\?$/.test(text)) return null;
+    return 'reprompt';
+  }
+  if (APPROVAL_BIGRAMS.test(text)) return 'approval';
+  if (CORRECTION_PATTERNS.test(text) && text.length < 100) return 'correction';
+  return null;
+}
+
 export function fetchChorusRepromptAnalytics(
   deps: ChorusRepromptAnalyticsDeps,
   query: ChorusRepromptAnalyticsQuery,
@@ -47,27 +79,7 @@ export function fetchChorusRepromptAnalytics(
   const days = Math.min(Math.max(parseInt(query.days || '30', 10), 1), 365);
   const cutoff = new Date(now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  const rows = deps.db.prepare(`
-    SELECT content, channel, timestamp FROM messages
-    WHERE author='user' AND source='claude'
-      AND channel IN ('session:wren','session:silas','session:kade')
-      AND timestamp >= ?
-    ORDER BY timestamp ASC
-  `).all(cutoff) as Array<{ content: string; channel: string; timestamp: string }>;
-
-  const filtered = rows
-    .map((r) => {
-      const cleaned = r.content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
-      return { ...r, content: cleaned };
-    })
-    .filter((r) => {
-      const c = r.content;
-      if (!c || c.length > 500) return false;
-      if (c.startsWith('<') || c.startsWith('{') || c.startsWith('[')) return false;
-      if (/^\/Users\/|^\/tmp\/|^\/opt\//.test(c)) return false;
-      if (/^(exit|y|n|yes|no)$/i.test(c.trim())) return false;
-      return true;
-    });
+  const filtered = loadFilteredMessages(deps.db, cutoff);
 
   const events: RepromptEvent[] = [];
   const dailyCounts: Record<string, { reprompt: number; approval: number; correction: number; total: number }> = {};
@@ -84,17 +96,7 @@ export function fetchChorusRepromptAnalytics(
     if (!dailyCounts[day]) dailyCounts[day] = { reprompt: 0, approval: 0, correction: 0, total: 0 };
     dailyCounts[day].total++;
 
-    let type: EventType | null = null;
-    if (REPROMPT_KEYWORDS.test(text)) {
-      if (!/run.*(again|it)|try.*(again|it)|again\?$/.test(text)) {
-        type = 'reprompt';
-      }
-    } else if (APPROVAL_BIGRAMS.test(text)) {
-      type = 'approval';
-    } else if (CORRECTION_PATTERNS.test(text) && text.length < 100) {
-      type = 'correction';
-    }
-
+    const type = classifyEventType(text);
     if (type) {
       events.push({ text: r.content.substring(0, 120), role, timestamp: r.timestamp, type });
       dailyCounts[day][type]++;

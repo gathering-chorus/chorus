@@ -67,6 +67,41 @@ function buildCountQuery(sdUri: string, predicate: string): string {
   return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?e) AS ?n) WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:${predicate} ?e } }`;
 }
 
+function buildSections(b: SparqlMetaResult['results']['bindings'][number], counts: Record<string, number>): Record<string, boolean> {
+  return {
+    label: !!b.label,
+    comment: !!b.comment,
+    owner: !!b.ownerLabel,
+    step: !!b.stepLabel,
+    actors: counts.actorCount > 0,
+    scenarios: counts.scenarioCount > 0,
+    contract: counts.contractCount > 0,
+    prior_art: counts.priorArtCount > 0,
+    pages: counts.pageCount > 0,
+    integrations: counts.integrationCount > 0,
+    services: counts.serviceCount > 0,
+    persistence: counts.persistenceCount > 0,
+    pipeline: counts.pipelineCount > 0,
+    logs: counts.logSourceCount > 0,
+    gaps: counts.gapCount > 0,
+    edges: (parseInt(b.consumesCount?.value ?? '0', 10) + parseInt(b.consumedByCount?.value ?? '0', 10)) > 0,
+  };
+}
+
+function computeLifecycle(sections: Record<string, boolean>) {
+  const lifecycle: Record<string, { required: string[]; met: string[]; missing: string[]; pass: boolean }> = {
+    create: { required: ['label', 'owner', 'step', 'comment'], met: [], missing: [], pass: false },
+    wip: { required: ['actors', 'edges'], met: [], missing: [], pass: false },
+    done: { required: ['scenarios', 'contract'], met: [], missing: [], pass: false },
+  };
+  for (const gate of Object.values(lifecycle)) {
+    gate.met = gate.required.filter((r) => sections[r]);
+    gate.missing = gate.required.filter((r) => !sections[r]);
+    gate.pass = gate.missing.length === 0;
+  }
+  return lifecycle;
+}
+
 export async function fetchAthenaSubdomainCompleteness(
   deps: AthenaCompletenessDeps,
   id: string,
@@ -94,34 +129,8 @@ export async function fetchAthenaSubdomainCompleteness(
       const cr = countsRaw[i] as SparqlCountResult;
       counts[key] = parseInt(cr.results.bindings[0]?.n?.value ?? '0', 10);
     });
-    const sections: Record<string, boolean> = {
-      label: !!b.label,
-      comment: !!b.comment,
-      owner: !!b.ownerLabel,
-      step: !!b.stepLabel,
-      actors: counts.actorCount > 0,
-      scenarios: counts.scenarioCount > 0,
-      contract: counts.contractCount > 0,
-      prior_art: counts.priorArtCount > 0,
-      pages: counts.pageCount > 0,
-      integrations: counts.integrationCount > 0,
-      services: counts.serviceCount > 0,
-      persistence: counts.persistenceCount > 0,
-      pipeline: counts.pipelineCount > 0,
-      logs: counts.logSourceCount > 0,
-      gaps: counts.gapCount > 0,
-      edges: (parseInt(b.consumesCount?.value ?? '0', 10) + parseInt(b.consumedByCount?.value ?? '0', 10)) > 0,
-    };
-    const lifecycle: Record<string, { required: string[]; met: string[]; missing: string[]; pass: boolean }> = {
-      create: { required: ['label', 'owner', 'step', 'comment'], met: [], missing: [], pass: false },
-      wip: { required: ['actors', 'edges'], met: [], missing: [], pass: false },
-      done: { required: ['scenarios', 'contract'], met: [], missing: [], pass: false },
-    };
-    for (const gate of Object.values(lifecycle)) {
-      gate.met = gate.required.filter((r) => sections[r]);
-      gate.missing = gate.required.filter((r) => !sections[r]);
-      gate.pass = gate.missing.length === 0;
-    }
+    const sections = buildSections(b, counts);
+    const lifecycle = computeLifecycle(sections);
     const present = Object.entries(sections).filter(([, v]) => v).map(([k]) => k);
     const missing = Object.entries(sections).filter(([, v]) => !v).map(([k]) => k);
     const percentage = Math.round((present.length / Object.keys(sections).length) * 100);
