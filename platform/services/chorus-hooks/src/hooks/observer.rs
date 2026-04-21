@@ -48,6 +48,17 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
         return;
     }
 
+    // #2220: drop pure-read Bash commands — 65%+ of observer.digest volume is
+    // `bash: grep/cat/ls/...` that carries no decision or catch signal per the
+    // 100-event sample audit. Mutating Bash (writes, cards ops, chorus-log,
+    // launchctl kickstart, git commit/push) still lands.
+    if tool == "Bash" {
+        let cmd = input.get_tool_input_str("command");
+        if is_read_only_bash(&cmd) {
+            return;
+        }
+    }
+
     let action = tool.to_string();
     let digest = digest_tool_call(input);
 
@@ -76,6 +87,38 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
     };
 
     write_observation(&obs).await;
+}
+
+/// #2220 — Classify a Bash command as read-only (observation noise) or
+/// potentially mutating (carries decision/catch signal).
+///
+/// Read-only = first non-env token is a pure-read utility AND no write
+/// redirect (>/>>/tee) is present. Conservative: any unknown command counts
+/// as mutating to avoid silently losing signal.
+pub fn is_read_only_bash(cmd: &str) -> bool {
+    let trimmed = cmd.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    if trimmed.contains(" > ") || trimmed.contains(">>") || trimmed.contains(" | tee ") {
+        return false;
+    }
+    let first = trimmed.split_whitespace()
+        .find(|tok| !tok.contains('=') && *tok != "sudo" && *tok != "bash" && *tok != "-c")
+        .unwrap_or("");
+    let first = first.rsplit('/').next().unwrap_or(first).trim_matches('"').trim_matches('\'');
+    matches!(
+        first,
+        "grep" | "egrep" | "fgrep" | "rg" | "ack"
+        | "cat" | "head" | "tail" | "less" | "more"
+        | "ls" | "ll" | "la" | "find" | "fd" | "tree"
+        | "wc" | "sort" | "uniq" | "cut" | "tr" | "awk" | "sed"
+        | "stat" | "file" | "du" | "df"
+        | "echo" | "printf" | "pwd" | "which" | "whereis" | "type"
+        | "curl" | "wget" | "ping" | "dig" | "host" | "nslookup"
+        | "ps" | "top" | "htop"
+        | "sqlite3" | "jq" | "yq"
+    )
 }
 
 /// #2120 — The card a role is working on is the WIP card they own on the
@@ -551,6 +594,47 @@ mod tests {
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("nudging:"), "got: {}", d);
+    }
+
+    // === is_read_only_bash tests (#2220) ===
+
+    #[test]
+    fn is_read_only_bash_catches_common_reads() {
+        assert!(is_read_only_bash("grep foo /etc/passwd"));
+        assert!(is_read_only_bash("cat /tmp/file"));
+        assert!(is_read_only_bash("ls -la /var"));
+        assert!(is_read_only_bash("find . -name '*.ts'"));
+        assert!(is_read_only_bash("wc -l file.txt"));
+        assert!(is_read_only_bash("/usr/bin/grep foo bar"));
+        assert!(is_read_only_bash("curl -s http://localhost:3340/api/chorus/health"));
+        assert!(is_read_only_bash("sqlite3 ~/.chorus/index.db 'SELECT COUNT(*) FROM messages'"));
+    }
+
+    #[test]
+    fn is_read_only_bash_rejects_mutations() {
+        assert!(!is_read_only_bash("cards move 1234 Done"));
+        assert!(!is_read_only_bash("chorus-log some.event silas"));
+        assert!(!is_read_only_bash("launchctl kickstart -k gui/$(id -u)/com.foo"));
+        assert!(!is_read_only_bash("git commit -m 'x'"));
+        assert!(!is_read_only_bash("npm install"));
+    }
+
+    #[test]
+    fn is_read_only_bash_rejects_redirects() {
+        assert!(!is_read_only_bash("grep foo bar > /tmp/out"));
+        assert!(!is_read_only_bash("cat file >> /tmp/acc"));
+    }
+
+    #[test]
+    fn is_read_only_bash_handles_env_prefix() {
+        assert!(is_read_only_bash("FOO=bar grep baz file"));
+        assert!(is_read_only_bash("HOME=/tmp cat /etc/hosts"));
+    }
+
+    #[test]
+    fn is_read_only_bash_empty_is_noop() {
+        assert!(is_read_only_bash(""));
+        assert!(is_read_only_bash("   "));
     }
 
     #[test]
