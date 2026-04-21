@@ -143,18 +143,27 @@ async function cmdList(client: BoardClient, _label: string, productFilter?: stri
   }
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
-async function cmdFilter(client: BoardClient, args: string[]) {
+function parseFilterArgs(args: string[]): Record<string, string> {
   const filters: Record<string, string> = {};
+  const flags = ['--domain', '--sequence', '--owner', '--type', '--status'];
   for (let i = 0; i < args.length; i++) {
-    const flag = args[i];
-    if (flag === '--domain' && args[i + 1]) { filters.domain = args[++i]; }
-    else if (flag === '--sequence' && args[i + 1]) { filters.sequence = args[++i]; }
-    else if (flag === '--owner' && args[i + 1]) { filters.owner = args[++i]; }
-    else if (flag === '--type' && args[i + 1]) { filters.type = args[++i]; }
-    else if (flag === '--status' && args[i + 1]) { filters.status = args[++i]; }
+    if (flags.includes(args[i]) && args[i + 1]) {
+      filters[args[i].slice(2)] = args[++i];
+    }
   }
+  return filters;
+}
 
+function taskMatchesFilters(t: any, filters: Record<string, string>): boolean {
+  if (filters.domain && !t.domains.includes(`domain:${filters.domain}`)) return false;
+  if (filters.sequence && !t.domains.includes(`sequence:${filters.sequence}`)) return false;
+  if (filters.owner && t.owner.toLowerCase() !== filters.owner.toLowerCase()) return false;
+  if (filters.type && !t.domains.includes(`type:${filters.type}`)) return false;
+  return true;
+}
+
+async function cmdFilter(client: BoardClient, args: string[]) {
+  const filters = parseFilterArgs(args);
   if (Object.keys(filters).length === 0) {
     console.log('Usage: cards filter --domain <d> [--sequence <s>] [--owner <o>] [--type <t>] [--status <s>]');
     console.log('  At least one filter required.');
@@ -164,17 +173,11 @@ async function cmdFilter(client: BoardClient, args: string[]) {
   const grouped = await client.listGrouped();
   const excludeStatuses = ["Won't Do", 'Done'];
   const results: { status: string; task: any }[] = [];
-
   for (const [status, tasks] of grouped.entries()) {
     if (excludeStatuses.includes(status)) continue;
     if (filters.status && status.toLowerCase() !== filters.status.toLowerCase()) continue;
     for (const t of tasks) {
-      let match = true;
-      if (filters.domain && !t.domains.includes(`domain:${filters.domain}`)) match = false;
-      if (filters.sequence && !t.domains.includes(`sequence:${filters.sequence}`)) match = false;
-      if (filters.owner && t.owner.toLowerCase() !== filters.owner.toLowerCase()) match = false;
-      if (filters.type && !t.domains.includes(`type:${filters.type}`)) match = false;
-      if (match) results.push({ status, task: t });
+      if (taskMatchesFilters(t, filters)) results.push({ status, task: t });
     }
   }
 
@@ -205,89 +208,96 @@ async function cmdMine(client: BoardClient, args: string[], label: string) {
   }
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+async function printViewJson(client: BoardClient, task: any, index: number): Promise<void> {
+  const comments = await client.comments(index);
+  console.log(JSON.stringify({
+    index: task.index,
+    title: task.title,
+    status: task.status,
+    owner: task.owner || 'unassigned',
+    priority: task.priority || 'none',
+    description: task.description,
+    domains: task.domains,
+    created: task.created,
+    updated: task.updated,
+    comments: comments.map((c) => ({ author: c.author, text: c.text })),
+  }, null, 2));
+}
+
+function extractConstraints(content: string): string[] {
+  const constraints: string[] = [];
+  let inConstraints = false;
+  for (const line of content.split('\n')) {
+    if (/^##\s+Constraints/i.test(line)) { inConstraints = true; continue; }
+    if (inConstraints && /^##\s/.test(line)) break;
+    if (inConstraints && line.trim().startsWith('-')) constraints.push(line.trim());
+  }
+  return constraints;
+}
+
+function ageDescription(mtimeMs: number): string {
+  const age = Math.round((Date.now() - mtimeMs) / 3600000);
+  if (age < 1) return '<1h ago';
+  if (age < 24) return `${age}h ago`;
+  return `${Math.round(age / 24)}d ago`;
+}
+
+async function printDomainRadius(domainTags: string[]): Promise<void> {
+  const fs = await import('fs');
+  const path = await import('path');
+  const contextDir = path.join(__dirname, '..', '..', 'domain-context');
+  const missing: string[] = [];
+
+  for (const domain of domainTags) {
+    const filePath = path.join(contextDir, `domain-context-${domain}.md`);
+    if (!fs.existsSync(filePath)) {
+      missing.push(domain);
+      continue;
+    }
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const constraints = extractConstraints(content);
+    const ageStr = ageDescription(fs.statSync(filePath).mtimeMs);
+    console.log(`\n**Domain Radius** (${domain}):`);
+    console.log(`  ${filePath.replace(/.*domain-context\//, 'domain-context/')}`);
+    console.log(`  Updated: ${ageStr}`);
+    if (constraints.length > 0) {
+      console.log(`  Constraints (${constraints.length}):`);
+      constraints.slice(0, 5).forEach((c) => console.log(`    ${c}`));
+      if (constraints.length > 5) console.log(`    ... +${constraints.length - 5} more`);
+    }
+  }
+
+  if (missing.length > 0) {
+    console.log(`\n**Domain Radius** — missing context: ${missing.map((d) => `domain-context-${d}.md`).join(', ')}`);
+  }
+}
+
 async function cmdView(client: BoardClient, args: string[]) {
   if (!args[0]) die('Usage: cards view <id> [--json] [--verbose|-v]');
   const jsonFlag = args.includes('--json');
   const verbose = args.includes('--verbose') || args.includes('-v');
-  const index = parseInt(args.filter(a => !a.startsWith('-'))[0], 10);
+  const index = parseInt(args.filter((a) => !a.startsWith('-'))[0], 10);
   const task = await client.view(index);
 
-  if (jsonFlag) {
-    const comments = await client.comments(index);
-    console.log(JSON.stringify({
-      index: task.index,
-      title: task.title,
-      status: task.status,
-      owner: task.owner || 'unassigned',
-      priority: task.priority || 'none',
-      description: task.description,
-      domains: task.domains,
-      created: task.created,
-      updated: task.updated,
-      comments: comments.map(c => ({ author: c.author, text: c.text })),
-    }, null, 2));
-    return;
-  }
+  if (jsonFlag) return printViewJson(client, task, index);
 
   console.log(`#${task.index} ${task.title}`);
   console.log(`  Status:   ${task.status}`);
   console.log(`  Owner:    ${task.owner || 'unassigned'}`);
   console.log(`  Priority: ${task.priority || 'none'}`);
-  if (task.description) console.log(`  Desc:\n${task.description.split('\n').map(l => `    ${l}`).join('\n')}`);
+  if (task.description) console.log(`  Desc:\n${task.description.split('\n').map((l) => `    ${l}`).join('\n')}`);
   if (task.domains.length) console.log(`  Domains:  ${task.domains.join(', ')}`);
   console.log(`  Created:  ${task.created}`);
   console.log(`  Updated:  ${task.updated}`);
 
-  // Domain Radius — show domain context alongside blast radius (#1688)
   const domainTags = task.domains.filter((d: string) => d.startsWith('domain:')).map((d: string) => d.replace('domain:', ''));
-  if (domainTags.length > 0) {
-    const fs = await import('fs');
-    const path = await import('path');
-    const contextDir = path.join(__dirname, '..', '..', 'domain-context');
-    const found: string[] = [];
-    const missing: string[] = [];
-    for (const domain of domainTags) {
-      const filePath = path.join(contextDir, `domain-context-${domain}.md`);
-      if (fs.existsSync(filePath)) {
-        found.push(domain);
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const lines = content.split('\n');
-        // Extract constraints section
-        let inConstraints = false;
-        const constraints: string[] = [];
-        for (const line of lines) {
-          if (/^##\s+Constraints/i.test(line)) { inConstraints = true; continue; }
-          if (inConstraints && /^##\s/.test(line)) break;
-          if (inConstraints && line.trim().startsWith('-')) constraints.push(line.trim());
-        }
-        // Get last modified
-        const stat = fs.statSync(filePath);
-        const age = Math.round((Date.now() - stat.mtimeMs) / 3600000);
-        const ageStr = age < 1 ? '<1h ago' : age < 24 ? `${age}h ago` : `${Math.round(age / 24)}d ago`;
-        console.log(`\n**Domain Radius** (${domain}):`);
-        console.log(`  ${filePath.replace(/.*domain-context\//, 'domain-context/')}`);
-        console.log(`  Updated: ${ageStr}`);
-        if (constraints.length > 0) {
-          console.log(`  Constraints (${constraints.length}):`);
-          constraints.slice(0, 5).forEach(c => console.log(`    ${c}`));
-          if (constraints.length > 5) console.log(`    ... +${constraints.length - 5} more`);
-        }
-      } else {
-        missing.push(domain);
-      }
-    }
-    if (missing.length > 0) {
-      console.log(`\n**Domain Radius** — missing context: ${missing.map(d => `domain-context-${d}.md`).join(', ')}`);
-    }
-  }
+  if (domainTags.length > 0) await printDomainRadius(domainTags);
 
   const comments = await client.comments(index);
   if (comments.length > 0) {
     console.log(`  Comments (${comments.length}):`);
     for (const c of comments) {
       const rendered = formatCommentForView(c.text, verbose);
-      // formatCommentForView may return multi-line; indent each line to match style
       const indented = rendered.split('\n').map((l, i) => i === 0 ? `    [${c.author}] ${l}` : `    ${l}`).join('\n');
       console.log(indented);
     }
@@ -406,78 +416,80 @@ async function cmdChunk(client: BoardClient, args: string[]) {
   }
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
-async function cmdDomain(client: BoardClient, args: string[]) {
-  const validDomains = Object.keys(LABELS.domain);
-  const sub = args[0]?.toLowerCase();
-
-  if (sub === 'add') {
-    const name = args[1]?.toLowerCase();
-    if (!name) die('Usage: cards domain add <name>');
-    if (LABELS.domain[name]) {
-      console.log(`Domain "${name}" already exists (label ID ${LABELS.domain[name]})`);
-      return;
-    }
-    // Create label via Vikunja API
-    const label = await client.createLabel(`domain:${name}`);
-    console.log(`Created domain "${name}" (label ID ${label.id})`);
-    console.log(`⚠ Add to config.ts LABELS.domain: ${name}: ${label.id}`);
+async function cmdDomainAdd(client: BoardClient, name: string): Promise<void> {
+  if (!name) die('Usage: cards domain add <name>');
+  if (LABELS.domain[name]) {
+    console.log(`Domain "${name}" already exists (label ID ${LABELS.domain[name]})`);
     return;
   }
+  const label = await client.createLabel(`domain:${name}`);
+  console.log(`Created domain "${name}" (label ID ${label.id})`);
+  console.log(`⚠ Add to config.ts LABELS.domain: ${name}: ${label.id}`);
+}
 
-  if (sub === 'remove') {
-    const name = args[1]?.toLowerCase();
-    if (!name) die('Usage: cards domain remove <name>');
-    // Check config.ts first, then Vikunja labels
-    let labelId = LABELS.domain[name];
-    if (!labelId) {
-      // Not in config — check Vikunja directly (covers domains added via `domain add`)
-      const labels = await client.listLabels();
-      const match = labels.find(l => l.title === `domain:${name}`);
-      if (!match) die(`Domain "${name}" not found in config.ts or Vikunja labels.`);
-      labelId = match.id;
+async function resolveDomainLabelId(client: BoardClient, name: string): Promise<number> {
+  const labelId = LABELS.domain[name];
+  if (labelId) return labelId;
+  const labels = await client.listLabels();
+  const match = labels.find((l) => l.title === `domain:${name}`);
+  if (!match) die(`Domain "${name}" not found in config.ts or Vikunja labels.`);
+  return match!.id;
+}
+
+async function tryDeleteDomainLabel(client: BoardClient, name: string, labelId: number): Promise<void> {
+  try {
+    await client.deleteLabel(labelId);
+    console.log(`Deleted domain "${name}" (label ID ${labelId}) from Vikunja`);
+  } catch (e: any) {
+    if (e.message?.includes('401')) {
+      console.log(`⚠ Cannot delete label ${labelId} — requires creator's token. Delete manually in Vikunja UI.`);
+    } else {
+      throw e;
     }
-    console.log(`Domain "${name}" has label ID ${labelId}`);
-    // Check if any cards use this domain before deleting
-    const all = await client.list();
-    const using = all.filter(t => t.domains.includes(`domain:${name}`));
-    if (using.length > 0) {
-      console.log(`⚠ ${using.length} card(s) use domain:${name} — remove from cards first`);
-      for (const c of using.slice(0, 5)) {
-        console.log(`  #${c.apiId} ${c.title.substring(0, 60)}`);
-      }
-      return;
-    }
-    try {
-      await client.deleteLabel(labelId);
-      console.log(`Deleted domain "${name}" (label ID ${labelId}) from Vikunja`);
-    } catch (e: any) {
-      if (e.message?.includes('401')) {
-        console.log(`⚠ Cannot delete label ${labelId} — requires creator's token. Delete manually in Vikunja UI.`);
-      } else {
-        throw e;
-      }
-    }
-    if (LABELS.domain[name]) {
-      console.log('⚠ Also remove from config.ts LABELS.domain and recompile');
+  }
+  if (LABELS.domain[name]) {
+    console.log('⚠ Also remove from config.ts LABELS.domain and recompile');
+  }
+}
+
+async function cmdDomainRemove(client: BoardClient, name: string): Promise<void> {
+  if (!name) die('Usage: cards domain remove <name>');
+  const labelId = await resolveDomainLabelId(client, name);
+  console.log(`Domain "${name}" has label ID ${labelId}`);
+  const all = await client.list();
+  const using = all.filter((t) => t.domains.includes(`domain:${name}`));
+  if (using.length > 0) {
+    console.log(`⚠ ${using.length} card(s) use domain:${name} — remove from cards first`);
+    for (const c of using.slice(0, 5)) {
+      console.log(`  #${c.apiId} ${c.title.substring(0, 60)}`);
     }
     return;
   }
+  await tryDeleteDomainLabel(client, name, labelId);
+}
 
-  // Default: list domains with card counts
+async function cmdDomainList(client: BoardClient, showAll: boolean): Promise<void> {
+  const validDomains = Object.keys(LABELS.domain).sort();
   const all = await client.list();
   const activeBuckets = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Next', 'Later', 'Blocked'];
   console.log('Domains:');
-  for (const d of validDomains.sort()) {
-    const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`domain:${d}`));
-    if (cards.length > 0 || sub === 'all') {
+  for (const d of validDomains) {
+    const cards = all.filter((t) => activeBuckets.includes(t.status) && t.domains.includes(`domain:${d}`));
+    if (cards.length > 0 || showAll) {
       console.log(`  ${d.padEnd(16)} ${String(cards.length).padStart(3)} cards`);
     }
   }
-  const untagged = all.filter(t => activeBuckets.includes(t.status) && !t.domains.some(d => d.startsWith('domain:')));
+  const untagged = all.filter((t) => activeBuckets.includes(t.status) && !t.domains.some((d) => d.startsWith('domain:')));
   if (untagged.length > 0) {
     console.log(`  ${'(no domain)'.padEnd(16)} ${String(untagged.length).padStart(3)} cards`);
   }
+}
+
+async function cmdDomain(client: BoardClient, args: string[]) {
+  const sub = args[0]?.toLowerCase();
+  if (sub === 'add') return cmdDomainAdd(client, args[1]?.toLowerCase());
+  if (sub === 'remove') return cmdDomainRemove(client, args[1]?.toLowerCase());
+  return cmdDomainList(client, sub === 'all');
 }
 
 async function cmdSequence(client: BoardClient, args: string[]) {
@@ -623,7 +635,291 @@ Examples:
  * `clientFactory` to inject a mock `BoardClient`; default constructs one
  * from env.
  */
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+interface CliCtx {
+  client: BoardClient;
+  cmdArgs: string[];
+  productFilter?: string;
+  boardLabel: string;
+  boardConfig: BoardConfig;
+}
+
+async function cmdAdd(ctx: CliCtx) {
+  const opts = parseAddArgs(ctx.cmdArgs);
+  if (ctx.productFilter && !opts.product) opts.product = ctx.productFilter;
+  if (!opts.sequence) {
+    console.error('  WARN: No --sequence on new card. Use --sequence <seq> for board visibility.');
+  }
+  await addCard(ctx.client, opts.title, opts);
+}
+
+async function cmdDone(ctx: CliCtx) {
+  if (!ctx.cmdArgs[0]) die('Usage: cards done <id> [--proven "1815 1898"]');
+  const provenIdx = ctx.cmdArgs.indexOf('--proven');
+  const provenCards = provenIdx >= 0 ? ctx.cmdArgs.slice(provenIdx + 1) : undefined;
+  await doneCard(ctx.client, parseInt(ctx.cmdArgs[0], 10), provenCards);
+}
+
+function parseSetPairs(cmdArgs: string[]): { id: number; pairs: Record<string, string> } {
+  const id = parseInt(cmdArgs[0], 10);
+  if (isNaN(id)) die(`Invalid card ID: ${cmdArgs[0]}`);
+  const pairs: Record<string, string> = {};
+  for (let i = 1; i < cmdArgs.length; i++) {
+    const arg = cmdArgs[i];
+    const eq = arg.indexOf('=');
+    if (eq === -1) die(`Bare value "${arg}" — specify category: domain=${arg}, chunk=${arg}, or sequence=${arg}`);
+    const key = arg.substring(0, eq).toLowerCase();
+    const val = arg.substring(eq + 1);
+    if (!val) die(`Empty value for key "${key}"`);
+    pairs[key] = val;
+  }
+  return { id, pairs };
+}
+
+async function cmdSet(ctx: CliCtx) {
+  if (ctx.cmdArgs.length < 2) die('Usage: cards set <id> key=value [key=value ...]');
+  const { id, pairs } = parseSetPairs(ctx.cmdArgs);
+  await setCard(ctx.client, id, pairs);
+}
+
+async function cmdUpdate(ctx: CliCtx) {
+  const u = parseUpdateArgs(ctx.cmdArgs);
+  const pairs: Record<string, string> = {};
+  if (u.title) pairs.title = u.title;
+  if (u.description !== undefined) pairs.desc = u.description;
+  if (u.domain) pairs.domain = u.domain;
+  if (u.chunk) pairs.chunk = u.chunk;
+  if (u.sequence) pairs.sequence = u.sequence;
+  if (u.owner) pairs.owner = u.owner;
+  await setCard(ctx.client, u.index, pairs);
+}
+
+async function cmdUntag(ctx: CliCtx) {
+  if (ctx.cmdArgs.length < 2) die('Usage: cards untag <id> <category:value> (e.g. cards untag 1866 sequence:infrastructure)');
+  const untagId = parseInt(ctx.cmdArgs[0], 10);
+  if (isNaN(untagId)) die(`Invalid card ID: ${ctx.cmdArgs[0]}`);
+  const label = ctx.cmdArgs[1];
+  const colonIdx = label.indexOf(':');
+  if (colonIdx === -1) die(`Label must be category:value (e.g. domain:photos, sequence:hardening). Got: "${label}"`);
+  await untagCard(ctx.client, untagId, label.substring(colonIdx + 1), label.substring(0, colonIdx));
+}
+
+async function cmdDeps(ctx: CliCtx) {
+  if (!ctx.cmdArgs[0]) die('Usage: cards deps <id>');
+  const depsId = parseInt(ctx.cmdArgs[0], 10);
+  const rels = await ctx.client.getRelations(depsId);
+  const card = await ctx.client.view(depsId);
+  console.log(`#${depsId} ${card.title}`);
+  console.log(rels.blockedBy.length ? `  After:  ${rels.blockedBy.map((id) => `#${id}`).join(', ')}` : '  After:  (none)');
+  console.log(rels.blocks.length ? `  Gates:  ${rels.blocks.map((id) => `#${id}`).join(', ')}` : '  Gates:  (none)');
+}
+
+async function buildReverseTaskMap(client: BoardClient): Promise<Map<number, number>> {
+  const map = await client.buildTaskMap();
+  const revMap = new Map<number, number>();
+  for (const [di, ai] of map) revMap.set(ai, di);
+  return revMap;
+}
+
+async function cmdBlocked(ctx: CliCtx) {
+  const all = await ctx.client.fetchAllTasks();
+  const revMap = await buildReverseTaskMap(ctx.client);
+  let found = false;
+  for (const task of all) {
+    const related = (task as any).related_tasks?.blocked || [];
+    if (related.length === 0) continue;
+    const doneCount = related.filter((r: any) => r.done).length;
+    if (doneCount >= related.length) continue;
+    found = true;
+    const displayId = revMap.get(task.id) || task.id;
+    const blockers = related.map((r: any) => `#${revMap.get(r.id) || r.id}${r.done ? '✓' : ''}`).join(', ');
+    console.log(`#${displayId} ${task.title?.substring(0, 60)} — blocked by: ${blockers}`);
+  }
+  if (!found) console.log('No blocked cards');
+}
+
+async function cmdReady(ctx: CliCtx) {
+  const allTasks = await ctx.client.fetchAllTasks();
+  const revMap = await buildReverseTaskMap(ctx.client);
+  let found = false;
+  for (const task of allTasks) {
+    const related = (task as any).related_tasks?.blocked || [];
+    if (related.length === 0 || task.done) continue;
+    if (!related.every((r: any) => r.done)) continue;
+    found = true;
+    const displayId = revMap.get(task.id) || task.id;
+    console.log(`#${displayId} ${task.title?.substring(0, 60)} — all deps done, ready to pull`);
+  }
+  if (!found) console.log('No cards with completed dependencies waiting');
+}
+
+async function walkChainUpstream(client: BoardClient, start: number): Promise<number> {
+  let root = start;
+  const visited = new Set<number>();
+  while (!visited.has(root)) {
+    visited.add(root);
+    try {
+      const rels = await client.getRelations(root);
+      if (rels.blockedBy.length === 0) break;
+      root = rels.blockedBy[0];
+    } catch { break; }
+  }
+  return root;
+}
+
+type ChainEntry = { id: number; title: string; status: string; depth: number; blockedBy: number[] };
+
+async function walkChainDownstream(client: BoardClient, root: number): Promise<ChainEntry[]> {
+  const visited = new Set<number>();
+  const chain: ChainEntry[] = [];
+  async function walk(id: number, depth: number) {
+    if (visited.has(id)) return;
+    visited.add(id);
+    try {
+      const card = await client.view(id);
+      const rels = await client.getRelations(id);
+      chain.push({ id, title: card.title, status: card.status, depth, blockedBy: rels.blockedBy });
+      for (const gated of rels.blocks) await walk(gated, depth + 1);
+    } catch { /* skip */ }
+  }
+  await walk(root, 0);
+  return chain.sort((a, b) => a.depth - b.depth || a.id - b.id);
+}
+
+function chainStatusIcon(status: string): string {
+  if (status === 'Done') return '✅';
+  if (status === 'WIP') return '🔨';
+  if (status === "Won't Do") return '⏭️';
+  return '⬜';
+}
+
+function printChain(chainRoot: number, root: number, chain: ChainEntry[]): void {
+  if (chain.length === 0) {
+    console.log(`#${chainRoot} has no dependency chain`);
+    return;
+  }
+  console.log(`Chain from #${root}:`);
+  for (const c of chain) {
+    const indent = '  '.repeat(c.depth);
+    const deps = c.blockedBy.length ? ` (after ${c.blockedBy.map((d) => `#${d}`).join(', ')})` : '';
+    console.log(`${indent}${chainStatusIcon(c.status)} #${c.id} ${c.title.substring(0, 60)}${deps}`);
+    if (c.status === "Won't Do") console.log(`${indent}  ⚠ Won't Do — chain gap. Deliberate or drift?`);
+  }
+  const done = chain.filter((c) => c.status === 'Done').length;
+  const wontDo = chain.filter((c) => c.status === "Won't Do").length;
+  console.log(`\n${done}/${chain.length} complete${wontDo ? ` (${wontDo} Won't Do — gaps)` : ''}`);
+}
+
+async function cmdChain(ctx: CliCtx) {
+  if (!ctx.cmdArgs[0]) die('Usage: cards chain <id>');
+  const chainRoot = parseInt(ctx.cmdArgs[0], 10);
+  const root = await walkChainUpstream(ctx.client, chainRoot);
+  const chain = await walkChainDownstream(ctx.client, root);
+  printChain(chainRoot, root, chain);
+}
+
+function parseBulkIds(args: string[]): number[] {
+  return args.slice(0, -1).join(',').split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+}
+
+async function cmdSequenceTag(ctx: CliCtx) {
+  if (ctx.cmdArgs.length < 2) die('Usage: cards sequence-tag <id>[,<id>,...] <sequence>');
+  const ids = parseBulkIds(ctx.cmdArgs);
+  if (ids.length === 0) die('No valid card IDs provided');
+  await bulkSequenceTag(ctx.client, ids, ctx.cmdArgs[ctx.cmdArgs.length - 1]);
+}
+
+async function cmdBulkMove(ctx: CliCtx) {
+  if (ctx.cmdArgs.length < 2) die('Usage: cards bulk-move <id>[,<id>,...] <status>');
+  const ids = parseBulkIds(ctx.cmdArgs);
+  if (ids.length === 0) die('No valid card IDs provided');
+  await bulkMove(ctx.client, ids, ctx.cmdArgs[ctx.cmdArgs.length - 1]);
+}
+
+async function cmdLabel(ctx: CliCtx) {
+  const sub = ctx.cmdArgs[0];
+  if (sub === 'create') {
+    const title = ctx.cmdArgs.slice(1).join(' ');
+    if (!title) die('Usage: cards label create <title>');
+    const result = await ctx.client.createLabel(title);
+    console.log(`Created label: "${result.title}" → id: ${result.id}`);
+    console.log('  Add to config.ts LABELS as needed.');
+  } else if (sub === 'list') {
+    const labels = await ctx.client.listLabels();
+    labels.sort((a, b) => a.id - b.id);
+    for (const l of labels) console.log(`  ${l.id}\t${l.title}`);
+    console.log(`\n${labels.length} labels total`);
+  } else {
+    die('Usage: cards label create <title> | cards label list');
+  }
+}
+
+function buildCliHandlers(): Record<string, (ctx: CliCtx) => void | Promise<unknown>> {
+  return {
+    list: (ctx) => cmdList(ctx.client, ctx.boardLabel, ctx.productFilter),
+    add: cmdAdd, create: cmdAdd,
+    move: (ctx) => {
+      if (!ctx.cmdArgs[0] || !ctx.cmdArgs[1]) die('Usage: cards move <id> <status>');
+      return moveCard(ctx.client, parseInt(ctx.cmdArgs[0], 10), ctx.cmdArgs[1]);
+    },
+    done: cmdDone,
+    demo: (ctx) => {
+      if (!ctx.cmdArgs[0]) die('Usage: cards demo <id>');
+      return demoCard(ctx.client, parseInt(ctx.cmdArgs[0], 10));
+    },
+    reject: (ctx) => {
+      if (!ctx.cmdArgs[0]) die('Usage: cards reject <id> "reason"');
+      return rejectCard(ctx.client, parseInt(ctx.cmdArgs[0], 10), ctx.cmdArgs.slice(1).join(' ') || 'no reason given');
+    },
+    block: (ctx) => {
+      if (!ctx.cmdArgs[0]) die('Usage: cards block <id> "reason"');
+      return blockCard(ctx.client, parseInt(ctx.cmdArgs[0], 10), ctx.cmdArgs.slice(1).join(' '));
+    },
+    unblock: (ctx) => {
+      if (!ctx.cmdArgs[0]) die('Usage: cards unblock <id>');
+      return unblockCard(ctx.client, parseInt(ctx.cmdArgs[0], 10));
+    },
+    mine: (ctx) => cmdMine(ctx.client, ctx.cmdArgs, ctx.boardLabel),
+    view: (ctx) => cmdView(ctx.client, ctx.cmdArgs),
+    now: (ctx) => cmdNow(ctx.client, ctx.cmdArgs, ctx.boardLabel),
+    set: cmdSet,
+    update: cmdUpdate,
+    comment: (ctx) => {
+      if (!ctx.cmdArgs[0] || !ctx.cmdArgs[1]) die('Usage: cards comment <id> "text"');
+      return commentCard(ctx.client, parseInt(ctx.cmdArgs[0], 10), ctx.cmdArgs.slice(1).join(' '));
+    },
+    reassign: (ctx) => {
+      if (!ctx.cmdArgs[0] || !ctx.cmdArgs[1]) die('Usage: cards reassign <id> <role>');
+      return reassignCard(ctx.client, parseInt(ctx.cmdArgs[0], 10), ctx.cmdArgs[1]);
+    },
+    tag: () => { die('Removed: use "cards set <id> domain=X", "cards set <id> sequence=X", or "cards sequence-tag <ids> <seq>"'); },
+    untag: cmdUntag,
+    deps: cmdDeps,
+    blocked: cmdBlocked,
+    ready: cmdReady,
+    chain: cmdChain,
+    filter: (ctx) => cmdFilter(ctx.client, ctx.cmdArgs),
+    chunk: (ctx) => cmdChunk(ctx.client, ctx.cmdArgs),
+    domain: (ctx) => cmdDomain(ctx.client, ctx.cmdArgs),
+    sequence: (ctx) => cmdSequence(ctx.client, ctx.cmdArgs),
+    'sequence-tag': cmdSequenceTag,
+    'bulk-move': cmdBulkMove,
+    swat: (ctx) => {
+      if (!ctx.cmdArgs[0]) die('Usage: cards swat "description of urgent issue"');
+      return swatCard(ctx.client, ctx.cmdArgs[0]);
+    },
+    snapshot: (ctx) => snapshotBoard(ctx.client),
+    'audit-start': (ctx) => auditStart(ctx.client, ctx.cmdArgs[0] || detectRole()),
+    'audit-close': (ctx) => auditClose(ctx.client, ctx.cmdArgs[0] || detectRole()),
+    label: cmdLabel,
+    buckets: (ctx) => cmdBuckets(ctx.client),
+    'set-limit': (ctx) => cmdSetLimit(ctx.client, ctx.cmdArgs, ctx.boardConfig),
+    fields: (ctx) => cmdFields(ctx.boardConfig),
+    help: () => printUsage(),
+    '--help': () => printUsage(),
+    '-h': () => printUsage(),
+  };
+}
+
 export async function runCli(
   argv: string[],
   clientFactory?: (cfg: BoardConfig) => BoardClient,
@@ -638,301 +934,11 @@ export async function runCli(
     : (() => { const { url, token } = loadEnv(); return new BoardClient(url, token, boardConfig); })();
   const boardLabel = boardSelection === 'self' ? 'Self' : 'Gathering';
 
-  const cmd = rest[0]?.toLowerCase();
-  const cmdArgs = rest.slice(1);
-
-  switch (cmd) {
-    case 'list': await cmdList(client, boardLabel, productFilter); break;
-
-    case 'create':  // #2223 alias — 'create' is the more common verb habit
-    case 'add': {
-      const opts = parseAddArgs(cmdArgs);
-      if (productFilter && !opts.product) opts.product = productFilter;
-      if (!opts.sequence) {
-        console.error('  WARN: No --sequence on new card. Use --sequence <seq> for board visibility.');
-      }
-      await addCard(client, opts.title, opts);
-      break;
-    }
-
-    case 'move': {
-      if (!cmdArgs[0] || !cmdArgs[1]) die('Usage: cards move <id> <status>');
-      await moveCard(client, parseInt(cmdArgs[0], 10), cmdArgs[1]);
-      break;
-    }
-
-    case 'done': {
-      if (!cmdArgs[0]) die('Usage: cards done <id> [--proven "1815 1898"]');
-      const provenIdx = cmdArgs.indexOf('--proven');
-      const provenCards = provenIdx >= 0 ? cmdArgs.slice(provenIdx + 1) : undefined;
-      await doneCard(client, parseInt(cmdArgs[0], 10), provenCards);
-      break;
-    }
-
-    case 'demo': {
-      if (!cmdArgs[0]) die('Usage: cards demo <id>');
-      await demoCard(client, parseInt(cmdArgs[0], 10));
-      break;
-    }
-
-    case 'reject': {
-      if (!cmdArgs[0]) die('Usage: cards reject <id> "reason"');
-      await rejectCard(client, parseInt(cmdArgs[0], 10), cmdArgs.slice(1).join(' ') || 'no reason given');
-      break;
-    }
-
-    case 'block': {
-      if (!cmdArgs[0]) die('Usage: cards block <id> "reason"');
-      await blockCard(client, parseInt(cmdArgs[0], 10), cmdArgs.slice(1).join(' '));
-      break;
-    }
-
-    case 'unblock': {
-      if (!cmdArgs[0]) die('Usage: cards unblock <id>');
-      await unblockCard(client, parseInt(cmdArgs[0], 10));
-      break;
-    }
-
-    case 'mine': await cmdMine(client, cmdArgs, boardLabel); break;
-    case 'view': await cmdView(client, cmdArgs); break;
-    case 'now': await cmdNow(client, cmdArgs, boardLabel); break;
-
-    case 'set': {
-      if (cmdArgs.length < 2) die('Usage: cards set <id> key=value [key=value ...]');
-      const setId = parseInt(cmdArgs[0], 10);
-      if (isNaN(setId)) die(`Invalid card ID: ${cmdArgs[0]}`);
-      const pairs: Record<string, string> = {};
-      for (let i = 1; i < cmdArgs.length; i++) {
-        const arg = cmdArgs[i];
-        const eq = arg.indexOf('=');
-        if (eq === -1) die(`Bare value "${arg}" — specify category: domain=${arg}, chunk=${arg}, or sequence=${arg}`);
-        const key = arg.substring(0, eq).toLowerCase();
-        const val = arg.substring(eq + 1);
-        if (!val) die(`Empty value for key "${key}"`);
-        pairs[key] = val;
-      }
-      await setCard(client, setId, pairs);
-      break;
-    }
-
-    case 'update': {
-      const u = parseUpdateArgs(cmdArgs);
-      const updatePairs: Record<string, string> = {};
-      if (u.title) updatePairs.title = u.title;
-      if (u.description !== undefined) updatePairs.desc = u.description;
-      if (u.domain) updatePairs.domain = u.domain;
-      if (u.chunk) updatePairs.chunk = u.chunk;
-      if (u.sequence) updatePairs.sequence = u.sequence;
-      if (u.owner) updatePairs.owner = u.owner;
-      await setCard(client, u.index, updatePairs);
-      break;
-    }
-
-    case 'comment': {
-      if (!cmdArgs[0] || !cmdArgs[1]) die('Usage: cards comment <id> "text"');
-      await commentCard(client, parseInt(cmdArgs[0], 10), cmdArgs.slice(1).join(' '));
-      break;
-    }
-
-    case 'reassign': {
-      if (!cmdArgs[0] || !cmdArgs[1]) die('Usage: cards reassign <id> <role>');
-      await reassignCard(client, parseInt(cmdArgs[0], 10), cmdArgs[1]);
-      break;
-    }
-
-    case 'tag':
-      die('Removed: use "cards set <id> domain=X", "cards set <id> sequence=X", or "cards sequence-tag <ids> <seq>"');
-      break;
-
-    case 'untag': {
-      if (cmdArgs.length < 2) die('Usage: cards untag <id> <category:value> (e.g. cards untag 1866 sequence:infrastructure)');
-      const untagId = parseInt(cmdArgs[0], 10);
-      if (isNaN(untagId)) die(`Invalid card ID: ${cmdArgs[0]}`);
-      const label = cmdArgs[1];
-      const colonIdx = label.indexOf(':');
-      if (colonIdx === -1) die(`Label must be category:value (e.g. domain:photos, sequence:hardening). Got: "${label}"`);
-      const category = label.substring(0, colonIdx);
-      const value = label.substring(colonIdx + 1);
-      await untagCard(client, untagId, value, category);
-      break;
-    }
-
-    case 'deps': {
-      if (!cmdArgs[0]) die('Usage: cards deps <id>');
-      const depsId = parseInt(cmdArgs[0], 10);
-      const rels = await client.getRelations(depsId);
-      const card = await client.view(depsId);
-      console.log(`#${depsId} ${card.title}`);
-      if (rels.blockedBy.length) console.log(`  After:  ${rels.blockedBy.map(id => `#${id}`).join(', ')}`);
-      else console.log('  After:  (none)');
-      if (rels.blocks.length) console.log(`  Gates:  ${rels.blocks.map(id => `#${id}`).join(', ')}`);
-      else console.log('  Gates:  (none)');
-      break;
-    }
-
-    case 'blocked': {
-      const all = await client.fetchAllTasks();
-      let found = false;
-      for (const task of all) {
-        const related = (task as any).related_tasks?.blocked || [];
-        if (related.length > 0) {
-          const doneCount = related.filter((r: any) => r.done).length;
-          if (doneCount < related.length) {
-            found = true;
-            const map = await client.buildTaskMap();
-            const revMap = new Map<number, number>();
-            for (const [di, ai] of map) revMap.set(ai, di);
-            const displayId = revMap.get(task.id) || task.id;
-            const blockers = related.map((r: any) => `#${revMap.get(r.id) || r.id}${r.done ? '✓' : ''}`).join(', ');
-            console.log(`#${displayId} ${task.title?.substring(0, 60)} — blocked by: ${blockers}`);
-          }
-        }
-      }
-      if (!found) console.log('No blocked cards');
-      break;
-    }
-
-    case 'ready': {
-      const allTasks = await client.fetchAllTasks();
-      let found = false;
-      for (const task of allTasks) {
-        const related = (task as any).related_tasks?.blocked || [];
-        if (related.length > 0) {
-          const allDone = related.every((r: any) => r.done);
-          if (allDone && !task.done) {
-            found = true;
-            const map = await client.buildTaskMap();
-            const revMap = new Map<number, number>();
-            for (const [di, ai] of map) revMap.set(ai, di);
-            const displayId = revMap.get(task.id) || task.id;
-            console.log(`#${displayId} ${task.title?.substring(0, 60)} — all deps done, ready to pull`);
-          }
-        }
-      }
-      if (!found) console.log('No cards with completed dependencies waiting');
-      break;
-    }
-
-    case 'chain': {
-      if (!cmdArgs[0]) die('Usage: cards chain <id>');
-      const chainRoot = parseInt(cmdArgs[0], 10);
-      // Walk the full dependency chain (transitive)
-      const visited = new Set<number>();
-      const chain: Array<{ id: number; title: string; status: string; depth: number; blockedBy: number[] }> = [];
-
-      async function walkChain(id: number, depth: number) {
-        if (visited.has(id)) return;
-        visited.add(id);
-        try {
-          const card = await client.view(id);
-          const rels = await client.getRelations(id);
-          chain.push({ id, title: card.title, status: card.status, depth, blockedBy: rels.blockedBy });
-          // Walk downstream (what this card gates)
-          for (const gated of rels.blocks) {
-            await walkChain(gated, depth + 1);
-          }
-        } catch { /* card not found — skip */ }
-      }
-
-      // First walk upstream to find the chain root
-      let root = chainRoot;
-      const upVisited = new Set<number>();
-      while (true) {
-        if (upVisited.has(root)) break;
-        upVisited.add(root);
-        try {
-          const rels = await client.getRelations(root);
-          if (rels.blockedBy.length > 0) { root = rels.blockedBy[0]; }
-          else break;
-        } catch { break; }
-      }
-
-      // Walk downstream from root
-      await walkChain(root, 0);
-
-      // Sort by depth then id
-      chain.sort((a, b) => a.depth - b.depth || a.id - b.id);
-
-      if (chain.length === 0) {
-        console.log(`#${chainRoot} has no dependency chain`);
-      } else {
-        console.log(`Chain from #${root}:`);
-        for (const c of chain) {
-          const icon = c.status === 'Done' ? '✅' : c.status === 'WIP' ? '🔨' : c.status === "Won't Do" ? '⏭️' : '⬜';
-          const indent = '  '.repeat(c.depth);
-          const deps = c.blockedBy.length ? ` (after ${c.blockedBy.map(d => `#${d}`).join(', ')})` : '';
-          console.log(`${indent}${icon} #${c.id} ${c.title.substring(0, 60)}${deps}`);
-          if (c.status === "Won't Do") {
-            console.log(`${indent}  ⚠ Won't Do — chain gap. Deliberate or drift?`);
-          }
-        }
-        const done = chain.filter(c => c.status === 'Done').length;
-        const total = chain.length;
-        const wontDo = chain.filter(c => c.status === "Won't Do").length;
-        console.log(`\n${done}/${total} complete${wontDo ? ` (${wontDo} Won't Do — gaps)` : ''}`);
-      }
-      break;
-    }
-
-    case 'filter': await cmdFilter(client, cmdArgs); break;
-    case 'chunk': await cmdChunk(client, cmdArgs); break;
-    case 'domain': await cmdDomain(client, cmdArgs); break;
-
-    case 'sequence': await cmdSequence(client, cmdArgs); break;
-
-    case 'sequence-tag': {
-      if (cmdArgs.length < 2) die('Usage: cards sequence-tag <id>[,<id>,...] <sequence>');
-      const seqName = cmdArgs[cmdArgs.length - 1];
-      const ids = cmdArgs.slice(0, -1).join(',').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-      if (ids.length === 0) die('No valid card IDs provided');
-      await bulkSequenceTag(client, ids, seqName);
-      break;
-    }
-
-    case 'bulk-move': {
-      if (cmdArgs.length < 2) die('Usage: cards bulk-move <id>[,<id>,...] <status>');
-      const targetStatus = cmdArgs[cmdArgs.length - 1];
-      const moveIds = cmdArgs.slice(0, -1).join(',').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-      if (moveIds.length === 0) die('No valid card IDs provided');
-      await bulkMove(client, moveIds, targetStatus);
-      break;
-    }
-
-    case 'swat': {
-      if (!cmdArgs[0]) die('Usage: cards swat "description of urgent issue"');
-      await swatCard(client, cmdArgs[0]);
-      break;
-    }
-
-    case 'snapshot': await snapshotBoard(client); break;
-    case 'audit-start': await auditStart(client, cmdArgs[0] || detectRole()); break;
-    case 'audit-close': await auditClose(client, cmdArgs[0] || detectRole()); break;
-    case 'label': {
-      const sub = cmdArgs[0];
-      if (sub === 'create') {
-        const labelTitle = cmdArgs.slice(1).join(' ');
-        if (!labelTitle) die('Usage: cards label create <title>');
-        const result = await client.createLabel(labelTitle);
-        console.log(`Created label: "${result.title}" → id: ${result.id}`);
-        console.log('  Add to config.ts LABELS as needed.');
-      } else if (sub === 'list') {
-        const labels = await client.listLabels();
-        labels.sort((a, b) => a.id - b.id);
-        for (const l of labels) {
-          console.log(`  ${l.id}\t${l.title}`);
-        }
-        console.log(`\n${labels.length} labels total`);
-      } else {
-        die('Usage: cards label create <title> | cards label list');
-      }
-      break;
-    }
-    case 'buckets': await cmdBuckets(client); break;
-    case 'set-limit': await cmdSetLimit(client, cmdArgs, boardConfig); break;
-    case 'fields': cmdFields(boardConfig); break;
-    case 'help': case '--help': case '-h': printUsage(); break;
-    default: die(`Unknown command: ${cmd}`);
-  }
+  const cmd = rest[0]?.toLowerCase() || '';
+  const ctx: CliCtx = { client, cmdArgs: rest.slice(1), productFilter, boardLabel, boardConfig };
+  const handler = buildCliHandlers()[cmd];
+  if (!handler) die(`Unknown command: ${cmd}`);
+  await handler(ctx);
 }
 
 // Run as a CLI only when this file is the process entrypoint. Tests import

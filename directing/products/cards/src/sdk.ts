@@ -387,7 +387,36 @@ export async function warnNoComments(client: BoardClient, index: number, title: 
 
 // ── Audit ──
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+const HOUR_MS = 3600_000;
+
+function ageLabelFromTimestamps(updatedStr: string, now: number): string {
+  const age = now - new Date(updatedStr).getTime();
+  if (age < HOUR_MS) return `${Math.round(age / 60_000)}m`;
+  if (age < 24 * HOUR_MS) return `${Math.round(age / HOUR_MS)}h`;
+  return `${Math.round(age / (24 * HOUR_MS))}d`;
+}
+
+function emitStaleEvents(tasks: BoardTask[], role: string, stage: string, status: string | undefined, now: number, boardName: string): void {
+  for (const t of tasks) {
+    emitSpineEvent('card.stale.detected', role, {
+      card_id: String(t.index), title: t.title, stage,
+      status: status ?? t.status,
+      age: ageLabelFromTimestamps(t.updated, now),
+      board: boardName,
+    });
+  }
+}
+
+function printAuditSection(tasks: BoardTask[], label: string, question: string, staleSet?: Set<number>, now?: number): void {
+  if (tasks.length === 0) return;
+  console.log(`\n${label} (${tasks.length}) — ${question}`);
+  for (const t of tasks) {
+    const stale = staleSet && now !== undefined && staleSet.has(t.index) ? ` — ${ageLabelFromTimestamps(t.updated, now)} stale` : '';
+    const pri = t.priority ? ` [${t.priority}]` : '';
+    console.log(`  #${t.index}  ${t.title}${pri}${stale}`);
+  }
+}
+
 export async function auditStart(client: BoardClient, role: string): Promise<{
   staleNow: number; staleNext: number; nowCount: number;
 }> {
@@ -397,86 +426,35 @@ export async function auditStart(client: BoardClient, role: string): Promise<{
   fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
   fs.writeFileSync(snapFile, JSON.stringify(snap, null, 2));
 
-  const myTasks = snap.tasks.filter(t => t.owner.toLowerCase() === role.toLowerCase());
-  const nowTasks = myTasks.filter(t => t.status === 'Now' || t.status === 'WIP');
-  const swatTasks = myTasks.filter(t => t.status === 'SWAT');
-  const harvestTasks = myTasks.filter(t => t.status === 'Harvesting');
-  const next = myTasks.filter(t => t.status === 'Next');
-  const blocked = myTasks.filter(t => t.status === 'Blocked');
+  const myTasks = snap.tasks.filter((t) => t.owner.toLowerCase() === role.toLowerCase());
+  const byStatus = (statuses: string[]) => myTasks.filter((t) => statuses.includes(t.status));
+  const nowTasks = byStatus(['Now', 'WIP']);
+  const swatTasks = byStatus(['SWAT']);
+  const harvestTasks = byStatus(['Harvesting']);
+  const next = byStatus(['Next']);
+  const blocked = byStatus(['Blocked']);
 
   const now = Date.now();
-  const HOUR = 3600_000;
-  const staleNowThreshold = 48 * HOUR;
-  const staleNextThreshold = 7 * 24 * HOUR;
+  const staleNow = nowTasks.filter((t) => (now - new Date(t.updated).getTime()) > 48 * HOUR_MS);
+  const staleNext = next.filter((t) => (now - new Date(t.updated).getTime()) > 7 * 24 * HOUR_MS);
 
-  function ageLabel(updatedStr: string): string {
-    const age = now - new Date(updatedStr).getTime();
-    if (age < HOUR) return `${Math.round(age / 60_000)}m`;
-    if (age < 24 * HOUR) return `${Math.round(age / HOUR)}h`;
-    return `${Math.round(age / (24 * HOUR))}d`;
-  }
+  emitStaleEvents(staleNow, role, 'building', undefined, now, boardName);
+  emitStaleEvents(staleNext, role, 'directing', 'Next', now, boardName);
 
-  const staleNow = nowTasks.filter(t => (now - new Date(t.updated).getTime()) > staleNowThreshold);
-  const staleNext = next.filter(t => (now - new Date(t.updated).getTime()) > staleNextThreshold);
-
-  for (const t of staleNow) {
-    emitSpineEvent('card.stale.detected', role, {
-      card_id: String(t.index), title: t.title, stage: 'building', status: t.status,
-      age: ageLabel(t.updated), board: boardName,
-    });
-  }
-  for (const t of staleNext) {
-    emitSpineEvent('card.stale.detected', role, {
-      card_id: String(t.index), title: t.title, stage: 'directing', status: 'Next',
-      age: ageLabel(t.updated), board: boardName,
-    });
-  }
-
-  if (nowTasks.length > 0) {
-    console.log(`\nIn Progress (${nowTasks.length}) — still working on these?`);
-    for (const t of nowTasks) {
-      const stale = staleNow.some(s => s.index === t.index) ? ` — ${ageLabel(t.updated)} stale` : '';
-      console.log(`  #${t.index}  ${t.title}${t.priority ? ` [${t.priority}]` : ''}${stale}`);
-    }
-  }
-
-  if (next.length > 0) {
-    console.log(`\nNext (${next.length}) — any of these already done?`);
-    for (const t of next) {
-      const stale = staleNext.some(s => s.index === t.index) ? ` — ${ageLabel(t.updated)} stale` : '';
-      console.log(`  #${t.index}  ${t.title}${t.priority ? ` [${t.priority}]` : ''}${stale}`);
-    }
-  }
-
-  if (swatTasks.length > 0) {
-    console.log(`\nSWAT (${swatTasks.length}) — open from prior session?`);
-    for (const t of swatTasks) {
-      console.log(`  #${t.index}  ${t.title}${t.priority ? ` [${t.priority}]` : ''}`);
-    }
-  }
-
-  if (harvestTasks.length > 0) {
-    console.log(`\nHarvesting (${harvestTasks.length}) — still running?`);
-    for (const t of harvestTasks) {
-      console.log(`  #${t.index}  ${t.title}${t.priority ? ` [${t.priority}]` : ''}`);
-    }
-  }
-
-  if (blocked.length > 0) {
-    console.log(`\nBlocked (${blocked.length}) — still blocked?`);
-    for (const t of blocked) {
-      console.log(`  #${t.index}  ${t.title}`);
-    }
-  }
+  const staleNowSet = new Set(staleNow.map((s) => s.index));
+  const staleNextSet = new Set(staleNext.map((s) => s.index));
+  printAuditSection(nowTasks, 'In Progress', 'still working on these?', staleNowSet, now);
+  printAuditSection(next, 'Next', 'any of these already done?', staleNextSet, now);
+  printAuditSection(swatTasks, 'SWAT', 'open from prior session?');
+  printAuditSection(harvestTasks, 'Harvesting', 'still running?');
+  printAuditSection(blocked, 'Blocked', 'still blocked?');
 
   if (nowTasks.length === 0 && next.length === 0) {
     console.log(`\n  No active items for ${role}. Pick a card before starting work.`);
   }
 
   console.log(`\nAUDIT:stale_now=${staleNow.length},stale_next=${staleNext.length},now_count=${nowTasks.length}`);
-
   emitSpineEvent('board.audit.started', role, { board: boardName, snapshot: snapFile });
-
   return { staleNow: staleNow.length, staleNext: staleNext.length, nowCount: nowTasks.length };
 }
 
@@ -1051,54 +1029,31 @@ export async function reassignCard(client: BoardClient, index: number, newOwner:
   notifyOwnerIfDifferent(index, title, displayOwner, `reassigned-to-${displayOwner}`, detectRole());
 }
 
-/** Unified set — apply multiple key=value mutations and print resulting state (#1635) */
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
-export async function setCard(client: BoardClient, index: number, pairs: Record<string, string>): Promise<void> {
-  const VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates']);
-  const changes: string[] = [];
+const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates']);
+const SET_CARD_TAG_CATEGORIES = ['domain', 'chunk', 'sequence', 'stream', 'type', 'origin'];
 
-  // Validate all keys first
+function validateSetKeys(pairs: Record<string, string>): void {
   for (const key of Object.keys(pairs)) {
-    if (!VALID_KEYS.has(key)) {
-      throw new Error(`Unknown key "${key}". Valid: ${[...VALID_KEYS].join(', ')}`);
+    if (!SET_CARD_VALID_KEYS.has(key)) {
+      throw new Error(`Unknown key "${key}". Valid: ${[...SET_CARD_VALID_KEYS].join(', ')}`);
     }
   }
+}
 
-  // Apply tag-category changes
-  for (const cat of ['domain', 'chunk', 'sequence', 'stream', 'type', 'origin']) {
+async function applyTagChanges(client: BoardClient, index: number, pairs: Record<string, string>, changes: string[]): Promise<void> {
+  for (const cat of SET_CARD_TAG_CATEGORIES) {
     if (pairs[cat]) {
       await client.tag(index, cat, pairs[cat]);
       changes.push(`${cat}=${pairs[cat]}`);
     }
   }
-
-  // Apply owner change
-  if (pairs.owner) {
-    await client.reassignOwner(index, pairs.owner);
-    changes.push(`owner=${pairs.owner}`);
-  }
-
-  // Apply priority (preserve case — LABELS expects P1/P2/P3)
   if (pairs.priority) {
     await client.tag(index, 'priority', pairs.priority.toUpperCase());
     changes.push(`priority=${pairs.priority}`);
   }
+}
 
-  // Apply title/description
-  if (pairs.title || pairs.desc || pairs.description) {
-    const desc = pairs.desc || pairs.description;
-    await updateCard(client, index, { title: pairs.title, description: desc });
-    if (pairs.title) changes.push(`title="${pairs.title}"`);
-    if (desc) changes.push(`desc=(${desc.length} chars)`);
-  }
-
-  // Apply status (move)
-  if (pairs.status) {
-    await moveCard(client, index, pairs.status);
-    changes.push(`status=${pairs.status}`);
-  }
-
-  // Sequencing: after= means "this card is blocked by X"
+async function applyRelationPairs(client: BoardClient, index: number, pairs: Record<string, string>, changes: string[]): Promise<void> {
   if (pairs.after) {
     for (const dep of pairs.after.split(',')) {
       const depId = parseInt(dep.trim(), 10);
@@ -1107,8 +1062,6 @@ export async function setCard(client: BoardClient, index: number, pairs: Record<
       changes.push(`after=${depId}`);
     }
   }
-
-  // Sequencing: gates= means "this card blocks X"
   if (pairs.gates) {
     for (const dep of pairs.gates.split(',')) {
       const depId = parseInt(dep.trim(), 10);
@@ -1117,8 +1070,9 @@ export async function setCard(client: BoardClient, index: number, pairs: Record<
       changes.push(`gates=${depId}`);
     }
   }
+}
 
-  // Print resulting card state
+async function printResultingCard(client: BoardClient, index: number, changes: string[]): Promise<void> {
   const card = await client.view(index);
   console.log(`#${card.index} ${card.title}`);
   console.log(`  Status:   ${card.status}`);
@@ -1126,6 +1080,33 @@ export async function setCard(client: BoardClient, index: number, pairs: Record<
   if (card.priority) console.log(`  Priority: ${card.priority}`);
   if (card.domains?.length) console.log(`  Domains:  ${card.domains.join(', ')}`);
   if (changes.length) console.log(`  Changed:  ${changes.join(', ')}`);
+}
+
+export async function setCard(client: BoardClient, index: number, pairs: Record<string, string>): Promise<void> {
+  validateSetKeys(pairs);
+  const changes: string[] = [];
+
+  await applyTagChanges(client, index, pairs, changes);
+
+  if (pairs.owner) {
+    await client.reassignOwner(index, pairs.owner);
+    changes.push(`owner=${pairs.owner}`);
+  }
+
+  if (pairs.title || pairs.desc || pairs.description) {
+    const desc = pairs.desc || pairs.description;
+    await updateCard(client, index, { title: pairs.title, description: desc });
+    if (pairs.title) changes.push(`title="${pairs.title}"`);
+    if (desc) changes.push(`desc=(${desc.length} chars)`);
+  }
+
+  if (pairs.status) {
+    await moveCard(client, index, pairs.status);
+    changes.push(`status=${pairs.status}`);
+  }
+
+  await applyRelationPairs(client, index, pairs, changes);
+  await printResultingCard(client, index, changes);
 
   emitSpineEvent('card.item.set', detectRole(), {
     card_id: String(index), changes: changes.join(','), board: client.boardName,
