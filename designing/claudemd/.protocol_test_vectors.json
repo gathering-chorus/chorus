@@ -40,8 +40,8 @@
       "description": "Current 13-fragment protocol core from the live repo. References paths \u2014 both Python gen and Rust hook read the real files. When any core fragment changes, this hash changes; vector must be regenerated and both sides update together.",
       "files": null,
       "core_paths_from_manifest": true,
-      "expected_core_hash": "51b0ba292950d07a6920d7dcf04ad606f6d07997806df852e81951b18474d5c3",
-      "expected_fragments_hash": "51b0ba292950d07a6920d7dcf04ad606f6d07997806df852e81951b18474d5c3"
+      "expected_core_hash": "9fbe2240de79a03e9facea01ca61522e255e651888e9a29749e543797bef18a2",
+      "expected_fragments_hash": "9fbe2240de79a03e9facea01ca61522e255e651888e9a29749e543797bef18a2"
     }
   ]
 }

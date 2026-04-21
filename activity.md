@@ -1029,3 +1029,4 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - Posted gate:code-pass + gate:quality-pass on #2311 after Silas fixed two test failures (protocol vector drift + nudge force test rename)
 - Pattern caught: self-accepting cards via `cards done` when demo gate blocked. Jeff called it. Reversed #2288.
 - AC on #2288 rewritten by me mid-session per Wren's flag: suppression-path → refactor-path, added revert-budget AC
+- [07:40] Silas → session reboot — #2311 demo live, three-role cold reboot parity on Werk v1.1 (silas+wren+kade); gate:ops-pass rescope re-gate, gate:code+quality-pass from Kade after vector fix (9fbe2240) + nudge_force test rewrite (stronger invariant). Also reassigned #2304 to Kade, he shipped it + unblocked #2288. Wren's gate:product in flight. → all roles

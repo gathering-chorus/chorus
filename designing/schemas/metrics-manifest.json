@@ -297,7 +297,7 @@
       "event": "brief.handoff.read",
       "status": "resolved",
       "issue": "werk-init.sh emits brief.handoff.acknowledged but not brief.handoff.read. No read timestamp captured. Cannot compute brief read latency (time from write to read).",
-      "emitter": "werk-init.sh",
+      "emitter": "werk-init.sh (retired 2026-04-20 by #2311 — boot context now emitted by chorus-hook-shim session-start)",
       "emitter_line": "~214",
       "fix": "Emit brief.handoff.read with timestamp when brief file is first opened, before acknowledged. Phase 2 (Silas).",
       "resolved": "2026-03-05 — brief.handoff.read emitted in werk-init.sh boot brief scan, before acknowledged event",
