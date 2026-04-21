@@ -1382,10 +1382,14 @@ app.use('/api/athena', (_req: Request, res: Response, next: NextFunction) => {
 // /api/loom/* and /api/chorus/domain/:id/decisions from :3340 for
 // instance-body enrichment. Need CORS until Athena relocates per #2041 —
 // remove this block once Athena is hosted alongside its consumers.
+// Origin narrowed to localhost:3000 + reads only (per silas gate:arch hold
+// #2431): chorus-api binds 0.0.0.0, '*' + write methods would open blanket
+// CSRF surface. The legitimate consumer is gathering reads; nothing
+// cross-origin writes here.
 // #2041: remove once Athena relocates
 app.use(['/api/loom', '/api/chorus'], (_req: Request, res: Response, next: NextFunction) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (_req.method === 'OPTIONS') return res.sendStatus(204);
   next();
