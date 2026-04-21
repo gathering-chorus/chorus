@@ -1013,3 +1013,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Wren 21:5x] → Wrote DEC-2311 (hook decomposition: guard/injector/observer/scheduler/validator); pending loom-decisions API for proper landing → board
 - [Wren 21:5x] → Filed #2314/2316/2317/2318 and parent #2319 — loom write surfaces sweep (principles/stories/heartbeat/decisions APIs all missing, same jenga shape) → Wren owned
 - [Wren 21:5x] → Convergence sequence 23→7; retagged 16 cards (11 werk, 2 borg, 3 athena). Reverted 26-card gathering retag after Clearing UI screenshot showed wrong taxonomy → board
+
+- [Wren] 2026-04-20 PM → evening session: saved user memory (anger as quality investment), filed #2320 roles-domain extraction spike after Jeff reframed Chorus work as roles-domain implementation → visible to Silas/Kade for context
