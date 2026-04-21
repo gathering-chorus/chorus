@@ -117,6 +117,7 @@ function extractCallerInfo(): { function: string | null; line: string | null } {
  * AC1: context fields injected automatically when context is provided.
  * AC6: missing keys emit as null, not error.
  */
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 export function emit(
   event: string,
   role: string,

@@ -77,6 +77,25 @@ fi
 CHANGED=$(git diff "$BASE" --name-only -- '*.ts' 2>/dev/null | grep -v '^$' || true)
 CHANGED_COUNT=$(printf '%s\n' "$CHANGED" | grep -c . || true)
 
+# Lint gate (#2288): run eslint with --max-warnings=0 before jest. Scoped to
+# changed .ts files when possible; full repo pass on --full or refactor-sized
+# diffs. Exits non-zero on any violation — regressions block at gate-code,
+# not at demo.
+if [ "$FULL" = "1" ] || [ "$CHANGED_COUNT" = "0" ] || [ "$CHANGED_COUNT" -gt 20 ]; then
+  echo "--- lint (full) ---"
+  if ! npm run lint --silent; then
+    echo "gate-code-tests: lint failed (full)" >&2
+    exit 1
+  fi
+else
+  echo "--- lint ($CHANGED_COUNT changed .ts) ---"
+  # shellcheck disable=SC2046
+  if ! npx eslint --max-warnings=0 $(printf '%s ' $CHANGED); then
+    echo "gate-code-tests: lint failed (scoped)" >&2
+    exit 1
+  fi
+fi
+
 # Decide full-fallback
 run_full=0
 reason=""

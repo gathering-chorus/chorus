@@ -83,6 +83,7 @@ function dedupByUri<T extends { uri: string }>(entries: T[]): T[] {
   return out;
 }
 
+// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export async function fetchAthenaSubdomainDetail(
   deps: AthenaSubdomainDetailDeps,
   id: string,

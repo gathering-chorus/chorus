@@ -63,6 +63,7 @@ export class MessageRouter extends EventEmitter {
   }
 
   /** Classify a message: determine type and visibility */
+  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
   private classify(raw: { from: string; text: string; ts: string; type?: string; level?: string }): ChannelMessage {
     const { from, text, ts } = raw;
 

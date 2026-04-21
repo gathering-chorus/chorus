@@ -96,6 +96,7 @@ function resolveUnknownRoles(events: ChorusEvent[], sessions: SessionWindow[]): 
   }
 }
 
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 function detectRetryClusters(allEvents: ChorusEvent[]): ChorusEvent[] {
   const toolEvents = allEvents.filter((e) => e.event === 'session_tool');
   const clusters: ChorusEvent[] = [];

@@ -67,6 +67,7 @@ function buildCountQuery(sdUri: string, predicate: string): string {
   return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?e) AS ?n) WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:${predicate} ?e } }`;
 }
 
+// eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export async function fetchAthenaSubdomainCompleteness(
   deps: AthenaCompletenessDeps,
   id: string,

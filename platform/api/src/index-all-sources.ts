@@ -31,8 +31,10 @@ export interface IndexAllSourcesDeps {
   now?: () => string;
 }
 
+// eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<{ indexed: Record<string, string>; elapsed_ms: number }> {
   const nowFn = deps.now ?? (() => new Date().toISOString());
+  // eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
   return async function indexAllSources() {
     const db = new deps.DatabaseCtor(deps.dbPath);
     db.pragma('journal_mode = WAL');

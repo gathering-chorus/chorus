@@ -39,6 +39,7 @@ interface RepromptEvent {
   type: EventType;
 }
 
+// eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export function fetchChorusRepromptAnalytics(
   deps: ChorusRepromptAnalyticsDeps,
   query: ChorusRepromptAnalyticsQuery,

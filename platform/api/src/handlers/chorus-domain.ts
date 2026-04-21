@@ -170,6 +170,7 @@ async function buildSparqlSections(
     SECTION_PREDS.map(([, pred]) => deps.sparql(sectionQuery(pred)).catch(() => null)),
   );
 
+  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
   SECTION_PREDS.forEach(([key], i) => {
     const r = results[i];
     const bindings = (r?.results?.bindings || []) as SectionBinding[];

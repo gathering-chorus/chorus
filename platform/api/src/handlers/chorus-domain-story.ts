@@ -52,6 +52,7 @@ interface TimelineEntry {
   card?: number;
 }
 
+// eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export function fetchChorusDomainStory(
   deps: ChorusDomainStoryDeps,
   domainParam: string,
@@ -121,8 +122,10 @@ export function fetchChorusDomainStory(
       for (const line of log.split('\n')) {
         try {
           const parsed = JSON.parse(line);
+          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (!parsed.event || !String(parsed.event).startsWith('card.')) continue;
           const cardId = parseInt(parsed.card || '0', 10);
+          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (!cardIds.has(cardId)) continue;
           timeline.push({
             timestamp: parsed.timestamp,

@@ -73,7 +73,9 @@ export function buildCodeAliasMap(
   return out;
 }
 
+// eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export function createDiscoverCode(deps: DiscoverCodeDeps) {
+  // eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
   return async function discoverCode() {
     const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
     const sdResult = await deps.sparqlClient.query(sdQuery);

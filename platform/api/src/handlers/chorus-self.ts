@@ -48,6 +48,7 @@ export interface SelfResult {
 
 const DEFAULT_WHITELIST = new Set(['memory', 'story', 'decision', 'brief', 'adr']);
 
+// eslint-disable-next-line max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export async function fetchSelf(
   {
     db,

@@ -182,6 +182,7 @@ export class BoardClient {
   }
 
   /** Create a new task */
+  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
   async add(title: string, opts?: {
     status?: string;
     owner?: string;

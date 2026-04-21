@@ -53,6 +53,7 @@ interface TimelineEntry {
   event?: string;
 }
 
+// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export async function fetchChorusCardStory(
   deps: ChorusCardStoryDeps,
   cardIdParam: string,
@@ -123,6 +124,7 @@ export async function fetchChorusCardStory(
         if (!line.includes(`card=${cardId}`) && !line.includes(`"card":"${cardId}"`)) continue;
         try {
           const parsed = JSON.parse(line);
+          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (parsed.event && String(parsed.event).startsWith('card.')) {
             timeline.push({
               timestamp: parsed.timestamp,

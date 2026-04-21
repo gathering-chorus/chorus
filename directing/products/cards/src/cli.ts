@@ -143,6 +143,7 @@ async function cmdList(client: BoardClient, _label: string, productFilter?: stri
   }
 }
 
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 async function cmdFilter(client: BoardClient, args: string[]) {
   const filters: Record<string, string> = {};
   for (let i = 0; i < args.length; i++) {
@@ -204,6 +205,7 @@ async function cmdMine(client: BoardClient, args: string[], label: string) {
   }
 }
 
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 async function cmdView(client: BoardClient, args: string[]) {
   if (!args[0]) die('Usage: cards view <id> [--json] [--verbose|-v]');
   const jsonFlag = args.includes('--json');
@@ -255,8 +257,11 @@ async function cmdView(client: BoardClient, args: string[]) {
         let inConstraints = false;
         const constraints: string[] = [];
         for (const line of lines) {
+          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (/^##\s+Constraints/i.test(line)) { inConstraints = true; continue; }
+          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (inConstraints && /^##\s/.test(line)) break;
+          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (inConstraints && line.trim().startsWith('-')) constraints.push(line.trim());
         }
         // Get last modified
@@ -269,6 +274,7 @@ async function cmdView(client: BoardClient, args: string[]) {
         if (constraints.length > 0) {
           console.log(`  Constraints (${constraints.length}):`);
           constraints.slice(0, 5).forEach(c => console.log(`    ${c}`));
+          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (constraints.length > 5) console.log(`    ... +${constraints.length - 5} more`);
         }
       } else {
@@ -404,6 +410,7 @@ async function cmdChunk(client: BoardClient, args: string[]) {
   }
 }
 
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 async function cmdDomain(client: BoardClient, args: string[]) {
   const validDomains = Object.keys(LABELS.domain);
   const sub = args[0]?.toLowerCase();
@@ -620,6 +627,7 @@ Examples:
  * `clientFactory` to inject a mock `BoardClient`; default constructs one
  * from env.
  */
+// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export async function runCli(
   argv: string[],
   clientFactory?: (cfg: BoardConfig) => BoardClient,
@@ -777,6 +785,7 @@ export async function runCli(
             found = true;
             const map = await client.buildTaskMap();
             const revMap = new Map<number, number>();
+            // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
             for (const [di, ai] of map) revMap.set(ai, di);
             const displayId = revMap.get(task.id) || task.id;
             const blockers = related.map((r: any) => `#${revMap.get(r.id) || r.id}${r.done ? '✓' : ''}`).join(', ');
@@ -799,6 +808,7 @@ export async function runCli(
             found = true;
             const map = await client.buildTaskMap();
             const revMap = new Map<number, number>();
+            // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
             for (const [di, ai] of map) revMap.set(ai, di);
             const displayId = revMap.get(task.id) || task.id;
             console.log(`#${displayId} ${task.title?.substring(0, 60)} — all deps done, ready to pull`);

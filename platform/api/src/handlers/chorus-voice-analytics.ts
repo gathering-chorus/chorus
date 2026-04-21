@@ -87,6 +87,7 @@ function emptyTones(): Record<Tone, number> {
   return Object.fromEntries(TONE_KEYS.map((k) => [k, 0])) as Record<Tone, number>;
 }
 
+// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export function fetchChorusVoiceAnalytics(
   deps: ChorusVoiceAnalyticsDeps,
   query: ChorusVoiceAnalyticsQuery,

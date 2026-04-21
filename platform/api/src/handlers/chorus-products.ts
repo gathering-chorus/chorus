@@ -71,6 +71,7 @@ interface ProductAccum {
   domains: string[];
 }
 
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 export async function fetchChorusProducts({
   sparql,
   now = Date.now,

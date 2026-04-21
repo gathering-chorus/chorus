@@ -79,6 +79,7 @@ export interface TraceCreateDeps {
   now: () => string;
 }
 
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 export function handleTraceCreate(req: Req, res: Res, deps: TraceCreateDeps): void {
   deps.ensureTable();
   const { correlationId, hop, callStack, source, destination, latencyMs, error } = req.body || {};

@@ -26,6 +26,7 @@ export interface AttentionAnalyticsResult {
   body: Record<string, unknown>;
 }
 
+// eslint-disable-next-line complexity, max-lines-per-function -- #2288 pre-existing threshold violation, tracked for refactor
 export function fetchAttentionAnalytics({
   readFile = () => '',
   exists = () => false,

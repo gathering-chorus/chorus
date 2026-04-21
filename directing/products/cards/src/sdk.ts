@@ -387,6 +387,7 @@ export async function warnNoComments(client: BoardClient, index: number, title: 
 
 // ── Audit ──
 
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 export async function auditStart(client: BoardClient, role: string): Promise<{
   staleNow: number; staleNext: number; nowCount: number;
 }> {
@@ -546,27 +547,41 @@ export async function auditClose(client: BoardClient, role: string): Promise<{
 
 // ── High-level operations (composable by CLI or scripts) ──
 
-export async function addCard(
-  client: BoardClient,
-  title: string,
-  opts: { status?: string; owner?: string; priority?: string; domain?: string; description?: string; product?: string; chunk?: string; sequence?: string; type?: string; origin?: string; quick?: boolean }
-): Promise<BoardTask> {
-  warnShortTitle(title, client.boardName);
+// Maps title verbs to card type labels.
+const TITLE_TO_TYPE: Record<string, string> = {
+  fix: 'fix', repair: 'fix', broken: 'fix', bug: 'fix',
+  add: 'new', create: 'new', build: 'new', implement: 'new',
+  update: 'enhance', improve: 'enhance', enhance: 'enhance', upgrade: 'enhance',
+  remove: 'chore', clean: 'chore', refactor: 'chore', migrate: 'chore',
+};
 
-  // Classification gates: ALWAYS enforced, even with --quick (#1966)
-  // --quick only exempts description/AC requirement
+// Chunk auto-inference from domain (#1873).
+const DOMAIN_TO_CHUNK: Record<string, string> = {
+  photos: 'memory', music: 'music', stories: 'memory', notes: 'memory',
+  people: 'memory', social: 'memory', documents: 'memory', books: 'memory',
+  blog: 'app', property: 'app', cooking: 'app', reading: 'app',
+  watching: 'app', todo: 'app', seeds: 'app', glimmers: 'app',
+  ideas: 'app', projects: 'app', sexuality: 'sexuality', values: 'app',
+  practices: 'app', search: 'app', self: 'senses',
+  skills: 'spine', roles: 'spine', cards: 'ops', decisions: 'spine',
+  briefs: 'spine', sessions: 'spine', convergence: 'convergence',
+  infrastructure: 'ops',
+};
 
-  // --- Single-pass validation (#2032) ---
-  // Collect all errors and infer defaults before failing.
-  const errors: string[] = [];
+// Origin inference from type (#2101).
+const TYPE_TO_ORIGIN: Record<string, string> = {
+  fix: 'reactive', swat: 'reactive',
+  new: 'reflective', enhance: 'reflective',
+};
 
-  // Inference: type from title verb
-  const TITLE_TO_TYPE: Record<string, string> = {
-    fix: 'fix', repair: 'fix', broken: 'fix', bug: 'fix',
-    add: 'new', create: 'new', build: 'new', implement: 'new',
-    update: 'enhance', improve: 'enhance', enhance: 'enhance', upgrade: 'enhance',
-    remove: 'chore', clean: 'chore', refactor: 'chore', migrate: 'chore',
-  };
+type AddOpts = {
+  status?: string; owner?: string; priority?: string; domain?: string;
+  description?: string; product?: string; chunk?: string; sequence?: string;
+  type?: string; origin?: string; quick?: boolean;
+};
+
+// Mutates opts to fill in type/chunk/origin from title and domain where possible.
+function inferCardDefaults(title: string, opts: AddOpts): void {
   if (!opts.type) {
     const firstWord = title.split(/\s+/)[0]?.toLowerCase() || '';
     const inferred = TITLE_TO_TYPE[firstWord];
@@ -575,20 +590,6 @@ export async function addCard(
       console.log(`  Auto-tagged type:${inferred} from title verb "${firstWord}"`);
     }
   }
-
-  // Chunk auto-inference from domain (optional, #1873)
-  const DOMAIN_TO_CHUNK: Record<string, string> = {
-    photos: 'memory', music: 'music', stories: 'memory', notes: 'memory',
-    people: 'memory', social: 'memory', documents: 'memory', books: 'memory',
-    blog: 'app', property: 'app', cooking: 'app', reading: 'app',
-    watching: 'app', todo: 'app', seeds: 'app', glimmers: 'app',
-    ideas: 'app', projects: 'app', sexuality: 'sexuality', values: 'app',
-    practices: 'app', search: 'app', self: 'senses',
-    skills: 'spine', roles: 'spine', cards: 'ops', decisions: 'spine',
-    briefs: 'spine', sessions: 'spine', convergence: 'convergence',
-    infrastructure: 'ops',
-  };
-
   if (!opts.chunk && opts.domain) {
     const inferred = DOMAIN_TO_CHUNK[opts.domain.toLowerCase()];
     if (inferred) {
@@ -596,82 +597,97 @@ export async function addCard(
       console.log(`  Auto-tagged chunk:${inferred} from domain:${opts.domain}`);
     }
   }
-
-  // Validate all required fields
-  if (!opts.domain) {
-    errors.push('Missing --domain <name>');
-  }
-
-  const validTypes = Object.keys(LABELS.type).join(', ');
-  if (!opts.type) {
-    errors.push(`Missing --type <${validTypes}>`);
-  } else if (!LABELS.type[opts.type.toLowerCase()]) {
-    errors.push(`Unknown type "${opts.type}". Valid: ${validTypes}`);
-  }
-
-  if (!opts.priority) {
-    errors.push('Missing --priority P1|P2|P3');
-  }
-
-  // Origin inference from type (#2101)
   if (!opts.origin && opts.type) {
-    const TYPE_TO_ORIGIN: Record<string, string> = {
-      fix: 'reactive', swat: 'reactive',
-      new: 'reflective', enhance: 'reflective',
-    };
     const inferred = TYPE_TO_ORIGIN[opts.type.toLowerCase()];
     if (inferred) {
       opts.origin = inferred;
       console.log(`  Auto-tagged origin:${inferred} from type:${opts.type}`);
     }
   }
+}
 
-  if (!opts.origin) {
-    errors.push('Missing origin. Is this reactive (responding to breakage) or reflective (chosen work)? Use --origin reflective|reactive');
-  } else if (!['reflective', 'reactive'].includes(opts.origin.toLowerCase())) {
-    errors.push(`Unknown origin "${opts.origin}". Valid: reflective, reactive`);
+// Validates required fields and collects error strings.
+function collectRequiredFieldErrors(opts: AddOpts): string[] {
+  const errors: string[] = [];
+  if (!opts.domain) errors.push('Missing --domain <name>');
+  const validTypes = Object.keys(LABELS.type).join(', ');
+  if (!opts.type) errors.push(`Missing --type <${validTypes}>`);
+  else if (!LABELS.type[opts.type.toLowerCase()]) errors.push(`Unknown type "${opts.type}". Valid: ${validTypes}`);
+  if (!opts.priority) errors.push('Missing --priority P1|P2|P3');
+  if (!opts.origin) errors.push('Missing origin. Is this reactive (responding to breakage) or reflective (chosen work)? Use --origin reflective|reactive');
+  else if (!['reflective', 'reactive'].includes(opts.origin.toLowerCase())) errors.push(`Unknown origin "${opts.origin}". Valid: reflective, reactive`);
+  return errors;
+}
+
+// Validates description has AC when not in --quick mode. Warns on missing Experience.
+function validateDescription(
+  opts: AddOpts, title: string, boardName: string, errors: string[],
+): void {
+  if (opts.quick) return;
+  const desc = (opts.description || '').trim();
+  if (!desc) {
+    errors.push('Missing --desc with acceptance criteria (use --quick/-q to skip, or --desc-file <path>, or --desc - for stdin)');
+  } else {
+    const hasAC =
+      /acceptance\s*criteria/i.test(desc) ||
+      /##\s*(ac|criteria|what|acceptance)/i.test(desc) ||
+      /- \[[ x]\]/i.test(desc) ||
+      /\d+\.\s+\S/m.test(desc);
+    if (!hasAC) errors.push('Description missing acceptance criteria (need ## AC heading, checkboxes, or numbered items). Use --quick/-q to skip');
   }
-
-  if (!opts.quick) {
-    const desc = (opts.description || '').trim();
-    if (!desc) {
-      errors.push('Missing --desc with acceptance criteria (use --quick/-q to skip, or --desc-file <path>, or --desc - for stdin)');
-    } else {
-      const hasAC =
-        /acceptance\s*criteria/i.test(desc) ||
-        /##\s*(ac|criteria|what|acceptance)/i.test(desc) ||
-        /- \[[ x]\]/i.test(desc) ||
-        /\d+\.\s+\S/m.test(desc);
-      if (!hasAC) {
-        errors.push('Description missing acceptance criteria (need ## AC heading, checkboxes, or numbered items). Use --quick/-q to skip');
-      }
-    }
-    // Experience section check (#1839): warn if missing, Wren adds before WIP
-    const hasExperience = /##\s*experience/i.test((opts.description || ''));
-    if (!hasExperience) {
-      console.log('  WARN: No Experience section. Wren should add "## Experience" before this card enters WIP.');
-      emitSpineEvent('card.quality.warned', detectRole(), {
-        title, gate: 'experience_missing_at_creation', board: client.boardName,
-      });
-    }
-  }
-
-  if (errors.length > 0) {
-    console.error(`ERROR: Card creation failed (${errors.length} issue${errors.length > 1 ? 's' : ''}):`);
-    for (const err of errors) {
-      console.error(`  • ${err}`);
-    }
-    emitSpineEvent('card.quality.blocked', detectRole(), {
-      title, gate: 'add_validation_failed', board: client.boardName,
-      errors: errors.join('; '),
+  const hasExperience = /##\s*experience/i.test(opts.description || '');
+  if (!hasExperience) {
+    console.log('  WARN: No Experience section. Wren should add "## Experience" before this card enters WIP.');
+    emitSpineEvent('card.quality.warned', detectRole(), {
+      title, gate: 'experience_missing_at_creation', board: boardName,
     });
-    process.exit(1);
   }
+}
+
+// Reports collected errors and exits the process.
+function reportErrorsAndExit(errors: string[], title: string, boardName: string): never {
+  console.error(`ERROR: Card creation failed (${errors.length} issue${errors.length > 1 ? 's' : ''}):`);
+  for (const err of errors) console.error(`  • ${err}`);
+  emitSpineEvent('card.quality.blocked', detectRole(), {
+    title, gate: 'add_validation_failed', board: boardName,
+    errors: errors.join('; '),
+  });
+  process.exit(1);
+}
+
+// Applies post-add tags (sequence, origin) and triggers workflow if status is Now.
+async function applyPostAddTags(
+  client: BoardClient, task: BoardTask, opts: AddOpts,
+): Promise<void> {
+  if (opts.sequence) {
+    try { await client.tag(task.index, 'sequence', opts.sequence); }
+    catch (err: any) { console.error(`  (sequence tag: ${err.message || err})`); }
+  }
+  if (opts.origin) {
+    try { await client.tag(task.index, 'origin', opts.origin.toLowerCase()); }
+    catch (err: any) { console.error(`  (origin tag: ${err.message || err})`); }
+  }
+  if (task.status.toLowerCase() === 'now') {
+    try { await triggerWorkflow(client, task.index); }
+    catch (err: any) { console.error(`  (workflow: ${err.message || err})`); }
+  }
+}
+
+export async function addCard(
+  client: BoardClient, title: string, opts: AddOpts,
+): Promise<BoardTask> {
+  warnShortTitle(title, client.boardName);
+
+  // Classification gates: ALWAYS enforced, even with --quick (#1966)
+  // --quick only exempts description/AC requirement.
+  inferCardDefaults(title, opts);
+
+  const errors = collectRequiredFieldErrors(opts);
+  validateDescription(opts, title, client.boardName, errors);
+  if (errors.length > 0) reportErrorsAndExit(errors, title, client.boardName);
 
   if (opts.quick) {
-    emitSpineEvent('card.quick.created', detectRole(), {
-      title, board: client.boardName,
-    });
+    emitSpineEvent('card.quick.created', detectRole(), { title, board: client.boardName });
   }
   const task = await client.add(title, opts);
   const productTag = opts.product ? ` [product:${opts.product}]` : '';
@@ -681,28 +697,115 @@ export async function addCard(
     ...(opts.product ? { product: opts.product } : {}),
   });
 
-  if (opts.sequence) {
-    try {
-      await client.tag(task.index, 'sequence', opts.sequence);
-    } catch (err: any) {
-      console.error(`  (sequence tag: ${err.message || err})`);
-    }
-  }
-
-  if (opts.origin) {
-    try {
-      await client.tag(task.index, 'origin', opts.origin.toLowerCase());
-    } catch (err: any) {
-      console.error(`  (origin tag: ${err.message || err})`);
-    }
-  }
-
-  if (task.status.toLowerCase() === 'now') {
-    try { await triggerWorkflow(client, task.index); }
-    catch (err: any) { console.error(`  (workflow: ${err.message || err})`); }
-  }
-
+  await applyPostAddTags(client, task, opts);
   return task;
+}
+
+// Pre-move gates — runs before the actual status change. Exits process on gate failure.
+async function enforcePreMoveGates(
+  client: BoardClient, index: number, title: string, card: BoardTask, status: string,
+): Promise<void> {
+  if (status.toLowerCase() === 'now' && !enforceNowDescriptionGate(index, title, card.description, client.boardName)) {
+    process.exit(1);
+  }
+  if (/^wip$/i.test(status) && !enforceACGate(index, title, card.description, client.boardName)) {
+    process.exit(1);
+  }
+  if (/^wip$/i.test(status) && !enforceExperienceGate(index, title, card.description, client.boardName)) {
+    process.exit(1);
+  }
+  if (/^(now|wip)$/i.test(status)) {
+    enforceTaxonomyGate(index, title, card.domains, client.boardName);
+  }
+  if (/^wip$/i.test(status)) {
+    try {
+      const fullText = `${title}\n${card.description || ''}`;
+      const domainLabel = (card.domains || []).find((d: string) => d.startsWith('domain:'));
+      const cardDomain = domainLabel ? domainLabel.replace('domain:', '') : undefined;
+      if (isCodeCard(fullText)) {
+        const report = await generateBlastRadius(index, title, card.description || '', cardDomain);
+        if (report && report.totalFiles === 0) {
+          console.error(`ERROR: Blast radius: 0 files on a code card (#${index}).`);
+          console.error('  Add explicit file paths to description (e.g. src/handlers/music.handler.ts)');
+          console.error('  or route to Wren for manual blast radius mapping.');
+          emitSpineEvent('card.blast_radius.zero_code', detectRole(), {
+            card_id: String(index), title, board: client.boardName,
+          });
+          process.exit(1);
+        }
+      }
+    } catch { /* blast radius API failure = non-blocking, proceed to WIP */ }
+  }
+}
+
+// Generates and posts blast radius comment after WIP entry. Non-blocking on failure.
+async function postBlastRadiusOnWip(
+  client: BoardClient, index: number, title: string, role: string,
+): Promise<void> {
+  try {
+    const card = title ? await client.view(index).catch(() => null) : null;
+    const desc = card?.description || '';
+    const domainLabel2 = (card?.domains || []).find((d: string) => d.startsWith('domain:'));
+    const cardDomain2 = domainLabel2 ? domainLabel2.replace('domain:', '') : undefined;
+    const report = await generateBlastRadius(index, title, desc, cardDomain2);
+    if (report && report.totalFiles > 0) {
+      const comment = formatBlastComment(report);
+      await client.comment(index, comment);
+      console.log(`  Blast radius: ${report.totalFiles} files, ${report.crossDomain.length} domains`);
+      emitSpineEvent('card.blast_radius.generated', role, {
+        card_id: String(index), files: String(report.totalFiles),
+        domains: report.crossDomain.join(','),
+      });
+    }
+  } catch (err: any) {
+    console.error(`  (blast radius: ${err.message || err})`);
+    emitSpineEvent('card.blast_radius.failed', role, {
+      card_id: String(index), error: String(err.message || err).slice(0, 200),
+    });
+  }
+}
+
+// Finds cards in WIP that share domain/sequence/chunk/stream labels. Returns overlap lines.
+function findWipOverlaps(card: BoardTask, wipCards: BoardTask[], selfIndex: number): string[] {
+  const myChunks = card.domains.filter(d => d.startsWith('chunk:'));
+  const mySequences = card.domains.filter(d => d.startsWith('sequence:'));
+  const myDomains = card.domains.filter(d => d.startsWith('domain:'));
+  const myStreams = card.domains.filter(d => d.startsWith('stream:'));
+  const overlaps: string[] = [];
+  for (const other of wipCards) {
+    if (other.index === selfIndex) continue;
+    const shared = {
+      chunks: myChunks.filter(c => other.domains.includes(c)),
+      seqs: mySequences.filter(s => other.domains.includes(s)),
+      domains: myDomains.filter(d => other.domains.includes(d)),
+      streams: myStreams.filter(s => other.domains.includes(s)),
+    };
+    if (shared.domains.length > 0) overlaps.push(`  ${other.owner} has #${other.index} in ${shared.domains.join(', ')}`);
+    if (shared.streams.length > 0) overlaps.push(`  ${other.owner} has #${other.index} in ${shared.streams.join(', ')}`);
+    if (shared.chunks.length > 0) overlaps.push(`  ${other.owner} has #${other.index} in ${shared.chunks.join(', ')}`);
+    if (shared.seqs.length > 0) overlaps.push(`  ${other.owner} has #${other.index} in ${shared.seqs.join(', ')}`);
+  }
+  return overlaps;
+}
+
+// WIP overlap detection (#1318) — warn when entering a domain/sequence with active WIP.
+async function detectWipOverlap(client: BoardClient, index: number, role: string): Promise<void> {
+  try {
+    const card = await client.view(index).catch(() => null);
+    if (!card) return;
+    const hasLabels = card.domains.some(d => /^(chunk|sequence|domain|stream):/.test(d));
+    if (!hasLabels) return;
+    const grouped = await client.listGrouped();
+    const wipCards = grouped.get('WIP') || [];
+    const overlaps = findWipOverlaps(card, wipCards, index);
+    if (overlaps.length > 0) {
+      console.log('  WIP overlap detected:');
+      overlaps.forEach(o => console.log(o));
+      emitSpineEvent('card.wip_overlap.detected', role, {
+        card_id: String(index), overlaps: String(overlaps.length),
+      });
+    }
+  } catch { /* non-blocking */ }
 }
 
 export async function moveCard(
@@ -715,43 +818,7 @@ export async function moveCard(
     const card = await client.view(index);
     title = card.title;
     owner = card.owner;
-    if (status.toLowerCase() === 'now') {
-      if (!enforceNowDescriptionGate(index, title, card.description, client.boardName)) {
-        process.exit(1);
-      }
-    }
-    // Capture gate (#1085): block WIP entry if AC is missing
-    if (/^wip$/i.test(status) && !enforceACGate(index, title, card.description, client.boardName)) {
-      process.exit(1);
-    }
-    // Experience gate (#1839): block WIP entry if Experience section is missing
-    if (/^wip$/i.test(status) && !enforceExperienceGate(index, title, card.description, client.boardName)) {
-      process.exit(1);
-    }
-    // Taxonomy gate (#1272): check chunk + sequence labels on Now/WIP entry
-    if (/^(now|wip)$/i.test(status)) {
-      enforceTaxonomyGate(index, title, card.domains, client.boardName);
-    }
-    // DEC-084: pre-move blast radius check for code cards
-    if (/^wip$/i.test(status)) {
-      try {
-        const fullText = `${title}\n${card.description || ''}`;
-        const domainLabel = (card.domains || []).find((d: string) => d.startsWith('domain:'));
-        const cardDomain = domainLabel ? domainLabel.replace('domain:', '') : undefined;
-        if (isCodeCard(fullText)) {
-          const report = await generateBlastRadius(index, title, card.description || '', cardDomain);
-          if (report && report.totalFiles === 0) {
-            console.error(`ERROR: Blast radius: 0 files on a code card (#${index}).`);
-            console.error('  Add explicit file paths to description (e.g. src/handlers/music.handler.ts)');
-            console.error('  or route to Wren for manual blast radius mapping.');
-            emitSpineEvent('card.blast_radius.zero_code', detectRole(), {
-              card_id: String(index), title, board: client.boardName,
-            });
-            process.exit(1);
-          }
-        }
-      } catch { /* blast radius API failure = non-blocking, proceed to WIP */ }
-    }
+    await enforcePreMoveGates(client, index, title, card, status);
   } catch { /* best effort */ }
 
   await client.move(index, status);
@@ -761,11 +828,8 @@ export async function moveCard(
   const moveFields: Record<string, string> = {
     card_id: String(index), title, to: status, board: client.boardName,
   };
-  if (isWontDo) {
-    moveFields.reason = 'wont_do';
-  }
+  if (isWontDo) moveFields.reason = 'wont_do';
   emitSpineEvent('card.item.moved', role, moveFields);
-  // AC1 (#1805): emit card.pulled when entering WIP — role started building
   if (/^wip$/i.test(status)) {
     emitSpineEvent('card.pulled', role, { card_id: String(index), title, board: client.boardName, hop: '1', source_service: 'board', dest_service: 'role-state', callStack: 'integration' });
     autoRoleState('building', `card=${index}`);
@@ -777,82 +841,9 @@ export async function moveCard(
     catch (err: any) { console.error(`  (workflow: ${err.message || err})`); }
   }
 
-  // Automated blast radius on WIP entry (DEC-072, #1098, DEC-084, #2019)
   if (/^wip$/i.test(status)) {
-    try {
-      const card = title ? await client.view(index).catch(() => null) : null;
-      const desc = card?.description || '';
-      const domainLabel2 = (card?.domains || []).find((d: string) => d.startsWith('domain:'));
-      const cardDomain2 = domainLabel2 ? domainLabel2.replace('domain:', '') : undefined;
-      const report = await generateBlastRadius(index, title, desc, cardDomain2);
-
-      if (report && report.totalFiles > 0) {
-        const comment = formatBlastComment(report);
-        await client.comment(index, comment);
-        console.log(`  Blast radius: ${report.totalFiles} files, ${report.crossDomain.length} domains`);
-        emitSpineEvent('card.blast_radius.generated', role, {
-          card_id: String(index), files: String(report.totalFiles),
-          domains: report.crossDomain.join(','),
-        });
-      }
-    } catch (err: any) {
-      // Non-blocking — blast radius failure should never prevent WIP entry
-      console.error(`  (blast radius: ${err.message || err})`);
-      emitSpineEvent('card.blast_radius.failed', role, {
-        card_id: String(index), error: String(err.message || err).slice(0, 200),
-      });
-    }
-
-    // WIP overlap detection (#1318) — warn when entering a domain/sequence with active WIP
-    try {
-      const card = await client.view(index).catch(() => null);
-      if (card) {
-        const myChunks = card.domains.filter(d => d.startsWith('chunk:'));
-        const mySequences = card.domains.filter(d => d.startsWith('sequence:'));
-        const myDomains = card.domains.filter(d => d.startsWith('domain:'));
-        const myStreams = card.domains.filter(d => d.startsWith('stream:'));
-
-        if (myChunks.length > 0 || mySequences.length > 0 || myDomains.length > 0 || myStreams.length > 0) {
-          const grouped = await client.listGrouped();
-          const wipCards = grouped.get('WIP') || [];
-          const overlaps: string[] = [];
-
-          for (const other of wipCards) {
-            if (other.index === index) continue;
-            const otherChunks = other.domains.filter(d => d.startsWith('chunk:'));
-            const otherSequences = other.domains.filter(d => d.startsWith('sequence:'));
-            const otherDomains = other.domains.filter(d => d.startsWith('domain:'));
-            const otherStreams = other.domains.filter(d => d.startsWith('stream:'));
-
-            const sharedChunks = myChunks.filter(c => otherChunks.includes(c));
-            const sharedSeqs = mySequences.filter(s => otherSequences.includes(s));
-            const sharedDomains = myDomains.filter(d => otherDomains.includes(d));
-            const sharedStreams = myStreams.filter(s => otherStreams.includes(s));
-
-            if (sharedDomains.length > 0) {
-              overlaps.push(`  ${other.owner} has #${other.index} in ${sharedDomains.join(', ')}`);
-            }
-            if (sharedStreams.length > 0) {
-              overlaps.push(`  ${other.owner} has #${other.index} in ${sharedStreams.join(', ')}`);
-            }
-            if (sharedChunks.length > 0) {
-              overlaps.push(`  ${other.owner} has #${other.index} in ${sharedChunks.join(', ')}`);
-            }
-            if (sharedSeqs.length > 0) {
-              overlaps.push(`  ${other.owner} has #${other.index} in ${sharedSeqs.join(', ')}`);
-            }
-          }
-
-          if (overlaps.length > 0) {
-            console.log('  WIP overlap detected:');
-            overlaps.forEach(o => console.log(o));
-            emitSpineEvent('card.wip_overlap.detected', role, {
-              card_id: String(index), overlaps: String(overlaps.length),
-            });
-          }
-        }
-      }
-    } catch { /* non-blocking */ }
+    await postBlastRadiusOnWip(client, index, title, role);
+    await detectWipOverlap(client, index, role);
   }
 }
 
@@ -921,13 +912,16 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
         // Check if ALL blockers of the gated card are now Done
         let allDone = true;
         for (const blockerId of gatedRels.blockedBy) {
+          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           try {
             const blockerCard = await client.view(blockerId);
+            // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
             if (blockerCard.status !== 'Done') { allDone = false; break; }
           } catch { allDone = false; break; }
         }
         if (allDone) {
           const gatedCard = await client.view(gatedId);
+          // eslint-disable-next-line max-depth -- #2288 pre-existing threshold violation, tracked for refactor
           if (gatedCard.status === 'Later') {
             await client.move(gatedId, 'Next');
             console.log(`  Unblocked #${gatedId} — moved Later → Next`);
@@ -1061,6 +1055,7 @@ export async function reassignCard(client: BoardClient, index: number, newOwner:
 }
 
 /** Unified set — apply multiple key=value mutations and print resulting state (#1635) */
+// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
 export async function setCard(client: BoardClient, index: number, pairs: Record<string, string>): Promise<void> {
   const VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates']);
   const changes: string[] = [];

@@ -60,6 +60,7 @@ export class ChorusLogTailer extends EventEmitter {
     }
   }
 
+  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
   private processLine(line: string): void {
     let parsed;
     try {
