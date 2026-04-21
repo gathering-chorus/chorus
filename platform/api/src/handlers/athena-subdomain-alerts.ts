@@ -7,6 +7,7 @@
  * regex from YAML-ish content.
  */
 import type { FetchResult } from './codebase-topology';
+import { resolveDomainIdentity } from './domain-identity';
 
 export interface AthenaSubdomainAlertsDeps {
   listAlertFiles: () => string[];
@@ -39,13 +40,20 @@ export async function fetchAthenaSubdomainAlerts(
   const start = now();
 
   try {
-    const domainLabel = id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    // #2430: shared resolver. alertFileTokens is the resolver's contract for
+    // filename/content scan terms — derives from the kebab id naturally.
+    const identity = resolveDomainIdentity(id);
+    const domainLabel = identity.primary;
+    const tokens = identity.alertFileTokens;
     const files = deps.listAlertFiles();
     const alerts: AlertSummary[] = [];
     for (const file of files) {
       const content = deps.readAlertFile(file);
       const lower = content.toLowerCase();
-      if (!lower.includes(domainLabel) && !file.toLowerCase().includes(domainLabel)) continue;
+      const fileLower = file.toLowerCase();
+      // Match if ANY token appears in content or filename — covers parent
+      // subdomains too (loom-principles matches files mentioning 'loom').
+      if (!tokens.some((t) => lower.includes(t) || fileLower.includes(t))) continue;
       const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() ?? file.replace(/\.yml$/, '');
       const description = content.match(/^description:\s*(.+)/m)?.[1]?.trim() ?? '';
       const severity = content.match(/^severity:\s*(.+)/m)?.[1]?.trim() ?? 'unknown';

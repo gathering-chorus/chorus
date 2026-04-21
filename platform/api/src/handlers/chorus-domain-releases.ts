@@ -15,6 +15,7 @@
  *   - Any throw → empty envelope, original subdomain name preserved
  */
 import type { FetchResult } from './codebase-topology';
+import { resolveDomainIdentity } from './domain-identity';
 
 export interface ReleasesBoardCard {
   id: string;
@@ -52,7 +53,12 @@ export function fetchChorusDomainReleases(
 ): FetchResult {
   const now = deps.now ?? Date.now;
   const start = now();
-  const domainName = name.replace(/-(domain|service|analytics)$/, '').toLowerCase();
+  // #2430: shared resolver. Pre-refactor this had the same -analytics/-service
+  // strip bug cards.ts had AND no alias support — loom-principles releases
+  // always returned 0 because commits are tagged sequence:loom, not
+  // sequence:loom-principles, and the handler only did exact includes().
+  const identity = resolveDomainIdentity(name);
+  const searchTerms = [identity.primary, ...identity.aliases];
 
   try {
     const allAcps: AcpEntry[] = [];
@@ -80,9 +86,9 @@ export function fetchChorusDomainReleases(
     const releases: ReleaseEntry[] = [];
     for (const acp of allAcps) {
       const cardDomains = cardsDomainIndex.get(acp.cardId);
-      if (cardDomains && cardDomains.includes(domainName)) {
+      if (cardDomains && cardDomains.some((d) => searchTerms.includes(d))) {
         releases.push({ ...acp, gates: 'passed' });
-      } else if (!cardDomains && acp.title.toLowerCase().includes(domainName)) {
+      } else if (!cardDomains && searchTerms.some((t) => acp.title.toLowerCase().includes(t))) {
         releases.push({ ...acp, gates: 'unknown' });
       }
     }

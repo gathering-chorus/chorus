@@ -12,6 +12,7 @@
 
 import type { FetchResult } from './sessions';
 import type { SparqlResult } from './athena-health';
+import { resolveDomainIdentity } from './domain-identity';
 
 export interface DomainFacetDeps {
   sparql: (query: string) => Promise<SparqlResult>;
@@ -31,7 +32,12 @@ export async function fetchDomainTests(
   const fetcher = deps.fetcher ?? fetch;
   const start = now();
   try {
-    const domain = subdomainName.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    // #2430: shared resolver. Upstream quality scanner is domain-name-keyed, not
+    // URI-keyed — use resolver.primary for the path. Note: upstream scanner has
+    // no data for loom subdomains regardless of alias; scanner enhancement is a
+    // separate follow-on, not this card.
+    const identity = resolveDomainIdentity(subdomainName);
+    const domain = identity.primary;
     const upstream = await fetcher(`http://localhost:3000/api/quality/domain/${domain}`, {
       signal: AbortSignal.timeout(5000),
     });
@@ -143,11 +149,15 @@ export async function fetchDomainAlerts(
   const start = now();
   try {
     const sdId = await deps.resolveSubdomainId(subdomainName);
-    const domainLabel = sdId.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
+    // #2430: use resolver's alertFileTokens — covers parent + child substrings.
+    const identity = resolveDomainIdentity(subdomainName);
+    const domainLabel = identity.primary;
+    const tokens = identity.alertFileTokens;
     const alerts: Array<{ file: string; name: string; description: string; severity: string; schedule: string }> = [];
     for (const { file, content } of deps.readAlertFiles()) {
       const lower = content.toLowerCase();
-      if (lower.includes(domainLabel) || file.toLowerCase().includes(domainLabel)) {
+      const fileLower = file.toLowerCase();
+      if (tokens.some((t) => lower.includes(t) || fileLower.includes(t))) {
         const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file.replace('.yml', '');
         const description = content.match(/^description:\s*(.+)/m)?.[1]?.trim() || '';
         const severity = content.match(/^severity:\s*(.+)/m)?.[1]?.trim() || 'unknown';
@@ -326,13 +336,11 @@ SELECT ?env ?name ?port ?health ?host ?engine ?dep WHERE {
   }
 }
 
-// --- decisions: SPARQL against urn:chorus:decisions with alias mapping ---
-
-const DECISION_ALIASES: Record<string, string[]> = {
-  tests: ['quality'],
-  code: ['code'],
-  gates: ['gates'],
-};
+// --- decisions: SPARQL against urn:chorus:decisions, via shared resolver (#2430) ---
+// Pre-#2430 this handler had its own DECISION_ALIASES table in underscore-case
+// (loom_principles) whose primary URI was always garbage — `loom_principles-domain`
+// doesn't exist in Fuseki (which uses kebab). The alias fell through to the
+// right URI (`loom-domain`) by accident. Resolver fixes this properly.
 
 export async function fetchDomainDecisions(
   deps: DomainFacetDeps,
@@ -341,8 +349,8 @@ export async function fetchDomainDecisions(
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const domainName = subdomainName.replace(/-(domain|service|analytics)$/, '').replace(/-/g, '_');
-    const domainNames = [domainName, ...(DECISION_ALIASES[domainName] || [])];
+    const identity = resolveDomainIdentity(subdomainName);
+    const domainNames = [identity.primary, ...identity.aliases];
     const domainFilter = domainNames.map((n) => `<https://jeffbridwell.com/chorus#${n}-domain>`).join(', ');
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id ?title ?date ?status ?level ?type WHERE { GRAPH <urn:chorus:decisions> { ?s a chorus:Decision ; rdfs:label ?id ; rdfs:comment ?title ; chorus:decisionDate ?date ; chorus:decisionStatus ?status ; chorus:enforcementLevel ?level ; chorus:decisionType ?type ; chorus:hasDomain ?dom . FILTER(?dom IN (${domainFilter})) } } ORDER BY ?type ?id`;
     const result = await deps.sparql(query);

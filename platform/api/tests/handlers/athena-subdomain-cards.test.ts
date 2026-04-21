@@ -36,14 +36,18 @@ describe('fetchAthenaSubdomainCards (#2187)', () => {
     expect(body.data.cards).toEqual([]);
   });
 
-  test('strips -domain / -service / -analytics suffix from id for search label', async () => {
-    const r1 = await fetchAthenaSubdomainCards(deps(), 'photos-service');
-    const b1 = r1.body as { data: { domainLabel: string } };
-    expect(b1.data.domainLabel).toBe('photos');
+  test('strips -domain suffix only; -service / -analytics words kept (#2430)', async () => {
+    // Pre-#2430 this handler over-aggressively stripped -service and -analytics,
+    // silently collapsing real subdomain ids (e.g. loom-analytics → loom).
+    // Resolver-strict contract: only -domain is a namespace suffix.
+    const r1 = await fetchAthenaSubdomainCards(deps(), 'chorus-domain');
+    expect((r1.body as { data: { domainLabel: string } }).data.domainLabel).toBe('chorus');
 
-    const r2 = await fetchAthenaSubdomainCards(deps(), 'music-analytics');
-    const b2 = r2.body as { data: { domainLabel: string } };
-    expect(b2.data.domainLabel).toBe('music');
+    const r2 = await fetchAthenaSubdomainCards(deps(), 'photos-service');
+    expect((r2.body as { data: { domainLabel: string } }).data.domainLabel).toBe('photos-service');
+
+    const r3 = await fetchAthenaSubdomainCards(deps(), 'music-analytics');
+    expect((r3.body as { data: { domainLabel: string } }).data.domainLabel).toBe('music-analytics');
   });
 
   test('card with matching domain:<label> tag is included', async () => {

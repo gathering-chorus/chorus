@@ -1,11 +1,13 @@
 /**
  * GET /api/athena/subdomains/:id/cards — Board cards related to this domain (#2187).
  *
- * Maps the sub-domain id to a search label (stripping -domain/-service/-analytics),
- * expands through DOMAIN_ALIASES for aggregation domains, filters the board
- * cards cache for any matching domain:<label> or sequence:<label> tag.
+ * Uses the shared domain-identity resolver (#2430) so sub-subdomain aliases
+ * live in one registry. Replaces the handler-local DOMAIN_ALIASES table and
+ * the over-aggressive -analytics/-service suffix strip that used to collapse
+ * `loom-analytics` to `loom` by accident.
  */
 import type { FetchResult } from './codebase-topology';
+import { resolveDomainIdentity, cardDomainSearchLabels } from './domain-identity';
 
 /**
  * Shape matches server.ts CachedCard — id is a string (card ID rendered),
@@ -27,12 +29,6 @@ export interface AthenaSubdomainCardsDeps {
   envelope?: (name: string, data: unknown, durationMs: number, extra?: Record<string, unknown>) => unknown;
 }
 
-const DOMAIN_ALIASES: Record<string, string[]> = {
-  tests: ['quality'],
-  code: ['code'],
-  gates: ['gates'],
-};
-
 function defaultEnvelope(name: string, data: unknown, durationMs: number, extra: Record<string, unknown> = {}) {
   return {
     _meta: { source: 'athena', query_name: name, duration_ms: durationMs, ...extra },
@@ -49,8 +45,8 @@ export async function fetchAthenaSubdomainCards(
   const start = now();
 
   try {
-    const domainLabel = id.replace(/-(?:domain|service|analytics)$/, '').toLowerCase();
-    const searchLabels = [domainLabel, ...(DOMAIN_ALIASES[domainLabel] ?? [])];
+    const identity = resolveDomainIdentity(id);
+    const searchLabels = cardDomainSearchLabels(identity);
     const cards = deps.getBoardCards()
       .filter((c) => searchLabels.some((l) => c.tags.includes(`domain:${l}`) || c.tags.includes(`sequence:${l}`)))
       .map((c) => ({ id: c.id, title: c.title, owner: c.owner, status: c.status, priority: c.priority }));
@@ -60,7 +56,7 @@ export async function fetchAthenaSubdomainCards(
       status: 200,
       body: envelope(
         'subdomain-cards',
-        { subdomain: id, domainLabel, cards },
+        { subdomain: id, domainLabel: identity.primary, cards },
         now() - start,
         { count: cards.length },
       ),
