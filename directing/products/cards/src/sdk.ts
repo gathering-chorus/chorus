@@ -17,6 +17,7 @@ function autoRoleState(state: string, extra: string = ''): void {
   } catch { /* non-blocking — don't break card ops if role-state fails */ }
 }
 import { generateBlastRadius, formatBlastComment } from './blast-radius';
+import { countAcDiff } from './ac-tick-detection';
 
 // Paths are `let` so hermetic tests can point them at a temp dir via
 // `__setTestPaths`. Defaults match the pre-override production layout.
@@ -973,6 +974,12 @@ export async function updateCard(
   client: BoardClient, index: number,
   fields: { title?: string; description?: string; product?: string }
 ): Promise<void> {
+  // #2193: read old description BEFORE update so ac.ticked can diff old→new.
+  let oldDesc = '';
+  if (fields.description !== undefined) {
+    try { oldDesc = (await client.view(index)).description || ''; } catch { /* pre-read best-effort */ }
+  }
+
   await client.update(index, fields);
 
   // Verify-after-write: re-read card to confirm description persisted (#1267)
@@ -994,6 +1001,18 @@ export async function updateCard(
     }
 
     console.log(`Updated #${index} — desc: ${actualLen} chars${fields.product ? ` [product:${fields.product}]` : ''}`);
+
+    // #2193: emit ac.ticked when the update flipped any `- [ ]` → `- [x]`.
+    const diff = countAcDiff(oldDesc, fields.description);
+    if (diff.tickedCount > 0) {
+      emitSpineEvent('ac.ticked', detectRole(), {
+        card_id: String(index),
+        ticked_count: String(diff.tickedCount),
+        total_checked: String(diff.totalChecked),
+        total_ac: String(diff.totalAc),
+        board: client.boardName,
+      });
+    }
   } else {
     console.log(`Updated #${index}${fields.product ? ` [product:${fields.product}]` : ''}`);
   }

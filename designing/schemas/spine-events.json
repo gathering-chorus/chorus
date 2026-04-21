@@ -286,6 +286,47 @@
         "board": "Board name"
       }
     },
+    "ac.ticked": {
+      "vertebra": "directing",
+      "source": "cards",
+      "description": "AC item checked on a card — `- [ ]` → `- [x]`. Emitted per update that advances the check count. #2193.",
+      "keys": ["card_id"],
+      "fields": {
+        "card_id": "Card identifier",
+        "ticked_count": "Number of items flipped from unchecked to checked in this update",
+        "total_checked": "Total checked count after update",
+        "total_ac": "Total AC items on card",
+        "board": "Board name"
+      }
+    },
+    "commit.landed": {
+      "vertebra": "building",
+      "source": "git-queue",
+      "description": "Commit landed on main via git-queue.sh. Emitted after successful commit, before push. #2193.",
+      "keys": ["sha"],
+      "fields": {
+        "sha": "Commit SHA (short)",
+        "author_role": "Role that authored (kade/silas/wren)",
+        "card_id": "Card id extracted from commit message, if present",
+        "files_changed": "Number of files in the commit",
+        "message_subject": "First line of commit message"
+      }
+    },
+    "test.delta": {
+      "vertebra": "proving",
+      "source": "gate-code-tests",
+      "description": "Test run completed with delta vs prior run. #2193.",
+      "keys": ["run_id"],
+      "fields": {
+        "run_id": "Unique run identifier (timestamp-role)",
+        "suite": "Suite name (api/clearing/cards/pulse/workflow/bats)",
+        "passed": "Tests passed",
+        "failed": "Tests failed",
+        "delta_passed": "Change vs prior run (+N / -N / 0)",
+        "delta_failed": "Change vs prior run",
+        "role": "Role that ran"
+      }
+    },
     "self.biometric.transposition_rate": {
       "vertebra": "building",
       "source": "chorus-events",
