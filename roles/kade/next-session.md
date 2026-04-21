@@ -2,19 +2,22 @@
 
 ## State on close
 - WIP: none
-- Last action: parked #2304 → Next (Silas in WIP on #2311, same chorus-hooks crate)
+- Last action: session opened, no cards pulled — immediate /reboot after thesis-driven opening
 
 ## What happened this session
-- Session opened gate-locked: SessionStart payload reported success but `/tmp/claude-session-init/kade.done` was missing. All Bash blocked.
-- Nudged Silas with the failure as live #2311 artifact. Jeff touched the marker to unblock.
-- Silas shipped in-session recovery path on #2311: `Read /tmp/session-start-kade.md` re-runs `protocol_contract::check` and writes `.done`. No reboot needed for future lockouts.
-- Tried to pull #2288 (ESLint backlog, 280→102 violations remaining). Still blocked by test_quality_gate deadlock.
-- Pulled #2304 (the unblocker — `is_no_signature_edit` exemption for test_quality_gate). Realized Silas's #2311 is in the same chorus-hooks crate. Parked #2304 back to Next.
+- Boot was clean (no gate-lock this time — Silas's recovery path from prior session held).
+- Read pulse + own next-session.md. Confirmed #2311 still in WIP with Silas, blocking #2304/#2288/#2300 chain.
+- Wrote thesis-driven opening: named the single-file dependency chain in own queue as a Kade problem, not a Silas problem. Reframed #2304 as the third exemption-stamp into a gate that smells like #2118 territory. Identified #2126/#2127 as truly independent borg-domain work.
+- CLAUDE.md regenerated to v1.1 mid-response (chorus-prompt drift); next session opens on v1.1.
+- /reboot called immediately after opening.
 
 ## Resume sequence
-1. Check #2311 status. If Done, pull #2304 — small surgical edit to `test_quality_gate.rs`, mirror the `is_no_signature_edit` short-circuit pattern from #2286 (`tdd_gate.rs`).
-2. After #2304 lands, resume #2288: 102 problems remaining (32 complexity, 28 max-lines, 38 max-depth, 4 security).
-3. #2300 (complexity refactor) is also queued.
+1. Pull #2126 OR #2127 — borg-sequence, Kade-domain (TS, src/, handlers), zero overlap with chorus-hooks crate. Do not check #2311 first; that's the documented stall pattern.
+2. Keep #2304 surgical-edit prepped mentally (mirror `is_no_signature_edit` from #2286 in `tdd_gate.rs`) so it's a fast pull when #2311 lands.
+3. After #2304: #2288 (102 ESLint violations), then #2300 (complexity refactor).
 
-## New recovery knowledge
-If you boot and find Bash gate-locked with `kade.done` missing: open `/tmp/session-start-kade.md` with the Read tool. That re-arms the protocol contract check.
+## Pattern to break
+Three consecutive session reboots opened with "check #2311 status" as step 1 of the resume plan. That's me writing my own block into the plan. Next session: pull independent owned work first, then check #2311 as a parallel concern, not a gate.
+
+## Header version
+After v1.1 regeneration, header reads `Werk v1.1` (was 1.0). Three roles must agree — if Silas/Wren still on 1.0 next session, that's a #2311-class drift.
