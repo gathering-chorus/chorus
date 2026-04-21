@@ -96,35 +96,41 @@ function resolveUnknownRoles(events: ChorusEvent[], sessions: SessionWindow[]): 
   }
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+function categorizeRetry(summary: string): string {
+  const s = summary.toLowerCase();
+  if (s.includes('board-ts') || s.includes('cards')) return 'board';
+  if (s.includes('git-queue')) return 'git-queue';
+  if (s.includes('curl') && (s.includes('3030') || s.includes('fuseki'))) return 'fuseki';
+  if (s.includes('curl') && (s.includes('3100') || s.includes('3102'))) return 'loki-grafana';
+  if (s.includes('curl') && s.includes('localhost')) return 'endpoint';
+  if (s.includes('app-state') || s.includes('launchctl')) return 'deploy';
+  if (s.includes('chorus-log')) return 'chorus-log';
+  if (s.includes('role-state')) return 'role-state';
+  return 'other';
+}
+
+function isRetryPair(e1: ChorusEvent, e2: ChorusEvent): boolean {
+  if (e1.role !== e2.role || e1.action !== e2.action) return false;
+  const s1 = String(e1.summary || '');
+  const s2 = String(e2.summary || '');
+  if (s1 === s2) return false;
+  try {
+    const gap = new Date(e2.timestamp).getTime() - new Date(e1.timestamp).getTime();
+    return gap <= 30000;
+  } catch {
+    return false;
+  }
+}
+
 function detectRetryClusters(allEvents: ChorusEvent[]): ChorusEvent[] {
   const toolEvents = allEvents.filter((e) => e.event === 'session_tool');
   const clusters: ChorusEvent[] = [];
   for (let i = 0; i < toolEvents.length - 1; i++) {
     const e1 = toolEvents[i];
     const e2 = toolEvents[i + 1];
-    if (e1.role !== e2.role) continue;
-    if (e1.action !== e2.action) continue;
+    if (!isRetryPair(e1, e2)) continue;
     const s1 = String(e1.summary || '');
-    const s2 = String(e2.summary || '');
-    if (s1 === s2) continue;
-    try {
-      const t1 = new Date(e1.timestamp).getTime();
-      const t2 = new Date(e2.timestamp).getTime();
-      if (t2 - t1 > 30000) continue;
-    } catch { continue; }
-
-    const s = s1.toLowerCase();
-    let category = 'other';
-    if (s.includes('board-ts') || s.includes('cards')) category = 'board';
-    else if (s.includes('git-queue')) category = 'git-queue';
-    else if (s.includes('curl') && (s.includes('3030') || s.includes('fuseki'))) category = 'fuseki';
-    else if (s.includes('curl') && (s.includes('3100') || s.includes('3102'))) category = 'loki-grafana';
-    else if (s.includes('curl') && s.includes('localhost')) category = 'endpoint';
-    else if (s.includes('app-state') || s.includes('launchctl')) category = 'deploy';
-    else if (s.includes('chorus-log')) category = 'chorus-log';
-    else if (s.includes('role-state')) category = 'role-state';
-
+    const category = categorizeRetry(s1);
     clusters.push({
       timestamp: e1.timestamp,
       event: 'tool.retry_cluster',

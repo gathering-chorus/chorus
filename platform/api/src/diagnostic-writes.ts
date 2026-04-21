@@ -79,11 +79,29 @@ export interface TraceCreateDeps {
   now: () => string;
 }
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+interface EndpointRef { domain?: string; service?: string; instance?: string }
+interface ErrorInfo { classification?: string; message?: string }
+
+function traceRowFromBody(body: any, now: string): unknown[] {
+  const { correlationId, hop, callStack, source, destination, latencyMs, error } = body;
+  const src: EndpointRef = source || {};
+  const dst: EndpointRef = destination || {};
+  const err: ErrorInfo = error || {};
+  return [
+    correlationId, hop, callStack,
+    src.domain || null, src.service || null, src.instance || null,
+    dst.domain || null, dst.service || null, dst.instance || null,
+    now,
+    latencyMs || null,
+    err.classification || null, err.message || null,
+    now,
+  ];
+}
+
 export function handleTraceCreate(req: Req, res: Res, deps: TraceCreateDeps): void {
   deps.ensureTable();
-  const { correlationId, hop, callStack, source, destination, latencyMs, error } = req.body || {};
-  if (!correlationId || !hop || !callStack) {
+  const body = req.body || {};
+  if (!body.correlationId || !body.hop || !body.callStack) {
     res.status(400).json!({ error: 'correlationId, hop, and callStack are required' });
     return;
   }
@@ -93,22 +111,7 @@ export function handleTraceCreate(req: Req, res: Res, deps: TraceCreateDeps): vo
   db.prepare(`
     INSERT INTO traces (correlation_id, hop, call_stack, source_domain, source_service, source_instance, dest_domain, dest_service, dest_instance, timestamp, latency_ms, error_class, error_message, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    correlationId,
-    hop,
-    callStack,
-    source?.domain || null,
-    source?.service || null,
-    source?.instance || null,
-    destination?.domain || null,
-    destination?.service || null,
-    destination?.instance || null,
-    now,
-    latencyMs || null,
-    error?.classification || null,
-    error?.message || null,
-    now,
-  );
+  `).run(...traceRowFromBody(body, now));
   db.close();
   res.json!({ ok: true });
 }
