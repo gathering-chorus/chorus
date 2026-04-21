@@ -71,6 +71,8 @@ export interface DriftState {
 
 export interface ContextRolesRow {
   name: string;
+  /** Alias of name — consumers key off either. Added post-#2193 gemba (silas). */
+  role: string;
   state: string;
   card: number | null;
   gemba: string | null;
@@ -127,6 +129,7 @@ function shapeRoleRow(deps: ContextRolesDeps, name: string, nowMs: number): Cont
   const declaredCard = st?.card ?? null;
   return {
     name,
+    role: name,
     state: st?.state ?? 'unknown',
     card: declaredCard,
     gemba: st?.gemba ?? null,

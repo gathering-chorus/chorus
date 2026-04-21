@@ -198,4 +198,16 @@ describe('fetchContextRoles', () => {
     expect(kade.derived_state).toBeNull();
     expect(kade.drift_state.inferred_stale).toBe(true);
   });
+
+  // Post-demo gemba catch (silas, 2026-04-21): consumers keying off r.role hit null.
+  it('role field mirrors name so consumers can key off either', async () => {
+    const r = await fetchContextRoles({
+      sparql: stubSparql(),
+      readState: (role) => ({ role, state: 'idle' }),
+      tailSpine: () => null,
+    }, '/api/chorus/context/roles');
+    for (const row of r.body.data.roles) {
+      expect(row.role).toBe(row.name);
+    }
+  });
 });
