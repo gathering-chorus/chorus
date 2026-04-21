@@ -848,8 +848,16 @@ async function cmdLabel(ctx: CliCtx) {
     labels.sort((a, b) => a.id - b.id);
     for (const l of labels) console.log(`  ${l.id}\t${l.title}`);
     console.log(`\n${labels.length} labels total`);
+  } else if (sub === 'add') {
+    const idArg = ctx.cmdArgs[1];
+    const labelName = ctx.cmdArgs.slice(2).join(' ');
+    if (!idArg || !labelName) die('Usage: cards label add <id> <label-name>');
+    const id = parseInt(idArg, 10);
+    if (!Number.isFinite(id)) die(`Invalid card id: ${idArg}`);
+    const { labelId, created } = await ctx.client.applyLabelByName(id, labelName);
+    console.log(`Labeled #${id} with "${labelName}" (id=${labelId})${created ? ' — created' : ''}`);
   } else {
-    die('Usage: cards label create <title> | cards label list');
+    die('Usage: cards label create <title> | cards label list | cards label add <id> <name>');
   }
 }
 

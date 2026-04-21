@@ -192,6 +192,33 @@ if [ -z "$ONLY" ] || [ "$ONLY" = "shell" ]; then
   done
 fi
 
+# #2324 zone (c): discover .bats suites too (the previous loop only took .test.sh).
+run_bats_file() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  local name
+  name=$(basename "$f" .bats)
+  local out rc summary
+  out=$(bats "$f" 2>&1)
+  rc=$?
+  summary=$(echo "$out" | grep -E '^(ok|not ok|[0-9]+ tests)' | tail -1)
+  [ -z "$summary" ] && summary="exit=$rc"
+  if [ "$rc" -eq 0 ]; then
+    record bats "$name" pass "$summary"
+  else
+    record bats "$name" fail "$summary"
+  fi
+}
+
+if [ -z "$ONLY" ] || [ "$ONLY" = "bats" ] || [ "$ONLY" = "shell" ]; then
+  if command -v bats >/dev/null 2>&1; then
+    [ "$JSON_MODE" = "0" ] && echo "-- Bats --"
+    for f in "$CHORUS_ROOT"/platform/tests/*.bats; do
+      run_bats_file "$f"
+    done
+  fi
+fi
+
 # Summary
 if [ "$JSON_MODE" = "1" ]; then
   printf '{"pass":%d,"fail":%d,"skip":%d,"failed_suites":"%s"}\n' "$PASS" "$FAIL" "$SKIP" "$FAILED_SUITES"

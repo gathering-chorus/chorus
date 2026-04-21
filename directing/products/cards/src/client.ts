@@ -469,6 +469,21 @@ export class BoardClient {
     await this.api('PUT', `/tasks/${apiId}/labels`, { label_id: labelId });
   }
 
+  /** Apply a label by name to a display-index card. Creates the label if missing. (#2324) */
+  async applyLabelByName(index: number, labelName: string): Promise<{ labelId: number; created: boolean }> {
+    const apiId = await this.resolveIndex(index);
+    const labels = await this.listLabels();
+    let label = labels.find((l) => l.title === labelName);
+    let created = false;
+    if (!label) {
+      label = await this.createLabel(labelName);
+      created = true;
+    }
+    await this.addLabel(apiId, label.id);
+    this.clearCache();
+    return { labelId: label.id, created };
+  }
+
   async removeLabel(apiId: number, labelId: number): Promise<void> {
     await this.api('DELETE', `/tasks/${apiId}/labels/${labelId}`, undefined);
   }
