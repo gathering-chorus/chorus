@@ -60,100 +60,84 @@ export class ChorusLogTailer extends EventEmitter {
     }
   }
 
-  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
-  private processLine(line: string): void {
-    let parsed;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      return;
+  private handleDemoStarted(parsed: any, role: string): void {
+    const card = parsed.card || parsed.card_id || '';
+    const title = parsed.title || '';
+    this.router.ingest({
+      from: role,
+      text: `Demo ready: #${card}${title ? ` — ${title}` : ''}`,
+      ts: parsed.timestamp || new Date().toISOString(),
+      type: 'demo-ready',
+    });
+  }
+
+  private handleCardAccepted(parsed: any, role: string): void {
+    const card = parsed.card_id || parsed.card || '';
+    const title = parsed.title || '';
+    const acceptor = parsed.acceptor || 'jeff';
+    this.router.ingest({
+      from: acceptor,
+      text: `Accepted #${card}${title ? ` — ${title}` : ''}`,
+      ts: parsed.timestamp || new Date().toISOString(),
+      type: 'accept-request',
+    });
+    this.emit('board-event', { type: 'card.accepted', card, role: acceptor, builder: role, ts: parsed.timestamp });
+  }
+
+  private handleRoleStateChanged(parsed: any, role: string): void {
+    this.emit('board-event', {
+      type: 'role.state.changed',
+      role, state: parsed.state, card: parsed.card || '', ts: parsed.timestamp,
+    });
+    if (parsed.state === 'blocked') {
+      this.router.ingest({
+        from: role,
+        text: `BLOCKED: ${parsed.detail || 'no detail'}`,
+        ts: parsed.timestamp || new Date().toISOString(),
+        type: 'blocked',
+      });
     }
+  }
+
+  private handleNudgeSent(parsed: any, role: string): void {
+    const target = parsed.target?.split(',')[0] || '';
+    const content = parsed.target?.match(/content=(.+)/)?.[1] || '';
+    if (target !== 'jeff' || !content) return;
+    this.router.ingest({
+      from: role,
+      text: content,
+      ts: parsed.timestamp || new Date().toISOString(),
+      type: 'role-response',
+    });
+  }
+
+  private processLine(line: string): void {
+    let parsed: any;
+    try { parsed = JSON.parse(line); } catch { return; }
 
     const event = parsed.event || '';
     const role = parsed.role || '';
 
-    // Demo started — always surface
-    if (event === 'card.demo.started') {
-      const card = parsed.card || parsed.card_id || '';
-      const title = parsed.title || '';
-      this.router.ingest({
-        from: role,
-        text: `Demo ready: #${card}${title ? ` — ${title}` : ''}`,
-        ts: parsed.timestamp || new Date().toISOString(),
-        type: 'demo-ready',
-      });
-      return;
-    }
-
-    // Card accepted — surface + emit board event
-    if (event === 'card.accepted') {
-      const card = parsed.card_id || parsed.card || '';
-      const title = parsed.title || '';
-      const acceptor = parsed.acceptor || 'jeff';
-      this.router.ingest({
-        from: acceptor,
-        text: `Accepted #${card}${title ? ` — ${title}` : ''}`,
-        ts: parsed.timestamp || new Date().toISOString(),
-        type: 'accept-request',
-      });
-      this.emit('board-event', { type: 'card.accepted', card, role: acceptor, builder: role, ts: parsed.timestamp });
-      return;
-    }
-
-    // Card pulled — emit board event (#1681)
-    if (event === 'card.pulled') {
-      const card = parsed.card_id || parsed.card || '';
-      this.emit('board-event', { type: 'card.pulled', card, role, ts: parsed.timestamp });
-      return;
-    }
-
-    // Role state change — emit event + surface blocked (#1681)
-    if (event === 'role.state.changed') {
-      this.emit('board-event', {
-        type: 'role.state.changed',
-        role,
-        state: parsed.state,
-        card: parsed.card || '',
-        ts: parsed.timestamp,
-      });
-      if (parsed.state === 'blocked') {
+    switch (event) {
+      case 'card.demo.started':
+        return this.handleDemoStarted(parsed, role);
+      case 'card.accepted':
+        return this.handleCardAccepted(parsed, role);
+      case 'card.pulled':
+        this.emit('board-event', { type: 'card.pulled', card: parsed.card_id || parsed.card || '', role, ts: parsed.timestamp });
+        return;
+      case 'role.state.changed':
+        return this.handleRoleStateChanged(parsed, role);
+      case 'interaction.jdi.received':
         this.router.ingest({
-          from: role,
-          text: `BLOCKED: ${parsed.detail || 'no detail'}`,
-          ts: parsed.timestamp || new Date().toISOString(),
-          type: 'blocked',
-        });
-      }
-      return;
-    }
-
-    // JDI received — surface (Jeff said it, show confirmation)
-    if (event === 'interaction.jdi.received') {
-      this.router.ingest({
-        from: 'system',
-        text: `JDI signal received by ${role}${parsed.card ? ` [#${parsed.card}]` : ''}`,
-        ts: parsed.timestamp || new Date().toISOString(),
-        type: 'role-response',
-      });
-      return;
-    }
-
-    // Nudge sent — only surface nudges TO jeff
-    if (event === 'role.nudge.sent') {
-      const target = parsed.target?.split(',')[0] || '';
-      const content = parsed.target?.match(/content=(.+)/)?.[1] || '';
-      if (target === 'jeff' && content) {
-        this.router.ingest({
-          from: role,
-          text: content,
+          from: 'system',
+          text: `JDI signal received by ${role}${parsed.card ? ` [#${parsed.card}]` : ''}`,
           ts: parsed.timestamp || new Date().toISOString(),
           type: 'role-response',
         });
-      }
-      return;
+        return;
+      case 'role.nudge.sent':
+        return this.handleNudgeSent(parsed, role);
     }
-
-    // Session turns — handled by SessionTailer (reads JSONL directly for user/assistant distinction)
-    // Kept here only as fallback if session tailer can't find session files
   }
 }

@@ -66,70 +66,65 @@ function isLocal(req: express.Request): boolean {
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
-app.use((req, res, next) => {
-  // OG image always open (link previews need it without auth)
-  if (req.path === '/bridge-og.jpg') return next();
+const LOCAL_ONLY_PATHS = ['/health', '/metrics', '/api/debug'];
+const ADMIN_PATH_PREFIXES = ['/api/stream', '/api/session/', '/api/commands/', '/api/flow', '/api/restart'];
+const TOKEN_COOKIE_OPTS = {
+  maxAge: 365 * 24 * 60 * 60 * 1000,
+  httpOnly: true,
+  sameSite: 'lax' as const,
+};
 
-  // Health/metrics: local only, blocked from tunnel (#1756)
-  if (req.path === '/health' || req.path === '/metrics' || req.path === '/api/debug') {
-    if (isLocal(req)) return next();
-    return res.status(403).json({ error: 'forbidden' });
-  }
-
-  // Admin APIs: local only (#1756)
-  const adminPaths = ['/api/stream', '/api/session/', '/api/commands/', '/api/flow', '/api/restart'];
-  if (adminPaths.some(p => req.path.startsWith(p))) {
-    if (isLocal(req)) return next();
-    return res.status(403).json({ error: 'forbidden' });
-  }
-
-  // Local requests skip auth
-  if (isLocal(req)) return next();
-
-  // Check token: query param, cookie, or Authorization header
-  const token = (req.query.token as string)
+function extractToken(req: any): string | undefined {
+  return (req.query.token as string)
     || req.cookies?.bridge_token
     || req.headers.authorization?.replace('Bearer ', '');
+}
 
+function handleLocalOnlyGate(req: any, res: any): boolean {
+  if (LOCAL_ONLY_PATHS.includes(req.path)) {
+    if (isLocal(req)) return false;
+    res.status(403).json({ error: 'forbidden' });
+    return true;
+  }
+  if (ADMIN_PATH_PREFIXES.some((p) => req.path.startsWith(p))) {
+    if (isLocal(req)) return false;
+    res.status(403).json({ error: 'forbidden' });
+    return true;
+  }
+  return false;
+}
+
+function handleAuthenticated(req: any, res: any, next: any) {
+  if (req.query.token && !req.cookies?.bridge_token) {
+    res.cookie('bridge_token', BRIDGE_TOKEN, TOKEN_COOKIE_OPTS);
+  }
+  const hasName = req.cookies?.bridge_name;
+  if (!hasName && req.path !== '/set-name' && req.path !== '/bridge-og.jpg'
+      && (req.path === '/' || req.path === '/index.html')) {
+    return res.send(namePage());
+  }
+  return next();
+}
+
+function handleLoginPost(req: any, res: any) {
+  const { token: submittedToken } = req.body || {};
+  if (submittedToken === BRIDGE_TOKEN) {
+    res.cookie('bridge_token', BRIDGE_TOKEN, TOKEN_COOKIE_OPTS);
+    return res.redirect('/');
+  }
+  return res.status(401).send(loginPage('Wrong token'));
+}
+
+app.use((req, res, next) => {
+  if (req.path === '/bridge-og.jpg') return next();
+  if (handleLocalOnlyGate(req, res)) return;
+  if (isLocal(req)) return next();
+
+  const token = extractToken(req);
   // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; this is a tunnel auth gate, not a high-security comparison.
-  if (token === BRIDGE_TOKEN) {
-    // Set cookie so Jeff doesn't need the token in every URL
-    if (req.query.token && !req.cookies?.bridge_token) {
-      res.cookie('bridge_token', BRIDGE_TOKEN, {
-        maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
-        httpOnly: true,
-        sameSite: 'lax',
-      });
-    }
+  if (token === BRIDGE_TOKEN) return handleAuthenticated(req, res, next);
 
-    // Guest name gate — remote users must identify themselves (#1719)
-    const hasName = req.cookies?.bridge_name;
-    if (!hasName && req.path !== '/set-name' && req.path !== '/bridge-og.jpg') {
-      // Jeff on LAN doesn't hit this (isLocal returned above)
-      // Show name prompt
-      if (req.path === '/' || req.path === '/index.html') {
-        return res.send(namePage());
-      }
-    }
-
-    return next();
-  }
-
-  // No valid token — show login page
-  if (req.path === '/login' && req.method === 'POST') {
-    const { token: submittedToken } = req.body || {};
-    if (submittedToken === BRIDGE_TOKEN) {
-      res.cookie('bridge_token', BRIDGE_TOKEN, {
-        maxAge: 365 * 24 * 60 * 60 * 1000,
-        httpOnly: true,
-        sameSite: 'lax',
-      });
-      return res.redirect('/');
-    }
-    return res.status(401).send(loginPage('Wrong token'));
-  }
-
+  if (req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
   res.status(401).send(loginPage());
 });
 
@@ -391,92 +386,77 @@ app.get('/api/commands/:role', (req, res) => {
   res.json({ text: lines.join('\n') || `No commands recorded for ${role}`, lines: lines.length });
 });
 
-// API: unified activity stream — all roles interleaved by time
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
-app.get('/api/stream', (req, res) => {
-  const fs = require('fs');
-  const logFile = `${CHORUS_ROOT}/platform/logs/chorus.log`;
-  const limit = parseInt(req.query.lines as string) || 60;
+type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null };
 
-  const lines: any[] = [];
+const TURN_SKIP_PREFIXES = ['[nudge from', '[feedback]', '[response]', '[reply]', '[ack]', '[direction]', '[correction]'];
+const TURN_SKIP_CONTAINS = ['<command-', 'Base directory for this skill', '[Request interrupted', '[Image:', '/var/folders'];
+const OBS_SKIP_TOKENS = ['nudge', 'chorus-log', 'role-state', 'cards', 'smoke-check'];
+
+function formatToolDisplay(summary: string, action: string): string | null {
+  if (action === 'Read' || action === 'Glob' || action === 'Grep') return null;
+  if (action === 'Bash') return summary.replace(/^Bash: /, '→ ');
+  if (action === 'Edit') return summary.replace(/^Edit: /, '✏️ ');
+  if (action === 'Write') return summary.replace(/^Write: /, '📝 ');
+  return summary;
+}
+
+function parseTurnLine(entry: any, role: string): StreamLine | null {
+  let summary = (entry.summary || '').substring(0, 200);
+  if (TURN_SKIP_PREFIXES.some((p) => summary.startsWith(p))) return null;
+  if (TURN_SKIP_CONTAINS.some((p) => summary.includes(p))) return null;
+  summary = summary.replace(/\s*\|\s*tools:\s*[^|]*\|\s*[\d.]+s\s*$/, '').trim();
+  if (!summary) return null;
+  const toolCount = parseInt(entry.tool_count || '0', 10);
+  const isJeffInput = toolCount === 0;
+  if (isJeffInput && summary.length < 5) return null;
+  return {
+    ts: entry.timestamp || '',
+    role: isJeffInput ? 'jeff' : role,
+    type: 'turn',
+    text: isJeffInput ? `→${role}: ${summary}` : summary,
+  };
+}
+
+function parseLogEntry(entry: any): StreamLine | null {
+  const role = entry.role || '';
+  if (!role || !['wren', 'silas', 'kade'].includes(role)) return null;
+  const event = entry.event || '';
+
+  if (event === 'session_tool') {
+    const display = formatToolDisplay((entry.summary || '').substring(0, 120), entry.action || '');
+    if (display === null) return null;
+    return { ts: entry.timestamp || '', role, type: 'tool', text: display };
+  }
+  if (event === 'session_turn') return parseTurnLine(entry, role);
+  if (event === 'role.nudge.sent') {
+    const content = (entry.target || '').match(/content=(.+)/)?.[1] || '';
+    if (!content.includes('[gemba]')) return null;
+    return { ts: entry.timestamp || '', role, type: 'gemba', text: content.substring(0, 200) };
+  }
+  return null;
+}
+
+function readSpineLines(fs: any, logFile: string, limit: number): StreamLine[] {
+  const out: StreamLine[] = [];
   try {
-    const content = fs.readFileSync(logFile, 'utf-8');
-    const logLines = content.trim().split('\n').filter(Boolean);
-
-    // Scan from end
+    const logLines = fs.readFileSync(logFile, 'utf-8').trim().split('\n').filter(Boolean);
     let count = 0;
     for (let i = logLines.length - 1; i >= 0 && count < limit * 2; i--) {
       try {
-        const entry = JSON.parse(logLines[i]);
-        const event = entry.event || '';
-        const role = entry.role || '';
-        if (!role || !['wren', 'silas', 'kade'].includes(role)) continue;
-
-        if (event === 'session_tool') {
-          const summary = (entry.summary || '').substring(0, 120);
-          const action = entry.action || '';
-          // Compact: just the tool + short description
-          let display = summary;
-          if (action === 'Bash') display = summary.replace(/^Bash: /, '→ ');
-          else if (action === 'Edit') display = summary.replace(/^Edit: /, '✏️ ');
-          else if (action === 'Write') display = summary.replace(/^Write: /, '📝 ');
-          else if (action === 'Read') continue; // skip reads
-          else if (action === 'Glob' || action === 'Grep') continue; // skip searches
-
-          lines.push({
-            ts: entry.timestamp || '',
-            role,
-            type: 'tool',
-            text: display,
-          });
-          count++;
-        } else if (event === 'session_turn') {
-          let summary = (entry.summary || '').substring(0, 200);
-          // Skip nudge relays and system noise
-          if (summary.startsWith('[nudge from') || summary.startsWith('[feedback]') || summary.startsWith('[response]')) continue;
-          if (summary.startsWith('[reply]') || summary.startsWith('[ack]') || summary.startsWith('[direction]') || summary.startsWith('[correction]')) continue;
-          if (summary.includes('<command-') || summary.includes('Base directory for this skill')) continue;
-          if (summary.includes('[Request interrupted')) continue;
-          if (summary.includes('[Image:')) continue;
-          if (summary.includes('/var/folders')) continue;
-          // Strip metadata suffix
-          summary = summary.replace(/\s*\|\s*tools:\s*[^|]*\|\s*[\d.]+s\s*$/, '').trim();
-          if (!summary) continue;
-          // Detect Jeff's input vs role output (#1706)
-          // tool_count=0 means Jeff typed it; roles always use tools when responding
-          const toolCount = parseInt(entry.tool_count || '0', 10);
-          const isJeffInput = toolCount === 0;
-          if (isJeffInput && summary.length < 5) continue;
-          lines.push({
-            ts: entry.timestamp || '',
-            role: isJeffInput ? 'jeff' : role,
-            type: 'turn',
-            text: isJeffInput ? `→${role}: ${summary}` : summary,
-          });
-          count++;
-        } else if (event === 'role.nudge.sent') {
-          // Capture gemba observations sent to jeff
-          const content = (entry.target || '').match(/content=(.+)/)?.[1] || '';
-          if (content.includes('[gemba]')) {
-            lines.push({
-              ts: entry.timestamp || '',
-              role,
-              type: 'gemba',
-              text: content.substring(0, 200),
-            });
-            count++;
-          }
-        }
+        const line = parseLogEntry(JSON.parse(logLines[i]));
+        if (line) { out.push(line); count++; }
       } catch { /* ignored */ }
     }
   } catch { /* ignored */ }
+  return out;
+}
 
-  // Also include observations for richer tool data
+function readRoleObservations(fs: any): StreamLine[] {
+  const out: StreamLine[] = [];
   for (const role of ['wren', 'silas', 'kade']) {
     const obsFile = `/tmp/claude-team-scan/${role}-observations.jsonl`;
     try {
-      const content = fs.readFileSync(obsFile, 'utf-8');
-      const obsLines = content.trim().split('\n').filter(Boolean);
+      const obsLines = fs.readFileSync(obsFile, 'utf-8').trim().split('\n').filter(Boolean);
       const seen = new Set<string>();
       for (const line of obsLines.slice(-30)) {
         try {
@@ -485,151 +465,159 @@ app.get('/api/stream', (req, res) => {
           if (seen.has(key)) continue;
           seen.add(key);
           const digest = obs.digest || '';
-          // Filter nudge traffic and system plumbing from stream
-          if (digest.includes('nudge') || digest.includes('nudge ') || digest.includes('chorus-log') ||
-              digest.includes('role-state') || digest.includes('cards') || digest.includes('smoke-check')) continue;
-          lines.push({
-            ts: obs.ts,
-            role: obs.role,
-            type: 'obs',
-            text: digest,
-            card: obs.card || null,
-          });
+          if (OBS_SKIP_TOKENS.some((t) => digest.includes(t))) continue;
+          out.push({ ts: obs.ts, role: obs.role, type: 'obs', text: digest, card: obs.card || null });
         } catch { /* ignored */ }
       }
     } catch { /* ignored */ }
   }
+  return out;
+}
 
-  // Sort by timestamp, newest last
-  lines.sort((a: any, b: any) => (a.ts || '').localeCompare(b.ts || ''));
-
-  // Deduplicate: same role + similar text within 2 seconds (#1706)
-  const deduped: typeof lines = [];
+function dedupeLines(lines: StreamLine[]): StreamLine[] {
+  const out: StreamLine[] = [];
   for (const line of lines) {
-    const dominated = deduped.some(prev => {
+    const dominated = out.some((prev) => {
       if (prev.role !== line.role) return false;
-      // Same text = exact dup
       if (prev.text === line.text) return true;
-      // One contains the other (observation vs turn)
       const shorter = prev.text.length < line.text.length ? prev.text : line.text;
       const longer = prev.text.length >= line.text.length ? prev.text : line.text;
-      if (shorter.length > 10 && longer.includes(shorter)) return true;
-      return false;
+      return shorter.length > 10 && longer.includes(shorter);
     });
-    if (!dominated) deduped.push(line);
+    if (!dominated) out.push(line);
   }
+  return out;
+}
 
-  // Format for display
-  const formatted = deduped.slice(-limit).map((l: any) => {
+app.get('/api/stream', (req, res) => {
+  const fs = require('fs');
+  const limit = parseInt(req.query.lines as string) || 60;
+  const lines = [
+    ...readSpineLines(fs, `${CHORUS_ROOT}/platform/logs/chorus.log`, limit),
+    ...readRoleObservations(fs),
+  ];
+  lines.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+
+  const formatted = dedupeLines(lines).slice(-limit).map((l) => {
     const ts = new Date(l.ts).toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York'
+      hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
     });
     const card = l.card ? ` #${l.card}` : '';
     return { ts, role: l.role, text: l.text + card, type: l.type };
   });
-
   res.json(formatted);
 });
 
-// API: board flow state — grouped by domain, matching /flow page sort
-// eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+const CHORUS_DOMAINS = new Set(['chorus', 'roles', 'borg']);
+const FLOW_ENV_OPTS = {
+  encoding: 'utf-8' as const, timeout: 15000,
+  env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' },
+};
+
+function extractSequenceTag(tags: string): string {
+  const seqMatch = tags.match(/sequence:(\w+)/);
+  if (seqMatch) return seqMatch[1];
+  const parts = tags.split('|').map((s) => s.trim());
+  const bareTag = parts.find((p) => p && !/^(Wren|Silas|Kade|Jeff|P[123]$)/.test(p) && !p.includes(':'));
+  return bareTag || '';
+}
+
+function parseCardRow(line: string, currentStatus: string): any | null {
+  const match = line.trim().match(/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/);
+  if (!match) return null;
+  const tags = match[3];
+  const domains = (tags.match(/domain:(\w+)/g) || []).map((d) => d.replace('domain:', ''));
+  return {
+    id: match[1],
+    title: match[2].trim(),
+    status: currentStatus,
+    owner: tags.match(/^(Wren|Silas|Kade)/i)?.[1].toLowerCase() || '',
+    domains: domains.length > 0 ? domains : ['uncategorized'],
+    type: tags.match(/type:(\w+)/)?.[1] || '',
+    priority: parseInt(tags.match(/P([123])/)?.[1] || '9'),
+    sequence: extractSequenceTag(tags),
+  };
+}
+
+function parseCardList(output: string): any[] {
+  const cards: any[] = [];
+  let currentStatus = '';
+  for (const line of output.split('\n')) {
+    const statusMatch = line.match(/^(WIP|SWAT|Blocked|Harvesting|Next|Later|Done|Won't Do)\s*\(\d+\)/);
+    if (statusMatch) { currentStatus = statusMatch[1]; continue; }
+    if (currentStatus === 'Done' || currentStatus === "Won't Do") continue;
+    const card = parseCardRow(line, currentStatus);
+    if (card) cards.push(card);
+  }
+  return cards;
+}
+
+function loadActiveWorkflowCounts(fs: any, wfDir: string): Record<string, number> {
+  const counts: Record<string, number> = {};
+  try {
+    const files = fs.readdirSync(wfDir).filter((f: string) => f.endsWith('.json'));
+    for (const f of files) {
+      try {
+        const wf = JSON.parse(fs.readFileSync(`${wfDir}/${f}`, 'utf-8'));
+        if (['completed', 'archived', 'cancelled'].includes(wf.status)) continue;
+        if (wf.card) counts[String(wf.card)] = (counts[String(wf.card)] || 0) + 1;
+      } catch { /* ignored */ }
+    }
+  } catch { /* ignored */ }
+  return counts;
+}
+
+function groupByProduct(cards: any[]): Record<string, any> {
+  const byDomain: Record<string, any> = {};
+  for (const card of cards) {
+    for (const domain of card.domains) {
+      const topLevel = CHORUS_DOMAINS.has(domain) ? 'chorus' : 'gathering';
+      if (!byDomain[topLevel]) {
+        byDomain[topLevel] = { cards: [], counts: { wip: 0, next: 0, blocked: 0, activeCards: 0, activeWorkflows: 0, activeTotal: 0 } };
+      }
+      byDomain[topLevel].cards.push({ ...card, subDomain: CHORUS_DOMAINS.has(domain) ? undefined : domain });
+    }
+  }
+  return byDomain;
+}
+
+function computeDomainCounts(byDomain: Record<string, any>, wfByCard: Record<string, number>): void {
+  for (const data of Object.values(byDomain) as any[]) {
+    const c = data.cards;
+    data.counts.wip = c.filter((x: any) => x.status === 'WIP').length;
+    data.counts.next = c.filter((x: any) => x.status === 'Next' || x.status === 'Later').length;
+    data.counts.blocked = c.filter((x: any) => x.status === 'Blocked').length;
+    data.counts.activeCards = c.filter((x: any) => x.status !== "Won't Do").length;
+    let wfCount = 0;
+    for (const card of c) wfCount += wfByCard[card.id] || 0;
+    data.counts.activeWorkflows = wfCount;
+    data.counts.activeTotal = data.counts.activeCards + wfCount;
+  }
+}
+
+function computeFixFeatureRatio(cards: any[]): { typeCounts: Record<string, number>; fixFeatureRatio: string } {
+  const typeCounts: Record<string, number> = {};
+  for (const card of cards) {
+    const t = card.type || 'untyped';
+    typeCounts[t] = (typeCounts[t] || 0) + 1;
+  }
+  const fixes = typeCounts['fix'] || 0;
+  const features = (typeCounts['new'] || 0) + (typeCounts['enhance'] || 0);
+  const ratio = features > 0 ? (fixes / features).toFixed(2) : fixes > 0 ? 'all-fix' : 'n/a';
+  return { typeCounts, fixFeatureRatio: ratio };
+}
+
 app.get('/api/flow', (_req, res) => {
   const { execSync } = require('child_process');
   const fs = require('fs');
-  const envOpts = {
-    encoding: 'utf-8' as const, timeout: 15000,
-    env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
-  };
   try {
     const boardTs = `${CHORUS_ROOT}/platform/scripts/cards`;
-    const output = execSync(`bash ${boardTs} list 2>/dev/null`, envOpts).trim();
-
-    // Parse all active cards
-    const cards: any[] = [];
-    let currentStatus = '';
-    for (const line of output.split('\n')) {
-      const statusMatch = line.match(/^(WIP|SWAT|Blocked|Harvesting|Next|Later|Done|Won't Do)\s*\(\d+\)/);
-      if (statusMatch) { currentStatus = statusMatch[1]; continue; }
-      if (currentStatus === 'Done' || currentStatus === "Won't Do") continue;
-      const cardMatch = line.trim().match(/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/);
-      if (cardMatch) {
-        const tags = cardMatch[3];
-        const ownerMatch = tags.match(/^(Wren|Silas|Kade)/i);
-        const domains = (tags.match(/domain:(\w+)/g) || []).map((d: string) => d.replace('domain:', ''));
-        const typeMatch = tags.match(/type:(\w+)/);
-        const priorityMatch = tags.match(/P([123])/);
-        const sequenceMatch = tags.match(/sequence:(\w+)/);
-        // Bare tags (not prefixed with chunk:/domain:/type:/sequence:/P[123]/role) are sequence labels
-        let sequence = sequenceMatch ? sequenceMatch[1] : '';
-        if (!sequence) {
-          const parts = tags.split('|').map((s: string) => s.trim());
-          const bareTag = parts.find((p: string) => p && !/^(Wren|Silas|Kade|Jeff|P[123]$)/.test(p) && !p.includes(':'));
-          if (bareTag) sequence = bareTag;
-        }
-        cards.push({
-          id: cardMatch[1],
-          title: cardMatch[2].trim(),
-          status: currentStatus,
-          owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
-          domains: domains.length > 0 ? domains : ['uncategorized'],
-          type: typeMatch ? typeMatch[1] : '',
-          priority: priorityMatch ? parseInt(priorityMatch[1]) : 9,
-          sequence,
-        });
-      }
-    }
-
-    // Count active workflows per card
-    const wfDir = `${CHORUS_ROOT}/platform/workflows/archive`;
-    const wfByCard: Record<string, number> = {};
-    try {
-      const files = fs.readdirSync(wfDir).filter((f: string) => f.endsWith('.json'));
-      for (const f of files) {
-        try {
-          const wf = JSON.parse(fs.readFileSync(`${wfDir}/${f}`, 'utf-8'));
-          if (wf.status === 'completed' || wf.status === 'archived' || wf.status === 'cancelled') continue;
-          if (wf.card) wfByCard[String(wf.card)] = (wfByCard[String(wf.card)] || 0) + 1;
-        } catch { /* ignored */ }
-      }
-    } catch { /* ignored */ }
-
-    // Group by top-level product (chorus or gathering), sub-domain preserved on card
-    const CHORUS_DOMAINS = new Set(['chorus', 'roles', 'borg']);
-    const byDomain: Record<string, any> = {};
-    for (const card of cards) {
-      for (const domain of card.domains) {
-        const topLevel = CHORUS_DOMAINS.has(domain) ? 'chorus' : 'gathering';
-        if (!byDomain[topLevel]) byDomain[topLevel] = { cards: [], counts: { wip: 0, next: 0, blocked: 0, activeCards: 0, activeWorkflows: 0, activeTotal: 0 } };
-        // Attach sub-domain so UI can nest further if needed
-        const enriched = { ...card, subDomain: CHORUS_DOMAINS.has(domain) ? undefined : domain };
-        byDomain[topLevel].cards.push(enriched);
-      }
-    }
-
-    // Compute counts
-    for (const [, data] of Object.entries(byDomain) as any[]) {
-      const c = data.cards;
-      data.counts.wip = c.filter((x: any) => x.status === 'WIP').length;
-      data.counts.next = c.filter((x: any) => x.status === 'Next' || x.status === 'Later').length;
-      data.counts.blocked = c.filter((x: any) => x.status === 'Blocked').length;
-      data.counts.activeCards = c.filter((x: any) => x.status !== "Won't Do").length;
-      // Sum workflows for cards in this domain
-      let wfCount = 0;
-      for (const card of c) { wfCount += wfByCard[card.id] || 0; }
-      data.counts.activeWorkflows = wfCount;
-      data.counts.activeTotal = data.counts.activeCards + wfCount;
-    }
-
-    // Fix:feature ratio (#1909 AC6)
-    const typeCounts: Record<string, number> = {};
-    for (const card of cards) {
-      const t = (card as any).type || 'untyped';
-      typeCounts[t] = (typeCounts[t] || 0) + 1;
-    }
-    const fixes = typeCounts['fix'] || 0;
-    const features = (typeCounts['new'] || 0) + (typeCounts['enhance'] || 0);
-    const fixFeatureRatio = features > 0 ? (fixes / features).toFixed(2) : fixes > 0 ? 'all-fix' : 'n/a';
-
+    const output = execSync(`bash ${boardTs} list 2>/dev/null`, FLOW_ENV_OPTS).trim();
+    const cards = parseCardList(output);
+    const wfByCard = loadActiveWorkflowCounts(fs, `${CHORUS_ROOT}/platform/workflows/archive`);
+    const byDomain = groupByProduct(cards);
+    computeDomainCounts(byDomain, wfByCard);
+    const { typeCounts, fixFeatureRatio } = computeFixFeatureRatio(cards);
     res.json({ domains: byDomain, totalCards: cards.length, typeCounts, fixFeatureRatio });
   } catch {
     res.json({ domains: {}, totalCards: 0 });

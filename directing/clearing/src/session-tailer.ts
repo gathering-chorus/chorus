@@ -163,126 +163,84 @@ export class SessionTailer {
     }
   }
 
-  // eslint-disable-next-line complexity -- #2288 pre-existing threshold violation, tracked for refactor
+  private extractUserText(rawContent: unknown): string {
+    if (typeof rawContent === 'string') return rawContent.trim();
+    if (!Array.isArray(rawContent)) return '';
+    let slashCmd = '';
+    const humanParts: string[] = [];
+    for (const p of rawContent) {
+      if (p.type !== 'text' || !p.text) continue;
+      const t = p.text.trim();
+      const nameMatch = t.match(/<command-name>([^<]+)<\/command-name>/);
+      const argsMatch = t.match(/<command-args>([^<]*)<\/command-args>/);
+      if (nameMatch) { slashCmd = nameMatch[1].trim(); continue; }
+      if (argsMatch && slashCmd) { slashCmd += ' ' + argsMatch[1].trim(); continue; }
+      if (t.includes('<system-reminder>') || t.includes('<command-message>')) continue;
+      if (t.startsWith('Base directory for this skill') || t.startsWith('ARGUMENTS:') || t.startsWith('Stop hook')) continue;
+      humanParts.push(t);
+    }
+    return slashCmd || humanParts.join(' ').trim();
+  }
+
+  private handleUserMessage(entry: any, ts: string): void {
+    const rawContent = entry.message?.content;
+    if (!rawContent) return;
+    let text = this.extractUserText(rawContent);
+    if (!text) return;
+    text = text.replace(/\n/g, ' ');
+
+    const nudgeMatch = text.match(/^\[nudge from (wren|silas|kade)/i);
+    if (nudgeMatch) {
+      this.router.ingest({ from: nudgeMatch[1].toLowerCase(), text, ts, type: 'role-response' });
+    } else {
+      this.router.ingest({ from: 'jeff', text, ts, type: 'jeff-input' });
+    }
+  }
+
+  private extractAssistantText(contentArr: unknown): string {
+    if (typeof contentArr === 'string') return contentArr.trim();
+    if (!Array.isArray(contentArr)) return '';
+    const texts = contentArr
+      .filter((b: { type: string }) => b.type === 'text')
+      .map((b: { text: string }) => b.text || '');
+    return texts.join(' ').trim();
+  }
+
+  private isFilteredAssistantText(text: string): boolean {
+    if (text.match(/^DELIVERED to (wren|silas|kade)/i)) return true;
+    if (text.match(/^card\.\w+/)) return true;
+    if (text.match(/^(bash .*scripts\/|role-state |chorus-log )/)) return true;
+    if (text.includes('[bridge]')) return true;
+    if (text.includes('role.nudge.consumed')) return true;
+    return false;
+  }
+
+  private handleAssistantMessage(role: string, entry: any, ts: string): void {
+    const contentArr = entry.message?.content;
+    if (!contentArr) return;
+    let combined = this.extractAssistantText(contentArr);
+    if (!combined) return;
+    combined = combined.replace(/^---\s+\w+\s+\|[^]*?---\s*/g, '').trim();
+    if (!combined) return;
+    if (this.isFilteredAssistantText(combined)) return;
+
+    const existing = this.pendingAssistant.get(role);
+    if (existing) clearTimeout(existing.timer);
+    const debounceTimer = setTimeout(() => {
+      const pending = this.pendingAssistant.get(role);
+      if (pending) {
+        this.router.ingest({ from: role, text: pending.text, ts: pending.ts, type: 'pm-thinking' });
+        this.pendingAssistant.delete(role);
+      }
+    }, 3000);
+    this.pendingAssistant.set(role, { text: combined, ts, timer: debounceTimer });
+  }
+
   private processLine(role: string, line: string): void {
-    let entry;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      return;
-    }
-
-    const msgType = entry.type;
+    let entry: any;
+    try { entry = JSON.parse(line); } catch { return; }
     const ts = entry.timestamp || new Date().toISOString();
-
-    if (msgType === 'user') {
-      // Input from role terminals — classify as Jeff or role-to-role (#1706)
-      const rawContent = entry.message?.content;
-      if (!rawContent) return;
-
-      // #2049: Jeff's input goes through verbatim — no content filtering.
-      // Reconstruct slash commands from <command-name>/<command-args> tags.
-      // Strip system-reminder and skill expansion boilerplate, keep Jeff's words.
-      let text = '';
-      if (typeof rawContent === 'string') {
-        text = rawContent.trim();
-      } else if (Array.isArray(rawContent)) {
-        // Extract slash command if present
-        let slashCmd = '';
-        const humanParts: string[] = [];
-        for (const p of rawContent) {
-          if (p.type !== 'text' || !p.text) continue;
-          const t = p.text.trim();
-          // Reconstruct /command from tags
-          const nameMatch = t.match(/<command-name>([^<]+)<\/command-name>/);
-          const argsMatch = t.match(/<command-args>([^<]*)<\/command-args>/);
-          if (nameMatch) { slashCmd = nameMatch[1].trim(); continue; }
-          if (argsMatch && slashCmd) { slashCmd += ' ' + argsMatch[1].trim(); continue; }
-          // Skip system injections — not Jeff's words
-          if (t.includes('<system-reminder>')) continue;
-          if (t.includes('<command-message>')) continue;
-          if (t.startsWith('Base directory for this skill')) continue;
-          if (t.startsWith('ARGUMENTS:')) continue;
-          if (t.startsWith('Stop hook')) continue;
-          humanParts.push(t);
-        }
-        text = slashCmd || humanParts.join(' ').trim();
-      }
-
-      if (!text) return;
-      text = text.replace(/\n/g, ' ');
-
-      // #2048: Detect nudge messages — attribute to sending role, not Jeff.
-      // Nudges inject into terminals as user input but they're role-to-role.
-      const nudgeMatch = text.match(/^\[nudge from (wren|silas|kade)/i);
-      if (nudgeMatch) {
-        this.router.ingest({
-          from: nudgeMatch[1].toLowerCase(),
-          text,
-          ts,
-          type: 'role-response',
-        });
-      } else {
-        this.router.ingest({
-          from: 'jeff',
-          text,
-          ts,
-          type: 'jeff-input',
-        });
-      }
-    } else if (msgType === 'assistant') {
-      // Surface ALL roles' reasoning/thinking on Bridge (#1706, Jeff comment 3)
-      // Terminal output is ephemeral — Bridge is the persistent record.
-      const contentArr = entry.message?.content;
-      if (!contentArr) return;
-
-      let texts: string[] = [];
-      if (typeof contentArr === 'string') {
-        texts = [contentArr];
-      } else if (Array.isArray(contentArr)) {
-        texts = contentArr
-          .filter((b: { type: string }) => b.type === 'text')
-          .map((b: { text: string }) => b.text || '');
-      }
-
-      let combined = texts.join(' ').trim();
-      if (!combined) return;
-
-      // Strip chorus prompt prefix — multiple formats:
-      // "--- Silas | 2026-03-24 13:42 Boston | Werk v73 ---"
-      // "--- Silas | 2026-03-24 13:42 Boston | #1665 | Werk v73 ---"
-      combined = combined.replace(/^---\s+\w+\s+\|[^]*?---\s*/g, '').trim();
-      if (!combined) return;
-
-      // Filter machine protocol only — let human-readable role thinking through (#2035)
-      // The router's pm-thinking classification handles visibility at display time
-      // Keep filtering: raw spine events, state declarations, delivery confirmations, script calls
-      if (combined.match(/^DELIVERED to (wren|silas|kade)/i)) return;
-      if (combined.match(/^card\.\w+/)) return;
-      if (combined.match(/^(bash .*scripts\/|role-state |chorus-log )/)) return;
-      if (combined.includes('[bridge]')) return;
-      if (combined.includes('role.nudge.consumed')) return;
-
-      // Debounce: replace pending message, emit after 3s quiet (#1720)
-      // This ensures only the final response in a tool-call burst reaches Bridge
-      const existing = this.pendingAssistant.get(role);
-      if (existing) clearTimeout(existing.timer);
-
-      const debounceTimer = setTimeout(() => {
-        const pending = this.pendingAssistant.get(role);
-        if (pending) {
-          this.router.ingest({
-            from: role,
-            text: pending.text,
-            ts: pending.ts,
-            type: 'pm-thinking',
-          });
-          this.pendingAssistant.delete(role);
-        }
-      }, 3000);
-
-      this.pendingAssistant.set(role, { text: combined, ts, timer: debounceTimer });
-    }
-    // All other types (tool_use, tool_result, system, progress) — filtered out
+    if (entry.type === 'user') return this.handleUserMessage(entry, ts);
+    if (entry.type === 'assistant') return this.handleAssistantMessage(role, entry, ts);
   }
 }
