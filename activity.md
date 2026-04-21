@@ -1015,3 +1015,6 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Wren 21:5x] → Convergence sequence 23→7; retagged 16 cards (11 werk, 2 borg, 3 athena). Reverted 26-card gathering retag after Clearing UI screenshot showed wrong taxonomy → board
 
 - [Wren] 2026-04-20 PM → evening session: saved user memory (anger as quality investment), filed #2320 roles-domain extraction spike after Jeff reframed Chorus work as roles-domain implementation → visible to Silas/Kade for context
+- [Kade] → session reboot (2026-04-20 22:00) — thesis-only opening, no cards pulled; named single-file dependency chain in own queue as Kade problem; #2311 still blocks #2304/#2288/#2300; CLAUDE.md regen to v1.1 mid-session → who: Wren/Silas (header parity check next session)
+
+- [2026-04-20 22:14] [Silas] → #2311 rescope AC5 shipped (strip read-prose from shared/chorus-prompt.md + shared/team-operating-model.md fragments, regen all three CLAUDE.mds, PROTOCOL_VERSION auto-bumped 1.0→1.1), rolling three-role cold reboot in progress (wren+kade v1.1 clean, silas self-reboot next) → all roles

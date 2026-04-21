@@ -1,6 +1,6 @@
 ## Team Operating Model
 
-Full model: `../../../team-architecture.md`. Session lifecycle: **Synchronize** (automatic hook loads context to `/tmp/session-start-<role>.md`, read it + state files) → **Operate** (brief + signal + record) → **Close** (update activity.md, commit).
+Full model: `../../../team-architecture.md`. Session lifecycle: **Synchronize** (SessionStart hook injects context into your first turn; read state files as needed) → **Operate** (brief + signal + record) → **Close** (update activity.md, commit).
 
 **Close-out triggers** (don't wait for Jeff): "eod", "wrapping up", "done for today", past 5pm and winding down, or previous session missed close-out.
 

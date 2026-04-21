@@ -1,11 +1,11 @@
 {
   "wren": {
-    "input_hash": "bd616e5f5a46812b01e11f812d746c84ebbfac46f432ec7dc59e30485bdb7606",
+    "input_hash": "b80ec9dc4eb9e9b496908270d70b9882db5a4549f857422c1f1651cb354d64d2",
     "var_hash": "fa8be4e2820d85c43f130a5ddad27b4150c9b840f4fccfcf4a4c8b571fa86873",
     "config_hash": "dac2f3666b4cb0db82e5a64553d282675b4497b2efa3359884e2c9848615ba38",
     "fragments": {
       "roles/wren/title.md": "737ba9e22cf5bf016d6ce06dcd9dfe2bd34ca736d2785fcc5bf65ff9357e6df9",
-      "shared/chorus-prompt.md": "5088763c191f44438617bcd76a363347a75388ccfbec8ac4bf0a0e1ce15f814a",
+      "shared/chorus-prompt.md": "3d83b18531866720edc18f40ba7ae3ca89232d19109739194c7864b438668ed2",
       "roles/wren/principles.md": "683aef3456b8be6bd669358390dddcd8d1aa365e4696b275c697ad28cdc3d0a0",
       "roles/wren/how-you-operate.md": "fb9965451c5f6758da0aa10b97fbeceb386896afc0cf1bac6a59b95ce0f3668f",
       "roles/wren/portfolio.md": "691b305b0fa9f6f3382af6e2fb5a60c2142ba1faf9e19e93181a92d512921cb3",
@@ -17,7 +17,7 @@
       "shared/idle-awareness.md": "5ee05a1fe666a7f5b73e1dc7dab482ec85a392daa3b3aca6fed30e2d14aeafb1",
       "roles/wren/session-moderation.md": "635cb4a13a050de06e59743d771b3f2f943e811a96e0f04817ae956920d61e1a",
       "shared/team-kanban-board-core.md": "32632fe2ea42d8681ac0c37a68db2fc2dad8d1ef81ba37647a01b96a27ad08b0",
-      "shared/team-operating-model.md": "800d1c3368b8436209bd8eb01dcc9880058075fbe87562ed5a160395665c8f6e",
+      "shared/team-operating-model.md": "cb02787712676756abf52de51d91c37b6f044e5e5f4a39a57ca7b41d19a3ecb2",
       "shared/execution-modes.md": "2fab669b37f3bf192f033affcaf2ecfa7b97ff96a66f6d895a45187e74d46a41",
       "shared/intellectual-honesty.md": "1c00d2349a60e84ac3682580bf46e164da9ce23ce2553e934d8bd8d2d546b188",
       "shared/search-hierarchy.md": "64335346604fc4e1286cd8223676397cbb46b633f9865e79044b478366f72bd3",
@@ -29,16 +29,16 @@
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
       "roles/wren/state-files.md": "db298378771fcfa6f8a805d18c039d28256f6909b30b415247bb1d0b085d28d0"
     },
-    "generated_at": "2026-04-20 21:58",
+    "generated_at": "2026-04-20 22:09",
     "_build": "217"
   },
   "silas": {
-    "input_hash": "67e4537463dd564aa5df0df91ed2b0849c26fd2491da8e87ecf34997912f266b",
+    "input_hash": "975393e9c33a2ae67bde5f3b0b4ce7d86f0f59c63a11d298bf9fa30e52f9218b",
     "var_hash": "c39808cd9be74efa19467bee3b771a61328f816af567dae76bb34562ecc2109a",
     "config_hash": "f64bb6094135f5fac978249efd832dbe8f1954d8348d9f38655c81bd2cfdba0e",
     "fragments": {
       "roles/silas/title.md": "f642e4fa3e43c3ba28cc8c8528147eddbcbd4da0b0cd55d0b75076033370d592",
-      "shared/chorus-prompt.md": "5088763c191f44438617bcd76a363347a75388ccfbec8ac4bf0a0e1ce15f814a",
+      "shared/chorus-prompt.md": "3d83b18531866720edc18f40ba7ae3ca89232d19109739194c7864b438668ed2",
       "roles/silas/principles.md": "8a31fec99a90a89d37d9e729e20e9cab70bb2be2c0dd4108d8826ce4e25c5414",
       "roles/silas/how-you-operate.md": "39dd210b681dd9ea77fa781fa6fed805c54cd9a985a3405e721905fc56470663",
       "roles/silas/portfolio.md": "a58dd1387e0b2edcc8b3d7862e9f2f0893ad086724e1ba0c42301d8abb60cfdc",
@@ -50,7 +50,7 @@
       "shared/communication-discipline.md": "e299ead656ea34ae4974454374896e3ea6c3ebaf4275eadb4f6aa4d6f4554223",
       "shared/idle-awareness.md": "5ee05a1fe666a7f5b73e1dc7dab482ec85a392daa3b3aca6fed30e2d14aeafb1",
       "shared/team-kanban-board-core.md": "32632fe2ea42d8681ac0c37a68db2fc2dad8d1ef81ba37647a01b96a27ad08b0",
-      "shared/team-operating-model.md": "800d1c3368b8436209bd8eb01dcc9880058075fbe87562ed5a160395665c8f6e",
+      "shared/team-operating-model.md": "cb02787712676756abf52de51d91c37b6f044e5e5f4a39a57ca7b41d19a3ecb2",
       "shared/execution-modes.md": "2fab669b37f3bf192f033affcaf2ecfa7b97ff96a66f6d895a45187e74d46a41",
       "shared/intellectual-honesty.md": "1c00d2349a60e84ac3682580bf46e164da9ce23ce2553e934d8bd8d2d546b188",
       "shared/search-hierarchy.md": "64335346604fc4e1286cd8223676397cbb46b633f9865e79044b478366f72bd3",
@@ -62,16 +62,16 @@
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
       "roles/silas/state-files.md": "3013233db35095d2270d6592f34c149401f4fe1b115a365b98042539575f092f"
     },
-    "generated_at": "2026-04-20 21:58",
+    "generated_at": "2026-04-20 22:09",
     "_build": "217"
   },
   "kade": {
-    "input_hash": "35d46c06e22bfc57c1f0686d4c2354125d09defc2eaf9acaa3795247e151069f",
+    "input_hash": "3bd2cdeaef57480ff7c2deac489b9ad986b3e7f8be439300998a830b7d35c155",
     "var_hash": "d9407bddc1af5c38e5924ad184ba7a8322a5e2d952c3be5cfb72f756d0dc61ec",
     "config_hash": "5ae8188978842262dcab33c4d1d2608ee8c04f0166a7b26f0cead669e6930261",
     "fragments": {
       "roles/kade/title.md": "f0a9d01c90c15a34d2b4bed06df0dd7060a35efaaef41d2f6dc262da3f30de73",
-      "shared/chorus-prompt.md": "5088763c191f44438617bcd76a363347a75388ccfbec8ac4bf0a0e1ce15f814a",
+      "shared/chorus-prompt.md": "3d83b18531866720edc18f40ba7ae3ca89232d19109739194c7864b438668ed2",
       "roles/kade/principles.md": "8dc097ccaca0440d42319892936456db6ddf198b4d3d8da8fadd99335c0ee9a7",
       "roles/kade/how-you-operate.md": "d1e8a9e52c2455badad1dc6b1e6340d400f4e8fb74e88a3e6661f20ceb17394c",
       "roles/kade/portfolio.md": "e22148cb23f2a51db0c4657c35d084e6f569daeeb53e039685e81b216119db45",
@@ -82,7 +82,7 @@
       "shared/communication-discipline.md": "e299ead656ea34ae4974454374896e3ea6c3ebaf4275eadb4f6aa4d6f4554223",
       "shared/idle-awareness.md": "5ee05a1fe666a7f5b73e1dc7dab482ec85a392daa3b3aca6fed30e2d14aeafb1",
       "shared/team-kanban-board-core.md": "32632fe2ea42d8681ac0c37a68db2fc2dad8d1ef81ba37647a01b96a27ad08b0",
-      "shared/team-operating-model.md": "800d1c3368b8436209bd8eb01dcc9880058075fbe87562ed5a160395665c8f6e",
+      "shared/team-operating-model.md": "cb02787712676756abf52de51d91c37b6f044e5e5f4a39a57ca7b41d19a3ecb2",
       "shared/execution-modes.md": "2fab669b37f3bf192f033affcaf2ecfa7b97ff96a66f6d895a45187e74d46a41",
       "shared/intellectual-honesty.md": "1c00d2349a60e84ac3682580bf46e164da9ce23ce2553e934d8bd8d2d546b188",
       "shared/search-hierarchy.md": "64335346604fc4e1286cd8223676397cbb46b633f9865e79044b478366f72bd3",
@@ -94,9 +94,9 @@
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
       "roles/kade/state-files.md": "a2c3cb49faa0b00736be5100f09b1ac2d08f441afd7a972e3d2266b3d782731c"
     },
-    "generated_at": "2026-04-20 21:58",
+    "generated_at": "2026-04-20 22:09",
     "_build": "217"
   },
-  "_protocol_core_hash": "51b0ba292950d07a6920d7dcf04ad606f6d07997806df852e81951b18474d5c3",
-  "_protocol_version": "1.0"
+  "_protocol_core_hash": "9fbe2240de79a03e9facea01ca61522e255e651888e9a29749e543797bef18a2",
+  "_protocol_version": "1.1"
 }
