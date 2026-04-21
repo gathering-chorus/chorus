@@ -881,31 +881,39 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
   notifyOwnerIfDifferent(index, title, owner, 'done', role);
   notifyPM(index, title, owner, role);
 
-  // Auto-unblock: check if this card gates others (#1636)
+  await tryAutoUnblockDownstream(client, index, role);
+}
+
+async function allBlockersDone(client: BoardClient, blockerIds: number[]): Promise<boolean> {
+  for (const blockerId of blockerIds) {
+    try {
+      const blocker = await client.view(blockerId);
+      if (blocker.status !== 'Done') return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function maybeUnblockGated(client: BoardClient, gatedId: number, completedIndex: number, role: string): Promise<void> {
+  const gatedRels = await client.getRelations(gatedId);
+  if (!(await allBlockersDone(client, gatedRels.blockedBy))) return;
+  const gatedCard = await client.view(gatedId);
+  if (gatedCard.status !== 'Later') return;
+  await client.move(gatedId, 'Next');
+  console.log(`  Unblocked #${gatedId} — moved Later → Next`);
+  emitSpineEvent('card.unblocked', role, {
+    card_id: String(gatedId), title: gatedCard.title, unblocked_by: String(completedIndex),
+  });
+}
+
+async function tryAutoUnblockDownstream(client: BoardClient, index: number, role: string): Promise<void> {
   try {
     const rels = await client.getRelations(index);
-    if (rels.blocks.length > 0) {
-      for (const gatedId of rels.blocks) {
-        const gatedRels = await client.getRelations(gatedId);
-        // Check if ALL blockers of the gated card are now Done
-        let allDone = true;
-        for (const blockerId of gatedRels.blockedBy) {
-          try {
-            const blockerCard = await client.view(blockerId);
-            if (blockerCard.status !== 'Done') { allDone = false; break; }
-          } catch { allDone = false; break; }
-        }
-        if (allDone) {
-          const gatedCard = await client.view(gatedId);
-          if (gatedCard.status === 'Later') {
-            await client.move(gatedId, 'Next');
-            console.log(`  Unblocked #${gatedId} — moved Later → Next`);
-            emitSpineEvent('card.unblocked', role, {
-              card_id: String(gatedId), title: gatedCard.title, unblocked_by: String(index),
-            });
-          }
-        }
-      }
+    if (rels.blocks.length === 0) return;
+    for (const gatedId of rels.blocks) {
+      await maybeUnblockGated(client, gatedId, index, role);
     }
   } catch { /* best effort — sequencing is additive, not blocking */ }
 }

@@ -17,6 +17,19 @@ export interface PatternsSummaryResponse {
   days: number;
 }
 
+function recordPatternLine(line: string, patterns: Record<string, number>, byDate: Record<string, Record<string, number>>): void {
+  try {
+    const obj = JSON.parse(line);
+    const pattern = obj.pattern || 'unknown';
+    const date = (obj.timestamp || '').slice(0, 10);
+    patterns[pattern] = (patterns[pattern] || 0) + 1;
+    if (date) {
+      if (!byDate[date]) byDate[date] = {};
+      byDate[date][pattern] = (byDate[date][pattern] || 0) + 1;
+    }
+  } catch { /* skip malformed */ }
+}
+
 export async function getPatternsSummary(days: number): Promise<PatternsSummaryResponse> {
   const start = Math.floor(Date.now() / 1000 - days * 86400);
   const end = Math.floor(Date.now() / 1000);
@@ -42,16 +55,7 @@ export async function getPatternsSummary(days: number): Promise<PatternsSummaryR
     };
     for (const stream of data.data?.result || []) {
       for (const [, line] of stream.values || []) {
-        try {
-          const obj = JSON.parse(line);
-          const pattern = obj.pattern || 'unknown';
-          const date = (obj.timestamp || '').slice(0, 10);
-          patterns[pattern] = (patterns[pattern] || 0) + 1;
-          if (date) {
-            if (!byDate[date]) byDate[date] = {};
-            byDate[date][pattern] = (byDate[date][pattern] || 0) + 1;
-          }
-        } catch { /* skip malformed */ }
+        recordPatternLine(line, patterns, byDate);
       }
     }
   } catch { /* loki unreachable — return empty */ }

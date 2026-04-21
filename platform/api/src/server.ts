@@ -1636,193 +1636,148 @@ app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) 
   res.status(r.status).json(r.body);
 });
 
-// POST /api/athena/discover-endpoints — auto-discover API endpoints per domain (#2066)
+type EndpointEntry = { method: string; path: string; handler: string; domainId: string };
+
+const DISCOVER_ENDPOINTS_HANDLER_OVERRIDES: Record<string, string> = {
+  bookHandler: 'books-domain', bookUploadHandler: 'books-domain',
+  seedHandler: 'seeds-domain', socialpostHandler: 'social-domain',
+  personHandler: 'people-domain', collectionHandler: 'blog-domain',
+  glimmerHandler: 'glimmers-domain', ideaProjectHandler: 'ideas-domain',
+  codebaseGraphHandler: 'chorus-domain', dashboardHandler: 'chorus-domain',
+  flowHandler: 'chorus-domain', werkHandler: 'chorus-domain',
+  ontologyViewHandler: 'convergence-domain', galleryHandler: 'gallery-domain',
+  gardenHandler: 'property-domain', icdHandler: 'convergence-domain',
+  docCatalogHandler: 'documents-domain', docsHandler: 'documents-domain',
+  documentHandler: 'documents-domain', accessDashboardHandler: 'chorus-domain',
+  aclHandler: 'chorus-domain', sessionReplayHandler: 'chorus-domain',
+  staticPageHandler: 'chorus-domain', linkInferenceHandler: 'knowledge-domain',
+  knowledgeGraphHandler: 'knowledge-domain', selfDomainHandler: 'self-domain',
+  selfAiHandler: 'sexuality-domain', sexualityHandler: 'sexuality-domain',
+  cookingHandler: 'cooking-domain', fitnessFunctionsHandler: 'chorus-domain',
+  intentionHandler: 'ideas-domain', notesHandler: 'notes-domain',
+  noteHandler: 'notes-domain', readingHandler: 'reading-domain',
+  storiesHandler: 'stories-domain', storyHandler: 'stories-domain',
+  watchingHandler: 'watching-domain', todoHandler: 'ideas-domain',
+  groupHandler: 'people-domain', qualityHandler: 'chorus-domain',
+  rolesHandler: 'roles-domain', skillsHandler: 'skills-service',
+  teamHandler: 'chorus-domain', briefsHandler: 'chorus-domain',
+  cardsHandler: 'cards-service', costHandler: 'chorus-domain',
+  hooksHandler: 'chorus-domain', decisionsHandler: 'chorus-domain',
+  gardeningHandler: 'property-domain', webhookHandler: 'seeds-domain',
+  userHandler: 'chorus-domain', aboutHandler: 'chorus-domain',
+  aboutProfileHandler: 'chorus-domain', homeHandler: 'chorus-domain',
+  loginHandler: 'chorus-domain', callbackHandler: 'chorus-domain',
+  profileHandler: 'chorus-domain', logoutHandler: 'chorus-domain',
+};
+
+const DISCOVER_ENDPOINTS_ROUTE_PREFIXES: Record<string, string> = {
+  '/api/books': 'books-domain', '/books': 'books-domain',
+  '/api/music': 'music-domain', '/music': 'music-domain',
+  '/api/photos': 'photos-domain', '/photos': 'photos-domain',
+  '/api/property': 'property-domain', '/property': 'property-domain',
+  '/api/seed': 'seeds-domain',
+  '/api/glimmers': 'glimmers-domain',
+  '/api/ideas': 'ideas-domain',
+  '/api/collections': 'blog-domain', '/blog': 'blog-domain',
+  '/api/search': 'search-domain', '/search': 'search-domain',
+  '/api/gallery': 'gallery-domain', '/gallery': 'gallery-domain',
+  '/api/documents': 'documents-domain', '/documents': 'documents-domain',
+  '/api/codebase': 'chorus-domain',
+  '/api/dashboard': 'chorus-domain', '/dashboard': 'chorus-domain',
+  '/api/admin': 'chorus-domain',
+  '/api/icd': 'convergence-domain',
+  '/api/chorus': 'chorus-domain',
+  '/api/athena': 'chorus-domain',
+  '/cooking': 'cooking-domain', '/notes': 'notes-domain',
+  '/reading': 'reading-domain', '/stories': 'stories-domain',
+  '/watching': 'watching-domain', '/todo': 'ideas-domain',
+  '/gardening': 'property-domain', '/people': 'people-domain',
+  '/socialposts': 'social-domain', '/self': 'self-domain',
+  '/sexuality': 'sexuality-domain', '/api/sessions': 'chorus-domain',
+  '/api/roles': 'roles-domain',
+};
+
+async function buildHandlerToDomain(): Promise<Record<string, string>> {
+  const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
+  const sdResult = await athenaSparqlQuery(sdQuery);
+  const domains = sdResult.results.bindings.map((b: any) => ({ id: b.sd.value.split('#').pop() as string }));
+  const map: Record<string, string> = {};
+  for (const d of domains) {
+    const base = d.id.replace(/-(domain|service)$/, '');
+    map[base + 'Handler'] = d.id;
+    if (base.endsWith('s') && !base.endsWith('ss')) {
+      const singular = base.endsWith('ies') ? base.replace(/ies$/, 'y') : base.replace(/s$/, '');
+      map[singular + 'Handler'] = d.id;
+    }
+  }
+  return { ...map, ...DISCOVER_ENDPOINTS_HANDLER_OVERRIDES };
+}
+
+function resolveEndpointDomain(handlerName: string | null, routePath: string, handlerToDomain: Record<string, string>): string | null {
+  if (handlerName && handlerToDomain[handlerName]) return handlerToDomain[handlerName];
+  for (const [prefix, did] of Object.entries(DISCOVER_ENDPOINTS_ROUTE_PREFIXES)) {
+    if (routePath.startsWith(prefix)) return did;
+  }
+  return null;
+}
+
+function parseAppRoutes(appContent: string, handlerToDomain: Record<string, string>): EndpointEntry[] {
+  const entries: EndpointEntry[] = [];
+  const routeRegex = /app\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
+  let match;
+  while ((match = routeRegex.exec(appContent)) !== null) {
+    const method = match[1].toUpperCase();
+    const routePath = match[2];
+    const lineEnd = appContent.indexOf('\n', match.index);
+    const lineContent = appContent.substring(match.index, lineEnd > 0 ? lineEnd : match.index + 200);
+    const handlerMatch = lineContent.match(/(\w+Handler)\.\w+/);
+    const handlerName = handlerMatch ? handlerMatch[1] : null;
+    const domainId = resolveEndpointDomain(handlerName, routePath, handlerToDomain);
+    if (!domainId) continue;
+    entries.push({
+      method,
+      path: routePath,
+      handler: handlerName ? `gathering/src/handlers/${handlerName.replace(/Handler$/, '')}.handler.ts` : 'gathering/src/app.ts',
+      domainId,
+    });
+  }
+  return entries;
+}
+
+async function writeEndpointsInBatches(entries: EndpointEntry[]): Promise<number> {
+  const batchSize = 50;
+  let written = 0;
+  for (let i = 0; i < entries.length; i += batchSize) {
+    const batch = entries.slice(i, i + batchSize);
+    const triples = batch.map((e) => {
+      const epId = `endpoint-${e.method.toLowerCase()}-${e.path.replace(/[/.:]/g, '-').toLowerCase()}`;
+      const epUri = `https://jeffbridwell.com/chorus#${epId}`;
+      const sdUri = `https://jeffbridwell.com/chorus#${e.domainId}`;
+      return `<${epUri}> a chorus:Endpoint ; rdfs:label "${e.method} ${e.path.replace(/"/g, '\\"')}" ; chorus:httpMethod "${e.method}" ; chorus:routePath "${e.path.replace(/"/g, '\\"')}" ; chorus:filePath "${e.handler.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasEndpoint <${epUri}> .`;
+    }).join('\n');
+    const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} } }`;
+    await athenaSparqlUpdate(insert);
+    written += batch.length;
+  }
+  return written;
+}
+
 app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
-    // 1. Domain alias map (same as discover-code/discover-pages)
-    const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
-    const sdResult = await athenaSparqlQuery(sdQuery);
-    const domains = sdResult.results.bindings.map((b: any) => ({
-      id: b.sd.value.split('#').pop() as string,
-      label: (b.label.value as string).toLowerCase(),
-    }));
-
-    // Handler variable name → domain mapping
-    const handlerToDomain: Record<string, string> = {};
-    for (const d of domains) {
-      const base = d.id.replace(/-(domain|service)$/, '');
-      handlerToDomain[base + 'Handler'] = d.id;
-      // Singular forms
-      if (base.endsWith('s') && !base.endsWith('ss')) {
-        const singular = base.endsWith('ies') ? base.replace(/ies$/, 'y') : base.replace(/s$/, '');
-        handlerToDomain[singular + 'Handler'] = d.id;
-      }
-    }
-    // Explicit overrides for non-obvious handler names
-    handlerToDomain['bookHandler'] = 'books-domain';
-    handlerToDomain['bookUploadHandler'] = 'books-domain';
-    handlerToDomain['seedHandler'] = 'seeds-domain';
-    handlerToDomain['socialpostHandler'] = 'social-domain';
-    handlerToDomain['personHandler'] = 'people-domain';
-    handlerToDomain['collectionHandler'] = 'blog-domain';
-    handlerToDomain['glimmerHandler'] = 'glimmers-domain';
-    handlerToDomain['ideaProjectHandler'] = 'ideas-domain';
-    handlerToDomain['codebaseGraphHandler'] = 'chorus-domain';
-    handlerToDomain['dashboardHandler'] = 'chorus-domain';
-    handlerToDomain['flowHandler'] = 'chorus-domain';
-    handlerToDomain['werkHandler'] = 'chorus-domain';
-    handlerToDomain['ontologyViewHandler'] = 'convergence-domain';
-    handlerToDomain['galleryHandler'] = 'gallery-domain';
-    handlerToDomain['gardenHandler'] = 'property-domain';
-    handlerToDomain['icdHandler'] = 'convergence-domain';
-    handlerToDomain['docCatalogHandler'] = 'documents-domain';
-    handlerToDomain['docsHandler'] = 'documents-domain';
-    handlerToDomain['documentHandler'] = 'documents-domain';
-    handlerToDomain['accessDashboardHandler'] = 'chorus-domain';
-    handlerToDomain['aclHandler'] = 'chorus-domain';
-    handlerToDomain['sessionReplayHandler'] = 'chorus-domain';
-    handlerToDomain['staticPageHandler'] = 'chorus-domain';
-    handlerToDomain['linkInferenceHandler'] = 'knowledge-domain';
-    handlerToDomain['knowledgeGraphHandler'] = 'knowledge-domain';
-    handlerToDomain['selfDomainHandler'] = 'self-domain';
-    handlerToDomain['selfAiHandler'] = 'sexuality-domain';
-    handlerToDomain['sexualityHandler'] = 'sexuality-domain';
-    // Silas review — missing handlers added
-    handlerToDomain['cookingHandler'] = 'cooking-domain';
-    handlerToDomain['fitnessFunctionsHandler'] = 'chorus-domain';
-    handlerToDomain['intentionHandler'] = 'ideas-domain';
-    handlerToDomain['notesHandler'] = 'notes-domain';
-    handlerToDomain['noteHandler'] = 'notes-domain';
-    handlerToDomain['readingHandler'] = 'reading-domain';
-    handlerToDomain['storiesHandler'] = 'stories-domain';
-    handlerToDomain['storyHandler'] = 'stories-domain';
-    handlerToDomain['watchingHandler'] = 'watching-domain';
-    handlerToDomain['todoHandler'] = 'ideas-domain';
-    handlerToDomain['groupHandler'] = 'people-domain';
-    handlerToDomain['qualityHandler'] = 'chorus-domain';
-    handlerToDomain['rolesHandler'] = 'roles-domain';
-    handlerToDomain['skillsHandler'] = 'skills-service';
-    handlerToDomain['teamHandler'] = 'chorus-domain';
-    handlerToDomain['briefsHandler'] = 'chorus-domain';
-    handlerToDomain['cardsHandler'] = 'cards-service';
-    handlerToDomain['costHandler'] = 'chorus-domain';
-    handlerToDomain['hooksHandler'] = 'chorus-domain';
-    handlerToDomain['decisionsHandler'] = 'chorus-domain';
-    handlerToDomain['gardeningHandler'] = 'property-domain';
-    handlerToDomain['webhookHandler'] = 'seeds-domain';
-    handlerToDomain['userHandler'] = 'chorus-domain';
-    handlerToDomain['aboutHandler'] = 'chorus-domain';
-    handlerToDomain['aboutProfileHandler'] = 'chorus-domain';
-    handlerToDomain['homeHandler'] = 'chorus-domain';
-    handlerToDomain['loginHandler'] = 'chorus-domain';
-    handlerToDomain['callbackHandler'] = 'chorus-domain';
-    handlerToDomain['profileHandler'] = 'chorus-domain';
-    handlerToDomain['logoutHandler'] = 'chorus-domain';
-
-    // Route prefix → domain (fallback for routes without handler reference)
-    const routePrefixToDomain: Record<string, string> = {
-      '/api/books': 'books-domain', '/books': 'books-domain',
-      '/api/music': 'music-domain', '/music': 'music-domain',
-      '/api/photos': 'photos-domain', '/photos': 'photos-domain',
-      '/api/property': 'property-domain', '/property': 'property-domain',
-      '/api/seed': 'seeds-domain',
-      '/api/glimmers': 'glimmers-domain',
-      '/api/ideas': 'ideas-domain',
-      '/api/collections': 'blog-domain', '/blog': 'blog-domain',
-      '/api/search': 'search-domain', '/search': 'search-domain',
-      '/api/gallery': 'gallery-domain', '/gallery': 'gallery-domain',
-      '/api/documents': 'documents-domain', '/documents': 'documents-domain',
-      '/api/codebase': 'chorus-domain',
-      '/api/dashboard': 'chorus-domain', '/dashboard': 'chorus-domain',
-      '/api/admin': 'chorus-domain',
-      '/api/icd': 'convergence-domain',
-      '/api/chorus': 'chorus-domain',
-      '/api/athena': 'chorus-domain',
-      '/cooking': 'cooking-domain',
-      '/notes': 'notes-domain',
-      '/reading': 'reading-domain',
-      '/stories': 'stories-domain',
-      '/watching': 'watching-domain',
-      '/todo': 'ideas-domain',
-      '/gardening': 'property-domain',
-      '/people': 'people-domain',
-      '/socialposts': 'social-domain',
-      '/self': 'self-domain',
-      '/sexuality': 'sexuality-domain',
-      '/api/sessions': 'chorus-domain',
-      '/api/roles': 'roles-domain',
-    };
-
+    const handlerToDomain = await buildHandlerToDomain();
     const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
-    const entries: Array<{ method: string; path: string; handler: string; domainId: string }> = [];
-
-    // 2. Parse app.ts for route definitions
     const appTsPath = path.join(GATHERING_ROOT, 'src/app.ts');
-    if (fs.existsSync(appTsPath)) {
-      const appContent = fs.readFileSync(appTsPath, 'utf-8');
-      // Match: app.get('/path', ..., handlerName.methodName) or app.get('/path', (req, res) => ...)
-      const routeRegex = /app\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
-      let match;
-      while ((match = routeRegex.exec(appContent)) !== null) {
-        const method = match[1].toUpperCase();
-        const routePath = match[2];
-        // Find handler reference on the same or next few chars
-        const lineEnd = appContent.indexOf('\n', match.index);
-        const lineContent = appContent.substring(match.index, lineEnd > 0 ? lineEnd : match.index + 200);
-        // Extract handler variable name (e.g., bookHandler.renderCollection)
-        const handlerMatch = lineContent.match(/(\w+Handler)\.\w+/);
-        const handlerName = handlerMatch ? handlerMatch[1] : null;
+    const entries = fs.existsSync(appTsPath)
+      ? parseAppRoutes(fs.readFileSync(appTsPath, 'utf-8'), handlerToDomain)
+      : [];
 
-        // Map to domain
-        let domainId: string | null = null;
-        if (handlerName && handlerToDomain[handlerName]) {
-          domainId = handlerToDomain[handlerName];
-        }
-        if (!domainId) {
-          // Try route prefix matching
-          for (const [prefix, did] of Object.entries(routePrefixToDomain)) {
-            if (routePath.startsWith(prefix)) {
-              domainId = did;
-              break;
-            }
-          }
-        }
-
-        if (domainId) {
-          entries.push({
-            method,
-            path: routePath,
-            handler: handlerName ? `gathering/src/handlers/${handlerName.replace(/Handler$/, '')}.handler.ts` : 'gathering/src/app.ts',
-            domainId,
-          });
-        }
-      }
-    }
-
-    // 3. Clear existing endpoint data and repopulate
     const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?ep a <https://jeffbridwell.com/chorus#Endpoint> ; ?p ?o . ?sd <https://jeffbridwell.com/chorus#hasEndpoint> ?ep . } }';
     await athenaSparqlUpdate(clearQuery);
+    const written = await writeEndpointsInBatches(entries);
 
-    // 4. Write to graph in batches
-    const batchSize = 50;
-    let written = 0;
-    for (let i = 0; i < entries.length; i += batchSize) {
-      const batch = entries.slice(i, i + batchSize);
-      const triples = batch.map(e => {
-        const epId = `endpoint-${e.method.toLowerCase()}-${e.path.replace(/[/.:]/g, '-').toLowerCase()}`;
-        const epUri = `https://jeffbridwell.com/chorus#${epId}`;
-        const sdUri = `https://jeffbridwell.com/chorus#${e.domainId}`;
-        return `<${epUri}> a chorus:Endpoint ; rdfs:label "${e.method} ${e.path.replace(/"/g, '\\"')}" ; chorus:httpMethod "${e.method}" ; chorus:routePath "${e.path.replace(/"/g, '\\"')}" ; chorus:filePath "${e.handler.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasEndpoint <${epUri}> .`;
-      }).join('\n');
-      const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} } }`;
-      await athenaSparqlUpdate(insert);
-      written += batch.length;
-    }
-
-    // 5. Summary
     const byDomain: Record<string, number> = {};
-    for (const e of entries) { byDomain[e.domainId] = (byDomain[e.domainId] || 0) + 1; }
+    for (const e of entries) byDomain[e.domainId] = (byDomain[e.domainId] || 0) + 1;
 
     res.json(athenaEnvelope('discover-endpoints', {
       total_endpoints: entries.length,

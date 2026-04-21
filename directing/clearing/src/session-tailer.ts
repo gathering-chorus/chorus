@@ -116,27 +116,29 @@ export class SessionTailer {
       let newest: { path: string; mtime: number } | null = null;
 
       for (const entry of entries) {
-        if (entry.includes(roleDir)) {
-          const projDir = path.join(PROJECTS_DIR, entry);
-          try {
-            const files = fs.readdirSync(projDir)
-              .filter(f => f.endsWith('.jsonl'))
-              .map(f => {
-                const fullPath = path.join(projDir, f);
-                return { path: fullPath, mtime: fs.statSync(fullPath).mtimeMs };
-              });
-            for (const file of files) {
-              if (!newest || file.mtime > newest.mtime) {
-                newest = file;
-              }
-            }
-          } catch { /* ignored */ }
-        }
+        if (!entry.includes(roleDir)) continue;
+        newest = this.newestJsonlIn(path.join(PROJECTS_DIR, entry), newest);
       }
 
       return newest ? newest.path : null;
     } catch { /* ignored */ }
     return null;
+  }
+
+  private newestJsonlIn(projDir: string, current: { path: string; mtime: number } | null): { path: string; mtime: number } | null {
+    let newest = current;
+    try {
+      const files = fs.readdirSync(projDir)
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => {
+          const fullPath = path.join(projDir, f);
+          return { path: fullPath, mtime: fs.statSync(fullPath).mtimeMs };
+        });
+      for (const file of files) {
+        if (!newest || file.mtime > newest.mtime) newest = file;
+      }
+    } catch { /* ignored */ }
+    return newest;
   }
 
   private poll(): void {

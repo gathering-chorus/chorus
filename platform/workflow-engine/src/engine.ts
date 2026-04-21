@@ -146,120 +146,89 @@ export class WorkflowEngine {
     return manifest;
   }
 
-  advance(wfId: string, notes?: string, artifacts?: string): AdvanceResult {
-    const manifest = this.load(wfId);
-
-    if (manifest.status === 'completed') {
-      throw new Error(`Workflow ${wfId} is already completed`);
-    }
-
-    // Find current step: first in_progress or ready
-    const currentStep = manifest.steps.find(
-      s => s.status === 'in_progress' || s.status === 'ready'
-    );
-    if (!currentStep) {
-      throw new Error(`No active step to advance in ${wfId}`);
-    }
-
-    const now = nowISO();
-
-    // Complete current step
-    currentStep.status = 'completed';
-    currentStep.completed_at = now;
-    if (notes) currentStep.notes = notes;
-    if (artifacts) {
-      currentStep.artifacts = artifacts.split(',').map(a => a.trim()).filter(Boolean);
-    }
-
+  private completeStep(step: Step, now: string, notes: string | undefined, artifacts: string | undefined, manifest: WorkflowManifest): void {
+    step.status = 'completed';
+    step.completed_at = now;
+    if (notes) step.notes = notes;
+    if (artifacts) step.artifacts = artifacts.split(',').map((a) => a.trim()).filter(Boolean);
     manifest.history.push({
       timestamp: now,
       event: 'step_completed',
-      role: currentStep.role,
-      detail: `Step ${currentStep.seq} completed: ${currentStep.role} — ${currentStep.action}`,
+      role: step.role,
+      detail: `Step ${step.seq} completed: ${step.role} — ${step.action}`,
     });
+  }
 
-    // Find and unlock next step
-    let nextStep: Step | null = null;
+  private unlockNextStep(manifest: WorkflowManifest, now: string): Step | null {
     for (const step of manifest.steps) {
       if (step.status !== 'pending') continue;
-      const allBlockersComplete = step.blocked_by.every(blockerSeq => {
-        const blocker = manifest.steps.find(s => s.seq === blockerSeq);
+      const allBlockersComplete = step.blocked_by.every((blockerSeq) => {
+        const blocker = manifest.steps.find((s) => s.seq === blockerSeq);
         return blocker && (blocker.status === 'completed' || blocker.status === 'skipped');
       });
-      if (allBlockersComplete) {
-        step.status = 'ready';
-        nextStep = step;
-        manifest.history.push({
-          timestamp: now,
-          event: 'step_ready',
-          role: step.role,
-          detail: `Step ${step.seq} ready: ${step.role} — ${step.action}`,
-        });
-        break; // Only unlock one at a time (sequential model)
-      }
+      if (!allBlockersComplete) continue;
+      step.status = 'ready';
+      manifest.history.push({
+        timestamp: now,
+        event: 'step_ready',
+        role: step.role,
+        detail: `Step ${step.seq} ready: ${step.role} — ${step.action}`,
+      });
+      return step;
     }
+    return null;
+  }
 
-    // Check if workflow is complete
-    const allDone = manifest.steps.every(
-      s => s.status === 'completed' || s.status === 'skipped'
-    );
+  private writeHandoffBrief(manifest: WorkflowManifest, currentStep: Step, nextStep: Step, now: string): string | null {
+    const briefDir = this.config.briefDirs[nextStep.role];
+    if (!briefDir) return null;
+    mkdirSync(briefDir, { recursive: true });
+    const fileName = `${now.split('T')[0]}-${manifest.id.toLowerCase()}-step${nextStep.seq}.md`;
+    const briefPath = join(briefDir, fileName);
+    writeFileSync(briefPath, generateHandoffBrief(manifest, currentStep, nextStep), 'utf-8');
+    nextStep.brief = briefPath;
+    return briefPath;
+  }
+
+  advance(wfId: string, notes?: string, artifacts?: string): AdvanceResult {
+    const manifest = this.load(wfId);
+    if (manifest.status === 'completed') throw new Error(`Workflow ${wfId} is already completed`);
+
+    const currentStep = manifest.steps.find((s) => s.status === 'in_progress' || s.status === 'ready');
+    if (!currentStep) throw new Error(`No active step to advance in ${wfId}`);
+
+    const now = nowISO();
+    this.completeStep(currentStep, now, notes, artifacts, manifest);
+    const nextStep = this.unlockNextStep(manifest, now);
+
+    const allDone = manifest.steps.every((s) => s.status === 'completed' || s.status === 'skipped');
     if (allDone) {
       manifest.status = 'completed';
       manifest.history.push({
-        timestamp: now,
-        event: 'workflow_completed',
-        role: 'system',
+        timestamp: now, event: 'workflow_completed', role: 'system',
         detail: `Workflow completed: ${manifest.decision}`,
       });
     }
-
     manifest.updated = now;
 
-    // Generate handoff brief if next step exists
-    let briefPath: string | null = null;
-    if (nextStep && !allDone) {
-      const briefDir = this.config.briefDirs[nextStep.role];
-      if (briefDir) {
-        mkdirSync(briefDir, { recursive: true });
-        const dateStr = now.split('T')[0];
-        const wfNum = manifest.id.toLowerCase();
-        const fileName = `${dateStr}-${wfNum}-step${nextStep.seq}.md`;
-        briefPath = join(briefDir, fileName);
-        const briefContent = generateHandoffBrief(manifest, currentStep, nextStep);
-        writeFileSync(briefPath, briefContent, 'utf-8');
-        nextStep.brief = briefPath;
-      }
-    }
-
-    // Log handoff event if handing off to next role
+    const briefPath = nextStep && !allDone ? this.writeHandoffBrief(manifest, currentStep, nextStep, now) : null;
     if (nextStep && briefPath) {
       this.logHandoff({
         id: `HO-${manifest.id}-S${currentStep.seq}`,
         type: 'workflow-advance',
-        from: currentStep.role,
-        to: nextStep.role,
-        artifact: briefPath,
-        status: 'sent',
-        timestamp: now,
-        workflow: manifest.id,
-        step: currentStep.seq,
+        from: currentStep.role, to: nextStep.role,
+        artifact: briefPath, status: 'sent', timestamp: now,
+        workflow: manifest.id, step: currentStep.seq,
       });
     }
 
-    // Save updated manifest, then archive if done
     this.save(manifest);
     if (allDone) {
       this.archive(manifest);
       this.retireBriefs(manifest);
     }
 
-    return {
-      completedStep: currentStep,
-      nextStep,
-      workflowCompleted: allDone,
-      briefPath,
-      manifest,
-    };
+    return { completedStep: currentStep, nextStep, workflowCompleted: allDone, briefPath, manifest };
   }
 
   private retireBriefs(manifest: WorkflowManifest): void {

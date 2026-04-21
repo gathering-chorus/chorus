@@ -451,26 +451,35 @@ function readSpineLines(fs: any, logFile: string, limit: number): StreamLine[] {
   return out;
 }
 
+function parseObservation(line: string, seen: Set<string>): StreamLine | null {
+  try {
+    const obs = JSON.parse(line);
+    const key = `${obs.ts}|${obs.digest}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    const digest = obs.digest || '';
+    if (OBS_SKIP_TOKENS.some((t) => digest.includes(t))) return null;
+    return { ts: obs.ts, role: obs.role, type: 'obs', text: digest, card: obs.card || null };
+  } catch {
+    return null;
+  }
+}
+
+function readObservationsForRole(fs: any, role: string, out: StreamLine[]): void {
+  const obsFile = `/tmp/claude-team-scan/${role}-observations.jsonl`;
+  try {
+    const obsLines = fs.readFileSync(obsFile, 'utf-8').trim().split('\n').filter(Boolean);
+    const seen = new Set<string>();
+    for (const line of obsLines.slice(-30)) {
+      const entry = parseObservation(line, seen);
+      if (entry) out.push(entry);
+    }
+  } catch { /* ignored */ }
+}
+
 function readRoleObservations(fs: any): StreamLine[] {
   const out: StreamLine[] = [];
-  for (const role of ['wren', 'silas', 'kade']) {
-    const obsFile = `/tmp/claude-team-scan/${role}-observations.jsonl`;
-    try {
-      const obsLines = fs.readFileSync(obsFile, 'utf-8').trim().split('\n').filter(Boolean);
-      const seen = new Set<string>();
-      for (const line of obsLines.slice(-30)) {
-        try {
-          const obs = JSON.parse(line);
-          const key = `${obs.ts}|${obs.digest}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const digest = obs.digest || '';
-          if (OBS_SKIP_TOKENS.some((t) => digest.includes(t))) continue;
-          out.push({ ts: obs.ts, role: obs.role, type: 'obs', text: digest, card: obs.card || null });
-        } catch { /* ignored */ }
-      }
-    } catch { /* ignored */ }
-  }
+  for (const role of ['wren', 'silas', 'kade']) readObservationsForRole(fs, role, out);
   return out;
 }
 
@@ -515,11 +524,17 @@ const FLOW_ENV_OPTS = {
 };
 
 function extractSequenceTag(tags: string): string {
-  const seqMatch = tags.match(/sequence:(\w+)/);
-  if (seqMatch) return seqMatch[1];
+  return extractSequenceTags(tags)[0] || '';
+}
+
+// #2325: a card can carry multiple sequence: labels (e.g. werk + clearing).
+// Return every one so the nav renders the card under each sub-sequence tile.
+export function extractSequenceTags(tags: string): string[] {
+  const matches = Array.from(tags.matchAll(/sequence:(\w+)/g)).map((m) => m[1]);
+  if (matches.length > 0) return Array.from(new Set(matches));
   const parts = tags.split('|').map((s) => s.trim());
   const bareTag = parts.find((p) => p && !/^(Wren|Silas|Kade|Jeff|P[123]$)/.test(p) && !p.includes(':'));
-  return bareTag || '';
+  return bareTag ? [bareTag] : [];
 }
 
 function parseCardRow(line: string, currentStatus: string): any | null {
@@ -536,6 +551,7 @@ function parseCardRow(line: string, currentStatus: string): any | null {
     type: tags.match(/type:(\w+)/)?.[1] || '',
     priority: parseInt(tags.match(/P([123])/)?.[1] || '9'),
     sequence: extractSequenceTag(tags),
+    sequences: extractSequenceTags(tags),
   };
 }
 
