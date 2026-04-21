@@ -609,15 +609,16 @@ app.get('/api/chorus/stats', async (_req: Request, res: Response) => {
 // SOURCE_CADENCE moved to src/search-meta.ts (#2205 wave 5) — imported at line 264.
 
 import { fetchFreshness } from './handlers/chorus-freshness';
-app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
+import { fetchContextFreshness } from './handlers/context-freshness';
+
+function runFreshnessHandler() {
   if (!fs.existsSync(DB_PATH)) {
-    res.status(503).json({ error: 'Index database not found' });
-    return;
+    return { status: 503, body: { error: 'Index database not found' } };
   }
   const db = new Database(DB_PATH, { readonly: true });
   db.pragma('journal_mode = WAL');
   try {
-    const r = fetchFreshness({
+    return fetchFreshness({
       db,
       exists: (p) => fs.existsSync(p),
       readFile: (p, enc) => fs.readFileSync(p, enc),
@@ -625,10 +626,26 @@ app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
       cadence: SOURCE_CADENCE,
       timestamp: bostonNow,
     });
-    res.status(r.status).json(r.body);
   } finally {
     db.close();
   }
+}
+
+// New canonical path under /api/chorus/context/* (#2252).
+app.get('/api/chorus/context/freshness', async (req: Request, res: Response) => {
+  const r = await fetchContextFreshness(
+    { sparql: _athena, runFreshness: runFreshnessHandler },
+    req.originalUrl,
+  );
+  res.status(r.status).json(r.body);
+});
+
+// Legacy path stays live (returns same JSON) while callers migrate to
+// /api/chorus/context/freshness. 301 redirect + telemetry wave follows
+// once callers (test suites, bats) are carded — see #2252 follow-on.
+app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
+  const r = runFreshnessHandler();
+  res.status(r.status).json(r.body);
 });
 
 // --- GET /api/chorus/pulse/latest (#1881) ---
