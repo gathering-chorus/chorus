@@ -47,7 +47,7 @@ process.env.CLEARING_PROJECTS_DIR = TMP;
 process.env.CHORUS_ROOT = TMP;
 
 // Now import — listener is guarded.
-import { app, server, io, clearingChat } from '../src/server';
+import { server, io, clearingChat, extractSequenceTags } from '../src/server';
 
 let baseUrl: string;
 
@@ -145,6 +145,49 @@ describe('server — health and basic reads', () => {
     const r = await call('/api/flow');
     expect(r.status).toBe(200);
     expect(r.body.totalCards).toBe(0);
+  });
+
+  test('GET /api/flow #2325 — multi-sequence card appears under EVERY sequence bucket', async () => {
+    // Jeff-visible bug: a card with sequence:werk AND sequence:clearing was
+    // bucketed under werk only; the clearing nav tile showed 0 even though
+    // the card was tagged clearing. Fix: expose all sequence labels so the
+    // nav can render the card under each sub-sequence tile.
+
+    // Unit-level: extractSequenceTags returns every match, not just the first.
+    expect(extractSequenceTags('Kade|P1|domain:chorus|type:fix|sequence:werk|sequence:clearing'))
+      .toEqual(['werk', 'clearing']);
+    expect(extractSequenceTags('Wren|P2|domain:chorus|type:new|sequence:clearing'))
+      .toEqual(['clearing']);
+    expect(extractSequenceTags('Silas|P1|domain:chorus|type:fix'))
+      .toEqual([]);
+    // Bare-tag fallback still works (from #1963 follow-up).
+    expect(extractSequenceTags('Kade|P1|quality')).toEqual(['quality']);
+    // Duplicate labels in Vikunja (data hygiene noise) dedupe, not double-render.
+    expect(extractSequenceTags('Wren|P2|sequence:loom|sequence:loom')).toEqual(['loom']);
+
+    // Integration-level: the /api/flow response carries sequences[] on each card.
+    mockExecSync.mockReturnValueOnce(
+      [
+        'WIP (1)',
+        '  2001  Dual-tagged card   [Kade|P1|domain:chorus|type:fix|sequence:werk|sequence:clearing]',
+        'Next (1)',
+        '  2002  Clearing-only card [Wren|P2|domain:chorus|type:new|sequence:clearing]',
+        'Later (1)',
+        '  2003  Werk-only card     [Silas|P1|domain:chorus|type:fix|sequence:werk]',
+      ].join('\n')
+    );
+    const r = await call('/api/flow');
+    expect(r.status).toBe(200);
+    const chorusCards = r.body.domains?.chorus?.cards || [];
+    const dual = chorusCards.find((c: any) => c.id === '2001');
+    expect(dual).toBeDefined();
+    expect(dual.sequences).toEqual(expect.arrayContaining(['werk', 'clearing']));
+    // Backward compat: `sequence` still populated with first match.
+    expect(dual.sequence).toBe('werk');
+    const clearingOnly = chorusCards.find((c: any) => c.id === '2002');
+    expect(clearingOnly.sequences).toEqual(['clearing']);
+    const werkOnly = chorusCards.find((c: any) => c.id === '2003');
+    expect(werkOnly.sequences).toEqual(['werk']);
   });
 
   test('GET /api/flow handles cards with bare sequence tag (no prefix)', async () => {

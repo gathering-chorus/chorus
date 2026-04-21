@@ -1227,12 +1227,19 @@ async function loadFlow() {
       const badges = `<span style="font-size:0.6rem;color:var(--text-muted);margin-left:4px;">${cardBadge}${wfBadge} · ${totalBadge}</span>${wipIndicator}`;
       html += `<div class="flow-section"><div class="flow-section-title" onclick="toggleDomain('${domain}')">${arrow} ${domain} ${badges}</div>`;
       html += `<div class="flow-section-cards${isCollapsed ? ' collapsed' : ''}">`;
-      // Group cards by sequence within domain
+      // #2325: group cards by sequence within domain. A card with multiple
+      // sequence labels (e.g. sequence:werk + sequence:clearing) renders
+      // under EACH sequence tile, not just the first one. Fall back to the
+      // legacy single `sequence` field for cards older than the fix.
       const bySequence = {};
       for (const c of cards) {
-        const seq = c.sequence || '';
-        if (!bySequence[seq]) bySequence[seq] = [];
-        bySequence[seq].push(c);
+        const seqs = (Array.isArray(c.sequences) && c.sequences.length > 0)
+          ? c.sequences
+          : [c.sequence || ''];
+        for (const seq of seqs) {
+          if (!bySequence[seq]) bySequence[seq] = [];
+          bySequence[seq].push(c);
+        }
       }
       const seqKeys = Object.keys(bySequence).sort((a, b) => {
         if (a === '' && b !== '') return 1; // unsequenced last
