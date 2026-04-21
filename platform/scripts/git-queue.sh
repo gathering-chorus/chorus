@@ -231,6 +231,25 @@ do_commit() {
   local exit_code=0
   git add "${files[@]}" 9>&- && git commit "${git_args[@]}" -- "${files[@]}" 9>&- || exit_code=$?
 
+  # #2193: emit commit.landed after successful commit. Semantic event for
+  # the coherence checker to correlate role activity with real git history.
+  if [ $exit_code -eq 0 ]; then
+    local _sha
+    _sha=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    local _subject
+    _subject=$(printf '%s' "$_msg" | head -1)
+    local _card_id=""
+    if [[ "$_msg" =~ \#([0-9]+) ]]; then
+      _card_id="${BASH_REMATCH[1]}"
+    fi
+    log_event "commit.landed" \
+      "sha=${_sha}" \
+      "author_role=${ROLE}" \
+      "card_id=${_card_id}" \
+      "files_changed=${#files[@]}" \
+      "message_subject=${_subject:0:100}"
+  fi
+
   # Release
   clear_meta
   # fd 9 closes on script exit, releasing lockf
