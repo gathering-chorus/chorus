@@ -1,0 +1,182 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+# #2339 — Chorus policies mapped to loom-principles.
+#
+# Each chorus:Policy instance is a live enforcement rule (hook, DEC, gate,
+# CLAUDE.md directive, skill check). Every policy has `chorus:enforces` edges
+# pointing at the principle(s) it operationalizes — no orphan policies.
+#
+# Initial seed covers the most visible hook enforcement surface. Later waves
+# can add DECs, CLAUDE.md directives, and gate scripts. Orphan flagging is
+# a one-pass retro per #2339 AC — not part of the seed.
+
+INSERT DATA {
+  GRAPH <urn:chorus:ontology> {
+
+    chorus:policy-accept-gate
+      a chorus:Policy ;
+      rdfs:label "Accept gate — no self-accept on code cards" ;
+      rdfs:comment "Builders cannot /acp their own code cards. Wren or Jeff accepts. Source: platform/services/chorus-hooks/src/hooks/accept_gate.rs + DEC-048." ;
+      chorus:enforces chorus:principle-no-dark-work ,
+                      chorus:principle-obtain-a-yield ;
+      chorus:surface "hook" .
+
+    chorus:policy-autonomy-guard
+      a chorus:Policy ;
+      rdfs:label "Autonomy guard — no permission-asking when the answer is obvious" ;
+      rdfs:comment "Stop hook blocks responses that ask for confirmation when Jeff's intent is already clear (DEC-025 JDI). Source: autonomy_guard.rs + jdi_detector.rs." ;
+      chorus:enforces chorus:principle-protect-attention ,
+                      chorus:principle-use-and-value-renewable-resources ;
+      chorus:surface "hook" .
+
+    chorus:policy-demo-gate
+      a chorus:Policy ;
+      rdfs:label "Demo gate — no Done without demo evidence" ;
+      rdfs:comment "cards done blocked unless demo:preflight-pass comment + gate chain passes exist. DEC-048. Source: demo_gate.rs + demo_preflight.rs + cards CLI." ;
+      chorus:enforces chorus:principle-obtain-a-yield ,
+                      chorus:principle-quality-at-source ;
+      chorus:surface "hook" .
+
+    chorus:policy-demo-provenance
+      a chorus:Policy ;
+      rdfs:label "Demo provenance — brief lands after every demo" ;
+      rdfs:comment "demo_provenance.rs auto-generates a brief file after /demo completes. Source: demo_provenance.rs." ;
+      chorus:enforces chorus:principle-artifacts ,
+                      chorus:principle-catch-and-store-energy ;
+      chorus:surface "hook" .
+
+    chorus:policy-handoff-logger
+      a chorus:Policy ;
+      rdfs:label "Handoff logger — every cross-role brief leaves a trace" ;
+      rdfs:comment "handoff_logger.rs records every brief written to another role's inbox with trace_id + recipient. Source: handoff_logger.rs." ;
+      chorus:enforces chorus:principle-artifacts ,
+                      chorus:principle-no-dark-work ;
+      chorus:surface "hook" .
+
+    chorus:policy-icd-write-gate
+      a chorus:Policy ;
+      rdfs:label "ICD write gate — no harvester code without matching ICD provider" ;
+      rdfs:comment "DEC-095: blocks writes to *-harvester.service.ts + harvest-*.sh if domain has no provider in urn:gathering:icd/current. Source: icd_write_gate.rs." ;
+      chorus:enforces chorus:principle-design-from-patterns-to-details ,
+                      chorus:principle-services-reliable-bounded-idempotent ;
+      chorus:surface "hook" .
+
+    chorus:policy-interaction-pattern
+      a chorus:Policy ;
+      rdfs:label "Interaction pattern detection — emit spine event on detected pattern" ;
+      rdfs:comment "interaction_pattern.rs classifies direction/ideation/demo/triage/swat/gemba/clearing/story/reflection and emits interaction.pattern.detected. Source: interaction_pattern.rs." ;
+      chorus:enforces chorus:principle-observe-and-interact ;
+      chorus:surface "hook" .
+
+    chorus:policy-memory-first-search
+      a chorus:Policy ;
+      rdfs:label "Memory-first search gate — query Chorus before filesystem" ;
+      rdfs:comment "DEC-074: hook blocks Grep/Bash searches until Chorus-index query runs first. Reuses stored knowledge before re-discovery. Source: memory_first.rs + search_hierarchy.rs." ;
+      chorus:enforces chorus:principle-catch-and-store-energy ,
+                      chorus:principle-use-and-value-renewable-resources ;
+      chorus:surface "hook" .
+
+    chorus:policy-nudge-blast-radius
+      a chorus:Policy ;
+      rdfs:label "Nudge blast radius — warn before interrupting a WIP role" ;
+      rdfs:comment "nudge_blast_radius.rs flags when a nudge target is mid-card; interruption cost is visible before it fires. Source: nudge_blast_radius.rs." ;
+      chorus:enforces chorus:principle-focus-is-infrastructure ,
+                      chorus:principle-use-small-and-slow-solutions ;
+      chorus:surface "hook" .
+
+    chorus:policy-pair-enforcement
+      a chorus:Policy ;
+      rdfs:label "Pair enforcement — both roles load /pair skill when pairing" ;
+      rdfs:comment "pair_enforcement.rs + pair_gate.rs: once /pair starts, both sides must load the skill or gate blocks driver actions. Keeps composition honest. Source: pair_enforcement.rs, pair_gate.rs." ;
+      chorus:enforces chorus:principle-integrate-rather-than-segregate ;
+      chorus:surface "hook" .
+
+    chorus:policy-quality-gate
+      a chorus:Policy ;
+      rdfs:label "Quality gate — no regression at edit/commit time" ;
+      rdfs:comment "quality_gate.rs + Stop hook agent review: runs lint + test budgets; blocks edits that introduce debt. Source: quality_gate.rs + gate-code-tests.sh." ;
+      chorus:enforces chorus:principle-quality-at-source ,
+                      chorus:principle-produce-no-waste ;
+      chorus:surface "hook" .
+
+    chorus:policy-sensitive-paths
+      a chorus:Policy ;
+      rdfs:label "Sensitive paths — no writes to secrets, keys, env files" ;
+      rdfs:comment "sensitive_paths.rs + write_scrubber.rs: blocks Write/Edit on .env, credentials.json, SSH keys, etc. Source: sensitive_paths.rs, write_scrubber.rs." ;
+      chorus:enforces chorus:principle-produce-no-waste ,
+                      chorus:principle-artifacts ;
+      chorus:surface "hook" .
+
+    chorus:policy-session-init-gate
+      a chorus:Policy ;
+      rdfs:label "Session init gate — roles refuse to load on CLAUDE.md drift" ;
+      rdfs:comment "#2311: boot-time protocol contract. All three roles must boot on the same chorus-prompt version. Source: session_init_gate.rs + contracts/." ;
+      chorus:enforces chorus:principle-services-reliable-bounded-idempotent ,
+                      chorus:principle-apply-self-regulation-and-accept-feedback ;
+      chorus:surface "hook" .
+
+    chorus:policy-stop-on-error
+      a chorus:Policy ;
+      rdfs:label "Stop on error — roles halt on tool failure, force card/defer/resolve" ;
+      rdfs:comment "#2145 PostToolUse hook: blocks next turn when a tool errored, forces acknowledgment. Source: stop_on_error.rs." ;
+      chorus:enforces chorus:principle-apply-self-regulation-and-accept-feedback ,
+                      chorus:principle-quality-at-source ;
+      chorus:surface "hook" .
+
+    chorus:policy-story-write-gate
+      a chorus:Policy ;
+      rdfs:label "Story write gate — stories go to TTL, not markdown" ;
+      rdfs:comment "#2321: hook blocks markdown edits with story-shape content, redirects to write-story.sh which writes jeff:Story into Fuseki. Source: story_write_gate.rs + write-story.sh." ;
+      chorus:enforces chorus:principle-artifacts ,
+                      chorus:principle-catch-and-store-energy ;
+      chorus:surface "hook" .
+
+    chorus:policy-tdd-gate
+      a chorus:Policy ;
+      rdfs:label "TDD gate — tests before code" ;
+      rdfs:comment "DEC-1674: edits to production code blocked until a failing test exists. Source: tdd_gate.rs + test_quality_gate.rs." ;
+      chorus:enforces chorus:principle-quality-at-source ,
+                      chorus:principle-speed-and-quality-correlate ;
+      chorus:surface "hook" .
+
+    chorus:policy-tool-telemetry
+      a chorus:Policy ;
+      rdfs:label "Tool telemetry — every tool call emits observable event" ;
+      rdfs:comment "tool_telemetry.rs: PostToolUse emits permission-log entries with role, tool, outcome. Source: tool_telemetry.rs." ;
+      chorus:enforces chorus:principle-no-dark-work ,
+                      chorus:principle-observe-and-interact ;
+      chorus:surface "hook" .
+
+    chorus:policy-write-scrubber
+      a chorus:Policy ;
+      rdfs:label "Write scrubber — no credentials in shared files" ;
+      rdfs:comment "write_scrubber.rs: blocks any Write/Edit that would leak env vars, tokens, or credentials into tracked files. Source: write_scrubber.rs." ;
+      chorus:enforces chorus:principle-produce-no-waste ;
+      chorus:surface "hook" .
+
+    chorus:policy-context-inject
+      a chorus:Policy ;
+      rdfs:label "Context inject — session-start assembles pulse + spine + athena into envelope" ;
+      rdfs:comment "context_inject.rs: UserPromptSubmit injects fresh team state so roles start each turn current. Source: context_inject.rs + #2168." ;
+      chorus:enforces chorus:principle-catch-and-store-energy ,
+                      chorus:principle-self-healing ;
+      chorus:surface "hook" .
+
+    chorus:policy-chrome-tab-gate
+      a chorus:Policy ;
+      rdfs:label "Chrome tab gate — roles don't steal Jeff's browser window" ;
+      rdfs:comment "DEC-090: Open commands route URLs to role-specific Chrome windows, never Jeff's. Source: chrome_tab_gate.rs + chrome-window.sh." ;
+      chorus:enforces chorus:principle-focus-is-infrastructure ,
+                      chorus:principle-protect-attention ;
+      chorus:surface "hook" .
+
+    chorus:policy-ops-awareness
+      a chorus:Policy ;
+      rdfs:label "Ops awareness — roles see health state before acting" ;
+      rdfs:comment "ops_awareness.rs: injects deep-health snapshot into turn context so ops-affecting decisions see live state, not stale memory. Source: ops_awareness.rs." ;
+      chorus:enforces chorus:principle-observe-and-interact ,
+                      chorus:principle-self-healing ;
+      chorus:surface "hook" .
+  }
+}

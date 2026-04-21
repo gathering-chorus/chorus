@@ -1,0 +1,14 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?policy ?label ?comment ?surface ?principle ?principleLabel WHERE {
+  GRAPH <urn:chorus:ontology> {
+    ?policy a chorus:Policy .
+    OPTIONAL { ?policy rdfs:label ?label }
+    OPTIONAL { ?policy rdfs:comment ?comment }
+    OPTIONAL { ?policy chorus:surface ?surface }
+    OPTIONAL {
+      ?policy chorus:enforces ?principle .
+      OPTIONAL { ?principle rdfs:label ?principleLabel }
+    }
+  }
+}

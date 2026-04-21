@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chorus Policies — Loom</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #fdfcf8;
+      --fg: #1a1a1a;
+      --muted: #6b6b6b;
+      --accent: #2d5016;
+      --accent-soft: #5a7a3a;
+      --border: #d4cdb8;
+      --card-bg: #ffffff;
+      --enforces-bg: #f4f1e8;
+      --orphan-bg: #fbe9e7;
+      --orphan-border: #d88574;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      line-height: 1.6;
+    }
+    body {
+      margin: 0;
+      padding: 3rem 1in 6rem 1in;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+    h1 {
+      font-size: 2.4rem;
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.01em;
+      color: var(--accent);
+    }
+    .subtitle {
+      color: var(--muted);
+      font-style: italic;
+      font-size: 1.05rem;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 0.75rem;
+    }
+    .intro {
+      font-size: 1.05rem;
+      margin-bottom: 2rem;
+      color: #333;
+      border-left: 3px solid var(--accent);
+      padding-left: 1rem;
+    }
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+    }
+    .actions button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      font-size: 0.95rem;
+      font-family: inherit;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .actions button:hover { background: #1e3810; }
+    .actions button.secondary {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    .section-heading {
+      font-size: 1.4rem;
+      color: var(--accent);
+      margin: 3rem 0 1rem;
+      letter-spacing: -0.005em;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.4rem;
+    }
+    .section-intro {
+      color: var(--muted);
+      font-style: italic;
+      margin-bottom: 1.5rem;
+    }
+    .policy {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.25rem;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .policy.orphan {
+      background: var(--orphan-bg);
+      border-color: var(--orphan-border);
+    }
+    .policy h2 {
+      font-size: 1.2rem;
+      margin: 0 0 0.3rem;
+      color: var(--accent);
+    }
+    .policy.orphan h2 { color: #8b3a25; }
+    .policy .id {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    .policy .surface {
+      display: inline-block;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-soft);
+      border: 1px solid var(--accent-soft);
+      padding: 0.1rem 0.5rem;
+      border-radius: 2px;
+      margin-left: 0.5rem;
+    }
+    .policy p.comment { margin: 0.75rem 0 0; font-size: 0.98rem; }
+    .enforces {
+      margin-top: 1rem;
+      padding: 0.8rem 1rem;
+      background: var(--enforces-bg);
+      border-radius: 3px;
+      font-size: 0.92rem;
+    }
+    .enforces .layer-label {
+      display: block;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.3rem;
+    }
+    .enforces ul { margin: 0; padding-left: 1.2rem; }
+    .enforces li { margin: 0.15rem 0; }
+    .no-enforces {
+      color: #8b3a25;
+      font-style: italic;
+      margin-top: 0.5rem;
+    }
+    .empty, .error {
+      text-align: center;
+      padding: 3rem;
+      border-radius: 4px;
+    }
+    .empty { color: var(--muted); border: 1px dashed var(--border); }
+    .error {
+      color: #8b1111;
+      background: #fdf0f0;
+      border: 1px solid #e4bbbb;
+    }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    @media print {
+      @page { margin: 0.75in 1in; }
+      body { background: white; padding: 0; font-size: 11pt; line-height: 1.5; }
+      .actions { display: none; }
+      header { border-bottom-color: #888; }
+      h1 { color: black; font-size: 22pt; }
+      .intro { border-left-color: #444; }
+      .section-heading { color: black; font-size: 15pt; margin-top: 1.5rem; }
+      .policy {
+        border: none;
+        border-bottom: 1px solid #bbb;
+        padding: 0.6rem 0 0.8rem;
+        margin-bottom: 0.5rem;
+        background: white;
+      }
+      .policy.orphan { background: white; border-bottom: 2px solid #8b3a25; }
+      .policy h2 { color: black; font-size: 13pt; }
+      .policy.orphan h2 { color: #8b3a25; }
+      .policy .id { display: none; }
+      .enforces { background: transparent; border-left: 3px solid #888; padding: 0 0 0 0.6rem; }
+      footer { color: #555; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Policies</h1>
+    <div class="subtitle">Enforced rules — every policy traces upstream to the principle it operationalizes.</div>
+    <div class="meta" id="meta">Loading…</div>
+  </header>
+
+  <div class="intro">
+    Principles are the <em>why</em>. Policies are the <em>must</em>. Each policy (hook, gate, DEC, CLAUDE.md directive) points at the principle(s) it enforces — no orphan policies. Orphans, when they appear, are flagged in the bottom section so the team can either retire them or name the missing principle.
+  </div>
+
+  <div class="actions">
+    <button onclick="window.print()">Print</button>
+    <button class="secondary" onclick="loadPolicies()">Refresh</button>
+  </div>
+
+  <main id="policies" aria-live="polite">
+    <div class="empty">Loading policies…</div>
+  </main>
+
+  <footer>
+    Source: <code>GET /api/loom/policies</code> → graph <code>urn:chorus:ontology</code>. Seed in <code>platform/api/src/sparql/seeds/chorus-policies.rq</code> per #2339.
+  </footer>
+
+  <script>
+    const RENDERED_AT = new Date().toLocaleString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    });
+    document.getElementById('meta').textContent = 'Rendered ' + RENDERED_AT;
+
+    function escapeHtml(s) {
+      return String(s || '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
+    function renderPolicy(p) {
+      const orphan = !p.enforces || p.enforces.length === 0;
+      const surfaceChip = p.surface ? `<span class="surface">${escapeHtml(p.surface)}</span>` : '';
+      const enforcesBlock = orphan
+        ? `<div class="no-enforces">⚠ Orphan — this policy has no principle it enforces. Name one or retire it.</div>`
+        : `<div class="enforces">
+             <span class="layer-label">Enforces</span>
+             <ul>${p.enforces.map((pr) => `<li>${escapeHtml(pr.label)}</li>`).join('')}</ul>
+           </div>`;
+      return `
+        <article class="policy${orphan ? ' orphan' : ''}">
+          <h2>${escapeHtml(p.label || p.id || 'Unlabeled')}${surfaceChip}</h2>
+          <code class="id">${escapeHtml(p.id || '')}</code>
+          ${p.comment ? `<p class="comment">${escapeHtml(p.comment)}</p>` : ''}
+          ${enforcesBlock}
+        </article>
+      `;
+    }
+
+    async function loadPolicies() {
+      const main = document.getElementById('policies');
+      main.innerHTML = '<div class="empty">Loading policies…</div>';
+      try {
+        const res = await fetch('/api/loom/policies');
+        if (!res.ok) throw new Error('API returned ' + res.status);
+        const body = await res.json();
+        const all = body?.data?.policies || [];
+        if (all.length === 0) {
+          main.innerHTML = '<div class="empty">No policies found in the ontology yet.</div>';
+          return;
+        }
+        const traced = all.filter((p) => p.enforces && p.enforces.length > 0);
+        const orphans = all.filter((p) => !p.enforces || p.enforces.length === 0);
+
+        let html = '';
+        if (traced.length > 0) {
+          html += `<h3 class="section-heading">Policies (${traced.length})</h3>`;
+          html += `<div class="section-intro">Each policy lists the principles it enforces.</div>`;
+          html += traced.map(renderPolicy).join('');
+        }
+        if (orphans.length > 0) {
+          html += `<h3 class="section-heading">Orphans (${orphans.length})</h3>`;
+          html += `<div class="section-intro">No principle named — candidates for retirement or for naming the missing principle.</div>`;
+          html += orphans.map(renderPolicy).join('');
+        }
+        main.innerHTML = html;
+        document.getElementById('meta').textContent =
+          `${all.length} policies (${traced.length} traced · ${orphans.length} orphan) · rendered ${RENDERED_AT}`;
+      } catch (err) {
+        main.innerHTML = '<div class="error">Failed to load policies: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    loadPolicies();
+  </script>
+</body>
+</html>
