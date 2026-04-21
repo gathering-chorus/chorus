@@ -1,25 +1,52 @@
-# Wren — Next Session
+# Wren — Next Session Pickup
 
-## Where things landed
+**Last session:** 2026-04-21, ~10 hours, dense. Duration=38798s per close-out.
 
-- **#2311 AC8 doc sweep shipped.** Paired with Silas in chat `silas-wren-1776770295`. Two-pass sweep of 8 live-state docs: wren/stories.md, decisions.md, chorus-method-map.md, chorus-consolidation-proposal.md (banner-tagged historical), silas/CONCEPTUAL_ARCHITECTURE.md, spine-architecture.md, spine-emitter-inventory.md, docs/diagrams/chorus-c4-container.mmd. First pass pointed at session-start-thin.sh; Silas correctly flagged that reproduced competing-implementations one layer down — canonical surface is `chorus-hook-shim session-start/session-close` subcommand. Re-sweep done. Strict AC8 grep (`session-start.sh|werk-init.sh|chorus-prompt.sh`) returns only activity.md (audit trail). Silas closed chat, requested gate:product.
+## One-line session thesis
+"Ritual into contract" morning shifted into "Loom triangle" afternoon — permaculture principles as the anti-Gestell top-level, policies+practices traced back via skos:broader, and domain-detail.html made honest about the instances it renders.
 
-- **#2288 gate:product issued AND rescinded within 60s.** I passed it on suppression-path AC (6/6, lint clean, gate-code-tests.sh eslint --max-warnings=0 verified live). Kade nudged: Jeff redirected scope mid-flow to real refactor of 27 complexity fns. Pass rescinded; commented the rescind on the card; nudged Kade to hold.
+## Session accepts (11)
+#2288, #2326, #2327, #2325, #2328, #2321, #2337, #2252, #2339, #2193, #2431. Gate:product passes also on #2416, #2220 (pending /acp by Silas).
 
-- **#2311 gate:product held** pending #2288 scope resolution — don't want to gate one card while an adjacent card is in scope-flux.
+## WIP entering next session
+- **#2430** — unified domain-identity resolver. Gates 5/5 PASSED. Ready for /acp.
+- **#2431** — generic instance-render fold. Gates 5/5 PASSED (gate:arch-pass (post-narrowing) + gate:ops-pass posted by Silas, arrived silently via #2435 pattern). Ready for /acp. Pair with Kade stays open per his convention.
+- **#2337, #2339, #2193, #2220, #2327, #2416** — all shipped + gates pass, pending /acp by Jeff.
+- **#2348 (practices → principles + policies)** — third Loom-triangle leg, still Later, not yet pulled.
 
-## Open threads for next session
+## Cards filed this session (many)
+#2321 write-story gap, #2322 nav entries, #2323 search-telemetry swat (shipped by Silas), #2324 zone-c e2e (Silas), #2325 multi-seq render (shipped), #2329 classifier widen, #2330 reduce-to-single principle, #2333 post-restart smoke, #2337 permaculture harvest (shipped), #2339 policies map (shipped), #2348 practices map, #2359 Chorus products narrative, #2414-#2416 Silas's #2311 follow-ons, #2428 test fixtures no pollute, #2430 resolver, #2431 instance render, #2432 /demo endpoint smoke, #2434 quality scanner, #2435 nudge-delivery reframed to heartbeat-as-primary, #2436 Silas's CORS narrowing follow-on.
 
-1. **Jeff needs to land #2288 scope**: confirm refactor path (AC rewrite to "27 complexity fns refactored <20, budget ratchets down") OR revert to suppression-path accept. Until settled, both gates are parked.
-2. **#2311 gate:product** — once #2288 is settled, run gate. Canonical AC is the 10-item list in the card's `## AC` section (not the 38 my grep caught; other sections contain quoted historical AC drafts from 4 prior attempts — worth flagging to Silas that card description could use a cleanup pass so `cards view` shows only the canonical AC).
-3. **#2288 scope-drift pattern itself** — worth a reflection. This is the second time in 2 sessions that AC shape shifted mid-WIP. #2123 (zero-hits-as-closing-AC) is the generalization; a sibling card on "scope-redirect protocol — what happens to in-flight gates when direction changes" may be warranted. Don't file reflexively; raise with Jeff first.
+## Active tension points
+1. **#2041 Athena out of Gathering** — reshaped mid-session to narrower "move, don't decide shape." CORS stopgap in #2431 is explicit #2041 debt (`// #2041: remove once Athena relocates`).
+2. **#2435 nudge-delivery** — reshaped from "fix osascript inject" to "retire inject as load-bearing, heartbeat-poll as primary." Two observed drops today (Kade 11:40, Silas 14:14). The pair scratch file became the fallback channel during the pair.
+3. **#2430 / #2431 still WIP** — both waiting on Jeff /acp despite 5/5 gates each.
 
-## Session meta
+## Loom triangle state
+- #2337 permaculture principles (parents) — **SHIPPED**. 24 instances in Fuseki (12 parents + 12 specializations).
+- #2339 policies → principles — **SHIPPED**. 24 policies, 39 enforces edges, 0 orphans post-retro.
+- #2348 practices → principles + policies — **filed, not pulled**. Closes the triangle.
+- #2359 Chorus products narrative page — filed, not pulled. Portrays the whole shape.
 
-- WIP at reboot: #2311 (Silas, gate:product pending), #2288 (Kade, scope in-flux).
-- Memory already captures: performative-gates, ship-the-enforcement-point, no-competing-implementations, bad-AC-is-the-miss. This session reinforced all four.
-- Nothing new to save — today was pattern application, not pattern discovery.
+## Stories captured
+Two real stories landed in Fuseki via the fixed write-story.sh (#2321):
+- `urn:jb/jeff/stories/garden-learning-tech-learning.ttl` — Mom→Jeff→tech thread, enthusiasm-first learning
+- `urn:jb/jeff/stories/you-are-not-the-boss-of-me.ttl` — Ravi→small-kid childhood→inward boundary
 
-## The flinch from morning opening
+Both linked via `rdfs:seeAlso` to three permaculture principles (Design from patterns, Use and value diversity, Observe and interact).
 
-Still #2116 and its acceptance-protocol design. Untouched this session. Noting so next-me doesn't lose it.
+## Open nudges to handle
+- Silas: #2327 /acp (I passed gate:product earlier)
+- Silas: #2416 /acp (I passed gate:product)
+- Silas: #2220 /acp (I passed gate:product)
+- Jeff: /acp on my WIP #2430 + #2431
+
+## Patterns/memory candidates
+Three scope-discipline patterns named today — worth consolidating into one loom-principle candidate:
+1. AC matches shipped state (#2288)
+2. No artifacts without consumers (#2252)
+3. Test-green ≠ deploy-live (#2252 → #2432)
+Compose into: "the card, the tests, and the live surface all have to tell the same story before /acp."
+
+## Personal tone
+Strong session. Jeff shared two stories (gardening/tech composition, boundaries with Ravi). Kade + Silas paired cleanly despite the nudge-delivery friction. Session ended warm.

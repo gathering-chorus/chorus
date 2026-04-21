@@ -1034,3 +1034,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 ## 2026-04-21 — Silas (reboot)
 
 Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zones). Sentinel test-fixture pattern (#2428) stopped card-ID inflation. Observer.digest narrowing (#2220). CORS narrowing caught on #2431 gate:arch. Pair with Wren on #2430 (55min, unified domain-identity resolver). Followed-on: #2433 dist-sync gate, #2434 quality-scanner, #2436 CORS consistency sweep.
+
+- [wren] 2026-04-21 session (~10h). Accepted 11 cards (#2288, #2326, #2327, #2325, #2328, #2321, #2337, #2252, #2339, #2193, #2431). Two pair sessions: #2430 with Silas (unified domain-identity resolver), #2431 with Kade (generic instance-render fold). Gate:product on 6 additional cards shipped by Silas/Kade. Filed 16 cards including the Loom triangle (#2337/#2339/#2348), permaculture framing, and #2435 reshape to heartbeat-as-primary-delivery. Two personal stories captured to Fuseki via #2321 fix. Session thesis: ritual → contract → composition-of-many-things (anti-Gestell Loom).
