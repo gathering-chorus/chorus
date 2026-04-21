@@ -238,7 +238,7 @@ Borg is the convergence engine. It operates across all three layers, detecting p
 │  │   Card Absorption    │  │   Harvest State Tracking     │  │
 │  │   (Board Borg)       │  │   (manifest diffing)         │  │
 │  │                      │  │                              │  │
-│  │   werk-init.sh       │  │   harvest-manifest.json      │  │
+│  │   SessionStart hook  │  │   harvest-manifest.json      │  │
 │  │   semantic similarity │  │   domain completeness %      │  │
 │  │   open ↔ shipped     │  │   gap detection              │  │
 │  └──────────┬──────────┘  └──────────────┬───────────────┘  │
@@ -268,7 +268,7 @@ Borg is the convergence engine. It operates across all three layers, detecting p
 
 | Component | Where | Trigger | What it does |
 |-----------|-------|---------|-------------|
-| Board Borg | `werk-init.sh` | Session boot | Matches open cards against shipped work by semantic similarity |
+| Board Borg | SessionStart hook (via `chorus-hook-shim session-start` subcommand) | Session boot | Matches open cards against shipped work by semantic similarity |
 | Spine events | `chorus-log.sh` | Every role action | Logs structured events to Loki-indexed stream |
 | Harvest manifests | `harvest-manifest.json` | Post-harvest | Tracks domain completeness, gaps, last-run timestamps |
 | Perf baselines | `perf-baseline.sh` | Nightly (LaunchAgent) | Measures Fuseki query times, establishes SLAs |
@@ -337,7 +337,7 @@ HTTP APIs over the home LAN. Gathering → Self: Fuseki SPARQL at `192.168.86.36
 
 **2. Where does Borg's convergence detection live?**
 
-Today: `werk-init.sh` (Board Borg, runs at session boot). Future: a dedicated LaunchAgent service (`com.chorus.borg-convergence`) running every 4 hours, querying Fuseki for cross-domain links, Chorus API for pattern matches, and spine events for work flow analysis. Output to `/data/pods/jeff/borg/convergence-<date>.ttl`.
+Today: SessionStart hook invoking `chorus-hook-shim session-start` (Board Borg, runs at session boot). Future: a dedicated LaunchAgent service (`com.chorus.borg-convergence`) running every 4 hours, querying Fuseki for cross-domain links, Chorus API for pattern matches, and spine events for work flow analysis. Output to `/data/pods/jeff/borg/convergence-<date>.ttl`.
 
 **3. How does Self's read-only Chorus access work technically?**
 

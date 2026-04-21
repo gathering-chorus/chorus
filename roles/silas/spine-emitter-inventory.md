@@ -41,7 +41,7 @@ All 5 shell direct-writers now call chorus-log.sh. New event types added to spin
 - `write_scrub` — write-scrubber-hook.sh
 - `data_classification` — sensitive-paths-hook.sh
 - `audit_check` — chorus-audit.sh (log_json)
-- `session_start` — werk-init.sh (already existed, just switched to chorus-log.sh call)
+- `session_start` — `chorus-hook-shim session-start` subcommand (invoked by the SessionStart hook; already existed, just switched to chorus-log.sh call)
 - chorus-audit.sh log_event was already matching format — now delegates to chorus-log.sh
 
 ### TypeScript writers to chorus.log

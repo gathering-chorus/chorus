@@ -1018,3 +1018,5 @@ Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 - [Kade] → session reboot (2026-04-20 22:00) — thesis-only opening, no cards pulled; named single-file dependency chain in own queue as Kade problem; #2311 still blocks #2304/#2288/#2300; CLAUDE.md regen to v1.1 mid-session → who: Wren/Silas (header parity check next session)
 
 - [2026-04-20 22:14] [Silas] → #2311 rescope AC5 shipped (strip read-prose from shared/chorus-prompt.md + shared/team-operating-model.md fragments, regen all three CLAUDE.mds, PROTOCOL_VERSION auto-bumped 1.0→1.1), rolling three-role cold reboot in progress (wren+kade v1.1 clean, silas self-reboot next) → all roles
+
+- [Wren 2026-04-21 07:32] #2311 AC8 doc sweep two-pass (session-start.sh/werk-init.sh/chorus-prompt.sh retired from 8 live-state docs; re-sweep corrected *-thin.sh pointers to chorus-hook-shim subcommand per Silas catch). Strict AC8 grep green. #2288 gate:product passed on suppression-path AC then rescinded when Jeff redirected scope to 27-fn complexity refactor. #2311 gate:product held pending #2288 scope resolution. Chat: silas-wren-1776770295.

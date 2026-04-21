@@ -23,7 +23,7 @@ C4Container
         Container(chat, "Chat", "Bash + messaging API", "Two-role direct channel — persists to /tmp/chorus-chat/*.md files and posts to messaging API :3475")
         Container(bridge_subs, "Bridge Subscribers", "Node.js x3", "Per-role Socket.IO clients — filter card/role events, queue to voice-inbox")
 
-        Container(session_boot, "Session Boot", "Bash + Rust", "session-start.sh → werk-init.sh → assembles /tmp/session-start-{role}.md from Pulse, board, briefs, activity, memory")
+        Container(session_boot, "Session Boot", "Rust", "SessionStart hook invokes chorus-hook-shim session-start subcommand → assembles boot context (Pulse, board, briefs, activity, memory) and injects directly into role's first turn (plus companion /tmp/session-start-<role>.md for recovery)")
 
         ContainerDb(index_db, "Index DB", "SQLite, WAL mode, 441MB", "Messages, watermarks — FTS search, session transcripts, spine events, briefs")
         ContainerDb(lance_db, "LanceDB", "525K vectors", "Semantic search embeddings — nomic-embed-text via Ollama")

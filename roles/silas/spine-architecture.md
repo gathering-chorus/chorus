@@ -14,17 +14,17 @@ Design principle: Jeff moves a card to Now → the system takes over → roles p
 
 | Component | Function | Trigger | Key Files |
 |-----------|----------|---------|-----------|
-| `session-start.sh` | Parallel board reads, brief checks, workflow steps, CLAUDE.md staleness. Writes full context to `/tmp/session-start-<role>.md` | Manual or SessionStart hook | `messages/scripts/session-start.sh` |
+| SessionStart hook → `chorus-hook-shim session-start` | Parallel board reads, brief checks, workflow steps, CLAUDE.md staleness. The SessionStart hook (configured in settings.json) invokes the `chorus-hook-shim session-start <role>` subcommand, which injects boot context directly into the role's first turn (plus writes companion `/tmp/session-start-<role>.md` for recovery / stale-session rescue) | SessionStart hook (automatic) or manual | Rust binary: `chorus-hook-shim` (subcommand `session-start`) |
 | `session-init-gate.sh` | Blocks Write/Edit/Bash until role reads context file. Marker lifecycle: `.pending` → `.done` | PreToolUse hook (every tool call) | `messages/scripts/session-init-gate.sh` |
 | `chorus-audit.sh` | Gate health, disk budget (C1/C2), container health, uncommitted files, retroactive card detection | Session start/close, manual | `messages/scripts/chorus-audit.sh` |
 
-**session-start.sh parallel operations:**
+**Session boot parallel operations (SessionStart hook → `chorus-hook-shim session-start`):**
 1. `board-ts audit-start` (both boards)
 2. `workflow.sh pending <role>` (waiting steps)
 3. `handoff-check.sh` (stale handoffs)
 4. `claudemd-gen.sh --check` (CLAUDE.md drift)
 5. `chorus-capture.sh --count` (intake queue)
-6. Write context to `/tmp/session-start-<role>.md`
+6. SessionStart hook injects assembled boot context into the role's first turn
 
 Latency: ~3-5s for full context load.
 
@@ -32,7 +32,7 @@ Latency: ~3-5s for full context load.
 
 | Component | Function | Trigger | Key Files |
 |-----------|----------|---------|-----------|
-| `cards` | TypeScript Vikunja client — card CRUD, audit snapshots, staleness detection (Now >48h, Next >7d), WIP limiting | Manual, session-start.sh | `directing/products/cards/src/cli.ts`, `directing/products/cards/src/client.ts` |
+| `cards` | TypeScript Vikunja client — card CRUD, audit snapshots, staleness detection (Now >48h, Next >7d), WIP limiting | Manual, `chorus-hook-shim session-start` | `directing/products/cards/src/cli.ts`, `directing/products/cards/src/client.ts` |
 | Workflow engine | Multi-step state machine — JSON manifests, auto-handoff briefs, swim lane dashboard | Auto on `board-ts move <id> Now`, manual via `workflow.sh` | `messages/workflow-engine/src/engine.ts`, `messages/scripts/workflow.sh` |
 | Briefs protocol | Structured files in recipient's `briefs/` dir, staleness flagging, activity.md audit trail | Manual write, workflow auto-generation | Role `briefs/` directories, `messages/activity.md` |
 
@@ -158,9 +158,9 @@ Full registry: `architect/chorus/gate-registry.md`
 
 | Component | Depends on | Used by |
 |-----------|-----------|---------|
-| session-start.sh | board-ts, workflow.sh, handoff-check.sh, claudemd-gen.sh | session-init-gate, role startup |
-| session-init-gate | /tmp/session-start-<role>.md | Every Write/Edit/Bash call |
-| board-ts | Vikunja API (localhost:3456), WorkflowEngine | session-start, audits, manual card ops |
+| SessionStart hook → `chorus-hook-shim session-start` | board-ts, workflow.sh, handoff-check.sh, claudemd-gen.sh | session-init-gate, role startup |
+| session-init-gate | boot-context injection marker | Every Write/Edit/Bash call |
+| board-ts | Vikunja API (localhost:3456), WorkflowEngine | session boot, audits, manual card ops |
 | workflow-engine | board-ts (card linking), briefs/ directories | board-ts (auto-trigger), workflow.sh CLI |
 | chorus index | session JSONL, artifact files | /chorus skill, reconciliation, HTTP API |
 | claudemd-gen.sh | manifest.json, fragments, settings.local.json | session-start (--check), chorus prompt |
@@ -190,13 +190,13 @@ The spine is pull-based — roles only process briefs when Jeff starts a session
 Team repo pre-commit hook validates TypeScript, tests, secrets — but `.git/hooks/` doesn't travel with the repo. Needs `core.hooksPath` or shared hooks directory for portability.
 
 ### 7. Board consolidation freshness (v1.3.4)
-Unified board with product labels just landed. session-start.sh still runs `--chorus` audit. Scripts may need a verification pass to confirm drain-period routing works correctly.
+Unified board with product labels just landed. `chorus-hook-shim session-start` still runs `--chorus` audit. Scripts may need a verification pass to confirm drain-period routing works correctly.
 
 ## Performance
 
 | Operation | Latency |
 |-----------|---------|
-| session-start.sh (full context) | ~3-5s |
+| Session boot (full context via SessionStart hook → `chorus-hook-shim session-start`) | ~3-5s |
 | board-ts audit-start | <1s |
 | workflow.sh advance | <1s |
 | chorus FTS5 search | ~50ms |

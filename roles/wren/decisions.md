@@ -414,7 +414,7 @@
 - **Context**: Session start took 90 seconds with verbose output from sequential reads. Jeff's feedback: "I don't need to see 100 lines of output — just that the signal is causing action." He wants to click into details if he wants them, not have them forced on him.
 - **Decision**: Every automated event (hooks, audits, gates, checks) outputs a single status line. 🟢 = success, 🟡 = warnings (shown inline), 🔴 = errors (shown inline). Full details written to a temp file for drill-down. Progressive disclosure: status line is default, details are available on demand. Quiet success, loud failure.
 - **Jeff's words**: "I like this type of signaling on any event (pre-commit, etc) that is implemented — I don't need to see 100 lines of output — just that the signal is causing action"
-- **Implementation**: `session-start.sh` (parallel reads, <1s), `chorus-audit.sh start` (status line + detail file at `/tmp/chorus-audit-<role>.md`). Pattern applies to all future hooks and signals.
+- **Implementation**: `chorus-hook-shim session-start` subcommand (parallel reads, <1s; invoked by the SessionStart hook configured in settings.json), `chorus-audit.sh start` (status line + detail file at `/tmp/chorus-audit-<role>.md`). Pattern applies to all future hooks and signals.
 - **Status**: Accepted
 
 ## DEC-036: Werk version tracks CLAUDE.md generator output

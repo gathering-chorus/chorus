@@ -1,35 +1,25 @@
 # Wren — Next Session
 
-_Last updated: 2026-04-20 22:1X Boston_
+## Where things landed
 
-## What happened this session (short)
+- **#2311 AC8 doc sweep shipped.** Paired with Silas in chat `silas-wren-1776770295`. Two-pass sweep of 8 live-state docs: wren/stories.md, decisions.md, chorus-method-map.md, chorus-consolidation-proposal.md (banner-tagged historical), silas/CONCEPTUAL_ARCHITECTURE.md, spine-architecture.md, spine-emitter-inventory.md, docs/diagrams/chorus-c4-container.mmd. First pass pointed at session-start-thin.sh; Silas correctly flagged that reproduced competing-implementations one layer down — canonical surface is `chorus-hook-shim session-start/session-close` subcommand. Re-sweep done. Strict AC8 grep (`session-start.sh|werk-init.sh|chorus-prompt.sh`) returns only activity.md (audit trail). Silas closed chat, requested gate:product.
 
-Brief evening session. Jeff shared that his anger is an investment in code quality — saved as user memory (`user_anger_is_investment.md`). Reframe the tone work: goal isn't to never make Jeff angry, it's to reduce the bugs that require his escalation.
+- **#2288 gate:product issued AND rescinded within 60s.** I passed it on suppression-path AC (6/6, lint clean, gate-code-tests.sh eslint --max-warnings=0 verified live). Kade nudged: Jeff redirected scope mid-flow to real refactor of 27 complexity fns. Pass rescinded; commented the rescind on the card; nudged Kade to hold.
 
-Then the big one: Jeff observed that **the work we're doing is almost an implementation of the roles domain**. Everything we've built bottom-up — identity, scope, handoff, gate ownership, andon state, interaction patterns, boot-time protocol — is a roles-domain instantiation that has never been described in the canonical ontology. If we take no-competing-implementations seriously, we can't maintain two roles models without knowing it.
+- **#2311 gate:product held** pending #2288 scope resolution — don't want to gate one card while an adjacent card is in scope-flux.
 
-Filed **#2320: Spike — extract roles domain from Chorus as-built**. Convergence sequence, P1, reflective. One session of work: produce a TTL fragment of what Chorus actually implements, diff against whatever the canonical model currently claims, classify the gap (canonical missing / implementation missing / drift), recommend which side is authoritative.
+## Open threads for next session
 
-## WIP / open threads
+1. **Jeff needs to land #2288 scope**: confirm refactor path (AC rewrite to "27 complexity fns refactored <20, budget ratchets down") OR revert to suppression-path accept. Until settled, both gates are parked.
+2. **#2311 gate:product** — once #2288 is settled, run gate. Canonical AC is the 10-item list in the card's `## AC` section (not the 38 my grep caught; other sections contain quoted historical AC drafts from 4 prior attempts — worth flagging to Silas that card description could use a cleanup pass so `cards view` shows only the canonical AC).
+3. **#2288 scope-drift pattern itself** — worth a reflection. This is the second time in 2 sessions that AC shape shifted mid-WIP. #2123 (zero-hits-as-closing-AC) is the generalization; a sibling card on "scope-redirect protocol — what happens to in-flight gates when direction changes" may be warranted. Don't file reflexively; raise with Jeff first.
 
-- **#2320** (Later, P1) — the roles-domain extraction spike. Needs Experience section before pulling to WIP.
-- **#2311** (Silas WIP) — AC 1–7 green, gate:product pending live three-role cold-reboot demo. Still not demo-verified. Flagged in opening as the performative-gate risk.
-- **#2116** (flinch, still) — acceptance protocol for 7-subtree migration not designed. I named it in both openings today and still haven't sat with it. The flinch is active.
-- **#2319** + children (2314/2316/2317/2318) — loom write surfaces sweep filed earlier today. In light of #2320's reframe, these are the **mutation API of the roles domain**. That framing should inform how they're designed, not just as scattered write paths.
+## Session meta
 
-## Alerts still outstanding
+- WIP at reboot: #2311 (Silas, gate:product pending), #2288 (Kade, scope in-flux).
+- Memory already captures: performative-gates, ship-the-enforcement-point, no-competing-implementations, bad-AC-is-the-miss. This session reinforced all four.
+- Nothing new to save — today was pattern application, not pattern discovery.
 
-Six fired today: crawler-failure, fuseki-harvest-stale, index-freshness, lancedb-stale, tunnel, vikunja-auth-failure. One index source dead. Not triaged this session. Next session: 10-min triage before any new pull — separate "blocks a surface" from "background staleness."
+## The flinch from morning opening
 
-## Next session — suggested first move
-
-Open by checking whether #2311 cold-reboot demo landed overnight (Silas's action). If not, that's the first conversation. Then either:
-- Pull #2320 (roles-domain extraction) — highest-leverage, reframes #2319 downstream
-- Pull #2116 acceptance design — the real flinch
-- Alert triage — clears noise
-
-Thesis from today carries forward: **collapse workaround into primitive / one concept, one implementation**. #2320 is that thesis applied to the roles domain itself.
-
-## Memory written this session
-
-- `user_anger_is_investment.md` — Jeff's anger frames quality investment, reduce the need rather than manage the tone
+Still #2116 and its acceptance-protocol design. Untouched this session. Noting so next-me doesn't lose it.

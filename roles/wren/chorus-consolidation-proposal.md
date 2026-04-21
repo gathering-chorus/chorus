@@ -1,4 +1,6 @@
-# Chorus Consolidation Proposal
+# Chorus Consolidation Proposal (HISTORICAL)
+
+> **Historical document.** This proposal dates from 2026-03-11. Since then, the session-lifecycle consolidation described below was executed: the legacy session-start wrapper and werk-init boot orchestrator have been retired, and the legacy chorus-prompt generator script is gone. Current mechanism: the SessionStart hook (configured in settings.json) invokes `chorus-hook-shim session-start <role>` — a Rust binary subcommand that injects boot context directly into each role's first turn (plus writes a companion `/tmp/session-start-<role>.md` for recovery / stale-session rescue); `chorus-hook-shim session-close` handles close-out; the chorus prompt is now a literal template in each role's CLAUDE.md sourced from `PROTOCOL_VERSION`. References below are preserved for historical accuracy.
 
 **Card:** #1292 | **Owner:** Wren | **Date:** 2026-03-11
 **Premise:** The method has 100+ components across 5 layers. Each solved a real problem. Together they're a favela — vertically accreted, no load-bearing design. This proposal identifies what to keep, what to merge, what to demolish, and what to encapsulate.
@@ -109,7 +111,7 @@ This is the biggest cut. Many scripts exist because a capability was needed once
 |--------|-------------------|
 | board-ts | Card lifecycle engine. Irreplaceable. |
 | git-queue.sh | Multi-role commit serialization. Irreplaceable. |
-| werk-init.sh | Session boot/close orchestration. Irreplaceable. |
+| `chorus-hook-shim session-start` / `session-close` subcommands | Session boot/close orchestration (canonical, Rust). Irreplaceable. (Originally proposed as a single werk-init orchestrator; subsequently absorbed into the `chorus-hook-shim` Rust binary, invoked by the SessionStart hook in settings.json.) |
 | role-state.sh | Andon state declaration. Load-bearing for Jeff's visibility. |
 | chorus-log.sh | Spine event emission. The nervous system's signal carrier. |
 | chorus-query.sh | Memory search. 95K+ messages indexed. |
@@ -130,9 +132,9 @@ This is the biggest cut. Many scripts exist because a capability was needed once
 - All do the same thing: read source → extract → insert into SQLite. Six scripts with identical patterns.
 - One script, six subcommands: `chorus-index.sh artifacts|sessions|slack|spine|stories|journal`
 
-**Merge: team-scan.sh + handoff-check.sh → fold into werk-init.sh**
+**Merge: team-scan.sh + handoff-check.sh → fold into session boot orchestrator**
 - Both run at session start. Both check role state. Both are called by the same boot sequence.
-- Eliminate the indirection. werk-init.sh already orchestrates boot — let it do the scanning directly.
+- Eliminate the indirection. The boot orchestrator already runs at session start — let it do the scanning directly. (Outcome: SessionStart hook invokes `chorus-hook-shim session-start` which now handles this path.)
 
 **Merge: voice-to-session.sh + vts-lib.sh → fold into listen.sh**
 - listen.sh captures audio. voice-to-session.sh transcribes and injects. vts-lib.sh is shared functions.
@@ -142,7 +144,7 @@ This is the biggest cut. Many scripts exist because a capability was needed once
 
 | Script | Reason to remove |
 |--------|-----------------|
-| session-start.sh | Deprecated wrapper. Just calls werk-init.sh. Remove the indirection. |
+| (former) legacy session-start wrapper | Deprecated wrapper that just delegated to the boot orchestrator. Indirection removed — retired. |
 | slack-post.sh | Slack deprecated (2026-02-22). Dead code. |
 | slack-read.sh | Slack deprecated. Dead code. |
 | system-state.sh | Overlaps with app-state.sh. Terraform is not in active use. |
@@ -238,11 +240,11 @@ This isn't a rewrite. It's a series of small, safe consolidations. Each one shri
 
 | Phase | What | Effort | Risk |
 |-------|------|--------|------|
-| **1. Dead code** | Remove deprecated scripts (slack-*, session-start.sh wrapper, one-shot installers) | Small | Zero — unused code |
+| **1. Dead code** | Remove deprecated scripts (slack-*, legacy session-start wrapper, one-shot installers) | Small | Zero — unused code |
 | **2. Hook merges** | autonomy-guard (3→1), tool-telemetry (2→1), absorb pod-state-sync | Medium | Low — same behavior, fewer files |
 | **3. Index consolidation** | 6 chorus-index-*.sh → 1 with subcommands | Medium | Low — same logic, unified |
 | **4. Daemon merges** | chorus-ops (3→1), andon consolidation (3→1) | Medium | Medium — process lifecycle changes |
-| **5. Boot simplification** | Fold team-scan + handoff-check into werk-init.sh | Medium | Medium — boot sequence is critical path |
+| **5. Boot simplification** | Fold team-scan + handoff-check into the boot orchestrator (landed as SessionStart hook invoking `chorus-hook-shim session-start`) | Medium | Medium — boot sequence is critical path |
 | **6. CLAUDE.md audit** | 51 fragments → ~25. Separate card. | Large | Low — documentation, not code |
 
 **Total reduction:** 100+ components → ~70. Same capabilities. Clearer boundaries. Less to break.

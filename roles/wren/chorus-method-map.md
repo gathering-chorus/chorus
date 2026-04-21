@@ -68,7 +68,7 @@ Hooks are forcing functions — they fire automatically on tool use, response co
 | Hook | Trigger | What It Does |
 |------|---------|-------------|
 | session-init-gate | PreToolUse:Bash/Write/Edit | Blocks all work until role reads `/tmp/session-start-<role>.md` |
-| session-end | SessionEnd | Emits close-out spine events via `werk-init.sh --close` |
+| session-end | SessionEnd | Emits close-out spine events via `chorus-hook-shim session-close` subcommand |
 
 **Spine events emitted by hooks:** `search.hierarchy.filesystem_used`, `decision.gate.matched`, `decision.gate.jdi_override`, `guard.scrub.blocked`, `guard.classify.decided`, `guard.sparql.warned`, `brief.handoff.written`, `decision.gate.text_leak`
 
@@ -85,7 +85,8 @@ Scripts are the implementation layer — bash, TypeScript, and Python executing 
 #### Session Lifecycle
 | Script | Location | Purpose |
 |--------|----------|---------|
-| werk-init.sh | messages/scripts/ | Boot context assembly + close-out introspection |
+| chorus-hook-shim session-start | Rust binary subcommand | Canonical session boot: SessionStart hook invokes it to inject context into role's first turn (plus companion `/tmp/session-start-<role>.md` written by session.rs for recovery / stale-session rescue) |
+| chorus-hook-shim session-close | Rust binary subcommand | Close-out introspection + spine events |
 | role-state.sh | messages/scripts/ | Declare andon state (building/blocked/waiting/idle) |
 | team-scan.sh | messages/scripts/ | Scan briefs inbox, protocol version, context injection |
 
@@ -207,12 +208,12 @@ Background processes that keep the system alive without human intervention.
 
 Every role session follows a three-phase pattern.
 
-### Boot (werk-init.sh --session)
+### Boot (SessionStart hook → `chorus-hook-shim session-start`)
 1. **Parallel data gather** (~2-5s): board state, workflow pending, recent decisions, new briefs, git history, Chorus stats
 2. **Health checks** (~3-8s): board reachable, state files exist, CLAUDE.md fresh, disk health, Fuseki health (Silas only)
 3. **Auto-remediation**: Now → WIP auto-promote (DEC-051), nudge inbox drain, brief acknowledgment
-4. **Context file** → `/tmp/session-start-<role>.md`
-5. **Session-init gate** blocks all work until context file is read
+4. **Context injection** — the SessionStart hook (configured in settings.json) invokes `chorus-hook-shim session-start <role>`, which assembles boot context and injects it directly into the role's first turn (plus writes a companion `/tmp/session-start-<role>.md` for recovery / stale-session rescue)
+5. **Session-init gate** blocks all work until boot context has been received
 
 ### Operate
 - Card-first: work starts with `board-ts move <id> WIP` + `role-state.sh <role> building card=<id>`
@@ -221,7 +222,7 @@ Every role session follows a three-phase pattern.
 - Spine events emitted on every card mutation
 - Hooks fire on every tool use
 
-### Close (werk-init.sh --close)
+### Close (`chorus-hook-shim session-close` subcommand)
 1. Journal (3-8 sentence reflection)
 2. Board audit (`board-ts audit-close`)
 3. Activity log append
