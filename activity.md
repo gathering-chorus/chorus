@@ -1050,3 +1050,28 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - [Silas] → design doc #2280 (pulse service-as-event-bus redesign) → Jeff review
 - [Silas] → authored practice-atomic-cutover (with Kade+Wren retro inputs) → Loom triangle
 
+
+## 2026-04-22 silas session (reboot)
+- [Silas] → shipped #2280 pulse service design (event-bus cache reframe, 185 lines at designing/docs/pulse-service-design.md) → Wren, Kade, Jeff
+- [Silas] → shipped #2443 nudge truncation swat (two commits: 120-char cap removal + multi-line JSON escape) → team
+- [Silas] → filed #2442 with 12-item wave AC (sidecar timestamps, schema_version, suppression delete, 5 resolve-on-recovery swats, context_inject + tiles.ts age-awareness) → Silas next session
+- [Silas] → Wren delivered substantive full feedback on #2280 post-#2443 fix → design doc updated with thesis elevation, schema_version inline, wave-not-wedge scope
+- [Silas] → Kade delivered substantive full feedback on #2280 (getPulseAge helper → follow-on, parallel-primary wedge-vs-wave catch, sources.alerts meaninglessness fix) → #2442 scope expanded
+- Pattern: shipped #2443 with narrow x-string test, missed newline edge case; Jeff correction caught the sidecar-vs-simpler-fix anti-pattern
+
+## 2026-04-22 — Kade (reboot)
+
+- [06:10] [Kade] → Jeff pinged quality-review "50% fail feels wrong" — started investigation → Jeff
+- [06:45] [Kade] → Filed #2438 (quality-review reporting granularity, SWAT P1) + #2439 (brief-pipeline-flow gate parse-mismatch, P2) → Jeff, Wren
+- [06:49] [Kade] → Retro chat with Wren: wave-vs-wedge + silence-as-failure-mode practices scoped; owning practice-atomic-cutover authorship → Wren
+- [06:51] [Kade] → 9 TS6133 unused-var fixes across cards/tests/ (continuation of #2284); cards/ unblocked 528 green → Jeff
+- [07:40] [Kade] → #2435 call-site audit delivered (18 callers / 6 write surfaces / 9 consumers) → Silas
+- [07:45] [Kade] → #2435 AC v1→v2 review, 4 pushbacks folded (flag flip in-card, zero-shared-code pair-enforcement, drained-consumer audit, explicit latency contract) → Silas
+- [08:15] [Kade] → #2435 §0.3 drained-consumer audit: nudge.acknowledged name collision caught pre-parallel-run → Silas
+- [09:06] [Kade] → #2438 shipped wave 1 (3-state categorization + per-suite counts + pass rate) → Jeff, Wren
+- [09:14] [Kade] → Wren feedback on #2438: 4 extensions; inlined (1) failing-suite names, filed (2)(3)(4) as #2441 → Wren
+- [09:16] [Kade] → Filed #2440 (demo_gate_env.rs #1815 fixture drift, confirmed pre-existing on #2435 gate chain) → Jeff
+- [09:17] [Kade] → gate:code-pass + gate:quality-pass on #2435 (618 tests green, warnings 36→21, -733 LOC net) → Silas
+- [09:20] [Kade] → /acp #2438 — commit 4100c895, 15 files, +362/-247 → Jeff, Wren
+- [09:32] [Kade] → #2280 feedback: 3 code-quality points (sidecar key helper, parallel-primary wedge, empty sources.alerts). Truncated by #2443 at 120 chars; resent post-fix. → Silas
+- [09:40] [Kade] → #2443 120-char repro: confirmed truncation boundary via probe → Silas
