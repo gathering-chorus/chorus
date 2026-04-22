@@ -1,35 +1,52 @@
-# Wren — Next Session
+# Wren — Next Session Pickup
 
-_Last updated: 2026-04-20 22:1X Boston_
+**Last session:** 2026-04-21, ~10 hours, dense. Duration=38798s per close-out.
 
-## What happened this session (short)
+## One-line session thesis
+"Ritual into contract" morning shifted into "Loom triangle" afternoon — permaculture principles as the anti-Gestell top-level, policies+practices traced back via skos:broader, and domain-detail.html made honest about the instances it renders.
 
-Brief evening session. Jeff shared that his anger is an investment in code quality — saved as user memory (`user_anger_is_investment.md`). Reframe the tone work: goal isn't to never make Jeff angry, it's to reduce the bugs that require his escalation.
+## Session accepts (11)
+#2288, #2326, #2327, #2325, #2328, #2321, #2337, #2252, #2339, #2193, #2431. Gate:product passes also on #2416, #2220 (pending /acp by Silas).
 
-Then the big one: Jeff observed that **the work we're doing is almost an implementation of the roles domain**. Everything we've built bottom-up — identity, scope, handoff, gate ownership, andon state, interaction patterns, boot-time protocol — is a roles-domain instantiation that has never been described in the canonical ontology. If we take no-competing-implementations seriously, we can't maintain two roles models without knowing it.
+## WIP entering next session
+- **#2430** — unified domain-identity resolver. Gates 5/5 PASSED. Ready for /acp.
+- **#2431** — generic instance-render fold. Gates 5/5 PASSED (gate:arch-pass (post-narrowing) + gate:ops-pass posted by Silas, arrived silently via #2435 pattern). Ready for /acp. Pair with Kade stays open per his convention.
+- **#2337, #2339, #2193, #2220, #2327, #2416** — all shipped + gates pass, pending /acp by Jeff.
+- **#2348 (practices → principles + policies)** — third Loom-triangle leg, still Later, not yet pulled.
 
-Filed **#2320: Spike — extract roles domain from Chorus as-built**. Convergence sequence, P1, reflective. One session of work: produce a TTL fragment of what Chorus actually implements, diff against whatever the canonical model currently claims, classify the gap (canonical missing / implementation missing / drift), recommend which side is authoritative.
+## Cards filed this session (many)
+#2321 write-story gap, #2322 nav entries, #2323 search-telemetry swat (shipped by Silas), #2324 zone-c e2e (Silas), #2325 multi-seq render (shipped), #2329 classifier widen, #2330 reduce-to-single principle, #2333 post-restart smoke, #2337 permaculture harvest (shipped), #2339 policies map (shipped), #2348 practices map, #2359 Chorus products narrative, #2414-#2416 Silas's #2311 follow-ons, #2428 test fixtures no pollute, #2430 resolver, #2431 instance render, #2432 /demo endpoint smoke, #2434 quality scanner, #2435 nudge-delivery reframed to heartbeat-as-primary, #2436 Silas's CORS narrowing follow-on.
 
-## WIP / open threads
+## Active tension points
+1. **#2041 Athena out of Gathering** — reshaped mid-session to narrower "move, don't decide shape." CORS stopgap in #2431 is explicit #2041 debt (`// #2041: remove once Athena relocates`).
+2. **#2435 nudge-delivery** — reshaped from "fix osascript inject" to "retire inject as load-bearing, heartbeat-poll as primary." Two observed drops today (Kade 11:40, Silas 14:14). The pair scratch file became the fallback channel during the pair.
+3. **#2430 / #2431 still WIP** — both waiting on Jeff /acp despite 5/5 gates each.
 
-- **#2320** (Later, P1) — the roles-domain extraction spike. Needs Experience section before pulling to WIP.
-- **#2311** (Silas WIP) — AC 1–7 green, gate:product pending live three-role cold-reboot demo. Still not demo-verified. Flagged in opening as the performative-gate risk.
-- **#2116** (flinch, still) — acceptance protocol for 7-subtree migration not designed. I named it in both openings today and still haven't sat with it. The flinch is active.
-- **#2319** + children (2314/2316/2317/2318) — loom write surfaces sweep filed earlier today. In light of #2320's reframe, these are the **mutation API of the roles domain**. That framing should inform how they're designed, not just as scattered write paths.
+## Loom triangle state
+- #2337 permaculture principles (parents) — **SHIPPED**. 24 instances in Fuseki (12 parents + 12 specializations).
+- #2339 policies → principles — **SHIPPED**. 24 policies, 39 enforces edges, 0 orphans post-retro.
+- #2348 practices → principles + policies — **filed, not pulled**. Closes the triangle.
+- #2359 Chorus products narrative page — filed, not pulled. Portrays the whole shape.
 
-## Alerts still outstanding
+## Stories captured
+Two real stories landed in Fuseki via the fixed write-story.sh (#2321):
+- `urn:jb/jeff/stories/garden-learning-tech-learning.ttl` — Mom→Jeff→tech thread, enthusiasm-first learning
+- `urn:jb/jeff/stories/you-are-not-the-boss-of-me.ttl` — Ravi→small-kid childhood→inward boundary
 
-Six fired today: crawler-failure, fuseki-harvest-stale, index-freshness, lancedb-stale, tunnel, vikunja-auth-failure. One index source dead. Not triaged this session. Next session: 10-min triage before any new pull — separate "blocks a surface" from "background staleness."
+Both linked via `rdfs:seeAlso` to three permaculture principles (Design from patterns, Use and value diversity, Observe and interact).
 
-## Next session — suggested first move
+## Open nudges to handle
+- Silas: #2327 /acp (I passed gate:product earlier)
+- Silas: #2416 /acp (I passed gate:product)
+- Silas: #2220 /acp (I passed gate:product)
+- Jeff: /acp on my WIP #2430 + #2431
 
-Open by checking whether #2311 cold-reboot demo landed overnight (Silas's action). If not, that's the first conversation. Then either:
-- Pull #2320 (roles-domain extraction) — highest-leverage, reframes #2319 downstream
-- Pull #2116 acceptance design — the real flinch
-- Alert triage — clears noise
+## Patterns/memory candidates
+Three scope-discipline patterns named today — worth consolidating into one loom-principle candidate:
+1. AC matches shipped state (#2288)
+2. No artifacts without consumers (#2252)
+3. Test-green ≠ deploy-live (#2252 → #2432)
+Compose into: "the card, the tests, and the live surface all have to tell the same story before /acp."
 
-Thesis from today carries forward: **collapse workaround into primitive / one concept, one implementation**. #2320 is that thesis applied to the roles domain itself.
-
-## Memory written this session
-
-- `user_anger_is_investment.md` — Jeff's anger frames quality investment, reduce the need rather than manage the tone
+## Personal tone
+Strong session. Jeff shared two stories (gardening/tech composition, boundaries with Ravi). Kade + Silas paired cleanly despite the nudge-delivery friction. Session ended warm.
