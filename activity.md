@@ -1042,3 +1042,11 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - Filed: #2338 (filter test fix), #2433 (dist-sync gate prevention)
 - Gates posted: #2321, #2323, #2324, #2325, #2326, #2327, #2337, #2339, #2414, #2415, #2416, #2428, #2430, #2220
 - Three discipline patterns composed: AC matches shipped state, no artifacts without consumers, test-green ≠ deploy-live
+- Wren → filed brief roles/kade/briefs/2026-04-21-loom-practices-render.md → Kade (needs to see)
+- Wren → #2348 Wave 1 shipped: 40 practices + 84 expresses + 25 operationalizes edges in Fuseki + chorus.ttl → team
+
+- [Silas] → acp #2435 (collapse nudge delivery to one canonical path, -733 LOC net, spine-tick-poller canonical receiver) → team, closes parent #2437 first-instance
+- [Silas] → filed #2437 (competing-implementations audit) → all roles
+- [Silas] → design doc #2280 (pulse service-as-event-bus redesign) → Jeff review
+- [Silas] → authored practice-atomic-cutover (with Kade+Wren retro inputs) → Loom triangle
+
