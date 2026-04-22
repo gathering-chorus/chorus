@@ -138,3 +138,62 @@ fn nudge_without_deploy_role_fails_loud() {
         "stderr must name the contract violation: {}", stderr
     );
 }
+
+/// #2435 — nudge CLI emits a canonical `nudge.emitted` spine event per invocation.
+/// Producer side of the one-canonical-path design: consumers fold nudge.emitted
+/// against nudge.surfaced to compute unread sets. Parallel-run with legacy
+/// role.nudge.sent; post-flag-flip, role.nudge.sent retires.
+///
+/// Event name chosen to avoid collision with role_state drain's nudge.acknowledged
+/// (count-payload, different semantics — Kade's 0.3 audit).
+#[test]
+fn nudge_cli_emits_canonical_emitted_event() {
+    let log_path = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
+    let marker = format!("emit-test-{}-canonical", std::process::id());
+
+    let out = Command::new("bash")
+        .arg(NUDGE_SCRIPT)
+        .arg("wren")
+        .arg(&marker)
+        .env("CHORUS_INJECT_DRY_RUN", "1")
+        .env("DEPLOY_ROLE", "silas")
+        .output()
+        .expect("nudge script must run");
+    assert!(out.status.success(), "dry-run nudge must succeed");
+
+    let log = fs::read_to_string(log_path).unwrap_or_default();
+    let recent: Vec<&str> = log.lines().rev().take(400).collect();
+    let our_lines: Vec<&&str> = recent.iter().filter(|l| l.contains(&marker)).collect();
+    assert!(
+        !our_lines.is_empty(),
+        "chorus.log must contain lines with marker `{}` after nudge", marker
+    );
+
+    let emitted_line = our_lines
+        .iter()
+        .find(|l| l.contains("\"event\":\"nudge.emitted\""))
+        .unwrap_or_else(|| panic!(
+            "chorus.log must contain a nudge.emitted event for marker `{}`. Got: {:?}",
+            marker, our_lines
+        ));
+
+    // chorus_log flattens the first key=value as a proper JSON field and crams the
+    // rest into its value. What we guarantee: emitted event carries sender as role,
+    // target + trace id + the marker are all somewhere in the line.
+    assert!(
+        emitted_line.contains("\"role\":\"silas\""),
+        "nudge.emitted must carry sender as role: {}", emitted_line
+    );
+    assert!(
+        emitted_line.contains("to=wren"),
+        "nudge.emitted must name target role: {}", emitted_line
+    );
+    assert!(
+        emitted_line.contains("trace=ntr-"),
+        "nudge.emitted must include trace id: {}", emitted_line
+    );
+    assert!(
+        emitted_line.contains(&marker),
+        "nudge.emitted must include marker in content preview: {}", emitted_line
+    );
+}

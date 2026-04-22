@@ -67,17 +67,10 @@ fn main() -> ExitCode {
         "wall-clock" => return wall_clock_cmd(),
         "heartbeat" => return heartbeat_cmd(),
 
-        // --- Inject (needs special arg check) ---
-        "inject" => {
-            if args.len() < 2 {
-                eprintln!("Usage: chorus-hook-shim inject <role> <message>");
-                return ExitCode::from(1);
-            }
-            return match process::inject_by_tab_name(&args[0], &args[1]) {
-                Ok(()) => { println!("DELIVERED to {}", args[0]); ExitCode::SUCCESS }
-                Err(e) => { eprintln!("FAILED: {}", e); ExitCode::from(1) }
-            };
-        }
+        // #2435 — "inject" subcommand retired alongside inject_by_tab_name.
+        // Nudge delivery is the spine-tick-poller reading chorus.log; callers
+        // that need raw osascript (pair-enforce only) invoke chorus-inject
+        // binary directly.
 
         // --- Ops + workflow ---
         "chorus-ops" | "ops" => return ops::run(&args),

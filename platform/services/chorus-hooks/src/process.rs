@@ -5,7 +5,8 @@ use std::process::Command;
 
 /// Find the PID of a role's active Claude process by matching CWD.
 /// Used by role_state.rs for liveness checks — NOT used for nudge delivery.
-/// Nudge delivery uses inject_by_tab_name which bypasses PID entirely.
+/// Nudge delivery is the spine-tick-poller reading chorus.log directly (#2435);
+/// osascript inject (pair-enforce only) goes through the chorus-inject binary.
 pub fn find_role_pid(role: &str) -> Option<u32> {
     let output = Command::new("ps")
         .args(["-eo", "pid,comm"])
@@ -49,25 +50,6 @@ pub fn get_cwd(pid: u32) -> Option<String> {
                 .find(|l| l.starts_with('n'))
                 .map(|l| l[1..].to_string())
         })
-}
-
-/// Inject text into a role's Terminal window via separate chorus-inject binary.
-/// The inject binary has its own TCC Accessibility grant — rebuilding the shim
-/// never revokes it. Restores #2075 architecture after #2100 broke TCC.
-pub fn inject_by_tab_name(role: &str, text: &str) -> Result<(), String> {
-    let inject_bin = format!("{}/platform/services/chorus-inject/target/release/chorus-inject", crate::shared::state_paths::chorus_root());
-
-    let output = Command::new(inject_bin)
-        .args([role, text])
-        .output()
-        .map_err(|e| format!("chorus-inject spawn failed: {}", e))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(format!("{}", stderr))
-    }
 }
 
 /// Wall clock timestamp in Boston timezone
@@ -128,41 +110,7 @@ mod tests {
         assert!(cwd.is_none());
     }
 
-    // --- inject_by_tab_name delegates to chorus-inject binary (#2077) ---
-    // Separate crate so TCC accessibility permissions survive shim rebuilds.
-    // History: #2100 inlined it, #2229 tried bash, both reverted. Binary delegation
-    // is the stable path. This test was stale since re-introduction of the binary.
-
-    // Test seam (matches chorus-inject/tests/inject_integration.rs pattern):
-    // set CHORUS_INJECT_DRY_RUN=1 before calling inject_by_tab_name. The real
-    // code path runs — subprocess spawn, argv, role validation, escape, exit
-    // code handling — but chorus-inject's main.rs hits its dry-run branch and
-    // returns Ok without firing osascript. This exercises the nudge delivery
-    // path on every `cargo test` without storming Jeff's terminal (the opt-in
-    // polarity flip from earlier was wrong — it meant these tests never ran).
-    fn dry_run_env() {
-        std::env::set_var("CHORUS_INJECT_DRY_RUN", "1");
-    }
-
-    #[test]
-    fn inject_by_tab_name_delegates_to_chorus_inject_binary() {
-        dry_run_env();
-        let result = inject_by_tab_name("silas", "structural-test");
-        if let Err(e) = result {
-            assert!(!e.is_empty(), "error should have a message");
-        }
-    }
-
-    #[test]
-    fn inject_by_tab_name_rejects_unknown_role() {
-        let result = inject_by_tab_name("nonexistent", "test");
-        assert!(result.is_err(), "should reject unknown role");
-    }
-
-    #[test]
-    fn inject_by_tab_name_escapes_double_quotes() {
-        dry_run_env();
-        let result = inject_by_tab_name("silas", "test with \"quotes\" inside");
-        assert!(result.is_err() || result.is_ok());
-    }
+    // #2435 — inject_by_tab_name tests retired with the function. Nudge
+    // delivery is now the spine-tick-poller; osascript coverage lives in
+    // chorus-inject's own test suite (tests/inject_integration.rs).
 }

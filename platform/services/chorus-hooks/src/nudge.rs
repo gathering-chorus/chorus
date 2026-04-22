@@ -52,16 +52,6 @@ fn detect_sender() -> Result<String, String> {
 }
 
 
-/// Queue message to inbox file
-fn queue_message(role: &str, text: &str) {
-    let inbox = PathBuf::from(format!("{}/{}", INBOX_DIR, role));
-    let _ = fs::create_dir_all(&inbox);
-    let path = inbox.join("pending-inject.txt");
-    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(f, "{}", text);
-    }
-}
-
 /// Track exchange count between sender and target
 fn track_exchange(sender: &str, target: &str) {
     let _ = fs::create_dir_all(EXCHANGE_DIR);
@@ -103,8 +93,11 @@ fn needs_reply(msg: &str) -> bool {
         || lower.ends_with('?')
 }
 
-/// Emit spine event via chorus-log
-fn chorus_log(event: &str, role: &str, extra: &str) {
+/// Emit spine event via chorus-log. Public within the crate so the nudge
+/// read path (hooks::nudge_poll::mark_surfaced) can emit nudge.surfaced events
+/// through the same path as nudge.emitted — one canonical emission route per
+/// #2435 (no parallel chorus-log helpers across hooks).
+pub(crate) fn chorus_log(event: &str, role: &str, extra: &str) {
     let log_script = chorus_log_path();
     if Path::new(&log_script).exists() {
         let _ = Command::new(&log_script)
@@ -280,51 +273,43 @@ pub fn run(args: &[String]) -> ExitCode {
         ])
         .output();
 
+    // #2435 — canonical emit event. role.nudge.sent retired in wedge 7b after
+    // bridge-subscriber + Clearing (tailer.ts, server.ts) migrated to nudge.emitted.
+    // Consumers of the poll-based read path fold nudge.emitted vs nudge.surfaced
+    // to compute the unread set. Surface-ack is named nudge.surfaced (not
+    // acknowledged) to avoid collision with role_state drain's count-payload
+    // nudge.acknowledged (Kade's 0.3 audit).
     let content_preview: String = message.chars().take(120).collect();
     chorus_log(
-        "role.nudge.sent",
+        "nudge.emitted",
         &sender,
-        &format!("target={},chars={},trace={},content={}", target, message.len(), tid, content_preview),
+        &format!("from={},to={},chars={},trace={},content={}", sender, target, message.len(), tid, content_preview),
     );
 
-    // Level-based delivery (#1898):
-    // #2283: one delivery path. DEC-107: all nudges inject — no level branching.
-    // --dry-run: persist happened above, skip inject + queue.
-    // CHORUS_INJECT_DRY_RUN=1: test seam, same effect as --dry-run.
+    // #2435 atomic cutover — sender emits canonical event only. Delivery is
+    // owned by the per-role spine-tick-poller LaunchAgent (2s cadence, reads
+    // chorus.log for nudge.emitted targeting the role, delivers via
+    // chorus-inject with focus-gate, emits nudge.surfaced). No sender-side
+    // inject, no queue file, no dedup event here — the fold lives entirely
+    // on the receiver side now.
+    //
+    // Retired with this commit: inject_by_tab_name call, queue_message fallback,
+    // role.nudge.inject_failed event, role.nudge.delivered event, /tmp/voice-inbox
+    // writes, role_state.rs idle/waiting drain, inject-watcher.sh LaunchAgent.
+    // First operational demonstration of practice-canonical-surface-designation
+    // and practice-atomic-cutover (Wren + Kade's Loom triangle).
     let env_dry_run = std::env::var("CHORUS_INJECT_DRY_RUN").is_ok();
     let dry_run = dry_run || env_dry_run;
-    let mode;
 
     if dry_run {
-        mode = "dry-run";
-        println!("DRY-RUN: would inject to {} at {} | text={}",
+        println!("DRY-RUN: would emit nudge to {} at {} | text={}",
             target, clock_short, &full_text.chars().take(120).collect::<String>());
     } else {
-        // Inject first. Queue only on failure — drain on next UserPromptSubmit.
-        match process::inject_by_tab_name(target, &full_text) {
-            Ok(()) => {
-                mode = "injected";
-                println!("DELIVERED to {} at {}", target, clock_short);
-            }
-            Err(e) => {
-                queue_message(target, &full_text);
-                mode = "inject-failed-queued";
-                eprintln!("INJECT FAILED for {} (queued for drain): {}", target, e);
-                println!("INJECT_FAILED for {} at {} (queued for drain)", target, clock_short);
-                chorus_log(
-                    "role.nudge.inject_failed",
-                    &sender,
-                    &format!("target={},error={}", target, e),
-                );
-            }
-        }
+        // Canonical: emit event, exit. Tick-poller surfaces on the receiver's
+        // next 2s tick. Sender sees EMITTED (not DELIVERED — delivery is a
+        // receiver-side property we don't know yet).
+        println!("EMITTED to {} at {}", target, clock_short);
     }
-
-    chorus_log(
-        "role.nudge.delivered",
-        &sender,
-        &format!("target={},mode={},trace={}", target, mode, tid),
-    );
 
     ExitCode::SUCCESS
 }
@@ -496,91 +481,10 @@ mod tests {
         assert_eq!(role_dir("unknown"), None);
     }
 
-    // --- AC1: queue_message writes to inbox ---
-
-    #[test]
-    fn queue_message_creates_inbox_file() {
-        let test_role = "test-nudge-queue";
-        let inbox_dir = format!("{}/{}", INBOX_DIR, test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-
-        // Clean up from prior runs
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-
-        queue_message(test_role, "hello from test");
-
-        let content = fs::read_to_string(&inbox_file).expect("inbox file should exist");
-        assert!(content.contains("hello from test"));
-
-        // Cleanup
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-    }
-
-    #[test]
-    fn queue_message_appends_multiple() {
-        let test_role = "test-nudge-append";
-        let inbox_dir = format!("{}/{}", INBOX_DIR, test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-
-        queue_message(test_role, "msg1");
-        queue_message(test_role, "msg2");
-
-        let content = fs::read_to_string(&inbox_file).expect("inbox file should exist");
-        assert!(content.contains("msg1"));
-        assert!(content.contains("msg2"));
-
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-    }
-
-    // --- AC1: drain clears inbox ---
-
-    #[test]
-    fn drain_clears_inbox_after_read() {
-        let test_role = "test-nudge-drain";
-        let inbox_dir = format!("{}/{}", INBOX_DIR, test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-
-        let _ = fs::create_dir_all(&inbox_dir);
-        fs::write(&inbox_file, "queued message\n").expect("write test inbox");
-
-        let result = run(&["drain".into(), test_role.into()]);
-        assert_eq!(result, ExitCode::SUCCESS);
-
-        // Inbox should be empty after drain
-        let content = fs::read_to_string(&inbox_file).unwrap_or_default();
-        assert!(content.is_empty(), "inbox should be empty after drain");
-
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-    }
-
-    // --- AC1: drain filters bridge echo lines ---
-
-    #[test]
-    fn drain_filters_bridge_echo_lines() {
-        let test_role = "test-nudge-bridge-filter";
-        let inbox_dir = format!("{}/{}", INBOX_DIR, test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-
-        let _ = fs::create_dir_all(&inbox_dir);
-        fs::write(&inbox_file, "[bridge] echo line\nreal message\n").expect("write test inbox");
-
-        let result = run(&["drain".into(), test_role.into()]);
-        assert_eq!(result, ExitCode::SUCCESS);
-
-        // File cleared after drain
-        let content = fs::read_to_string(&inbox_file).unwrap_or_default();
-        assert!(content.is_empty());
-
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-    }
+    // #2435 — queue_message + drain tests retired alongside their functions.
+    // Nudge delivery is the spine-tick-poller (platform/scripts/spine-tick-poller);
+    // the queue file and drain subcommand no longer exist. Tick-poller coverage
+    // is end-to-end: fire dry-run nudge, --once pass, verify nudge.surfaced.
 
     // --- AC1: exchange tracking ---
 
@@ -620,51 +524,20 @@ mod tests {
         assert_eq!(result, ExitCode::from(1));
     }
 
-    // --- Level-based delivery (#1898) ---
-
-    #[test]
-    fn info_level_queues_without_inject() {
-        let test_role = "test-level-info";
-        let inbox_dir = format!("{}/{}", INBOX_DIR, test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-
-        // Info level should queue, not inject
-        // Can't test full run (needs osascript), but verify queue_message works
-        queue_message(test_role, "info level test");
-        let content = fs::read_to_string(&inbox_file).unwrap_or_default();
-        assert!(content.contains("info level test"));
-
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-    }
+    // #2435 — level-based delivery (#1898) retired. V2 has no levels; all nudges
+    // emit the same nudge.emitted event and the tick-poller surfaces. Any
+    // 'info vs critical' distinction becomes a receiver-side display choice
+    // from the canonical record, not a sender-side branch.
 
     #[test]
     fn needs_reply_with_reply_expected() {
         assert!(needs_reply("[REPLY EXPECTED — nudge kade back]"));
     }
 
-    // --- --dry-run: persist + queue, skip osascript ---
-
-    #[test]
-    fn dry_run_queues_without_inject() {
-        let test_role = "test-dry-run";
-        let inbox_dir = format!("{}/{}", INBOX_DIR, test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-
-        // --dry-run should queue but not fire osascript
-        // We can't call run() directly for a real role (it would try osascript without --dry-run),
-        // but we can verify queue_message works and the flag is parsed.
-        queue_message(test_role, "[dry-run test] persist only");
-        let content = fs::read_to_string(&inbox_file).unwrap_or_default();
-        assert!(content.contains("[dry-run test] persist only"));
-
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-    }
+    // #2435 — dry_run_queues_without_inject retired. V2 dry-run prints
+    // "DRY-RUN: would emit ..." and exits. End-to-end coverage lives in
+    // nudge_suite::nudge_cli_emits_canonical_emitted_event and the tick-poller
+    // integration path.
 
     // ── #2287: DEPLOY_ROLE contract enforcement ───────────────────────────
     // Per chorus-contracts.md C1: DEPLOY_ROLE must be set. The nudge binary

@@ -429,7 +429,15 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     if std::env::var("CONTEXT_PUSH_MODE").as_deref() != Ok("legacy") {
         let (health, team_wip, role_wip, card) = parse_pulse_orientation(&role_name);
         let envelope = build_manifest_envelope(&role_name, card.as_deref(), &health, team_wip, role_wip);
-        return HookResponse::warn_stderr(&format!("\n{}\n", envelope));
+        // #2435 wedge 3 — surface pending nudges via poll when NUDGE_PATH_V2=1.
+        // No-op when flag is off; legacy delivery paths continue unchanged.
+        // On each surface, emits nudge.surfaced to spine so the unread fold converges.
+        let log_path_str = crate::shared::state_paths::chorus_log_file();
+        let log_path = std::path::Path::new(&log_path_str);
+        let augmented = crate::hooks::nudge_poll::augment_envelope_with_nudges(
+            &role_name, &envelope, log_path, 50_000, 10,
+        );
+        return HookResponse::warn_stderr(&format!("\n{}\n", augmented));
     }
 
     // Pulse: assemble team state snapshot. A background daemon already refreshes

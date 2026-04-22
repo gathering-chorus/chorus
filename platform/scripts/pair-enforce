@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# pair-enforce — deliver the /pair skill-load signal to a target role's terminal.
+#
+# #2435 extraction: pair-enforcement is an in-band control signal ("load /pair
+# now"), not a coordination nudge. The two semantics share a substrate today
+# (nudge CLI), which conflates their timing + delivery contracts. This script
+# is the carved-out primitive — its own CLI, own event types, own delivery.
+# Zero shared code with nudge post-cutover.
+#
+# Delivery: chorus-inject binary (general osascript wrapper — not shared with
+# the nudge delivery path). Focus-gate enhancement (Wren, #2435 review): before
+# injecting, verify frontmost app is Terminal AND window title matches the
+# target's session. On failure, abort + emit pair.enforce.failed — never
+# write to a queue file, never retry, never corrupt unrelated terminal input.
+#
+# Event types (distinct from nudge.* to prevent any fold collision):
+#   pair.enforce.emitted   — sender emits; CLI invocation succeeded
+#   pair.enforce.delivered — receiver terminal received the keystroke
+#   pair.enforce.failed    — focus-gate rejected OR inject errored
+#
+# Usage: pair-enforce <target-role> <message>
+
+set -euo pipefail
+
+TARGET="${1:-}"
+MESSAGE="${2:-}"
+
+if [ -z "$TARGET" ] || [ -z "$MESSAGE" ]; then
+  echo "pair-enforce: usage: pair-enforce <target-role> <message>" >&2
+  exit 1
+fi
+
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+INJECT_BIN="${CHORUS_ROOT}/platform/services/chorus-inject/target/release/chorus-inject"
+CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
+SENDER="${DEPLOY_ROLE:-system}"
+TRACE_ID="pair-enforce-$(date +%s%N)-$$"
+
+# 1. Emit intent event. Load-bearing in either outcome.
+if [ -x "$CHORUS_LOG" ]; then
+  "$CHORUS_LOG" pair.enforce.emitted "$SENDER" \
+    "target=${TARGET},trace=${TRACE_ID},chars=${#MESSAGE}" >/dev/null 2>&1 || true
+fi
+
+# 2. Focus-gate: verify the target role's Terminal window exists and a count
+#    of exactly 1 (chorus-inject's --count-windows returns `<count>::<title>`).
+#    Rejecting zero or many prevents keystroke landing in the wrong window —
+#    the failure mode Jeff has named repeatedly as "nudges clobbering my typing."
+if [ ! -x "$INJECT_BIN" ]; then
+  if [ -x "$CHORUS_LOG" ]; then
+    "$CHORUS_LOG" pair.enforce.failed "$SENDER" \
+      "target=${TARGET},trace=${TRACE_ID},reason=inject-binary-missing" >/dev/null 2>&1 || true
+  fi
+  echo "pair-enforce: chorus-inject missing at ${INJECT_BIN}" >&2
+  exit 2
+fi
+
+WINDOW_INFO="$("$INJECT_BIN" --count-windows "$TARGET" 2>/dev/null || echo "0::")"
+WINDOW_COUNT="${WINDOW_INFO%%::*}"
+
+if [ "$WINDOW_COUNT" != "1" ]; then
+  if [ -x "$CHORUS_LOG" ]; then
+    "$CHORUS_LOG" pair.enforce.failed "$SENDER" \
+      "target=${TARGET},trace=${TRACE_ID},reason=focus-gate-failed,windows=${WINDOW_COUNT}" >/dev/null 2>&1 || true
+  fi
+  echo "pair-enforce: focus-gate rejected — ${TARGET} has ${WINDOW_COUNT} terminal windows (expected 1)" >&2
+  exit 3
+fi
+
+# 3. Deliver via chorus-inject. Single attempt — no retry, no queue fallback.
+if "$INJECT_BIN" "$TARGET" "$MESSAGE" >/dev/null 2>&1; then
+  if [ -x "$CHORUS_LOG" ]; then
+    "$CHORUS_LOG" pair.enforce.delivered "$SENDER" \
+      "target=${TARGET},trace=${TRACE_ID}" >/dev/null 2>&1 || true
+  fi
+  echo "pair-enforce: delivered to ${TARGET}"
+  exit 0
+else
+  if [ -x "$CHORUS_LOG" ]; then
+    "$CHORUS_LOG" pair.enforce.failed "$SENDER" \
+      "target=${TARGET},trace=${TRACE_ID},reason=inject-error" >/dev/null 2>&1 || true
+  fi
+  echo "pair-enforce: inject failed for ${TARGET}" >&2
+  exit 4
+fi

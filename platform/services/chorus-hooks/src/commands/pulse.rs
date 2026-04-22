@@ -1,5 +1,16 @@
-//! Pulse service — structured team state JSON on every prompt cycle (#1881)
-//! Assembles: role states, spine events, alerts, nudges, health, board, index freshness.
+//! Pulse service — event-bus cache over team-state producers (#1881, #2280).
+//!
+//! Each section in pulse-latest.json is owned by a separate upstream producer
+//! writing on its own cadence. Pulse reads, annotates with age, and exposes.
+//! It does not filter, suppress, or synthesize. Consumers decide what to act on
+//! given raw state and freshness.
+//!
+//! Producers: role_state.rs (declared), observer.rs (inferred), chorus-log
+//! (events), alert scripts (cooldown files), nudge CLI (voice-inbox),
+//! deep-health.sh (health), cards CLI (board snapshot), /api/chorus/freshness
+//! (index_freshness). See designing/docs/pulse-service-design.md for the full
+//! producer/consumer inventory and the reframe from aggregator → event-bus.
+//!
 //! Target: <200ms. All file reads, no shell spawning.
 
 use std::fs;

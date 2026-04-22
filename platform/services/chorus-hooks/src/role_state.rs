@@ -174,33 +174,12 @@ pub fn run(args: &[String]) -> ExitCode {
         let _ = writeln!(log_file, "role.state.changed | {} {}", role, event_kv);
     }
 
-    // Auto-drain nudge inbox on idle/waiting transition (atomic rename to prevent race)
-    if state == "waiting" || state == "idle" {
-        let inbox_path = format!("/tmp/voice-inbox/{}/pending-inject.txt", role);
-        let drain_path = format!("/tmp/voice-inbox/{}/draining-rs-{}.txt", role, std::process::id());
-        if fs::rename(&inbox_path, &drain_path).is_ok() {
-            let mut nudge_count = 0u32;
-            if let Ok(content) = fs::read_to_string(&drain_path) {
-                for line in content.lines() {
-                    if !line.trim().is_empty() {
-                        println!("{}", line);
-                        nudge_count += 1;
-                    }
-                }
-            }
-            let _ = fs::remove_file(&drain_path);
-            // Emit nudge.acknowledged for tracking (#1847)
-            if nudge_count > 0 {
-                if let Ok(mut log_file) = fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&chorus_log_path())
-                {
-                    let _ = writeln!(log_file, "nudge.acknowledged | {} role={} count={}", role, role, nudge_count);
-                }
-            }
-        }
-    }
+    // #2435 atomic cutover — idle/waiting inbox drain retired. The /tmp/voice-inbox
+    // queue was the fallback channel for inject-failed nudges. Under the spine-
+    // tick-poller canonical receiver (platform/scripts/spine-tick-poller), there
+    // is no inject failure to queue for — the poller retries on its next 2s tick
+    // directly from spine. Queue file + drain + count-payload nudge.acknowledged
+    // event all retire together.
 
     ExitCode::SUCCESS
 }
@@ -370,59 +349,35 @@ mod tests {
         assert_eq!(result, ExitCode::SUCCESS);
     }
 
-    // --- AC2: idle-transition inbox drain ---
+    // #2435 atomic cutover — inbox drain tests retired alongside the drain
+    // code. /tmp/voice-inbox is no longer written (inject retired in nudge.rs)
+    // nor read (drain removed from role_state). The spine-tick-poller is the
+    // canonical receiver; there's nothing for role_state to drain. New coverage
+    // for tick-poller delivery lives in the receiver-side tests for that
+    // script and its spine fold.
 
+    /// #2435 atomic cutover — regression guard that no role-state transition
+    /// (idle, waiting, building) touches the retired /tmp/voice-inbox queue.
+    /// Pre-existing queue files must survive all transitions unchanged.
     #[test]
-    fn idle_transition_drains_inbox() {
-        let test_role = "kade";
+    fn no_transition_drains_retired_inbox() {
+        let test_role = "test-no-drain-post-cutover";
         let inbox_dir = format!("/tmp/voice-inbox/{}", test_role);
         let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
 
-        let _ = fs::create_dir_all(&inbox_dir);
-        fs::write(&inbox_file, "pending nudge\n").expect("write test inbox");
+        for state in &["idle", "waiting", "building"] {
+            let _ = fs::create_dir_all(&inbox_dir);
+            fs::write(&inbox_file, "should stay\n").expect("write test inbox");
 
-        // Transition to idle — should drain
-        let result = run(&[test_role.into(), "idle".into()]);
-        assert_eq!(result, ExitCode::SUCCESS);
+            let result = run(&[test_role.into(), (*state).into()]);
+            assert_eq!(result, ExitCode::SUCCESS);
 
-        let content = fs::read_to_string(&inbox_file).unwrap_or_default();
-        assert!(content.is_empty(), "inbox should be drained on idle transition");
-    }
-
-    #[test]
-    fn waiting_transition_drains_inbox() {
-        let test_role = "kade";
-        let inbox_dir = format!("/tmp/voice-inbox/{}", test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-
-        let _ = fs::create_dir_all(&inbox_dir);
-        fs::write(&inbox_file, "another pending nudge\n").expect("write test inbox");
-
-        let result = run(&[test_role.into(), "waiting".into()]);
-        assert_eq!(result, ExitCode::SUCCESS);
-
-        let content = fs::read_to_string(&inbox_file).unwrap_or_default();
-        assert!(content.is_empty(), "inbox should be drained on waiting transition");
-    }
-
-    #[test]
-    fn building_transition_does_not_drain_inbox() {
-        // Use a unique test role to avoid parallel test interference
-        let test_role = "test-building-nodrain";
-        let inbox_dir = format!("/tmp/voice-inbox/{}", test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-
-        let _ = fs::create_dir_all(&inbox_dir);
-        fs::write(&inbox_file, "should stay\n").expect("write test inbox");
-
-        // building is not idle/waiting — should NOT drain
-        // Note: run() validates role name against VALID_STATES but not ROLES for state declaration.
-        // The drain logic checks for "waiting"/"idle" state — building should skip it.
-        let result = run(&[test_role.into(), "building".into()]);
-        assert_eq!(result, ExitCode::SUCCESS);
-
-        let content = fs::read_to_string(&inbox_file).unwrap_or_default();
-        assert!(content.contains("should stay"), "inbox should NOT drain on building transition");
+            let content = fs::read_to_string(&inbox_file).unwrap_or_default();
+            assert!(
+                content.contains("should stay"),
+                "retired drain must NOT consume inbox on transition={}", state
+            );
+        }
 
         // Cleanup
         let _ = fs::remove_file(&inbox_file);

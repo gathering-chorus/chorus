@@ -428,8 +428,14 @@ function parseLogEntry(entry: any): StreamLine | null {
     return { ts: entry.timestamp || '', role, type: 'tool', text: display };
   }
   if (event === 'session_turn') return parseTurnLine(entry, role);
-  if (event === 'role.nudge.sent') {
-    const content = (entry.target || '').match(/content=(.+)/)?.[1] || '';
+  // #2435 — canonical event is nudge.emitted. role.nudge.sent is retired in-card.
+  // Event shape: chorus-log packs the first kv as the JSON field; for nudge.emitted
+  // that's "from":"<sender>,to=<target>,chars=N,trace=...,content=<preview>". Parse
+  // the same content= tail that role.nudge.sent used — the payload format didn't
+  // change, only which JSON field carries the packed value.
+  if (event === 'nudge.emitted') {
+    const packed = (entry.from || entry.target || '') as string;
+    const content = packed.match(/content=(.+)/)?.[1] || '';
     if (!content.includes('[gemba]')) return null;
     return { ts: entry.timestamp || '', role, type: 'gemba', text: content.substring(0, 200) };
   }

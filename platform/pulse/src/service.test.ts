@@ -62,49 +62,11 @@ describe('pulse service — nudges', () => {
     expect(res.body[0].content).toBe('one');
   });
 
-  it('POST /api/nudge/:id/ack marks single nudge acknowledged', async () => {
-    const { app } = fresh();
-    const created = await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'x' });
-    const res = await request(app).post(`/api/nudge/${created.body.id}/ack`);
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    const pending = await request(app).get('/api/nudge/w/pending');
-    expect(pending.body).toHaveLength(0);
-  });
-
-  it('POST /api/nudge/:role/ack-all acknowledges all pending for role', async () => {
-    const { app } = fresh();
-    await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'a' });
-    await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'b' });
-    const res = await request(app).post('/api/nudge/w/ack-all');
-    expect(res.status).toBe(200);
-    expect(res.body.acknowledged).toBe(2);
-  });
-
-  it('POST /api/nudge/:id/attempt records delivery attempt', async () => {
-    const { app } = fresh();
-    const created = await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'x' });
-    const res = await request(app).post(`/api/nudge/${created.body.id}/attempt`);
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body).toHaveProperty('deadLettered');
-  });
-
-  it('repeated /attempt past max moves nudge to dead-letter', async () => {
-    const { app } = fresh();
-    const created = await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'x' });
-    const id = created.body.id;
-    // MAX_ATTEMPTS=3; fourth attempt triggers dead-letter.
-    await request(app).post(`/api/nudge/${id}/attempt`);
-    await request(app).post(`/api/nudge/${id}/attempt`);
-    await request(app).post(`/api/nudge/${id}/attempt`);
-    const fourth = await request(app).post(`/api/nudge/${id}/attempt`);
-    expect(fourth.body.deadLettered).toBe(true);
-    const dl = await request(app).get('/api/dead-letter');
-    expect(dl.body.length).toBeGreaterThanOrEqual(1);
-    const replay = await request(app).post(`/api/dead-letter/${id}/replay`);
-    expect(replay.status).toBe(200);
-  });
+  // #2435 wedge 7d — tests for /api/nudge/:id/ack, /api/nudge/:role/ack-all,
+  // /api/nudge/:id/attempt, /api/dead-letter replay retired alongside their
+  // endpoints. Kade's 0.3 audit confirmed 0 production callers. Delivery
+  // confirmation in V2 is the nudge.surfaced spine event, not an HTTP ack API.
+  // Dead-letter /attempt semantics retire with the inject-based delivery model.
 });
 
 describe('pulse service — chats', () => {

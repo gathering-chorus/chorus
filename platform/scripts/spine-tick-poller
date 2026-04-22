@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# spine-tick-poller — #2435 canonical nudge receiver.
+#
+# Per-role LaunchAgent that polls chorus.log every 2s for unread nudges
+# targeting this role (nudge.emitted without a matching nudge.surfaced),
+# delivers each via chorus-inject with a focus-gate, emits nudge.surfaced
+# on success or nudge.surface.failed on inject-miss.
+#
+# Canonical receiver design (Wren's framing): ONE delivery mechanism,
+# driven by the canonical store (spine). Replaces the inject-watcher.sh
+# LaunchAgent that polled /tmp/voice-inbox — that file-queue retires
+# together with the legacy inject path in nudge.rs once this tick-poller
+# demonstrates its SLO (p50 < 2s, p99 < 4s, 24h green).
+#
+# During the floor (while the old inject path still runs in nudge.rs as
+# a wake mechanism), this poller dedup-skips nudges that nudge.rs already
+# surfaced via its post-inject nudge.surfaced emit. The fold is the same
+# fold: unread = nudge.emitted − nudge.surfaced for this role.
+#
+# Usage: spine-tick-poller <role>
+#   (invoked by LaunchAgent — not meant to be called interactively except
+#    for --once testing.)
+
+set -uo pipefail
+
+ROLE="${1:-}"
+ONCE_MODE="${2:-}"
+
+if [ -z "$ROLE" ]; then
+  echo "spine-tick-poller: usage: spine-tick-poller <role> [--once]" >&2
+  exit 1
+fi
+
+# #2435 §2 parallel-run discipline (Wren 06:50): tick-poller ships gated off.
+# Must be explicitly activated via NUDGE_TICK_POLLER_ACTIVE=1 in the LaunchAgent's
+# EnvironmentVariables (or caller env for --once). Keeps inject as canonical floor
+# until SLO proof + atomic flip. --once bypasses the gate so we can run telemetry
+# probes and tests without activating the daemon.
+if [ "$ONCE_MODE" != "--once" ] && [ "${NUDGE_TICK_POLLER_ACTIVE:-0}" != "1" ]; then
+  # Silent early-exit on gated-off path. No-op LaunchAgent cycles cheaply.
+  exit 0
+fi
+
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+LOG_PATH="${CHORUS_ROOT}/platform/logs/chorus.log"
+CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
+INJECT_BIN="${CHORUS_ROOT}/platform/services/chorus-inject/target/release/chorus-inject"
+STATE_DIR="/tmp/spine-tick-poller"
+OFFSET_FILE="${STATE_DIR}/${ROLE}.offset"
+WINDOW_EVENTS=50000
+
+mkdir -p "$STATE_DIR"
+
+# Single pass: read chorus.log tail, find unread nudge.emitted for $ROLE,
+# deliver each, emit nudge.surfaced per success or .failed per miss.
+tick_once() {
+  [ ! -f "$LOG_PATH" ] && return 0
+  [ ! -x "$INJECT_BIN" ] && {
+    [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" nudge.surface.failed "$ROLE" \
+      "reason=inject-binary-missing" >/dev/null 2>&1 || true
+    return 1
+  }
+
+  # Slice the last WINDOW_EVENTS lines. Under sustained load this keeps the
+  # per-tick cost bounded — 0.1 latency spike showed ~20ms for 50k-line fold.
+  python3 - "$LOG_PATH" "$ROLE" "$WINDOW_EVENTS" "$INJECT_BIN" "$CHORUS_LOG" <<'PYEOF'
+import sys, json, subprocess, time
+
+log_path, role, window_str, inject_bin, chorus_log = sys.argv[1:6]
+window = int(window_str)
+
+try:
+    with open(log_path, 'r') as f:
+        lines = f.readlines()
+except Exception:
+    sys.exit(0)
+
+window_lines = lines[-window:] if len(lines) > window else lines
+
+emitted = {}   # trace_id -> (sender, content_preview, emit_ts)
+surfaced = set()
+
+for raw in window_lines:
+    try:
+        d = json.loads(raw)
+    except Exception:
+        continue
+    ev = d.get('event', '')
+    if ev == 'nudge.emitted':
+        packed = str(d.get('from', ''))  # "<sender>,to=<target>,chars=N,trace=...,content=..."
+        if f'to={role}' not in packed:
+            continue
+        # extract trace
+        tid = None
+        for seg in packed.split(','):
+            if seg.startswith('trace='):
+                tid = seg[len('trace='):]
+                break
+        if not tid:
+            continue
+        sender = packed.split(',', 1)[0] if packed else ''
+        # content after first 'content=' to end of packed value
+        content = ''
+        if 'content=' in packed:
+            content = packed.split('content=', 1)[1]
+        emit_ts = d.get('timestamp', '')
+        emitted[tid] = (sender, content, emit_ts)
+    elif ev == 'nudge.surfaced' and d.get('role') == role:
+        # chorus-log quirk: first kv ('trace=<tid>') becomes a JSON field named
+        # "trace" whose value is "<tid>,from=<sender>,to=<target>". The trace
+        # id is the portion before the first comma inside that value.
+        packed = str(d.get('trace', ''))
+        if packed:
+            tid = packed.split(',', 1)[0]
+            if tid:
+                surfaced.add(tid)
+
+unread = [(tid, sender, content, emit_ts) for tid, (sender, content, emit_ts) in emitted.items() if tid not in surfaced]
+
+if not unread:
+    sys.exit(0)
+
+# Deliver each, emit nudge.surfaced per success.
+for tid, sender, content, emit_ts in unread:
+    # Reconstruct the full nudge text. chorus_log truncates content at 120 chars,
+    # but for the receiver's terminal keystroke that's fine — the canonical
+    # record is the spine event; the inject is a surfacing of that record.
+    # Format matches nudge.rs full_text shape: "[nudge from <sender> | <ts>] <content>"
+    # Timestamp in the prefix reflects surface-time, not emit-time (that's in spine).
+    ts_short = time.strftime('%Y-%m-%d %H:%M')
+    display = f'[nudge from {sender} | {ts_short} Boston] {content}'
+
+    # Focus-gate: verify exactly 1 window for this role.
+    try:
+        count_out = subprocess.check_output([inject_bin, '--count-windows', role],
+                                            stderr=subprocess.DEVNULL, timeout=3).decode().strip()
+        count = int(count_out.split('::', 1)[0]) if '::' in count_out else 0
+    except Exception:
+        count = 0
+
+    if count != 1:
+        subprocess.run([chorus_log, 'nudge.surface.failed', role,
+                       f'trace={tid},reason=focus-gate-miss,windows={count}'],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        continue
+
+    try:
+        rc = subprocess.run([inject_bin, role, display], timeout=10,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if rc.returncode == 0:
+            subprocess.run([chorus_log, 'nudge.surfaced', role,
+                           f'trace={tid},from={sender},to={role}'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.run([chorus_log, 'nudge.surface.failed', role,
+                           f'trace={tid},reason=inject-nonzero,rc={rc.returncode}'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        subprocess.run([chorus_log, 'nudge.surface.failed', role,
+                       f'trace={tid},reason=exception,detail={str(e)[:80]}'],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+sys.exit(0)
+PYEOF
+}
+
+if [ "$ONCE_MODE" = "--once" ]; then
+  tick_once
+  exit $?
+fi
+
+# LaunchAgent mode: loop every 2s, forever. launchd restarts on crash via
+# KeepAlive in the plist. Sleep is inside the loop (not launchd StartInterval)
+# because StartInterval respawns the process which is expensive vs a sleep.
+while true; do
+  tick_once
+  sleep 2
+done

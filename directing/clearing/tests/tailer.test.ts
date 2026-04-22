@@ -156,40 +156,53 @@ describe('ChorusLogTailer.processLine — event dispatch', () => {
     expect(arg.text).toBe('JDI signal received by wren');
   });
 
-  test('role.nudge.sent to jeff with content surfaces', () => {
-    fire(JSON.stringify({
-      event: 'role.nudge.sent',
+  // #2435 — canonical event is nudge.emitted. chorus-log packs the first
+  // kv pair ("from=<sender>") into the JSON field `from`; target + content
+  // live inside that packed value as `to=<target>,chars=N,trace=...,content=<>`.
+  // Each test constructs ChorusLogTailer directly so the class symbol is
+  // actively invoked in the test body (test-quality gate DEC-1674).
+  test('nudge.emitted to jeff with content surfaces', () => {
+    const r = makeRouter();
+    const t = new ChorusLogTailer(r as any);
+    (t as any).processLine(JSON.stringify({
+      event: 'nudge.emitted',
       role: 'kade',
-      target: 'jeff,chars=4,trace=t-1,content=demo ready',
+      from: 'kade,to=jeff,chars=10,trace=t-1,content=demo ready',
     }));
-    expect(router.ingest).toHaveBeenCalledWith(expect.objectContaining({
+    expect(r.ingest).toHaveBeenCalledWith(expect.objectContaining({
       from: 'kade',
       text: 'demo ready',
       type: 'role-response',
     }));
   });
 
-  test('role.nudge.sent to non-jeff is dropped', () => {
-    fire(JSON.stringify({
-      event: 'role.nudge.sent',
+  test('nudge.emitted to non-jeff is dropped', () => {
+    const r = makeRouter();
+    const t = new ChorusLogTailer(r as any);
+    (t as any).processLine(JSON.stringify({
+      event: 'nudge.emitted',
       role: 'kade',
-      target: 'silas,content=internal ping',
+      from: 'kade,to=silas,chars=13,trace=t-2,content=internal ping',
     }));
-    expect(router.ingest).not.toHaveBeenCalled();
+    expect(r.ingest).not.toHaveBeenCalled();
   });
 
-  test('role.nudge.sent to jeff with no content is dropped', () => {
-    fire(JSON.stringify({
-      event: 'role.nudge.sent',
+  test('nudge.emitted to jeff with no content is dropped', () => {
+    const r = makeRouter();
+    const t = new ChorusLogTailer(r as any);
+    (t as any).processLine(JSON.stringify({
+      event: 'nudge.emitted',
       role: 'kade',
-      target: 'jeff,chars=0',
+      from: 'kade,to=jeff,chars=0',
     }));
-    expect(router.ingest).not.toHaveBeenCalled();
+    expect(r.ingest).not.toHaveBeenCalled();
   });
 
-  test('role.nudge.sent with undefined target is dropped (regex guard)', () => {
-    fire(JSON.stringify({ event: 'role.nudge.sent', role: 'kade' }));
-    expect(router.ingest).not.toHaveBeenCalled();
+  test('nudge.emitted with undefined payload is dropped (regex guard)', () => {
+    const r = makeRouter();
+    const t = new ChorusLogTailer(r as any);
+    (t as any).processLine(JSON.stringify({ event: 'nudge.emitted', role: 'kade' }));
+    expect(r.ingest).not.toHaveBeenCalled();
   });
 });
 

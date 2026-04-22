@@ -307,35 +307,13 @@ describe('AC #3.4: WIP state detection — blast radius warning', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 5. SPINE EVENTS — nudge lifecycle emits observability events
+// 5. SPINE EVENTS — nudge lifecycle is observable
 // ═══════════════════════════════════════════════════════════════════════════
-
-describe('AC #3.5: Spine events — nudge lifecycle is observable', () => {
-  test('nudge binary emits role.nudge.sent event', () => {
-    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
-    const content = fs.readFileSync(nudgeSource, 'utf-8');
-    expect(content).toContain('role.nudge.sent');
-  });
-
-  test('nudge binary emits role.nudge.delivered event', () => {
-    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
-    const content = fs.readFileSync(nudgeSource, 'utf-8');
-    expect(content).toContain('role.nudge.delivered');
-  });
-
-  test('nudge sent event includes target and content preview', () => {
-    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
-    const content = fs.readFileSync(nudgeSource, 'utf-8');
-    expect(content).toContain('target=');
-    expect(content).toContain('content=');
-  });
-
-  test('nudge delivered event includes delivery mode', () => {
-    const nudgeSource = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs';
-    const content = fs.readFileSync(nudgeSource, 'utf-8');
-    expect(content).toContain('mode=');
-    // Delivery modes: injected, queued-no-session, queued-inject-failed, queued-passive, bridge
-    expect(content).toContain('injected');
-    expect(content).toContain('queued');
-  });
-});
+//
+// Behavioral coverage for spine events now lives in the Rust test suite
+// (chorus-hooks tests/nudge_suite.rs::nudge_cli_emits_canonical_emitted_event)
+// which fires a real nudge CLI invocation and asserts the event lands in
+// chorus.log with the expected payload. #2435 retired the source-string
+// grep tests that previously lived here — they matched presence of literals
+// in nudge.rs rather than actual behavior, the anti-pattern the test-quality
+// gate (DEC-1674 / #2196) exists to reject.

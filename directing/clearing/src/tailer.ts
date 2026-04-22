@@ -99,9 +99,19 @@ export class ChorusLogTailer extends EventEmitter {
     }
   }
 
+  // #2435 — canonical event is nudge.emitted. For nudge.emitted, chorus-log
+  // packs the first kv ("from=<sender>") as the JSON field, so target + content
+  // live inside entry.from. For back-compat during parallel-run the older
+  // role.nudge.sent packed them under entry.target; accept both.
   private handleNudgeSent(parsed: any, role: string): void {
-    const target = parsed.target?.split(',')[0] || '';
-    const content = parsed.target?.match(/content=(.+)/)?.[1] || '';
+    const packed: string = parsed.from || parsed.target || '';
+    // On nudge.emitted: "from" value starts with "<sender>,to=<target>,..."; the
+    // target role is after "to=". On role.nudge.sent: "target" value starts with
+    // "<target>,chars=..." — first segment is the target.
+    const target = packed.match(/(?:^|,)to=([^,]+)/)?.[1]
+                || packed.split(',')[0]
+                || '';
+    const content = packed.match(/content=(.+)/)?.[1] || '';
     if (target !== 'jeff' || !content) return;
     this.router.ingest({
       from: role,
@@ -136,7 +146,7 @@ export class ChorusLogTailer extends EventEmitter {
           type: 'role-response',
         });
         return;
-      case 'role.nudge.sent':
+      case 'nudge.emitted':
         return this.handleNudgeSent(parsed, role);
     }
   }

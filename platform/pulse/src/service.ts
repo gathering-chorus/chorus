@@ -86,29 +86,12 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
   app.get('/api/nudge/:role/pending', (req, res) => {
     res.json(store.getPendingNudges(req.params.role));
   });
-  app.post('/api/nudge/:id/ack', (req, res) => {
-    store.acknowledgeNudge(parseInt(req.params.id));
-    metrics.nudgesAcked.inc();
-    log('info', 'nudge.acknowledged', { id: req.params.id });
-    res.json({ ok: true });
-  });
-  app.post('/api/nudge/:role/ack-all', (req, res) => {
-    const count = store.acknowledgeAllNudges(req.params.role);
-    metrics.nudgesAcked.inc(count);
-    log('info', 'nudge.ack-all', { role: req.params.role, count });
-    res.json({ ok: true, acknowledged: count });
-  });
-  app.post('/api/nudge/:id/attempt', (req, res) => {
-    const id = parseInt(req.params.id);
-    const result = store.recordDeliveryAttempt(id);
-    if (result.deadLettered) {
-      metrics.deadLetterCount.inc();
-      log('warn', 'nudge.dead-lettered', { id, reason: 'max delivery attempts exceeded' });
-    } else {
-      log('info', 'nudge.delivery-attempt', { id });
-    }
-    res.json({ ok: true, ...result });
-  });
+  // #2435 wedge 7d — /api/nudge/:id/ack + /api/nudge/:role/ack-all +
+  // /api/nudge/:id/attempt retired. Kade's 0.3 audit: 0 production callers.
+  // Delivery confirmation in V2 is the nudge.surfaced spine event, not an
+  // HTTP ack API. Store-side helpers (acknowledgeNudge, acknowledgeAllNudges,
+  // recordDeliveryAttempt) stay in the MessageStore for now — harmless dead
+  // code that retires with the broader messages.db nudge-write retirement.
 }
 
 function registerChatRoutes(app: Express, store: MessageStore): void {
