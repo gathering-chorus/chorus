@@ -1,0 +1,778 @@
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix chorus:  <https://jeffbridwell.com/chorus#> .
+
+# =============================================================================
+# Loom Authorization Graph — DRAFT (Wren, 2026-04-22, #2348 sub-spike 1)
+# =============================================================================
+#
+# Closes the orphan-skill + orphan-gate gaps by giving every skill and gate
+# an upstream owner: a Role or a Practice.
+#
+# Status: DRAFT for review — not yet loaded into Fuseki.
+# Targets merging into: roles/silas/ontology/chorus.ttl
+#
+# Scope of this phase (sub-spike 1 of #2348-expanded):
+#   - Role → hasSkill + hasGate edges for wren, silas, kade
+#   - First-pass Skill instances for the 39 ~/.claude/skills entries
+#   - First-pass Gate instances for the 5 domain gates + key hook gates
+#   - Orphan flag stays empty in this draft — pass 2 will flag anything here
+#     that doesn't also have a Practice owner.
+#
+# Reference: roles/wren/artifacts/roles-domain-design.html (as-designed side)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Classes (additions — Skill is new; Gate/Role already in chorus.ttl)
+# -----------------------------------------------------------------------------
+
+chorus:Skill a owl:Class ;
+    rdfs:label "Skill" ;
+    rdfs:comment "A named invocable procedure a role executes. Entry point into a pipeline of actions; contains hard gates, spine emission, and building logic. Invoked as /<slug>. Skills are attributes of roles and practices, not products." .
+
+# -----------------------------------------------------------------------------
+# Object properties
+# -----------------------------------------------------------------------------
+
+chorus:hasSkill a owl:ObjectProperty ;
+    rdfs:label "has skill" ;
+    rdfs:comment "A role or practice has a skill in its repertoire. Role hasSkill is the role's toolkit; Practice hasSkill is the named entry point that enacts the practice." ;
+    rdfs:domain [ owl:unionOf ( chorus:Role chorus:Practice ) ] ;
+    rdfs:range chorus:Skill .
+
+chorus:hasGate a owl:ObjectProperty ;
+    rdfs:label "has gate" ;
+    rdfs:comment "A role or practice has a gate it runs or enforces. Role hasGate is the gate the role is authorized to evaluate; Practice hasGate is the gate that enforces the practice's invariant." ;
+    rdfs:domain [ owl:unionOf ( chorus:Role chorus:Practice ) ] ;
+    rdfs:range chorus:Gate .
+
+chorus:authorizedBy a owl:ObjectProperty ;
+    rdfs:label "authorized by" ;
+    rdfs:comment "A skill or gate is authorized by a role or practice. Inverse of hasSkill / hasGate. Makes the orphan-query cheap: any Skill or Gate without an authorizedBy edge is an orphan." ;
+    rdfs:domain [ owl:unionOf ( chorus:Skill chorus:Gate ) ] ;
+    rdfs:range [ owl:unionOf ( chorus:Role chorus:Practice ) ] .
+
+chorus:implementedIn a owl:ObjectProperty ;
+    rdfs:label "implemented in" ;
+    rdfs:comment "A skill or gate is implemented in a file. Path relative to chorus repo root (e.g., platform/scripts/cards, platform/services/chorus-hooks/src/gates/demo_gate.rs). Makes the Loom→Werk trace concrete." ;
+    rdfs:domain [ owl:unionOf ( chorus:Skill chorus:Gate ) ] ;
+    rdfs:range xsd:string .
+
+# =============================================================================
+# SKILL INSTANCES (39 total from ~/.claude/skills/)
+# =============================================================================
+#
+# Grouped by category. Every skill gets an implementedIn path and an
+# authorizedBy edge (pass 1 points everything at a role; pass 2 will refine
+# to practice where appropriate).
+# -----------------------------------------------------------------------------
+
+# --- Build-flow skills (all roles use) ---
+
+chorus:skill-pull a chorus:Skill ;
+    rdfs:label "/pull" ;
+    rdfs:comment "Single engineering entry point. Validate → preflight → WIP check → domain context → design gate → TDD readiness → move + declare + signal." ;
+    chorus:implementedIn "~/.claude/skills/pull/SKILL.md" .
+
+chorus:skill-demo a chorus:Skill ;
+    rdfs:label "/demo" ;
+    rdfs:comment "Proving gate — smoke check, prep summary, signal to Wren, builder cannot self-accept." ;
+    chorus:implementedIn "~/.claude/skills/demo/SKILL.md" .
+
+chorus:skill-acp a chorus:Skill ;
+    rdfs:label "/acp" ;
+    rdfs:comment "Accept + commit + push — full acceptance flow in one command." ;
+    chorus:implementedIn "~/.claude/skills/acp/SKILL.md" .
+
+chorus:skill-close a chorus:Skill ;
+    rdfs:label "/close" ;
+    rdfs:comment "Session close-out — Hard 5 (journal, board audit, activity log, next-session, commit)." ;
+    chorus:implementedIn "~/.claude/skills/close/SKILL.md" .
+
+chorus:skill-reboot a chorus:Skill ;
+    rdfs:label "/reboot" ;
+    rdfs:comment "Save memory, write next-session.md, commit, exit cleanly. Fires on context-rising alert." ;
+    chorus:implementedIn "~/.claude/skills/reboot/SKILL.md" .
+
+chorus:skill-jdi a chorus:Skill ;
+    rdfs:label "/jdi" ;
+    rdfs:comment "Just do it — execute the obvious next thing, no discussion. Delegates to /pull." ;
+    chorus:implementedIn "~/.claude/skills/jdi/SKILL.md" .
+
+# --- Gate skills (role-scoped) ---
+
+chorus:skill-gate-product a chorus:Skill ;
+    rdfs:label "/gate-product" ;
+    rdfs:comment "Product gate — verify AC complete, demo evidence, domain visibility, spine contract. Wren only." ;
+    chorus:implementedIn "~/.claude/skills/gate-product/SKILL.md" .
+
+chorus:skill-gate-arch a chorus:Skill ;
+    rdfs:label "/gate-arch" ;
+    rdfs:comment "Architecture gate — verify system fit, namespace conventions, ICD consistency, domain boundaries. Silas only." ;
+    chorus:implementedIn "~/.claude/skills/gate-arch/SKILL.md" .
+
+chorus:skill-gate-ops a chorus:Skill ;
+    rdfs:label "/gate-ops" ;
+    rdfs:comment "Operations gate — verify deploy safety, health checks, log flow, rollback path. Silas only. Fires at deploy, not code-complete." ;
+    chorus:implementedIn "~/.claude/skills/gate-ops/SKILL.md" .
+
+chorus:skill-gate-code a chorus:Skill ;
+    rdfs:label "/gate-code" ;
+    rdfs:comment "Code gate — verify tests green, build clean, no new warnings. Kade only." ;
+    chorus:implementedIn "~/.claude/skills/gate-code/SKILL.md" .
+
+chorus:skill-gate-quality a chorus:Skill ;
+    rdfs:label "/gate-quality" ;
+    rdfs:comment "Quality gate — verify hooks pass, no regression, no console.log in production code. Kade only." ;
+    chorus:implementedIn "~/.claude/skills/gate-quality/SKILL.md" .
+
+# --- Coordination skills (cross-role) ---
+
+chorus:skill-nudge a chorus:Skill ;
+    rdfs:label "/nudge" ;
+    rdfs:comment "Persist + deliver message to another role's active terminal. Dual-path (API + osascript) always fires." ;
+    chorus:implementedIn "~/.claude/skills/nudge/SKILL.md" .
+
+chorus:skill-chat a chorus:Skill ;
+    rdfs:label "/chat" ;
+    rdfs:comment "Lightweight two-role chat — direct terminal channel between roles." ;
+    chorus:implementedIn "~/.claude/skills/chat/SKILL.md" .
+
+chorus:skill-chat-tick a chorus:Skill ;
+    rdfs:label "/chat-tick" ;
+    rdfs:comment "Chat observation loop tick — cron-invoked, reads new chat lines since last check." ;
+    chorus:implementedIn "~/.claude/skills/chat-tick/SKILL.md" .
+
+chorus:skill-clearing a chorus:Skill ;
+    rdfs:label "/clearing" ;
+    rdfs:comment "Multi-party browser chat with Jeff and all three AI roles. DECISION: prefix auto-captured." ;
+    chorus:implementedIn "~/.claude/skills/clearing/SKILL.md" .
+
+chorus:skill-pair a chorus:Skill ;
+    rdfs:label "/pair" ;
+    rdfs:comment "Strong-style pair session with navigator scope loop, work-mode detection, rotation checkpoints." ;
+    chorus:implementedIn "~/.claude/skills/pair/SKILL.md" .
+
+chorus:skill-interrupt a chorus:Skill ;
+    rdfs:label "/interrupt" ;
+    rdfs:comment "Break into a role's active session." ;
+    chorus:implementedIn "~/.claude/skills/interrupt/SKILL.md" .
+
+chorus:skill-gemba a chorus:Skill ;
+    rdfs:label "/gemba" ;
+    rdfs:comment "Live observation of a role working — tail session + spine events." ;
+    chorus:implementedIn "~/.claude/skills/gemba/SKILL.md" .
+
+chorus:skill-gemba-tick a chorus:Skill ;
+    rdfs:label "/gemba-tick" ;
+    rdfs:comment "Gemba observation loop tick — cron-invoked." ;
+    chorus:implementedIn "~/.claude/skills/gemba-tick/SKILL.md" .
+
+chorus:skill-retro a chorus:Skill ;
+    rdfs:label "/retro" ;
+    rdfs:comment "Team retrospective with data-driven template." ;
+    chorus:implementedIn "~/.claude/skills/retro/SKILL.md" .
+
+chorus:skill-listen a chorus:Skill ;
+    rdfs:label "/listen" ;
+    rdfs:comment "Voice input capture." ;
+    chorus:implementedIn "~/.claude/skills/listen/SKILL.md" .
+
+# --- Board and flow skills (Wren-heavy) ---
+
+chorus:skill-werk a chorus:Skill ;
+    rdfs:label "/werk" ;
+    rdfs:comment "Work state dashboard — current board, WIP, next, gates." ;
+    chorus:implementedIn "~/.claude/skills/werk/SKILL.md" .
+
+chorus:skill-sb a chorus:Skill ;
+    rdfs:label "/sb" ;
+    rdfs:comment "Scan board — quick board state summary." ;
+    chorus:implementedIn "~/.claude/skills/sb/SKILL.md" .
+
+chorus:skill-ab a chorus:Skill ;
+    rdfs:label "/ab" ;
+    rdfs:comment "Analyze board — shape and flow of work, patterns and concerns." ;
+    chorus:implementedIn "~/.claude/skills/ab/SKILL.md" .
+
+chorus:skill-flow a chorus:Skill ;
+    rdfs:label "/flow" ;
+    rdfs:comment "Board sweep and work proposal — read the board, tail active roles, propose what to pull." ;
+    chorus:implementedIn "~/.claude/skills/flow/SKILL.md" .
+
+chorus:skill-board-sweep a chorus:Skill ;
+    rdfs:label "/board-sweep" ;
+    rdfs:comment "Board coherence sweep — find and fix untagged, duplicate, stale cards." ;
+    chorus:implementedIn "~/.claude/skills/board-sweep/SKILL.md" .
+
+chorus:skill-pipeline a chorus:Skill ;
+    rdfs:label "/pipeline" ;
+    rdfs:comment "Orchestrate a multi-card pipeline — Wren drives, roles nudge back on completion." ;
+    chorus:implementedIn "~/.claude/skills/pipeline/SKILL.md" .
+
+chorus:skill-golfball a chorus:Skill ;
+    rdfs:label "/golfball" ;
+    rdfs:comment "Pre-sequence scan for fix/swat cards in a domain before building new features." ;
+    chorus:implementedIn "~/.claude/skills/golfball/SKILL.md" .
+
+chorus:skill-cs a chorus:Skill ;
+    rdfs:label "/cs" ;
+    rdfs:comment "Check seeds — read what Jeff sent, act on it." ;
+    chorus:implementedIn "~/.claude/skills/cs/SKILL.md" .
+
+# --- Look / observe skills ---
+
+chorus:skill-lw a chorus:Skill ;
+    rdfs:label "/lw" ; rdfs:comment "Look at Wren's terminal." ;
+    chorus:implementedIn "~/.claude/skills/lw/SKILL.md" .
+
+chorus:skill-ls a chorus:Skill ;
+    rdfs:label "/ls" ; rdfs:comment "Look at Silas's terminal." ;
+    chorus:implementedIn "~/.claude/skills/ls/SKILL.md" .
+
+chorus:skill-lk a chorus:Skill ;
+    rdfs:label "/lk" ; rdfs:comment "Look at Kade's terminal." ;
+    chorus:implementedIn "~/.claude/skills/lk/SKILL.md" .
+
+chorus:skill-lc a chorus:Skill ;
+    rdfs:label "/lc" ; rdfs:comment "Look at Chrome — screenshot Jeff's frontmost Chrome tab." ;
+    chorus:implementedIn "~/.claude/skills/lc/SKILL.md" .
+
+chorus:skill-lm a chorus:Skill ;
+    rdfs:label "/lm" ; rdfs:comment "Look at me — latest posture/sentiment score." ;
+    chorus:implementedIn "~/.claude/skills/lm/SKILL.md" .
+
+chorus:skill-look a chorus:Skill ;
+    rdfs:label "/look" ; rdfs:comment "Capture Jeff's screen for visual context sharing." ;
+    chorus:implementedIn "~/.claude/skills/look/SKILL.md" .
+
+chorus:skill-ot a chorus:Skill ;
+    rdfs:label "/ot" ; rdfs:comment "Open in tab — open file or URL in role's own Chrome window." ;
+    chorus:implementedIn "~/.claude/skills/ot/SKILL.md" .
+
+chorus:skill-share a chorus:Skill ;
+    rdfs:label "/share" ; rdfs:comment "Export any localhost page as shareable PDF + PNG." ;
+    chorus:implementedIn "~/.claude/skills/share/SKILL.md" .
+
+chorus:skill-chorus a chorus:Skill ;
+    rdfs:label "/chorus" ; rdfs:comment "Query the shared memory index — Slack + Claude sessions + artifacts." ;
+    chorus:implementedIn "~/.claude/skills/chorus/SKILL.md" .
+
+chorus:skill-simplify a chorus:Skill ;
+    rdfs:label "/simplify" ;
+    rdfs:comment "Review changed code for reuse, quality, efficiency, fix any issues found." ;
+    chorus:implementedIn "~/.claude/skills/simplify/SKILL.md" .
+
+# =============================================================================
+# GATE INSTANCES — named gates that run in the build pipeline
+# =============================================================================
+
+chorus:gate-product a chorus:Gate ;
+    rdfs:label "gate:product" ;
+    rdfs:subClassOf chorus:ProvingGate ;
+    rdfs:comment "Verify AC complete, demo evidence, domain visibility, spine contract." ;
+    chorus:implementedIn "~/.claude/skills/gate-product/SKILL.md" .
+
+chorus:gate-arch a chorus:Gate ;
+    rdfs:label "gate:arch" ;
+    rdfs:subClassOf chorus:DesignGate ;
+    rdfs:comment "Verify system fit, namespace conventions, ICD consistency, domain boundaries." ;
+    chorus:implementedIn "~/.claude/skills/gate-arch/SKILL.md" .
+
+chorus:gate-ops a chorus:Gate ;
+    rdfs:label "gate:ops" ;
+    rdfs:subClassOf chorus:ProvingGate ;
+    rdfs:comment "Verify deploy safety, health checks, log flow, rollback path. Fires at deploy, not code-complete." ;
+    chorus:implementedIn "~/.claude/skills/gate-ops/SKILL.md" .
+
+chorus:gate-code a chorus:Gate ;
+    rdfs:label "gate:code" ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:comment "Verify tests green, build clean, no new warnings." ;
+    chorus:implementedIn "~/.claude/skills/gate-code/SKILL.md" .
+
+chorus:gate-quality a chorus:Gate ;
+    rdfs:label "gate:quality" ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:comment "Verify hooks pass, no regression, no console.log in production code." ;
+    chorus:implementedIn "~/.claude/skills/gate-quality/SKILL.md" .
+
+# --- Hook-based gates (Rust chorus-hooks) ---
+
+chorus:gate-demo a chorus:Gate ;
+    rdfs:label "demo-gate hook" ;
+    rdfs:subClassOf chorus:ProvingGate ;
+    rdfs:comment "PreToolUse hook — blocks cards Done when demo evidence missing. DEC-048 enforcement." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/demo_gate.rs" .
+
+chorus:gate-write-scrubber a chorus:Gate ;
+    rdfs:label "write-scrubber hook" ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:comment "PreToolUse hook — blocks writes of credentials to shared files." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/write_scrubber.rs" .
+
+chorus:gate-tdd a chorus:Gate ;
+    rdfs:label "tdd_gate hook" ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:comment "PreToolUse hook — enforces test-first discipline. DEC-1674." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/tdd_gate.rs" .
+
+chorus:gate-icd-write a chorus:Gate ;
+    rdfs:label "icd-gate hook" ;
+    rdfs:subClassOf chorus:DesignGate ;
+    rdfs:comment "PreToolUse hook — blocks harvester writes without matching ICD provider section. DEC-095." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/icd_gate.rs" .
+
+chorus:gate-chorus-search-first a chorus:Gate ;
+    rdfs:label "memory-first search gate" ;
+    rdfs:subClassOf chorus:DirectionGate ;
+    rdfs:comment "PreToolUse hook — blocks filesystem grep/find without prior Chorus index query. DEC-074." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/chorus_search_gate.rs" .
+
+# =============================================================================
+# ROLE AUTHORIZATION — who has which skill + gate
+# =============================================================================
+
+# --- Shared skills (all three AI roles invoke) ---
+
+chorus:wren chorus:hasSkill
+    chorus:skill-pull,
+    chorus:skill-demo,
+    chorus:skill-acp,
+    chorus:skill-close,
+    chorus:skill-reboot,
+    chorus:skill-jdi,
+    chorus:skill-nudge,
+    chorus:skill-chat,
+    chorus:skill-chat-tick,
+    chorus:skill-clearing,
+    chorus:skill-pair,
+    chorus:skill-interrupt,
+    chorus:skill-gemba,
+    chorus:skill-gemba-tick,
+    chorus:skill-retro,
+    chorus:skill-listen,
+    chorus:skill-cs,
+    chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
+    chorus:skill-lc, chorus:skill-lm, chorus:skill-look,
+    chorus:skill-ot, chorus:skill-share,
+    chorus:skill-chorus,
+    chorus:skill-simplify ;
+    # --- Wren-specific skills (board + flow moderation) ---
+    chorus:hasSkill
+        chorus:skill-werk,
+        chorus:skill-sb,
+        chorus:skill-ab,
+        chorus:skill-flow,
+        chorus:skill-board-sweep,
+        chorus:skill-pipeline,
+        chorus:skill-golfball ;
+    chorus:hasGate chorus:gate-product .
+
+chorus:silas chorus:hasSkill
+    chorus:skill-pull,
+    chorus:skill-demo,
+    chorus:skill-acp,
+    chorus:skill-close,
+    chorus:skill-reboot,
+    chorus:skill-jdi,
+    chorus:skill-nudge,
+    chorus:skill-chat,
+    chorus:skill-chat-tick,
+    chorus:skill-clearing,
+    chorus:skill-pair,
+    chorus:skill-gemba,
+    chorus:skill-gemba-tick,
+    chorus:skill-retro,
+    chorus:skill-cs,
+    chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
+    chorus:skill-lc, chorus:skill-lm, chorus:skill-look,
+    chorus:skill-ot, chorus:skill-share,
+    chorus:skill-chorus,
+    chorus:skill-simplify ;
+    chorus:hasGate chorus:gate-arch, chorus:gate-ops .
+
+chorus:kade chorus:hasSkill
+    chorus:skill-pull,
+    chorus:skill-demo,
+    chorus:skill-acp,
+    chorus:skill-close,
+    chorus:skill-reboot,
+    chorus:skill-jdi,
+    chorus:skill-nudge,
+    chorus:skill-chat,
+    chorus:skill-chat-tick,
+    chorus:skill-clearing,
+    chorus:skill-pair,
+    chorus:skill-gemba,
+    chorus:skill-gemba-tick,
+    chorus:skill-retro,
+    chorus:skill-cs,
+    chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
+    chorus:skill-lc, chorus:skill-lm, chorus:skill-look,
+    chorus:skill-ot, chorus:skill-share,
+    chorus:skill-chorus,
+    chorus:skill-simplify ;
+    chorus:hasGate chorus:gate-code, chorus:gate-quality .
+
+# =============================================================================
+# SUB-SPIKE 2 — PRACTICE AUTHORIZATION (hasSkill, hasGate edges)
+# =============================================================================
+#
+# Each existing practice in chorus.ttl gets:
+#   - chorus:hasSkill → the slash-command(s) that enact it (0..N)
+#   - chorus:hasGate  → the gate(s) that enforce its invariant (0..N)
+#
+# Practices with no skill are process-only (brief-writing, domain-first,
+# product-owner-aligned). Practices with no gate are unenforced — rely on
+# role discipline. Both are valid states to declare explicitly.
+# -----------------------------------------------------------------------------
+
+# --- Session lifecycle practices ---
+
+chorus:practice-session-opening
+    chorus:hasSkill chorus:skill-listen .
+    # Auto-injected via SessionStart hook; no direct skill invocation.
+    # Orphan flag candidate: the opening practice has no enforcement gate —
+    # today we rely on role discipline to produce the 5-beat shape. #2315
+    # (Opener-shape contract) is the missing gate. Add when #2315 lands.
+
+chorus:practice-close-out
+    chorus:hasSkill chorus:skill-close, chorus:skill-reboot .
+
+chorus:practice-pull-card
+    chorus:hasSkill chorus:skill-pull, chorus:skill-jdi ;
+    chorus:hasGate chorus:gate-tdd, chorus:gate-icd-write .
+    # /jdi delegates to /pull — inherits the gate chain.
+
+chorus:practice-demo
+    chorus:hasSkill chorus:skill-demo ;
+    chorus:hasGate chorus:gate-demo, chorus:gate-product .
+
+chorus:practice-acp
+    chorus:hasSkill chorus:skill-acp .
+    # policy-no-self-acp enforces the builder/accepter separation —
+    # enforcement is social/procedural, not a named Gate instance yet.
+    # Sub-spike 3 candidate: materialize gate-no-self-acp in chorus-hooks.
+
+chorus:practice-reboot
+    chorus:hasSkill chorus:skill-reboot .
+
+chorus:practice-brief-writing
+    chorus:hasSkill chorus:skill-nudge .
+    # Brief-writing is mostly manual (write file to briefs/), but /nudge
+    # is the delivery leg. No enforcement gate today — depends on role
+    # discipline to actually write the brief.
+
+# --- Cross-role coordination ---
+
+chorus:practice-nudge
+    chorus:hasSkill chorus:skill-nudge .
+    # DEC-107: persist-and-deliver dual-path contract. Enforced by
+    # test coverage in chorus-hooks, not by a runtime gate yet.
+
+chorus:practice-pair
+    chorus:hasSkill chorus:skill-pair .
+    # 60-second heartbeat is policy-response-window-60s — not yet
+    # materialized as a gate. /pair-heartbeat-check skill missing (#2317).
+
+chorus:practice-clearing
+    chorus:hasSkill chorus:skill-clearing .
+
+chorus:practice-chat
+    chorus:hasSkill chorus:skill-chat, chorus:skill-chat-tick .
+
+# --- Observation practices ---
+
+chorus:practice-gemba
+    chorus:hasSkill chorus:skill-gemba, chorus:skill-gemba-tick .
+
+chorus:practice-mutual-observation
+    chorus:hasSkill chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
+                    chorus:skill-lc, chorus:skill-lm, chorus:skill-look .
+    # Resolves the orphan-family flagged in sub-spike 1:
+    # /lw /ls /lk /lc /lm /look all enact mutual-observation.
+
+chorus:practice-interaction-pattern-detection
+    chorus:hasSkill chorus:skill-chorus .
+    # Pattern detection uses Chorus search + the nine-pattern table
+    # in CLAUDE.md. No separate skill slug; /chorus is the query tool.
+
+# --- Gate-evaluation practices (one per gate, as expected) ---
+
+chorus:practice-gate-product
+    chorus:hasSkill chorus:skill-gate-product ;
+    chorus:hasGate chorus:gate-product .
+
+chorus:practice-gate-code
+    chorus:hasSkill chorus:skill-gate-code ;
+    chorus:hasGate chorus:gate-code .
+
+chorus:practice-gate-quality
+    chorus:hasSkill chorus:skill-gate-quality ;
+    chorus:hasGate chorus:gate-quality .
+
+chorus:practice-gate-arch
+    chorus:hasSkill chorus:skill-gate-arch ;
+    chorus:hasGate chorus:gate-arch .
+
+chorus:practice-gate-ops
+    chorus:hasSkill chorus:skill-gate-ops ;
+    chorus:hasGate chorus:gate-ops .
+
+# --- Discipline practices (enforced by hooks, not skills) ---
+
+chorus:practice-stop-the-line
+    chorus:hasGate chorus:gate-stop-the-line .
+    # #2145 Next — gate implementation pending. Flag as open work.
+
+chorus:practice-andon-state
+    chorus:hasSkill chorus:skill-pull .
+    # role-state declaration lives inside /pull's step 6; no standalone skill.
+
+# chorus:practice-idle-awareness — process-only; no skill or gate. Role discipline.
+# chorus:practice-signal-not-narrate — process-only; trained via feedback.
+# chorus:practice-wall-clock-refresh — process-only; every-response ritual per CLAUDE.md.
+
+chorus:practice-chorus-search-first
+    chorus:hasSkill chorus:skill-chorus ;
+    chorus:hasGate chorus:gate-chorus-search-first .
+    # Policy-chorus-search-first (DEC-074) → gate-chorus-search-first (hook).
+    # Clean principle → policy → gate → practice chain. Good reference shape.
+
+# chorus:practice-story-capture — process-only; trained via CLAUDE.md guidance.
+# Orphan-gate candidate: stories capture has no gate despite being declared
+# a required practice when Jeff shares personal content.
+
+chorus:practice-retro
+    chorus:hasSkill chorus:skill-retro .
+
+chorus:practice-board-sweep
+    chorus:hasSkill chorus:skill-board-sweep, chorus:skill-sb, chorus:skill-ab,
+                    chorus:skill-flow, chorus:skill-golfball .
+    # Board hygiene practice family — five related skills enact it.
+
+chorus:practice-werk
+    chorus:hasSkill chorus:skill-werk, chorus:skill-pipeline .
+
+# chorus:practice-context-injection — auto-injected via SessionStart hook; no role invocation.
+# chorus:practice-2-touch-target — measurement target, not enforceable at turn time;
+# observed via spine events in Borg.
+
+chorus:practice-domain-context-before-code
+    chorus:hasGate chorus:gate-fuseki-health .
+    # /pull Step 4 enforces Fuseki-up before domain context loads.
+
+# chorus:practice-verify-before-asserting — process-only; trained via feedback memories.
+
+# --- Legacy practices (7 original from team-architecture) ---
+
+# chorus:practice-actor-bdd — design-time practice; no run-time skill or gate yet.
+# Could add: gate-has-scenarios before pull.
+
+chorus:practice-domain-first
+    chorus:hasGate chorus:gate-design-wip-ready .
+
+# chorus:practice-service-next — process-only; the service-design doc precedes the card.
+
+chorus:practice-product-owner-aligned
+    chorus:hasGate chorus:gate-product .
+    # Every code card routes through Wren's gate-product.
+
+chorus:practice-tdd
+    chorus:hasGate chorus:gate-tdd, chorus:gate-code .
+
+chorus:practice-production-ready
+    chorus:hasGate chorus:gate-demo, chorus:gate-product, chorus:gate-ops .
+
+# chorus:practice-api-first — process-only today; could have gate-api-first
+# (OpenAPI required before merge) — not built.
+
+# =============================================================================
+# NEW GATE INSTANCES referenced above (not in sub-spike 1)
+# =============================================================================
+
+chorus:gate-stop-the-line a chorus:Gate ;
+    rdfs:label "stop-the-line PostToolUse" ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:comment "PostToolUse hook — blocks turn when a tool errors; forces resolve/card/defer. #2145 (Next) is the implementation card." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/stop_the_line.rs" .
+    # Implementation status: PENDING. Gate exists conceptually; card #2145 is the build work.
+
+chorus:gate-fuseki-health a chorus:Gate ;
+    rdfs:label "Fuseki health" ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:comment "Inline check in /pull Step 4 — blocks pull if Fuseki :3030 is not 200. #2033 origin." ;
+    chorus:implementedIn "~/.claude/skills/pull/SKILL.md:step-4" .
+
+chorus:gate-design-wip-ready a chorus:Gate ;
+    rdfs:label "Design gate (WIP-ready)" ;
+    rdfs:subClassOf chorus:DesignGate ;
+    rdfs:comment "Inline check in /pull Step 4.5 — blocks type:new or type:enhance pulls when domain lifecycle.wip is not pass. #1396 origin." ;
+    chorus:implementedIn "~/.claude/skills/pull/SKILL.md:step-4.5" .
+
+# =============================================================================
+# SUB-SPIKE 3C — DANGLING POLICY REPAIR
+# =============================================================================
+#
+# chorus.ttl declares practice→policy edges to 9 policies that don't exist
+# as instances. This section materializes them — one policy instance per
+# dangling reference, with derivedFrom pointing at the principle that
+# motivates the rule.
+#
+# Rule: each policy is a BINARY assertion — allowed/blocked, required/forbidden.
+# If it's a discipline (a how, not a yes/no), it's a practice, not a policy.
+# -----------------------------------------------------------------------------
+
+chorus:policy-tdd-gate a chorus:Policy ;
+    rdfs:label "TDD required before code" ;
+    rdfs:comment "Every code card must have failing tests (red) before production code is written. Enforced by tdd_gate.rs PreToolUse hook. DEC-1674." ;
+    chorus:derivedFrom chorus:principle-quality-at-source,
+                       chorus:principle-speed-and-quality-correlate .
+
+chorus:policy-demo-gate a chorus:Policy ;
+    rdfs:label "No accept without demo" ;
+    rdfs:comment "A code card cannot be marked Done without demo evidence. Builder cannot self-accept. DEC-048 Proving Gate. Enforced by demo_gate.rs hook and /acp skill." ;
+    chorus:derivedFrom chorus:principle-apply-self-regulation-and-accept-feedback,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-accept-gate a chorus:Policy ;
+    rdfs:label "Accept = Done + spine + commit + push" ;
+    rdfs:comment "An acceptance must complete all four: move card to Done, emit card.accepted spine event, commit changes via git-queue, push. Partial acceptance is not acceptance. Enforced by /acp skill steps 1-4." ;
+    chorus:derivedFrom chorus:principle-artifacts,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-handoff-logger a chorus:Policy ;
+    rdfs:label "Every cross-role handoff logged" ;
+    rdfs:comment "Briefs, nudges, gate-passes, and acceptances across roles must log to activity.md. If it's a handoff, it's traceable. Enforced by role discipline + future handoff-gate hook (not yet materialized)." ;
+    chorus:derivedFrom chorus:principle-artifacts,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-demo-provenance a chorus:Policy ;
+    rdfs:label "Demo evidence is an artifact" ;
+    rdfs:comment "Every demo produces a durable artifact (brief file or card comment) identifying what was shown, by whom, when. Verbal-only demos do not satisfy the demo gate. Enforced by demo_gate.rs hook reading comments/briefs — #2177 migrates fully to card comments." ;
+    chorus:derivedFrom chorus:principle-artifacts,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-nudge-blast-radius a chorus:Policy ;
+    rdfs:label "Nudge requires WIP context" ;
+    rdfs:comment "A nudge targeting a role carries the card context (WIP id if present, reason for interruption). Cross-domain nudges surface a warning. DEC-107 dual-path persist+deliver is the mechanism; blast-radius is the discipline around when it fires." ;
+    chorus:derivedFrom chorus:principle-protect-attention,
+                       chorus:principle-focus-is-infrastructure .
+
+chorus:policy-pair-enforcement a chorus:Policy ;
+    rdfs:label "Pair has navigator + driver, not spectators" ;
+    rdfs:comment "A /pair session has exactly one navigator and one driver. Navigator scopes; driver implements. Rotation checkpoints enforce turn-taking. Partner silence > 60s = stall signal (see policy-response-window-60s for the heartbeat). Enforced by /pair skill state + future pair-heartbeat-check skill (#2317)." ;
+    chorus:derivedFrom chorus:principle-comprehension-is-the-rate-limit,
+                       chorus:principle-integrate-rather-than-segregate .
+
+chorus:policy-icd-write-gate a chorus:Policy ;
+    rdfs:label "No harvester without ICD provider" ;
+    rdfs:comment "A harvester service file (harvest-*.sh, *-harvester.service.ts) cannot be written if the domain has no ICD provider section in urn:gathering:icd/current. Populate the ICD first, then code. DEC-095. Enforced by icd-gate-hook.sh PreToolUse hook." ;
+    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-quality-gate a chorus:Policy ;
+    rdfs:label "Quality gate required before demo" ;
+    rdfs:comment "Quality gate (hooks pass, no regression, no console.log in production code) must pass before /demo is called on a code card. Kade-owned. Enforced by /gate-quality skill + quality_gate.rs hook integration." ;
+    chorus:derivedFrom chorus:principle-quality-at-source,
+                       chorus:principle-produce-no-waste .
+
+# -----------------------------------------------------------------------------
+# After 3C: every practice→policy edge resolves. Orphan-policy query:
+# SELECT ?p WHERE { ?p a chorus:Policy . FILTER NOT EXISTS { [] chorus:operationalizes ?p . [] chorus:derivedFrom ?p } }
+# should now return only intentionally-unlinked policies (if any).
+# -----------------------------------------------------------------------------
+
+# =============================================================================
+# SUB-SPIKE 2 OBSERVATIONS — orphans + gaps
+# =============================================================================
+
+# A. Skills without a practice edge (7)
+#    - skill-interrupt     — no practice declared for break-in protocol
+#    - skill-cs            — check-seeds; maps to practice-seed-triage (doesn't exist)
+#    - skill-ot            — open-tab; utility, not a named practice
+#    - skill-share         — export-page; utility
+#    - skill-listen        — voice input; a mechanism, not a practice
+#    - skill-simplify      — code hygiene; no practice-simplify exists
+#    - skill-chat-tick     — also covered under practice-chat but marginal
+#
+#    Question for Silas/Jeff: do these need practice owners, or do we
+#    declare a category "utility skills" with no practice required?
+
+# B. Practices without a skill (6)
+#    - practice-actor-bdd
+#    - practice-domain-first
+#    - practice-service-next
+#    - practice-api-first
+#    - practice-idle-awareness
+#    - practice-signal-not-narrate
+#    - practice-wall-clock-refresh
+#    - practice-context-injection
+#    - practice-story-capture
+#    - practice-verify-before-asserting
+#    - practice-2-touch-target
+#    - practice-interaction-pattern-detection (only /chorus which is indirect)
+#
+#    These are either process-only (trained) or auto-injected. Both are
+#    valid, but they're invisible to the harness graph — no gate fires,
+#    no skill invocation emits a spine event. Sub-spike 3 candidate:
+#    propose named gates for the process-only ones that matter most
+#    (verify-before-asserting, story-capture, signal-not-narrate).
+
+# C. Practices pointing at non-existent policies
+#    Several practice-*-gate references in chorus.ttl (lines 2128-2225)
+#    point at policies that are not defined in the ontology file:
+#      - chorus:policy-tdd-gate
+#      - chorus:policy-demo-gate
+#      - chorus:policy-accept-gate
+#      - chorus:policy-handoff-logger
+#      - chorus:policy-demo-provenance
+#      - chorus:policy-nudge-blast-radius
+#      - chorus:policy-pair-enforcement
+#      - chorus:policy-icd-write-gate
+#    Only 5 policies exist as instances (working-hours, no-raw-process-kill,
+#    response-window-60s, no-self-acp, chorus-search-first). Either the
+#    practice references are aspirational (intended policies, not written),
+#    or the policies exist in another file. Silas should confirm.
+
+# D. Gate instances without a role or practice
+#    None after sub-spike 2 — every Gate declared here has at least one
+#    upstream edge. The orphan-gate check is now queryable:
+#    SELECT ?g WHERE { ?g a chorus:Gate . FILTER NOT EXISTS { [] chorus:hasGate ?g } }
+
+# =============================================================================
+# Observations from first-pass sub-spike 1 (superseded / still open)
+# =============================================================================
+#
+# 1. Role-scoping of gate skills is documented in CLAUDE.md but not
+#    enforced anywhere in code. #2348-expanded sub-spike 3: SHACL constraint
+#    that Kade invoking gate-product is an error.
+#
+# 2. Every Skill above also needs an authorizedBy edge from a Practice —
+#    that's sub-spike 2 (practice authorization). Most are obvious:
+#    skill-pull → practice-pull-card (already in chorus.ttl)
+#    skill-demo → practice-demo
+#    skill-acp → practice-acp
+#    skill-close → practice-close-out
+#    etc. Look-skills (/lw, /ls, /lk, /lc, /lm, /look) may be orphan practices
+#    (observation-as-practice isn't in chorus.ttl yet).
+#
+# 3. Several hook-gates above (#gate-demo, #gate-tdd, #gate-icd-write,
+#    #gate-chorus-search-first, #gate-write-scrubber) have no Role edge —
+#    because hooks don't belong to a role, they run on every role's tools.
+#    These are practice-gates (practice-demo, practice-tdd, policy-icd-write-gate,
+#    policy-chorus-search-first, data safety). Add practice/policy hasGate
+#    edges in sub-spike 2.
+#
+# 4. Orphan candidates flagged by gap analysis:
+#    - /listen only appears on Wren above. Kade and Silas: do they use voice?
+#      Need to confirm before widening or keeping Wren-scoped.
+#    - /werk, /sb, /ab, /flow, /board-sweep, /pipeline, /golfball all currently
+#      assigned Wren-only — confirm vs shared.
+#    - /simplify exists as a skill but may not map to any named practice yet —
+#      sub-spike 2 candidate for new practice "practice-simplify".
+#
+# =============================================================================

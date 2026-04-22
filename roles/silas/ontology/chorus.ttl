@@ -1508,6 +1508,15 @@ chorus:Policy a owl:Class ;
     rdfs:label "Policy" ;
     rdfs:comment "A binary team rule — allowed/blocked, in-bounds/out-of-bounds. Derived from principles but enforceable as yes/no (unlike practices, which are disciplines). Examples: working hours, WIP limits, response windows, touch-count targets." .
 
+chorus:Skill a owl:Class ;
+    rdfs:label "Skill" ;
+    rdfs:comment "A named invocable procedure a role executes. Entry point into a pipeline of actions; contains hard gates, spine emission, and building logic. Invoked as /<slug>. Skills are attributes of roles and practices, not products. #2348." .
+
+chorus:UtilitySkill a owl:Class ;
+    rdfs:subClassOf chorus:Skill ;
+    rdfs:label "Utility Skill" ;
+    rdfs:comment "A skill that provides a utility action (open tab, share, listen, simplify, check-seeds, interrupt, cron-tick) and is not an enactment of a specific practice. Subclass exists so the orphan-skill query honestly excludes utilities: FILTER NOT EXISTS { ?s a chorus:UtilitySkill }. #2348 sub-spike 3A." .
+
 chorus:derivedFrom a owl:ObjectProperty ;
     rdfs:label "derived from" ;
     rdfs:comment "A practice or policy traces back to the principle(s) that motivate it." ;
@@ -1525,6 +1534,30 @@ chorus:reads a owl:ObjectProperty ;
 chorus:writes a owl:ObjectProperty ;
     rdfs:label "writes" ;
     rdfs:comment "A service writes state to a persistence or emits events consumed by another service. Distinguishes data production from data consumption at the service level. #2178." .
+
+chorus:hasSkill a owl:ObjectProperty ;
+    rdfs:label "has skill" ;
+    rdfs:comment "A role or practice has a skill in its repertoire. Role hasSkill = the role's toolkit; Practice hasSkill = the named entry point that enacts the practice. #2348." ;
+    rdfs:domain [ owl:unionOf ( chorus:Role chorus:Practice ) ] ;
+    rdfs:range chorus:Skill .
+
+chorus:hasGate a owl:ObjectProperty ;
+    rdfs:label "has gate" ;
+    rdfs:comment "A role or practice has a gate it runs or enforces. Role hasGate = gate the role is authorized to evaluate; Practice hasGate = gate that enforces the practice's invariant. #2348." ;
+    rdfs:domain [ owl:unionOf ( chorus:Role chorus:Practice ) ] ;
+    rdfs:range chorus:Gate .
+
+chorus:authorizedBy a owl:ObjectProperty ;
+    rdfs:label "authorized by" ;
+    rdfs:comment "A skill or gate is authorized by a role or practice. Inverse of hasSkill / hasGate. Makes orphan queries cheap: Skill or Gate without authorizedBy = orphan. #2348." ;
+    rdfs:domain [ owl:unionOf ( chorus:Skill chorus:Gate ) ] ;
+    rdfs:range [ owl:unionOf ( chorus:Role chorus:Practice ) ] .
+
+chorus:implementedIn a owl:ObjectProperty ;
+    rdfs:label "implemented in" ;
+    rdfs:comment "A skill or gate is implemented in a file (path relative to chorus repo root, e.g., platform/services/chorus-hooks/src/gates/demo_gate.rs). Concrete Loom→Werk trace. Range is xsd:string today; future: resource pointing at a code node. #2348." ;
+    rdfs:domain [ owl:unionOf ( chorus:Skill chorus:Gate ) ] ;
+    rdfs:range xsd:string .
 
 # --- Policies (5 from existing CLAUDE.md + team-architecture.md rules; binary, operationally enforced) ---
 
@@ -1552,6 +1585,62 @@ chorus:policy-chorus-search-first a chorus:Policy ;
     rdfs:label "Chorus search before filesystem" ;
     rdfs:comment "Search order: Chorus (/chorus search) → codebase graph → filesystem (Grep/Glob). Guard hook enforces. DEC-074." ;
     chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
+
+# --- Policies (9 materialized 2026-04-22 for dangling practice→policy refs; #2348 sub-spike 3C) ---
+
+chorus:policy-tdd-gate a chorus:Policy ;
+    rdfs:label "TDD required before code" ;
+    rdfs:comment "Every code card must have failing tests (red) before production code is written. Enforced by tdd_gate.rs PreToolUse hook. DEC-1674." ;
+    chorus:derivedFrom chorus:principle-quality-at-source,
+                       chorus:principle-speed-and-quality-correlate .
+
+chorus:policy-demo-gate a chorus:Policy ;
+    rdfs:label "No accept without demo" ;
+    rdfs:comment "A code card cannot be marked Done without demo evidence. Builder cannot self-accept. DEC-048 Proving Gate. Enforced by demo_gate.rs hook and /acp skill." ;
+    chorus:derivedFrom chorus:principle-apply-self-regulation-and-accept-feedback,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-accept-gate a chorus:Policy ;
+    rdfs:label "Accept = Done + spine + commit + push" ;
+    rdfs:comment "An acceptance must complete all four: move card to Done, emit card.accepted spine event, commit changes via git-queue, push. Partial acceptance is not acceptance. Enforced by /acp skill steps 1-4." ;
+    chorus:derivedFrom chorus:principle-artifacts,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-handoff-logger a chorus:Policy ;
+    rdfs:label "Every cross-role handoff logged" ;
+    rdfs:comment "Briefs, nudges, gate-passes, and acceptances across roles must log to activity.md. If it's a handoff, it's traceable. Enforced by role discipline + future handoff-gate hook (not yet materialized)." ;
+    chorus:derivedFrom chorus:principle-artifacts,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-demo-provenance a chorus:Policy ;
+    rdfs:label "Demo evidence is an artifact" ;
+    rdfs:comment "Every demo produces a durable artifact (brief file or card comment) identifying what was shown, by whom, when. Verbal-only demos do not satisfy the demo gate. Enforced by demo_gate.rs hook reading comments/briefs — #2177 migrates fully to card comments." ;
+    chorus:derivedFrom chorus:principle-artifacts,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-nudge-blast-radius a chorus:Policy ;
+    rdfs:label "Nudge requires WIP context" ;
+    rdfs:comment "A nudge targeting a role carries the card context (WIP id if present, reason for interruption). Cross-domain nudges surface a warning. DEC-107 dual-path persist+deliver is the mechanism; blast-radius is the discipline around when it fires." ;
+    chorus:derivedFrom chorus:principle-protect-attention,
+                       chorus:principle-focus-is-infrastructure .
+
+chorus:policy-pair-enforcement a chorus:Policy ;
+    rdfs:label "Pair has navigator + driver, not spectators" ;
+    rdfs:comment "A /pair session has exactly one navigator and one driver. Navigator scopes; driver implements. Rotation checkpoints enforce turn-taking. Partner silence > 60s = stall signal (see policy-response-window-60s for the heartbeat). Enforced by /pair skill state + future pair-heartbeat-check skill (#2317)." ;
+    chorus:derivedFrom chorus:principle-comprehension-is-the-rate-limit,
+                       chorus:principle-integrate-rather-than-segregate .
+
+chorus:policy-icd-write-gate a chorus:Policy ;
+    rdfs:label "No harvester without ICD provider" ;
+    rdfs:comment "A harvester service file (harvest-*.sh, *-harvester.service.ts) cannot be written if the domain has no ICD provider section in urn:gathering:icd/current. Populate the ICD first, then code. DEC-095. Enforced by icd-gate-hook.sh PreToolUse hook." ;
+    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-quality-gate a chorus:Policy ;
+    rdfs:label "Quality gate required before demo" ;
+    rdfs:comment "Quality gate (hooks pass, no regression, no console.log in production code) must pass before /demo is called on a code card. Kade-owned. Enforced by /gate-quality skill + quality_gate.rs hook integration." ;
+    chorus:derivedFrom chorus:principle-quality-at-source,
+                       chorus:principle-produce-no-waste .
 
 # --- 12 Principles (7 from team-architecture.md + 5 from 2026-04-17 session) ---
 
@@ -2056,3 +2145,813 @@ chorus:gathering chorus:inputTo chorus:Capturing .
 #      3100=grafana(observability), 3102=loki(logs), chorus-sdk=spine
 #   4. Diff declared vs actual. Undeclared = drift.
 #
+
+# =============================================================================
+# 11. PRACTICES MAPPING (#2348) — third leg of the Loom triangle
+# =============================================================================
+#
+# Every practice (skill, ritual, habit) traces upstream:
+#   chorus:expresses       Practice → Principle  (what principle the practice embodies)
+#   chorus:operationalizes Practice → Policy     (what policy the practice enacts, if any)
+#
+# Orphan practices flagged chorus:ceremonyRisk true — candidates for retirement
+# or for naming the missing principle.
+# Uncovered principles flagged chorus:abstract true — aspirational, not enacted.
+#
+# Rule of thumb:
+#   Principle without policy  = toothless
+#   Policy without principle  = arbitrary
+#   Practice without principle = ceremony
+#   Practice without policy    = voluntary (fine unless principle says "required")
+#   Principle without practice = abstract (aspirational, not enacted)
+
+# --- New object properties ---
+
+chorus:expresses a owl:ObjectProperty ;
+    rdfs:label "expresses" ;
+    rdfs:comment "A practice expresses (embodies, enacts) a principle. Practice → Principle. Counterpart to chorus:enforces (Policy → Principle) at the doing-layer." ;
+    rdfs:domain chorus:Practice ;
+    rdfs:range chorus:Principle .
+
+chorus:operationalizes a owl:ObjectProperty ;
+    rdfs:label "operationalizes" ;
+    rdfs:comment "A practice operationalizes a policy — the concrete doing that the policy's binary rule sits inside. Practice → Policy. Zero or one per practice; a practice with no policy is voluntary." ;
+    rdfs:domain chorus:Practice ;
+    rdfs:range chorus:Policy .
+
+chorus:ceremonyRisk a owl:DatatypeProperty ;
+    rdfs:label "ceremony risk" ;
+    rdfs:comment "True on a practice that has no traceable principle — candidate for retirement or for naming the missing principle." ;
+    rdfs:domain chorus:Practice ;
+    rdfs:range xsd:boolean .
+
+chorus:abstract a owl:DatatypeProperty ;
+    rdfs:label "abstract" ;
+    rdfs:comment "True on a principle with no practice expressing it — aspirational claim the team does not enact." ;
+    rdfs:domain chorus:Principle ;
+    rdfs:range xsd:boolean .
+
+# --- Edges for the 7 pre-existing practices (additive; definitions above) ---
+
+chorus:practice-actor-bdd
+    chorus:expresses chorus:principle-quality-at-source,
+                     chorus:principle-comprehension-is-the-rate-limit ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-domain-first
+    chorus:expresses chorus:principle-no-dark-work,
+                     chorus:principle-design-from-patterns-to-details ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-service-next
+    chorus:expresses chorus:principle-services-reliable-bounded-idempotent,
+                     chorus:principle-design-from-patterns-to-details ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-product-owner-aligned
+    chorus:expresses chorus:principle-owner-sets-direction,
+                     chorus:principle-integrate-rather-than-segregate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-tdd
+    chorus:expresses chorus:principle-quality-at-source,
+                     chorus:principle-speed-and-quality-correlate ;
+    chorus:operationalizes chorus:policy-tdd-gate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-production-ready
+    chorus:expresses chorus:principle-quality-at-source,
+                     chorus:principle-obtain-a-yield ;
+    chorus:operationalizes chorus:policy-demo-gate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-api-first
+    chorus:expresses chorus:principle-services-reliable-bounded-idempotent,
+                     chorus:principle-design-from-patterns-to-details ;
+    chorus:ceremonyRisk false .
+
+# --- New practices — session lifecycle ---
+
+chorus:practice-session-opening a chorus:Practice ;
+    rdfs:label "Session opening (5-beat thesis)" ;
+    rdfs:comment "Role opens every session with a thesis-driven 5-beat prose opening: named shift, reframed active card, quiet friction with position, named flinch, single-question close. Not a status report. Skill: auto-injected via SessionStart hook." ;
+    chorus:expresses chorus:principle-observe-and-interact,
+                     chorus:principle-protect-attention,
+                     chorus:principle-obtain-a-yield ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-close-out a chorus:Practice ;
+    rdfs:label "Close-out (Hard 5)" ;
+    rdfs:comment "End-of-session discipline: journal, board audit, activity log, next-session.md, commit. Triggered on 'eod' / 'reboot' / past 5pm. Skills: /close, /reboot." ;
+    chorus:expresses chorus:principle-catch-and-store-energy,
+                     chorus:principle-produce-no-waste,
+                     chorus:principle-artifacts ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-pull-card a chorus:Practice ;
+    rdfs:label "Pull card to WIP (/pull)" ;
+    rdfs:comment "Single engineering entry point. Validate card → preflight → WIP check → domain context → design gate → TDD readiness → move + declare + signal. Hard gates emit spine events. Skill: /pull." ;
+    chorus:expresses chorus:principle-no-dark-work,
+                     chorus:principle-ship-small,
+                     chorus:principle-design-from-patterns-to-details ;
+    chorus:operationalizes chorus:policy-tdd-gate,
+                           chorus:policy-icd-write-gate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-demo a chorus:Practice ;
+    rdfs:label "Demo to Jeff (/demo)" ;
+    rdfs:comment "Proving gate — smoke check, prep summary, signal to Wren, builder cannot self-accept. Skill: /demo." ;
+    chorus:expresses chorus:principle-apply-self-regulation-and-accept-feedback,
+                     chorus:principle-obtain-a-yield ;
+    chorus:operationalizes chorus:policy-demo-gate,
+                           chorus:policy-demo-provenance ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-acp a chorus:Practice ;
+    rdfs:label "Accept + commit + push (/acp)" ;
+    rdfs:comment "Full acceptance flow in one command after gates pass. Ownership transfer recorded in spine + git. Skill: /acp." ;
+    chorus:expresses chorus:principle-artifacts,
+                     chorus:principle-no-dark-work ;
+    chorus:operationalizes chorus:policy-accept-gate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-reboot a chorus:Practice ;
+    rdfs:label "Reboot (save memory, write next-session, exit)" ;
+    rdfs:comment "Triggered on context-rising alert or 'reboot' directive. Writes next-session.md + commits + exits cleanly so the next session can pick up without Jeff recap. Skill: /reboot." ;
+    chorus:expresses chorus:principle-catch-and-store-energy,
+                     chorus:principle-self-healing ;
+    chorus:ceremonyRisk false .
+
+# --- New practices — coordination ---
+
+chorus:practice-brief-writing a chorus:Practice ;
+    rdfs:label "Brief writing (cross-role work exchange)" ;
+    rdfs:comment "Primary mechanism for cross-role work exchange. Briefs land in recipient's briefs/ directory with question/request + context + constraints + response needed. Logged in activity.md." ;
+    chorus:expresses chorus:principle-artifacts,
+                     chorus:principle-no-dark-work,
+                     chorus:principle-integrate-rather-than-segregate ;
+    chorus:operationalizes chorus:policy-handoff-logger,
+                           chorus:policy-demo-provenance ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-nudge a chorus:Practice ;
+    rdfs:label "Nudge (cross-role immediate delivery)" ;
+    rdfs:comment "Persist-and-deliver message to another role's active terminal. Two paths fire every time (POST + osascript). Skill: /nudge." ;
+    chorus:expresses chorus:principle-owner-sets-direction,
+                     chorus:principle-use-small-and-slow-solutions ;
+    chorus:operationalizes chorus:policy-nudge-blast-radius ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-pair a chorus:Practice ;
+    rdfs:label "Pair session (strong-style)" ;
+    rdfs:comment "Strong-style pairing with navigator scope loop, work-mode detection, rotation checkpoints. Skill: /pair." ;
+    chorus:expresses chorus:principle-comprehension-is-the-rate-limit,
+                     chorus:principle-integrate-rather-than-segregate,
+                     chorus:principle-apply-self-regulation-and-accept-feedback ;
+    chorus:operationalizes chorus:policy-pair-enforcement,
+                           chorus:policy-response-window-60s ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-clearing a chorus:Practice ;
+    rdfs:label "Clearing (multi-role browser chat)" ;
+    rdfs:comment "Browser-based group chat with Jeff + all three AI roles. Decisions marked DECISION: auto-captured. Skill: /clearing." ;
+    chorus:expresses chorus:principle-integrate-rather-than-segregate,
+                     chorus:principle-owner-sets-direction ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-chat a chorus:Practice ;
+    rdfs:label "Two-role direct chat (/chat)" ;
+    rdfs:comment "Lightweight two-role terminal channel. Jeff watches or participates. Skill: /chat." ;
+    chorus:expresses chorus:principle-integrate-rather-than-segregate,
+                     chorus:principle-use-small-and-slow-solutions ;
+    chorus:ceremonyRisk false .
+
+# --- New practices — observation ---
+
+chorus:practice-gemba a chorus:Practice ;
+    rdfs:label "Gemba (observe a role working)" ;
+    rdfs:comment "Live observation of a role's session + spine events. Jeff + observer discuss what they notice. Skill: /gemba." ;
+    chorus:expresses chorus:principle-observe-and-interact,
+                     chorus:principle-apply-self-regulation-and-accept-feedback ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-mutual-observation a chorus:Practice ;
+    rdfs:label "Mutual observation (roles watch roles)" ;
+    rdfs:comment "Roles tail each other's sessions on idle cycles. Attention is commentary, not watching. Skills: /lw /ls /lk /lc /lm. If no role observes, the system is blind and Jeff becomes the eyes (Attention Contract rule 7)." ;
+    chorus:expresses chorus:principle-observe-and-interact,
+                     chorus:principle-focus-is-infrastructure ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-interaction-pattern-detection a chorus:Practice ;
+    rdfs:label "Interaction pattern detection" ;
+    rdfs:comment "Wren detects which of 9 patterns Jeff is in (direction/ideation/demo/triage/swat/gemba/clearing/story/reflection) and emits spine event. Not announced to Jeff — silent instrumentation feeding Borg." ;
+    chorus:expresses chorus:principle-observe-and-interact,
+                     chorus:principle-interrogate-the-data ;
+    chorus:operationalizes chorus:policy-interaction-pattern ;
+    chorus:ceremonyRisk false .
+
+# --- New practices — quality / rigor ---
+
+chorus:practice-gate-product a chorus:Practice ;
+    rdfs:label "Gate: product (Wren)" ;
+    rdfs:comment "Verify AC complete, demo evidence, domain visibility, spine contract. Wren only. Skill: /gate-product." ;
+    chorus:expresses chorus:principle-quality-at-source,
+                     chorus:principle-obtain-a-yield ;
+    chorus:operationalizes chorus:policy-demo-gate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-gate-code a chorus:Practice ;
+    rdfs:label "Gate: code (Kade)" ;
+    rdfs:comment "Verify tests green, build clean, no new warnings. Kade only. Skill: /gate-code." ;
+    chorus:expresses chorus:principle-quality-at-source,
+                     chorus:principle-speed-and-quality-correlate ;
+    chorus:operationalizes chorus:policy-tdd-gate,
+                           chorus:policy-quality-gate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-gate-quality a chorus:Practice ;
+    rdfs:label "Gate: quality (Kade)" ;
+    rdfs:comment "Verify hooks pass, no regression, no console.log in production code. Kade only. Skill: /gate-quality." ;
+    chorus:expresses chorus:principle-quality-at-source,
+                     chorus:principle-produce-no-waste ;
+    chorus:operationalizes chorus:policy-quality-gate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-gate-arch a chorus:Practice ;
+    rdfs:label "Gate: architecture (Silas)" ;
+    rdfs:comment "Verify system fit, namespace conventions, ICD consistency, domain boundaries. Silas only. Skill: /gate-arch." ;
+    chorus:expresses chorus:principle-services-reliable-bounded-idempotent,
+                     chorus:principle-design-from-patterns-to-details ;
+    chorus:operationalizes chorus:policy-icd-write-gate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-gate-ops a chorus:Practice ;
+    rdfs:label "Gate: operations (Silas)" ;
+    rdfs:comment "Verify deploy safety, health checks, log flow, rollback path. Silas only. Fires at deploy, not code-complete. Skill: /gate-ops." ;
+    chorus:expresses chorus:principle-services-reliable-bounded-idempotent,
+                     chorus:principle-self-healing ;
+    chorus:operationalizes chorus:policy-ops-awareness ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-stop-the-line a chorus:Practice ;
+    rdfs:label "Stop the line" ;
+    rdfs:comment "Friction triggers a fix card in the same response. Don't work around + gripe. PostToolUse hook (planned) blocks turn on tool errors, forces resolve/card/defer. Memory: feedback_stop_the_line." ;
+    chorus:expresses chorus:principle-quality-at-source,
+                     chorus:principle-apply-self-regulation-and-accept-feedback ;
+    chorus:operationalizes chorus:policy-stop-on-error ;
+    chorus:ceremonyRisk false .
+
+# --- New practices — state / andon ---
+
+chorus:practice-andon-state a chorus:Practice ;
+    rdfs:label "Andon state declaration" ;
+    rdfs:comment "Declare state at transitions via role-state: building / blocked / waiting / observing / idle. Silence ≠ idle — idle is a declared state (Attention Contract rule 3)." ;
+    chorus:expresses chorus:principle-no-dark-work,
+                     chorus:principle-observe-and-interact ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-idle-awareness a chorus:Practice ;
+    rdfs:label "Idle awareness (no poll)" ;
+    rdfs:comment "Never idle-poll. If a background task runs: check seeds, update state files, read briefs. Don't auto-pull new cards." ;
+    chorus:expresses chorus:principle-protect-attention,
+                     chorus:principle-use-and-value-renewable-resources ;
+    chorus:operationalizes chorus:policy-autonomy-guard ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-signal-not-narrate a chorus:Practice ;
+    rdfs:label "Signal not narrate" ;
+    rdfs:comment "Narrate outcomes, not steps. Don't announce what you're about to do — execute, then report result. Terminal visual noise discipline." ;
+    chorus:expresses chorus:principle-protect-attention,
+                     chorus:principle-use-small-and-slow-solutions ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-wall-clock-refresh a chorus:Practice ;
+    rdfs:label "Wall-clock refresh per response" ;
+    rdfs:comment "Refresh the Chorus-prompt timestamp every response — never cache. Stale timestamps cascade into wrong escalation decisions (#1559)." ;
+    chorus:expresses chorus:principle-interrogate-the-data,
+                     chorus:principle-observe-and-interact ;
+    chorus:ceremonyRisk false .
+
+# --- New practices — memory / search ---
+
+chorus:practice-chorus-search-first a chorus:Practice ;
+    rdfs:label "Chorus search before filesystem" ;
+    rdfs:comment "Search order: Chorus → codebase graph → filesystem. Guard hook enforces. DEC-074. Memory: feedback_chorus_search_first." ;
+    chorus:expresses chorus:principle-catch-and-store-energy,
+                     chorus:principle-use-and-value-renewable-resources ;
+    chorus:operationalizes chorus:policy-memory-first-search ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-story-capture a chorus:Practice ;
+    rdfs:label "Story capture (personal → TTL)" ;
+    rdfs:comment "When Jeff shares something personal, capture as a story TTL linked to principles via rdfs:seeAlso. Stories feed Self ontology and Chorus narrative." ;
+    chorus:expresses chorus:principle-catch-and-store-energy,
+                     chorus:principle-use-and-value-diversity ;
+    chorus:operationalizes chorus:policy-story-write-gate ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-retro a chorus:Practice ;
+    rdfs:label "Retro (team retrospective)" ;
+    rdfs:comment "Team retrospective — surface patterns, update principles/policies/practices, retire ceremony. Skill: /retro." ;
+    chorus:expresses chorus:principle-apply-self-regulation-and-accept-feedback,
+                     chorus:principle-creatively-use-and-respond-to-change ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-board-sweep a chorus:Practice ;
+    rdfs:label "Board sweep (coherence audit)" ;
+    rdfs:comment "Find and fix untagged, duplicate, and stale cards. Scheduled or on-demand. Skill: /board-sweep." ;
+    chorus:expresses chorus:principle-produce-no-waste,
+                     chorus:principle-creatively-use-and-respond-to-change ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-werk a chorus:Practice ;
+    rdfs:label "Werk dashboard (work state)" ;
+    rdfs:comment "Live work-state dashboard — WIP, blocks, pending accepts, staleness. Skill: /werk." ;
+    chorus:expresses chorus:principle-no-dark-work,
+                     chorus:principle-observe-and-interact ;
+    chorus:ceremonyRisk false .
+
+# --- New practices — meta ---
+
+chorus:practice-context-injection a chorus:Practice ;
+    rdfs:label "Context injection (SessionStart)" ;
+    rdfs:comment "SessionStart hook assembles pulse + spine + athena into envelope, injected into role's first turn. Role reads envelope, not state files. Sync-via-artifacts, not recap." ;
+    chorus:expresses chorus:principle-catch-and-store-energy,
+                     chorus:principle-self-healing ;
+    chorus:operationalizes chorus:policy-context-inject ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-2-touch-target a chorus:Practice ;
+    rdfs:label "2-touch-per-card target" ;
+    rdfs:comment "Jeff's coordination target: 2 touches per card (start + accept). Every re-nudge = failure of the Attention Contract." ;
+    chorus:expresses chorus:principle-protect-attention ;
+    chorus:operationalizes chorus:policy-working-hours ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-domain-context-before-code a chorus:Practice ;
+    rdfs:label "Domain context before code" ;
+    rdfs:comment "Read domain state (completeness, actors, edges) before writing code. /pull step 4 enforces. No building blind." ;
+    chorus:expresses chorus:principle-design-from-patterns-to-details,
+                     chorus:principle-interrogate-the-data ;
+    chorus:ceremonyRisk false .
+
+chorus:practice-verify-before-asserting a chorus:Practice ;
+    rdfs:label "Verify before asserting" ;
+    rdfs:comment "Check the data before claiming something is fine. False assertions put Jeff in the loop. Memory: feedback_verify_before_asserting." ;
+    chorus:expresses chorus:principle-interrogate-the-data,
+                     chorus:principle-apply-self-regulation-and-accept-feedback ;
+    chorus:ceremonyRisk false .
+
+# --- Abstract principles flagged (no practice enacts them) ---
+
+chorus:principle-use-edges-and-value-the-marginal
+    chorus:abstract true .
+
+# --- Expanded contains edges (additive) ---
+
+chorus:loom-practices chorus:contains
+    chorus:practice-session-opening, chorus:practice-close-out, chorus:practice-pull-card,
+    chorus:practice-demo, chorus:practice-acp, chorus:practice-reboot,
+    chorus:practice-brief-writing, chorus:practice-nudge, chorus:practice-pair,
+    chorus:practice-clearing, chorus:practice-chat,
+    chorus:practice-gemba, chorus:practice-mutual-observation, chorus:practice-interaction-pattern-detection,
+    chorus:practice-gate-product, chorus:practice-gate-code, chorus:practice-gate-quality,
+    chorus:practice-gate-arch, chorus:practice-gate-ops, chorus:practice-stop-the-line,
+    chorus:practice-andon-state, chorus:practice-idle-awareness, chorus:practice-signal-not-narrate,
+    chorus:practice-wall-clock-refresh,
+    chorus:practice-chorus-search-first, chorus:practice-story-capture, chorus:practice-retro,
+    chorus:practice-board-sweep, chorus:practice-werk,
+    chorus:practice-context-injection, chorus:practice-2-touch-target,
+    chorus:practice-domain-context-before-code, chorus:practice-verify-before-asserting .
+
+# =============================================================================
+# SKILLS, GATES, ROLE + PRACTICE EDGES
+# =============================================================================
+# #2348 sub-spikes 1+2 merged 2026-04-22. Wren drafted, Silas reviewed.
+#
+# Vocabulary:
+#   chorus:Skill          — named invocable procedure (/<slug>)
+#   chorus:UtilitySkill   — utility skills (not practice-owned)
+#   chorus:hasSkill       — Role|Practice → Skill
+#   chorus:hasGate        — Role|Practice → Gate
+#   chorus:authorizedBy   — Skill|Gate → Role|Practice (inverse)
+#   chorus:implementedIn  — Skill|Gate → file path (xsd:string, for now)
+#
+# Orphan queries:
+#   Gates without authority:
+#     SELECT ?g WHERE { ?g a chorus:Gate .
+#                       FILTER NOT EXISTS { [] chorus:hasGate ?g } }
+#   Skills without practice (excluding utilities):
+#     SELECT ?s WHERE { ?s a chorus:Skill .
+#                       FILTER NOT EXISTS { ?s a chorus:UtilitySkill }
+#                       FILTER NOT EXISTS { [] chorus:hasSkill ?s } }
+# =============================================================================
+
+# --- Skill instances — practice-enacting (32) ---
+
+chorus:skill-pull a chorus:Skill ;
+    rdfs:label "/pull" ;
+    rdfs:comment "Single engineering entry point. Validate → preflight → WIP check → domain context → design gate → TDD readiness → move + declare + signal." ;
+    chorus:implementedIn "~/.claude/skills/pull/SKILL.md" .
+
+chorus:skill-demo a chorus:Skill ;
+    rdfs:label "/demo" ;
+    rdfs:comment "Proving gate — smoke check, prep summary, signal to Wren, builder cannot self-accept." ;
+    chorus:implementedIn "~/.claude/skills/demo/SKILL.md" .
+
+chorus:skill-acp a chorus:Skill ;
+    rdfs:label "/acp" ;
+    rdfs:comment "Accept + commit + push — full acceptance flow in one command." ;
+    chorus:implementedIn "~/.claude/skills/acp/SKILL.md" .
+
+chorus:skill-close a chorus:Skill ;
+    rdfs:label "/close" ;
+    rdfs:comment "Session close-out — Hard 5 (journal, board audit, activity log, next-session, commit)." ;
+    chorus:implementedIn "~/.claude/skills/close/SKILL.md" .
+
+chorus:skill-reboot a chorus:Skill ;
+    rdfs:label "/reboot" ;
+    rdfs:comment "Save memory, write next-session.md, commit, exit cleanly. Fires on context-rising alert." ;
+    chorus:implementedIn "~/.claude/skills/reboot/SKILL.md" .
+
+chorus:skill-jdi a chorus:Skill ;
+    rdfs:label "/jdi" ;
+    rdfs:comment "Just do it — delegates to /pull with the obvious next card." ;
+    chorus:implementedIn "~/.claude/skills/jdi/SKILL.md" .
+
+chorus:skill-gate-product a chorus:Skill ;
+    rdfs:label "/gate-product" ;
+    rdfs:comment "Product gate — AC complete, demo evidence, domain visibility, spine contract. Wren only." ;
+    chorus:implementedIn "~/.claude/skills/gate-product/SKILL.md" .
+
+chorus:skill-gate-arch a chorus:Skill ;
+    rdfs:label "/gate-arch" ;
+    rdfs:comment "Architecture gate — system fit, namespace, ICD, domain boundaries. Silas only." ;
+    chorus:implementedIn "~/.claude/skills/gate-arch/SKILL.md" .
+
+chorus:skill-gate-ops a chorus:Skill ;
+    rdfs:label "/gate-ops" ;
+    rdfs:comment "Operations gate — deploy safety, health checks, log flow, rollback. Silas only." ;
+    chorus:implementedIn "~/.claude/skills/gate-ops/SKILL.md" .
+
+chorus:skill-gate-code a chorus:Skill ;
+    rdfs:label "/gate-code" ;
+    rdfs:comment "Code gate — tests green, build clean, no new warnings. Kade only." ;
+    chorus:implementedIn "~/.claude/skills/gate-code/SKILL.md" .
+
+chorus:skill-gate-quality a chorus:Skill ;
+    rdfs:label "/gate-quality" ;
+    rdfs:comment "Quality gate — hooks pass, no regression, no console.log in production code. Kade only." ;
+    chorus:implementedIn "~/.claude/skills/gate-quality/SKILL.md" .
+
+chorus:skill-nudge a chorus:Skill ;
+    rdfs:label "/nudge" ;
+    rdfs:comment "Persist + deliver message to another role's active terminal. Dual-path (API + osascript) always fires. DEC-107." ;
+    chorus:implementedIn "~/.claude/skills/nudge/SKILL.md" .
+
+chorus:skill-chat a chorus:Skill ;
+    rdfs:label "/chat" ;
+    rdfs:comment "Lightweight two-role chat — direct terminal channel between roles." ;
+    chorus:implementedIn "~/.claude/skills/chat/SKILL.md" .
+
+chorus:skill-clearing a chorus:Skill ;
+    rdfs:label "/clearing" ;
+    rdfs:comment "Multi-party browser chat with Jeff and all three AI roles. DECISION: prefix auto-captured." ;
+    chorus:implementedIn "~/.claude/skills/clearing/SKILL.md" .
+
+chorus:skill-pair a chorus:Skill ;
+    rdfs:label "/pair" ;
+    rdfs:comment "Strong-style pair session — navigator scope loop, work-mode detection, rotation checkpoints." ;
+    chorus:implementedIn "~/.claude/skills/pair/SKILL.md" .
+
+chorus:skill-gemba a chorus:Skill ;
+    rdfs:label "/gemba" ;
+    rdfs:comment "Live observation of a role working — tail session + spine events." ;
+    chorus:implementedIn "~/.claude/skills/gemba/SKILL.md" .
+
+chorus:skill-gemba-tick a chorus:Skill ;
+    rdfs:label "/gemba-tick" ;
+    rdfs:comment "Gemba observation loop tick — cron-invoked." ;
+    chorus:implementedIn "~/.claude/skills/gemba-tick/SKILL.md" .
+
+chorus:skill-retro a chorus:Skill ;
+    rdfs:label "/retro" ;
+    rdfs:comment "Team retrospective with data-driven template." ;
+    chorus:implementedIn "~/.claude/skills/retro/SKILL.md" .
+
+chorus:skill-werk a chorus:Skill ;
+    rdfs:label "/werk" ;
+    rdfs:comment "Work state dashboard — current board, WIP, next, gates." ;
+    chorus:implementedIn "~/.claude/skills/werk/SKILL.md" .
+
+chorus:skill-sb a chorus:Skill ;
+    rdfs:label "/sb" ;
+    rdfs:comment "Scan board — quick board state summary." ;
+    chorus:implementedIn "~/.claude/skills/sb/SKILL.md" .
+
+chorus:skill-ab a chorus:Skill ;
+    rdfs:label "/ab" ;
+    rdfs:comment "Analyze board — shape and flow of work, patterns and concerns." ;
+    chorus:implementedIn "~/.claude/skills/ab/SKILL.md" .
+
+chorus:skill-flow a chorus:Skill ;
+    rdfs:label "/flow" ;
+    rdfs:comment "Board sweep and work proposal — read board, tail active roles, propose what to pull." ;
+    chorus:implementedIn "~/.claude/skills/flow/SKILL.md" .
+
+chorus:skill-board-sweep a chorus:Skill ;
+    rdfs:label "/board-sweep" ;
+    rdfs:comment "Board coherence sweep — find and fix untagged, duplicate, stale cards." ;
+    chorus:implementedIn "~/.claude/skills/board-sweep/SKILL.md" .
+
+chorus:skill-pipeline a chorus:Skill ;
+    rdfs:label "/pipeline" ;
+    rdfs:comment "Orchestrate a multi-card pipeline — Wren drives, roles nudge back on completion." ;
+    chorus:implementedIn "~/.claude/skills/pipeline/SKILL.md" .
+
+chorus:skill-golfball a chorus:Skill ;
+    rdfs:label "/golfball" ;
+    rdfs:comment "Pre-sequence scan for fix/swat cards in a domain before building new features." ;
+    chorus:implementedIn "~/.claude/skills/golfball/SKILL.md" .
+
+chorus:skill-chorus a chorus:Skill ;
+    rdfs:label "/chorus" ;
+    rdfs:comment "Query the shared memory index — Slack + Claude sessions + artifacts." ;
+    chorus:implementedIn "~/.claude/skills/chorus/SKILL.md" .
+
+chorus:skill-lw a chorus:Skill ;
+    rdfs:label "/lw" ; rdfs:comment "Look at Wren's terminal." ;
+    chorus:implementedIn "~/.claude/skills/lw/SKILL.md" .
+
+chorus:skill-ls a chorus:Skill ;
+    rdfs:label "/ls" ; rdfs:comment "Look at Silas's terminal." ;
+    chorus:implementedIn "~/.claude/skills/ls/SKILL.md" .
+
+chorus:skill-lk a chorus:Skill ;
+    rdfs:label "/lk" ; rdfs:comment "Look at Kade's terminal." ;
+    chorus:implementedIn "~/.claude/skills/lk/SKILL.md" .
+
+chorus:skill-lc a chorus:Skill ;
+    rdfs:label "/lc" ; rdfs:comment "Look at Chrome — screenshot Jeff's frontmost Chrome tab." ;
+    chorus:implementedIn "~/.claude/skills/lc/SKILL.md" .
+
+chorus:skill-lm a chorus:Skill ;
+    rdfs:label "/lm" ; rdfs:comment "Look at me — latest posture/sentiment score." ;
+    chorus:implementedIn "~/.claude/skills/lm/SKILL.md" .
+
+chorus:skill-look a chorus:Skill ;
+    rdfs:label "/look" ; rdfs:comment "Capture Jeff's screen for visual context sharing." ;
+    chorus:implementedIn "~/.claude/skills/look/SKILL.md" .
+
+# --- UtilitySkill instances (7) — skills without a specific practice owner ---
+
+chorus:skill-ot a chorus:UtilitySkill ;
+    rdfs:label "/ot" ; rdfs:comment "Open in tab — open file or URL in role's own Chrome window." ;
+    chorus:implementedIn "~/.claude/skills/ot/SKILL.md" .
+
+chorus:skill-share a chorus:UtilitySkill ;
+    rdfs:label "/share" ; rdfs:comment "Export any localhost page as shareable PDF + PNG." ;
+    chorus:implementedIn "~/.claude/skills/share/SKILL.md" .
+
+chorus:skill-listen a chorus:UtilitySkill ;
+    rdfs:label "/listen" ; rdfs:comment "Voice input capture." ;
+    chorus:implementedIn "~/.claude/skills/listen/SKILL.md" .
+
+chorus:skill-simplify a chorus:UtilitySkill ;
+    rdfs:label "/simplify" ;
+    rdfs:comment "Review changed code for reuse, quality, efficiency; fix issues found." ;
+    chorus:implementedIn "~/.claude/skills/simplify/SKILL.md" .
+
+chorus:skill-cs a chorus:UtilitySkill ;
+    rdfs:label "/cs" ; rdfs:comment "Check seeds — read what Jeff sent, act on it." ;
+    chorus:implementedIn "~/.claude/skills/cs/SKILL.md" .
+
+chorus:skill-interrupt a chorus:UtilitySkill ;
+    rdfs:label "/interrupt" ; rdfs:comment "Break into a role's active session." ;
+    chorus:implementedIn "~/.claude/skills/interrupt/SKILL.md" .
+
+chorus:skill-chat-tick a chorus:UtilitySkill ;
+    rdfs:label "/chat-tick" ;
+    rdfs:comment "Chat observation loop tick — cron-invoked, reads new chat lines since last check." ;
+    chorus:implementedIn "~/.claude/skills/chat-tick/SKILL.md" .
+
+# --- Gate instances (13) — domain gates + hook gates + pipeline-step gates ---
+
+chorus:gate-product a chorus:Gate ;
+    rdfs:subClassOf chorus:ProvingGate ;
+    rdfs:label "gate:product" ;
+    rdfs:comment "Verify AC complete, demo evidence, domain visibility, spine contract." ;
+    chorus:implementedIn "~/.claude/skills/gate-product/SKILL.md" .
+
+chorus:gate-arch a chorus:Gate ;
+    rdfs:subClassOf chorus:DesignGate ;
+    rdfs:label "gate:arch" ;
+    rdfs:comment "Verify system fit, namespace conventions, ICD consistency, domain boundaries." ;
+    chorus:implementedIn "~/.claude/skills/gate-arch/SKILL.md" .
+
+chorus:gate-ops a chorus:Gate ;
+    rdfs:subClassOf chorus:ProvingGate ;
+    rdfs:label "gate:ops" ;
+    rdfs:comment "Verify deploy safety, health checks, log flow, rollback path. Fires at deploy, not code-complete." ;
+    chorus:implementedIn "~/.claude/skills/gate-ops/SKILL.md" .
+
+chorus:gate-code a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "gate:code" ;
+    rdfs:comment "Verify tests green, build clean, no new warnings." ;
+    chorus:implementedIn "~/.claude/skills/gate-code/SKILL.md" .
+
+chorus:gate-quality a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "gate:quality" ;
+    rdfs:comment "Verify hooks pass, no regression, no console.log in production code." ;
+    chorus:implementedIn "~/.claude/skills/gate-quality/SKILL.md" .
+
+chorus:gate-demo a chorus:Gate ;
+    rdfs:subClassOf chorus:ProvingGate ;
+    rdfs:label "demo-gate hook" ;
+    rdfs:comment "PreToolUse hook — blocks cards Done when demo evidence missing. DEC-048 enforcement." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/demo_gate.rs" .
+
+chorus:gate-write-scrubber a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "write-scrubber hook" ;
+    rdfs:comment "PreToolUse hook — blocks writes of credentials to shared files." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/write_scrubber.rs" .
+
+chorus:gate-tdd a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "tdd_gate hook" ;
+    rdfs:comment "PreToolUse hook — enforces test-first discipline. DEC-1674." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/tdd_gate.rs" .
+
+chorus:gate-icd-write a chorus:Gate ;
+    rdfs:subClassOf chorus:DesignGate ;
+    rdfs:label "icd-gate hook" ;
+    rdfs:comment "PreToolUse hook — blocks harvester writes without matching ICD provider. DEC-095." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/icd_gate.rs" .
+
+chorus:gate-chorus-search-first a chorus:Gate ;
+    rdfs:subClassOf chorus:DirectionGate ;
+    rdfs:label "memory-first search gate" ;
+    rdfs:comment "PreToolUse hook — blocks filesystem grep/find without prior Chorus index query. DEC-074." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/chorus_search_gate.rs" .
+
+chorus:gate-stop-the-line a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "stop-the-line PostToolUse" ;
+    rdfs:comment "PostToolUse hook — blocks turn when tool errors; forces resolve/card/defer. #2145 implementation pending." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/stop_the_line.rs" .
+
+chorus:gate-fuseki-health a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "Fuseki health" ;
+    rdfs:comment "Inline check in /pull Step 4 — blocks pull if Fuseki :3030 is not 200. #2033 origin." ;
+    chorus:implementedIn "~/.claude/skills/pull/SKILL.md:step-4" .
+
+chorus:gate-design-wip-ready a chorus:Gate ;
+    rdfs:subClassOf chorus:DesignGate ;
+    rdfs:label "Design gate (WIP-ready)" ;
+    rdfs:comment "Inline check in /pull Step 4.5 — blocks type:new or type:enhance pulls when domain lifecycle.wip is not pass. #1396 origin." ;
+    chorus:implementedIn "~/.claude/skills/pull/SKILL.md:step-4.5" .
+
+# --- Role authorization edges ---
+
+chorus:wren chorus:hasSkill
+    chorus:skill-pull, chorus:skill-demo, chorus:skill-acp, chorus:skill-close,
+    chorus:skill-reboot, chorus:skill-jdi,
+    chorus:skill-nudge, chorus:skill-chat, chorus:skill-clearing, chorus:skill-pair,
+    chorus:skill-gemba, chorus:skill-gemba-tick, chorus:skill-retro,
+    chorus:skill-werk, chorus:skill-sb, chorus:skill-ab, chorus:skill-flow,
+    chorus:skill-board-sweep, chorus:skill-pipeline, chorus:skill-golfball,
+    chorus:skill-chorus,
+    chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
+    chorus:skill-lc, chorus:skill-lm, chorus:skill-look,
+    chorus:skill-ot, chorus:skill-share, chorus:skill-listen,
+    chorus:skill-simplify, chorus:skill-cs, chorus:skill-interrupt,
+    chorus:skill-chat-tick, chorus:skill-gate-product ;
+    chorus:hasGate chorus:gate-product .
+
+chorus:silas chorus:hasSkill
+    chorus:skill-pull, chorus:skill-demo, chorus:skill-acp, chorus:skill-close,
+    chorus:skill-reboot, chorus:skill-jdi,
+    chorus:skill-nudge, chorus:skill-chat, chorus:skill-clearing, chorus:skill-pair,
+    chorus:skill-gemba, chorus:skill-gemba-tick, chorus:skill-retro,
+    chorus:skill-chorus,
+    chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
+    chorus:skill-lc, chorus:skill-lm, chorus:skill-look,
+    chorus:skill-ot, chorus:skill-share, chorus:skill-simplify,
+    chorus:skill-cs, chorus:skill-chat-tick,
+    chorus:skill-gate-arch, chorus:skill-gate-ops ;
+    chorus:hasGate chorus:gate-arch, chorus:gate-ops .
+
+chorus:kade chorus:hasSkill
+    chorus:skill-pull, chorus:skill-demo, chorus:skill-acp, chorus:skill-close,
+    chorus:skill-reboot, chorus:skill-jdi,
+    chorus:skill-nudge, chorus:skill-chat, chorus:skill-clearing, chorus:skill-pair,
+    chorus:skill-gemba, chorus:skill-gemba-tick, chorus:skill-retro,
+    chorus:skill-chorus,
+    chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
+    chorus:skill-lc, chorus:skill-lm, chorus:skill-look,
+    chorus:skill-ot, chorus:skill-share, chorus:skill-simplify,
+    chorus:skill-cs, chorus:skill-chat-tick,
+    chorus:skill-gate-code, chorus:skill-gate-quality ;
+    chorus:hasGate chorus:gate-code, chorus:gate-quality .
+
+# --- Practice authorization edges (sub-spike 2) ---
+
+chorus:practice-close-out
+    chorus:hasSkill chorus:skill-close, chorus:skill-reboot .
+
+chorus:practice-pull-card
+    chorus:hasSkill chorus:skill-pull, chorus:skill-jdi ;
+    chorus:hasGate chorus:gate-tdd, chorus:gate-icd-write,
+                   chorus:gate-fuseki-health, chorus:gate-design-wip-ready .
+
+chorus:practice-demo
+    chorus:hasSkill chorus:skill-demo ;
+    chorus:hasGate chorus:gate-demo, chorus:gate-product .
+
+chorus:practice-acp
+    chorus:hasSkill chorus:skill-acp .
+
+chorus:practice-reboot
+    chorus:hasSkill chorus:skill-reboot .
+
+chorus:practice-brief-writing
+    chorus:hasSkill chorus:skill-nudge .
+
+chorus:practice-nudge
+    chorus:hasSkill chorus:skill-nudge .
+
+chorus:practice-pair
+    chorus:hasSkill chorus:skill-pair .
+
+chorus:practice-clearing
+    chorus:hasSkill chorus:skill-clearing .
+
+chorus:practice-chat
+    chorus:hasSkill chorus:skill-chat .
+
+chorus:practice-gemba
+    chorus:hasSkill chorus:skill-gemba, chorus:skill-gemba-tick .
+
+chorus:practice-mutual-observation
+    chorus:hasSkill chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
+                    chorus:skill-lc, chorus:skill-lm, chorus:skill-look .
+
+chorus:practice-interaction-pattern-detection
+    chorus:hasSkill chorus:skill-chorus .
+
+chorus:practice-gate-product
+    chorus:hasSkill chorus:skill-gate-product ;
+    chorus:hasGate chorus:gate-product .
+
+chorus:practice-gate-code
+    chorus:hasSkill chorus:skill-gate-code ;
+    chorus:hasGate chorus:gate-code .
+
+chorus:practice-gate-quality
+    chorus:hasSkill chorus:skill-gate-quality ;
+    chorus:hasGate chorus:gate-quality .
+
+chorus:practice-gate-arch
+    chorus:hasSkill chorus:skill-gate-arch ;
+    chorus:hasGate chorus:gate-arch .
+
+chorus:practice-gate-ops
+    chorus:hasSkill chorus:skill-gate-ops ;
+    chorus:hasGate chorus:gate-ops .
+
+chorus:practice-stop-the-line
+    chorus:hasGate chorus:gate-stop-the-line .
+
+chorus:practice-andon-state
+    chorus:hasSkill chorus:skill-pull .
+
+chorus:practice-chorus-search-first
+    chorus:hasSkill chorus:skill-chorus ;
+    chorus:hasGate chorus:gate-chorus-search-first .
+
+chorus:practice-retro
+    chorus:hasSkill chorus:skill-retro .
+
+chorus:practice-board-sweep
+    chorus:hasSkill chorus:skill-board-sweep, chorus:skill-sb, chorus:skill-ab,
+                    chorus:skill-flow, chorus:skill-golfball .
+
+chorus:practice-werk
+    chorus:hasSkill chorus:skill-werk, chorus:skill-pipeline .
+
+chorus:practice-domain-first
+    chorus:hasGate chorus:gate-design-wip-ready .
+
+chorus:practice-product-owner-aligned
+    chorus:hasGate chorus:gate-product .
+
+chorus:practice-tdd
+    chorus:hasGate chorus:gate-tdd, chorus:gate-code .
+
+chorus:practice-production-ready
+    chorus:hasGate chorus:gate-demo, chorus:gate-product, chorus:gate-ops .
+
