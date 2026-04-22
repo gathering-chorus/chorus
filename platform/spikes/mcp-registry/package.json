@@ -1,0 +1,15 @@
+{
+  "name": "@chorus/spike-mcp-registry",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Spike: expose Chorus capabilities via MCP (#2452). Not production.",
+  "main": "server.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "demo": "node demo-client.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}
