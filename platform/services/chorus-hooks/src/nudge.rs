@@ -279,11 +279,13 @@ pub fn run(args: &[String]) -> ExitCode {
     // to compute the unread set. Surface-ack is named nudge.surfaced (not
     // acknowledged) to avoid collision with role_state drain's count-payload
     // nudge.acknowledged (Kade's 0.3 audit).
-    let content_preview: String = message.chars().take(120).collect();
+    // #2443 — no truncation. Full message goes in `content=` so the tick-poller
+    // has the un-truncated payload to deliver. Prior `chars().take(120)` capped
+    // every cross-role nudge at 120 chars at the delivery boundary.
     chorus_log(
         "nudge.emitted",
         &sender,
-        &format!("from={},to={},chars={},trace={},content={}", sender, target, message.len(), tid, content_preview),
+        &format!("from={},to={},chars={},trace={},content={}", sender, target, message.len(), tid, message),
     );
 
     // #2435 atomic cutover — sender emits canonical event only. Delivery is

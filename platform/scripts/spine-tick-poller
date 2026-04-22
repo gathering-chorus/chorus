@@ -122,11 +122,8 @@ if not unread:
 
 # Deliver each, emit nudge.surfaced per success.
 for tid, sender, content, emit_ts in unread:
-    # Reconstruct the full nudge text. chorus_log truncates content at 120 chars,
-    # but for the receiver's terminal keystroke that's fine — the canonical
-    # record is the spine event; the inject is a surfacing of that record.
-    # Format matches nudge.rs full_text shape: "[nudge from <sender> | <ts>] <content>"
-    # Timestamp in the prefix reflects surface-time, not emit-time (that's in spine).
+    # #2443 — `content` is the full un-truncated payload. nudge.rs no longer
+    # caps the log field. Format matches nudge.rs full_text shape.
     ts_short = time.strftime('%Y-%m-%d %H:%M')
     display = f'[nudge from {sender} | {ts_short} Boston] {content}'
 
