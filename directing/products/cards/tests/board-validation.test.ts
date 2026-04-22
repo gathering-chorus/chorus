@@ -47,7 +47,6 @@ function skip() { return !INTEGRATION_ENABLED || !canConnect; }
 describe('move: persistence verification', () => {
   // Use a known Won't Do card for move tests — move it out and back
   let testCard: BoardTask | undefined;
-  let originalStatus: string;
 
   beforeAll(async () => {
     if (skip()) return;
@@ -57,9 +56,6 @@ describe('move: persistence verification', () => {
     if (!testCard) {
       // Fall back to any Won't Do card
       testCard = all.find(t => t.status === "Won't Do");
-    }
-    if (testCard) {
-      originalStatus = testCard.status;
     }
   });
 

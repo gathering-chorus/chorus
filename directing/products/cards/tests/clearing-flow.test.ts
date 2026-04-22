@@ -16,10 +16,6 @@ const CLEARING_DIR = path.join(
 );
 const CLEARING_SERVER = path.join(CLEARING_DIR, 'src/server.ts');
 const SCRIPTS_DIR = path.join(__dirname, '../../../../platform/scripts');
-const CHORUS_SCRIPTS = path.join(
-  process.env.HOME || '/Users/jeffbridwell',
-  '.chorus/scripts'
-);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. CLEARING INFRASTRUCTURE — binary and config exist

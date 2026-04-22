@@ -7,8 +7,6 @@
  */
 
 import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import type { BoardClient } from '../src/client';
 import { bulkSequenceTag, bulkMove, snapshotBoard } from '../src/sdk';
 

@@ -12,9 +12,7 @@
  */
 import { execSync } from 'child_process';
 import * as fs from 'fs';
-import * as path from 'path';
 
-const SCRIPTS_DIR = path.join(__dirname, '../../../../platform/scripts');
 const PREFS_FILE = '/Users/jeffbridwell/CascadeProjects/chorus/jeff-preferences.json';
 
 // Helper: run the seeking-pattern Python detector against sample text

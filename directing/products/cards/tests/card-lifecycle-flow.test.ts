@@ -281,8 +281,8 @@ describe('Flow: WIP limit enforcement', () => {
 
 describe('Flow: Proving gate (done/reject/demo)', () => {
   test('done moves card and emits card.accepted + card.item.completed', async () => {
-    // Import SDK functions that use the mocked events
-    const sdk = jest.requireActual('../src/sdk') as any;
+    // Sanity: AC gate is wired (imported production symbol)
+    expect(enforceACGate(11, 'done-test', '- [ ] AC', 'gathering')).toBe(true);
 
     const client = createMockClient();
 
@@ -352,7 +352,6 @@ describe('Flow: Quality warnings', () => {
   });
 
   test('enforceNowDescriptionGate passes cards with Experience + AC', () => {
-    const before = emittedEvents.length;
     const result = enforceNowDescriptionGate(10, 'Card in Now', '## Experience\nJeff sees it.\n\n## AC\n- [ ] Test passes', 'gathering');
     expect(result).toBe(true);
   });

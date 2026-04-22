@@ -26,10 +26,10 @@ describe('Board configs', () => {
   });
 
   test('bucketNames reverse-maps every bucket ID', () => {
-    for (const [name, id] of Object.entries(GATHERING.buckets)) {
+    for (const id of Object.values(GATHERING.buckets)) {
       expect(GATHERING.bucketNames[id]).toBeDefined();
     }
-    for (const [name, id] of Object.entries(SELF.buckets)) {
+    for (const id of Object.values(SELF.buckets)) {
       expect(SELF.bucketNames[id]).toBeDefined();
     }
   });

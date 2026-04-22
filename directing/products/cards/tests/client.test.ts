@@ -283,7 +283,7 @@ describe('BoardClient.fetchBucketsWithLimits', () => {
 describe('BoardClient.moveToBucket error handling', () => {
   test('translates 412 bucket limit error to friendly message', async () => {
     const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
-    (client as any).api = jest.fn().mockImplementation((method: string, endpoint: string) => {
+    (client as any).api = jest.fn().mockImplementation((_method: string, endpoint: string) => {
       if (endpoint.includes('/views/') && endpoint.includes('/buckets/') && endpoint.includes('/tasks')) {
         return Promise.reject(new Error('API POST /endpoint: 412 {"message":"bucket limit reached"}'));
       }

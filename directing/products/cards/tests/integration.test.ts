@@ -7,7 +7,7 @@
  * and avoids SQLite contention when Vikunja holds a write lock (#1800).
  */
 import { BoardClient } from '../src/client';
-import { GATHERING, SELF, loadEnv } from '../src/config';
+import { GATHERING, loadEnv } from '../src/config';
 
 const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 
