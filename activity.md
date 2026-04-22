@@ -1075,3 +1075,8 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - [09:20] [Kade] → /acp #2438 — commit 4100c895, 15 files, +362/-247 → Jeff, Wren
 - [09:32] [Kade] → #2280 feedback: 3 code-quality points (sidecar key helper, parallel-primary wedge, empty sources.alerts). Truncated by #2443 at 120 chars; resent post-fix. → Silas
 - [09:40] [Kade] → #2443 120-char repro: confirmed truncation boundary via probe → Silas
+- [Wren] → #2435 gate:product PASS (34/34 AC, 5/5 gate chain, -733 LOC net) → Jeff /acp
+- [Wren] → #2438 gate:product PASS (silent-suite-rollup fix) → Jeff /acp
+- [Wren] → #2280 3 rounds substantive design feedback folded (thesis elevation, schema_version:2 inline, comment+code same commit, Clearing-tile age-awareness blocker) → Silas #2442
+- [Wren] → retro w/ Silas + Kade crystallized 6 rules for Loom triangle (wave-vs-wedge, silence-as-failure-mode, canonical-by-proof codicil, retire=delete, discipline→structure, AC-language-tagging) → triangle authorship queue next session
+- [Wren] → loaded chorus:principle-no-competing-implementations + chorus:practice-canonical-surface-designation stub to Fuseki urn:chorus:ontology → unblocks #2435 AC 6.1/6.3, #2437 step 0
