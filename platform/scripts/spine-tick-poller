@@ -124,8 +124,12 @@ if not unread:
 for tid, sender, content, emit_ts in unread:
     # #2443 — `content` is the full un-truncated payload. nudge.rs no longer
     # caps the log field. Format matches nudge.rs full_text shape.
+    # Newlines in content would make osascript keystroke submit early
+    # (Enter per \n), delivering Kade's multi-line feedback as separate
+    # prompts. Collapse to ' / ' so the receiver gets one readable payload.
+    content_flat = content.replace('\r\n', ' / ').replace('\n', ' / ').replace('\r', ' / ')
     ts_short = time.strftime('%Y-%m-%d %H:%M')
-    display = f'[nudge from {sender} | {ts_short} Boston] {content}'
+    display = f'[nudge from {sender} | {ts_short} Boston] {content_flat}'
 
     # Focus-gate: verify exactly 1 window for this role.
     try:

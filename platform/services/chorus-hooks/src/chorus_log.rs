@@ -90,8 +90,12 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
                 level = val.to_string();
                 continue;
             }
-            let escaped = val.replace('"', "\\\"");
-            extras.push_str(&format!(r#","{}":"{}""#, key, escaped));
+            // #2443 follow-on: proper JSON escape — newlines/backslashes/quotes/control
+            // chars would otherwise break log-line integrity. Prior `.replace('"', ...)`
+            // only handled quotes; multi-line content (Kade's #2280 feedback) produced
+            // invalid JSON that the poller silently skipped.
+            let escaped_value = serde_json::to_string(&val).unwrap_or_else(|_| "\"\"".to_string());
+            extras.push_str(&format!(r#","{}":{}"#, key, escaped_value));
             display.push_str(&format!(" {}={}", key, val));
         }
     }
