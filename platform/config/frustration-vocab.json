@@ -1,0 +1,31 @@
+{
+  "_meta": {
+    "card": "#2454",
+    "created": "2026-04-23",
+    "rule": "Keep low-polysemy terms only. Substring collisions (ffs matches handoffs/jeffs-mini) ruin the signal. Space-delimited phrases preferred."
+  },
+  "frustration": {
+    "description": "Jeff-to-role direct anger. High specificity; profanity + named failure words.",
+    "patterns": [
+      "wtf", "pathetic", "gaslight", "goddamn", "god damn",
+      "fuck you", "fuck off", "fuck this", "fucking",
+      "this sucks", "you broke", "stop doing", "piece of shit",
+      "jesus christ", "this is garbage", "data is wrong"
+    ]
+  },
+  "relief": {
+    "description": "Jeff-to-role confirmation. Narrow — drop polysemous (exactly/perfect/thank you) to avoid catching setups for criticism.",
+    "patterns": [
+      "ship it", "nice work", "good catch", "well done",
+      "exactly right", "perfect, keep", "love it", "that's right",
+      "beautiful", "brilliant"
+    ]
+  },
+  "precursor": {
+    "description": "Role-side patterns that precede frustration. EXPERIMENTAL — vocabulary-only precursors are noisy; production version needs LLM labeling or structured session-turn pattern detection (#2454-followup).",
+    "patterns": [
+      "i apologize", "my apologies", "my mistake",
+      "you're right, i", "you're absolutely right"
+    ]
+  }
+}
