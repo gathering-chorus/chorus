@@ -74,7 +74,7 @@ export function fetchChorusReconcile(
   const lastSession = db.prepare(
     `SELECT MAX(timestamp) as ts FROM messages
      WHERE source = 'claude' AND channel = ? AND author = 'assistant'`,
-  ).get(`session:${role}`) as { ts: string | null };
+  ).get(`session:${role}`) as { ts: string | null } | undefined;
 
   const cutoff = lastSession?.ts ?? new Date(now() - TWENTY_FOUR_HOURS_MS).toISOString();
 
@@ -85,12 +85,11 @@ export function fetchChorusReconcile(
      ORDER BY timestamp ASC`,
   ).all(cutoff, role) as SlackMsg[];
 
-  const slackByChannel: Record<string, SlackMsg[]> = {};
+  const slackByChannel: Partial<Record<string, SlackMsg[]>> = {};
   for (const msg of slackMessages) {
-    if (!slackByChannel[msg.channel]) slackByChannel[msg.channel] = [];
-    if (slackByChannel[msg.channel].length < 5) {
-      slackByChannel[msg.channel].push(msg);
-    }
+    let bucket = slackByChannel[msg.channel];
+    if (!bucket) { bucket = []; slackByChannel[msg.channel] = bucket; }
+    if (bucket.length < 5) bucket.push(msg);
   }
 
   const sessionRows = db.prepare(

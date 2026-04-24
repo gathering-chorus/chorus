@@ -43,7 +43,7 @@ interface PrincipleRow {
 }
 
 export interface SparqlPrinciplesResult {
-  results: { bindings: SparqlPrincipleBinding[] };
+  results?: { bindings?: SparqlPrincipleBinding[] };
 }
 
 export interface LoomPrinciplesDeps {

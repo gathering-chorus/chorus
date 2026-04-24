@@ -34,7 +34,7 @@ interface PolicyRow {
 }
 
 export interface SparqlPoliciesResult {
-  results: { bindings: SparqlPolicyBinding[] };
+  results?: { bindings?: SparqlPolicyBinding[] };
 }
 
 export interface LoomPoliciesDeps {

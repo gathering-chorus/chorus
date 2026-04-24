@@ -67,29 +67,34 @@ interface SubProduct {
 
 interface ProductAccum {
   label: string;
-  subproducts: Record<string, SubProduct>;
+  subproducts: Partial<Record<string, SubProduct>>;
   domains: string[];
 }
 
-function ensureProduct(products: Record<string, ProductAccum>, pLabel: string): ProductAccum {
-  if (!products[pLabel]) products[pLabel] = { label: pLabel, subproducts: {}, domains: [] };
-  return products[pLabel];
+type ProductMap = Partial<Record<string, ProductAccum>>;
+
+function ensureProduct(products: ProductMap, pLabel: string): ProductAccum {
+  let p = products[pLabel];
+  if (!p) { p = { label: pLabel, subproducts: {}, domains: [] }; products[pLabel] = p; }
+  return p;
 }
 
-function mergeNestedBinding(products: Record<string, ProductAccum>, b: Record<string, { value: string } | undefined>): void {
+function mergeNestedBinding(products: ProductMap, b: Record<string, { value: string } | undefined>): void {
   const p = ensureProduct(products, b.productLabel?.value || '?');
   const spLabel = b.spLabel?.value;
   if (!spLabel) return;
-  if (!p.subproducts[spLabel]) {
-    p.subproducts[spLabel] = { label: spLabel, owner: b.ownerLabel?.value || null, domains: [] };
+  let sp = p.subproducts[spLabel];
+  if (!sp) {
+    sp = { label: spLabel, owner: b.ownerLabel?.value || null, domains: [] };
+    p.subproducts[spLabel] = sp;
   }
   const sd = b.sdLabel?.value;
-  if (sd && !p.subproducts[spLabel].domains.includes(sd)) {
-    p.subproducts[spLabel].domains.push(sd);
+  if (sd && !sp.domains.includes(sd)) {
+    sp.domains.push(sd);
   }
 }
 
-function mergeDirectBinding(products: Record<string, ProductAccum>, b: Record<string, { value: string } | undefined>): void {
+function mergeDirectBinding(products: ProductMap, b: Record<string, { value: string } | undefined>): void {
   const p = ensureProduct(products, b.productLabel?.value || '?');
   const dom = b.domainLabel?.value;
   if (dom && !p.domains.includes(dom)) p.domains.push(dom);
@@ -102,12 +107,12 @@ export async function fetchChorusProducts({
   const start = now();
   try {
     const [nested, direct] = await Promise.all([sparql(NESTED_QUERY), sparql(DIRECT_QUERY)]);
-    const products: Record<string, ProductAccum> = {};
+    const products: ProductMap = {};
     nested.results.bindings.forEach((b) => mergeNestedBinding(products, b));
     direct.results.bindings.forEach((b) => mergeDirectBinding(products, b));
-    const out = Object.values(products).map((p) => ({
+    const out = Object.values(products).filter((p): p is ProductAccum => p !== undefined).map((p) => ({
       label: p.label,
-      subproducts: Object.values(p.subproducts),
+      subproducts: Object.values(p.subproducts).filter((sp): sp is SubProduct => sp !== undefined),
       domains: p.domains,
     }));
     return { status: 200, body: { products: out, elapsed_ms: now() - start } };

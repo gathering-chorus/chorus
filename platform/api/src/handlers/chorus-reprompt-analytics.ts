@@ -81,9 +81,13 @@ export function fetchChorusRepromptAnalytics(
 
   const filtered = loadFilteredMessages(deps.db, cutoff);
 
+  type DailyBucket = { reprompt: number; approval: number; correction: number; total: number };
+  type Role = 'wren' | 'silas' | 'kade';
+  const isRole = (s: string): s is Role => s === 'wren' || s === 'silas' || s === 'kade';
+
   const events: RepromptEvent[] = [];
-  const dailyCounts: Record<string, { reprompt: number; approval: number; correction: number; total: number }> = {};
-  const roleCounts: Record<string, { reprompt: number; approval: number; correction: number }> = {
+  const dailyCounts: Partial<Record<string, DailyBucket>> = {};
+  const roleCounts: Record<Role, { reprompt: number; approval: number; correction: number }> = {
     wren: { reprompt: 0, approval: 0, correction: 0 },
     silas: { reprompt: 0, approval: 0, correction: 0 },
     kade: { reprompt: 0, approval: 0, correction: 0 },
@@ -93,23 +97,27 @@ export function fetchChorusRepromptAnalytics(
     const text = r.content.toLowerCase().trim();
     const role = r.channel.replace('session:', '');
     const day = r.timestamp.substring(0, 10);
-    if (!dailyCounts[day]) dailyCounts[day] = { reprompt: 0, approval: 0, correction: 0, total: 0 };
-    dailyCounts[day].total++;
+    let bucket = dailyCounts[day];
+    if (!bucket) { bucket = { reprompt: 0, approval: 0, correction: 0, total: 0 }; dailyCounts[day] = bucket; }
+    bucket.total++;
 
     const type = classifyEventType(text);
     if (type) {
       events.push({ text: r.content.substring(0, 120), role, timestamp: r.timestamp, type });
-      dailyCounts[day][type]++;
-      if (roleCounts[role]) roleCounts[role][type]++;
+      bucket[type]++;
+      if (isRole(role)) roleCounts[role][type]++;
     }
   }
 
   const sortedDays = Object.keys(dailyCounts).sort();
-  const trend = sortedDays.map((day) => ({
-    date: day,
-    ...dailyCounts[day],
-    attentionCost: dailyCounts[day].reprompt * 3 + dailyCounts[day].approval + dailyCounts[day].correction * 2,
-  }));
+  const trend = sortedDays.map((day) => {
+    const d = dailyCounts[day] ?? { reprompt: 0, approval: 0, correction: 0, total: 0 };
+    return {
+      date: day,
+      ...d,
+      attentionCost: d.reprompt * 3 + d.approval + d.correction * 2,
+    };
+  });
 
   const totalMessages = filtered.length;
   const totalSignals = events.length;
