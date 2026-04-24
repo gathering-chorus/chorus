@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Hook Architecture</title>
+<style>
+body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:24px 1in;color:#1a1a1a;line-height:1.6}
+h1{font-size:1.8em;border-bottom:2px solid #333;padding-bottom:8px}
+h2{font-size:1.3em;margin-top:2em;color:#2c5282}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:.9em}
+th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}
+th{background:#f0f0f0;font-weight:600}
+.tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:.8em;font-weight:600}
+.tag-gate{background:#dc2626;color:#fff}
+.tag-enrich{background:#0284c7;color:#fff}
+.tag-observe{background:#16a34a;color:#fff}
+.tag-guard{background:#ca8a04;color:#fff}
+.issue{color:#dc2626;font-weight:600}
+.ok{color:#16a34a}
+footer{margin-top:3em;padding-top:1em;border-top:1px solid #ddd;font-size:.85em;color:#666}
+</style>
+</head>
+<body>
+<h1>Chorus Hook Architecture</h1>
+<p><em>Standards surface for #1932 — generated 2026-04-24, updated 2026-04-24 by generate-standards-surface.sh. 14 modules actively enforcing (0 blocks, 972 denies trailing 7d).</em></p>
+<p>40 hook modules in a 6-phase execution model. This document maps what exists, identifies the gaps, and tracks resolution.</p>
+
+<h2>The Problem (2026-04-05) and What Changed (2026-04-06)</h2>
+<ul>
+<li>29% of Jeff's prompts stolen by system noise — <em>partially addressed: search hooks consolidated (#2225), watchdog false alerts fixed (#2224)</em></li>
+<li>Board counts that shift between renders (pagination bug hiding 232 cards) — <em>open</em></li>
+<li><s>Monitoring blind to its own failures (session indexer dead 2 days, fswatch segfaulting 37 times)</s> — <em>fixed: #2227 (stale lock recovery), #2228 (fswatch root cause), #2260 (event loop lag + memory alerts)</em></li>
+<li>Hooks that don't coordinate — 5 independent Chorus searches per prompt cycle — <em>consolidated to 2 (#2225), cache shared state shipped</em></li>
+<li>Bulk operations that destroy data (152 cards moved to Won't Do without verification) — <em>open (#2234 carded)</em></li>
+<li>Chorus API froze under load (13 execSync calls blocking event loop) — <em>fixed: #2241 (API async), #2249-#2252 + #2256 (all hot-path handlers async)</em></li>
+<li>Overnight nudge inject failed (osascript needs display awake) — <em>fixed: #2245 (do-script replaces keystroke)</em></li>
+<li>Daily review posted duplicate messages, ops lied about health — <em>fixed: #2243 (one summary, alert state included, roles nudged)</em></li>
+</ul>
+
+<h2>Hook Inventory (36 modules)</h2>
+<table>
+<tr><th>Hook</th><th>Category</th><th>Trigger</th><th>Effect</th><th>State?</th></tr>
+<tr><th colspan="5" style="background:#333;color:#fff">Phase 0 — Session and Clock</th></tr>
+<tr><td title="10 denies (7d)">session_init_gate</td><td><span class="tag tag-gate">GATE</span></td><td>All</td><td>Block until session-start read</td><td>AppState</td></tr>
+<tr><td>clock_sync</td><td><span class="tag tag-observe">OBS</span></td><td>All</td><td>Update wall-clock</td><td>No</td></tr>
+<tr><td>tool_telemetry</td><td><span class="tag tag-observe">OBS</span></td><td>All</td><td>Metrics</td><td>No</td></tr>
+<tr><th colspan="5" style="background:#333;color:#fff">Phase 1 — Safety Guards</th></tr>
+<tr><td title="9 denies (7d)">sensitive_paths</td><td><span class="tag tag-guard">GUARD</span></td><td>R/W/E</td><td>Block credentials</td><td>No</td></tr>
+<tr><td title="7 denies (7d)">write_scrubber</td><td><span class="tag tag-guard">GUARD</span></td><td>W/E</td><td>Block cred writes</td><td>No</td></tr>
+<tr><td>sparql_guard</td><td><span class="tag tag-guard">GUARD</span></td><td>Bash</td><td>Block SPARQL mutations</td><td>No</td></tr>
+<tr><td>bedroom_nfs_guard</td><td><span class="tag tag-guard">GUARD</span></td><td>Bash</td><td>Block NFS writes</td><td>No</td></tr>
+<tr><td title="6 denies (7d)">csc_guard</td><td><span class="tag tag-guard">GUARD</span></td><td>Bash</td><td>Block /tmp artifacts</td><td>No</td></tr>
+<tr><td title="141 denies (7d)">infra_guardrails</td><td><span class="tag tag-guard">GUARD</span></td><td>Bash</td><td>Block infra mutations</td><td>No</td></tr>
+<tr><th colspan="5" style="background:#333;color:#fff">Phase 2 — Knowledge Gates</th></tr>
+<tr><td title="134 denies (7d)">memory_first</td><td><span class="tag tag-gate">GATE</span></td><td>B/Grep/Glob</td><td>Chorus before grep</td><td>JSONL</td></tr>
+<tr><td title="766 denies (7d)">memory_gate</td><td><span class="tag tag-gate">GATE</span></td><td>W/E</td><td>Research before code</td><td>JSONL</td></tr>
+<tr><td title="312 denies (7d)">log_first_gate</td><td><span class="tag tag-gate">GATE</span></td><td>W/E</td><td>Logs before fix</td><td>JSONL</td></tr>
+<tr><td>icd_pre_read</td><td><span class="tag tag-gate">GATE</span></td><td>R/W/E</td><td>Domain context first</td><td>AppState</td></tr>
+<tr><td>icd_write_gate</td><td><span class="tag tag-gate">GATE</span></td><td>W/E</td><td>ICD before harvester</td><td>No</td></tr>
+<tr><th colspan="5" style="background:#333;color:#fff">Phase 3 — Context Enrichment</th></tr>
+<tr><td>context_inject</td><td><span class="tag tag-enrich">ENRICH</span></td><td>Prompt</td><td>Chorus + memory search</td><td>AppState</td></tr>
+<tr><td title="309 denies (7d)">search_hierarchy</td><td><span class="tag tag-enrich">ENRICH</span></td><td>Grep/Glob/git</td><td>4-layer enrichment</td><td>AppState</td></tr>
+<tr><td>input_classifier</td><td><span class="tag tag-enrich">ENRICH</span></td><td>Prompt</td><td>Pattern classification</td><td>AppState</td></tr>
+<tr><th colspan="5" style="background:#333;color:#fff">Phase 4 — Workflow Gates</th></tr>
+<tr><td title="588 denies (7d)">tdd_gate</td><td><span class="tag tag-gate">GATE</span></td><td>E/W/B/Skill</td><td>Tests before code</td><td>JSONL</td></tr>
+<tr><td title="795 denies (7d)">demo_gate</td><td><span class="tag tag-gate">GATE</span></td><td>B/Skill</td><td>Demo before done</td><td>JSONL</td></tr>
+<tr><td title="33 denies (7d)">demo_preflight</td><td><span class="tag tag-gate">GATE</span></td><td>Skill</td><td>Smoke check</td><td>No</td></tr>
+<tr><td>quality_gate</td><td><span class="tag tag-gate">GATE</span></td><td>Skill</td><td>Agent AC review</td><td>No</td></tr>
+<tr><td title="180 denies (7d)">accept_gate</td><td><span class="tag tag-gate">GATE</span></td><td>Skill</td><td>No self-accept</td><td>No</td></tr>
+<tr><td title="36 denies (7d)">pair_gate</td><td><span class="tag tag-gate">GATE</span></td><td>W/E</td><td>Pair required</td><td>AppState</td></tr>
+<tr><td>pair_enforcement</td><td><span class="tag tag-enrich">ENRICH</span></td><td>Skill</td><td>Nudge pair target</td><td>No</td></tr>
+<tr><td>nifi_discipline</td><td><span class="tag tag-guard">GUARD</span></td><td>Skill</td><td>No bash wrappers</td><td>No</td></tr>
+<tr><th colspan="5" style="background:#333;color:#fff">Phase 5 — Behavioral Gates</th></tr>
+<tr><td>autonomy_guard</td><td><span class="tag tag-gate">GATE</span></td><td>Ask</td><td>No unnecessary questions</td><td>AppState</td></tr>
+<tr><td>jdi_detector</td><td><span class="tag tag-gate">GATE</span></td><td>Stop</td><td>No permission-seeking</td><td>No</td></tr>
+<tr><td title="2 denies (7d)">story_write_gate</td><td><span class="tag tag-gate">GATE</span></td><td>W/E</td><td>Stories to right location</td><td>No</td></tr>
+<tr><td>stop_on_error</td><td><span class="tag tag-gate">GATE</span></td><td>Stop</td><td>Stop after errors</td><td>AppState</td></tr>
+<tr><td>batch_progress</td><td><span class="tag tag-observe">OBS</span></td><td>Bash(bg)</td><td>Background task detection</td><td>No</td></tr>
+<tr><th colspan="5" style="background:#333;color:#fff">Phase 6 — Observation</th></tr>
+<tr><td>observer</td><td><span class="tag tag-observe">OBS</span></td><td>Post</td><td>Session log digest</td><td>No</td></tr>
+<tr><td>handoff_logger</td><td><span class="tag tag-observe">OBS</span></td><td>Post</td><td>Cross-role handoffs</td><td>No</td></tr>
+<tr><td>demo_provenance</td><td><span class="tag tag-observe">OBS</span></td><td>Post</td><td>Demo artifact record</td><td>No</td></tr>
+<tr><td>ops_awareness</td><td><span class="tag tag-observe">OBS</span></td><td>Post</td><td>Infra health</td><td>No</td></tr>
+<tr><td>nudge_blast_radius</td><td><span class="tag tag-observe">OBS</span></td><td>Bash</td><td>WIP interrupt warning</td><td>No</td></tr>
+<tr><td>e2e_responder</td><td><span class="tag tag-observe">OBS</span></td><td>Bash</td><td>Test probe response</td><td>No</td></tr>
+</table>
+
+<h2>Current vs Proposed Sequence</h2>
+<p class="issue">Current: flat list in main.rs, organized by tool type. No phases, no shared state coordination. Same hook (tdd_gate) in 3 branches. Order is implicit.</p>
+<p>Proposed: 6 phases — Session, Safety, Knowledge, Enrichment, Workflow, Observation. Within each phase, defined order. State flows forward.</p>
+
+<h2>Shared State</h2>
+<table>
+<tr><th>State</th><th>Producer</th><th>Consumer</th><th>TTL</th><th>Status</th></tr>
+<tr><td>Chorus results</td><td>context_inject</td><td title="309 denies (7d)">search_hierarchy</td><td>30s</td><td class="ok">Shipped #2225</td></tr>
+<tr><td>Session init</td><td title="10 denies (7d)">session_init_gate</td><td>All</td><td>Session</td><td class="ok">Working</td></tr>
+<tr><td>Interaction pattern</td><td>input_classifier</td><td>Behavioral</td><td>Session</td><td class="ok">Working</td></tr>
+<tr><td class="issue">Hook decisions</td><td>—</td><td>—</td><td>—</td><td class="issue">Missing</td></tr>
+<tr><td class="issue">Prompt cycle ID</td><td>—</td><td>—</td><td>—</td><td class="issue">Missing</td></tr>
+<tr><td class="issue">Accepted-by</td><td>—</td><td title="180 denies (7d)">accept_gate</td><td>—</td><td class="issue">Missing</td></tr>
+</table>
+
+<h2>Gaps Found Today</h2>
+<table>
+<tr><th>#</th><th>Gap</th><th>Impact</th><th>Fix</th></tr>
+<tr><td>1</td><td>accept_gate no attribution</td><td>False self-accept accusation</td><td>#2232 carded</td></tr>
+<tr><td>2</td><td class="ok">Watchdog checks role-state not team-scan</td><td><s>8 false alerts</s></td><td class="ok">#2224 shipped</td></tr>
+<tr><td>3</td><td class="ok">Session indexer blind (fswatch segfault)</td><td><s>Gemba stale 2 days</s></td><td class="ok">#2227 + #2228 shipped</td></tr>
+<tr><td>4</td><td>No prompt cycle correlation</td><td>Cannot trace hook chains</td><td>#2231 carded</td></tr>
+<tr><td>5</td><td>Nudge corrupts Jeff input</td><td>23 interrupted messages</td><td>#2233 carded + #2255 (Bridge mutation)</td></tr>
+<tr><td>6</td><td>bulk-move no verification</td><td>152 cards misplaced</td><td>#2234 carded</td></tr>
+<tr><td>7</td><td class="ok">Tests create production cards</td><td><s>120+ junk cards</s></td><td class="ok">#2101 shipped</td></tr>
+<tr><td>8</td><td>Gates block HTML docs as code + don't recognize bats</td><td>False blocks, workarounds</td><td>#2236 updated (broadened scope)</td></tr>
+</table>
+
+<h2>Invariants</h2>
+<ol>
+<li>Safety guards fire before any other hook</li>
+<li>Context enrichment fires exactly once per prompt cycle</li>
+<li>Gates never block observation hooks</li>
+<li>Card state verified against Vikunja SQLite, not API cache</li>
+<li>Acceptance events record who invoked them</li>
+<li>No hook creates production data</li>
+<li>Jeff's input is never corrupted by nudge injection</li>
+</ol>
+
+<h2>Data Access Patterns</h2>
+<table>
+<tr><th>Consumer</th><th>State Source</th><th>Access Method</th><th>Consistency</th></tr>
+<tr><td>Hooks (36 modules)</td><td>AppState (in-memory)</td><td>Shared Mutex, async</td><td>Per-process, lost on restart</td></tr>
+<tr><td>Board CLI (cards command)</td><td>Vikunja SQLite</td><td>Direct query via sqlite3</td><td>Ground truth, survives restart</td></tr>
+<tr><td>Clearing UI</td><td>Board CLI via execSync</td><td>Shells out, parses text</td><td>Depends on CLI consistency</td></tr>
+<tr><td>Vikunja API</td><td>Vikunja SQLite</td><td>REST endpoints, 50-per-bucket cap</td><td class="issue">Partial — truncates overflow</td></tr>
+</table>
+<p>Note: 192 legacy tasks have no task_buckets row. These correctly fall through to done-flag heuristic (all are done=true). Known edge case, not a gap.</p>
+
+<h2>Known Violations</h2>
+<ul>
+<li class="issue">Invariant 2 violated: context_inject fires on UserPromptSubmit, search_hierarchy fires again on PreToolUse. Two enrichments per cycle. #2225 cache masks it but does not fix it.</li>
+<li class="issue">Phase 2/3 tangled: memory_first blocks Grep, then search_hierarchy enriches the same Grep. Same tool, two phases, no coordination.</li>
+<li><s>TCC revocation on cargo rebuild</s> — resolved: #2245 separated chorus-inject binary from shim. do-script replaces activate+keystroke. Future shim rebuilds don't revoke TCC.</li>
+</ul>
+
+<footer>
+Generated by Wren for #1932. Data: chorus-hooks/src/main.rs + 36 modules.<br>
+Created: 2026-04-05 (board reckoning). Updated: 2026-04-06 (hardening session — 13 cards shipped, 3 gaps closed, TCC resolved, async migration complete).
+</footer>
+</body>
+</html>

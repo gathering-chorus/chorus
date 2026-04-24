@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>/demo — Sequence Diagram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Mono', 'Fira Code', monospace; background: #1a1a2e; color: #e0e0e0; padding: 40px; }
+  h1 { font-size: 1.4rem; color: #fff; margin-bottom: 4px; }
+  .subtitle { font-size: 0.85rem; color: #888; margin-bottom: 30px; }
+  svg text { font-family: 'SF Mono', 'Fira Code', monospace; }
+  .meta { font-size: 0.75rem; color: #555; margin-top: 40px; text-align: center; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>/demo — Proving Gate Sequence</h1>
+<p class="subtitle">DEC-048: No self-service Done. Builder shows, PM reviews, Jeff accepts.</p>
+
+<svg width="920" height="1100" viewBox="0 0 920 1100">
+  <!-- Swimlane headers -->
+  <rect x="30" y="10" width="140" height="36" rx="6" fill="#4a2d6b"/>
+  <text x="100" y="33" text-anchor="middle" fill="#c49bff" font-size="13" font-weight="bold">Builder</text>
+
+  <rect x="230" y="10" width="140" height="36" rx="6" fill="#2d6b4a"/>
+  <text x="300" y="33" text-anchor="middle" fill="#7bffb2" font-size="13" font-weight="bold">Smoke Check</text>
+
+  <rect x="430" y="10" width="140" height="36" rx="6" fill="#6b5a2d"/>
+  <text x="500" y="33" text-anchor="middle" fill="#ffd97b" font-size="13" font-weight="bold">Wren (PM)</text>
+
+  <rect x="630" y="10" width="140" height="36" rx="6" fill="#2d4a7a"/>
+  <text x="700" y="33" text-anchor="middle" fill="#7cb3ff" font-size="13" font-weight="bold">Jeff</text>
+
+  <rect x="810" y="10" width="90" height="36" rx="6" fill="#6b2d4a"/>
+  <text x="855" y="33" text-anchor="middle" fill="#ff7bb2" font-size="12" font-weight="bold">Board</text>
+
+  <!-- Lifelines -->
+  <line x1="100" y1="50" x2="100" y2="1080" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="300" y1="50" x2="300" y2="1080" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="500" y1="50" x2="500" y2="1080" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="700" y1="50" x2="700" y2="1080" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+  <line x1="855" y1="50" x2="855" y2="1080" stroke="#333" stroke-width="2" stroke-dasharray="6,4"/>
+
+  <!-- === PHASE 1: BUILDER TRIGGERS === -->
+  <rect x="10" y="70" width="900" height="24" rx="4" fill="#1e2a3a"/>
+  <text x="20" y="86" fill="#4a90d9" font-size="11" font-weight="bold">BUILDER TRIGGERS /demo</text>
+
+  <rect x="50" y="108" width="100" height="22" rx="4" fill="#4a2d6b" opacity="0.5"/>
+  <text x="100" y="123" text-anchor="middle" fill="#c49bff" font-size="10">/demo #N</text>
+
+  <!-- Builder -> Smoke: run smoke-check.sh -->
+  <line x1="100" y1="150" x2="290" y2="150" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="290,150 282,145 282,155" fill="#c49bff"/>
+  <text x="195" y="143" text-anchor="middle" fill="#c49bff" font-size="10">smoke-check.sh --all</text>
+
+  <!-- === PHASE 2: SMOKE CHECK GATE === -->
+  <rect x="10" y="175" width="900" height="24" rx="4" fill="#2e2a1a"/>
+  <text x="20" y="191" fill="#d9a84a" font-size="11" font-weight="bold">SMOKE CHECK (HARD GATE)</text>
+
+  <!-- Smoke check diamond -->
+  <polygon points="300,220 330,240 300,260 270,240" fill="#2e2a1a" stroke="#d9a84a" stroke-width="1.5"/>
+  <text x="300" y="244" text-anchor="middle" fill="#d9a84a" font-size="9">PASS?</text>
+
+  <!-- FAIL path -->
+  <line x1="270" y1="240" x2="110" y2="240" stroke="#d94a4a" stroke-width="1.5"/>
+  <polygon points="110,240 118,235 118,245" fill="#d94a4a"/>
+  <text x="190" y="233" text-anchor="middle" fill="#d94a4a" font-size="9">FAIL → fix and retry</text>
+
+  <!-- PASS path -->
+  <line x1="330" y1="240" x2="490" y2="240" stroke="#4ac94a" stroke-width="1.5"/>
+  <polygon points="490,240 482,235 482,245" fill="#4ac94a"/>
+  <text x="410" y="233" text-anchor="middle" fill="#4ac94a" font-size="9">PASS</text>
+
+  <!-- === PHASE 3: DEMO BRIEF === -->
+  <rect x="10" y="280" width="900" height="24" rx="4" fill="#1e2a3a"/>
+  <text x="20" y="296" fill="#4a90d9" font-size="11" font-weight="bold">PREP DEMO BRIEF</text>
+
+  <!-- Builder generates brief -->
+  <rect x="40" y="320" width="120" height="40" rx="4" fill="#4a2d6b" opacity="0.4"/>
+  <text x="100" y="337" text-anchor="middle" fill="#c49bff" font-size="9">Auto-generate brief</text>
+  <text x="100" y="351" text-anchor="middle" fill="#a888cc" font-size="8">AC status, stakes</text>
+
+  <!-- Builder -> Wren: demo brief -->
+  <line x1="100" y1="380" x2="490" y2="380" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="490,380 482,375 482,385" fill="#c49bff"/>
+  <text x="295" y="373" text-anchor="middle" fill="#c49bff" font-size="10">briefs/demo-#N.md</text>
+
+  <!-- Builder -> Board: demo started -->
+  <line x1="100" y1="410" x2="845" y2="410" stroke="#c49bff" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="845,410 837,405 837,415" fill="#c49bff"/>
+  <text x="470" y="403" text-anchor="middle" fill="#888" font-size="9">board-ts demo #N + card.demo.started event</text>
+
+  <!-- === PHASE 4: SIGNAL TEAM === -->
+  <rect x="10" y="440" width="900" height="24" rx="4" fill="#1e2a3a"/>
+  <text x="20" y="456" fill="#4a90d9" font-size="11" font-weight="bold">SIGNAL</text>
+
+  <!-- Builder -> Bridge -->
+  <rect x="40" y="478" width="120" height="30" rx="4" fill="#4a2d6b" opacity="0.4"/>
+  <text x="100" y="497" text-anchor="middle" fill="#c49bff" font-size="9">Post to The Clearing</text>
+
+  <!-- Builder nudges other roles -->
+  <line x1="100" y1="525" x2="490" y2="525" stroke="#ffd97b" stroke-width="1.5"/>
+  <polygon points="490,525 482,520 482,530" fill="#ffd97b"/>
+  <text x="295" y="518" text-anchor="middle" fill="#ffd97b" font-size="10">[demo] nudge → enter /gemba</text>
+
+  <line x1="100" y1="555" x2="490" y2="555" stroke="#ffd97b" stroke-width="1.5"/>
+  <polygon points="490,555 482,550 482,560" fill="#ffd97b"/>
+  <text x="295" y="548" text-anchor="middle" fill="#ffd97b" font-size="10">[feedback] nudge → reply with substance</text>
+
+  <!-- === PHASE 5: SHOW === -->
+  <rect x="10" y="585" width="900" height="24" rx="4" fill="#2d6b4a"/>
+  <text x="20" y="601" fill="#7bffb2" font-size="11" font-weight="bold">SHOW, DON'T TELL</text>
+
+  <!-- Builder shows Jeff -->
+  <line x1="100" y1="630" x2="690" y2="630" stroke="#c49bff" stroke-width="2"/>
+  <polygon points="690,630 682,625 682,635" fill="#c49bff"/>
+  <text x="395" y="623" text-anchor="middle" fill="#e0e0e0" font-size="11">Live demo — open page / hit endpoint / run command</text>
+
+  <!-- Jeff reacts -->
+  <rect x="640" y="650" width="120" height="30" rx="4" fill="#2d4a7a" opacity="0.4"/>
+  <text x="700" y="669" text-anchor="middle" fill="#7cb3ff" font-size="9">Jeff watches, reacts</text>
+
+  <!-- Pause -->
+  <rect x="250" y="695" width="400" height="30" rx="4" fill="#1e1e2e" stroke="#444" stroke-width="1"/>
+  <text x="450" y="714" text-anchor="middle" fill="#888" font-size="10">PAUSE — wait for Jeff's reaction. Don't pre-answer.</text>
+
+  <!-- Jeff -> Builder: feedback -->
+  <line x1="700" y1="745" x2="110" y2="745" stroke="#7cb3ff" stroke-width="2"/>
+  <polygon points="110,745 118,740 118,750" fill="#7cb3ff"/>
+  <text x="405" y="738" text-anchor="middle" fill="#7cb3ff" font-size="10">Questions, feedback, "show me X"</text>
+
+  <!-- Wren observes via gemba -->
+  <rect x="450" y="765" width="100" height="22" rx="4" fill="#2d6b4a" opacity="0.4"/>
+  <text x="500" y="780" text-anchor="middle" fill="#7bffb2" font-size="9">/gemba observing</text>
+
+  <!-- Wren captures reaction -->
+  <line x1="500" y1="800" x2="500" y2="830" stroke="#7bffb2" stroke-width="1"/>
+  <rect x="440" y="830" width="120" height="22" rx="4" fill="#2d6b4a" opacity="0.4"/>
+  <text x="500" y="845" text-anchor="middle" fill="#7bffb2" font-size="9">Capture reaction</text>
+
+  <!-- === PHASE 6: ACCEPT/REJECT === -->
+  <rect x="10" y="870" width="900" height="24" rx="4" fill="#2e1a1a"/>
+  <text x="20" y="886" fill="#d94a4a" font-size="11" font-weight="bold">ACCEPT or REJECT (Wren or Jeff only)</text>
+
+  <!-- Decision diamond -->
+  <polygon points="600,920 640,940 600,960 560,940" fill="#2e1a1a" stroke="#d94a4a" stroke-width="1.5"/>
+  <text x="600" y="944" text-anchor="middle" fill="#d94a4a" font-size="9">Accept?</text>
+
+  <!-- Accept path -->
+  <line x1="640" y1="940" x2="845" y2="940" stroke="#4ac94a" stroke-width="2"/>
+  <polygon points="845,940 837,935 837,945" fill="#4ac94a"/>
+  <text x="740" y="933" text-anchor="middle" fill="#4ac94a" font-size="10">board-ts done #N</text>
+
+  <!-- Reject path -->
+  <line x1="560" y1="940" x2="110" y2="940" stroke="#d94a4a" stroke-width="2"/>
+  <polygon points="110,940 118,935 118,945" fill="#d94a4a"/>
+  <text x="335" y="933" text-anchor="middle" fill="#d94a4a" font-size="10">board-ts reject #N "reason" → iterate</text>
+
+  <!-- Accept events -->
+  <line x1="855" y1="960" x2="855" y2="990" stroke="#4ac94a" stroke-width="1"/>
+  <rect x="790" y="990" width="130" height="22" rx="4" fill="#1a2e1a"/>
+  <text x="855" y="1005" text-anchor="middle" fill="#4ac94a" font-size="9">card.accepted event</text>
+
+  <!-- Commit + push -->
+  <rect x="420" y="1020" width="160" height="22" rx="4" fill="#1e2a3a"/>
+  <text x="500" y="1035" text-anchor="middle" fill="#4a90d9" font-size="9">git-queue.sh commit → git push</text>
+
+  <!-- Rules box -->
+  <rect x="60" y="1050" width="800" height="36" rx="6" fill="#1e1e2e" stroke="#444" stroke-width="1"/>
+  <text x="460" y="1068" text-anchor="middle" fill="#888" font-size="10">Builder CANNOT self-accept code cards (DEC-048) | Smoke fails → no demo | Jeff sees every demo</text>
+  <text x="460" y="1082" text-anchor="middle" fill="#555" font-size="9">Stakes → Show → Pause → Follow Jeff's attention → Capture reaction</text>
+</svg>
+
+<p class="meta">Generated by Wren &bull; 2026-03-26 &bull; Card #1726 &bull; Chorus Interaction Skills</p>
+
+</body>
+</html>

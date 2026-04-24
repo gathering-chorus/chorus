@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Borg Mitosis — How Chorus Reproduces Across Products</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Open+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; }
+    body {
+      font-family: 'Open Sans', Arial, sans-serif;
+      font-weight: 300; color: #3a3a3a; background: #fff; line-height: 1.8;
+      max-width: 780px; margin: 0 auto; padding: 2rem 2rem 4rem;
+    }
+    h1, h2, h3 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-weight: 600; color: #2c3e2d; line-height: 1.3;
+    }
+    h1 { font-size: 2.4rem; margin-bottom: 0.3rem; }
+    h2 { font-size: 1.6rem; margin: 2.5rem 0 0.8rem; border-bottom: 1px solid #e8e4dc; padding-bottom: 0.4rem; }
+    h3 { font-size: 1.2rem; margin: 1.5rem 0 0.5rem; }
+    p { margin-bottom: 1rem; }
+    a { color: #6b7f5e; }
+    strong { font-weight: 600; color: #2c3e2d; }
+    ul, ol { margin: 0.5rem 0 1.2rem 1.5rem; }
+    li { margin-bottom: 0.4rem; }
+
+    .header {
+      border-bottom: 3px solid #2c3e2d;
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .subtitle {
+      font-size: 1.1rem;
+      color: #6b7f5e;
+      font-style: italic;
+      margin-bottom: 0.5rem;
+    }
+    .meta { font-size: 0.85rem; color: #888; }
+
+    .insight-box {
+      background: #f2fdf4;
+      border-left: 4px solid #6b7f5e;
+      padding: 1.2rem 1.5rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1.5rem 0;
+    }
+    .tension-box {
+      background: #fdf2f2;
+      border-left: 4px solid #c55a5a;
+      padding: 1.2rem 1.5rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1.5rem 0;
+    }
+    .question-box {
+      background: rgba(197, 165, 90, 0.08);
+      border-left: 4px solid #c5a55a;
+      padding: 1.2rem 1.5rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1.5rem 0;
+    }
+
+    /* CHAIN DIAGRAM */
+    .chain {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin: 1.5rem 0;
+      flex-wrap: wrap;
+    }
+    .chain-node {
+      background: #2c3e2d;
+      color: #fff;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .chain-arrow {
+      color: #6b7f5e;
+      font-size: 1.2rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.92rem;
+    }
+    th {
+      text-align: left;
+      background: #2c3e2d;
+      color: #fff;
+      padding: 0.5rem 0.8rem;
+      font-weight: 400;
+    }
+    td {
+      padding: 0.6rem 0.8rem;
+      border-bottom: 1px solid #e8e4dc;
+      vertical-align: top;
+    }
+    td:first-child { font-weight: 600; color: #2c3e2d; }
+
+    @media print {
+      body { padding: 0.5in; font-size: 11pt; max-width: none; }
+      h2 { break-after: avoid; }
+      .chain { break-inside: avoid; }
+    }
+  </style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<div class="header">
+  <h1>Borg Mitosis</h1>
+  <p class="subtitle">How Chorus Reproduces Across Products</p>
+  <p class="meta">March 2026 &mdash; Working document</p>
+</div>
+
+<h2>The Mitosis Pattern</h2>
+
+<p>Biological mitosis: a cell divides into two copies, each carrying the full DNA of the parent. The organism grows not by getting bigger, but by reproducing its fundamental unit.</p>
+
+<p>The same pattern is emerging in how Chorus relates to the products it serves:</p>
+
+<div class="chain">
+  <span class="chain-node">Gathering</span>
+  <span class="chain-arrow">&rarr;</span>
+  <span class="chain-node">Chorus</span>
+  <span class="chain-arrow">&rarr;</span>
+  <span class="chain-node">Borg</span>
+  <span class="chain-arrow">&rarr;</span>
+  <span class="chain-node">Akasha</span>
+  <span class="chain-arrow">&rarr;</span>
+  <span class="chain-node">Next client</span>
+  <span class="chain-arrow">&rarr;</span>
+  <span class="chain-node">...</span>
+</div>
+
+<p>Each split carries forward the DNA: ontology-first design, value stream modeling, role-based coordination, shared memory. But each new product also needs its <em>own</em> domain knowledge, its own context, its own care.</p>
+
+<h2>The Identity Question</h2>
+
+<p>Is Chorus a <strong>build system</strong> or an <strong>organism</strong>?</p>
+
+<table>
+  <thead>
+    <tr><th>Chorus as Build System</th><th>Chorus as Organism</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Generic coordination tool</td>
+      <td>Deeply coupled to each product's domain</td>
+    </tr>
+    <tr>
+      <td>Point it at any project, it works</td>
+      <td>Must <em>learn</em> each product to be effective</td>
+    </tr>
+    <tr>
+      <td>Like make, terraform, CI/CD</td>
+      <td>Like acupuncture &mdash; treatment coupled to knowing the patient</td>
+    </tr>
+    <tr>
+      <td>Scales easily, low cost per split</td>
+      <td>Each split is expensive &mdash; growing a new consciousness</td>
+    </tr>
+    <tr>
+      <td>Portable but shallow</td>
+      <td>Deep but hard to replicate</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="insight-box">
+  <strong>The answer is: it's the second one.</strong> Chorus isn't a tool you install &mdash; it's a team that learns your domain. When Chorus supports Akasha, it needs to <em>know</em> Akasha the way it knows Gathering: the ontology, the value stream, the stories, the practitioner's philosophy. That's the value. That's also the constraint.
+</div>
+
+<h2>What Each Split Costs</h2>
+
+<p>Every time the pattern reproduces, the new instance needs:</p>
+
+<table>
+  <thead>
+    <tr><th>Resource</th><th>What It Means</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>A repo</td>
+      <td>Code, config, and state for the new product</td>
+    </tr>
+    <tr>
+      <td>A deploy target</td>
+      <td>Infrastructure to host and run it (AWS, local, hybrid)</td>
+    </tr>
+    <tr>
+      <td>Domain context</td>
+      <td>Ontology, value stream, entities, relationships &mdash; the team must learn the client's world</td>
+    </tr>
+    <tr>
+      <td>Team attention</td>
+      <td>Three roles, finite hours. WIP limit applies across products, not per product</td>
+    </tr>
+    <tr>
+      <td>Client relationship</td>
+      <td>Someone to answer to when it breaks. Support, not just delivery</td>
+    </tr>
+    <tr>
+      <td>Memory</td>
+      <td>Chorus index, briefs, decisions, stories &mdash; each product accumulates its own history</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="tension-box">
+  <strong>The scaling constraint isn't infrastructure &mdash; it's attention.</strong> Two Macs at 89% disk can be fixed with AWS. Three roles with 24 hours in a day cannot. The team can deeply serve one product. Adding a second means dividing consciousness, not just compute.
+</div>
+
+<h2>The Acupuncture Analogy</h2>
+
+<p>Anthe doesn't apply a generic protocol to each client. She learns their body, their history, their constitution. The treatment is coupled to the knowing. She can't see 50 clients a day &mdash; the depth is the value, and the depth is the bottleneck.</p>
+
+<p>Chorus is acupuncture, not aspirin.</p>
+
+<p>Aspirin scales infinitely &mdash; same pill, every patient. Acupuncture scales by growing more practitioners, each of whom carries the method but develops their own relationship with each patient.</p>
+
+<p>This implies the growth model: <strong>not one team serving N products simultaneously, but the team deeply serving one, then teaching the method to the next practitioner (human or AI) who serves the next product.</strong></p>
+
+<h2>Serial, Not Parallel</h2>
+
+<p>The revenue sequence (DEC-067) already encodes this insight:</p>
+
+<ol>
+  <li><strong>Chorus &rarr; Akasha</strong> &mdash; prove the method works for someone else</li>
+  <li><strong>Chorus consulting</strong> &mdash; sell the method</li>
+  <li><strong>Light Life</strong> &mdash; consulting meets building</li>
+  <li><strong>Mobile Practicing</strong> &mdash; the long game</li>
+</ol>
+
+<p>Each step is serial, not parallel. The team focuses fully on one product at a time. The previous product must be <strong>self-sustaining</strong> &mdash; not finished forever, but stable enough to run without consuming the team's full attention &mdash; before the next split happens.</p>
+
+<div class="question-box">
+  <strong>The maturity question for Gathering:</strong> When is it "done for now"? Not done-done &mdash; it's a living system. The bar is: harvest pipelines run, pages work, the team maintains but doesn't build full-time. That's when capacity exists for mitosis.
+</div>
+
+<h2>The Cell Membrane</h2>
+
+<p>If the mitosis pattern is real, each new product needs a <strong>cell membrane</strong> &mdash; self-containment that prevents it from draining the parent.</p>
+
+<ul>
+  <li><strong>Templates, not bespoke.</strong> The Akasha prototype was built in one session because we used a repeatable pattern (static HTML, shared design language, Amplify deploy). Each new client site should be faster than the last.</li>
+  <li><strong>Shared infra, not per-project.</strong> One AWS account, one deploy pattern, one monitoring stack. The overhead of N products should be marginally more than 1, not N times more.</li>
+  <li><strong>Chorus coordinates the same way regardless of product.</strong> Briefs, cards, board, spine &mdash; the protocol doesn't change. Only the domain context changes.</li>
+  <li><strong>Each product carries its own memory.</strong> Isolated context so the team can switch between products without cross-contamination. Chorus already has this pattern (role-scoped memory files).</li>
+</ul>
+
+<h2>Open Questions</h2>
+
+<ul>
+  <li>What does "self-sustaining" look like for Gathering? What's the maintenance cost once building stops?</li>
+  <li>Can Chorus context-switch between products within a single session, or does it need dedicated sessions per product?</li>
+  <li>When the team serves Akasha, does Jeff still direct all three roles? Or does Anthe direct some of them?</li>
+  <li>Is the consulting model "we build it for you" or "we teach you the method and you build it"?</li>
+  <li>How does the Bridwell patent (US9552400B2) relate to the Borg pattern? RDF/OWL + SPARQL + workflow gates is the prior art &mdash; is Chorus the implementation?</li>
+</ul>
+
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

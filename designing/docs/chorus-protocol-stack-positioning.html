@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chorus Protocol Stack — Multi-Agent Coordination Over Claude Code</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; padding: 48px 20px; line-height: 1.7; }
+  .container { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 28px; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.5px; }
+  .subtitle { font-size: 14px; color: #666; margin-bottom: 32px; }
+  h2 { font-size: 19px; font-weight: 800; margin: 36px 0 8px; color: #1a1a1a; border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+  h2 .num { color: #4361ee; margin-right: 6px; }
+  h3 { font-size: 15px; font-weight: 700; margin: 20px 0 6px; color: #333; }
+  p { font-size: 14px; margin-bottom: 14px; color: #333; }
+
+  .thesis { font-size: 16px; color: #444; border-left: 4px solid #4361ee; padding: 16px 20px; margin: 24px 0; background: #f0f4ff; border-radius: 0 8px 8px 0; line-height: 1.8; }
+  .thesis strong { color: #1a1a1a; }
+
+  .insight { border-left: 3px solid #2ec4b6; padding: 12px 16px; margin: 16px 0; background: #f0fdfa; border-radius: 0 8px 8px 0; font-size: 14px; color: #444; }
+
+  .gap { border-left: 3px solid #e94560; padding: 12px 16px; margin: 16px 0; background: #fef2f2; border-radius: 0 8px 8px 0; font-size: 14px; color: #444; }
+  .gap strong { color: #c41e3a; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
+  th { text-align: left; padding: 8px 12px; background: #f8f9fa; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; color: #666; border-bottom: 2px solid #e5e7eb; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+
+  .stack { margin: 24px 0; }
+  .stack-layer { display: grid; grid-template-columns: 100px 180px 1fr; gap: 0; border: 1px solid #e5e7eb; border-bottom: none; }
+  .stack-layer:last-child { border-bottom: 1px solid #e5e7eb; }
+  .stack-layer:first-child { border-radius: 8px 8px 0 0; }
+  .stack-layer:last-child { border-radius: 0 0 8px 8px; }
+  .sl-level { background: #f8f9fa; padding: 12px; font-weight: 700; font-size: 12px; color: #666; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e5e7eb; }
+  .sl-name { padding: 12px; font-weight: 700; font-size: 14px; border-right: 1px solid #e5e7eb; display: flex; align-items: center; }
+  .sl-desc { padding: 12px; font-size: 13px; color: #555; }
+  .sl-chorus { background: #f0f4ff; }
+  .sl-claude { background: #f0fdfa; }
+  .sl-hook { background: #fffbeb; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+  .col-card { background: #f8f9fa; border-radius: 10px; padding: 18px; border: 1px solid #e5e7eb; }
+  .col-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .col-card ul { padding-left: 18px; font-size: 13px; }
+  .col-card ul li { margin-bottom: 6px; }
+  .col-card.ours { border-top: 3px solid #4361ee; }
+  .col-card.theirs { border-top: 3px solid #2ec4b6; }
+
+  .quote { font-size: 15px; color: #555; font-style: italic; border-left: 3px solid #ccc; padding: 12px 20px; margin: 24px 0; }
+  .quote .attr { font-style: normal; font-size: 12px; color: #999; margin-top: 8px; }
+
+  @media print { body { padding: 24px 0; } }
+  @media (max-width: 600px) { .two-col { grid-template-columns: 1fr; } .stack-layer { grid-template-columns: 60px 1fr; } .sl-desc { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Chorus Protocol Stack</h1>
+<p class="subtitle">Multi-Agent Coordination Over Claude Code &middot; Positioning Document &middot; March 2026</p>
+
+<div class="thesis">
+  <strong>Thesis:</strong> Claude Code's hook system (PreToolUse, PostToolUse, UserPromptSubmit) is an undocumented IPC layer. Chorus uses it to build persistent, role-based, governed multi-agent coordination — something no other framework does over Claude Code. The protocol stack is a general solution; Chorus is the first implementation.
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">1.</span> The Problem Nobody Is Solving</h2>
+
+<p>Multi-agent AI systems exist. AutoGen, CrewAI, LangGraph, MetaGPT — they all orchestrate multiple AI agents. But they share three assumptions that limit them:</p>
+
+<div class="gap">
+  <strong>1. Disposable agents.</strong> Agents are spun up per task and discarded. No persistence, no accumulated context, no memory across sessions. Every interaction starts cold.
+</div>
+
+<div class="gap">
+  <strong>2. Programmatic orchestration.</strong> A Python/JS program defines the agent graph, routes messages, and manages state. The human writes code to coordinate agents, not direct them interactively.
+</div>
+
+<div class="gap">
+  <strong>3. No human in the loop.</strong> The human starts the swarm and reads the output. There's no model for a human directing agents in real time — steering, interrupting, observing, accepting or rejecting work mid-stream.
+</div>
+
+<p>Chorus solves all three. Roles are persistent (37 days of accumulated context). Coordination is interactive (Jeff directs from Bridge, not from Python). And the human is the irreplaceable center — providing judgment, energy, and direction that the AI cannot.</p>
+
+<!-- ============================================================ -->
+<h2><span class="num">2.</span> The Protocol Stack</h2>
+
+<p>Chorus layers on top of Claude Code using its hook system as the coordination primitive. Five layers, from hardware to human:</p>
+
+<div class="stack">
+  <div class="stack-layer">
+    <div class="sl-level">L5</div>
+    <div class="sl-name sl-chorus">Human Direction</div>
+    <div class="sl-desc sl-chorus">Jeff directs via Bridge, terminal, voice. Pattern detection (9 interaction modes). Gemba observation. Demo/accept workflow. The human layer that no framework automates because it can't be automated.</div>
+  </div>
+  <div class="stack-layer">
+    <div class="sl-level">L4</div>
+    <div class="sl-name sl-chorus">Role Coordination</div>
+    <div class="sl-desc sl-chorus">Named roles with vertical domains. Briefs as cross-domain messages. Nudge as instant delivery. Cards as work units. Attention contract (roles monitor each other). Pipeline sequencing. This is Chorus's core — the coordination protocol.</div>
+  </div>
+  <div class="stack-layer">
+    <div class="sl-level">L3</div>
+    <div class="sl-name sl-hook">Gate Enforcement</div>
+    <div class="sl-desc sl-hook">Compiled Rust hooks: ICD validation on write, demo pre-flight, accept gates, autonomy guard, search hierarchy, blast radius. <strong>PreToolUse</strong> blocks actions. <strong>PostToolUse</strong> validates results. Hooks are the enforcement layer — memory suggests, hooks enforce.</div>
+  </div>
+  <div class="stack-layer">
+    <div class="sl-level">L2</div>
+    <div class="sl-name sl-claude">Session Persistence</div>
+    <div class="sl-desc sl-claude">CLAUDE.md as role configuration (v73, evolves daily). Memory files for cross-session context. Skills as repeatable protocols. <strong>UserPromptSubmit</strong> hooks inject context on every prompt. The session knows who it is and what happened before.</div>
+  </div>
+  <div class="stack-layer">
+    <div class="sl-level">L1</div>
+    <div class="sl-name sl-claude">Claude Code Runtime</div>
+    <div class="sl-desc sl-claude">The AI execution engine. Tool use (Bash, Read, Write, Edit, Grep, Glob). Background tasks. Subagents. Cron scheduling. The raw capability layer that Chorus orchestrates but doesn't modify.</div>
+  </div>
+</div>
+
+<div class="insight">
+  <strong>Key insight:</strong> L1 and L2 are Claude Code features (provided by Anthropic). L3 is the bridge — hooks that Anthropic provides but doesn't use for coordination. L4 and L5 are pure Chorus — the protocol that turns individual AI sessions into a team. The innovation is L3→L4: using hooks as IPC to enable role coordination.
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">3.</span> Hooks as IPC</h2>
+
+<p>Claude Code's hook system was designed for safety gates (blocking dangerous commands, enforcing permissions). Chorus repurposes it as an inter-process communication layer:</p>
+
+<table>
+  <tr><th>Hook</th><th>Intended Use</th><th>Chorus Use</th></tr>
+  <tr>
+    <td><strong>PreToolUse</strong></td>
+    <td>Block dangerous file writes</td>
+    <td>ICD validation gate, autonomy guard, search hierarchy enforcement, blast radius check, demo pre-flight</td>
+  </tr>
+  <tr>
+    <td><strong>PostToolUse</strong></td>
+    <td>Log tool usage</td>
+    <td>ICD auto-reload + lint on write (Athena pattern), spine event emission, deploy verification, context injection</td>
+  </tr>
+  <tr>
+    <td><strong>UserPromptSubmit</strong></td>
+    <td>Validate user input</td>
+    <td>Team scan (check other roles' state), nudge consumption, brief routing, interaction pattern detection, context synchronization</td>
+  </tr>
+</table>
+
+<p>This is the unsupported but working pattern. Anthropic didn't design hooks for multi-agent coordination. But the hook contract (fire on event, return allow/block/inject) is exactly what IPC needs: intercept, validate, route, inject. Chorus proves it works at scale — three roles, 1,660+ cards, 37 days of continuous operation.</p>
+
+<h3>Hooks Shipped This Week (Concrete Examples)</h3>
+<table>
+  <tr><th>Hook</th><th>Type</th><th>What It Enforces</th></tr>
+  <tr><td><strong>ICD write gate</strong></td><td>PostToolUse</td><td>Every edit to icd-*.ttl auto-validates TTL, reloads Fuseki, runs linter. The Athena pattern: save IS validation.</td></tr>
+  <tr><td><strong>Demo pre-flight</strong></td><td>PreToolUse</td><td>Blocks /demo if card not in WIP, AC missing, or smoke check fails. Can't demo incomplete work.</td></tr>
+  <tr><td><strong>Accept gate</strong></td><td>PreToolUse</td><td>Blocks /acp without a demo brief. Prevents self-accept on code cards. The proving gate, compiled.</td></tr>
+  <tr><td><strong>Batch progress</strong></td><td>PostToolUse</td><td>Every run_in_background job auto-emits elapsed time + last output every 30s. Silent jobs structurally impossible.</td></tr>
+</table>
+<p>Each of these was a feedback memory that roles kept violating. The progression: Jeff notices → feedback file written → role forgets → Jeff notices again → hook compiled → behavior enforced forever. That progression IS the Chorus product cycle.</p>
+
+<!-- ============================================================ -->
+<h2><span class="num">4.</span> What's Chorus-Specific vs Generalizable</h2>
+
+<div class="two-col">
+  <div class="col-card ours">
+    <h4>Chorus-Specific (The Product)</h4>
+    <ul>
+      <li>Three named roles: Wren, Silas, Kade</li>
+      <li>Jeff's interaction patterns (9 modes)</li>
+      <li>ICD-governed data pipelines</li>
+      <li>Gathering + Chorus product context</li>
+      <li>Bridge UI</li>
+      <li>Specific hook implementations (ICD lint, demo gate)</li>
+      <li>Borg assessment framework</li>
+    </ul>
+  </div>
+  <div class="col-card theirs">
+    <h4>Generalizable (The Framework)</h4>
+    <ul>
+      <li>Role-based AI coordination over hooks</li>
+      <li>Persistent context via CLAUDE.md + memory</li>
+      <li>Proving gate: build → demo → accept</li>
+      <li>Feedback → skill → hook progression</li>
+      <li>Cards as work units with WIP limits</li>
+      <li>Attention economy model</li>
+      <li>Human-as-director, not human-as-coder</li>
+      <li>Cross-role observation (gemba)</li>
+      <li>Interrupt/redirect mechanism</li>
+    </ul>
+  </div>
+</div>
+
+<p>The left column is Jeff's instance. The right column is what anyone running Claude Code could adopt. The framework doesn't require three roles, specific domain knowledge, or particular tooling — it requires the <em>patterns</em>: persistent roles, governed work, enforced gates, human direction.</p>
+
+<!-- ============================================================ -->
+<h2><span class="num">5.</span> Competitive Landscape</h2>
+
+<table>
+  <tr><th>Framework</th><th>Agents</th><th>Persistence</th><th>Human Role</th><th>Enforcement</th></tr>
+  <tr>
+    <td><strong>AutoGen (Microsoft)</strong></td>
+    <td>Disposable, Python-defined</td>
+    <td>None</td>
+    <td>Starts the graph, reads output</td>
+    <td>Code-level (Python guards)</td>
+  </tr>
+  <tr>
+    <td><strong>CrewAI</strong></td>
+    <td>Role-based but disposable</td>
+    <td>None</td>
+    <td>Defines crew, triggers tasks</td>
+    <td>Delegation rules in Python</td>
+  </tr>
+  <tr>
+    <td><strong>LangGraph</strong></td>
+    <td>State machine nodes</td>
+    <td>Graph state (not role identity)</td>
+    <td>Designs the graph</td>
+    <td>Edge conditions</td>
+  </tr>
+  <tr>
+    <td><strong>MetaGPT</strong></td>
+    <td>Software company roles</td>
+    <td>Per-run only</td>
+    <td>Provides requirements</td>
+    <td>SOP-based (not enforced)</td>
+  </tr>
+  <tr>
+    <td><strong>Claude Agent SDK (Anthropic)</strong></td>
+    <td>Programmatic, code-defined</td>
+    <td>Per-run state</td>
+    <td>Writes the orchestration code</td>
+    <td>Code-level (Python SDK)</td>
+  </tr>
+  <tr>
+    <td><strong>Claude Code (raw)</strong></td>
+    <td>Single session</td>
+    <td>CLAUDE.md + hooks</td>
+    <td>Direct interaction</td>
+    <td>Hooks (safety only)</td>
+  </tr>
+  <tr>
+    <td><strong>Chorus</strong></td>
+    <td>Persistent, named, domain-owning</td>
+    <td>Full: identity + context + memory + feedback</td>
+    <td><strong>Director: steers, observes, accepts, interrupts</strong></td>
+    <td><strong>Compiled Rust hooks: structurally enforced</strong></td>
+  </tr>
+</table>
+
+<div class="insight">
+  <strong>The gap Chorus fills:</strong> No other framework combines persistent role identity, interactive human direction, and compiled enforcement gates. AutoGen/CrewAI are programmatic (human writes code, not directs). LangGraph is stateful but not role-aware. MetaGPT has roles but no enforcement. Claude Agent SDK is powerful but programmatic — a developer writes Python to orchestrate agents. Chorus has all three — and it runs on infrastructure Anthropic already ships (Claude Code + hooks). <strong>Chorus + Agent SDK are complementary:</strong> Agent SDK builds the agents, Chorus coordinates the human-AI team. Different layers, same platform.
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">6.</span> The Anthropic Angle</h2>
+
+<p>Chorus demonstrates that Claude Code's hook system is more powerful than its current documentation suggests. The hooks are positioned as safety features. Chorus uses them as a coordination backbone.</p>
+
+<h3>What We'd Tell Anthropic</h3>
+
+<div class="insight">
+  <strong>Your hooks are an IPC layer.</strong> We're running three Claude Code sessions as a coordinated team — persistent roles with named identities, vertical domain ownership, compiled enforcement gates, and a human director. The hook contract (PreToolUse, PostToolUse, UserPromptSubmit) is sufficient for multi-agent coordination. We've been running this daily for 37 days with 1,660+ cards shipped.
+</div>
+
+<h3>What We'd Ask For</h3>
+
+<table>
+  <tr><th>Request</th><th>Why</th></tr>
+  <tr>
+    <td><strong>1. Background task progress API</strong></td>
+    <td>Background tasks are silent. A progress callback or polling API would solve the "chained to desk" problem without custom hooks. This is the most acute daily pain — three times in one session, the human sat watching a blank screen while a job ran silently.</td>
+  </tr>
+  <tr>
+    <td><strong>2. Hook-to-hook messaging</strong></td>
+    <td>Today, roles communicate via file writes + nudge scripts (osascript injection). Native hook-to-hook messaging (Session A fires event → Session B receives it) would eliminate the fragile bridge and make cross-role coordination reliable.</td>
+  </tr>
+  <tr>
+    <td><strong>3. Session identity API</strong></td>
+    <td>Roles derive identity from CLAUDE.md. A session identity primitive ("I am Silas, architect role") would make role awareness native instead of inferred from file paths and prompt content.</td>
+  </tr>
+  <tr>
+    <td><strong>4. Cross-session state</strong></td>
+    <td>Memory files work but are fragile. A shared state layer across sessions (key-value, queryable) would replace file-based coordination with something atomic and consistent.</td>
+  </tr>
+  <tr>
+    <td><strong>5. Hook performance metrics</strong></td>
+    <td>Hooks add latency. We can't measure it. Hook execution time as a reportable metric would help optimize the enforcement layer — currently we can't distinguish "Claude is thinking" from "the hook is slow."</td>
+  </tr>
+</table>
+
+<!-- ============================================================ -->
+<h2><span class="num">7.</span> The Evidence</h2>
+
+<p>37 days of daily operation. Not a demo, not a prototype — a production team.</p>
+
+<table>
+  <tr><td><strong>Duration</strong></td><td>37 days continuous (Feb 13 — Mar 24, 2026)</td></tr>
+  <tr><td><strong>Roles</strong></td><td>3 (PM, Architect, Engineer) + 1 human director</td></tr>
+  <tr><td><strong>Cards shipped</strong></td><td>1,660+</td></tr>
+  <tr><td><strong>Decisions documented</strong></td><td>106</td></tr>
+  <tr><td><strong>Tests</strong></td><td>3,855+</td></tr>
+  <tr><td><strong>RDF triples</strong></td><td>23M+</td></tr>
+  <tr><td><strong>Hook invocations</strong></td><td>Thousands daily (every tool call fires PreToolUse + PostToolUse)</td></tr>
+  <tr><td><strong>CLAUDE.md versions</strong></td><td>73 (protocol evolves daily)</td></tr>
+  <tr><td><strong>Products built</strong></td><td>2 (Gathering personal app + Chorus coordination system)</td></tr>
+  <tr><td><strong>Infrastructure migrations</strong></td><td>Docker → LaunchAgent, 56 bash → 8 scripts, namespace migration of 23M triples</td></tr>
+</table>
+
+<div class="quote">
+  "Look how few you need when they actually pay attention."
+  <div class="attr">— Jeff Bridwell, on why three roles is enough</div>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">8.</span> What We're Offering</h2>
+
+<p>Three possible engagements:</p>
+
+<table>
+  <tr><th>Offering</th><th>What</th><th>For Whom</th></tr>
+  <tr>
+    <td><strong>Chorus Playbook</strong></td>
+    <td>The reference model + implementation guide. How to set up persistent AI roles, configure hooks for coordination, implement the proving gate and attention economy. Delivered as an engagement ($15–25K).</td>
+    <td>Teams adopting Claude Code who want structured multi-agent coordination</td>
+  </tr>
+  <tr>
+    <td><strong>Chorus Framework</strong></td>
+    <td>Open-source protocol stack: hook implementations, board-ts CLI, role configuration templates, skill library. The generalizable right column from Section 4.</td>
+    <td>Claude Code power users who want to build their own multi-role systems</td>
+  </tr>
+  <tr>
+    <td><strong>Anthropic Partnership</strong></td>
+    <td>Collaborate on making hooks a first-class coordination primitive. Chorus as the reference implementation for multi-agent Claude Code. The asks from Section 6.</td>
+    <td>Anthropic product team</td>
+  </tr>
+</table>
+
+<div class="quote">
+  "I don't want to solve a DSL problem for integration. I do want to for AI."
+  <div class="attr">— Jeff Bridwell, on where to invest creative energy</div>
+</div>
+
+<div style="margin-top: 40px; padding: 16px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e5e7eb; font-size: 12px; color: #666; text-align: center;">
+  Chorus Protocol Stack Positioning &middot; Wren &middot; Card #1593 &middot; 2026-03-24
+</div>
+
+</div>
+</body>
+</html>

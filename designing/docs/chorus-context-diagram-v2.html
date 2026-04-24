@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Reference Model</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; color: #1a1a1a; line-height: 1.5; padding: 12px 20px; }
+  h1 { font-size: 1.3em; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.7em; }
+  .date { color: #999; font-size: 0.72em; margin-bottom: 8px; }
+  .top-row { display: flex; gap: 16px; align-items: flex-start; }
+  .left { flex: 1.2; }
+  .right { flex: 1; }
+  .bottom-row { margin-top: 8px; width: 100%; clear: both; }
+  .bottom-row .mermaid svg { width: 100% !important; max-width: 100%; }
+  .panel { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 12px; }
+  .panel h2 { font-size: 0.85em; color: #555; margin-bottom: 4px; }
+  .panel.stack { flex: 0 0 auto; text-align: center; }
+  .panel.stack h2 { text-align: left; }
+  .panel.flow { flex: 0 0 auto; }
+  .panel.ownership { flex: 1; overflow-y: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.78em; }
+  th, td { border: 1px solid #ddd; padding: 3px 6px; text-align: left; }
+  th { background: #f0f0f0; font-size: 0.75em; }
+  .mermaid { font-size: 0.8em; }
+  .note { font-size: 0.72em; color: #666; font-style: italic; margin-bottom: 6px; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>CHORUS <span>— Reference Model</span></h1>
+<p class="date">2026-04-07 — The system architecture. Vertical = dependency. Horizontal = transaction.</p>
+
+<div class="top-row">
+  <div class="left">
+    <div class="panel stack">
+      <h2>Dependency Stack (top depends on bottom)</h2>
+      <div style="display:flex; gap:0;">
+        <div style="display:flex; flex-direction:column; justify-content:stretch; margin-right:12px; width:120px; position:relative;">
+          <div style="background:#e0f2fe; border:2px solid #0284c7; border-radius:6px; flex:1; display:flex; align-items:center; justify-content:center; font-size:0.82em; font-weight:600; padding:12px 10px; color:#000; text-align:center; line-height:1.5;">Quality<br/>Tests<br/>Gates<br/>Coverage<br/>SLAs</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
+          <div style="background:#d1fae5; border:2px solid #059669; border-radius:6px; padding:8px 14px; text-align:center; font-size:0.85em; font-weight:600;">Shared Awareness — History, Sessions, Stories, Decisions, Search, Memory</div>
+          <div style="text-align:center; color:#999;">↓</div>
+          <div style="background:#fef3c7; border:2px dashed #d97706; border-radius:6px; padding:6px 14px; text-align:center; font-size:0.82em; font-weight:600;">OWL/RDF — Semantic Layer — gives signals meaning: domain→service→gate→role</div>
+          <div style="text-align:center; color:#999;">↓</div>
+          <div style="background:#dbeafe; border:2px solid #1d4ed8; border-radius:6px; padding:8px 14px; text-align:center; font-size:0.85em; font-weight:600;">Loom — Roles, Clearing, Interactions, Briefs, Cards, Skills, Policy, Decisions, ADRs, Practices, Tech Stack</div>
+          <div style="text-align:center; color:#999;">↓</div>
+          <div style="background:#ede9fe; border:2px solid #6d28d9; border-radius:6px; padding:8px 14px; text-align:center; font-size:0.85em; font-weight:600;">Protocol — Spine, Gates</div>
+          <div style="text-align:center; color:#999;">↓</div>
+          <div style="background:#fce7f3; border:2px solid #db2777; border-radius:6px; padding:8px 14px; text-align:center; font-size:0.85em; font-weight:600;">Framework — ICDs, Service Design, Domain Pages, BDD Gates, Convergence</div>
+          <div style="text-align:center; color:#999;">↓</div>
+          <div style="background:#fff7ed; border:2px solid #ea580c; border-radius:6px; padding:8px 14px; text-align:center; font-size:0.85em; font-weight:600;">Apps — Gathering, Chorus, Borg</div>
+          <div style="text-align:center; color:#999;">↓</div>
+          <div style="background:#fee2e2; border:2px solid #dc2626; border-radius:6px; padding:8px 14px; text-align:center; font-size:0.85em; font-weight:600;">Observability — Alerts, Logs, Health, Metrics</div>
+          <div style="text-align:center; color:#999;">↓</div>
+          <div style="background:#f3f4f6; border:2px solid #6b7280; border-radius:6px; padding:8px 14px; text-align:center; font-size:0.85em; font-weight:600;">Infrastructure — Machines, Agents, Tunnel, Deploy, Codebase, Toolchain</div>
+        </div>
+        <div style="display:flex; flex-direction:column; justify-content:stretch; margin-left:12px; width:120px; position:relative;">
+          <div style="background:#fef9c3; border:2px solid #ca8a04; border-radius:6px; flex:1; display:flex; align-items:center; justify-content:center; font-size:0.82em; font-weight:600; padding:12px 10px; color:#000; text-align:center; line-height:1.5;">Services<br/>API<br/>Endpoints<br/>UIs<br/>Domains</div>
+        </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="panel ownership">
+      <h2>Layer Ownership</h2>
+      <table>
+        <tr><th>Layer</th><th>Owner</th><th>Note</th></tr>
+        <tr><td style="background:#d1fae5">Shared Awareness</td><td>All</td><td>= Chorus</td></tr>
+        <tr><td style="background:#fef3c7">OWL/RDF</td><td>All</td><td>Semantic layer — ontology gives signals meaning</td></tr>
+        <tr><td style="background:#dbeafe">Loom</td><td>Silas → Kade?</td><td>Clearing, Nudge = app code</td></tr>
+        <tr><td style="background:#ede9fe">Protocol</td><td>Silas</td><td>Spine, Gates, Hooks</td></tr>
+        <tr><td style="background:#fce7f3">Framework</td><td>All (OWL)</td><td>ICDs, Service Design, Domain Pages, BDD Gates</td></tr>
+        <tr><td style="background:#fff7ed">Apps</td><td>Kade</td><td>Gathering, Chorus, Borg</td></tr>
+        <tr><td style="background:#fee2e2">Observability</td><td>Silas</td><td>Alerts, Logs, Health</td></tr>
+        <tr><td style="background:#f3f4f6">Infrastructure</td><td>Silas</td><td>Machines, Agents, Tunnel</td></tr>
+        <tr><th colspan="3" style="background:#fff; border-top:2px solid #ccc; font-size:0.7em; color:#666;">Horizontal Capabilities</th></tr>
+        <tr><td style="background:#e0f2fe">Quality</td><td>Kade</td><td>Tests, Gates, Coverage, SLAs</td></tr>
+        <tr><td style="background:#fef9c3">Services</td><td>Kade</td><td>API, Endpoints, UIs, Domains</td></tr>
+      </table>
+      <p class="note">Silas logjam: 4 of 8 layers. Horizontal capabilities (Quality, Services) owned by Kade.</p>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-row">
+  <div class="panel flow">
+    <h2>Seed Journey (left → right)</h2>
+    <div class="mermaid">
+graph LR
+    jeff["&nbsp;&nbsp;&nbsp;Jeff&nbsp;&nbsp;&nbsp;"] --> infra_t["&nbsp;&nbsp;Infrastructure&nbsp;&nbsp;"] --> obs_t["&nbsp;&nbsp;Observability&nbsp;&nbsp;"] --> api_t["&nbsp;&nbsp;Apps&nbsp;&nbsp;"] --> fw_t["&nbsp;&nbsp;Framework&nbsp;&nbsp;"] --> protocol_t["&nbsp;&nbsp;Protocol&nbsp;&nbsp;"] --> loom_t["&nbsp;&nbsp;Loom&nbsp;&nbsp;"] --> owl_t["&nbsp;&nbsp;OWL/RDF&nbsp;&nbsp;"] --> sa_t["&nbsp;&nbsp;Shared Awareness&nbsp;&nbsp;"]
+
+    style jeff fill:#fbbf24,stroke:#d97706,color:#000
+    style infra_t fill:#f3f4f6,stroke:#6b7280,color:#000
+    style obs_t fill:#fee2e2,stroke:#dc2626,color:#000
+    style api_t fill:#fff7ed,stroke:#ea580c,color:#000
+    style fw_t fill:#fce7f3,stroke:#db2777,color:#000
+    style protocol_t fill:#ede9fe,stroke:#6d28d9,color:#000
+    style loom_t fill:#dbeafe,stroke:#1d4ed8,color:#000
+    style owl_t fill:#fef3c7,stroke:#d97706,color:#000
+    style sa_t fill:#d1fae5,stroke:#059669,color:#000
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:16px;">
+  <div class="panel" style="font-size:0.78em;">
+    <h2>Why Each Layer Exists</h2>
+    <dl style="margin:4px 0;">
+      <dt style="font-weight:600; color:#059669;">Shared Awareness</dt>
+      <dd style="margin:0 0 6px 0;">The product. Everything below exists so that Jeff, Wren, Silas, and Kade share one picture of what happened, what's happening, and what matters. History, sessions, stories, decisions, search, memory — indexed and queryable.</dd>
+
+      <dt style="font-weight:600; color:#d97706;">OWL/RDF — Semantic Layer</dt>
+      <dd style="margin:0 0 6px 0;">The meaning layer. Awareness collects signals; OWL/RDF says what they mean. Three ontologies (borg, chorus, jb) bridged by framework.ttl so one SPARQL query traces domain→service→gate→role. Without this, signals are noise. Prior art: US Patent 9,552,400 B2.</dd>
+
+      <dt style="font-weight:600; color:#1d4ed8;">Loom</dt>
+      <dd style="margin:0 0 6px 0;">The team. Roles, the Clearing, interactions, briefs, cards, skills, policies, decisions, practices. How three AI roles and one human coordinate without Jeff becoming the message relay.</dd>
+
+      <dt style="font-weight:600; color:#6d28d9;">Protocol</dt>
+      <dd style="margin:0 0 6px 0;">The nervous system. Spine events and gates. Every action emits a signal; every transition is gated. The spine makes work visible; gates make quality automatic.</dd>
+
+      <dt style="font-weight:600; color:#db2777;">Framework</dt>
+      <dd style="margin:0 0 6px 0;">The contracts. ICDs define what data looks like before code touches it. Service designs define what services do before they're built. Domain pages show the current truth. BDD gates enforce it. Define, map, build.</dd>
+
+      <dt style="font-weight:600; color:#ea580c;">Apps</dt>
+      <dd style="margin:0 0 6px 0;">The products Jeff uses. Gathering (personal knowledge), Chorus (team coordination), Borg (codebase analysis). Each consumes services, respects gates, and emits spine events.</dd>
+
+      <dt style="font-weight:600; color:#dc2626;">Observability</dt>
+      <dd style="margin:0 0 6px 0;">The eyes. Alerts, logs, health checks, metrics. Roles see problems before Jeff does. Every service is monitored; every failure is an event, not a surprise.</dd>
+
+      <dt style="font-weight:600; color:#6b7280;">Infrastructure</dt>
+      <dd style="margin:0 0 6px 0;">The ground. Two Mac minis (Library + Bedroom), LaunchAgents, Cloudflare tunnel, deploy tooling, codebase. Native services, no Docker. Everything above depends on this staying up.</dd>
+    </dl>
+  </div>
+</div>
+
+<div style="margin-top:12px;" class="panel">
+  <h2 style="font-size:0.85em; color:#555;">Reading the Model</h2>
+  <p style="font-size:0.78em; margin:4px 0;"><strong>Vertical = dependency.</strong> Each layer depends on everything below it. If Infrastructure goes down, everything above it fails. If the Semantic Layer is wrong, Awareness reports garbage.</p>
+  <p style="font-size:0.78em; margin:4px 0;"><strong>Horizontal = transaction.</strong> The seed journey shows how a signal flows from Jeff through every layer to become shared awareness. Quality gates check at every transition. Services provide the APIs that each layer consumes.</p>
+  <p style="font-size:0.78em; margin:4px 0;"><strong>The dashed line matters.</strong> OWL/RDF is the only dashed layer — it's a horizontal capability that spans all layers, not a service you call. It's the schema that gives structure to everything above and below.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({startOnLoad: true, theme: 'neutral', flowchart: { nodeSpacing: 12, rankSpacing: 16, padding: 8 }});
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    var br = document.querySelector('.bottom-row .mermaid svg');
+    if (br) { br.style.width = '100%'; br.style.maxWidth = '100%'; br.removeAttribute('width'); }
+  }, 500);
+});
+</script>
+
+</body>
+</html>

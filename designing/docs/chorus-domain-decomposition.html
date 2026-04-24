@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Domain Decomposition — Synthesis</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.65em; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; color: #555; margin-top: 1.5em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.84em; }
+  th { text-align: left; padding: 8px 12px; background: #e0e7ff; color: #2d4a7a; font-size: 0.78em; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .real { background: #d1fae5; }
+  .partial { background: #fef9c3; }
+  .conceptual { background: #fee2e2; }
+  .principle { background: #e8f0fe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-style: italic; font-size: 0.88em; }
+  .action { background: #fef3cd; padding: 10px 14px; margin: 12px 0; border-radius: 4px; border-left: 4px solid #d4a017; font-size: 0.86em; }
+  .action strong { color: #856404; }
+  ul { padding-left: 20px; margin: 8px 0; font-size: 0.86em; }
+  li { margin: 4px 0; }
+  .quote { border-left: 3px solid #999; padding-left: 12px; color: #555; font-style: italic; margin: 12px 0; font-size: 0.88em; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:12px 16px;margin:20px 40px;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Superseded</strong> — Replaced by live views: <a href="/gathering-docs/chorus-instance-explorer.html">Instance Explorer</a> | <a href="/gathering-docs/chorus-er-diagram.html">ER Diagram</a> | <a href="/gathering-docs/chorus-data-model.html">Data Model Cards</a></div>
+
+<h1>Chorus Domain Decomposition <span>— Establish Ownership Before Building</span></h1>
+<p class="date">2026-04-04 — Wren synthesis from Jeff direction + Silas chat + Kade chat. Card #2045.</p>
+
+<div class="principle">
+"Shared Awareness is the product and the promise." The domain is the abstraction — business architecture. The services implement the abstraction. Ownership must be established before building. — Jeff, 2026-04-04
+</div>
+
+<h2>The Problem</h2>
+<p>46 cards tagged <code>domain:chorus</code>. 22 owned by Silas. The work is jammed because everything is one domain with one owner. Every card Silas touches spawns three more. The tar baby.</p>
+<p>The fix isn't rotating people or cherry-picking cards. It's decomposing the domain so ownership has addresses.</p>
+
+<h2>Dependency Stack</h2>
+<p>7 layers, top depends on bottom. Services (API, Endpoints, UIs, Domains) spans vertically — every layer has a service surface.</p>
+<table>
+<tr><th>Layer</th><th>What it is</th><th>Contents</th></tr>
+<tr><td style="background:#d1fae5">Shared Awareness</td><td>The product and the promise = Chorus</td><td>History, Sessions, Stories, Decisions, Search, Memory</td></tr>
+<tr><td style="background:#dbeafe">Loom</td><td>The team operating model</td><td>Roles, Clearing, Interactions, Briefs, Cards, Skills, Policy, Decisions, ADRs, Practices, Tech Stack</td></tr>
+<tr><td style="background:#ede9fe">Protocol</td><td>Automation that implements Loom as code</td><td>Spine, Gates</td></tr>
+<tr><td style="background:#fce7f3">Framework</td><td>How we normalize building apps</td><td>ICDs, Service Design, Domain Pages, BDD Gates, Convergence</td></tr>
+<tr><td style="background:#fff7ed">Apps</td><td>The things we build — containers, not products. Each domain owns its own UI.</td><td>Gathering (24 domains), Chorus (protocol), Borg (decomposition)</td></tr>
+<tr><td style="background:#fee2e2">Observability</td><td>Seeing what's happening</td><td>Alerts, Logs, Health, Metrics</td></tr>
+<tr><td style="background:#f3f4f6">Infrastructure</td><td>The runtime substrate</td><td>Machines, Agents, Tunnel, Deploy, Codebase, Toolchain</td></tr>
+</table>
+
+<div class="principle">
+Loom is the blog at any company. Protocol is the automation that implements it as code. Loom says it, Protocol does it. The gap between them is the implementation backlog. — Jeff
+</div>
+
+<h2>Domain Reality Assessment</h2>
+<p>From Silas (architect) and Kade (engineer) chats. Three ratings:</p>
+<ul>
+<li><strong class="real">REAL</strong> — deployed, running, exercised daily, coherent boundaries</li>
+<li><strong class="partial">PARTIAL</strong> — code exists but gaps, incoherence, or missing enforcement</li>
+<li><strong class="conceptual">CONCEPTUAL</strong> — named but no running service or clear codebase</li>
+</ul>
+
+<table>
+<tr><th>Domain</th><th>Rating</th><th>Evidence</th><th>Tipping Point to REAL</th></tr>
+<tr class="real"><td>Infrastructure</td><td>REAL</td><td>2 Macs, 50+ LaunchAgents, Cloudflare tunnel, SSH ops. Operated daily.</td><td>—</td></tr>
+<tr class="real"><td>Seeds</td><td>REAL</td><td>SMS → adapter → service → Fuseki. One path, 3 files. Kade: "surgical fixes because boundary is clean."</td><td>—</td></tr>
+<tr class="real"><td>Search</td><td>REAL</td><td>FTS + semantic + SPARQL. Three layers, each its own service. Compound loop wires them.</td><td>—</td></tr>
+<tr class="real"><td>Gates/Hooks</td><td>REAL</td><td>37 Rust modules, each single check() function. Self-contained. 3 fixed today with confidence.</td><td>—</td></tr>
+<tr class="real"><td>Cards CLI</td><td>REAL</td><td>board-client in chorus/platform/. Own tests, own build. Clean boundary.</td><td>—</td></tr>
+<tr class="real"><td>Clearing (UI)</td><td>REAL</td><td>localhost:3470, Socket.IO, Jeff uses daily. Ack + visibility fixed today.</td><td>—</td></tr>
+<tr class="partial"><td>Clearing (data)</td><td>PARTIAL</td><td>flow.handler.ts lives in Gathering app, not Chorus. Cross-repo features need two commits.</td><td>Move flow.handler.ts into chorus repo</td></tr>
+<tr class="partial"><td>Observability</td><td>PARTIAL</td><td>Grafana, Loki, Prometheus running. But: false alerts (#2033), no HTTP metrics (#1810), incomplete coverage.</td><td>Wire express-prom-bundle (#1810)</td></tr>
+<tr class="partial"><td>Protocol (Spine)</td><td>PARTIAL</td><td>chorus-log emits events, gates enforce rules. But: no persistent event log. Events disappear if API is down.</td><td>Persistent append-only log file</td></tr>
+<tr class="partial"><td>Shared Awareness</td><td>PARTIAL</td><td>Chorus search works, memory files work. But: indexer lags minutes, no unified timeline, stories are just files.</td><td>Real-time session indexing (fs.watch)</td></tr>
+<tr class="partial"><td>Framework (ICDs)</td><td>PARTIAL</td><td>9 TTL files, Fuseki graph, convergence page, auto-sync shipped today. But: gate only fires on harvester files.</td><td>Extend ICD gate to all domain writes + service design workflow (#1918)</td></tr>
+<tr class="partial"><td>Loom (Policy)</td><td>PARTIAL</td><td>Decisions have DEC- prefixes, searchable. But: no enforcement — can contradict a decision without referencing it.</td><td>Hook that blocks contradicting numbered decisions</td></tr>
+<tr class="conceptual"><td>Spine (as domain)</td><td>CONCEPTUAL</td><td>Kade: "plumbing, not a place to build features." No directory to open.</td><td>Don't create a directory — it's a pattern, not a codebase</td></tr>
+<tr class="conceptual"><td>Policy (as domain)</td><td>CONCEPTUAL</td><td>Kade: "I've never written code in a 'policy domain.'" It's CLAUDE.md + hooks.</td><td>Same — pattern, not codebase</td></tr>
+<tr class="conceptual"><td>Coordination</td><td>CONCEPTUAL</td><td>Kade: "skills and scripts, not code I write features in."</td><td>Folded into Loom</td></tr>
+<tr class="conceptual"><td>Borg</td><td>CONCEPTUAL</td><td>One self-assessment page. No calibration, no practice.</td><td>Ship calibration session (#1677)</td></tr>
+<tr class="conceptual"><td>Practices, Tech Stack</td><td>CONCEPTUAL</td><td>Named in diagram, no service, no enforcement.</td><td>Future — document in Loom, enforce via Protocol</td></tr>
+</table>
+
+<h2>Key Principle: Don't Create Directories for Patterns</h2>
+<div class="quote">
+"Spine and Policy aren't codebases, they're behaviors implemented across multiple real domains. Creating directories for patterns creates empty directories." — Kade
+</div>
+<p>The conceptual domains (Spine, Policy, Coordination) are real behaviors but not bounded contexts. They don't need directories, owners, or domain pages. They need the real domains (Gates, Hooks, Clearing, Cards) to implement them correctly.</p>
+
+<h2>Structural Moves</h2>
+
+<div class="action">
+<strong>Move #1:</strong> Move flow.handler.ts and its data assembly from the Gathering app into chorus/directing/clearing/. The Clearing's data source shouldn't live in a different repo from the Clearing's UI. One domain, one repo, one owner.
+</div>
+
+<div class="action">
+<strong>Move #2:</strong> Rename board-client to board-service (or merge into platform/services/). It's a service with its own tests, CLI, and build — not a client library.
+</div>
+
+<div class="action">
+<strong>Move #3:</strong> Framework needs both a gate AND a workflow. Gate without workflow = friction. Workflow without gate = optional. Card #1918 (service design page) is the workflow. Extend ICD gate (#DEC-095) to all domain writes for enforcement.
+</div>
+
+<h2>Proposed Ownership</h2>
+<table>
+<tr><th>Layer</th><th>Owner</th><th>Rationale</th></tr>
+<tr><td style="background:#d1fae5">Shared Awareness</td><td>All</td><td>Emergent from all layers working</td></tr>
+<tr><td style="background:#dbeafe">Loom — Clearing, Interactions</td><td><strong>Kade</strong></td><td>App code — Socket.IO, router, session tailer. Kade proved he can build here (#2018, #2034, #1934 pair)</td></tr>
+<tr><td style="background:#dbeafe">Loom — Cards, Briefs, Skills, Policy, Decisions</td><td><strong>Wren</strong></td><td>Product operating model — PM's domain</td></tr>
+<tr><td style="background:#dbeafe">Loom — Roles</td><td><strong>Silas</strong></td><td>Role state, lifecycle, cross-role coordination infrastructure</td></tr>
+<tr><td style="background:#ede9fe">Protocol</td><td><strong>Silas</strong></td><td>Spine, Gates, Hooks — deepest context, Rust binary</td></tr>
+<tr><td style="background:#fce7f3">Framework</td><td><strong>Wren + Silas</strong></td><td>Wren owns the service design workflow, Silas owns the gate enforcement</td></tr>
+<tr><td style="background:#fff7ed">Apps</td><td><strong>Kade</strong></td><td>Gathering app, Borg — each domain owns its own UI</td></tr>
+<tr><td style="background:#fee2e2">Observability</td><td><strong>Silas</strong></td><td>Alerts, Logs, Grafana, Prometheus — infra expertise</td></tr>
+<tr><td style="background:#f3f4f6">Infrastructure</td><td><strong>Silas</strong></td><td>Machines, Agents, Tunnel, Toolchain — his vertical</td></tr>
+</table>
+
+<p><em>Silas: Protocol + Observability + Infrastructure + Roles (4 domains, all deep expertise).<br/>
+Kade: Apps + Clearing/Interactions (2 domains, application code).<br/>
+Wren: Cards/Briefs/Skills/Policy/Decisions + Framework workflow (product operating model).<br/>
+Balanced. No rotation needed — boundaries moved to match where people already work.</em></p>
+
+<h2>What This Unlocks</h2>
+<ul>
+<li>Board cards get sub-domain tags instead of monolithic <code>domain:chorus</code></li>
+<li>Kade can pull Clearing cards without hitting Silas's WIP limit</li>
+<li>Framework becomes a real practice, not an aspirational label</li>
+<li>The Silas logjam dissolves because 22 cards now have 3 owners</li>
+</ul>
+
+<div class="principle">
+"The domain is the abstraction — business architecture. The services implement the abstraction. We have to establish ownership first, before we can consider building." — Jeff, 2026-04-04
+</div>
+
+</body>
+</html>

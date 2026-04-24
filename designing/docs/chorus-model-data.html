@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chorus — Model + Data</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e0e0e8; padding: 40px; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 24px; font-weight: 300; color: #fff; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 32px; }
+  .subtitle span { color: #c084fc; }
+
+  .back-link { color: #c084fc; text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 16px; }
+  .back-link:hover { text-decoration: underline; }
+
+  /* Ontology summary bar */
+  .meta-bar { display: flex; gap: 2rem; padding: 16px 20px; background: #13131a; border: 1px solid #2a2a3a; border-radius: 10px; margin-bottom: 32px; flex-wrap: wrap; }
+  .meta-bar dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-bottom: 2px; }
+  .meta-bar dd { font-weight: 500; font-size: 14px; color: #fff; }
+  .meta-bar dd code { color: #c084fc; font-size: 11px; }
+
+  /* Value stream stage sections */
+  .vs-stage { margin-bottom: 40px; }
+  .vs-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #2a2a3a; }
+  .vs-header h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #aab; }
+  .vs-label { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+  .vs-label.capturing { background: #ede9fe; color: #6d28d9; }
+  .vs-label.directing { background: #fef3c7; color: #92400e; }
+  .vs-label.designing { background: #e0e7ff; color: #3730a3; }
+  .vs-label.building { background: #d1fae5; color: #065f46; }
+  .vs-label.proving { background: #fce7f3; color: #9d174d; }
+  .vs-label.operating { background: #f3f4f6; color: #6b7280; }
+  .vs-desc { font-size: 12px; color: #666; font-style: italic; margin-bottom: 16px; }
+
+  /* Stage content grid */
+  .stage-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .stage-col h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 10px; }
+  .stage-col ul { list-style: none; }
+  .stage-col li { padding: 6px 0; font-size: 13px; color: #ccc; border-bottom: 1px solid #1a1a2a; }
+  .stage-col li:last-child { border-bottom: none; }
+  .concept { color: #c084fc; font-family: 'SF Mono', monospace; font-size: 12px; }
+  .tool { color: #60a5fa; font-family: 'SF Mono', monospace; font-size: 12px; }
+  .tool-status { font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  .tool-status.live { background: #1a2a1a; color: #6d6; }
+  .tool-status.planned { background: #2a2a1a; color: #a8a; }
+
+  /* Doc links */
+  .doc-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .doc-links a { font-size: 12px; color: #c084fc; text-decoration: none; padding: 4px 10px; background: #1a1a2a; border: 1px solid #2a2a3a; border-radius: 6px; }
+  .doc-links a:hover { border-color: #c084fc; text-decoration: underline; }
+
+  /* Foundation docs section */
+  .foundation { margin-top: 40px; }
+  .foundation h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #aab; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #2a2a3a; }
+  .doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .doc-card { background: #13131a; border: 1px solid #2a2a3a; border-radius: 10px; padding: 16px; }
+  .doc-card h3 { font-size: 14px; color: #fff; margin-bottom: 6px; }
+  .doc-card h3 a { color: #c084fc; text-decoration: none; }
+  .doc-card h3 a:hover { text-decoration: underline; }
+  .doc-card p { font-size: 12px; color: #777; line-height: 1.5; }
+
+  /* Lineage note */
+  .note { font-size: 13px; color: #888; line-height: 1.6; margin-top: 12px; padding: 12px; background: #1a1a24; border-radius: 8px; border-left: 3px solid #c084fc; }
+</style>
+</head>
+<body>
+
+<a href="/model-data-hub.html" class="back-link">&larr; Model + Data</a>
+
+<h1>Chorus — Model + Data</h1>
+<p class="subtitle">Ontology and product docs organized by <span>Werk value stream</span></p>
+
+<div class="meta-bar">
+  <dl><dt>Ontology</dt><dd>chorus.ttl</dd></dl>
+  <dl><dt>Version</dt><dd>v0.2.0</dd></dl>
+  <dl><dt>Namespace</dt><dd><code>https://jeffbridwell.com/chorus#</code></dd></dl>
+  <dl><dt>Classes</dt><dd>23</dd></dl>
+  <dl><dt>Object Properties</dt><dd>29</dd></dl>
+  <dl><dt>Datatype Properties</dt><dd>10</dd></dl>
+  <dl><dt>Detail</dt><dd><a href="/ontology-views/chorus" style="color:#c084fc;text-decoration:none;font-size:13px;">Full Ontology &rarr;</a></dd></dl>
+</div>
+
+<!-- CAPTURING -->
+<div class="vs-stage">
+  <div class="vs-header">
+    <h2>Capturing</h2>
+    <span class="vs-label capturing">Where work enters</span>
+  </div>
+  <p class="vs-desc">Ideas, observations, and signals become visible to the team.</p>
+  <div class="stage-grid">
+    <div class="stage-col">
+      <h3>Concepts</h3>
+      <ul>
+        <li><span class="concept">chorus:Card</span> &mdash; kanban entry point</li>
+        <li><span class="concept">chorus:WorkItem</span> &mdash; trackable unit</li>
+        <li><span class="concept">chorus:Signal</span> &mdash; ephemeral notification</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Tools</h3>
+      <ul>
+        <li><span class="tool">/look</span> <span class="tool-status live">live</span> &mdash; screen capture</li>
+        <li><span class="tool">/listen</span> <span class="tool-status live">live</span> &mdash; voice transcription</li>
+        <li><span class="tool">SMS capture</span> <span class="tool-status live">live</span> &mdash; Twilio webhook</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Roles</h3>
+      <ul>
+        <li>Jeff &mdash; primary (ideas, direction, voice)</li>
+        <li>Wren &mdash; secondary (triage, card creation)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- DIRECTING -->
+<div class="vs-stage">
+  <div class="vs-header">
+    <h2>Directing</h2>
+    <span class="vs-label directing">Where work gets shaped</span>
+  </div>
+  <p class="vs-desc">Raw ideas become cards with acceptance criteria, priority, and ownership.</p>
+  <div class="stage-grid">
+    <div class="stage-col">
+      <h3>Concepts</h3>
+      <ul>
+        <li><span class="concept">chorus:AcceptanceCriteria</span></li>
+        <li><span class="concept">chorus:Priority</span> &mdash; P1/P2/P3</li>
+        <li><span class="concept">chorus:Decision</span> &mdash; DEC-NNN</li>
+        <li><span class="concept">chorus:Gate</span> &mdash; Direction Gate</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Tools</h3>
+      <ul>
+        <li><span class="tool">board-ts</span> <span class="tool-status live">live</span> &mdash; kanban CLI</li>
+        <li><span class="tool">/flow</span> <span class="tool-status live">live</span> &mdash; chunk view</li>
+        <li><span class="tool">/clearing</span> <span class="tool-status live">live</span> &mdash; alignment</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Roles</h3>
+      <ul>
+        <li>Jeff &mdash; gatekeeper</li>
+        <li>Wren &mdash; primary (AC, priority, sequencing)</li>
+      </ul>
+      <div class="doc-links">
+        <a href="/flow">Flow page</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DESIGNING -->
+<div class="vs-stage">
+  <div class="vs-header">
+    <h2>Designing</h2>
+    <span class="vs-label designing">Where work gets structured</span>
+  </div>
+  <p class="vs-desc">Cards become briefs, workflows, and architectural decisions. The design-doc-first pattern for high-rework-cost work.</p>
+  <div class="stage-grid">
+    <div class="stage-col">
+      <h3>Concepts</h3>
+      <ul>
+        <li><span class="concept">chorus:Brief</span> &mdash; structured handoff</li>
+        <li><span class="concept">chorus:Workflow</span> &mdash; multi-step manifest</li>
+        <li><span class="concept">chorus:ADR</span> &mdash; architectural record</li>
+        <li><span class="concept">chorus:Gate</span> &mdash; Design Gate</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Tools</h3>
+      <ul>
+        <li><span class="tool">/werk</span> <span class="tool-status live">live</span> &mdash; workflow engine</li>
+        <li><span class="tool">workflow.sh</span> <span class="tool-status live">live</span> &mdash; manifest ops</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Roles</h3>
+      <ul>
+        <li>Silas &mdash; primary (architecture, infra design)</li>
+        <li>Wren &mdash; secondary (product briefs)</li>
+      </ul>
+      <div class="doc-links">
+        <a href="/werk">Werk dashboard</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BUILDING -->
+<div class="vs-stage">
+  <div class="vs-header">
+    <h2>Building</h2>
+    <span class="vs-label building">Where work gets built</span>
+  </div>
+  <p class="vs-desc">Briefs become code, commits, and deployed artifacts. Spine events flow here.</p>
+  <div class="stage-grid">
+    <div class="stage-col">
+      <h3>Concepts</h3>
+      <ul>
+        <li><span class="concept">chorus:Session</span> &mdash; agent work period</li>
+        <li><span class="concept">chorus:SpineEvent</span> &mdash; typed signal</li>
+        <li><span class="concept">chorus:Commit</span> &mdash; (#N) reference</li>
+        <li><span class="concept">chorus:Gate</span> &mdash; Build Gate</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Tools</h3>
+      <ul>
+        <li><span class="tool">/chorus</span> <span class="tool-status live">live</span> &mdash; shared memory (35k+ msgs)</li>
+        <li><span class="tool">git-queue.sh</span> <span class="tool-status live">live</span> &mdash; serialized commits</li>
+        <li><span class="tool">chorus-log.sh</span> <span class="tool-status live">live</span> &mdash; spine emitter</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Roles</h3>
+      <ul>
+        <li>Kade &mdash; primary (app features, tests)</li>
+        <li>Silas &mdash; secondary (infra, deploy tooling)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- PROVING -->
+<div class="vs-stage">
+  <div class="vs-header">
+    <h2>Proving</h2>
+    <span class="vs-label proving">Where work gets verified</span>
+  </div>
+  <p class="vs-desc">Deploy &rarr; Demo &rarr; Accept. No self-service Done for code changes (DEC-048).</p>
+  <div class="stage-grid">
+    <div class="stage-col">
+      <h3>Concepts</h3>
+      <ul>
+        <li><span class="concept">chorus:Demo</span> &mdash; builder shows Jeff</li>
+        <li><span class="concept">chorus:Verification</span></li>
+        <li><span class="concept">chorus:GateResult</span> &mdash; Pass/Fail/Override</li>
+        <li><span class="concept">chorus:Gate</span> &mdash; Proving Gate</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Tools</h3>
+      <ul>
+        <li><span class="tool">/look</span> <span class="tool-status live">live</span> &mdash; demo evidence</li>
+        <li><span class="tool">board-ts done</span> <span class="tool-status live">live</span> &mdash; acceptance</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Roles</h3>
+      <ul>
+        <li>Jeff &mdash; gatekeeper (accepts or bounces)</li>
+        <li>Wren &mdash; AC verification</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- OPERATING -->
+<div class="vs-stage">
+  <div class="vs-header">
+    <h2>Operating</h2>
+    <span class="vs-label operating">Crosscuts all stages</span>
+  </div>
+  <p class="vs-desc">Infrastructure substrate &mdash; monitoring, alerts, deploy, health checks. The floor beneath the spine.</p>
+  <div class="stage-grid">
+    <div class="stage-col">
+      <h3>Concepts</h3>
+      <ul>
+        <li><span class="concept">chorus:Alert</span> &mdash; Prometheus/Alertmanager</li>
+        <li><span class="concept">chorus:Pipeline</span> &mdash; harvest ETL</li>
+        <li><span class="concept">chorus:HealthCheck</span></li>
+        <li><span class="concept">chorus:EventCategory</span> &mdash; 4 vertebrae (DEC-053)</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Tools</h3>
+      <ul>
+        <li><span class="tool">app-state.sh</span> <span class="tool-status live">live</span> &mdash; lifecycle mgmt</li>
+        <li><span class="tool">Grafana</span> <span class="tool-status live">live</span> &mdash; 10+ dashboards</li>
+        <li><span class="tool">Loki</span> <span class="tool-status live">live</span> &mdash; structured logs</li>
+        <li><span class="tool">ops-agent</span> <span class="tool-status live">live</span> &mdash; auto-triage</li>
+      </ul>
+    </div>
+    <div class="stage-col">
+      <h3>Roles</h3>
+      <ul>
+        <li>Silas &mdash; primary (infra, deploy, monitoring)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- FOUNDATIONAL DOCS -->
+<div class="foundation">
+  <h2>Foundational Documents</h2>
+  <p style="font-size:13px;color:#888;margin-bottom:16px;">Design documents that define Chorus's architecture and value stream.</p>
+  <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="/chorus-spine.html">Spine Architecture</a></h3>
+      <p>The three thirds of Chorus: Awareness (index + search), Coordination (briefs + workflows + board), Interaction (Clearing + senses + tools). How they connect through the spine.</p>
+    </div>
+    <div class="doc-card">
+      <h3><a href="/werk-process.html">Card Lifecycle (Werk Process)</a></h3>
+      <p>How a piece of work flows from Capturing through Proving. Gate quality criteria at each transition. The feedback loop from Proving back to Directing.</p>
+    </div>
+    <div class="doc-card">
+      <h3><a href="/ontology-views/chorus">Chorus Ontology Detail</a></h3>
+      <p>Full class tree, 29 object properties, 10 datatype properties. Roles, gates, tools, artifacts, relationships. chorus.ttl v0.2.0.</p>
+    </div>
+    <div class="doc-card">
+      <h3><a href="/gathering-chorus.html">Gathering + Chorus</a></h3>
+      <p>How the two products relate. Gathering is the application (personal knowledge graph). Chorus is the operating system (team coordination). They share infrastructure.</p>
+    </div>
+  </div>
+</div>
+
+<div class="note" style="margin-top:32px;">
+  <strong>Prior art:</strong> US Patent 9,552,400 B2 (Bridwell) &mdash; RDF/OWL + SPARQL + workflow gates for multi-hop flow comprehension. Chorus is the team-scale realization of the same principle: model the flow, gate the transitions, query the state.
+</div>
+
+<p style="text-align:center;margin-top:40px;font-size:11px;color:#444;">Chorus Model + Data &middot; chorus.ttl v0.2.0 &middot; Werk value stream</p>
+<footer style="margin-top:2rem;padding:1rem 1in;border-top:1px solid #334;color:#888;font-size:0.85rem;">&copy; 2026 Jeff Bridwell</footer>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus — State of the System</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.4em; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  h2 { font-size: 1.1em; margin-top: 2em; color: #444; }
+  .date { color: #888; font-size: 0.85em; }
+  .metric { display: inline-block; background: #f5f5f5; border-left: 3px solid #c00; padding: 8px 14px; margin: 4px 0; width: 100%; box-sizing: border-box; }
+  .metric .num { font-size: 1.3em; font-weight: 700; }
+  .metric .label { color: #555; margin-left: 8px; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #ddd; }
+  th { font-weight: 600; color: #555; font-size: 0.85em; text-transform: uppercase; }
+  .tag { display: inline-block; font-size: 0.75em; padding: 2px 8px; border-radius: 3px; font-weight: 500; }
+  .tag-red { background: #fee; color: #a00; }
+  .tag-green { background: #efe; color: #270; }
+  .tag-yellow { background: #ffd; color: #860; }
+  blockquote { border-left: 3px solid #ccc; margin: 1.5em 0; padding: 8px 16px; color: #555; background: #fafafa; }
+  .callout { background: #f0f4ff; border: 1px solid #cde; padding: 16px; border-radius: 4px; margin: 1.5em 0; }
+  .callout h2 { margin-top: 0; color: #336; }
+  .callout-warn { background: #fff8f0; border-color: #e8c; }
+  .callout-warn h2 { color: #863; }
+</style>
+</head>
+<body>
+<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:12px 16px;margin:20px 40px;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Superseded</strong> — Replaced by live views: <a href="/gathering-docs/chorus-instance-explorer.html">Instance Explorer</a> | <a href="/gathering-docs/chorus-er-diagram.html">ER Diagram</a> | <a href="/gathering-docs/chorus-data-model.html">Data Model Cards</a></div>
+
+<h1>Chorus — State of the System</h1>
+<p class="date">Kade + Jeff | 2026-04-06 morning | For Jeff, Mark Nakib, and Deb Majumdar</p>
+
+<blockquote>"It makes me feel almost seasick." — Jeff, describing the experience of watching the system run.</blockquote>
+
+<h2>What Chorus Is</h2>
+
+<p>Chorus is a coordination protocol for AI coding agents. Three AI roles (Wren/PM, Silas/Architect, Kade/Engineer) and one human (Jeff) work together using a shared harness of hooks, gates, cards, briefs, nudges, and spine events. The product is the protocol itself — Gathering (Jeff's personal app) is the test harness.</p>
+
+<p>In Birgitta Bockeler's taxonomy (<a href="https://martinfowler.com/articles/harness-engineering.html">Harness Engineering</a>, April 2026): Claude Code is the builder harness. Chorus is the user harness — feedforward guides (CLAUDE.md, decisions, skills, session context) and feedback sensors (hooks, gates, team-scan, spine events) that steer agent behavior.</p>
+
+<h2>What Works</h2>
+
+<ul>
+  <li>Card velocity: 5-15 cards/day across three roles</li>
+  <li>Cross-role awareness: gemba observation, nudge delivery, activity logging</li>
+  <li>Decision discipline: 100+ locked decisions, behavioral memory across sessions</li>
+  <li>The architecture is ahead of most published AI agent coordination systems</li>
+  <li>4,458 of 4,460 tests passing</li>
+</ul>
+
+<h2>What's Breaking</h2>
+
+<div class="callout-warn callout">
+<h2>The core problem: we break things as much as we fix them</h2>
+<p>Board pagination bug led to bulk SQL cleanup led to 1,410 duplicate position rows. Nudge shell script became Rust binary became TCC permission failures became revert to osascript. Watchdog enabled, created false alerts, disabled. Each step rational. The sequence destructive.</p>
+</div>
+
+<table>
+  <tr><th>Pattern</th><th>Examples</th></tr>
+  <tr><td>Fix creates new problem</td><td>Bulk card cleanup corrupted data. Inject binary reverted twice. Test suites polluted production board.</td></tr>
+  <tr><td>No post-ship health check</td><td>We verify card AC passed. We don't verify the surrounding system didn't regress.</td></tr>
+  <tr><td>Logs as data store</td><td>3 API endpoints query Loki as their primary data source. When Loki is down, dashboards go dark. No canonical event store.</td></tr>
+  <tr><td>Speed without verification</td><td>30 cards accepted April 5. Also: 2 reverts, 3 nudge breakages, 45 API restarts, 50+ TCC popups, 29% stolen prompts.</td></tr>
+  <tr><td>Scope always expanding</td><td>433 Gathering cards. 106 in Later. New gap cards created daily. More layers designed than stabilized.</td></tr>
+</table>
+
+<h2>The Human Experience</h2>
+
+<div class="callout-warn callout">
+<h2>The system doesn't have a quiet mode</h2>
+<p>Three AI roles run concurrently. Every action emits spine events, triggers hooks, fires nudges. Jeff sits in the middle of all terminals. Nudges land mid-sentence. Cards move while he's thinking. Chat threads open during strategic conversations. There is no difference between "Jeff is steering" and "Jeff is reflecting" — the system treats both as full throughput.</p>
+<p>The harness engineering is real. The execution quality means the human is still the primary sensor — and the sensor is overwhelmed.</p>
+</div>
+
+<p>Bockeler's closing insight: <em>"A good harness should not necessarily aim to fully eliminate human input, but to direct it to where our input is most important."</em> Right now Jeff's input goes to TCC popups, relay coordination, and re-nudging stalled roles. Not where it's most important.</p>
+
+<h2>Machine Coupling</h2>
+
+<p>Chorus cannot be distributed today. It is welded to Jeff's hardware.</p>
+
+<div class="metric"><span class="num">468</span><span class="label">files with hardcoded localhost:port</span></div>
+<div class="metric"><span class="num">309</span><span class="label">files with /Users/jeffbridwell/ absolute paths</span></div>
+<div class="metric"><span class="num">99</span><span class="label">files referencing Jeff's LAN IPs</span></div>
+<div class="metric"><span class="num">98</span><span class="label">files with macOS LaunchAgent bundle IDs</span></div>
+
+<h2>Layer Portability</h2>
+
+<table>
+  <tr><th>Layer</th><th>Status</th><th>Notes</th></tr>
+  <tr><td>Protocol concepts</td><td><span class="tag tag-green">portable</span></td><td>Roles, briefs, cards, nudges, hooks, spine events</td></tr>
+  <tr><td>Chorus API</td><td><span class="tag tag-green">portable</span></td><td>TypeScript, env vars, npm install</td></tr>
+  <tr><td>Board SDK</td><td><span class="tag tag-green">portable</span></td><td>Wraps Vikunja. Needs an instance</td></tr>
+  <tr><td>Shell scripts (92+)</td><td><span class="tag tag-yellow">partial</span></td><td>Assume directory layout and symlinks</td></tr>
+  <tr><td>Hooks (36, bash + Rust)</td><td><span class="tag tag-yellow">partial</span></td><td>Rust portable. Bash references absolute paths</td></tr>
+  <tr><td>Clearing UI</td><td><span class="tag tag-red">coupled</span></td><td>Compiled JS with absolute paths baked in</td></tr>
+  <tr><td>Nudge delivery</td><td><span class="tag tag-red">coupled</span></td><td>Requires macOS osascript</td></tr>
+  <tr><td>Service lifecycle</td><td><span class="tag tag-red">coupled</span></td><td>LaunchAgents, container names</td></tr>
+  <tr><td>Multi-machine ops</td><td><span class="tag tag-red">coupled</span></td><td>Two-machine topology hardcoded</td></tr>
+</table>
+
+<h2>What Exists vs. What's Missing</h2>
+
+<table>
+  <tr><th>Exists</th><th>Missing</th></tr>
+  <tr><td>CLAUDE.md per role (system docs)</td><td>README for external contributors</td></tr>
+  <tr><td>Decision log (100+ decisions)</td><td>.env.example for any service</td></tr>
+  <tr><td>Architecture HTML artifacts</td><td>Setup / install script</td></tr>
+  <tr><td>7-layer context diagram</td><td>Docker Compose for full local stack</td></tr>
+  <tr><td>Harness engineering mapping</td><td>Config layer to replace hardcoded paths</td></tr>
+  <tr><td>92+ operational scripts</td><td>Any test that runs without Jeff's machine</td></tr>
+</table>
+
+<div class="callout">
+<h2>For Mark and Deb: where to enter</h2>
+<table>
+  <tr><th>Entry point</th><th>What you'd do</th><th>Gap today</th></tr>
+  <tr><td><strong>Research collaborator</strong></td><td>Help think about the coordination model</td><td>Small — design docs, decision log, and Bockeler mapping exist</td></tr>
+  <tr><td><strong>Protocol contributor</strong></td><td>Help build Chorus itself</td><td>Medium — need reproducible dev environment</td></tr>
+  <tr><td><strong>Protocol consumer</strong></td><td>Use Chorus to coordinate your own project</td><td>Large — need install path, env config, onboarding docs</td></tr>
+</table>
+</div>
+
+<h2>The Real Questions</h2>
+
+<ol>
+  <li><strong>What is Chorus v1?</strong> What's the minimum set that works reliably and demonstrates the value? Right now everything is v0.8 — functional enough to use, fragile enough to break weekly.</li>
+  <li><strong>Can the system run quietly?</strong> The roles need to be able to work without Jeff feeling every heartbeat. The system needs a mode where Jeff steers, not absorbs.</li>
+  <li><strong>How much coordination tooling serves the product vs. serves itself?</strong> Board, briefs, nudges earn their keep. Spine events, workflow manifests, standards surfaces — are they making the product better or making the process more observable at the cost of more things that can break?</li>
+  <li><strong>What can Mark and Deb actually touch?</strong> The protocol is portable. The wiring is not. Extracting Chorus from Jeff's machine is 3-4 config refactors, not an architecture change — but it's real work nobody has prioritized.</li>
+</ol>
+
+<footer>
+  Built from a morning conversation between Jeff and Kade. References: Wren's harness engineering mapping, Wren's 7-layer context diagram (v2), codebase portability scan.
+</footer>
+
+</body>
+</html>

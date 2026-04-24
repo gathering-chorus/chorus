@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #7c3aed; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #ede9fe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #7c3aed; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .resolved { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .resolved strong { color: #059669; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #ede9fe; color: #5b21b6; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #5b21b6; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
+  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 40px;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Canonical service-design shape for Chorus.</strong> Live data views complement: <a href="/gathering-docs/chorus-instance-explorer.html">Instance Explorer</a> | <a href="/gathering-docs/chorus-er-diagram.html">ER Diagram</a> | <a href="/gathering-docs/chorus-data-model.html">Data Model Cards</a>. Related sub-products with their own service designs: <a href="/gathering-docs/pulse-service-design.html">Pulse</a>, <a href="/gathering-docs/loom-service-design.html">Loom</a>, <a href="/gathering-docs/clearing-service-design.html">Clearing</a>, <a href="/gathering-docs/quality-service-design.html">Quality</a> (new, 2026-04-18).</div>
+
+<h1>Chorus <span>— Service Design</span></h1>
+<p class="date">2026-04-11 — Silas (#1877). <strong>Updated 2026-04-18 — Wren.</strong> Today's landings: <code>#2168</code> context injection envelope (pulse/spine/athena live per prompt, sub-100ms); role-state writer discipline (declared/inferred file split); <code>#2173</code> Quality as its own sub-product; <code>#2174</code> response quality for AX as distinct future-scope card.</p>
+
+<div class="promise">
+Any role can ask "what happened last session?" or "what does the team know about photos?" and get a semantically rich answer without asking Jeff. When the index is stale or incomplete, every role's comprehension degrades silently. Chorus is the team's memory — if it's wrong, the team is wrong.
+</div>
+
+<h2>Overview</h2>
+<p>Chorus is the shared memory and coordination index. Five components: the SQLite message index (FTS), the LanceDB vector index (semantic), the HTTP API, the hooks service, and the ingestion pipelines that feed them. As of 2026-04-18: FTS works (512 MB, 306K+ messages and growing), vector index is populated (2.3 GB) and freshness is 11/12 sources fresh with 1 critical, hooks service now injects live Chorus context into every prompt envelope, and 8 data sources remain without ingestion pipelines. Response-quality tuning for agent experience is scoped as <code>#2174</code> — this doc describes the mechanism; response-schema work is downstream.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Services</th><th>Tests</th><th>Gap</th></tr>
+<tr><td>Message Index (FTS)</td><td><span class="tag-real">REAL</span></td><td>SQLite FTS5, 306K+ messages, 512 MB</td><td>BDD</td><td>No per-source freshness alert</td></tr>
+<tr><td>Vector Index (Semantic)</td><td><span class="tag-partial">PARTIAL</span></td><td>LanceDB + Ollama nomic-embed-text, 2.3 GB</td><td><span class="tag-none">NONE</span></td><td>11/12 sources fresh, 1 critical; several Fuseki domains still BROKEN</td></tr>
+<tr><td>HTTP API</td><td><span class="tag-real">REAL</span></td><td>Chorus API on :3340, cached freshness (30s TTL)</td><td>BDD</td><td>Hybrid search 766–2154ms — #2168 AC-14 tuning</td></tr>
+<tr><td>Hooks Service</td><td><span class="tag-real">REAL</span></td><td>chorus-hooks Rust binary, unix socket, envelope injection</td><td>500+ tests</td><td>Response quality for AX (#2174) not yet defined</td></tr>
+<tr><td>Ingestion Pipelines</td><td><span class="tag-partial">PARTIAL</span></td><td>Crawler, session indexer, bridge subscribers</td><td><span class="tag-none">NONE</span></td><td>8 data sources not ingested</td></tr>
+</table>
+
+<!-- ==================== MESSAGE INDEX ==================== -->
+<div class="component">
+<h3>Message Index (FTS) <span class="tag-real">REAL</span></h3>
+<p>SQLite FTS5 database. Every session transcript, spine event, brief, decision, and clearing message lands here. This is the foundation — 306K messages spanning Feb–Apr 2026.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>~/.chorus/index.db</code> (512 MB, 2026-04-18)<br/>
+    Session indexer (LaunchAgent)<br/>
+    Bridge subscribers (3x per role)
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>GET /api/chorus/search?q=&limit=</code><br/>
+    <code>GET /api/chorus/health</code><br/>
+    <code>GET /api/chorus/conversations</code>
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    157K claude sessions<br/>
+    143K spine events<br/>
+    2,246 briefs<br/>
+    1,083 clearing messages<br/>
+    103 decisions, 19 ADRs
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>BDD scenarios for search, ingest</div>
+  <div class="section-box"><strong>Docs</strong><code>designing/docs/chorus-overview.md</code></div>
+  <div class="section-box"><strong>UIs</strong>Chorus search in The Clearing</div>
+</div>
+<div class="resolved"><strong>Working:</strong> FTS keyword search returns results across all 13 source types. Session indexer runs continuously.</div>
+</div>
+
+<!-- ==================== VECTOR INDEX ==================== -->
+<div class="component">
+<h3>Vector Index (Semantic) <span class="tag-partial">PARTIAL</span></h3>
+<p>LanceDB with Ollama nomic-embed-text embeddings. Enables semantic queries like "what was the theme of last session?" that keyword search can't answer. Populated (2.3 GB as of 2026-04-18) and freshness much improved — 11/12 sources fresh, 1 critical — but Fuseki-domain coverage still limited.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>~/.chorus/lance/</code> (2.3 GB, 2026-04-18)<br/>
+    Ollama on Bedroom (192.168.86.242:11434)<br/>
+    Model: nomic-embed-text (768 dim)
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>GET /api/chorus/search</code> (hybrid FTS+vector)<br/>
+    <code>GET /api/chorus/freshness</code> (per-source, summary cached 30s)<br/>
+    <code>embedDelta()</code> in server.ts<br/>
+    <code>semanticSearch()</code> with RRF ranking
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    ~157K+ embedded messages (Chorus sessions)<br/>
+    App LanceDB: populated (2.3 GB)<br/>
+    Fuseki domains: some BROKEN — per-domain status in Instance Explorer
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong><span class="tag-none">NONE</span> — no freshness test, no coverage test</div>
+  <div class="section-box"><strong>Docs</strong>None — this service design is the first</div>
+  <div class="section-box"><strong>UIs</strong>None — no way to see what's indexed or stale</div>
+</div>
+<div class="resolved"><strong>Resolved 2026-04-18:</strong> Original "19 days stale" gap closed. Vector index now populated (2.3 GB), summary shows 11/12 sources fresh. Freshness endpoint (<code>/api/chorus/freshness</code>) cached 30s in Pulse (#2168 AC-12) — sub-100ms pulse warm read.</div>
+<div class="gap"><strong>Gap (remaining):</strong> 1 source still critical in latest freshness summary. Root cause TBD — likely a specific Fuseki domain. Needs investigation.</div>
+<div class="gap"><strong>Gap:</strong> App semantic search queries 5 of 6 Fuseki domains with wrong graph URIs — search the empty default graph instead of named graphs (urn:gathering:*). (Still open; filed as prior work.)</div>
+<div class="gap"><strong>Gap:</strong> No reindex API endpoint. Must delete lance data and restart app to rebuild.</div>
+<div class="gap"><strong>Gap:</strong> Response-quality dimensions for AX (per-hit freshness age, structured provenance metadata, minimum-coherent-unit spans, intent-aware ranking, versioned schema, token economy) not yet defined. Scoped as <code>#2174</code> linked to Quality sub-product.</div>
+</div>
+
+<!-- ==================== DATA SOURCE INVENTORY ==================== -->
+<h2>Data Source Inventory</h2>
+<p>Everything the team produces and operates that should be semantically searchable. Ordered by priority for role reasoning.</p>
+
+<table>
+<tr><th>Source</th><th>Location</th><th>Records</th><th>In FTS?</th><th>In LanceDB?</th><th>Refresh</th><th>Owner</th></tr>
+<tr><td>Claude sessions</td><td>~/.chorus/index.db</td><td>157K</td><td>Yes</td><td>Yes (partial)</td><td>Continuous (indexer)</td><td>Silas</td></tr>
+<tr><td>Spine events</td><td>~/.chorus/index.db</td><td>143K</td><td>Yes</td><td>Yes (partial)</td><td>Continuous (bridge)</td><td>Silas</td></tr>
+<tr><td>Briefs</td><td>~/.chorus/index.db</td><td>2,246</td><td>Yes</td><td>Partial</td><td>On write</td><td>Wren</td></tr>
+<tr><td>Decisions</td><td>~/.chorus/index.db</td><td>103</td><td>Yes</td><td>Partial</td><td>On write</td><td>Wren</td></tr>
+<tr><td>Photos (Fuseki)</td><td>urn:gathering:photos/canonical</td><td>79K</td><td>No</td><td>Working</td><td>NiFi pipeline</td><td>Silas</td></tr>
+<tr><td>Music (Fuseki)</td><td>urn:gathering:music</td><td>1.6M triples</td><td>No</td><td><span class="tag-none">BROKEN</span></td><td>Harvest</td><td>Kade</td></tr>
+<tr><td>People (Fuseki)</td><td>urn:gathering:people</td><td>35K triples</td><td>No</td><td><span class="tag-none">BROKEN</span></td><td>Harvest</td><td>Kade</td></tr>
+<tr><td>Notes (Fuseki)</td><td>urn:gathering:notes</td><td>10K triples</td><td>No</td><td><span class="tag-none">BROKEN</span></td><td>Harvest</td><td>Kade</td></tr>
+<tr><td>Social posts (Fuseki)</td><td>urn:gathering:socialposts</td><td>19K triples</td><td>No</td><td><span class="tag-none">BROKEN</span></td><td>Harvest</td><td>Kade</td></tr>
+<tr><td>Stories (Fuseki)</td><td>(not in graph)</td><td>0</td><td>No</td><td><span class="tag-none">BROKEN</span></td><td>Not harvested</td><td>Kade</td></tr>
+<tr><td>Documents (Fuseki)</td><td>urn:gathering:documents</td><td>6.9M triples</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>Unknown</td><td>Kade</td></tr>
+<tr><td>Code (repo)</td><td>chorus/ + personal-site/</td><td>8,500+ files</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>On commit</td><td>Kade</td></tr>
+<tr><td>Tests (repo)</td><td>**/tests/, *.test.*, *.bats</td><td>178 files</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>On commit</td><td>Kade</td></tr>
+<tr><td>Git history</td><td>.git/</td><td>619 commits</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>On commit</td><td>All</td></tr>
+<tr><td>Logs</td><td>~/Library/Logs/Chorus/ + Gathering/</td><td>1.2 GB</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>Rolling</td><td>Silas</td></tr>
+<tr><td>State files</td><td>roles/*/next-session.md, ADRs</td><td>~50 files</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>Per session</td><td>All</td></tr>
+<tr><td>Alert rules</td><td>proving/domains/alerts/</td><td>13 YAML</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>On edit</td><td>Silas</td></tr>
+<tr><td>Skills</td><td>platform/skills/</td><td>34 dirs</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>On edit</td><td>Wren</td></tr>
+<tr><td>Vikunja tasks</td><td>~/.chorus/vikunja/</td><td>8.6 MB</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>Continuous</td><td>Wren</td></tr>
+<tr><td>Audit trail</td><td>data/audit/</td><td>48 daily files</td><td>No</td><td><span class="tag-none">NOT INDEXED</span></td><td>Daily</td><td>Silas</td></tr>
+</table>
+
+<!-- ==================== HTTP API ==================== -->
+<div class="component">
+<h3>HTTP API <span class="tag-real">REAL</span></h3>
+<p>Chorus API on port 3340. Serves search, health, conversations, domain context, and crawl endpoints. Every role queries this at boot via the search hierarchy hook.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>com.chorus.api</code> LaunchAgent<br/>
+    Express + SQLite + LanceDB<br/>
+    Port 3340
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>GET /api/chorus/search</code> — hybrid search<br/>
+    <code>GET /api/chorus/health</code> — status + counts<br/>
+    <code>GET /api/chorus/conversations</code><br/>
+    <code>POST /api/chorus/crawl/:domain</code><br/>
+    <code>GET /api/chorus/domain/:name</code>
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    306K messages (SQLite)<br/>
+    ~157K vectors (LanceDB)<br/>
+    33K domain vectors
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>BDD scenarios</div>
+  <div class="section-box"><strong>Docs</strong>None dedicated</div>
+  <div class="section-box"><strong>UIs</strong>None — API only</div>
+</div>
+<div class="gap"><strong>Gap:</strong> No <code>POST /api/chorus/reindex</code> endpoint. Cannot trigger rebuild without app restart.</div>
+<div class="gap"><strong>Gap:</strong> No staleness dashboard — cannot see per-source freshness or coverage.</div>
+<div class="gap"><strong>Gap:</strong> Search response has no freshness metadata. Consumers (hooks, roles, Clearing) can't tell when results are thin or stale. Proposed (Wren): add <code>_meta</code> to every search response with <code>domain_coverage</code> (sources hit / sources queried), <code>newest_result_age</code>, and <code>staleness</code> boolean.</div>
+</div>
+
+<!-- ==================== HOOKS SERVICE ==================== -->
+<div class="component">
+<h3>Hooks Service <span class="tag-real">REAL</span></h3>
+<p>Rust binary (<code>chorus-hook-shim</code>) listening on unix socket. Intercepts every Claude Code tool call — PreToolUse, PostToolUse, UserPromptSubmit, Stop. Hook modules enforce gates, inject context, emit telemetry. As of 2026-04-18 (#2168) the <code>context_inject.rs</code> hook injects live <code>## Pulse</code>, <code>## Spine</code>, and <code>## Athena</code> sections into every per-prompt envelope — previously these only existed in the session-start boot file, which is why roles went blind between turns.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>/tmp/chorus-hooks.sock</code><br/>
+    <code>chorus-hook-shim</code> binary<br/>
+    Hook modules (gates, inject, telemetry)
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    Unix socket HTTP<br/>
+    <code>pulse</code> subcommand (sub-100ms warm)<br/>
+    <code>context-cache</code> subcommand<br/>
+    <code>session-start</code> / <code>session-close</code>
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    <code>/tmp/session-start-{role}.md</code> (boot)<br/>
+    <code>/tmp/claude-team-scan/{role}-declared.json</code> (human-stated)<br/>
+    <code>/tmp/claude-team-scan/{role}-inferred.json</code> (tool-call inferred)<br/>
+    <code>/tmp/pulse-latest.json</code> (assembled, ~14ms warm)<br/>
+    <code>/tmp/board-wip-snapshot.json</code> (10s TTL cache)<br/>
+    <code>/tmp/freshness-snapshot.json</code> (30s TTL cache)
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>500+ Rust tests across suite; new invariants: <code>role_state_writer_invariants.rs</code> locks declared/inferred file/source pairing (#2168 AC-13); <code>context-inject-envelope-spec.bats</code> locks per-prompt injection</div>
+  <div class="section-box"><strong>Docs</strong>CLAUDE.md hook references; <a href="/gathering-docs/pulse-service-design.html">Pulse service design</a></div>
+  <div class="section-box"><strong>UIs</strong>Hooks telemetry in Grafana; role tiles in <a href="http://localhost:3470/">The Clearing</a> surface declared + inferred per role</div>
+</div>
+<div class="resolved"><strong>Working:</strong> Search hierarchy, context synthesis (FTS + memory + pulse + spine + Athena), session init gate, TDD gate, memory gate, context-synthesis gate, CSC gate all operational.</div>
+<div class="resolved"><strong>Resolved 2026-04-18 (#2168):</strong> Role-state writer discipline — reconciler writes only to <code>-inferred.json</code>, role_state.rs writes only to <code>-declared.json</code>. Each file has one writer by architecture. Source field distinguishes <code>"declared"</code> vs <code>"inferred"</code>. Closes the Clearing role-card lie class (reconciler no longer mutates human declarations).</div>
+<div class="resolved"><strong>Resolved 2026-04-18 (#2168):</strong> Pulse assembly sub-100ms — cache-primary <code>assemble_board</code> (10s TTL) and <code>assemble_freshness</code> (30s TTL). Cold 754ms, warm 14ms. Per-section timings exposed in <code>pulse.timings</code> field.</div>
+<div class="gap"><strong>Gap:</strong> Envelope's Chorus-search response quality for AX (per-hit freshness, structured provenance, intent-aware ranking, schema versioning) — scoped as <code>#2174</code>. Silas owns API-side ranking (#2168 AC-14), Wren owns response-schema + AX semantics.</div>
+</div>
+
+<!-- ==================== INGESTION PIPELINES ==================== -->
+<div class="component">
+<h3>Ingestion Pipelines <span class="tag-partial">PARTIAL</span></h3>
+<p>Multiple pipelines feed the index. The session indexer and bridge subscribers run continuously. The crawler runs on a schedule. Delta embedding runs on API calls. Most data sources have no pipeline at all.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Active Pipelines</strong>
+    Session indexer (continuous)<br/>
+    Bridge subscribers (3x, continuous)<br/>
+    Crawler snapshots (scheduled)<br/>
+    Delta embedding (on API call)<br/>
+    Context cache (5min/hourly/daily/weekly)
+  </div>
+  <div class="section-box"><strong>Missing Pipelines</strong>
+    Code/test indexing<br/>
+    Git commit indexing<br/>
+    Log tailing to index<br/>
+    State file watching<br/>
+    Alert rule indexing<br/>
+    Skill definition indexing<br/>
+    Vikunja task sync<br/>
+    Audit trail indexing
+  </div>
+  <div class="section-box"><strong>Staleness Detection</strong>
+    <code>lancedb-stale.yml</code> — 24h threshold<br/>
+    No per-source freshness<br/>
+    No coverage metrics
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> 8 data sources have no ingestion pipeline. The index only grows when sessions are indexed or the crawler runs.</div>
+<div class="gap"><strong>Gap:</strong> Staleness alert is binary (fresh/stale) with a 24h threshold. A 19-day gap went unnoticed because the alert fires once and gets dismissed.</div>
+<div class="gap"><strong>Gap:</strong> No per-source freshness tracking. Cannot answer "when was music last indexed?" without checking file timestamps.</div>
+</div>
+
+<!-- ==================== ARCHITECTURE DECISIONS ==================== -->
+<h2>Architecture Decisions</h2>
+
+<table>
+<tr><th>Decision</th><th>Rationale</th><th>Impact</th></tr>
+<tr><td>Ollama on Bedroom Mac</td><td>GPU acceleration, separates embedding load from app</td><td>Network dependency — Bedroom sleep/wake causes transient failures</td></tr>
+<tr><td>nomic-embed-text model</td><td>768-dim, fast, good quality for retrieval</td><td>Locked to Ollama availability</td></tr>
+<tr><td>Hybrid FTS + vector search</td><td>RRF ranking combines keyword precision with semantic recall</td><td>Both indexes must be fresh for good results</td></tr>
+<tr><td>SQLite FTS5 for messages</td><td>Simple, fast, no external dependency</td><td>Single-file DB, easy backup, hard to scale</td></tr>
+<tr><td>LanceDB for vectors</td><td>Embedded, columnar, good for batch operations</td><td>No server process — rebuilt on app start, stale if app doesn't restart</td></tr>
+<tr><td>Delta embedding on API call</td><td>Incremental — only embed new messages</td><td>Depends on API being called. If nobody searches, vectors don't update.</td></tr>
+</table>
+
+<!-- ==================== NEXT STEPS ==================== -->
+<h2>Next Steps (Priority Order)</h2>
+
+<table>
+<tr><th>#</th><th>Action</th><th>Impact</th><th>Owner</th><th>Card</th></tr>
+<tr><td>1</td><td>Hybrid search ranking — semantic-first, FTS-boost on exact tokens, subsecond endpoint</td><td>Envelope quality jumps immediately; matches DEC-074 intent</td><td>Silas</td><td>#2168 AC-14</td></tr>
+<tr><td>2</td><td>Response-quality schema for AX — per-hit freshness age, structured provenance, minimum-coherent-unit spans, versioned schema, token economy</td><td>Consumers can trust what comes back; define good before measuring</td><td>Silas API + Wren semantics</td><td>#2174</td></tr>
+<tr><td>3</td><td>Fix Fuseki graph URIs in semantic-search.service.ts — 5 domains go from 0 to indexed</td><td>Restores broken Fuseki coverage</td><td>Kade</td><td>#1876</td></tr>
+<tr><td>4</td><td>Add <code>POST /api/chorus/reindex</code> endpoint</td><td>Rebuild without app restart</td><td>Kade</td><td>open</td></tr>
+<tr><td>5</td><td>Per-source freshness alert with graduated severity (not 24h binary)</td><td>1 source critical today would trip explicitly; never miss a 19-day gap again</td><td>Silas</td><td>open</td></tr>
+<tr><td>6</td><td>Staleness dashboard in Grafana — visual coverage + freshness per source</td><td>Replaces manual inspection of freshness summary</td><td>Silas</td><td>open</td></tr>
+<tr><td>7</td><td>Index code + tests + git commits into Chorus</td><td>"Where is the photo handler?" / "what changed yesterday" become semantic queries</td><td>Kade + Silas</td><td>open</td></tr>
+<tr><td>8</td><td>Index state files, skills, alert rules, logs (via Loki)</td><td>Team memory + protocol definitions searchable</td><td>Silas (state/logs), Wren (skills)</td><td>open</td></tr>
+<tr><td>9</td><td>Continuous delta embedding (cron, not on-demand)</td><td>Vectors stay fresh without manual trigger</td><td>Silas</td><td>open</td></tr>
+</table>
+
+<!-- ==================== CROSS-LINKS ==================== -->
+<h2>Related Sub-Products</h2>
+<p>Chorus is the shared-memory substrate. Several sub-products depend on it:</p>
+<ul style="font-size:0.88em;line-height:1.8;margin-left:20px">
+<li><strong><a href="/gathering-docs/pulse-service-design.html">Pulse</a></strong> — team-state assembler. Pure pass-through; reads role-state files, spine, board snapshot, freshness cache. Sub-100ms warm.</li>
+<li><strong><a href="/gathering-docs/loom-service-design.html">Loom</a></strong> — org substrate (principles, practices, policies, decisions, roles). Indexed into Chorus.</li>
+<li><strong><a href="/gathering-docs/clearing-service-design.html">Clearing</a></strong> — multi-role browser chat. Reads pulse + role-state files; renders tiles with multi-WIP surfacing (#2168 AC-11).</li>
+<li><strong><a href="/gathering-docs/quality-service-design.html">Quality</a> (new, 2026-04-18)</strong> — pyramid + coverage + gates + test-value policy. Horizontal discipline. Kade-owned, depends on gates-service + spine-service. Chorus-response-quality-for-AX (<code>#2174</code>) is the AX analog of Quality's test-value-policy.</li>
+</ul>
+
+</body>
+</html>

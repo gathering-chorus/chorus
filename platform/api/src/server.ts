@@ -30,6 +30,14 @@ app.use('/docs', express.static(path.join(__dirname, '..', 'public')));
 // Serve Borg shaping surface — #2099
 app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
 
+// #2458 — serve migrated chorus artifacts at their new canonical locations
+// (cross-repo moves from jeff-bridwell-personal-site completed in #2458)
+const chorusRepoRoot = path.resolve(__dirname, '..', '..', '..');
+app.use('/designing/docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html'] }));
+app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'adr'), { extensions: ['html', 'md'] }));
+app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
+app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
+
 // Borg — Hooks summary endpoint — #2099
 // Borg summary delegates — #2173 AC4: uniform run() wrapper replaces
 // per-handler try/catch boilerplate. Each adapter is one line.
