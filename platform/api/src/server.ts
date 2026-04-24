@@ -2556,6 +2556,29 @@ app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) 
   } finally { db.close(); }
 });
 
+// Doc inventory (#2457) — reads TSV produced by doc-inventory.sh
+app.get('/api/doc-inventory', (_req: Request, res: Response) => {
+  const tsvPath = path.resolve(__dirname, '..', '..', '..', 'knowledge', 'doc-inventory.tsv');
+  try {
+    if (!fs.existsSync(tsvPath)) {
+      res.status(404).json({ error: 'doc-inventory.tsv not found — run platform/scripts/doc-inventory.sh' });
+      return;
+    }
+    const stat = fs.statSync(tsvPath);
+    const raw = fs.readFileSync(tsvPath, 'utf-8').trim();
+    const rows = raw.split('\n').filter(Boolean).map(line => {
+      const [repo, pathCol, state, cabinet, owner, inCatalog, topic] = line.split('\t');
+      return { repo, path: pathCol, state, cabinet, owner: owner || '', inCatalog, topic: topic || '' };
+    });
+    const counts: Record<string, number> = {};
+    for (const r of rows) counts[r.state] = (counts[r.state] || 0) + 1;
+    res.json({ generatedAt: stat.mtime.toISOString(), total: rows.length, counts, rows });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: msg });
+  }
+});
+
 process.on('uncaughtException', (err) => {
   console.error(`[chorus-api] FATAL uncaughtException: ${err.message}`);
   console.error(err.stack);

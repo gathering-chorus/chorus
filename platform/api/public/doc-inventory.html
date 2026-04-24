@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Doc Inventory — KM Triage</title>
+<style>
+  body { font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; margin: 1.5rem; color: #e6e6e6; background: #1a1a1a; }
+  h1 { font-size: 1.3rem; margin: 0 0 0.5rem; }
+  .summary { margin: 0.5rem 0 1rem; padding: 0.6rem 0.8rem; background: #252525; border-left: 3px solid #4a9eff; }
+  .counts { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .counts span { font-variant-numeric: tabular-nums; }
+  .counts b { color: #fff; }
+  .counts .state-ok { color: #4ade80; }
+  .counts .state-misfiled { color: #fbbf24; }
+  .counts .state-wrong-cabinet { color: #f87171; }
+  .counts .state-unfiled { color: #a78bfa; }
+  .controls { margin: 0.5rem 0; }
+  .controls input, .controls select { background: #2a2a2a; color: #e6e6e6; border: 1px solid #444; padding: 0.3rem 0.5rem; font: inherit; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 1px solid #333; }
+  th { background: #252525; cursor: pointer; user-select: none; position: sticky; top: 0; }
+  th:hover { background: #2f2f2f; }
+  th .arrow { opacity: 0.5; margin-left: 0.3rem; }
+  td.state-ok { color: #4ade80; }
+  td.state-misfiled { color: #fbbf24; }
+  td.state-wrong-cabinet { color: #f87171; }
+  td.state-unfiled { color: #a78bfa; }
+  td.path { font-family: ui-monospace, monospace; font-size: 12px; color: #bbb; }
+  .meta { color: #888; font-size: 11px; margin-bottom: 0.5rem; }
+  .empty { padding: 1rem; color: #888; }
+</style>
+</head>
+<body>
+<h1>Doc Inventory</h1>
+<div class="meta" id="meta">Loading…</div>
+<div class="summary">
+  <div class="counts" id="counts"></div>
+</div>
+<div class="controls">
+  <input id="filter" type="text" placeholder="Filter by path, owner, topic…" style="width: 320px;">
+  <select id="stateFilter">
+    <option value="">All states</option>
+    <option value="ok">ok</option>
+    <option value="misfiled">misfiled</option>
+    <option value="wrong-cabinet">wrong-cabinet</option>
+    <option value="unfiled">unfiled</option>
+  </select>
+  <select id="repoFilter">
+    <option value="">Both repos</option>
+    <option value="gathering">gathering</option>
+    <option value="chorus">chorus</option>
+  </select>
+  <span id="shown" style="margin-left: 1rem; color: #888;"></span>
+</div>
+<table id="tbl">
+  <thead><tr>
+    <th data-key="repo">Repo</th>
+    <th data-key="path">Path</th>
+    <th data-key="state">State</th>
+    <th data-key="cabinet">Correct Cabinet</th>
+    <th data-key="owner">Owner</th>
+    <th data-key="inCatalog">In Catalog</th>
+    <th data-key="topic">Topic</th>
+  </tr></thead>
+  <tbody></tbody>
+</table>
+<script>
+let rows = [];
+let sortKey = 'state';
+let sortAsc = true;
+
+async function load() {
+  const res = await fetch('/api/doc-inventory');
+  if (!res.ok) {
+    document.getElementById('meta').textContent = 'Error: ' + res.status + ' ' + (await res.text());
+    return;
+  }
+  const data = await res.json();
+  rows = data.rows;
+  document.getElementById('meta').textContent =
+    `Generated ${new Date(data.generatedAt).toLocaleString()} — ${data.total} rows`;
+  const c = data.counts;
+  document.getElementById('counts').innerHTML = Object.keys(c).sort().map(k =>
+    `<span class="state-${k}">${k}: <b>${c[k]}</b></span>`
+  ).join('');
+  render();
+}
+
+function render() {
+  const term = document.getElementById('filter').value.toLowerCase();
+  const stateF = document.getElementById('stateFilter').value;
+  const repoF = document.getElementById('repoFilter').value;
+  let filtered = rows.filter(r => {
+    if (stateF && r.state !== stateF) return false;
+    if (repoF && r.repo !== repoF) return false;
+    if (!term) return true;
+    return (r.path + ' ' + r.owner + ' ' + r.topic).toLowerCase().includes(term);
+  });
+  filtered.sort((a, b) => {
+    const av = (a[sortKey] || '').toString();
+    const bv = (b[sortKey] || '').toString();
+    return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+  document.getElementById('shown').textContent = filtered.length + ' shown';
+  const tb = document.querySelector('#tbl tbody');
+  if (!filtered.length) { tb.innerHTML = '<tr><td colspan="7" class="empty">No rows.</td></tr>'; return; }
+  tb.innerHTML = filtered.slice(0, 1000).map(r =>
+    `<tr>
+       <td>${r.repo}</td>
+       <td class="path">${r.path}</td>
+       <td class="state-${r.state}">${r.state}</td>
+       <td>${r.cabinet}</td>
+       <td>${r.owner || '—'}</td>
+       <td>${r.inCatalog}</td>
+       <td>${r.topic || '—'}</td>
+     </tr>`
+  ).join('') + (filtered.length > 1000
+    ? `<tr><td colspan="7" class="empty">(showing first 1000 of ${filtered.length})</td></tr>` : '');
+  // arrows
+  document.querySelectorAll('th').forEach(th => {
+    const k = th.dataset.key;
+    th.innerHTML = th.textContent.replace(/[▲▼]/g, '').trim() +
+      (k === sortKey ? `<span class="arrow">${sortAsc ? '▲' : '▼'}</span>` : '');
+  });
+}
+
+document.querySelectorAll('th').forEach(th => {
+  th.addEventListener('click', () => {
+    const k = th.dataset.key;
+    if (k === sortKey) sortAsc = !sortAsc; else { sortKey = k; sortAsc = true; }
+    render();
+  });
+});
+document.getElementById('filter').addEventListener('input', render);
+document.getElementById('stateFilter').addEventListener('change', render);
+document.getElementById('repoFilter').addEventListener('change', render);
+
+load();
+</script>
+</body>
+</html>
