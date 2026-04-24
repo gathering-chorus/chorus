@@ -544,7 +544,35 @@ export function extractSequenceTags(tags: string): string[] {
   return bareTag ? [bareTag] : [];
 }
 
-function parseCardRow(line: string, currentStatus: string): any | null {
+interface ParsedCard {
+  id: string;
+  title: string;
+  status: string;
+  owner: string;
+  domains: string[];
+  type: string;
+  priority: number;
+  sequence: string | null;
+  sequences: string[];
+}
+
+interface DomainCard extends ParsedCard {
+  subDomain?: string;
+}
+
+interface DomainCardGroup {
+  cards: DomainCard[];
+  counts: {
+    wip: number;
+    next: number;
+    blocked: number;
+    activeCards: number;
+    activeWorkflows: number;
+    activeTotal: number;
+  };
+}
+
+function parseCardRow(line: string, currentStatus: string): ParsedCard | null {
   const match = line.trim().match(/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/);
   if (!match) return null;
   const tags = match[3];
@@ -562,8 +590,8 @@ function parseCardRow(line: string, currentStatus: string): any | null {
   };
 }
 
-function parseCardList(output: string): any[] {
-  const cards: any[] = [];
+function parseCardList(output: string): ParsedCard[] {
+  const cards: ParsedCard[] = [];
   let currentStatus = '';
   for (const line of output.split('\n')) {
     const statusMatch = line.match(/^(WIP|SWAT|Blocked|Harvesting|Next|Later|Done|Won't Do)\s*\(\d+\)/);
@@ -590,27 +618,29 @@ function loadActiveWorkflowCounts(fs: typeof fs_node, wfDir: string): Record<str
   return counts;
 }
 
-function groupByProduct(cards: any[]): Record<string, any> {
-  const byDomain: Record<string, any> = {};
+function groupByProduct(cards: ParsedCard[]): Record<string, DomainCardGroup> {
+  const byDomain: Partial<Record<string, DomainCardGroup>> = {};
   for (const card of cards) {
     for (const domain of card.domains) {
       const topLevel = CHORUS_DOMAINS.has(domain) ? 'chorus' : 'gathering';
-      if (!byDomain[topLevel]) {
-        byDomain[topLevel] = { cards: [], counts: { wip: 0, next: 0, blocked: 0, activeCards: 0, activeWorkflows: 0, activeTotal: 0 } };
+      let group = byDomain[topLevel];
+      if (!group) {
+        group = { cards: [], counts: { wip: 0, next: 0, blocked: 0, activeCards: 0, activeWorkflows: 0, activeTotal: 0 } };
+        byDomain[topLevel] = group;
       }
-      byDomain[topLevel].cards.push({ ...card, subDomain: CHORUS_DOMAINS.has(domain) ? undefined : domain });
+      group.cards.push({ ...card, subDomain: CHORUS_DOMAINS.has(domain) ? undefined : domain });
     }
   }
-  return byDomain;
+  return byDomain as Record<string, DomainCardGroup>;
 }
 
-function computeDomainCounts(byDomain: Record<string, any>, wfByCard: Record<string, number>): void {
-  for (const data of Object.values(byDomain) as any[]) {
+function computeDomainCounts(byDomain: Record<string, DomainCardGroup>, wfByCard: Record<string, number>): void {
+  for (const data of Object.values(byDomain)) {
     const c = data.cards;
-    data.counts.wip = c.filter((x: any) => x.status === 'WIP').length;
-    data.counts.next = c.filter((x: any) => x.status === 'Next' || x.status === 'Later').length;
-    data.counts.blocked = c.filter((x: any) => x.status === 'Blocked').length;
-    data.counts.activeCards = c.filter((x: any) => x.status !== "Won't Do").length;
+    data.counts.wip = c.filter((x: DomainCard) => x.status === 'WIP').length;
+    data.counts.next = c.filter((x: DomainCard) => x.status === 'Next' || x.status === 'Later').length;
+    data.counts.blocked = c.filter((x: DomainCard) => x.status === 'Blocked').length;
+    data.counts.activeCards = c.filter((x: DomainCard) => x.status !== "Won't Do").length;
     let wfCount = 0;
     for (const card of c) wfCount += wfByCard[card.id] || 0;
     data.counts.activeWorkflows = wfCount;
@@ -618,7 +648,7 @@ function computeDomainCounts(byDomain: Record<string, any>, wfByCard: Record<str
   }
 }
 
-function computeFixFeatureRatio(cards: any[]): { typeCounts: Record<string, number>; fixFeatureRatio: string } {
+function computeFixFeatureRatio(cards: ParsedCard[]): { typeCounts: Record<string, number>; fixFeatureRatio: string } {
   const typeCounts: Record<string, number> = {};
   for (const card of cards) {
     const t = card.type || 'untyped';
