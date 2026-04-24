@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-04-24T21:38:24.348Z",
+  "generatedAt": "2026-04-24T21:40:09.044Z",
   "note": "Per-rule ESLint count ratchet (#2462). Counts may only decrease. Run `npm run lint:baseline` to regenerate after a legitimate drop.",
   "counts": {
     "complexity": 22,
-    "@typescript-eslint/no-unnecessary-condition": 78,
+    "@typescript-eslint/no-unnecessary-condition": 69,
     "security/detect-object-injection": 225,
     "security/detect-non-literal-fs-filename": 151,
     "@typescript-eslint/no-floating-promises": 3,

@@ -71,7 +71,7 @@ export async function fetchSeeds({
       return { status: 502, body: { error: 'Fuseki query failed', status: response.status } };
     }
     const data = (await response.json()) as {
-      results: { bindings: Array<Record<string, { value: string }>> };
+      results: { bindings: Array<Partial<Record<string, { value: string }>>> };
     };
     const seeds: Seed[] = data.results.bindings.map((b) => ({
       slug: b.slug?.value,
