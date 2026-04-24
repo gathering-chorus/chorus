@@ -76,14 +76,14 @@ async function sparqlPost(
   fetchFn: FetchFn,
   fusekiUrl: string,
   sparql: string,
-): Promise<Array<Record<string, { value?: string }>>> {
+): Promise<Array<Partial<Record<string, { value?: string }>>>> {
   const resp = await fetchFn(`${fusekiUrl}/gathering/sparql`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/sparql-results+json' },
     body: `query=${encodeURIComponent(sparql)}`,
   });
   if (!resp.ok) return [];
-  const result = (await resp.json()) as { results?: { bindings?: Array<Record<string, { value?: string }>> } };
+  const result = (await resp.json()) as { results?: { bindings?: Array<Partial<Record<string, { value?: string }>>> } };
   return result.results?.bindings || [];
 }
 
