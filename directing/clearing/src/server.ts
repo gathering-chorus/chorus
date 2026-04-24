@@ -38,13 +38,14 @@ const io = new Server(server, {
 });
 
 // Cookie parser (minimal — just need bridge_token) — must be before auth
-app.use((req: any, _res, next) => {
-  if (!req.cookies) {
-    req.cookies = {};
-    const cookieHeader = req.headers.cookie || '';
+app.use((req: Request, _res, next) => {
+  const r = req as Request & { cookies?: Record<string, string> };
+  if (!r.cookies) {
+    r.cookies = {};
+    const cookieHeader = r.headers.cookie ?? '';
     for (const pair of cookieHeader.split(';')) {
       const [key, val] = pair.trim().split('=');
-      if (key && val) req.cookies[key] = decodeURIComponent(val);
+      if (key && val) r.cookies[key] = decodeURIComponent(val);
     }
   }
   next();
@@ -177,7 +178,7 @@ ${error ? `<div class="error">${error}</div>` : ''}
 }
 
 // Static files — no cache, plus rewrite index.html to bust browser cache
-app.get('/', (req: any, res) => {
+app.get('/', (req: Request, res) => {
   const fs = require('fs');
   let html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf-8');
   // Inject guest name for remote users (#1719)
@@ -209,7 +210,7 @@ h2{font-size:1.2rem}</style></head><body><h2>Signed out. Close this tab.</h2></b
 });
 
 // Guest name registration (#1719)
-app.post('/set-name', (req: any, res) => {
+app.post('/set-name', (req: Request, res) => {
   const name = (req.body?.name || '').trim().substring(0, 30);
   if (!name) return res.redirect('/');
   res.cookie('bridge_name', name, {
