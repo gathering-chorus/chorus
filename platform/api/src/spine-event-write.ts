@@ -7,14 +7,18 @@
 
 import type { Request as Req, Response as Res } from 'express';
 
+/** Prepared-statement run — any retained due to better-sqlite3 Statement variance. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RunFn = (...args: any[]) => unknown;
+
 export interface SpineEventDeps {
-  appendFileSync: (path: string, data: string) => void;
+  appendFileSync: typeof import('fs').appendFileSync;
   chorusLogPath: string;
   now: () => string;
   traceDbPath: string;
   DatabaseCtor: new (path: string) => {
     pragma: (s: string) => void;
-    prepare: (sql: string) => { run: (...args: any[]) => any };
+    prepare: (sql: string) => { run: RunFn };
     close: () => void;
   };
   ensureTraceTable: () => void;

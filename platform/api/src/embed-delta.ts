@@ -5,20 +5,31 @@
 // injected so tests run with fake Database + fake embedder + fake lance
 // store.
 
+/** Prepared-statement method — any used because better-sqlite3 Statement<T>
+ *  is too strict for structural shim typing. Callers cast results. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StmtMethod = (...args: any[]) => any;
+
+/** Lance record — arbitrary keyed row (field shape varies by table). */
+type LanceRow = Record<string, unknown>;
+
 export interface EmbedDeltaDeps {
   dbPath: string;
   DatabaseCtor: new (path: string, opts?: { readonly?: boolean }) => {
     pragma: (s: string) => void;
     exec: (sql: string) => void;
     prepare: (sql: string) => {
-      all?: (...args: any[]) => any[];
-      get?: (...args: any[]) => any;
-      run?: (...args: any[]) => any;
+      all?: StmtMethod;
+      get?: StmtMethod;
+      run?: StmtMethod;
     };
     transaction: (fn: (ids: number[]) => void) => (ids: number[]) => void;
     close: () => void;
   };
-  getLanceStore: () => { db: { createTable: (n: string, rec: any[]) => Promise<any> } | null; table: { add: (rec: any[]) => Promise<void> } | null };
+  getLanceStore: () => {
+    db: { createTable: (n: string, rec: LanceRow[]) => Promise<unknown> } | null;
+    table: { add: (rec: LanceRow[]) => Promise<void> } | null;
+  };
   setLanceTable: (t: unknown) => void;
   embed: (text: string) => Promise<number[]>;
   minLength: number;

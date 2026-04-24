@@ -4,15 +4,20 @@
 
 import type { Request as Req, Response as Res } from 'express';
 
+/** Prepared-statement run — any retained because better-sqlite3 Statement<T>
+ *  variance blocks structural typing here; callers observe lastInsertRowid. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RunFn = (...args: any[]) => { lastInsertRowid: number | bigint };
+
 export interface RcaCreateDeps {
   dbPath: string;
   DatabaseCtor: new (path: string) => {
     pragma: (s: string) => void;
-    prepare: (sql: string) => { run: (...args: any[]) => { lastInsertRowid: any } };
+    prepare: (sql: string) => { run: RunFn };
     close: () => void;
   };
   ensureTable: () => void;
-  appendFileSync: (path: string, data: string) => void;
+  appendFileSync: typeof import('fs').appendFileSync;
   chorusLogPath: string;
   now: () => string;
 }
@@ -64,11 +69,15 @@ export function handleRcaCreate(req: Req, res: Res, deps: RcaCreateDeps): void {
   res.json!({ ok: true, id: result.lastInsertRowid, status });
 }
 
+/** Prepared-statement run (trace) — same rationale as RcaCreateDeps.RunFn. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TraceRunFn = (...args: any[]) => unknown;
+
 export interface TraceCreateDeps {
   dbPath: string;
   DatabaseCtor: new (path: string) => {
     pragma: (s: string) => void;
-    prepare: (sql: string) => { run: (...args: any[]) => any };
+    prepare: (sql: string) => { run: TraceRunFn };
     close: () => void;
   };
   ensureTable: () => void;

@@ -10,15 +10,23 @@ export interface AthenaSparqlClientDeps {
   fetchFn?: typeof fetch;
 }
 
+/** Raw SPARQL response — structure varies by query; downstream handlers cast
+ *  to their expected bindings shape. any retained here because the downstream
+ *  SparqlResult/Sparql/SparqlCodeResult types have incompatible required
+ *  bindings shapes; a narrower response would force cascading renames across
+ *  5+ files. #2463 scope: this gap documented. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SparqlResponse = any;
+
 export interface AthenaSparqlClient {
-  query: (query: string) => Promise<any>;
+  query: (query: string) => Promise<SparqlResponse>;
   update: (update: string) => Promise<void>;
 }
 
 export function createAthenaSparqlClient(deps: AthenaSparqlClientDeps): AthenaSparqlClient {
   const fetchFn = deps.fetchFn ?? fetch;
   return {
-    async query(query: string): Promise<any> {
+    async query(query: string): Promise<SparqlResponse> {
       const res = await fetchFn(deps.sparqlUrl, {
         method: 'POST',
         headers: {

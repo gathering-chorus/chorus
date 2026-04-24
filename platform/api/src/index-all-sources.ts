@@ -5,18 +5,29 @@
 // try/catch so one source's failure doesn't tank the others. Factory
 // form with injected fs / path / dbPath / homedir keeps tests hermetic.
 
+/** Prepared-statement method — bindings passed positionally. any used because
+ *  better-sqlite3 Statement<T> has a strict parameterized signature that doesn't
+ *  structurally unify with a generic shim here. Callers cast results to their
+ *  specific row type. #2463 scope: this is the remaining structural gap. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StmtMethod = (...args: any[]) => any;
+
+interface IndexStmt {
+  run?: StmtMethod;
+  all?: StmtMethod;
+  get?: StmtMethod;
+}
+
+interface IndexDb {
+  pragma: (s: string) => void;
+  prepare: (sql: string) => IndexStmt;
+  transaction: <T>(fn: (arg: T) => void) => (arg: T) => void;
+  close: () => void;
+}
+
 export interface IndexAllSourcesDeps {
   dbPath: string;
-  DatabaseCtor: new (path: string) => {
-    pragma: (s: string) => void;
-    prepare: (sql: string) => {
-      run?: (...args: any[]) => any;
-      all?: (...args: any[]) => any[];
-      get?: (...args: any[]) => any;
-    };
-    transaction: (fn: (events: any[]) => void) => (events: any[]) => void;
-    close: () => void;
-  };
+  DatabaseCtor: new (path: string) => IndexDb;
   fs: {
     existsSync: (p: string) => boolean;
     readdirSync: (p: string) => string[];
@@ -32,9 +43,9 @@ export interface IndexAllSourcesDeps {
 }
 
 interface IndexCtx {
-  db: any;
-  insert: { run?: (...args: any[]) => any };
-  updateWatermark: { run?: (...args: any[]) => any };
+  db: IndexDb;
+  insert: IndexStmt;
+  updateWatermark: IndexStmt;
   fs: IndexAllSourcesDeps['fs'];
   path: IndexAllSourcesDeps['path'];
   repoRoot: string;
