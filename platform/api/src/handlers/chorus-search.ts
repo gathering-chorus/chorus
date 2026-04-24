@@ -42,7 +42,7 @@ export type MergeRRFFn = (
 ) => unknown[];
 export type EmitSearchEventFn = (fields: Record<string, string | number>) => void;
 export type BuildSearchMetaFn = (
-  results: unknown[],
+  results: Array<{ timestamp?: string; source?: string; domain?: string }>,
   db?: Database.Database,
 ) => Record<string, unknown>;
 export type EnrichHitFn = (r: unknown, now: number) => unknown;
@@ -122,7 +122,7 @@ export async function fetchSearch(
     extra: Record<string, unknown> = {},
   ): unknown => {
     const truncated = rawResults.length > limit;
-    const enriched = rawResults.slice(0, limit).map((r) => enrichHit(r, now()));
+    const enriched = rawResults.slice(0, limit).map((r) => enrichHit(r, now())) as Array<{ timestamp?: string; source?: string; domain?: string }>;
     const meta = {
       ...buildSearchMeta(enriched, includeDb ? db : undefined),
       limit_applied: limit, limit_default: !limitExplicit, truncated,

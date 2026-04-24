@@ -47,7 +47,13 @@ export function addStaleHeader(res: Response, db: Database.Database): void {
  * response. Defensively handles missing db, broken db queries, missing
  * timestamps, unknown sources.
  */
-export function buildSearchMeta(results: any[], db?: Database.Database): Record<string, any> {
+interface SearchMetaResult {
+  timestamp?: string;
+  source?: string;
+  domain?: string;
+}
+
+export function buildSearchMeta(results: SearchMetaResult[], db?: Database.Database): Record<string, unknown> {
   let domain_coverage = 1;
   if (db) {
     try {
@@ -78,10 +84,10 @@ export function buildSearchMeta(results: any[], db?: Database.Database): Record<
   let newest_result_age_s = 0;
   if (results.length > 0) {
     const timestamps = results
-      .map((r: any) => r.timestamp)
-      .filter(Boolean)
-      .map((t: string) => new Date(t).getTime())
-      .filter((t: number) => !isNaN(t));
+      .map((r) => r.timestamp)
+      .filter((t): t is string => Boolean(t))
+      .map((t) => new Date(t).getTime())
+      .filter((t) => !isNaN(t));
     if (timestamps.length > 0) {
       const newest = Math.max(...timestamps);
       newest_result_age_s = Math.round((Date.now() - newest) / 1000);

@@ -18,24 +18,52 @@ export interface SemanticResult {
   score: number;
 }
 
+/** FTS row shape used by mergeRRF — downstream consumers may have more fields. */
+export interface FtsResult {
+  id?: number;
+  msg_id?: number;
+  source?: string;
+  channel?: string;
+  role?: string;
+  content?: string;
+  timestamp?: string;
+  snippet?: string | null;
+  _semantic_score?: number;
+}
+
+/** Merged RRF entry — union of FTS + semantic fields with RRF score. */
+export interface RrfMerged {
+  id?: number;
+  msg_id?: number;
+  source?: string;
+  channel?: string;
+  role?: string;
+  content?: string;
+  timestamp?: string;
+  snippet?: string | null;
+  _semantic_score?: number;
+  _rrf_score: number;
+}
+
 export function hasExactToken(query: string): boolean {
   return /#\d+|\b[a-z][a-z0-9_]+\.(ts|rs|sh|md|py|json|toml|bats|html)\b|[/][a-z][a-z0-9_-]*[/]|[a-z]+_[a-z0-9_]+/i.test(query);
 }
 
 export function mergeRRF(
-  ftsResults: any[],
+  ftsResults: FtsResult[],
   semResults: SemanticResult[],
   limit: number,
   query = '',
   k = 60,
-): any[] {
-  const scoreMap = new Map<number, { score: number; result: any }>();
+): RrfMerged[] {
+  const scoreMap = new Map<number, { score: number; result: FtsResult }>();
   const exactToken = hasExactToken(query);
   const ftsWeight = exactToken ? 2.0 : 1.0;
   const semanticWeight = exactToken ? 1.0 : 2.0;
 
   ftsResults.forEach((r, i) => {
-    const key = r.id || r.msg_id;
+    const key = r.id ?? r.msg_id;
+    if (key === undefined) return;
     const rrfScore = ftsWeight / (k + i + 1);
     scoreMap.set(key, { score: rrfScore, result: r });
   });

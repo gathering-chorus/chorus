@@ -38,13 +38,22 @@ export interface UnifiedResult {
   _sources: string[];
 }
 
+/** Full-text search result row — caller downcasts the raw SQL row into this shape. */
+export interface FtsResult {
+  id: number;
+  source?: string;
+  role?: string;
+  content: string;
+  timestamp?: string;
+}
+
 /**
  * Reciprocal Rank Fusion: each source contributes 1/(k+rank+1) to an item's
  * score, keyed so FTS and semantic hits on the same msg_id combine, while
  * SPARQL hits stay under a distinct uri: key.
  */
 export function mergeUnified(
-  ftsResults: any[],
+  ftsResults: FtsResult[],
   semanticResults: SemanticResult[],
   sparqlResults: SparqlResult[],
   limit: number,
@@ -104,12 +113,13 @@ export function resolveSearchLimit(raw: string | undefined): { limit: number; ex
 
 // #2174 AC-1: per-hit freshness. Structured so agents don't re-parse content
 // for timestamp (AC-2 semantic).
-export function enrichHit(r: any, now: number): any {
-  const ts = r?.timestamp;
+export function enrichHit(r: unknown, now: number): unknown {
+  const obj = (r && typeof r === 'object') ? r as { timestamp?: string } : {};
+  const ts = obj.timestamp;
   let freshness_s = 0;
   if (ts) {
     const t = new Date(ts).getTime();
     if (!isNaN(t)) freshness_s = Math.max(0, Math.round((now - t) / 1000));
   }
-  return { ...r, freshness_s };
+  return { ...(r as object), freshness_s };
 }
