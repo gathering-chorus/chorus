@@ -49,7 +49,7 @@ app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles
 // Borg — Hooks summary endpoint — #2099
 // Borg summary delegates — #2173 AC4: uniform run() wrapper replaces
 // per-handler try/catch boilerplate. Each adapter is one line.
-import { run } from './handlers/util';
+import { run, asStr } from './handlers/util';
 
 app.get('/api/chorus/hooks/summary', async (_req, res) => {
   const r = await run(() => getHooksSummary());
@@ -87,7 +87,7 @@ app.get('/api/chorus/quality/domain/:domain', async (req, res) => {
 });
 
 app.get('/api/chorus/patterns/summary', async (req, res) => {
-  const days = parseInt(String(req.query.days || '30'), 10) || 30;
+  const days = parseInt(asStr(req.query.days, '30'), 10) || 30;
   const r = await run(() => getPatternsSummary(days));
   res.status(r.status).json(r.body);
 });
@@ -104,17 +104,17 @@ app.get('/api/chorus/codebase/topology', async (_req, res) => {
 });
 
 app.get('/api/chorus/jeff/posture/strip', async (req, res) => {
-  const days = parseInt(String(req.query.days || '7'), 10) || 7;
-  const posture = String(req.query.posture || 'all');
-  const mood = String(req.query.mood || 'all');
+  const days = parseInt(asStr(req.query.days, '7'), 10) || 7;
+  const posture = asStr(req.query.posture, 'all');
+  const mood = asStr(req.query.mood, 'all');
   const r = await run(() => getPostureStrip(days, posture, mood));
   res.status(r.status).json(r.body);
 });
 
 app.get('/api/chorus/werk/activity', async (req, res) => {
-  const hours = parseInt(String(req.query.hours || '24'), 10) || 24;
-  const role = String(req.query.role || '');
-  const event = String(req.query.event || '');
+  const hours = parseInt(asStr(req.query.hours, '24'), 10) || 24;
+  const role = asStr(req.query.role, '');
+  const event = asStr(req.query.event, '');
   const r = await run(() => getWerkActivity(hours, role, event));
   res.status(r.status).json(r.body);
 });

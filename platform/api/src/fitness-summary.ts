@@ -111,8 +111,8 @@ function categorizeRetry(summary: string): string {
 
 function isRetryPair(e1: ChorusEvent, e2: ChorusEvent): boolean {
   if (e1.role !== e2.role || e1.action !== e2.action) return false;
-  const s1 = String(e1.summary || '');
-  const s2 = String(e2.summary || '');
+  const s1 = typeof e1.summary === 'string' ? e1.summary : '';
+  const s2 = typeof e2.summary === 'string' ? e2.summary : '';
   if (s1 === s2) return false;
   try {
     const gap = new Date(e2.timestamp).getTime() - new Date(e1.timestamp).getTime();
@@ -129,7 +129,7 @@ function detectRetryClusters(allEvents: ChorusEvent[]): ChorusEvent[] {
     const e1 = toolEvents[i];
     const e2 = toolEvents[i + 1];
     if (!isRetryPair(e1, e2)) continue;
-    const s1 = String(e1.summary || '');
+    const s1 = typeof e1.summary === 'string' ? e1.summary : '';
     const category = categorizeRetry(s1);
     clusters.push({
       timestamp: e1.timestamp,

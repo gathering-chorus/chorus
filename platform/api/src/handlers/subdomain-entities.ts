@@ -189,7 +189,8 @@ export async function createSubdomainEntity(
       .map(([bodyField, predicate]) => {
         const v = b[bodyField];
         if (v === undefined || v === null || v === '') return '';
-        const s = typeof v === 'string' ? v : String(v);
+        const s = typeof v === 'string' ? v : (typeof v === 'number' || typeof v === 'boolean') ? String(v) : '';
+        if (!s) return '';
         return serializeTriple(entityUri, resolveDescriptor(predicate), s);
       })
       .filter(Boolean)
@@ -380,7 +381,8 @@ export async function updateSubdomainEntity(
       .map(([bodyField, predicate]) => {
         const v = b[bodyField];
         if (v === null || v === undefined || v === '') return '';
-        const s = typeof v === 'string' ? v : String(v);
+        const s = typeof v === 'string' ? v : (typeof v === 'number' || typeof v === 'boolean') ? String(v) : '';
+        if (!s) return '';
         return serializeTriple(entityUri, resolveDescriptor(predicate), s);
       })
       .filter(Boolean)

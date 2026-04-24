@@ -35,3 +35,12 @@ export function asyncRoute(
     fn(req, res, next).catch(next);
   };
 }
+
+/** Coerce an unknown value (e.g. req.query['x'] which is string | string[] | ParsedQs)
+ *  to a plain string for display/slicing. Non-primitives return the fallback instead
+ *  of '[object Object]'. #2463 wave 2 (no-base-to-string). */
+export function asStr(v: unknown, fallback = ''): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return fallback;
+}

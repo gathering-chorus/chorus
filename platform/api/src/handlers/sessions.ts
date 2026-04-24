@@ -34,7 +34,7 @@ export function fetchSessionList(deps: SessionsDeps): FetchResult {
 }
 
 export function fetchSessionById(deps: SessionsDeps, idInput: unknown): FetchResult {
-  const id = String(idInput || '');
+  const id = typeof idInput === 'string' ? idInput : '';
   if (!deps.isValidSessionId(id)) {
     return { status: 400, body: { error: 'invalid session id' } };
   }
@@ -46,7 +46,7 @@ export function fetchSessionById(deps: SessionsDeps, idInput: unknown): FetchRes
 }
 
 export function fetchSessionLog(deps: SessionsDeps, idInput: unknown): FetchResult {
-  const id = String(idInput || '');
+  const id = typeof idInput === 'string' ? idInput : '';
   if (!deps.isValidSessionId(id)) {
     return { status: 400, body: { error: 'invalid session id' } };
   }

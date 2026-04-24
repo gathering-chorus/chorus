@@ -110,7 +110,7 @@ const CLASSIFIERS: Array<{
   { match: (e) => e.startsWith('role.nudge.') || e.startsWith('nudge.'),
     classify: (obj, event) => ({ category: 'nudge', action: event.includes('delivered') || event.includes('sent') ? 'nudge' : 'log', detail: `${event.split('.').pop()}: ${asStr(obj.detail) || asStr(obj.to) || ''}`.slice(0, 120) }) },
   { match: (e) => e === 'build.precommit.completed' || e === 'build.commit.created',
-    classify: (obj, event) => ({ category: 'build-gate', action: 'log', detail: `${event}: checks=${obj.checks_passed || 0}/${obj.checks_run || 0}` }) },
+    classify: (obj, event) => ({ category: 'build-gate', action: 'log', detail: `${event}: checks=${asStr(obj.checks_passed, '0')}/${asStr(obj.checks_run, '0')}` }) },
   { match: (e) => e === 'card.quality.blocked',
     classify: (obj) => ({ category: 'card-quality', action: 'block', detail: `Blocked: ${(asStr(obj.reason) || asStr(obj.detail) || '').slice(0, 120)}` }) },
   { match: (e) => e === 'card.quality.warned',
