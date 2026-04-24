@@ -805,9 +805,9 @@ io.use((socket, next) => {
     || ip.startsWith('192.168.86.') || ip.startsWith('::ffff:192.168.86.');
   if (isLocalSocket) return next();
 
-  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+  const token = socket.handshake.auth.token || socket.handshake.query.token;
   // Also check cookies from handshake headers
-  const cookieHeader = socket.handshake.headers?.cookie || '';
+  const cookieHeader = socket.handshake.headers.cookie || '';
   const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
   const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
 
@@ -836,10 +836,10 @@ io.on('connection', (socket) => {
   // Message from The Clearing UI — Jeff or guest (#1719, #1802 reverted to working state)
   socket.on('jeff-message', (data: { text: string; from?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
     const { text } = data;
-    if (!text?.trim()) { ack?.({ ok: false, error: 'empty' }); return; }
+    if (!text.trim()) { ack?.({ ok: false, error: 'empty' }); return; }
 
     // Determine sender — cookie or explicit from field
-    const cookieHeader = socket.handshake.headers?.cookie || '';
+    const cookieHeader = socket.handshake.headers.cookie || '';
     const nameMatch = cookieHeader.match(/bridge_name=([^;]+)/);
     const guestName = nameMatch ? decodeURIComponent(nameMatch[1]) : '';
     const senderName = data.from || guestName || 'jeff';
