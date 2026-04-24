@@ -6,6 +6,21 @@ const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProje
 const CHORUS_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
 const POLL_INTERVAL = 2000; // 2 seconds
 
+/** Spine log entry — all fields optional since entries vary by event type. */
+interface SpineEntry {
+  timestamp?: string;
+  event?: string;
+  role?: string;
+  card?: string | number;
+  card_id?: string | number;
+  title?: string;
+  acceptor?: string;
+  state?: string;
+  detail?: string;
+  from?: string;
+  target?: string;
+}
+
 /**
  * Tail the chorus log for jeff-facing events.
  * Converts relevant spine events into command channel messages.
@@ -60,7 +75,7 @@ export class ChorusLogTailer extends EventEmitter {
     }
   }
 
-  private handleDemoStarted(parsed: any, role: string): void {
+  private handleDemoStarted(parsed: SpineEntry, role: string): void {
     const card = parsed.card || parsed.card_id || '';
     const title = parsed.title || '';
     this.router.ingest({
@@ -71,7 +86,7 @@ export class ChorusLogTailer extends EventEmitter {
     });
   }
 
-  private handleCardAccepted(parsed: any, role: string): void {
+  private handleCardAccepted(parsed: SpineEntry, role: string): void {
     const card = parsed.card_id || parsed.card || '';
     const title = parsed.title || '';
     const acceptor = parsed.acceptor || 'jeff';
@@ -84,7 +99,7 @@ export class ChorusLogTailer extends EventEmitter {
     this.emit('board-event', { type: 'card.accepted', card, role: acceptor, builder: role, ts: parsed.timestamp });
   }
 
-  private handleRoleStateChanged(parsed: any, role: string): void {
+  private handleRoleStateChanged(parsed: SpineEntry, role: string): void {
     this.emit('board-event', {
       type: 'role.state.changed',
       role, state: parsed.state, card: parsed.card || '', ts: parsed.timestamp,
@@ -103,7 +118,7 @@ export class ChorusLogTailer extends EventEmitter {
   // packs the first kv ("from=<sender>") as the JSON field, so target + content
   // live inside entry.from. For back-compat during parallel-run the older
   // role.nudge.sent packed them under entry.target; accept both.
-  private handleNudgeSent(parsed: any, role: string): void {
+  private handleNudgeSent(parsed: SpineEntry, role: string): void {
     const packed: string = parsed.from || parsed.target || '';
     // On nudge.emitted: "from" value starts with "<sender>,to=<target>,..."; the
     // target role is after "to=". On role.nudge.sent: "target" value starts with
@@ -122,7 +137,7 @@ export class ChorusLogTailer extends EventEmitter {
   }
 
   private processLine(line: string): void {
-    let parsed: any;
+    let parsed: SpineEntry;
     try { parsed = JSON.parse(line); } catch { return; }
 
     const event = parsed.event || '';

@@ -184,7 +184,7 @@ export class SessionTailer {
     return slashCmd || humanParts.join(' ').trim();
   }
 
-  private handleUserMessage(entry: any, ts: string): void {
+  private handleUserMessage(entry: { message?: { content?: unknown } }, ts: string): void {
     const rawContent = entry.message?.content;
     if (!rawContent) return;
     let text = this.extractUserText(rawContent);
@@ -217,7 +217,7 @@ export class SessionTailer {
     return false;
   }
 
-  private handleAssistantMessage(role: string, entry: any, ts: string): void {
+  private handleAssistantMessage(role: string, entry: { message?: { content?: unknown } }, ts: string): void {
     const contentArr = entry.message?.content;
     if (!contentArr) return;
     let combined = this.extractAssistantText(contentArr);
@@ -239,7 +239,7 @@ export class SessionTailer {
   }
 
   private processLine(role: string, line: string): void {
-    let entry: any;
+    let entry: { type?: string; timestamp?: string; message?: { content?: unknown } };
     try { entry = JSON.parse(line); } catch { return; }
     const ts = entry.timestamp || new Date().toISOString();
     if (entry.type === 'user') return this.handleUserMessage(entry, ts);
