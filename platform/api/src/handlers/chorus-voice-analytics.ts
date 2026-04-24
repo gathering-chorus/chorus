@@ -92,14 +92,14 @@ type Row = { content: string; channel: string; timestamp: string };
 
 interface Aggregates {
   toneCount: Record<Tone, number>;
-  toneByRole: Record<string, Record<Tone, number>>;
-  weeklyTone: Record<string, Record<Tone, number>>;
-  weeklyRole: Record<string, { wren: number; silas: number; kade: number }>;
-  weeklyLength: Record<string, { total: number; count: number }>;
-  hourByRole: Record<string, number[]>;
+  toneByRole: Record<Role, Record<Tone, number>>;
+  weeklyTone: Partial<Record<string, Record<Tone, number>>>;
+  weeklyRole: Partial<Record<string, { wren: number; silas: number; kade: number }>>;
+  weeklyLength: Partial<Record<string, { total: number; count: number }>>;
+  hourByRole: Record<Role, number[]>;
   bigramCount: Record<string, number>;
   correctiveWords: Record<string, number>;
-  roleWordFreq: Record<string, Record<string, number>>;
+  roleWordFreq: Record<Role, Record<string, number>>;
 }
 
 function isNoise(c: string): boolean {
@@ -193,7 +193,7 @@ function processRow(agg: Aggregates, row: Row, isEDT: (dateStr: string) => boole
   const words = tokenize(row.content);
 
   agg.toneCount[tone]++;
-  if (agg.toneByRole[role]) agg.toneByRole[role][tone]++;
+  agg.toneByRole[role][tone]++;
 
   const d = new Date(row.timestamp);
   updateWeekly(agg, weekKeyFor(d), role, tone, words.length);
@@ -234,7 +234,7 @@ function toneByRolePercentages(toneByRole: Record<string, Record<Tone, number>>)
   return out;
 }
 
-function buildToneTrend(weeklyTone: Record<string, Record<Tone, number>>, weeks: string[]): Record<string, unknown> {
+function buildToneTrend(weeklyTone: Aggregates['weeklyTone'], weeks: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = { weeks };
   for (const t of TONE_KEYS) out[t] = weeks.map((w) => weeklyTone[w]?.[t] || 0);
   return out;
