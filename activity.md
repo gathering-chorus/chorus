@@ -1091,3 +1091,11 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - [18:54] [Kade] → distill of 255 unique team memories: top-10 patterns ranked by repeat-frequency. Anthropic postmortem + Guthrie "Architecture After AI" article validated Chorus observability/gates bet → memory
 - [18:55] [Kade] → Silas ran parallel ops/arch distill: 7/10 overlap, ~70/30 team-shared/role-local split numerically validates three-layer memory shape → Silas
 - [19:13] [Kade] → Wren distill went silent past ETA, chat closed at Jeff's direction; wren lens is pending async → Wren
+
+## 2026-04-23 silas session reboot
+- Shipped #2455 (session-indexer line_num bug fix; uuid source_id; hermetic bats; 87K message backfill across 267 sessions)
+- Shipped #2454 (frustration telemetry; bidirectional regex + team-learning overlay + top-bad-days table; live at localhost:3340/frustration.html)
+- Resurrected session-watcher (fswatch segfault recovery)
+- Deep team distill on memory-vs-structure (Kade 8 + Wren 4 card proposals retired per Jeff; top-10 pattern distill output pending)
+- Anthropic postmortem reconciled with frustration chart windows (4/07-4/10, 4/16-4/20)
+- Data-quality hole audit: activity/state/story stale 12d, journal 4d — not carded pending Jeff direction
