@@ -7,7 +7,7 @@
 import type { Request as Req, Response as Res } from 'express';
 
 export interface PulseDeps {
-  appendFileSync: (path: string, data: string) => void;
+  appendFileSync: typeof import('fs').appendFileSync;
   chorusLogPath: string;
   now: () => string;
 }
@@ -38,8 +38,8 @@ export function handlePulse(req: Req, res: Res, deps: PulseDeps): void {
 }
 
 export interface RoleStateDeps {
-  appendFileSync: (path: string, data: string) => void;
-  writeFileSync: (path: string, data: string) => void;
+  appendFileSync: typeof import('fs').appendFileSync;
+  writeFileSync: typeof import('fs').writeFileSync;
   chorusLogPath: string;
 }
 
@@ -75,7 +75,7 @@ export function handleRoleState(req: Req, res: Res, deps: RoleStateDeps): void {
 }
 
 export interface AlertDeps {
-  appendFileSync: (path: string, data: string) => void;
+  appendFileSync: typeof import('fs').appendFileSync;
   notify: (title: string, message: string) => void;
   chorusLogPath: string;
 }

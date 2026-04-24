@@ -977,7 +977,7 @@ import { handlePulse, handleRoleState, handleAlert } from './lifecycle-writes';
 const LIFECYCLE_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
 app.post('/api/chorus/pulse', (req: Request, res: Response) => {
   handlePulse(req, res, {
-    appendFileSync: fs.appendFileSync as any,
+    appendFileSync: fs.appendFileSync,
     chorusLogPath: LIFECYCLE_LOG,
     now: bostonNow,
   });
@@ -987,8 +987,8 @@ app.post('/api/chorus/pulse', (req: Request, res: Response) => {
 
 app.post('/api/chorus/role-state', (req: Request, res: Response) => {
   handleRoleState(req, res, {
-    appendFileSync: fs.appendFileSync as any,
-    writeFileSync: fs.writeFileSync as any,
+    appendFileSync: fs.appendFileSync,
+    writeFileSync: fs.writeFileSync,
     chorusLogPath: LIFECYCLE_LOG,
   });
 });
@@ -997,7 +997,7 @@ app.post('/api/chorus/role-state', (req: Request, res: Response) => {
 
 app.post('/api/chorus/alert', (req: Request, res: Response) => {
   handleAlert(req, res, {
-    appendFileSync: fs.appendFileSync as any,
+    appendFileSync: fs.appendFileSync,
     notify: (title, message) => {
       execFile(
         'osascript',
@@ -2499,7 +2499,7 @@ app.post('/api/chorus/rca', (req: Request, res: Response) => {
   handleRcaCreate(req, res, {
     dbPath: RCA_DB_PATH, DatabaseCtor: Database,
     ensureTable: () => { if (!rcaTableReady) { ensureRcaTable(); rcaTableReady = true; } },
-    appendFileSync: fs.appendFileSync as any,
+    appendFileSync: fs.appendFileSync,
     chorusLogPath: LIFECYCLE_LOG,
     now: bostonNow,
   });
@@ -2525,7 +2525,7 @@ import { handleSpineEvent } from './spine-event-write';
 const SPINE_EVENT_LOG = `${CHORUS_ROOT}/chorus/platform/logs/chorus.log`;
 app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
   handleSpineEvent(req, res, {
-    appendFileSync: fs.appendFileSync as any,
+    appendFileSync: fs.appendFileSync,
     chorusLogPath: SPINE_EVENT_LOG,
     now: bostonNow,
     traceDbPath: DB_PATH, DatabaseCtor: Database,
