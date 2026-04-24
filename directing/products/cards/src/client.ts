@@ -85,7 +85,7 @@ export class BoardClient {
     const allTasks = await this.fetchAllTasks();
     this.taskMap = new Map();
     for (const task of allTasks) {
-      this.taskMap.set(task.index ?? task.id, task.id);
+      this.taskMap.set(task.index, task.id);
     }
     return this.taskMap;
   }
@@ -102,8 +102,7 @@ export class BoardClient {
     // Bucket query misses old Done tasks — fall back to full project scan
     const allTasks = await this.fetchAllTasks();
     for (const task of allTasks) {
-      const idx = task.index ?? task.id;
-      if (!map.has(idx)) map.set(idx, task.id);
+      if (!map.has(task.index)) map.set(task.index, task.id);
     }
     const fullId = map.get(index);
     if (fullId === undefined) {
@@ -133,7 +132,7 @@ export class BoardClient {
         'GET',
         `/projects/${this.board.projectId}/tasks?per_page=50&page=${page}`
       );
-      if (!tasks || tasks.length === 0) break;
+      if (tasks.length === 0) break;
       all.push(...tasks);
     }
     return all;
@@ -298,7 +297,7 @@ export class BoardClient {
   /** Add a label to an existing task by index */
   async tag(index: number, category: string, value: string): Promise<void> {
     const apiId = await this.resolveIndex(index);
-    const group = (LABELS as Record<string, Record<string, number>>)[category];
+    const group = (LABELS as Record<string, Record<string, number> | undefined>)[category];
     if (!group) throw new Error(`Unknown label category "${category}". Valid: ${Object.keys(LABELS).join(', ')}`);
     const labelId = group[value.toLowerCase()] || group[value.toUpperCase()] || group[value];
     if (!labelId) throw new Error(`Unknown ${category} "${value}". Valid: ${Object.keys(group).join(', ')}`);
@@ -307,7 +306,7 @@ export class BoardClient {
     // This ensures domain/chunk/sequence tags replace, not append
     const categoryLabelIds = new Set(Object.values(group));
     const task = await this.fetchTask(apiId);
-    for (const label of task.labels || []) {
+    for (const label of task.labels) {
       if (categoryLabelIds.has(label.id) && label.id !== labelId) {
         await this.removeLabel(apiId, label.id);
       }
@@ -329,7 +328,7 @@ export class BoardClient {
     // Look up the actual label ID from the task's labels, not from config.
     // Config IDs can be stale after DB rebuild — the task knows its own label IDs.
     const task = await this.api<VikunjaTask>('GET', `/tasks/${apiId}`);
-    const taskLabels: Array<{ id: number; title: string }> = task.labels || [];
+    const taskLabels: Array<{ id: number; title: string }> = task.labels;
     const match = taskLabels.find((l: { title: string }) => l.title === labelTitle);
     if (!match) throw new Error(`Label "${labelTitle}" not found on card #${index}`);
     await this.removeLabel(apiId, match.id);
@@ -347,7 +346,7 @@ export class BoardClient {
     const raw = await this.api<Array<{ author?: { username?: string }; comment: string }>>(
       'GET', `/tasks/${apiId}/comments`
     );
-    return (raw || []).map(c => ({
+    return raw.map(c => ({
       author: c.author?.username || 'unknown',
       text: c.comment,
     }));
@@ -373,7 +372,7 @@ export class BoardClient {
     return buckets.map(b => ({
       id: b.id,
       title: b.title,
-      limit: b.limit ?? 0,
+      limit: b.limit,
       taskCount: (b.tasks || []).length,
     }));
   }
@@ -387,6 +386,7 @@ export class BoardClient {
     // Vikunja paginates at 50 — fetch all pages
     const all: Array<{ id: number; title: string }> = [];
     let page = 1;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- intentional pagination loop; break on short batch
     while (true) {
       const batch = await this.api<Array<{ id: number; title: string }>>('GET', `/labels?page=${page}`);
       all.push(...batch);
@@ -558,7 +558,7 @@ export class BoardClient {
 
     // Find and remove existing owner label
     let oldOwner = '';
-    for (const label of task.labels || []) {
+    for (const label of task.labels) {
       if (label.title.startsWith('owner:')) {
         oldOwner = label.title.split(':')[1];
         await this.removeLabel(apiId, label.id);
@@ -612,7 +612,7 @@ export class BoardClient {
     let priority = '';
     const domains: string[] = [];
 
-    for (const label of task.labels || []) {
+    for (const label of task.labels) {
       if (label.title.startsWith('owner:')) {
         owner = label.title.split(':')[1];
       } else if (['P1', 'P2', 'P3'].includes(label.title)) {
@@ -623,7 +623,7 @@ export class BoardClient {
     }
 
     return {
-      index: task.index ?? task.id,
+      index: task.index,
       apiId: task.id,
       title: task.title,
       description: task.description || '',
