@@ -2,11 +2,7 @@
 // - handleRcaCreate: POST /api/chorus/rca — validates + inserts rca + emits spine event.
 // - handleTraceCreate: POST /api/chorus/trace — validates + inserts trace row.
 
-interface Req { body: any }
-interface Res {
-  status: (s: number) => Res;
-  json: (b: any) => Res | void;
-}
+import type { Request as Req, Response as Res } from 'express';
 
 export interface RcaCreateDeps {
   dbPath: string;
@@ -82,7 +78,17 @@ export interface TraceCreateDeps {
 interface EndpointRef { domain?: string; service?: string; instance?: string }
 interface ErrorInfo { classification?: string; message?: string }
 
-function traceRowFromBody(body: any, now: string): unknown[] {
+interface TraceBody {
+  correlationId?: string;
+  hop?: number;
+  callStack?: string;
+  source?: EndpointRef;
+  destination?: EndpointRef;
+  latencyMs?: number;
+  error?: ErrorInfo;
+}
+
+function traceRowFromBody(body: TraceBody, now: string): unknown[] {
   const { correlationId, hop, callStack, source, destination, latencyMs, error } = body;
   const src: EndpointRef = source || {};
   const dst: EndpointRef = destination || {};

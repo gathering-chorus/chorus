@@ -11,10 +11,10 @@ export class DbNotFoundError extends Error {
 export interface DbOpenerDeps {
   dbPath: string;
   exists: (p: string) => boolean;
-  DatabaseCtor: new (path: string, opts: any) => { pragma: (s: string) => void };
+  DatabaseCtor: new (path: string, opts?: { readonly?: boolean }) => { pragma: (s: string) => void };
 }
 
-export function createDbOpener<T = any>(deps: DbOpenerDeps): () => T {
+export function createDbOpener<T = unknown>(deps: DbOpenerDeps): () => T {
   return (): T => {
     if (!deps.exists(deps.dbPath)) {
       throw new DbNotFoundError();
@@ -28,7 +28,7 @@ export function createDbOpener<T = any>(deps: DbOpenerDeps): () => T {
 export interface AlertFilesReaderDeps {
   fs: {
     readdirSync: (p: string) => string[];
-    readFileSync: (p: string, enc: string) => any;
+    readFileSync: (p: string, enc: string) => string;
   };
   alertsDir: string;
 }
@@ -46,7 +46,7 @@ export function createAlertFilesReader(
 
 export interface SearchEventEmitterDeps {
   chorusLogPath: string;
-  execFileFn: (cmd: string, args: string[], opts: any, cb?: (...a: any[]) => void) => any;
+  execFileFn: (cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; cwd?: string; timeout?: number }, cb?: (err: Error | null, stdout: string, stderr: string) => void) => unknown;
 }
 
 export function createSearchEventEmitter(
