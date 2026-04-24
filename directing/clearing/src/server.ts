@@ -401,32 +401,43 @@ function formatToolDisplay(summary: string, action: string): string | null {
   return summary;
 }
 
-function parseTurnLine(entry: any, role: string): StreamLine | null {
-  let summary = (entry.summary || '').substring(0, 200);
+interface LogEntry {
+  timestamp?: string;
+  role?: string;
+  event?: string;
+  summary?: string;
+  action?: string;
+  tool_count?: string | number;
+  from?: string;
+  target?: string;
+}
+
+function parseTurnLine(entry: LogEntry, role: string): StreamLine | null {
+  let summary = (entry.summary ?? '').substring(0, 200);
   if (TURN_SKIP_PREFIXES.some((p) => summary.startsWith(p))) return null;
   if (TURN_SKIP_CONTAINS.some((p) => summary.includes(p))) return null;
   summary = summary.replace(/\s*\|\s*tools:\s*[^|]*\|\s*[\d.]+s\s*$/, '').trim();
   if (!summary) return null;
-  const toolCount = parseInt(entry.tool_count || '0', 10);
+  const toolCount = parseInt(String(entry.tool_count ?? '0'), 10);
   const isJeffInput = toolCount === 0;
   if (isJeffInput && summary.length < 5) return null;
   return {
-    ts: entry.timestamp || '',
+    ts: entry.timestamp ?? '',
     role: isJeffInput ? 'jeff' : role,
     type: 'turn',
     text: isJeffInput ? `→${role}: ${summary}` : summary,
   };
 }
 
-function parseLogEntry(entry: any): StreamLine | null {
-  const role = entry.role || '';
+function parseLogEntry(entry: LogEntry): StreamLine | null {
+  const role = entry.role ?? '';
   if (!role || !['wren', 'silas', 'kade'].includes(role)) return null;
-  const event = entry.event || '';
+  const event = entry.event ?? '';
 
   if (event === 'session_tool') {
-    const display = formatToolDisplay((entry.summary || '').substring(0, 120), entry.action || '');
+    const display = formatToolDisplay((entry.summary ?? '').substring(0, 120), entry.action ?? '');
     if (display === null) return null;
-    return { ts: entry.timestamp || '', role, type: 'tool', text: display };
+    return { ts: entry.timestamp ?? '', role, type: 'tool', text: display };
   }
   if (event === 'session_turn') return parseTurnLine(entry, role);
   // #2435 — canonical event is nudge.emitted. role.nudge.sent is retired in-card.
@@ -435,10 +446,10 @@ function parseLogEntry(entry: any): StreamLine | null {
   // the same content= tail that role.nudge.sent used — the payload format didn't
   // change, only which JSON field carries the packed value.
   if (event === 'nudge.emitted') {
-    const packed = (entry.from || entry.target || '') as string;
+    const packed = entry.from ?? entry.target ?? '';
     const content = packed.match(/content=(.+)/)?.[1] || '';
     if (!content.includes('[gemba]')) return null;
-    return { ts: entry.timestamp || '', role, type: 'gemba', text: content.substring(0, 200) };
+    return { ts: entry.timestamp ?? '', role, type: 'gemba', text: content.substring(0, 200) };
   }
   return null;
 }
@@ -868,7 +879,7 @@ io.on('connection', (socket) => {
           return;
         }
       } catch (err) {
-        const errMsg = err instanceof Error ? (err as any).stderr || err.message : String(err);
+        const errMsg = err instanceof Error ? ((err as { stderr?: string }).stderr ?? err.message) : String(err);
         console.error(`[clearing] delivery to ${target} failed: ${errMsg}`);
         ack?.({ ok: false, error: errMsg });
         return;
