@@ -86,10 +86,10 @@ export function createEmbedDelta(deps: EmbedDeltaDeps): () => Promise<EmbedDelta
             timestamp: msg.timestamp,
             vector,
           });
-        } catch (err: any) {
+        } catch (err: unknown) {
           skipped++;
           ollamaFailures++;
-          error(`[embed-delta] Ollama failure for msg ${msg.id}: ${err.message}`);
+          error(`[embed-delta] Ollama failure for msg ${msg.id}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 

@@ -5,11 +5,7 @@
 // - If the body includes a numeric `hop`, also inserts a trace row
 //   with synthesized correlation id when absent.
 
-interface Req { body: any }
-interface Res {
-  status: (s: number) => Res;
-  json: (b: any) => Res | void;
-}
+import type { Request as Req, Response as Res } from 'express';
 
 export interface SpineEventDeps {
   appendFileSync: (path: string, data: string) => void;
