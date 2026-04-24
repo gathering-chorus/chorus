@@ -77,10 +77,10 @@ function extractDomains(text: string, knownDomains: string[]): string[] {
   });
 }
 
-async function fetchJson(url: string): Promise<any> {
+async function fetchJson<T = unknown>(url: string): Promise<T | null> {
   const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) return null;
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 /**
@@ -88,19 +88,21 @@ async function fetchJson(url: string): Promise<any> {
  * Pure function — reads card data, queries graph, returns report.
  */
 async function addDomainCodeFiles(domain: string, touchedFiles: Set<string>, touchedDomains: Set<string>): Promise<void> {
-  const codeRes = await fetchJson(`${CHORUS_API}/api/chorus/domain/${encodeURIComponent(domain)}/code`);
-  if (!codeRes?.data?.files) return;
-  for (const file of codeRes.data.files) touchedFiles.add(file.path);
-  if (codeRes.data.files.length > 0) touchedDomains.add(domain);
+  const codeRes = await fetchJson<{ data?: { files?: Array<{ path: string }> } }>(`${CHORUS_API}/api/chorus/domain/${encodeURIComponent(domain)}/code`);
+  const files = codeRes?.data?.files;
+  if (!files || files.length === 0) return;
+  for (const file of files) touchedFiles.add(file.path);
+  touchedDomains.add(domain);
 }
 
 async function resolveNodeByPath(filePath: string): Promise<GraphNode | null> {
-  const direct: GraphNode | null = await fetchJson(`${APP_BASE}/api/codebase/node/${encodeURIComponent(filePath)}`);
+  const direct = await fetchJson<GraphNode>(`${APP_BASE}/api/codebase/node/${encodeURIComponent(filePath)}`);
   if (direct) return direct;
   if (filePath.includes('/')) return null;
-  const search = await fetchJson(`${APP_BASE}/api/codebase/search?q=${encodeURIComponent(filePath)}&limit=1`);
-  if (!search?.nodes?.[0]) return null;
-  return fetchJson(`${APP_BASE}/api/codebase/node/${encodeURIComponent(search.nodes[0].path)}`);
+  const search = await fetchJson<{ nodes?: Array<{ path: string }> }>(`${APP_BASE}/api/codebase/search?q=${encodeURIComponent(filePath)}&limit=1`);
+  const first = search?.nodes?.[0];
+  if (!first) return null;
+  return fetchJson<GraphNode>(`${APP_BASE}/api/codebase/node/${encodeURIComponent(first.path)}`);
 }
 
 async function walkExplicitFiles(explicitFiles: string[], touchedFiles: Set<string>, touchedDomains: Set<string>): Promise<void> {
@@ -123,7 +125,7 @@ async function addMentionedDomainFiles(mentionedDomains: string[], explicitFiles
   for (const dom of mentionedDomains) {
     touchedDomains.add(dom);
     if (explicitFiles.some((f) => f.includes(dom))) continue;
-    const search = await fetchJson(`${APP_BASE}/api/codebase/search?domain=${dom}&limit=10`);
+    const search = await fetchJson<{ nodes?: Array<{ path: string }> }>(`${APP_BASE}/api/codebase/search?domain=${dom}&limit=10`);
     if (search?.nodes) for (const node of search.nodes) touchedFiles.add(node.path);
   }
 }
@@ -146,9 +148,9 @@ export async function generateBlastRadius(
   domain?: string,
 ): Promise<BlastReport | null> {
   const fullText = `${title}\n${description}`;
-  const topology = await fetchJson(`${APP_BASE}/api/codebase/topology`);
+  const topology = await fetchJson<{ domains?: Record<string, unknown> }>(`${APP_BASE}/api/codebase/topology`);
   if (!topology) return null;
-  const knownDomains = Object.keys(topology.domains || {});
+  const knownDomains = Object.keys(topology.domains ?? {});
   const explicitFiles = extractFilePaths(fullText);
   const mentionedDomains = extractDomains(fullText, knownDomains);
 
