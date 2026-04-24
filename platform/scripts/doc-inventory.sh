@@ -70,14 +70,17 @@ correct_cabinet_for() {
 
 in_catalog_dir() {
   # $1 = repo label (gathering|chorus), $2 = relative path from repo root
-  local repo="$1" rel="$2" dir
+  # Catalog scanner (doc-catalog.handler.ts) uses readdirSync — top-level only, not recursive.
+  # So a file counts as in-catalog iff its immediate parent dir equals a SOURCE_DIR.
+  local repo="$1" rel="$2" dir parent
+  parent=$(dirname "$rel")
   if [ "$repo" = "gathering" ]; then
     for dir in "${GATHERING_CATALOG_DIRS[@]}"; do
-      case "$rel" in "$dir"/*) echo "Y"; return ;; esac
+      [ "$parent" = "$dir" ] && { echo "Y"; return; }
     done
   else
     for dir in "${CHORUS_CATALOG_DIRS[@]}"; do
-      case "$rel" in "$dir"/*) echo "Y"; return ;; esac
+      [ "$parent" = "$dir" ] && { echo "Y"; return; }
     done
   fi
   echo "N"
@@ -99,9 +102,8 @@ classify_one() {
     state="wrong-cabinet"
   elif [ "$catalog" = "N" ]; then
     state="unfiled"
-  elif [ -z "$owner" ]; then
-    state="misfiled"
   else
+    # In a catalog dir = ok. Missing owner front-matter is not drift.
     state="ok"
   fi
 
@@ -126,7 +128,48 @@ walk_repo() {
     -not -path '*/transcripts/*' \
     -not -path '*/journal/*' \
     -not -path '*/fixtures/*' \
+    -not -path '*/briefs/*' \
     -not -path '*/briefs-archive/*' \
+    -not -path '*/directing/products/roles/*' \
+    -not -path '*/messages/*' \
+    -not -path '*/.chorus/*' \
+    -not -path '*/skills/*' \
+    -not -path '*/claudemd/*' \
+    -not -path '*/domain-context/*' \
+    -not -path '*/reports/*' \
+    -not -path '*/plato-report/*' \
+    -not -path '*/e2e/screenshots/*' \
+    -not -path '*/terraform/*' \
+    -not -path '*/tests/docs/*' \
+    -not -path '*/tests/fixtures/*' \
+    -not -name 'CLAUDE.md' \
+    -not -name 'backlog.md' \
+    -not -name 'projects.md' \
+    -not -name 'stories.md' \
+    -not -name 'tech-debt.md' \
+    -not -name 'decisions.md' \
+    -not -name 'service-manifest.md' \
+    -not -name 'scope-ownership.md' \
+    -not -name 'role-config-manifest.md' \
+    -not -name 'RUNBOOK.md' \
+    -not -name 'RUNBOOK.html' \
+    -not -name 'TEAM_PROTOCOL.md' \
+    -not -name 'team-architecture.md' \
+    -not -name 'README.md' \
+    -not -name 'TEST.md' \
+    -not -name 'test-triage.md' \
+    -not -name 'reference-templates.md' \
+    -not -name 'working-agreement-*.md' \
+    -not -name 'turtle-filesystem-and-ontology.md' \
+    -not -name 'next-session.md' \
+    -not -name 'next-session.md.consumed' \
+    -not -path '*/platform/api/public/*' \
+    -not -path '*/ghost_content/*' \
+    -not -path '*/jscpd-report/*' \
+    -not -path '*/playwright-report/*' \
+    -not -path '*/data/pods/*' \
+    -not -path '*/data/harvest/*' \
+    -not -path '*/directing/clearing/*' \
     -not -path '*/test-output/*' \
     -not -path '*/test-fixtures/*' \
     2>/dev/null | while IFS= read -r f; do

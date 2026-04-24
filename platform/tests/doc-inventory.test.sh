@@ -86,10 +86,9 @@ check() {
 rows=$(grep -vc '^#' "$OUT")
 check "row count = 5 (ignores .bin)" 5 "$rows"
 
-# State counts
-check "ok count"            2 "$(awk -F'\t' '$3=="ok"'            "$OUT" | wc -l | tr -d ' ')"
+# State counts (misfiled removed — owner-missing is not drift)
+check "ok count"            3 "$(awk -F'\t' '$3=="ok"'            "$OUT" | wc -l | tr -d ' ')"
 check "wrong-cabinet count" 1 "$(awk -F'\t' '$3=="wrong-cabinet"' "$OUT" | wc -l | tr -d ' ')"
-check "misfiled count"      1 "$(awk -F'\t' '$3=="misfiled"'      "$OUT" | wc -l | tr -d ' ')"
 check "unfiled count"       1 "$(awk -F'\t' '$3=="unfiled"'       "$OUT" | wc -l | tr -d ' ')"
 
 # Specific rows
@@ -97,7 +96,7 @@ check "chorus-spine classified wrong-cabinet" "wrong-cabinet" \
   "$(awk -F'\t' '$2 ~ /chorus-spine\.html/ {print $3}' "$OUT")"
 check "book-outline classified unfiled" "unfiled" \
   "$(awk -F'\t' '$2 ~ /book-outline\.md/ {print $3}' "$OUT")"
-check "orphan-notes classified misfiled" "misfiled" \
+check "orphan-notes (no front-matter) classified ok" "ok" \
   "$(awk -F'\t' '$2 ~ /orphan-notes\.md/ {print $3}' "$OUT")"
 check "pulse-design owner = silas" "silas" \
   "$(awk -F'\t' '$2 ~ /pulse-design\.md/ {print $5}' "$OUT")"

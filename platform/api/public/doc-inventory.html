@@ -35,13 +35,13 @@
 <div class="meta" id="meta">Loading…</div>
 <div class="summary">
   <div class="counts" id="counts"></div>
+  <div id="reconcile" style="margin-top: 0.6rem; color: #aaa; font-size: 0.82rem;"></div>
 </div>
 <div class="controls">
   <input id="filter" type="text" placeholder="Filter by path, owner, topic…" style="width: 320px;">
   <select id="stateFilter">
     <option value="">All states</option>
     <option value="ok">ok</option>
-    <option value="misfiled">misfiled</option>
     <option value="wrong-cabinet">wrong-cabinet</option>
     <option value="unfiled">unfiled</option>
   </select>
@@ -57,7 +57,7 @@
     <th data-key="repo">Repo</th>
     <th data-key="path">Path</th>
     <th data-key="state">State</th>
-    <th data-key="cabinet">Correct Cabinet</th>
+    <th data-key="cabinet">Target (if wrong)</th>
     <th data-key="owner">Owner</th>
     <th data-key="inCatalog">In Catalog</th>
     <th data-key="topic">Topic</th>
@@ -83,6 +83,20 @@ async function load() {
   document.getElementById('counts').innerHTML = Object.keys(c).sort().map(k =>
     `<span class="state-${k}">${k}: <b>${c[k]}</b></span>`
   ).join('');
+  // Reconcile with catalog: count unique basenames among ok rows; compare to live catalog size
+  const okRows = rows.filter(r => r.state === 'ok');
+  const uniqBasenames = new Set(okRows.map(r => r.path.split('/').pop())).size;
+  const dupeFiles = okRows.length - uniqBasenames;
+  try {
+    const cat = await (await fetch('http://localhost:3000/api/doc-catalog')).json();
+    document.getElementById('reconcile').innerHTML =
+      `<strong>Reconciliation with gathering catalog:</strong> ${okRows.length} file-instances in catalog dirs, ` +
+      `${uniqBasenames} unique basenames, ${dupeFiles} duplicate-basename collisions (see #2461). ` +
+      `Gathering catalog surfaces <b>${cat.totalDocs}</b> docs (dedupes by href + title).`;
+  } catch (_e) {
+    document.getElementById('reconcile').textContent =
+      `File-instances: ${okRows.length} / unique: ${uniqBasenames} / dupes: ${dupeFiles} (catalog unreachable)`;
+  }
   render();
 }
 
@@ -109,7 +123,7 @@ function render() {
        <td>${r.repo}</td>
        <td class="path">${r.path}</td>
        <td class="state-${r.state}">${r.state}</td>
-       <td>${r.cabinet}</td>
+       <td>${r.state === 'wrong-cabinet' ? `→ ${r.cabinet}` : '—'}</td>
        <td>${r.owner || '—'}</td>
        <td>${r.inCatalog}</td>
        <td>${r.topic || '—'}</td>
