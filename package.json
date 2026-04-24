@@ -4,14 +4,17 @@
   "private": true,
   "description": "Chorus workspace root — hosts shared lint config for all packages (#2284)",
   "scripts": {
-    "lint": "eslint --max-warnings=0 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts'",
-    "lint:fix": "eslint --fix 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts'"
+    "lint": "eslint 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts' 'platform/**/tests/**/*.ts' 'directing/**/tests/**/*.ts'",
+    "lint:fix": "eslint --fix 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts' 'platform/**/tests/**/*.ts' 'directing/**/tests/**/*.ts'",
+    "lint:ratchet": "node platform/scripts/lint-ratchet.js",
+    "lint:baseline": "node platform/scripts/lint-ratchet.js --regenerate"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
+    "eslint-plugin-jest": "^29.15.2",
     "eslint-plugin-security": "^3.0.0",
     "globals": "^15.0.0"
   }

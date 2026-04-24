@@ -126,23 +126,16 @@ fi
 CHANGED=$(git diff "$BASE" --name-only -- '*.ts' 2>/dev/null | grep -v '^$' || true)
 CHANGED_COUNT=$(printf '%s\n' "$CHANGED" | grep -c . || true)
 
-# Lint gate (#2288): run eslint with --max-warnings=0 before jest. Scoped to
-# changed .ts files when possible; full repo pass on --full or refactor-sized
-# diffs. Exits non-zero on any violation — regressions block at gate-code,
-# not at demo.
-if [ "$FULL" = "1" ] || [ "$CHANGED_COUNT" = "0" ] || [ "$CHANGED_COUNT" -gt 20 ]; then
-  echo "--- lint (full) ---"
-  if ! npm run lint --silent; then
-    echo "gate-code-tests: lint failed (full)" >&2
-    exit 1
-  fi
-else
-  echo "--- lint ($CHANGED_COUNT changed .ts) ---"
-  # shellcheck disable=SC2046
-  if ! npx eslint --max-warnings=0 $(printf '%s ' $CHANGED); then
-    echo "gate-code-tests: lint failed (scoped)" >&2
-    exit 1
-  fi
+# Lint ratchet gate (#2462, supersedes #2288 --max-warnings=0 approach): strict
+# eslint rules enabled with per-rule baseline at .eslint-baseline.json. Ratchet
+# fails if any rule count climbs above baseline OR a new rule fires that isn't
+# in baseline. Baseline regenerated explicitly via `npm run lint:baseline` after
+# a cleanup wave or rule change, never auto-updated. Full ratchet runs on every
+# gate — scoping to changed files would miss cross-file effects.
+echo "--- lint ratchet ---"
+if ! npm run lint:ratchet --silent; then
+  echo "gate-code-tests: lint ratchet failed — rule counts climbed or new rule fired" >&2
+  exit 1
 fi
 
 # Decide full-fallback

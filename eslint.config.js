@@ -6,6 +6,7 @@ const js = require('@eslint/js');
 const tsParser = require('@typescript-eslint/parser');
 const tsPlugin = require('@typescript-eslint/eslint-plugin');
 const security = require('eslint-plugin-security');
+const jestPlugin = require('eslint-plugin-jest');
 const globals = require('globals');
 
 module.exports = [
@@ -28,7 +29,12 @@ module.exports = [
     files: ['platform/**/src/**/*.ts', 'directing/**/src/**/*.ts'],
     languageOptions: {
       parser: tsParser,
-      parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        projectService: true,
+        tsconfigRootDir: __dirname,
+      },
       globals: {
         ...globals.node,
         ...globals.es2021,
@@ -48,13 +54,17 @@ module.exports = [
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...security.configs.recommended.rules,
-      'security/detect-non-literal-fs-filename': 'off',
-      'security/detect-object-injection': 'off',
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-new-func': 'error',
       '@typescript-eslint/explicit-function-return-type': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/await-thenable': 'error',
+      '@typescript-eslint/require-await': 'error',
+      '@typescript-eslint/no-base-to-string': 'error',
+      '@typescript-eslint/no-unnecessary-condition': 'error',
       '@typescript-eslint/no-unused-vars': ['error', {
         'argsIgnorePattern': '^_',
         'varsIgnorePattern': '^_',
@@ -63,9 +73,9 @@ module.exports = [
       // TypeScript handles type/import resolution better than ESLint's no-undef.
       // Disabling prevents false positives on TS built-ins (NodeJS, BufferEncoding, RequestInit).
       'no-undef': 'off',
-      'complexity': ['error', { max: 20 }],
-      'max-depth': ['warn', { max: 4 }],
-      'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
+      'complexity': ['error', { max: 15 }],
+      'max-depth': ['error', { max: 4 }],
+      'max-lines-per-function': ['error', { max: 80, skipBlankLines: true, skipComments: true }],
       'no-console': 'off',
       'no-debugger': 'error',
       'no-duplicate-imports': 'error',
@@ -87,10 +97,22 @@ module.exports = [
         fetch: 'readonly',
       },
     },
+    plugins: {
+      'jest': jestPlugin,
+    },
+    settings: {
+      jest: { version: 29 },
+    },
     rules: {
+      ...jestPlugin.configs['flat/recommended'].rules,
+      'jest/expect-expect': 'error',
+      'jest/no-disabled-tests': 'error',
+      'jest/no-focused-tests': 'error',
+      'jest/valid-expect': 'error',
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/ban-ts-comment': 'off',
       '@typescript-eslint/ban-types': 'off',
+      'no-unused-vars': 'off',
       'max-lines-per-function': ['warn', { max: 1500, skipBlankLines: true, skipComments: true }],
       'complexity': 'off',
     },
