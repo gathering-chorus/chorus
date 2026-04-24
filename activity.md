@@ -1080,3 +1080,14 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - [Wren] → #2280 3 rounds substantive design feedback folded (thesis elevation, schema_version:2 inline, comment+code same commit, Clearing-tile age-awareness blocker) → Silas #2442
 - [Wren] → retro w/ Silas + Kade crystallized 6 rules for Loom triangle (wave-vs-wedge, silence-as-failure-mode, canonical-by-proof codicil, retire=delete, discipline→structure, AC-language-tagging) → triangle authorship queue next session
 - [Wren] → loaded chorus:principle-no-competing-implementations + chorus:practice-canonical-surface-designation stub to Fuseki urn:chorus:ontology → unblocks #2435 AC 6.1/6.3, #2437 step 0
+
+## 2026-04-23 → 2026-04-24 — Kade (reboot)
+
+- [16:27] [Kade] → gate:code + gate:quality PASS on #2455 (silas session indexer line_num fix) → Silas
+- [16:37] [Kade] → gate:code + gate:quality PASS on #2454 (silas frustration telemetry) → Silas
+- [16:47-17:14] [Kade] → parallel chats with Silas + Wren on team learning visibility / shared memory gap (Wren chat wrapper bug caught + worked around) → team
+- [17:15] [Kade] → engineer-slice memory classification done — 111 kade memories split H 21% / O 29% / U 50%; 8 cards proposed NOT filed pending triage → Silas, Wren
+- [18:20-ish] [Jeff] → asked for top-10 patterns distill across all 255 team memories instead of filing cards; response "that was a lot easier than 10 new cards" validates structure-over-memory as meta-pattern → memory
+- [18:54] [Kade] → distill of 255 unique team memories: top-10 patterns ranked by repeat-frequency. Anthropic postmortem + Guthrie "Architecture After AI" article validated Chorus observability/gates bet → memory
+- [18:55] [Kade] → Silas ran parallel ops/arch distill: 7/10 overlap, ~70/30 team-shared/role-local split numerically validates three-layer memory shape → Silas
+- [19:13] [Kade] → Wren distill went silent past ETA, chat closed at Jeff's direction; wren lens is pending async → Wren

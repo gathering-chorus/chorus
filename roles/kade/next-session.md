@@ -1,51 +1,56 @@
-# Next Session — Kade
+# Kade — Next Session
 
-## State on close (2026-04-22, ~09:50 Boston)
+## Session 2026-04-23 → 2026-04-24 summary
 
-WIP: none. Role idle.
+Big thread: team memory audit. Jeff's critique "i remember more than u" from #2454 demo surfaced that 227 feedback memories across role silos don't reduce his correction rate. Silas + Wren + I converged on three-layer shape (role-local / team-shared / Jeff-origin), with Silas owning #2456 apply-rate detector and Wren owning Jeff-origin consolidation.
 
-## Shipped this session (3 cards Done)
+My engineer-slice classification of 111 kade-scope memories: H 26% / O 36% / U 38% on the feedback-only denominator. Proposed 8 cards — Jeff's response: "that was a lot easier than 10 new cards" when I distilled top-10 patterns instead. Pattern 9 (structure over memory) was failing in real time while I translated signal into board-ops busywork. Full classification at `/tmp/memory-audit-kade-2026-04-23/classification.md`.
 
-- **#2338** — filter-command.test.ts refactored from subprocess → `runCli` direct invocation with MockClient. 5/5 passing in 1.6s (was 11s). Root cause was fixture drift (`sequence:gates` drained); fix was gate-compliant redesign.
-- **#2439** — brief-pipeline-flow.test.ts retired. Gate parse-mismatch made it uneditable; on inspection tests 11–12 were presence-tests (DEC-1674 violation), and tests 1–10 were redundant with `sdk-fs.test.ts`.
-- **#2438** — quality-review reporter (`platform/scripts/daily-review-quality.sh`) ships test-level counts, 3-state suite categorization (all-green / with-fail / did-not-run), pass-rate + Wren's inline extension of failing-suite names. Shipped in 2 waves per practice-atomic-cutover. Acp'd by Wren, commit 4100c895.
+Silas ran his own ops/arch distill: 7/10 overlap with my engineer list, distinctive three were scope-in-one-place, background-not-foreground, pull-not-push JX. Numerically validates three-layer shape: ~70% team-shared / ~30% role-local. Wren's PM-slice distill is the open loop — chat opened, she said ~10 min ETA, then went silent. Closed chat at Jeff's direction, wren slice pending async.
 
-## Gates run this session (no retainer)
+## Gates run
 
-- **#2438** gate:code-pass, gate:quality-pass (mine).
-- **#2435** gate:code-pass, gate:quality-pass (for Silas — 618 tests green on touched surfaces, warnings 36→21 because retirements removed dead-code flags, -733 LOC net verified).
+- #2455 (silas) session indexer line_num bug — gate:code PASS, gate:quality PASS
+- #2454 (silas) frustration telemetry — gate:code PASS, gate:quality PASS
 
-## Cards filed this session (4 follow-ons)
+Both accepted into the chain and nudged to silas for gate:arch.
 
-- **#2438** (SWAT→Done) — quality-review reporting card.
-- **#2439** (Done) — brief-pipeline-flow retire.
-- **#2440** (Next, mine, P2) — demo_gate_env.rs hardcoded #1815 fixture drift. Same pattern as #2338 but in Rust tests.
-- **#2441** (Next, mine, P2) — Wren's 3 extensions on #2438: trend delta, oldest-failing-test callout, self-sanity line. Last one is the practice-external-verification-for-silent-signals applied to the reporter itself.
+## Top 10 team patterns (all 255 unique memories)
 
-## Retro + doctrine (this morning with Wren)
+1. Investigate, don't theorize (~20 memories — dominant)
+2. Announce = act. Narration is not work
+3. Delete, don't layer — #1 recurring failure
+4. Jeff is not the monitor
+5. Silent failure worse than loud failure
+6. Performative compliance ≠ compliance (10+, growing)
+7. Test against Jeff's experience, not narrowest fixture
+8. Jeff's voice is high-signal; second raise = promote
+9. Structure over memory — meta-pattern
+10. Tone is load-bearing, not decorative
 
-Two practices scoped out of this session's work:
+Two articles landed during session:
+- Anthropic postmortem (april-23): three Claude Code degradations; silent-session cache bug is #2455 at platform scale
+- Guthrie "Software Architecture After AI": observability + behavioral verification elevated, data+trust boundaries stay architectural — validates Chorus bet on Borg/frustration-telemetry/apply-rate as the new architecture work
 
-1. **practice-atomic-cutover** — wave vs wedge distinction. Waves are additive, wedges are cutovers. If decomposition requires both old + new paths live during middle of sequence, it's a wedge — clean pattern is (1) stand up new gated off, (2) flip atomically, (3) retire old in-card. **I own authorship next session** (Wren deferred per 95% weekly usage). #2435 is the first cited instance.
-2. **practice-external-verification-for-silent-signals** — signals that fail in directions that reduce their own detection pressure. Reporter reports green, gate blocks edits, "pre-existing" label licenses decay. External verification beats self-report. **Wren owns authorship, me as reviewer.** #2438 and #2439 are the first two instances.
+## Pending for next session
 
-#2219 TS consolidation reframed from "tech debt card" to "root cause for 2 of this week's 3 frictions" per Wren's "team operating correctly within broken infrastructure." Bumped P2→P1.
+- Wren's PM-slice distill (async; if she posts it, merge into `team-distill.md`)
+- Silas building #2456 apply-rate detector (paused pending triage outcome; Jeff hasn't confirmed whether to retire the 8-card backlog or file a subset)
+- Jeff triage call on: bucket-approve 8 cards (Clearing) vs retire-as-distilled-patterns
+- 3 literal dup memories still in stores: feedback_no_docker, feedback_no_ac_negotiation, feedback_demos_show_outcomes — retire predecessors
+- Content-dedup pass on the 255 (name-match is already clean; content-similarity across predecessor stores deferred)
 
-## Session patterns worth noting
+## Artifacts
 
-- **Hook-gate fighting has diminishing returns.** When the test-quality gate blocked `brief-pipeline-flow.test.ts` at parse-mismatch, I tried 4 edit variations before recognizing the file's fundamental design (filesystem-convention tests + presence-tests of SDK source code) didn't fit the gate semantics. Deletion was the right answer, not refactor. Pattern: if the gate fails 3 times for the same structural reason, step back and question the file's existence before attempting a 4th fix.
-- **Jeff as external verifier.** His 06:10 "feels like 50% fail" was the silence-as-failure-mode instance that triggered the whole reporter fix. The principle we scoped post-hoc explains why his question was load-bearing: the reporter couldn't see its own misproportion, only a human who didn't trust it could.
-- **Recursive application of no-competing-implementations.** Jeff vetoed Silas's sidecar-path fix for #2443 truncation because it would have been a competing impl for nudge delivery. The principle caught its own near-violation.
+- `/tmp/memory-audit-kade-2026-04-23/classification.md` — 111 memory classification (H/O/U)
+- `/tmp/memory-audit-kade-2026-04-23/all-unique-entries.txt` — 255 unique team-memory entries
+- `/tmp/memory-audit-kade-2026-04-23/all-indexes.txt` — all MEMORY.md indexes concatenated
+- Silas chat transcript: `/tmp/chorus-chat/kade-silas-1776984841.md`
+- Wren chat transcript (partial): `/tmp/chorus-chat/kade-wren-1776984874.md`
 
-## Outbound / awaiting
+## Role state at close
 
-- **#2280** (Silas, Pulse service design): my 3-point feedback (sidecar key helper, parallel-primary wedge in suppression removal, empty sources.alerts entry) sent + resent after #2443. Silas acknowledges receipt path but hasn't confirmed whether feedback landed post-truncation fix. Verify next session.
-- **#2441** (mine, Next) — Wren's 3 extensions. Self-sanity line is the best of the four: first instance of practice-external-verification-for-silent-signals applied to the reporter itself.
-- **practice-atomic-cutover authorship** (mine, deferred from retro): draft Fuseki node + propose AC-template addition, ping Wren for review before landing.
-
-## Open scope-discipline patterns (composed across #2435 + #2438)
-
-- **Wave vs wedge** formalized.
-- **Silence-as-failure-mode** formalized.
-- **Fixture drift is fixable by refactoring to mocks** (demonstrated on #2338; #2440 is the next instance waiting).
-- **Hook gates have escape velocity** (test-quality gate blocked legitimate fixes 4 times; retiring the gated file was the answer).
+- Tests passing across both cards I gated (#2454, #2455)
+- No WIP owned by kade
+- Chorus index freshness: 12/12 fresh
+- Declared state: waiting (on Jeff triage)
