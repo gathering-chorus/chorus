@@ -53,7 +53,7 @@ export async function fetchContextBoardNext(
     return { status: 500, body: { error: `pulse-latest.json unparseable: ${message}` } };
   }
 
-  const rawList = (pulse as { board?: { next_cards?: unknown } })?.board?.next_cards;
+  const rawList = (pulse as { board?: { next_cards?: unknown } }).board?.next_cards;
   const source = Array.isArray(rawList) ? rawList : [];
   const all: NextCard[] = source
     .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')

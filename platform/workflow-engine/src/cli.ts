@@ -192,7 +192,7 @@ function main(): void {
   const { command, args, flags } = parseArgs(rawArgs);
   const engine = new WorkflowEngine();
 
-  const handlers: Record<string, () => void> = {
+  const handlers: Partial<Record<string, () => void>> = {
     create: () => cmdCreate(engine, args, flags),
     advance: () => cmdAdvance(engine, args, flags),
     status: () => cmdStatus(engine, args),

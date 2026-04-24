@@ -228,10 +228,9 @@ const _embedDeltaInner = createEmbedDelta({
   pageSize: EMBED_PAGE_SIZE,
 });
 async function embedDelta(): Promise<{ embedded: number; skipped: number; ollama_failures: number }> {
-  if (!lanceDb) {
-    await initLance();
-    if (!lanceDb) return { embedded: 0, skipped: 0, ollama_failures: 0 };
-  }
+  if (!lanceDb) await initLance();
+  const db = lanceDb as lancedb.Connection | null;
+  if (!db) return { embedded: 0, skipped: 0, ollama_failures: 0 };
   return _embedDeltaInner();
 }
 

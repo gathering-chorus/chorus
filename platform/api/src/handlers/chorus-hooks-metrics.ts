@@ -36,7 +36,8 @@ export function fetchChorusHooksMetrics(deps: ChorusHooksMetricsDeps): FetchResu
     cutoff.setDate(cutoff.getDate() - 7);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-    const modules: Record<string, { allow: number; deny: number; warn: number; total: number }> = {};
+    type ModuleStats = { allow: number; deny: number; warn: number; total: number };
+    const modules: Partial<Record<string, ModuleStats>> = {};
     let totalDecisions = 0;
 
     for (const line of lines) {
@@ -51,19 +52,18 @@ export function fetchChorusHooksMetrics(deps: ChorusHooksMetricsDeps): FetchResu
 
       if (!moduleName || moduleName === '-' || moduleName === 'none' || decision === 'enter') continue;
 
-      if (!modules[moduleName]) {
-        modules[moduleName] = { allow: 0, deny: 0, warn: 0, total: 0 };
-      }
+      let m = modules[moduleName];
+      if (!m) { m = { allow: 0, deny: 0, warn: 0, total: 0 }; modules[moduleName] = m; }
 
-      modules[moduleName].total++;
+      m.total++;
       totalDecisions++;
 
-      if (decision === 'allow') modules[moduleName].allow++;
-      else if (decision === 'deny' || decision === 'block') modules[moduleName].deny++;
-      else if (decision === 'warn') modules[moduleName].warn++;
+      if (decision === 'allow') m.allow++;
+      else if (decision === 'deny' || decision === 'block') m.deny++;
+      else if (decision === 'warn') m.warn++;
     }
 
-    const enforcedModules = Object.keys(modules).filter((m) => modules[m].deny > 0).length;
+    const enforcedModules = Object.entries(modules).filter(([, v]) => v !== undefined && v.deny > 0).length;
     const totalModules = Object.keys(modules).length;
     const enforcementPercent = totalModules > 0 ? Math.round((enforcedModules / totalModules) * 100) : 0;
 

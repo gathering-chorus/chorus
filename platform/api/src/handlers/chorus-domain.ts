@@ -49,7 +49,7 @@ export interface Completeness {
 type Sparql = (query: string) => Promise<{ results?: { bindings?: unknown[] } } | null>;
 
 export interface ChorusDomainDeps {
-  domainRegistry: Record<string, DomainMeta>;
+  domainRegistry: Partial<Record<string, DomainMeta>>;
   getCards: () => DomainBoardCard[];
   readDomainHtml: (domainName: string) => string | null;
   fetchCompleteness: (subdomainId: string) => Promise<Completeness | null>;

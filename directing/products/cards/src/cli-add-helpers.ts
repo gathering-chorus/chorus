@@ -30,7 +30,7 @@ const USAGE =
 /** String-valued field names only — `quick` (boolean) is not here. */
 type StringField = Exclude<keyof AddArgs, 'quick'>;
 
-const STRING_FLAGS: Record<string, StringField> = {
+const STRING_FLAGS: Partial<Record<string, StringField>> = {
   '--status': 'status',
   '--owner': 'owner',
   '--priority': 'priority',

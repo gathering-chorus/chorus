@@ -100,7 +100,7 @@ export class ClearingChat {
     const shorthandMap: Record<string, string> = { nw: 'wren', ns: 'silas', nk: 'kade' };
     const nudgeMatch = content.match(/^(?:\/nudge\s+(wren|silas|kade)|(nw|ns|nk))\s+(.+)$/i);
     if (nudgeMatch) {
-      const target = (nudgeMatch[1] || shorthandMap[nudgeMatch[2]?.toLowerCase()]).toLowerCase();
+      const target = (nudgeMatch[1] || shorthandMap[nudgeMatch[2].toLowerCase()]).toLowerCase();
       const msg = nudgeMatch[3].replace(/^["']|["']$/g, '');
       const jeffMsg = this.transcript.add('Jeff', content);
       this.io.emit('chat:message', jeffMsg);

@@ -67,7 +67,7 @@ export async function fetchContextHealth(
 
   const header = await stampHeader(deps.sparql, null);
 
-  const healthRaw = (pulse as { health?: Record<string, unknown> })?.health ?? {};
+  const healthRaw = (pulse as { health?: Record<string, unknown> }).health ?? {};
   const status = toHealthStatus(healthRaw.status);
   const failures = numericOr(healthRaw.failures, 0);
   const warnings = numericOr(healthRaw.warning_count ?? healthRaw.warnings, 0);

@@ -473,7 +473,7 @@ export const updatePersistenceSpec: UpdateEntitySpec = {
 // --- DELETE: generic section-aware entity removal (#1929) ---
 
 /** Maps URL section slug → (hasPredicate short name, class name). */
-export const ENTITY_SECTIONS: Record<string, { hasProperty: string; class: string }> = {
+export const ENTITY_SECTIONS: Partial<Record<string, { hasProperty: string; class: string }>> = {
   actors: { hasProperty: 'hasActor', class: 'Actor' },
   scenarios: { hasProperty: 'hasScenario', class: 'Scenario' },
   contract: { hasProperty: 'hasContract', class: 'Contract' },

@@ -36,7 +36,7 @@ export interface SessionSummary {
 }
 
 // Approximate costs per million tokens
-const MODEL_COSTS: Record<string, { input: number; output: number }> = {
+const MODEL_COSTS: Partial<Record<string, { input: number; output: number }>> = {
   'claude-haiku-4-5-20251001': { input: 0.80, output: 4.00 },
   'claude-sonnet-4-20250514': { input: 3.00, output: 15.00 },
   'claude-opus-4-20250514': { input: 15.00, output: 75.00 },
@@ -92,7 +92,7 @@ export class Transcript {
 
   getEstimatedCost(): number {
     const tokens = this.getTotalTokens();
-    const costs = MODEL_COSTS[this.model] || MODEL_COSTS['claude-haiku-4-5-20251001'];
+    const costs = MODEL_COSTS[this.model] ?? { input: 0.80, output: 4.00 };
     return (tokens.input * costs.input + tokens.output * costs.output) / 1_000_000;
   }
 

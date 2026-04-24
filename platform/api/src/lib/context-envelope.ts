@@ -86,7 +86,7 @@ export async function stampHeader(
   let product: string | undefined;
   try {
     const result = await client.query(sparql);
-    const b = result?.results?.bindings?.[0];
+    const b = result.results?.bindings?.[0];
     step = b?.step?.value;
     product = b?.product?.value;
   } catch {

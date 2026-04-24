@@ -117,13 +117,13 @@ export async function fetchAthenaSubdomainCompleteness(
       ...COUNT_PREDS.map(([, pred]) => deps.sparqlQuery(buildCountQuery(sdUri, pred))),
     ]);
     const meta = metaRaw as SparqlMetaResult;
-    const b = meta.results.bindings[0];
-    if (!b) {
+    if (meta.results.bindings.length === 0) {
       return {
         status: 404,
         body: envelope('subdomain-completeness', { error: `Sub-domain '${id}' not found` }, now() - start, { error: true }),
       };
     }
+    const b = meta.results.bindings[0];
     const counts: Record<string, number> = {};
     COUNT_PREDS.forEach(([key], i) => {
       const cr = countsRaw[i] as SparqlCountResult;

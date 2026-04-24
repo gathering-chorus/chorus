@@ -17,15 +17,16 @@ export interface PatternsSummaryResponse {
   days: number;
 }
 
-function recordPatternLine(line: string, patterns: Record<string, number>, byDate: Record<string, Record<string, number>>): void {
+function recordPatternLine(line: string, patterns: Record<string, number>, byDate: Partial<Record<string, Record<string, number>>>): void {
   try {
     const obj = JSON.parse(line);
     const pattern = obj.pattern || 'unknown';
     const date = (obj.timestamp || '').slice(0, 10);
     patterns[pattern] = (patterns[pattern] || 0) + 1;
     if (date) {
-      if (!byDate[date]) byDate[date] = {};
-      byDate[date][pattern] = (byDate[date][pattern] || 0) + 1;
+      let bucket = byDate[date];
+      if (!bucket) { bucket = {}; byDate[date] = bucket; }
+      bucket[pattern] = (bucket[pattern] || 0) + 1;
     }
   } catch { /* skip malformed */ }
 }
@@ -41,7 +42,7 @@ export async function getPatternsSummary(days: number): Promise<PatternsSummaryR
   });
 
   const patterns: Record<string, number> = {};
-  const byDate: Record<string, Record<string, number>> = {};
+  const byDate: Partial<Record<string, Record<string, number>>> = {};
 
   try {
     const r = await fetch(`${LOKI_URL}/loki/api/v1/query_range?${params}`, {
@@ -65,8 +66,8 @@ export async function getPatternsSummary(days: number): Promise<PatternsSummaryR
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([date, counts]) => ({
       date,
-      total: Object.values(counts).reduce((a, b) => a + b, 0),
-      counts,
+      total: Object.values(counts ?? {}).reduce((a, b) => a + b, 0),
+      counts: counts ?? {},
     }));
 
   return { patterns, byDate: byDateArr, total, days };

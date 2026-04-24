@@ -63,7 +63,7 @@ export async function fetchContextAlerts(
 }
 
 function readFiredList(pulse: unknown): string[] {
-  const block = (pulse as { alerts?: { fired_today?: unknown[] } })?.alerts;
+  const block = (pulse as { alerts?: { fired_today?: unknown[] } }).alerts;
   if (!block || !Array.isArray(block.fired_today)) return [];
   return block.fired_today.filter((n): n is string => typeof n === 'string');
 }

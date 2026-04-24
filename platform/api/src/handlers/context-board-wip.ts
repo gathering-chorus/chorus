@@ -67,7 +67,7 @@ export async function fetchContextBoardWip(
 
   const header = await stampHeader(deps.sparql, 'chorus');
 
-  const wipRaw = (pulse as { board?: { wip_cards?: unknown } })?.board?.wip_cards;
+  const wipRaw = (pulse as { board?: { wip_cards?: unknown } }).board?.wip_cards;
   const source = Array.isArray(wipRaw) ? wipRaw : [];
 
   const all: WipCard[] = source

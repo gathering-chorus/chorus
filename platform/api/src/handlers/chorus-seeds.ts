@@ -75,7 +75,7 @@ export async function fetchSeeds({
     };
     const seeds: Seed[] = data.results.bindings.map((b) => ({
       slug: b.slug?.value,
-      content: b.content?.value?.substring(0, 200),
+      content: b.content?.value.substring(0, 200),
       seedUrl: b.seedUrl?.value,
       linkTitle: b.linkTitle?.value,
       status: b.status?.value || 'pending',

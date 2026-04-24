@@ -101,7 +101,7 @@ export function fetchFreshness({
   const spineOnDisk = exists(spineLogPath) ? readFile(spineLogPath, 'utf-8').split('\n').length : 0;
   const spineIndexed = (db.prepare("SELECT COUNT(*) as cnt FROM messages WHERE source='spine'").get() as Count).cnt;
 
-  const driftMap: Record<string, { onDisk: number; indexed: number }> = {
+  const driftMap: Partial<Record<string, { onDisk: number; indexed: number }>> = {
     claude: { onDisk: claudeOnDisk, indexed: claudeIndexed },
     spine: { onDisk: spineOnDisk, indexed: spineIndexed },
   };

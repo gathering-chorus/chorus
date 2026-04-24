@@ -125,7 +125,7 @@ async function collectNudges(deps: ChorusCardStoryDeps, cardId: number, timeline
   try {
     const nudges = await deps.loadNudges();
     for (const msg of nudges) {
-      if (msg.text?.includes(`#${cardId}`)) {
+      if (msg.text.includes(`#${cardId}`)) {
         timeline.push({ timestamp: msg.timestamp, source: 'nudge', text: msg.text.slice(0, 500), role: msg.from });
       }
     }

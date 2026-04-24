@@ -56,12 +56,13 @@ export async function fetchHarvest({
       totalTriples += count;
     }
 
-    const domains: Record<string, { graphs: number; triples: number }> = {};
+    const domains: Partial<Record<string, { graphs: number; triples: number }>> = {};
     for (const g of graphs) {
       const domain = g.name.replace(/[-_].*$/, '').replace(/\.ttl$/, '').toLowerCase();
-      if (!domains[domain]) domains[domain] = { graphs: 0, triples: 0 };
-      domains[domain].graphs++;
-      domains[domain].triples += g.triples;
+      let d = domains[domain];
+      if (!d) { d = { graphs: 0, triples: 0 }; domains[domain] = d; }
+      d.graphs++;
+      d.triples += g.triples;
     }
 
     return {
@@ -70,6 +71,7 @@ export async function fetchHarvest({
         total_graphs: graphs.length,
         total_triples: totalTriples,
         domains: Object.entries(domains)
+          .filter((e): e is [string, { graphs: number; triples: number }] => e[1] !== undefined)
           .sort((a, b) => b[1].triples - a[1].triples)
           .map(([name, d]) => ({ name, ...d })),
       },

@@ -326,7 +326,7 @@ async function cmdBuckets(client: BoardClient) {
 }
 
 async function cmdSetLimit(client: BoardClient, args: string[], boardConfig: BoardConfig) {
-  if (!args[0] || args[1] === undefined) die('Usage: cards set-limit <bucket> <number>');
+  if (!args[0] || args.length < 2) die('Usage: cards set-limit <bucket> <number>');
   const bucketName = args[0].toLowerCase();
   const limit = parseInt(args[1], 10);
   if (isNaN(limit) || limit < 0) die('Limit must be a non-negative number (0 = no limit)');
@@ -869,7 +869,7 @@ async function cmdLabel(ctx: CliCtx) {
   }
 }
 
-function buildCliHandlers(): Record<string, (ctx: CliCtx) => void | Promise<unknown>> {
+function buildCliHandlers(): Partial<Record<string, (ctx: CliCtx) => void | Promise<unknown>>> {
   return {
     list: (ctx) => cmdList(ctx.client, ctx.boardLabel, ctx.productFilter),
     add: cmdAdd, create: cmdAdd,

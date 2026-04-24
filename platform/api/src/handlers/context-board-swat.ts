@@ -51,7 +51,7 @@ export async function fetchContextBoardSwat(
 
   const header = await stampHeader(deps.sparql, 'chorus');
 
-  const swatRaw = (pulse as { board?: { swat_cards?: unknown } })?.board?.swat_cards;
+  const swatRaw = (pulse as { board?: { swat_cards?: unknown } }).board?.swat_cards;
   const source = Array.isArray(swatRaw) ? swatRaw : [];
 
   const all: SwatCard[] = source

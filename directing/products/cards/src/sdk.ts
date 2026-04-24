@@ -705,7 +705,7 @@ async function enforcePreMoveGates(
   if (/^wip$/i.test(status)) {
     try {
       const fullText = `${title}\n${card.description || ''}`;
-      const domainLabel = (card.domains || []).find((d: string) => d.startsWith('domain:'));
+      const domainLabel = card.domains.find((d: string) => d.startsWith('domain:'));
       const cardDomain = domainLabel ? domainLabel.replace('domain:', '') : undefined;
       if (isCodeCard(fullText)) {
         const report = await generateBlastRadius(index, title, card.description || '', cardDomain);
@@ -1112,7 +1112,7 @@ async function printResultingCard(client: BoardClient, index: number, changes: s
   console.log(`  Status:   ${card.status}`);
   if (card.owner) console.log(`  Owner:    ${card.owner}`);
   if (card.priority) console.log(`  Priority: ${card.priority}`);
-  if (card.domains?.length) console.log(`  Domains:  ${card.domains.join(', ')}`);
+  if (card.domains.length) console.log(`  Domains:  ${card.domains.join(', ')}`);
   if (changes.length) console.log(`  Changed:  ${changes.join(', ')}`);
 }
 
