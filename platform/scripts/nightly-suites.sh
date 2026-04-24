@@ -118,7 +118,22 @@ owner_for_npm() {
   esac
 }
 
+run_lint_ratchet() {
+  # #2465: full-codebase ESLint ratchet. Runs every nightly so drift surfaces
+  # even when no role is touching TypeScript. Fails if any rule count climbed
+  # above baseline OR a new rule fires not in baseline.
+  local path="$CHORUS_ROOT" owner="kade" status="pass" summary="" out rc
+  if [ -f "$path/.eslint-baseline.json" ] && [ -f "$path/eslint.config.js" ]; then
+    out=$(cd "$path" && npm run lint:ratchet --silent 2>&1); rc=$?
+    summary=$(echo "$out" | tail -1 | tr -d '\n')
+    [ "$rc" -ne 0 ] && status="fail"
+    echo "SUITE|lint|$path|$owner|$status|$summary"
+  fi
+}
+
 run_all() {
+  run_lint_ratchet
+
   while IFS= read -r d; do
     [ -z "$d" ] && continue
     run_one npm "$d" "$(owner_for_npm "$d")"
