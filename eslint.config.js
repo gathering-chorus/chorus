@@ -60,7 +60,15 @@ module.exports = [
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-promises': 'error',
+      // checksVoidReturn.arguments: false — Express 4 @types say route handlers
+      // must return void, but Express accepts Promise-returning handlers fine
+      // (Express 5 types this natively). Without this override, every async
+      // route lights up as a "promise in void slot" false positive. We keep
+      // `assignments`/`properties` checks on — those catch real bugs where a
+      // returned Promise is silently ignored (#2463 wave 2).
+      '@typescript-eslint/no-misused-promises': ['error', {
+        checksVoidReturn: { arguments: false, attributes: false },
+      }],
       '@typescript-eslint/await-thenable': 'error',
       '@typescript-eslint/require-await': 'error',
       '@typescript-eslint/no-base-to-string': 'error',

@@ -12,6 +12,7 @@
  */
 
 import type { FetchResult } from './sessions';
+import type { Request, Response, NextFunction } from 'express';
 
 export async function run<T>(fn: () => T | Promise<T>): Promise<FetchResult> {
   try {
@@ -21,4 +22,16 @@ export async function run<T>(fn: () => T | Promise<T>): Promise<FetchResult> {
     const message = e instanceof Error ? e.message : String(e);
     return { status: 500, body: { error: message } };
   }
+}
+
+/** Wrap an async Express handler so the returned Promise is consumed (and
+ *  rejections forwarded to next()). Keeps `@typescript-eslint/no-misused-promises`
+ *  happy: the wrapper itself returns void, while still awaiting the async body.
+ *  Use as `app.get('/x', asyncRoute(async (req, res) => { ... }))`. #2463 wave 2. */
+export function asyncRoute(
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
+): (req: Request, res: Response, next: NextFunction) => void {
+  return (req, res, next) => {
+    fn(req, res, next).catch(next);
+  };
 }
