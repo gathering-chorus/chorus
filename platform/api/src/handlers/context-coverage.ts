@@ -100,8 +100,8 @@ function aggregateCoverage(
     withCoverage++;
     const [, fc] = match;
     for (const metric of Object.keys(acc) as Array<keyof FileCoverage>) {
-      acc[metric].total += fc[metric]?.total ?? 0;
-      acc[metric].covered += fc[metric]?.covered ?? 0;
+      acc[metric].total += fc[metric].total;
+      acc[metric].covered += fc[metric].covered;
     }
   }
 
