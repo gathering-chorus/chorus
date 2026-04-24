@@ -3,7 +3,7 @@
 // invocations so the 15-min timer can fire without stomping an in-flight run.
 
 export interface ScheduledReindexDeps {
-  indexAllSources: () => Promise<Record<string, any>>;
+  indexAllSources: () => Promise<Record<string, unknown>>;
   log?: (m: string) => void;
   error?: (m: string) => void;
 }
@@ -21,8 +21,8 @@ export function createScheduledReindex(deps: ScheduledReindexDeps): () => Promis
         .filter(v => typeof v === 'string' && v.startsWith('indexed '))
         .length;
       log(`[reindex] scheduled run complete — ${total} sources indexed`);
-    } catch (err: any) {
-      error(`[reindex] scheduled run failed: ${err.message}`);
+    } catch (err: unknown) {
+      error(`[reindex] scheduled run failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       running = false;
     }
