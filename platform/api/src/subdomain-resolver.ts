@@ -7,7 +7,7 @@
 // fall back to -service when the query says no (or fails).
 
 export interface SubdomainResolverDeps {
-  sparql: (query: string) => Promise<any>;
+  sparql: (query: string) => Promise<{ boolean?: boolean }>;
 }
 
 export function createSubdomainResolver(deps: SubdomainResolverDeps): (name: string) => Promise<string> {

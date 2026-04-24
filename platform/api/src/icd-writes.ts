@@ -3,10 +3,16 @@
 
 import type { Request as Req, Response as Res } from 'express';
 
+interface IcdSparqlBag { results?: { bindings?: Array<Record<string, { value: string }>> } }
+
+function bindingCount(bag: IcdSparqlBag): number {
+  return bag.results?.bindings?.length ?? 0;
+}
+
 export interface IcdFieldUpsertDeps {
   resolveDomain: (domainId: string) => Promise<string | null>;
   client: {
-    query: (q: string) => Promise<any>;
+    query: (q: string) => Promise<IcdSparqlBag>;
     update: (u: string) => Promise<void>;
   };
   pfx: string;
@@ -46,7 +52,7 @@ export async function handleIcdFieldUpsert(req: Req, res: Res, deps: IcdFieldUps
     const exists = await deps.client.query(
       `${deps.pfx} SELECT ?f WHERE { GRAPH <${deps.graph}> { <${fieldUri}> a icd:CanonicalField } } LIMIT 1`,
     );
-    const isNew = exists.results.bindings.length === 0;
+    const isNew = bindingCount(exists) === 0;
 
     await deps.client.update(`${deps.pfx}
       DELETE WHERE { GRAPH <${deps.graph}> { <${fieldUri}> ?p ?o } };
@@ -93,7 +99,7 @@ export async function handleIcdMappingUpsert(req: Req, res: Res, deps: IcdFieldU
     const provExists = await deps.client.query(
       `${deps.pfx} SELECT ?p WHERE { GRAPH <${deps.graph}> { <${provUri}> a icd:Provider } } LIMIT 1`,
     );
-    if (provExists.results.bindings.length === 0) {
+    if (bindingCount(provExists) === 0) {
       res.status(404).json!({ error: `Provider '${providerId}' not found` });
       return;
     }
@@ -101,7 +107,7 @@ export async function handleIcdMappingUpsert(req: Req, res: Res, deps: IcdFieldU
     const exists = await deps.client.query(
       `${deps.pfx} SELECT ?m WHERE { GRAPH <${deps.graph}> { <${mappingUri}> a icd:FieldMapping } } LIMIT 1`,
     );
-    const isNew = exists.results.bindings.length === 0;
+    const isNew = bindingCount(exists) === 0;
 
     await deps.client.update(`${deps.pfx}
       DELETE WHERE { GRAPH <${deps.graph}> { <${mappingUri}> ?p ?o } };
@@ -141,7 +147,7 @@ export async function handleIcdSectionPut(req: Req, res: Res, deps: IcdFieldUpse
     const provExists = await deps.client.query(
       `${deps.pfx} SELECT ?p WHERE { GRAPH <${deps.graph}> { <${provUri}> a icd:Provider } } LIMIT 1`,
     );
-    if (provExists.results.bindings.length === 0) {
+    if (bindingCount(provExists) === 0) {
       res.status(404).json!({ error: `Provider '${req.params.pid}' not found` });
       return;
     }

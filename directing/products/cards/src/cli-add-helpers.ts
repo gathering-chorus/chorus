@@ -27,7 +27,10 @@ const USAGE =
   '[--product P] [--chunk C] [--sequence S] [--type T] [--origin O] ' +
   '[--desc D | --desc-file PATH | --desc -] [--quick]';
 
-const STRING_FLAGS: Record<string, keyof AddArgs> = {
+/** String-valued field names only — `quick` (boolean) is not here. */
+type StringField = Exclude<keyof AddArgs, 'quick'>;
+
+const STRING_FLAGS: Record<string, StringField> = {
   '--status': 'status',
   '--owner': 'owner',
   '--priority': 'priority',
@@ -67,7 +70,7 @@ export function parseAddArgs(args: string[]): AddArgs {
     if (arg === '--quick' || arg === '-q') { out.quick = true; continue; }
     const field = STRING_FLAGS[arg];
     if (field) {
-      (out as any)[field] = args[++i];
+      out[field] = args[++i];
       continue;
     }
     if (!out.title) out.title = arg;
