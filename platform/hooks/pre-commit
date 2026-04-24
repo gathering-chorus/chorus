@@ -150,6 +150,22 @@ if git diff --cached -U0 -- ':!*CLAUDE.md' ':!*claudemd/*' ':!*TEAM_PROTOCOL*' '
   echo "" >> "$DETAIL_FILE"
 fi
 
+# --- Check 3.5: Catalog-dir oversize-binary gate (#2461) ---
+# Reject commits that add files >2MB into any doc-catalog SOURCE_DIR.
+# Logic in platform/scripts/check-catalog-oversize.sh (hermetic-tested).
+CHECKS_RUN=$((CHECKS_RUN + 1))
+if oversize_out=$(echo "$STAGED" | REPO_ROOT="$REPO_ROOT" "$REPO_ROOT/platform/scripts/check-catalog-oversize.sh" 2>&1); then
+  CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+  CHECKS_FAILED=$((CHECKS_FAILED + 1))
+  FAILURES="${FAILURES}\n  - catalog-oversize — large binaries in catalog dirs (#2461, #2458 push-bloat incident)"
+  echo "## Catalog oversize binaries (#2461)" >> "$DETAIL_FILE"
+  echo '```'  >> "$DETAIL_FILE"
+  echo "$oversize_out" >> "$DETAIL_FILE"
+  echo '```'  >> "$DETAIL_FILE"
+  echo "" >> "$DETAIL_FILE"
+fi
+
 # --- Check 4: Per-rule ESLint ratchet (#2462/#2464, supersedes #1282) ---
 # Chorus repo owns a .eslint-baseline.json with per-rule counts. The ratchet
 # script runs on every commit that touches .ts/config/baseline files and fails

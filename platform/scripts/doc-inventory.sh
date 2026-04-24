@@ -96,6 +96,7 @@ classify_one() {
   local rest="${fm#*|}"
   local topic="${rest%%|*}"
   local catalog; catalog=$(in_catalog_dir "$repo" "$rel")
+  local hash; hash=$(shasum -a 256 "$abspath" 2>/dev/null | awk '{print substr($1,1,12)}')
 
   local state
   if [ "$cabinet" != "ambiguous" ] && [ "$cabinet" != "$repo" ]; then
@@ -107,8 +108,8 @@ classify_one() {
     state="ok"
   fi
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$repo" "$rel" "$state" "$cabinet" "$owner" "$catalog" "$topic"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$repo" "$rel" "$state" "$cabinet" "$owner" "$catalog" "$topic" "$hash"
 }
 
 walk_repo() {

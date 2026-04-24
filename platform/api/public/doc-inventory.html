@@ -35,6 +35,7 @@
 <div class="meta" id="meta">Loading…</div>
 <div class="summary">
   <div class="counts" id="counts"></div>
+  <div id="coherence" style="margin-top: 0.6rem; padding: 0.6rem 0.8rem; background: #fef3c7; border-left: 3px solid #d97706; border-radius: 3px; font-size: 0.88rem; color: #451a03; display: none;"></div>
   <div id="reconcile" style="margin-top: 0.6rem; color: #aaa; font-size: 0.82rem;"></div>
 </div>
 <div class="controls">
@@ -83,6 +84,16 @@ async function load() {
   document.getElementById('counts').innerHTML = Object.keys(c).sort().map(k =>
     `<span class="state-${k}">${k}: <b>${c[k]}</b></span>`
   ).join('');
+  // Coherence (#2461) — show drift categories from doc-coherence.md
+  const coh = data.coherence;
+  const cohEl = document.getElementById('coherence');
+  if (coh) {
+    const bad = coh.contentDupGroups + coh.basenameDupGroups + coh.brokenHrefs;
+    cohEl.style.display = 'block';
+    cohEl.innerHTML = bad === 0
+      ? `<strong>Coherence:</strong> <span style="color:#166534;">green</span> — 0 content-dups / 0 basename-dups / 0 broken-hrefs <span style="color:#78350f;">(generated ${new Date(coh.generatedAt).toLocaleString()})</span>`
+      : `<strong>Coherence:</strong> <b>${coh.contentDupGroups}</b> content-dup groups · <b>${coh.basenameDupGroups}</b> basename-dup groups · <b>${coh.brokenHrefs}</b> broken hrefs. See <a href="/knowledge/doc-coherence.md" style="color:#7c2d12; text-decoration: underline;">doc-coherence.md</a>. <span style="color:#78350f;">(generated ${new Date(coh.generatedAt).toLocaleString()})</span>`;
+  }
   // Reconcile with catalog: count unique basenames among ok rows; compare to live catalog size
   const okRows = rows.filter(r => r.state === 'ok');
   const uniqBasenames = new Set(okRows.map(r => r.path.split('/').pop())).size;
