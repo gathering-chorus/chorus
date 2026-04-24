@@ -28,7 +28,7 @@ export function createDbOpener<T = unknown>(deps: DbOpenerDeps): () => T {
 export interface AlertFilesReaderDeps {
   fs: {
     readdirSync: (p: string) => string[];
-    readFileSync: (p: string, enc: string) => string;
+    readFileSync: (p: string, enc: BufferEncoding) => string;
   };
   alertsDir: string;
 }

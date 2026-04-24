@@ -20,7 +20,7 @@ export interface IndexAllSourcesDeps {
   fs: {
     existsSync: (p: string) => boolean;
     readdirSync: (p: string) => string[];
-    readFileSync: (p: string, enc: string) => any;
+    readFileSync: (p: string, enc: BufferEncoding) => string;
     statSync: (p: string) => { mtime: { toISOString: () => string } };
   };
   path: {

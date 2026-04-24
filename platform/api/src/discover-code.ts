@@ -18,7 +18,7 @@ interface PathModule {
 
 interface FsModule {
   existsSync: (p: string) => boolean;
-  readdirSync: (p: string, opts?: { withFileTypes?: boolean; encoding?: string; recursive?: boolean }) => string[];
+  readdirSync: (p: string, opts?: BufferEncoding | { encoding: BufferEncoding | null; withFileTypes?: false; recursive?: boolean } | null) => string[];
   statSync: (p: string) => { isFile: () => boolean };
 }
 
@@ -95,7 +95,7 @@ function makeScanDir(deps: DiscoverCodeDeps, aliasMap: Record<string, string[]>,
   const repoName = (repoRoot: string) => repoRoot === deps.gatheringRoot ? 'gathering' : 'chorus';
   return (dir: string, repoRoot: string) => {
     if (!deps.fs.existsSync(dir)) return;
-    const entries = deps.fs.readdirSync(dir, { recursive: true }) as string[];
+    const entries = deps.fs.readdirSync(dir, { recursive: true, encoding: null }) as string[];
     for (const entry of entries) {
       const entryStr = String(entry);
       if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) continue;
@@ -115,7 +115,7 @@ function makeScanDir(deps: DiscoverCodeDeps, aliasMap: Record<string, string[]>,
 function scanOverrideDir(deps: DiscoverCodeDeps, dir: string, domainId: string, discovered: Discovered[]): void {
   const fullDir = deps.path.join(deps.chorusRoot, dir);
   if (!deps.fs.existsSync(fullDir)) return;
-  const entries = deps.fs.readdirSync(fullDir, { recursive: true }) as string[];
+  const entries = deps.fs.readdirSync(fullDir, { recursive: true, encoding: null }) as string[];
   for (const entry of entries) {
     const entryStr = String(entry);
     if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) continue;

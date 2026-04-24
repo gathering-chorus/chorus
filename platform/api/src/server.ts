@@ -478,7 +478,7 @@ import {
 // readAlertFiles moved to src/server-helpers.ts (#2205 wave 12).
 // (createAlertFilesReader + crashAlert imported at line 247.)
 const readAlertFiles = createAlertFilesReader({
-  fs: fs as any,
+  fs,
   alertsDir: path.join(REPO_ROOT, 'proving/domains/alerts'),
 });
 const domainFacetDeps = () => ({
@@ -927,8 +927,8 @@ import { createIndexAllSources } from './index-all-sources';
 const indexAllSources = createIndexAllSources({
   dbPath: DB_PATH,
   DatabaseCtor: Database,
-  fs: fs as any,
-  path: path as any,
+  fs,
+  path,
   repoRoot: REPO_ROOT,
   homedir: () => os.homedir(),
 });
@@ -1606,7 +1606,7 @@ app.post('/api/athena/subdomains/:id/code', async (req: Request, res: Response) 
 import { createDiscoverCode } from './discover-code';
 const _discoverCode = createDiscoverCode({
   sparqlClient: { query: (q: string) => athenaSparqlQuery(q), update: (u: string) => athenaSparqlUpdate(u) },
-  fs: fs as any, path: path as any,
+  fs, path,
   gatheringRoot: path.resolve(__dirname, '../../../../jeff-bridwell-personal-site'),
   chorusRoot: path.resolve(__dirname, '../../..'),
 });
@@ -1625,7 +1625,7 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
 import { createDiscoverTests } from './discover-tests';
 const _discoverTests = createDiscoverTests({
   sparqlClient: { query: (q: string) => athenaSparqlQuery(q), update: (u: string) => athenaSparqlUpdate(u) },
-  fs: fs as any, path: path as any,
+  fs, path,
   gatheringRoot: path.resolve(__dirname, '../../../../jeff-bridwell-personal-site'),
   chorusRoot: path.resolve(__dirname, '../../..'),
 });

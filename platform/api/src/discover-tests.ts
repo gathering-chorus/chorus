@@ -17,7 +17,7 @@ interface PathModule {
 
 interface FsModule {
   existsSync: (p: string) => boolean;
-  readdirSync: (p: string, opts?: { withFileTypes?: boolean; encoding?: string; recursive?: boolean }) => string[];
+  readdirSync: (p: string, opts?: BufferEncoding | { encoding: BufferEncoding | null; withFileTypes?: false; recursive?: boolean } | null) => string[];
   statSync: (p: string) => { isFile: () => boolean };
 }
 
@@ -104,7 +104,7 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
     const scanTests = (dir: string, repoRoot: string) => {
       if (!deps.fs.existsSync(dir)) return;
       const prefix = repoRoot === deps.gatheringRoot ? 'gathering' : 'chorus';
-      const entries = deps.fs.readdirSync(dir, { recursive: true }) as string[];
+      const entries = deps.fs.readdirSync(dir, { recursive: true, encoding: null }) as string[];
       for (const entry of entries) {
         const entryStr = String(entry);
         if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) continue;
