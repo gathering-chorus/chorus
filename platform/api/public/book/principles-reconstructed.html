@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chorus Principles — Gaia's Garden + Chorus Specializations</title>
+<style>
+  :root {
+    --bg: #fdfcf8;
+    --fg: #1a1a1a;
+    --muted: #6b6b6b;
+    --accent: #2d5016;
+    --accent-soft: #5a7a3a;
+    --border: #d4cdb8;
+    --perm-bg: #f3efe3;
+    --tech-bg: #f4f1e8;
+    --jeff-bg: #f6efe2;
+    --spec-bg: #ffffff;
+    --spec-border: #c9bf9d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; line-height: 1.65; }
+  main { max-width: 860px; margin: 0 auto; padding: 2.5rem 1in 6rem; }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+  h1 { font-size: 2.4rem; margin: 0 0 0.3rem; color: var(--accent); letter-spacing: -0.01em; }
+  .subtitle { color: var(--muted); font-style: italic; font-size: 1.05rem; }
+  .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.6rem; }
+  .intro { background: #fef3c7; border-left: 4px solid #d97706; padding: 12px 16px; border-radius: 4px; font-size: 0.92rem; margin-bottom: 2.2rem; }
+  .intro strong { color: #92400e; }
+  article.principle { margin: 2.3rem 0; padding: 1.2rem 1.4rem; background: var(--spec-bg); border: 1px solid var(--border); border-radius: 6px; }
+  article.principle > h2 { font-size: 1.45rem; margin: 0 0 0.3rem; color: var(--accent); }
+  .principle-id { font-family: "SF Mono", Menlo, monospace; font-size: 0.78rem; color: var(--muted); }
+  .reading { padding: 0.55rem 0.9rem; margin: 0.65rem 0; border-radius: 4px; font-size: 0.95rem; }
+  .reading.permaculture { background: var(--perm-bg); border-left: 3px solid var(--accent); font-style: italic; }
+  .reading.tech { background: var(--tech-bg); border-left: 3px solid #7a5a3a; }
+  .reading.jeff { background: var(--jeff-bg); border-left: 3px solid #9f6b2e; }
+  .layer-label { display: inline-block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-right: 0.5rem; }
+  .spec-block { margin-top: 1rem; padding: 0.8rem 1rem; background: #faf7ed; border: 1px dashed var(--spec-border); border-radius: 4px; }
+  .spec-block .spec-heading { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-soft); margin-bottom: 0.4rem; }
+  .spec { padding: 0.5rem 0.7rem; margin: 0.4rem 0; background: white; border-left: 2px solid var(--accent-soft); border-radius: 3px; font-size: 0.92rem; }
+  .spec-title { font-weight: 600; color: var(--accent); }
+  .spec-body { margin-top: 0.2rem; font-size: 0.9rem; }
+  footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-size: 0.82rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Principles</h1>
+  <div class="subtitle">The agreed why — what every policy and practice operationalizes.</div>
+  <div class="meta">Reconstructed 2026-04-24 from the 2026-04-21 printed state of <code>/loom/principles.html</code> (card #2337). 24 principles total — 12 Gaia's Garden permaculture parents (Hemenway, 2nd ed.) + 12 Chorus specializations.</div>
+</header>
+
+<div class="intro"><strong>Note:</strong> this is a reconstructed render — the live API currently returns only the 13 Chorus specializations, not the 12 permaculture parents. The parents were landed by #2337 on 2026-04-21 and have since silently disappeared from the graph. This page uses text transcribed from Jeff's 2026-04-21 printout (photos IMG_8005–8011). Restoration and root-cause investigation are in scope for #2447. When that card ships, this view will match the live API again.</div>
+
+<article class="principle">
+  <h2>Apply self-regulation and accept feedback</h2>
+  <div class="principle-id">principle-apply-self-regulation-and-accept-feedback</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Systems that correct themselves from their own signal. Unwanted feedback is still information.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Gates, hooks, ceremony ROI audits, three-role interaction as mutual correction. The seams between roles generate the corrections.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff models this — he will say "I was wrong about X" and redirect without defending the prior position. Invites pushback rather than fending it off.</div>
+  <div class="spec-block">
+    <div class="spec-heading">Chorus specializations</div>
+    <div class="spec"><span class="spec-title">The system should be self-healing</span><div class="spec-body">Synchronization brings roles current without Jeff recapping. Any role should reconstruct state from artifacts alone.</div></div>
+    <div class="spec"><span class="spec-title">Services are reliable, bounded, and idempotent</span> <em>(also under Use small and slow solutions)</em><div class="spec-body">Every Chorus service works every time (reliable), declares its edges (bounded), and behaves the same until deliberately versioned (idempotent unless changed).</div></div>
+  </div>
+</article>
+
+<article class="principle">
+  <h2>Catch and store energy</h2>
+  <div class="principle-id">principle-catch-and-store-energy</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Harvest flows when they are abundant; preserve for leaner times when they're warm — not after they've cooled.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Capture events, insights, and decisions while warm — Chorus index, spine events, memory records, stories. TTL.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>When Jeff has a live insight (a thought, write, reading), he cards it or stories it. The 2-month rule: capture-while-warm, not-on-discipline.</div>
+  <div class="spec-block">
+    <div class="spec-heading">Chorus specializations</div>
+    <div class="spec"><span class="spec-title">Artifacts are the source of truth</span><div class="spec-body">When conversation and a file disagree, the file wins. If it matters next week, it's a file.</div></div>
+    <div class="spec"><span class="spec-title">Quality at the source</span><div class="spec-body">Build quality in at construction, not at inspection. No staging means the shortcut that skips thinking is the bug that costs more than the thinking would have.</div></div>
+  </div>
+</article>
+
+<article class="principle">
+  <h2>Creatively use and respond to change</h2>
+  <div class="principle-id">principle-creatively-use-and-respond-to-change</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Change is inevitable. Design systems that use it as an input rather than fighting it as disruption.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Refactor, retire, rename. The 10-week zero-to-self-healing Chorus delta is this principle in action.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff rebrands things (Bridge → Clearing, multiple Werk generations, Chorus rewrites) without sentimental attachment. The name is less important than the fit.</div>
+</article>
+
+<article class="principle">
+  <h2>Design from patterns to details</h2>
+  <div class="principle-id">principle-design-from-patterns-to-details</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>A broad pattern language shapes site-specific decisions. Details without pattern context are arbitrary.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Loom principles → architecture → code. Pattern cards before implementation cards. Composition before primitives.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff moves from narrative to detail. Resists "give me the first step" when the shape isn't clear yet — and rightly so.</div>
+  <div class="spec-block">
+    <div class="spec-heading">Chorus specializations</div>
+    <div class="spec"><span class="spec-title">Comprehension is the rate limit</span><div class="spec-body">The team's real throughput is set by what can be understood, not what can be generated. Output beyond the rate of comprehension is debt disguised as speed. You own what you understand, not what you produced.</div></div>
+  </div>
+</article>
+
+<article class="principle">
+  <h2>Integrate rather than segregate</h2>
+  <div class="principle-id">principle-integrate-rather-than-segregate</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Diverse elements in relationship produce more than the sum of each alone. The relationship is the value.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Roles compose, not isolate. Gates stay in-role (not in subagents). The Clearing. Pair work. Briefs move between roles directly.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff uses the team as a thinking partner, not as executors. Asks all three roles and composes the answers rather than directing one.</div>
+  <div class="spec-block">
+    <div class="spec-heading">Chorus specializations</div>
+    <div class="spec"><span class="spec-title">The owner sets direction, the system does the relay</span><div class="spec-body">Jeff sets direction. Roles maintain shared context directly. The system is the router.</div></div>
+  </div>
+</article>
+
+<article class="principle">
+  <h2>Observe and interact</h2>
+  <div class="principle-id">principle-observe-and-interact</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Spend time with the land before changing it; each site is particular and reveals itself through attention.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Gemba, dashboards, mutual attention. Watch a role work before directing it. Read the board before acting on it.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff reads the board, looks at the screenshare, listens to stories before committing to a move. Decision-making starts with watching.</div>
+  <div class="spec-block">
+    <div class="spec-heading">Chorus specializations</div>
+    <div class="spec"><span class="spec-title">Give a fuck about data quality (Interrogate the data)</span><div class="spec-body">Interrogate the data you touch before repeating or acting on it. Every claim you relay is a claim you own. Check provenance, verify fossils, refuse to narrate over gaps. The failure mode is storytelling — coherent-sounding prose that papers over what the data actually shows.</div></div>
+  </div>
+</article>
+
+<article class="principle">
+  <h2>Obtain a yield</h2>
+  <div class="principle-id">principle-obtain-a-yield</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Every system must produce observable output. Work that yields nothing is not worth the energy.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Visible yield per card, per session. No dark work. The demo is the learning moment.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff measures himself by what ships, not what he knows. The "no dark work" principle is his.</div>
+</article>
+
+<article class="principle">
+  <h2>Produce no waste</h2>
+  <div class="principle-id">principle-produce-no-waste</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Every output of one element is input to another. Nothing discarded.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Ceremony ROI audits, retirement gates, hermetic tests, loop-closing. Reuse what does not earn its place.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff retires things — principles, cards, protocols, names — when they stop producing. Little sentimental attachment to prior shapes.</div>
+</article>
+
+<article class="principle">
+  <h2>Use and value diversity</h2>
+  <div class="principle-id">principle-use-and-value-diversity</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Diverse systems are resilient; monocultures fail together. Variation is insurance.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Distinct role voices, multiple tests, multiple memory sources. Reduce-to-single is a lossy default (see born-principle).</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff shaped the three roles to be distinct, not interchangeable. Their different instincts are the asset.</div>
+</article>
+
+<article class="principle">
+  <h2>Use and value renewable resources</h2>
+  <div class="principle-id">principle-use-and-value-renewable-resources</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Prefer renewable energy and materials over extractive ones. Renewables compound; extractives deplete.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Patterns, skills, hooks, memory — recurring value — over one-shot human effort. Invest in the pattern, not the individual fix.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff treats his attention as the renewable-but-finite resource the whole team is designed to protect. "Focus is infrastructure" is this in practice.</div>
+  <div class="spec-block">
+    <div class="spec-heading">Chorus specializations</div>
+    <div class="spec"><span class="spec-title">Focus is infrastructure</span><div class="spec-body">Focus windows are infrastructure, not preference. Every interruption has a cost; make the cost visible. Interruption is a last resort, not a default.</div></div>
+    <div class="spec"><span class="spec-title">Protect Jeff's attention</span><div class="spec-body">Jeff's attention is the scarcest resource. Every protocol, gate, and automation exists to keep coordination off his desk. Target: 2 touches per card.</div></div>
+    <div class="spec"><span class="spec-title">Speed and quality correlate</span><div class="spec-body">Speed and quality both come from uninterrupted thinking — they are not a trade-off. Skipping review does not produce speed; it produces rework plus the interruption load that rework generates.</div></div>
+    <div class="spec"><span class="spec-title">No dark work</span><div class="spec-body">Everything must be visible — board, domain graph, API. If the system can't see it, it doesn't exist.</div></div>
+  </div>
+</article>
+
+<article class="principle">
+  <h2>Use edges and value the marginal</h2>
+  <div class="principle-id">principle-use-edges-and-value-the-marginal</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Edges — hedgerows, pond margins, forest boundaries — are the most productive zones in any ecosystem.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Seams between roles generate patterns. Margin of the spec produces new cards. The Clearing IS an edge between roles.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff's best ideas come in the margins — the "what if" during a demo, the story dropped between cards, the side comment that reshapes a roadmap.</div>
+</article>
+
+<article class="principle">
+  <h2>Use small and slow solutions</h2>
+  <div class="principle-id">principle-use-small-and-slow-solutions</div>
+  <div class="reading permaculture"><span class="layer-label">Permaculture</span>Smaller interventions are easier to maintain and adjust. Slow change lets the system adapt without shock.</div>
+  <div class="reading tech"><span class="layer-label">Tech / Chorus</span>Ship small, narrow blast radius, bounded services, deploy rings. Smallest card that teaches, not largest card that ships.</div>
+  <div class="reading jeff"><span class="layer-label">Jeff</span>Jeff cards a tiny fix rather than a big reorg when he can. Prefers a pattern learned over a pattern imposed.</div>
+  <div class="spec-block">
+    <div class="spec-heading">Chorus specializations</div>
+    <div class="spec"><span class="spec-title">Ship small, learn fast</span><div class="spec-body">Small cards, fast cycles, real demos. The demo is the learning moment.</div></div>
+    <div class="spec"><span class="spec-title">Services are reliable, bounded, and idempotent</span> <em>(also under Apply self-regulation)</em><div class="spec-body">Every Chorus service works every time (reliable), declares its edges (bounded), and behaves the same until deliberately versioned (idempotent unless changed).</div></div>
+  </div>
+</article>
+
+<footer>
+  Reconstructed from IMG_8005–IMG_8011 (Jeff's printout of /loom/principles.html dated 2026-04-21 09:28 EDT). Source of lineage: Toby Hemenway, <em>Gaia's Garden</em> (2nd ed.), adapted for Chorus per card #2337. Specialization mapping from #2337 AC. "No competing implementations" principle (13th specialization) is present in the live API but did not appear in the 2026-04-21 printout — included in the graph but not rendered here until its parent mapping is confirmed.
+</footer>
+</main>
+</body>
+</html>
