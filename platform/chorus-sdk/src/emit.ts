@@ -7,7 +7,7 @@ const SCHEMA_FILE = path.resolve(__dirname, '../../../designing/schemas/spine-ev
 
 // ── Event → vertebra lookup from spine schema (lazy loaded) ──
 
-let eventVertebra: Record<string, string> | null = null;
+let eventVertebra: Record<string, string | null> | null = null;
 
 function getEventVertebra(event: string): string | null {
   if (!eventVertebra) {
@@ -15,7 +15,7 @@ function getEventVertebra(event: string): string | null {
       const schema = JSON.parse(fs.readFileSync(SCHEMA_FILE, 'utf-8'));
       eventVertebra = {};
       for (const [name, info] of Object.entries(schema.events || {})) {
-        eventVertebra[name] = (info as any).vertebra ?? null;
+        eventVertebra[name] = (info as { vertebra?: string }).vertebra ?? null;
       }
     } catch {
       eventVertebra = {};

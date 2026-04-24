@@ -54,10 +54,10 @@ export interface EnvelopeBuilderDeps {
 
 export type EnvelopeBuilder = (
   queryName: string,
-  data: any,
+  data: unknown,
   durationMs: number,
-  extra?: Record<string, any>,
-) => { _meta: Record<string, any>; data: any };
+  extra?: Record<string, unknown>,
+) => { _meta: Record<string, unknown>; data: unknown };
 
 export function createEnvelopeBuilder(deps: EnvelopeBuilderDeps): EnvelopeBuilder {
   return (queryName, data, durationMs, extra = {}) => ({
@@ -75,7 +75,7 @@ export function createEnvelopeBuilder(deps: EnvelopeBuilderDeps): EnvelopeBuilde
 }
 
 export interface SparqlLoaderDeps {
-  fs: { readFileSync: (...args: any[]) => any };
+  fs: { readFileSync: (path: string, enc: BufferEncoding) => string };
   sparqlDir: string;
 }
 
