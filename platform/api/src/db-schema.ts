@@ -4,14 +4,22 @@
 // Factory form so tests stub the Database constructor and observe what
 // SQL got executed.
 
+/** Minimal Database surface used by table-ensurers. Structurally satisfied
+ *  by better-sqlite3's Database and by test stubs. (#2463 wave 1 widened the
+ *  constructor signature + prepare() return to remove `as any` casts at call sites.) */
+/** Minimal Database handle surface — structurally satisfied by better-sqlite3. */
+export interface DbHandle {
+  pragma: (s: string) => void;
+  exec: (sql: string) => void;
+  prepare: (sql: string) => { get: () => unknown };
+  close: () => void;
+}
+
+/** Constructor shape: covariant in the handle, tolerant of additional options
+ *  via a rest parameter — lets `typeof Database` (which accepts Options) assign. */
 export interface TableEnsurerDeps {
   dbPath: string;
-  DatabaseCtor: new (path: string) => {
-    pragma: (s: string) => void;
-    exec: (sql: string) => void;
-    prepare: (sql: string) => { get: () => any };
-    close: () => void;
-  };
+  DatabaseCtor: new (path: string, ...rest: never[]) => DbHandle;
 }
 
 export function createRcaTableEnsurer(deps: TableEnsurerDeps): () => void {

@@ -10,6 +10,14 @@ import * as lancedb from '@lancedb/lancedb';
 const execAsync = promisify(exec);
 const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
 
+/** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** SPARQL binding row — each variable maps to a { value, type } cell. */
+type SparqlBinding = Record<string, { value: string; type?: string; datatype?: string }>;
+
 const app = express();
 app.use(express.json());
 
@@ -209,7 +217,7 @@ const EMBED_PAGE_SIZE = 100;  // Process one page per cycle, timer handles the r
 import { createEmbedDelta } from './embed-delta';
 const _embedDeltaInner = createEmbedDelta({
   dbPath: DB_PATH,
-  DatabaseCtor: Database as any,
+  DatabaseCtor: Database,
   getLanceStore: () => ({ db: lanceDb as any, table: lanceTable as any }),
   setLanceTable: (t) => { lanceTable = t as lancedb.Table; },
   embed: (t: string) => embedQuery(t),
@@ -270,7 +278,7 @@ import {
 const getDb = createDbOpener<Database.Database>({
   dbPath: DB_PATH,
   exists: (p) => fs.existsSync(p),
-  DatabaseCtor: Database as any,
+  DatabaseCtor: Database,
 });
 const emitSearchEvent = createSearchEventEmitter({
   chorusLogPath: CHORUS_LOG,
@@ -811,7 +819,7 @@ app.get('/api/chorus/context/coverage', async (req: Request, res: Response) => {
         const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domainSuffix}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
         try {
           const result = await athenaSparqlQuery(query);
-          return result.results.bindings.map((b: any) => b.filePath.value as string);
+          return result.results.bindings.map((b: SparqlBinding) => b.filePath.value as string);
         } catch {
           return [];
         }
@@ -894,8 +902,8 @@ app.post('/api/chorus/reindex', async (_req: Request, res: Response) => {
       skipped: embedResult.skipped,
       timestamp: bostonNow(),
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: errMsg(err) });
   }
 });
 
@@ -909,8 +917,8 @@ app.post('/api/chorus/index', async (_req: Request, res: Response) => {
       console.error(`[embed-delta] post-index embed failed: ${err.message}`)
     );
     res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: errMsg(err) });
   }
 });
 
@@ -918,7 +926,7 @@ app.post('/api/chorus/index', async (_req: Request, res: Response) => {
 import { createIndexAllSources } from './index-all-sources';
 const indexAllSources = createIndexAllSources({
   dbPath: DB_PATH,
-  DatabaseCtor: Database as any,
+  DatabaseCtor: Database,
   fs: fs as any,
   path: path as any,
   repoRoot: REPO_ROOT,
@@ -956,8 +964,8 @@ app.post('/api/chorus/embed', async (_req: Request, res: Response) => {
   try {
     const result = await embedDelta();
     res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: errMsg(err) });
   }
 });
 
@@ -1251,10 +1259,10 @@ const DOMAIN_REGISTRY: Record<string, { product: string; step: string; descripti
 // calls it every prompt with a 500ms timeout). Section queries + completeness
 // + board filter spike to >1s cold. Cache full response for 60s — same shape
 // as the existing boardCache / healthCache patterns in this file.
-const domainResponseCache = new Map<string, { body: any; ts: number }>();
+const domainResponseCache = new Map<string, { body: unknown; ts: number }>();
 const DOMAIN_CACHE_TTL_MS = 60 * 1000;
 
-import { fetchChorusDomain } from './handlers/chorus-domain';
+import { fetchChorusDomain, Completeness } from './handlers/chorus-domain';
 app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
   const name = _req.params.name.toLowerCase();
   const cached = domainResponseCache.get(name);
@@ -1275,8 +1283,8 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
           try {
             const resp = await fetch(`http://localhost:3340/api/athena/subdomains/${sdId}/completeness`);
             if (!resp.ok) return null;
-            const body = await resp.json() as any;
-            return body.data || null;
+            const body = await resp.json() as { data?: Completeness };
+            return body.data ?? null;
           } catch { return null; }
         },
         sparql: athenaSparqlQuery,
@@ -1308,7 +1316,7 @@ const startTime = Date.now();
 import { createHealthCache } from './health-cache';
 const _healthCache = createHealthCache({
   dbPath: DB_PATH,
-  DatabaseCtor: Database as any,
+  DatabaseCtor: Database,
   getLanceTable: () => lanceTable as any,
   fs: { existsSync: (p) => fs.existsSync(p), statSync: (p) => fs.statSync(p) },
   hookBinaryPath: path.resolve(__dirname, '../../services/chorus-hooks/target/release/chorus-hooks'),
@@ -1352,7 +1360,7 @@ app.get('/api/chorus/health/detail', async (_req: Request, res: Response) => {
 
 // --- GET /api/chorus/hooks/metrics (#2277) ---
 
-let hooksMetricsCache: { data: any; ts: number } | null = null;
+let hooksMetricsCache: { data: unknown; ts: number } | null = null;
 const HOOKS_CACHE_TTL = 60_000; // 60s
 
 import { fetchChorusHooksMetrics } from './handlers/chorus-hooks-metrics';
@@ -1590,7 +1598,7 @@ app.post('/api/athena/subdomains/:id/code', async (req: Request, res: Response) 
     const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${fileUri}> a chorus:CodeFile ; rdfs:label "${name.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasCodeFile <${fileUri}> . ${filePath ? `<${fileUri}> chorus:filePath "${filePath.replace(/"/g, '\\"')}" .` : ''} ${fileType ? `<${fileUri}> chorus:fileType "${fileType}" .` : ''} ${description ? `<${fileUri}> rdfs:comment "${description.replace(/"/g, '\\"')}" .` : ''} } }`;
     await athenaSparqlUpdate(update);
     res.json(athenaEnvelope('subdomain-code-create', { subdomain: req.params.id, uri: fileUri, label: name, path: filePath || null, type: fileType || null, description: description || null }, Date.now() - start));
-  } catch (err: any) { res.status(500).json(athenaEnvelope('subdomain-code-create', { error: err.message }, Date.now() - start, { error: true })); }
+  } catch (err: unknown) { res.status(500).json(athenaEnvelope('subdomain-code-create', { error: errMsg(err) }, Date.now() - start, { error: true })); }
 });
 
 // POST /api/athena/discover-code — auto-discover code files per domain from filesystem (#1868 AC1)
@@ -1607,8 +1615,8 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
   try {
     const data = await _discoverCode();
     res.json(athenaEnvelope('discover-code', data, Date.now() - start, { count: data.total_files }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('discover-code', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('discover-code', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -1626,8 +1634,8 @@ app.post('/api/athena/discover-tests', async (_req: Request, res: Response) => {
   try {
     const data = await _discoverTests();
     res.json(athenaEnvelope('discover-tests', data, Date.now() - start, { count: data.total_tests }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('discover-tests', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('discover-tests', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -1671,7 +1679,7 @@ const DISCOVER_PAGES_ALIAS_OVERRIDES: Record<string, string> = {
 async function buildPageAliasMap(): Promise<Record<string, string>> {
   const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
   const sdResult = await athenaSparqlQuery(sdQuery);
-  const domains = sdResult.results.bindings.map((b: any) => ({
+  const domains = sdResult.results.bindings.map((b: SparqlBinding) => ({
     id: b.sd.value.split('#').pop() as string,
   }));
   const aliasToId: Record<string, string> = {};
@@ -1799,8 +1807,8 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
       entries,
       written,
     }, Date.now() - start, { count: entries.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('discover-pages', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('discover-pages', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -1874,7 +1882,7 @@ const DISCOVER_ENDPOINTS_ROUTE_PREFIXES: Record<string, string> = {
 async function buildHandlerToDomain(): Promise<Record<string, string>> {
   const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
   const sdResult = await athenaSparqlQuery(sdQuery);
-  const domains = sdResult.results.bindings.map((b: any) => ({ id: b.sd.value.split('#').pop() as string }));
+  const domains = sdResult.results.bindings.map((b: SparqlBinding) => ({ id: b.sd.value.split('#').pop() as string }));
   const map: Record<string, string> = {};
   for (const d of domains) {
     const base = d.id.replace(/-(domain|service)$/, '');
@@ -1960,8 +1968,8 @@ app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) 
       entries,
       written,
     }, Date.now() - start, { count: entries.length }));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('discover-endpoints', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('discover-endpoints', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -2006,8 +2014,8 @@ app.post('/api/chorus/open', (req: Request, res: Response) => {
   try {
     execSync(`open "${resolved}"`);
     res.json({ ok: true, opened: resolved });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: errMsg(err) });
   }
 });
 
@@ -2304,8 +2312,8 @@ app.post('/api/athena/subdomains', async (req: Request, res: Response) => {
     const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nPREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\nINSERT DATA { GRAPH <${ATHENA_INSTANCES}> { ${triples} } }`;
     await athenaSparqlUpdate(update);
     res.status(201).json(athenaEnvelope('subdomain-create', { uri, id, label, owner: owner || null, step: step || null, comment: comment || null }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-create', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('subdomain-create', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -2334,8 +2342,8 @@ app.put('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
     const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nPREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\nWITH <${ATHENA_INSTANCES}>\nDELETE { ${deletes.join(' ')} }\nINSERT { ${inserts.join(' ')} }\nWHERE { <${uri}> a chorus:SubDomain . ${deletes.map(d => `OPTIONAL { ${d} }`).join(' ')} }`;
     await athenaSparqlUpdate(update);
     res.json(athenaEnvelope('subdomain-update', { uri, id: req.params.id, updated: { label, owner, step, comment } }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-update', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('subdomain-update', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -2355,8 +2363,8 @@ app.post('/api/athena/subdomains/:id/consumes', async (req: Request, res: Respon
     const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nINSERT DATA { GRAPH <${ATHENA_INSTANCES}> { <${sourceUri}> chorus:consumes <${targetUri}> . } }`;
     await athenaSparqlUpdate(update);
     res.status(201).json(athenaEnvelope('subdomain-consumes-add', { source: req.params.id, target: targetId }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-consumes-add', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('subdomain-consumes-add', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -2369,8 +2377,8 @@ app.delete('/api/athena/subdomains/:id/consumes/:targetId', async (req: Request,
     const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nDELETE DATA { GRAPH <${ATHENA_INSTANCES}> { <${sourceUri}> chorus:consumes <${targetUri}> . } }`;
     await athenaSparqlUpdate(update);
     res.json(athenaEnvelope('subdomain-consumes-remove', { source: req.params.id, target: req.params.targetId }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('subdomain-consumes-remove', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('subdomain-consumes-remove', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -2397,8 +2405,8 @@ app.post('/api/athena/reload', async (_req: Request, res: Response) => {
     const countResult = await athenaSparqlQuery(loadSparql('health'));
     const tripleCount = parseInt(countResult.results.bindings[0]?.count?.value || '0', 10);
     res.json(athenaEnvelope('reload', { status: 'ok', source: ttlPath, tripleCount }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('reload', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('reload', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -2443,8 +2451,8 @@ app.post('/api/athena/validate', async (req: Request, res: Response) => {
     }
 
     res.json(athenaEnvelope('validate', { valid, missing, total: predicates.length, valid_count: valid.length, missing_count: missing.length }, Date.now() - start));
-  } catch (err: any) {
-    res.status(500).json(athenaEnvelope('validate', { error: err.message }, Date.now() - start, { error: true }));
+  } catch (err: unknown) {
+    res.status(500).json(athenaEnvelope('validate', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
 });
 
@@ -2480,7 +2488,7 @@ const RCA_DB_PATH = DB_PATH; // Same SQLite as chorus index
 
 // ensureRcaTable moved to src/db-schema.ts (#2205 wave 14).
 import { createRcaTableEnsurer, createTraceTableEnsurer } from './db-schema';
-const ensureRcaTable = createRcaTableEnsurer({ dbPath: RCA_DB_PATH, DatabaseCtor: Database as any });
+const ensureRcaTable = createRcaTableEnsurer({ dbPath: RCA_DB_PATH, DatabaseCtor: Database });
 
 // Lazy init on first use
 let rcaTableReady = false;
@@ -2489,7 +2497,7 @@ let rcaTableReady = false;
 import { handleRcaCreate, handleTraceCreate } from './diagnostic-writes';
 app.post('/api/chorus/rca', (req: Request, res: Response) => {
   handleRcaCreate(req, res, {
-    dbPath: RCA_DB_PATH, DatabaseCtor: Database as any,
+    dbPath: RCA_DB_PATH, DatabaseCtor: Database,
     ensureTable: () => { if (!rcaTableReady) { ensureRcaTable(); rcaTableReady = true; } },
     appendFileSync: fs.appendFileSync as any,
     chorusLogPath: LIFECYCLE_LOG,
@@ -2520,7 +2528,7 @@ app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
     appendFileSync: fs.appendFileSync as any,
     chorusLogPath: SPINE_EVENT_LOG,
     now: bostonNow,
-    traceDbPath: DB_PATH, DatabaseCtor: Database as any,
+    traceDbPath: DB_PATH, DatabaseCtor: Database,
     ensureTraceTable: () => { if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; } },
   });
 });
@@ -2530,14 +2538,14 @@ app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
 // Traces auto-populate domain integration maps.
 
 // ensureTraceTable moved to src/db-schema.ts (#2205 wave 14).
-const ensureTraceTable = createTraceTableEnsurer({ dbPath: DB_PATH, DatabaseCtor: Database as any });
+const ensureTraceTable = createTraceTableEnsurer({ dbPath: DB_PATH, DatabaseCtor: Database });
 
 let traceTableReady = false;
 
 // POST /api/chorus/trace — record a hop
 app.post('/api/chorus/trace', (req: Request, res: Response) => {
   handleTraceCreate(req, res, {
-    dbPath: DB_PATH, DatabaseCtor: Database as any,
+    dbPath: DB_PATH, DatabaseCtor: Database,
     ensureTable: () => { if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; } },
     now: bostonNow,
   });
