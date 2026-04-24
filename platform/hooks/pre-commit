@@ -1,0 +1,264 @@
+#!/bin/bash
+# pre-commit hook — chorus repo (tracked at platform/hooks/pre-commit, installed via
+# platform/scripts/install-hooks.sh, #2465).
+# Signal-not-narrate (DEC-035): one status line, details on demand.
+# Gates: git-queue enforcement, WIP card (#1799), secrets, ESLint ratchet (#2462/#2464),
+# werk version auto-bump (#1881). Legacy gathering-team checks (board-client,
+# workflow-engine) are gated by path-presence and no-op in this repo.
+set -euo pipefail
+
+# Block commits that bypass git-queue.sh
+if [ ! -f "$(git rev-parse --show-toplevel)/.git-commit.meta" ] && [ -z "${_GIT_QUEUE_INTERNAL:-}" ]; then
+  echo "pre-commit: 🔴 blocked — all commits must go through git-queue.sh"
+  echo "  Usage: DEPLOY_ROLE=<role> git-queue.sh commit <files...> -- -m \"message\""
+  exit 1
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# --- WIP card gate (#1799) ---
+# Reject commits when the committing role has no WIP card declared.
+# Bypass: no DEPLOY_ROLE (Jeff direct), swat/chore commits.
+_WIP_ROLE="${DEPLOY_ROLE:-}"
+_WIP_MSG="${_COMMIT_MSG:-}"
+if [ -n "$_WIP_ROLE" ]; then
+  _wip_bypass=false
+  # #1977: acp commits are acceptance actions — valid after card moves to Done
+  # close/reboot commits happen after WIP cards are Done — bypass WIP gate
+  echo "$_WIP_MSG" | grep -qiE '\b(swat|chore|acp|close|reboot)\b' && _wip_bypass=true
+
+  if ! $_wip_bypass; then
+    _state_file="/tmp/claude-team-scan/${_WIP_ROLE}-declared.json"
+    _wip_ok=false
+    if [ -f "$_state_file" ]; then
+      _state=$(python3 -c "import json; d=json.load(open('${_state_file}')); print(d.get('state',''))" 2>/dev/null || echo "")
+      _card=$(python3 -c "import json; d=json.load(open('${_state_file}')); print(d.get('card',''))" 2>/dev/null || echo "")
+      if [ "$_state" = "building" ] && [ -n "$_card" ] && [ "$_card" != "None" ]; then
+        _wip_ok=true
+      fi
+    fi
+    if ! $_wip_ok; then
+      echo "pre-commit: 🔴 blocked — ${_WIP_ROLE} has no WIP card declared. Pull a card first."
+      exit 1
+    fi
+  fi
+fi
+
+DETAIL_FILE="/tmp/pre-commit-detail.md"
+CHECKS_RUN=0
+CHECKS_PASSED=0
+CHECKS_FAILED=0
+FAILURES=""
+
+# Write detail header
+cat > "$DETAIL_FILE" <<EOF
+# Pre-Commit Detail — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+EOF
+
+run_check() {
+  local name="$1"
+  local dir="$2"
+  local cmd="$3"
+  CHECKS_RUN=$((CHECKS_RUN + 1))
+
+  echo "## $name" >> "$DETAIL_FILE"
+  echo '```' >> "$DETAIL_FILE"
+
+  if output=$(cd "$dir" && eval "$cmd" 2>&1); then
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+    echo "$output" >> "$DETAIL_FILE"
+    echo '```' >> "$DETAIL_FILE"
+    echo "Result: PASS" >> "$DETAIL_FILE"
+    echo "" >> "$DETAIL_FILE"
+  else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+    FAILURES="${FAILURES}\n  - ${name}"
+    echo "$output" >> "$DETAIL_FILE"
+    echo '```' >> "$DETAIL_FILE"
+    echo "Result: FAIL" >> "$DETAIL_FILE"
+    echo "" >> "$DETAIL_FILE"
+  fi
+}
+
+# Detect which packages have staged changes
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+
+HAS_BOARD_CLIENT=false
+HAS_WORKFLOW_ENGINE=false
+HAS_CHORUS=false
+HAS_ANY_TS=false
+
+while IFS= read -r file; do
+  case "$file" in
+    messages/board-client/*) HAS_BOARD_CLIENT=true; HAS_ANY_TS=true ;;
+    messages/workflow-engine/*) HAS_WORKFLOW_ENGINE=true; HAS_ANY_TS=true ;;
+    chorus/*) HAS_CHORUS=true ;;
+  esac
+done <<< "$STAGED"
+
+# --- Check 1: TypeScript compilation (if any TS changed) ---
+
+if $HAS_BOARD_CLIENT; then
+  run_check "board-client: tsc" \
+    "$REPO_ROOT/messages/board-client" \
+    "npx tsc --noEmit 2>&1"
+fi
+
+if $HAS_WORKFLOW_ENGINE; then
+  run_check "workflow-engine: tsc" \
+    "$REPO_ROOT/messages/workflow-engine" \
+    "npx tsc --noEmit 2>&1"
+fi
+
+# --- Check 2: Tests (if packages changed) ---
+
+if $HAS_BOARD_CLIENT; then
+  run_check "board-client: tests" \
+    "$REPO_ROOT/messages/board-client" \
+    "npx jest --forceExit 2>&1"
+fi
+
+if $HAS_WORKFLOW_ENGINE; then
+  run_check "workflow-engine: tests" \
+    "$REPO_ROOT/messages/workflow-engine" \
+    "npx jest --forceExit 2>&1"
+fi
+
+# --- Check 3: No secrets in staged files ---
+
+if echo "$STAGED" | grep -qE '\.(env|credentials|secret)'; then
+  CHECKS_RUN=$((CHECKS_RUN + 1))
+  CHECKS_FAILED=$((CHECKS_FAILED + 1))
+  FAILURES="${FAILURES}\n  - secrets: .env or credentials file staged"
+  echo "## Secrets check" >> "$DETAIL_FILE"
+  echo "FAIL: Sensitive file staged for commit" >> "$DETAIL_FILE"
+  echo "" >> "$DETAIL_FILE"
+fi
+
+# Check for credential patterns in staged diffs. Exclusions:
+#   - CLAUDE.md / claudemd/ / TEAM_PROTOCOL* — docs with token names as examples
+#   - logs/ — log ingest can legitimately surface token strings
+#   - platform/hooks/ — hook sources contain the regex itself (#2465 self-match fix)
+#   - platform/scripts/install-hooks.sh — same reason
+if git diff --cached -U0 -- ':!*CLAUDE.md' ':!*claudemd/*' ':!*TEAM_PROTOCOL*' ':!*logs/*' ':!platform/hooks/*' ':!platform/scripts/install-hooks.sh' | grep '^+' | grep -qiE '(SLACK_BOT_TOKEN|VIKUNJA_TOKEN|API_KEY|SECRET_KEY|password\s*=)' 2>/dev/null; then
+  CHECKS_RUN=$((CHECKS_RUN + 1))
+  CHECKS_FAILED=$((CHECKS_FAILED + 1))
+  FAILURES="${FAILURES}\n  - secrets: credential pattern found in staged diff"
+  echo "## Credential pattern check" >> "$DETAIL_FILE"
+  echo "FAIL: Credential-like pattern found in staged changes" >> "$DETAIL_FILE"
+  echo "" >> "$DETAIL_FILE"
+fi
+
+# --- Check 4: Per-rule ESLint ratchet (#2462/#2464, supersedes #1282) ---
+# Chorus repo owns a .eslint-baseline.json with per-rule counts. The ratchet
+# script runs on every commit that touches .ts/config/baseline files and fails
+# if any rule count climbs above baseline OR a new rule fires that isn't in
+# baseline. Baseline regeneration commits pass (the baseline file itself is
+# staged, ratchet sees no climb).
+
+if [ -f "$REPO_ROOT/eslint.config.js" ] && [ -f "$REPO_ROOT/.eslint-baseline.json" ]; then
+  # Only run when the diff could affect lint output
+  if echo "$STAGED" | grep -qE '\.ts$|^eslint\.config\.js$|^\.eslint-baseline\.json$|^package\.json$'; then
+    CHECKS_RUN=$((CHECKS_RUN + 1))
+    echo "## ESLint ratchet (#2462/#2464)" >> "$DETAIL_FILE"
+    echo '```' >> "$DETAIL_FILE"
+    if ratchet_out=$(cd "$REPO_ROOT" && npm run lint:ratchet --silent 2>&1); then
+      CHECKS_PASSED=$((CHECKS_PASSED + 1))
+      echo "$ratchet_out" >> "$DETAIL_FILE"
+      echo '```' >> "$DETAIL_FILE"
+      echo "Result: PASS" >> "$DETAIL_FILE"
+      echo "" >> "$DETAIL_FILE"
+    else
+      CHECKS_FAILED=$((CHECKS_FAILED + 1))
+      FAILURES="${FAILURES}\n  - lint:ratchet — rule count climbed or new rule fired"
+      echo "$ratchet_out" >> "$DETAIL_FILE"
+      echo '```' >> "$DETAIL_FILE"
+      echo "Result: FAIL" >> "$DETAIL_FILE"
+      echo "Fix: run \`npm run lint:fix\`, or regenerate baseline if the drop is intentional (\`npm run lint:baseline\`)." >> "$DETAIL_FILE"
+      echo "" >> "$DETAIL_FILE"
+    fi
+  fi
+fi
+
+# --- Check 5: Compiled dist matches source (if TS changed) ---
+
+if $HAS_BOARD_CLIENT; then
+  # Rebuild and check if dist differs from what's staged
+  CHECKS_RUN=$((CHECKS_RUN + 1))
+  (cd "$REPO_ROOT/messages/board-client" && npx tsc 2>/dev/null)
+  DIST_DIRTY=$(cd "$REPO_ROOT" && git diff --name-only -- messages/board-client/dist/ 2>/dev/null)
+  if [ -n "$DIST_DIRTY" ]; then
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+    FAILURES="${FAILURES}\n  - board-client: dist/ out of sync with src/"
+    echo "## board-client dist sync" >> "$DETAIL_FILE"
+    echo "FAIL: dist/ doesn't match compiled src/" >> "$DETAIL_FILE"
+    echo "Files: $DIST_DIRTY" >> "$DETAIL_FILE"
+    echo "" >> "$DETAIL_FILE"
+  else
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+    echo "## board-client dist sync" >> "$DETAIL_FILE"
+    echo "Result: PASS — dist/ matches src/" >> "$DETAIL_FILE"
+    echo "" >> "$DETAIL_FILE"
+  fi
+fi
+
+# --- Check 6: Werk version auto-bump (#1881) ---
+# Protocol changes require a version bump. If qualifying files changed but
+# manifest.json version didn't bump, auto-increment it.
+
+WERK_BUMP_PATTERNS="platform/scripts/ platform/skills/ platform/services/chorus-hooks/src/hooks/ platform/services/chorus-hooks/src/commands/ designing/claudemd/"
+NEEDS_BUMP=false
+MANIFEST="$REPO_ROOT/designing/claudemd/manifest.json"
+
+for pattern in $WERK_BUMP_PATTERNS; do
+  if echo "$STAGED" | grep -q "^${pattern}"; then
+    NEEDS_BUMP=true
+    break
+  fi
+done
+
+if $NEEDS_BUMP && [ -f "$MANIFEST" ]; then
+  # Check if manifest.json is already in the staged files (manual bump)
+  if echo "$STAGED" | grep -q "designing/claudemd/manifest.json"; then
+    : # Already bumped manually — skip
+  else
+    # Auto-bump: read current version, increment, write, stage
+    CURRENT_V=$(grep '"version"' "$MANIFEST" | head -1 | grep -oE '[0-9]+')
+    if [ -n "$CURRENT_V" ]; then
+      NEW_V=$((CURRENT_V + 1))
+      sed -i '' "s/\"version\": \"${CURRENT_V}\"/\"version\": \"${NEW_V}\"/" "$MANIFEST"
+      git add "$MANIFEST"
+      CHECKS_RUN=$((CHECKS_RUN + 1))
+      CHECKS_PASSED=$((CHECKS_PASSED + 1))
+      echo "## Werk version auto-bump" >> "$DETAIL_FILE"
+      echo "Result: PASS — v${CURRENT_V} → v${NEW_V} (protocol files changed)" >> "$DETAIL_FILE"
+      echo "" >> "$DETAIL_FILE"
+    fi
+  fi
+fi
+
+# --- Emit event to chorus log ---
+
+"$REPO_ROOT/chorus/platform/scripts/chorus-log" "pre_commit" \
+  "$(cd "$REPO_ROOT" && basename "$(pwd)")" \
+  "checks_run=${CHECKS_RUN}" \
+  "checks_passed=${CHECKS_PASSED}" \
+  "checks_failed=${CHECKS_FAILED}" 2>/dev/null || true
+
+# --- Signal output ---
+
+if [ $CHECKS_RUN -eq 0 ]; then
+  echo "pre-commit: 🟢 no checks needed (no TypeScript/package changes)"
+  exit 0
+fi
+
+if [ $CHECKS_FAILED -gt 0 ]; then
+  echo "pre-commit: 🔴 ${CHECKS_FAILED}/${CHECKS_RUN} checks failed"
+  echo -e "$FAILURES"
+  echo "  Details: $DETAIL_FILE"
+  exit 1
+fi
+
+echo "pre-commit: 🟢 ${CHECKS_PASSED}/${CHECKS_RUN} checks passed"
+exit 0

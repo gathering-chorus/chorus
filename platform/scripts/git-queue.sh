@@ -81,7 +81,19 @@ EOF
 
 # --- Commands ---
 
+ensure_hooks_installed() {
+  # #2465: auto-install tracked hooks if the installed pre-commit isn't a symlink
+  # to the canonical source. Safe to run every commit — install script is idempotent.
+  local canonical="$REPO_ROOT/platform/hooks/pre-commit"
+  local installed="$REPO_ROOT/.git/hooks/pre-commit"
+  [ -f "$canonical" ] || return 0
+  if [ ! -L "$installed" ] || [ "$(readlink "$installed")" != "$canonical" ]; then
+    bash "$REPO_ROOT/platform/scripts/install-hooks.sh" >/dev/null 2>&1 || true
+  fi
+}
+
 do_commit() {
+  ensure_hooks_installed
   # Split args at -- into files and git-commit flags
   local files=()
   local git_args=()
