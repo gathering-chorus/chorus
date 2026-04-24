@@ -56,10 +56,11 @@ describe('#1909: Framework lint — Athena endpoint patterns', () => {
     // route's body; otherwise naked catches in non-Athena routes get falsely
     // attributed to Athena adapters above them. Negative lookahead on the
     // next app.(get|post)( opening bounds the span to the current route.
-    const athenaRoutes = SERVER_SRC.match(/app\.(get|post)\('\/api\/athena\/[^']+',(?:(?!app\.(?:get|post)\()[\s\S])*?catch\s*\(err:\s*any\)\s*\{[^}]+\}/g) || [];
+    // #2463: catches were migrated from `err: any` to `err: unknown`. Test accepts both.
+    const athenaRoutes = SERVER_SRC.match(/app\.(get|post)\('\/api\/athena\/[^']+',(?:(?!app\.(?:get|post)\()[\s\S])*?catch\s*\(err:\s*(?:any|unknown)\)\s*\{[^}]+\}/g) || [];
     expect(athenaRoutes.length).toBeGreaterThan(0);
     const nakedCatches = athenaRoutes.filter(b => {
-      const catchBlock = b.match(/catch\s*\(err:\s*any\)\s*\{[^}]+\}/)?.[0] || '';
+      const catchBlock = b.match(/catch\s*\(err:\s*(?:any|unknown)\)\s*\{[^}]+\}/)?.[0] || '';
       return !catchBlock.includes('athenaEnvelope');
     });
     expect(nakedCatches.length).toBe(0);

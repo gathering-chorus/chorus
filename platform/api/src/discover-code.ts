@@ -1,7 +1,10 @@
 // /api/athena/discover-code logic (extracted from server.ts for #2205 wave 25).
 
+/** SPARQL result bag — caller downcasts the bindings to the expected shape. */
+interface SparqlResult { results?: { bindings?: Array<Record<string, { value: string }>> } }
+
 interface SparqlClient {
-  query: (q: string) => Promise<any>;
+  query: (q: string) => Promise<SparqlResult>;
   update: (u: string) => Promise<void>;
 }
 
@@ -15,7 +18,7 @@ interface PathModule {
 
 interface FsModule {
   existsSync: (p: string) => boolean;
-  readdirSync: (p: string, opts?: any) => string[];
+  readdirSync: (p: string, opts?: { withFileTypes?: boolean; encoding?: string; recursive?: boolean }) => string[];
   statSync: (p: string) => { isFile: () => boolean };
 }
 
@@ -54,7 +57,7 @@ const OVERRIDES: Record<string, string[]> = {
 };
 
 export function buildCodeAliasMap(
-  domains: Array<{ id: string; label: string } | any>,
+  domains: Array<{ id?: string; label?: string; sd?: { value?: string } }>,
 ): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const d of domains) {
@@ -146,9 +149,10 @@ export function createDiscoverCode(deps: DiscoverCodeDeps) {
   return async function discoverCode() {
     const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
     const sdResult = await deps.sparqlClient.query(sdQuery);
-    const domains = sdResult.results.bindings.map((b: any) => ({
+    const bindings = sdResult.results?.bindings ?? [];
+    const domains = bindings.map((b) => ({
       id: b.sd.value.split('#').pop() as string,
-      label: b.label.value as string,
+      label: b.label.value,
     }));
     const aliasMap = buildCodeAliasMap(domains);
     const discovered: Discovered[] = [];

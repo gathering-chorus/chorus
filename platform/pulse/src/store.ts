@@ -96,7 +96,7 @@ export class MessageStore {
   recordDeliveryAttempt(id: number): { deadLettered: boolean } {
     const MAX_ATTEMPTS = 3;
     this.db.prepare('UPDATE messages SET delivery_attempts = delivery_attempts + 1 WHERE id = ?').run(id);
-    const row = this.db.prepare('SELECT delivery_attempts FROM messages WHERE id = ?').get(id) as any;
+    const row = this.db.prepare('SELECT delivery_attempts FROM messages WHERE id = ?').get(id) as { delivery_attempts: number } | undefined;
     if (row && row.delivery_attempts >= MAX_ATTEMPTS) {
       this.db.prepare('UPDATE messages SET dead_letter = 1, dead_lettered_at = datetime(\'now\') WHERE id = ?').run(id);
       return { deadLettered: true };
@@ -167,7 +167,7 @@ export class MessageStore {
   }
 
   private getChatPartner(chatId: string, from: string): string {
-    const chat = this.db.prepare('SELECT role_a, role_b FROM chats WHERE id = ?').get(chatId) as any;
+    const chat = this.db.prepare('SELECT role_a, role_b FROM chats WHERE id = ?').get(chatId) as { role_a: string; role_b: string } | undefined;
     if (!chat) return 'unknown';
     return chat.role_a === from ? chat.role_b : chat.role_a;
   }
@@ -195,8 +195,8 @@ export class MessageStore {
     `).run(role, state, card || null, detail || null);
   }
 
-  getRoleState(role: string): { state: string; card?: string; detail?: string; updatedAt: string } | null {
-    const row = this.db.prepare('SELECT * FROM role_state WHERE role = ?').get(role) as any;
+  getRoleState(role: string): { state: string; card: string | null; detail: string | null; updatedAt: string } | null {
+    const row = this.db.prepare('SELECT * FROM role_state WHERE role = ?').get(role) as { state: string; card: string | null; detail: string | null; updated_at: string } | undefined;
     if (!row) return null;
     return { state: row.state, card: row.card, detail: row.detail, updatedAt: row.updated_at };
   }
@@ -205,7 +205,7 @@ export class MessageStore {
 
   queryMessages(opts: { type?: string; from?: string; to?: string; since?: string; limit?: number }): Message[] {
     let sql = 'SELECT * FROM messages WHERE 1=1';
-    const params: any[] = [];
+    const params: (string | number)[] = [];
 
     if (opts.type) { sql += ' AND type = ?'; params.push(opts.type); }
     if (opts.from) { sql += ' AND "from" = ?'; params.push(opts.from); }
@@ -221,9 +221,9 @@ export class MessageStore {
   // --- Stats ---
 
   getStats(): { total: number; pending: number; byType: Record<string, number> } {
-    const total = (this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as any).c;
-    const pending = (this.db.prepare('SELECT COUNT(*) as c FROM messages WHERE acknowledged = 0').get() as any).c;
-    const rows = this.db.prepare('SELECT type, COUNT(*) as c FROM messages GROUP BY type').all() as any[];
+    const total = (this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c;
+    const pending = (this.db.prepare('SELECT COUNT(*) as c FROM messages WHERE acknowledged = 0').get() as { c: number }).c;
+    const rows = this.db.prepare('SELECT type, COUNT(*) as c FROM messages GROUP BY type').all() as Array<{ type: string; c: number }>;
     const byType: Record<string, number> = {};
     for (const row of rows) byType[row.type] = row.c;
     return { total, pending, byType };

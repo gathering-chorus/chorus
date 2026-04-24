@@ -1,8 +1,10 @@
 // /api/athena/discover-tests logic (extracted from server.ts for #2205 wave 24).
 // Returns a flat summary object; server.ts wraps it in athenaEnvelope.
 
+interface SparqlResult { results?: { bindings?: Array<Record<string, { value: string }>> } }
+
 interface SparqlClient {
-  query: (q: string) => Promise<any>;
+  query: (q: string) => Promise<SparqlResult>;
   update: (u: string) => Promise<void>;
 }
 
@@ -15,7 +17,7 @@ interface PathModule {
 
 interface FsModule {
   existsSync: (p: string) => boolean;
-  readdirSync: (p: string, opts?: any) => string[];
+  readdirSync: (p: string, opts?: { withFileTypes?: boolean; encoding?: string; recursive?: boolean }) => string[];
   statSync: (p: string) => { isFile: () => boolean };
 }
 
@@ -50,13 +52,15 @@ export function classifyTestType(relPath: string): string {
   return 'unit';
 }
 
-export function buildAliasMap(domains: Array<{ id: string; label: string } | any>): Record<string, string> {
+export function buildAliasMap(
+  domains: Array<{ id?: string; label?: string; sd?: { value?: string } }>,
+): Record<string, string> {
   const out: Record<string, string> = {};
-  const normalized = domains.map((d: any) => {
-    if (d.id) return d;
+  const normalized = domains.map((d) => {
+    if (d.id) return { id: d.id, label: d.label ?? '' };
     return {
-      id: String(d.sd?.value || '').split('#').pop() || '',
-      label: String(d.label?.value || '').toLowerCase(),
+      id: String(d.sd?.value ?? '').split('#').pop() || '',
+      label: String(d.label ?? '').toLowerCase(),
     };
   });
   for (const d of normalized) {
@@ -92,7 +96,8 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
   return async function discoverTests() {
     const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
     const sdResult = await deps.sparqlClient.query(sdQuery);
-    const aliasToId = buildAliasMap(sdResult.results.bindings);
+    const bindings = sdResult.results?.bindings ?? [];
+    const aliasToId = buildAliasMap(bindings.map((b) => ({ sd: b.sd, label: b.label.value })));
 
     const testEntries: Array<{ testFile: string; testType: string; coversDomain: string }> = [];
 
