@@ -36,10 +36,10 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
   };
 }
 
-export async function fetchAthenaSubdomainCards(
+export function fetchAthenaSubdomainCards(
   deps: AthenaSubdomainCardsDeps,
   id: string,
-): Promise<FetchResult> {
+): FetchResult {
   const now = deps.now ?? Date.now;
   const envelope = deps.envelope ?? defaultEnvelope;
   const start = now();

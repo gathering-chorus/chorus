@@ -269,6 +269,7 @@ function clearSlackWatermarks(db: IndexDb, results: Record<string, string>): voi
 
 export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<{ indexed: Record<string, string>; elapsed_ms: number }> {
   const nowFn = deps.now ?? (() => new Date().toISOString());
+  // eslint-disable-next-line @typescript-eslint/require-await -- signature preserved as Promise for async-swap later if any source goes async
   return async function indexAllSources() {
     const db = new deps.DatabaseCtor(deps.dbPath);
     db.pragma('journal_mode = WAL');

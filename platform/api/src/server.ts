@@ -391,7 +391,7 @@ app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
 // Memory domain — institutional memory for a domain. Cards + conversation mentions + spine events. #1947
 
 import { fetchChorusDomainStory } from './handlers/chorus-domain-story';
-app.get('/api/chorus/domain-story/:domain', async (req: Request, res: Response) => {
+app.get('/api/chorus/domain-story/:domain', (req: Request, res: Response) => {
   const logPath = path.resolve(__dirname, '../../logs/chorus.log');
   let db: Database.Database | null = null;
   try { db = getDb(); } catch { /* db optional */ }
@@ -531,7 +531,7 @@ app.get('/api/chorus/domain/:name/blast-radius', async (req: Request, res: Respo
 // GET /api/chorus/domain/:name/releases — domain-scoped deploy history (#1910)
 // Git-first: parse ACP commits, match card domain tags, return newest first.
 import { fetchChorusDomainReleases } from './handlers/chorus-domain-releases';
-app.get('/api/chorus/domain/:name/releases', async (req: Request, res: Response) => {
+app.get('/api/chorus/domain/:name/releases', (req: Request, res: Response) => {
   const r = fetchChorusDomainReleases(
     {
       gitLog: () => {
@@ -1557,8 +1557,8 @@ app.get('/api/loom/policies', async (_req: Request, res: Response) => {
 });
 
 // GET /api/athena/subdomains/:id/cards — active board cards for this domain
-app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainCards(
+app.get('/api/athena/subdomains/:id/cards', (req: Request, res: Response) => {
+  const r = fetchAthenaSubdomainCards(
     { getBoardCards, envelope: athenaEnvelope },
     req.params.id,
   );
@@ -1566,9 +1566,9 @@ app.get('/api/athena/subdomains/:id/cards', async (req: Request, res: Response) 
 });
 
 // GET /api/athena/subdomains/:id/alerts — alert rules related to this domain
-app.get('/api/athena/subdomains/:id/alerts', async (req: Request, res: Response) => {
+app.get('/api/athena/subdomains/:id/alerts', (req: Request, res: Response) => {
   const ALERTS_DIR = path.join(REPO_ROOT, 'proving/domains/alerts');
-  const r = await fetchAthenaSubdomainAlerts(
+  const r = fetchAthenaSubdomainAlerts(
     {
       listAlertFiles: () => fs.readdirSync(ALERTS_DIR).filter((f: string) => f.endsWith('.yml')),
       readAlertFile: (f: string) => fs.readFileSync(path.join(ALERTS_DIR, f), 'utf-8'),

@@ -31,10 +31,10 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
   };
 }
 
-export async function fetchAthenaSubdomainAlerts(
+export function fetchAthenaSubdomainAlerts(
   deps: AthenaSubdomainAlertsDeps,
   id: string,
-): Promise<FetchResult> {
+): FetchResult {
   const now = deps.now ?? Date.now;
   const envelope = deps.envelope ?? defaultEnvelope;
   const start = now();

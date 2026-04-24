@@ -970,7 +970,7 @@ app.get('/api/chat/messages', (req, res) => {
   res.json({ messages: clearingChat.getMessages(since) });
 });
 
-app.post('/api/chat/message', async (req, res) => {
+app.post('/api/chat/message', (req, res) => {
   const { text, activeRoles } = req.body;
   if (!text) return res.status(400).json({ error: 'text required' });
   // Fire-and-forget — responses stream via Socket.IO
