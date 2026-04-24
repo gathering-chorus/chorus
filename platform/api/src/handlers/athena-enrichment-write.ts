@@ -46,14 +46,14 @@ function storeUri(subdomainId: string, entityId: string): string {
 interface DescriptionRequest {
   subdomainId: string;
   entityId: string;
-  body: { description: string };
+  body?: { description?: unknown };
 }
 
 interface EdgeRequest {
   subdomainId: string;
   entityId: string;
   predicate: 'reads' | 'writes' | 'consumes';
-  body: { target: string };
+  body?: { target?: string };
 }
 
 async function writeDescription(
