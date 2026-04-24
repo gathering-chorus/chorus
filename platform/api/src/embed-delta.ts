@@ -7,7 +7,7 @@
 
 export interface EmbedDeltaDeps {
   dbPath: string;
-  DatabaseCtor: new (path: string, opts?: any) => {
+  DatabaseCtor: new (path: string, opts?: { readonly?: boolean }) => {
     pragma: (s: string) => void;
     exec: (sql: string) => void;
     prepare: (sql: string) => {
@@ -19,7 +19,7 @@ export interface EmbedDeltaDeps {
     close: () => void;
   };
   getLanceStore: () => { db: { createTable: (n: string, rec: any[]) => Promise<any> } | null; table: { add: (rec: any[]) => Promise<void> } | null };
-  setLanceTable: (t: any) => void;
+  setLanceTable: (t: unknown) => void;
   embed: (text: string) => Promise<number[]>;
   minLength: number;
   pageSize: number;
