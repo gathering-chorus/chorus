@@ -65,6 +65,12 @@ export function __resetTestPaths(): void {
 // Import from compiled dist to avoid rootDir conflicts
 const { WorkflowEngine } = require('../../../../platform/workflow-engine/dist/engine');
 
+/** Minimal shape of WorkflowManifest used here — full type lives in platform/workflow-engine. */
+interface WorkflowManifestLite {
+  id: string;
+  card: number | null;
+}
+
 // ── Notifications ──
 
 export function notifyOwnerIfDifferent(
@@ -155,7 +161,7 @@ export function reconcileWorkflows(cardIndex: number, role: string): void {
 export async function triggerWorkflow(client: BoardClient, cardIndex: number): Promise<void> {
   const engine = new WorkflowEngine();
 
-  const existing = engine.scanWorkflows().find((wf: any) => wf.card === cardIndex);
+  const existing = engine.scanWorkflows().find((wf: WorkflowManifestLite) => wf.card === cardIndex);
   if (existing) {
     console.log(`  Workflow ${existing.id} already exists for #${cardIndex}`);
     return;
@@ -640,15 +646,15 @@ async function applyPostAddTags(
 ): Promise<void> {
   if (opts.sequence) {
     try { await client.tag(task.index, 'sequence', opts.sequence); }
-    catch (err: any) { console.error(`  (sequence tag: ${err.message || err})`); }
+    catch (err: unknown) { console.error(`  (sequence tag: ${err instanceof Error ? err.message : err})`); }
   }
   if (opts.origin) {
     try { await client.tag(task.index, 'origin', opts.origin.toLowerCase()); }
-    catch (err: any) { console.error(`  (origin tag: ${err.message || err})`); }
+    catch (err: unknown) { console.error(`  (origin tag: ${err instanceof Error ? err.message : err})`); }
   }
   if (task.status.toLowerCase() === 'now') {
     try { await triggerWorkflow(client, task.index); }
-    catch (err: any) { console.error(`  (workflow: ${err.message || err})`); }
+    catch (err: unknown) { console.error(`  (workflow: ${err instanceof Error ? err.message : err})`); }
   }
 }
 
@@ -736,10 +742,11 @@ async function postBlastRadiusOnWip(
         domains: report.crossDomain.join(','),
       });
     }
-  } catch (err: any) {
-    console.error(`  (blast radius: ${err.message || err})`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`  (blast radius: ${msg})`);
     emitSpineEvent('card.blast_radius.failed', role, {
-      card_id: String(index), error: String(err.message || err).slice(0, 200),
+      card_id: String(index), error: msg.slice(0, 200),
     });
   }
 }
@@ -817,7 +824,7 @@ export async function moveCard(
 
   if (status.toLowerCase() === 'now') {
     try { await triggerWorkflow(client, index); }
-    catch (err: any) { console.error(`  (workflow: ${err.message || err})`); }
+    catch (err: unknown) { console.error(`  (workflow: ${err instanceof Error ? err.message : err})`); }
   }
 
   if (/^wip$/i.test(status)) {
@@ -1185,8 +1192,8 @@ export async function bulkSequenceTag(
     try {
       await client.tag(id, 'sequence', seq);
       tagged++;
-    } catch (err: any) {
-      const msg = err?.message || String(err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('409') || msg.includes('already')) {
         skipped++;
       } else {
@@ -1214,8 +1221,8 @@ export async function bulkMove(
       await client.move(id, status);
       console.log(`  #${id} → ${status}`);
       moved++;
-    } catch (err: any) {
-      console.error(`  #${id}: ${err?.message || err}`);
+    } catch (err: unknown) {
+      console.error(`  #${id}: ${err instanceof Error ? err.message : err}`);
       failed++;
     }
   }

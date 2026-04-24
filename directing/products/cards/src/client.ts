@@ -102,7 +102,7 @@ export class BoardClient {
     // Bucket query misses old Done tasks — fall back to full project scan
     const allTasks = await this.fetchAllTasks();
     for (const task of allTasks) {
-      const idx = (task as any).index ?? task.id;
+      const idx = task.index ?? task.id;
       if (!map.has(idx)) map.set(idx, task.id);
     }
     const fullId = map.get(index);
@@ -150,7 +150,7 @@ export class BoardClient {
       let status = dbMap.get(task.id);
       if (!status) {
         // Not in DB map — fallback to done field
-        status = (task as any).done ? 'Done' : 'Later';
+        status = task.done ? 'Done' : 'Later';
       }
       tasks.push(this.parseTask(task, status));
     }
@@ -187,7 +187,7 @@ export class BoardClient {
       const buckets = await this.fetchBuckets();
       status = this.findTaskBucket(task.id, buckets);
       if (status === 'Unknown') {
-        status = (task as any).done ? 'Done' : 'Later';
+        status = task.done ? 'Done' : 'Later';
       }
     }
     return this.parseTask(task, status);
@@ -206,7 +206,7 @@ export class BoardClient {
     for (const [field, category, caseFn] of specs) {
       const value = opts[field];
       if (!value) continue;
-      const labelId = (LABELS as any)[category][caseFn(value)];
+      const labelId = LABELS[category][caseFn(value)];
       if (labelId) await this.addLabel(taskId, labelId);
     }
   }
@@ -315,9 +315,9 @@ export class BoardClient {
 
     try {
       await this.addLabel(apiId, labelId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Ignore duplicate label errors (already tagged)
-      if (err?.message?.includes('409') || err?.message?.includes('already')) return;
+      if (err instanceof Error && (err.message.includes('409') || err.message.includes('already'))) return;
       throw err;
     }
   }
@@ -328,7 +328,7 @@ export class BoardClient {
     const labelTitle = `${category}:${value}`;
     // Look up the actual label ID from the task's labels, not from config.
     // Config IDs can be stale after DB rebuild — the task knows its own label IDs.
-    const task = await this.api<any>('GET', `/tasks/${apiId}`);
+    const task = await this.api<VikunjaTask>('GET', `/tasks/${apiId}`);
     const taskLabels: Array<{ id: number; title: string }> = task.labels || [];
     const match = taskLabels.find((l: { title: string }) => l.title === labelTitle);
     if (!match) throw new Error(`Label "${labelTitle}" not found on card #${index}`);
@@ -436,8 +436,8 @@ export class BoardClient {
         `/projects/${this.board.projectId}/views/${this.board.viewId}/buckets/${bucketId}/tasks`,
         { task_id: apiId }
       );
-    } catch (err: any) {
-      const msg = err?.message || String(err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('412') || msg.includes('bucket limit')) {
         const bucketName = this.board.bucketNames[bucketId] || 'target column';
         // Fetch the current limit for a better message
@@ -536,7 +536,7 @@ export class BoardClient {
   async getRelations(index: number): Promise<{ blockedBy: number[]; blocks: number[] }> {
     const apiId = await this.resolveIndex(index);
     const task = await this.fetchTask(apiId);
-    const related = (task as any).related_tasks || {};
+    const related = task.related_tasks ?? {};
 
     // Build reverse map: API ID → display index
     const map = await this.buildTaskMap();
@@ -545,8 +545,8 @@ export class BoardClient {
       reverseMap.set(apiIdx, displayIdx);
     }
 
-    const blockedBy = (related['blocked'] || []).map((t: any) => reverseMap.get(t.id) || t.id);
-    const blocks = (related['blocking'] || []).map((t: any) => reverseMap.get(t.id) || t.id);
+    const blockedBy = (related.blocked ?? []).map((t) => reverseMap.get(t.id) ?? t.id);
+    const blocks = (related.blocking ?? []).map((t) => reverseMap.get(t.id) ?? t.id);
 
     return { blockedBy, blocks };
   }

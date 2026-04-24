@@ -1,3 +1,10 @@
+/** Vikunja related-task reference (subset of VikunjaTask used in relation arrays) */
+export interface VikunjaRelatedTask {
+  id: number;
+  title?: string;
+  done: boolean;
+}
+
 /** Vikunja task as returned by the API */
 export interface VikunjaTask {
   id: number;
@@ -9,6 +16,13 @@ export interface VikunjaTask {
   updated: string;
   labels: VikunjaLabel[];
   project_id: number;
+  /** Relation edges — Vikunja groups by relation kind. Only `blocked` used today. */
+  related_tasks?: {
+    blocked?: VikunjaRelatedTask[];
+    blocking?: VikunjaRelatedTask[];
+    subtask?: VikunjaRelatedTask[];
+    parenttask?: VikunjaRelatedTask[];
+  };
 }
 
 export interface VikunjaLabel {

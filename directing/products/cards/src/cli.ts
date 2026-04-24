@@ -30,7 +30,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BoardClient } from './client';
 import { GATHERING, SELF, LABELS, loadEnv, detectRole } from './config';
-import { BoardConfig } from './types';
+import { BoardConfig, BoardTask } from './types';
 import { emitSpineEvent } from './events';
 import { formatCommentForView } from './cli-view-helpers';
 import { parseAddArgs as parseAddArgsShared } from './cli-add-helpers';
@@ -80,8 +80,8 @@ function parseAddArgs(args: string[]): {
 } {
   try {
     return parseAddArgsShared(args);
-  } catch (err: any) {
-    die(err.message || String(err));
+  } catch (err: unknown) {
+    die(err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -154,7 +154,7 @@ function parseFilterArgs(args: string[]): Record<string, string> {
   return filters;
 }
 
-function taskMatchesFilters(t: any, filters: Record<string, string>): boolean {
+function taskMatchesFilters(t: BoardTask, filters: Record<string, string>): boolean {
   if (filters.domain && !t.domains.includes(`domain:${filters.domain}`)) return false;
   if (filters.sequence && !t.domains.includes(`sequence:${filters.sequence}`)) return false;
   if (filters.owner && t.owner.toLowerCase() !== filters.owner.toLowerCase()) return false;
@@ -172,7 +172,7 @@ async function cmdFilter(client: BoardClient, args: string[]) {
 
   const grouped = await client.listGrouped();
   const excludeStatuses = ["Won't Do", 'Done'];
-  const results: { status: string; task: any }[] = [];
+  const results: { status: string; task: BoardTask }[] = [];
   for (const [status, tasks] of grouped.entries()) {
     if (excludeStatuses.includes(status)) continue;
     if (filters.status && status.toLowerCase() !== filters.status.toLowerCase()) continue;
@@ -208,7 +208,7 @@ async function cmdMine(client: BoardClient, args: string[], label: string) {
   }
 }
 
-async function printViewJson(client: BoardClient, task: any, index: number): Promise<void> {
+async function printViewJson(client: BoardClient, task: BoardTask, index: number): Promise<void> {
   const comments = await client.comments(index);
   console.log(JSON.stringify({
     index: task.index,
@@ -440,8 +440,8 @@ async function tryDeleteDomainLabel(client: BoardClient, name: string, labelId: 
   try {
     await client.deleteLabel(labelId);
     console.log(`Deleted domain "${name}" (label ID ${labelId}) from Vikunja`);
-  } catch (e: any) {
-    if (e.message?.includes('401')) {
+  } catch (e: unknown) {
+    if (e instanceof Error && e.message.includes('401')) {
       console.log(`⚠ Cannot delete label ${labelId} — requires creator's token. Delete manually in Vikunja UI.`);
     } else {
       throw e;
@@ -725,14 +725,14 @@ async function cmdBlocked(ctx: CliCtx) {
   const revMap = await buildReverseTaskMap(ctx.client);
   let found = false;
   for (const task of all) {
-    const related = (task as any).related_tasks?.blocked || [];
+    const related = task.related_tasks?.blocked ?? [];
     if (related.length === 0) continue;
-    const doneCount = related.filter((r: any) => r.done).length;
+    const doneCount = related.filter((r) => r.done).length;
     if (doneCount >= related.length) continue;
     found = true;
     const displayId = revMap.get(task.id) || task.id;
-    const blockers = related.map((r: any) => `#${revMap.get(r.id) || r.id}${r.done ? '✓' : ''}`).join(', ');
-    console.log(`#${displayId} ${task.title?.substring(0, 60)} — blocked by: ${blockers}`);
+    const blockers = related.map((r) => `#${revMap.get(r.id) || r.id}${r.done ? '✓' : ''}`).join(', ');
+    console.log(`#${displayId} ${task.title.substring(0, 60)} — blocked by: ${blockers}`);
   }
   if (!found) console.log('No blocked cards');
 }
@@ -742,12 +742,12 @@ async function cmdReady(ctx: CliCtx) {
   const revMap = await buildReverseTaskMap(ctx.client);
   let found = false;
   for (const task of allTasks) {
-    const related = (task as any).related_tasks?.blocked || [];
+    const related = task.related_tasks?.blocked ?? [];
     if (related.length === 0 || task.done) continue;
-    if (!related.every((r: any) => r.done)) continue;
+    if (!related.every((r) => r.done)) continue;
     found = true;
     const displayId = revMap.get(task.id) || task.id;
-    console.log(`#${displayId} ${task.title?.substring(0, 60)} — all deps done, ready to pull`);
+    console.log(`#${displayId} ${task.title.substring(0, 60)} — all deps done, ready to pull`);
   }
   if (!found) console.log('No cards with completed dependencies waiting');
 }
