@@ -1191,7 +1191,7 @@ const resolveIcdDomain = createIcdDomainResolver({ client: _icd, pfx: ICD_PFX, g
 // ICD field upsert handler moved to src/icd-writes.ts (#2205 wave 22).
 import { handleIcdFieldUpsert, handleIcdMappingUpsert, handleIcdSectionPut } from './icd-writes';
 app.post('/api/icd/domains/:id/fields', async (req: Request, res: Response) => {
-  await handleIcdFieldUpsert(req as any, res as any, {
+  await handleIcdFieldUpsert(req, res, {
     resolveDomain: resolveIcdDomain,
     client: { query: icdSparqlQuery, update: icdSparqlUpdate },
     pfx: ICD_PFX, graph: ICD_GRAPH,
@@ -1208,12 +1208,12 @@ const icdDeps = () => ({
   icdSlug, escSparql,
 });
 app.post('/api/icd/domains/:id/mappings', async (req: Request, res: Response) => {
-  await handleIcdMappingUpsert(req as any, res as any, icdDeps());
+  await handleIcdMappingUpsert(req, res, icdDeps());
 });
 
 // PUT /api/icd/domains/:id/providers/:pid/sections
 app.put('/api/icd/domains/:id/providers/:pid/sections', async (req: Request, res: Response) => {
-  await handleIcdSectionPut(req as any, res as any, icdDeps());
+  await handleIcdSectionPut(req, res, icdDeps());
 });
 
 // --- Error handler ---

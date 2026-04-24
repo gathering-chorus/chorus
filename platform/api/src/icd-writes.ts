@@ -1,11 +1,7 @@
 // ICD write handlers (extracted from server.ts for #2205 wave 22).
 // First handler: POST /api/icd/domains/:id/fields — upserts a CanonicalField.
 
-interface Req { params: Record<string, string>; body: any }
-interface Res {
-  status: (s: number) => Res;
-  json: (b: any) => Res | void;
-}
+import type { Request as Req, Response as Res } from 'express';
 
 export interface IcdFieldUpsertDeps {
   resolveDomain: (domainId: string) => Promise<string | null>;
