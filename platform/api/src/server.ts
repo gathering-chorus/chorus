@@ -218,7 +218,10 @@ import { createEmbedDelta } from './embed-delta';
 const _embedDeltaInner = createEmbedDelta({
   dbPath: DB_PATH,
   DatabaseCtor: Database,
-  getLanceStore: () => ({ db: lanceDb as any, table: lanceTable as any }),
+  getLanceStore: () => ({
+    db: lanceDb as unknown as { createTable: (n: string, rec: Record<string, unknown>[]) => Promise<unknown> } | null,
+    table: lanceTable as unknown as { add: (rec: Record<string, unknown>[]) => Promise<void> } | null,
+  }),
   setLanceTable: (t) => { lanceTable = t as lancedb.Table; },
   embed: (t: string) => embedQuery(t),
   minLength: MIN_EMBED_LENGTH,
@@ -250,7 +253,7 @@ interface SemanticResult {
 }
 
 async function semanticSearch(query: string, limit: number, role?: string): Promise<SemanticResult[]> {
-  return searchInTable(lanceTable as any, embedQuery, query, limit, role);
+  return searchInTable(lanceTable as unknown as Parameters<typeof searchInTable>[0], embedQuery, query, limit, role);
 }
 // STALE_THRESHOLD_MS moved to src/search-meta.ts (#2205 wave 5).
 const FUSEKI_URL = process.env.FUSEKI_URL || 'http://localhost:3030/pods/query';
@@ -282,7 +285,7 @@ const getDb = createDbOpener<Database.Database>({
 });
 const emitSearchEvent = createSearchEventEmitter({
   chorusLogPath: CHORUS_LOG,
-  execFileFn: execFile as any,
+  execFileFn: execFile as unknown as Parameters<typeof createSearchEventEmitter>[0]['execFileFn'],
 });
 
 // Staleness middleware + search meta extracted to src/search-meta.ts (#2205 wave 5).
@@ -1317,7 +1320,7 @@ import { createHealthCache } from './health-cache';
 const _healthCache = createHealthCache({
   dbPath: DB_PATH,
   DatabaseCtor: Database,
-  getLanceTable: () => lanceTable as any,
+  getLanceTable: () => lanceTable as unknown as { countRows: () => Promise<number> } | null,
   fs: { existsSync: (p) => fs.existsSync(p), statSync: (p) => fs.statSync(p) },
   hookBinaryPath: path.resolve(__dirname, '../../services/chorus-hooks/target/release/chorus-hooks'),
 });

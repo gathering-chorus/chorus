@@ -53,12 +53,23 @@ interface IndexCtx {
   now: string;
 }
 
+/** Indexed spine event row — columns the insert statement binds. */
+interface IndexEvent {
+  source: string;
+  source_id: string;
+  channel: string;
+  role: string;
+  author: string;
+  content: string;
+  timestamp: string;
+}
+
 function runSource(name: string, results: Record<string, string>, fn: () => string | void): void {
   try {
     const summary = fn();
     if (summary) results[name] = summary;
-  } catch (err: any) {
-    results[name] = `error: ${err.message}`;
+  } catch (err: unknown) {
+    results[name] = `error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -68,7 +79,7 @@ function indexSpine(ctx: IndexCtx): string | void {
   const content = String(ctx.fs.readFileSync(logPath, 'utf-8'));
   const lines = content.trim().split('\n');
   let indexed = 0;
-  const insertMany = ctx.db.transaction((events: any[]) => {
+  const insertMany = ctx.db.transaction((events: IndexEvent[]) => {
     for (const e of events) {
       ctx.insert.run!(e.source, e.source_id, e.channel, e.role, e.author, e.content, e.timestamp);
       indexed++;
@@ -83,7 +94,7 @@ function indexSpine(ctx: IndexCtx): string | void {
     'search.result.returned',
     'search.hierarchy.enrichment',
   ]);
-  const events: any[] = [];
+  const events: IndexEvent[] = [];
   for (const line of lines) {
     try {
       const evt = JSON.parse(line);
@@ -248,7 +259,7 @@ function indexStories(ctx: IndexCtx): string {
   return `${indexed} stories indexed`;
 }
 
-function clearSlackWatermarks(db: any, results: Record<string, string>): void {
+function clearSlackWatermarks(db: IndexDb, results: Record<string, string>): void {
   try {
     db.prepare('DELETE FROM watermarks WHERE source LIKE \'slack%\'').run!();
     db.prepare('DELETE FROM watermarks WHERE source = \'slack\'').run!();
