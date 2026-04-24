@@ -135,7 +135,7 @@ function contextFields(ctx: SpineContext | undefined, stage: string | null) {
   };
 }
 
-function errorFields(level: string, extra: Record<string, string>) {
+function errorFields(level: string, extra: Partial<Record<string, string>>) {
   const isError = level === 'error';
   return {
     error: isError ? (extra.error ?? null) : null,
@@ -146,7 +146,7 @@ function errorFields(level: string, extra: Record<string, string>) {
 function buildSpineEntry(
   event: string,
   role: string,
-  extra: Record<string, string>,
+  extra: Partial<Record<string, string>>,
   options: EmitOptions,
 ): SpineEvent {
   const ctx = options.context;
@@ -171,7 +171,7 @@ function buildSpineEntry(
   };
 }
 
-function buildTracePayload(entry: SpineEvent, extra: Record<string, string>, hopNum: number) {
+function buildTracePayload(entry: SpineEvent, extra: Partial<Record<string, string>>, hopNum: number) {
   return {
     correlationId: entry.trace_id,
     hop: hopNum,
@@ -195,7 +195,7 @@ function buildTracePayload(entry: SpineEvent, extra: Record<string, string>, hop
   };
 }
 
-function maybeFireTrace(entry: SpineEvent, extra: Record<string, string>): void {
+function maybeFireTrace(entry: SpineEvent, extra: Partial<Record<string, string>>): void {
   const hopNum = extra.hop ? parseInt(extra.hop, 10) : NaN;
   if (isNaN(hopNum)) return;
   fetch('http://localhost:3340/api/chorus/trace', {
@@ -209,7 +209,7 @@ function maybeFireTrace(entry: SpineEvent, extra: Record<string, string>): void 
 export function emit(
   event: string,
   role: string,
-  extra: Record<string, string> = {},
+  extra: Partial<Record<string, string>> = {},
   options: EmitOptions = {},
 ): SpineEvent {
   const entry = buildSpineEntry(event, role, extra, options);
