@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { createServer as createHttpsServer } from 'https';
 import { Server } from 'socket.io';
@@ -74,13 +74,13 @@ const TOKEN_COOKIE_OPTS = {
   sameSite: 'lax' as const,
 };
 
-function extractToken(req: any): string | undefined {
+function extractToken(req: Request): string | undefined {
   return (req.query.token as string)
     || req.cookies?.bridge_token
     || req.headers.authorization?.replace('Bearer ', '');
 }
 
-function handleLocalOnlyGate(req: any, res: any): boolean {
+function handleLocalOnlyGate(req: Request, res: Response): boolean {
   if (LOCAL_ONLY_PATHS.includes(req.path)) {
     if (isLocal(req)) return false;
     res.status(403).json({ error: 'forbidden' });
@@ -94,7 +94,7 @@ function handleLocalOnlyGate(req: any, res: any): boolean {
   return false;
 }
 
-function handleAuthenticated(req: any, res: any, next: any) {
+function handleAuthenticated(req: Request, res: Response, next: NextFunction) {
   if (req.query.token && !req.cookies?.bridge_token) {
     res.cookie('bridge_token', BRIDGE_TOKEN, TOKEN_COOKIE_OPTS);
   }
@@ -106,7 +106,7 @@ function handleAuthenticated(req: any, res: any, next: any) {
   return next();
 }
 
-function handleLoginPost(req: any, res: any) {
+function handleLoginPost(req: Request, res: Response) {
   const { token: submittedToken } = req.body || {};
   if (submittedToken === BRIDGE_TOKEN) {
     res.cookie('bridge_token', BRIDGE_TOKEN, TOKEN_COOKIE_OPTS);
@@ -325,10 +325,11 @@ app.post('/api/voice', (req, res) => {
       console.log(`[voice] transcribed ${body.length} bytes → "${transcript.substring(0, 100)}"`);
 
       res.json({ transcript, audioFile: `/audio-uploads/${ts}.webm` });
-    } catch (err: any) {
-      console.error('[voice] transcription failed:', err.message || err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[voice] transcription failed:', msg);
       try { fs.unlinkSync(wavPath); } catch { /* ignored */ }
-      res.json({ error: 'Transcription failed: ' + (err.message || 'unknown') });
+      res.json({ error: 'Transcription failed: ' + msg });
     }
   });
 });
@@ -442,7 +443,7 @@ function parseLogEntry(entry: any): StreamLine | null {
   return null;
 }
 
-function readSpineLines(fs: any, logFile: string, limit: number): StreamLine[] {
+function readSpineLines(fs: typeof fs_node, logFile: string, limit: number): StreamLine[] {
   const out: StreamLine[] = [];
   try {
     const logLines = fs.readFileSync(logFile, 'utf-8').trim().split('\n').filter(Boolean);
@@ -471,7 +472,7 @@ function parseObservation(line: string, seen: Set<string>): StreamLine | null {
   }
 }
 
-function readObservationsForRole(fs: any, role: string, out: StreamLine[]): void {
+function readObservationsForRole(fs: typeof fs_node, role: string, out: StreamLine[]): void {
   const obsFile = `/tmp/claude-team-scan/${role}-observations.jsonl`;
   try {
     const obsLines = fs.readFileSync(obsFile, 'utf-8').trim().split('\n').filter(Boolean);
@@ -483,7 +484,7 @@ function readObservationsForRole(fs: any, role: string, out: StreamLine[]): void
   } catch { /* ignored */ }
 }
 
-function readRoleObservations(fs: any): StreamLine[] {
+function readRoleObservations(fs: typeof fs_node): StreamLine[] {
   const out: StreamLine[] = [];
   for (const role of ['wren', 'silas', 'kade']) readObservationsForRole(fs, role, out);
   return out;
@@ -574,7 +575,7 @@ function parseCardList(output: string): any[] {
   return cards;
 }
 
-function loadActiveWorkflowCounts(fs: any, wfDir: string): Record<string, number> {
+function loadActiveWorkflowCounts(fs: typeof fs_node, wfDir: string): Record<string, number> {
   const counts: Record<string, number> = {};
   try {
     const files = fs.readdirSync(wfDir).filter((f: string) => f.endsWith('.json'));
@@ -977,8 +978,8 @@ if (require.main === module) {
     httpsServer.listen(HTTPS_PORT, () => {
       console.log(`The Clearing HTTPS listening on https://192.168.86.36:${HTTPS_PORT} (mic-enabled)`);
     });
-  } catch (err: any) {
-    console.log(`[clearing] HTTPS not available: ${err.message} — mic requires tunnel URL`);
+  } catch (err: unknown) {
+    console.log(`[clearing] HTTPS not available: ${err instanceof Error ? err.message : String(err)} — mic requires tunnel URL`);
   }
 }
 
