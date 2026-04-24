@@ -12,8 +12,19 @@
 
 import type { SemanticResult } from './search-fusion';
 
+/** Row shape returned by LanceDB vectorSearch — subset used here. */
+export interface LanceRow {
+  msg_id?: number;
+  source?: string;
+  channel?: string;
+  role?: string;
+  content?: string;
+  timestamp?: string;
+  _distance?: number;
+}
+
 export type VectorTable = {
-  vectorSearch: (vec: number[]) => { limit: (n: number) => { toArray: () => Promise<any[]> } };
+  vectorSearch: (vec: number[]) => { limit: (n: number) => { toArray: () => Promise<LanceRow[]> } };
   countRows?: () => Promise<number>;
 };
 
@@ -38,11 +49,11 @@ export async function searchInTable(
 
   let filtered = results;
   if (role) {
-    filtered = results.filter((r: any) => r.role === role);
+    filtered = results.filter((r) => r.role === role);
   }
 
-  return filtered.slice(0, limit).map((r: any) => ({
-    msg_id: r.msg_id,
+  return filtered.slice(0, limit).map((r) => ({
+    msg_id: r.msg_id ?? 0,
     source: r.source || '',
     channel: r.channel || '',
     role: r.role || '',
@@ -52,15 +63,21 @@ export async function searchInTable(
   }));
 }
 
+/** Minimal LanceDB connection surface used here. */
+export interface LanceDbConnection {
+  openTable: (name: string) => Promise<VectorTable>;
+  tableNames: () => Promise<string[]>;
+}
+
 export interface LanceInitDeps {
   fs: { existsSync: (p: string) => boolean };
-  lancedb: { connect: (dir: string) => Promise<any> };
+  lancedb: { connect: (dir: string) => Promise<LanceDbConnection> };
   lanceDir: string;
   logger?: { log?: (m: string) => void; error?: (m: string) => void };
 }
 
 export interface LanceInitResult {
-  db: any | null;
+  db: LanceDbConnection | null;
   table: VectorTable | null;
 }
 
@@ -79,7 +96,7 @@ export function createLanceInit(deps: LanceInitDeps): () => Promise<LanceInitRes
       const tables = await db.tableNames();
       if (tables.includes('messages')) {
         const table = await db.openTable('messages');
-        const count = await table.countRows();
+        const count = await table.countRows?.() ?? 0;
         log(`[chorus-api] LanceDB: ${count} vectors loaded`);
         return { db, table };
       }
