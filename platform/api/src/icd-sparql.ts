@@ -12,20 +12,23 @@ export interface IcdSparqlClientDeps {
   fetchFn?: typeof fetch;
 }
 
+/** SPARQL response shape — caller downcasts bindings to the expected shape. */
+export interface IcdSparqlResponse { results?: { bindings?: Array<Record<string, { value: string }>> } }
+
 export interface IcdSparqlClient {
-  query: (query: string) => Promise<any>;
+  query: (query: string) => Promise<IcdSparqlResponse>;
   update: (update: string) => Promise<void>;
 }
 
 export function createIcdSparqlClient(deps: IcdSparqlClientDeps): IcdSparqlClient {
   const fetchFn = deps.fetchFn ?? fetch;
   return {
-    async query(query: string): Promise<any> {
+    async query(query: string): Promise<IcdSparqlResponse> {
       const resp = await fetchFn(`${deps.queryUrl}?query=${encodeURIComponent(query)}`, {
         headers: { Accept: 'application/sparql-results+json' },
       });
       if (!resp.ok) throw new Error(`SPARQL query failed: ${resp.status}`);
-      return resp.json();
+      return resp.json() as Promise<IcdSparqlResponse>;
     },
     async update(update: string): Promise<void> {
       const resp = await fetchFn(deps.updateUrl, {
@@ -58,10 +61,12 @@ export function createIcdDomainResolver(deps: IcdDomainResolverDeps): (domainId:
     const byId = await deps.client.query(
       `${deps.pfx} SELECT ?d WHERE { GRAPH <${deps.graph}> { ?d a icd:Domain ; icd:domainId ?did . FILTER(?did = "domain-${domainId}") } } LIMIT 1`,
     );
-    if (byId.results.bindings.length > 0) return byId.results.bindings[0].d.value;
+    const idBindings = byId.results?.bindings ?? [];
+    if (idBindings.length > 0) return idBindings[0].d.value;
     const byName = await deps.client.query(
       `${deps.pfx} SELECT ?d WHERE { GRAPH <${deps.graph}> { ?d a icd:Domain ; icd:domainName ?name . FILTER(LCASE(?name) = "${domainId.toLowerCase()}") } } LIMIT 1`,
     );
-    return byName.results.bindings.length > 0 ? byName.results.bindings[0].d.value : null;
+    const nameBindings = byName.results?.bindings ?? [];
+    return nameBindings.length > 0 ? nameBindings[0].d.value : null;
   };
 }

@@ -4,11 +4,7 @@
 // - role-state: role + state → /tmp/role-state-<role>.json + spine-log line
 // - alert: Grafana webhook → spine-log line per alert + optional desktop notify
 
-interface Req { body: any }
-interface Res {
-  status: (s: number) => Res;
-  json: (b: any) => Res | void;
-}
+import type { Request as Req, Response as Res } from 'express';
 
 export interface PulseDeps {
   appendFileSync: (path: string, data: string) => void;

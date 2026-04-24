@@ -48,12 +48,15 @@ export function buildSparqlQuery(terms: string[], limit: number): string {
   `;
 }
 
+/** SPARQL binding row — each variable may or may not be bound. */
+export type SparqlBinding = Partial<Record<'s' | 'type' | 'domain' | 'label' | 'text', { value?: string }>>;
+
 /**
  * Parse the SPARQL JSON bindings array into SparqlResult[].
  * Pure function, defensive against missing fields.
  */
-export function parseSparqlBindings(bindings: any[]): SparqlResult[] {
-  return bindings.map((b: any) => ({
+export function parseSparqlBindings(bindings: SparqlBinding[]): SparqlResult[] {
+  return bindings.map((b) => ({
     uri: b.s?.value || '',
     type: (b.type?.value || '').replace(/.*[#/]/, ''),
     domain: b.domain?.value || '',
@@ -82,7 +85,7 @@ export function createSparqlSearch(deps: SparqlSearchDeps): SparqlSearch {
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!res.ok) return [];
-      const data = (await res.json()) as { results: { bindings: any[] } };
+      const data = (await res.json()) as { results?: { bindings?: SparqlBinding[] } };
       return parseSparqlBindings(data.results?.bindings || []);
     } catch {
       return [];

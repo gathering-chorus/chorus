@@ -9,14 +9,14 @@ import { DbNotFoundError } from './server-helpers';
 
 interface MinimalResponse {
   status: (s: number) => MinimalResponse;
-  json: (b: any) => MinimalResponse | void;
+  json: (b: unknown) => MinimalResponse | void;
 }
 
 interface MinimalDb {
   close: () => void;
 }
 
-export function createWithDb<DB extends MinimalDb = any>(
+export function createWithDb<DB extends MinimalDb = MinimalDb>(
   openDb: () => DB,
 ): <T>(res: MinimalResponse, work: (db: DB) => Promise<T> | T) => Promise<T | undefined> {
   return async function withDb<T>(

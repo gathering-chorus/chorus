@@ -16,8 +16,8 @@ export interface HealthSnapshot {
 
 export interface HealthCacheDeps {
   dbPath: string;
-  DatabaseCtor: new (path: string, opts: any) => {
-    prepare: (sql: string) => { get: () => any };
+  DatabaseCtor: new (path: string, opts?: { readonly?: boolean }) => {
+    prepare: (sql: string) => { get: () => unknown };
     close?: () => void;
   };
   getLanceTable: () => { countRows: () => Promise<number> } | null;
