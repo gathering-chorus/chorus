@@ -26,6 +26,11 @@ export interface AttentionAnalyticsResult {
   body: Record<string, unknown>;
 }
 
+type Intensity = 'green' | 'yellow' | 'red';
+const isIntensity = (s: string): s is Intensity => s === 'green' || s === 'yellow' || s === 'red';
+
+type Phase = 'deep_work' | 'directing' | 'dual_load' | 'recovery';
+
 type Row = {
   timestamp: number; intensity: string;
   keys_per_min: number; prompts_1h: number;
@@ -48,8 +53,8 @@ function computeHeadline(day: Row[]) {
   const activeDay = day.filter((r) => r.keys_per_min > 0 || r.prompts_1h > 0);
   const avg = (fn: (r: Row) => number) =>
     activeDay.length ? activeDay.reduce((s, r) => s + fn(r), 0) / activeDay.length : 0;
-  const intensityCounts: Record<string, number> = { green: 0, yellow: 0, red: 0 };
-  day.forEach((r) => { if (intensityCounts[r.intensity] !== undefined) intensityCounts[r.intensity]++; });
+  const intensityCounts: Record<Intensity, number> = { green: 0, yellow: 0, red: 0 };
+  day.forEach((r) => { if (isIntensity(r.intensity)) intensityCounts[r.intensity]++; });
   const dayTotal = day.length || 1;
   return {
     avgPromptsHr: Math.round(avg((r) => r.prompts_1h)),
@@ -81,7 +86,7 @@ function computeHourOfDay(day: Row[], isEDT: (date: string) => boolean) {
 function computeIntensityBands(rows: Row[], bandSize: number) {
   const bands: Array<{ timestamp: number; green: number; yellow: number; red: number }> = [];
   if (!rows.length) return bands;
-  const counts: Record<string, number> = { green: 0, yellow: 0, red: 0 };
+  const counts: Record<Intensity, number> = { green: 0, yellow: 0, red: 0 };
   let bandStart = rows[0].timestamp;
   const flush = () => bands.push({ timestamp: bandStart, green: counts.green, yellow: counts.yellow, red: counts.red });
   for (const r of rows) {
@@ -89,13 +94,13 @@ function computeIntensityBands(rows: Row[], bandSize: number) {
       flush();
       bandStart = r.timestamp; counts.green = 0; counts.yellow = 0; counts.red = 0;
     }
-    if (counts[r.intensity] !== undefined) counts[r.intensity]++;
+    if (isIntensity(r.intensity)) counts[r.intensity]++;
   }
   flush();
   return bands;
 }
 
-type ReadFileFn = (p: string, enc?: string) => string;
+type ReadFileFn = (p: string, enc: BufferEncoding) => string;
 type ExistsFn = (p: string) => boolean;
 type ReadRoleTimesFn = (role: string) => number[];
 
@@ -109,14 +114,15 @@ function makeReadRoleTimes(readFile: ReadFileFn, exists: ExistsFn, promptDir: st
 }
 
 function computeBreakPatterns(rows: Row[]) {
-  const dailyBreaks: Record<string, { breaks: number[]; longest: number[] }> = {};
+  const dailyBreaks = new Map<string, { breaks: number[]; longest: number[] }>();
   rows.forEach((r) => {
     const d = new Date((r.timestamp - 5 * 3600) * 1000).toISOString().slice(0, 10);
-    if (!dailyBreaks[d]) dailyBreaks[d] = { breaks: [], longest: [] };
-    dailyBreaks[d].breaks.push(r.break_count_3h);
-    dailyBreaks[d].longest.push(r.longest_break_min);
+    let bucket = dailyBreaks.get(d);
+    if (!bucket) { bucket = { breaks: [], longest: [] }; dailyBreaks.set(d, bucket); }
+    bucket.breaks.push(r.break_count_3h);
+    bucket.longest.push(r.longest_break_min);
   });
-  return Object.entries(dailyBreaks).sort().map(([date, data]) => ({
+  return [...dailyBreaks.entries()].sort().map(([date, data]) => ({
     date,
     avgBreaks: Math.round(Math.max(...data.breaks) * 10) / 10,
     longestBreak: Math.max(...data.longest),
@@ -166,18 +172,18 @@ function computeTypingVsPrompting(day: Row[], windowSize: number) {
 }
 
 function computeDailyStats(rows: Row[]) {
-  const summary: Record<string, { active: number; total: number; peakKeys: number; peakPrompts: number; redMin: number }> = {};
+  const summary = new Map<string, { active: number; total: number; peakKeys: number; peakPrompts: number; redMin: number }>();
   rows.forEach((r) => {
     const d = new Date((r.timestamp - 5 * 3600) * 1000).toISOString().slice(0, 10);
-    if (!summary[d]) summary[d] = { active: 0, total: 0, peakKeys: 0, peakPrompts: 0, redMin: 0 };
-    const s = summary[d];
+    let s = summary.get(d);
+    if (!s) { s = { active: 0, total: 0, peakKeys: 0, peakPrompts: 0, redMin: 0 }; summary.set(d, s); }
     s.total++;
     if (r.keys_per_min > 0 || r.prompts_1h > 0) s.active++;
     if (r.keys_per_min > s.peakKeys) s.peakKeys = r.keys_per_min;
     if (r.prompts_1h > s.peakPrompts) s.peakPrompts = r.prompts_1h;
     if (r.intensity === 'red') s.redMin += 0.5;
   });
-  return Object.entries(summary).sort().map(([date, s]) => ({
+  return [...summary.entries()].sort().map(([date, s]) => ({
     date,
     activeHours: Math.round(((s.active * 0.5) / 60) * 10) / 10,
     peakKeys: Math.round(s.peakKeys),
@@ -186,14 +192,14 @@ function computeDailyStats(rows: Row[]) {
   }));
 }
 
-function classifyPhase(kAvg: number, pAvg: number): string {
+function classifyPhase(kAvg: number, pAvg: number): Phase {
   if (kAvg > 15 && pAvg > 20) return 'dual_load';
   if (kAvg > 15) return 'deep_work';
   if (pAvg > 10) return 'directing';
   return 'recovery';
 }
 
-type EnergyFlowEntry = { timestamp: number; phase: string; keys: number; prompts: number; hour: number };
+type EnergyFlowEntry = { timestamp: number; phase: Phase; keys: number; prompts: number; hour: number };
 
 function computeEnergyFlow(day: Row[], windowSize: number): EnergyFlowEntry[] {
   return rollWindowAverages(day, windowSize, (wStart, kSum, pSum, cnt) => {
@@ -205,8 +211,8 @@ function computeEnergyFlow(day: Row[], windowSize: number): EnergyFlowEntry[] {
 }
 
 function computePhaseStats(energyFlow: EnergyFlowEntry[]) {
-  const counts: Record<string, number> = { deep_work: 0, directing: 0, dual_load: 0, recovery: 0 };
-  energyFlow.forEach((e) => { if (counts[e.phase] !== undefined) counts[e.phase]++; });
+  const counts: Record<Phase, number> = { deep_work: 0, directing: 0, dual_load: 0, recovery: 0 };
+  energyFlow.forEach((e) => { counts[e.phase]++; });
   const total = energyFlow.length || 1;
   const phasePcts = {
     deep_work: Math.round((counts.deep_work / total) * 100),
