@@ -5,6 +5,7 @@
 @prefix dcterms:  <http://purl.org/dc/terms/> .
 @prefix sh:       <http://www.w3.org/ns/shacl#> .
 @prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
 
 # =============================================================================
 # Chorus Ontology v0.3.0 — Canonical Model
@@ -1696,6 +1697,199 @@ chorus:principle-no-competing-implementations a chorus:Principle ;
     rdfs:label "No competing implementations" ;
     rdfs:comment "One concept, one implementation. When the same idea lives in multiple surfaces — two version sources, three drift detectors, three boot-enforcement attempts — they drift out of phase and nobody knows which is load-bearing. Root cause is weak APIs: when the contract is prose or convention instead of a callable surface, every new attempt adds a parallel implementation rather than replacing the prior one. Every new implementation must retire its predecessor; if you cannot retire it, the contract is not strong enough — fix the API first. The #2311 jenga pattern (5+ prior attempts at drift detection, none removed) is this principle's canonical violation." .
 
+# --- #2447: Hemenway permaculture parents + specialization edges ---
+# Source: /book/principles-reconstructed.html (2026-04-24), transcribed from Jeff's book
+# photos IMG_2601/IMG_2602/IMG_2603 of Hemenway, Gaia's Garden 2nd ed., Chelsea Green 2009,
+# pp. 5–7. Chapter "Introducing the Ecological Garden."
+
+chorus:specializes a owl:ObjectProperty ;
+    rdfs:label "specializes" ;
+    rdfs:comment "A Chorus-specific principle specializes a more general (permaculture) parent principle. The child inherits the parent's intent and applies it to team/tech context. Distinct from derivedFrom (practice/policy→principle); specializes is principle→principle. #2447." ;
+    rdfs:domain chorus:Principle ;
+    rdfs:range chorus:Principle .
+
+chorus:techReading a owl:DatatypeProperty ;
+    rdfs:label "tech/chorus reading" ;
+    rdfs:comment "The Tech/Chorus lens reading of a principle as rendered on /book/principles-reconstructed.html. Free-text prose that operationalizes the principle for team + engineering context. #2447." ;
+    rdfs:domain chorus:Principle ;
+    rdfs:range xsd:string .
+
+chorus:jeffReading a owl:DatatypeProperty ;
+    rdfs:label "jeff reading" ;
+    rdfs:comment "The Jeff lens reading of a principle as rendered on /book/principles-reconstructed.html. Free-text prose showing how Jeff models or demonstrates the principle in practice. #2447." ;
+    rdfs:domain chorus:Principle ;
+    rdfs:range xsd:string .
+
+chorus:dctermsSource a owl:AnnotationProperty ;
+    rdfs:label "dcterms:source" ;
+    rdfs:comment "Bibliographic source citation for an imported principle. Used to trace a chorus:Principle instance back to its canonical external reference (e.g., Hemenway). #2447." .
+
+# --- 14 Hemenway parents ---
+
+chorus:hemenway-observe a chorus:Principle ;
+    rdfs:label "Observe" ;
+    rdfs:comment "Use protracted and thoughtful observation rather than prolonged and thoughtless action. In the garden, this may mean noting where the sun and its shade fall during the day, where water collects, and in which direction the winds blow. Think over seasons, years." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed. (Chelsea Green, 2009), p. 6." ;
+    chorus:techReading "Gemba, dashboards, mutual attention. Watch a role work before directing it. Read the board before acting on it. Loom principles → architecture → code: pattern cards before implementation cards; composition before primitives." ;
+    chorus:jeffReading "Jeff reads the board, looks at the screenshare, listens to stories before committing to a move. Decision-making starts with watching. Resists 'give me the first step' when the shape isn't clear yet." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-connect a chorus:Principle ;
+    rdfs:label "Connect" ;
+    rdfs:comment "Use relative location — place the elements of your design in ways that create useful relationships and time-saving connections among all parts. The number of connections among useful elements makes a healthy, diverse ecosystem, not the number of elements." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
+    chorus:techReading "Roles compose, not isolate. Gates stay in-role (not in subagents). The Clearing. Pair work. Briefs move between roles directly." ;
+    chorus:jeffReading "Jeff uses the team as a thinking partner, not as executors. Asks all three roles and composes the answers rather than directing one." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-catch-and-store a chorus:Principle ;
+    rdfs:label "Catch and store energy and materials" ;
+    rdfs:comment "Identify, collect, and hold useful flows. Every cycle is an opportunity for yield; every gradient (in slope, charge, temperature, or otherwise) is an opportunity for energy." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
+    chorus:techReading "Capture events, insights, and decisions while warm — Chorus index, spine events, memory records, stories. TTL. Produce-no-waste corollary: every output of one element is input to another. Retire what does not earn its place." ;
+    chorus:jeffReading "When Jeff has a live insight (a thought, write, reading), he cards it or stories it. The 2-month rule: capture-while-warm, not-on-discipline. Retires things — principles, cards, protocols, names — when they stop producing." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-each-element-multiple-functions a chorus:Principle ;
+    rdfs:label "Each element performs multiple functions" ;
+    rdfs:comment "Choose and place each element in a design so that it performs as many functions as possible. Beneficial connections between diverse components create a stable whole. Stack elements in both space and time." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
+    chorus:techReading "Each role carries several functions (Wren = PM + moderator + interaction-layer owner; Kade = engineer + gate-code + gate-quality; Silas = architect + ops + repo-infra). Each primitive serves multiple skills (chorus-log, git-queue.sh, nudge). Stack in time: briefs become stories become principles." ;
+    chorus:jeffReading "Jeff reuses patterns he invented (briefs, demos, gates) across new problems rather than inventing new abstractions per problem. Compresses rather than proliferates." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-function-supported-by-multiple-elements a chorus:Principle ;
+    rdfs:label "Each function is supported by multiple elements" ;
+    rdfs:comment "Use multiple methods to achieve important functions and to create redundancy and backup. Redundancy protects when one or more elements fail." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
+    chorus:techReading "Distinct role voices, multiple tests, multiple memory sources. Reduce-to-single is a lossy default. Three gates (product, code, arch) supporting the quality function via different lenses." ;
+    chorus:jeffReading "Jeff shaped the three roles to be distinct, not interchangeable. Their different instincts are the asset; collapsing them to one voice would make the system fragile." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-least-change-greatest-effect a chorus:Principle ;
+    rdfs:label "Make the least change for the greatest effect" ;
+    rdfs:comment "Understand the system you are working with well enough to find its 'leverage points' and intervene there, where the least work accomplishes the most change." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
+    chorus:techReading "Fix the invariant once, not the symptom repeatedly. One-line inventory exclude beats 2075-file front-matter prepend. Gates over sweeps." ;
+    chorus:jeffReading "Jeff looks for root-cause invariants rather than surface fixes. The preference for 'fix the shape that causes the bug, not the bug.' Calls out agent-shaped solutions that mass-mutate instead of adjusting the rule." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-small-scale-intensive-systems a chorus:Principle ;
+    rdfs:label "Use small-scale, intensive systems" ;
+    rdfs:comment "Start at your doorstep with the smallest systems that will do the job and build on your successes. Grow by 'chunking' — that is, developing a small system or arrangement that works well — and then add it to another one." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
+    chorus:techReading "Ship small, narrow blast radius, bounded services, deploy rings. Smallest card that teaches, not largest card that ships. Chunking: a practice that works becomes a skill; a skill that works becomes a primitive." ;
+    chorus:jeffReading "Jeff cards a tiny fix rather than a big reorg when he can. Prefers a pattern learned over a pattern imposed." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-optimize-edge a chorus:Principle ;
+    rdfs:label "Optimize edge" ;
+    rdfs:comment "The edge — the intersection of two environments — is where resources and interactions are highest. A productive edge is where the most diversity and productivity are found." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
+    chorus:techReading "Seams between roles generate patterns. Margin of the spec produces new cards. The Clearing IS an edge between roles. Demo seeds — Jeff's reactions to live work — are the highest-signal intake channel." ;
+    chorus:jeffReading "Jeff's best ideas come in the margins — the 'what if' during a demo, the story dropped between cards, the side comment that reshapes a roadmap." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-collaborate-with-succession a chorus:Principle ;
+    rdfs:label "Collaborate with succession" ;
+    rdfs:comment "Living systems usually advance from immaturity to maturity, and if we accept this trend and align our designs with it instead of fighting it, we save work and energy. Mature ecosystems are more diverse and productive than young ones." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
+    chorus:techReading "Refactor, retire, rename. Protocol versions grow up. The 10-week zero-to-self-healing Chorus delta is this principle in action. Cards move through Next → WIP → Done; principles move from practice to rule to invariant." ;
+    chorus:jeffReading "Jeff rebrands things (Bridge → Clearing, multiple Werk generations, Chorus rewrites) without sentimental attachment. The name is less important than the fit." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-biological-renewable-resources a chorus:Principle ;
+    rdfs:label "Use biological and renewable resources" ;
+    rdfs:comment "Renewable resources — usually living beings and their products — reproduce and build up over time, store energy, assist yield, and interact with other elements. Favor these over nonrenewable resources." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
+    chorus:techReading "Patterns, skills, hooks, memory — recurring value — over one-shot human effort. Invest in the pattern, not the individual fix. Treat Jeff's attention as the renewable-but-finite resource the whole system is designed to protect." ;
+    chorus:jeffReading "'Focus is infrastructure' is this in practice — Jeff's finite attention is the resource every protocol and automation exists to conserve." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-turn-problems-into-solutions a chorus:Principle ;
+    rdfs:label "Turn problems into solutions" ;
+    rdfs:comment "Constraints can inspire creative design; problems usually carry not just the seeds of their own solution, but the inspiration for simultaneously solving other problems. 'You are confronted by formidable problems? Celebrate, for you have just encountered opportunities!'" ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
+    chorus:techReading "Every recurring failure becomes a gate or invariant. Today's push-bloat crisis → repo bloat card + gitignore rule + future filter-repo plan. Friction becomes structure. Creatively use and respond to change: refactor, retire, rename rather than fight decay." ;
+    chorus:jeffReading "Jeff's 'bugs not character' stance — treats recurring failures as design opportunities, not discipline problems. When tone drops, fix the routing; when a skill is fragile, fix the shape." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-get-a-yield a chorus:Principle ;
+    rdfs:label "Get a yield" ;
+    rdfs:comment "Grow for both immediate and long-term rewards. A designer's discipline as much as a system property — listed under Hemenway's 'Principles Based on Attitudes.'" ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
+    chorus:techReading "Visible yield per card, per session. No dark work. The demo is the learning moment. Short-term: a shipped card. Long-term: a pattern the team can reuse." ;
+    chorus:jeffReading "Jeff measures himself by what ships, not what he knows. The 'no dark work' principle is his." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-creativity-is-the-limit a chorus:Principle ;
+    rdfs:label "The biggest limit to abundance is creativity" ;
+    rdfs:comment "The designer's imagination and skill usually limit productivity and diversity before any physical limits are reached." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
+    chorus:techReading "The hard constraint is rarely compute, lines of code, or token budget — it's the sharpness of the design question. Agent-shaped solutions fail the creativity test before they fail the engineering test." ;
+    chorus:jeffReading "Jeff's friction with 'agent-shaped answers' — rejects solutions that pattern-match without imagining what a human would actually want." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+chorus:hemenway-mistakes-are-tools-for-learning a chorus:Principle ;
+    rdfs:label "Mistakes are tools for learning" ;
+    rdfs:comment "Evaluate your trials. Making mistakes is a sign you're trying to do things better. There is usually little penalty for mistakes if you learn from them." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
+    chorus:techReading "Gates, hooks, ceremony ROI audits, three-role interaction as mutual correction. The seams between roles generate the corrections. Self-regulation: systems correct themselves from their own signal; unwanted feedback is still information." ;
+    chorus:jeffReading "Jeff models this — he will say 'I was wrong about X' and redirect without defending the prior position. Invites pushback rather than fending it off." ;
+    dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
+    chorus:isPermacultureParent true .
+
+# --- Specialization edges: 12 Chorus principles → Hemenway parents (per HTML nesting) ---
+
+chorus:principle-interrogate-the-data skos:broader chorus:hemenway-observe .
+chorus:principle-comprehension-is-the-rate-limit skos:broader chorus:hemenway-observe .
+
+chorus:principle-owner-sets-direction skos:broader chorus:hemenway-connect .
+
+chorus:principle-artifacts skos:broader chorus:hemenway-catch-and-store .
+chorus:principle-quality-at-source skos:broader chorus:hemenway-catch-and-store .
+
+chorus:principle-ship-small skos:broader chorus:hemenway-small-scale-intensive-systems .
+chorus:principle-services-reliable-bounded-idempotent skos:broader chorus:hemenway-small-scale-intensive-systems .
+
+chorus:principle-focus-is-infrastructure skos:broader chorus:hemenway-biological-renewable-resources .
+chorus:principle-protect-attention skos:broader chorus:hemenway-biological-renewable-resources .
+chorus:principle-speed-and-quality-correlate skos:broader chorus:hemenway-biological-renewable-resources .
+chorus:principle-no-dark-work skos:broader chorus:hemenway-biological-renewable-resources .
+
+chorus:principle-self-healing skos:broader chorus:hemenway-mistakes-are-tools-for-learning .
+
+# principle-no-competing-implementations has no Hemenway parent yet — per HTML footer
+# ('did not appear in the 2026-04-21 printout — included in the graph but not rendered
+# here until its parent mapping is confirmed'). Left unedged intentionally.
+
 # --- 7 Practices (from team-architecture.md) ---
 
 chorus:practice-actor-bdd a chorus:Practice ;
@@ -1736,7 +1930,21 @@ chorus:loom-principles chorus:contains chorus:principle-protect-attention,
     chorus:principle-speed-and-quality-correlate,
     chorus:principle-comprehension-is-the-rate-limit,
     chorus:principle-interrogate-the-data,
-    chorus:principle-no-competing-implementations .
+    chorus:principle-no-competing-implementations,
+    # #2447: Hemenway parents contained by loom-principles too
+    chorus:hemenway-observe, chorus:hemenway-connect,
+    chorus:hemenway-catch-and-store,
+    chorus:hemenway-each-element-multiple-functions,
+    chorus:hemenway-function-supported-by-multiple-elements,
+    chorus:hemenway-least-change-greatest-effect,
+    chorus:hemenway-small-scale-intensive-systems,
+    chorus:hemenway-optimize-edge,
+    chorus:hemenway-collaborate-with-succession,
+    chorus:hemenway-biological-renewable-resources,
+    chorus:hemenway-turn-problems-into-solutions,
+    chorus:hemenway-get-a-yield,
+    chorus:hemenway-creativity-is-the-limit,
+    chorus:hemenway-mistakes-are-tools-for-learning .
 
 chorus:loom-practices chorus:contains chorus:practice-actor-bdd,
     chorus:practice-domain-first, chorus:practice-service-next,
