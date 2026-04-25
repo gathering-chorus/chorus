@@ -205,7 +205,7 @@ Every role, every session, same sequence:
 
 **1. Synchronize** (session start)
 - `git -C /Users/jeffbridwell/CascadeProjects pull --rebase` — get latest from all roles
-- The `SessionStart` hook fires automatically on Claude boot and invokes `chorus-hook-shim session-start <role>` (Rust). The subcommand emits session context into the model view via `hookSpecificOutput.additionalContext`, runs the protocol contract check, and writes `/tmp/claude-session-init/<role>.done` on pass (#2311). No manual invocation required.
+- The `SessionStart` hook fires automatically on Claude boot and invokes `chorus-hook-shim session-start <role>` (Rust). The subcommand emits session context into the model view via `hookSpecificOutput.additionalContext`, runs the protocol contract check, writes `/tmp/claude-session-init/<role>.done` on pass (#2311), and injects the live principle set fetched from `/api/loom/principles` along with a sibling principles-hash for cross-role drift detection (#2450). The graph is the source of truth at boot — CLAUDE.md fragments redirect to the injected section, they do not duplicate it. No manual invocation required.
   - Output to Jeff: one status line from the hook envelope
   - Output to you: full session context injected directly into the first response window
 - Read your state files in parallel (role-specific: backlog.md, projects.md, etc.)

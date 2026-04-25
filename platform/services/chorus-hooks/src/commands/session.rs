@@ -9,6 +9,7 @@ use crate::shared::protocol_contract;
 
 use super::context_cache;
 use super::pulse;
+use super::principles_inject;
 
 /// Session start — replaces session-start-thin.sh (#1623)
 pub fn session_start_cmd(args: &[String]) -> ExitCode {
@@ -80,6 +81,50 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
                 "session.protocol.violation".to_string(),
                 role.to_string(),
                 format!("reason={}", v.reason()),
+            ]);
+        }
+    }
+
+    // #2450 — inject live principles from /api/loom/principles. Emit a
+    // sibling principles-hash for cross-role drift detection. Degrades
+    // gracefully on API failure (cache fallback) and surfaces a loud banner
+    // on empty response — boot continues either way.
+    match principles_inject::fetch() {
+        principles_inject::FetchResult::Fresh(ps) => {
+            content.push_str(&principles_inject::render_section(&ps, false));
+            let h = principles_inject::hash_principles(&ps);
+            let _ = principles_inject::write_hash(role, &h);
+            let _ = chorus_log::run_silent(&[
+                "session.principles.injected".to_string(),
+                role.to_string(),
+                format!("count={}", ps.len()),
+                format!("hash={}", &h[..16]),
+            ]);
+        }
+        principles_inject::FetchResult::Stale(ps) => {
+            content.push_str(&principles_inject::render_section(&ps, true));
+            let h = principles_inject::hash_principles(&ps);
+            let _ = principles_inject::write_hash(role, &h);
+            let _ = chorus_log::run_silent(&[
+                "session.principles.stale".to_string(),
+                role.to_string(),
+                format!("count={}", ps.len()),
+            ]);
+        }
+        principles_inject::FetchResult::EmptyFromApi => {
+            content.push_str(&principles_inject::render_empty_banner());
+            let _ = chorus_log::run_silent(&[
+                "session.principles.empty".to_string(),
+                role.to_string(),
+                "error_type=api_returned_empty_set".to_string(),
+            ]);
+        }
+        principles_inject::FetchResult::Unavailable(reason) => {
+            content.push_str(&principles_inject::render_unavailable_banner(&reason));
+            let _ = chorus_log::run_silent(&[
+                "session.principles.unavailable".to_string(),
+                role.to_string(),
+                format!("reason={}", reason),
             ]);
         }
     }
