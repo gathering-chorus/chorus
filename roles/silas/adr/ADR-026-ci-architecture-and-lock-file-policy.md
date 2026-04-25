@@ -132,3 +132,13 @@ When ADR is signed:
 1. #2481 returns to Next with AC rewritten as 4 sub-AC implementing ADR-026 §a–d (per Consequences above).
 2. Jeff toggles branch protection on `main` (admin task, can't be scripted from a role).
 3. Builder of #2481 picks up all four sub-AC; closure of the card closes ADR-026 in practice.
+
+## Addendum 2026-04-25 — Smoke-check CI ownership revised (Jeff + Kade, during #2487)
+
+§b CI(target) listed smoke-check as "Yes — on PR." Revised: **No — chorus CI does not run smoke-check.**
+
+The Gathering app lives in `jeff-bridwell-personal-site` (separate repo). Booting it inside chorus CI would require either checking out a sibling repo or maintaining a contract-test mock — both couple chorus CI to a surface chorus does not own. The app's own CI is the right place for smoke-check; chorus CI stays focused on chorus-native artifacts (tsc, jest, cargo, lint-ratchet, MCP shape, MCP round-trip).
+
+Decision (e) "(A) for gates + (B) for CI" reduces to **(A) for gates only**: `/gate-quality` invokes smoke-check locally when the app is up. CI does not.
+
+Consequence: #2487 (api-boot-in-CI) scope reduces to MCP round-trip + ephemeral Fuseki seed only. Smoke-check + cross-repo coordination drops out of #2487 AC #4–5.

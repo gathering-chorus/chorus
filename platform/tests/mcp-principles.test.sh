@@ -3,7 +3,7 @@
 # Tests against running chorus-api at :3340. Streamable HTTP transport
 # requires session-init handshake before tools/list / tools/call.
 
-MCP_URL="http://localhost:3340/mcp"
+MCP_URL="${MCP_URL:-http://localhost:3340/mcp}"
 
 init_session() {
   curl -s -i -X POST "$MCP_URL" \
