@@ -190,9 +190,14 @@ jobs:
       - name: Symlink Mac path → runner workspace
         # 27 test files hardcode /Users/jeffbridwell/CascadeProjects/chorus
         # paths (#1821 era). Symlinking the Mac path to the runner workspace
-        # is one surgical fix vs. env-var-izing every test. The underlying
-        # tech-debt (chorus_root() helper across all test files) tracks
-        # separately; this unblocks CI today.
+        # is one surgical fix vs. env-var-izing every test.
+        #
+        # SUNSET via #2505 — this step violates the no-symlinks principle and
+        # would pollute Jeff's live tree if we ever switched to a self-hosted
+        # Mac runner. Safe ONLY on ubuntu-latest (ephemeral, nothing else at
+        # /Users/jeffbridwell). #2505 replaces this with a chorus_root() test
+        # helper across all 27 files; drop this step when that lands.
+        if: runner.os == 'Linux'
         run: |
           sudo mkdir -p /Users/jeffbridwell/CascadeProjects
           sudo ln -sf "$GITHUB_WORKSPACE" /Users/jeffbridwell/CascadeProjects/chorus
