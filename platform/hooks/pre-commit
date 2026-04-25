@@ -84,45 +84,48 @@ run_check() {
 # Detect which packages have staged changes
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
 
-HAS_BOARD_CLIENT=false
-HAS_WORKFLOW_ENGINE=false
-HAS_CHORUS=false
-HAS_ANY_TS=false
+# ADR-026 §b: tsc + jest run for every active TS package whose files staged.
+# Mapping is by directory prefix; legacy gathering-team paths
+# (messages/board-client, messages/workflow-engine) are intentionally absent
+# from chorus repo — those packages live elsewhere.
+TS_PACKAGES=(
+  "directing/clearing"
+  "directing/products/cards"
+  "platform/api"
+  "platform/chorus-sdk"
+  "platform/pulse"
+  "platform/tests"
+  "platform/workflow-engine"
+)
 
-while IFS= read -r file; do
-  case "$file" in
-    messages/board-client/*) HAS_BOARD_CLIENT=true; HAS_ANY_TS=true ;;
-    messages/workflow-engine/*) HAS_WORKFLOW_ENGINE=true; HAS_ANY_TS=true ;;
-    chorus/*) HAS_CHORUS=true ;;
-  esac
-done <<< "$STAGED"
+AFFECTED_PACKAGES=()
+for pkg in "${TS_PACKAGES[@]}"; do
+  if echo "$STAGED" | grep -qE "^${pkg}/"; then
+    AFFECTED_PACKAGES+=("$pkg")
+  fi
+done
 
-# --- Check 1: TypeScript compilation (if any TS changed) ---
+# --- Check 1: TypeScript compilation (per affected package) ---
+# Guard for set -u: empty-array expansion is an unbound-variable error in
+# bash, so check length before iterating.
 
-if $HAS_BOARD_CLIENT; then
-  run_check "board-client: tsc" \
-    "$REPO_ROOT/messages/board-client" \
-    "npx tsc --noEmit 2>&1"
+if [ ${#AFFECTED_PACKAGES[@]} -gt 0 ]; then
+  for pkg in "${AFFECTED_PACKAGES[@]}"; do
+    run_check "$pkg: tsc" \
+      "$REPO_ROOT/$pkg" \
+      "npx tsc --noEmit 2>&1"
+  done
 fi
 
-if $HAS_WORKFLOW_ENGINE; then
-  run_check "workflow-engine: tsc" \
-    "$REPO_ROOT/messages/workflow-engine" \
-    "npx tsc --noEmit 2>&1"
-fi
+# --- Check 2: Tests (per affected package) ---
 
-# --- Check 2: Tests (if packages changed) ---
-
-if $HAS_BOARD_CLIENT; then
-  run_check "board-client: tests" \
-    "$REPO_ROOT/messages/board-client" \
-    "npx jest --forceExit 2>&1"
-fi
-
-if $HAS_WORKFLOW_ENGINE; then
-  run_check "workflow-engine: tests" \
-    "$REPO_ROOT/messages/workflow-engine" \
-    "npx jest --forceExit 2>&1"
+if [ ${#AFFECTED_PACKAGES[@]} -gt 0 ]; then
+  for pkg in "${AFFECTED_PACKAGES[@]}"; do
+    # passWithNoTests so packages without test files don't fail
+    run_check "$pkg: tests" \
+      "$REPO_ROOT/$pkg" \
+      "npx jest --forceExit --passWithNoTests 2>&1"
+  done
 fi
 
 # --- Check 3: No secrets in staged files ---
@@ -242,27 +245,37 @@ if echo "$STAGED" | grep -qE '^platform/api/src/mcp/.*\.ts$'; then
   fi
 fi
 
-# --- Check 5: Compiled dist matches source (if TS changed) ---
+# --- Check 4.6: cargo test (per affected Rust crate) ---
+# ADR-026 §b: cargo test runs in pre-commit when *.rs files stage in any
+# Rust crate. Two crates today: chorus-hooks, chorus-inject.
+RUST_CRATES=(
+  "platform/services/chorus-hooks"
+  "platform/services/chorus-inject"
+)
 
-if $HAS_BOARD_CLIENT; then
-  # Rebuild and check if dist differs from what's staged
-  CHECKS_RUN=$((CHECKS_RUN + 1))
-  (cd "$REPO_ROOT/messages/board-client" && npx tsc 2>/dev/null)
-  DIST_DIRTY=$(cd "$REPO_ROOT" && git diff --name-only -- messages/board-client/dist/ 2>/dev/null)
-  if [ -n "$DIST_DIRTY" ]; then
-    CHECKS_FAILED=$((CHECKS_FAILED + 1))
-    FAILURES="${FAILURES}\n  - board-client: dist/ out of sync with src/"
-    echo "## board-client dist sync" >> "$DETAIL_FILE"
-    echo "FAIL: dist/ doesn't match compiled src/" >> "$DETAIL_FILE"
-    echo "Files: $DIST_DIRTY" >> "$DETAIL_FILE"
-    echo "" >> "$DETAIL_FILE"
-  else
-    CHECKS_PASSED=$((CHECKS_PASSED + 1))
-    echo "## board-client dist sync" >> "$DETAIL_FILE"
-    echo "Result: PASS — dist/ matches src/" >> "$DETAIL_FILE"
-    echo "" >> "$DETAIL_FILE"
+for crate in "${RUST_CRATES[@]}"; do
+  if echo "$STAGED" | grep -qE "^${crate}/.*\.rs$"; then
+    run_check "$crate: cargo test" \
+      "$REPO_ROOT/$crate" \
+      "cargo test --quiet 2>&1"
   fi
+done
+
+# --- Check 4.7: Doc-coherence ratchet (#2451) ---
+# Wires the existing test at platform/tests/doc-coherence-ratchet.test.sh.
+# Runs only when CLAUDE.md or claudemd/ fragments stage. Local-only per
+# ADR-026 §b ("No (no remote effect)" CI cell).
+if echo "$STAGED" | grep -qE '(^|/)CLAUDE\.md$|^designing/claudemd/'; then
+  run_check "doc-coherence-ratchet" \
+    "$REPO_ROOT" \
+    "bash platform/tests/doc-coherence-ratchet.test.sh 2>&1"
 fi
+
+# --- Check 5: Compiled dist matches source — RETIRED ---
+# Was board-client-only, referenced messages/board-client/dist which lives
+# in legacy gathering-team repo, not chorus. Per ADR-026 §b "Extend or
+# retire when build moves" — build moved, retired. If dist drift becomes
+# a concern in chorus packages, reintroduce per-package.
 
 # --- Check 6: Werk version auto-bump (#1881) ---
 # Protocol changes require a version bump. If qualifying files changed but

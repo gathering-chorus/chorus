@@ -137,26 +137,27 @@ jobs:
         run: cat /tmp/changed.txt | bash platform/scripts/check-principle-direct-edit.sh
 
   cargo-test:
-    name: cargo test — chorus-hooks
+    name: cargo test — ${{ matrix.crate }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - platform/services/chorus-hooks
+          - platform/services/chorus-inject
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: platform/services/chorus-hooks
+          workspaces: ${{ matrix.crate }}
       - name: Run cargo test
-        working-directory: platform/services/chorus-hooks
+        working-directory: ${{ matrix.crate }}
         run: cargo test --all
 
-  smoke-check:
-    name: Smoke check (#2229)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Run smoke
-        run: bash platform/scripts/smoke-check.sh
+  # smoke-check + MCP round-trip deferred — both require the Gathering app
+  # (localhost:3000) and/or the chorus-api booted in CI, which needs postgres
+  # + fuseki + initial data. Out of scope for this PR. Tracked: follow-on
+  # sub-AC under #2481 ("api-boot-in-CI scaffolding") once the rest of the
+  # workflow is stable. Per ADR-026 §b CI(target): smoke-check is "Yes — on PR"
+  # and MCP round-trip is "Conditional"; both gated on this infra existing.
