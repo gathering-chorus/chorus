@@ -1,5 +1,5 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
- * Server-controlled paths; bracket access on validated CanonicalField keys.
+/* eslint-disable security/detect-object-injection --
+ * Bracket access on validated CanonicalField keys.
  */
 // ICD write handlers (extracted from server.ts for #2205 wave 22).
 // First handler: POST /api/icd/domains/:id/fields — upserts a CanonicalField.

@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated SPARQL binding keys. */
 /**
  * domain-identity.ts — #2430
  *

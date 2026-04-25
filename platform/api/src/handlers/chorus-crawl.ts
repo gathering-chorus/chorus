@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated source/domain keys. */
 /**
  * GET /api/chorus/crawl/:domain — Multi-source crawler (#1956, extracted #2189).
  *

@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated metric keys. */
 /**
  * GET /api/chorus/perf — Daily perf baseline summary (extracted #2189).
  *

@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-non-literal-fs-filename --
+ * Server-controlled CHORUS_LOG path under CHORUS_ROOT.
+ */
 import * as fs from 'fs';
 import * as path from 'path';
 

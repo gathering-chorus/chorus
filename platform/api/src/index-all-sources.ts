@@ -1,5 +1,5 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
- * Server-controlled source paths; per-source indexer registry keyed by source enum.
+/* eslint-disable security/detect-object-injection --
+ * Per-source indexer registry keyed by source enum.
  */
 // indexAllSources (extracted from server.ts for #2205 wave 18).
 //

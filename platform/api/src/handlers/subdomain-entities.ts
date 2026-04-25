@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-object-injection --
+ * Indexing on validated subdomain-id keys from typed SPARQL bindings.
+ */
 /**
  * Subdomain entity list handlers — #2180 (follow-on to #2173 AC4).
  *

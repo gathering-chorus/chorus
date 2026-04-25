@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Hierarchy indexed by SPARQL-bound IDs. */
 /**
  * GET /api/chorus/products — Product → SubProduct → SubDomain hierarchy (#2093, extracted #2189).
  *

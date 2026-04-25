@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated role/status keys. */
 /**
  * GET /api/chorus/context/board/next?role={r} (#2252).
  *

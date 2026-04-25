@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- FileCoverage indexed by validated keys. */
 /**
  * GET /api/chorus/context/coverage?domain={d} (#2252).
  *

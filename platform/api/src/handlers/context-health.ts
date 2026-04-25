@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated typed keys. */
 /**
  * GET /api/chorus/context/health (#2234 Step 3).
  *

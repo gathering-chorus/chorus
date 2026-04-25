@@ -1,10 +1,9 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+/* eslint-disable security/detect-non-literal-fs-filename --
  * fs paths in this workflow engine are all internally constructed:
  *   - Roots: this.config.activeDir / archiveDir (caller-supplied at construction)
  *   - Filenames: `WF-NNN.json` from this.nextId() or a wfId passed by callers
  *     who validate the id (CLI matches /^WF-\d+$/, server validates at handler boundary)
  *   - readdirSync results are filtered by /^WF-\d+\.json$/ regex before use
- * Object indexing is on internally-derived role/status keys from typed enums.
  */
 import { readFileSync, writeFileSync, appendFileSync, readdirSync, renameSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';

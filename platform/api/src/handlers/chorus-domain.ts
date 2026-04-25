@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated domain-name keys. */
 /**
  * GET /api/chorus/domain/:name — canonical domain view (#2198, deferred from #2188).
  *

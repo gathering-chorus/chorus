@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated source enum keys. */
 /**
  * GET /api/chorus/freshness — Per-source freshness with graduated staleness (extracted #2189).
  *

@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Local CLI config; LABELS map keyed by validated domain/status/priority enums.
+ */
 import * as fs from 'fs';
 import * as path from 'path';
 import { BoardConfig } from './types';
@@ -41,7 +44,7 @@ export const LABELS = {
     framework: 81, awareness: 82, coordination: 83, surfaces: 84, loom: 85,
     quality: 86, athena: 137, convergence: 138,
     harness: 141, borg: 142, cards: 143, context: 144, protocol: 145, seeds: 146,
-    pulse: 147,
+    pulse: 147, chorus: 154, gathering: 155,
   } as Record<string, number>,
   type: {
     new: 66, enhance: 67, fix: 68, chore: 69, swat: 70,

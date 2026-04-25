@@ -1,5 +1,5 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
- * Server-controlled paths from env constants; indexing on validated typed keys.
+/* eslint-disable security/detect-object-injection --
+ * Indexing on validated typed enum keys; no user-controlled fs paths.
  */
 /**
  * Interaction Patterns — #2099 per-page migration from Gathering.

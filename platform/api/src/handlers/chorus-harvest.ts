@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated provider keys. */
 /**
  * GET /api/chorus/harvest — Harvest pipeline status (#1485, extracted #2189).
  *

@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Server-controlled CHORUS_LOG path; payload indexing on typed event keys.
+ */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';

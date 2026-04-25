@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated event-field keys. */
 /**
  * GET /api/chorus/context/spine?limit=N (#2252).
  *

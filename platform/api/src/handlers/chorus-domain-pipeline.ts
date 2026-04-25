@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated stage/domain keys. */
 /**
  * GET /api/chorus/domain/:name/pipeline — 5-stage domain maturity view (#2188).
  *

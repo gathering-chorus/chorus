@@ -1,5 +1,5 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
- * Server-controlled scan roots; indexing on SPARQL binding keys with fixed schema.
+/* eslint-disable security/detect-object-injection --
+ * Indexing on SPARQL binding keys with fixed schema.
  */
 // /api/athena/discover-code logic (extracted from server.ts for #2205 wave 25).
 

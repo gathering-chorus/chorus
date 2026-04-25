@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Indexing on validated stage/section keys. */
 /**
  * GET /api/athena/subdomains/:id/completeness — Per-stage lifecycle gate (#2187).
  *

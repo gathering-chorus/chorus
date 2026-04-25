@@ -1,5 +1,5 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
- * Indexing on SOURCE_CADENCE keys (validated source enum); no user-controlled fs.
+/* eslint-disable security/detect-object-injection --
+ * Indexing on SOURCE_CADENCE keys (validated source enum).
  */
 // Search freshness metadata (extracted from server.ts for #2205 wave 5).
 // - SOURCE_CADENCE: per-source expected freshness bands.
