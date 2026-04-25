@@ -201,18 +201,37 @@ jobs:
         # server pattern. On Mac the server runs as a launchctl LaunchAgent;
         # on CI we boot it manually so tests get real allow/deny responses
         # instead of the fail-open empty stdout that breaks assertions.
+        # bash -e is intentionally NOT used here because nohup + & under -e
+        # can swallow upstream failures silently. Use explicit error checks.
         if: matrix.crate == 'platform/services/chorus-hooks'
         working-directory: platform/services/chorus-hooks
+        shell: bash
         run: |
+          set -x
           cargo build --release --bin chorus-hooks
-          mkdir -p /Users/jeffbridwell/Library/Logs/Gathering
+          # HOOK_LOG path in main.rs writes here; if-let-Ok wraps the open so
+          # missing dir doesn't crash the server, but creating it is cheap.
+          sudo mkdir -p /Users/jeffbridwell/Library/Logs/Gathering
+          sudo chmod 777 /Users/jeffbridwell/Library/Logs/Gathering
+          rm -f /tmp/chorus-hooks.sock /tmp/chorus-hooks.pid
           nohup target/release/chorus-hooks > /tmp/chorus-hooks-server.log 2>&1 &
+          SERVER_PID=$!
+          echo "Server PID: $SERVER_PID"
           for i in $(seq 1 30); do
-            if [ -S /tmp/chorus-hooks.sock ]; then exit 0; fi
+            if [ -S /tmp/chorus-hooks.sock ]; then
+              echo "Socket bound after ${i} iterations"
+              ls -la /tmp/chorus-hooks.sock
+              exit 0
+            fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "Server process died early; log:"
+              cat /tmp/chorus-hooks-server.log || true
+              exit 1
+            fi
             sleep 0.5
           done
-          echo "chorus-hooks server never bound socket; tail log:"
-          tail -50 /tmp/chorus-hooks-server.log || true
+          echo "chorus-hooks server never bound socket within 15s; log:"
+          cat /tmp/chorus-hooks-server.log || true
           exit 1
       - name: Run cargo test
         working-directory: ${{ matrix.crate }}
