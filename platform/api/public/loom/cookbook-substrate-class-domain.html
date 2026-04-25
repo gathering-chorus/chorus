@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cookbook — Substrate-class Domain Treatment</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #fcfaf3;
+      --fg: #2a2a2a;
+      --muted: #6a6a6a;
+      --accent: #2d5016;
+      --accent-soft: #5a7a3a;
+      --border: #d4cdb8;
+      --card-bg: #ffffff;
+      --code-bg: #f4f1e8;
+      --warn: #9c2d2d;
+      --must: #9c2d2d;
+      --should: #8a6a1a;
+      --may: #4a6a3a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+      font-family: "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+      line-height: 1.65;
+    }
+    main { margin: 0 1in; padding: 2.5rem 0 6rem; max-width: 50rem; }
+    header { border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+    h1 { font-size: 2.4rem; margin: 0 0 0.3rem; color: var(--accent); letter-spacing: -0.01em; }
+    .subtitle { color: var(--muted); font-style: italic; font-size: 1.05rem; }
+    .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.6rem; font-family: "SF Mono", Menlo, monospace; }
+    h2 { font-size: 1.6rem; color: var(--accent); margin-top: 3rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+    h3 { font-size: 1.2rem; color: var(--accent-soft); margin-top: 2rem; margin-bottom: 0.6rem; }
+    h4 { font-size: 1rem; color: var(--accent); margin-top: 1.4rem; margin-bottom: 0.4rem; }
+    p { margin: 0.7rem 0; }
+    code { background: var(--code-bg); padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; font-family: "SF Mono", Menlo, monospace; }
+    ul { padding-left: 1.4rem; }
+    li { margin: 0.35rem 0; }
+    .move {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 0 4px 4px 0;
+      padding: 1rem 1.3rem;
+      margin: 1.2rem 0;
+    }
+    .move-title {
+      font-size: 1.15rem;
+      color: var(--accent);
+      font-weight: 600;
+      margin: 0 0 0.6rem;
+    }
+    .move-row {
+      display: grid;
+      grid-template-columns: 7rem 1fr;
+      gap: 0.4rem 0.8rem;
+      font-size: 0.95rem;
+      margin: 0.3rem 0;
+    }
+    .move-row .label {
+      color: var(--muted);
+      font-style: italic;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding-top: 0.15rem;
+    }
+    .callout {
+      background: #f6efe2;
+      border-left: 4px solid var(--accent);
+      padding: 0.8rem 1.1rem;
+      margin: 1rem 0;
+      border-radius: 0 4px 4px 0;
+    }
+    .callout.warn { border-left-color: var(--warn); }
+    .callout-title { font-weight: 700; color: var(--accent); margin-bottom: 0.3rem; }
+    .callout.warn .callout-title { color: var(--warn); }
+    .applicability {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .applicability > div {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.9rem 1.1rem;
+    }
+    .applicability h4 { margin-top: 0; }
+    .rule { margin: 0.6rem 0; padding-left: 0.6rem; border-left: 3px solid transparent; }
+    .rule .keyword { font-weight: 700; font-family: "SF Mono", Menlo, monospace; font-size: 0.85em; padding: 0.05rem 0.4rem; border-radius: 2px; margin-right: 0.5rem; letter-spacing: 0.03em; }
+    .rule.must .keyword, .rule.must-not .keyword { color: white; background: var(--must); }
+    .rule.should .keyword { color: white; background: var(--should); }
+    .rule.may .keyword { color: white; background: var(--may); }
+    .rule.must, .rule.must-not { border-left-color: var(--must); }
+    .rule.should { border-left-color: var(--should); }
+    .rule.may { border-left-color: var(--may); }
+    .rule .why { display: block; color: var(--muted); font-size: 0.85rem; font-style: italic; margin-top: 0.25rem; padding-left: 0.4rem; }
+    footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-size: 0.82rem; color: var(--muted); }
+    @media print {
+      html, body { background: white; color: black; }
+      main { margin: 0 0.5in; padding: 0.3in 0 0.5in; max-width: none; }
+      h1 { font-size: 1.8rem; }
+      h2 { font-size: 1.25rem; margin-top: 1.4rem; page-break-after: avoid; }
+      h3, h4 { page-break-after: avoid; }
+      .move { page-break-inside: avoid; border-left-width: 3px; }
+      .callout { page-break-inside: avoid; }
+      .applicability { page-break-inside: avoid; }
+      a { color: black; text-decoration: none; }
+      code { background: #eee; }
+      footer { font-size: 0.75rem; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Cookbook — Substrate-class Domain Treatment</h1>
+    <div class="subtitle">A reusable recipe for turning a documentation surface into a contract. Abstracted from the principles arc; refined by the decisions arc.</div>
+    <div class="meta">v2 · 2026-04-25 · Wren · second-instance refined</div>
+  </header>
+
+  <p>
+    A <strong>substrate-class domain</strong> is content that ought to be a contract, not documentation —
+    referenced by name across role files, briefs, and code; queried more than authored; shape definable.
+    Examples: principles (shipped), decisions, practices, policies, services, roles.
+  </p>
+  <p>
+    The principles arc (<code>#2447 → #2477</code>) put the first such domain through five moves that
+    each remove a path back to documentation-as-truth. The shape that emerged is the recipe below.
+    See <a href="/loom/principles-reference-impl.html">/loom/principles-reference-impl.html</a> for
+    the worked example. The decisions arc (<code>#2485</code>) was the second instance — most of v2's
+    refinements come from what that arc surfaced.
+  </p>
+
+  <h2>Two-phase model</h2>
+  <p>
+    Each substrate-class arc has two phases. <strong>Phase 2 doesn't open until Phase 1 closes.</strong>
+    Restructuring a domain on top of dirty data compounds drift; refactor decisions made on broken
+    data carry the brokenness forward.
+  </p>
+  <ul>
+    <li><strong>Phase 1 — Data correctness.</strong> The five moves below. Graph populated, schema canonical, instances in the right place per ADR-025, drift test holds, citations clean, MCP + hook close the affordance.</li>
+    <li><strong>Phase 2 — Refactor / placement.</strong> A separate card opens after Phase 1 closes: move the domain's code to its right repo + folder, fix its validation surface, settle structural placement.</li>
+  </ul>
+  <p>
+    Cross-cutting refactors (e.g., a shared validation surface like the Athena domain page) span all
+    domains and are independent arcs from any single domain's two-phase work.
+  </p>
+
+  <h2>When to reach for this recipe</h2>
+  <div class="applicability">
+    <div>
+      <h4 style="color: var(--accent);">Apply when all of:</h4>
+      <ul>
+        <li>Referenced by name across role files, briefs, or code.</li>
+        <li>Has a definable shape (predicates you could write down).</li>
+        <li>Read-heavy after the initial seed.</li>
+        <li>"Stop being documentation, start being a contract" is the goal.</li>
+      </ul>
+    </div>
+    <div>
+      <h4 style="color: var(--warn);">Don't apply when:</h4>
+      <ul>
+        <li>Content is transient or single-use.</li>
+        <li>Edit cadence is rare <em>and</em> readership is small (over-engineering).</li>
+        <li>The domain is a UI surface, not a content surface.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>The five moves</h2>
+  <p>Each move closes a path the previous left open. <strong>Order is non-negotiable.</strong></p>
+
+  <div class="move">
+    <div class="move-title">Move 1 — Graph as the single source</div>
+    <div class="move-row"><div class="label">Deliverable</div><div><code>chorus:&lt;Domain&gt;</code> instances in <code>urn:chorus:instances</code> (per ADR-025), one per source-of-truth entry. URI scheme parallel to siblings.</div></div>
+    <div class="move-row"><div class="label">Acceptance</div><div>Instance count in graph = entry count in source files. Cross-graph SHACL boundary check (label-required → 400) wired.</div></div>
+    <div class="move-row"><div class="label">Precedent</div><div><code>#2314</code> — principles ontology→instances migration.</div></div>
+    <div class="move-row"><div class="label">Pre-Move-1</div><div><strong>Query the existing graph first.</strong> If the domain has prior data in any other graph, read its predicate set and reuse — don't invent a thin schema. Decisions arc cost: 30 min rework when discovered <code>urn:chorus:decisions</code> already had a rich schema (decisionDate, decisionStatus, enforcementLevel, hasDomain×N) that the new thin schema (chorus:id, decisionType DEC|ADR) ignored.</div></div>
+    <div class="move-row"><div class="label">Pre-Move-1</div><div><strong>Audit the source corpus for ID collisions.</strong> Different content sharing one ID is a Move 1 blocker — populate cannot satisfy "instance count = source count" with collisions. Decisions found 3 (DEC-093, DEC-096, DEC-101) and ate a swat (<code>#2492</code>) before Move 1 could land.</div></div>
+    <div class="move-row"><div class="label">Pre-Move-1</div><div><strong>Declare the URI scheme before populate.</strong> Probe the existing graph for any prior instance URI shape (e.g., <code>urn:chorus:decision:dec_NNN</code> vs <code>https://jeffbridwell.com/chorus#dec-NNN</code>). If found, adopt it. If not, declare one in this cookbook's addendum for the domain and pin it as canonical. Decisions arc cost: ~30 min when v1 backfill wrote on the wrong URI shape. Cross-tool consistency is non-negotiable — seed scripts, hand-authored TTL, MCP tools, and Athena handlers must all emit and accept the same shape.</div></div>
+    <div class="move-row"><div class="label">Pre-Move-1</div><div><strong>Declare predicate names once.</strong> When adding any derived-from-graph rule, declare the predicate ONCE in this cookbook's addendum and check that all consumers reference that exact name: writer (discover-*), page facet, completeness count, MCP tool. Today's <code>hasContract</code>-vs-<code>hasEndpoint</code> mismatch (writer wrote one, reader expected the other) cost half an afternoon. Doneness sub-test: <code>grep &lt;predicate&gt;</code> across handlers + completeness + page client returns matching reference counts.</div></div>
+    <div class="move-row"><div class="label">Pre-Move-1</div><div><strong>Audit discover-* scan paths before Move 1 closes.</strong> A new substrate-class id needs entries in <em>all four</em> discoverers it touches: <code>discover-pages</code> (for <code>/loom/&lt;slug&gt;.html</code>), <code>discover-code</code> (alias override for the source root), <code>discover-endpoints</code> (route URL match), <code>discover-tests</code> (test filename match). Decisions arc hit gaps in all four. One-line per discoverer in the addendum: "this domain registers in scan paths X/Y/Z."</div></div>
+  </div>
+
+  <div class="move">
+    <div class="move-title">Move 2 — API as the only write path</div>
+    <div class="move-row"><div class="label">Deliverable</div><div>Athena handlers <code>GET/POST/PUT/DELETE /api/athena/subdomains/&lt;id&gt;/&lt;plural&gt;</code>, reusing ENTITY_SECTIONS. Any pre-existing parallel write path retired (308 redirect; full removal is a later card).</div></div>
+    <div class="move-row"><div class="label">Acceptance</div><div>Every write goes through the API. POST without required predicates → 400. Handlers emit spine events.</div></div>
+    <div class="move-row"><div class="label">Precedent</div><div><code>#2314</code>.</div></div>
+  </div>
+
+  <div class="move">
+    <div class="move-title">Move 3 — Drift test as the gate</div>
+    <div class="move-row"><div class="label">Deliverable</div><div>Static baseline (<code>book/&lt;domain&gt;-reconstructed.html</code> or equivalent) + a CI assertion holding the baseline against the live graph. Divergence fails CI.</div></div>
+    <div class="move-row"><div class="label">Acceptance</div><div>Mutate one graph instance without updating the baseline → CI red. Mutate baseline without graph → CI red.</div></div>
+    <div class="move-row"><div class="label">Precedent</div><div><code>#2447</code> — 12/12 API regressions + 6/6 drift assertions.</div></div>
+  </div>
+
+  <div class="move">
+    <div class="move-title">Move 4 — Cite-by-ID, never inline</div>
+    <div class="move-row"><div class="label">Deliverable</div><div>Every caller (role CLAUDE.md fragments, briefs, decision logs, code comments) that paraphrases entries rewritten to cite by URI/ID. A lint or hook that fires if inline restatement reappears.</div></div>
+    <div class="move-row"><div class="label">Acceptance</div><div><code>grep</code> for inline-restatement pattern across all callers returns 0.</div></div>
+    <div class="move-row"><div class="label">Precedent</div><div><code>#2449</code> — role principles.md fragments became citation-only.</div></div>
+  </div>
+
+  <div class="move">
+    <div class="move-title">Move 5 — Hook backstops the affordance</div>
+    <div class="move-row"><div class="label">Deliverable</div><div>(a) MCP tools <code>&lt;domain&gt;_list</code> / <code>&lt;domain&gt;_get</code> — single-verb-single-target per <code>#2476</code>. Defer <code>_create</code> until cadence proves out. (b) Pre-commit hook that blocks the <em>old</em> path of least resistance (direct TTL edit, or HTTP on the retired endpoint).</div></div>
+    <div class="move-row"><div class="label">Acceptance</div><div>A role asking Claude in natural language reaches for the MCP tool, not curl. The hook blocks an attempted regression to the old path.</div></div>
+    <div class="move-row"><div class="label">Precedent</div><div><code>#2476</code> (MCP tools), <code>#2314</code> (TTL-edit hook).</div></div>
+  </div>
+
+  <h2>Order discipline</h2>
+  <div class="rule must"><span class="keyword">MUST</span> Land moves serially, not in parallel. <span class="why">Move 5's hook only makes sense after Moves 1–4 have made the typed path more attractive than the path being blocked. Skip the order, ship a hook that punishes roles for using the only path they have.</span></div>
+  <div class="rule must"><span class="keyword">MUST</span> Ship Move 3 (drift test). It's the most-skipped move. <span class="why">The drift test is what makes the contract a contract; without it, paraphrase grows back.</span></div>
+  <div class="rule must"><span class="keyword">MUST</span> Be atomic per move, not across moves. <span class="why">Each card commits one move end-to-end. Cross-class atomicity ("decisions and practices together") is sacrificed for testability and reversibility.</span></div>
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Open Phase 2 (refactor / placement) before Phase 1 closes. <span class="why">Restructuring on dirty data carries the dirt forward. Two-phase rule.</span></div>
+
+  <h2>Doneness test</h2>
+  <p>The domain is Phase-1 treated when <em>all six</em> are true:</p>
+  <ol>
+    <li>Every instance lives in the graph.</li>
+    <li>Every write went through the API.</li>
+    <li>CI fails if graph and baseline diverge.</li>
+    <li>Every caller cites by ID; lint enforces it.</li>
+    <li>MCP tools exist <em>and</em> the hook bites the old path.</li>
+    <li><strong>Lifecycle gate measures truth.</strong> The completeness model classifies each facet as derived / required-authored / optional-authored, and <code>done.pass</code> reflects "all required-authored present + all derived attempted." Hand-authored proxies for completeness percentage are no longer accepted as closure evidence.</li>
+  </ol>
+  <p>If any one is missing, you have a half-treated domain — and the path you didn't close is where drift will start.</p>
+
+  <p><strong>Phase-1 closure does NOT mean placement is right.</strong> A reference implementation isn't valid until the code is in the right repo, the data is in the right graph, AND the validation surface is in the right product. Decisions arc surfaced this: <code>#2485</code> closed Phase 1 with the Athena page (which validates every domain) still living in the gathering app, not chorus. That's a Phase-2 fix; Phase 1 closes regardless, but the contract isn't whole until Phase 2 lands.</p>
+
+  <h3>Facet classification (lifecycle gate, post-decisions arc)</h3>
+  <p>Each facet on the Athena domain page gets one classification:</p>
+  <ul>
+    <li><strong>derived</strong> — populated by <code>discover-*</code> handlers or graph traversal. Empty count = "we asked, found nothing." Examples: pages, code, tests, services, endpoints, decisions, cards, release-history, prior-art, logs.</li>
+    <li><strong>required-authored</strong> — must be hand-authored for the domain to be design-complete. Missing = card not done. Examples: actors, scenarios, contract. Substrate-class subdomains add prior-art to required.</li>
+    <li><strong>optional-authored</strong> — adds quality but doesn't gate. Examples: gaps, integrations, persistence, pipeline.</li>
+  </ul>
+  <p>Lifecycle pass criteria:</p>
+  <ul>
+    <li><code>create.pass</code>: label + comment + owner + step.</li>
+    <li><code>wip.pass</code>: edges + ≥1 required-authored present (proof design started).</li>
+    <li><code>done.pass</code>: ALL required-authored present (≥1 each) AND all derived facets had derivation attempted. Optional-authored ignored.</li>
+  </ul>
+
+  <h2>Sizing &amp; cost</h2>
+  <ul>
+    <li><strong>~5–7 cards per arc</strong> for Phase 1. Principles took 7: <code>#2447, #2314, #2157, #2473, #2449, #2476, #2477</code>. Decisions took 1 parent (<code>#2485</code>) + 1 swat (<code>#2492</code>) + 3 follow-ons (<code>#2486, #2502, #2503</code>) over a single intense session.</li>
+    <li><strong>~1–3 weeks elapsed</strong> at current cadence.</li>
+    <li><strong>Lowest-blast-radius move first.</strong> For most domains: Move 1 (graph populate) is safest; Move 5 (hook) is most disruptive — last.</li>
+    <li><strong>Plan a swat budget.</strong> Move 1 surfaces latent corpus issues — collisions, schema mismatches, misfiled entries, dual-graph drift. Decisions arc consumed an extra ~2h on cleanup that wasn't in the original AC. Treat Move 1 as a discovery move, not just a populate.</li>
+  </ul>
+
+  <h2>Rules &amp; anti-patterns</h2>
+
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Skip the drift test. <span class="why">"Tests can come later" means the contract is fictional.</span></div>
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Invent a new schema when the graph already has a rich one for this domain. <span class="why">Query before designing. Decisions arc cost: 30 min when the existing urn:chorus:decisions schema was richer than the thin one being added.</span></div>
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Hand-author per-domain <code>chorus:hasX</code> edges to satisfy a completeness percentage. <span class="why">The percentage measures the wrong thing if it gates on edges instead of derivation. Fix the model, not the score.</span></div>
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Pass <code>gate-product</code> performatively when the validation surface is broken. <span class="why">If the domain page lies (missing sections, hidden empty folds, hand-authored proxies), the PASS is fiction. Retract, reshape, pass for real.</span></div>
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Refactor placement before data is clean. <span class="why">Two-phase model. Restructuring on dirty data carries the dirt forward.</span></div>
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Edit other-product files under this card's WIP. <span class="why">If a chorus card needs a gathering-app edit, that's cross-product scope-grow — file a gathering card.</span></div>
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Close Phase 1 quietly when Phase 2 is needed. <span class="why">Phase-1 doneness ≠ "the domain works in production." Open the Phase-2 placement card explicitly so the half-state is visible.</span></div>
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Stop at Move 4. <span class="why">Citations look clean, but without Move 5 the next regression is a paraphrase one keystroke away.</span></div>
+  <div class="rule must-not"><span class="keyword">MUST NOT</span> Use cross-class atomicity ("migrate decisions and practices together"). <span class="why">Per-class atomicity makes failure recoverable.</span></div>
+
+  <div class="rule should"><span class="keyword">SHOULD</span> Plan a swat budget for Move 1 cleanup. <span class="why">Move 1 surfaces latent corpus issues — collisions, schema mismatches, misfiled entries, dual-graph drift. Treat Move 1 as a discovery move, not just a populate.</span></div>
+  <div class="rule should"><span class="keyword">SHOULD</span> Generate the per-domain reference-impl page only after the shape settles. <span class="why">Static authored pages beat dashboards while learning the shape; generation comes after the second instance.</span></div>
+
+  <div class="rule may"><span class="keyword">MAY</span> Defer <code>_create</code> MCP tools until <code>_list</code>/<code>_get</code> have proven cadence. <span class="why">Anti-affordance until reach is established. Decisions arc deferred per ADR cadence (monthly-ish).</span></div>
+  <div class="rule may"><span class="keyword">MAY</span> Auto-sync caller files when canonical entries change — but only if the editorial layer is null. <span class="why">For domains with role emphasis (principles), auto-sync erases role judgment. For domains without it (decisions), sync is safer.</span></div>
+
+  <h2>Domain-specific divergence template</h2>
+  <p>Fill in for each new domain as you start. These are where arcs differ:</p>
+  <ul>
+    <li><strong>Source-of-truth shape:</strong> single file? per-role fragments? per-instance files? <em>(decisions: DEC-NNN log + per-ADR files; principles: TTL + per-role emphasis lists)</em></li>
+    <li><strong>Editorial layer:</strong> does the domain have role-specific weighting/emphasis? <em>(principles: yes — emphasis IDs per role. decisions: probably no — DEC-NNN are team-level.)</em></li>
+    <li><strong>Ordering:</strong> is there canonical order? <em>(principles: Hemenway book order. decisions: chronological + numbered. practices: probably not.)</em></li>
+    <li><strong>Multi-source intake:</strong> content authored in multiple places needing a single graph view? <em>(decisions: yes — DEC log + ADR files. principles: no.)</em></li>
+    <li><strong><code>_create</code> cadence:</strong> day-one or deferred? <em>(principles: shipped in #2476 — writes weekly. decisions: deferred — ADR cadence is monthly-ish.)</em></li>
+  </ul>
+
+  <h2>How to use this recipe on the next domain</h2>
+  <ol>
+    <li>Pick the domain. Apply the "when to reach for this" test.</li>
+    <li><strong>Audit the corpus first.</strong> Query the existing graph for any prior schema on this domain (different graph, prior modeling, partial migration). Reuse rich predicates; don't invent thin ones. Scan source files for ID collisions and resolve before Move 1 populate.</li>
+    <li>Fill in the divergence template below.</li>
+    <li>Open one parent card titled <code>&lt;domain&gt; — five-move treatment (Phase 1)</code>. AC organized against the five moves + the placement-deferral note (Phase 2 is its own card). Mirror <code>#2485</code>.</li>
+    <li>Land each move as a sub-card or sub-AC. <strong>In order.</strong> Demo each before pulling the next. Plan a swat budget for cleanup that emerges.</li>
+    <li>After all five land + lifecycle <code>done.pass=true</code> per the new model: write <code>/loom/&lt;domain&gt;-reference-impl.html</code> mirroring the principles page. That's the case-study artifact.</li>
+    <li><strong>Open the Phase-2 placement card</strong> when Phase 1 closes. Move the domain's code/page to its right structural home. Do NOT do this before Phase 1 closes.</li>
+    <li>The diff between your <code>&lt;domain&gt;-reference-impl</code> and the principles one tells the cookbook maintainer what's universal vs. accidental. <strong>After three instances, abstract this recipe again.</strong></li>
+  </ol>
+
+  <div class="callout">
+    <div class="callout-title">v2 — refined by decisions arc (2026-04-25)</div>
+    Refinements from <code>#2485</code> (loom-decisions) folded into this page:
+    <ul>
+      <li>Two-phase model named explicitly (data clean, then refactor).</li>
+      <li>Move 1 gets pre-conditions: query existing graph, audit ID collisions.</li>
+      <li>Doneness test #6: lifecycle gate measures truth via facet classification (derived / required-authored / optional-authored).</li>
+      <li>Doneness test addendum: closure ≠ valid placement. Reference implementation needs code, data, AND validation surface in the right place — that's Phase 2.</li>
+      <li>Anti-patterns added: schema-invention, hasX-edge gaming, performative gate-product, cross-product scope-grow, quiet Phase-1 closure.</li>
+      <li>Sizing: plan swat budget for Move 1 corpus cleanup.</li>
+    </ul>
+    Next refinement: after the third instance (practices? policies?). Until then, working draft.
+  </div>
+
+  <footer>
+    Sources: <a href="/loom/principles-reference-impl.html">principles-reference-impl</a> ·
+    ADR-025 (graph separation) ·
+    Phase 1 cards: principles <code>#2447, #2314, #2157, #2473, #2449, #2468, #2476, #2477</code>; decisions <code>#2485</code> + swat <code>#2492</code> ·
+    Phase 2 follow-ons (decisions): <code>#2486</code> npm workspaces, <code>#2502</code> Athena page render-rule, <code>#2503</code> Athena page placement question ·
+    Christopher Alexander, <em>A Pattern Language</em> (the ur-text).
+    <br>v2 by Wren 2026-04-25 — refined from the decisions arc. Next refinement after the third substrate-class instance.
+  </footer>
+</main>
+</body>
+</html>
