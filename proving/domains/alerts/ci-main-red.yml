@@ -1,0 +1,68 @@
+# ci-main-red.yml — Alert when GitHub Actions on main branch is red.
+# Card #2481 sub-AC 8 | ADR-026 §d (reactive posture).
+#
+# Branch protection (proactive) prevents merge of red PRs into main.
+# This alert catches the case where main lands red anyway — direct push,
+# admin override, post-merge regression on a flake — and routes to silas.
+# No auto-revert (ADR-026 §d explicitly vetoes that).
+
+name: ci-main-red
+description: GitHub Actions quality workflow on main branch is failing
+severity: critical
+schedule: "*/10 * * * *"
+
+check: |
+  # Query the GitHub Actions API for the most recent run of the quality
+  # workflow on the main branch. Requires GH_TOKEN env var (PAT with
+  # actions:read scope).
+  REPO="${CI_MAIN_RED_REPO:-WJeffBridwell/chorus}"
+  WORKFLOW="${CI_MAIN_RED_WORKFLOW:-quality.yml}"
+
+  if [ -z "${GH_TOKEN:-}" ]; then
+    # Token absent — alert can't run but shouldn't fire false-red. Treat
+    # as ok and surface a separate config alert if Silas wants one.
+    echo "ok"
+    exit 0
+  fi
+
+  RESULT=$(curl -sf --max-time 10 \
+    -H "Authorization: Bearer ${GH_TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW}/runs?branch=main&per_page=1" 2>/dev/null)
+
+  STATUS=$(echo "$RESULT" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    runs = d.get('workflow_runs', [])
+    if not runs:
+        print('no-runs')
+    else:
+        r = runs[0]
+        s = r.get('status', '')
+        c = r.get('conclusion', '')
+        # status=completed + conclusion=failure → red
+        # status=in_progress / queued → not yet a verdict, treat as ok
+        if s == 'completed' and c == 'failure':
+            print(f'red:{r.get(\"html_url\", \"\")}')
+        else:
+            print('ok')
+except Exception as e:
+    print(f'parse-error:{e}')
+" 2>/dev/null)
+
+  case "$STATUS" in
+    ok|no-runs) exit 0 ;;
+    red:*) echo "$STATUS"; exit 1 ;;
+    *) echo "$STATUS"; exit 0 ;;  # parse error, don't false-fire
+  esac
+
+action: |
+  # Daily cooldown — don't re-nudge silas every 10 minutes for the same red.
+  COOLDOWN="/tmp/alert-ci-main-red-$(date '+%Y-%m-%d')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "ci-main-red: quality workflow failing on main. Check: gh run list --branch main --workflow quality.yml" --force 2>/dev/null || true

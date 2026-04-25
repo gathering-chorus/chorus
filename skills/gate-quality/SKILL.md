@@ -110,6 +110,30 @@ fi
 **Pass:** Changed handlers have logging.
 **Warn:** Handler files without logging — advisory, not blocking.
 
+### 5. Smoke check
+
+Per ADR-026 §b open-decision (A): gate-quality runs smoke-check on the
+changed surface. Skip if Gathering app isn't running locally (smoke-check
+needs `localhost:3000`); fail-the-gate if the app is up and smoke fails.
+
+```bash
+APP_HEALTH=$(curl -sf --max-time 2 -o /dev/null -w '%{http_code}' http://localhost:3000/health 2>/dev/null)
+if [ "$APP_HEALTH" = "200" ]; then
+  if bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/smoke-check.sh --all 2>&1; then
+    echo "PASS: smoke-check all pages green"
+  else
+    echo "FAIL: smoke-check found broken pages — see output"
+    exit 1
+  fi
+else
+  echo "WARN: Gathering app not reachable on :3000 — smoke-check skipped"
+fi
+```
+
+**Pass:** All known pages return expected status + content.
+**Fail:** One or more pages broken — gate fails.
+**Warn:** App down locally — surface but don't block.
+
 ## Manual Confirm (1 item)
 
 Only shown if all automated checks pass.
@@ -127,6 +151,7 @@ Print summary:
   Regression suite:    PASS | FAIL
   Console.log check:   PASS | FAIL (files listed)
   Observability:       PASS | WARN (files listed)
+  Smoke check:         PASS | FAIL | SKIP (app down)
   New debt:            PASS | FAIL (carded)
 
   VERDICT: PASS | FAIL
