@@ -1,3 +1,4 @@
+/* global RequestInit */
 import { createAthenaSparqlClient, createEnvelopeBuilder, createSparqlLoader } from '../src/athena-sparql';
 
 function okRes(body: any): Response {

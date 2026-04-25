@@ -1,3 +1,4 @@
+/* global RequestInit */
 /**
  * codebase-topology handler — unit tests (#2173 AC4).
  *

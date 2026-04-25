@@ -17,7 +17,6 @@ import { fetchChorusDomain, type ChorusDomainDeps } from '../../src/handlers/cho
 const FIXTURE_TTL = path.join(__dirname, '..', 'fixtures', 'athena-minimal.ttl');
 
 function buildStore() {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const oxigraph = require('oxigraph');
   const store = new oxigraph.Store();
   const ttl = fs.readFileSync(FIXTURE_TTL, 'utf-8');

@@ -1,3 +1,4 @@
+/* global RequestInit */
 import { createSparqlSearch, buildSparqlQuery, parseSparqlBindings } from '../src/sparql-search';
 
 function okSparql(bindings: any[]): Response {

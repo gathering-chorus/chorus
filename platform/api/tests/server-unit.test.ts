@@ -1,3 +1,4 @@
+/* global RequestInit */
 /**
  * server.ts — in-process unit tests (#2167).
  *

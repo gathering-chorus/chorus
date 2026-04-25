@@ -9,7 +9,6 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const oxigraph = require('oxigraph') as OxigraphModule;
 
 interface OxigraphTerm {
