@@ -92,19 +92,17 @@ fn git_commit_allowed_outside_team_repo() {
 fn git_commit_blocked_inside_team_repo() {
     let _guard = MarkerGuard::ensure_done("kade");
     // git commit from CascadeProjects SHOULD be blocked
-    // CHORUS_ROOT env w/ Mac-default fallback — CI sets CHORUS_ROOT to the
-    // runner workspace; local Mac dev keeps the hardcoded path. The hook
-    // checks if cwd is inside the chorus repo to decide whether to block.
-    let chorus_root = std::env::var("CHORUS_ROOT")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
-    let cwd = format!("{}/roles/kade", chorus_root);
+    // cwd MUST be the hardcoded Mac path because shim's infra_guardrails
+    // string-compares against shared::state_paths::REPO_ROOT (also hardcoded
+    // to the Mac path). On Linux CI, the workflow symlinks
+    // /Users/jeffbridwell/CascadeProjects/chorus → $GITHUB_WORKSPACE so the
+    // path is filesystem-valid. The shim's check is string-prefix, not
+    // filesystem-walk, so the hardcoded path is what matches.
     let hook_input = json!({
         "tool_name": "Bash",
         "tool_input": {"command": "git commit -m 'test'"},
         "session_id": "test-session",
-        "cwd": cwd
+        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade"
     });
 
     let output = Command::new(SHIM)
