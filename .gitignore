@@ -22,7 +22,6 @@ directing/products/cards/src/**/*.js
 directing/products/cards/src/**/*.d.ts
 .env
 .env.*
-package-lock.json
 *.tsbuildinfo
 
 # Runtime data
