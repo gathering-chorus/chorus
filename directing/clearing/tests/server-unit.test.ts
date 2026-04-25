@@ -51,29 +51,27 @@ import { server, io, clearingChat, extractSequenceTags } from '../src/server';
 
 let baseUrl: string;
 
-beforeAll((done) => {
-  server.listen(0, () => {
-    const addr = server.address() as AddressInfo;
-    baseUrl = `http://127.0.0.1:${addr.port}`;
-    done();
-  });
+beforeAll(async () => {
+  await new Promise<void>((resolve) => server.listen(0, () => resolve()));
+  const addr = server.address() as AddressInfo;
+  baseUrl = `http://127.0.0.1:${addr.port}`;
 });
 
 afterAll(async () => {
   io.close();
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
 // Tiny helper: fetch with default GET, returns { status, body, headers }
-async function call(p: string, opts: RequestInit = {}) {
+async function call(p: string, opts: Parameters<typeof fetch>[1] = {}) {
   const res = await fetch(`${baseUrl}${p}`, opts);
   let body: any = null;
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('json')) {
-    try { body = await res.json(); } catch {}
+    try { body = await res.json(); } catch { /* ignore */ }
   } else {
-    try { body = await res.text(); } catch {}
+    try { body = await res.text(); } catch { /* ignore */ }
   }
   return { status: res.status, body, headers: res.headers };
 }
@@ -328,8 +326,8 @@ describe('server — card and session lookups', () => {
 describe('server — upload endpoints', () => {
   beforeAll(() => {
     // Upload handler writes to /tmp/bridge-uploads/ — ensure dir exists.
-    try { fs.mkdirSync('/tmp/bridge-uploads', { recursive: true }); } catch {}
-    try { fs.mkdirSync('/tmp/bridge-audio-uploads', { recursive: true }); } catch {}
+    try { fs.mkdirSync('/tmp/bridge-uploads', { recursive: true }); } catch { /* ignore */ }
+    try { fs.mkdirSync('/tmp/bridge-audio-uploads', { recursive: true }); } catch { /* ignore */ }
   });
 
   test('POST /api/upload with png bytes returns {url, filename}', async () => {
@@ -455,7 +453,7 @@ describe('server — authenticated tunneled paths', () => {
     let token = '';
     try {
       token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
-    } catch {}
+    } catch { /* ignore */ }
     if (!token) return;  // no token available in test env — skip
 
     const r = await call('/', {
@@ -472,7 +470,7 @@ describe('server — authenticated tunneled paths', () => {
     let token = '';
     try {
       token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
-    } catch {}
+    } catch { /* ignore */ }
     if (!token) return;
 
     const r = await call('/', {
@@ -492,7 +490,7 @@ describe('server — authenticated tunneled paths', () => {
     let token = '';
     try {
       token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
-    } catch {}
+    } catch { /* ignore */ }
     if (!token) return;
 
     const r = await call(`/api/tiles?token=${token}`, {
@@ -505,7 +503,7 @@ describe('server — authenticated tunneled paths', () => {
     let token = '';
     try {
       token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
-    } catch {}
+    } catch { /* ignore */ }
     if (!token) return;
 
     const r = await call('/login', {
@@ -549,7 +547,7 @@ describe('server — SSE stream and session', () => {
 
   test('GET /api/stream with missing log returns 200 with empty set', async () => {
     // Remove the log we just wrote
-    try { fs.unlinkSync(path.join(TMP, 'platform/logs/chorus.log')); } catch {}
+    try { fs.unlinkSync(path.join(TMP, 'platform/logs/chorus.log')); } catch { /* ignore */ }
     const r = await call('/api/stream');
     expect(r.status).toBe(200);
   });
@@ -630,7 +628,7 @@ describe('server — SSE stream and session', () => {
 
 describe('server — HEIC upload path', () => {
   beforeAll(() => {
-    try { fs.mkdirSync('/tmp/bridge-uploads', { recursive: true }); } catch {}
+    try { fs.mkdirSync('/tmp/bridge-uploads', { recursive: true }); } catch { /* ignore */ }
   });
 
   test('POST /api/upload with image/heic content-type takes the convert branch', async () => {
