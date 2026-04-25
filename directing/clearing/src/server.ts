@@ -430,28 +430,28 @@ function parseTurnLine(entry: LogEntry, role: string): StreamLine | null {
   };
 }
 
+function parseToolEntry(entry: LogEntry, role: string): StreamLine | null {
+  const display = formatToolDisplay((entry.summary ?? '').substring(0, 120), entry.action ?? '');
+  if (display === null) return null;
+  return { ts: entry.timestamp ?? '', role, type: 'tool', text: display };
+}
+
+// #2435 — canonical event is nudge.emitted. chorus-log packs the first kv as
+// the JSON field; for nudge.emitted that's "from":"<sender>,to=...,content=<preview>".
+function parseNudgeEntry(entry: LogEntry, role: string): StreamLine | null {
+  const packed = entry.from ?? entry.target ?? '';
+  const content = packed.match(/content=(.+)/)?.[1] || '';
+  if (!content.includes('[gemba]')) return null;
+  return { ts: entry.timestamp ?? '', role, type: 'gemba', text: content.substring(0, 200) };
+}
+
 function parseLogEntry(entry: LogEntry): StreamLine | null {
   const role = entry.role ?? '';
   if (!role || !['wren', 'silas', 'kade'].includes(role)) return null;
   const event = entry.event ?? '';
-
-  if (event === 'session_tool') {
-    const display = formatToolDisplay((entry.summary ?? '').substring(0, 120), entry.action ?? '');
-    if (display === null) return null;
-    return { ts: entry.timestamp ?? '', role, type: 'tool', text: display };
-  }
+  if (event === 'session_tool') return parseToolEntry(entry, role);
   if (event === 'session_turn') return parseTurnLine(entry, role);
-  // #2435 — canonical event is nudge.emitted. role.nudge.sent is retired in-card.
-  // Event shape: chorus-log packs the first kv as the JSON field; for nudge.emitted
-  // that's "from":"<sender>,to=<target>,chars=N,trace=...,content=<preview>". Parse
-  // the same content= tail that role.nudge.sent used — the payload format didn't
-  // change, only which JSON field carries the packed value.
-  if (event === 'nudge.emitted') {
-    const packed = entry.from ?? entry.target ?? '';
-    const content = packed.match(/content=(.+)/)?.[1] || '';
-    if (!content.includes('[gemba]')) return null;
-    return { ts: entry.timestamp ?? '', role, type: 'gemba', text: content.substring(0, 200) };
-  }
+  if (event === 'nudge.emitted') return parseNudgeEntry(entry, role);
   return null;
 }
 
@@ -838,53 +838,17 @@ io.on('connection', (socket) => {
     const { text } = data;
     if (!text.trim()) { ack?.({ ok: false, error: 'empty' }); return; }
 
-    // Determine sender — cookie or explicit from field
-    const cookieHeader = socket.handshake.headers.cookie || '';
-    const nameMatch = cookieHeader.match(/bridge_name=([^;]+)/);
-    const guestName = nameMatch ? decodeURIComponent(nameMatch[1]) : '';
-    const senderName = data.from || guestName || 'jeff';
+    const senderName = resolveJeffMessageSender(socket.handshake.headers.cookie || '', data.from);
+    messageRouter.ingest({ from: senderName, text: text.trim(), ts: new Date().toISOString(), type: 'jeff-input' });
 
-    // Record message
-    messageRouter.ingest({
-      from: senderName,
-      text: text.trim(),
-      ts: new Date().toISOString(),
-      type: 'jeff-input',
-    });
-
-    // Route to mentioned roles — @mentions override tile lock
-    const mentions = text.match(/@(wren|silas|kade)/gi) || [];
-    const targets = mentions.length > 0
-      ? [...new Set(mentions.map((m: string) => m.slice(1).toLowerCase()))]
-      : [parseTarget(text)];
+    const targets = pickJeffMessageTargets(text);
     const cleanText = text.replace(/@(wren|silas|kade)\s*/gi, '').trim();
-
-    const { execSync } = require('child_process');
     const finalText = cleanText.replace(/\[img:(\/uploads\/[^\]]+)\]/g, `[img:http://localhost:${PORT}$1]`);
     const safeMsg = finalText.replace(/"/g, '\\"');
 
     for (const target of targets) {
-      try {
-        const cmd = `bash "${NUDGE_SCRIPT}" "${target}" "${safeMsg}" --from jeff --force`;
-        console.log(`[clearing] delivering to ${target}: ${cleanText.substring(0, 60)}`);
-        const result = execSync(cmd, {
-          timeout: 10_000,
-          encoding: 'utf-8',
-          env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' },
-        });
-        console.log(`[clearing] result: ${result.trim()}`);
-        // #2036: Detect inject failure — nudge persisted but keystroke didn't work
-        if (result.includes('INJECT_FAILED')) {
-          console.error(`[clearing] inject failed for ${target} — TCC or window issue`);
-          ack?.({ ok: false, error: `inject failed for ${target} (message queued but not delivered to terminal)` });
-          return;
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? ((err as { stderr?: string }).stderr ?? err.message) : String(err);
-        console.error(`[clearing] delivery to ${target} failed: ${errMsg}`);
-        ack?.({ ok: false, error: errMsg });
-        return;
-      }
+      const err = deliverJeffMessageToTarget(target, safeMsg, cleanText);
+      if (err) { ack?.({ ok: false, error: err }); return; }
     }
     ack?.({ ok: true });
   });
@@ -1030,4 +994,40 @@ function parseTarget(text: string): string {
   const match = text.match(/^@(wren|silas|kade)\b/i);
   if (match) return match[1].toLowerCase();
   return 'wren'; // No @ = Wren gets it
+}
+
+function resolveJeffMessageSender(cookieHeader: string, fromField?: string): string {
+  const nameMatch = cookieHeader.match(/bridge_name=([^;]+)/);
+  const guestName = nameMatch ? decodeURIComponent(nameMatch[1]) : '';
+  return fromField || guestName || 'jeff';
+}
+
+function pickJeffMessageTargets(text: string): string[] {
+  const mentions = text.match(/@(wren|silas|kade)/gi) || [];
+  if (mentions.length === 0) return [parseTarget(text)];
+  return [...new Set(mentions.map((m: string) => m.slice(1).toLowerCase()))];
+}
+
+// Returns null on success, error string on failure (#2036).
+function deliverJeffMessageToTarget(target: string, safeMsg: string, cleanText: string): string | null {
+  const { execSync } = require('child_process');
+  try {
+    const cmd = `bash "${NUDGE_SCRIPT}" "${target}" "${safeMsg}" --from jeff --force`;
+    console.log(`[clearing] delivering to ${target}: ${cleanText.substring(0, 60)}`);
+    const result = execSync(cmd, {
+      timeout: 10_000,
+      encoding: 'utf-8',
+      env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' },
+    });
+    console.log(`[clearing] result: ${result.trim()}`);
+    if (result.includes('INJECT_FAILED')) {
+      console.error(`[clearing] inject failed for ${target} — TCC or window issue`);
+      return `inject failed for ${target} (message queued but not delivered to terminal)`;
+    }
+    return null;
+  } catch (err) {
+    const errMsg = err instanceof Error ? ((err as { stderr?: string }).stderr ?? err.message) : String(err);
+    console.error(`[clearing] delivery to ${target} failed: ${errMsg}`);
+    return errMsg;
+  }
 }

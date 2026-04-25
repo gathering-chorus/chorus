@@ -94,98 +94,83 @@ export class ClearingChat {
     this.transcript = new Transcript(MODEL);
   }
 
-  /** Handle incoming message from Jeff */
-  async handleMessage(content: string, activeRoles?: string[]): Promise<void> {
-    // Check for nudge command
+  private tryHandleNudgeCommand(content: string): boolean {
     const shorthandMap: Record<string, string> = { nw: 'wren', ns: 'silas', nk: 'kade' };
     const nudgeMatch = content.match(/^(?:\/nudge\s+(wren|silas|kade)|(nw|ns|nk))\s+(.+)$/i);
-    if (nudgeMatch) {
-      const target = (nudgeMatch[1] || shorthandMap[nudgeMatch[2].toLowerCase()]).toLowerCase();
-      const msg = nudgeMatch[3].replace(/^["']|["']$/g, '');
-      const jeffMsg = this.transcript.add('Jeff', content);
-      this.io.emit('chat:message', jeffMsg);
-      const result = executeNudge('jeff', target, msg);
-      const sysMsg = this.transcript.add('System',
-        result.success ? `Nudge sent to ${target}.` : `Nudge to ${target} failed: ${result.detail}`);
-      this.io.emit('chat:message', sysMsg);
-      return;
-    }
+    if (!nudgeMatch) return false;
+    const target = (nudgeMatch[1] || shorthandMap[nudgeMatch[2].toLowerCase()]).toLowerCase();
+    const msg = nudgeMatch[3].replace(/^["']|["']$/g, '');
+    const jeffMsg = this.transcript.add('Jeff', content);
+    this.io.emit('chat:message', jeffMsg);
+    const result = executeNudge('jeff', target, msg);
+    const sysMsg = this.transcript.add('System',
+      result.success ? `Nudge sent to ${target}.` : `Nudge to ${target} failed: ${result.detail}`);
+    this.io.emit('chat:message', sysMsg);
+    return true;
+  }
 
-    // Record Jeff's message
+  private selectRespondingRoles(content: string, activeRoles?: string[]) {
+    const addressed = parseAddressed(content);
+    const all = this.participants.getRoles();
+    if (addressed.length > 0) return all.filter((r) => addressed.includes(r.name.toLowerCase()));
+    if (activeRoles && activeRoles.length > 0) return all.filter((r) => activeRoles.includes(r.name.toLowerCase()));
+    return all;
+  }
+
+  private async runRoleResponse(role: { name: string }): Promise<void> {
+    try {
+      this.io.emit('chat:typing', { sender: role.name });
+      const response = await this.participants.getResponse(
+        role as Parameters<typeof this.participants.getResponse>[0],
+        this.transcript.getMessages(),
+        (token: string) => { this.io.emit('chat:token', { sender: role.name, token }); }
+      );
+      const trimmed = response.content.trim();
+      if (trimmed === '[pass]' || trimmed.toLowerCase().startsWith('[pass]')) {
+        this.io.emit('chat:typed', { sender: role.name, passed: true });
+        return;
+      }
+      const { cleaned, nudges } = extractNudges(response.content);
+      const displayContent = nudges.length > 0 ? cleaned : response.content;
+      const roleMsg = this.transcript.add(role.name, displayContent, {
+        input: response.inputTokens,
+        output: response.outputTokens,
+      });
+      this.io.emit('chat:typed', { sender: role.name, message: roleMsg });
+      for (const nudge of nudges) {
+        const result = executeNudge(role.name.toLowerCase(), nudge.target, nudge.message);
+        const notice = this.transcript.add('System',
+          result.success
+            ? `${role.name} nudged ${nudge.target}: "${nudge.message}"`
+            : `${role.name}'s nudge to ${nudge.target} failed: ${result.detail}`
+        );
+        this.io.emit('chat:message', notice);
+      }
+      this.io.emit('chat:cost', {
+        totalTokens: this.transcript.getTotalTokens(),
+        estimatedCost: this.transcript.getEstimatedCost(),
+        messageCount: this.transcript.getMessages().length,
+      });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const sysMsg = this.transcript.add('System', `${role.name} failed: ${errMsg}`);
+      this.io.emit('chat:typed', { sender: role.name, message: sysMsg });
+    }
+  }
+
+  /** Handle incoming message from Jeff */
+  async handleMessage(content: string, activeRoles?: string[]): Promise<void> {
+    if (this.tryHandleNudgeCommand(content)) return;
+
     const userMsg = this.transcript.add('Jeff', content);
     this.io.emit('chat:message', userMsg);
 
-    // DECISION: capture
     if (/^DECISION[\s:–—-]/i.test(content)) {
-      this.io.emit('chat:decision', {
-        messageId: userMsg.id,
-        text: content,
-        speaker: 'Jeff',
-      });
+      this.io.emit('chat:decision', { messageId: userMsg.id, text: content, speaker: 'Jeff' });
     }
 
-    // Determine responding roles
-    const addressed = parseAddressed(content);
-    const respondingRoles =
-      addressed.length > 0
-        ? this.participants.getRoles().filter((r) => addressed.includes(r.name.toLowerCase()))
-        : activeRoles && activeRoles.length > 0
-          ? this.participants.getRoles().filter((r) => activeRoles.includes(r.name.toLowerCase()))
-          : this.participants.getRoles();
-
-    // Each role responds with streaming
-    for (const role of respondingRoles) {
-      try {
-        this.io.emit('chat:typing', { sender: role.name });
-
-        const response = await this.participants.getResponse(
-          role,
-          this.transcript.getMessages(),
-          (token: string) => {
-            this.io.emit('chat:token', { sender: role.name, token });
-          }
-        );
-
-        // [pass] detection
-        const trimmed = response.content.trim();
-        if (trimmed === '[pass]' || trimmed.toLowerCase().startsWith('[pass]')) {
-          this.io.emit('chat:typed', { sender: role.name, passed: true });
-          continue;
-        }
-
-        // Extract nudges from response
-        const { cleaned, nudges } = extractNudges(response.content);
-        const displayContent = nudges.length > 0 ? cleaned : response.content;
-
-        const roleMsg = this.transcript.add(role.name, displayContent, {
-          input: response.inputTokens,
-          output: response.outputTokens,
-        });
-
-        this.io.emit('chat:typed', { sender: role.name, message: roleMsg });
-
-        // Execute nudges
-        for (const nudge of nudges) {
-          const result = executeNudge(role.name.toLowerCase(), nudge.target, nudge.message);
-          const notice = this.transcript.add('System',
-            result.success
-              ? `${role.name} nudged ${nudge.target}: "${nudge.message}"`
-              : `${role.name}'s nudge to ${nudge.target} failed: ${result.detail}`
-          );
-          this.io.emit('chat:message', notice);
-        }
-
-        // Cost update
-        this.io.emit('chat:cost', {
-          totalTokens: this.transcript.getTotalTokens(),
-          estimatedCost: this.transcript.getEstimatedCost(),
-          messageCount: this.transcript.getMessages().length,
-        });
-      } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const sysMsg = this.transcript.add('System', `${role.name} failed: ${errMsg}`);
-        this.io.emit('chat:typed', { sender: role.name, message: sysMsg });
-      }
+    for (const role of this.selectRespondingRoles(content, activeRoles)) {
+      await this.runRoleResponse(role);
     }
   }
 

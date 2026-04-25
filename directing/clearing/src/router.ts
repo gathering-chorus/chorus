@@ -129,21 +129,23 @@ function stripSpineMetadata(text: string): string {
   return text.replace(/\s*\|\s*tools:\s*[^|]*\|\s*[\d.]+s\s*$/, '').trim();
 }
 
+const SYSTEM_NOISE_RULES: ReadonlyArray<(t: string) => boolean> = [
+  (t) => /<[a-z-]+>/i.test(t),
+  (t) => t.includes('/Users/') || t.includes('/var/') || t.includes('/private/') || t.includes('/tmp/'),
+  (t) => t.includes('hook '),
+  (t) => t.startsWith('Base directory'),
+  (t) => t.startsWith('ARGUMENTS:'),
+  (t) => t.startsWith('Stop hook'),
+  (t) => t.startsWith('→ '),
+  (t) => t.includes('[Request interrupted'),
+  (t) => t.includes('[Image: source:'),
+  (t) => t.includes('chorus-query'),
+  (t) => t.includes('[search]') && t.includes('results'),
+];
+
 /** Whitelist filter — only show clean human-readable content */
 function isSystemNoise(text: string): boolean {
-  // Whitelist approach: if it contains ANY XML-like tag or system artifact, it's noise
-  if (/<[a-z-]+>/i.test(text)) return true;       // Any XML tags
-  if (text.includes('/Users/') || text.includes('/var/') || text.includes('/private/') || text.includes('/tmp/')) return true; // File paths
-  if (text.includes('hook ')) return true;          // Hook output
-  if (text.startsWith('Base directory')) return true;
-  if (text.startsWith('ARGUMENTS:')) return true;
-  if (text.startsWith('Stop hook')) return true;
-  if (text.startsWith('→ ')) return true;           // Nudge delivery echo
-  if (text.includes('[Request interrupted')) return true;
-  if (text.includes('[Image: source:')) return true;
-  if (text.includes('chorus-query')) return true;       // chorus-query.sh output (#1706)
-  if (text.includes('[search]') && text.includes('results')) return true; // search progress
-  return false;
+  return SYSTEM_NOISE_RULES.some((rule) => rule(text));
 }
 
 /** Check if text looks like a tool call, command output, or system plumbing — not human-readable (#1720) */
@@ -167,24 +169,27 @@ function isToolCall(text: string): boolean {
   return false;
 }
 
+const SKILL_OUTPUT_PATTERNS: ReadonlyArray<RegExp> = [
+  /^Auto-checked \d+ AC item/i,
+  /^Demo started: #\d+/i,
+  /^Done: #\d+/i,
+  /^Moved #\d+/i,
+  /^Accepted #\d+/i,
+  /^INJECT_FAILED/i,
+  /^Pulled #\d+/i,
+  /^Updated #\d+/i,
+  /^Rejected: #\d+/i,
+  /^Blocked: #\d+/i,
+  /^Unblocked: #\d+/i,
+  /^Gate chain/i,
+  /^gate:(product|code|quality|arch|ops)/i,
+  /^Nudge delivered/i,
+  /^pre-commit:/i,
+];
+
 /** Check if text is structured skill/CLI output — not role thinking (#2049) */
 function isSkillOutput(text: string): boolean {
-  if (/^Auto-checked \d+ AC item/i.test(text)) return true;
-  if (/^Demo started: #\d+/i.test(text)) return true;
-  if (/^Done: #\d+/i.test(text)) return true;
-  if (/^Moved #\d+/i.test(text)) return true;
-  if (/^Accepted #\d+/i.test(text)) return true;
-  if (/^INJECT_FAILED/i.test(text)) return true;
-  if (/^Pulled #\d+/i.test(text)) return true;
-  if (/^Updated #\d+/i.test(text)) return true;
-  if (/^Rejected: #\d+/i.test(text)) return true;
-  if (/^Blocked: #\d+/i.test(text)) return true;
-  if (/^Unblocked: #\d+/i.test(text)) return true;
-  if (/^Gate chain/i.test(text)) return true;
-  if (/^gate:(product|code|quality|arch|ops)/i.test(text)) return true;
-  if (/^Nudge delivered/i.test(text)) return true;
-  if (/^pre-commit:/i.test(text)) return true;
-  return false;
+  return SKILL_OUTPUT_PATTERNS.some((re) => re.test(text));
 }
 
 /** Check if a message is role-to-role (no Jeff involvement) */
