@@ -31,8 +31,16 @@ module.exports = {
   // ts-jest diagnostics off — type checking is tsc's job, not the test runner's.
   // Tests in this dir were written for default-jest (no strict TS) and use
   // `body.data` style access on `unknown`-typed `res.json()` returns.
+  // #2495: tsconfig.json moves to module=node16 so tsc honors the SDK's
+  // exports field. ts-jest stays on commonjs so dynamic `await import()`
+  // calls in tests (e.g., test-app.ts) get transpiled to require(),
+  // avoiding the --experimental-vm-modules requirement. Runtime Node
+  // honors the SDK exports field regardless of TS module setting.
   transform: {
-    '^.+\\.tsx?$': ['ts-jest', { diagnostics: false }],
+    '^.+\\.tsx?$': ['ts-jest', {
+      diagnostics: false,
+      tsconfig: { module: 'commonjs', moduleResolution: 'node', esModuleInterop: true },
+    }],
   },
   // Coverage floor — #2167 calibrated to baseline.
   //
