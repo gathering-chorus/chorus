@@ -115,7 +115,10 @@ function makeScanDir(deps: DiscoverCodeDeps, aliasMap: Record<string, string[]>,
   };
 }
 
-function scanOverrideDir(deps: DiscoverCodeDeps, dir: string, domainId: string, discovered: Discovered[]): void {
+function scanOverrideDir(deps: DiscoverCodeDeps, dir: string, domainId: string, discovered: Discovered[], aliasMap?: Record<string, string[]>): void {
+  // #2485 — alias-first classifier with override-domain fallback. Without
+  // this, loom-* files inside platform/api/src/handlers and src/sparql were
+  // tagged chorus-domain wholesale, masking the substrate-class subdivision.
   const fullDir = deps.path.join(deps.chorusRoot, dir);
   if (!deps.fs.existsSync(fullDir)) return;
   const entries = deps.fs.readdirSync(fullDir, { recursive: true, encoding: null }) as string[];
@@ -125,8 +128,18 @@ function scanOverrideDir(deps: DiscoverCodeDeps, dir: string, domainId: string, 
     const fullPath = deps.path.join(fullDir, entryStr);
     try { if (!deps.fs.statSync(fullPath).isFile()) continue; } catch { continue; }
     const relPath = deps.path.relative(deps.chorusRoot, fullPath);
+    const qualifiedPath = `chorus/${relPath}`;
     const ext = deps.path.extname(entryStr).slice(1) || 'unknown';
-    discovered.push({ domainId, filePath: `chorus/${relPath}`, fileType: ext });
+    if (aliasMap) {
+      const basename = deps.path.basename(entryStr).toLowerCase();
+      const pathParts = relPath.toLowerCase().split('/');
+      const hit = classifyEntry(entryStr, basename, pathParts, ext, aliasMap, qualifiedPath);
+      if (hit) {
+        discovered.push(hit);
+        continue;
+      }
+    }
+    discovered.push({ domainId, filePath: qualifiedPath, fileType: ext });
   }
 }
 
@@ -173,7 +186,7 @@ export function createDiscoverCode(deps: DiscoverCodeDeps) {
       'platform/api/tests': 'chorus-domain',
     };
     for (const [dir, domainId] of Object.entries(dirDomainOverrides)) {
-      scanOverrideDir(deps, dir, domainId, discovered);
+      scanOverrideDir(deps, dir, domainId, discovered, aliasMap);
     }
     scanDir(deps.path.join(deps.chorusRoot, 'skills'), deps.chorusRoot);
     scanDir(deps.path.join(deps.chorusRoot, 'proving/domains/alerts'), deps.chorusRoot);

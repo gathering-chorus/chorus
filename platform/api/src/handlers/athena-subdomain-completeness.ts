@@ -46,7 +46,10 @@ const COUNT_PREDS = [
   ['priorArtCount', 'hasPriorArt'],
   ['pageCount', 'hasPage'],
   ['integrationCount', 'hasIntegration'],
-  ['serviceCount', 'hasService'],
+  // #2485 — services slot counts hasEndpoint (canonical predicate from
+  // discover-endpoints) instead of hasService. Page renders this under the
+  // "Endpoints" header (renamed from "API Contract" same round).
+  ['serviceCount', 'hasEndpoint'],
   ['persistenceCount', 'hasPersistence'],
   ['pipelineCount', 'hasPipeline'],
   ['logSourceCount', 'hasLogSource'],

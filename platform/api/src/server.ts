@@ -1564,6 +1564,11 @@ app.get('/api/loom/principles', (_req: Request, res: Response) => {
   res.redirect(308, '/api/athena/subdomains/loom-principles/principles');
 });
 
+// GET /api/loom/decisions — 308 redirect to Athena (#2485 Move 2, mirror of principles).
+app.get('/api/loom/decisions', (_req: Request, res: Response) => {
+  res.redirect(308, '/api/athena/subdomains/loom-decisions/decisions');
+});
+
 // GET /api/athena/subdomains/:id/principles — principles inside a SubDomain (#2314).
 // Currently scoped to loom-principles; reuses the existing principle folding logic
 // (parent set, sort, envelope) from handlers/loom-principles.ts.
