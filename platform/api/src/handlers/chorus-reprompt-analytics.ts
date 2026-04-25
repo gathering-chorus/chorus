@@ -1,3 +1,11 @@
+/* eslint-disable security/detect-object-injection --
+ * Object/array indexing in this handler is on internally-validated keys:
+ *   - Role union 'wren'|'silas'|'kade' guarded by isRole()
+ *   - Event type union ('reprompt'|'approval'|'correction') from classifyEventType()
+ *   - Date-string day keys (YYYY-MM-DD substring of validated timestamps)
+ *   - Normalized phrase keys (alphanumeric only after regex strip)
+ * No untrusted HTTP input reaches a bracket-access sink in this handler.
+ */
 /**
  * GET /api/chorus/reprompt-analytics — Jeff attention-cost analytics (#2188).
  *

@@ -1,3 +1,11 @@
+/* eslint-disable security/detect-object-injection --
+ * Object/array indexing in this handler is on internally-validated keys:
+ *   - TSV header names from the analytics generator (internal schema)
+ *   - Intensity union ('green'|'yellow'|'red') checked via isIntensity()
+ *   - Computed hour-of-day indices 0..23
+ *   - Role union 'wren'|'silas'|'kade' (typed at ingest)
+ * No untrusted HTTP input reaches a bracket-access sink in this handler.
+ */
 /**
  * GET /api/chorus/attention-analytics — Jeff intensity + energy-flow aggregate (extracted #2189).
  *

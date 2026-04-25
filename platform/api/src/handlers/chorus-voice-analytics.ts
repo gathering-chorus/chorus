@@ -1,3 +1,11 @@
+/* eslint-disable security/detect-object-injection --
+ * All object/array indexing in this file is on internally-validated keys:
+ *   - Tone keys come from the TONE_KEYS const enum
+ *   - Role keys are the 'wren'|'silas'|'kade' union (typed at row ingest)
+ *   - Week keys are deterministic YYYY-Www strings from weekKeyFor()
+ *   - Word/bigram keys are tokenized + filtered through isValidWord()
+ * No untrusted HTTP input reaches a bracket-access sink in this handler.
+ */
 /**
  * GET /api/chorus/voice-analytics — Jeff tone + vocab analytics (#2188).
  *
