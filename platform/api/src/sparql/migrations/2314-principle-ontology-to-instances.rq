@@ -1,0 +1,42 @@
+# 2314 — Migrate chorus:Principle instances from ontology graph to instances graph.
+# Per ADR-025 (#2468), content belongs in urn:chorus:instances. URIs preserved.
+# 27 instances + their predicates (skos:broader, chorus:contains, isPermacultureParent,
+# techReading, jeffReading, dcterms:source, dcterms:created, dcterms:modified,
+# rdfs:label, rdfs:comment).
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX skos:   <http://www.w3.org/2004/02/skos/core#>
+DELETE {
+  GRAPH <urn:chorus:ontology> {
+    ?principle ?p ?o .
+  }
+}
+INSERT {
+  GRAPH <urn:chorus:instances> {
+    ?principle ?p ?o .
+  }
+}
+WHERE {
+  GRAPH <urn:chorus:ontology> {
+    ?principle a chorus:Principle .
+    ?principle ?p ?o .
+  }
+} ;
+# Move chorus:contains edges from loom-principles → individual principles
+DELETE {
+  GRAPH <urn:chorus:ontology> {
+    chorus:loom-principles chorus:contains ?p .
+  }
+}
+INSERT {
+  GRAPH <urn:chorus:instances> {
+    chorus:loom-principles chorus:contains ?p .
+  }
+}
+WHERE {
+  GRAPH <urn:chorus:ontology> {
+    chorus:loom-principles chorus:contains ?p .
+    ?p a chorus:Principle .
+  }
+}

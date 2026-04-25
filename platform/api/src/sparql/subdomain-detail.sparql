@@ -11,6 +11,29 @@ SELECT ?label ?ownerLabel ?stepLabel ?comment ?consumer ?consumerLabel ?consumed
     OPTIONAL { ?consumer chorus:consumes <$URI> . ?consumer rdfs:label ?consumerLabel }
     OPTIONAL { <$URI> chorus:consumes ?consumed . ?consumed rdfs:label ?consumedLabel }
     OPTIONAL { <$URI> chorus:hasDomain ?child . ?child rdfs:label ?childLabel }
-    OPTIONAL { <$URI> chorus:contains ?instance . ?instance rdfs:label ?instanceLabel . OPTIONAL { ?instance rdfs:comment ?instanceComment } OPTIONAL { ?instance a ?instanceType . ?instanceType rdfs:label ?instanceTypeLabel . FILTER(?instanceType != owl:NamedIndividual) } }
+  }
+  # Contains edges + instances may live in either graph during the ADR-025 migration.
+  # Until SubDomain (#2469 child #10) moves last, this needs a cross-graph view.
+  OPTIONAL {
+    { GRAPH <urn:chorus:ontology>  { <$URI> chorus:contains ?instance } }
+    UNION
+    { GRAPH <urn:chorus:instances> { <$URI> chorus:contains ?instance } }
+    OPTIONAL {
+      { GRAPH <urn:chorus:ontology>  { ?instance rdfs:label ?instanceLabel } }
+      UNION
+      { GRAPH <urn:chorus:instances> { ?instance rdfs:label ?instanceLabel } }
+    }
+    OPTIONAL {
+      { GRAPH <urn:chorus:ontology>  { ?instance rdfs:comment ?instanceComment } }
+      UNION
+      { GRAPH <urn:chorus:instances> { ?instance rdfs:comment ?instanceComment } }
+    }
+    OPTIONAL {
+      { GRAPH <urn:chorus:ontology>  { ?instance a ?instanceType } }
+      UNION
+      { GRAPH <urn:chorus:instances> { ?instance a ?instanceType } }
+      OPTIONAL { GRAPH <urn:chorus:ontology> { ?instanceType rdfs:label ?instanceTypeLabel } }
+      FILTER(?instanceType != owl:NamedIndividual)
+    }
   }
 }

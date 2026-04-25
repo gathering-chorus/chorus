@@ -1,0 +1,11 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+# #2314 follow-on (Jeff direction): "no competing implementations" specializes
+# parents 5, 6, and 7 — any and all of them are truthful upstreams.
+INSERT DATA {
+  GRAPH <urn:chorus:instances> {
+    chorus:principle-no-competing-implementations skos:broader chorus:hemenway-function-supported-by-multiple-elements .
+    chorus:principle-no-competing-implementations skos:broader chorus:hemenway-least-change-greatest-effect .
+    chorus:principle-no-competing-implementations skos:broader chorus:hemenway-small-scale-intensive-systems .
+  }
+}

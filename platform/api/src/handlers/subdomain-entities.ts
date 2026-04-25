@@ -160,7 +160,7 @@ function escapeLiteral(s: string): string {
 }
 
 function slugify(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, '-');
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 export async function createSubdomainEntity(
@@ -481,6 +481,9 @@ export const ENTITY_SECTIONS: Partial<Record<string, { hasProperty: string; clas
   pages: { hasProperty: 'hasPage', class: 'Page' },
   integrations: { hasProperty: 'hasIntegration', class: 'Integration' },
   persistence: { hasProperty: 'hasPersistence', class: 'PersistenceStore' },
+  // #2314 — first migration child of #2469. Principles use chorus:contains (the
+  // canonical domain→instance edge), not a class-specific has<X> predicate.
+  principles: { hasProperty: 'contains', class: 'Principle' },
   services: { hasProperty: 'hasService', class: 'Service' },
   pipeline: { hasProperty: 'hasPipeline', class: 'Pipeline' },
   logs: { hasProperty: 'hasLogSource', class: 'LogSource' },
@@ -680,6 +683,33 @@ export const updatePriorArtSpec: UpdateEntitySpec = {
   propertyMap: createPriorArtSpec.propertyMap,
 };
 
+// #2314 — Principle write spec. Uses chorus:contains (canonical domain→instance edge),
+// not class-specific has<X>. Properties mirror the chorus.ttl schema for principles:
+// rdfs:label, rdfs:comment, chorus:techReading, chorus:jeffReading, dcterms:source,
+// chorus:isPermacultureParent, skos:broader (parent principle URI for specializations).
+export const createPrincipleSpec: CreateEntitySpec = {
+  envelopeName: 'subdomain-principle-create',
+  uriSegment: 'principle',
+  typeClass: 'chorus:Principle',
+  hasPredicate: 'chorus:contains',
+  propertyMap: {
+    label:        { predicate: 'rdfs:label' },
+    comment:      { predicate: 'rdfs:comment' },
+    techReading:  { predicate: 'chorus:techReading' },
+    jeffReading:  { predicate: 'chorus:jeffReading' },
+    dcSource:     { predicate: 'dcterms:source' },
+    isPermacultureParent: { predicate: 'chorus:isPermacultureParent' },
+    broaderOf:    { predicate: 'skos:broader', kind: 'uri' },
+  },
+};
+
+export const updatePrincipleSpec: UpdateEntitySpec = {
+  envelopeName: 'principle-update',
+  typeClass: 'chorus:Principle',
+  hasPredicate: 'chorus:contains',
+  propertyMap: createPrincipleSpec.propertyMap,
+};
+
 export const createSubdomainActor = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
   createSubdomainEntity(deps, id, body, createActorSpec);
 export const createSubdomainContract = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
@@ -695,3 +725,9 @@ export const updateSubdomainContract = (deps: WriteDeps, id: string, entityId: s
   updateSubdomainEntity(deps, id, entityId, body, updateContractSpec);
 export const updateSubdomainPriorArt = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
   updateSubdomainEntity(deps, id, entityId, body, updatePriorArtSpec);
+
+// #2314 — Principle write adapters
+export const createSubdomainPrinciple = (deps: WriteDeps, id: string, body: Record<string, unknown> | null | undefined) =>
+  createSubdomainEntity(deps, id, body, createPrincipleSpec);
+export const updateSubdomainPrinciple = (deps: WriteDeps, id: string, entityId: string, body: Record<string, unknown> | null | undefined) =>
+  updateSubdomainEntity(deps, id, entityId, body, updatePrincipleSpec);

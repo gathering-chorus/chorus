@@ -1,14 +1,15 @@
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-SELECT ?principle ?label ?comment ?techReading ?jeffReading ?isPermacultureParent ?parent ?parentLabel WHERE {
-  GRAPH <urn:chorus:ontology> {
+SELECT ?principle ?label ?comment ?techReading ?jeffReading ?isPermacultureParent ?order ?parent ?parentLabel WHERE {
+  GRAPH <urn:chorus:instances> {
     ?principle a chorus:Principle .
     OPTIONAL { ?principle rdfs:label ?label }
     OPTIONAL { ?principle rdfs:comment ?comment }
     OPTIONAL { ?principle chorus:techReading ?techReading }
     OPTIONAL { ?principle chorus:jeffReading ?jeffReading }
     OPTIONAL { ?principle chorus:isPermacultureParent ?isPermacultureParent }
+    OPTIONAL { ?principle chorus:order ?order }
     OPTIONAL {
       ?principle skos:broader ?parent .
       OPTIONAL { ?parent rdfs:label ?parentLabel }

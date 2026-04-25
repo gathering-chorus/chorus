@@ -1,0 +1,23 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+# #2314 follow-on: stamp book order on the 14 permaculture parents so
+# /loom/principles.html can render in the same order as
+# /book/principles-reconstructed.html. Source: Hemenway, Gaia's Garden, 2nd ed.,
+# pp. 5–7 (reconstructed from photos in #2337/#2447).
+INSERT DATA {
+  GRAPH <urn:chorus:instances> {
+    chorus:hemenway-observe chorus:order 1 .
+    chorus:hemenway-connect chorus:order 2 .
+    chorus:hemenway-catch-and-store chorus:order 3 .
+    chorus:hemenway-each-element-multiple-functions chorus:order 4 .
+    chorus:hemenway-function-supported-by-multiple-elements chorus:order 5 .
+    chorus:hemenway-least-change-greatest-effect chorus:order 6 .
+    chorus:hemenway-small-scale-intensive-systems chorus:order 7 .
+    chorus:hemenway-optimize-edge chorus:order 8 .
+    chorus:hemenway-collaborate-with-succession chorus:order 9 .
+    chorus:hemenway-biological-renewable-resources chorus:order 10 .
+    chorus:hemenway-turn-problems-into-solutions chorus:order 11 .
+    chorus:hemenway-get-a-yield chorus:order 12 .
+    chorus:hemenway-creativity-is-the-limit chorus:order 13 .
+    chorus:hemenway-mistakes-are-tools-for-learning chorus:order 14 .
+  }
+}

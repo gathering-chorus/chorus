@@ -1449,8 +1449,8 @@ import { fetchAthenaSubproducts } from './handlers/athena-subproducts';
 import { fetchAthenaSteps } from './handlers/athena-steps';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
-import { fetchLoomPrinciples } from './handlers/loom-principles';
 import { fetchLoomPolicies } from './handlers/loom-policies';
+import { fetchLoomPrinciples } from './handlers/loom-principles';
 import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
 import { fetchAthenaSubdomainDetail } from './handlers/athena-subdomain-detail';
 import { fetchAthenaBlastRadius } from './handlers/athena-blast-radius';
@@ -1543,8 +1543,17 @@ app.get('/api/athena/machines', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
-// GET /api/loom/principles — all chorus:Principle instances, product-facing alias (#2337)
-app.get('/api/loom/principles', async (_req: Request, res: Response) => {
+// GET /api/loom/principles — 308 redirect to Athena (#2314 — Loom GET retired post-ADR-025).
+// New canonical path: /api/athena/subdomains/loom-principles/principles. Frontend updated to fetch
+// the canonical path directly; this redirect serves any remaining callers.
+app.get('/api/loom/principles', (_req: Request, res: Response) => {
+  res.redirect(308, '/api/athena/subdomains/loom-principles/principles');
+});
+
+// GET /api/athena/subdomains/:id/principles — principles inside a SubDomain (#2314).
+// Currently scoped to loom-principles; reuses the existing principle folding logic
+// (parent set, sort, envelope) from handlers/loom-principles.ts.
+app.get('/api/athena/subdomains/:id/principles', async (_req: Request, res: Response) => {
   const r = await fetchLoomPrinciples({ sparql: athenaSparqlQuery, loadQuery: loadSparql });
   res.status(r.status).json(r.body);
 });
@@ -2074,10 +2083,12 @@ import {
   createSubdomainActor,
   createSubdomainContract,
   createSubdomainPriorArt,
+  createSubdomainPrinciple,
   updateSubdomainActor,
   updateSubdomainScenario,
   updateSubdomainContract,
   updateSubdomainPriorArt,
+  updateSubdomainPrinciple,
   updateSubdomainService,
   updateSubdomainPipeline,
   updateSubdomainLog,
@@ -2274,6 +2285,18 @@ app.post('/api/athena/subdomains/:id/scenarios', async (req: Request, res: Respo
 
 app.post('/api/athena/subdomains/:id/contract', async (req: Request, res: Response) => {
   const r = await createSubdomainContract(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
+});
+
+// POST /api/athena/subdomains/:id/principles — add principle to subdomain (#2314)
+app.post('/api/athena/subdomains/:id/principles', async (req: Request, res: Response) => {
+  const r = await createSubdomainPrinciple(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
+});
+
+// PUT /api/athena/subdomains/:id/principles/:entityId — update principle (#2314)
+app.put('/api/athena/subdomains/:id/principles/:entityId', async (req: Request, res: Response) => {
+  const r = await updateSubdomainPrinciple(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
   res.status(r.status).json(r.body);
 });
 

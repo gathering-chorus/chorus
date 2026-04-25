@@ -166,6 +166,23 @@ else
   echo "" >> "$DETAIL_FILE"
 fi
 
+# --- Check 3.6: Principle direct-edit gate (#2314) ---
+# Reject staged chorus.ttl edits that add new chorus:Principle instance triples.
+# Principles are written via POST /api/athena/subdomains/loom-principles/principles
+# (ADR-025). Override via PRINCIPLE_DIRECT_EDIT_SKIP=1 for one-off migration / schema-only edits.
+CHECKS_RUN=$((CHECKS_RUN + 1))
+if principle_out=$(echo "$STAGED" | REPO_ROOT="$REPO_ROOT" "$REPO_ROOT/platform/scripts/check-principle-direct-edit.sh" 2>&1); then
+  CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+  CHECKS_FAILED=$((CHECKS_FAILED + 1))
+  FAILURES="${FAILURES}\n  - principle-direct-edit — chorus.ttl stages new Principle instances (#2314)"
+  echo "## Principle direct-edit (#2314)" >> "$DETAIL_FILE"
+  echo '```' >> "$DETAIL_FILE"
+  echo "$principle_out" >> "$DETAIL_FILE"
+  echo '```' >> "$DETAIL_FILE"
+  echo "" >> "$DETAIL_FILE"
+fi
+
 # --- Check 4: Per-rule ESLint ratchet (#2462/#2464, supersedes #1282) ---
 # Chorus repo owns a .eslint-baseline.json with per-rule counts. The ratchet
 # script runs on every commit that touches .ts/config/baseline files and fails

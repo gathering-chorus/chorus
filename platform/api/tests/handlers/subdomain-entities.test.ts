@@ -261,6 +261,16 @@ describe('createSubdomainService', () => {
     expect(body.data.uri).toBe('https://jeffbridwell.com/chorus#chorus-domain-service-my-fancy-service');
   });
 
+  test('slugify strips non-alphanumerics (#, punctuation, unicode) and trims edges', async () => {
+    // Before #2314 hardening: a `#` in the label survived into the URI fragment,
+    // producing nonsense like ...#chorus-domain-service-foo-#42. Now any non-[a-z0-9]
+    // run collapses to a single dash and leading/trailing dashes are trimmed.
+    const d = writeDeps();
+    const r = await createSubdomainService(d, 'chorus-domain', { label: '  Demo svc for #42 / v2!  ' });
+    const body = r.body as { data: { uri: string } };
+    expect(body.data.uri).toBe('https://jeffbridwell.com/chorus#chorus-domain-service-demo-svc-for-42-v2');
+  });
+
   test('escapes double quotes in label to avoid SPARQL injection', async () => {
     const d = writeDeps();
     await createSubdomainService(d, 'chorus-domain', { label: 'evil "quoted" name' });

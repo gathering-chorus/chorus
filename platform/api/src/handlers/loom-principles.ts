@@ -21,6 +21,7 @@ export interface SparqlPrincipleBinding {
   techReading?: { value: string };
   jeffReading?: { value: string };
   isPermacultureParent?: { value: string };
+  order?: { value: string };
   parent?: { value: string };
   parentLabel?: { value: string };
 }
@@ -38,6 +39,7 @@ interface PrincipleRow {
   techReading: string;
   jeffReading: string;
   isPermacultureParent: boolean;
+  order: number | null;
   parents: PrincipleParentRef[];
   uri: string;
 }
@@ -76,6 +78,7 @@ function buildPrincipleRow(b: SparqlPrincipleBinding, uri: string): PrincipleRow
     techReading: b.techReading?.value ?? '',
     jeffReading: b.jeffReading?.value ?? '',
     isPermacultureParent: b.isPermacultureParent?.value === 'true',
+    order: b.order?.value ? Number.parseInt(b.order.value, 10) : null,
     parents: [],
     uri,
   };
@@ -108,7 +111,18 @@ function foldBindings(bindings: SparqlPrincipleBinding[]): PrincipleRow[] {
     addParentIfMissing(row, b);
   }
   const principles = Array.from(byUri.values());
-  principles.sort((a, b) => a.label.localeCompare(b.label));
+  // Permaculture parents render in book order (chorus:order). Specializations and
+  // unparented entries fall back to label sort. Frontend may re-group nested under
+  // parents — this sort produces a deterministic flat order regardless.
+  principles.sort((a, b) => {
+    if (a.isPermacultureParent && b.isPermacultureParent) {
+      return (a.order ?? 999) - (b.order ?? 999);
+    }
+    if (a.isPermacultureParent !== b.isPermacultureParent) {
+      return a.isPermacultureParent ? -1 : 1;
+    }
+    return a.label.localeCompare(b.label);
+  });
   return principles;
 }
 

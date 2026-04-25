@@ -92,6 +92,16 @@
       font-style: italic;
       margin-bottom: 1.5rem;
     }
+    .nested {
+      margin-top: 1rem;
+      margin-left: 1.1rem;
+      padding-left: 0.9rem;
+      border-left: 2px dashed var(--border);
+    }
+    .nested .principle {
+      margin: 0.6rem 0;
+      padding: 0.9rem 1.1rem;
+    }
 
     .principle {
       background: var(--card-bg);
@@ -228,7 +238,7 @@
   </main>
 
   <footer>
-    Source: <code>GET /api/loom/principles</code> → graph <code>urn:chorus:ontology</code>. Top-level principles derived from Toby Hemenway, <em>Gaia's Garden</em> (2nd ed.), adapted for the Chorus+Jeff context per #2337.
+    Source: <code>GET /api/athena/subdomains/loom-principles/principles</code> → graph <code>urn:chorus:instances</code> (per ADR-025). Top-level principles derived from Toby Hemenway, <em>Gaia's Garden</em> (2nd ed.), adapted for the Chorus+Jeff context per #2337.
   </footer>
 
   <script>
@@ -289,7 +299,7 @@
       const main = document.getElementById('principles');
       main.innerHTML = '<div class="empty">Loading principles…</div>';
       try {
-        const res = await fetch('/api/loom/principles');
+        const res = await fetch('/api/athena/subdomains/loom-principles/principles');
         if (!res.ok) throw new Error('API returned ' + res.status);
         const body = await res.json();
         const all = body?.data?.principles || [];
@@ -298,28 +308,44 @@
           return;
         }
 
-        const parents = all.filter((p) => p.isPermacultureParent);
+        const parents = all.filter((p) => p.isPermacultureParent)
+          .slice()
+          .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
         const children = all.filter((p) => !p.isPermacultureParent);
         const unparented = children.filter((c) => !c.parents || c.parents.length === 0);
         const grouped = children.filter((c) => c.parents && c.parents.length > 0);
 
+        // Group specializations by parent URI for nested render
+        const childrenByParent = new Map();
+        grouped.forEach((c) => {
+          c.parents.forEach((pp) => {
+            if (!childrenByParent.has(pp.uri)) childrenByParent.set(pp.uri, []);
+            childrenByParent.get(pp.uri).push(c);
+          });
+        });
+
         let html = '';
 
         if (parents.length > 0) {
-          html += `<h3 class="section-heading">Permaculture principles</h3>`;
-          html += `<div class="section-intro">Top-level. Each reads three ways: permaculture / tech / Jeff.</div>`;
-          html += parents.map((p) => renderPrinciple(p)).join('');
-        }
-
-        if (grouped.length > 0) {
-          html += `<h3 class="section-heading">Chorus specializations</h3>`;
-          html += `<div class="section-intro">Principles Jeff + team discovered in Chorus work. Each points upstream to its permaculture parent(s).</div>`;
-          html += grouped.map((c) => renderPrinciple(c)).join('');
+          html += `<div class="section-intro">Permaculture principles in book order. Each reads three ways: permaculture / tech / Jeff. Specializations nest under their parent.</div>`;
+          parents.forEach((p, idx) => {
+            const ordinal = p.order ?? (idx + 1);
+            const headedLabel = `${ordinal}. ${escapeHtml(p.label || p.id || 'Unlabeled')}`;
+            const inner = renderPrinciple(p).replace(
+              /<h2>[^<]*<\/h2>/,
+              `<h2>${headedLabel}</h2>`,
+            );
+            const kids = childrenByParent.get(p.uri) || [];
+            const nested = kids.length
+              ? `<div class="nested">` + kids.map((c) => renderPrinciple(c)).join('') + `</div>`
+              : '';
+            html += inner.replace('</article>', `${nested}</article>`);
+          });
         }
 
         if (unparented.length > 0) {
           html += `<h3 class="section-heading">Unclassified</h3>`;
-          html += `<div class="section-intro">Principles with no permaculture parent yet. File #2337 or #2339 to place them.</div>`;
+          html += `<div class="section-intro">Principles with no permaculture parent yet.</div>`;
           html += unparented.map((c) => renderPrinciple(c)).join('');
         }
 
