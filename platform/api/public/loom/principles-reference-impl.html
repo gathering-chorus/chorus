@@ -27,7 +27,7 @@
       font-family: "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
       line-height: 1.65;
     }
-    main { margin: 0 1in; padding: 2.5rem 0 6rem; max-width: 1100px; }
+    main { margin: 0 1in; padding: 2.5rem 0 6rem; }
     header { border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }
     h1 { font-size: 2.4rem; margin: 0 0 0.3rem; color: var(--accent); letter-spacing: -0.01em; }
     .subtitle { color: var(--muted); font-style: italic; font-size: 1.05rem; }
@@ -87,9 +87,32 @@
 <main>
   <header>
     <h1>Principles — Reference Implementation</h1>
-    <div class="subtitle">The full body of MUST / SHOULD / MAY rules across the principles arc — graph schema, write API, page rendering, citation pattern, enforcement, and planned MCP integration.</div>
+    <div class="subtitle">The first substrate-class domain put through the full treatment — graph as source, API as write path, drift test as gate, cite-by-ID, hook as backstop. Captured fresh so the shape transfers to Practices, Policies, Decisions, ADRs, Services.</div>
     <div class="meta">Cards: 14 · Shipped: 5 · Queued: 9 · Rendered: <span id="rendered-at"></span></div>
   </header>
+
+  <h2 id="heart">The Heart</h2>
+  <p>This page exists because the principles arc was the first time we put a substrate-class domain through the full treatment. The shape that emerged is reusable. Five moves, in order:</p>
+  <ol>
+    <li><strong>Graph as the single source.</strong> One named graph holds every instance; nothing is paraphrased anywhere else.</li>
+    <li><strong>API as the only write path.</strong> POST/PUT/DELETE through Athena; hand-edits to TTL are blocked at commit.</li>
+    <li><strong>Drift test as the gate.</strong> A static baseline (<code>book/principles-reconstructed.html</code>) is held against the graph; divergence fails CI.</li>
+    <li><strong>Cite-by-ID, never inline.</strong> Role files reference principle URIs and emphasize a subset; the lens is editorial, the body is canonical.</li>
+    <li><strong>Hook backstops the affordance.</strong> The typed API becomes the path of least resistance; the pre-commit hook bites the path it replaces.</li>
+  </ol>
+  <p>This shape transfers. Practices, Policies, Decisions, ADRs, Services — every substrate-class domain that wants to stop being documentation and start being a contract goes through these five moves. The principles arc is the proof; everything past #2469 is replication.</p>
+
+  <h3>How we got here</h3>
+  <p>#2447 found the gaps — the live page was missing parents and the graph had no drift test. #2314 moved the substrate — 27 instances out of the ontology graph into the instances graph, an Athena write API, and the Loom GET retired to a 308 so no parallel implementation could grow back. #2157 proved the API by writing a meta-principle ("tests hermetic by default") through it as the first content write. #2473 populated 18 missing team principles through the same path — Jeff stamped wording in three batches, no TTL touched. #2449 closed the loop: role <code>principles.md</code> fragments became citation-only, drift-proof by construction. The arc took five cards because each one removed one path back to the old way.</p>
+
+  <h3>What we deliberately didn't do</h3>
+  <ul>
+    <li><strong>Auto-update role files when a principle changes.</strong> Emphasis is editorial — the role chooses what to weight. Auto-sync would erase that judgment. Citations stay live; emphasis stays authored.</li>
+    <li><strong>Generate this page.</strong> Jeff is reading-as-thinking right now; a static surface he can mark up beats a dashboard. Generation comes after the shape settles.</li>
+    <li><strong>Allow Loom GET as a parallel read path.</strong> The 308 is non-negotiable — two read shapes for the same data is how drift starts. Retirement was part of the contract, not a follow-on.</li>
+    <li><strong>SHACL across graphs in #2314.</strong> The boundary check (label-required → 400) covers the immediate need; cross-graph SHACL waits for #2469 where it can be tested hermetically. Don't ship enforcement you can't test.</li>
+    <li><strong>Update/Delete MCP tools in #2476.</strong> Create has unproven cadence; PUT/DELETE on REST stay available. Adding tools nobody reaches for is anti-affordance.</li>
+  </ul>
 
   <h2 id="diagram">Reference Architecture</h2>
   <p>Eight surfaces, one source of truth. The graph (<code>urn:chorus:instances</code>) holds every principle. Athena is the canonical read+write API. Loom is product-facing redirect-and-page. The shim and SessionStart consume principles at boot. MCP is the typed surface coming online.</p>
@@ -330,7 +353,7 @@ flowchart TB
 
   <div class="invariant">
     <span class="num">I-1</span><strong>The graph is the source of truth.</strong>
-    <span class="why">Every other surface — page render, role citations, MCP tools, boot envelope — derives from the graph. No surface caches. No surface paraphrases. Drift starts the moment a copy lives somewhere else.</span>
+    <span class="why">Every other surface — page render, role citations, MCP tools, boot envelope — derives from the graph. No surface caches. No surface paraphrases. Drift starts the moment a copy lives somewhere else. <em>Scar:</em> role <code>principles.md</code> files used to inline principle text; every wording tweak meant a three-place edit Jeff or the role would forget. #2449 retired the inlining for exactly this reason.</span>
   </div>
   <div class="invariant">
     <span class="num">I-2</span><strong>URIs are stable across all migrations.</strong>
@@ -342,7 +365,7 @@ flowchart TB
   </div>
   <div class="invariant">
     <span class="num">I-4</span><strong>One source, multiple call shapes.</strong>
-    <span class="why">REST, MCP, SPARQL, page render — all delegate to the same Athena handler reading the same graph. No competing implementations. New transports are surfaces over the source, not new sources.</span>
+    <span class="why">REST, MCP, SPARQL, page render — all delegate to the same Athena handler reading the same graph. No competing implementations. New transports are surfaces over the source, not new sources. <em>Scar:</em> the Loom GET was about to become a permanent parallel read path. #2314 retired it to a 308 in the same commit that introduced the canonical Athena route — closing the door before a second implementation could harden.</span>
   </div>
   <div class="invariant">
     <span class="num">I-5</span><strong>Single-verb-single-target tool granularity.</strong>
@@ -354,7 +377,11 @@ flowchart TB
   </div>
   <div class="invariant">
     <span class="num">I-7</span><strong>Rule expression beats rule paraphrase.</strong>
-    <span class="why">Don't restate principles; cite IDs. Don't reword principles in role files; reference them. The role file is a lens, not a copy. <code>grep -c '^[0-9]\\.'</code> on a principles fragment must return 0.</span>
+    <span class="why">Don't restate principles; cite IDs. Don't reword principles in role files; reference them. The role file is a lens, not a copy. <code>grep -c '^[0-9]\\.'</code> on a principles fragment must return 0. <em>Scar:</em> three role files, three slightly-different paraphrases of the same principle, no way to tell which was current. The cite-by-ID rule exists because we lived with the alternative.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-11</span><strong>Every principle is read three ways; the third is yours.</strong>
+    <span class="why"><code>rdfs:comment</code> is the permaculture source. <code>chorus:techReading</code> translates it to engineering. <code>chorus:jeffReading</code> is Jeff's reading — what the principle means in <em>this</em> portfolio, on <em>this</em> team. The third layer is what makes a principle his and not paraphrased Hemenway. Without it, this is a textbook; with it, it's a contract he signed.</span>
   </div>
   <div class="invariant">
     <span class="num">I-8</span><strong>Counts grow; tests assert floors.</strong>

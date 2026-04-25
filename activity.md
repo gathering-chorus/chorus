@@ -1099,3 +1099,6 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - Deep team distill on memory-vs-structure (Kade 8 + Wren 4 card proposals retired per Jeff; top-10 pattern distill output pending)
 - Anthropic postmortem reconciled with frustration chart windows (4/07-4/10, 4/16-4/20)
 - Data-quality hole audit: activity/state/story stale 12d, journal 4d — not carded pending Jeff direction
+- 2026-04-25T13:58Z [wren] session reboot — principles arc shipped 5 cards (#2447 #2314 #2157 #2473 #2449); filed 6 follow-ons (#2470 #2471 #2476 #2477 #2479 #2480); ran gate-product on #2472 #2474 #2450; reference impl HTML landed at /loom/principles-reference-impl.html
+
+- [Wren] 2026-04-25 morning → extended /loom/principles-reference-impl.html with "The Heart" section (5-move pattern, transferability claim, how-we-got-here arc, deliberate negatives, scar tissue on I-1/I-4/I-7, new I-11 jeffReading invariant, 1in symmetric margins). Ran /gate-product PASS on #2451 → Kade gate:code+quality PASS → Silas notified for arch+ops. Open: Kade question on #2463 AC#5 (ratchet vs sustained-no-regression) — answer queued in next-session.md.

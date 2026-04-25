@@ -1,6 +1,7 @@
 {
   "env": {
-    "DEPLOY_ROLE": "wren"
+    "DEPLOY_ROLE": "wren",
+    "CHORUS_ROLE": "wren"
   },
   "hooks": {
     "SessionStart": [
