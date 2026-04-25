@@ -85,32 +85,34 @@ function parseAddArgs(args: string[]): {
   }
 }
 
-function parseUpdateArgs(args: string[]): { index: number; title?: string; description?: string; domain?: string; chunk?: string; sequence?: string; owner?: string } {
+type UpdateFields = { title?: string; description?: string; domain?: string; chunk?: string; sequence?: string; owner?: string };
+
+const UPDATE_FLAG_TO_FIELD: Partial<Record<string, keyof UpdateFields>> = {
+  '--title': 'title',
+  '--description': 'description',
+  '--desc': 'description',
+  '--domain': 'domain',
+  '--chunk': 'chunk',
+  '--sequence': 'sequence',
+  '--seq': 'sequence',
+  '--owner': 'owner',
+};
+
+function parseUpdateArgs(args: string[]): { index: number } & UpdateFields {
   if (!args[0]) die('Usage: cards update <id> [--title T] [--desc D] [--domain D] [--chunk C] [--owner O]');
   const index = parseInt(args[0], 10);
-  let title: string | undefined;
-  let description: string | undefined;
-  let domain: string | undefined;
-  let chunk: string | undefined;
-  let sequence: string | undefined;
-  let owner: string | undefined;
+  const fields: UpdateFields = {};
 
-  let i = 1;
-  while (i < args.length) {
-    switch (args[i]) {
-      case '--title': title = args[++i]; break;
-      case '--description': case '--desc': description = args[++i]; break;
-      case '--domain': domain = args[++i]; break;
-      case '--chunk': chunk = args[++i]; break;
-      case '--sequence': case '--seq': sequence = args[++i]; break;
-      case '--owner': owner = args[++i]; break;
-      default: die(`Unexpected argument: ${args[i]}`);
-    }
-    i++;
+  for (let i = 1; i < args.length; i++) {
+    const field = UPDATE_FLAG_TO_FIELD[args[i]];
+    if (!field) die(`Unexpected argument: ${args[i]}`);
+    fields[field] = args[++i];
   }
 
-  if (!title && description === undefined && !domain && !chunk && !sequence && !owner) die('Provide --title, --desc, --domain, --chunk, --seq, and/or --owner');
-  return { index, title, description, domain, chunk, sequence, owner };
+  if (Object.keys(fields).length === 0) {
+    die('Provide --title, --desc, --domain, --chunk, --seq, and/or --owner');
+  }
+  return { index, ...fields };
 }
 
 // ── Display-only commands (no business logic, just formatting) ──
@@ -346,65 +348,59 @@ async function cmdSetLimit(client: BoardClient, args: string[], boardConfig: Boa
 
 const CHUNKS_DIR = path.join(__dirname, '../../../product-manager/chunks');
 
-async function cmdChunk(client: BoardClient, args: string[]) {
-  const validChunks = ['spine', 'ops', 'memory', 'music', 'senses', 'strategy', 'app', 'sexuality', 'convergence'];
-  const chunk = args[0]?.toLowerCase();
+const VALID_CHUNKS = ['spine', 'ops', 'memory', 'music', 'senses', 'strategy', 'app', 'sexuality', 'convergence'];
 
-  if (!chunk || !validChunks.includes(chunk)) {
-    const all = await client.list();
-    const activeBuckets = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Next', 'Later', 'Blocked'];
-    console.log('Chunks:');
-    for (const c of validChunks) {
-      const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`chunk:${c}`));
-      const contextFile = path.join(CHUNKS_DIR, `${c}.md`);
-      const hasContext = fs.existsSync(contextFile) ? '+' : ' ';
-      console.log(`  ${hasContext} ${c.padEnd(10)} ${String(cards.length).padStart(2)} cards`);
-    }
-    const untagged = all.filter(t => activeBuckets.includes(t.status) && !t.domains.some(d => d.startsWith('chunk:')));
-    if (untagged.length > 0) {
-      console.log(`    ${'untagged'.padEnd(10)} ${String(untagged.length).padStart(2)} cards`);
-    }
+async function listAllChunks(client: BoardClient): Promise<void> {
+  const all = await client.list();
+  const activeBuckets = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Next', 'Later', 'Blocked'];
+  console.log('Chunks:');
+  for (const c of VALID_CHUNKS) {
+    const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`chunk:${c}`));
+    const hasContext = fs.existsSync(path.join(CHUNKS_DIR, `${c}.md`)) ? '+' : ' ';
+    console.log(`  ${hasContext} ${c.padEnd(10)} ${String(cards.length).padStart(2)} cards`);
+  }
+  const untagged = all.filter(t => activeBuckets.includes(t.status) && !t.domains.some(d => d.startsWith('chunk:')));
+  if (untagged.length > 0) {
+    console.log(`    ${'untagged'.padEnd(10)} ${String(untagged.length).padStart(2)} cards`);
+  }
+}
+
+function renderChunkContext(chunk: string): void {
+  const contextFile = path.join(CHUNKS_DIR, `${chunk}.md`);
+  if (!fs.existsSync(contextFile)) {
+    console.log(`\n  No context doc yet for chunk:${chunk}. Create: product-manager/chunks/${chunk}.md\n`);
     return;
   }
-
-  const contextFile = path.join(CHUNKS_DIR, `${chunk}.md`);
-  if (fs.existsSync(contextFile)) {
-    const content = fs.readFileSync(contextFile, 'utf-8');
-    const lines = content.split('\n');
-    let headerCount = 0;
-    const summary: string[] = [];
-    for (const line of lines) {
-      if (line.startsWith('# ')) { summary.push(line); continue; }
-      if (line.startsWith('## ')) {
-        headerCount++;
-        if (headerCount > 2) break;
-      }
-      summary.push(line);
+  const lines = fs.readFileSync(contextFile, 'utf-8').split('\n');
+  let headerCount = 0;
+  const summary: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith('# ')) { summary.push(line); continue; }
+    if (line.startsWith('## ')) {
+      headerCount++;
+      if (headerCount > 2) break;
     }
-    console.log(summary.join('\n'));
-    console.log(`\n  (full context: product-manager/chunks/${chunk}.md)\n`);
-  } else {
-    console.log(`\n  No context doc yet for chunk:${chunk}. Create: product-manager/chunks/${chunk}.md\n`);
+    summary.push(line);
   }
+  console.log(summary.join('\n'));
+  console.log(`\n  (full context: product-manager/chunks/${chunk}.md)\n`);
+}
 
+async function listChunkCards(client: BoardClient, chunk: string): Promise<void> {
   const all = await client.list();
   const activeBuckets = ['Now', 'WIP', 'Next', 'Later', 'Blocked'];
   const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`chunk:${chunk}`));
-
   if (cards.length === 0) {
     console.log(`No active cards tagged chunk:${chunk}`);
     return;
   }
-
   const byStatus = new Map<string, typeof cards>();
   for (const c of cards) {
     const list = byStatus.get(c.status) || [];
     list.push(c);
     byStatus.set(c.status, list);
   }
-
-  const order = ['Now', 'WIP', 'Blocked', 'Next', 'Later'];
-  for (const status of order) {
+  for (const status of ['Now', 'WIP', 'Blocked', 'Next', 'Later']) {
     const group = byStatus.get(status);
     if (!group) continue;
     console.log(`${status} (${group.length}):`);
@@ -414,6 +410,16 @@ async function cmdChunk(client: BoardClient, args: string[]) {
       console.log(`  ${String(t.index).padStart(4)}  ${t.title}${tagStr}`);
     }
   }
+}
+
+async function cmdChunk(client: BoardClient, args: string[]) {
+  const chunk = args[0]?.toLowerCase();
+  if (!chunk || !VALID_CHUNKS.includes(chunk)) {
+    await listAllChunks(client);
+    return;
+  }
+  renderChunkContext(chunk);
+  await listChunkCards(client, chunk);
 }
 
 async function cmdDomainAdd(client: BoardClient, name: string): Promise<void> {
@@ -492,44 +498,30 @@ async function cmdDomain(client: BoardClient, args: string[]) {
   return cmdDomainList(client, sub === 'all');
 }
 
-async function cmdSequence(client: BoardClient, args: string[]) {
+async function listAllSequences(client: BoardClient): Promise<void> {
   const validSequences = Object.keys(LABELS.sequence);
-  const seq = args[0]?.toLowerCase();
-
-  if (!seq || !validSequences.includes(seq)) {
-    const all = await client.list();
-    const activeBuckets = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Next', 'Later', 'Blocked'];
-    console.log('Sequences:');
-    for (const s of validSequences) {
-      const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`sequence:${s}`));
-      console.log(`  ${s.padEnd(14)} ${String(cards.length).padStart(3)} cards`);
-    }
-    const untagged = all.filter(t => activeBuckets.includes(t.status) && !t.domains.some(d => d.startsWith('sequence:')));
-    if (untagged.length > 0) {
-      console.log(`  ${'untagged'.padEnd(14)} ${String(untagged.length).padStart(3)} cards`);
-    }
-    return;
-  }
-
   const all = await client.list();
-  const activeBuckets = ['Now', 'WIP', 'Next', 'Later', 'Blocked'];
-  const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`sequence:${seq}`));
-
-  if (cards.length === 0) {
-    console.log(`No active cards tagged sequence:${seq}`);
-    return;
+  const activeBuckets = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Next', 'Later', 'Blocked'];
+  console.log('Sequences:');
+  for (const s of validSequences) {
+    const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`sequence:${s}`));
+    console.log(`  ${s.padEnd(14)} ${String(cards.length).padStart(3)} cards`);
   }
+  const untagged = all.filter(t => activeBuckets.includes(t.status) && !t.domains.some(d => d.startsWith('sequence:')));
+  if (untagged.length > 0) {
+    console.log(`  ${'untagged'.padEnd(14)} ${String(untagged.length).padStart(3)} cards`);
+  }
+}
 
+function printSequenceActive(seq: string, cards: { status: string; index: number; title: string; owner?: string; priority?: string }[]): void {
   const byStatus = new Map<string, typeof cards>();
   for (const c of cards) {
     const list = byStatus.get(c.status) || [];
     list.push(c);
     byStatus.set(c.status, list);
   }
-
   console.log(`\nsequence:${seq} (${cards.length} active):`);
-  const order = ['Now', 'WIP', 'Blocked', 'Next', 'Later'];
-  for (const status of order) {
+  for (const status of ['Now', 'WIP', 'Blocked', 'Next', 'Later']) {
     const group = byStatus.get(status);
     if (!group) continue;
     console.log(`${status} (${group.length}):`);
@@ -539,18 +531,36 @@ async function cmdSequence(client: BoardClient, args: string[]) {
       console.log(`  ${String(t.index).padStart(4)}  ${t.title}${tagStr}`);
     }
   }
+}
 
-  // Also show Done cards for this sequence
-  const doneCards = (await client.list()).filter(t => t.status === 'Done' && t.domains.includes(`sequence:${seq}`));
-  if (doneCards.length > 0) {
-    console.log(`Done (${doneCards.length}):`);
-    for (const t of doneCards.slice(0, 10)) {
-      console.log(`  ${String(t.index).padStart(4)}  ${t.title}`);
-    }
-    if (doneCards.length > 10) {
-      console.log(`  ... and ${doneCards.length - 10} more`);
-    }
+function printSequenceDone(doneCards: { index: number; title: string }[]): void {
+  if (doneCards.length === 0) return;
+  console.log(`Done (${doneCards.length}):`);
+  for (const t of doneCards.slice(0, 10)) {
+    console.log(`  ${String(t.index).padStart(4)}  ${t.title}`);
   }
+  if (doneCards.length > 10) {
+    console.log(`  ... and ${doneCards.length - 10} more`);
+  }
+}
+
+async function cmdSequence(client: BoardClient, args: string[]) {
+  const validSequences = Object.keys(LABELS.sequence);
+  const seq = args[0]?.toLowerCase();
+  if (!seq || !validSequences.includes(seq)) {
+    await listAllSequences(client);
+    return;
+  }
+  const all = await client.list();
+  const activeBuckets = ['Now', 'WIP', 'Next', 'Later', 'Blocked'];
+  const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`sequence:${seq}`));
+  if (cards.length === 0) {
+    console.log(`No active cards tagged sequence:${seq}`);
+    return;
+  }
+  printSequenceActive(seq, cards);
+  const doneCards = all.filter(t => t.status === 'Done' && t.domains.includes(`sequence:${seq}`));
+  printSequenceDone(doneCards);
 }
 
 function cmdFields(board: BoardConfig) {

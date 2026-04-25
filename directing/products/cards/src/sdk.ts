@@ -686,41 +686,38 @@ export async function addCard(
   return task;
 }
 
+async function enforceWipBlastRadius(
+  client: BoardClient, index: number, title: string, card: BoardTask,
+): Promise<void> {
+  try {
+    const fullText = `${title}\n${card.description || ''}`;
+    if (!isCodeCard(fullText)) return;
+    const domainLabel = card.domains.find((d: string) => d.startsWith('domain:'));
+    const cardDomain = domainLabel ? domainLabel.replace('domain:', '') : undefined;
+    const report = await generateBlastRadius(index, title, card.description || '', cardDomain);
+    if (report && report.totalFiles === 0) {
+      console.error(`ERROR: Blast radius: 0 files on a code card (#${index}).`);
+      console.error('  Add explicit file paths to description (e.g. src/handlers/music.handler.ts)');
+      console.error('  or route to Wren for manual blast radius mapping.');
+      emitSpineEvent('card.blast_radius.zero_code', detectRole(), {
+        card_id: String(index), title, board: client.boardName,
+      });
+      process.exit(1);
+    }
+  } catch { /* blast radius API failure = non-blocking, proceed to WIP */ }
+}
+
 // Pre-move gates — runs before the actual status change. Exits process on gate failure.
 async function enforcePreMoveGates(
   client: BoardClient, index: number, title: string, card: BoardTask, status: string,
 ): Promise<void> {
-  if (status.toLowerCase() === 'now' && !enforceNowDescriptionGate(index, title, card.description, client.boardName)) {
-    process.exit(1);
-  }
-  if (/^wip$/i.test(status) && !enforceACGate(index, title, card.description, client.boardName)) {
-    process.exit(1);
-  }
-  if (/^wip$/i.test(status) && !enforceExperienceGate(index, title, card.description, client.boardName)) {
-    process.exit(1);
-  }
-  if (/^(now|wip)$/i.test(status)) {
-    enforceTaxonomyGate(index, title, card.domains, client.boardName);
-  }
-  if (/^wip$/i.test(status)) {
-    try {
-      const fullText = `${title}\n${card.description || ''}`;
-      const domainLabel = card.domains.find((d: string) => d.startsWith('domain:'));
-      const cardDomain = domainLabel ? domainLabel.replace('domain:', '') : undefined;
-      if (isCodeCard(fullText)) {
-        const report = await generateBlastRadius(index, title, card.description || '', cardDomain);
-        if (report && report.totalFiles === 0) {
-          console.error(`ERROR: Blast radius: 0 files on a code card (#${index}).`);
-          console.error('  Add explicit file paths to description (e.g. src/handlers/music.handler.ts)');
-          console.error('  or route to Wren for manual blast radius mapping.');
-          emitSpineEvent('card.blast_radius.zero_code', detectRole(), {
-            card_id: String(index), title, board: client.boardName,
-          });
-          process.exit(1);
-        }
-      }
-    } catch { /* blast radius API failure = non-blocking, proceed to WIP */ }
-  }
+  const isNow = status.toLowerCase() === 'now';
+  const isWip = /^wip$/i.test(status);
+  if (isNow && !enforceNowDescriptionGate(index, title, card.description, client.boardName)) process.exit(1);
+  if (isWip && !enforceACGate(index, title, card.description, client.boardName)) process.exit(1);
+  if (isWip && !enforceExperienceGate(index, title, card.description, client.boardName)) process.exit(1);
+  if (isNow || isWip) enforceTaxonomyGate(index, title, card.domains, client.boardName);
+  if (isWip) await enforceWipBlastRadius(client, index, title, card);
 }
 
 // Generates and posts blast radius comment after WIP entry. Non-blocking on failure.
