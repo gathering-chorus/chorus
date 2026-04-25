@@ -241,6 +241,9 @@ jobs:
           npm run build
 
       - name: Seed Fuseki with principles ontology
+        # Loads chorus.ttl into urn:chorus:instances — the named graph the
+        # principles SPARQL (src/sparql/loom-principles.sparql) queries.
+        # Earlier versions loaded into ?default and the query returned empty.
         run: |
           for i in $(seq 1 30); do
             if curl -sf http://localhost:3030/$/ping >/dev/null 2>&1; then break; fi
@@ -249,9 +252,9 @@ jobs:
           curl -sfu admin:admin -X POST \
             -H 'Content-Type: text/turtle' \
             --data-binary @roles/silas/ontology/chorus.ttl \
-            "http://localhost:3030/pods/data?default" > /dev/null
+            "http://localhost:3030/pods/data?graph=urn:chorus:instances" > /dev/null
           curl -sf -G "${FUSEKI_QUERY_URL}" \
-            --data-urlencode 'query=SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }' \
+            --data-urlencode 'query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?s a <https://jeffbridwell.com/chorus#Principle> } }' \
             -H 'Accept: application/sparql-results+json' | grep -q '"value"'
 
       - name: Boot chorus-api (background)
