@@ -88,6 +88,42 @@ describe('fetchDomainTests', () => {
     await fetchDomainTests(d, 'chorus-domain');
     expect(seenUrl).toBe('http://localhost:3000/api/quality/domain/chorus');
   });
+
+  test('#2485 — falls back to chorus:TestCoverage SPARQL when upstream has no data', async () => {
+    const sparqlResult: SparqlResult = {
+      results: {
+        bindings: [
+          { testFile: { value: 'chorus/platform/api/tests/seed-loom-decisions.test.ts' }, testType: { value: 'unit' } },
+          { testFile: { value: 'chorus/platform/tests/decisions-graph.test.sh' }, testType: { value: 'integration' } },
+        ],
+      },
+    };
+    const d = deps({
+      fetcher: async () => mockFetch(200, { files: [], total: 0 }),
+      sparql: async () => sparqlResult,
+    });
+    const r = await fetchDomainTests(d, 'loom-decisions');
+    expect(r.status).toBe(200);
+    const body = r.body as { data: { tests: Array<{ path: string; type: string }>; byType: Record<string, number> } };
+    expect(body.data.tests.length).toBe(2);
+    expect(body.data.tests[0].path).toContain('seed-loom-decisions');
+    expect(body.data.byType.unit).toBe(1);
+    expect(body.data.byType.integration).toBe(1);
+  });
+
+  test('#2485 — upstream data takes precedence; SPARQL fallback only fires on empty upstream', async () => {
+    const sparqlResult: SparqlResult = {
+      results: { bindings: [{ testFile: { value: 'chorus/x.test.ts' }, testType: { value: 'unit' } }] },
+    };
+    const d = deps({
+      fetcher: async () => mockFetch(200, { files: [{ name: 'gathering/y.test.ts', kind: 'ts' }], total: 1 }),
+      sparql: async () => sparqlResult,
+    });
+    const r = await fetchDomainTests(d, 'chorus-domain');
+    const body = r.body as { data: { tests: Array<{ path: string; type: string }> } };
+    expect(body.data.tests.length).toBe(1);
+    expect(body.data.tests[0].path).toBe('gathering/y.test.ts');
+  });
 });
 
 // --- fetchDomainLogs ---

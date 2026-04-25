@@ -6,6 +6,7 @@
  */
 
 import { startTestApp, type TestApp } from './lib/test-app';
+import { scanLoomHtml } from '../src/discover-pages-loom';
 
 describe('Discover pages (#2065)', () => {
 
@@ -34,10 +35,16 @@ describe('Discover pages (#2065)', () => {
   }, 30_000);
 
   test('paths include gathering/ project prefix', async () => {
+    // #2485 Move 6 — discover-pages now also scans chorus/platform/api/public/loom/
+    // via scanLoomHtml. Both gathering/ and chorus/ prefixes are legitimate.
+    // Smoke the scanner contract first (returns entries with chorus/ prefix when
+    // valid subdomain ids match).
+    const sample = scanLoomHtml('/nonexistent', new Set());
+    expect(sample).toEqual([]);
     const res = await fetch(`${harness.baseUrl}/api/athena/discover-pages`, { method: 'POST' });
     const body = await res.json();
     const entries = body.data?.entries || [];
-    const withPrefix = entries.filter((e: any) => e.path.startsWith('gathering/'));
+    const withPrefix = entries.filter((e: any) => e.path.startsWith('gathering/') || e.path.startsWith('chorus/'));
     expect(withPrefix.length).toBe(entries.length);
   }, 30_000);
 

@@ -58,6 +58,10 @@ export interface McpServerDeps {
 const PrinciplesGetInput = z.object({
   id: z.string().min(1).describe('Principle id (e.g., hemenway-observe, principle-ship-small)'),
 });
+
+const DecisionsGetInput = z.object({
+  id: z.string().min(1).describe('Decision id (e.g., dec-2090, adr-026)'),
+});
 const PrinciplesCreateInput = z.object({
   label: z.string().min(1).describe('Short human-readable name (e.g., "Ship small")'),
   comment: z.string().optional().describe('One-paragraph description of the principle'),
@@ -119,6 +123,26 @@ const PRINCIPLES_CREATE_TOOL_DEF = {
       },
     },
     required: ['label'],
+  },
+} as const;
+
+const DECISIONS_LIST_TOOL_DEF = {
+  name: 'chorus_decisions_list',
+  description:
+    'List all Chorus decisions (DECs + ADRs) from the live graph. Use this to show every recorded team decision and architecture record (~140 today). Returns id + label + decisionType for each. Use to ground a position in the canonical record or to discover what already exists before re-arguing it. Do NOT use as a paraphrase target — cite by id, do not rewrite the body.',
+  inputSchema: { type: 'object', properties: {}, required: [] },
+} as const;
+
+const DECISIONS_GET_TOOL_DEF = {
+  name: 'chorus_decisions_get',
+  description:
+    'Get one Chorus decision (DEC or ADR) by id from the live graph. Use this when you have a specific id (from a CLAUDE.md citation, a card, or chorus_decisions_list) and want its full body. Returns label + comment + status (ADR only) + relatedCard. Do NOT use to fish for a decision by topic — use chorus_decisions_list and filter; ids are stable but labels are mutable.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', minLength: 1, description: 'Decision id, e.g., adr-026 or dec-2090' },
+    },
+    required: ['id'],
   },
 } as const;
 
@@ -241,6 +265,65 @@ async function executePrinciplesCreate(
   return { content: [{ type: 'text', text: `principle created: ${id}` }] };
 }
 
+interface DecisionRecord {
+  id: string;
+  label?: string;
+  comment?: string;
+  decisionType?: string;
+  status?: string;
+  relatedCard?: number | string;
+  uri?: string;
+}
+
+async function fetchDecisionsList(fetchImpl: FetchImpl, apiBase: string): Promise<DecisionRecord[]> {
+  // Hit Athena subdomain handler directly (loom alias 308-redirects here;
+  // skipping the redirect hop matches where the data flows).
+  const url = `${apiBase}/api/athena/subdomains/loom-decisions/decisions`;
+  const resp = await fetchImpl(url);
+  if (!resp.ok) {
+    throw new Error(`decisions list fetch failed (status ${resp.status ?? 'unknown'})`);
+  }
+  const body = (await resp.json()) as { data?: { decisions?: DecisionRecord[] } };
+  return body.data?.decisions ?? [];
+}
+
+async function executeDecisionsList(
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  from: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.decisions.list.invoked', tool: 'chorus_decisions_list', from, ts: new Date().toISOString() }) + '\n');
+  const decisions = await fetchDecisionsList(fetchImpl, apiBase);
+  const lines: string[] = [`${decisions.length} decision${decisions.length === 1 ? '' : 's'}:`];
+  for (const d of decisions) {
+    const kind = d.decisionType ? `[${d.decisionType}] ` : '';
+    const label = d.label ? `${kind}${d.label} (${d.id})` : `${kind}${d.id}`;
+    lines.push(`- ${label}`);
+  }
+  return { content: [{ type: 'text', text: lines.join('\n') }] };
+}
+
+async function executeDecisionsGet(
+  args: { id: string },
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  from: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.decisions.get.invoked', tool: 'chorus_decisions_get', from, id: args.id, ts: new Date().toISOString() }) + '\n');
+  const decisions = await fetchDecisionsList(fetchImpl, apiBase);
+  const found = decisions.find((d) => d.id === args.id);
+  if (!found) throw new Error(`decision not found: ${args.id}`);
+  const lines = [
+    `${found.label ?? found.id} (${found.id})`,
+    '',
+    found.comment ?? '(no comment)',
+  ];
+  if (found.status) lines.push('', `status: ${found.status}`);
+  if (found.relatedCard !== undefined) lines.push(`relatedCard: #${found.relatedCard}`);
+  if (found.uri) lines.push(`uri: ${found.uri}`);
+  return { content: [{ type: 'text', text: lines.join('\n') }] };
+}
+
 async function executeNudge(
   args: NudgeArgs,
   from: string,
@@ -295,6 +378,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       PRINCIPLES_LIST_TOOL_DEF,
       PRINCIPLES_GET_TOOL_DEF,
       PRINCIPLES_CREATE_TOOL_DEF,
+      DECISIONS_LIST_TOOL_DEF,
+      DECISIONS_GET_TOOL_DEF,
     ],
   }));
 
@@ -323,6 +408,15 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executePrinciplesCreate(parsed.data, fetchImpl, apiBase, from);
+      }
+      case 'chorus_decisions_list':
+        return executeDecisionsList(fetchImpl, apiBase, from);
+      case 'chorus_decisions_get': {
+        const parsed = DecisionsGetInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeDecisionsGet(parsed.data, fetchImpl, apiBase, from);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);

@@ -197,14 +197,71 @@ export const fetchAthenaSubdomainPersistence = (deps: AthenaFacetDeps, id: strin
     ],
   });
 
-export const fetchAthenaSubdomainPriorArt = (deps: AthenaFacetDeps, id: string) =>
-  fetchAthenaFacet(deps, id, {
-    queryName: 'subdomain-prior-art',
-    collectionKey: 'items',
-    itemVar: 'item',
-    predicate: 'hasPriorArt',
-    fields: [
-      { sparqlVar: 'path', outputKey: 'path', rdfProp: 'chorus:filePath' },
-      { sparqlVar: 'description', outputKey: 'description', rdfProp: 'rdfs:comment' },
-    ],
-  });
+// #2485 — prior-art has TWO sources:
+//   (a) hand-authored chorus:hasPriorArt items
+//   (b) ADRs (chorus:Decision with decisionType="ADR") that have
+//       chorus:hasDomain pointing at this subdomain
+// UNION query returns both; each item carries `source: 'authored' | 'adr'`
+// so the page can differentiate on render.
+export async function fetchAthenaSubdomainPriorArt(
+  deps: AthenaFacetDeps,
+  id: string,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const envelope = deps.envelope ?? defaultEnvelope;
+  const start = now();
+  const sdUri = `${CHORUS_PREFIX}${id}`;
+
+  try {
+    const exists = await deps.sparql(EXISTS_QUERY(sdUri));
+    if (exists.results.bindings.length === 0) {
+      return {
+        status: 404,
+        body: envelope('subdomain-prior-art', { error: `Sub-domain '${id}' not found` }, now() - start, { error: true }),
+      };
+    }
+    const handAuthored = await deps.sparql(
+      `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?item ?label ?path ?description WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasPriorArt ?item . OPTIONAL { ?item rdfs:label ?label } OPTIONAL { ?item chorus:filePath ?path } OPTIONAL { ?item rdfs:comment ?description } } }`,
+    );
+    const adrDerived = await deps.sparql(
+      `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?item ?label ?description WHERE { GRAPH <urn:chorus:instances> { ?item a chorus:Decision ; chorus:decisionType "ADR" ; chorus:hasDomain <${sdUri}> . OPTIONAL { ?item rdfs:label ?label } OPTIONAL { ?item rdfs:comment ?description } } }`,
+    );
+    const items = [
+      ...handAuthored.results.bindings.map((b) => {
+        const itemUri = b.item!.value;
+        return {
+          uri: itemUri,
+          label: b.label?.value ?? fallbackId(itemUri),
+          path: b.path?.value ?? null,
+          description: b.description?.value ?? null,
+          source: 'authored' as const,
+        };
+      }),
+      ...adrDerived.results.bindings.map((b) => {
+        const itemUri = b.item!.value;
+        // URI shape: urn:chorus:decision:adr_NNN (or chorus#adr-NNN). Extract
+        // the adr_NNN tail, normalize to the canonical filename ADR-NNN-*.md.
+        const tail = itemUri.split(/[:#]/).pop() ?? itemUri;
+        const adrLabel = b.label?.value ?? tail.toUpperCase().replace(/_/g, '-');
+        return {
+          uri: itemUri,
+          label: adrLabel,
+          // Best-effort path; canonical filename glob is ADR-NNN-*.md.
+          path: `roles/silas/adr/${adrLabel}*.md`,
+          description: b.description?.value ?? null,
+          source: 'adr' as const,
+        };
+      }),
+    ];
+    return {
+      status: 200,
+      body: envelope('subdomain-prior-art', { subdomain: id, items }, now() - start, { count: items.length }),
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      status: 500,
+      body: envelope('subdomain-prior-art', { error: message }, now() - start, { error: true }),
+    };
+  }
+}

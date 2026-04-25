@@ -1648,6 +1648,8 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
 
 // discover-tests moved to src/discover-tests.ts (#2205 wave 24).
 import { createDiscoverTests } from './discover-tests';
+import { scanLoomHtml } from './discover-pages-loom';
+import { parseChorusApiRoutes } from './discover-endpoints-chorus-api';
 const _discoverTests = createDiscoverTests({
   sparqlClient: { query: (q: string) => athenaSparqlQuery(q), update: (u: string) => athenaSparqlUpdate(u) },
   fs, path,
@@ -1796,9 +1798,13 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
   try {
     const aliasToId = await buildPageAliasMap();
     const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
+    // #2485 Move 6 — scan chorus/platform/api/public/loom/ for loom-* subdomain pages.
+    const validSubdomainIds = new Set<string>(Object.values(aliasToId));
+    const loomEntries = scanLoomHtml(path.join(REPO_ROOT, 'platform/api/public/loom'), validSubdomainIds);
     const entries: PageEntry[] = [
       ...scanEjsViews(path.join(GATHERING_ROOT, 'views'), aliasToId),
       ...scanDocHtml(path.join(GATHERING_ROOT, 'public/gathering-docs'), aliasToId),
+      ...loomEntries,
     ];
 
     // 4. Clear existing page data and repopulate
@@ -1975,9 +1981,17 @@ app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) 
     const handlerToDomain = await buildHandlerToDomain();
     const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
     const appTsPath = path.join(GATHERING_ROOT, 'src/app.ts');
-    const entries = fs.existsSync(appTsPath)
+    const gatheringEntries = fs.existsSync(appTsPath)
       ? parseAppRoutes(fs.readFileSync(appTsPath, 'utf-8'), handlerToDomain)
       : [];
+    // #2485 Move 8 — also scan chorus-api's own server.ts so loom-*, chorus-domain
+    // get hasEndpoint edges for the routes they actually own.
+    const validSubdomainIds = new Set<string>(Object.values(handlerToDomain));
+    const chorusApiSrc = path.join(REPO_ROOT, 'platform/api/src/server.ts');
+    const chorusEntries = fs.existsSync(chorusApiSrc)
+      ? parseChorusApiRoutes(fs.readFileSync(chorusApiSrc, 'utf-8'), validSubdomainIds)
+      : [];
+    const entries = [...gatheringEntries, ...chorusEntries];
 
     const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?ep a <https://jeffbridwell.com/chorus#Endpoint> ; ?p ?o . ?sd <https://jeffbridwell.com/chorus#hasEndpoint> ?ep . } }';
     await athenaSparqlUpdate(clearQuery);

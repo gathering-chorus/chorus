@@ -65,6 +65,12 @@ function buildMetaQuery(sdUri: string): string {
 }
 
 function buildCountQuery(sdUri: string, predicate: string): string {
+  // #2485 — prior-art counts BOTH hand-authored chorus:hasPriorArt AND ADRs
+  // surfaced via chorus:Decision + decisionType="ADR" + chorus:hasDomain.
+  // Other predicates use the simple count.
+  if (predicate === 'hasPriorArt') {
+    return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?e) AS ?n) WHERE { GRAPH <urn:chorus:instances> { { <${sdUri}> chorus:hasPriorArt ?e } UNION { ?e a chorus:Decision ; chorus:decisionType "ADR" ; chorus:hasDomain <${sdUri}> } } }`;
+  }
   return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?e) AS ?n) WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:${predicate} ?e } }`;
 }
 

@@ -48,14 +48,37 @@ export async function fetchDomainTests(
       };
     }
     const scanData = (await upstream.json()) as { files?: Array<{ name: string; kind: string }>; total?: number };
-    const tests = (scanData.files || []).map((f) => ({ path: f.name, type: f.kind }));
+    let tests = (scanData.files || []).map((f) => ({ path: f.name, type: f.kind }));
+    let total = scanData.total || 0;
+    // #2485 — fall back to chorus:TestCoverage instances graph when upstream
+    // has nothing (loom-* and other chorus-side subdomains the gathering-app
+    // quality scanner doesn't see). Closes the follow-on parked at the top of
+    // this function.
+    if (tests.length === 0) {
+      try {
+        const sdId = await deps.resolveSubdomainId(subdomainName);
+        const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+        const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:covers <${sdUri}> ; chorus:testFile ?testFile ; chorus:testType ?testType } }`;
+        const result = await deps.sparql(query);
+        const sparqlTests = (result.results?.bindings ?? []).map((b) => ({
+          path: b.testFile?.value || '',
+          type: b.testType?.value || 'unknown',
+        }));
+        if (sparqlTests.length > 0) {
+          tests = sparqlTests;
+          total = sparqlTests.length;
+        }
+      } catch {
+        // SPARQL failure is non-fatal — fall through with empty tests
+      }
+    }
     const byType: Record<string, number> = {};
     for (const t of tests) byType[t.type] = (byType[t.type] || 0) + 1;
     return {
       status: 200,
       body: deps.envelope(
         'domain-tests',
-        { subdomain: subdomainName, tests, byType, total: scanData.total || 0 },
+        { subdomain: subdomainName, tests, byType, total },
         now() - start,
         { count: tests.length },
       ),
