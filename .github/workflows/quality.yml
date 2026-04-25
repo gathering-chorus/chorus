@@ -184,6 +184,17 @@ jobs:
           workspaces: ${{ matrix.crate }}
       - name: Ensure runtime dirs (chorus_log writes to platform/logs/)
         run: mkdir -p platform/logs /tmp/claude-team-scan /tmp/voice-inbox /tmp/chorus-chat
+      - name: Pre-test diagnostic — chorus-log + log file (#2485 / chorus_log CI failures)
+        run: |
+          echo "=== chorus-log script ==="
+          ls -la platform/scripts/chorus-log || echo "MISSING"
+          echo "=== chorus-hook-shim binary ==="
+          ls -la platform/services/chorus-hooks/target/release/chorus-hook-shim 2>/dev/null || echo "MISSING (expected pre-build)"
+          echo "=== platform/logs/ dir + chorus.log ==="
+          touch platform/logs/chorus.log
+          ls -la platform/logs/
+          echo "=== CHORUS_ROOT env ==="
+          echo "CHORUS_ROOT=${CHORUS_ROOT:-<unset>}"
       - name: Run cargo test
         working-directory: ${{ matrix.crate }}
         run: cargo test --all
