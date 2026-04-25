@@ -67,15 +67,15 @@ echo "DELIVERED to \$TARGET at \$(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
     try {
       const code = execSync(`curl -sf -o /dev/null -w "%{http_code}" ${CLEARING_URL}/health`, { encoding: 'utf-8', timeout: 1000 }).trim();
       if (code === '200') return;
-    } catch {}
+    } catch { /* ignore */ }
     await new Promise(r => setTimeout(r, 200));
   }
   throw new Error(`test Clearing failed to start on port ${TEST_PORT} within 10s:\n${spawnLog.join('')}`);
 });
 
 afterAll(async () => {
-  try { fs.unlinkSync(MOCK_NUDGE_SCRIPT); } catch {}
-  try { fs.rmSync(MOCK_NUDGE_DIR, { recursive: true }); } catch {}
+  try { fs.unlinkSync(MOCK_NUDGE_SCRIPT); } catch { /* ignore */ }
+  try { fs.rmSync(MOCK_NUDGE_DIR, { recursive: true }); } catch { /* ignore */ }
   if (clearingProc && !clearingProc.killed) {
     clearingProc.kill('SIGTERM');
     // Give it a moment to shut down gracefully
@@ -96,7 +96,7 @@ function createClient(): ClientSocket {
 
 afterAll(async () => {
   for (const client of activeClients) {
-    try { client.removeAllListeners(); client.disconnect(); client.close(); } catch {}
+    try { client.removeAllListeners(); client.disconnect(); client.close(); } catch { /* ignore */ }
   }
   // Allow event loop to drain
   await new Promise(r => setTimeout(r, 500));

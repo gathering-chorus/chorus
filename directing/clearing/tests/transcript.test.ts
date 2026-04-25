@@ -202,7 +202,7 @@ describe('Transcript — save to disk', () => {
   });
 
   afterEach(() => {
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
   test('save() writes JSON file and returns its path', () => {

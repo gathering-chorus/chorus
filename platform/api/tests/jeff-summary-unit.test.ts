@@ -19,7 +19,7 @@ function load() {
 const realFetch = global.fetch;
 
 afterAll(() => {
-  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
 afterEach(() => {

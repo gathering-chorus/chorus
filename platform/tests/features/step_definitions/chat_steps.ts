@@ -157,7 +157,7 @@ Then('the nudge was delivered — not dry-run', function () {
 
 After(function () {
   if (chatId) {
-    try { chat(`end ${chatId}`); } catch {}
+    try { chat(`end ${chatId}`); } catch { /* ignore */ }
     chatId = '';
   }
 });

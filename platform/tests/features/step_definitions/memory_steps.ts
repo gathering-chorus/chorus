@@ -493,5 +493,5 @@ Then('the timeline is empty or contains only metadata', function () {
 // --- Cleanup ---
 
 After(function () {
-  try { require('fs').unlinkSync('/tmp/memory-test-body'); } catch {}
+  try { require('fs').unlinkSync('/tmp/memory-test-body'); } catch { /* ignore */ }
 });

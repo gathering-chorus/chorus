@@ -219,5 +219,5 @@ Then('{word} responds via the Clearing within {int} seconds', function (role: st
 // --- Cleanup ---
 
 After(function () {
-  try { fs.unlinkSync('/tmp/clearing-test-body'); } catch {}
+  try { fs.unlinkSync('/tmp/clearing-test-body'); } catch { /* ignore */ }
 });

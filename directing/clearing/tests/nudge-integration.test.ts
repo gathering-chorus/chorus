@@ -72,7 +72,7 @@ function clearInbox(role: string): void {
   const inboxFile = path.join(INBOX_DIR, role, 'pending-inject.txt');
   try {
     fs.writeFileSync(inboxFile, '');
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -218,7 +218,7 @@ describe('AC #3.3: Exchange tracking — pair key mechanics', () => {
   test('exchange file uses alphabetical pair key (kade-silas, not silas-kade)', () => {
     // Clear exchange
     const exchangeFile = path.join(EXCHANGE_DIR, 'kade-silas');
-    try { fs.unlinkSync(exchangeFile); } catch {}
+    try { fs.unlinkSync(exchangeFile); } catch { /* ignore */ }
 
     runNudge('silas "Exchange test" --from kade', { DEPLOY_ROLE: 'kade' });
 
@@ -230,7 +230,7 @@ describe('AC #3.3: Exchange tracking — pair key mechanics', () => {
 
   test('exchange tracking records timestamp', () => {
     const exchangeFile = path.join(EXCHANGE_DIR, 'kade-wren');
-    try { fs.unlinkSync(exchangeFile); } catch {}
+    try { fs.unlinkSync(exchangeFile); } catch { /* ignore */ }
 
     runNudge('wren "Timestamp test" --from kade', { DEPLOY_ROLE: 'kade' });
 

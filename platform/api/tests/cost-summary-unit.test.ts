@@ -25,7 +25,7 @@ function load() {
 }
 
 afterAll(() => {
-  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
 function writeStats(data: any) {
@@ -36,7 +36,7 @@ function writeTranscript(filename: string, data: any) {
   fs.writeFileSync(path.join(process.env.CLEARING_TRANSCRIPTS_DIR!, filename), JSON.stringify(data));
 }
 function clear() {
-  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
   fs.mkdirSync(TMP, { recursive: true });
 }
 

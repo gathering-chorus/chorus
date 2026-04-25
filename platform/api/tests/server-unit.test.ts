@@ -41,7 +41,7 @@ beforeAll((done) => {
 
 afterAll((done) => {
   server.close(() => done());
-  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
 async function get(p: string, opts: RequestInit = {}) {
@@ -49,8 +49,8 @@ async function get(p: string, opts: RequestInit = {}) {
     const res = await fetch(`${baseUrl}${p}`, { ...opts, signal: AbortSignal.timeout(3000) } as any);
     let body: any = null;
     const ct = res.headers.get('content-type') || '';
-    if (ct.includes('json')) { try { body = await res.json(); } catch {} }
-    else { try { body = await res.text(); } catch {} }
+    if (ct.includes('json')) { try { body = await res.json(); } catch { /* ignore */ } }
+    else { try { body = await res.text(); } catch { /* ignore */ } }
     return { status: res.status, body, headers: res.headers };
   } catch {
     return { status: 0, body: null, headers: new Headers() };

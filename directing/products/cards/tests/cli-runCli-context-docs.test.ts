@@ -85,9 +85,9 @@ describe('cmdView — domain-context rendering', () => {
   });
 
   afterAll(() => {
-    try { fs.unlinkSync(fixtureFile); } catch {}
+    try { fs.unlinkSync(fixtureFile); } catch { /* ignore */ }
     if (createdDir) {
-      try { fs.rmdirSync(DOMAIN_CONTEXT_DIR); } catch {}
+      try { fs.rmdirSync(DOMAIN_CONTEXT_DIR); } catch { /* ignore */ }
     }
   });
 
@@ -148,10 +148,10 @@ describe('cmdChunk — chunk context doc rendering', () => {
 
   afterAll(() => {
     if (!existedBefore) {
-      try { fs.unlinkSync(testChunkDoc); } catch {}
+      try { fs.unlinkSync(testChunkDoc); } catch { /* ignore */ }
     }
     if (createdDir) {
-      try { fs.rmdirSync(CHUNKS_DIR); } catch {}
+      try { fs.rmdirSync(CHUNKS_DIR); } catch { /* ignore */ }
     }
   });
 

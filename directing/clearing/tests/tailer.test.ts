@@ -235,7 +235,7 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
     tailer.stop();
     if (origChorusRoot === undefined) delete process.env.CHORUS_ROOT;
     else process.env.CHORUS_ROOT = origChorusRoot;
-    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
   test('start() seeks to current EOF when log exists (no historical replay)', () => {

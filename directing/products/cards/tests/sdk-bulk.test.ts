@@ -182,7 +182,7 @@ describe('snapshotBoard', () => {
     expect(out).toMatch(/board-snapshot-gathering\.json$/);
     expect(fs.existsSync(out!)).toBe(true);
     // Clean up the file so repeated runs don't accumulate (best effort).
-    try { fs.unlinkSync(out!); } catch {}
+    try { fs.unlinkSync(out!); } catch { /* ignore */ }
   });
 
   it('log line reports the task count', async () => {
@@ -193,7 +193,7 @@ describe('snapshotBoard', () => {
     const cap = silence();
     try {
       const p = await snapshotBoard(asBoardClient(mock));
-      try { fs.unlinkSync(p); } catch {}
+      try { fs.unlinkSync(p); } catch { /* ignore */ }
     } finally {
       cap.restore();
     }
@@ -206,7 +206,7 @@ describe('snapshotBoard', () => {
     const cap = silence();
     try {
       const p = await snapshotBoard(asBoardClient(mock));
-      try { fs.unlinkSync(p); } catch {}
+      try { fs.unlinkSync(p); } catch { /* ignore */ }
     } finally {
       cap.restore();
     }

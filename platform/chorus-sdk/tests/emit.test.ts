@@ -7,7 +7,7 @@ describe('emit', () => {
   const tmpFile = path.join(os.tmpdir(), `chorus-sdk-test-${Date.now()}.log`);
 
   afterAll(() => {
-    try { fs.unlinkSync(tmpFile); } catch {}
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
   });
 
   it('writes a JSON line to the log file', () => {

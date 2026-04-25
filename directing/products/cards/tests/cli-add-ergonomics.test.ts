@@ -62,7 +62,7 @@ describe('#2223 parseAddArgs', () => {
     const mockClient = { boardName: 'chorus', create: jest.fn(), listLabels: jest.fn().mockResolvedValue([]), createLabel: jest.fn().mockResolvedValue({ id: 1, title: 'x' }) } as any;
     try {
       await addCard(mockClient, 'test title', { owner: 'wren', priority: 'P3', domain: 'chorus', type: 'fix', origin: 'reactive', quick: false, description: '' });
-    } catch {}
+    } catch { /* ignore */ }
     const output = logSpy.mock.calls.map(c => c.join(' ')).join(' ') + errSpy.mock.calls.map(c => c.join(' ')).join(' ');
     expect(output).toMatch(/--desc-file/);
     expect(output).toMatch(/stdin/);

@@ -12,7 +12,7 @@ describe('spine event metadata enrichment (#1817)', () => {
   const tmpFile = path.join(os.tmpdir(), `chorus-sdk-metadata-test-${Date.now()}.log`);
 
   afterAll(() => {
-    try { fs.unlinkSync(tmpFile); } catch {}
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
   });
 
   // ── AC1: context injection at construction, not per-call ──

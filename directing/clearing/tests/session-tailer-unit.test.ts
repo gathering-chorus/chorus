@@ -23,7 +23,7 @@ function makeRouter() {
 }
 
 afterAll(() => {
-  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
 describe('SessionTailer.processLine — user messages', () => {

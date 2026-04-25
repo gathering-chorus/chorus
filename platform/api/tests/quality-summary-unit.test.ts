@@ -23,13 +23,13 @@ function load() {
 }
 
 afterAll(() => {
-  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
 function clear() {
-  try { fs.rmSync(GATH, { recursive: true, force: true }); } catch {}
-  try { fs.rmSync(CHOR, { recursive: true, force: true }); } catch {}
-  try { fs.unlinkSync(CACHE); } catch {}
+  try { fs.rmSync(GATH, { recursive: true, force: true }); } catch { /* ignore */ }
+  try { fs.rmSync(CHOR, { recursive: true, force: true }); } catch { /* ignore */ }
+  try { fs.unlinkSync(CACHE); } catch { /* ignore */ }
   fs.mkdirSync(GATH, { recursive: true });
   fs.mkdirSync(CHOR, { recursive: true });
 }

@@ -292,7 +292,7 @@ try{
       });
     });
   }
-}catch(e){}
+}catch(e){/* ignore */}
 
 function saveState(){
   var p={};N.forEach(function(n){if(n.x&&n.y)p[n.id]={x:n.x,y:n.y}});

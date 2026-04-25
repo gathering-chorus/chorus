@@ -16,7 +16,7 @@ function load() {
 }
 
 afterAll(() => {
-  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
 function writeLog(events: any[]) {
@@ -24,7 +24,7 @@ function writeLog(events: any[]) {
 }
 
 function clear() {
-  try { fs.unlinkSync(process.env.CHORUS_LOG_PATH!); } catch {}
+  try { fs.unlinkSync(process.env.CHORUS_LOG_PATH!); } catch { /* ignore */ }
 }
 
 const today = new Date().toISOString().slice(0, 10);
