@@ -51,6 +51,12 @@ fn session_start_emits_context_error_on_empty_cache() {
 
 // === #1847: nudge acknowledgment ===
 
+// macOS-only: role-state drain logic depends on the per-role LaunchAgent
+// inbox lifecycle (/tmp/voice-inbox/<role>/pending-inject.txt + tick-poller).
+// On Linux the shim writes role.state.changed but the drain code path that
+// emits nudge.acknowledged doesn't fire — same Mac-stack pattern as
+// ops_awareness_timeout / healthy_api_never_reports_unreachable.
+#[cfg(target_os = "macos")]
 #[test]
 fn role_state_drain_emits_nudge_acknowledged() {
     let test_role = "kade";
