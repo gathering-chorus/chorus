@@ -210,34 +210,140 @@ function tracedFetch(url) {
 }
 
 
-// --- Herald facet auto-wiring (#2104) ---
+// --- Herald facet auto-wiring (#2104, #2485 round 2) ---
 // One config, one renderer. Adding a new herald = one line here, zero UI code.
+//
+// Contract (Jeff's "tabs-must-render-empty-not-missing" rule, 2026-04-25):
+// every entry here renders a section header + body unconditionally. Empty data
+// shows the section + emptyMsg; never hidden. Non-table renders declare
+// `customRender(items, ctx, raw)` returning the inner HTML for the <details> body.
+// Facets whose data isn't a flat list (e.g., dependencies = direct + shared)
+// declare `extract(data)` to compute the items count for the header.
 const HERALD_FACETS = [
-  { key: 'code', title: 'Code', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/code'; }, listKey: 'files', columns: ['path', 'type'], emptyMsg: 'No source files mapped — run POST /api/athena/discover-code' },
-  { key: 'tests', title: 'Tests', endpoint: function(id) { return DOMAIN_API + '/' + id + '/tests'; }, listKey: 'tests', columns: ['path', 'type'], emptyMsg: 'No tests mapped' },
-  { key: 'pages', title: 'UI Pages', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/pages'; }, listKey: 'pages', columns: ['route', 'path', 'pageType'], emptyMsg: 'No UI pages discovered — run POST /api/athena/discover-pages' },
-  { key: 'endpoints', title: 'API Contract', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/services'; }, listKey: 'endpoints', altKey: 'services', columns: ['method', 'path', 'handler'], emptyMsg: 'No API endpoints discovered — run POST /api/athena/discover-endpoints' },
-  { key: 'alerts', title: 'Alerts', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/alerts'; }, listKey: 'alerts', columns: ['name', 'severity', 'description'], emptyMsg: 'No alert rules for this domain' },
+  { key: 'actors', title: 'Actors', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/actors'; }, listKey: 'actors',
+    customRender: function(items, ctx) {
+      var chart = 'graph LR\n  DOMAIN["' + (ctx.label || '') + '"]\n';
+      items.forEach(function(a, i) {
+        var safeLabel = (a.label || (a.role || '').split('#').pop() || 'unknown').replace(/[^a-zA-Z0-9 .]/g, '');
+        var safeAction = (a.action || 'interacts').replace(/[^a-zA-Z0-9 ,./]/g, '').substring(0, 50);
+        chart += '  A' + i + '["' + safeLabel + '"] -->|"' + safeAction + '"| DOMAIN\n';
+      });
+      return '<div class="mermaid" id="mermaid-actors-' + Date.now() + '">' + chart + '</div>';
+    },
+    emptyMsg: 'No actors for this domain', source: { kind: 'authored', from: 'POST /api/athena/subdomains/:id/actors' } },
+  { key: 'scenarios', title: 'Scenarios', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/scenarios'; }, listKey: 'scenarios',
+    customRender: function(items) {
+      return items.map(function(s) {
+        var body = '<div style="padding:4px 0 8px 16px;">';
+        if (s.given) body += '<div><strong style="color:#16a34a;">Given</strong> ' + s.given + '</div>';
+        if (s.when) body += '<div><strong style="color:#d97706;">When</strong> ' + s.when + '</div>';
+        if (s.then) body += '<div><strong style="color:#2563eb;">Then</strong> ' + s.then + '</div>';
+        if (s.notes) body += '<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:0.85em;color:#666;">Implementation notes</summary><p style="padding:4px 0 0 8px;font-size:0.85em;color:#999;">' + s.notes + '</p></details>';
+        body += '</div>';
+        return '<details style="margin:4px 0;"><summary style="cursor:pointer;padding:6px 0;font-weight:500;color:#0369a1;">' + (s.label || s.title || 'Untitled') + '</summary>' + body + '</details>';
+      }).join('');
+    },
+    emptyMsg: 'No scenarios for this domain', source: { kind: 'authored', from: 'POST /api/athena/subdomains/:id/scenarios' } },
+  { key: 'dependencies', title: 'Dependencies', endpoint: function(id) { return DOMAIN_API + '/' + id + '/dependencies'; },
+    extract: function(data) {
+      var direct = (data && data.direct) || { consumes: [], consumedBy: [] };
+      var shared = (data && data.shared) || [];
+      var count = direct.consumes.length + direct.consumedBy.length + shared.length;
+      return { count: count };
+    },
+    customRender: function(_items, _ctx, raw) {
+      var direct = (raw && raw.direct) || { consumes: [], consumedBy: [] };
+      var shared = (raw && raw.shared) || [];
+      var html = '';
+      if (direct.consumes.length > 0 || direct.consumedBy.length > 0) {
+        html += '<h3 style="font-size:0.9em;color:#444;margin:8px 0 4px;">Direct</h3><div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">';
+        html += '<div><strong style="font-size:0.8em;color:#666;">Depends On</strong>';
+        if (direct.consumes.length > 0) direct.consumes.forEach(function(d) { html += '<div style="padding:3px 0;"><a href="domain-detail.html?id=' + d.id + '">' + d.label + '</a></div>'; });
+        else html += '<p class="placeholder" style="margin:4px 0;">None</p>';
+        html += '</div><div><strong style="font-size:0.8em;color:#666;">Consumed By</strong>';
+        if (direct.consumedBy.length > 0) direct.consumedBy.forEach(function(c) { html += '<div style="padding:3px 0;"><a href="domain-detail.html?id=' + c.id + '">' + c.label + '</a></div>'; });
+        else html += '<p class="placeholder" style="margin:4px 0;">None</p>';
+        html += '</div></div>';
+      }
+      if (shared.length > 0) {
+        html += '<h3 style="font-size:0.9em;color:#444;margin:12px 0 4px;">Shared Infrastructure</h3><table><tr><th>Domain</th><th>Shared Via</th></tr>';
+        shared.forEach(function(s) { html += '<tr><td><a href="domain-detail.html?id=' + s.domain + '">' + s.label + '</a></td><td>' + (s.sharedVia || []).join(', ') + '</td></tr>'; });
+        html += '</table>';
+      }
+      return html;
+    },
+    emptyMsg: 'No dependencies for this domain', source: { kind: 'derived', from: 'graph edges: chorus:dependsOn / consumedBy / sharedVia' } },
+  { key: 'pages', title: 'UI Pages', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/pages'; }, listKey: 'pages', columns: ['route', 'path', 'pageType'], emptyMsg: 'No UI pages for this domain', source: { kind: 'derived', from: 'discover-pages scanner' } },
+  { key: 'integrations', title: 'Integration', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/integrations'; }, listKey: 'integrations', columns: ['label', 'source', 'path', 'status'], emptyMsg: 'No integrations for this domain', source: { kind: 'hybrid', from: 'icd-instance TTL + integration scanner' } },
+  { key: 'endpoints', title: 'Endpoints', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/services'; }, listKey: 'endpoints', altKey: 'services', columns: ['method', 'path', 'handler'], emptyMsg: 'No endpoints for this domain', source: { kind: 'derived', from: 'discover-endpoints scanner' } },
+  { key: 'code', title: 'Code', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/code'; }, listKey: 'files', columns: ['path', 'type'], emptyMsg: 'No code for this domain', source: { kind: 'derived', from: 'discover-code scanner' } },
+  { key: 'tests', title: 'Tests', endpoint: function(id) { return DOMAIN_API + '/' + id + '/tests'; }, listKey: 'tests', columns: ['path', 'type'], emptyMsg: 'No tests for this domain', source: { kind: 'derived', from: 'discover-tests scanner' } },
+  { key: 'persistence', title: 'Persistence', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/persistence'; }, listKey: 'stores', altKey: 'persistence', columns: ['label', 'namespace', 'records', 'status'], emptyMsg: 'No persistence for this domain', source: { kind: 'derived', from: 'icd persistence section' } },
+  { key: 'pipeline', title: 'Pipeline', endpoint: function(id) { return DOMAIN_API + '/' + id + '/pipeline'; }, listKey: 'stages', columns: ['name', 'status', 'evidence', 'summary'], emptyMsg: 'No pipeline for this domain', source: { kind: 'authored', from: 'pipeline manifest per domain' } },
+  { key: 'releases', title: 'Release History', endpoint: function(id) { return DOMAIN_API + '/' + id + '/releases'; }, listKey: 'releases', columns: ['timestamp', 'cardId', 'title', 'role', 'commit'], emptyMsg: 'No releases for this domain', source: { kind: 'derived', from: 'git log / acp commits' } },
+  { key: 'infra', title: 'Infrastructure', endpoint: function(id) { return DOMAIN_API + '/' + id + '/infra'; }, listKey: 'environments', columns: ['name', 'port', 'engine', 'host'], emptyMsg: 'No infrastructure for this domain', source: { kind: 'derived', from: 'infra config / launchd services' } },
+  { key: 'priorArt', title: 'Prior Art', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/prior-art'; }, listKey: 'items', columns: ['label', 'path', 'description'], emptyMsg: 'No prior art for this domain', source: { kind: 'authored', from: 'POST /api/athena/subdomains/:id/prior-art' } },
+  { key: 'decisions', title: 'Decisions', endpoint: function(id) { return DOMAIN_API + '/' + id + '/decisions'; }, listKey: 'decisions', columns: ['id', 'title', 'type', 'enforcement', 'date'], emptyMsg: 'No decisions for this domain', source: { kind: 'derived', from: 'DEC/ADR harvest filtered to this domain' } },
+  { key: 'logs', title: 'Logs', endpoint: function(id) { return DOMAIN_API + '/' + id + '/logs'; }, listKey: 'logs', columns: ['label', 'location', 'retention', 'status'], emptyMsg: 'No logs for this domain', source: { kind: 'derived', from: 'log config / promtail jobs' } },
+  { key: 'alerts', title: 'Alerts', endpoint: function(id) { return DOMAIN_API + '/' + id + '/alerts'; }, listKey: 'alerts', columns: ['name', 'description', 'severity'], emptyMsg: 'No alerts for this domain', source: { kind: 'derived', from: 'proving/domains/alerts/*.yml' } },
+  { key: 'gaps', title: 'Gaps & Status', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/gaps'; }, listKey: 'gaps',
+    customRender: function(items) {
+      return items.map(function(g) {
+        var cls = g.type === 'resolved' ? 'resolved' : 'gap';
+        var prefix = g.type === 'resolved' ? 'RESOLVED' : 'GAP';
+        return '<div class="' + cls + '"><strong>' + prefix + ':</strong> ' + (g.description || g.label || '') + (g.severity ? ' <em>(' + g.severity + ')</em>' : '') + '</div>';
+      }).join('');
+    },
+    emptyMsg: 'No gaps or status items for this domain', source: { kind: 'derived', from: 'completeness API: missing-from-lifecycle' } },
 ];
 
-function renderHeraldFacet(facetDef, data) {
-  var items = data[facetDef.listKey] || (facetDef.altKey ? data[facetDef.altKey] : null) || [];
-  var html = '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">' + facetDef.title + ' (' + items.length + ')</summary>';
-  if (items.length > 0) {
-    html += '<table><tr>';
-    facetDef.columns.forEach(function(col) { html += '<th>' + col.charAt(0).toUpperCase() + col.slice(1) + '</th>'; });
-    html += '</tr>';
-    items.forEach(function(item) {
-      html += '<tr>';
-      facetDef.columns.forEach(function(col) {
-        var val = item[col] || '';
-        if (col === 'route' && val.startsWith('/')) val = '<a href="' + val + '">' + val + '</a>';
-        else if (col === 'path') val = '<code>' + val + '</code>';
-        html += '<td>' + val + '</td>';
-      });
+function renderHeraldFacet(facetDef, raw, ctx) {
+  // raw is the body.data for this facet's endpoint (or {} when fetch failed).
+  // customRender gets (items, ctx, raw); column path uses items only.
+  var data = raw || {};
+  var items;
+  var count;
+  if (facetDef.extract) {
+    var ex = facetDef.extract(data);
+    items = [];
+    count = (ex && typeof ex.count === 'number') ? ex.count : 0;
+  } else {
+    items = data[facetDef.listKey] || (facetDef.altKey ? data[facetDef.altKey] : null) || [];
+    if (!Array.isArray(items)) items = [];
+    count = items.length;
+  }
+  // #2502 — source-of-data label so empty=0 reads honestly: "discovery returned nothing"
+  // vs "no one authored it" vs "blended". Tooltip on hover shows the exact discoverer.
+  var srcLabel = '';
+  if (facetDef.source) {
+    var srcText = facetDef.source.kind || '';
+    var srcTitle = facetDef.source.from ? ' title="from: ' + facetDef.source.from + '"' : '';
+    srcLabel = '<span class="herald-src" data-source="' + srcText + '"' + srcTitle + ' style="margin-left:8px;font-size:0.7em;font-weight:400;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">' + srcText + '</span>';
+  }
+  var html = '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">' + facetDef.title + (count ? ' (' + count + ')' : '') + srcLabel + '</summary>';
+  if (count > 0) {
+    if (facetDef.customRender) {
+      html += facetDef.customRender(items, ctx || {}, data);
+    } else {
+      html += '<table><tr>';
+      facetDef.columns.forEach(function(col) { html += '<th>' + col.charAt(0).toUpperCase() + col.slice(1) + '</th>'; });
       html += '</tr>';
-    });
-    html += '</table>';
+      items.forEach(function(item) {
+        html += '<tr>';
+        facetDef.columns.forEach(function(col) {
+          var val = item[col];
+          if (val === undefined || val === null) val = '';
+          if (col === 'route' && typeof val === 'string' && val.startsWith('/')) val = '<a href="' + val + '">' + val + '</a>';
+          else if (col === 'path') val = '<code>' + val + '</code>';
+          else if (col === 'commit' && val) val = '<code>' + val + '</code>';
+          else if (col === 'cardId' && val) val = '#' + val;
+          else if (col === 'timestamp' && typeof val === 'string') val = val.slice(0, 10);
+          html += '<td>' + val + '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</table>';
+    }
   } else {
     html += '<p class="placeholder">' + facetDef.emptyMsg + '</p>';
   }
@@ -365,7 +471,41 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
   // Build all content sections
   let html = '';
 
-  // --- ACTORS ---
+  // #2485 round 2 — Herald-driven rendering. dataMap is keyed by HERALD_FACETS.key;
+  // each entry maps to the body.data envelope from its endpoint. Empty → renders
+  // section header + emptyMsg per Jeff's "tabs-must-render-empty-not-missing" rule.
+  var heraldCtx = { label: d.label, domainId: d.id || (d.uri ? d.uri.split('#').pop() : '') };
+  var dataMap = {
+    actors: actorsData || { actors: [] },
+    scenarios: scenariosData || { scenarios: [] },
+    dependencies: depsData || { direct: { consumes: [], consumedBy: [] }, shared: [] },
+    pages: pagesData || { pages: [] },
+    integrations: integrationsData || { integrations: [] },
+    endpoints: { endpoints: (servicesData && (servicesData.endpoints || servicesData.services)) || (contractData && contractData.endpoints) || [] },
+    code: { files: (codeFiles && codeFiles.files) || [] },
+    tests: { tests: (codeFiles && codeFiles.tests) || [] },
+    persistence: persistenceData || { stores: [] },
+    pipeline: pipelineData || { stages: [] },
+    releases: relData || { releases: [] },
+    infra: infraData || { environments: [] },
+    priorArt: { items: ((priorArtData && priorArtData.items) || []).concat(((docsData && docsData.governs) || []).map(function(doc) {
+      return { label: doc.title || '', path: doc.href || '', description: doc.type || '' };
+    })) },
+    decisions: decData || { decisions: [] },
+    logs: logsData || { logs: [] },
+    alerts: { alerts: Array.isArray(alerts) ? alerts : ((alerts && alerts.alerts) || []) },
+    gaps: gapsData || { gaps: [] },
+  };
+
+  // First wave — render facets that come before the structural sections
+  // (Child Domains, Instances, Cards). Order matches original page layout.
+  ['actors', 'scenarios', 'dependencies', 'pages', 'integrations', 'endpoints', 'code', 'tests', 'persistence', 'pipeline', 'releases', 'infra', 'priorArt', 'decisions'].forEach(function(key) {
+    var facet = HERALD_FACETS.find(function(f) { return f.key === key; });
+    if (facet) html += renderHeraldFacet(facet, dataMap[key], heraldCtx);
+  });
+
+  // --- ACTORS_REMOVED — replaced by herald loop above ---
+  if (false) {
   const actors = actorsData ? actorsData.actors || [] : [];
   html += '<details><summary style=\"cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;\">Actors' + (actors.length ? ' (' + actors.length + ')' : '') + '</summary>';
   if (actors.length > 0) {
@@ -709,6 +849,7 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
     html += '<p class="placeholder">No decisions for this domain</p>';
   }
   html += '</details>';  // #2431 — close Decisions unconditionally (was inside d.domains branch; broke on domains with no children)
+  } // close if (false) — old inline blocks superseded by herald loop above (#2485 round 2)
 
   // --- CHILD DOMAINS ---
   if (d.domains && d.domains.length > 0) {
@@ -737,7 +878,10 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
     });
     // #2431 — pluralize type names for group headers.
     // Irregulars + y→ies rule; default is + 's'.
-    var PLURAL_OVERRIDES = { AlertRule: 'Alerts' };
+    // #2485 round 2 — Decision instance group disambiguates from the protocol
+    // Decisions herald (which filters DECs to this domain via the aggregation
+    // route). Instance group is the chorus:Decision class membership view.
+    var PLURAL_OVERRIDES = { AlertRule: 'Alerts', Decision: 'Decision Instances' };
     function pluralize(name) {
       if (PLURAL_OVERRIDES[name]) return PLURAL_OVERRIDES[name];
       if (/[^aeiou]y$/i.test(name)) return name.slice(0, -1) + 'ies';  // Policy → Policies
@@ -767,9 +911,8 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
   }
 
   // --- ACTIVE CARDS (foldable #1932) ---
-
-  html += '</details>';
-  html += '</details>';
+  // (#2485 round 2) — strays from the old leave-open pattern removed; Cards
+  // now self-closes so the second-wave herald loop is not nested under Cards.
 
   html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">Cards (' + (cards ? cards.length : 0) + ')</summary>';
   if (cards && cards.length > 0) {
@@ -786,67 +929,27 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
   } else {
     html += '<p class="placeholder">No cards for this domain</p>';
   }
+  html += '</details>';  // close Cards
 
-  // --- LOGS ---
-  const logs = logsData ? logsData.logs || [] : [];
+  // Second wave — facets that come after Cards. Logs/Alerts/Gaps via heralds;
+  // Blast Radius render-empty inline (data shape is just an array, not facet-shaped).
+  ['logs', 'alerts', 'gaps'].forEach(function(key) {
+    var facet = HERALD_FACETS.find(function(f) { return f.key === key; });
+    if (facet) html += renderHeraldFacet(facet, dataMap[key], heraldCtx);
+  });
 
-  html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">Logs' + (logs.length ? ' (' + logs.length + ')' : '') + '</summary>';
-  if (logs.length > 0) {
-    html += '<table><tr><th>Source</th><th>Location</th><th>Retention</th><th>Status</th></tr>';
-    logs.forEach(function(lg) {
-      var tag = lg.status === 'real' ? 'tag-real' : lg.status === 'partial' ? 'tag-partial' : 'tag-design';
-      html += '<tr><td>' + lg.label + '</td><td><code>' + (lg.location || '') + '</code></td><td>' + (lg.retention || '') + '</td><td><span class="' + tag + '">' + (lg.status || 'design').toUpperCase() + '</span></td></tr>';
-    });
-    html += '</table>';
-  } else {
-    html += '<p class="placeholder">No log sources defined</p>';
-  }
-
-  // --- ALERTS ---
-  var alertList = Array.isArray(alerts) ? alerts : (alerts ? alerts.alerts || [] : []);
-
-  html += '</details>';
-
-  html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">Alerts (' + alertList.length + ')</summary>';
-  if (alertList.length > 0) {
-    html += '<table><tr><th>Alert</th><th>Description</th><th>Severity</th></tr>';
-    alertList.forEach(function(a) {
-      html += '<tr><td>' + (a.name || a.title || '') + '</td><td>' + (a.description || '') + '</td><td>' + (a.severity || 'info') + '</td></tr>';
-    });
-    html += '</table>';
-  } else {
-    html += '<p class="placeholder">No alert rules — <span class="tag-mock">API GAP</span> POST /api/athena/subdomains/:id/alerts</p>';
-  }
-
-  // --- BLAST RADIUS ---
-  if (blastConsumers && blastConsumers.length > 0) {
-
-  html += '</details>';
-
-    html += '<details><summary style=\"cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;\">Blast Radius</summary>';
+  // Blast Radius — always render (Jeff's rule); empty placeholder if no consumers.
+  var blast = blastConsumers || [];
+  html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">Blast Radius' + (blast.length ? ' (' + blast.length + ')' : '') + '</summary>';
+  if (blast.length > 0) {
     html += '<div class="blast"><h3>If ' + d.label + ' fails:</h3>';
-    blastConsumers.forEach(function(c) {
+    blast.forEach(function(c) {
       html += '<div style="padding:4px 0;">' + c.label + ' — consumes this service</div>';
     });
     html += '</div>';
-  }
-
-  // --- GAPS & STATUS ---
-  const gaps = gapsData ? gapsData.gaps || [] : [];
-
-  html += '</details>';
-
-  html += '<details><summary style=\"cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;\">Gaps & Status' + (gaps.length ? ' (' + gaps.length + ')' : '') + '</summary>';
-  if (gaps.length > 0) {
-    gaps.forEach(function(g) {
-      var cls = g.type === 'resolved' ? 'resolved' : 'gap';
-      var prefix = g.type === 'resolved' ? 'RESOLVED' : 'GAP';
-      html += '<div class="' + cls + '"><strong>' + prefix + ':</strong> ' + (g.description || g.label || '') + (g.severity ? ' <em>(' + g.severity + ')</em>' : '') + '</div>';
-    });
   } else {
-    html += '<p class="placeholder">No gaps or status items defined</p>';
+    html += '<p class="placeholder">No consumers depend on this domain</p>';
   }
-
   html += '</details>';
 
   document.getElementById('content-sections').innerHTML = html;
