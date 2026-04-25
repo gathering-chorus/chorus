@@ -23,7 +23,7 @@ Detect which pattern is active from Jeff's intent — he will NOT label it:
 **Emit a spine event when you detect a pattern.** This is not optional — it feeds Borg.
 
 ```bash
-../../scripts/chorus-log interaction.pattern.detected wren pattern=<name>
+../../platform/scripts/chorus-log interaction.pattern.detected wren pattern=<name>
 ```
 
 Rules:

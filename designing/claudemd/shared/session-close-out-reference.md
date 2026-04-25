@@ -12,7 +12,7 @@ Scan: "did anything I did today make these stale?" Gate — Hard 5 cannot procee
 - `/cost` → log to cost-log.md
 - Role-specific domain docs (listed in each role's CLAUDE.md)
 
-After updates: `../../scripts/chorus-log session.docscan.completed <role> checked=<N> updated=<M>`
+After updates: `../../platform/scripts/chorus-log session.docscan.completed <role> checked=<N> updated=<M>`
 
 ### Hard 5 (in order)
 1. **Journal** — reflective entry in `journal/<date>.md`. Not status — reflection. 3-8 sentences.

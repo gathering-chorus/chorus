@@ -24,11 +24,11 @@ curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \
 
 | Script | Canonical invocation |
 |--------|---------------------|
-| cards | `bash ../../scripts/cards <command>` |
-| git-queue.sh | `cd /Users/jeffbridwell/CascadeProjects && DEPLOY_ROLE=<role> bash messages/scripts/git-queue.sh commit <dirs> -- -m "message"` |
-| role-state | `../../scripts/role-state <role> <state>` |
-| nudge | `bash ../../scripts/nudge <target> "message" --from <sender>` |
-| chorus-log | `../../scripts/chorus-log <event> <role> key=value` |
+| cards | `bash ../../platform/scripts/cards <command>` |
+| git-queue.sh | `cd /Users/jeffbridwell/CascadeProjects/chorus && DEPLOY_ROLE=<role> bash platform/scripts/git-queue.sh commit <dirs> -- -m "message"` |
+| role-state | `../../platform/scripts/role-state <role> <state>` |
+| nudge | `bash ../../platform/scripts/nudge <target> "message" --from <sender>` |
+| chorus-log | `../../platform/scripts/chorus-log <event> <role> key=value` |
 | session-close | `chorus-hook-shim session-close <role>` (close-out introspection) |
 
 **Never use:** `/Users/jeffbridwell/CascadeProjects/chorus/scripts/nudge` (stale copy), `gathering-te../../scripts/` (wrong repo name).

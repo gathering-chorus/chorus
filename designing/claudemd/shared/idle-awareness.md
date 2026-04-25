@@ -4,5 +4,5 @@ Never idle-poll. If a background task is running: check seeds, update state file
 
 ## Andon State Declaration (MANDATORY)
 
-Declare state at transitions via `../../scripts/role-state`:
+Declare state at transitions via `../../platform/scripts/role-state`:
 `building card=<id>` | `blocked detail="reason"` | `waiting` | `observing gemba=<target>` | `idle`
