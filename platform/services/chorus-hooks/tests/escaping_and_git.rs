@@ -92,11 +92,19 @@ fn git_commit_allowed_outside_team_repo() {
 fn git_commit_blocked_inside_team_repo() {
     let _guard = MarkerGuard::ensure_done("kade");
     // git commit from CascadeProjects SHOULD be blocked
+    // CHORUS_ROOT env w/ Mac-default fallback — CI sets CHORUS_ROOT to the
+    // runner workspace; local Mac dev keeps the hardcoded path. The hook
+    // checks if cwd is inside the chorus repo to decide whether to block.
+    let chorus_root = std::env::var("CHORUS_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+    let cwd = format!("{}/roles/kade", chorus_root);
     let hook_input = json!({
         "tool_name": "Bash",
         "tool_input": {"command": "git commit -m 'test'"},
         "session_id": "test-session",
-        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade"
+        "cwd": cwd
     });
 
     let output = Command::new(SHIM)

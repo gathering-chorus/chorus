@@ -187,6 +187,15 @@ jobs:
         # exists on every checkout. /tmp/* dirs still need creation since
         # they're outside the workspace.
         run: mkdir -p /tmp/claude-team-scan /tmp/voice-inbox /tmp/chorus-chat
+      - name: Symlink Mac path → runner workspace
+        # 27 test files hardcode /Users/jeffbridwell/CascadeProjects/chorus
+        # paths (#1821 era). Symlinking the Mac path to the runner workspace
+        # is one surgical fix vs. env-var-izing every test. The underlying
+        # tech-debt (chorus_root() helper across all test files) tracks
+        # separately; this unblocks CI today.
+        run: |
+          sudo mkdir -p /Users/jeffbridwell/CascadeProjects
+          sudo ln -sf "$GITHUB_WORKSPACE" /Users/jeffbridwell/CascadeProjects/chorus
       - name: Run cargo test
         working-directory: ${{ matrix.crate }}
         run: cargo test --all
