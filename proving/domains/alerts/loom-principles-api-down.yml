@@ -1,0 +1,29 @@
+# loom-principles-api-down.yml — Alert when /api/loom/principles returns 5xx or unreachable
+# Card #2451 | health signal #1 of 3
+#
+# /api/loom/principles is load-bearing for SessionStart inject (#2450). When it
+# 5xxs, every booting role falls back to STALE cache — visible to the role, but
+# Silas should know it's happening so the underlying cause gets fixed before
+# the cache itself goes stale.
+
+name: loom-principles-api-down
+description: /api/loom/principles 5xx or unreachable — SessionStart falls back to STALE cache
+severity: critical
+schedule: "*/5 * * * *"
+
+check: |
+  CODE=$(curl -sL --max-time 5 -o /dev/null -w '%{http_code}' "http://localhost:3340/api/loom/principles" 2>/dev/null)
+  # 2xx/3xx ok. 000 = unreachable. 4xx = route/auth issue still flag-worthy. 5xx = server side.
+  case "$CODE" in
+    2*|3*) echo "ok"; exit 0 ;;
+    *)     echo "loom-principles-api:status=${CODE:-000}"; exit 1 ;;
+  esac
+
+action: |
+  COOLDOWN="/tmp/alert-loom-principles-api-down-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "loom-principles-api-down: /api/loom/principles unreachable. SessionStart inject (#2450) is now serving STALE cache to every new role boot. Check chorus-api + Fuseki." --force 2>/dev/null || true

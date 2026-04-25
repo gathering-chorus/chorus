@@ -1,0 +1,52 @@
+# loom-principles-orphans.yml — Alert when principles lack parent edges and aren't abstract
+# Card #2451 | health signal #2 of 3
+#
+# Every chorus:Principle should either declare a parent (chorus:dependsOn /
+# chorus:derivedFrom / chorus:isPermacultureParent=true) or carry an explicit
+# abstract flag. An orphan principle is graph drift — likely an incomplete
+# write or a mid-rename state. Silas surfaces the count and lets the data
+# steward fix the source.
+#
+# Schedule 15min — orphans don't appear minute-to-minute and the SPARQL query
+# is non-trivial. Cooldown by hour so an unfixed orphan re-pages.
+
+name: loom-principles-orphans
+description: chorus:Principle instances with no parent edges and not flagged abstract
+severity: warning
+schedule: "7,22,37,52 * * * *"
+
+check: |
+  Q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
+  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+  SELECT (COUNT(?p) AS ?orphans) WHERE {
+    GRAPH <urn:chorus:instances> {
+      ?p a chorus:Principle .
+      FILTER NOT EXISTS { ?p chorus:dependsOn ?_ }
+      FILTER NOT EXISTS { ?p chorus:derivedFrom ?_ }
+      FILTER NOT EXISTS { ?p chorus:isPermacultureParent true }
+      FILTER NOT EXISTS { ?p chorus:abstract true }
+    }
+  }'
+  COUNT=$(curl -sf --max-time 8 "http://localhost:3030/pods/query" \
+    --data-urlencode "query=$Q" \
+    -H 'Accept: application/sparql-results+json' 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['results']['bindings'][0]['orphans']['value'])" 2>/dev/null || echo "")
+  if [ -z "$COUNT" ]; then
+    echo "ok"  # SPARQL endpoint unreachable — covered by fuseki alerts, not this one
+    exit 0
+  fi
+  if [ "$COUNT" -eq 0 ]; then
+    echo "ok"
+    exit 0
+  fi
+  echo "loom-principles-orphans:count=$COUNT"
+  exit 1
+
+action: |
+  COOLDOWN="/tmp/alert-loom-principles-orphans-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "loom-principles-orphans: principles in graph have no parent and aren't flagged abstract. Likely a mid-write or rename drift. Investigate via /loom/principles.html or SPARQL." --force 2>/dev/null || true

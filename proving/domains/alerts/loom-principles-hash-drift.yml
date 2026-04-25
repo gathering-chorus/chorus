@@ -1,0 +1,54 @@
+# loom-principles-hash-drift.yml — Alert when role principle-set hashes diverge
+# Card #2451 | health signal #3 of 3
+#
+# Each role's session-start (chorus-hook-shim, #2450) writes the sha256 of the
+# principle ids it booted with to /tmp/session-start-<role>-principles.hash.
+# If the three roles' hashes differ AND the latest write is recent, principles
+# changed mid-team-session and at least one role is operating on a stale set.
+#
+# Recoverable on next role boot — severity warning, not critical. Visible to
+# Silas so a coordinated /reboot can be initiated when needed.
+
+name: loom-principles-hash-drift
+description: principle-set hashes differ across roles — at least one role is stale
+severity: warning
+schedule: "*/5 * * * *"
+
+check: |
+  HASHES=()
+  STALE_ROLES=()
+  for ROLE in silas wren kade; do
+    F="/tmp/session-start-${ROLE}-principles.hash"
+    if [ ! -f "$F" ]; then
+      # Role hasn't booted under #2450 yet — not drift, just absence
+      continue
+    fi
+    # Skip roles whose hash file is older than 24h (stale session, will boot fresh)
+    AGE=$(( $(date +%s) - $(stat -f %m "$F" 2>/dev/null || echo 0) ))
+    if [ "$AGE" -gt 86400 ]; then
+      STALE_ROLES+=("$ROLE")
+      continue
+    fi
+    HASHES+=("$(cat "$F" 2>/dev/null)")
+  done
+  # Need 2+ roles to compare
+  if [ "${#HASHES[@]}" -lt 2 ]; then
+    echo "ok"
+    exit 0
+  fi
+  UNIQ=$(printf '%s\n' "${HASHES[@]}" | sort -u | wc -l | tr -d ' ')
+  if [ "$UNIQ" -eq 1 ]; then
+    echo "ok"
+    exit 0
+  fi
+  echo "loom-principles-hash-drift:roles=${#HASHES[@]} unique=$UNIQ"
+  exit 1
+
+action: |
+  COOLDOWN="/tmp/alert-loom-principles-hash-drift-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "loom-principles-hash-drift: principle-set hashes differ across roles. At least one role booted before a graph change. Coordinate /reboot to realign." --force 2>/dev/null || true
