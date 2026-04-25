@@ -102,7 +102,7 @@ describe('fetchChorusDomainCode (#2188)', () => {
     expect(body.data.files[0].path).toBe('the-file-id');
   });
 
-  test('test files excluded from source but counted', async () => {
+  test('excludes test files from source but counts them', async () => {
     const sparql = async () => sparqlResult([
       { file: 'x#a', filePath: 'src/foo.ts' },
       { file: 'x#b', filePath: 'tests/foo.test.ts' },

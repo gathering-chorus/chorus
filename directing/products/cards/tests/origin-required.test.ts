@@ -23,7 +23,7 @@ describe('Origin required at card creation', () => {
         `node ${CLI} add "Clean up test artifacts" --owner silas --priority P2 --domain chorus --type chore --quick 2>&1`,
         { encoding: 'utf-8', timeout: 10000 }
       );
-      fail('Should have exited non-zero');
+      throw new Error('Should have exited non-zero');
     } catch (err: any) {
       const output = (err.stdout || '') + (err.stderr || '');
       expect(output).toMatch(/origin/i);

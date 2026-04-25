@@ -36,7 +36,7 @@ describe('Crawl API response shape (#1884)', () => {
 
       beforeAll(async () => {
         const res = await fetch(`${harness.baseUrl}/api/chorus/crawl/${domain}`);
-        expect(res.status).toBe(200);
+        if (res.status !== 200) throw new Error(`crawl returned ${res.status}`);
         body = await res.json();
       }, 60_000);
 

@@ -30,17 +30,15 @@ import * as http from 'http';
 let server: http.Server;
 let baseUrl: string;
 
-beforeAll((done) => {
+beforeAll(async () => {
   server = http.createServer(app as any);
-  server.listen(0, '127.0.0.1', () => {
-    const addr = server.address() as AddressInfo;
-    baseUrl = `http://127.0.0.1:${addr.port}`;
-    done();
-  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const addr = server.address() as AddressInfo;
+  baseUrl = `http://127.0.0.1:${addr.port}`;
 });
 
-afterAll((done) => {
-  server.close(() => done());
+afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 

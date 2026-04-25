@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-25T11:00:16.482Z",
+  "generatedAt": "2026-04-25T11:03:24.408Z",
   "note": "Per-rule ESLint count ratchet (#2462). Counts may only decrease. Run `npm run lint:baseline` to regenerate after a legitimate drop.",
   "counts": {
     "complexity": 22,
@@ -8,14 +8,9 @@
     "@typescript-eslint/no-floating-promises": 3,
     "no-useless-escape": 9,
     "jest/no-conditional-expect": 41,
-    "jest/no-jasmine-globals": 1,
-    "no-undef": 7,
     "no-regex-spaces": 1,
     "@typescript-eslint/no-unused-vars": 2,
-    "jest/no-identical-title": 2,
-    "jest/no-standalone-expect": 1,
-    "@typescript-eslint/no-require-imports": 2,
-    "jest/valid-title": 1,
-    "jest/no-done-callback": 4
+    "no-undef": 6,
+    "@typescript-eslint/no-require-imports": 2
   }
 }

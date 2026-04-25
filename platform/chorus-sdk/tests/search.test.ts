@@ -5,7 +5,7 @@ describe('search', () => {
   let server: http.Server;
   const PORT = 13340;
 
-  beforeAll((done) => {
+  beforeAll(async () => {
     server = http.createServer((req, res) => {
       const url = new URL(req.url!, `http://localhost:${PORT}`);
       const q = url.searchParams.get('q') ?? '';
@@ -17,11 +17,11 @@ describe('search', () => {
         total: 1,
       }));
     });
-    server.listen(PORT, done);
+    await new Promise<void>((resolve) => server.listen(PORT, () => resolve()));
   });
 
-  afterAll((done) => {
-    server.close(done);
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
   beforeEach(() => {

@@ -473,7 +473,7 @@ describeIntegration('GET /api/athena/subdomains/:id/actors', () => {
     expect(Array.isArray(body.data.actors)).toBe(true);
   });
 
-  test('returns 404 for unknown subdomain', async () => {
+  test('actors returns 404 for unknown subdomain', async () => {
     const res = await fetch(`${API}/api/athena/subdomains/nonexistent-xyz/actors`);
     expect(res.status).toBe(404);
   });
@@ -784,7 +784,7 @@ describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
     expect(body.data.lifecycle.done.required).toContain('scenarios');
   });
 
-  test('returns 404 for unknown subdomain', async () => {
+  test('completeness returns 404 for unknown subdomain', async () => {
     const res = await fetch(`${API}/api/athena/subdomains/nonexistent-domain-xyz/completeness`);
     expect(res.status).toBe(404);
   });
