@@ -15,6 +15,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const INIT_DIR: &str = "/tmp/claude-session-init";
 const TEST_ROLE: &str = "kade";
@@ -92,7 +93,7 @@ fn read_session_start_unlocks_role_on_protocol_pass() {
             "file_path": format!("/tmp/session-start-{}.md", TEST_ROLE),
         },
         "session_id": "recovery-test",
-        "cwd": format!("/Users/jeffbridwell/CascadeProjects/chorus/roles/{}", TEST_ROLE),
+        "cwd": format!("{}/roles/{}", chorus_root(), TEST_ROLE),
         "deploy_role": TEST_ROLE,
     })
     .to_string();
@@ -129,7 +130,7 @@ fn read_other_file_does_not_unlock() {
         "tool_name": "Read",
         "tool_input": {"file_path": "/tmp/some-unrelated-file.txt"},
         "session_id": "recovery-test-negative",
-        "cwd": format!("/Users/jeffbridwell/CascadeProjects/chorus/roles/{}", TEST_ROLE),
+        "cwd": format!("{}/roles/{}", chorus_root(), TEST_ROLE),
         "deploy_role": TEST_ROLE,
     })
     .to_string();

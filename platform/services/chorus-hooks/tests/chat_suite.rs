@@ -5,6 +5,7 @@
 
 use std::fs;
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 // CHORUS_ROOT env var with Mac-default fallback (mirrors
 // src/shared/state_paths.rs). CI sets CHORUS_ROOT=${{ github.workspace }}

@@ -15,6 +15,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const INIT_DIR: &str = "/tmp/claude-session-init";
 
@@ -87,10 +88,7 @@ fn post_via_socket(endpoint: &str, body: &str) -> String {
 const TEST_ROLE: &str = "kade";
 
 fn expect_deny(role: &str, tool: &str, tool_input: serde_json::Value) {
-    let cwd = format!(
-        "/Users/jeffbridwell/CascadeProjects/chorus/roles/{}",
-        role
-    );
+    let cwd = format!("{}/roles/{}", chorus_root(), role);
     let body = serde_json::json!({
         "tool_name": tool,
         "tool_input": tool_input,
@@ -185,7 +183,7 @@ fn bash_allowed_when_done_exists() {
         "tool_name": "Bash",
         "tool_input": {"command": "ls"},
         "session_id": "binary-gate-allow",
-        "cwd": format!("/Users/jeffbridwell/CascadeProjects/chorus/roles/{}", TEST_ROLE),
+        "cwd": format!("{}/roles/{}", chorus_root(), TEST_ROLE),
         "deploy_role": TEST_ROLE,
     })
     .to_string();

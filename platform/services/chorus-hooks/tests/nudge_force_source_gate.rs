@@ -19,10 +19,11 @@
 //! nudges passive. Log evidence (2026-04-03): wren→silas at 11:37
 //! delivered mode=queued despite wrapper appending --force.
 
+use chorus_hooks::shared::state_paths::chorus_root;
 #[test]
 fn nudge_has_no_passive_force_path() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs"
+        &format!("{}/platform/services/chorus-hooks/src/nudge.rs", chorus_root())
     ).expect("nudge.rs should exist");
 
     assert!(

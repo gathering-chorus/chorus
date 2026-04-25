@@ -15,6 +15,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use serde_json::json;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 const INIT_DIR: &str = "/tmp/claude-session-init";

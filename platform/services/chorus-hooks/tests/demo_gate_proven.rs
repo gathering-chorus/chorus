@@ -12,6 +12,7 @@
 use serde_json::json;
 use std::io::Write;
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
@@ -20,7 +21,7 @@ fn hook_check_with_role(tool: &str, input: serde_json::Value, role: &str) -> Str
         "tool_name": tool,
         "tool_input": input,
         "session_id": "test-session-1916",
-        "cwd": format!("/Users/jeffbridwell/CascadeProjects/chorus/roles/{}", role)
+        "cwd": format!("{}/roles/{}", chorus_root(), role)
     });
 
     let output = Command::new(SHIM)

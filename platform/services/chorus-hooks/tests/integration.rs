@@ -4,6 +4,7 @@
 //! verifying role detection, guard routing, and response format.
 
 use serde_json::{json, Value};
+use chorus_hooks::shared::state_paths::chorus_root;
 
 // ============================================================
 // Since chorus-hooks is a binary crate, integration tests exercise
@@ -73,12 +74,12 @@ fn test_decode_chunked_hex_size() {
 #[test]
 fn test_role_detection_from_cwd() {
     // These patterns are critical — wrong role = wrong guard chain
-    let cases = vec![
-        ("/Users/jeffbridwell/CascadeProjects/chorus/roles/wren", "wren"),
-        ("/Users/jeffbridwell/CascadeProjects/chorus/roles/silas", "silas"),
-        ("/Users/jeffbridwell/CascadeProjects/chorus/roles/kade", "kade"),
-        ("/Users/jeffbridwell/CascadeProjects/chorus/messages", "unknown"),
-        ("/tmp/random", "unknown"),
+    let cases: Vec<(String, &str)> = vec![
+        (format!("{}/roles/wren", chorus_root()), "wren"),
+        (format!("{}/roles/silas", chorus_root()), "silas"),
+        (format!("{}/roles/kade", chorus_root()), "kade"),
+        (format!("{}/messages", chorus_root()), "unknown"),
+        ("/tmp/random".to_string(), "unknown"),
     ];
 
     for (cwd, expected_role) in cases {

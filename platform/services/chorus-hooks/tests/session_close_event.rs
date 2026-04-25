@@ -3,17 +3,17 @@
 
 use std::fs;
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
-
+fn chorus_log() -> String { format!("{}/platform/logs/chorus.log", chorus_root()) }
 fn log_tail(n: usize) -> String {
-    let content = fs::read_to_string(CHORUS_LOG).unwrap_or_default();
+    let content = fs::read_to_string(chorus_log()).unwrap_or_default();
     content.lines().rev().take(n).collect::<Vec<_>>().join("\n")
 }
 
 fn log_tail_after_marker(marker: &str) -> String {
-    let content = fs::read_to_string(CHORUS_LOG).unwrap_or_default();
+    let content = fs::read_to_string(chorus_log()).unwrap_or_default();
     let lines: Vec<&str> = content.lines().collect();
     // Find last occurrence of marker, return everything after it
     if let Some(pos) = lines.iter().rposition(|l| l.contains(marker)) {
@@ -58,7 +58,7 @@ fn session_close_emits_role_ended_with_duration() {
 
 #[test]
 fn nudge_stale_alert_rule_exists() {
-    let rule_path = "/Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts/nudge-stale.yml";
+    let rule_path = &format!("{}/proving/domains/alerts/nudge-stale.yml", chorus_root());
     assert!(
         std::path::Path::new(rule_path).exists(),
         "nudge-stale.yml alert rule must exist at {}",

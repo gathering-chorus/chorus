@@ -10,6 +10,7 @@
 
 use serde_json::json;
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
@@ -19,7 +20,7 @@ fn post_tool_hook(tool: &str, input: serde_json::Value) -> (String, String, i32)
         "tool_name": tool,
         "tool_input": input,
         "session_id": "test-ops-awareness-1981",
-        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade"
+        "cwd": &format!("{}/roles/kade", chorus_root())
     });
 
     let output = Command::new(SHIM)

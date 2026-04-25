@@ -10,19 +10,19 @@
 
 use std::process::Command;
 use std::time::Instant;
+use chorus_hooks::shared::state_paths::chorus_root;
 
-const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge";
-const CHAT_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh";
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log";
-const SHIM_BIN: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim";
-
+fn nudge_script() -> String { format!("{}/platform/scripts/nudge", chorus_root()) }
+fn chat_script() -> String { format!("{}/platform/scripts/chat.sh", chorus_root()) }
+fn chorus_log() -> String { format!("{}/platform/scripts/chorus-log", chorus_root()) }
+fn shim_bin() -> String { format!("{}/platform/services/chorus-hooks/target/release/chorus-hook-shim", chorus_root()) }
 /// Nudge dry-run budget: 500ms. Measured baseline ~150ms (#2283 post-lsof-fix).
 /// Exercises: detect_sender, persist curl, queue decision. Skips osascript.
 #[test]
 fn nudge_dry_run_under_500ms() {
     let t = Instant::now();
     let out = Command::new("bash")
-        .arg(NUDGE_SCRIPT)
+        .arg(nudge_script())
         .args(["wren", "perf-nudge-dry-run"])
         .env("DEPLOY_ROLE", "silas")
         .env("CHORUS_INJECT_DRY_RUN", "1")
@@ -65,7 +65,7 @@ fn nudge_persist_under_100ms() {
 fn chat_say_under_200ms() {
     // Start a throwaway chat first
     let start = Command::new("bash")
-        .arg(CHAT_SCRIPT)
+        .arg(chat_script())
         .args(["start", "silas", "wren", "perf-chat-test"])
         .env("CHAT_DRY_RUN", "1")
         .env("DEPLOY_ROLE", "silas")
@@ -78,7 +78,7 @@ fn chat_say_under_200ms() {
 
     let t = Instant::now();
     let out = Command::new("bash")
-        .arg(CHAT_SCRIPT)
+        .arg(chat_script())
         .args(["say", &chat_id, "silas", "perf timing test"])
         .env("CHAT_DRY_RUN", "1")
         .env("DEPLOY_ROLE", "silas")
@@ -103,7 +103,7 @@ fn chat_say_under_200ms() {
 #[test]
 fn pulse_assembly_under_1500ms() {
     let t = Instant::now();
-    let out = Command::new(SHIM_BIN)
+    let out = Command::new(shim_bin())
         .arg("pulse")
         .env("DEPLOY_ROLE", "silas")
         .output()
@@ -122,7 +122,7 @@ fn pulse_assembly_under_1500ms() {
 #[test]
 fn spine_emit_under_200ms() {
     let t = Instant::now();
-    let out = Command::new(CHORUS_LOG)
+    let out = Command::new(chorus_log())
         .args(["perf.test.event", "silas", "suite=perf,test=spine_emit"])
         .env("DEPLOY_ROLE", "silas")
         .output()

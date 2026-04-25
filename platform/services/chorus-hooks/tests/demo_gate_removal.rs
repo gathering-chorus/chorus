@@ -9,11 +9,8 @@
 //! Bash or Skill tool inputs. cards CLI is single enforcement point.
 
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
-fn chorus_root() -> String {
-    std::env::var("CHORUS_ROOT")
-        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
-}
 
 /// Before #2270: `cards done` on a card without a brief file was blocked by
 /// the hook-shim via done-gate.sh, even if card.demo.started spine event exists.

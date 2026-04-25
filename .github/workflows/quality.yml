@@ -187,20 +187,10 @@ jobs:
         # exists on every checkout. /tmp/* dirs still need creation since
         # they're outside the workspace.
         run: mkdir -p /tmp/claude-team-scan /tmp/voice-inbox /tmp/chorus-chat
-      - name: Symlink Mac path → runner workspace
-        # 27 test files hardcode /Users/jeffbridwell/CascadeProjects/chorus
-        # paths (#1821 era). Symlinking the Mac path to the runner workspace
-        # is one surgical fix vs. env-var-izing every test.
-        #
-        # SUNSET via #2505 — this step violates the no-symlinks principle and
-        # would pollute Jeff's live tree if we ever switched to a self-hosted
-        # Mac runner. Safe ONLY on ubuntu-latest (ephemeral, nothing else at
-        # /Users/jeffbridwell). #2505 replaces this with a chorus_root() test
-        # helper across all 27 files; drop this step when that lands.
-        if: runner.os == 'Linux'
-        run: |
-          sudo mkdir -p /Users/jeffbridwell/CascadeProjects
-          sudo ln -sf "$GITHUB_WORKSPACE" /Users/jeffbridwell/CascadeProjects/chorus
+      # Symlink step retired by #2505 — all 28 test files now read paths via
+      # chorus_root() (chorus_hooks::shared::state_paths::chorus_root for
+      # chorus-hooks tests; inline helper for chorus-inject) which respects
+      # CHORUS_ROOT env. No more out-of-tree symlink to /Users/jeffbridwell.
       - name: Build chorus-inject release binary (chorus-hooks crate only)
         # tests/inject_binary_test.rs + tests/inject_uses_binary.rs (3 tests)
         # assert that the chorus-inject release binary exists at the

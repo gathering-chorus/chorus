@@ -5,11 +5,8 @@
 //! Same root cause as #1992 (demo_preflight).
 
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
-fn chorus_root() -> String {
-    std::env::var("CHORUS_ROOT")
-        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
-}
 
 fn home() -> String {
     std::env::var("HOME")

@@ -23,14 +23,19 @@
 
 use std::process::Command;
 
+fn chorus_root() -> String {
+    std::env::var("CHORUS_ROOT").ok().filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
+}
+
+
 // CARGO_BIN_EXE_chorus-inject points to the cargo-built binary for the current
 // profile — debug during `cargo test`, which is what tarpaulin instruments.
 // Previously this was a hardcoded release-binary path; that path is still
 // used by scripts that assume an installed release build (nudge e2e below
 // still shells out through the release binary via the nudge script).
 const INJECT_BIN: &str = env!("CARGO_BIN_EXE_chorus-inject");
-const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge";
-
+fn nudge_script() -> String { format!("{}/platform/scripts/nudge", chorus_root()) }
 // AC1 (source-gate) moved to inject_source_gate.rs per #2155.
 
 // --- AC3 + AC4: delivery path per role (dry-run — hermetic, no side effects) ---
@@ -87,16 +92,18 @@ fn inject_delivers_to_kade() {
 #[cfg(target_os = "macos")]
 #[test]
 fn nudge_e2e_delivers() {
-    // CHORUS_INJECT_DRY_RUN fires the shim's dry-run branch (nudge.rs), which
-    // prints "DRY-RUN: would inject to <target>..." and skips osascript.
+    // CHORUS_INJECT_DRY_RUN fires the shim's dry-run branch (nudge.rs:312),
+    // which prints "DRY-RUN: would emit nudge to <target>..." and skips
+    // osascript. Pre-#2435 the message was "would inject to..."; updated
+    // here in #2505 to match the canonical emit-only path.
     let output = Command::new("bash")
         .env("CHORUS_INJECT_DRY_RUN", "1")
-        .args([NUDGE_SCRIPT, "silas", "[cargo-test] AC5 nudge e2e", "--force"])
+        .args([nudge_script().as_str(), "silas", "[cargo-test] AC5 nudge e2e", "--force"])
         .output()
         .expect("failed to run nudge");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("DRY-RUN: would inject to silas"),
+        stdout.contains("DRY-RUN: would emit nudge to silas"),
         "nudge e2e under CHORUS_INJECT_DRY_RUN should dry-run at shim level, got: {}",
         stdout
     );

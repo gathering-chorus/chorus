@@ -22,6 +22,7 @@
 
 use std::path::Path;
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects/chorus";
 
