@@ -2,42 +2,55 @@
 
 ## This session shipped (2026-04-25 morning)
 
-**Principles reference-impl page (`/loom/principles-reference-impl.html`)** — extended with the "heart" of the arc:
-- New top section "The Heart" naming the five-move pattern (graph-as-source / API-as-write / drift-test / cite-by-ID / hook-as-backstop) and the transferability claim (Practices, Policies, Decisions, ADRs, Services).
-- "How we got here" — 5-card arc (#2447 → #2314 → #2157 → #2473 → #2449), each card removing one path back to the old way.
-- "What we deliberately didn't do" — 5 named negatives with reasons (no auto-update of role files, no generation of this page, no parallel Loom GET, no premature cross-graph SHACL, no premature MCP update/delete).
-- Scar tissue added to I-1, I-4, I-7.
-- New invariant **I-11: every principle is read three ways; the third is yours** — promotes `jeffReading` from layer-4 SHOULD to soul-of-the-artifact.
-- True 1in symmetric margins (removed `max-width: 1100px`).
-- Subtitle reframed: "first substrate-class domain put through the full treatment — captured fresh so the shape transfers."
+**Drift discussion on `/loom/principles-reference-impl.html`** — surfaced that the page violates I-1 on its own subject. Card-status sections (#2450, #2451 mermaid classes) are hand-edited and stale within 45 minutes of the last edit. Position banked for Jeff (FYA, not action): static-status sections must read live from API; editorial sections (Heart, Layers, Invariants) stay hand-curated. The "reboot-and-reread" cycle IS an empirical drift test — any document that can't survive it is paraphrase pretending to be contract.
 
-**Gate run:** `/gate-product` PASS on **#2451** (Principles SubDomain contract + health). 11/11 AC; lifecycle 3/3 (create/wip/done all pass=true); 3 alerts firing. Spine event emitted, comment added, Kade nudged → Kade ran gate:code + gate:quality → both PASS. Silas notified — arch + ops are his loop next.
+**Gate-product runs:**
+- **#2475** (MCP observability + governance) — initial FAIL on AC 5/6 shape (split-off [ ] under AC), retry-3 PASS at 6/6, formal forward to Kade.
+- **#2476** (Principles MCP tools) — gate-product PASS retracted mid-conversation. Performative-gates pattern: AC 9/9 + Silas tests green satisfied technical surface, but **Wren cannot reach the typed tools from this session** (ToolSearch returned no chorus_*) — which IS the user-surface check. Reach-test is the AC. Silas mapped path: env injection from .claude/settings.json + reboot + ToolSearch + live call → spine evidence closes new AC#7. **Reboot is the trigger for #2476 close.**
 
-## Open: Kade's question on #2463 (just before reboot)
+**ADR-026 (CI architecture + lock-file policy)** — driven by Kade hitting local↔CI divergence (gitignored package-lock.json) on #2481 build. Kade escalated to Wren via chat kade-wren-1777128773. Position: ADR shape, four decisions, Silas-owned. Silas drafted v1 fast; Wren PM-review APPROVE w/ 3 changes (drift-warning in §b, fold three follow-ons into #2481 AC, reconcile 12 vs 6 package count); Silas v2 + v3 applied; Kade impl-review PASS; ready for Jeff final + branch-protection toggle.
 
-**Kade's nudge (2026-04-25 10:19):** "Lint ratchet at 0/0. Does AC#5 'ratchet at 0 violations on all rules' satisfy what you wanted, or is the value really in the rules being PERMANENTLY at 0 (no regression in the next month)? If the latter, this card is the start of a measurement, not the end."
+**Drive harvest analysis (deeper)** — sampled ~200 files. Mapped to Gathering domains. Architectural call: build ONE Drive harvester with per-folder/per-pattern config, not N one-offs. High-fit harvest targets: grandma audio interview, resume time-series, jeff-bridwell-user-guide, life-purpose+core-values+wants bundle, finance spreadsheets, garden refs. Mid-tier: FTF/LendCo 2023-07 career archive (~30 PDFs — same shape as Staples archive, direct Chorus design lineage). Defer/archive: ~50 cover letters (metadata only). Two flags raised before any card filing: (1) Gathering domain readiness gap, (2) classification policy needed before sensitive harvest. **Open question to Jeff:** draft ADR-027 ("Drive as a harvest source") now, or scan Gathering schema readiness first?
 
-**Wren's position to deliver next session:** the AC text is satisfied — "ratchet at 0" is a state, not a duration. But Kade's framing is right: the *value* of the ratchet is the no-regression guarantee, which only proves out over time. Recommend accepting #2463 on AC compliance AND filing a sibling card "Lint ratchet sustains 0 for 30 days — auto-close 2026-05-25" so the measurement has a card. Don't conflate "AC met" with "value realized" — that's the bad-AC pattern in reverse. AC was correctly written for a discrete deliverable; the operating measurement is a separate card.
+**Career pivot memory + canonical model lineage memory + script-paths memory + Loki-before-bug memory** — four memories banked from this session. Notable: re-read of 2011 Staples Canonical Model Governance + Interface_and_Mapping_Capture decks confirmed Chorus is direct lineage from Jeff's 2011 ESB work (same Cambridge Semantics → Anzo → Athena vendor thread). Career arc visible in Drive: ~35 cover letters 2024-25 → re-source from own canon → built Chorus. Frame Chorus as "thing he'd want to be hired for," not side project.
 
-## Open: Silas's question on #2451 (right at reboot)
+## Open threads to resume
 
-**Silas's nudge (2026-04-25 10:19):** "First SubDomain to hit 7/7 MUST-haves. PM lens: does the actor framing (Roles consume / Practices express / Policies derive from) carry the conceptual model, or is it under-specified for the domain page? Any AC you would have written differently for the next SubDomain to walk this shape?"
+1. **#2476 reach-test (load-bearing).** First action this session: run ToolSearch for `chorus_principles_list` from this fresh seat. If visible, call it (any reasonable principle id) — spine event with `from=wren, origin=mcp` closes new AC#7. Silas + Kade waiting. After reach-confirmed: re-route to Kade for /gate-code re-run, then re-/gate-product for clean PASS, then full close.
 
-**Wren's position to deliver next session:** the three actors are accurate but thin — they name *who relates* without naming *what each gets*. For the principles domain page to teach the model, each actor needs a verb-with-object: "Roles cite by ID and emphasize a subset" / "Practices express principles as repeatable moves" / "Policies derive enforcement from principles." Three nouns + three relationships = the conceptual model. AC I'd add for the next SubDomain walking this shape: (a) each actor has a one-sentence "what it does with this domain" that renders on the domain page; (b) at least one of the three BDD scenarios names the actor explicitly; (c) the contract endpoint returns at least one field per actor's interest — proves the actor is real, not decorative. That generalizes to a "7/7 + actor-specificity" pattern for every SubDomain after this one.
+2. **ADR-026 — Jeff sign-off pending.** Silas + Kade signed; Wren PM signed. Jeff's two actions: flip Status: Proposed → Accepted at top, toggle GitHub branch protection on `main` (Settings → Branches → Add rule, require CI green to merge).
+
+3. **#2476 Kade/Silas open question on tool descriptions.** WHEN-guidance in `chorus_principles_get` description is grounded (names CLAUDE.md citation / card / list as call-sites) but lacks a positive example showing the rhetoric ("e.g., role file cites principle-ship-small in scope; fetch full body to ground a sizing argument"). Position: ship as-is, refine description as a follow-up bundle when third tool lands. Don't block close on copy.
+
+4. **Drive harvest decision pending Jeff.** Either draft ADR-027 ("Drive as a harvest source" — four decisions: source enumeration, extractor table by file-type, classification policy split, drift/idempotency posture) OR first scan Gathering domain schema readiness so the ADR doesn't promise harvest into empty domains. Wren recommends scan-first.
+
+5. **JX/AX gap in gate-product skill.** Jeff named the meta-miss: gate-product checks machinery (AC count, comment, spine call) but not experiences (does Jeff see/use it; does an agent reach for it). Position: amend skill to add JX-confirm + AX-confirm as required gates 8 and 9. Held during demo loop, not yet executed. Same risk applies retroactively to #2475 (alert visible to Jeff?), #2451 (SubDomain detail page reached?).
+
+6. **Principles reference-impl page** still stale on card statuses (#2450 + #2451 should not class :::later). FYA, not action — Jeff explicit on that.
 
 ## WIP at session close
-None. Wren WIP = 0/1.
+- **#2476** — WIP, gate-product retracted, awaiting reach-test.
+- Wren WIP = 1/1.
 
-## What's queued for Wren
-- #2470 — harden `check-principle-direct-edit` hook to catch mods + deletes (small, finishes principles tail)
-- #2471 — multi-parent permaculture audit (interactive with Jeff)
-- #2123 — retirement gate (zero-hits grep as closing AC)
+## What's queued for Wren (unchanged)
+- #2470 — harden check-principle-direct-edit hook (mods + deletes)
+- #2471 — multi-parent permaculture audit
+- #2123 — retirement gate
 - #2125 — Borg handler error observability
-- #2116 — Chorus page migration parent (the long-running flinch — needs acceptance shape rewritten against the principles-arc pattern before pulling child 1/7)
+- #2116 — Chorus page migration parent (still the long-running flinch)
 
-## Reboot gap to fix
-Wren's session lacked the `chorus-api` MCP transport (`.mcp.json` is in place; session predated it). Next Wren session should pick up `chorus_nudge_message` automatically — verify by trying ToolSearch for it in the first turn.
+## Friction notes (this session)
+- Script paths: `chorus/platform/scripts/` is canonical for `nudge` + `chorus-log` + `cards`. Wrong paths (`chorus/scripts/`, `gathering-team/scripts/nudge.sh`) silently failed when run in background. Memory banked.
+- Loki-before-bug: filed #2484 against a non-bug (origin-tagging test traffic) without checking trace_ids. Retracted after Jeff prompted "we have logs / loki wren!" Memory banked.
+- Ankle-biter cards: filed #2483 (folded) + reference-doc-line-fix card-shape (dropped) before Jeff named the pattern. Net new this session: #2482 only.
+- Performative gates: gate-product PASS on #2476 without reach-test. Retracted mid-conversation. The deeper miss is JX/AX absence in the skill itself (open thread #5 above).
 
-## Friction notes
-- `cards` not on PATH; always full path `/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards`.
-- Background-nudge default was overridden by Jeff this session ("not background") — match Jeff's preference per request, don't reflexively background.
+## Reach-test for next Wren session
+Run as first turn after boot envelope:
+```
+ToolSearch query "chorus_principles_list"
+# if visible:
+mcp__chorus__chorus_principles_list (or whatever the surfaced name is)
+# spine event should tag from=wren, origin=mcp
+# that closes #2476 AC#7
+```
