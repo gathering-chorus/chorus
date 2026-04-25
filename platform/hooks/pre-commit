@@ -44,10 +44,14 @@ if [ -n "$_WIP_ROLE" ]; then
       # `cards list --status WIP` returns the WIP section AND a Next section
       # below it. Scope to the WIP block (between "WIP (" and the next blank
       # line / "Next (") so a role with cards only in Next doesn't pass.
+      # Anchor the grep to the metadata bracket shape '[Role|P<digit>' —
+      # priority is always immediately after the role pipe, and titles
+      # don't contain that pattern. Without this, a card whose TITLE
+      # contains literal '[Role|' false-positives (kade #2204 review).
       _cards_cmd="${CARDS_CMD:-${REPO_ROOT}/platform/scripts/cards}"
       if "$_cards_cmd" list --status WIP 2>/dev/null \
           | awk '/^WIP \(/{p=1; next} /^[A-Z]/ && p{p=0} p' \
-          | grep -qiE "\[${_WIP_ROLE}\|"; then
+          | grep -qiE "\[${_WIP_ROLE}\|P[0-9]"; then
         _wip_ok=true
       fi
     fi

@@ -16,10 +16,12 @@ _role_has_board_wip() {
   local role="$1"
   local cards_cmd="${CARDS_CMD:-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards}"
   # `cards list --status WIP` includes a Next section after the WIP block;
-  # scope the grep to the WIP block only.
+  # scope the grep to the WIP block only. Anchor to the metadata bracket
+  # shape '[Role|P<digit>' so a card whose TITLE contains literal '[Role|'
+  # can't false-positive (kade #2204 review).
   "$cards_cmd" list --status WIP 2>/dev/null \
     | awk '/^WIP \(/{p=1; next} /^[A-Z]/ && p{p=0} p' \
-    | grep -qiE "\[${role}\|"
+    | grep -qiE "\[${role}\|P[0-9]"
 }
 
 wip_gate_check() {
@@ -106,7 +108,16 @@ echo "Next (2):"
 echo "  4321  Some testrol card [testrol|P2|chunk:ops|domain:chorus]"
 echo "  5432  Another testrol card [testrol|P2|chunk:ops|domain:chorus]"
 EOF
-chmod +x "$STUB_DIR/cards-with-wip" "$STUB_DIR/cards-empty" "$STUB_DIR/cards-only-in-next"
+
+# Card title contains literal '[testrol|' as text — must NOT count as
+# testrol owning WIP. Caught by Kade in #2204 review: anchor grep to the
+# card-list line shape so titles can't false-positive.
+cat > "$STUB_DIR/cards-with-rolename-in-title" <<'EOF'
+#!/bin/bash
+echo "WIP (1):"
+echo "  7777  Card titled with [testrol| as plain text [otherrol|P1|chunk:ops|domain:chorus]"
+EOF
+chmod +x "$STUB_DIR/cards-with-wip" "$STUB_DIR/cards-empty" "$STUB_DIR/cards-only-in-next" "$STUB_DIR/cards-with-rolename-in-title"
 
 # 1. No DEPLOY_ROLE — bypass (Jeff's direct commits)
 run_test "bypass when DEPLOY_ROLE unset" env -u DEPLOY_ROLE bash -c "$(declare -f wip_gate_check); SCAN_DIR='$SCAN_DIR'; wip_gate_check"
@@ -154,6 +165,11 @@ run_test_expect_fail "idle-cache + empty-board blocked" bash -c "$(declare -f _r
 # Next entries too.
 rm -f "$SCAN_DIR/testrol-declared.json"
 run_test_expect_fail "role-only-in-Next-not-WIP blocked" bash -c "$(declare -f _role_has_board_wip wip_gate_check); SCAN_DIR='$SCAN_DIR'; CARDS_CMD='$STUB_DIR/cards-only-in-next'; DEPLOY_ROLE=testrol; export SCAN_DIR CARDS_CMD DEPLOY_ROLE; wip_gate_check"
+
+# 12. Card title contains '[testrol|' as plain text but is owned by another
+# role → still blocked. Regression guard for grep-anchor weakness (#2204
+# review by kade): without line-shape anchor, the title text false-positives.
+run_test_expect_fail "rolename-in-title-not-owner blocked" bash -c "$(declare -f _role_has_board_wip wip_gate_check); SCAN_DIR='$SCAN_DIR'; CARDS_CMD='$STUB_DIR/cards-with-rolename-in-title'; DEPLOY_ROLE=testrol; export SCAN_DIR CARDS_CMD DEPLOY_ROLE; wip_gate_check"
 
 # Cleanup test state
 rm -f "$SCAN_DIR/testrol-declared.json"
