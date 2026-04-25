@@ -27,6 +27,16 @@ module.exports = {
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
     '/node_modules/',
     '<rootDir>/tests/athena\\.test\\.ts$',
+    // #2495 / #2501 — integration tests masquerading as unit. They hit
+    // /api/athena/subdomains/.../completeness on the in-process harness,
+    // which proxies to live Fuseki. No Fuseki in CI for the jest job →
+    // 500s. Quarantined behind RUN_INTEGRATION until converted to mocked
+    // Fuseki seam (#2501).
+    '<rootDir>/tests/observability\\.test\\.ts$',
+    '<rootDir>/tests/domain-api-consolidated\\.test\\.ts$',
+    '<rootDir>/tests/trace-integration-callstack\\.test\\.ts$',
+    '<rootDir>/tests/logs-facet\\.test\\.ts$',
+    '<rootDir>/tests/quality-summary\\.test\\.ts$',
   ],
   // ts-jest diagnostics off — type checking is tsc's job, not the test runner's.
   // Tests in this dir were written for default-jest (no strict TS) and use
