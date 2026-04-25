@@ -1130,3 +1130,4 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - Gate runs for team: #2475 code+quality PASS (Silas), #2476 code+quality PASS (then stale-marked on Wren gate-product retract, then re-PASS after AC reshape)
 - Brief sent: roles/silas/briefs/2026-04-25-adr-026-ci-architecture.md
 - Decisions referenced: ADR-026 (CI architecture + lock-file policy)
+- [silas|2026-04-25 12:46] Reboot — 5 cards + ADR-026 shipped (principles arc complete: #2472, #2474 (kade), #2475, #2476, #2477, plus #2450, #2451). #2491 filed for test-baseline cleanup. Branch entanglement flagged for retro.
