@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CMDB — Products & Domains</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'SF Pro Text', -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 24px; }
+h1 { font-size: 20px; font-weight: 300; margin-bottom: 4px; }
+.subtitle { font-size: 12px; color: #888; margin-bottom: 24px; }
+.error { color: #e53e3e; padding: 12px; background: #fff5f5; border-radius: 6px; margin: 12px 0; }
+
+/* Product tabs */
+.product-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+.product-tab { padding: 8px 20px; border-radius: 8px; border: 2px solid #e0e0e0; background: #fff; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; }
+.product-tab:hover { border-color: #4f46e5; }
+.product-tab.active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+
+/* Stats bar */
+.stats { display: flex; gap: 24px; margin-bottom: 24px; padding: 12px 20px; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; }
+.stat-item { text-align: center; }
+.stat-value { font-size: 24px; font-weight: 300; color: #4f46e5; }
+.stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Filter bar */
+.filters { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+.filters label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+.filter-btn { padding: 4px 12px; border-radius: 4px; border: 1px solid #e0e0e0; background: #fff; cursor: pointer; font-size: 12px; }
+.filter-btn.active { background: #eef2ff; border-color: #4f46e5; color: #4f46e5; }
+.filter-btn:hover { border-color: #4f46e5; }
+
+/* Tree view */
+.tree { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
+.tree-header { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 80px; padding: 10px 16px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+.tree-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 80px; padding: 10px 16px; border-bottom: 1px solid #f0f0f0; align-items: center; cursor: pointer; transition: background 0.1s; }
+.tree-row:hover { background: #f8f9fa; }
+.tree-row:last-child { border-bottom: none; }
+.tree-row.subproduct { font-weight: 600; font-size: 14px; }
+.tree-row.subdomain { padding-left: 40px; font-size: 13px; color: #444; }
+.tree-row.subdomain .name { position: relative; }
+.tree-row.subdomain .name::before { content: '└'; position: absolute; left: -18px; color: #ccc; }
+
+.name { font-size: inherit; }
+.owner { font-size: 12px; }
+.owner-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.owner-dot.jeff { background: #e6edf3; }
+.owner-dot.wren { background: #4ade80; }
+.owner-dot.silas { background: #60a5fa; }
+.owner-dot.kade { background: #fb923c; }
+.step { font-size: 11px; padding: 2px 8px; border-radius: 10px; display: inline-block; }
+.step.shaping { background: #fef9c3; color: #854d0e; }
+.step.directing { background: #fef3c7; color: #92400e; }
+.step.designing { background: #e0e7ff; color: #3730a3; }
+.step.building { background: #d1fae5; color: #065f46; }
+.step.proving { background: #fce7f3; color: #9d174d; }
+.step.capturing { background: #ede9fe; color: #6d28d9; }
+.consumes { font-size: 11px; color: #888; }
+
+/* Blast radius panel */
+.blast-panel { display: none; margin: 8px 16px 16px 40px; padding: 12px; background: #fff5f5; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; }
+.blast-panel.visible { display: block; }
+.blast-panel h4 { font-size: 11px; color: #e53e3e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.blast-item { padding: 3px 0; color: #444; }
+
+.loading { text-align: center; padding: 40px; color: #888; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>CMDB</h1>
+<p class="subtitle">Products, sub-products, and sub-domains — live from Athena</p>
+
+<div class="product-tabs" id="tabs"></div>
+<div class="stats" id="stats"></div>
+<div class="filters" id="filters">
+  <label>Step:</label>
+</div>
+<div class="tree" id="tree">
+  <div class="loading">Loading from Athena...</div>
+</div>
+
+<script>
+const API = 'http://localhost:3340/api/athena';
+let products = [];
+let subproducts = [];
+let subdomains = [];
+let activeProduct = null;
+let activeStep = null;
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  const d = await r.json();
+  return d.data || d;
+}
+
+function ownerDot(owner) {
+  const cls = (owner || '').toLowerCase();
+  return `<span class="owner-dot ${cls}"></span>${owner || '?'}`;
+}
+
+function stepBadge(step) {
+  const cls = (step || '').toLowerCase();
+  return `<span class="step ${cls}">${step || '?'}</span>`;
+}
+
+function renderStats() {
+  const sp = subproducts.filter(s => !activeProduct || isChildOf(s, activeProduct));
+  const sd = subdomains.filter(s => !activeStep || s.step === activeStep);
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-item"><div class="stat-value">${products.length}</div><div class="stat-label">Products</div></div>
+    <div class="stat-item"><div class="stat-value">${sp.length}</div><div class="stat-label">Sub-Products</div></div>
+    <div class="stat-item"><div class="stat-value">${sd.length}</div><div class="stat-label">Sub-Domains</div></div>
+    <div class="stat-item"><div class="stat-value">6</div><div class="stat-label">Steps</div></div>
+  `;
+}
+
+function isChildOf(subproduct, product) {
+  // For now, all subproducts belong to Chorus
+  if (product.label === 'Gathering') return false;
+  return true;
+}
+
+function renderTabs() {
+  const el = document.getElementById('tabs');
+  el.innerHTML = products.map(p =>
+    `<div class="product-tab ${activeProduct === p ? 'active' : ''}" onclick="selectProduct('${p.uri}')">${p.label}</div>`
+  ).join('') + `<div class="product-tab ${!activeProduct ? 'active' : ''}" onclick="selectProduct(null)">All</div>`;
+}
+
+function renderFilters() {
+  const steps = ['Shaping', 'Directing', 'Designing', 'Building', 'Proving'];
+  const el = document.getElementById('filters');
+  el.innerHTML = '<label>Step:</label>' +
+    `<div class="filter-btn ${!activeStep ? 'active' : ''}" onclick="filterStep(null)">All</div>` +
+    steps.map(s => `<div class="filter-btn ${activeStep === s ? 'active' : ''}" onclick="filterStep('${s}')">${s}</div>`).join('');
+}
+
+function renderTree() {
+  const el = document.getElementById('tree');
+  let html = `<div class="tree-header"><span>Name</span><span>Owner</span><span>Step</span><span>Consumes</span><span>Blast</span></div>`;
+
+  const filteredSP = subproducts.filter(sp => !activeProduct || isChildOf(sp, activeProduct));
+
+  for (const sp of filteredSP) {
+    html += `<div class="tree-row subproduct" onclick="toggleChildren('${sp.uri}')">
+      <span class="name">${sp.label}</span>
+      <span class="owner">${ownerDot(sp.owner)}</span>
+      <span></span>
+      <span class="consumes">${sp.consumesCount || 0} services</span>
+      <span></span>
+    </div>`;
+
+    const children = subdomains.filter(sd => {
+      if (activeStep && sd.step !== activeStep) return false;
+      return true; // show all under each subproduct for now
+    });
+
+    // Group subdomains by step under this subproduct
+    const spDomains = sp.domains || [];
+    for (const sd of children) {
+      html += `<div class="tree-row subdomain" data-parent="${sp.uri}" id="row-${sd.id}">
+        <span class="name">${sd.label}</span>
+        <span class="owner">${ownerDot(sd.owner)}</span>
+        <span>${stepBadge(sd.step)}</span>
+        <span></span>
+        <span><a href="#" onclick="showBlast('${sd.id}', event)" style="font-size:11px;color:#e53e3e;text-decoration:none;">impact</a></span>
+      </div>
+      <div class="blast-panel" id="blast-${sd.id}"></div>`;
+    }
+    break; // Only show first subproduct's domains to avoid repeating all 31 under each
+  }
+
+  // Show flat list instead — subproducts as headers, subdomains as flat filterable list
+  html = `<div class="tree-header"><span>Name</span><span>Owner</span><span>Step</span><span>Type</span><span>Blast</span></div>`;
+
+  // Sub-products first
+  for (const sp of filteredSP) {
+    html += `<div class="tree-row subproduct">
+      <span class="name">${sp.label}</span>
+      <span class="owner">${ownerDot(sp.owner)}</span>
+      <span></span>
+      <span style="font-size:11px;color:#4f46e5;">Sub-Product</span>
+      <span></span>
+    </div>`;
+  }
+
+  // Then all subdomains
+  const filteredSD = subdomains.filter(sd => !activeStep || sd.step === activeStep);
+  for (const sd of filteredSD) {
+    html += `<div class="tree-row subdomain" id="row-${sd.id}" style="padding-left:16px;">
+      <span class="name">${sd.label}</span>
+      <span class="owner">${ownerDot(sd.owner)}</span>
+      <span>${stepBadge(sd.step)}</span>
+      <span style="font-size:11px;color:#888;">Sub-Domain</span>
+      <span><a href="#" onclick="showBlast('${sd.id}', event)" style="font-size:11px;color:#e53e3e;text-decoration:none;">impact</a></span>
+    </div>
+    <div class="blast-panel" id="blast-${sd.id}"></div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+async function showBlast(id, event) {
+  event.preventDefault();
+  const panel = document.getElementById('blast-' + id);
+  if (panel.classList.contains('visible')) {
+    panel.classList.remove('visible');
+    return;
+  }
+  panel.innerHTML = 'Loading...';
+  panel.classList.add('visible');
+  try {
+    const data = await fetchJSON(API + '/subdomains/' + id + '/blast-radius');
+    if (data.consumers && data.consumers.length > 0) {
+      panel.innerHTML = `<h4>If ${id} fails:</h4>` +
+        data.consumers.map(c => `<div class="blast-item">${c.label || c}</div>`).join('');
+    } else {
+      panel.innerHTML = '<h4>No direct consumers found</h4>';
+    }
+  } catch(e) {
+    panel.innerHTML = `<div class="error">Failed to load blast radius</div>`;
+  }
+}
+
+function selectProduct(uri) {
+  activeProduct = uri ? products.find(p => p.uri === uri) : null;
+  renderTabs();
+  renderStats();
+  renderTree();
+}
+
+function filterStep(step) {
+  activeStep = step;
+  renderFilters();
+  renderStats();
+  renderTree();
+}
+
+async function init() {
+  try {
+    [products, subproducts, subdomains] = await Promise.all([
+      fetchJSON(API + '/products'),
+      fetchJSON(API + '/subproducts'),
+      fetchJSON(API + '/subdomains')
+    ]);
+    document.querySelector('.loading').textContent =
+      `${products.length} products, ${subproducts.length} sub-products, ${subdomains.length} sub-domains`;
+    renderTabs();
+    renderFilters();
+    renderStats();
+    renderTree();
+  } catch(e) {
+    document.getElementById('tree').innerHTML = `<div class="error">Failed to load from Athena API: ${e.message}</div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

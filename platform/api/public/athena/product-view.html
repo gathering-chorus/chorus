@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Products — Athena</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; }
+  a { color: #4f46e5; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .page-container { margin: 0; padding: 40px 96px; }
+
+  h1 { font-size: 28px; font-weight: 300; color: #1a1a1a; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 32px; }
+
+  /* Breadcrumb */
+  .breadcrumb { font-size: 13px; color: #666; margin-bottom: 24px; }
+  .breadcrumb a { color: #4f46e5; }
+
+  /* Stats */
+  .stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+  .stat { background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 300; color: #1a1a1a; }
+  .stat-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 24px; }
+  .tab { padding: 8px 20px; border-radius: 8px; border: 1px solid #e0e0e0; background: #ffffff; color: #666; font-size: 13px; cursor: pointer; transition: all 0.15s; }
+  .tab:hover, .tab.active { border-color: #4f46e5; color: #1a1a1a; background: #1a1a2f; }
+
+  /* Filters */
+  .filters { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .filter-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid #e0e0e0; background: #ffffff; color: #666; font-size: 12px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
+  .filter-btn:hover, .filter-btn.active { border-color: #4f46e5; color: #1a1a1a; }
+
+  .filter-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .filter-label { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-right: 8px; }
+
+  /* Owner dots */
+  .owner-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  .owner-dot.jeff { background: #e6edf3; }
+  .owner-dot.wren { background: #4ade80; }
+  .owner-dot.silas { background: #60a5fa; }
+  .owner-dot.kade { background: #fb923c; }
+
+  /* Step badges */
+  .step-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 10px; }
+  .step-shaping { background: #ede9fe; color: #5b21b6; }
+  .step-shaping { background: #fef9c3; color: #854d0e; }
+  .step-directing { background: #fef3c7; color: #92400e; }
+  .step-designing { background: #e0e7ff; color: #3730a3; }
+  .step-building { background: #d1fae5; color: #065f46; }
+  .step-proving { background: #fce7f3; color: #9d174d; }
+
+  /* Sub-product cards */
+  .subproduct-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+  .subproduct-card { background: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; transition: border-color 0.15s; }
+  .subproduct-card:hover { border-color: #4f46e5; }
+  .subproduct-card h3 { font-size: 16px; font-weight: 500; color: #1a1a1a; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .subproduct-card .meta { font-size: 12px; color: #666; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .subproduct-card .stats-row { display: flex; gap: 16px; }
+  .subproduct-card .stat-mini { text-align: center; }
+  .subproduct-card .stat-mini .val { font-size: 20px; font-weight: 300; color: #1a1a1a; }
+  .subproduct-card .stat-mini .lbl { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Domain list within sub-product */
+  .domain-list { margin-top: 12px; border-top: 1px solid #f0f0f0; padding-top: 12px; }
+  .domain-link { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #111118; font-size: 13px; }
+  .domain-link:last-child { border-bottom: none; }
+  .domain-link a { color: #1a1a1a; font-weight: 500; }
+  .domain-link a:hover { color: #4f46e5; }
+
+  /* Product section header */
+  .product-header { font-size: 18px; font-weight: 500; color: #1a1a1a; margin-bottom: 16px; margin-top: 32px; padding-bottom: 8px; border-bottom: 1px solid #e0e0e0; }
+  .product-header:first-of-type { margin-top: 0; }
+
+  .empty-state { text-align: center; padding: 48px; color: #555; font-size: 14px; }
+  .footer { text-align: center; margin-top: 48px; font-size: 11px; color: #555; }
+</style>
+</head>
+<body>
+<div class="page-container">
+
+<div class="breadcrumb">
+  <a href="value-stream.html">Athena</a> &rsaquo; Products
+</div>
+
+<h1>Products</h1>
+<p class="subtitle">Product portfolio &mdash; sub-products, owners, and domain coverage</p>
+
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-value">2</div>
+    <div class="stat-label">Products</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">8</div>
+    <div class="stat-label">Sub-Products</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">31</div>
+    <div class="stat-label">Sub-Domains</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">4</div>
+    <div class="stat-label">Owners</div>
+  </div>
+</div>
+
+<div class="tabs" id="tabs"></div>
+
+<div class="filter-group" id="owner-filters">
+  <span class="filter-label">Owner</span>
+</div>
+
+<div class="filter-group" id="step-filters">
+  <span class="filter-label">Step</span>
+</div>
+
+<div id="content"></div>
+
+<div class="footer">Athena &middot; Chorus &middot; Live from Athena (mockup)</div>
+
+</div>
+
+<script src="/athena/product-view.js"></script>
+</body>
+</html>

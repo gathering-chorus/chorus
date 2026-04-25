@@ -1654,6 +1654,7 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
 // discover-tests moved to src/discover-tests.ts (#2205 wave 24).
 import { createDiscoverTests } from './discover-tests';
 import { scanLoomHtml } from './discover-pages-loom';
+import { scanAthenaHtml } from './discover-pages-athena';
 import { parseChorusApiRoutes } from './discover-endpoints-chorus-api';
 const _discoverTests = createDiscoverTests({
   sparqlClient: { query: (q: string) => athenaSparqlQuery(q), update: (u: string) => athenaSparqlUpdate(u) },
@@ -1806,10 +1807,13 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
     // #2485 Move 6 — scan chorus/platform/api/public/loom/ for loom-* subdomain pages.
     const validSubdomainIds = new Set<string>(Object.values(aliasToId));
     const loomEntries = scanLoomHtml(path.join(REPO_ROOT, 'platform/api/public/loom'), validSubdomainIds);
+    // #2041 — scan chorus/platform/api/public/athena/ for athena-domain pages.
+    const athenaEntries = scanAthenaHtml(path.join(REPO_ROOT, 'platform/api/public/athena'), validSubdomainIds);
     const entries: PageEntry[] = [
       ...scanEjsViews(path.join(GATHERING_ROOT, 'views'), aliasToId),
       ...scanDocHtml(path.join(GATHERING_ROOT, 'public/gathering-docs'), aliasToId),
       ...loomEntries,
+      ...athenaEntries,
     ];
 
     // 4. Clear existing page data and repopulate
