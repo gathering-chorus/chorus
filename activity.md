@@ -1102,3 +1102,12 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - 2026-04-25T13:58Z [wren] session reboot — principles arc shipped 5 cards (#2447 #2314 #2157 #2473 #2449); filed 6 follow-ons (#2470 #2471 #2476 #2477 #2479 #2480); ran gate-product on #2472 #2474 #2450; reference impl HTML landed at /loom/principles-reference-impl.html
 
 - [Wren] 2026-04-25 morning → extended /loom/principles-reference-impl.html with "The Heart" section (5-move pattern, transferability claim, how-we-got-here arc, deliberate negatives, scar tissue on I-1/I-4/I-7, new I-11 jeffReading invariant, 1in symmetric margins). Ran /gate-product PASS on #2451 → Kade gate:code+quality PASS → Silas notified for arch+ops. Open: Kade question on #2463 AC#5 (ratchet vs sustained-no-regression) — answer queued in next-session.md.
+
+## 2026-04-25 — Kade session
+
+- **Shipped #2463** (mine, P2 chore): ESLint cleanup ratchet to ZERO. 414 → 0 lint sites, 11 → 0 rule classes in this session; 1026 → 0 over the parent arc. Final AC item complete; baseline is now an empty counts: {}. Ten commits this session.
+- **Shipped #2474** (mine, P2 enhance): MCP server SHIM_BIN env-override resolver + 7 new unit tests (shim-path resolver + happy-path delegation + catch-branch). DI seam in buildMcpServer. Production switchover landed on Silas's chorus-api restart.
+- **Gates run for the team:** /gate-code + /gate-quality on #2472 (Silas MCP transport), #2449 (Wren principles fragments), #2450 (Silas SessionStart principle inject), #2451 (Silas loom-principles SubDomain). All PASS, all shipped.
+- **Code-lens reviews:** Silas #2472 → recommended SHIM_BIN refactor + happy-path test (became #2474, mine, shipped same session). Silas #2450 → recommended malformed-JSON 200 should ride card not follow-on (Silas added 7th test). Silas #2451 → keep alert YAMLs inline at 3, helper extraction at #6-7 when parameter shape is stable.
+- **Cross-role attribution misses:** server.ts mount for #2472 swept into my b67da46a, MCP module files swept into c3d93b7e — flagged to Silas both times. Pattern: when peer has untracked work mid-session, my git-queue commits absorb them.
+- **Next session priorities:** #2481 (CI-side lint ratchet, mine, P2, filed by Silas off my demo feedback). The 4 pre-existing TS6133 suite failures in clearing tests (clearing-ui, session-tailer, etc.) are a small follow-on cleanup.
