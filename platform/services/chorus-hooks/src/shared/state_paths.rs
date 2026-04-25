@@ -17,9 +17,12 @@ pub fn chorus_root() -> &'static str {
     &CHORUS_ROOT_INNER
 }
 
-/// Repository root — alias for chorus_root(). Existing call sites use REPO_ROOT;
-/// update them to use chorus_root() over time.
-pub static REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects/chorus";
+/// Repository root — alias for chorus_root(). #2505: was a hardcoded Mac
+/// path which broke on Linux CI once the Mac→runner symlink was retired.
+/// Now delegates to chorus_root() so call sites respect CHORUS_ROOT env.
+/// Kept the REPO_ROOT name (as a fn) so existing call sites can be rewritten
+/// REPO_ROOT → repo_root() without semantic change.
+pub fn repo_root() -> &'static str { chorus_root() }
 
 /// Team scan directory — role state JSON files
 pub const SCAN_DIR: &str = "/tmp/claude-team-scan";

@@ -6,7 +6,7 @@ use std::fs;
 use std::process::{Command as Cmd, ExitCode};
 
 use crate::process;
-use crate::shared::state_paths::{self, REPO_ROOT};
+use crate::shared::state_paths::{self, repo_root};
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -87,7 +87,7 @@ pub fn cruft_scan() -> ExitCode {
 
     // Activity log size
     out.push_str("## Activity Log\n");
-    let activity_size = fs::metadata(&format!("{}/chorus/activity.md", REPO_ROOT))
+    let activity_size = fs::metadata(&format!("{}/chorus/activity.md", repo_root()))
         .map(|m| m.len()).unwrap_or(0);
     out.push_str(&format!("Size: {} bytes\n\n", activity_size));
 
@@ -157,7 +157,7 @@ pub fn cruft_scan() -> ExitCode {
     // CLAUDE.md sizes
     out.push_str("## CLAUDE.md Sizes\n");
     for dir in &["silas", "wren", "kade"] {
-        let path = format!("{}/platform/roles/{}/CLAUDE.md", REPO_ROOT, dir);
+        let path = format!("{}/platform/roles/{}/CLAUDE.md", repo_root(), dir);
         if let Ok(meta) = fs::metadata(&path) {
             let flag = if meta.len() > 30000 { " ⚠ HEAVY" } else { "" };
             out.push_str(&format!("  {}: {} bytes{}\n", dir, meta.len(), flag));
@@ -233,7 +233,7 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
 
     // Cost log check
     let today = process::wall_clock().chars().take(10).collect::<String>();
-    let cost_path = format!("{}/chorus/cost-log.md", REPO_ROOT);
+    let cost_path = format!("{}/chorus/cost-log.md", repo_root());
     if let Ok(content) = fs::read_to_string(&cost_path) {
         if !content.contains(&today) {
             eprintln!("WARNING: no cost entry for today");
@@ -241,7 +241,7 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
     }
 
     // Activity.md recency
-    let activity_path = format!("{}/chorus/activity.md", REPO_ROOT);
+    let activity_path = format!("{}/chorus/activity.md", repo_root());
     if let Ok(meta) = fs::metadata(&activity_path) {
         if let Ok(modified) = meta.modified() {
             let age_h = modified.elapsed().unwrap_or_default().as_secs() / 3600;
@@ -251,7 +251,7 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
 
     // Uncommitted files
     let uncommitted = Cmd::new("git")
-        .args(["-C", REPO_ROOT, "status", "--porcelain", &format!("{}/", role_dir)])
+        .args(["-C", repo_root(), "status", "--porcelain", &format!("{}/", role_dir)])
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -260,7 +260,7 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
     if uncommitted > 5 { eprintln!("WARNING: {} uncommitted files in {}/", uncommitted, role_dir); }
 
     // Recurring errors
-    let error_log = format!("{}/chorus/proving/logs/command-errors.log", REPO_ROOT);
+    let error_log = format!("{}/chorus/proving/logs/command-errors.log", repo_root());
     if let Ok(content) = fs::read_to_string(&error_log) {
         let mut fps: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         for line in content.lines() {
@@ -289,9 +289,9 @@ pub fn health_daily(args: &[String]) -> ExitCode {
     }
 
     let role_dir_path = match role {
-        "wren" => format!("{}/roles/wren", REPO_ROOT),
-        "silas" => format!("{}/roles/silas", REPO_ROOT),
-        "kade" => format!("{}/roles/kade", REPO_ROOT),
+        "wren" => format!("{}/roles/wren", repo_root()),
+        "silas" => format!("{}/roles/silas", repo_root()),
+        "kade" => format!("{}/roles/kade", repo_root()),
         _ => unreachable!(),
     };
 
@@ -347,7 +347,7 @@ pub fn health_daily(args: &[String]) -> ExitCode {
 
     // Git log summary
     let _ = Cmd::new("git")
-        .args(["-C", REPO_ROOT, "log", "--oneline", "--since=24 hours ago"])
+        .args(["-C", repo_root(), "log", "--oneline", "--since=24 hours ago"])
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -359,7 +359,7 @@ pub fn health_daily(args: &[String]) -> ExitCode {
 
 /// Log rotation — replaces log-rotate.sh (#1622)
 pub fn log_rotate() -> ExitCode {
-    let log_dir = &format!("{}/chorus/platform/logs", REPO_ROOT);
+    let log_dir = &format!("{}/chorus/platform/logs", repo_root());
     let max_size: u64 = 10 * 1024 * 1024; // 10MB
     let keep_rotations = 3u32;
 
@@ -434,7 +434,7 @@ pub fn health_weekly(args: &[String]) -> ExitCode {
 
     // 2. Stale card audit — cards in WIP/Next >7 days
     println!("\n--- Stale Card Audit ---");
-    let board_ts = format!("{}/chorus/platform/scripts/cards", REPO_ROOT);
+    let board_ts = format!("{}/chorus/platform/scripts/cards", repo_root());
     let list_output = Cmd::new("zsh")
         .arg("-lc")
         .arg(format!("{} list", board_ts))

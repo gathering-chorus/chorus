@@ -196,7 +196,7 @@ fn read_pulse_snapshot() -> Option<String> {
 /// a JSON object with timestamp/role/event fields.
 fn query_recent_spine(limit: usize) -> Vec<(String, String, String)> {
     let log_path = format!("{}/platform/logs/chorus.log",
-        crate::shared::state_paths::REPO_ROOT);
+        crate::shared::state_paths::repo_root());
     let content = match std::fs::read_to_string(&log_path) {
         Ok(s) => s,
         Err(_) => return vec![],
@@ -446,7 +446,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // unconditionally on every prompt, ~200ms of redundant work per turn.
     if pulse_snapshot_stale() {
         let shim = format!("{}/platform/services/chorus-hooks/target/release/chorus-hook-shim",
-            crate::shared::state_paths::REPO_ROOT);
+            crate::shared::state_paths::repo_root());
         let _ = std::process::Command::new(&shim).arg("pulse")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
