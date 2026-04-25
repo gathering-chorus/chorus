@@ -26,8 +26,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install (root, npm ci)
+      # Type-aware ESLint rules (no-floating-promises et al.) need every
+      # subpackage's deps installed for type resolution. Without per-package
+      # node_modules, the type analyzer mis-fires false positives. Install
+      # all 7 active TS packages + root before linting.
+      - name: Install (root)
         run: npm ci --no-audit --no-fund
+      - name: Install (subpackages)
+        run: |
+          for pkg in directing/clearing directing/products/cards platform/api platform/chorus-sdk platform/pulse platform/tests platform/workflow-engine; do
+            (cd "$pkg" && npm ci --no-audit --no-fund)
+          done
       - name: Run lint ratchet
         run: npm run lint:ratchet
 
@@ -162,6 +171,11 @@ jobs:
         crate:
           - platform/services/chorus-hooks
           - platform/services/chorus-inject
+    env:
+      # Tests in shared/protocol_contract.rs and chorus_log.rs read paths
+      # via shared::state_paths::chorus_root() which falls back to the
+      # local /Users/... path. CI must override to the runner workspace.
+      CHORUS_ROOT: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
