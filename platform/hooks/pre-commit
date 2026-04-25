@@ -214,6 +214,33 @@ if [ -f "$REPO_ROOT/eslint.config.js" ] && [ -f "$REPO_ROOT/.eslint-baseline.jso
   fi
 fi
 
+# --- Check 4.5: MCP tool description shape (#2475) ---
+# The description string is the doc surface for every MCP tool — Claude reads
+# it on every reach. Drift here is doc rot at runtime. Lint asserts each tool's
+# description meets the shape contract: min length, disposition guidance,
+# anti-pattern clause, polymorphism clarifiers on multi-value enums.
+
+if echo "$STAGED" | grep -qE '^platform/api/src/mcp/.*\.ts$'; then
+  CHECKS_RUN=$((CHECKS_RUN + 1))
+  echo "## MCP tool description shape (#2475)" >> "$DETAIL_FILE"
+  echo '```' >> "$DETAIL_FILE"
+  if mcp_lint_out=$(node "$REPO_ROOT/platform/scripts/mcp-tool-description-lint.js" 2>&1); then
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+    echo "$mcp_lint_out" >> "$DETAIL_FILE"
+    echo '```' >> "$DETAIL_FILE"
+    echo "Result: PASS" >> "$DETAIL_FILE"
+    echo "" >> "$DETAIL_FILE"
+  else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+    FAILURES="${FAILURES}\n  - mcp-description-shape — tool description fails the shape contract (#2475)"
+    echo "$mcp_lint_out" >> "$DETAIL_FILE"
+    echo '```' >> "$DETAIL_FILE"
+    echo "Result: FAIL" >> "$DETAIL_FILE"
+    echo "Fix: see platform/scripts/mcp-tool-description-lint.js for the shape." >> "$DETAIL_FILE"
+    echo "" >> "$DETAIL_FILE"
+  fi
+fi
+
 # --- Check 5: Compiled dist matches source (if TS changed) ---
 
 if $HAS_BOARD_CLIENT; then

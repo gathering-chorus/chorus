@@ -78,7 +78,14 @@ async function executeNudge(
   const { to, message } = args;
   logEvent('info', 'mcp.nudge.invoked', { from, to });
   try {
-    const env = { ...process.env, DEPLOY_ROLE: from } as NodeJS.ProcessEnv;
+    const env = {
+      ...process.env,
+      DEPLOY_ROLE: from,
+      // #2475 — origin tag distinguishes MCP-routed nudges from bash CLI in
+      // the spine. nudge.emitted carries origin=mcp so audit can tell typed
+      // surface adoption from legacy paths.
+      CHORUS_NUDGE_ORIGIN: 'mcp',
+    } as NodeJS.ProcessEnv;
     const { stdout } = await execFileAsync(shimPath, ['nudge', to, message], { env, timeout: 10_000 });
     logEvent('info', 'mcp.nudge.delivered', { from, to, stdout: stdout.slice(0, 200) });
     return { content: [{ type: 'text', text: `nudge sent: ${from} → ${to}` }] };

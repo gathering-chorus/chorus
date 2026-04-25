@@ -7,7 +7,14 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-fn log_file() -> String { format!("{}/platform/logs/chorus.log", crate::shared::state_paths::chorus_root()) }
+fn log_file() -> String {
+    // #2475 — CHORUS_LOG_FILE override for hermetic tests. Production never
+    // sets it; tests point at a tempdir to isolate spine writes.
+    if let Ok(p) = std::env::var("CHORUS_LOG_FILE") {
+        return p;
+    }
+    format!("{}/platform/logs/chorus.log", crate::shared::state_paths::chorus_root())
+}
 fn schema_file() -> String { format!("{}/designing/schemas/spine-events.json", crate::shared::state_paths::chorus_root()) }
 
 /// Eastern timezone offset — standalone for shim binary (#1850)

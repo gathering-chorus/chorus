@@ -1,0 +1,36 @@
+# chorus-mcp-down.yml — Alert when the chorus-api MCP endpoint stops responding
+# Card #2475 | observability thread 2 of 5
+#
+# /mcp is the typed surface the team is shifting to. When it stops responding,
+# every MCP-routed tool call fails — including chorus_nudge_message, which the
+# team is starting to depend on for inter-role coordination. Without an alert,
+# the failure mode is "tools silently start failing and nobody knows why."
+
+name: chorus-mcp-down
+description: chorus-api /mcp endpoint not responding to MCP initialize handshake
+severity: critical
+schedule: "*/5 * * * *"
+
+check: |
+  # MCP requires Accept: application/json, text/event-stream and a JSON-RPC
+  # initialize body. A health probe has to honor the protocol or the endpoint
+  # rejects with 406, which would fire as a false positive.
+  PAYLOAD='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"alert-probe","version":"1.0"}}}'
+  CODE=$(curl -s -o /dev/null --max-time 5 -w '%{http_code}' \
+    -X POST "http://localhost:3340/mcp" \
+    -H 'Content-Type: application/json' \
+    -H 'Accept: application/json, text/event-stream' \
+    -d "$PAYLOAD" 2>/dev/null)
+  case "$CODE" in
+    2*) echo "ok"; exit 0 ;;
+    *)  echo "chorus-mcp-down:status=${CODE:-000}"; exit 1 ;;
+  esac
+
+action: |
+  COOLDOWN="/tmp/alert-chorus-mcp-down-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+  "$NUDGE" silas "chorus-mcp-down: /mcp endpoint not responding to initialize. All MCP tool calls (chorus_nudge_message, etc.) are now failing for every role. Check chorus-api status." --force 2>/dev/null || true

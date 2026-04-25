@@ -282,10 +282,16 @@ pub fn run(args: &[String]) -> ExitCode {
     // #2443 — no truncation. Full message goes in `content=` so the tick-poller
     // has the un-truncated payload to deliver. Prior `chars().take(120)` capped
     // every cross-role nudge at 120 chars at the delivery boundary.
+    // #2475 — origin tag distinguishes how this nudge was sent. Default "cli"
+    // when invoked directly via the bash CLI; MCP server (TS) sets
+    // CHORUS_NUDGE_ORIGIN=mcp via the execFile env so audit can tell typed
+    // surface from legacy paths. Future Rust MCP client (#2477) will set
+    // origin=mcp the same way.
+    let origin = std::env::var("CHORUS_NUDGE_ORIGIN").unwrap_or_else(|_| "cli".to_string());
     chorus_log(
         "nudge.emitted",
         &sender,
-        &format!("from={},to={},chars={},trace={},content={}", sender, target, message.len(), tid, message),
+        &format!("from={},to={},chars={},trace={},origin={},content={}", sender, target, message.len(), tid, origin, message),
     );
 
     // #2435 atomic cutover — sender emits canonical event only. Delivery is
