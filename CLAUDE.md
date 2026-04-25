@@ -44,3 +44,15 @@ The SQLite index database lives at `~/.chorus/index.db` — it's runtime state, 
 - **Canonical source**: Dashboards and alert rules live here. They get synced/copied to shared-observability for deployment.
 - **No secrets**: Permission profiles reference env var names, never values. The sensitive-paths hook applies here too.
 - **Test before deploy**: Scripts should be testable locally before being symlinked into place.
+
+## Quality layers (ADR-026)
+
+Three quality layers, each owns a different question with a different threat model:
+
+1. **Pre-commit hooks** (`platform/hooks/pre-commit`) — "will this commit obviously break something?" Local fast feedback. Skippable via `--no-verify`.
+2. **Role gates** (`/gate-product`, `/gate-code`, `/gate-quality`, `/gate-arch`, `/gate-ops`) — "is this card team-acceptable?" Card-level done. Recorded on the card.
+3. **CI** (`.github/workflows/quality.yml`) — "does main build cleanly from scratch?" Branch-protected on `main`.
+
+**`--no-verify` is overridden by CI as authoritative on `main`.** A commit that bypasses pre-commit hooks locally will still be checked when its PR runs against `main`. Branch protection blocks merge of red PRs. Pre-commit failure messages reference this; the CI workflow itself is the source of truth.
+
+Lock files (`package-lock.json` per active TS package + root, plus Cargo locks) are committed for reproducibility. CI uses `npm ci` against the locks; local installs that drift from the lock raise red flags. See ADR-026 for the full architecture and lock-file policy.
