@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>ADR-026: CI architecture + lock-file policy</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <style>
+  body { max-width: 960px; margin: 2em auto; padding: 0 1em; font-family: -apple-system, system-ui, sans-serif; line-height: 1.55; color: #222; }
+  h1, h2, h3 { line-height: 1.25; margin-top: 1.6em; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: .3em; }
+  h2 { border-bottom: 1px solid #ccc; padding-bottom: .2em; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: .92em; }
+  th, td { border: 1px solid #ccc; padding: .45em .6em; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  code { background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-size: .9em; }
+  pre { background: #f4f4f4; padding: .8em; border-radius: 4px; overflow-x: auto; }
+  blockquote { border-left: 4px solid #888; margin: 1em 0; padding: .4em 1em; color: #444; background: #f9f9f9; }
+  strong { color: #000; }
+  a { color: #0660ad; }
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">ADR-026: CI architecture + lock-file policy</h1>
+</header>
+<h1 id="adr-026-ci-architecture-lock-file-policy">ADR-026: CI
+architecture + lock-file policy</h1>
+<p><strong>Status:</strong> Accepted — 2026-04-25. Wren PM-review
+APPROVED with 3 edits applied. Kade impl-review APPROVED with 6 §b
+deltas applied. Jeff final pending repo state (CI workflow lives on
+<code>kade/2481-ci-ratchet</code> branch). <strong>Card:</strong>
+unblocks #2481 (CI ratchet enforcement); informed by #2475 (MCP
+observability). <strong>Supersedes:</strong> establishes the rule for
+the first time.</p>
+<h2 id="context">Context</h2>
+<p>#2481 was reflectively filed with AC referencing “the CI pipeline.”
+Pulled by Kade, who wrote <code>.github/workflows/quality.yml</code> and
+opened PR #1. CI went red on first push because
+<code>package-lock.json</code> is in <code>.gitignore</code> —
+<code>npm install</code> on the runner resolved a slightly newer
+<code>@typescript-eslint/eslint-plugin</code>, fired a
+<code>no-floating-promises</code> rule that doesn’t fire locally, and
+lint-ratchet failed. Local-vs-CI divergence on a clean repo. Jeff
+stopped the line: no design existed for what CI is for, what it owns,
+what it doesn’t, and how it stays reproducible.</p>
+<p>This ADR makes four decisions. The bar is <strong>decisions
+made</strong>, not pretty prose.</p>
+<h2 id="decision-a-layer-relationship">Decision (a) — Layer
+relationship</h2>
+<p>Three quality layers. Each owns a different question with a different
+threat model.</p>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Question it answers</th>
+<th>Threat model</th>
+<th>Authority</th>
+<th>Skippable?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pre-commit hooks</td>
+<td>“Will this commit obviously break something?”</td>
+<td>Honest mistakes (typo, regression, missing import)</td>
+<td>Local fast feedback (1–10s)</td>
+<td>Yes (<code>--no-verify</code>)</td>
+</tr>
+<tr>
+<td>Role gates (gate-product / -code / -quality / -arch / -ops)</td>
+<td>“Is this card team-acceptable?”</td>
+<td>Cross-role coordination, demo-readiness</td>
+<td>Card-level done</td>
+<td>No — recorded on card</td>
+</tr>
+<tr>
+<td>CI (GitHub Actions)</td>
+<td>“Does main build cleanly from scratch?”</td>
+<td>Reproducibility, deliberate bypasses, environment drift</td>
+<td>Merge-to-main authoritative</td>
+<td>No — branch-protected</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Redundancy is intentional where threat models
+differ.</strong> lint-ratchet runs in both pre-commit (catches the
+honest case) and CI (catches the <code>--no-verify</code> case + the
+local-vs-CI divergence Kade hit). Same check, two threat models, two
+layers. Document the redundancy with the threat model that justifies it;
+otherwise eliminate.</p>
+<p><strong>Contract:</strong> all three layers passing means the change
+is good. Two-of-three is not enough — pre-commit alone misses
+environment drift; CI alone misses cross-role acceptance; role gates
+alone miss reproducibility.</p>
+<h2 id="decision-b-check-distribution">Decision (b) — Check
+distribution</h2>
+<p>Two columns per layer: <strong>today</strong> = what’s actually wired
+right now (per Kade’s impl-review 2026-04-25); <strong>target</strong> =
+where ADR-026 says it should land. Gaps are explicit so the migration
+list is honest.</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr>
+<th>Check</th>
+<th>Pre-commit (today)</th>
+<th>Pre-commit (target)</th>
+<th>Role gate</th>
+<th>CI (today)</th>
+<th>CI (target)</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Type-check (tsc –noEmit)</td>
+<td>board-client + workflow-engine only</td>
+<td>All packages with changes</td>
+<td>gate-code (Kade)</td>
+<td>None</td>
+<td>All packages</td>
+<td>&lt;30s/pkg</td>
+</tr>
+<tr>
+<td>Jest tests</td>
+<td>board-client + workflow-engine only</td>
+<td>All packages with changes</td>
+<td>gate-code (Kade)</td>
+<td>None</td>
+<td>All packages</td>
+<td>5–60s/pkg</td>
+</tr>
+<tr>
+<td>Cargo test (chorus-hooks)</td>
+<td><strong>gap — not wired</strong></td>
+<td>All packages with Rust changes</td>
+<td>gate-code (Kade)</td>
+<td>None</td>
+<td>Yes</td>
+<td>30s–3min</td>
+</tr>
+<tr>
+<td>ESLint per-rule ratchet</td>
+<td>Yes — when TS staged</td>
+<td>(same)</td>
+<td>—</td>
+<td>None</td>
+<td>Yes — same script</td>
+<td>10–30s</td>
+</tr>
+<tr>
+<td>Doc-coherence ratchet</td>
+<td><strong>gap — not wired</strong> (test exists at
+platform/tests/doc-coherence-ratchet.test.sh, unwired)</td>
+<td>When CLAUDE.md fragments staged</td>
+<td>—</td>
+<td>None</td>
+<td>No (no remote effect)</td>
+<td>&lt;2s</td>
+</tr>
+<tr>
+<td>MCP tool description shape (#2475)</td>
+<td>Yes — when mcp/*.ts staged</td>
+<td>(same)</td>
+<td>—</td>
+<td>None</td>
+<td>Yes — same lint</td>
+<td>&lt;1s</td>
+</tr>
+<tr>
+<td>Catalog oversize (#2461)</td>
+<td>Yes — always</td>
+<td>(same)</td>
+<td>—</td>
+<td>None</td>
+<td>Yes — backstop</td>
+<td>&lt;1s</td>
+</tr>
+<tr>
+<td>Principle direct-edit (#2314)</td>
+<td>Yes — always</td>
+<td>(same)</td>
+<td>—</td>
+<td>None</td>
+<td>Yes — backstop</td>
+<td>&lt;1s</td>
+</tr>
+<tr>
+<td>Compiled-dist matches source (Check 5)</td>
+<td>Yes — board-client only</td>
+<td>Extend or retire when build moves</td>
+<td>—</td>
+<td>None</td>
+<td>(same)</td>
+<td>&lt;2s</td>
+</tr>
+<tr>
+<td>Smoke check (#2229)</td>
+<td>No (heavy)</td>
+<td>(same)</td>
+<td><strong>Decision needed — see below</strong></td>
+<td>None</td>
+<td>Yes — on PR</td>
+<td>30–90s</td>
+</tr>
+<tr>
+<td>Alerts (proving/domains/alerts/*.yml)</td>
+<td>No</td>
+<td>(same)</td>
+<td>gate-ops (Silas)</td>
+<td>No — LaunchAgent runtime</td>
+<td>(same)</td>
+<td>5–15min cadence</td>
+</tr>
+<tr>
+<td>MCP tool round-trip (mcp-*.test.sh)</td>
+<td>No (needs running api)</td>
+<td>(same)</td>
+<td>gate-quality (Kade)</td>
+<td>Conditional — only if api boots in CI; else skip</td>
+<td>(same)</td>
+<td>5–10s</td>
+</tr>
+<tr>
+<td>Demo gate fixtures</td>
+<td>No</td>
+<td>(same)</td>
+<td>/demo skill</td>
+<td>No</td>
+<td>(same)</td>
+<td>Manual</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Source of truth note:</strong> this table is a draft-time
+snapshot. Authoritative source is <code>platform/hooks/pre-commit</code>
+(pre-commit) + <code>.github/workflows/quality.yml</code> (CI). It will
+drift; treat as the design intent at sign-time, not the running
+spec.</p>
+<h2 id="decision-e-smoke-check-ownership">Decision (e) — Smoke-check
+ownership</h2>
+<p>Today smoke-check.sh runs cron-driven via
+<code>daily-review-quality.sh</code>, not bound to any gate. Two
+candidate paths: - <strong>(A) gate-quality invokes it</strong> —
+<code>/gate-quality</code> skill calls smoke-check on the changed
+surface; quality gate fails if smoke fails. Aligns with the layer model
+(gate-quality owns “is this card team-acceptable?”). - <strong>(B)
+cron-only + CI mirror</strong> — leave the cron, add CI step on PR. Drop
+the gate-quality claim entirely.</p>
+<p><strong>Decision: (A) for gates + (B) for CI</strong> — gate-quality
+covers the demo path; CI covers the merge path; cron stays as the
+operational-heartbeat layer. Sub-AC under #2481: “wire smoke-check into
+/gate-quality skill.”</p>
+<p><strong>Migrations to do</strong> (these become #2481 sub-AC, not new
+cards): - Pre-commit: extend Check 1 (tsc) and Check 2 (jest) from
+<code>board-client + workflow-engine</code> to all changed TS packages.
+- Pre-commit: wire <code>cargo test</code> for staged Rust. -
+Pre-commit: wire <code>doc-coherence-ratchet.test.sh</code> for staged
+CLAUDE.md fragment changes. - Gate-quality: wire smoke-check.sh
+invocation per the (A) decision above. - CI: every check in the “Yes”
+column of CI(target) gets a corresponding step in
+<code>.github/workflows/quality.yml</code>.</p>
+<p><strong>Stay local-only:</strong> alerts (LaunchAgent operational),
+demo gate fixtures (manual review), MCP round-trips that need a running
+api (CI conditional only).</p>
+<h2 id="decision-c-lock-file-policy-load-bearing">Decision (c) —
+Lock-file policy [load-bearing]</h2>
+<p><strong>Decision: commit <code>package-lock.json</code> for every
+package. Use <code>npm ci</code> in CI.</strong></p>
+<p>Reasoning: - Today’s gitignore was anti-pattern. The diff noise was
+the stated cost; the real cost was non-reproducibility — Kade’s CI
+failure proves it. - Lock files ARE the reproducibility contract.
+<code>npm install</code> resolves dep ranges fresh; <code>npm ci</code>
+installs exactly what the lock says. CI without a lock is theater. -
+Multiple package.json files (12 of them today, of which 6 are active TS
+projects per the consolidation memory; the other 6 are sibling
+tooling/SDK/spike directories) means multiple lock files. That’s the
+price of polyrepo-in-monorepo until the TS-project consolidation lands.
+Renovate / Dependabot manages updates centrally. - ESLint baseline +
+lint-ratchet require deterministic dep versions. Without that, the
+baseline is fictional and the ratchet flickers.</p>
+<p>Implementation: 1. Remove <code>package-lock.json</code> from
+<code>.gitignore</code>. 2. Run <code>npm install</code> in each package
+once to generate the lock; commit the locks. 3. CI workflow uses
+<code>npm ci</code> (not <code>npm install</code>) to install from lock.
+4. Renovate config (or Dependabot) manages weekly lock updates as PRs.
+5. Lock-file changes are reviewed PRs like any code change.</p>
+<p><strong>Cost:</strong> lock files add ~50–150KB per package, ~1MB
+total. Diff noise on dependency updates. Real but acceptable. The
+chorus-api lock alone has ~600 transitive deps; that diff IS the truth
+of what’s running.</p>
+<p><strong>Source-of-truth note:</strong> the 12-files-of-which-6-active
+count above is a draft-time snapshot. Authoritative source is
+<code>find . -name package.json -not -path '*/node_modules/*'</code>.
+The count revisits when the project_ts_project_consolidation work closes
+(memory-tracked); update §c then.</p>
+<h2 id="decision-d-red-main-posture">Decision (d) — Red-main
+posture</h2>
+<p><strong>Two complementary postures:</strong></p>
+<ol type="1">
+<li><strong>Proactive — branch protection on <code>main</code>.</strong>
+PRs cannot merge if CI is red on the PR. Required reviewers can be 1
+(Jeff or any role). Flip the switch in GitHub repo settings — admin
+task; ADR closure asks Jeff to enable.</li>
+<li><strong>Reactive — alert if main goes red.</strong> New
+<code>proving/domains/alerts/ci-main-red.yml</code> polls the GitHub
+Actions API for last main run; fires if status is failure. Routes to
+silas via the existing nudge action pattern. No auto-revert.</li>
+</ol>
+<p><strong>Out of scope:</strong> - Auto-revert: clobbers unrelated work
+on flake. Veto. - Pager / phone notification: silas + alert pattern is
+sufficient for the cadence Jeff actually moves at.</p>
+<h2 id="consequences">Consequences</h2>
+<ul>
+<li><strong>#2481 unblocks</strong> with revised AC: “implements ADR-026
+§a–d.” Per Wren’s ankle-biters call, all follow-on units fold into
+#2481’s revised AC rather than spawning new cards.</li>
+</ul>
+<p><strong>Sequence</strong> (Kade impl-review 2026-04-25): locks → CI
+workflow completeness → green run on a real PR → THEN Jeff toggles
+branch protection. The reactive alert (ci-main-red) and
+pre-commit-widening sub-AC can land in parallel. Branch protection
+BEFORE CI is complete creates a worst-of-both window: main is protected
+by an incomplete CI.</p>
+<ul>
+<li>sub-AC (1): package-lock.json files generated + committed for each
+active TS project; <code>.gitignore</code> updated to remove the
+lock-file ignore.</li>
+<li>sub-AC (2): <code>.github/dependabot.yml</code> (or Renovate
+equivalent) wired for centralized lock-update PRs.</li>
+<li>sub-AC (3): CI workflow <code>.github/workflows/quality.yml</code>
+has a step for every check listed Yes in the §b CI(target) column.</li>
+<li>sub-AC (4): green CI run on a real PR proves (1)–(3)
+end-to-end.</li>
+<li>sub-AC (5) <strong>[Jeff-action, asynchronous]</strong>: branch
+protection enabled on <code>main</code> requiring the CI workflow to
+pass — admin task, can’t be scripted from a role. Lands AFTER (4). Card
+closure does NOT block on this — builder marks complete on (1)–(4); the
+toggle is a separate human step that closes ADR-026 in practice but not
+the card.</li>
+<li>sub-AC (parallel):
+<code>proving/domains/alerts/ci-main-red.yml</code> polls GitHub Actions
+API, fires on red main, routes to silas.</li>
+<li>sub-AC (parallel): gate-quality wires smoke-check (per §b open
+decision (A)).</li>
+<li>sub-AC (parallel): pre-commit Check 1+2 extended from
+board-client/workflow-engine to all changed TS packages.</li>
+<li>sub-AC (parallel): pre-commit wires cargo test for staged Rust.</li>
+<li>sub-AC (parallel): pre-commit wires doc-coherence-ratchet for staged
+CLAUDE.md fragment changes.</li>
+<li>The CI workflow currently lives on branch
+<code>kade/2481-ci-ratchet</code> (the §c proof-of-concept). Either
+accepted with the ADR or superseded if the workflow needs a substantive
+rewrite per the revised AC.</li>
+</ul>
+<h2 id="dependencies">Dependencies</h2>
+<ul>
+<li><strong>Blocks (now unblocks):</strong> #2481.</li>
+<li><strong>Informs:</strong> #2475 (the description-shape lint already
+lives in pre-commit; CI mirror is part of the §b table migration).</li>
+<li><strong>Future:</strong> workspace consolidation card — 12
+package.json files is accretion, not architecture. Not in scope here,
+but lock-file reproducibility raises the cost of leaving it.</li>
+</ul>
+<h2 id="review">Review</h2>
+<ul>
+<li>Silas: drafted, 2026-04-25.</li>
+<li>Wren: PM-review APPROVED 2026-04-25 with 3 edits — (1) §b
+drift-warning line; (2) follow-on chores fold into #2481 sub-AC, not new
+cards; (3) reconcile §c “12 package.jsons” with the
+project_ts_project_consolidation memory’s “6 active TS projects.” All
+applied.</li>
+<li>Kade: impl-review APPROVED 2026-04-25 with 6 §b deltas — (1)(2) tsc
++ jest narrowed to actual today-state (board-client + workflow-engine
+only); (3)(4) cargo test + doc-coherence-ratchet labeled as gaps not
+wired; (5) smoke-check open-decision section with recommendation; (6)
+Compiled-dist Check 5 added. All applied.</li>
+<li>Jeff: final sign-off + branch-protection toggle pending.</li>
+</ul>
+<h2 id="action-on-close">Action on close</h2>
+<p>When ADR is signed: 1. #2481 returns to Next with AC rewritten as 4
+sub-AC implementing ADR-026 §a–d (per Consequences above). 2. Jeff
+toggles branch protection on <code>main</code> (admin task, can’t be
+scripted from a role). 3. Builder of #2481 picks up all four sub-AC;
+closure of the card closes ADR-026 in practice.</p>
+</body>
+</html>
