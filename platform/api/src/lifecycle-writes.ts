@@ -80,31 +80,45 @@ export interface AlertDeps {
   chorusLogPath: string;
 }
 
+type AlertPayload = {
+  status?: string;
+  labels?: { severity?: string; alertname?: string };
+  annotations?: { summary?: string; description?: string };
+};
+
+function extractAlertFields(alert: AlertPayload) {
+  return {
+    severity: alert.labels?.severity || 'unknown',
+    alertname: alert.labels?.alertname || 'unknown',
+    status: alert.status || 'unknown',
+    summary: alert.annotations?.summary || '',
+    description: alert.annotations?.description || '',
+  };
+}
+
+function processAlert(alert: AlertPayload, ts: string, deps: AlertDeps): void {
+  const f = extractAlertFields(alert);
+  const entry = JSON.stringify({
+    timestamp: ts,
+    level: f.severity === 'critical' ? 'error' : 'warn',
+    appName: 'grafana-alerts',
+    component: 'alertmanager',
+    event: `alert_${f.status}`,
+    role: 'system',
+    alertname: f.alertname,
+    severity: f.severity,
+    summary: f.summary,
+    description: f.description.substring(0, 500),
+  });
+  deps.appendFileSync(deps.chorusLogPath, entry + '\n');
+  if (f.severity === 'critical' && f.status === 'firing') {
+    deps.notify(`ALERT: ${f.alertname}`, f.summary || f.description.substring(0, 100));
+  }
+}
+
 export function handleAlert(req: Req, res: Res, deps: AlertDeps): void {
   const alerts = req.body?.alerts || [];
   const ts = new Date().toISOString();
-  for (const alert of alerts) {
-    const severity = alert.labels?.severity || 'unknown';
-    const alertname = alert.labels?.alertname || 'unknown';
-    const status = alert.status || 'unknown';
-    const summary = alert.annotations?.summary || '';
-    const description = alert.annotations?.description || '';
-    const entry = JSON.stringify({
-      timestamp: ts,
-      level: severity === 'critical' ? 'error' : 'warn',
-      appName: 'grafana-alerts',
-      component: 'alertmanager',
-      event: `alert_${status}`,
-      role: 'system',
-      alertname,
-      severity,
-      summary,
-      description: description.substring(0, 500),
-    });
-    deps.appendFileSync(deps.chorusLogPath, entry + '\n');
-    if (severity === 'critical' && status === 'firing') {
-      deps.notify(`ALERT: ${alertname}`, summary || description.substring(0, 100));
-    }
-  }
+  for (const alert of alerts) processAlert(alert, ts, deps);
   res.json!({ received: alerts.length });
 }

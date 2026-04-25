@@ -132,51 +132,27 @@ export class TilePoller {
     }
   }
 
-  private readRoleTile(role: string): RoleTile {
-    const tile: RoleTile = {
-      role,
-      state: 'idle',
-      card: '',
-      lastAction: '',
-      lastActionAge: '',
-      sessionAlive: false,
-    };
-
-    // Jeff has a different state file format
-    if (role === 'jeff') {
-      return this.readJeffTile();
-    }
-
-    // Read andon state
-    const stateFile = path.join(this.scanDir, `${role}-declared.json`);
+  private applyAndonState(tile: RoleTile, role: string): void {
     try {
-      const content = fs.readFileSync(stateFile, 'utf-8');
-      const data = JSON.parse(content);
+      const data = JSON.parse(fs.readFileSync(path.join(this.scanDir, `${role}-declared.json`), 'utf-8'));
       tile.state = data.state || 'idle';
       tile.card = data.card ? `#${data.card}` : '';
       tile.sessionAlive = data.session_alive !== false;
-
       if (data.ts) {
-        const ageSecs = Math.floor(Date.now() / 1000) - data.ts;
-        tile.lastActionAge = formatAge(ageSecs);
+        tile.lastActionAge = formatAge(Math.floor(Date.now() / 1000) - data.ts);
       }
     } catch {
-      // File doesn't exist or is malformed
+      // File doesn't exist or is malformed — tile keeps defaults.
     }
+  }
 
-    // #2168 — surface ALL WIP cards owned by this role, not just declared.
-    // Pulse is the source of truth for board state; it composes wip_cards with
-    // owner, and tiles.ts reads that to render the full set. Also populates
-    // divergence flags from pulse.roles.<role> (pulse already composes declared
-    // + inferred per #2168 AC-9).
+  // #2168 — surface ALL WIP cards owned by this role, plus pulse divergence flags.
+  private applyBoardAndPulse(tile: RoleTile, role: string): void {
     try {
-      // Board state from API cache (#2261) — no more /tmp file polling
-      const wipCards = this.boardCache.wip_cards;
-      const swatCards = this.boardCache.swat_cards;
-      const ownedWip = wipCards
+      const ownedWip = this.boardCache.wip_cards
         .filter((c) => (c.owner || '').toLowerCase() === role.toLowerCase())
         .map((c) => `#${c.id}`);
-      const ownedSwat = swatCards
+      const ownedSwat = this.boardCache.swat_cards
         .filter((c) => (c.owner || '').toLowerCase() === role.toLowerCase())
         .map((c) => `#${c.id}[swat]`);
       const ownedIds = [...ownedWip, ...ownedSwat];
@@ -184,9 +160,7 @@ export class TilePoller {
         tile.cards = ownedIds;
         if (!tile.card) tile.card = ownedWip[0] ?? ownedIds[0];
       }
-      // Role divergence still from pulse file (roles API not yet migrated)
-      const pulseContent = fs.readFileSync(this.pulseFile, 'utf-8');
-      const pulseData = JSON.parse(pulseContent);
+      const pulseData = JSON.parse(fs.readFileSync(this.pulseFile, 'utf-8'));
       const roleComposed = pulseData?.roles?.[role];
       tile.divergent = roleComposed?.divergent === true;
       if (tile.divergent) {
@@ -196,26 +170,37 @@ export class TilePoller {
     } catch {
       // Pulse file absent or malformed — tile renders with declared-only view.
     }
+  }
 
-    // Read last observation for action summary
-    const obsFile = path.join(this.scanDir, `${role}-observations.jsonl`);
+  private applyLastObservation(tile: RoleTile, role: string): void {
     try {
-      const content = fs.readFileSync(obsFile, 'utf-8');
-      const lines = content.trim().split('\n').filter(Boolean);
-      if (lines.length > 0) {
-        const last = JSON.parse(lines[lines.length - 1]);
-        tile.lastAction = last.digest || '';
-
-        if (last.ts) {
-          const obsTime = new Date(last.ts).getTime();
-          const ageSecs = Math.floor((Date.now() - obsTime) / 1000);
-          tile.lastActionAge = formatAge(ageSecs);
-        }
+      const lines = fs.readFileSync(path.join(this.scanDir, `${role}-observations.jsonl`), 'utf-8')
+        .trim().split('\n').filter(Boolean);
+      if (lines.length === 0) return;
+      const last = JSON.parse(lines[lines.length - 1]);
+      tile.lastAction = last.digest || '';
+      if (last.ts) {
+        const ageSecs = Math.floor((Date.now() - new Date(last.ts).getTime()) / 1000);
+        tile.lastActionAge = formatAge(ageSecs);
       }
     } catch {
       // No observations yet
     }
+  }
 
+  private readRoleTile(role: string): RoleTile {
+    if (role === 'jeff') return this.readJeffTile();
+    const tile: RoleTile = {
+      role,
+      state: 'idle',
+      card: '',
+      lastAction: '',
+      lastActionAge: '',
+      sessionAlive: false,
+    };
+    this.applyAndonState(tile, role);
+    this.applyBoardAndPulse(tile, role);
+    this.applyLastObservation(tile, role);
     return tile;
   }
 

@@ -24,14 +24,9 @@ export interface SpineEventDeps {
   ensureTraceTable: () => void;
 }
 
-export function handleSpineEvent(req: Req, res: Res, deps: SpineEventDeps): void {
-  const { event, role, ...fields } = req.body || {};
-  if (!event) {
-    res.status(400).json!({ error: 'event is required' });
-    return;
-  }
-  const entry = {
-    timestamp: deps.now(),
+function buildSpineEntry(event: string, role: string | undefined, fields: Record<string, unknown>, now: number): Record<string, unknown> {
+  return {
+    timestamp: now,
     level: 'info',
     appName: 'chorus-events',
     component: 'spine-service',
@@ -39,38 +34,52 @@ export function handleSpineEvent(req: Req, res: Res, deps: SpineEventDeps): void
     role: role || 'system',
     ...fields,
   };
+}
+
+function appendSpineLog(deps: SpineEventDeps, entry: Record<string, unknown>): void {
   try {
     deps.appendFileSync(deps.chorusLogPath, JSON.stringify(entry) + '\n');
   } catch {
     /* best-effort spine log; swallow */
   }
+}
 
-  if (typeof fields.hop === 'number' && !isNaN(fields.hop)) {
-    deps.ensureTraceTable();
-    const db = new deps.DatabaseCtor(deps.traceDbPath);
-    db.pragma('journal_mode = WAL');
-    const ts = deps.now();
-    db.prepare(`
-      INSERT INTO traces (correlation_id, hop, call_stack, source_domain, source_service, source_instance, dest_domain, dest_service, dest_instance, timestamp, latency_ms, error_class, error_message, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      fields.trace_id || `spine-${Date.now()}`,
-      fields.hop,
-      fields.callStack || 'integration',
-      fields.domain || null,
-      fields.source_service || event,
-      fields.source_instance || null,
-      fields.dest_domain || fields.domain || null,
-      fields.dest_service || null,
-      fields.dest_instance || null,
-      ts,
-      fields.latencyMs || null,
-      fields.error_class || null,
-      fields.error_message || null,
-      ts,
-    );
-    db.close();
+function insertTraceRow(deps: SpineEventDeps, event: string, fields: Record<string, unknown>): void {
+  deps.ensureTraceTable();
+  const db = new deps.DatabaseCtor(deps.traceDbPath);
+  db.pragma('journal_mode = WAL');
+  const ts = deps.now();
+  db.prepare(`
+    INSERT INTO traces (correlation_id, hop, call_stack, source_domain, source_service, source_instance, dest_domain, dest_service, dest_instance, timestamp, latency_ms, error_class, error_message, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    fields.trace_id || `spine-${Date.now()}`,
+    fields.hop,
+    fields.callStack || 'integration',
+    fields.domain || null,
+    fields.source_service || event,
+    fields.source_instance || null,
+    fields.dest_domain || fields.domain || null,
+    fields.dest_service || null,
+    fields.dest_instance || null,
+    ts,
+    fields.latencyMs || null,
+    fields.error_class || null,
+    fields.error_message || null,
+    ts,
+  );
+  db.close();
+}
+
+export function handleSpineEvent(req: Req, res: Res, deps: SpineEventDeps): void {
+  const { event, role, ...fields } = req.body || {};
+  if (!event) {
+    res.status(400).json!({ error: 'event is required' });
+    return;
   }
-
+  appendSpineLog(deps, buildSpineEntry(event, role, fields, deps.now()));
+  if (typeof fields.hop === 'number' && !isNaN(fields.hop)) {
+    insertTraceRow(deps, event, fields);
+  }
   res.json!({ ok: true });
 }

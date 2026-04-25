@@ -162,17 +162,16 @@ function classifyChorusEvent(obj: Record<string, unknown>): HookEvent | null {
   return null;
 }
 
-function loadAllEvents(): HookEvent[] {
-  const events: HookEvent[] = [];
-
+function loadChorusEvents(events: HookEvent[]): void {
   for (const line of readLogLines(LOG_PATHS.chorus)) {
     try {
-      const obj = JSON.parse(line);
-      const ev = classifyChorusEvent(obj);
+      const ev = classifyChorusEvent(JSON.parse(line));
       if (ev) events.push(ev);
     } catch { /* skip malformed */ }
   }
+}
 
+function loadPermissionEvents(events: HookEvent[]): void {
   for (const line of readLogLines(LOG_PATHS.permissions)) {
     try {
       const obj = JSON.parse(line);
@@ -186,23 +185,30 @@ function loadAllEvents(): HookEvent[] {
       });
     } catch { /* skip */ }
   }
+}
 
+function loadErrorEvents(events: HookEvent[]): void {
   for (const line of readLogLines(LOG_PATHS.errors)) {
     try {
       const obj = JSON.parse(line);
-      if (obj.fingerprint === 'DOCKER_BLOCKED' || obj.fingerprint === 'KILL_BLOCKED') {
-        events.push({
-          timestamp: obj.ts || '',
-          category: 'app-state-guard',
-          action: 'block',
-          role: obj.role || 'unknown',
-          detail: `Blocked: ${(obj.cmd || '').slice(0, 120)}`,
-          raw: obj,
-        });
-      }
+      if (obj.fingerprint !== 'DOCKER_BLOCKED' && obj.fingerprint !== 'KILL_BLOCKED') continue;
+      events.push({
+        timestamp: obj.ts || '',
+        category: 'app-state-guard',
+        action: 'block',
+        role: obj.role || 'unknown',
+        detail: `Blocked: ${(obj.cmd || '').slice(0, 120)}`,
+        raw: obj,
+      });
     } catch { /* skip */ }
   }
+}
 
+function loadAllEvents(): HookEvent[] {
+  const events: HookEvent[] = [];
+  loadChorusEvents(events);
+  loadPermissionEvents(events);
+  loadErrorEvents(events);
   events.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   return events;
 }
