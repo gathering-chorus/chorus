@@ -209,6 +209,7 @@ if [ -f "$REPO_ROOT/eslint.config.js" ] && [ -f "$REPO_ROOT/.eslint-baseline.jso
       echo '```' >> "$DETAIL_FILE"
       echo "Result: FAIL" >> "$DETAIL_FILE"
       echo "Fix: run \`npm run lint:fix\`, or regenerate baseline if the drop is intentional (\`npm run lint:baseline\`)." >> "$DETAIL_FILE"
+      echo "Note: \`git commit --no-verify\` will land locally but the same check runs in CI on PRs/pushes to main (.github/workflows/quality.yml, #2481). CI is authoritative." >> "$DETAIL_FILE"
       echo "" >> "$DETAIL_FILE"
     fi
   fi
