@@ -182,6 +182,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ matrix.crate }}
+      - name: Ensure runtime dirs (chorus_log writes to platform/logs/)
+        run: mkdir -p platform/logs /tmp/claude-team-scan /tmp/voice-inbox /tmp/chorus-chat
       - name: Run cargo test
         working-directory: ${{ matrix.crate }}
         run: cargo test --all
