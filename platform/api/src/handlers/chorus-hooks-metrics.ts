@@ -21,48 +21,54 @@ export interface ChorusHooksMetricsDeps {
   now?: () => number;
 }
 
+type ModuleStats = { allow: number; deny: number; warn: number; total: number };
+type ModuleMap = Partial<Record<string, ModuleStats>>;
+
+function cutoffDateStr(now: () => number): string {
+  const cutoff = new Date(now());
+  cutoff.setDate(cutoff.getDate() - 7);
+  return cutoff.toISOString().slice(0, 10);
+}
+
+function parseLogLine(line: string, cutoffStr: string): { module: string; decision: string } | null {
+  const parts = line.split('|').map((s) => s.trim());
+  if (parts.length < 6) return null;
+  if (parts[0].slice(0, 10) < cutoffStr) return null;
+  const module = parts[4];
+  const decision = parts[5].toLowerCase();
+  if (!module || module === '-' || module === 'none' || decision === 'enter') return null;
+  return { module, decision };
+}
+
+function applyDecision(stats: ModuleStats, decision: string): void {
+  stats.total++;
+  if (decision === 'allow') stats.allow++;
+  else if (decision === 'deny' || decision === 'block') stats.deny++;
+  else if (decision === 'warn') stats.warn++;
+}
+
+function aggregateLines(lines: string[], cutoffStr: string): { modules: ModuleMap; totalDecisions: number } {
+  const modules: ModuleMap = {};
+  let totalDecisions = 0;
+  for (const line of lines) {
+    const parsed = parseLogLine(line, cutoffStr);
+    if (!parsed) continue;
+    let stats = modules[parsed.module];
+    if (!stats) { stats = { allow: 0, deny: 0, warn: 0, total: 0 }; modules[parsed.module] = stats; }
+    applyDecision(stats, parsed.decision);
+    totalDecisions++;
+  }
+  return { modules, totalDecisions };
+}
+
 export function fetchChorusHooksMetrics(deps: ChorusHooksMetricsDeps): FetchResult {
   const now = deps.now ?? Date.now;
-
   const raw = deps.readLog();
   if (raw === null) {
     return { status: 503, body: { error: 'hooks.log not found' } };
   }
-
   try {
-    const lines = raw.trim().split('\n');
-
-    const cutoff = new Date(now());
-    cutoff.setDate(cutoff.getDate() - 7);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-
-    type ModuleStats = { allow: number; deny: number; warn: number; total: number };
-    const modules: Partial<Record<string, ModuleStats>> = {};
-    let totalDecisions = 0;
-
-    for (const line of lines) {
-      const parts = line.split('|').map((s) => s.trim());
-      if (parts.length < 6) continue;
-
-      const timestamp = parts[0].slice(0, 10);
-      if (timestamp < cutoffStr) continue;
-
-      const moduleName = parts[4];
-      const decision = parts[5].toLowerCase();
-
-      if (!moduleName || moduleName === '-' || moduleName === 'none' || decision === 'enter') continue;
-
-      let m = modules[moduleName];
-      if (!m) { m = { allow: 0, deny: 0, warn: 0, total: 0 }; modules[moduleName] = m; }
-
-      m.total++;
-      totalDecisions++;
-
-      if (decision === 'allow') m.allow++;
-      else if (decision === 'deny' || decision === 'block') m.deny++;
-      else if (decision === 'warn') m.warn++;
-    }
-
+    const { modules, totalDecisions } = aggregateLines(raw.trim().split('\n'), cutoffDateStr(now));
     const enforcedModules = Object.entries(modules).filter(([, v]) => v !== undefined && v.deny > 0).length;
     const totalModules = Object.keys(modules).length;
     const enforcementPercent = totalModules > 0 ? Math.round((enforcedModules / totalModules) * 100) : 0;
