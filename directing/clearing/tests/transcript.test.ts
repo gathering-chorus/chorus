@@ -190,14 +190,12 @@ describe('Transcript — summary and return object', () => {
 });
 
 describe('Transcript — save to disk', () => {
-  let origCwd: string;
   let tmpDir: string;
 
   beforeEach(() => {
     // save() writes to ../transcripts relative to __dirname (src/). In test
     // the module is loaded from src/, so it lands in clearing/transcripts/.
     // We clean up any file we create.
-    origCwd = process.cwd();
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transcript-test-'));
   });
 
@@ -240,5 +238,15 @@ describe('Transcript — save to disk', () => {
     // internal reference so the next save() re-derives a fresh name.
     expect((t as any).lastSavePath).toBeNull();
     fs.unlinkSync(p1);
+  });
+
+  test('save() path is under transcripts dir with ISO-timestamp filename', () => {
+    const t = new Transcript('claude-haiku-4-5-20251001');
+    t.add('jeff', 'shape-check');
+    const saved = t.save();
+    // Filename must match YYYY-MM-DDTHH-MM-SS.json (no path-traversal chars).
+    expect(path.basename(saved)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/);
+    expect(path.dirname(saved)).toContain('transcripts');
+    fs.unlinkSync(saved);
   });
 });

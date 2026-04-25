@@ -49,6 +49,17 @@ describe('MessageRouter — ingest basics', () => {
     // Latest is retained
     expect(all[all.length - 1].text).toBe('m204');
   });
+
+  test('getHiddenCount counts trailing hidden, stops at first visible', () => {
+    const r = new MessageRouter();
+    expect(r.getHiddenCount()).toBe(0);
+    r.ingest(mk('jeff', 'visible-1'));
+    r.ingest(mk('kade', '[nudge from kade] hidden-1'));
+    r.ingest(mk('silas', '[nudge from silas] hidden-2'));
+    expect(r.getHiddenCount()).toBe(2);
+    r.ingest(mk('jeff', 'visible-2'));
+    expect(r.getHiddenCount()).toBe(0);
+  });
 });
 
 describe('MessageRouter — dedup', () => {

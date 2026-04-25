@@ -1,6 +1,5 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
- * fs reads on CHORUS_LOG, derived from CHORUS_ROOT env constant. Object indexing
- * on validated SpineEntry fields (event/role typed at parse).
+/* eslint-disable security/detect-non-literal-fs-filename --
+ * fs reads on CHORUS_LOG, derived from CHORUS_ROOT env constant.
  */
 import fs from 'fs';
 import { EventEmitter } from 'events';

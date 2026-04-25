@@ -1,3 +1,8 @@
+/* eslint-disable security/detect-object-injection --
+ * Array indexing in this router is on internally-bounded counters
+ * (this.messages[i] where i iterates over messages.length).
+ * Coverage: getHiddenCount tested in tests/router.test.ts.
+ */
 import { EventEmitter } from 'events';
 
 export interface ChannelMessage {

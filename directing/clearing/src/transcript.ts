@@ -1,3 +1,9 @@
+/* eslint-disable security/detect-non-literal-fs-filename --
+ * fs.writeFileSync target is `${transcriptsDir}/${ISO-timestamp}.json` —
+ * server-controlled directory, deterministic timestamp filename matching
+ * /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/. Coverage: tests/transcript.test.ts
+ * 'save() path is under transcripts dir with ISO-timestamp filename'.
+ */
 import fs from 'fs';
 import path from 'path';
 
