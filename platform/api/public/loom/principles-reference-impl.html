@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Principles — Reference Implementation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #fcfaf3;
+      --fg: #2a2a2a;
+      --muted: #6a6a6a;
+      --accent: #2d5016;
+      --accent-soft: #5a7a3a;
+      --border: #d4cdb8;
+      --card-bg: #ffffff;
+      --code-bg: #f4f1e8;
+      --must: #9c2d2d;
+      --should: #8a6a1a;
+      --may: #4a6a3a;
+      --done: #2d5016;
+      --later: #6a6a6a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+      font-family: "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+      line-height: 1.65;
+    }
+    main { margin: 0 1in; padding: 2.5rem 0 6rem; max-width: 1100px; }
+    header { border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+    h1 { font-size: 2.4rem; margin: 0 0 0.3rem; color: var(--accent); letter-spacing: -0.01em; }
+    .subtitle { color: var(--muted); font-style: italic; font-size: 1.05rem; }
+    .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.6rem; font-family: "SF Mono", Menlo, monospace; }
+    h2 { font-size: 1.6rem; color: var(--accent); margin-top: 3rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+    h3 { font-size: 1.2rem; color: var(--accent-soft); margin-top: 2rem; margin-bottom: 0.6rem; }
+    h4 { font-size: 1rem; color: var(--accent); margin-top: 1.4rem; margin-bottom: 0.4rem; }
+    p { margin: 0.7rem 0; }
+    code { background: var(--code-bg); padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; font-family: "SF Mono", Menlo, monospace; }
+    pre { background: var(--code-bg); padding: 0.9rem 1.1rem; border-radius: 4px; overflow-x: auto; font-size: 0.88rem; line-height: 1.5; }
+    pre code { background: transparent; padding: 0; }
+    ul { padding-left: 1.4rem; }
+    li { margin: 0.3rem 0; }
+    .card-row {
+      display: grid; grid-template-columns: 5rem 5rem 5rem 1fr; gap: 0.5rem 1rem;
+      padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border);
+      font-size: 0.95rem; align-items: baseline;
+    }
+    .card-row:nth-child(odd) { background: rgba(244, 241, 232, 0.4); }
+    .card-id { font-family: "SF Mono", Menlo, monospace; color: var(--accent); font-weight: 600; }
+    .card-status { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.1rem 0.5rem; border-radius: 3px; text-align: center; }
+    .card-status.done { background: var(--done); color: white; }
+    .card-status.later { background: #e8e3d0; color: var(--later); }
+    .card-owner { font-size: 0.85rem; color: var(--muted); font-style: italic; }
+    .layer { background: var(--card-bg); border: 1px solid var(--border); border-radius: 5px; padding: 1.2rem 1.5rem; margin: 1rem 0 1.5rem; }
+    .layer-title { font-size: 1.15rem; color: var(--accent); margin: 0 0 0.4rem; font-weight: 600; }
+    .layer-summary { color: var(--muted); font-style: italic; font-size: 0.9rem; margin-bottom: 1rem; }
+    .rule { margin: 0.6rem 0; padding-left: 0.6rem; border-left: 3px solid transparent; }
+    .rule .keyword { font-weight: 700; font-family: "SF Mono", Menlo, monospace; font-size: 0.9em; padding: 0 0.3rem; border-radius: 2px; }
+    .rule.must .keyword { color: white; background: var(--must); }
+    .rule.must-not .keyword { color: white; background: var(--must); }
+    .rule.should .keyword { color: white; background: var(--should); }
+    .rule.may .keyword { color: white; background: var(--may); }
+    .rule.must { border-left-color: var(--must); }
+    .rule.must-not { border-left-color: var(--must); }
+    .rule.should { border-left-color: var(--should); }
+    .rule.may { border-left-color: var(--may); }
+    .rule .source { color: var(--muted); font-size: 0.78rem; font-style: italic; display: block; margin-top: 0.15rem; padding-left: 0.4rem; }
+    .invariant { background: #f6efe2; border-left: 4px solid var(--accent); padding: 0.7rem 1rem; margin: 0.8rem 0; border-radius: 0 4px 4px 0; }
+    .invariant .num { font-family: "SF Mono", Menlo, monospace; color: var(--accent); font-weight: 700; margin-right: 0.4rem; }
+    .invariant .why { display: block; color: var(--muted); font-size: 0.88rem; font-style: italic; margin-top: 0.3rem; }
+    .counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1rem 0; }
+    .count-tile { background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.9rem 1.1rem; }
+    .count-num { font-size: 1.6rem; color: var(--accent); font-weight: 700; }
+    .count-label { color: var(--muted); font-size: 0.85rem; margin-top: 0.2rem; }
+    .diagram { background: var(--card-bg); border: 1px solid var(--border); border-radius: 5px; padding: 1.2rem; margin: 1rem 0; overflow-x: auto; }
+    .deferred { color: var(--muted); padding-left: 0.8rem; border-left: 2px dashed var(--border); margin: 0.5rem 0; }
+    footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-size: 0.82rem; color: var(--muted); }
+    @media print {
+      main { margin: 0 0.5in; }
+      .layer { break-inside: avoid; }
+      h2 { break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Principles — Reference Implementation</h1>
+    <div class="subtitle">The full body of MUST / SHOULD / MAY rules across the principles arc — graph schema, write API, page rendering, citation pattern, enforcement, and planned MCP integration.</div>
+    <div class="meta">Cards: 14 · Shipped: 5 · Queued: 9 · Rendered: <span id="rendered-at"></span></div>
+  </header>
+
+  <h2 id="diagram">Reference Architecture</h2>
+  <p>Eight surfaces, one source of truth. The graph (<code>urn:chorus:instances</code>) holds every principle. Athena is the canonical read+write API. Loom is product-facing redirect-and-page. The shim and SessionStart consume principles at boot. MCP is the typed surface coming online.</p>
+  <div class="diagram">
+    <pre class="mermaid">
+flowchart TB
+  classDef shipped fill:#2d5016,stroke:#1a3008,color:#fff
+  classDef later fill:#e8e3d0,stroke:#a99a78,color:#3a3a3a,stroke-dasharray: 5 3
+  classDef boundary fill:#f6efe2,stroke:#8a6a1a,color:#3a3a3a
+
+  subgraph FUSEKI["Fuseki — localhost:3030/pods"]
+    direction TB
+    ONT["urn:chorus:ontology<br/>(schema: classes, predicates,<br/>OWL/RDFS axioms, SHACL shapes)"]
+    INS["urn:chorus:instances<br/>(46 chorus:Principle instances<br/>14 parents + 32 specializations)"]
+  end
+  class FUSEKI boundary
+
+  subgraph CHORUS_API["chorus-api — localhost:3340"]
+    direction TB
+    ATH_R["GET /api/athena/subdomains/<br/>loom-principles/principles<br/>(canonical read)"]:::shipped
+    ATH_DETAIL["GET /api/athena/subdomains/<br/>loom-principles<br/>(cross-graph UNION)"]:::shipped
+    ATH_W["POST/PUT/DELETE /api/athena/<br/>subdomains/loom-principles/principles<br/>(write via ENTITY_SECTIONS)"]:::shipped
+    LOOM_REDIR["GET /api/loom/principles<br/>308 → canonical Athena path"]:::shipped
+    MCP_TOOLS["MCP tools — /mcp endpoint<br/>chorus_principles_list / get / create<br/>#2476"]:::later
+  end
+
+  subgraph BROWSER["Browser"]
+    LOOM_PAGE["/loom/principles.html<br/>(book order, nested specializations)"]:::shipped
+    BOOK_PAGE["/book/principles-reconstructed.html<br/>(static baseline)"]:::shipped
+  end
+
+  subgraph CLAUDE_CODE["Claude Code role sessions"]
+    direction TB
+    MCP_CLIENT[".mcp.json<br/>X-Chorus-Role: $CHORUS_ROLE"]:::shipped
+    SESSION_START["SessionStart inject<br/>(boot envelope: live principles)<br/>#2450"]:::later
+  end
+
+  subgraph SHIM["chorus-hook-shim — Rust"]
+    direction TB
+    HOOK["pre-commit: check-principle-direct-edit.sh<br/>(blocks chorus.ttl Principle additions)"]:::shipped
+    RUST_MCP["Rust MCP client<br/>#2477"]:::later
+  end
+
+  subgraph CITATIONS["Role citation fragments"]
+    FRAGS["designing/claudemd/roles/<br/>{wren,silas,kade}/principles.md<br/>(redirect + emphasis IDs only)"]:::shipped
+    GEN["claudemd-gen.sh →<br/>roles/{wren,silas,kade}/CLAUDE.md"]:::shipped
+  end
+
+  subgraph GOVERNANCE["Governance — planned"]
+    HEALTH["loom-principles SubDomain<br/>contract + completeness gate<br/>#2451"]:::later
+    OBS["MCP observability:<br/>metrics, alerts, origin tagging<br/>#2475"]:::later
+  end
+
+  ONT -. SHACL validates .-> INS
+  INS --> ATH_R
+  INS --> ATH_DETAIL
+  ATH_W --> INS
+  ATH_R --> LOOM_REDIR
+  ATH_R --> LOOM_PAGE
+  ATH_DETAIL --> LOOM_PAGE
+  BOOK_PAGE -. drift-test against .-> ATH_R
+
+  MCP_CLIENT --> MCP_TOOLS
+  MCP_TOOLS --> ATH_R
+  MCP_TOOLS --> ATH_W
+
+  RUST_MCP --> MCP_TOOLS
+  SESSION_START --> ATH_R
+  RUST_MCP -. eventually .-> SESSION_START
+
+  HOOK -.- INS
+  FRAGS --> GEN
+  GEN -. cite IDs from .-> ATH_R
+
+  HEALTH -.- INS
+  OBS -.- MCP_TOOLS
+    </pre>
+  </div>
+  <p style="font-size: 0.85rem; color: var(--muted);"><em>Solid boxes = shipped. Dashed boxes = queued. Solid arrows = active data flow. Dashed arrows = governance / validation / future.</em></p>
+
+  <h2 id="state">State Today</h2>
+  <div class="counts">
+    <div class="count-tile"><div class="count-num">46</div><div class="count-label">principles in graph</div></div>
+    <div class="count-tile"><div class="count-num">14</div><div class="count-label">permaculture parents (book order)</div></div>
+    <div class="count-tile"><div class="count-num">32</div><div class="count-label">child specializations</div></div>
+    <div class="count-tile"><div class="count-num">0</div><div class="count-label">in <code>urn:chorus:ontology</code></div></div>
+    <div class="count-tile"><div class="count-num">12/12</div><div class="count-label">API regression tests</div></div>
+    <div class="count-tile"><div class="count-num">6/6</div><div class="count-label">drift assertions</div></div>
+    <div class="count-tile"><div class="count-num">62/62</div><div class="count-label">jest unit tests</div></div>
+    <div class="count-tile"><div class="count-num">7/7</div><div class="count-label">hook hermetic tests</div></div>
+  </div>
+
+  <h2 id="cards">Body of Work</h2>
+  <p>Fourteen cards thread the principles arc from "read-only graph" to "drift-proof citation surface."</p>
+
+  <h3>Shipped (5)</h3>
+  <div class="card-row"><span class="card-id">#2447</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>Graph completeness — 14 Hemenway parents + 12 skos:broader edges; drift test holds <code>/book/principles-reconstructed.html</code> against the graph.</span></div>
+  <div class="card-row"><span class="card-id">#2314</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>Loom Principles API + first ADR-025 migration — moved 27 Principle instances from ontology→instances; added Athena POST/PUT/DELETE/GET; retired Loom GET to 308; pre-commit hook blocks TTL adds.</span></div>
+  <div class="card-row"><span class="card-id">#2157</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>"Tests hermetic by default, integration gated explicitly" — first content write through the API. Latent bug fix: <code>SPARQL_PREFIXES</code> hoist (chorus/rdfs/skos/dcterms/owl).</span></div>
+  <div class="card-row"><span class="card-id">#2473</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>Landed 18 missing team principles via API — Wren (6), Silas (7), Kade (5). Jeff stamped wording in three batches. Pre-req unlocked #2449.</span></div>
+  <div class="card-row"><span class="card-id">#2449</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>Role <code>principles.md</code> fragments cite by ID — drift-proof by construction. CLAUDE.mds regenerated; protocol contract hash unchanged.</span></div>
+
+  <h3>Foundational (1 done)</h3>
+  <div class="card-row"><span class="card-id">#2468</span><span class="card-status done">Done</span><span class="card-owner">Silas</span><span>ADR-025 — ontology-vs-instances graph separation. Schema in <code>urn:chorus:ontology</code>; populated content in <code>urn:chorus:instances</code>. URIs preserved across migration.</span></div>
+
+  <h3>Queued — Migration parent (1)</h3>
+  <div class="card-row"><span class="card-id">#2469</span><span class="card-status later">Later</span><span class="card-owner">Silas</span><span>Migrate content instances ontology→instances per ADR-025 — Tier 1 foundational classes (Vertebra, Machine, Product, SubProduct), Tier 2 SubDomain batches, Principle migrated as first child via #2314.</span></div>
+
+  <h3>Queued — Principles arc continuation (4)</h3>
+  <div class="card-row"><span class="card-id">#2450</span><span class="card-status later">Later</span><span class="card-owner">Silas</span><span>SessionStart injects live principles — boot envelope pulls from <code>/api/loom/principles</code>; hash extends #2311 protocol contract.</span></div>
+  <div class="card-row"><span class="card-id">#2451</span><span class="card-status later">Later</span><span class="card-owner">Silas</span><span>Principles SubDomain contract + health — completeness gate passes; API/orphan/boot-hash alerts wired.</span></div>
+  <div class="card-row"><span class="card-id">#2475</span><span class="card-status later">Later</span><span class="card-owner">Silas</span><span>MCP observability + governance — metrics, alerts, origin tagging, restart-herald, description-shape.</span></div>
+  <div class="card-row"><span class="card-id">#2476</span><span class="card-status later">Later</span><span class="card-owner">Silas</span><span>Principles as second MCP tool — <code>chorus_principles_list / get / create</code>. Migrates #2450 from HTTP to typed surface. Single-verb-single-target precedent.</span></div>
+
+  <h3>Queued — Cross-cutting follow-ons (3)</h3>
+  <div class="card-row"><span class="card-id">#2477</span><span class="card-status later">Later</span><span class="card-owner">Silas</span><span>Rust MCP client for chorus-hooks shim — migrate #2450 SessionStart inject to typed surface. After #2476 lands.</span></div>
+  <div class="card-row"><span class="card-id">#2470</span><span class="card-status later">Later</span><span class="card-owner">Wren</span><span>Harden <code>check-principle-direct-edit</code> hook to catch mods + deletes (currently only adds).</span></div>
+  <div class="card-row"><span class="card-id">#2471</span><span class="card-status later">Later</span><span class="card-owner">Wren</span><span>Audit Chorus specializations for multi-parent permaculture mapping — Jeff observed many children truthfully serve >1 parent.</span></div>
+
+  <h2 id="layers">Architectural Layers — MUST / SHOULD / MAY</h2>
+  <p>RFC 2119-style. Every rule cites source. Use <code>Ctrl-F</code> "MUST" to scan the contract surface; "SHOULD" for the recommendation surface.</p>
+
+  <div class="layer">
+    <div class="layer-title">1. Data layer — graph schema, classes, named graphs</div>
+    <div class="layer-summary">What lives where. Source: ADR-025 (#2468), chorus.ttl, /api/loom/principles SPARQL.</div>
+
+    <div class="rule must"><span class="keyword">MUST</span> <code>urn:chorus:ontology</code> contain <em>only</em> schema: OWL class declarations, RDFS property declarations, OWL/RDFS axioms, SHACL shapes, RDFS comment on classes/properties. <span class="source">ADR-025 §Decision</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> <code>urn:chorus:instances</code> contain <em>all</em> populated content — every instance of every class that isn't a class/property definition itself. <span class="source">ADR-025 §Decision</span></div>
+    <div class="rule must-not"><span class="keyword">MUST NOT</span> mix instance data into the ontology graph. New instance writes always target <code>urn:chorus:instances</code>. <span class="source">ADR-025 §Decision; #2314 AC</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> preserve URIs across migration. Moving triples between graphs MUST NOT change subject URIs. <code>chorus:principle-observe</code> stays <code>chorus:principle-observe</code>. <span class="source">ADR-025 §Decision</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> declare <code>chorus:Principle</code> instances with: <code>rdfs:label</code>, <code>rdfs:comment</code>, optional <code>chorus:techReading</code>, <code>chorus:jeffReading</code>, <code>dcterms:source</code>, <code>chorus:isPermacultureParent</code> (boolean), <code>skos:broader</code> (URI ref to parent), <code>chorus:order</code> (int 1–14, parents only). <span class="source">handlers/subdomain-entities.ts:704–717; sparql/loom-principles.sparql</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> link a SubDomain to its principles via <code>chorus:contains</code> — the canonical domain→instance edge, not a class-specific <code>has&lt;X&gt;</code>. <span class="source">subdomain-entities.ts:498–500 (ENTITY_SECTIONS); :708 (createPrincipleSpec.hasPredicate)</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> stamp <code>chorus:order N</code> (1–14) on every Hemenway permaculture parent so renderers can sort by book order. <span class="source">migrations/2314-principle-hemenway-order.rq; render in loom/principles.html:301</span></div>
+    <div class="rule may"><span class="keyword">MAY</span> assign multiple <code>skos:broader</code> edges to a specialization when it truthfully maps to several parents (e.g., "no competing implementations" → parents 5, 6, 7). <span class="source">migrations/2314-no-competing-broader.rq; #2471 audit card</span></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-title">2. Write layer — Athena POST/PUT/DELETE</div>
+    <div class="layer-summary">How content gets into the graph. Source: #2314 AC; subdomain-entities.ts.</div>
+
+    <div class="rule must"><span class="keyword">MUST</span> route writes through <code>POST /api/athena/subdomains/loom-principles/principles</code> with body <code>{label, comment?, techReading?, jeffReading?, broaderOf?, dcSource?, isPermacultureParent?}</code>. <span class="source">#2314 AC; server.ts; subdomain-entities.ts:744</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> reject POST without <code>label</code> with HTTP 400 — <em>"Missing required field: label"</em>. <span class="source">subdomain-entities.ts:178–183; principles-api.test.sh test 0</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> support idempotent updates via <code>PUT /api/athena/subdomains/:id/principles/:entityId</code> (DELETE-then-INSERT semantics). <span class="source">#2314 AC; subdomain-entities.ts:746</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> support <code>DELETE /api/athena/subdomains/:id/principles/:entityId</code> via the generic <code>deleteSubdomainEntity</code> handler keyed on <code>ENTITY_SECTIONS</code>. <span class="source">subdomain-entities.ts:507–537</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> declare SPARQL prefixes <code>chorus, rdfs, skos, dcterms, owl</code> in every INSERT/DELETE template via the shared <code>SPARQL_PREFIXES</code> constant. <span class="source">subdomain-entities.ts:165–177 (#2157 fix); jest test "SPARQL prefix block declares skos: and dcterms:"</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> render <code>broaderOf</code> as a URI ref via <code>skos:broader</code> (not a literal). <span class="source">createPrincipleSpec propertyMap; jest test "broaderOf renders as URI ref"</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> emit <code>chorus:contains</code> edge from subdomain to principle on every create. <span class="source">jest test "emits chorus:contains edge"</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> slugify labels by collapsing any non-<code>[a-z0-9]</code> run to a single dash and trimming leading/trailing dashes — <code>slugify(s) = s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')</code>. <span class="source">subdomain-entities.ts:162–164 (#2157 hardening); jest test "slugify strips non-alphanumerics"</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> mint URIs as <code>https://jeffbridwell.com/chorus#&lt;subdomainId&gt;-&lt;uriSegment&gt;-&lt;slugify(label)&gt;</code>. <span class="source">subdomain-entities.ts:185</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> escape double-quotes in literals to avoid SPARQL injection. <span class="source">jest test "escapes double quotes in label"</span></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-title">3. Read layer — Loom redirect, Athena canonical, cross-graph UNION</div>
+    <div class="layer-summary">Three surfaces, one source. Source: #2314 AC; loom-principles.ts; subdomain-detail.sparql.</div>
+
+    <div class="rule must"><span class="keyword">MUST</span> serve canonical principle reads at <code>GET /api/athena/subdomains/loom-principles/principles</code>. Returns <code>{principles: [{id, label, comment, techReading, jeffReading, isPermacultureParent, order, parents[], uri}]}</code>. <span class="source">server.ts:1551–1555; loom-principles.ts</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> 308-redirect <code>GET /api/loom/principles</code> to the canonical Athena path. Status code 308, Location header is canonical URL. <span class="source">server.ts:1546–1549; principles-api.test.sh tests 7+8</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> return permaculture parents in book order 1..14 by <code>chorus:order</code>; specializations and unparented entries fall back to label sort. <span class="source">loom-principles.ts:foldBindings sort; principles-api.test.sh test 9</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> fold multiple <code>skos:broader</code> bindings on the same principle into a single <code>parents[]</code> array on output. <span class="source">loom-principles.ts:foldBindings; principles-api.test.sh test 10</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> UNION across both graphs in <code>subdomain-detail.sparql</code> for <code>chorus:contains</code> edges and instance properties during the migration window. SubDomain stays in ontology until last; principles already in instances. <span class="source">sparql/subdomain-detail.sparql:15–38; principles-api.test.sh test 8</span></div>
+    <div class="rule must-not"><span class="keyword">MUST NOT</span> introduce a parallel principles GET on Loom — the API is retired to a redirect. New consumers point at the canonical Athena path. <span class="source">#2314 AC "Loom GET retirement"</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> empty-set is a valid 200 response — principles can be empty without 404. <span class="source">handlers/loom-principles.ts:6–7 (header comment)</span></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-title">4. Render layer — page shape, book order, nesting</div>
+    <div class="layer-summary">What a reader sees. Source: loom/principles.html (live), book/principles-reconstructed.html (baseline).</div>
+
+    <div class="rule must"><span class="keyword">MUST</span> render the 14 permaculture parents in book order 1..14, prefixed with the ordinal (e.g., "<em>1. Observe</em>", "<em>6. Make the least change for the greatest effect</em>"). <span class="source">loom/principles.html:301–326; book/principles-reconstructed.html h2 elements</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> nest each child specialization under its parent(s) — a multi-parent child renders under each of its parents. <span class="source">loom/principles.html:308–325 (childrenByParent map + nested div)</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> render the comment as the <code>permaculture</code> layer; <code>techReading</code> as the <code>tech</code> layer; <code>jeffReading</code> as the <code>jeff</code> layer (3-layer affordance). <span class="source">loom/principles.html:247–273</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> render <code>/book/principles-reconstructed.html</code> as the static baseline that the live page must match. <span class="source">principles-graph.test.sh drift assertions</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> 1in left/right page margins on book/principles pages. <span class="source">CLAUDE.md memory: feedback_page_margins_1in</span></div>
+    <div class="rule must-not"><span class="keyword">MUST NOT</span> render unparented specializations alongside grouped ones — they get a separate "Unclassified" section, or are absent entirely if the multi-parent audit (#2471) has placed them all. <span class="source">loom/principles.html:327–330</span></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-title">5. Citation layer — role principles.md fragments</div>
+    <div class="layer-summary">How roles reference principles in their CLAUDE.md. Source: #2449 AC; designing/claudemd/roles/{wren,silas,kade}/principles.md.</div>
+
+    <div class="rule must"><span class="keyword">MUST</span> the role <code>principles.md</code> fragment contain a one-line redirect to <code>/loom/principles.html</code> + <code>/api/athena/subdomains/loom-principles/principles</code> + a list of emphasis IDs the role weights heaviest. <span class="source">#2449 AC; designing/claudemd/roles/wren/principles.md</span></div>
+    <div class="rule must-not"><span class="keyword">MUST NOT</span> inline principle text in any role fragment. Citations only. <code>grep -cE '^\s*[0-9]+\.'</code> on each fragment must return 0. <span class="source">#2449 AC #9 ("No inlined principle text remains"); claudemd-gen.sh lint-fragments</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> regenerate all three role <code>CLAUDE.md</code> files via <code>claudemd-gen.sh</code> after any fragment edit. <span class="source">#2449 AC #5</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> "the full set applies to every role; emphasis names what the role weighs heaviest" — emphasis is a lens, not a subset. <span class="source">role principles.md fragments closing line</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> protocol contract hash (<code>.protocol_test_vectors.json</code> live_core) stays unchanged when only role-level fragments change — <code>principles.md</code> is not in <code>core_paths</code>. <span class="source">#2449 description, AC #6 reinterpretation</span></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-title">6. Enforcement layer — pre-commit hook</div>
+    <div class="layer-summary">Block hand-edits at commit time. Source: platform/scripts/check-principle-direct-edit.sh; #2470 follow-on.</div>
+
+    <div class="rule must"><span class="keyword">MUST</span> reject any staged commit that adds a new <code>chorus:Principle</code> instance triple to <code>roles/silas/ontology/chorus.ttl</code>. Detection: <code>grep -E 'a +chorus:Principle\b'</code> on staged diff added lines. <span class="source">check-principle-direct-edit.sh:38; check-principle-direct-edit.test.sh case "instance-add exit 1"</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> ignore non-watched paths (only <code>roles/silas/ontology/chorus.ttl</code> is watched). <span class="source">check-principle-direct-edit.sh:31; test case "non-watched-path exit 0"</span></div>
+    <div class="rule may"><span class="keyword">MAY</span> bypass via <code>PRINCIPLE_DIRECT_EDIT_SKIP=1</code> for one-off migration commits or schema-only edits. <span class="source">check-principle-direct-edit.sh:54–57</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> harden the hook to also catch modifications and deletions of existing Principle instances — currently only adds are caught. <span class="source">#2470 (Kade's gate:quality observation)</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> wire the hook into <code>platform/hooks/pre-commit</code> as Check 3.6, between catalog-oversize and ESLint ratchet. <span class="source">platform/hooks/pre-commit:153–168</span></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-title">7. Boot layer — SessionStart inject (planned)</div>
+    <div class="layer-summary">Live principles in the boot envelope. Source: #2450 AC.</div>
+
+    <div class="rule must"><span class="keyword">MUST</span> SessionStart hook fetch live principles at boot and inject them into the role's first turn — no role caches the list locally. <span class="source">#2450 AC</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> the boot envelope hash extend the #2311 protocol contract hash so drift on the principles surface invalidates the contract. <span class="source">#2450 AC</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> SessionStart inject migrate from HTTP fetch to typed MCP call (<code>chorus_principles_list</code>) once #2476 + #2477 land. <span class="source">#2477 AC; #2476 description</span></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-title">8. Governance layer — subdomain contract, MCP, observability (planned)</div>
+    <div class="layer-summary">How the surface stays honest. Source: #2451, #2475, #2476, #2477.</div>
+
+    <div class="rule must"><span class="keyword">MUST</span> the <code>loom-principles</code> SubDomain pass the completeness gate (lifecycle.wip.pass=True) — actors, scenarios, services declared per the standard SubDomain pattern. <span class="source">#2451 AC</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> alerts wired for: stale principle index (boot-hash drift), API errors on the canonical path, orphan instances (no <code>chorus:contains</code> edge to a SubDomain). <span class="source">#2451 AC</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> three MCP tools register on <code>/mcp</code> alongside <code>chorus_nudge_message</code>: <code>chorus_principles_list</code>, <code>chorus_principle_get</code>, <code>chorus_principle_create</code>. Each follows single-verb-single-target granularity. <span class="source">#2476 AC</span></div>
+    <div class="rule must-not"><span class="keyword">MUST NOT</span> collapse multiple verbs into one tool — no <code>chorus_principles_op(action,...)</code>. Granularity is the affordance. <span class="source">#2476 AC; chat silas-wren-1777123525</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> tool descriptions carry (a) what it does, (b) when to reach for it, (c) what it is NOT for. Descriptions are first-class doc strings, reviewed at the same weight as a CLAUDE.md fragment. <span class="source">#2476 AC; #2453 services-design addendum (chat silas-wren-1777123525)</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> per-role context (<code>X-Chorus-Role</code> header) propagate end-to-end into spine events on every MCP tool invocation. <span class="source">#2476 AC; #2472 verified pattern</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> Rust MCP client live at <code>platform/services/chorus-hooks/src/mcp_client.rs</code> with a thin async API: <code>init_session</code>, <code>list_tools</code>, <code>call_tool</code>. Streamable HTTP over reqwest. <span class="source">#2477 AC</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> MCP observability emit metrics on every tool invocation: latency, success/error, sender role, tool name. Restart-herald event when MCP server restarts. <span class="source">#2475 (paraphrased title)</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> tool descriptions eventually be governed by SHACL — every <code>chorus:Service</code> exposing an MCP tool has a reviewed description string. Future Service-class invariant territory. <span class="source">#2453 addendum (chat silas-wren-1777123525)</span></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-title">9. Test layer — regressions and drift</div>
+    <div class="layer-summary">What gets re-run on every commit. Source: platform/tests/principles-{api,graph}.test.sh; jest unit suite.</div>
+
+    <div class="rule must"><span class="keyword">MUST</span> <code>principles-api.test.sh</code> pass 12/12 — POST validation, three-surface visibility (canonical / Loom redirect / Athena subdomain detail), PUT idempotency, DELETE removal, 308 status + Location, cross-graph UNION ≥27, book order 1..14, multi-parent fan-out. <span class="source">platform/tests/principles-api.test.sh</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> <code>principles-graph.test.sh</code> pass 6/6 — 14 Hemenway parents, ≥12 specialization edges (floor; grows), all 14 parents have label+comment+source, HTML article count, 0 label drift between HTML and graph, chorus.ttl validates. <span class="source">platform/tests/principles-graph.test.sh</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> <code>check-principle-direct-edit.test.sh</code> pass 7/7 — schema-only allowed, instance-add rejected, skip-flag bypass, non-watched paths ignored. <span class="source">platform/tests/check-principle-direct-edit.test.sh</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> jest unit suite (subdomain-entities) pass 62/62 — includes 3 cases for <code>createSubdomainPrinciple</code> (prefix declarations, broaderOf URI rendering, chorus:contains edge) and 1 slugify hardening case. <span class="source">platform/api/tests/handlers/subdomain-entities.test.ts</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> count assertions stay floor-style (<code>≥N</code>) not exact — graph grows over time as Jeff adds principles. <span class="source">principles-graph.test.sh:46; principles-api.test.sh test 8</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> cross-graph SHACL hermetic test stage a known-bad write to instances and verify the ontology-graph SHACL shape rejects it. <span class="source">#2469 AC; ADR-025 §SHACL across graphs (deferred from #2314 to #2469 parent)</span></div>
+  </div>
+
+  <h2 id="invariants">Key Invariants</h2>
+  <p>The non-obvious rules that thread through multiple layers. Each is a single sentence with a one-line rationale.</p>
+
+  <div class="invariant">
+    <span class="num">I-1</span><strong>The graph is the source of truth.</strong>
+    <span class="why">Every other surface — page render, role citations, MCP tools, boot envelope — derives from the graph. No surface caches. No surface paraphrases. Drift starts the moment a copy lives somewhere else.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-2</span><strong>URIs are stable across all migrations.</strong>
+    <span class="why">Citations, links, and external references stay valid forever. Renaming a graph location does not rename the subject. Established by ADR-025 §Decision; assumed by every consumer.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-3</span><strong>Schema and content occupy different graphs.</strong>
+    <span class="why">Schema in <code>urn:chorus:ontology</code>, content in <code>urn:chorus:instances</code>. SHACL validates across the boundary. Mixing them is the original sin #2314 was filed to undo.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-4</span><strong>One source, multiple call shapes.</strong>
+    <span class="why">REST, MCP, SPARQL, page render — all delegate to the same Athena handler reading the same graph. No competing implementations. New transports are surfaces over the source, not new sources.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-5</span><strong>Single-verb-single-target tool granularity.</strong>
+    <span class="why">Each operation gets its own tool: <code>chorus_principles_list</code>, <code>chorus_principle_get</code>, <code>chorus_principle_create</code>. No <code>chorus_principles_op(action,…)</code> collapses. Granularity is the affordance — Claude reaches for the friendliest tool, and the friendliest tool is the most specific.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-6</span><strong>Tool descriptions are first-class doc strings.</strong>
+    <span class="why">Read every invocation, not once at boot — 100x cadence vs CLAUDE.md. Anti-patterns belong in the description string, not in a brief. Descriptions are governed artifacts.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-7</span><strong>Rule expression beats rule paraphrase.</strong>
+    <span class="why">Don't restate principles; cite IDs. Don't reword principles in role files; reference them. The role file is a lens, not a copy. <code>grep -c '^[0-9]\\.'</code> on a principles fragment must return 0.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-8</span><strong>Counts grow; tests assert floors.</strong>
+    <span class="why">Hard-coded counts (12 edges, 27 instances) become stale the moment Jeff adds a principle. <code>≥N</code> assertions stay valid forever.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-9</span><strong>Hooks bite where the wrong path is tempting.</strong>
+    <span class="why">The pre-commit hook on <code>chorus.ttl</code> exists because hand-editing the TTL was the path of least resistance before #2314. Now the typed API is the path of least resistance. The hook backstops the affordance.</span>
+  </div>
+  <div class="invariant">
+    <span class="num">I-10</span><strong>Atomic per class, not atomic across classes.</strong>
+    <span class="why">Each migration child (Principle, Practice, Policy, …) commits in one shot — data move + handler flip + test update. Cross-class atomicity is sacrificed for testability and reversibility. Order is lowest-blast-radius first.</span>
+  </div>
+
+  <h2 id="open-questions">Open Questions / Out-of-Scope Deferrals</h2>
+  <p>Things explicitly punted today. Each will resolve via a card or a deliberate non-decision.</p>
+
+  <div class="deferred"><strong>Cross-graph SHACL enforcement</strong> — ADR-025 promises Fuseki supports it, but the hermetic test that proves it lands in #2469 (parent migration) before any subsequent migration. #2314 covered the boundary check (label-required → 400) inline.</div>
+  <div class="deferred"><strong>Hook scope: mods + deletes</strong> — current hook only catches <em>adds</em> of <code>chorus:Principle</code> in chorus.ttl. Modifications to existing principle labels/comments and deletions slip through. #2470 hardens.</div>
+  <div class="deferred"><strong>Multi-parent re-edging</strong> — Jeff observed many specializations truthfully serve >1 parent. "No competing implementations" already nests under #5/#6/#7 as proof of pattern. #2471 audits the rest.</div>
+  <div class="deferred"><strong>Decision / Role / Metric class instances</strong> — declared but unpopulated in either graph. Separate backlog cards, not blockers for the principles arc.</div>
+  <div class="deferred"><strong>Service vs borg:Environment reconciliation</strong> — <code>chorus:Service</code> has 42 instances in instances graph; runtime services modeled via <code>borg:Environment</code>. Whether these reconcile or stay distinct is a follow-on, not in any current card.</div>
+  <div class="deferred"><strong>Loom GET retirement (full removal)</strong> — currently 308. Full removal of <code>/api/loom/principles</code> route is a separate retirement card after every caller migrates. No timeline.</div>
+  <div class="deferred"><strong>SHACL governance of MCP tool descriptions</strong> — eventual territory: every <code>chorus:Service</code> exposing an MCP tool has a reviewed description. Seeded in #2453; not in any active card.</div>
+  <div class="deferred"><strong>Generic content tools</strong> — <code>chorus_practices_*</code>, <code>chorus_policies_*</code>, etc. wait until those SubDomains migrate under #2469 (Tier 2 Loom batch).</div>
+  <div class="deferred"><strong>Bash CLI retirement</strong> — once MCP coverage is broad enough, the <code>nudge</code> / <code>cards</code> bash CLIs become candidates for retirement. Separate question, no card.</div>
+  <div class="deferred"><strong>Update / Delete MCP tools for principles</strong> — defer until create has been used a few times; the use case is rare and PUT/DELETE on Athena REST stays available. <span class="source">#2476 §Out of scope</span></div>
+
+  <h2 id="references">References</h2>
+  <ul>
+    <li><strong>ADR-025</strong> — <code>roles/silas/adr/ADR-025-ontology-vs-instances-graph-separation.md</code></li>
+    <li><strong>Live page</strong> — <a href="/loom/principles.html">/loom/principles.html</a></li>
+    <li><strong>Static baseline</strong> — <a href="/book/principles-reconstructed.html">/book/principles-reconstructed.html</a></li>
+    <li><strong>Canonical API</strong> — <code>GET /api/athena/subdomains/loom-principles/principles</code></li>
+    <li><strong>Loom redirect</strong> — <code>GET /api/loom/principles</code> → 308</li>
+    <li><strong>Write surface</strong> — <code>POST /api/athena/subdomains/loom-principles/principles</code></li>
+    <li><strong>Pre-commit hook</strong> — <code>platform/scripts/check-principle-direct-edit.sh</code></li>
+    <li><strong>Role fragments</strong> — <code>designing/claudemd/roles/{wren,silas,kade}/principles.md</code></li>
+    <li><strong>Tests</strong> — <code>platform/tests/principles-api.test.sh</code> (12), <code>principles-graph.test.sh</code> (6), <code>check-principle-direct-edit.test.sh</code> (7), <code>platform/api/tests/handlers/subdomain-entities.test.ts</code> (62 jest)</li>
+    <li><strong>Migrations</strong> — <code>platform/api/src/sparql/migrations/2314-{principle-ontology-to-instances, principle-hemenway-order, no-competing-broader}.rq</code></li>
+  </ul>
+
+  <footer>
+    Generated 2026-04-25 from cards #2447, #2314, #2157, #2473, #2449, #2468, #2469, #2450, #2451, #2470, #2471, #2475, #2476, #2477, plus ADR-025 and the live source files.
+    Treat this page as a snapshot — the canonical answer for "what's true now" is always the graph.
+  </footer>
+</main>
+<script>
+  document.getElementById('rendered-at').textContent = new Date().toISOString().replace('T',' ').slice(0,16);
+  if (window.mermaid) {
+    mermaid.initialize({ startOnLoad: true, theme: 'base', themeVariables: {
+      primaryColor: '#fcfaf3', primaryTextColor: '#2a2a2a', primaryBorderColor: '#a99a78',
+      lineColor: '#6a6a6a', secondaryColor: '#f4f1e8', tertiaryColor: '#e8e3d0'
+    }});
+  }
+</script>
+</body>
+</html>
