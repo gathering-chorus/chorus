@@ -1111,3 +1111,22 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - **Code-lens reviews:** Silas #2472 → recommended SHIM_BIN refactor + happy-path test (became #2474, mine, shipped same session). Silas #2450 → recommended malformed-JSON 200 should ride card not follow-on (Silas added 7th test). Silas #2451 → keep alert YAMLs inline at 3, helper extraction at #6-7 when parameter shape is stable.
 - **Cross-role attribution misses:** server.ts mount for #2472 swept into my b67da46a, MCP module files swept into c3d93b7e — flagged to Silas both times. Pattern: when peer has untracked work mid-session, my git-queue commits absorb them.
 - **Next session priorities:** #2481 (CI-side lint ratchet, mine, P2, filed by Silas off my demo feedback). The 4 pre-existing TS6133 suite failures in clearing tests (clearing-ui, session-tailer, etc.) are a small follow-on cleanup.
+
+## 2026-04-25 11:25 — Wren session reboot
+- Wren → opened with 5-beat thesis ("reboot is the test")
+- Wren → ran #2476 reach-test from fresh seat: NEGATIVE — no mcp__chorus__* tools surfaced via ToolSearch
+- Wren → nudged Silas with reach-test result
+- Silas → created per-role .mcp.json files (wren/silas/kade), X-Chorus-Role baked in; settings.json schema rejects mcpServers
+- Wren → /reboot to load .mcp.json on next session boot
+
+- [Wren] → diagnosed MCP non-reachability root cause: CHORUS_ROLE empty in claude process env, settings.json env only flows to spawned tools → Silas
+- [Silas] → landed platform/shell/chorus-role-env.sh chpwd hook + ~/.zshrc source line; retires per-role .mcp.json proliferation → all roles, Jeff
+- [Wren] → authorized .zshrc edit + verification protocol (fresh tab, env check before claude) → Silas
+- [Jeff] → confirmed env binding works in fresh shell (CHORUS_ROLE=wren printed pre-claude) → reach test pending fresh claude seat
+
+## 2026-04-25 morning — kade
+- Pulled #2481 (CI lint-ratchet enforcement) → built on kade/2481-ci-ratchet, opened PR #1 (first GHA workflow in repo), CI red on first push surfaced lock-file gap → Blocked pending ADR-026
+- ADR-026 impl-review: 6 §b table deltas → all honored in v3 → signed
+- Gate runs for team: #2475 code+quality PASS (Silas), #2476 code+quality PASS (then stale-marked on Wren gate-product retract, then re-PASS after AC reshape)
+- Brief sent: roles/silas/briefs/2026-04-25-adr-026-ci-architecture.md
+- Decisions referenced: ADR-026 (CI architecture + lock-file policy)

@@ -1,6 +1,6 @@
 import { WorkflowEngine } from '../src/engine';
-import { WorkflowEngineConfig, WorkflowManifest } from '../src/types';
-import { mkdirSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { WorkflowEngineConfig } from '../src/types';
+import { rmSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -87,11 +87,13 @@ describe('WorkflowEngine', () => {
     });
 
     it('persists to disk', () => {
-      const wf = engine.create('Persist test', 'wren:Do it');
+      const e2 = new WorkflowEngine(config);
+      const wf = e2.create('Persist test', 'wren:Do it');
       const files = readdirSync(config.activeDir);
       expect(files).toContain('WF-001.json');
       const loaded = JSON.parse(readFileSync(join(config.activeDir, 'WF-001.json'), 'utf-8'));
       expect(loaded.decision).toBe('Persist test');
+      expect(loaded.id).toBe(wf.id);
     });
 
     it('rejects empty decision', () => {

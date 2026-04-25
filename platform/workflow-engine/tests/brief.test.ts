@@ -1,5 +1,5 @@
 import { generateHandoffBrief } from '../src/brief';
-import { WorkflowManifest, Step } from '../src/types';
+import { WorkflowManifest } from '../src/types';
 
 function makeManifest(overrides: Partial<WorkflowManifest> = {}): WorkflowManifest {
   return {

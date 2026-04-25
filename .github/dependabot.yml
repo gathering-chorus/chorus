@@ -1,0 +1,93 @@
+# Dependabot — centralized weekly lock-update PRs.
+#
+# Per ADR-026 §c: lock files are committed for reproducibility; updates are
+# managed through reviewed PRs rather than ad-hoc `npm install` runs.
+#
+# Card #2481 sub-AC 2.
+
+version: 2
+updates:
+  # Root workspace + per-package npm directories. Each ecosystem-directory
+  # pair runs independently; one PR per package per week max.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels: [deps, npm]
+    commit-message:
+      prefix: deps
+      include: scope
+
+  - package-ecosystem: npm
+    directory: /directing/clearing
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, npm]
+    commit-message: { prefix: deps, include: scope }
+
+  - package-ecosystem: npm
+    directory: /directing/products/cards
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, npm]
+    commit-message: { prefix: deps, include: scope }
+
+  - package-ecosystem: npm
+    directory: /platform/api
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, npm]
+    commit-message: { prefix: deps, include: scope }
+
+  - package-ecosystem: npm
+    directory: /platform/chorus-sdk
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, npm]
+    commit-message: { prefix: deps, include: scope }
+
+  - package-ecosystem: npm
+    directory: /platform/pulse
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, npm]
+    commit-message: { prefix: deps, include: scope }
+
+  - package-ecosystem: npm
+    directory: /platform/tests
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, npm]
+    commit-message: { prefix: deps, include: scope }
+
+  - package-ecosystem: npm
+    directory: /platform/workflow-engine
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, npm]
+    commit-message: { prefix: deps, include: scope }
+
+  # Cargo crates
+  - package-ecosystem: cargo
+    directory: /platform/services/chorus-hooks
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, cargo]
+    commit-message: { prefix: deps, include: scope }
+
+  - package-ecosystem: cargo
+    directory: /platform/services/chorus-inject
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, cargo]
+    commit-message: { prefix: deps, include: scope }
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [deps, ci]
+    commit-message: { prefix: deps, include: scope }

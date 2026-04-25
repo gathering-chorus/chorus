@@ -1,0 +1,196 @@
+name: quality
+
+# CI-side authoritative quality checks for the chorus repo.
+# Pre-commit hooks catch the honest case locally; this workflow closes
+# the `git commit --no-verify` bypass by running the same checks on every
+# PR to main and every push to main.
+#
+# Implements ADR-026 §b CI(target) column. One job per logical check —
+# failures point at exactly one concern. npm ci against committed locks
+# (#2481 sub-AC 1) closes the local↔CI divergence that fired on first run.
+#
+# Card #2481.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-ratchet:
+    name: ESLint per-rule ratchet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Type-aware ESLint rules (no-floating-promises et al.) need every
+      # subpackage's deps installed for type resolution. Without per-package
+      # node_modules, the type analyzer mis-fires false positives. Install
+      # all 7 active TS packages + root before linting.
+      - name: Install (root)
+        run: npm ci --no-audit --no-fund
+      - name: Install (subpackages)
+        run: |
+          for pkg in directing/clearing directing/products/cards platform/api platform/chorus-sdk platform/pulse platform/tests platform/workflow-engine; do
+            (cd "$pkg" && npm ci --no-audit --no-fund)
+          done
+      - name: Run lint ratchet
+        run: npm run lint:ratchet
+
+  type-check:
+    name: tsc — ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - directing/clearing
+          - directing/products/cards
+          - platform/api
+          - platform/chorus-sdk
+          - platform/pulse
+          - platform/tests
+          - platform/workflow-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install (npm ci)
+        working-directory: ${{ matrix.package }}
+        run: npm ci --no-audit --no-fund
+      - name: Type-check
+        working-directory: ${{ matrix.package }}
+        run: npx tsc --noEmit
+
+  unit-tests:
+    name: jest — ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - directing/clearing
+          - directing/products/cards
+          - platform/api
+          - platform/chorus-sdk
+          - platform/pulse
+          - platform/tests
+          - platform/workflow-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Cross-package pre-build for cards: src/events.ts imports 'chorus-sdk'
+      # (file: dep needs dist), src/sdk.ts requires '../../../../platform/
+      # workflow-engine/dist/engine'. Both must be built before cards jest.
+      # Tracked: workspaces conversion card (ADR-026 §c Future) supersedes
+      # this bridge once npm workspaces lands.
+      - name: Pre-build chorus-sdk (cards only)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: platform/chorus-sdk
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Pre-build workflow-engine (cards only)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: platform/workflow-engine
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Install (npm ci)
+        working-directory: ${{ matrix.package }}
+        run: npm ci --no-audit --no-fund
+      - name: Run jest
+        working-directory: ${{ matrix.package }}
+        run: npx jest --forceExit --passWithNoTests
+
+  mcp-description-shape:
+    name: MCP tool description shape (#2475)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run shape lint
+        run: node platform/scripts/mcp-tool-description-lint.js
+
+  catalog-oversize:
+    name: Catalog oversize backstop (#2461)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute changed files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            git diff --name-only --diff-filter=ACMR "$base" "$head" > /tmp/changed.txt
+          else
+            git diff --name-only --diff-filter=ACMR HEAD~1 HEAD > /tmp/changed.txt
+          fi
+      - name: Run backstop
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: cat /tmp/changed.txt | bash platform/scripts/check-catalog-oversize.sh
+
+  principle-direct-edit:
+    name: Principle direct-edit backstop (#2314)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute changed files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            git diff --name-only --diff-filter=ACMR "$base" "$head" > /tmp/changed.txt
+          else
+            git diff --name-only --diff-filter=ACMR HEAD~1 HEAD > /tmp/changed.txt
+          fi
+      - name: Run backstop
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: cat /tmp/changed.txt | bash platform/scripts/check-principle-direct-edit.sh
+
+  cargo-test:
+    name: cargo test — ${{ matrix.crate }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - platform/services/chorus-hooks
+          - platform/services/chorus-inject
+    env:
+      # Tests in shared/protocol_contract.rs and chorus_log.rs read paths
+      # via shared::state_paths::chorus_root() which falls back to the
+      # local /Users/... path. CI must override to the runner workspace.
+      CHORUS_ROOT: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.crate }}
+      - name: Ensure runtime dirs (chorus_log writes to platform/logs/)
+        run: mkdir -p platform/logs /tmp/claude-team-scan /tmp/voice-inbox /tmp/chorus-chat
+      - name: Run cargo test
+        working-directory: ${{ matrix.crate }}
+        run: cargo test --all
+
+  # smoke-check + MCP round-trip deferred — both require the Gathering app
+  # (localhost:3000) and/or the chorus-api booted in CI, which needs postgres
+  # + fuseki + initial data. Out of scope for this PR. Tracked: follow-on
+  # sub-AC under #2481 ("api-boot-in-CI scaffolding") once the rest of the
+  # workflow is stable. Per ADR-026 §b CI(target): smoke-check is "Yes — on PR"
+  # and MCP round-trip is "Conditional"; both gated on this infra existing.

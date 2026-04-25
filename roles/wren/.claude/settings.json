@@ -3,6 +3,7 @@
     "DEPLOY_ROLE": "wren",
     "CHORUS_ROLE": "wren"
   },
+  "enableAllProjectMcpServers": true,
   "hooks": {
     "SessionStart": [
       {
