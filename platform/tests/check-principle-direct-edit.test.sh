@@ -53,7 +53,7 @@ git add roles/silas/ontology/chorus.ttl
 out=$(echo "roles/silas/ontology/chorus.ttl" | REPO_ROOT="$FIXTURE" "$CHECK" 2>&1)
 rc=$?
 check "instance-add exit 1" 1 "$rc"
-check "instance-add reports violation" 1 "$(echo "$out" | grep -c 'stages new chorus:Principle')"
+check "instance-add reports violation" 1 "$(echo "$out" | grep -c 'principle-direct-edit')"
 
 # Run 3: bypass via env var
 out=$(echo "roles/silas/ontology/chorus.ttl" | PRINCIPLE_DIRECT_EDIT_SKIP=1 REPO_ROOT="$FIXTURE" "$CHECK" 2>&1)
@@ -69,6 +69,65 @@ git add other/junk.ttl
 out=$(echo "other/junk.ttl" | REPO_ROOT="$FIXTURE" "$CHECK" 2>&1)
 rc=$?
 check "non-watched-path exit 0" 0 "$rc"
+
+# Hard-reset before seeding — earlier runs' `git checkout -- . && git reset HEAD`
+# cleanup leaves working-tree cruft (wrong order; checkout reads index, reset doesn't
+# touch working tree). Reset --hard guarantees a clean baseline for the seed commit.
+git reset -q --hard HEAD
+
+# Seed a real Principle instance in the committed baseline for delete/modify tests.
+cat >> roles/silas/ontology/chorus.ttl <<'EOF'
+
+chorus:loom-principles-principle-existing a chorus:Principle ;
+  rdfs:label "Existing principle" ;
+  rdfs:comment "Pre-existing comment" .
+EOF
+git add roles/silas/ontology/chorus.ttl
+git commit -q -m seed-existing
+
+# Run 5: delete an existing Principle instance block — fail
+python3 - <<'PY'
+import re, pathlib
+p = pathlib.Path("roles/silas/ontology/chorus.ttl")
+txt = p.read_text()
+txt = re.sub(r"\nchorus:loom-principles-principle-existing[^.]*\.\n", "\n", txt, count=1)
+p.write_text(txt)
+PY
+git add roles/silas/ontology/chorus.ttl
+out=$(echo "roles/silas/ontology/chorus.ttl" | REPO_ROOT="$FIXTURE" "$CHECK" 2>&1)
+rc=$?
+check "delete-instance exit 1" 1 "$rc"
+check "delete-instance reports violation" 1 "$(echo "$out" | grep -c 'principle-direct-edit')"
+git reset -q --hard HEAD
+
+# Run 6: modify rdfs:label of an existing Principle (continuation line, no subject on the diff line) — fail
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("roles/silas/ontology/chorus.ttl")
+p.write_text(p.read_text().replace('"Existing principle"', '"Modified label"'))
+PY
+git add roles/silas/ontology/chorus.ttl
+out=$(echo "roles/silas/ontology/chorus.ttl" | REPO_ROOT="$FIXTURE" "$CHECK" 2>&1)
+rc=$?
+check "modify-property exit 1" 1 "$rc"
+check "modify-property reports violation" 1 "$(echo "$out" | grep -c 'principle-direct-edit')"
+
+# Run 7: skip flag bypasses modify too
+out=$(echo "roles/silas/ontology/chorus.ttl" | PRINCIPLE_DIRECT_EDIT_SKIP=1 REPO_ROOT="$FIXTURE" "$CHECK" 2>&1)
+rc=$?
+check "skip-flag bypasses modify" 0 "$rc"
+git reset -q --hard HEAD
+
+# Run 8: schema-only edit on a file that also contains existing Principle instances — pass
+cat >> roles/silas/ontology/chorus.ttl <<'EOF'
+
+chorus:Decision a rdfs:Class .
+EOF
+git add roles/silas/ontology/chorus.ttl
+out=$(echo "roles/silas/ontology/chorus.ttl" | REPO_ROOT="$FIXTURE" "$CHECK" 2>&1)
+rc=$?
+check "schema-only-with-existing-instances exit 0" 0 "$rc"
+git checkout -q -- . && git reset -q HEAD
 
 echo ""
 echo "Result: $pass passed, $fail failed"
