@@ -212,6 +212,12 @@ jobs:
         run: |
           set -x
           cargo build --release --bin chorus-hooks
+          # #2505 follow-up: chorus-hook-shim release binary is what
+          # platform/scripts/chorus-log (bash wrapper) execs. Tests like
+          # nudge_origin_tag rely on the chorus_log path firing through
+          # the wrapper into the release binary; missing binary → wrapper
+          # exits "not found" → empty spine log → assertion fails.
+          cargo build --release --bin chorus-hook-shim
           # HOOK_LOG path in main.rs writes here; if-let-Ok wraps the open so
           # missing dir doesn't crash the server, but creating it is cheap.
           sudo mkdir -p /Users/jeffbridwell/Library/Logs/Gathering
