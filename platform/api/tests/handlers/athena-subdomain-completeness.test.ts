@@ -12,7 +12,8 @@ function countResult(n: number) {
 }
 
 function deps(meta: SparqlMetaBinding | null, counts: Record<string, number> = {}): AthenaCompletenessDeps {
-  const predOrder = ['hasActor', 'hasScenario', 'hasContract', 'hasPriorArt', 'hasPage', 'hasIntegration', 'hasService', 'hasPersistence', 'hasPipeline', 'hasLogSource', 'hasGap'];
+  // #2485 — services slot now counts hasEndpoint (canonical from discover-endpoints).
+  const predOrder = ['hasActor', 'hasScenario', 'hasContract', 'hasPriorArt', 'hasPage', 'hasIntegration', 'hasEndpoint', 'hasPersistence', 'hasPipeline', 'hasLogSource', 'hasGap'];
   return {
     sparqlQuery: async (q) => {
       if (q.includes('SubDomain')) return metaResult(meta);
@@ -38,7 +39,7 @@ describe('fetchAthenaSubdomainCompleteness (#2187)', () => {
         ownerLabel: { value: 'Silas' }, stepLabel: { value: 'Building' },
         consumesCount: { value: '2' }, consumedByCount: { value: '1' },
       },
-      { hasActor: 1, hasScenario: 1, hasContract: 1, hasPriorArt: 1, hasPage: 1, hasIntegration: 1, hasService: 1, hasPersistence: 1, hasPipeline: 1, hasLogSource: 1, hasGap: 1 },
+      { hasActor: 1, hasScenario: 1, hasContract: 1, hasPriorArt: 1, hasPage: 1, hasIntegration: 1, hasEndpoint: 1, hasPersistence: 1, hasPipeline: 1, hasLogSource: 1, hasGap: 1 },
     ), 'x');
     expect(r.status).toBe(200);
     const body = r.body as { data: { percentage: number; lifecycle: Record<string, { pass: boolean }> } };
@@ -55,7 +56,10 @@ describe('fetchAthenaSubdomainCompleteness (#2187)', () => {
     expect(body.data.lifecycle.create.missing).toEqual(expect.arrayContaining(['owner', 'step', 'comment']));
   });
 
-  test('wip gate requires actors AND edges', async () => {
+  test('#2485 wip gate requires edges + at least one required-authored facet', async () => {
+    // wip.pass = edges + ANY one of {actors, scenarios, contract}. Reshaped
+    // from the old "actors AND edges" rule. Designer started the design work
+    // is the signal — actors OR scenarios OR contract counts as evidence.
     const r = await fetchAthenaSubdomainCompleteness(deps(
       { label: { value: 'X' } },
       { hasActor: 1 },
@@ -63,6 +67,47 @@ describe('fetchAthenaSubdomainCompleteness (#2187)', () => {
     const body = r.body as { data: { lifecycle: { wip: { pass: boolean; missing: string[] } } } };
     expect(body.data.lifecycle.wip.pass).toBe(false);
     expect(body.data.lifecycle.wip.missing).toContain('edges');
+  });
+
+  test('#2485 wip gate passes when edges present + scenarios authored (alternative to actors)', async () => {
+    const r = await fetchAthenaSubdomainCompleteness(deps(
+      { label: { value: 'X' }, consumedByCount: { value: '1' } },
+      { hasScenario: 1 },
+    ), 'x');
+    const body = r.body as { data: { lifecycle: { wip: { pass: boolean } } } };
+    expect(body.data.lifecycle.wip.pass).toBe(true);
+  });
+
+  test('#2485 done gate requires all required-authored: actors + scenarios + contract', async () => {
+    // done.pass = all three required-authored facets present, regardless of
+    // optional facets. Reshape from old "scenarios + contract" rule.
+    const r = await fetchAthenaSubdomainCompleteness(deps(
+      { label: { value: 'X' }, comment: { value: 'c' }, ownerLabel: { value: 'O' }, stepLabel: { value: 'S' }, consumedByCount: { value: '1' } },
+      { hasActor: 1, hasScenario: 1, hasContract: 1 },
+    ), 'x');
+    const body = r.body as { data: { lifecycle: { done: { pass: boolean; missing: string[] } } } };
+    expect(body.data.lifecycle.done.pass).toBe(true);
+    expect(body.data.lifecycle.done.missing).toEqual([]);
+  });
+
+  test('#2485 done gate fails when actors missing (was passing under old scenarios+contract rule)', async () => {
+    const r = await fetchAthenaSubdomainCompleteness(deps(
+      { label: { value: 'X' }, comment: { value: 'c' }, ownerLabel: { value: 'O' }, stepLabel: { value: 'S' }, consumedByCount: { value: '1' } },
+      { hasScenario: 1, hasContract: 1 },
+    ), 'x');
+    const body = r.body as { data: { lifecycle: { done: { pass: boolean; missing: string[] } } } };
+    expect(body.data.lifecycle.done.pass).toBe(false);
+    expect(body.data.lifecycle.done.missing).toContain('actors');
+  });
+
+  test('#2485 substrate-class subdomain (loom-*) requires prior_art for done.pass', async () => {
+    const r = await fetchAthenaSubdomainCompleteness(deps(
+      { label: { value: 'X' }, comment: { value: 'c' }, ownerLabel: { value: 'O' }, stepLabel: { value: 'S' }, consumedByCount: { value: '1' } },
+      { hasActor: 1, hasScenario: 1, hasContract: 1 },
+    ), 'loom-decisions');
+    const body = r.body as { data: { lifecycle: { done: { pass: boolean; missing: string[] } } } };
+    expect(body.data.lifecycle.done.pass).toBe(false);
+    expect(body.data.lifecycle.done.missing).toContain('prior_art');
   });
 
   test('edges section true when consumesCount or consumedByCount > 0', async () => {

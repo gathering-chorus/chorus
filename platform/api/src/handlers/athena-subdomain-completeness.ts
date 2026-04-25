@@ -98,16 +98,44 @@ function buildSections(b: SparqlMetaResult['results']['bindings'][number], count
   };
 }
 
-function computeLifecycle(sections: Record<string, boolean>) {
+// #2485 — facet classification. Reshaped from the old "every hasX edge counts
+// equally" model to a three-class system that distinguishes derived data,
+// design-checkpoint authoring, and quality-only optionals.
+const REQUIRED_AUTHORED = ['actors', 'scenarios', 'contract'] as const;
+const SUBSTRATE_REQUIRED_AUTHORED = ['actors', 'scenarios', 'contract', 'prior_art'] as const;
+
+function isSubstrateClass(id: string): boolean {
+  // loom-decisions, loom-principles, loom-policies — substrate-class
+  // subdomains require prior-art citation as part of the design checkpoint.
+  return id.startsWith('loom-');
+}
+
+function computeLifecycle(sections: Record<string, boolean>, subdomainId: string) {
+  const requiredAuthored = isSubstrateClass(subdomainId)
+    ? Array.from(SUBSTRATE_REQUIRED_AUTHORED)
+    : Array.from(REQUIRED_AUTHORED);
+  const wipDesignSignal = requiredAuthored.some((r) => sections[r]);
   const lifecycle: Record<string, { required: string[]; met: string[]; missing: string[]; pass: boolean }> = {
     create: { required: ['label', 'owner', 'step', 'comment'], met: [], missing: [], pass: false },
-    wip: { required: ['actors', 'edges'], met: [], missing: [], pass: false },
-    done: { required: ['scenarios', 'contract'], met: [], missing: [], pass: false },
+    // wip.pass: edges + at least one required-authored (proof designer started)
+    wip: {
+      required: ['edges'],
+      met: [],
+      missing: [],
+      pass: false,
+    },
+    // done.pass: every required-authored facet has data
+    done: { required: requiredAuthored, met: [], missing: [], pass: false },
   };
   for (const gate of Object.values(lifecycle)) {
     gate.met = gate.required.filter((r) => sections[r]);
     gate.missing = gate.required.filter((r) => !sections[r]);
     gate.pass = gate.missing.length === 0;
+  }
+  // wip needs the design-signal in addition to its hard required (edges)
+  if (lifecycle.wip.pass && !wipDesignSignal) {
+    lifecycle.wip.pass = false;
+    lifecycle.wip.missing = ['actors|scenarios|contract'];
   }
   return lifecycle;
 }
@@ -140,7 +168,7 @@ export async function fetchAthenaSubdomainCompleteness(
       counts[key] = parseInt(cr.results.bindings[0]?.n?.value ?? '0', 10);
     });
     const sections = buildSections(b, counts);
-    const lifecycle = computeLifecycle(sections);
+    const lifecycle = computeLifecycle(sections, id);
     const present = Object.entries(sections).filter(([, v]) => v).map(([k]) => k);
     const missing = Object.entries(sections).filter(([, v]) => !v).map(([k]) => k);
     const percentage = Math.round((present.length / Object.keys(sections).length) * 100);
