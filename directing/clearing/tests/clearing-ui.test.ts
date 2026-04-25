@@ -310,6 +310,7 @@ describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
         { encoding: 'utf-8', timeout: 10000 },
       ).trim().split('\n').pop() || '';
 
+      /* eslint-disable jest/no-conditional-expect -- live integration; chat.sh availability gates the assertion */
       if (chatId) {
         execSync(
           `bash "${CHAT_SCRIPT}" say ${chatId} silas "${marker} — chat message, must not appear in Clearing"`,
@@ -332,6 +333,7 @@ describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
       console.log(`chat.sh unavailable: ${e.message?.substring(0, 60)}`);
       expect(true).toBe(true);
     }
+    /* eslint-enable jest/no-conditional-expect */
   });
 
   test('[chat] prefixed messages are filtered by router', async () => {

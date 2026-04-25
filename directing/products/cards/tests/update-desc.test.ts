@@ -43,17 +43,15 @@ describe('cards update --desc', () => {
     const markdown = '## Experience\\n\\nTest description with **markdown**.\\n\\n## AC\\n- Item one\\n- Item two';
     const result = run(`update 1964 --desc "${markdown}"`);
     expect(result.stderr).not.toContain('Removed');
-    if (result.exitCode === 0) {
-      expect(result.stdout).toContain('#1964');
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- skipped if API unavailable
+    if (result.exitCode === 0) expect(result.stdout).toContain('#1964');
   });
 
   test('update --desc preserves markdown in view output', () => {
     if (!cliExists) return console.log(skipMsg);
     const result = run('view 1964');
-    if (result.exitCode === 0) {
-      expect(result.stdout).toContain('##');
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- skipped if API unavailable
+    if (result.exitCode === 0) expect(result.stdout).toContain('##');
   });
 
   test('update requires at least one field', () => {

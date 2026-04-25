@@ -29,6 +29,9 @@ describe('SHACL ontology validation (#2014)', () => {
   test('violations have node, constraint, severity, message', async () => {
     const res = await fetch(`${harness.baseUrl}/api/athena/validate`);
     const body = await res.json();
+    // Live integration: assertions only run if the graph has violations.
+    // Empty-violations case is covered by checked=6 in the prior test.
+    /* eslint-disable jest/no-conditional-expect */
     if (body.violations.length > 0) {
       const v = body.violations[0];
       expect(v).toHaveProperty('node');
@@ -36,14 +39,14 @@ describe('SHACL ontology validation (#2014)', () => {
       expect(v.severity).toBe('violation');
       expect(v).toHaveProperty('message');
     }
+    /* eslint-enable jest/no-conditional-expect */
   }, 15_000);
 
   test('warnings have severity "warning"', async () => {
     const res = await fetch(`${harness.baseUrl}/api/athena/validate`);
     const body = await res.json();
-    if (body.warnings.length > 0) {
-      expect(body.warnings[0].severity).toBe('warning');
-    }
+    // eslint-disable-next-line jest/no-conditional-expect
+    if (body.warnings.length > 0) expect(body.warnings[0].severity).toBe('warning');
   }, 15_000);
 
   test('validation checks all 6 constraint types', async () => {

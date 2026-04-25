@@ -36,10 +36,12 @@ describe('#2082: domain dependencies facet', () => {
     const body = await res.json();
     expect(Array.isArray(body.data.shared)).toBe(true);
     // Seeds shares fuseki-library with other domains
+    /* eslint-disable jest/no-conditional-expect -- shape assertion only when graph has shared deps */
     if (body.data.shared.length > 0) {
       expect(body.data.shared[0]).toHaveProperty('domain');
       expect(body.data.shared[0]).toHaveProperty('sharedVia');
     }
+    /* eslint-enable jest/no-conditional-expect */
   }, 10_000);
 
   test('uses athena envelope', async () => {

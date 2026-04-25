@@ -106,10 +106,8 @@ describe('Flow: Transcript indexing', () => {
   test('Chorus index contains clearing source type', () => {
     // Check session-start file for clearing count in index stats
     const sessionFile = '/tmp/session-start-silas.md';
-    if (!fs.existsSync(sessionFile)) {
-      expect(true).toBe(true);
-      return;
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- session-dependent integration probe
+    if (!fs.existsSync(sessionFile)) { expect(true).toBe(true); return; }
     const content = fs.readFileSync(sessionFile, 'utf-8');
     // Session file content varies by session — only assert if clearing stats present
     if (!content.includes('clearing:')) {
@@ -123,20 +121,18 @@ describe('Flow: Transcript indexing', () => {
     // The Chorus index shows clearing as a source type
     // From session-start: "clearing: 1083"
     const sessionFile = '/tmp/session-start-silas.md';
-    if (!fs.existsSync(sessionFile)) {
-      expect(true).toBe(true);
-      return;
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- session-dependent integration probe
+    if (!fs.existsSync(sessionFile)) { expect(true).toBe(true); return; }
     const content = fs.readFileSync(sessionFile, 'utf-8');
     const match = content.match(/clearing:\s*(\d+)/);
-    if (match) {
-      expect(parseInt(match[1])).toBeGreaterThan(0);
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- session-dependent integration probe
+    if (match) expect(parseInt(match[1])).toBeGreaterThan(0);
   });
 
   test('chorus-log can emit clearing-related events', () => {
     const chorusLog = path.join(SCRIPTS_DIR, 'chorus-log');
     expect(fs.existsSync(chorusLog)).toBe(true);
+    /* eslint-disable jest/no-conditional-expect -- chorus-log probe; existence is sufficient if exec fails */
     try {
       const output = execSync(
         `${chorusLog} clearing.session.started silas port=3470 2>/dev/null`,
@@ -144,9 +140,9 @@ describe('Flow: Transcript indexing', () => {
       );
       expect(output).toContain('clearing.session.started');
     } catch {
-      // chorus-log may fail in test context — existence is sufficient
       expect(true).toBe(true);
     }
+    /* eslint-enable jest/no-conditional-expect */
   });
 });
 

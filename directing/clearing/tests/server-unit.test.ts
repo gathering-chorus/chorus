@@ -429,9 +429,8 @@ describe('server — card lookup', () => {
   test('GET /api/card/:id returns a JSON shape for any id', async () => {
     const r = await call('/api/card/2167');
     expect([200, 404, 500]).toContain(r.status);
-    if (r.status === 200) {
-      expect(typeof r.body).toBe('object');
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- card may or may not exist, only assert shape on hit
+    if (r.status === 200) expect(typeof r.body).toBe('object');
   });
 });
 
@@ -480,10 +479,8 @@ describe('server — authenticated tunneled paths', () => {
       },
     });
     expect(r.status).toBe(200);
-    // Name prompt page contains "Your name"
-    if (typeof r.body === 'string') {
-      expect(r.body).toMatch(/name/i);
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- response body may be string or object depending on accept header
+    if (typeof r.body === 'string') expect(r.body).toMatch(/name/i);
   });
 
   test('token via query param also authenticates', async () => {

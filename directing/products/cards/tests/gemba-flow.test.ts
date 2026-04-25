@@ -54,6 +54,7 @@ describe('Flow: Gemba tail', () => {
       expect(typeof output).toBe('string');
     } catch {
       // May fail if no active session — that's OK
+      // eslint-disable-next-line jest/no-conditional-expect
       expect(true).toBe(true);
     }
   });
@@ -94,6 +95,7 @@ describe('Flow: Gemba spine events', () => {
       expect(output).toContain('gemba.observation.started');
     } catch {
       // chorus-log may fail if log dir missing — check it exists
+      // eslint-disable-next-line jest/no-conditional-expect
       expect(fs.existsSync(path.join(SCRIPTS_DIR, 'chorus-log'))).toBe(true);
     }
   });

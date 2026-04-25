@@ -26,8 +26,10 @@ describe('Origin required at card creation', () => {
       throw new Error('Should have exited non-zero');
     } catch (err: any) {
       const output = (err.stdout || '') + (err.stderr || '');
+      /* eslint-disable jest/no-conditional-expect -- exec is expected to throw; assertions inspect error output */
       expect(output).toMatch(/origin/i);
       expect(output).toMatch(/reactive.*reflective|reflective.*reactive/i);
+      /* eslint-enable jest/no-conditional-expect */
     }
   });
 
@@ -61,6 +63,7 @@ describe('Origin required at card creation', () => {
       execSync(`node ${CLI} add 2>&1`, { encoding: 'utf-8', timeout: 10000 });
     } catch (err: any) {
       const output = (err.stdout || '') + (err.stderr || '');
+      // eslint-disable-next-line jest/no-conditional-expect -- exec expected to throw; assert error output
       expect(output).toMatch(/--origin/);
     }
   });

@@ -1,7 +1,5 @@
 {
-  "generatedAt": "2026-04-25T14:05:25.271Z",
+  "generatedAt": "2026-04-25T14:12:00.892Z",
   "note": "Per-rule ESLint count ratchet (#2462). Counts may only decrease. Run `npm run lint:baseline` to regenerate after a legitimate drop.",
-  "counts": {
-    "jest/no-conditional-expect": 41
-  }
+  "counts": {}
 }

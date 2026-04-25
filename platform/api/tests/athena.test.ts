@@ -795,10 +795,12 @@ describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
     const sections = body.data.sections;
     const present = body.data.present;
     const missing = body.data.missing;
+    /* eslint-disable jest/no-conditional-expect -- branch on observed state per row */
     for (const [key, val] of Object.entries(sections)) {
       if (val) expect(present).toContain(key);
       else expect(missing).toContain(key);
     }
+    /* eslint-enable jest/no-conditional-expect */
     const total = present.length + missing.length;
     expect(body.data.percentage).toBe(Math.round((present.length / total) * 100));
   });

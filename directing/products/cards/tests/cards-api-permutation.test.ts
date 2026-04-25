@@ -114,14 +114,13 @@ describe('cards CLI — permutation matrix (#2245)', () => {
 
         const stdout = cap.logs.join('\n');
 
-        if (tc.stdoutMatch) {
-          expect(stdout).toMatch(tc.stdoutMatch);
-        }
-
+        /* eslint-disable jest/no-conditional-expect -- table-driven test, fields are optional per row */
+        if (tc.stdoutMatch) expect(stdout).toMatch(tc.stdoutMatch);
         if (tc.expectCall) {
           const called = client.calls.some((c) => c.method === tc.expectCall);
           expect(called).toBe(true);
         }
+        /* eslint-enable jest/no-conditional-expect */
       });
     }
   );

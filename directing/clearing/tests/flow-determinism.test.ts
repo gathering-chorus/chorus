@@ -78,9 +78,11 @@ describe('Flow API determinism (#2171)', () => {
     const chorus2 = call2.domains?.chorus?.counts?.activeCards;
     const chorus3 = call3.domains?.chorus?.counts?.activeCards;
 
+    /* eslint-disable jest/no-conditional-expect -- assert determinism only when domain present in fixture */
     if (chorus1 !== undefined) {
       expect(chorus2).toBe(chorus1);
       expect(chorus3).toBe(chorus1);
     }
+    /* eslint-enable jest/no-conditional-expect */
   });
 });

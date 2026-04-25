@@ -150,6 +150,7 @@ describe('#2206 AC — replay chorus-domain-enrichment.ttl through the API', () 
           entityId: parts.entity,
           body: { description: t.object },
         });
+        // eslint-disable-next-line jest/no-conditional-expect -- replay branches per-triple kind
         expect(r.status).toBe(200);
         accepted.push(t);
       } else if ([READS_PRED, WRITES_PRED, CONSUMES_PRED].includes(t.predicate) && !t.isLiteral) {
@@ -165,6 +166,7 @@ describe('#2206 AC — replay chorus-domain-enrichment.ttl through the API', () 
           predicate: predName as 'reads' | 'writes' | 'consumes',
           body: { target: targetParts.entity },
         });
+        // eslint-disable-next-line jest/no-conditional-expect -- replay branches per-triple kind
         expect(r.status).toBe(200);
         accepted.push(t);
       } else {

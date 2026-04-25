@@ -39,10 +39,8 @@ describe('Scheduled reindex — index_freshness (#1960)', () => {
     const body = await res.json();
     // Find a high-cadence source (spine or claude) — these go stale fastest
     const spine = body.sources.find(function(s) { return s.source === 'spine'; });
-    if (spine) {
-      // age_seconds should be under 20 min (1200s) if the 15-min timer is running
-      expect(spine.age_seconds).toBeLessThan(1200);
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- spine source may be absent in test fixture
+    if (spine) expect(spine.age_seconds).toBeLessThan(1200);
   });
 
   test('POST /api/chorus/reindex succeeds (manual trigger still works)', async () => {

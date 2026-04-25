@@ -38,12 +38,14 @@ describe('#2099: /api/chorus/patterns/summary', () => {
   test('byDate entries have date, total, counts', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/patterns/summary?days=30`);
     const body = await res.json();
+    /* eslint-disable jest/no-conditional-expect -- live integration; assert shape only when data present */
     if (body.byDate.length > 0) {
       const row = body.byDate[0];
       expect(row).toHaveProperty('date');
       expect(typeof row.total).toBe('number');
       expect(typeof row.counts).toBe('object');
     }
+    /* eslint-enable jest/no-conditional-expect */
   }, 15_000);
 });
 

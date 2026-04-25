@@ -167,8 +167,7 @@ describe('cmdChunk — chunk context doc rendering', () => {
     const joined = cap.logs.join('\n');
     expect(joined).toMatch(/ops-card/);
     // Context doc summary (if fixture was ours) shows header + first couple sections
-    if (!existedBefore) {
-      expect(joined).toMatch(/# Ops Chunk|Overview of the ops chunk/);
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- assert fixture content only when this test created it
+    if (!existedBefore) expect(joined).toMatch(/# Ops Chunk|Overview of the ops chunk/);
   });
 });

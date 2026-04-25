@@ -37,11 +37,8 @@ describe('#1910: domain release history', () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/releases`);
     const body = await res.json();
     var releases = body.data.releases;
-    if (releases.length >= 2) {
-      expect(new Date(releases[0].timestamp).getTime()).toBeGreaterThanOrEqual(
-        new Date(releases[1].timestamp).getTime()
-      );
-    }
+    // eslint-disable-next-line jest/no-conditional-expect -- ordering check only when ≥2 releases observed
+    if (releases.length >= 2) expect(new Date(releases[0].timestamp).getTime()).toBeGreaterThanOrEqual(new Date(releases[1].timestamp).getTime());
   }, 15_000);
 
   test('uses athena envelope', async () => {
