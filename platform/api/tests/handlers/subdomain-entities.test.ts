@@ -35,6 +35,7 @@ import {
   createSubdomainActor,
   createSubdomainContract,
   createSubdomainPriorArt,
+  createSubdomainPrinciple,
   updateSubdomainActor,
   updateSubdomainScenario,
   updateSubdomainContract,
@@ -661,6 +662,39 @@ describe('createSubdomainContract', () => {
     const d = writeDeps();
     await createSubdomainContract(d, 'chorus-domain', { label: 'e', endpoint: '/api/e' });
     expect(d.lastUpdate.value).toContain('chorus:endpoint "/api/e"');
+  });
+});
+
+describe('createSubdomainPrinciple (#2314, #2157)', () => {
+  test('SPARQL prefix block declares skos: and dcterms: so principle predicates resolve', async () => {
+    const d = writeDeps();
+    await createSubdomainPrinciple(d, 'loom-principles', {
+      label: 'Tests hermetic by default',
+      comment: 'no external deps',
+      broaderOf: 'hemenway-least-change-greatest-effect',
+      dcSource: 'Jeff 2026',
+    });
+    expect(d.lastUpdate.value).toContain('PREFIX skos:');
+    expect(d.lastUpdate.value).toContain('PREFIX dcterms:');
+  });
+
+  test('broaderOf renders as URI ref via skos:broader (not literal)', async () => {
+    const d = writeDeps();
+    await createSubdomainPrinciple(d, 'loom-principles', {
+      label: 'Test principle',
+      broaderOf: 'hemenway-least-change-greatest-effect',
+    });
+    expect(d.lastUpdate.value).toContain(
+      'skos:broader <https://jeffbridwell.com/chorus#hemenway-least-change-greatest-effect>',
+    );
+    expect(d.lastUpdate.value).not.toContain('skos:broader "');
+  });
+
+  test('emits chorus:contains edge from subdomain to principle', async () => {
+    const d = writeDeps();
+    await createSubdomainPrinciple(d, 'loom-principles', { label: 'p' });
+    expect(d.lastUpdate.value).toContain('a chorus:Principle');
+    expect(d.lastUpdate.value).toContain('chorus:contains');
   });
 });
 

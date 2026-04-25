@@ -163,6 +163,17 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+// Prefixes shared by every INSERT/DELETE template. Specs can declare property
+// predicates under any of these without hand-rolling prefix declarations.
+// #2157 surfaced the gap when createPrincipleSpec used skos:broader without
+// the skos: prefix being declared.
+const SPARQL_PREFIXES =
+  'PREFIX chorus: <https://jeffbridwell.com/chorus#> ' +
+  'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ' +
+  'PREFIX skos: <http://www.w3.org/2004/02/skos/core#> ' +
+  'PREFIX dcterms: <http://purl.org/dc/terms/> ' +
+  'PREFIX owl: <http://www.w3.org/2002/07/owl#>';
+
 export async function createSubdomainEntity(
   deps: WriteDeps,
   subdomainId: string,
@@ -196,7 +207,7 @@ export async function createSubdomainEntity(
       .filter(Boolean)
       .join(' ');
 
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
+    const update = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
 
     await deps.sparqlUpdate(update);
 
@@ -374,7 +385,7 @@ export async function updateSubdomainEntity(
     const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
     const entityUri = `https://jeffbridwell.com/chorus#${entityId}`;
 
-    const deleteQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`;
+    const deleteQuery = `${SPARQL_PREFIXES} DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`;
     await deps.sparqlUpdate(deleteQuery);
 
     const propTriples = Object.entries(spec.propertyMap)
@@ -388,7 +399,7 @@ export async function updateSubdomainEntity(
       .filter(Boolean)
       .join(' ');
 
-    const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
+    const insert = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
     await deps.sparqlUpdate(insert);
 
     const responseData: Record<string, unknown> = {
@@ -508,7 +519,7 @@ export async function deleteSubdomainEntity(
   try {
     const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
     const entityUri = `https://jeffbridwell.com/chorus#${entityId}`;
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . <${sdUri}> chorus:${sectionMeta.hasProperty} <${entityUri}> . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`;
+    const update = `${SPARQL_PREFIXES} DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . <${sdUri}> chorus:${sectionMeta.hasProperty} <${entityUri}> . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`;
     await deps.sparqlUpdate(update);
     // Empty body for 204 signal (adapter converts to .send() with no content).
     return { status: 204, body: null };

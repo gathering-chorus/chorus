@@ -41,9 +41,10 @@ ask_query() {
 PARENTS=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?p a chorus:Principle ; chorus:isPermacultureParent true } }')
 check "14 Hemenway parents in graph" "14" "$PARENTS"
 
-# 2. skos:broader edge count to Hemenway parents
+# 2. skos:broader edge count to Hemenway parents — grows over time as Jeff
+# upstreams more specializations (#2471 multi-parent audit). Floor only.
 EDGES=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?c a chorus:Principle ; skos:broader ?p . ?p chorus:isPermacultureParent true } }')
-check "12 specialization edges" "12" "$EDGES"
+check ">=12 specialization edges (floor; grows)" "1" "$([ "$EDGES" -ge 12 ] && echo 1 || echo 0)"
 
 # 3. Every Hemenway parent has label + comment + source
 COMPLETE=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX dcterms: <http://purl.org/dc/terms/> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label ?l ; rdfs:comment ?c ; dcterms:source ?s } }')

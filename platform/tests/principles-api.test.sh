@@ -76,7 +76,8 @@ insts = json.load(sys.stdin)['data'].get('instances', [])
 principles = [i for i in insts if i.get('type') == 'Principle']
 print(len(principles))
 " 2>/dev/null || echo 0)
-check "cross-graph UNION returns 27 Principle instances on subdomain detail" "27" "$INSTANCE_COUNT"
+check "cross-graph UNION returns >=27 Principle instances on subdomain detail (floor)" "1" \
+  "$([ "$INSTANCE_COUNT" -ge 27 ] && echo 1 || echo 0)"
 
 # 9. chorus:order propagates to API → page render. Permaculture parents must come
 # back as the first 14 entries of the principles list, ordered 1..14 by chorus:order.
