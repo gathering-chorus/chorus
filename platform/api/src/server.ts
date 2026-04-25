@@ -1,3 +1,12 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * fs paths in this server file are all server-controlled:
+ *   - Constants: DB_PATH, CHORUS_LOG, CHORUS_ROOT, REPO_ROOT, /tmp/pulse-latest.json
+ *   - Joins from os.homedir(), __dirname, path.resolve under app root
+ *   - Filenames discovered via fs.readdirSync of trusted view/doc directories
+ * Object/array indexing is on internally-derived keys (aliasToId map keyed
+ * by regex-extracted view filenames). User input from req.params is forwarded
+ * to handlers, which validate before reaching their own fs/index sinks.
+ */
 import express, { Request, Response, NextFunction } from 'express';
 import Database from 'better-sqlite3';
 import { execFile, exec } from 'child_process';
@@ -20,6 +29,11 @@ type SparqlBinding = Record<string, { value: string; type?: string; datatype?: s
 
 const app = express();
 app.use(express.json());
+
+// #2472 — MCP transport. Mount before static file routes so POST/GET/DELETE
+// /mcp are handled by the Streamable HTTP transport, not 404'd by static.
+import { mountMcpEndpoint } from './mcp/transport';
+mountMcpEndpoint(app);
 
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
