@@ -46,6 +46,30 @@ function defaultScriptPath(): string {
   return path.join(root, 'platform/scripts/perf-baseline.sh');
 }
 
+function parsePerfRow(line: string): PerfRow | null {
+  const match = line.match(/^(\S+)\s+([\d,]+)ms\s+([\d,]+)ms\s+(.+?)\s+(PASS|FAIL)\s*$/);
+  if (!match) return null;
+  return {
+    function: match[1],
+    today_ms: parseInt(match[2].replace(/,/g, ''), 10),
+    yesterday_ms: parseInt(match[3].replace(/,/g, ''), 10),
+    delta_pct: match[4].trim(),
+    status: match[5],
+  };
+}
+
+function parsePerfRows(lines: string[], headerLine: number): PerfRow[] {
+  if (headerLine < 0) return [];
+  const results: PerfRow[] = [];
+  for (let i = headerLine + 2; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || /passed/.test(line)) continue;
+    const row = parsePerfRow(line);
+    if (row) results.push(row);
+  }
+  return results;
+}
+
 export async function fetchPerf({
   execFile = defaultExecFile,
   scriptPath = defaultScriptPath(),
@@ -63,27 +87,8 @@ export async function fetchPerf({
   const headerLine = lines.findIndex((l) => /^Function\s/.test(l));
   const dateLine = lines.find((l) => /^Perf Baseline/.test(l));
   const summaryLine = lines.find((l) => /passed/.test(l));
-
   const date = dateLine?.replace('Perf Baseline — ', '').trim() || null;
-  const results: PerfRow[] = [];
-
-  if (headerLine >= 0) {
-    for (let i = headerLine + 2; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line || /passed/.test(line)) continue;
-      const match = line.match(/^(\S+)\s+([\d,]+)ms\s+([\d,]+)ms\s+(.+?)\s+(PASS|FAIL)\s*$/);
-      if (match) {
-        results.push({
-          function: match[1],
-          today_ms: parseInt(match[2].replace(/,/g, ''), 10),
-          yesterday_ms: parseInt(match[3].replace(/,/g, ''), 10),
-          delta_pct: match[4].trim(),
-          status: match[5],
-        });
-      }
-    }
-  }
-
+  const results = parsePerfRows(lines, headerLine);
   const passed = results.filter((r) => r.status === 'PASS').length;
   const total = results.length;
 

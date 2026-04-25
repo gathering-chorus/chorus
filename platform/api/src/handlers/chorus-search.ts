@@ -103,24 +103,74 @@ function runFtsQuery(db: SearchDeps['db'], q: string, fetchLimit: number, role: 
   }
 }
 
+type FormatFn = (raw: unknown[], mode: string, includeDb: boolean, extra?: Record<string, unknown>) => unknown;
+type EmitFn = (mode: string, count: number, extra?: Record<string, unknown>) => void;
+
+async function trySemanticMode(
+  deps: SearchDeps, q: string, fetchLimit: number, role: string | undefined,
+  limit: number, limitExplicit: boolean, format: FormatFn, emit: EmitFn,
+): Promise<SearchResult> {
+  const { semanticSearch, buildSearchMeta } = deps;
+  if (!semanticSearch) {
+    return { status: 200, body: {
+      results: [], total: 0, mode: 'semantic', error: 'Semantic index not available',
+      _meta: { ...buildSearchMeta([]), limit_applied: limit, limit_default: !limitExplicit, truncated: false },
+    } };
+  }
+  try {
+    const results = await semanticSearch(q, fetchLimit, role);
+    emit('semantic', results.length);
+    return { status: 200, body: format(results, 'semantic', false) };
+  } catch (err) {
+    return { status: 500, body: { error: `Semantic search failed: ${err}` } };
+  }
+}
+
+async function tryUnifiedMode(
+  deps: SearchDeps, q: string, fetchLimit: number, role: string | undefined,
+  ftsResults: unknown[], format: FormatFn, emit: EmitFn,
+): Promise<SearchResult | null> {
+  const { semanticSearch, sparqlSearch, mergeUnified } = deps;
+  try {
+    const [semResults, sparqlResults] = await Promise.all([
+      semanticSearch ? semanticSearch(q, fetchLimit, role) : Promise.resolve([] as unknown[]),
+      sparqlSearch(q, fetchLimit),
+    ]);
+    const merged = mergeUnified(ftsResults, semResults, sparqlResults, fetchLimit);
+    emit('unified', merged.length, { sources: `fts=${ftsResults.length},semantic=${semResults.length},sparql=${sparqlResults.length}` });
+    return { status: 200, body: format(merged, 'unified', true, {
+      sources: { fts: ftsResults.length, semantic: semResults.length, sparql: sparqlResults.length },
+    }) };
+  } catch { return null; }
+}
+
+async function tryHybridMode(
+  deps: SearchDeps, q: string, fetchLimit: number, role: string | undefined,
+  ftsResults: unknown[], format: FormatFn, emit: EmitFn,
+): Promise<SearchResult | null> {
+  const { semanticSearch, mergeRRF } = deps;
+  if (!semanticSearch) return null;
+  try {
+    const semResults = await semanticSearch(q, fetchLimit, role);
+    const merged = mergeRRF(ftsResults, semResults, fetchLimit, q);
+    emit('hybrid', merged.length);
+    return { status: 200, body: format(merged, 'hybrid', true) };
+  } catch { return null; }
+}
+
 export async function fetchSearch(
   deps: SearchDeps,
   { q, limit: limitRaw, role, mode: modeRaw }: SearchInput,
 ): Promise<SearchResult> {
   if (!q) return { status: 400, body: { error: 'Missing required parameter: q' } };
 
-  const { db, semanticSearch, sparqlSearch, mergeUnified, mergeRRF,
-    emitSearchEvent = () => {}, buildSearchMeta, enrichHit,
-    resolveSearchLimit, now = Date.now } = deps;
+  const { db, emitSearchEvent = () => {}, buildSearchMeta, enrichHit, resolveSearchLimit, now = Date.now } = deps;
   const { limit, explicit: limitExplicit } = resolveSearchLimit(limitRaw);
   const mode = (modeRaw || 'fts').toLowerCase();
   const searchStart = now();
   const fetchLimit = limit + 1;
 
-  const formatResponse = (
-    rawResults: unknown[], resolvedMode: string, includeDb: boolean,
-    extra: Record<string, unknown> = {},
-  ): unknown => {
+  const format: FormatFn = (rawResults, resolvedMode, includeDb, extra = {}) => {
     const truncated = rawResults.length > limit;
     const enriched = rawResults.slice(0, limit).map((r) => enrichHit(r, now())) as Array<{ timestamp?: string; source?: string; domain?: string }>;
     const meta = {
@@ -130,57 +180,29 @@ export async function fetchSearch(
     return { results: enriched, total: enriched.length, mode: resolvedMode, _meta: meta, ...extra };
   };
 
-  const emit = (m: string, count: number, extra: Record<string, unknown> = {}) => emitSearchEvent({
+  const emit: EmitFn = (m, count, extra = {}) => emitSearchEvent({
     system: 'chorus-api', query: q.slice(0, 200), mode: m,
     result_count: count, duration_ms: now() - searchStart,
     ...(role ? { role_filter: role } : {}), ...extra,
   });
 
-  // Semantic-only mode
   if (mode === 'semantic') {
-    if (!semanticSearch) {
-      return { status: 200, body: {
-        results: [], total: 0, mode: 'semantic', error: 'Semantic index not available',
-        _meta: { ...buildSearchMeta([]), limit_applied: limit, limit_default: !limitExplicit, truncated: false },
-      } };
-    }
-    try {
-      const results = await semanticSearch(q, fetchLimit, role);
-      emit('semantic', results.length);
-      return { status: 200, body: formatResponse(results, 'semantic', false) };
-    } catch (err) {
-      return { status: 500, body: { error: `Semantic search failed: ${err}` } };
-    }
+    return trySemanticMode(deps, q, fetchLimit, role, limit, limitExplicit, format, emit);
   }
 
   const ftsResults = runFtsQuery(db, q, fetchLimit, role, mode);
 
-  // Unified: FTS + semantic + SPARQL
   if (mode === 'unified') {
-    try {
-      const [semResults, sparqlResults] = await Promise.all([
-        semanticSearch ? semanticSearch(q, fetchLimit, role) : Promise.resolve([] as unknown[]),
-        sparqlSearch(q, fetchLimit),
-      ]);
-      const merged = mergeUnified(ftsResults, semResults, sparqlResults, fetchLimit);
-      emit('unified', merged.length, { sources: `fts=${ftsResults.length},semantic=${semResults.length},sparql=${sparqlResults.length}` });
-      return { status: 200, body: formatResponse(merged, 'unified', true, {
-        sources: { fts: ftsResults.length, semantic: semResults.length, sparql: sparqlResults.length },
-      }) };
-    } catch { /* fall through to FTS-only */ }
+    const result = await tryUnifiedMode(deps, q, fetchLimit, role, ftsResults, format, emit);
+    if (result) return result;
   }
 
-  // Hybrid: FTS + semantic
-  if (mode === 'hybrid' && semanticSearch) {
-    try {
-      const semResults = await semanticSearch(q, fetchLimit, role);
-      const merged = mergeRRF(ftsResults, semResults, fetchLimit, q);
-      emit('hybrid', merged.length);
-      return { status: 200, body: formatResponse(merged, 'hybrid', true) };
-    } catch { /* fall through to FTS-only */ }
+  if (mode === 'hybrid') {
+    const result = await tryHybridMode(deps, q, fetchLimit, role, ftsResults, format, emit);
+    if (result) return result;
   }
 
   const resolvedMode = mode === 'recency' || mode === 'relevance' ? mode : 'fts';
   emit(resolvedMode, ftsResults.length);
-  return { status: 200, body: formatResponse(ftsResults, resolvedMode, true) };
+  return { status: 200, body: format(ftsResults, resolvedMode, true) };
 }

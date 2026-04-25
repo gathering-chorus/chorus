@@ -141,6 +141,32 @@ export interface DomainAlertsDeps extends DomainFacetDeps {
   readAlertFiles: () => AlertFile[];
 }
 
+type DomainAlertEntry = { file: string; name: string; description: string; severity: string; schedule: string };
+
+function alertMatches(file: string, content: string, tokens: string[]): boolean {
+  const lower = content.toLowerCase();
+  const fileLower = file.toLowerCase();
+  return tokens.some((t) => lower.includes(t) || fileLower.includes(t));
+}
+
+function parseDomainAlert(file: string, content: string): DomainAlertEntry {
+  return {
+    file,
+    name: content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file.replace('.yml', ''),
+    description: content.match(/^description:\s*(.+)/m)?.[1]?.trim() || '',
+    severity: content.match(/^severity:\s*(.+)/m)?.[1]?.trim() || 'unknown',
+    schedule: content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() || '',
+  };
+}
+
+function collectDomainAlerts(deps: DomainAlertsDeps, tokens: string[]): DomainAlertEntry[] {
+  const alerts: DomainAlertEntry[] = [];
+  for (const { file, content } of deps.readAlertFiles()) {
+    if (alertMatches(file, content, tokens)) alerts.push(parseDomainAlert(file, content));
+  }
+  return alerts;
+}
+
 export async function fetchDomainAlerts(
   deps: DomainAlertsDeps,
   subdomainName: string,
@@ -149,25 +175,11 @@ export async function fetchDomainAlerts(
   const start = now();
   try {
     const sdId = await deps.resolveSubdomainId(subdomainName);
-    // #2430: use resolver's alertFileTokens — covers parent + child substrings.
     const identity = resolveDomainIdentity(subdomainName);
-    const domainLabel = identity.primary;
-    const tokens = identity.alertFileTokens;
-    const alerts: Array<{ file: string; name: string; description: string; severity: string; schedule: string }> = [];
-    for (const { file, content } of deps.readAlertFiles()) {
-      const lower = content.toLowerCase();
-      const fileLower = file.toLowerCase();
-      if (tokens.some((t) => lower.includes(t) || fileLower.includes(t))) {
-        const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file.replace('.yml', '');
-        const description = content.match(/^description:\s*(.+)/m)?.[1]?.trim() || '';
-        const severity = content.match(/^severity:\s*(.+)/m)?.[1]?.trim() || 'unknown';
-        const schedule = content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() || '';
-        alerts.push({ file, name, description, severity, schedule });
-      }
-    }
+    const alerts = collectDomainAlerts(deps, identity.alertFileTokens);
     return {
       status: 200,
-      body: deps.envelope('domain-alerts', { subdomain: sdId, domainLabel, alerts }, now() - start, { count: alerts.length }),
+      body: deps.envelope('domain-alerts', { subdomain: sdId, domainLabel: identity.primary, alerts }, now() - start, { count: alerts.length }),
     };
   } catch {
     return {
@@ -282,15 +294,19 @@ SELECT ?target ?label ?relationship ?direction WHERE {
 
 // --- infra: borg environments via urn:borg:instances usesEnvironment edges ---
 
-export async function fetchDomainInfra(
-  deps: DomainFacetDeps,
-  subdomainName: string,
-): Promise<FetchResult> {
-  const now = deps.now ?? Date.now;
-  const start = now();
-  try {
-    const sdId = await deps.resolveSubdomainId(subdomainName);
-    const query = `PREFIX borg: <urn:borg:ontology/>
+interface InfraEnv { name: string; port: string | null; health: string | null; host: string | null; engine: string | null; dependsOn: string[]; }
+
+type InfraBinding = {
+  name?: { value: string };
+  port?: { value: string };
+  health?: { value: string };
+  host?: { value: string };
+  engine?: { value: string };
+  dep?: { value: string };
+};
+
+function buildInfraQuery(sdId: string): string {
+  return `PREFIX borg: <urn:borg:ontology/>
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 SELECT ?env ?name ?port ?health ?host ?engine ?dep WHERE {
   GRAPH <urn:borg:instances> {
@@ -303,27 +319,44 @@ SELECT ?env ?name ?port ?health ?host ?engine ?dep WHERE {
     OPTIONAL { ?env borg:dependsOn/borg:environmentName ?dep }
   }
 } ORDER BY ?host ?name`;
-    const result = await deps.sparql(query);
-    interface Env { name: string; port: string | null; health: string | null; host: string | null; engine: string | null; dependsOn: string[]; }
-    const envMap = new Map<string, Env>();
-    for (const b of result.results.bindings) {
-      const envName = b.name?.value || '';
-      if (!envName) continue;
-      if (!envMap.has(envName)) {
-        envMap.set(envName, {
-          name: envName,
-          port: b.port?.value || null,
-          health: b.health?.value || null,
-          host: b.host?.value || null,
-          engine: b.engine?.value || null,
-          dependsOn: [],
-        });
-      }
-      const dep = b.dep?.value;
-      const entry = envMap.get(envName)!;
-      if (dep && !entry.dependsOn.includes(dep)) entry.dependsOn.push(dep);
-    }
-    const environments = Array.from(envMap.values());
+}
+
+function makeInfraEnv(envName: string, b: InfraBinding): InfraEnv {
+  return {
+    name: envName,
+    port: b.port?.value || null,
+    health: b.health?.value || null,
+    host: b.host?.value || null,
+    engine: b.engine?.value || null,
+    dependsOn: [],
+  };
+}
+
+function ensureInfraEnv(map: Map<string, InfraEnv>, b: InfraBinding): void {
+  const envName = b.name?.value || '';
+  if (!envName) return;
+  let env = map.get(envName);
+  if (!env) { env = makeInfraEnv(envName, b); map.set(envName, env); }
+  const dep = b.dep?.value;
+  if (dep && !env.dependsOn.includes(dep)) env.dependsOn.push(dep);
+}
+
+function foldInfraBindings(bindings: InfraBinding[]): InfraEnv[] {
+  const map = new Map<string, InfraEnv>();
+  for (const b of bindings) ensureInfraEnv(map, b);
+  return Array.from(map.values());
+}
+
+export async function fetchDomainInfra(
+  deps: DomainFacetDeps,
+  subdomainName: string,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const start = now();
+  try {
+    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const result = await deps.sparql(buildInfraQuery(sdId));
+    const environments = foldInfraBindings(result.results.bindings as InfraBinding[]);
     return {
       status: 200,
       body: deps.envelope('domain-infra', { subdomain: subdomainName, environments }, now() - start, { count: environments.length }),

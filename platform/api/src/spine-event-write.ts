@@ -24,7 +24,7 @@ export interface SpineEventDeps {
   ensureTraceTable: () => void;
 }
 
-function buildSpineEntry(event: string, role: string | undefined, fields: Record<string, unknown>, now: number): Record<string, unknown> {
+function buildSpineEntry(event: string, role: string | undefined, fields: Record<string, unknown>, now: string): Record<string, unknown> {
   return {
     timestamp: now,
     level: 'info',
