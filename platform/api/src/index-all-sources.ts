@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Server-controlled source paths; per-source indexer registry keyed by source enum.
+ */
 // indexAllSources (extracted from server.ts for #2205 wave 18).
 //
 // Biggest single extraction of the card. 11 independent source indexers

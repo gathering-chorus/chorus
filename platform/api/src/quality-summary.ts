@@ -1,3 +1,8 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * fs paths from server-controlled env constants (GATHERING_ROOT, CHORUS_ROOT,
+ * QUALITY_CACHE_PATH) joined with discovered filenames; object indexing on
+ * internally-derived TestKind/layer/domain enum keys.
+ */
 /**
  * Quality Service — #2099 per-page migration from Gathering.
  *

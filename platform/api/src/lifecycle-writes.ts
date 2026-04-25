@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Server-controlled spine-log path; appendFile on validated event payloads.
+ */
 // Lifecycle write handlers (extracted from server.ts for #2205 wave 19).
 // Three POST routes that share a write-to-spine-log shape:
 // - pulse: event + role + optional extras → spine-log line

@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-object-injection --
+ * Indexing on Ollama response shape with validated keys.
+ */
 // Embed query helper (extracted from server.ts for #2205).
 //
 // Wraps Ollama's /api/embeddings endpoint with:

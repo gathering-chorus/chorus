@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Server-controlled scan roots; indexing on SPARQL binding keys with fixed schema.
+ */
 // /api/athena/discover-tests logic (extracted from server.ts for #2205 wave 24).
 // Returns a flat summary object; server.ts wraps it in athenaEnvelope.
 

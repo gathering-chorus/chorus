@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Server-controlled paths from env constants; indexing on validated typed keys.
+ */
 /**
  * Fitness Functions — #2099 per-page migration from Gathering.
  *

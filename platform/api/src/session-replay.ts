@@ -1,3 +1,7 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Server-controlled paths joined with regex-validated session UUIDs;
+ * object indexing on validated keys.
+ */
 /**
  * Session Replay — #2099 per-page migration from Gathering.
  *
