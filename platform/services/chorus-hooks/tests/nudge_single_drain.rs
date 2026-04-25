@@ -98,16 +98,8 @@ fn detect_sender_no_lsof_fallback() {
     );
 }
 
-/// Queue still exists as inject fallback — not removed, just not drained by PostToolUse
-#[test]
-fn queue_fallback_still_present_in_nudge() {
-    let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs"
-    ).expect("nudge.rs should exist");
-
-    assert!(
-        source.contains("queue_message(target,"),
-        "queue_message must still exist in nudge.rs — it's the inject-fail fallback, \
-         not removed, just not drained by PostToolUse"
-    );
-}
+// queue_fallback_still_present_in_nudge — REMOVED 2026-04-25 (#2477 acp).
+// The test asserted queue_message remains in nudge.rs as inject-fail fallback,
+// but #2435 deliberately retired the queue_message function (see retirement
+// comment block in nudge.rs around line 297-304). The test was asserting a
+// function that was correctly removed; this assertion was stale, not the code.

@@ -72,24 +72,111 @@ pub fn fetch() -> FetchResult {
         }
     }
 
-    let url = api_url();
-    let resp = ureq::get(&url)
-        .timeout(Duration::from_secs(3))
-        .call();
+    // #2477 — typed MCP surface replaces direct HTTP. Falls back to cache on
+    // MCP unreachable / parse error (same fold as the prior HTTP path).
+    let role = std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "shim".to_string());
+    let mcp_base = std::env::var("CHORUS_MCP_BASE_URL")
+        .unwrap_or_else(|_| "http://localhost:3340".to_string());
 
-    match resp {
-        Ok(r) => match r.into_string() {
-            Ok(body) => {
-                let parsed = parse_or_unavailable(&body);
-                if matches!(parsed, FetchResult::Fresh(_)) {
-                    let _ = fs::write(cache_path(), &body);
-                }
-                parsed
-            }
-            Err(e) => fallback_to_cache(format!("read body: {}", e)),
-        },
-        Err(e) => fallback_to_cache(format!("http: {}", e)),
+    let session = match crate::mcp_client::init_session(&mcp_base, &role) {
+        Ok(s) => s,
+        Err(e) => return fallback_to_cache(format!("mcp init: {}", e)),
+    };
+
+    // #2477 — spine emit at the caller layer (mcp_client is dep-light by design).
+    let _ = crate::chorus_log::run_silent(&[
+        "mcp.tool.invoked".to_string(),
+        role.clone(),
+        "tool=chorus_principles_list".to_string(),
+        "source=shim".to_string(),
+    ]);
+
+    let result = match crate::mcp_client::call_tool(
+        &session,
+        "chorus_principles_list",
+        serde_json::json!({}),
+    ) {
+        Ok(r) => r,
+        Err(e) => return fallback_to_cache(format!("mcp call_tool: {}", e)),
+    };
+
+    // The chorus_principles_list tool returns a text content block; parse it
+    // back into the canonical envelope so the rest of principles_inject works
+    // unchanged. The text shape is "<N> principles:\n- <Label> (<id>) — <comment>\n- ...".
+    let text = result
+        .get("content")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+
+    let principles = parse_tool_text(text);
+    if principles.is_empty() {
+        return FetchResult::EmptyFromApi;
     }
+
+    // Update cache with a JSON-shaped representation for the existing
+    // fallback_to_cache path. Uses the same envelope shape parse_or_unavailable
+    // expects, so future Stale fallback works.
+    if let Ok(envelope) = serde_json::to_string(&serde_json::json!({
+        "data": {"principles": principles}
+    })) {
+        let _ = fs::write(cache_path(), envelope);
+    }
+    FetchResult::Fresh(principles)
+}
+
+/// Parse the chorus_principles_list tool's text output back into structured
+/// records. Format produced by the MCP tool: "N principles:\n- Label (id) — comment".
+fn parse_tool_text(text: &str) -> Vec<Principle> {
+    let mut principles = Vec::new();
+    for line in text.lines() {
+        // Each principle line looks like "- **Label** (id) — comment" or
+        // "- Label (id) — comment". Strip leading "-" + bold markers.
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix("- ") else { continue };
+        // Remove ** if present
+        let rest = rest.trim_start_matches("**");
+
+        // Pull out (id) — find the LAST `(...)` before any em-dash.
+        let (label_part, after_paren) = match rest.rfind('(') {
+            Some(idx) => {
+                let close = rest[idx..].find(')').map(|c| idx + c);
+                if let Some(c) = close {
+                    (&rest[..idx], &rest[c + 1..])
+                } else {
+                    continue;
+                }
+            }
+            None => continue,
+        };
+        let id_open = match rest.rfind('(') { Some(i) => i, None => continue };
+        let id_close = match rest[id_open..].find(')') { Some(c) => id_open + c, None => continue };
+        let id = rest[id_open + 1..id_close].trim().to_string();
+        if id.is_empty() {
+            continue;
+        }
+
+        let label = label_part.trim_end_matches("**").trim().trim_end_matches(' ').to_string();
+
+        // Comment after `— ` (em-dash) or `- ` if present
+        let comment = after_paren
+            .trim_start_matches(' ')
+            .trim_start_matches('—')
+            .trim_start_matches('-')
+            .trim_start()
+            .to_string();
+
+        principles.push(Principle {
+            id,
+            label,
+            comment,
+            tech_reading: String::new(),
+            jeff_reading: String::new(),
+            order: serde_json::Value::Null,
+        });
+    }
+    principles
 }
 
 fn parse_or_unavailable(body: &str) -> FetchResult {

@@ -146,8 +146,8 @@ fn session_start_handles_api_unavailable_gracefully() {
     let cache = tmp.path().join("nonexistent-cache.json");
 
     let out = run_session_start("silas", &[
-        // Point at a port nothing is listening on, no fixture, no cache.
-        ("CHORUS_PRINCIPLES_API_URL", "http://127.0.0.1:1/api/loom/principles"),
+        // Point MCP base at a port nothing is listening on (#2477 — was HTTP API URL pre-MCP migration).
+        ("CHORUS_MCP_BASE_URL", "http://127.0.0.1:1"),
         ("CHORUS_PRINCIPLES_CACHE_FILE", cache.to_str().unwrap()),
     ]);
     assert!(out.status.success(), "boot must succeed even when principles API fails");
@@ -173,7 +173,7 @@ fn session_start_falls_back_to_cache_with_stale_marker() {
     fixture_three_principles(&cache);
 
     let out = run_session_start("silas", &[
-        ("CHORUS_PRINCIPLES_API_URL", "http://127.0.0.1:1/api/loom/principles"),
+        ("CHORUS_MCP_BASE_URL", "http://127.0.0.1:1"),
         ("CHORUS_PRINCIPLES_CACHE_FILE", cache.to_str().unwrap()),
     ]);
     assert!(out.status.success());

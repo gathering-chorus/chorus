@@ -6,7 +6,14 @@
 
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
+# #1815: fail-open on EXPLICIT empty CHORUS_ROOT (set but empty) — env issue,
+# let other gates handle. `${VAR-default}` substitutes only when unset, so
+# explicit empty stays empty. The fail-open guard catches it before the
+# CARDS path becomes broken.
+CHORUS_ROOT="${CHORUS_ROOT-$(cd "$(dirname "$0")/../../.." && pwd)}"
+if [ -z "$CHORUS_ROOT" ]; then
+  exit 0
+fi
 CARDS="$CHORUS_ROOT/platform/scripts/cards"
 
 CARD_ID="${1:-}"
@@ -42,9 +49,10 @@ fi
 
 # Check for demo evidence
 
-# Evidence 1: Demo brief in wren/briefs/
+# Evidence 1: Demo brief in wren/briefs/ (active or under archive subdirs)
 BRIEF_DIR="$CHORUS_ROOT/roles/wren/briefs"
-if ls "$BRIEF_DIR"/*demo*"$CARD_ID"* >/dev/null 2>&1; then
+if ls "$BRIEF_DIR"/*demo*"$CARD_ID"* >/dev/null 2>&1 \
+   || (find "$BRIEF_DIR" -maxdepth 4 -name "*demo*${CARD_ID}*" 2>/dev/null | grep -q .); then
   "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="brief" 2>/dev/null || true
   exit 0
 fi
