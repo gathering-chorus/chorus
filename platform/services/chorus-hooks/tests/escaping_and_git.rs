@@ -88,12 +88,6 @@ fn git_commit_allowed_outside_team_repo() {
     );
 }
 
-// macOS-only: this exercises the shim → unix-socket → chorus-hooks-server
-// round-trip. The server runs as a launchctl LaunchAgent on Mac. On Linux CI
-// there's no server listening, so the shim fails-open with empty stdout and
-// the assertion can't fire honestly. Same pattern as
-// platform/services/chorus-inject/tests/inject_integration.rs.
-#[cfg(target_os = "macos")]
 #[test]
 fn git_commit_blocked_inside_team_repo() {
     let _guard = MarkerGuard::ensure_done("kade");
