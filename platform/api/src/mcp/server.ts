@@ -37,11 +37,90 @@ export type ExecFileAsync = (
   opts: { env?: NodeJS.ProcessEnv; timeout?: number },
 ) => Promise<{ stdout: string; stderr: string }>;
 
-/** #2474 — DI seam for tests: inject mock execFile / fixed shim path. */
+/** #2474 — DI seam for tests: inject mock execFile / fixed shim path.
+ *  #2476 — extends with fetchImpl for tools that delegate to HTTP rather than
+ *  spawning a binary (the principles tools call existing Athena REST). Default
+ *  is the runtime's globalThis.fetch (Node 18+).
+ */
+export type FetchImpl = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{
+  ok: boolean;
+  status?: number;
+  json: () => Promise<unknown>;
+}>;
+
 export interface McpServerDeps {
   execFileAsync?: ExecFileAsync;
   shimPath?: string;
+  fetchImpl?: FetchImpl;
+  apiBase?: string;
 }
+
+const PrinciplesGetInput = z.object({
+  id: z.string().min(1).describe('Principle id (e.g., hemenway-observe, principle-ship-small)'),
+});
+const PrinciplesCreateInput = z.object({
+  label: z.string().min(1).describe('Short human-readable name (e.g., "Ship small")'),
+  comment: z.string().optional().describe('One-paragraph description of the principle'),
+  broaderOf: z.string().optional().describe('Optional parent principle id this derives from'),
+  dcSource: z.string().optional().describe('Optional dc:source citation (book, ADR, etc.)'),
+});
+
+const PRINCIPLES_LIST_TOOL_DEF = {
+  name: 'chorus_principles_list',
+  description:
+    'List all Chorus principles from the live graph. Use this to show every principle the team has agreed on (~46 today). Returns id + label + comment for each. Use to ground a decision in the canonical set or to discover what already exists before creating a new one. Do NOT use as a paraphrase target — cite by id, do not rewrite the text.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+    required: [],
+  },
+} as const;
+
+const PRINCIPLES_GET_TOOL_DEF = {
+  name: 'chorus_principles_get',
+  description:
+    'Get one Chorus principle by id from the live graph. Use this when you have a specific principle id (from a CLAUDE.md citation, a card, or chorus_principles_list) and want its full body. Returns label + comment + parent edges. Do NOT use to fish for a principle by topic — use chorus_principles_list and filter; ids are stable but labels are mutable.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        minLength: 1,
+        description: 'Principle id, e.g., hemenway-observe or principle-ship-small',
+      },
+    },
+    required: ['id'],
+  },
+} as const;
+
+const PRINCIPLES_CREATE_TOOL_DEF = {
+  name: 'chorus_principles_create',
+  description:
+    'Create a new Chorus principle in the live graph. Use this only after the team has agreed a new principle is needed (rare — principles change slowly). Required: label. Optional: comment (one-paragraph description), broaderOf (parent principle id), dcSource (citation). Do NOT use for practices, policies, or skills — those have separate surfaces. Do NOT use to update an existing principle — there is no chorus_principles_update yet (PUT REST stays available).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      label: {
+        type: 'string',
+        minLength: 1,
+        description: 'Short human-readable name',
+      },
+      comment: {
+        type: 'string',
+        description: 'One-paragraph description of the principle',
+      },
+      broaderOf: {
+        type: 'string',
+        description: 'Optional parent principle id this derives from',
+      },
+      dcSource: {
+        type: 'string',
+        description: 'Optional dc:source citation (book, ADR, etc.)',
+      },
+    },
+    required: ['label'],
+  },
+} as const;
 
 const NUDGE_TOOL_DEF = {
   name: 'chorus_nudge_message',
@@ -67,6 +146,99 @@ const NUDGE_TOOL_DEF = {
 
 function logEvent(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
   process.stderr.write(JSON.stringify({ level, event, tool: 'chorus_nudge_message', ts: new Date().toISOString(), ...fields }) + '\n');
+}
+
+interface PrincipleRecord {
+  id: string;
+  label?: string;
+  comment?: string;
+  techReading?: string;
+  jeffReading?: string;
+  isPermacultureParent?: boolean;
+  parents?: string[];
+  uri?: string;
+}
+
+async function fetchPrinciplesList(fetchImpl: FetchImpl, apiBase: string): Promise<PrincipleRecord[]> {
+  const url = `${apiBase}/api/loom/principles`;
+  const resp = await fetchImpl(url);
+  if (!resp.ok) {
+    throw new Error(`principles list fetch failed (status ${resp.status ?? 'unknown'})`);
+  }
+  const body = (await resp.json()) as { data?: { principles?: PrincipleRecord[] } };
+  return body.data?.principles ?? [];
+}
+
+async function executePrinciplesList(
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  from: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.principles.list.invoked', tool: 'chorus_principles_list', from, ts: new Date().toISOString() }) + '\n');
+  const principles = await fetchPrinciplesList(fetchImpl, apiBase);
+  const lines: string[] = [`${principles.length} principle${principles.length === 1 ? '' : 's'}:`];
+  for (const p of principles) {
+    const label = p.label ? `${p.label} (${p.id})` : p.id;
+    const summary = p.comment ? `${label} — ${p.comment}` : label;
+    lines.push(`- ${summary}`);
+  }
+  return { content: [{ type: 'text', text: lines.join('\n') }] };
+}
+
+async function executePrinciplesGet(
+  args: { id: string },
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  from: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  // TODO(#2476-followon): Athena has no single-principle GET endpoint; we
+  // fetch the full list (~46) and filter in memory. Fine at this scale, but
+  // when an Athena GET /api/athena/subdomains/loom-principles/principles/:id
+  // lands, swap to it for O(1) and to avoid pulling the full set on every
+  // get call. Code smell flagged in #2476 gate:code review (kade).
+  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.principles.get.invoked', tool: 'chorus_principles_get', from, id: args.id, ts: new Date().toISOString() }) + '\n');
+  const principles = await fetchPrinciplesList(fetchImpl, apiBase);
+  const found = principles.find((p) => p.id === args.id);
+  if (!found) {
+    throw new Error(`principle not found: ${args.id}`);
+  }
+  const lines = [
+    `${found.label ?? found.id} (${found.id})`,
+    '',
+    found.comment ?? '(no comment)',
+  ];
+  if (found.parents && found.parents.length > 0) {
+    lines.push('', `parents: ${found.parents.join(', ')}`);
+  }
+  if (found.uri) {
+    lines.push(`uri: ${found.uri}`);
+  }
+  return { content: [{ type: 'text', text: lines.join('\n') }] };
+}
+
+async function executePrinciplesCreate(
+  args: { label: string; comment?: string; broaderOf?: string; dcSource?: string },
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  from: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.principles.create.invoked', tool: 'chorus_principles_create', from, label: args.label, ts: new Date().toISOString() }) + '\n');
+  const url = `${apiBase}/api/athena/subdomains/loom-principles/principles`;
+  const body: Record<string, string> = { label: args.label };
+  if (args.comment) body.comment = args.comment;
+  if (args.broaderOf) body.broaderOf = args.broaderOf;
+  if (args.dcSource) body.dcSource = args.dcSource;
+  const resp = await fetchImpl(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    throw new Error(`principles create failed (status ${resp.status ?? 'unknown'})`);
+  }
+  const result = (await resp.json()) as { data?: { id?: string; uri?: string } };
+  const id = result.data?.id ?? result.data?.uri ?? '(unknown id)';
+  return { content: [{ type: 'text', text: `principle created: ${id}` }] };
 }
 
 async function executeNudge(
@@ -104,6 +276,8 @@ async function executeNudge(
 export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps = {}): Server {
   const execFileAsync: ExecFileAsync = deps.execFileAsync ?? (promisify(execFile) as unknown as ExecFileAsync);
   const shimPath = deps.shimPath ?? resolveShimPath();
+  const fetchImpl: FetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchImpl);
+  const apiBase = deps.apiBase ?? 'http://localhost:3340';
   const server = new Server(
     {
       name: 'chorus-api',
@@ -115,17 +289,44 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   );
 
   // eslint-disable-next-line @typescript-eslint/require-await -- MCP SDK requires async signature
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [NUDGE_TOOL_DEF] }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
+      NUDGE_TOOL_DEF,
+      PRINCIPLES_LIST_TOOL_DEF,
+      PRINCIPLES_GET_TOOL_DEF,
+      PRINCIPLES_CREATE_TOOL_DEF,
+    ],
+  }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    if (req.params.name !== 'chorus_nudge_message') {
-      throw new Error(`Unknown tool: ${req.params.name}`);
+    const from = getCallerRole();
+    switch (req.params.name) {
+      case 'chorus_nudge_message': {
+        const parsed = NudgeInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeNudge(parsed.data, from, execFileAsync, shimPath);
+      }
+      case 'chorus_principles_list':
+        return executePrinciplesList(fetchImpl, apiBase, from);
+      case 'chorus_principles_get': {
+        const parsed = PrinciplesGetInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executePrinciplesGet(parsed.data, fetchImpl, apiBase, from);
+      }
+      case 'chorus_principles_create': {
+        const parsed = PrinciplesCreateInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executePrinciplesCreate(parsed.data, fetchImpl, apiBase, from);
+      }
+      default:
+        throw new Error(`Unknown tool: ${req.params.name}`);
     }
-    const parsed = NudgeInput.safeParse(req.params.arguments);
-    if (!parsed.success) {
-      throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-    }
-    return executeNudge(parsed.data, getCallerRole(), execFileAsync, shimPath);
   });
 
   return server;
