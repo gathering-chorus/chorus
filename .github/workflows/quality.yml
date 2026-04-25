@@ -201,6 +201,14 @@ jobs:
         run: |
           sudo mkdir -p /Users/jeffbridwell/CascadeProjects
           sudo ln -sf "$GITHUB_WORKSPACE" /Users/jeffbridwell/CascadeProjects/chorus
+      - name: Build chorus-inject release binary (chorus-hooks crate only)
+        # tests/inject_binary_test.rs + tests/inject_uses_binary.rs (3 tests)
+        # assert that the chorus-inject release binary exists at the
+        # symlink-resolved path. The cargo-test job builds chorus-hooks but
+        # not chorus-inject; build it explicitly here. #2504.
+        if: matrix.crate == 'platform/services/chorus-hooks'
+        working-directory: platform/services/chorus-inject
+        run: cargo build --release --bin chorus-inject
       - name: Start chorus-hooks server (chorus-hooks crate only)
         # 16 chorus-hooks test files use the shim → /tmp/chorus-hooks.sock →
         # server pattern. On Mac the server runs as a launchctl LaunchAgent;
