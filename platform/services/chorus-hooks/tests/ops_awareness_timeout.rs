@@ -48,6 +48,12 @@ fn post_tool_hook(tool: &str, input: serde_json::Value) -> (String, String, i32)
 /// #1981 AC2+AC3: When the API is healthy, the hook must not block tool execution
 /// or report "unreachable". Run it twice rapidly — the first call is the one that
 /// races the cold-start timeout. Both must pass.
+///
+/// macOS-only: requires live chorus-api at localhost:3340 (Mac LaunchAgent).
+/// CI Linux runner has no LaunchAgent stack; the test asserts API up as a
+/// precondition and panics otherwise. Same pattern as the other Mac-stack
+/// gates landed in #2495 / #2504.
+#[cfg(target_os = "macos")]
 #[test]
 fn healthy_api_never_reports_unreachable() {
     // Verify API is actually up before testing the hook
