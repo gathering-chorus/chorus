@@ -76,6 +76,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      # Cross-package pre-build for cards: src/events.ts imports 'chorus-sdk'
+      # (file: dep needs dist), src/sdk.ts requires '../../../../platform/
+      # workflow-engine/dist/engine'. Both must be built before cards jest.
+      # Tracked: workspaces conversion card (ADR-026 §c Future) supersedes
+      # this bridge once npm workspaces lands.
+      - name: Pre-build chorus-sdk (cards only)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: platform/chorus-sdk
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Pre-build workflow-engine (cards only)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: platform/workflow-engine
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
       - name: Install (npm ci)
         working-directory: ${{ matrix.package }}
         run: npm ci --no-audit --no-fund
