@@ -1,1 +1,6 @@
-/Users/jeffbridwell/Library/Logs/Chorus/chorus.log
+{"appName":"chorus-events","digest":"bash: cd /Users/jeffbridwell/CascadeProjects/chorus && mv platform/logs/chorus.log /tm...","event":"observer.digest","level":"info","role":"kade","timestamp":"2026-04-25T15:31:09.090-0400"}
+{"timestamp":"2026-04-25T15:31:10.820-0400","level":"info","appName":"chorus-events","component":"lifecycle","event":"system.heartbeat","role":"silas"}
+{"timestamp":"2026-04-25T15:31:12.037-0400","level":"info","appName":"chorus-events","component":"lifecycle","event":"clearing.probe.passed","role":"system","latency":"1s"}
+{"appName":"chorus-events","digest":"bash: bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gemba-tick.sh s...","event":"observer.digest","level":"info","role":"wren","timestamp":"2026-04-25T15:31:15.145-0400"}
+{"timestamp":"2026-04-25T15:31:20.715-0400","level":"info","appName":"chorus-events","component":"lifecycle","event":"build.queue.waiting","role":"kade","file_count":"1","message":"kade: #2495 follow-on — remove platform/logs/chorus.log Mac-only symlink"}
+{"timestamp":"2026-04-25T15:31:20.733-0400","level":"info","appName":"chorus-events","component":"lifecycle","event":"build.queue.acquired","role":"kade","file_count":"1"}
