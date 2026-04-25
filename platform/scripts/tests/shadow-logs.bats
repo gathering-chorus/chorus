@@ -1,12 +1,12 @@
 #!/usr/bin/env bats
-# Shadow log enforcement — #2005 DEC-101
+# Shadow log enforcement — #2005 DEC-114
 
 @test "deep-health checks for /tmp/*.log files" {
   grep -q 'shadow-logs\|/tmp/.*\.log' "$BATS_TEST_DIRNAME/../deep-health.sh"
 }
 
-@test "deep-health references DEC-101" {
-  grep -q 'DEC-101' "$BATS_TEST_DIRNAME/../deep-health.sh"
+@test "deep-health references DEC-114" {
+  grep -q 'DEC-114' "$BATS_TEST_DIRNAME/../deep-health.sh"
 }
 
 @test "node-exporter plist does not write to /tmp/" {

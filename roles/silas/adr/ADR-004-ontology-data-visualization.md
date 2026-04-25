@@ -1,4 +1,4 @@
-l# ADR-004: Ontology and Data Visualization Tooling
+# ADR-004: Ontology and Data Visualization Tooling
 
 **Date**: 2026-02-13
 **Status**: Accepted
