@@ -82,6 +82,9 @@ fn inject_delivers_to_kade() {
 
 // --- AC5: nudge e2e regression (dry-run via shim env-gate, #2166) ---
 
+// macOS-only: nudge.sh delivers via osascript to Terminal.app. CI runs Linux
+// → no Terminal.app, no osascript, stdout is empty and assertion fails.
+#[cfg(target_os = "macos")]
 #[test]
 fn nudge_e2e_delivers() {
     // CHORUS_INJECT_DRY_RUN fires the shim's dry-run branch (nudge.rs), which
@@ -114,6 +117,9 @@ fn rejects_unknown_role() {
 
 // --- AC: --count-windows CLI path (hermetic — no matching pattern → "0::") ---
 
+// macOS-only: --count-windows uses osascript to enumerate Terminal.app windows.
+// On Linux the binary returns non-zero (no osascript). Hermetic only on Mac.
+#[cfg(target_os = "macos")]
 #[test]
 fn count_windows_cli_returns_zero_for_nonmatching_pattern() {
     // Exercises the PrintOut arm in main.rs via the real binary. Uses a
