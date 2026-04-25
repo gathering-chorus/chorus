@@ -3,10 +3,13 @@ name: quality
 # CI-side authoritative quality checks for the chorus repo.
 # Pre-commit hooks catch the honest case locally; this workflow closes
 # the `git commit --no-verify` bypass by running the same checks on every
-# PR to main and every push to main. Card #2481.
+# PR to main and every push to main.
 #
-# Job structure: one job per check, room to grow alongside lint-ratchet
-# (future: type-check, doc-coherence-ratchet, etc.).
+# Implements ADR-026 §b CI(target) column. One job per logical check —
+# failures point at exactly one concern. npm ci against committed locks
+# (#2481 sub-AC 1) closes the local↔CI divergence that fired on first run.
+#
+# Card #2481.
 
 on:
   push:
@@ -16,19 +19,144 @@ on:
 
 jobs:
   lint-ratchet:
-    name: lint ratchet
+    name: ESLint per-rule ratchet
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-
+      - name: Install (root, npm ci)
+        run: npm ci --no-audit --no-fund
       - name: Run lint ratchet
         run: npm run lint:ratchet
+
+  type-check:
+    name: tsc — ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - directing/clearing
+          - directing/products/cards
+          - platform/api
+          - platform/chorus-sdk
+          - platform/pulse
+          - platform/tests
+          - platform/workflow-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install (npm ci)
+        working-directory: ${{ matrix.package }}
+        run: npm ci --no-audit --no-fund
+      - name: Type-check
+        working-directory: ${{ matrix.package }}
+        run: npx tsc --noEmit
+
+  unit-tests:
+    name: jest — ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - directing/clearing
+          - directing/products/cards
+          - platform/api
+          - platform/chorus-sdk
+          - platform/pulse
+          - platform/tests
+          - platform/workflow-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install (npm ci)
+        working-directory: ${{ matrix.package }}
+        run: npm ci --no-audit --no-fund
+      - name: Run jest
+        working-directory: ${{ matrix.package }}
+        run: npx jest --forceExit --passWithNoTests
+
+  mcp-description-shape:
+    name: MCP tool description shape (#2475)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run shape lint
+        run: node platform/scripts/mcp-tool-description-lint.js
+
+  catalog-oversize:
+    name: Catalog oversize backstop (#2461)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute changed files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            git diff --name-only --diff-filter=ACMR "$base" "$head" > /tmp/changed.txt
+          else
+            git diff --name-only --diff-filter=ACMR HEAD~1 HEAD > /tmp/changed.txt
+          fi
+      - name: Run backstop
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: cat /tmp/changed.txt | bash platform/scripts/check-catalog-oversize.sh
+
+  principle-direct-edit:
+    name: Principle direct-edit backstop (#2314)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute changed files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            git diff --name-only --diff-filter=ACMR "$base" "$head" > /tmp/changed.txt
+          else
+            git diff --name-only --diff-filter=ACMR HEAD~1 HEAD > /tmp/changed.txt
+          fi
+      - name: Run backstop
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: cat /tmp/changed.txt | bash platform/scripts/check-principle-direct-edit.sh
+
+  cargo-test:
+    name: cargo test — chorus-hooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: platform/services/chorus-hooks
+      - name: Run cargo test
+        working-directory: platform/services/chorus-hooks
+        run: cargo test --all
+
+  smoke-check:
+    name: Smoke check (#2229)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run smoke
+        run: bash platform/scripts/smoke-check.sh
