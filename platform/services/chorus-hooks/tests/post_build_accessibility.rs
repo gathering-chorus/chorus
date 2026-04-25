@@ -19,6 +19,11 @@ fn post_build_script_exists_and_is_executable() {
     assert!(mode & 0o111 != 0, "post-cargo-build.sh must be executable, mode: {:o}", mode);
 }
 
+// macOS-only: Accessibility permission is a macOS concept (System Settings →
+// Privacy & Security → Accessibility) used by osascript to drive Terminal.app.
+// Linux has no equivalent; the script's accessibility-detection branch only
+// makes sense on Mac.
+#[cfg(target_os = "macos")]
 #[test]
 fn post_build_script_passes_when_accessibility_granted() {
     // When Accessibility is granted (current state after Jeff toggled),
