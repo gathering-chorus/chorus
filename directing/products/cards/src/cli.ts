@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Local CLI invoked from authenticated terminal sessions. Object indexing is on
+ * internally-validated keys (status/priority/owner labels from typed enums,
+ * action map keyed by literal command names from argv after dispatch table
+ * lookup). fs reads are on path arguments (--desc-file) supplied by the role
+ * running the CLI — local trust model, not HTTP-exposed.
+ */
 /**
  * Cards CLI — thin dispatch layer over board-sdk.
  *

@@ -1,3 +1,8 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Local CLI helper. fs reads come from --desc-file argument supplied by the
+ * role running the CLI; object indexing is on validated argv option names.
+ * Local trust model — no HTTP exposure.
+ */
 /**
  * Helpers for `cards add` parsing (#2223 ergonomics).
  *

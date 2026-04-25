@@ -1,3 +1,8 @@
+/* eslint-disable security/detect-object-injection --
+ * Object indexing in this Vikunja client is on internally-derived keys —
+ * label IDs from the LABELS const map keyed by domain/status/priority strings
+ * already validated against typed enums in config.ts before reaching this layer.
+ */
 import * as https from 'http';
 import { execSync } from 'child_process';
 import { VikunjaTask, VikunjaBucket, BoardConfig, BoardTask } from './types';

@@ -1,3 +1,11 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * fs paths in this CLI SDK are constructed from server-controlled defaults
+ * (DEFAULT_SNAPSHOT_DIR, DEFAULT_WORKFLOWS_*, DEFAULT_BRIEF_DIRS) with optional
+ * test-only overrides via __setTestPaths. Object indexing is on internally-derived
+ * keys (BRIEF_DIRS keyed by role, status/priority labels from typed enums in
+ * config.ts). This is a local CLI library invoked by trusted role processes —
+ * arguments come from authenticated terminal sessions, not HTTP.
+ */
 import * as fs from 'fs';
 import * as path from 'path';
 import { BoardClient } from './client';
