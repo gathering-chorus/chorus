@@ -52,33 +52,55 @@ function fallbackLabel(uri: string): string {
   return hashIdx === -1 ? uri : uri.slice(hashIdx + 1);
 }
 
+type MachineBinding = {
+  machine: { value: string };
+  label?: { value: string };
+  ip?: { value: string };
+  role?: { value: string };
+  service?: { value: string };
+  serviceLabel?: { value: string };
+};
+
+function ensureMachine(map: Map<string, MachineEntry>, b: MachineBinding): MachineEntry {
+  const uri = b.machine.value;
+  let entry = map.get(uri);
+  if (!entry) {
+    entry = {
+      uri,
+      label: b.label?.value ?? fallbackLabel(uri),
+      ip: b.ip?.value ?? null,
+      role: b.role?.value ?? null,
+      services: [],
+    };
+    map.set(uri, entry);
+  }
+  return entry;
+}
+
+function appendService(entry: MachineEntry, b: MachineBinding): void {
+  if (!b.service) return;
+  entry.services.push({
+    uri: b.service.value,
+    label: b.serviceLabel?.value ?? fallbackLabel(b.service.value),
+  });
+}
+
+function buildMachineList(bindings: MachineBinding[]): MachineEntry[] {
+  const map = new Map<string, MachineEntry>();
+  for (const b of bindings) {
+    const entry = ensureMachine(map, b);
+    appendService(entry, b);
+  }
+  return Array.from(map.values());
+}
+
 export async function fetchAthenaMachines(deps: AthenaMachinesDeps): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const envelope = deps.envelope ?? defaultEnvelope;
   const start = now();
-
   try {
     const result = await deps.sparql(deps.loadQuery('machines'));
-    const machineMap = new Map<string, MachineEntry>();
-    for (const b of result.results.bindings) {
-      const uri = b.machine.value;
-      if (!machineMap.has(uri)) {
-        machineMap.set(uri, {
-          uri,
-          label: b.label?.value ?? fallbackLabel(uri),
-          ip: b.ip?.value ?? null,
-          role: b.role?.value ?? null,
-          services: [],
-        });
-      }
-      if (b.service) {
-        machineMap.get(uri)!.services.push({
-          uri: b.service.value,
-          label: b.serviceLabel?.value ?? fallbackLabel(b.service.value),
-        });
-      }
-    }
-    const machines = Array.from(machineMap.values());
+    const machines = buildMachineList(result.results.bindings as MachineBinding[]);
     return {
       status: 200,
       body: envelope('machines', machines, now() - start, { count: machines.length }),

@@ -53,60 +53,67 @@ interface SearchMetaResult {
   domain?: string;
 }
 
-export function buildSearchMeta(results: SearchMetaResult[], db?: Database.Database): Record<string, unknown> {
-  let domain_coverage = 1;
-  if (db) {
-    try {
-      const watermarks = db.prepare('SELECT source, last_indexed FROM watermarks ORDER BY source')
-        .all() as Array<{ source: string; last_indexed: string }>;
-      const aggregated = new Map<string, string>();
-      for (const w of watermarks) {
-        const parts = w.source.split(':');
-        const key = parts[0] === 'artifact' ? parts.slice(0, 2).join(':') : parts[0];
-        const existing = aggregated.get(key);
-        if (!existing || w.last_indexed > existing) aggregated.set(key, w.last_indexed);
-      }
-      const now = Date.now();
-      let total = 0, contributing = 0;
-      for (const [source, lastIndexed] of aggregated) {
-        total++;
-        const ageSecs = (now - new Date(lastIndexed).getTime()) / 1000;
-        const cadenceKey = source.split(':')[0];
-        const cadence = SOURCE_CADENCE[cadenceKey] || SOURCE_CADENCE[source] || 86400;
-        if (ageSecs / cadence <= 2) contributing++;
-      }
-      domain_coverage = total > 0 ? contributing / total : 1;
-    } catch {
-      /* leave domain_coverage=1 */
-    }
+function aggregateWatermarks(db: Database.Database): Map<string, string> {
+  const watermarks = db.prepare('SELECT source, last_indexed FROM watermarks ORDER BY source')
+    .all() as Array<{ source: string; last_indexed: string }>;
+  const aggregated = new Map<string, string>();
+  for (const w of watermarks) {
+    const parts = w.source.split(':');
+    const key = parts[0] === 'artifact' ? parts.slice(0, 2).join(':') : parts[0];
+    const existing = aggregated.get(key);
+    if (!existing || w.last_indexed > existing) aggregated.set(key, w.last_indexed);
   }
+  return aggregated;
+}
 
-  let newest_result_age_s = 0;
-  if (results.length > 0) {
-    const timestamps = results
-      .map((r) => r.timestamp)
-      .filter((t): t is string => Boolean(t))
-      .map((t) => new Date(t).getTime())
-      .filter((t) => !isNaN(t));
-    if (timestamps.length > 0) {
-      const newest = Math.max(...timestamps);
-      newest_result_age_s = Math.round((Date.now() - newest) / 1000);
+function computeDomainCoverage(db?: Database.Database): number {
+  if (!db) return 1;
+  try {
+    const aggregated = aggregateWatermarks(db);
+    const now = Date.now();
+    let total = 0, contributing = 0;
+    for (const [source, lastIndexed] of aggregated) {
+      total++;
+      const ageSecs = (now - new Date(lastIndexed).getTime()) / 1000;
+      const cadenceKey = source.split(':')[0];
+      const cadence = SOURCE_CADENCE[cadenceKey] || SOURCE_CADENCE[source] || 86400;
+      if (ageSecs / cadence <= 2) contributing++;
     }
+    return total > 0 ? contributing / total : 1;
+  } catch {
+    return 1;
   }
+}
 
-  const stale = newest_result_age_s > 86400 || domain_coverage < 0.5;
+function computeNewestResultAge(results: SearchMetaResult[]): number {
+  if (results.length === 0) return 0;
+  const timestamps = results
+    .map((r) => r.timestamp)
+    .filter((t): t is string => Boolean(t))
+    .map((t) => new Date(t).getTime())
+    .filter((t) => !isNaN(t));
+  if (timestamps.length === 0) return 0;
+  return Math.round((Date.now() - Math.max(...timestamps)) / 1000);
+}
 
+function tallySources(results: SearchMetaResult[]): Record<string, number> {
   const sources: Record<string, number> = {};
   for (const r of results) {
     const src = r.source || r.domain || 'unknown';
     sources[src] = (sources[src] || 0) + 1;
   }
+  return sources;
+}
 
+export function buildSearchMeta(results: SearchMetaResult[], db?: Database.Database): Record<string, unknown> {
+  const domain_coverage = computeDomainCoverage(db);
+  const newest_result_age_s = computeNewestResultAge(results);
+  const stale = newest_result_age_s > 86400 || domain_coverage < 0.5;
   return {
     domain_coverage: Math.round(domain_coverage * 100) / 100,
     newest_result_age_s,
     stale,
-    sources,
+    sources: tallySources(results),
     schema_version: '1.0.0',
   };
 }

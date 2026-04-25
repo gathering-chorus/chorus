@@ -96,16 +96,20 @@ function resolveUnknownRoles(events: ChorusEvent[], sessions: SessionWindow[]): 
   }
 }
 
+const RETRY_RULES: ReadonlyArray<readonly [(s: string) => boolean, string]> = [
+  [(s) => s.includes('board-ts') || s.includes('cards'), 'board'],
+  [(s) => s.includes('git-queue'), 'git-queue'],
+  [(s) => s.includes('curl') && (s.includes('3030') || s.includes('fuseki')), 'fuseki'],
+  [(s) => s.includes('curl') && (s.includes('3100') || s.includes('3102')), 'loki-grafana'],
+  [(s) => s.includes('curl') && s.includes('localhost'), 'endpoint'],
+  [(s) => s.includes('app-state') || s.includes('launchctl'), 'deploy'],
+  [(s) => s.includes('chorus-log'), 'chorus-log'],
+  [(s) => s.includes('role-state'), 'role-state'],
+];
+
 function categorizeRetry(summary: string): string {
   const s = summary.toLowerCase();
-  if (s.includes('board-ts') || s.includes('cards')) return 'board';
-  if (s.includes('git-queue')) return 'git-queue';
-  if (s.includes('curl') && (s.includes('3030') || s.includes('fuseki'))) return 'fuseki';
-  if (s.includes('curl') && (s.includes('3100') || s.includes('3102'))) return 'loki-grafana';
-  if (s.includes('curl') && s.includes('localhost')) return 'endpoint';
-  if (s.includes('app-state') || s.includes('launchctl')) return 'deploy';
-  if (s.includes('chorus-log')) return 'chorus-log';
-  if (s.includes('role-state')) return 'role-state';
+  for (const [match, category] of RETRY_RULES) if (match(s)) return category;
   return 'other';
 }
 

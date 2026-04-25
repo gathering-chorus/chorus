@@ -31,6 +31,32 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
   };
 }
 
+function matchesTokens(content: string, file: string, tokens: string[]): boolean {
+  const lower = content.toLowerCase();
+  const fileLower = file.toLowerCase();
+  return tokens.some((t) => lower.includes(t) || fileLower.includes(t));
+}
+
+function parseAlertSummary(file: string, content: string): AlertSummary {
+  return {
+    file,
+    name: content.match(/^name:\s*(.+)/m)?.[1]?.trim() ?? file.replace(/\.yml$/, ''),
+    description: content.match(/^description:\s*(.+)/m)?.[1]?.trim() ?? '',
+    severity: content.match(/^severity:\s*(.+)/m)?.[1]?.trim() ?? 'unknown',
+    schedule: content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() ?? '',
+  };
+}
+
+function collectAlerts(deps: AthenaSubdomainAlertsDeps, tokens: string[]): AlertSummary[] {
+  const alerts: AlertSummary[] = [];
+  for (const file of deps.listAlertFiles()) {
+    const content = deps.readAlertFile(file);
+    if (!matchesTokens(content, file, tokens)) continue;
+    alerts.push(parseAlertSummary(file, content));
+  }
+  return alerts;
+}
+
 export function fetchAthenaSubdomainAlerts(
   deps: AthenaSubdomainAlertsDeps,
   id: string,
@@ -38,33 +64,14 @@ export function fetchAthenaSubdomainAlerts(
   const now = deps.now ?? Date.now;
   const envelope = deps.envelope ?? defaultEnvelope;
   const start = now();
-
   try {
-    // #2430: shared resolver. alertFileTokens is the resolver's contract for
-    // filename/content scan terms — derives from the kebab id naturally.
     const identity = resolveDomainIdentity(id);
-    const domainLabel = identity.primary;
-    const tokens = identity.alertFileTokens;
-    const files = deps.listAlertFiles();
-    const alerts: AlertSummary[] = [];
-    for (const file of files) {
-      const content = deps.readAlertFile(file);
-      const lower = content.toLowerCase();
-      const fileLower = file.toLowerCase();
-      // Match if ANY token appears in content or filename — covers parent
-      // subdomains too (loom-principles matches files mentioning 'loom').
-      if (!tokens.some((t) => lower.includes(t) || fileLower.includes(t))) continue;
-      const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() ?? file.replace(/\.yml$/, '');
-      const description = content.match(/^description:\s*(.+)/m)?.[1]?.trim() ?? '';
-      const severity = content.match(/^severity:\s*(.+)/m)?.[1]?.trim() ?? 'unknown';
-      const schedule = content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() ?? '';
-      alerts.push({ file, name, description, severity, schedule });
-    }
+    const alerts = collectAlerts(deps, identity.alertFileTokens);
     return {
       status: 200,
       body: envelope(
         'subdomain-alerts',
-        { subdomain: id, domainLabel, alerts },
+        { subdomain: id, domainLabel: identity.primary, alerts },
         now() - start,
         { count: alerts.length },
       ),
