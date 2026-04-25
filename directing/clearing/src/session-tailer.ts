@@ -1,3 +1,8 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * fs paths derived from PROJECTS_DIR (env-configurable, defaults to a server
+ * path under the role's home) joined with discovered session UUIDs that match
+ * /^[0-9a-f-]{36}\.jsonl$/. Object indexing on validated role-name keys.
+ */
 /**
  * Session JSONL Tailer — reads role session files directly.
  * Emits user input as Jeff, assistant text as role.

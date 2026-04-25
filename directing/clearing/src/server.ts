@@ -1,3 +1,10 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Clearing server. fs paths constructed from CHORUS_ROOT, CHORUS_HOME, and
+ * server-controlled env constants (BRIDGE_TOKEN_FILE etc). Object indexing is
+ * on internally-derived role keys (4-element ROLES tuple) and validated event
+ * fields. Auth is enforced by BRIDGE_TOKEN before req-derived routing reaches
+ * any sink.
+ */
 import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { createServer as createHttpsServer } from 'https';
