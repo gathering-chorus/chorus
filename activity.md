@@ -1123,3 +1123,10 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - [Silas] → landed platform/shell/chorus-role-env.sh chpwd hook + ~/.zshrc source line; retires per-role .mcp.json proliferation → all roles, Jeff
 - [Wren] → authorized .zshrc edit + verification protocol (fresh tab, env check before claude) → Silas
 - [Jeff] → confirmed env binding works in fresh shell (CHORUS_ROLE=wren printed pre-claude) → reach test pending fresh claude seat
+
+## 2026-04-25 morning — kade
+- Pulled #2481 (CI lint-ratchet enforcement) → built on kade/2481-ci-ratchet, opened PR #1 (first GHA workflow in repo), CI red on first push surfaced lock-file gap → Blocked pending ADR-026
+- ADR-026 impl-review: 6 §b table deltas → all honored in v3 → signed
+- Gate runs for team: #2475 code+quality PASS (Silas), #2476 code+quality PASS (then stale-marked on Wren gate-product retract, then re-PASS after AC reshape)
+- Brief sent: roles/silas/briefs/2026-04-25-adr-026-ci-architecture.md
+- Decisions referenced: ADR-026 (CI architecture + lock-file policy)
