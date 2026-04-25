@@ -27,7 +27,7 @@ function deps(overrides: Partial<AthenaSubdomainCodeDeps> = {}): AthenaSubdomain
 }
 
 function file(path: string, type?: string): SparqlCodeBinding {
-  const b: SparqlCodeBinding = { file: { value: `https://jeffbridwell.com/chorus#${path.replace(/[\/.]/g, '-')}` } };
+  const b: SparqlCodeBinding = { file: { value: `https://jeffbridwell.com/chorus#${path.replace(/[/.]/g, '-')}` } };
   b.filePath = { value: path };
   if (type) b.fileType = { value: type };
   return b;

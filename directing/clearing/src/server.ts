@@ -899,7 +899,7 @@ app.post('/api/restart', (_req, res) => {
   setTimeout(() => {
     tailer.stop();
     sessionTailer.stop();
-    io.close();
+    void io.close();
     server.close(() => process.exit(0));
     // Force exit after 3s if graceful close hangs
     setTimeout(() => process.exit(0), 3000);
@@ -945,7 +945,7 @@ app.post('/api/chat/message', (req, res) => {
   const { text, activeRoles } = req.body;
   if (!text) return res.status(400).json({ error: 'text required' });
   // Fire-and-forget — responses stream via Socket.IO
-  clearingChat.handleMessage(text, activeRoles);
+  void clearingChat.handleMessage(text, activeRoles);
   res.json({ ok: true });
 });
 

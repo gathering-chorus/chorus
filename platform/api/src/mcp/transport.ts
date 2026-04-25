@@ -101,6 +101,7 @@ export function mountMcpEndpoint(app: Application): void {
     await entry.transport.handleRequest(req, res);
   });
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- Express handler signature, no async work needed
   app.delete('/mcp', async (req: Request, res: Response) => {
     const sessionId = req.header('Mcp-Session-Id') as string | undefined;
     if (sessionId) sessions.delete(sessionId);

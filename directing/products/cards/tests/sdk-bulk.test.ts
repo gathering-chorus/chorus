@@ -150,7 +150,7 @@ describe('bulkMove', () => {
     } finally {
       cap.restore();
     }
-    expect(cap.logs.some((l) => /^  #1 → Later/.test(l))).toBe(true);
+    expect(cap.logs.some((l) => /^ {2}#1 → Later/.test(l))).toBe(true);
     expect(cap.logs.some((l) => /Moved 2 card/.test(l))).toBe(true);
   });
 

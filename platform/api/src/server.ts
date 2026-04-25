@@ -2667,8 +2667,8 @@ if (require.main === module) {
 
   // Scheduled reindex — live server only. First run after 60s startup delay.
   setTimeout(() => {
-    scheduledReindex();
-    setInterval(() => scheduledReindex(), REINDEX_INTERVAL);
+    void scheduledReindex();
+    setInterval(() => { void scheduledReindex(); }, REINDEX_INTERVAL);
   }, 60_000);
 
   app.listen(PORT, BIND_HOST, () => {

@@ -75,8 +75,8 @@ describe('#2472 buildMcpServer', () => {
 
   // #2474 — happy-path delegation coverage
   test('spawns shim with DEPLOY_ROLE=from + [nudge, to, msg] and returns success text', async () => {
-    const calls: Array<{ file: string; args: string[]; env?: NodeJS.ProcessEnv }> = [];
-    const mockExec = async (file: string, args: string[], opts: { env?: NodeJS.ProcessEnv }) => {
+    const calls: Array<{ file: string; args: string[]; env?: Record<string, string | undefined> }> = [];
+    const mockExec = async (file: string, args: string[], opts: { env?: Record<string, string | undefined> }) => {
       calls.push({ file, args, env: opts.env });
       return { stdout: 'nudge queued for wren\n', stderr: '' };
     };

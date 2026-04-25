@@ -43,6 +43,52 @@ export interface McpServerDeps {
   shimPath?: string;
 }
 
+const NUDGE_TOOL_DEF = {
+  name: 'chorus_nudge_message',
+  description:
+    'Send a message to another Chorus role. Delivered to the role\'s active session best-effort within ~3s. Use this to coordinate work, ask a question, or notify of a state change. Do NOT use for batch broadcasts or non-actionable status — those belong on chorus-log. The sender is read from request context.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      to: {
+        type: 'string',
+        enum: ['silas', 'wren', 'kade', 'jeff'],
+        description: 'Recipient — silas/wren/kade are AI roles, jeff is the human',
+      },
+      message: {
+        type: 'string',
+        minLength: 1,
+        description: 'Message text the recipient sees',
+      },
+    },
+    required: ['to', 'message'],
+  },
+} as const;
+
+function logEvent(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
+  process.stderr.write(JSON.stringify({ level, event, tool: 'chorus_nudge_message', ts: new Date().toISOString(), ...fields }) + '\n');
+}
+
+async function executeNudge(
+  args: NudgeArgs,
+  from: string,
+  execFileAsync: ExecFileAsync,
+  shimPath: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { to, message } = args;
+  logEvent('info', 'mcp.nudge.invoked', { from, to });
+  try {
+    const env = { ...process.env, DEPLOY_ROLE: from } as NodeJS.ProcessEnv;
+    const { stdout } = await execFileAsync(shimPath, ['nudge', to, message], { env, timeout: 10_000 });
+    logEvent('info', 'mcp.nudge.delivered', { from, to, stdout: stdout.slice(0, 200) });
+    return { content: [{ type: 'text', text: `nudge sent: ${from} → ${to}` }] };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logEvent('error', 'mcp.nudge.failed', { from, to, error: errMsg });
+    throw new Error(`nudge delivery failed: ${errMsg}`);
+  }
+}
+
 /**
  * Build the MCP server with one tool registered. Caller mounts a transport.
  * Caller passes a context-resolver that returns the sender role for a request
@@ -61,101 +107,18 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
     },
   );
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      {
-        name: 'chorus_nudge_message',
-        description:
-          'Send a message to another Chorus role. Delivered to the role\'s active session best-effort within ~3s. Use this to coordinate work, ask a question, or notify of a state change. Do NOT use for batch broadcasts or non-actionable status — those belong on chorus-log. The sender is read from request context.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            to: {
-              type: 'string',
-              enum: ['silas', 'wren', 'kade', 'jeff'],
-              description: 'Recipient — silas/wren/kade are AI roles, jeff is the human',
-            },
-            message: {
-              type: 'string',
-              minLength: 1,
-              description: 'Message text the recipient sees',
-            },
-          },
-          required: ['to', 'message'],
-        },
-      },
-    ],
-  }));
+  // eslint-disable-next-line @typescript-eslint/require-await -- MCP SDK requires async signature
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [NUDGE_TOOL_DEF] }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     if (req.params.name !== 'chorus_nudge_message') {
       throw new Error(`Unknown tool: ${req.params.name}`);
     }
-
     const parsed = NudgeInput.safeParse(req.params.arguments);
     if (!parsed.success) {
-      throw new Error(
-        `Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`,
-      );
+      throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
     }
-
-    const { to, message } = parsed.data;
-    const from = getCallerRole();
-
-    process.stderr.write(
-      JSON.stringify({
-        level: 'info',
-        event: 'mcp.nudge.invoked',
-        tool: 'chorus_nudge_message',
-        from,
-        to,
-        ts: new Date().toISOString(),
-      }) + '\n',
-    );
-
-    try {
-      const env = { ...process.env, DEPLOY_ROLE: from } as NodeJS.ProcessEnv;
-      const { stdout } = await execFileAsync(
-        shimPath,
-        ['nudge', to, message],
-        { env, timeout: 10_000 },
-      );
-
-      process.stderr.write(
-        JSON.stringify({
-          level: 'info',
-          event: 'mcp.nudge.delivered',
-          tool: 'chorus_nudge_message',
-          from,
-          to,
-          stdout: stdout.slice(0, 200),
-          ts: new Date().toISOString(),
-        }) + '\n',
-      );
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `nudge sent: ${from} → ${to}`,
-          },
-        ],
-      };
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(
-        JSON.stringify({
-          level: 'error',
-          event: 'mcp.nudge.failed',
-          tool: 'chorus_nudge_message',
-          from,
-          to,
-          error: errMsg,
-          ts: new Date().toISOString(),
-        }) + '\n',
-      );
-      throw new Error(`nudge delivery failed: ${errMsg}`);
-    }
+    return executeNudge(parsed.data, getCallerRole(), execFileAsync, shimPath);
   });
 
   return server;

@@ -213,7 +213,7 @@ describe('Flow: Seeds page render', () => {
 describe('Flow: Seed API endpoints', () => {
   test('GET /api/seed endpoint registered', () => {
     const appTs = fs.readFileSync(path.join(SRC_DIR, 'app.ts'), 'utf-8');
-    expect(appTs).toMatch(/app\.get\(.*\/api\/seed[^\/]/);
+    expect(appTs).toMatch(/app\.get\(.*\/api\/seed[^/]/);
   });
 
   test('seed route endpoint registered', () => {

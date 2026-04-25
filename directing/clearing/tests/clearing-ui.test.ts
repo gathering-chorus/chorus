@@ -40,9 +40,9 @@ beforeAll(async () => {
   fs.mkdirSync(MOCK_NUDGE_DIR, { recursive: true });
   fs.writeFileSync(MOCK_NUDGE_SCRIPT, `#!/bin/bash
 # Mock nudge — no osascript, no injection. Logs to temp file.
-TARGET="\$1"; shift; MSG="\$*"
-echo "\$(date +%s) | \$TARGET | \$MSG" >> ${MOCK_NUDGE_DIR}/nudge.log
-echo "DELIVERED to \$TARGET at \$(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
+TARGET="$1"; shift; MSG="$*"
+echo "$(date +%s) | $TARGET | $MSG" >> ${MOCK_NUDGE_DIR}/nudge.log
+echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
 `, { mode: 0o755 });
 
   // Spawn test-mode Clearing on TEST_PORT (#2166).
