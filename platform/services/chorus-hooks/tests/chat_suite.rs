@@ -6,13 +6,22 @@
 use std::fs;
 use std::process::Command;
 
-const CHAT_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh";
+// CHORUS_ROOT env var with Mac-default fallback (mirrors
+// src/shared/state_paths.rs). CI sets CHORUS_ROOT=${{ github.workspace }}
+// per quality.yml cargo-test job; local Mac dev keeps the hardcoded fallback.
+fn chat_script() -> String {
+    let root = std::env::var("CHORUS_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+    format!("{}/platform/scripts/chat.sh", root)
+}
 const CHAT_DIR: &str = "/tmp/chorus-chat";
 
 
 fn run_chat(args: &[&str]) -> (String, String, bool) {
     let out = Command::new("bash")
-        .arg(CHAT_SCRIPT)
+        .arg(chat_script())
         .args(args)
         .env("CHAT_DRY_RUN", "1") // skip nudge delivery in tests
         .output()
