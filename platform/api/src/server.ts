@@ -2160,6 +2160,7 @@ import {
   fetchAthenaPersistenceDescription,
   fetchAthenaServiceEdge,
 } from './handlers/athena-enrichment-write';
+import { setSubdomainOwner } from './handlers/athena-owner-write';
 // Seed lives in src/sparql/seeds/ — always version-controlled, never in dist.
 // Resolve from ../src so this works whether server runs from src (ts-node/jest) or dist (compiled).
 const ENRICHMENT_SEED_PATH = path.resolve(__dirname, '..', 'src', 'sparql', 'seeds', 'athena-enrichment.ttl');
@@ -2196,6 +2197,21 @@ for (const pred of ['reads', 'writes', 'consumes'] as const) {
     res.status(r.status).json(r.body);
   });
 }
+
+// POST /api/athena/subdomains/:id/owner — re-assign SubDomain owner (#2508)
+const ONTOLOGY_TTL_PATH = path.join(REPO_ROOT, 'roles/silas/ontology/chorus.ttl');
+const ownerWriteDeps = () => ({
+  sparqlUpdate: athenaSparqlUpdate,
+  readTtl: () => fs.readFileSync(ONTOLOGY_TTL_PATH, 'utf-8'),
+  writeTtl: (content: string) => fs.writeFileSync(ONTOLOGY_TTL_PATH, content, 'utf-8'),
+});
+app.post('/api/athena/subdomains/:id/owner', async (req: Request, res: Response) => {
+  const r = await setSubdomainOwner(ownerWriteDeps(), {
+    subdomainId: req.params.id,
+    body: req.body || {},
+  });
+  res.status(r.status).json(r.body);
+});
 
 // GET /api/athena/subdomains/:id/pipeline — data pipeline for this subdomain (#1925)
 app.get('/api/athena/subdomains/:id/pipeline', async (req: Request, res: Response) => {
