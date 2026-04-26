@@ -24,6 +24,13 @@ module.exports = {
     // mock factory which eagerly loads real config → Vikunja env check throws.
     // 'mock didn't fire' is downstream of module-load failure. Same family.
     '<rootDir>/tests/sdk-workflow-blast\\.test\\.ts$',
+    // seed-pipeline-flow tests Twilio/pod-write infrastructure that lives in
+    // jeff-bridwell-personal-site, not chorus. The test references
+    // $HOME/CascadeProjects/jeff-bridwell-personal-site which doesn't exist
+    // on Linux CI. Recommended retirement: MOVE this file to the personal-
+    // site repo where it belongs (Jeff's call). Gating here is the interim
+    // unblock so jest-cards can pass.
+    '<rootDir>/tests/seed-pipeline-flow\\.test\\.ts$',
   ],
   // Coverage floor (#2161).
   coverageThreshold: {
