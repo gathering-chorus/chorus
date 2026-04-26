@@ -3,8 +3,10 @@
  * Integration tests for tag error, untag, bulk-move, add --sequence warn.
  */
 import { execSync } from 'child_process';
+import * as path from 'node:path';
+import { repoRoot } from './lib/repo-root';
 
-const CARDS = 'bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards';
+const CARDS = `bash ${path.join(repoRoot(), 'platform/scripts/cards')}`;
 
 function run(cmd: string): { stdout: string; stderr: string; exitCode: number } {
   try {

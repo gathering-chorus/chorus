@@ -250,7 +250,7 @@ Shared audit trail at `../../../activity.md`. All roles read and append. Log whe
 
 Default: **briefs and responses** — not meetings. Jeff should not be the carrier between roles. Roles exchange work directly.
 
-For real-time multi-role alignment: Jeff opens The Clearing UI at http://localhost:3470/ directly. (No slash-command launcher; #2268 retired the stale `/clearing` skill.)
+For real-time multi-role alignment: Jeff opens The Clearing UI at http://localhost:3470/ directly. (No slash-command launcher; #2268 retired the stale `/clearing` skill.) Mark decisions in transcripts with `DECISION:` prefix — auto-captured and indexed into Chorus.
 
 ## Execution Modes (DEC-058)
 

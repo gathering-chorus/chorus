@@ -48,20 +48,9 @@ describe('Flow: Clearing infrastructure', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 2. SESSION PORT — Clearing runs on port 3470
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe('Flow: Clearing session port', () => {
-
-  test('clearing skill file exists', () => {
-    const skillFile = path.join(
-      process.env.HOME || '/Users/jeffbridwell',
-      '.claude/skills/clearing/SKILL.md'
-    );
-    expect(fs.existsSync(skillFile)).toBe(true);
-  });
-});
+// Section 2 (Clearing session port) removed: #2268 retired the /clearing
+// slash-command skill. Multi-role alignment opens The Clearing UI directly
+// at localhost:3470.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 3. DECISION CAPTURE — DECISION: prefix extraction
