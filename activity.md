@@ -1131,3 +1131,13 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - Brief sent: roles/silas/briefs/2026-04-25-adr-026-ci-architecture.md
 - Decisions referenced: ADR-026 (CI architecture + lock-file policy)
 - [silas|2026-04-25 12:46] Reboot — 5 cards + ADR-026 shipped (principles arc complete: #2472, #2474 (kade), #2475, #2476, #2477, plus #2450, #2451). #2491 filed for test-baseline cleanup. Branch entanglement flagged for retro.
+
+## 2026-04-25 evening — Wren session
+
+Shipped #2470 (principle-direct-edit hook hardening — delete + property-modify detection), #2041 (Athena UI moved out of Gathering into chorus/platform/api/public/athena/ + redirects pruned per Jeff: bookmark use case nonexistent), #2502 (Athena domain page renders all 17 sections honestly with source labels — Silas's #2485 stash applied + AC4 source labels by Wren).
+
+Stop hook (autonomy-guard / DEC-069) turned OFF in ~/.claude/settings.json — was misfiring on tone checks. Affects all three roles.
+
+Banked memory: feedback_jeff_splits_cards.
+
+Real session content was meta: throughput-halved post Apr 17 (arc + CI, not model); card amplification (+22 net to board today); Wren pile structurally agent-shape; three solo loops not collaboration; strategy-holding gap means three-agent value-pick stays Jeff's. Principle crystallized: reference implementations need code AND data — don't change the model to "make it right" without populated implementation.
