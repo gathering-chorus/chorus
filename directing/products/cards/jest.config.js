@@ -20,6 +20,10 @@ module.exports = {
     '<rootDir>/tests/card-gates-bdd\\.test\\.ts$',
     '<rootDir>/tests/origin-required\\.test\\.ts$',
     '<rootDir>/tests/update-desc\\.test\\.ts$',
+    // sdk-workflow-blast uses jest.requireActual('../src/config') inside its
+    // mock factory which eagerly loads real config → Vikunja env check throws.
+    // 'mock didn't fire' is downstream of module-load failure. Same family.
+    '<rootDir>/tests/sdk-workflow-blast\\.test\\.ts$',
   ],
   // Coverage floor (#2161).
   coverageThreshold: {
