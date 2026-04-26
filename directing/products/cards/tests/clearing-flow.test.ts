@@ -9,11 +9,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
+import { repoRoot } from './lib/repo-root';
 
-const CLEARING_DIR = path.join(
-  process.env.HOME || '/Users/jeffbridwell',
-  'CascadeProjects/chorus/directing/clearing'
-);
+const CLEARING_DIR = path.join(repoRoot(), 'directing/clearing');
 const CLEARING_SERVER = path.join(CLEARING_DIR, 'src/server.ts');
 const SCRIPTS_DIR = path.join(__dirname, '../../../../platform/scripts');
 
