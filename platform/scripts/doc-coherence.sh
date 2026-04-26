@@ -62,8 +62,9 @@ if [ "$SKIP_HREF_PROBE" != "1" ]; then
     if [ -n "$HREFS" ]; then
       BROKEN_HREFS=$(echo "$HREFS" | xargs -I{} -P 16 -n 1 sh -c '
         code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:3000$1" 2>/dev/null)
-        # 200 and 302 (auth redirect) are both fine
-        case "$code" in 200|302|301) : ;; *) echo "$code $1" ;; esac
+        # 200 + redirect codes (301/302/308) are all fine — 308 is a permanent
+        # redirect (semantically equivalent to 301), used by ADR migration paths.
+        case "$code" in 200|301|302|308) : ;; *) echo "$code $1" ;; esac
       ' _ {})
       BROKEN_COUNT=$(echo "$BROKEN_HREFS" | grep -c . | tr -d ' ')
       [ "$BROKEN_HREFS" = "" ] && BROKEN_COUNT=0
