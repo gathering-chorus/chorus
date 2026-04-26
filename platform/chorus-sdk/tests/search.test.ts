@@ -1,5 +1,6 @@
 import * as http from 'http';
-import { search } from '../src/search';
+// search() invoked via require('../src/search') below — top-level import
+// would be unused (each test does its own require to control module load).
 
 describe('search', () => {
   let server: http.Server;

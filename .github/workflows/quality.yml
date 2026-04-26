@@ -59,6 +59,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      # Cross-package pre-build for cards (mirrors unit-tests job):
+      # cards' tsc resolves 'chorus-sdk' + workflow-engine — those need dist.
+      # #2504 (a): pre-build was missing on tsc job; added here. Sunset via
+      # ADR-026 §c (#2486 npm workspaces).
+      - name: Pre-build chorus-sdk (cards only)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: platform/chorus-sdk
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Pre-build workflow-engine (cards only)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: platform/workflow-engine
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
       - name: Install (npm ci)
         working-directory: ${{ matrix.package }}
         run: npm ci --no-audit --no-fund
@@ -105,6 +121,11 @@ jobs:
       - name: Install (npm ci)
         working-directory: ${{ matrix.package }}
         run: npm ci --no-audit --no-fund
+      # #2504 (a): cards tests invoke ./dist/cli.js; build it before jest.
+      - name: Build cards dist (jest needs ./dist/cli.js)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: directing/products/cards
+        run: npm run build
       - name: Run jest
         working-directory: ${{ matrix.package }}
         run: npx jest --forceExit --passWithNoTests

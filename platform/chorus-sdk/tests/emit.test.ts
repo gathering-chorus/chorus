@@ -46,7 +46,7 @@ describe('emit', () => {
   });
 
   it('is backward compatible with cards format', () => {
-    const event = emit('card.accepted', 'silas', { card_id: '177' }, { logFile: tmpFile });
+    emit('card.accepted', 'silas', { card_id: '177' }, { logFile: tmpFile });
     const lines = fs.readFileSync(tmpFile, 'utf-8').trim().split('\n');
     const last = JSON.parse(lines[lines.length - 1]);
 

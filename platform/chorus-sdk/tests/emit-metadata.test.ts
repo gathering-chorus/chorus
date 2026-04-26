@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { emit, createSpineContext, type SpineContext } from '../src/emit';
+import { emit, createSpineContext } from '../src/emit';
 
 describe('spine event metadata enrichment (#1817)', () => {
   const tmpFile = path.join(os.tmpdir(), `chorus-sdk-metadata-test-${Date.now()}.log`);
