@@ -144,14 +144,9 @@ describe('Flow: Clearing session cleanup', () => {
     expect(content).toContain('/health');
   });
 
-  test('clearing LaunchAgent keeps service alive', () => {
-    const plistPath = path.join(
-      process.env.HOME || '/Users/jeffbridwell',
-      'Library/LaunchAgents/com.chorus.clearing.plist'
-    );
-    expect(fs.existsSync(plistPath)).toBe(true);
-    const content = fs.readFileSync(plistPath, 'utf-8');
-    expect(content).toContain('KeepAlive');
-  });
+  // 'clearing LaunchAgent keeps service alive' test removed: DEC-1674
+  // anti-pattern (presence-check on a static plist file, no production
+  // symbol invocation). Was also macOS-only path failing on Linux CI.
+  // LaunchAgent health is verified live by ops monitoring, not jest.
 
 });
