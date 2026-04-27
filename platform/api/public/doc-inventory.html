@@ -39,6 +39,8 @@
 <div class="meta" id="meta">Loading…</div>
 <div class="summary">
   <div class="counts" id="counts"></div>
+  <div id="tagcoverage" style="margin-top: 0.4rem; color: #d1d5db; font-size: 0.82rem;"></div>
+  <div id="drift" style="margin-top: 0.4rem; color: #fca5a5; font-size: 0.82rem; display: none;"></div>
   <div id="coherence" style="margin-top: 0.6rem; padding: 0.6rem 0.8rem; background: #fef3c7; border-left: 3px solid #d97706; border-radius: 3px; font-size: 0.88rem; color: #451a03; display: none;"></div>
   <div id="reconcile" style="margin-top: 0.6rem; color: #aaa; font-size: 0.82rem;"></div>
 </div>
@@ -127,6 +129,21 @@ async function load() {
     document.getElementById('reconcile').textContent =
       `File-instances: ${okRows.length} / unique: ${uniqBasenames} / dupes: ${dupeFiles} (catalog unreachable)`;
   }
+  // Tag coverage + drift (#2520)
+  try {
+    const tags = await (await fetch('/api/doc-catalog/tags')).json();
+    const cov = tags.coverage;
+    const byProd = Object.entries(tags.byProduct).map(([k,v]) => `${k} <b>${v}</b>`).join(' · ');
+    document.getElementById('tagcoverage').innerHTML =
+      `<strong>Tag coverage:</strong> product ${cov.product.tagged}/${tags.total} <b>(${cov.product.percent}%)</b> · subdomain ${cov.subdomain.tagged}/${tags.total} <b>(${cov.subdomain.percent}%)</b> — ${byProd}`;
+    if (tags.drift && tags.drift.length) {
+      const drift = tags.drift.slice(0, 5).map(d => `${d.claimedSubdomain}${d.closestMatch ? ` → ${d.closestMatch}?` : ''}`).join(', ');
+      document.getElementById('drift').style.display = 'block';
+      document.getElementById('drift').innerHTML =
+        `<strong>Drift:</strong> ${tags.drift.length} doc(s) claim a subdomain Athena doesn't recognize: ${drift}${tags.drift.length > 5 ? ` (+${tags.drift.length - 5} more)` : ''}`;
+    }
+  } catch (_e) { /* tagger endpoint optional */ }
+
   render();
 }
 

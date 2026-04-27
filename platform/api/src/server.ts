@@ -2666,11 +2666,61 @@ app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) 
 
 // Doc catalog (#2445) — relocated from gathering. Lift-and-shift; gathering's
 // /api/doc-catalog endpoints stay live until callers migrate.
-import { listCatalog as docCatalogList, addDoc as docCatalogAdd, domainArtifacts as docCatalogDomain, linkArtifact as docCatalogLink } from './handlers/doc-catalog';
+import { listCatalog as docCatalogList, addDoc as docCatalogAdd, domainArtifacts as docCatalogDomain, linkArtifact as docCatalogLink, buildDocCatalog } from './handlers/doc-catalog';
+import { inferTags } from './handlers/doc-tagger';
+import { detectDrift } from './handlers/doc-tag-drift';
 app.get('/api/doc-catalog', docCatalogList);
 app.post('/api/doc-catalog/add', docCatalogAdd);
 app.get('/api/doc-catalog/domain/:domain', docCatalogDomain);
 app.post('/api/doc-catalog/link', docCatalogLink);
+
+// Doc-tag coverage (#2520 AC4 + AC6) — applies inferTags + drift to live catalog
+app.get('/api/doc-catalog/tags', async (_req: Request, res: Response) => {
+  try {
+    const catalog = buildDocCatalog();
+    const docs = catalog.groups.flatMap(g => g.docs);
+    const tagged = docs.map(doc => {
+      const basename = doc.href.split('/').pop() || '';
+      const tags = inferTags({ sourcePath: `${doc.source}/${basename}`, basename });
+      return { href: doc.href, source: doc.source, title: doc.title, tags };
+    });
+    // Coverage breakdown
+    const byProduct: Record<string, number> = {};
+    const bySubproduct: Record<string, number> = {};
+    let withProduct = 0, withSubdomain = 0;
+    for (const t of tagged) {
+      if (t.tags.product) {
+        byProduct[t.tags.product] = (byProduct[t.tags.product] || 0) + 1;
+        withProduct++;
+      }
+      if (t.tags.subproduct) {
+        bySubproduct[t.tags.subproduct] = (bySubproduct[t.tags.subproduct] || 0) + 1;
+      }
+      if (t.tags.subdomain) withSubdomain++;
+    }
+    // Drift check — fetch valid Athena subdomain set
+    let drift: ReturnType<typeof detectDrift> = [];
+    try {
+      const r = await fetch('http://localhost:3340/api/athena/subdomains?limit=100');
+      const d = await r.json() as { data?: Array<{ id?: string }> };
+      const valid = (d.data || []).map(x => x.id || '').filter(Boolean);
+      drift = detectDrift(tagged, valid);
+    } catch { /* athena unreachable — skip drift but don't fail */ }
+
+    res.json({
+      total: docs.length,
+      coverage: {
+        product: { tagged: withProduct, percent: Math.round(100 * withProduct / docs.length) },
+        subdomain: { tagged: withSubdomain, percent: Math.round(100 * withSubdomain / docs.length) },
+      },
+      byProduct, bySubproduct,
+      drift,
+      tagged,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
 
 // Doc inventory (#2457) — reads TSV produced by doc-inventory.sh
 app.get('/api/doc-inventory', (_req: Request, res: Response) => {
