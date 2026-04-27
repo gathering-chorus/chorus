@@ -1,6 +1,36 @@
 # Next Session
 
-## Pull immediately
+## What landed today (2026-04-27 morning)
+- Research synthesis on social contagion + framing in AI/agent systems and humans → `chorus/designing/docs/social-contagion-and-framing-research.{md,html}`. Catalog picks up automatically (chorus/designing/docs is in SOURCE_DIRS at doc-catalog.handler.ts:341).
+- Gate:code + gate:quality on Wren's #2508 athena-owner-write; flagged 3 test gaps + recommended 3 helper extractions before second ontology-write endpoint copies the regex+SPARQL approach.
+- Reviewed Silas's #2512 sycophancy/labels-null fix; verified #2463 wave 1a did NOT introduce the narrowing (pre-existing).
+- Helped on #2509 catalog-source question (no handler change needed — chorus/designing/docs already scanned).
+
+## Open threads from yesterday's pair-2504 (still pending Jeff direction)
+- **(F2) seed-pipeline-flow** — interim gated; permanent move-to-personal-site-repo decision pending.
+- **(2c) Lazy-load Vikunja in cards/src/config.ts** — substrate card not yet filed. Right architectural answer for the 7 a-vikunja gates to retire.
+- **(2a/2b) CI Vikunja access** — secret + ephemeral instance vs. stay gated. Jeff's call.
+
+## Open threads from this session
+- Wren's #2508 helper-extraction recommendation (patchSubdomainField, replaceObjectTriple with WHERE-drift fix, multi-line-literal terminator) — her call whether to file or fold.
+- Silas appears to be working on lazy-load Vikunja (cards/src/config.ts modified in his tree). If that's (2c), he's on it.
+
+## Open questions surfaced by research doc that may warrant cards
+- Nudge-as-injection layer: PreToolUse hooks defend tools; no equivalent on inbound nudges (Greshake gap).
+- Cross-model role experiment: one role on a different base model.
+- Affect-strip the spine `digest` field; watch for downstream change.
+- Forcing functions on human input into shared context (error blast radius = N agents).
+
+Don't file speculatively. Surface to Jeff; he picks.
+
+## Patterns I'm carrying
+- Stop deflecting work to teammates via cards.
+- Things right ≠ things done. Hidden gates aren't isolation.
+- Lying-by-paraphrase: don't quote fabricated self-quotes.
+- Run skills end-to-end.
+
+---
+## (Older) Pull immediately
 - **#2495** — api-boot ESM/CJS reconciliation. Jeff's direction at session end. Owns: audit SDK imports in `platform/api/src/mcp/server.ts` + `transport.ts`, decide CJS-fixed-paths vs ESM migration, restore mcp-roundtrip CI job to `quality.yml`. This is what I should have done before pulling #2487 and what got dressed up as "scope cut" today.
 
 ## What landed today
