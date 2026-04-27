@@ -1141,3 +1141,5 @@ Stop hook (autonomy-guard / DEC-069) turned OFF in ~/.claude/settings.json — w
 Banked memory: feedback_jeff_splits_cards.
 
 Real session content was meta: throughput-halved post Apr 17 (arc + CI, not model); card amplification (+22 net to board today); Wren pile structurally agent-shape; three solo loops not collaboration; strategy-holding gap means three-agent value-pick stays Jeff's. Principle crystallized: reference implementations need code AND data — don't change the model to "make it right" without populated implementation.
+
+- [Silas] 2026-04-27 12:25 → session reboot — shipped #2509 (CI harness research brief in doc-catalog) + #2512 (cards list null-labels defense, hermetic test, 4-site fix). Arc continuation from #2504/#2505 trust-recovery. Sensors-vs-rules framing on CI architecture banked as canonical brief.
