@@ -31,7 +31,7 @@ export interface DocTags {
 }
 
 // Subproduct → subdomain ownership (from Athena #subproducts and #subdomains).
-const SUBPRODUCT_DOMAINS: Record<string, string[]> = {
+export const SUBPRODUCT_DOMAINS: Record<string, string[]> = {
   loom: [
     'loom-analytics', 'loom-decisions', 'loom-metrics', 'loom-policies',
     'loom-practices', 'loom-principles', 'loom-rcas',
@@ -49,7 +49,7 @@ for (const [sp, doms] of Object.entries(SUBPRODUCT_DOMAINS)) {
 }
 
 // Gathering subdomains (no subproduct level)
-const GATHERING_SUBDOMAINS = new Set([
+export const GATHERING_SUBDOMAINS = new Set([
   'blog-domain', 'books-domain', 'cooking-domain', 'documents-domain',
   'glimmers-domain', 'music-domain', 'notes-domain', 'photos-domain',
   'property-domain', 'social-domain', 'video-domain',

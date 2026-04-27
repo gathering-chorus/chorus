@@ -2667,8 +2667,9 @@ app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) 
 // Doc catalog (#2445) — relocated from gathering. Lift-and-shift; gathering's
 // /api/doc-catalog endpoints stay live until callers migrate.
 import { listCatalog as docCatalogList, addDoc as docCatalogAdd, domainArtifacts as docCatalogDomain, linkArtifact as docCatalogLink, buildDocCatalog } from './handlers/doc-catalog';
-import { inferTags } from './handlers/doc-tagger';
+import { inferTags, SUBPRODUCT_DOMAINS, GATHERING_SUBDOMAINS } from './handlers/doc-tagger';
 import { detectDrift } from './handlers/doc-tag-drift';
+import { buildHierarchyTree, type AthenaShape } from './handlers/doc-catalog-tree';
 app.get('/api/doc-catalog', docCatalogList);
 app.post('/api/doc-catalog/add', docCatalogAdd);
 app.get('/api/doc-catalog/domain/:domain', docCatalogDomain);
@@ -2717,6 +2718,71 @@ app.get('/api/doc-catalog/tags', async (_req: Request, res: Response) => {
       drift,
       tagged,
     });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// Doc-catalog hierarchy tree (#2521) — Athena-driven navigation surface
+app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
+  try {
+    const catalog = buildDocCatalog();
+    const docs = catalog.groups.flatMap(g => g.docs);
+    const tagged = docs.map(doc => {
+      const basename = doc.href.split('/').pop() || '';
+      const tags = inferTags({ sourcePath: `${doc.source}/${basename}`, basename });
+      return { href: doc.href, source: doc.source, title: doc.title, tags };
+    });
+
+    // Compose Athena shape from live queries + tagger maps.
+    // Athena's subdomain endpoint doesn't carry subproduct linkage today; we
+    // rely on SUBPRODUCT_DOMAINS as the authoritative bridge (same source the
+    // tagger uses, so tags and tree agree).
+    const [pRes, spRes, sdRes] = await Promise.all([
+      fetch('http://localhost:3340/api/athena/products').then(r => r.json()),
+      fetch('http://localhost:3340/api/athena/subproducts').then(r => r.json()),
+      fetch('http://localhost:3340/api/athena/subdomains?limit=100').then(r => r.json()),
+    ]) as [{ data?: Array<{ uri?: string; label?: string }> }, { data?: Array<{ uri?: string; label?: string; owner?: string }> }, { data?: Array<{ id?: string; label?: string }> }];
+
+    const products = (pRes.data || []).map(p => ({
+      id: (p.uri || '').split('#').pop() || '',
+      label: p.label || '',
+    }));
+
+    // Subproducts: Athena returns label + uri; product association is by name —
+    // the live API doesn't expose it, so we map by convention (Loom/Werk/etc.
+    // belong to Chorus product).
+    const subproducts = (spRes.data || [])
+      .map(sp => ({
+        id: (sp.uri || '').split('#').pop() || '',
+        label: sp.label || '',
+        product: 'chorusProduct',
+      }));
+
+    // Build subdomain → subproduct from SUBPRODUCT_DOMAINS
+    const sdToSp: Record<string, string> = {};
+    for (const [sp, doms] of Object.entries(SUBPRODUCT_DOMAINS)) {
+      for (const d of doms) {
+        // Map tagger short names ('loom', 'werk-product') to Athena URIs from spRes
+        const match = subproducts.find(s => s.id === sp || s.id === `${sp}-product`);
+        if (match) sdToSp[d] = match.id;
+      }
+    }
+
+    const subdomains = (sdRes.data || []).map(sd => {
+      const id = sd.id || '';
+      const subproduct = sdToSp[id] || null;
+      const isGathering = GATHERING_SUBDOMAINS.has(id);
+      return {
+        id, label: sd.label || id,
+        subproduct,
+        product: !subproduct && isGathering ? 'gathering' : undefined,
+      };
+    });
+
+    const shape: AthenaShape = { products, subproducts, subdomains };
+    const tree = buildHierarchyTree(tagged, shape);
+    res.json(tree);
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
