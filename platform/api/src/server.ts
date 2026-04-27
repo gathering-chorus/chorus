@@ -60,14 +60,19 @@ app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 's
 app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
 app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
 
-// #2445 wave 2 — chorus-api serves catalog HTML directly. Files still live
-// in gathering filesystem (lift-and-shift staged); chorus-api reads them.
-// AC3: chorus doc HTML renders from chorus-api, not gathering-only.
+// #2445 wave 2 — chorus-api serves catalog HTML. Static routes try chorus
+// designing/docs first (where 43 misfiled docs were relocated post-#2510),
+// then fall back to gathering filesystem for content that legitimately
+// lives there (gathering-domain pages, akasha consulting site).
+// Express runs middleware in registration order; first hit wins.
 const gatheringRepoRoot = process.env.GATHERING_REPO || '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site';
-app.use('/gathering-docs', express.static(path.join(gatheringRepoRoot, 'public', 'gathering-docs'), { extensions: ['html'] }));
-app.use('/chorus-docs', express.static(path.join(gatheringRepoRoot, 'public', 'chorus-docs'), { extensions: ['html'] }));
-app.use('/akasha', express.static(path.join(gatheringRepoRoot, 'public', 'akasha'), { extensions: ['html'] }));
+app.use('/system/docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html', 'md'] }));
 app.use('/system/docs', express.static(path.join(gatheringRepoRoot, 'data', 'about'), { extensions: ['html', 'md'] }));
+app.use('/chorus-docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html'] }));
+app.use('/chorus-docs', express.static(path.join(gatheringRepoRoot, 'public', 'chorus-docs'), { extensions: ['html'] }));
+app.use('/gathering-docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html'] }));
+app.use('/gathering-docs', express.static(path.join(gatheringRepoRoot, 'public', 'gathering-docs'), { extensions: ['html'] }));
+app.use('/akasha', express.static(path.join(gatheringRepoRoot, 'public', 'akasha'), { extensions: ['html'] }));
 
 // Borg — Hooks summary endpoint — #2099
 // Borg summary delegates — #2173 AC4: uniform run() wrapper replaces
