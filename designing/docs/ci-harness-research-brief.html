@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CI Harness Architecture — Research Brief</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; color: #2d4a7a; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #dbeafe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-style: italic; font-size: 0.9em; }
+  .key-distinction { background: #fef3c7; padding: 14px 18px; margin: 18px 0; border-radius: 4px; border-left: 4px solid #d97706; font-size: 0.9em; }
+  .key-distinction strong { color: #92400e; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; }
+  ul { margin: 8px 0 12px 20px; font-size: 0.84em; }
+  li { margin-bottom: 4px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  .sources { font-size: 0.82em; }
+  .sources a { color: #2563eb; text-decoration: none; }
+  .sources a:hover { text-decoration: underline; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+</head>
+<body>
+
+<h1>CI Harness Architecture <span>research brief</span></h1>
+<div class="date">Drafted 2026-04-27 · Author: Silas (Chorus architect role) · Origin: research agent + Chorus synthesis</div>
+
+<div class="promise">
+The CI/CD pipeline is a <strong>harness</strong> — a feedback loop for humans and agents — not a constraint engine. Each stage places sensors with a declared contract: what it watches for, when it fires, what its failure means. Block narrows as you move right (commit → main → production). Friction tolerance scales inversely with commit frequency. Drift detection runs async; in-loop correction stays fast.
+</div>
+
+<h2>Why this exists</h2>
+<p>Chorus runs at multi-times-per-day shipping cadence with three AI roles plus one human committing to <code>main</code>. The CI apparatus we built was over-rotated into <em>rules-as-enforcement</em> — branch protection, required-checks, ratchets that block commits — which produced gate-stacking, cards-as-protection, and architect-clean splits that consumed days of work without delivering card outcomes. This brief captures the architecture we want to converge on: <strong>sensors-as-feedback</strong>, with each test annotated by stage and contract.</p>
+
+<div class="key-distinction">
+<strong>The load-bearing distinction.</strong> A <em>sensor</em> gives the agent (and the human) data about what was produced. A <em>rule</em> forces an action when a sensor fires red. Sensors enable correction; rules enforce policy. Most "CI failures" we've fought were rules failing to be useful, not sensors failing to detect. The fix is to keep most sensors and remove most rules.
+</div>
+
+<h2>Sensor allocation by stage</h2>
+
+<table>
+<thead><tr><th>Stage</th><th>Purpose</th><th>Sensors</th><th>Latency</th><th>Failure response</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>Pre-commit</strong></td>
+  <td>"Did I just typo?"</td>
+  <td>Format auto-fix, lint (changed files, fast subset), type-check (changed scope), secret scan, hermetic unit slice for changed files</td>
+  <td>&lt;10s ceiling</td>
+  <td><strong>Warn + auto-fix.</strong> Block only on secrets and syntactically broken commits. <code>--no-verify</code> stays cheap.</td>
+</tr>
+<tr>
+  <td><strong>Pre-push</strong></td>
+  <td>"Is what I'm about to share locally coherent?"</td>
+  <td>Full hermetic unit suite for changed package; type-check across workspace</td>
+  <td>&lt;60s</td>
+  <td><strong>Signal, not block.</strong> Push anyway; CI is the contract.</td>
+</tr>
+<tr>
+  <td><strong>PR / pre-merge</strong></td>
+  <td>"Does this compose with main?"</td>
+  <td>Full hermetic unit + contract tests + targeted integration; lint full repo; mutation testing on changed files; inferential review (LLM judge)</td>
+  <td>&lt;5min blocking; &lt;15min total</td>
+  <td><strong>Block on red</strong> for hermetic + contract. <strong>Signal</strong> for inferential. Mutation/perf as warn.</td>
+</tr>
+<tr>
+  <td><strong>Merge-to-main</strong></td>
+  <td>"Does main still build clean from scratch?"</td>
+  <td>Same as PR but clean checkout, lockfile-strict (<code>npm ci</code>, <code>cargo --locked</code>)</td>
+  <td>&lt;10min</td>
+  <td><strong>Block deploy on red</strong>, not merge (already merged). Auto-revert on red.</td>
+</tr>
+<tr>
+  <td><strong>Deploy (hot-reload)</strong></td>
+  <td>"Did the running system stay healthy?"</td>
+  <td>Smoke test against live process; health endpoint check; structured-log error rate window</td>
+  <td>&lt;30s post-reload</td>
+  <td><strong>Auto-rollback</strong> (revert + re-deploy prior).</td>
+</tr>
+<tr>
+  <td><strong>Scheduled (nightly)</strong></td>
+  <td>"What did fast lanes miss?"</td>
+  <td>Full integration suite (<code>RUN_INTEGRATION=1</code>), perf benches on fixed-spec runner, mutation full-repo, dep/CVE scan, coverage-quality drift, doc-coherence broken-href probe</td>
+  <td>Hours OK</td>
+  <td><strong>File card</strong>, never block. Drift detection lane.</td>
+</tr>
+<tr>
+  <td><strong>On-demand</strong></td>
+  <td>"I'm about to do something risky."</td>
+  <td>Any sensor manually targeted (e.g. <code>chorus run-suite &lt;name&gt;</code>)</td>
+  <td>Bounded by operator</td>
+  <td><strong>Report only.</strong></td>
+</tr>
+</tbody>
+</table>
+
+<p><strong>The rule:</strong> block narrows as you move right. Pre-commit is feedback; main is the contract; production is observed, not gated.</p>
+
+<h2>Test categorization</h2>
+
+<table>
+<thead><tr><th>Category</th><th>Where it runs</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Hermetic unit</td><td>Pre-commit (changed scope) + PR (full)</td><td>No network, no fs outside tmp, no time/random</td></tr>
+<tr><td>Contract tests</td><td>PR</td><td>Cheap, deterministic, catch the integration risk that unit tests can't</td></tr>
+<tr><td>Integration</td><td>Nightly + on <code>RUN_INTEGRATION=1</code></td><td>Never on PR — too slow, too flaky</td></tr>
+<tr><td>Perf budget</td><td>Nightly on <strong>fixed-spec runner</strong></td><td>Compare to rolling baseline; alert on regression, don't block</td></tr>
+<tr><td>Mutation</td><td>Nightly full; PR scoped to changed files</td><td>Detects "tests that verify presence not behavior"</td></tr>
+<tr><td>Smoke / deploy verification</td><td>Post-deploy, &lt;30s</td><td>Tiny — log in, hit one endpoint per surface</td></tr>
+<tr><td>Security (SAST/dep scan)</td><td>PR (warn) + Nightly (report)</td><td>Block only on known-exploit CVEs; else file card</td></tr>
+</tbody>
+</table>
+
+<p>Charity Majors's principle applies: <em>don't add tests to compensate for missing observability.</em> If production signal is good and rollback is fast, you can ship with less pre-merge testing — and you should.</p>
+
+<h2>Friction math</h2>
+
+<p>Rough rule from DORA elite-performer literature and Böckeler: <strong>friction tolerance scales inversely with commit frequency.</strong> For Chorus's shape (4 actors × ~10 commits/day, deploys via <code>app-state.sh</code> hot-reload):</p>
+
+<ul>
+<li><strong>Pre-commit budget: &lt;10s, hard ceiling 30s.</strong> Past 30s, agents start <code>--no-verify</code>-ing and humans context-switch. Empirical breakpoint cited across the literature: humans tolerate ~7s before disengaging; agents tolerate longer but compound the cost across retries.</li>
+<li><strong>PR budget: &lt;5 min for blocking signals, &lt;15 min total.</strong> Past 15 min, PRs stack and reviewers batch — kills trunk-based flow.</li>
+<li><strong>Hooks that pay for themselves at high cadence:</strong> secret scanning (catastrophic to miss), formatter (zero-thought, prevents diff noise), type-check on changed files (catches the majority of broken-main causes for the cost of seconds).</li>
+<li><strong>Hooks that don't:</strong> full test suite pre-commit, mutation testing pre-commit, any inferential check pre-commit.</li>
+</ul>
+
+<h2>CI → CD path</h2>
+
+<p>What separates "CI green" from "confidently deploy from <code>main</code> N times/day" (Charity Majors / Honeycomb canon):</p>
+
+<ol style="margin-left: 24px; font-size: 0.86em;">
+<li><strong>Smoke test post-deploy</strong> — one synthetic transaction per surface, runs in &lt;30s, rolls back automatically on fail.</li>
+<li><strong>Observability over tests</strong> — structured logs + traces + a small set of SLOs.</li>
+<li><strong>Feature flags</strong> — decouple deploy from release. New behavior dark-launched, flipped after observation.</li>
+<li><strong>Automated rollback</strong> — the deploy pipeline must know how to undo itself without a human. Single highest-leverage CD investment.</li>
+<li><strong>Canary or soak window</strong> — for fleet deploys it's a canary; for hot-reload single-host (Chorus's shape) it's a "soak window": hold the new process under synthetic + real traffic for N seconds before declaring success.</li>
+</ol>
+
+<div class="component">
+<h3>Minimum viable CD for Chorus's hot-reload context</h3>
+<ul>
+<li><code>app-state.sh deploy</code> writes a deploy marker (git SHA + timestamp) to a known location.</li>
+<li>Smoke test runs immediately after reload, hitting one endpoint per surface (chorus-api 3340, gathering 3000, clearing 3470, vikunja 3456, fuseki 3030).</li>
+<li>If smoke fails OR error-rate over next 60s exceeds baseline, <code>app-state.sh rollback</code> reverts to previous SHA.</li>
+<li>Deploy marker + smoke result emitted as structured log → Loki → dashboard.</li>
+</ul>
+<p>That's the whole shape. No blue/green, no canary infrastructure, no fleet — just deploy-marker + smoke + rollback + observed window.</p>
+</div>
+
+<h2>Anti-patterns</h2>
+
+<table>
+<thead><tr><th>Pattern</th><th>Name</th><th>Why it bites</th></tr></thead>
+<tbody>
+<tr><td>Block merge on tests that flake</td><td><strong>Flaky-test gate</strong></td><td>Trains agents and humans to retry until green. Quarantine + delete.</td></tr>
+<tr><td>Tests that assert presence, not behavior (<code>fs.existsSync</code>, <code>expect(fn).toBeDefined()</code>)</td><td><strong>Tautological tests / vacuous green</strong></td><td>Mutation testing is the canonical detector.</td></tr>
+<tr><td>Coverage threshold as merge gate</td><td><strong>Coverage cargo-culting</strong></td><td>Encourages tautological tests. Use as signal, not gate.</td></tr>
+<tr><td>One test file per ticket number, never deleted</td><td><strong>Story-numbered backstops</strong></td><td>Working term in Chorus, no canonical industry name. Closest published source: Fowler's "Test Smell" catalog.</td></tr>
+<tr><td>Ratchet that only goes up</td><td><strong>Ratchet-as-rule</strong></td><td>Started as a feedback nudge; became enforcement. Sensors should not become guides without intent.</td></tr>
+<tr><td>Tests skipped to make CI green</td><td><strong>Skip-to-green / CI theater</strong></td><td>Skipped tests must fail the build louder than red tests.</td></tr>
+<tr><td>Gates that hide test isolation problems</td><td><strong>Order-dependent suite</strong></td><td>If tests must run in order, the suite is not hermetic. Run shuffled in CI.</td></tr>
+<tr><td>Pre-commit running full integration</td><td><strong>Hook hypertrophy</strong></td><td>Every second past ~10s erodes the contract.</td></tr>
+<tr><td>Inferential sensor as blocking gate</td><td><strong>LLM-as-judge-as-gate</strong></td><td>Non-deterministic; will eventually block a correct change. Always advisory.</td></tr>
+<tr><td>Branch protection without observability</td><td><strong>Gate without sensor</strong></td><td>Blocking on something you can't see fail in production.</td></tr>
+</tbody>
+</table>
+
+<p><strong>Böckeler's named meta-anti-patterns:</strong></p>
+<ul>
+<li><em>Feedback-only harness</em> — agent that keeps repeating the same mistakes (no guides to encode learning).</li>
+<li><em>Feedforward-only harness</em> — agent that encodes rules but never finds out whether they worked (no sensors to detect drift).</li>
+</ul>
+
+<h2>Agent-specific concerns</h2>
+
+<p>What agents need from CI that humans don't:</p>
+<ul>
+<li><strong>Sensor messages written for LLM consumption.</strong> Custom linter messages that include instructions for self-correction. Human-friendly errors ("expected <code>;</code>") are wasted on agents; tell them how to fix it.</li>
+<li><strong>Self-evaluation surface before human review.</strong> Agents generate faster than humans review; the harness must catch most issues pre-handoff. ("Humans on the loop," not in it.)</li>
+<li><strong>Determinism over speed.</strong> Flakes poison agents far worse than humans because the agent will retry, masking real signal. Quarantine flakes aggressively.</li>
+<li><strong>Loop-detection sensors.</strong> LangChain reported a substantial Terminal Bench 2.0 jump (52.8% → 66.5%) by adding only a self-verification + loop-detection sensor — no model change.</li>
+</ul>
+
+<h2>Sources</h2>
+<div class="sources">
+<ul>
+<li><a href="https://martinfowler.com/articles/harness-engineering.html">Harness engineering for coding agent users — Birgitta Böckeler (Martin Fowler, 2026)</a> — canonical taxonomy</li>
+<li><a href="https://martinfowler.com/articles/exploring-gen-ai/harness-engineering-memo.html">Harness Engineering: first thoughts — Böckeler (memo)</a></li>
+<li><a href="https://martinfowler.com/articles/exploring-gen-ai/humans-and-agents.html">Humans and Agents in Software Engineering Loops — Fowler / Morris</a></li>
+<li><a href="https://www.thoughtworks.com/insights/blog/generative-ai/cybernetics-and-human-on-the-loop-in-agentic-coding">Cybernetics and the "human-on-the-loop" in agentic coding — Thoughtworks</a></li>
+<li><a href="https://github.com/ai-boost/awesome-harness-engineering">Awesome Harness Engineering (curated list)</a></li>
+<li><a href="https://newsletter.pragmaticengineer.com/p/observability-the-present-and-future">Observability: present and future — Charity Majors / Pragmatic Engineer</a></li>
+<li><a href="https://charity.wtf/tag/continuous-deployment/">Continuous deployment — charity.wtf</a></li>
+<li><a href="https://dora.dev/capabilities/continuous-delivery/">DORA Capabilities: Continuous delivery</a></li>
+<li><a href="https://launchdarkly.com/blog/elite-performance-with-trunk-based-development/">Elite Performance with Trunk-based Development — LaunchDarkly</a></li>
+</ul>
+</div>
+
+<h2>Working terms not yet canonical</h2>
+<p>"Story-numbered backstops" and "ratchet-as-rule" are working terms in Chorus, not industry-named patterns. The behaviors are widely described in the testing-smell literature; the names aren't. Surfaced here so future readers can map our vocabulary onto the established frameworks.</p>
+
+<div class="footer">
+Origin: 2026-04-27 research agent (general-purpose subagent, two web rounds, canonical-source priority) + Chorus-specific synthesis by Silas. Card #2509 tracked the doc-catalog placement; the brief itself is meant to be amended over time as the architecture lands.
+</div>
+
+</body>
+</html>
