@@ -25,10 +25,20 @@ import type { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 
-const GATHERING_ROOT = process.env.GATHERING_REPO || '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site';
-const CHORUS_ROOT = process.env.CHORUS_REPO || '/Users/jeffbridwell/CascadeProjects/chorus';
-const REGISTRY_PATH = path.join(CHORUS_ROOT, 'platform', 'api', 'data', 'doc-catalog-registry.json');
-const LINKS_PATH = path.join(CHORUS_ROOT, 'platform', 'api', 'data', 'doc-catalog-links.json');
+// Read env at every call so tests can override via process.env at runtime
+// (#2517 hermetic-fixture variant).
+function gatheringRoot(): string {
+  return process.env.GATHERING_REPO || '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site';
+}
+function chorusRoot(): string {
+  return process.env.CHORUS_REPO || '/Users/jeffbridwell/CascadeProjects/chorus';
+}
+function registryPath(): string {
+  return path.join(chorusRoot(), 'platform', 'api', 'data', 'doc-catalog-registry.json');
+}
+function linksPath(): string {
+  return path.join(chorusRoot(), 'platform', 'api', 'data', 'doc-catalog-links.json');
+}
 
 type ArtifactType = 'service-design' | 'decision' | 'adr' | 'architecture' | 'research' | 'manual' | 'ontology' | 'domain-page' | 'product' | 'process';
 
@@ -84,7 +94,7 @@ const SOURCE_DIRS: SourceDir[] = [
 ];
 
 function rootPath(root: 'gathering' | 'chorus'): string {
-  return root === 'gathering' ? GATHERING_ROOT : CHORUS_ROOT;
+  return root === 'gathering' ? gatheringRoot() : chorusRoot();
 }
 
 function extractTitle(filePath: string, filename: string): string {
@@ -211,14 +221,14 @@ function scanDirectory(sd: SourceDir): DocEntry[] {
 
 function loadRegistered(): RegisteredDoc[] {
   try {
-    if (fs.existsSync(REGISTRY_PATH)) return JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf-8'));
+    if (fs.existsSync(registryPath())) return JSON.parse(fs.readFileSync(registryPath(), 'utf-8'));
   } catch { /* corrupt */ }
   return [];
 }
 
 function saveRegistered(docs: RegisteredDoc[]): void {
-  fs.mkdirSync(path.dirname(REGISTRY_PATH), { recursive: true });
-  fs.writeFileSync(REGISTRY_PATH, JSON.stringify(docs, null, 2));
+  fs.mkdirSync(path.dirname(registryPath()), { recursive: true });
+  fs.writeFileSync(registryPath(), JSON.stringify(docs, null, 2));
 }
 
 function registeredToEntry(reg: RegisteredDoc): DocEntry | null {
@@ -236,14 +246,14 @@ function registeredToEntry(reg: RegisteredDoc): DocEntry | null {
 
 function loadLinks(): DomainLink[] {
   try {
-    if (fs.existsSync(LINKS_PATH)) return JSON.parse(fs.readFileSync(LINKS_PATH, 'utf-8'));
+    if (fs.existsSync(linksPath())) return JSON.parse(fs.readFileSync(linksPath(), 'utf-8'));
   } catch { /* corrupt */ }
   return [];
 }
 
 function saveLinks(links: DomainLink[]): void {
-  fs.mkdirSync(path.dirname(LINKS_PATH), { recursive: true });
-  fs.writeFileSync(LINKS_PATH, JSON.stringify(links, null, 2));
+  fs.mkdirSync(path.dirname(linksPath()), { recursive: true });
+  fs.writeFileSync(linksPath(), JSON.stringify(links, null, 2));
 }
 
 function inferDomainLinks(docs: DocEntry[]): DomainLink[] {
@@ -258,11 +268,11 @@ function inferDomainLinks(docs: DocEntry[]): DomainLink[] {
   return links;
 }
 
-function collectDocs(): DocEntry[] {
+function collectDocs(sourceDirs: SourceDir[] = SOURCE_DIRS): DocEntry[] {
   const allDocs: DocEntry[] = [];
   const seenHref = new Set<string>();
   const seenTitle = new Map<string, DocEntry>();
-  for (const sd of SOURCE_DIRS) {
+  for (const sd of sourceDirs) {
     for (const doc of scanDirectory(sd)) {
       if (seenHref.has(doc.href)) continue;
       seenHref.add(doc.href);
@@ -285,11 +295,14 @@ function collectDocs(): DocEntry[] {
 
 // --- Pure functions (testable, no Express) ---
 
-export function buildDocCatalog(): DocCatalogResult {
-  const allDocs = collectDocs();
+export function buildDocCatalog(sourceDirs?: SourceDir[]): DocCatalogResult {
+  const allDocs = collectDocs(sourceDirs);
   const groups = buildGroups(allDocs);
   return { totalDocs: allDocs.length, groups };
 }
+
+// Exported for hermetic tests (#2517 AC3)
+export type { SourceDir };
 
 export function registerDoc(input: { filePath?: string; href?: string; group?: string }): HandlerResult {
   const { filePath, href, group } = input;
