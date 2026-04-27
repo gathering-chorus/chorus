@@ -36,6 +36,7 @@ export const LABELS = {
   chunk: {
     spine: 17, ops: 18, memory: 19, music: 20,
     senses: 21, strategy: 22, app: 23, sexuality: 24, convergence: 89,
+    knowledge: 156, ci: 157, tests: 159,
   } as Record<string, number>,
   sequence: {
     v1: 25, hardening: 26, style: 27, sparql: 28, 'flow-tests': 29,
