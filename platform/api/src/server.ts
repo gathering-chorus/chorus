@@ -2708,6 +2708,27 @@ app.get('/api/doc-catalog/tags', async (_req: Request, res: Response) => {
       drift = detectDrift(tagged, valid);
     } catch { /* athena unreachable — skip drift but don't fail */ }
 
+    // History (#2522 AC6) — read trend snapshot file if present
+    let history: Array<{ date: string; productPct: number; subdomainPct: number; drift: number }> = [];
+    try {
+      const historyPath = path.resolve(__dirname, '..', '..', '..', 'knowledge', 'doc-tag-coverage-history.tsv');
+      if (fs.existsSync(historyPath)) {
+        const raw = fs.readFileSync(historyPath, 'utf-8');
+        history = raw.split('\n')
+          .filter(line => line && !line.startsWith('#'))
+          .map(line => {
+            const [date, _total, _pt, productPct, _st, subdomainPct, driftCount] = line.split('\t');
+            return {
+              date,
+              productPct: Number(productPct) || 0,
+              subdomainPct: Number(subdomainPct) || 0,
+              drift: Number(driftCount) || 0,
+            };
+          })
+          .slice(-30); // last 30 days
+      }
+    } catch { /* trend optional */ }
+
     res.json({
       total: docs.length,
       coverage: {
@@ -2717,6 +2738,7 @@ app.get('/api/doc-catalog/tags', async (_req: Request, res: Response) => {
       byProduct, bySubproduct,
       drift,
       tagged,
+      history,
     });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });

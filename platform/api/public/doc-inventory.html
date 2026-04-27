@@ -134,8 +134,17 @@ async function load() {
     const tags = await (await fetch('/api/doc-catalog/tags')).json();
     const cov = tags.coverage;
     const byProd = Object.entries(tags.byProduct).map(([k,v]) => `${k} <b>${v}</b>`).join(' · ');
+    let trendStr = '';
+    if (tags.history && tags.history.length > 1) {
+      const oldest = tags.history[0];
+      const newest = tags.history[tags.history.length - 1];
+      const arrow = newest.productPct === oldest.productPct ? '→' : (newest.productPct > oldest.productPct ? '↑' : '↓');
+      trendStr = ` · trend ${oldest.productPct}% ${arrow} ${newest.productPct}% (${tags.history.length}d)`;
+    } else if (tags.history && tags.history.length === 1) {
+      trendStr = ` · trend baseline ${tags.history[0].productPct}% (1d)`;
+    }
     document.getElementById('tagcoverage').innerHTML =
-      `<strong>Tag coverage:</strong> product ${cov.product.tagged}/${tags.total} <b>(${cov.product.percent}%)</b> · subdomain ${cov.subdomain.tagged}/${tags.total} <b>(${cov.subdomain.percent}%)</b> — ${byProd}`;
+      `<strong>Tag coverage:</strong> product ${cov.product.tagged}/${tags.total} <b>(${cov.product.percent}%)</b> · subdomain ${cov.subdomain.tagged}/${tags.total} <b>(${cov.subdomain.percent}%)</b> — ${byProd}${trendStr}`;
     if (tags.drift && tags.drift.length) {
       const drift = tags.drift.slice(0, 5).map(d => `${d.claimedSubdomain}${d.closestMatch ? ` → ${d.closestMatch}?` : ''}`).join(', ');
       document.getElementById('drift').style.display = 'block';
