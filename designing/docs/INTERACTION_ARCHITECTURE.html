@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interaction Architecture — Three Layers</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f8fafc;
+    --card: #f1f5f9;
+    --accent: #dc2626;
+    --accent2: #6d28d9;
+    --text: #1e293b;
+    --muted: #64748b;
+    --code-bg: #f1f5f9;
+    --border: #e2e8f0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 0;
+  }
+  header {
+    background: linear-gradient(135deg, #6d28d9 0%, #dc2626 100%);
+    padding: 60px 40px;
+    text-align: center;
+  }
+  header h1 {
+    font-size: 2.8em;
+    font-weight: 300;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+    color: #fff;
+  }
+  header p {
+    font-size: 1.2em;
+    color: rgba(255,255,255,0.85);
+    max-width: 650px;
+    margin: 0 auto;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 40px 20px;
+  }
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 35px;
+    margin-bottom: 30px;
+  }
+  .section h2 {
+    font-size: 1.6em;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .section h3 {
+    color: var(--accent2);
+    font-size: 1.1em;
+    margin: 20px 0 10px;
+  }
+  .section .subtitle {
+    color: var(--muted);
+    font-size: 0.95em;
+    margin-bottom: 20px;
+    font-style: italic;
+  }
+  p { margin-bottom: 14px; }
+  code {
+    background: var(--code-bg);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.88em;
+    color: #1d4ed8;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 0.92em;
+  }
+  th {
+    background: var(--card);
+    color: var(--accent);
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.8em;
+    letter-spacing: 1px;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:hover td { background: rgba(99, 102, 241, 0.08); }
+  ul { padding-left: 22px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; }
+  .callout {
+    background: var(--card);
+    border-left: 4px solid var(--accent);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 18px 0;
+    font-size: 0.95em;
+  }
+  .callout.green { border-left-color: #10b981; }
+  .callout.amber { border-left-color: #f59e0b; }
+  .callout strong { color: var(--accent); }
+  .callout.green strong { color: #10b981; }
+  .callout.amber strong { color: #f59e0b; }
+  .mermaid {
+    background: var(--code-bg);
+    padding: 20px;
+    border-radius: 8px;
+    margin: 14px 0;
+    text-align: center;
+    border: 1px solid var(--border);
+  }
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin: 12px 0;
+  }
+  .step-num {
+    background: var(--accent2);
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85em;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .step-text { flex: 1; }
+  .step-text strong { color: var(--accent); }
+  .check { color: #10b981; }
+  .current { color: #f59e0b; }
+  .back-link {
+    text-align: center;
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .back-link a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.95em;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Interaction Architecture</h1>
+  <p>How conversation patterns govern card gates, card gates emit spine events, and spine events close the learning loop.</p>
+</header>
+
+<div class="container">
+
+<!-- The Three Layers -->
+<div class="section">
+  <h2>Three Layers</h2>
+  <p class="subtitle">Patterns are the control plane. Cards are the work plane. Spine is the data plane.</p>
+
+  <pre class="mermaid">
+graph TB
+    subgraph L1["Layer 1: Conversation — Control Plane"]
+        Detect["Wren detects pattern"] --> Pattern["Active Pattern<br/>(one of nine)"]
+        Pattern --> Context["Load context<br/>for this pattern"]
+        Pattern --> Emit1["Emit:<br/>interaction.pattern.detected"]
+    end
+
+    subgraph L2["Layer 2: Card Gates — Work Plane"]
+        Pull["/pull<br/>entry gate"] --> Build["Building"]
+        Build --> Demo["/demo<br/>proving gate"]
+        Demo --> ACP["/acp<br/>acceptance"]
+    end
+
+    subgraph L3["Layer 3: Spine — Data Plane"]
+        Events["card.pulled<br/>card.demo.started<br/>card.accepted<br/>memory.search.executed"] --> Index["Chorus Index<br/>56K+ events"]
+        Index --> Borg["Borg<br/>pattern analysis"]
+    end
+
+    L1 -->|"governs"| L2
+    L2 -->|"emits to"| L3
+    L3 -.->|"feeds back"| L1
+
+    style L1 fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#1e293b
+    style L2 fill:#f5f3ff,stroke:#6d28d9,stroke-width:2px,color:#1e293b
+    style L3 fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#1e293b
+  </pre>
+
+  <p><strong>Layer 1 governs Layer 2.</strong> The conversation pattern determines which card gates activate. A Demo pattern triggers the proving gate. A Direction pattern triggers pull and build. A Story pattern triggers no gates — just capture.</p>
+
+  <p><strong>Layer 2 feeds Layer 3.</strong> Every gate emits spine events. Every mutation through <code>board-ts</code> produces structured events that flow into the Chorus index.</p>
+
+  <p><strong>Layer 3 feeds back to Layer 1.</strong> Borg reads the event stream and surfaces what the data says: pattern distribution, duration trends, transition health, gaps. The team learns how it operates by observing its own signal.</p>
+</div>
+
+<!-- Pattern → Gate Mapping -->
+<div class="section">
+  <h2>Pattern → Gate Mapping</h2>
+  <p class="subtitle">Each conversation pattern activates specific card-level operations.</p>
+
+  <table>
+    <tr><th>Pattern</th><th>Gates Triggered</th><th>Layer 2 Operations</th></tr>
+    <tr><td><strong>Direction</strong></td><td>Entry + Build</td><td><code>/pull</code>, build, commit</td></tr>
+    <tr><td><strong>Ideation</strong></td><td>Capture</td><td>Card creation, tagging (spike/discovery/commitment)</td></tr>
+    <tr><td><strong>Demo</strong></td><td>Proving + Accept</td><td><code>/demo</code>, <code>/acp</code>, smoke check</td></tr>
+    <tr><td><strong>Triage</strong></td><td>Rebalance</td><td><code>board-ts move</code>, priority changes, WIP rebalancing</td></tr>
+    <tr><td><strong>SWAT</strong></td><td>Emergency</td><td><code>swat</code> card, WIP limit bypass (DEC-055)</td></tr>
+    <tr><td><strong>Gemba</strong></td><td>None</td><td>Observation only — no gates, no probes of builder's backends</td></tr>
+    <tr><td><strong>Clearing</strong></td><td>Alignment</td><td>Multi-role briefs, <code>DECISION:</code> capture</td></tr>
+    <tr><td><strong>Story</strong></td><td>None</td><td><code>stories.md</code> capture — no card gates</td></tr>
+    <tr><td><strong>Reflection</strong></td><td>Process</td><td>Decision log, process changes, new patterns</td></tr>
+  </table>
+</div>
+
+<!-- Concurrent Patterns -->
+<div class="section">
+  <h2>Concurrent Patterns</h2>
+  <p class="subtitle">Jeff operates in multiple patterns simultaneously across roles. This is the goal, not an edge case.</p>
+
+  <pre class="mermaid">
+graph LR
+    Jeff["Jeff"] --> W["Wren<br/>Story / Reflection"]
+    Jeff --> S["Silas<br/>Demo (#1041)"]
+    Jeff --> K["Kade<br/>Building (#1092)"]
+
+    style Jeff fill:#dc2626,stroke:#dc2626,color:white
+    style W fill:#7c3aed,stroke:#7c3aed,color:white
+    style S fill:#2563eb,stroke:#2563eb,color:white
+    style K fill:#059669,stroke:#059669,color:white
+  </pre>
+
+  <p>Three roles, three patterns, one person. Jeff directs from conversation, not from coordinating sequential tasks. The roles hold their own state; Jeff moves between them fluidly.</p>
+
+  <p>Concurrent patterns are healthy. They mean the system is absorbing coordination. The anti-pattern is Jeff stuck in one pattern because the other roles can't proceed without him.</p>
+
+  <div class="callout green">
+    <strong>Desk freedom test:</strong> Can Jeff step away from the computer and the roles keep working? Concurrent patterns are evidence that the answer is approaching yes.
+  </div>
+</div>
+
+<!-- Prompt Type vs Count -->
+<div class="section">
+  <h2>Prompt Type vs. Prompt Count</h2>
+  <p class="subtitle">The andon should measure what kind of attention Jeff is spending, not just how much.</p>
+
+  <table>
+    <tr><th>Prompt Type</th><th>Signal</th><th>Cost</th></tr>
+    <tr><td><strong>Direction</strong></td><td>Jeff giving a vector</td><td style="color:#059669">Low — the system is working</td></tr>
+    <tr><td><strong>Story / Reflection</strong></td><td>Jeff thinking, sharing, synthesizing</td><td style="color:#059669">Low — this IS the product</td></tr>
+    <tr><td><strong>Ideation</strong></td><td>Jeff exploring</td><td style="color:#059669">Low — Wren sorts, nothing blocks</td></tr>
+    <tr><td><strong>Re-prompt</strong></td><td>Jeff repeating himself</td><td style="color:#dc2626"><strong>High — the system failed</strong></td></tr>
+    <tr><td><strong>Clarification</strong></td><td>Jeff explaining what he already said</td><td style="color:#dc2626"><strong>High — detection missed</strong></td></tr>
+    <tr><td><strong>Coordination</strong></td><td>Jeff routing between roles</td><td style="color:#dc2626"><strong>High — brief system failed</strong></td></tr>
+  </table>
+
+  <div class="callout amber">
+    <strong>Red on prompts/hour during a Story + Demo + Building session is fine</strong> — that's Jeff fully engaged across the team. Red because Jeff said "I already told you" three times is a process failure. The andon (#1091) needs pattern classification to distinguish between the two.
+  </div>
+</div>
+
+<!-- Practice Loop -->
+<div class="section">
+  <h2>The Practice Loop</h2>
+  <p class="subtitle">Where we are in operationalizing the patterns.</p>
+
+  <div class="step"><span class="step-num check">1</span><div class="step-text"><strong>Name</strong> — nine patterns documented <span class="check">(done)</span></div></div>
+  <div class="step"><span class="step-num check">2</span><div class="step-text"><strong>Learn</strong> — detection signals in CLAUDE.md, team internalizes at boot <span class="check">(done)</span></div></div>
+  <div class="step"><span class="step-num check">3</span><div class="step-text"><strong>Practice</strong> — Wren identifies active pattern in real time <span class="check">(done)</span></div></div>
+  <div class="step"><span class="step-num check">4</span><div class="step-text"><strong>Instrument</strong> — spine events emitted on detection <span class="check">(done)</span></div></div>
+  <div class="step"><span class="step-num current">5</span><div class="step-text"><strong>Connect</strong> — patterns govern card gates, gates emit to spine <span class="current">(current work)</span></div></div>
+  <div class="step"><span class="step-num">6</span><div class="step-text"><strong>Observe</strong> — Borg surfaces distribution, duration, transitions, gaps</div></div>
+  <div class="step"><span class="step-num">7</span><div class="step-text"><strong>Classify</strong> — andon uses pattern type, not just count, for attention cost</div></div>
+  <div class="step"><span class="step-num">8</span><div class="step-text"><strong>Adjust</strong> — patterns evolve based on what the data reveals</div></div>
+</div>
+
+<!-- What Borg Will Surface -->
+<div class="section">
+  <h2>What Borg Will Surface</h2>
+  <p class="subtitle">With enough instrumented data, the three-layer architecture reveals how the team actually operates.</p>
+
+  <h3>Distribution</h3>
+  <p>What percentage of interactions are Direction vs. Ideation vs. Reflection? A team that's 90% Direction and 0% Reflection is executing without learning.</p>
+
+  <h3>Duration Trends</h3>
+  <p>Demos getting longer? Something's wrong upstream (AC quality, smoke check skipped). Stories getting shorter? Jeff might be editing himself.</p>
+
+  <h3>Transitions</h3>
+  <p>Ideation → Direction is healthy (ideas graduating). Ideation → Ideation → Ideation with no Direction means nothing's landing. SWAT → SWAT → SWAT means systemic quality problems.</p>
+
+  <h3>Gaps</h3>
+  <p>No Story pattern in two weeks. No Reflection in a month. The absence of a pattern is data too.</p>
+
+  <h3>Correlation</h3>
+  <p>Do sessions that start with Triage produce more completed cards? Does Gemba reduce SWAT frequency? Does Ideation volume correlate with shipped features two weeks later?</p>
+</div>
+
+<div class="back-link">
+  <a href="/about/INTERACTION_PATTERNS">Full Pattern Catalog</a> ·
+  <a href="/gathering-docs/tech-stack.html">Tech Stack</a> ·
+  <a href="/gathering-docs/cheat-sheet.html">Command Card</a> ·
+  <a href="/gathering-docs/next-sequence.html">Roadmap</a>
+</div>
+
+</div>
+
+<script src="/js/vendor/mermaid.min.js"></script>
+<script>mermaid.initialize({ theme: 'default', startOnLoad: true });</script>
+
+</body>
+</html>

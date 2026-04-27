@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log Relatedness — OWL-style Graph</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', monospace; overflow: hidden; }
+  svg { width: 100vw; height: 100vh; display: block; }
+
+  .node-label { font-size: 11px; fill: #e6edf3; pointer-events: none; }
+  .node-sublabel { font-size: 9px; fill: #6e7681; pointer-events: none; }
+  .edge-label { font-size: 8px; fill: #8b949e; pointer-events: none; }
+
+  .legend {
+    position: fixed; bottom: 16px; left: 16px;
+    background: #161b22ee; border: 1px solid #21262d; border-radius: 8px;
+    padding: 12px 16px; font-size: 11px; z-index: 10;
+  }
+  .legend-title { font-weight: 600; color: #58a6ff; margin-bottom: 6px; }
+  .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+  .title-bar {
+    position: fixed; top: 16px; left: 16px; right: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    z-index: 10;
+  }
+  .title-bar h1 { font-size: 16px; color: #58a6ff; }
+  .title-bar .subtitle { font-size: 11px; color: #6e7681; }
+
+  .tooltip {
+    position: fixed; display: none;
+    background: #1c2128ee; border: 1px solid #30363d; border-radius: 6px;
+    padding: 10px 14px; font-size: 11px; max-width: 320px;
+    z-index: 20; pointer-events: none;
+  }
+  .tooltip .tt-name { font-weight: 600; color: #e6edf3; margin-bottom: 4px; }
+  .tooltip .tt-meta { color: #8b949e; margin-bottom: 2px; }
+  .tooltip .tt-writers { color: #d2a8ff; margin-top: 4px; }
+  .tooltip .tt-readers { color: #79c0ff; }
+</style>
+</head>
+<body>
+
+<div class="title-bar">
+  <div>
+    <h1>Chorus Log Relatedness Graph</h1>
+    <div class="subtitle">OWL-style property graph &middot; Updated 2026-03-03 (post-Silas fixes) &middot; hover for detail</div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-title">Node Types</div>
+  <div class="legend-row"><span class="legend-dot" style="background:#3fb950"></span> Hot (active today, high volume)</div>
+  <div class="legend-row"><span class="legend-dot" style="background:#d29922"></span> Warm (active today, low volume)</div>
+  <div class="legend-row"><span class="legend-dot" style="background:#6e7681"></span> Cold (days since write)</div>
+  <div class="legend-row"><span class="legend-dot" style="background:#f85149"></span> Dead (empty/missing)</div>
+  <div class="legend-row"><span class="legend-dot" style="background:#58a6ff"></span> Infrastructure (Loki, Prometheus, Grafana)</div>
+  <div class="legend-row"><span class="legend-dot" style="background:#bc8cff; border: 2px solid #d2a8ff"></span> Agent (role, daemon, hook)</div>
+  <div style="margin-top: 8px; color: #6e7681;">
+    <div class="legend-title">Edge Types</div>
+    <div class="legend-row"><span style="color:#d2a8ff">———</span> writes_to</div>
+    <div class="legend-row"><span style="color:#79c0ff">- - -</span> reads_from</div>
+    <div class="legend-row"><span style="color:#3fb950">———</span> collects</div>
+    <div class="legend-row"><span style="color:#f0883e">- - -</span> feeds_into</div>
+  </div>
+  <div style="margin-top: 8px; color: #6e7681;">Node size = relative volume. Drag to rearrange.</div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<svg id="graph"></svg>
+
+<script>
+const nodes = [
+  // Log destinations
+  { id: 'chorus-log', label: 'chorus.log', sub: '9,574 lines · JSONL', type: 'hot', r: 22, group: 'spine',
+    detail: 'All spine events — lifecycle, deploy, build, defect, handoff.\nWriters: chorus-log.sh (all roles), hooks, daemons\nReaders: Promtail → Loki → Grafana' },
+  { id: 'perm-log', label: 'permission-prompts.log', sub: '8,954 lines · JSONL', type: 'hot', r: 21, group: 'spine',
+    detail: 'Every tool call approval/denial.\nWriters: permission-logger-hook.sh\nReaders: Promtail → Loki, jeff-intensity.sh' },
+  { id: 'cmd-errors', label: 'command-errors.log', sub: '594 lines · JSONL', type: 'warm', r: 14, group: 'spine',
+    detail: 'Bash command failures with fingerprints.\nWriters: command-outcome-hook.sh\nReaders: Promtail → Loki, defect-poller' },
+  { id: 'handoffs', label: 'handoffs.log', sub: '401 lines · JSONL', type: 'warm', r: 12, group: 'spine',
+    detail: 'Brief write/read events.\nWriters: handoff-logger-hook.sh\nReaders: Promtail → Loki, handoff-check.sh' },
+  { id: 'activity', label: 'activity.md', sub: '652 lines · Markdown', type: 'hot', r: 18, group: 'team',
+    detail: 'Shared audit trail — all role actions.\nWriters: All 3 roles (append)\nReaders: All 3 roles, Jeff' },
+  { id: 'cost-log', label: 'cost-log.md', sub: '22 lines · 6d stale', type: 'cold', r: 8, group: 'team',
+    detail: 'Session cost entries.\nWriters: Roles at close-out\nReaders: Grafana cost dashboard' },
+  { id: 'ops-agent-log', label: 'ops-agent.log', sub: '2,597 lines · COLLECTED', type: 'hot', r: 20, group: 'daemon',
+    detail: 'Ops agent health check output.\nWriters: com.chorus.ops-agent\nReaders: Promtail → Loki (job: daemon-logs) — added 2026-03-03' },
+  { id: 'node-exp-err', label: 'node-exporter.err', sub: 'FIXED — noise eliminated', type: 'warm', r: 12, group: 'daemon',
+    detail: 'Was 9,557 lines / 2MB of thermal collector noise.\nFix: disabled thermal collector (2026-03-03).\nWriters: com.gathering.node-exporter\nReaders: Manual only — no longer noisy' },
+  { id: 'defect-log', label: 'defect-poller.log', sub: '426 lines · COLLECTED', type: 'warm', r: 13, group: 'daemon',
+    detail: 'Defect detection output.\nWriters: com.chorus.defect-poller\nReaders: Promtail → Loki (job: daemon-logs) — added 2026-03-03' },
+  { id: 'fuseki-perf-log', label: 'fuseki-perf.log', sub: '665 lines · COLLECTED', type: 'warm', r: 14, group: 'daemon',
+    detail: 'SPARQL benchmark results.\nWriters: com.chorus.fuseki-perf\nReaders: Promtail → Loki (job: daemon-logs) — added 2026-03-03. Also Prometheus textfile collector.' },
+  { id: 'chorus-api-log', label: 'chorus-api.log', sub: '14 lines', type: 'warm', r: 8, group: 'daemon',
+    detail: 'HTTP API server log.\nWriters: com.chorus.api\nReaders: Manual only' },
+  { id: 'watcher-log', label: 'watcher.log', sub: '508 lines · 20K', type: 'warm', r: 11, group: 'chorus-idx',
+    detail: 'Session indexing activity.\nWriters: com.chorus.session-watcher\nReaders: Manual debugging' },
+  { id: 'fuseki-compact-log', label: 'fuseki-compact.log', sub: '48 lines · weekly', type: 'cold', r: 8, group: 'daemon',
+    detail: 'TDB2 compaction output (Saturday 1am).\nWriters: com.chorus.fuseki-compact\nReaders: Manual only' },
+  { id: 'alert-log', label: 'alert-notifier.log', sub: '6 lines', type: 'cold', r: 7, group: 'daemon',
+    detail: 'Alert notification delivery.\nWriters: com.chorus.alert-notifier\nReaders: Manual only' },
+  { id: 'andon-enrich-log', label: 'andon-enrich.log', sub: 'interval poller · working', type: 'cold', r: 6, group: 'daemon',
+    detail: 'Interval poller — emits to other channels, not stdout.\nWriters: com.chorus.andon-enrich\nReaders: None (by design)' },
+  { id: 'input-monitor-log', label: 'jeff-input-monitor.log', sub: 'interval poller · working', type: 'cold', r: 6, group: 'daemon',
+    detail: 'Interval poller — binary logs to own data files.\nWriters: com.chorus.jeff-input-monitor\nReaders: None (by design)' },
+  { id: 'andon-light-log', label: 'andon-light.log', sub: 'interval poller · working', type: 'cold', r: 5, group: 'daemon',
+    detail: 'Interval poller — controls hardware LED, no log output expected.\nWriters: com.chorus.andon-light\nReaders: None (by design)' },
+
+  // Infrastructure
+  { id: 'promtail', label: 'Promtail', sub: 'log collector', type: 'infra', r: 18, group: 'infra',
+    detail: 'Collects Docker logs + 4 spine logs + audit.\nScrape interval: 5s\nDrops: 10 infra containers' },
+  { id: 'loki', label: 'Loki', sub: 'log store (port 3102)', type: 'infra', r: 20, group: 'infra',
+    detail: 'Indexed log storage.\nRetention: default\nQuery: LogQL via Grafana or API' },
+  { id: 'grafana', label: 'Grafana', sub: '10+ dashboards', type: 'infra', r: 20, group: 'infra',
+    detail: 'Visualization layer.\nDashboards: cost, alerts-overview, chorus-events, attention analytics' },
+  { id: 'prometheus', label: 'Prometheus', sub: '34 alert rules', type: 'infra', r: 18, group: 'infra',
+    detail: 'Metrics TSDB.\nScrape: 15s\nAlert rules: app(19), infra(14), home(1)' },
+  { id: 'alertmanager', label: 'Alertmanager', sub: 'routing', type: 'infra', r: 12, group: 'infra',
+    detail: 'Alert routing and dedup.\nSends to: alert-notifier → macOS banners' },
+  { id: 'chorus-idx', label: 'index.db', sub: '44,497 msgs · 50MB', type: 'hot', r: 22, group: 'chorus-idx',
+    detail: 'Chorus shared memory.\nSources: claude(41K), slack(1.8K), brief(782), clearing(745)\nQuery: /chorus search' },
+  { id: 'docker-api', label: 'Docker API', sub: '16 containers', type: 'infra', r: 16, group: 'infra',
+    detail: '6 app containers collected, 10 infra dropped.\nCollected: app, fuseki, css, navidrome, wordpress, vikunja' },
+  { id: 'audit-logs', label: 'audit-*.jsonl', sub: '24 files · 5.8MB', type: 'hot', r: 16, group: 'app',
+    detail: 'SOLID pod access events.\nDaily rotation.\nWriters: Express app\nReaders: Promtail → Loki' },
+
+  // Agents (writers)
+  { id: 'roles', label: 'Claude Roles', sub: 'Wren, Silas, Kade', type: 'agent', r: 16, group: 'agent',
+    detail: '3 AI roles + hooks.\nGenerate: spine logs, activity, briefs, session transcripts' },
+  { id: 'hooks', label: 'Claude Hooks', sub: 'permission, outcome, handoff', type: 'agent', r: 14, group: 'agent',
+    detail: 'PreToolUse/PostToolUse hooks.\nGenerate: permission-prompts, command-errors, handoffs logs' },
+  { id: 'defect-poller', label: 'defect-poller', sub: 'KeepAlive daemon', type: 'agent', r: 12, group: 'agent',
+    detail: 'Polls Docker container logs for errors.\nFingerprints → chorus.log + auto-cards' },
+  { id: 'ops-agent', label: 'ops-agent', sub: 'KeepAlive daemon', type: 'agent', r: 12, group: 'agent',
+    detail: 'Health checks, disk, containers.\nFindings → chorus.log + auto-cards' },
+  { id: 'session-watcher', label: 'session-watcher', sub: 'KeepAlive daemon', type: 'agent', r: 12, group: 'agent',
+    detail: 'Indexes Claude sessions into chorus index.\nReads: ~/.chorus/intake/ → index.db' },
+  { id: 'express-app', label: 'Express App', sub: 'Gathering', type: 'agent', r: 14, group: 'agent',
+    detail: 'Main application.\nEmits: stdout → Docker → Promtail, audit-*.jsonl' },
+  { id: 'board-snapshots', label: 'board-snapshot-*.json', sub: '8 files · per-boot', type: 'warm', r: 12, group: 'spine',
+    detail: 'Vikunja board state at session boot.\nWriters: werk-init.sh\nReaders: board diff detection' },
+];
+
+const edges = [
+  // Spine log writers
+  { from: 'roles', to: 'chorus-log', type: 'writes', label: 'chorus-log.sh' },
+  { from: 'roles', to: 'activity', type: 'writes', label: 'append' },
+  { from: 'hooks', to: 'perm-log', type: 'writes', label: 'on tool call' },
+  { from: 'hooks', to: 'cmd-errors', type: 'writes', label: 'on Bash fail' },
+  { from: 'hooks', to: 'handoffs', type: 'writes', label: 'on brief write' },
+
+  // Daemon writers
+  { from: 'defect-poller', to: 'chorus-log', type: 'writes', label: 'findings' },
+  { from: 'defect-poller', to: 'defect-log', type: 'writes', label: 'stdout' },
+  { from: 'ops-agent', to: 'chorus-log', type: 'writes', label: 'findings' },
+  { from: 'ops-agent', to: 'ops-agent-log', type: 'writes', label: 'stdout' },
+  { from: 'session-watcher', to: 'chorus-idx', type: 'writes', label: 'index' },
+  { from: 'session-watcher', to: 'watcher-log', type: 'writes', label: 'stdout' },
+  { from: 'express-app', to: 'audit-logs', type: 'writes', label: 'pod access' },
+  { from: 'express-app', to: 'docker-api', type: 'writes', label: 'stdout/stderr' },
+
+  // Collection pipeline
+  { from: 'chorus-log', to: 'promtail', type: 'collects', label: 'job: chorus-operations' },
+  { from: 'perm-log', to: 'promtail', type: 'collects', label: 'job: permission-prompts' },
+  { from: 'cmd-errors', to: 'promtail', type: 'collects', label: 'job: command-errors' },
+  { from: 'handoffs', to: 'promtail', type: 'collects', label: 'job: handoffs' },
+  { from: 'audit-logs', to: 'promtail', type: 'collects', label: 'job: audit' },
+  { from: 'docker-api', to: 'promtail', type: 'collects', label: 'docker_sd' },
+  { from: 'promtail', to: 'loki', type: 'feeds', label: 'push' },
+  { from: 'loki', to: 'grafana', type: 'feeds', label: 'LogQL' },
+  { from: 'prometheus', to: 'grafana', type: 'feeds', label: 'PromQL' },
+  { from: 'prometheus', to: 'alertmanager', type: 'feeds', label: 'alert rules' },
+
+  // Daemon logs → Promtail (added 2026-03-03)
+  { from: 'ops-agent-log', to: 'promtail', type: 'collects', label: 'job: daemon-logs' },
+  { from: 'defect-log', to: 'promtail', type: 'collects', label: 'job: daemon-logs' },
+  { from: 'fuseki-perf-log', to: 'promtail', type: 'collects', label: 'job: daemon-logs' },
+
+  // Cross-reads
+  { from: 'cmd-errors', to: 'defect-poller', type: 'reads', label: 'fingerprint scan' },
+  { from: 'fuseki-perf-log', to: 'prometheus', type: 'feeds', label: 'textfile collector' },
+
+  // Board snapshots
+  { from: 'roles', to: 'board-snapshots', type: 'writes', label: 'werk-init.sh' },
+];
+
+// Remove duplicate edge
+const edgeSet = new Set();
+const dedupEdges = edges.filter(e => {
+  const key = `${e.from}-${e.to}-${e.type}`;
+  if (edgeSet.has(key)) return false;
+  edgeSet.add(key);
+  return true;
+});
+
+const colorMap = {
+  hot: '#3fb950', warm: '#d29922', cold: '#6e7681', dead: '#f85149',
+  infra: '#58a6ff', agent: '#bc8cff'
+};
+const edgeColorMap = {
+  writes: '#d2a8ff', reads: '#79c0ff', collects: '#3fb950', feeds: '#f0883e'
+};
+
+const svg = document.getElementById('graph');
+const width = window.innerWidth;
+const height = window.innerHeight;
+svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+// Layout: force-directed simulation (simple spring model)
+const cx = width / 2, cy = height / 2;
+
+// Initial positions by group
+const groupPos = {
+  spine: { x: cx - 200, y: cy - 100 },
+  team: { x: cx - 350, y: cy + 100 },
+  daemon: { x: cx + 200, y: cy + 80 },
+  infra: { x: cx + 50, y: cy - 200 },
+  'chorus-idx': { x: cx + 250, y: cy - 150 },
+  agent: { x: cx - 150, y: cy + 200 },
+  app: { x: cx + 300, y: cy + 200 },
+};
+
+nodes.forEach((n, i) => {
+  const gp = groupPos[n.group] || { x: cx, y: cy };
+  n.x = gp.x + (Math.random() - 0.5) * 120;
+  n.y = gp.y + (Math.random() - 0.5) * 120;
+  n.vx = 0; n.vy = 0;
+});
+
+// Simple force simulation
+function simulate(iterations) {
+  for (let iter = 0; iter < iterations; iter++) {
+    // Repulsion between all nodes
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        let dx = nodes[j].x - nodes[i].x;
+        let dy = nodes[j].y - nodes[i].y;
+        let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        let minDist = (nodes[i].r + nodes[j].r) * 3;
+        if (dist < minDist) {
+          let force = (minDist - dist) / dist * 0.5;
+          nodes[i].x -= dx * force;
+          nodes[i].y -= dy * force;
+          nodes[j].x += dx * force;
+          nodes[j].y += dy * force;
+        }
+      }
+    }
+
+    // Attraction along edges
+    const nodeMap = {};
+    nodes.forEach(n => nodeMap[n.id] = n);
+    dedupEdges.forEach(e => {
+      const a = nodeMap[e.from], b = nodeMap[e.to];
+      if (!a || !b) return;
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      let ideal = 140;
+      let force = (dist - ideal) / dist * 0.02;
+      a.x += dx * force;
+      a.y += dy * force;
+      b.x -= dx * force;
+      b.y -= dy * force;
+    });
+
+    // Keep in bounds
+    nodes.forEach(n => {
+      n.x = Math.max(80, Math.min(width - 80, n.x));
+      n.y = Math.max(60, Math.min(height - 60, n.y));
+    });
+  }
+}
+
+simulate(200);
+
+// Render
+const nodeMap = {};
+nodes.forEach(n => nodeMap[n.id] = n);
+
+// Draw edges
+const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+svg.appendChild(edgeGroup);
+
+// Arrowhead defs
+const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+['writes', 'reads', 'collects', 'feeds'].forEach(type => {
+  const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+  marker.setAttribute('id', `arrow-${type}`);
+  marker.setAttribute('viewBox', '0 0 10 10');
+  marker.setAttribute('refX', '10');
+  marker.setAttribute('refY', '5');
+  marker.setAttribute('markerWidth', '6');
+  marker.setAttribute('markerHeight', '6');
+  marker.setAttribute('orient', 'auto');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M 0 2 L 10 5 L 0 8 Z');
+  path.setAttribute('fill', edgeColorMap[type]);
+  marker.appendChild(path);
+  defs.appendChild(marker);
+});
+svg.insertBefore(defs, svg.firstChild);
+
+dedupEdges.forEach(e => {
+  const a = nodeMap[e.from], b = nodeMap[e.to];
+  if (!a || !b) return;
+
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  // Shorten line to stop at node boundary
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ux = dx / dist, uy = dy / dist;
+
+  line.setAttribute('x1', a.x + ux * a.r);
+  line.setAttribute('y1', a.y + uy * a.r);
+  line.setAttribute('x2', b.x - ux * (b.r + 8));
+  line.setAttribute('y2', b.y - uy * (b.r + 8));
+  line.setAttribute('stroke', edgeColorMap[e.type] || '#30363d');
+  line.setAttribute('stroke-width', '1.2');
+  line.setAttribute('stroke-opacity', '0.5');
+  line.setAttribute('marker-end', `url(#arrow-${e.type})`);
+
+  if (e.type === 'reads' || e.type === 'feeds') {
+    line.setAttribute('stroke-dasharray', '4,3');
+  }
+
+  edgeGroup.appendChild(line);
+
+  // Edge label at midpoint
+  if (e.label) {
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', mx);
+    text.setAttribute('y', my - 4);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('class', 'edge-label');
+    text.textContent = e.label;
+    edgeGroup.appendChild(text);
+  }
+});
+
+// Draw nodes
+const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+svg.appendChild(nodeGroup);
+
+const tooltip = document.getElementById('tooltip');
+
+nodes.forEach(n => {
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('cursor', 'pointer');
+
+  // Glow
+  const glow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  glow.setAttribute('cx', n.x);
+  glow.setAttribute('cy', n.y);
+  glow.setAttribute('r', n.r + 4);
+  glow.setAttribute('fill', 'none');
+  glow.setAttribute('stroke', colorMap[n.type]);
+  glow.setAttribute('stroke-width', '1');
+  glow.setAttribute('stroke-opacity', '0.2');
+  g.appendChild(glow);
+
+  // Node circle
+  const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  circle.setAttribute('cx', n.x);
+  circle.setAttribute('cy', n.y);
+  circle.setAttribute('r', n.r);
+  circle.setAttribute('fill', colorMap[n.type] + '22');
+  circle.setAttribute('stroke', colorMap[n.type]);
+  circle.setAttribute('stroke-width', n.type === 'agent' ? '2' : '1.5');
+  if (n.type === 'dead') {
+    circle.setAttribute('stroke-dasharray', '3,2');
+  }
+  g.appendChild(circle);
+
+  // Label
+  const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  label.setAttribute('x', n.x);
+  label.setAttribute('y', n.y + n.r + 14);
+  label.setAttribute('text-anchor', 'middle');
+  label.setAttribute('class', 'node-label');
+  label.textContent = n.label;
+  g.appendChild(label);
+
+  // Sublabel
+  const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  sub.setAttribute('x', n.x);
+  sub.setAttribute('y', n.y + n.r + 25);
+  sub.setAttribute('text-anchor', 'middle');
+  sub.setAttribute('class', 'node-sublabel');
+  sub.textContent = n.sub;
+  g.appendChild(sub);
+
+  // Tooltip
+  g.addEventListener('mouseenter', (evt) => {
+    tooltip.style.display = 'block';
+    tooltip.innerHTML = `<div class="tt-name">${n.label}</div>
+      <div class="tt-meta">${n.sub}</div>
+      <div class="tt-meta" style="color:${colorMap[n.type]}">${n.type.toUpperCase()} · ${n.group}</div>
+      <div style="margin-top:6px; white-space:pre-wrap; color:#c9d1d9">${n.detail}</div>`;
+  });
+  g.addEventListener('mousemove', (evt) => {
+    tooltip.style.left = (evt.clientX + 16) + 'px';
+    tooltip.style.top = (evt.clientY - 10) + 'px';
+  });
+  g.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+  });
+
+  // Drag
+  let dragging = false, offsetX, offsetY;
+  g.addEventListener('mousedown', (evt) => {
+    dragging = true;
+    offsetX = evt.clientX - n.x;
+    offsetY = evt.clientY - n.y;
+    evt.preventDefault();
+  });
+  window.addEventListener('mousemove', (evt) => {
+    if (!dragging) return;
+    n.x = evt.clientX - offsetX;
+    n.y = evt.clientY - offsetY;
+    redrawNode(g, n);
+    redrawEdges();
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+
+  nodeGroup.appendChild(g);
+});
+
+function redrawNode(g, n) {
+  const circles = g.querySelectorAll('circle');
+  circles[0].setAttribute('cx', n.x);
+  circles[0].setAttribute('cy', n.y);
+  circles[1].setAttribute('cx', n.x);
+  circles[1].setAttribute('cy', n.y);
+  const texts = g.querySelectorAll('text');
+  texts[0].setAttribute('x', n.x);
+  texts[0].setAttribute('y', n.y + n.r + 14);
+  texts[1].setAttribute('x', n.x);
+  texts[1].setAttribute('y', n.y + n.r + 25);
+}
+
+function redrawEdges() {
+  while (edgeGroup.firstChild) edgeGroup.removeChild(edgeGroup.firstChild);
+  dedupEdges.forEach(e => {
+    const a = nodeMap[e.from], b = nodeMap[e.to];
+    if (!a || !b) return;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / dist, uy = dy / dist;
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', a.x + ux * a.r);
+    line.setAttribute('y1', a.y + uy * a.r);
+    line.setAttribute('x2', b.x - ux * (b.r + 8));
+    line.setAttribute('y2', b.y - uy * (b.r + 8));
+    line.setAttribute('stroke', edgeColorMap[e.type] || '#30363d');
+    line.setAttribute('stroke-width', '1.2');
+    line.setAttribute('stroke-opacity', '0.5');
+    line.setAttribute('marker-end', `url(#arrow-${e.type})`);
+    if (e.type === 'reads' || e.type === 'feeds') {
+      line.setAttribute('stroke-dasharray', '4,3');
+    }
+    edgeGroup.appendChild(line);
+
+    if (e.label) {
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', mx);
+      text.setAttribute('y', my - 4);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('class', 'edge-label');
+      text.textContent = e.label;
+      edgeGroup.appendChild(text);
+    }
+  });
+}
+</script>
+
+</body>
+</html>
