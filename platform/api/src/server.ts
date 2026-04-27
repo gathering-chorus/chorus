@@ -2660,13 +2660,37 @@ app.get('/api/doc-inventory', (_req: Request, res: Response) => {
     }
     const stat = fs.statSync(tsvPath);
     const raw = fs.readFileSync(tsvPath, 'utf-8').trim();
-    const rows = raw.split('\n').filter(Boolean).map(line => {
-      const [repo, pathCol, state, cabinet, owner, inCatalog, topic] = line.split('\t');
-      return { repo, path: pathCol, state, cabinet, owner: owner || '', inCatalog, topic: topic || '' };
-    });
+    // Schema (#2510 wave 4):
+    //   repo  path  state  classification  owner  in-catalog  topic
+    //   hash12  mtime  sha256
+    // Header line starts with '#'; skip it.
+    const rows = raw.split('\n')
+      .filter(line => line && !line.startsWith('#'))
+      .map(line => {
+        const [repo, pathCol, state, classification, owner, inCatalog, topic, _hash, mtime, sha256] = line.split('\t');
+        return {
+          repo, path: pathCol, state,
+          // Backward-compat: keep `cabinet` populated with classification
+          cabinet: classification,
+          classification,
+          owner: owner || '',
+          inCatalog, topic: topic || '',
+          mtime: mtime || '', sha256: sha256 || '',
+        };
+      });
     const counts: Record<string, number> = {};
-    for (const r of rows) counts[r.state] = (counts[r.state] || 0) + 1;
-    res.json({ generatedAt: stat.mtime.toISOString(), total: rows.length, counts, rows });
+    const classCounts: Record<string, number> = {};
+    for (const r of rows) {
+      counts[r.state] = (counts[r.state] || 0) + 1;
+      if (r.classification) classCounts[r.classification] = (classCounts[r.classification] || 0) + 1;
+    }
+    res.json({
+      generatedAt: stat.mtime.toISOString(),
+      total: rows.length,
+      counts,
+      classCounts,
+      rows,
+    });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     res.status(500).json({ error: msg });
