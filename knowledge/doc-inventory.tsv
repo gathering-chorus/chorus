@@ -1,458 +1,459 @@
-gathering	docs/GALLERY-REFACTORING.md	ok	gathering		Y		30e82e4cafc4
-gathering	docs/CONTENT_INGESTION_MATRIX.md	ok	gathering		Y		072b6b2da74c
-gathering	docs/gathering-site-map.md	ok	gathering		Y		7f063992d703
-gathering	docs/SITE_MAP.md	ok	gathering		Y		e70d5b6ceeeb
-gathering	docs/OWNER_PERSONA.md	ok	gathering		Y		c0ead4b14ce0
-gathering	docs/USER_CAPABILITIES.md	ok	gathering		Y		7761a1a0dfff
-gathering	docs/C4-ARCHITECTURE.md	ok	gathering		Y		2335bc6937ca
-gathering	docs/API.md	ok	gathering		Y		1740f5c7db91
-gathering	docs/GUARDRAILS.md	ok	gathering		Y		ee28561906cf
-gathering	docs/IDEA_PROJECT_LIFECYCLE.md	ok	gathering		Y		3b951ca029d1
-gathering	docs/PRODUCT_VISION.md	ok	gathering		Y		16ccf11e2fcf
-gathering	docs/CONCEPTUAL_MODEL.md	ok	gathering		Y		6f2a87aa6f47
-gathering	docs/ARCHITECTURE_DECISIONS.md	ok	gathering		Y		9005e4bec7b6
-gathering	docs/SCALING_RDF_TRIPLES.md	ok	gathering		Y		0c18969acb87
-gathering	docs/UNIFIED_INDEX_ARCHITECTURE.md	ok	gathering		Y		b2386e0c76f4
-gathering	docs/fuseki-rebuild-diagram.html	ok	gathering		Y		c0d30cbffafc
-gathering	docs/GLOSSARY.md	ok	gathering		Y		cd6de76a9371
-gathering	docs/WORDPRESS-INTEGRATION.md	ok	gathering		Y		a931dc341fe4
-gathering	docs/TESTING.md	ok	gathering		Y		580bab64dc95
-gathering	docs/PUBLIC_ACCESS.md	ok	gathering		Y		e3747413d98f
-gathering	docs/SOLID-AUTHENTICATION.md	ok	gathering		Y		6c383790affb
-gathering	docs/HEIDEGGER_GATHERING_RESEARCH.md	ok	gathering		Y		e361ac6ee1d2
-gathering	docs/BOOK_CATALOG_WORKFLOW.md	ok	gathering		Y		af1d5d1665b3
-gathering	docs/gathering-vision-synthesis.md	ok	gathering		Y		edb46016251f
-gathering	docs/ONTOLOGY_STATUS.md	ok	gathering		Y		4df48e052029
-gathering	docs/SYSTEM_ARCHITECTURE.md	ok	gathering		Y		f0f4d4f2fbf7
-gathering	docs/SOLID_PODS_RESEARCH.md	ok	gathering		Y		b31d08974a3d
-gathering	docs/GATHERING_VISION.md	ok	gathering		Y		a0649371a428
-gathering	docs/INFRASTRUCTURE.md	ok	gathering		Y		ab13baf053ab
-gathering	docs/STARTUP_PROCESS.md	ok	gathering		Y		0b2eed6b64db
-gathering	docs/DECISIONS.md	ok	gathering		Y		34393184de10
-gathering	docs/ACCESS_CONTROL_MATRIX.md	ok	gathering		Y		f9787ed1fee2
-gathering	public/lightlife.html	ok	gathering		Y		43a1b90e5474
-gathering	public/operations.html	ok	gathering		Y		19837f74c691
-gathering	public/flow-map.html	ok	gathering		Y		c2946533cd30
-gathering	public/werk-process.html	ok	gathering		Y		e9546b619cff
-gathering	public/gathering-chorus.html	ok	gathering		Y		e4552d16fc39
-gathering	public/value-stream-render.html	ok	gathering		Y		df9ca6508ba2
-gathering	public/attention-analytics.html	ok	gathering		Y		6596781df8a1
-gathering	public/garden-observability.html	ok	gathering		Y		3064a1b07177
-gathering	public/akasha/proposal.html	ok	akasha		Y		f435fffff1a2
-gathering	public/akasha/index.html	ok	akasha		Y		1de09338b860
-gathering	public/akasha/about.html	ok	akasha		Y		23f730d29911
-gathering	public/akasha/contact.html	ok	akasha		Y		04b5e7cbb7c0
-gathering	public/akasha/schedule.html	ok	akasha		Y		9fd44e7d37ce
-gathering	public/akasha/value-stream.html	ok	akasha		Y		41f01efab13b
-gathering	public/akasha/services.html	ok	akasha		Y		fd3288a130ad
-gathering	public/akasha/site.html	ok	akasha		Y		a94b58d24421
-gathering	public/self-relationships.html	ok	gathering		Y		50e0987e8397
-gathering	public/dpor-report.html	ok	gathering		Y		74fcf71eafe4
-gathering	public/wardley-map.html	ok	gathering		Y		ae9a440a8cf9
-gathering	public/basement-garden.html	ok	gathering		Y		29339d206d9a
-gathering	public/gathering-docs/awareness-service-design.html	ok	gathering		Y		cf6262f721d2
-gathering	public/gathering-docs/c4-convergence-tier.html	ok	gathering		Y		af630833d2a6
-gathering	public/gathering-docs/domain-context-awareness.html	ok	gathering		Y		530f490209a4
-gathering	public/gathering-docs/bdd-seeds.html	ok	gathering		Y		7f44b2f5c2e0
-gathering	public/gathering-docs/domain-blog.html	ok	gathering		Y		19296c83f872
-gathering	public/gathering-docs/garden-setup-flow.html	ok	gathering		Y		3f76619050cb
-gathering	public/gathering-docs/werk-process.html	ok	gathering		Y		10eeb0a743fe
-gathering	public/gathering-docs/cheat-sheet.html	ok	gathering		Y		63935de7ee50
-gathering	public/gathering-docs/research-actor-bdd-agents.html	ok	gathering		Y		9b777b0905df
-gathering	public/gathering-docs/domain-books.html	ok	gathering		Y		38116ffb2ff0
-gathering	public/gathering-docs/domain-notes.html	ok	gathering		Y		97f3a504bb02
-gathering	public/gathering-docs/interaction-pattern-history.html	ok	gathering		Y		c213eff80cf6
-gathering	public/gathering-docs/gathering-positioning.html	ok	gathering		Y		fc49816b2c00
-gathering	public/gathering-docs/actor-diagram-nudge.html	ok	gathering		Y		2dec5eab0dd4
-gathering	public/gathering-docs/team-reliability-analysis.html	ok	gathering		Y		2e74de820312
-gathering	public/gathering-docs/domain-context-seeds.html	ok	gathering		Y		abd879ea72c7
-gathering	public/gathering-docs/observability-service-design.html	ok	gathering		Y		7e792ea0e126
-gathering	public/gathering-docs/harness-engineering-chorus.html	ok	gathering		Y		9479d86aad48
-gathering	public/gathering-docs/pair-flow-sequence.html	ok	gathering		Y		f978dbf280e8
-gathering	public/gathering-docs/domain-glimmers.html	ok	gathering		Y		c720d33d04c6
-gathering	public/gathering-docs/quality-service.html	ok	gathering		Y		56d6446a11bb
-gathering	public/gathering-docs/design-gate-definitions.html	ok	gathering		Y		0cf1d4dd2052
-gathering	public/gathering-docs/domain-cooking.html	ok	gathering		Y		70466e3fd1c3
-gathering	public/gathering-docs/home-cloud.html	ok	gathering		Y		6f5d1d26b44b
-gathering	public/gathering-docs/pulse-service-design.html	ok	gathering		Y		4231f1b11003
-gathering	public/gathering-docs/domain-seeds.html	ok	gathering		Y		d381d6bfd102
-gathering	public/gathering-docs/domain-stories.html	ok	gathering		Y		864a9f128d23
-gathering	public/gathering-docs/service-design-page.html	ok	gathering		Y		4e3e3f7eb0c3
-gathering	public/gathering-docs/competing-implementations-audit.html	ok	gathering		Y		b72441b13f5e
-gathering	public/gathering-docs/framework-service-design.html	ok	gathering		Y		c328100bea47
-gathering	public/gathering-docs/ax.html	ok	gathering		Y		55252679492d
-gathering	public/gathering-docs/definition-of-done.html	ok	gathering		Y		405cae4027a9
-gathering	public/gathering-docs/gathering-roadmap.html	ok	gathering		Y		2a4d096decea
-gathering	public/gathering-docs/domain-mockup-cards.html	ok	gathering		Y		f688dfbe76c2
-gathering	public/gathering-docs/domain-gallery.html	ok	gathering		Y		a4c65276d3eb
-gathering	public/gathering-docs/domain-self.html	ok	gathering		Y		b436ea98f2e9
-gathering	public/gathering-docs/board-triage.html	ok	gathering		Y		bf801ab48a88
-gathering	public/gathering-docs/log-topology.html	ok	gathering		Y		4277b3d7b294
-gathering	public/gathering-docs/nudge-service-design.html	ok	gathering		Y		c7c1fb7cd007
-gathering	public/gathering-docs/posture-strip.html	ok	gathering		Y		0bab784199fb
-gathering	public/gathering-docs/domain-index.html	ok	gathering		Y		54a4a1e75646
-gathering	public/gathering-docs/org-design.html	ok	gathering		Y		8f3372efc9c1
-gathering	public/gathering-docs/log-relatedness.html	ok	gathering		Y		a8e31cf4a85d
-gathering	public/gathering-docs/domain-observability.html	ok	gathering		Y		93023bb78fe1
-gathering	public/gathering-docs/system-model-thinking.html	ok	gathering		Y		daf71e795f7a
-gathering	public/gathering-docs/demo-plan-1641.html	ok	gathering		Y		d64cd3b7d768
-gathering	public/gathering-docs/photo-serving-model.md	ok	gathering		Y		fef5437dc517
-gathering	public/gathering-docs/domain-reading.html	ok	gathering		Y		0f947bfbb168
-gathering	public/gathering-docs/owl-design-assessment.html	ok	gathering		Y		f404bdb0a1d8
-gathering	public/gathering-docs/domain-loom.html	ok	gathering		Y		d359e584eeaa
-gathering	public/gathering-docs/domain-knowledge-graph.html	ok	gathering		Y		b62e229708da
-gathering	public/gathering-docs/domain-context-observability.html	ok	gathering		Y		72bf8e8018ec
-gathering	public/gathering-docs/observing-value.html	ok	gathering		Y		2b6b6fc5b2c5
-gathering	public/gathering-docs/domain-people.html	ok	gathering		Y		6a10bc843028
-gathering	public/gathering-docs/genome-visualization.html	ok	gathering		Y		28bf6e389c7c
-gathering	public/gathering-docs/domain-search.html	ok	gathering		Y		53235a77286d
-gathering	public/gathering-docs/roles-service-design.html	ok	gathering		Y		12467bec3941
-gathering	public/gathering-docs/card-type-spec.html	ok	gathering		Y		9084f76795ba
-gathering	public/gathering-docs/infrastructure-service-design.html	ok	gathering		Y		c2af36ef53c6
-gathering	public/gathering-docs/good-borg.html	ok	gathering		Y		7132ab2c8b30
-gathering	public/gathering-docs/domain-music.html	ok	gathering		Y		d2e696bd95e0
-gathering	public/gathering-docs/service-design-pulse.html	ok	gathering		Y		e82b991f907a
-gathering	public/gathering-docs/origin-analysis.html	ok	gathering		Y		f7808fd7c77e
-gathering	public/gathering-docs/operating-model.html	ok	gathering		Y		e94a62304bcf
-gathering	public/gathering-docs/quality-service-design.html	ok	gathering		Y		5901dce0800a
-gathering	public/gathering-docs/claude-hooks.html	ok	gathering		Y		f648e32de147
-gathering	public/gathering-docs/domain-social.html	ok	gathering		Y		fc32047a44c8
-gathering	public/gathering-docs/seeds-service-design.html	ok	gathering		Y		82a61c42063d
-gathering	public/gathering-docs/tech-stack.html	ok	gathering		Y		8c037b55b51f
-gathering	public/gathering-docs/photos-source-diff.html	ok	gathering		Y		047eb2833bd8
-gathering	public/gathering-docs/protocol-stack.html	ok	gathering		Y		41cbb1da3223
-gathering	public/gathering-docs/skill-lifecycle.html	ok	gathering		Y		16b139ba4ee6
-gathering	public/gathering-docs/photos-source-richness-scorecard.md	ok	gathering		Y		cb5e6295ac8d
-gathering	public/gathering-docs/blockverse-shared-awareness.html	ok	gathering		Y		55b9b2401923
-gathering	public/gathering-docs/domain-photos.html	ok	gathering		Y		ee5e37b10d80
-gathering	public/gathering-docs/domain-property.html	ok	gathering		Y		6bf9b5b8363a
-gathering	public/gathering-docs/clearing-service-design.html	ok	gathering		Y		5a4e2a8e9df7
-gathering	public/gathering-docs/next-sequence.html	ok	gathering		Y		e45a4f905a92
-gathering	public/gathering-docs/crawler-service-design.html	ok	gathering		Y		80912e5e3a2d
-gathering	public/gathering-docs/services-service-design.html	ok	gathering		Y		502c749466c2
-gathering	public/gathering-docs/spine-observability.html	ok	gathering		Y		5fd3e8f29b21
-gathering	public/gathering-docs/self-portrait.html	ok	gathering		Y		c2db52fee47a
-gathering	public/gathering-docs/domain-infrastructure.html	ok	gathering		Y		2bcc79171e4c
-gathering	public/gathering-docs/loom-service-design.html	ok	gathering		Y		d60f6883f952
-gathering	public/gathering-docs/cadence-analysis.html	ok	gathering		Y		d5b247f477c9
-gathering	public/gathering-docs/good-borg-print.html	ok	gathering		Y		0ad0b74bb150
-gathering	public/gathering-docs/photos-source-richness-comparison.html	ok	gathering		Y		8b6e85428297
-gathering	public/gathering-docs/homeostasis-research.html	ok	gathering		Y		eaa52c74fe40
-gathering	public/gathering-docs/interaction-architecture.html	ok	gathering		Y		da8bcc64a1cf
-gathering	public/gathering-docs/backup-strategy.html	ok	gathering		Y		e9dd10490211
-gathering	public/gathering-docs/domain-watching.html	ok	gathering		Y		1bbce9081b8e
-gathering	public/gathering-docs/domain-chorus.html	ok	gathering		Y		1a402fadc8eb
-gathering	public/gathering-docs/value-stream-design.html	ok	gathering		Y		0546150db3b4
-gathering	public/gathering-docs/domain-ideas.html	ok	gathering		Y		541450992389
-gathering	public/practice-spine.html	ok	gathering		Y		7691eba39094
-gathering	public/docs/nifi-chorus-integration-design.html	unfiled	gathering		N		aa3d743686d7
-gathering	public/docs/for-dani.html	unfiled	gathering		N		086a469e0c9f
-gathering	public/docs/photos-source-3way-comparison.html	unfiled	gathering		N		1aee177eae8b
-gathering	public/docs/nifi-concepts.html	unfiled	gathering		N		78cb16cc4bc5
-gathering	public/docs/team-timeline.html	unfiled	gathering		N		25232cdfb310
-gathering	public/business-plan.html	ok	gathering		Y		5270e87366b8
-gathering	public/v1-acceptance-criteria.html	ok	gathering		Y		5660e6c21c1a
-gathering	public/self-ontology-sketch.html	ok	gathering		Y		309267d2ae81
-gathering	public/ontology-value-stream-research.html	ok	gathering		Y		36a63af2b75e
-gathering	public/gemba-analysis.html	ok	gathering		Y		ee1d20865337
-gathering	public/chorus-docs/attention-architecture.html	misfiled	chorus		Y		1f95215e8b5c
-gathering	public/chorus-docs/spine-observability.html	misfiled	chorus		Y		6f406f60fcd1
-gathering	public/doc-catalog.html	ok	gathering		Y		32b3f5e0b46a
-gathering	public/concept-enrichment.html	ok	gathering		Y		beee20068957
-gathering	public/model-data-hub.html	ok	gathering		Y		fade703602e5
-gathering	public/reprompt-analytics.html	ok	gathering		Y		c027a31f32f3
-gathering	public/harvest-scope.html	ok	gathering		Y		03bdac433b1b
-gathering	public/homeostasis-research.html	ok	gathering		Y		0f45971f5a8f
-gathering	public/voice-analytics.html	ok	gathering		Y		dbeba1d8c0c3
-gathering	minimal_blog_ui_mockup.html	unfiled	gathering		N		b2f7cc93db95
-gathering	data/about/EMERGENT_ARCHITECTURE_PAPER.md	misfiled	chorus		Y		4cbb84afd143
-gathering	data/about/LIVING_ARCHITECTURE.md	misfiled	chorus		Y		7ce126c6c025
-gathering	data/about/INTERACTION_ARCHITECTURE.html	misfiled	chorus		Y		e9611a4e039d
-gathering	data/about/ADR-002-acl-graduation-model.md	misfiled	chorus		Y		d4c0627a66b6
-gathering	data/about/GALLERY-REFACTORING.md	misfiled	chorus		Y		88e9ffb92015
-gathering	data/about/CONTENT_INGESTION_MATRIX.md	ok	gathering		Y		39664dba34a2
-gathering	data/about/ENGINEERING_HORIZONTAL.md	misfiled	chorus		Y		526f7db12483
-gathering	data/about/ADR-014-pod-mediated-coordination.md	misfiled	chorus		Y		9e4608cca225
-gathering	data/about/CHORUS_COMMAND_CARD.html	misfiled	chorus		Y		36d1df5779ab
-gathering	data/about/SITE_MAP.md	ok	gathering		Y		1d781348ce4d
-gathering	data/about/OWNER_PERSONA.md	ok	gathering		Y		3a30129fae38
-gathering	data/about/CHEAT_SHEET.html	misfiled	chorus		Y		4861d47706cb
-gathering	data/about/USER_CAPABILITIES.md	ok	gathering		Y		2f7cc1b95412
-gathering	data/about/C4-ARCHITECTURE.md	ok	gathering		Y		df312a2aca51
-gathering	data/about/DOMAIN_ENDPOINT_CONTRACT.html	ok	gathering		Y		acb56484502b
-gathering	data/about/LOG_RELATEDNESS.html	misfiled	chorus		Y		4e48047d905b
-gathering	data/about/ADR-005-observability-evolves-with-infrastructure.md	misfiled	chorus		Y		fd503435b1a8
-gathering	data/about/INTERACTION_PATTERNS.md	misfiled	chorus		Y		60bdc3a81f97
-gathering	data/about/API.md	ok	gathering		Y		97de449b0062
-gathering	data/about/SOURCE_SEMANTICS.html	ok	gathering		Y		2aa00a6ac20e
-gathering	data/about/infrastructure-constraints.md	ok	gathering		Y		d6911d7579a7
-gathering	data/about/AI_FOUNDATIONS.html	misfiled	chorus		Y		cfe721eeec38
-gathering	data/about/GUARDRAILS.md	misfiled	chorus		Y		dae1ce7eb588
-gathering	data/about/COMPLETENESS_MODEL.md	misfiled	chorus		Y		d4f66471c2a1
-gathering	data/about/SYSTEM_MODEL.md	misfiled	chorus		Y		0d1d3935496c
-gathering	data/about/IDEA_PROJECT_LIFECYCLE.md	ok	gathering		Y		01936d8ac4ae
-gathering	data/about/CONCEPTUAL_MODEL.md	ok	gathering		Y		03afa9784658
-gathering	data/about/ARCHITECTURE_DECISIONS.md	ok	gathering		Y		bf5dcc19f8f7
-gathering	data/about/SCALING_RDF_TRIPLES.md	ok	gathering		Y		ecbb7918aa28
-gathering	data/about/ADR-009-chorus-pipeline-ontology.md	misfiled	chorus		Y		541fa5e7a9da
-gathering	data/about/UNIFIED_INDEX_ARCHITECTURE.md	ok	gathering		Y		3d490389d9b9
-gathering	data/about/PAIR_PROGRAMMING_RESEARCH.md	misfiled	chorus		Y		781b990c4aca
-gathering	data/about/GLOSSARY.md	ok	gathering		Y		8bf7d500bdfc
-gathering	data/about/INGEST_COMPLEXITY.html	ok	gathering		Y		3768359a9d2f
-gathering	data/about/ADR-007-two-machine-storage-topology.md	misfiled	chorus		Y		78e2658ab7a1
-gathering	data/about/WORDPRESS-INTEGRATION.md	ok	gathering		Y		a197c5003c05
-gathering	data/about/ADR-010-generalized-harvest-pipeline.md	misfiled	chorus		Y		133713fc870c
-gathering	data/about/ICD_COMPARE_NOTES.html	misfiled	chorus		Y		537d3eb18bd5
-gathering	data/about/MEMORY_ARCHITECTURE.html	misfiled	chorus		Y		654d13230291
-gathering	data/about/LOG_TOPOLOGY.html	misfiled	chorus		Y		49ffb2930461
-gathering	data/about/WARDLEY_MAP_ICD.html	misfiled	chorus		Y		3d61edf65eee
-gathering	data/about/system-model-thinking.html	misfiled	chorus		Y		aa1c38f54ad4
-gathering	data/about/POSTURE_STRIP.html	misfiled	chorus		Y		cb8fb6c23d53
-gathering	data/about/GOOD_BORG_PRINT.html	misfiled	chorus		Y		cd9ca52ba4e0
-gathering	data/about/FRESHNESS_MANIFEST.md	misfiled	chorus		Y		00c8176cb6a8
-gathering	data/about/CONVERGENCE_ARCHITECTURE.html	misfiled	chorus		Y		045bca02c9e4
-gathering	data/about/STYLE_GUIDE.md	ok	gathering		Y		9873eb94b241
-gathering	data/about/TESTING.md	misfiled	chorus		Y		44a72f592fee
-gathering	data/about/ADR-012-network-bind-security.md	misfiled	chorus		Y		6646cd4f7ffb
-gathering	data/about/ADR-001-observability-network-ownership.md	misfiled	chorus		Y		af8f8ba75910
-gathering	data/about/ADR-006-bridge-scope-guardrail.md	misfiled	chorus		Y		e67edf79f9cd
-gathering	data/about/PUBLIC_ACCESS.md	ok	gathering		Y		a725db0d1c88
-gathering	data/about/_archived/SYSTEM_ARCHITECTURE.md	unfiled	archive		N		8c43b6f9fd2e
-gathering	data/about/CHORUS_SDK.md	misfiled	chorus		Y		8feb60e7d540
-gathering	data/about/SOLID-AUTHENTICATION.md	misfiled	chorus		Y		99d7d11fad74
-gathering	data/about/GOOD_BORG.html	misfiled	chorus		Y		5bb1303559fc
-gathering	data/about/HEIDEGGER_GATHERING_RESEARCH.md	ok	gathering		Y		3b125e5db4a2
-gathering	data/about/BOOK_CATALOG_WORKFLOW.md	ok	gathering		Y		5c41f48a7826
-gathering	data/about/ADR-013-boundary-checking-operating-model.md	misfiled	chorus		Y		c0f24b787fd9
-gathering	data/about/HARVEST_RECONCILIATION.html	ok	gathering		Y		c44fdd1ec4ea
-gathering	data/about/ONTOLOGY_STATUS.md	ok	gathering		Y		27a4fed26433
-gathering	data/about/ICD_TEST_STRATEGY.html	misfiled	chorus		Y		440c8471cd59
-gathering	data/about/ADR-003-visibility-enforcement-architecture.md	misfiled	chorus		Y		f120e116e53a
-gathering	data/about/SOLID_PODS_RESEARCH.md	ok	gathering		Y		4a60e259558b
-gathering	data/about/GARDEN_SETUP_FLOW.html	ok	gathering		Y		523bf698fe1f
-gathering	data/about/GATHERING_README.md	ok	gathering		Y		1b868ed09e09
-gathering	data/about/ATTENTION_ARCHITECTURE.html	misfiled	chorus		Y		e862adbde566
-gathering	data/about/HOMEOSTASIS_RESEARCH.html	misfiled	chorus		Y		e1ab2d3cc571
-gathering	data/about/ICD_PROCESS_FLOW.html	misfiled	chorus		Y		09a06cc7df24
-gathering	data/about/TECH_STACK.html	ok	gathering		Y		740dc3042d75
-gathering	data/about/ADR-004-ontology-data-visualization.md	misfiled	chorus		Y		eaed8fd16416
-gathering	data/about/CADENCE_ANALYSIS.html	misfiled	chorus		Y		75a90bd1d8c2
-gathering	data/about/ARCHITECTURE_PATTERNS.html	ok	gathering		Y		a83c97f8b109
-gathering	data/about/GATHERING_VISION.md	ok	gathering		Y		b1e0e22c4ebe
-gathering	data/about/PHOTOS_DOMAIN_ARCHITECTURE.html	ok	gathering		Y		e38d193af859
-gathering	data/about/BORG_ASSIMILATION_PATTERN.html	misfiled	chorus		Y		e8d874e3ac40
-gathering	data/about/SELF_PORTRAIT.html	ok	gathering		Y		8b8986761bd2
-gathering	data/about/INFRASTRUCTURE.md	misfiled	chorus		Y		86730c17d002
-gathering	data/about/NEXT_SEQUENCE.html	misfiled	chorus		Y		ebb13529230f
-gathering	data/about/ADR-011-production-like-deployments.md	misfiled	chorus		Y		86094d248d20
-gathering	data/about/ADR-008-cross-graph-sparql-pattern.md	misfiled	chorus		Y		b256df556657
-gathering	data/about/NUDGE_BRIDGE.md	misfiled	chorus		Y		be8158d156e5
-gathering	data/about/CHORUS_README.md	misfiled	chorus		Y		8d16a4520efb
-gathering	data/about/STARTUP_PROCESS.md	misfiled	chorus		Y		be6d9f2ebe9c
-gathering	data/about/PRODUCT_TAXONOMY.md	misfiled	chorus		Y		1503c975e3ac
-gathering	data/about/KADE_ROLE.html	misfiled	chorus		Y		d5994b7b18d8
-gathering	data/about/DECISIONS.md	misfiled	chorus		Y		18c1b96e38d9
-gathering	data/about/ACCESS_CONTROL_MATRIX.md	ok	gathering		Y		041afa768ff1
-chorus	directing/products/cards/PRODUCT_TEMPLATE.md	unfiled	chorus		N		c4345ade26f5
-chorus	platform/seeds/PRODUCT_TEMPLATE.md	unfiled	chorus		N		99e113b2310d
-chorus	platform/scripts/ops-agent-prompt.md	unfiled	chorus		N		a6b3c6fdc45b
-chorus	platform/api/scripts/README-scaffold.md	unfiled	chorus		N		9b6ac7100d19
-chorus	platform/api/src/handlers/DOMAIN_IDENTITY.md	unfiled	chorus		N		1e4c6108a762
-chorus	platform/activity.md	unfiled	chorus		N		636490d48757
-chorus	platform/services/chorus-hooks/BUILD.md	unfiled	chorus		N		fb83407b0ee4
-chorus	platform/services/chorus-inject/BUILD.md	unfiled	chorus		N		baf3a408e1ca
-chorus	roles/wren/jeff-word-cloud.html	unfiled	chorus		N		0bbe55634aac
-chorus	roles/wren/chorus-overview.md	unfiled	chorus		N		b4c05b1409c6
-chorus	roles/wren/artifacts/book-sequence.html	ok	chorus		Y		ff3c984098a3
-chorus	roles/wren/artifacts/book-outline.html	ok	chorus		Y		b2877793b37b
-chorus	roles/wren/artifacts/chorus-toc.html	ok	chorus		Y		fca38cd59245
-chorus	roles/wren/artifacts/ontology-migration-pattern.md	ok	chorus		Y		9d1f022d00f1
-chorus	roles/wren/artifacts/roles-domain-design.html	ok	chorus		Y		37f277e13a90
-chorus	roles/wren/artifacts/domain-policy.html	ok	chorus		Y		7731a376d7dd
-chorus	roles/wren/artifacts/wren-claudemd-annotated.html	ok	chorus		Y		aafede30263c
-chorus	roles/wren/self-memories.md	unfiled	chorus		N		b4a35b756769
-chorus	roles/wren/designs/relationship-depth.md	unfiled	chorus		N		c1b9ddb8efd0
-chorus	roles/wren/data-classification-policy.md	unfiled	chorus		N		5a68971fc210
-chorus	roles/wren/practice-authoring-guidance.md	unfiled	chorus		N		33673d098e35
-chorus	roles/wren/heidegger-gathering-research.md	unfiled	chorus		N		30e2a542667f
-chorus	roles/wren/reconciliation-flow.html	unfiled	chorus		N		c25bce7b593d
-chorus	roles/wren/self-stories.md	unfiled	chorus		N		a5f7a9855a91
-chorus	roles/wren/ai-foundations.html	unfiled	chorus		N		cfe721eeec38
-chorus	roles/wren/chorus-scope-diagram.html	unfiled	chorus		N		b67767a58686
-chorus	roles/wren/docs/seed-pipeline-criteria.md	ok	chorus		Y		d15e2bcd794c
-chorus	roles/wren/docs/gemba-as-is.md	ok	chorus		Y		1d5fcdf71a4a
-chorus	roles/wren/v1-boundary.html	unfiled	chorus		N		b38ffc2dfd89
-chorus	roles/wren/decisions/board-api-verb-model.md	ok	chorus		Y		2d542e808ef0
-chorus	roles/wren/decisions/poppendieck-ch2-chorus-analysis.md	ok	chorus		Y		4b555298f856
-chorus	roles/wren/decisions/DEC-1674-tdd-discipline.md	ok	chorus		Y		122e218c14bf
-chorus	roles/wren/personas/jeff-owner-operator.md	unfiled	chorus		N		23ee7fcb4ee6
-chorus	roles/wren/personas/wren-pm.md	unfiled	chorus		N		59c154be12ef
-chorus	roles/wren/jeff-voice-analytics.html	unfiled	chorus		N		82b6bccacc25
-chorus	roles/wren/chunks/memory.md	unfiled	chorus		N		027b51e95956
-chorus	roles/wren/harvest-designs/notes.md	unfiled	chorus		N		dbc8c8b0db84
-chorus	roles/wren/log-coherence-audit.html	unfiled	chorus		N		310deb3d3f43
-chorus	roles/wren/self-domain-ontology-sketch.html	unfiled	chorus		N		e1fcb6301838
-chorus	roles/wren/memory-architecture.html	unfiled	chorus		N		654d13230291
-chorus	roles/wren/ux-walkthrough-2026-02-18.md	unfiled	chorus		N		a90b2fbeb33a
-chorus	roles/wren/access-control-permutation-matrix.md	unfiled	chorus		N		f9787ed1fee2
-chorus	roles/wren/capture-routing-refinement.md	unfiled	chorus		N		b0281f92bf2b
-chorus	roles/wren/security-trust-model.md	unfiled	chorus		N		4800761b02e9
-chorus	roles/wren/templates/harvest-design-doc.md	unfiled	chorus		N		fb812eda1eb2
-chorus	roles/wren/self-relationships-sketch.md	unfiled	chorus		N		63dd14e545b5
-chorus	roles/wren/jeff-practice-spine.md	unfiled	chorus		N		7d121851b08c
-chorus	roles/wren/value-stream-and-domains.md	unfiled	chorus		N		a358ffb383f9
-chorus	roles/wren/jeff-constitution.html	unfiled	chorus		N		33766127a359
-chorus	roles/wren/proposals/v1-acceptance-criteria.md	unfiled	chorus		N		759189ff3e34
-chorus	roles/wren/proposals/concept-enrichment-ontology.md	unfiled	chorus		N		9491a348b3d2
-chorus	roles/wren/v1-boundary.md	unfiled	chorus		N		1c3402113250
-chorus	roles/silas/fitness-test-template.md	unfiled	chorus		N		6cd59319a468
-chorus	roles/silas/artifacts/silas-role.html	ok	chorus		Y		692181028b75
-chorus	roles/silas/artifacts/class-diagram-products-domains.html	ok	chorus		Y		04c8897be95e
-chorus	roles/silas/adr/ADR-002-acl-graduation-model.md	ok	chorus		Y		5cc8f72f6695
-chorus	roles/silas/adr/ADR-014-pod-mediated-coordination.md	ok	chorus		Y		758d8480d01c
-chorus	roles/silas/adr/ADR-026-ci-architecture-and-lock-file-policy.md	ok	chorus		Y		589ecad7a097
-chorus	roles/silas/adr/ADR-020-product-vs-domain-typing.md	ok	chorus		Y		1c26f50b4e8f
-chorus	roles/silas/adr/ADR-023-stdout-logging-standard.md	ok	chorus		Y		66fd00d19e92
-chorus	roles/silas/adr/ADR-005-observability-evolves-with-infrastructure.md	ok	chorus		Y		a5260f088b90
-chorus	roles/silas/adr/ADR-024-common-message-envelope.md	ok	chorus		Y		b58013bcc3e0
-chorus	roles/silas/adr/ADR-025-ontology-vs-instances-graph-separation.md	ok	chorus		Y		405e978982c5
-chorus	roles/silas/adr/ADR-019-native-service-architecture.md	ok	chorus		Y		44422e7b14c6
-chorus	roles/silas/adr/ADR-009-chorus-pipeline-ontology.md	ok	chorus		Y		11047f4074fa
-chorus	roles/silas/adr/ADR-007-two-machine-storage-topology.md	ok	chorus		Y		b966753cb541
-chorus	roles/silas/adr/ADR-010-generalized-harvest-pipeline.md	ok	chorus		Y		c7c328b44a9c
-chorus	roles/silas/adr/ADR-021-ontology-enforcement-model.md	ok	chorus		Y		0e472ec52954
-chorus	roles/silas/adr/ADR-012-network-bind-security.md	ok	chorus		Y		2999e39f9848
-chorus	roles/silas/adr/ADR-001-observability-network-ownership.md	ok	chorus		Y		cd615bd18635
-chorus	roles/silas/adr/ADR-016-cross-machine-operations.md	ok	chorus		Y		63b8dc1cb95f
-chorus	roles/silas/adr/ADR-006-bridge-scope-guardrail.md	ok	chorus		Y		9294b3f8c740
-chorus	roles/silas/adr/ADR-022-graph-hygiene-rules.md	ok	chorus		Y		a4e84d69fae9
-chorus	roles/silas/adr/ADR-013-boundary-checking-operating-model.md	ok	chorus		Y		ba6abcafbe35
-chorus	roles/silas/adr/ADR-015-container-orchestration-single-host.md	ok	chorus		Y		e9ea0d6766d6
-chorus	roles/silas/adr/ADR-003-visibility-enforcement-architecture.md	ok	chorus		Y		4108b9ec6bad
-chorus	roles/silas/adr/ADR-004-ontology-data-visualization.md	ok	chorus		Y		c6659c9215d8
-chorus	roles/silas/adr/ADR-018-xsd-model-icd-severity.md	ok	chorus		Y		a6a0869fb993
-chorus	roles/silas/adr/ADR-017-enrichment-architecture.md	ok	chorus		Y		dd709ff639b0
-chorus	roles/silas/adr/ADR-026-ci-architecture-and-lock-file-policy.html	ok	chorus		Y		920677d0ba43
-chorus	roles/silas/adr/ADR-011-production-like-deployments.md	ok	chorus		Y		e8d04f6bb959
-chorus	roles/silas/adr/ADR-008-cross-graph-sparql-pattern.md	ok	chorus		Y		d44ab5e17704
-chorus	roles/silas/guardrails-and-feedback-loops.md	unfiled	chorus		N		ee28561906cf
-chorus	roles/silas/infrastructure-constraints.md	unfiled	chorus		N		93200236407a
-chorus	roles/silas/plans/2328-repo-cleanup-plan.md	unfiled	chorus		N		abbf3cda9859
-chorus	roles/silas/system-architecture.md	unfiled	chorus		N		f42c3bfba75d
-chorus	roles/silas/end-of-day-review.md	unfiled	chorus		N		dd155ce471e4
-chorus	roles/silas/glossary.md	unfiled	chorus		N		cd6de76a9371
-chorus	roles/silas/operations-assessment.md	unfiled	chorus		N		9c35c786239a
-chorus	roles/silas/boundary-contract.md	unfiled	chorus		N		dafa43be1ac3
-chorus	roles/silas/docs/nifi-photos-flow-spec.md	ok	chorus		Y		8900bcb8c38e
-chorus	roles/silas/docs/merge-specification-photos.html	ok	chorus		Y		d62c4e6424be
-chorus	roles/silas/docs/CONCEPTUAL_ARCHITECTURE.md	ok	chorus		Y		15208da6bd11
-chorus	roles/silas/docs/borg-assimilation-pattern.html	ok	chorus		Y		e8d874e3ac40
-chorus	roles/silas/docs/convergence-architecture.html	ok	chorus		Y		045bca02c9e4
-chorus	roles/silas/docs/demo-as-is.md	ok	chorus		Y		de0a166c0dc5
-chorus	roles/silas/docs/wardley-map-icd-product.html	ok	chorus		Y		7ff07c788622
-chorus	roles/silas/docs/demo-as-is.html	ok	chorus		Y		d1bc1be36228
-chorus	roles/silas/bedroom-audit-2026-03-21.md	unfiled	chorus		N		9ec4dacf6dc6
-chorus	roles/silas/network-inventory.md	unfiled	chorus		N		05780b200a72
-chorus	roles/silas/personas/silas-architect.md	unfiled	chorus		N		fa08499a25b7
-chorus	roles/silas/ontology-status.md	unfiled	chorus		N		1c4f19bc635b
-chorus	roles/silas/scratch-pair-2300.md	unfiled	chorus		N		37167ef295c7
-chorus	roles/silas/conceptual-model.md	unfiled	chorus		N		6f2a87aa6f47
-chorus	roles/silas/domain-registry.md	unfiled	chorus		N		15f5e05aa32d
-chorus	roles/silas/spine-emitter-inventory.md	unfiled	chorus		N		c699170e79a8
-chorus	roles/silas/chorus/gate-registry.md	unfiled	chorus		N		83061c789fbd
-chorus	roles/silas/chorus/chorus-activity-dashboard-summary.md	unfiled	chorus		N		d423c784cf0d
-chorus	roles/silas/chorus/communication-flows.md	unfiled	chorus		N		8ba794f308d1
-chorus	roles/silas/logging-strategy.html	unfiled	chorus		N		0c8f60adf134
-chorus	roles/silas/fuseki-graph-consolidation-map.md	unfiled	chorus		N		a3f3efa83d6c
-chorus	roles/silas/sparql-scoping-audit.md	unfiled	chorus		N		7fc529e678ab
-chorus	roles/silas/capability-map.md	unfiled	chorus		N		858994c0f951
-chorus	roles/silas/content-ingestion-matrix.md	unfiled	chorus		N		072b6b2da74c
-chorus	roles/silas/spine-architecture.md	unfiled	chorus		N		97371d020871
-chorus	roles/silas/building-value-stream.md	unfiled	chorus		N		5765f3bc6005
-chorus	roles/kade/artifacts/2435-callsite-audit.md	unfiled	chorus		N		2a18ffcdbb82
-chorus	roles/kade/artifacts/kade-role.html	unfiled	chorus		N		f5fb6b3436db
-chorus	roles/kade/artifacts/2435-0.3-drained-consumer-audit.md	unfiled	chorus		N		f1243e876e4e
-chorus	roles/kade/quality-guide.md	unfiled	chorus		N		962baddf73ef
-chorus	roles/kade/current-work.md	unfiled	chorus		N		a001916d13fc
-chorus	roles/kade/mockup-player.html	unfiled	chorus		N		1d38325620c4
-chorus	roles/kade/acl-audit-results.md	unfiled	chorus		N		dbbeab3d37cf
-chorus	roles/kade/policies/test-value-draft.md	unfiled	chorus		N		9c0629732ea7
-chorus	roles/kade/harvest-pipeline.html	unfiled	chorus		N		ac28bab0b1ce
-chorus	roles/kade/personas/kade-engineer.md	unfiled	chorus		N		10d71f0178cc
-chorus	docs/diagrams/skill-lifecycle.html	ok	chorus		Y		16b139ba4ee6
-chorus	docs/diagrams/chorus-c4.html	ok	chorus		Y		0bf39571a470
-chorus	designing/docs/chorus-domain-map-v2.html	ok	chorus		Y		21a2c4cd1b48
-chorus	designing/docs/chorus-clearing-architecture.md	ok	chorus		Y		d1d3d7f2b5f4
-chorus	designing/docs/chorus-repo-structure.html	ok	chorus		Y		f6b5f7d3e3af
-chorus	designing/docs/sequence-pipeline.html	ok	chorus		Y		b281ba7bb3d2
-chorus	designing/docs/chorus-contracts-pattern.md	ok	chorus		Y		3c48119a876b
-chorus	designing/docs/chorus-value-stream-deep-dive.html	ok	chorus		Y		d64bc773cc74
-chorus	designing/docs/chorus-overview.md	ok	chorus		Y		cd87b59dc867
-chorus	designing/docs/chorus-protocol-stack-positioning.html	ok	chorus		Y		d34bd89464fe
-chorus	designing/docs/chorus-instance-explorer.html	ok	chorus		Y		3162ba1f6930
-chorus	designing/docs/chorus-hook-architecture.html	ok	chorus		Y		3d5e55900465
-chorus	designing/docs/ci-pipeline-service-design.html	ok	chorus		Y		02b6e1c4b6f5
-chorus	designing/docs/chorus-standards.html	ok	chorus		Y		34edd915c08c
-chorus	designing/docs/chorus-roadmap.html	ok	chorus		Y		bac4ee5012ce
-chorus	designing/docs/pulse-service-design.md	ok	chorus		Y		eb1d7b2bacb8
-chorus	designing/docs/context-service-brief.md	ok	chorus		Y		899f96f54509
-chorus	designing/docs/doc-triage-rules.md	ok	chorus	wren	Y	doc-management, km	be9dcc40c0e6
-chorus	designing/docs/chorus-domain-map-v3.html	ok	chorus		Y		337c211274b4
-chorus	designing/docs/social-contagion-and-framing-research.html	ok	chorus		Y		f0e54a8163e3
-chorus	designing/docs/chorus-data-model.html	ok	chorus		Y		0d193100dc03
-chorus	designing/docs/roles-service-design.md	ok	chorus		Y		e6ca9091a9f9
-chorus	designing/docs/gate-registry.md	ok	chorus		Y		916aa94133d6
-chorus	designing/docs/chorus-spine.html	ok	chorus		Y		b5107601432a
-chorus	designing/docs/chorus-nervous-system.html	ok	chorus		Y		85d7fb6c28c1
-chorus	designing/docs/context-service-design.md	ok	chorus		Y		65fc65374a34
-chorus	designing/docs/chorus-service-design.html	ok	chorus		Y		8e2f989f4825
-chorus	designing/docs/social-contagion-and-framing-research.md	ok	chorus		Y		7a78120055d4
-chorus	designing/docs/borg-mitosis.html	ok	chorus		Y		4942ca5b640e
-chorus	designing/docs/chorus-er-diagram.html	ok	chorus		Y		4c99bfcfe74d
-chorus	designing/docs/ci-pipeline-service-design.md	ok	chorus		Y		f14af0ba084c
-chorus	designing/docs/chorus-scope-diagram.html	ok	chorus		Y		b67767a58686
-chorus	designing/docs/card-completion-pipeline.html	ok	chorus		Y		adb16c03c6ff
-chorus	designing/docs/chorus-reference-model.html	ok	chorus		Y		252541803a84
-chorus	designing/docs/chorus-consulting.html	ok	chorus		Y		3a40ef882067
-chorus	designing/docs/ci-harness-research-brief.html	ok	chorus		Y		cbddb9023dad
-chorus	designing/docs/chorus-distribution-assessment.html	ok	chorus		Y		f7a2760e3827
-chorus	designing/docs/context-push-envelope-reshape.md	ok	chorus		Y		0c49b18ff3a8
-chorus	designing/docs/chorus-wardley.html	ok	chorus		Y		ba406f629b3f
-chorus	designing/docs/cockpit-brief.md	ok	chorus		Y		61bdff197920
-chorus	designing/docs/context-api-endpoint-audit.md	ok	chorus		Y		a57486ca5115
-chorus	designing/docs/sequence-demo.html	ok	chorus		Y		eaa3d2be166a
-chorus	designing/docs/canonical-namespaces.md	ok	chorus		Y		63f5b78d35c4
-chorus	designing/docs/book-outline.md	ok	chorus		Y		b9a82d16e439
-chorus	designing/docs/borg-service-design.md	ok	chorus		Y		66365128aa93
-chorus	designing/docs/chorus-activity-dashboard-summary.md	ok	chorus		Y		d423c784cf0d
-chorus	designing/docs/chorus-structural-audit.html	ok	chorus		Y		75a9f75f1003
-chorus	designing/docs/chorus-hooks-circulatory-system.html	ok	chorus		Y		4697904501c6
-chorus	designing/docs/chorus-model-data.html	ok	chorus		Y		dcd53f6d24da
-chorus	designing/docs/nudge-service-design.md	ok	chorus		Y		49d8d87402f6
-chorus	designing/docs/chorus-consolidation-proposal.md	ok	chorus		Y		19df5527f1fa
-chorus	designing/docs/chorus-domain-decomposition.html	ok	chorus		Y		17a1806d5a82
-chorus	designing/docs/context-endpoint-schemas.md	ok	chorus		Y		3568311e94b8
-chorus	designing/docs/cockpit-v0.md	ok	chorus		Y		41acf649a33a
-chorus	designing/docs/doc-ownership-schema.md	ok	chorus	wren	Y	doc-management, km	5f0f5e83a6e9
-chorus	designing/docs/quality-service-design.md	ok	chorus		Y		4b9d4a5fa82b
-chorus	designing/docs/mcp-server-design.md	ok	chorus		Y		c20e19ee1126
-chorus	designing/docs/cockpit-mockup.html	ok	chorus		Y		fc6dc4f7540c
-chorus	designing/docs/chorus-client-onboarding-design.html	ok	chorus		Y		eae0730c389c
-chorus	designing/docs/sequence-nudge.html	ok	chorus		Y		99f4dc89ebb1
-chorus	designing/docs/chorus-perf-suite-design.md	ok	chorus		Y		3a643b0c3ea2
-chorus	designing/docs/services-service-design.md	ok	chorus		Y		26c2558108ad
-chorus	designing/docs/agent-experience.md	ok	chorus		Y		11cfbdbb5de9
-chorus	designing/docs/chorus-contracts.md	ok	chorus		Y		0e597ef3fc8b
-chorus	designing/docs/communication-flows.md	ok	chorus		Y		8ba794f308d1
-chorus	designing/docs/chorus-product-decomposition.md	ok	chorus		Y		e411dd9622cf
-chorus	designing/docs/chorus-method-map.md	ok	chorus		Y		27351f97b217
-chorus	designing/docs/chorus-context-diagram-v2.html	ok	chorus		Y		21a2392f534a
-chorus	designing/decisions/DEC-2311-hook-decomposition.md	ok	chorus		Y		1decc1fd439e
-chorus	designing/decisions/DEC-2209-no-compiled-siblings.md	ok	chorus		Y		783fd1a896d3
-chorus	designing/decisions/DEC-1816-repo-namespace.md	ok	chorus		Y		891fb9e3956e
-chorus	knowledge/doc-coherence.md	unfiled	chorus		N		f500be434525
-chorus	ceremony-roi.md	unfiled	chorus		N		cd9b245beabd
-chorus	activity.md	unfiled	chorus		N		5dcfde578d2c
-chorus	building/products/convergence/PIPELINE_MANIFEST.md	unfiled	chorus		N		aa7e590c7acb
-chorus	building/skill/SKILL.md	unfiled	chorus		N		f2f412ca0535
-chorus	building/nudges/nudges.md	unfiled	chorus		N		613f8ae929d9
+# repo	path	state	classification	owner	in-catalog	topic	hash12	mtime	sha256
+gathering	docs/GALLERY-REFACTORING.md	ok	gathering		Y		30e82e4cafc4	2026-02-11	30e82e4cafc4b3d066576ad67cb3e29b2ef99895e22a9f8261a7b0022113b01a
+gathering	docs/CONTENT_INGESTION_MATRIX.md	ok	gathering		Y		072b6b2da74c	2026-02-17	072b6b2da74cf84cf848ba8cd813d86a76e2a4de4dc4673758dadd4e176e987f
+gathering	docs/gathering-site-map.md	ok	gathering		Y		7f063992d703	2026-04-24	7f063992d7034b518d3dda22dd4ba4a1e41b6dff0190cb88d3837806074ef582
+gathering	docs/SITE_MAP.md	ok	gathering		Y		e70d5b6ceeeb	2026-02-21	e70d5b6ceeeb4db74f9a3a4fc91c81870c613e0040dc147f616d127c8295545a
+gathering	docs/OWNER_PERSONA.md	ok	gathering		Y		c0ead4b14ce0	2026-02-21	c0ead4b14ce0895323859ad61212ed2b50c69cb1f44bc30cd0276b3daf1871ef
+gathering	docs/USER_CAPABILITIES.md	ok	gathering		Y		7761a1a0dfff	2026-02-12	7761a1a0dfff2bec304b458bf77d7c2d75bf6d15954cb6f85f83ca6f5e27f4a5
+gathering	docs/C4-ARCHITECTURE.md	ok	gathering		Y		2335bc6937ca	2026-02-15	2335bc6937ca82c1842a28a2634b1e00862c4837f8037daeb48777e4e5350758
+gathering	docs/API.md	ok	gathering		Y		1740f5c7db91	2026-02-05	1740f5c7db915bcefa38321cf399979ed6658cd6e09f88df16f78cdc6e89f3e9
+gathering	docs/GUARDRAILS.md	ok	gathering		Y		ee28561906cf	2026-02-28	ee28561906cf6f08a302c9052b56188834d386bf1be3f297b048bffbe32c802d
+gathering	docs/IDEA_PROJECT_LIFECYCLE.md	ok	gathering		Y		3b951ca029d1	2026-02-12	3b951ca029d12a6573b0985a77f7fceffbacb7f9ed03ec01a99a1054b16d0406
+gathering	docs/PRODUCT_VISION.md	ok	gathering		Y		16ccf11e2fcf	2026-04-11	16ccf11e2fcfe20d77a839cd5992adc90e6869a916c64acb22c6bf45a71acc6c
+gathering	docs/CONCEPTUAL_MODEL.md	ok	gathering		Y		6f2a87aa6f47	2026-02-14	6f2a87aa6f47789071c661a43ec2d918d2f6449235772abf9529ef08b07e2afb
+gathering	docs/ARCHITECTURE_DECISIONS.md	ok	gathering		Y		9005e4bec7b6	2026-02-22	9005e4bec7b60a67afe25bed8dba96c6b8578d04ab8ae8305dcf6f0d70c06645
+gathering	docs/SCALING_RDF_TRIPLES.md	ok	gathering		Y		0c18969acb87	2026-02-12	0c18969acb87ff3feaaa796a149586162f8e657bed3d3e6972dd0625989a5af4
+gathering	docs/UNIFIED_INDEX_ARCHITECTURE.md	ok	gathering		Y		b2386e0c76f4	2026-02-12	b2386e0c76f49a3dbce1aa2b1323feb0362f33d8c08282dac5edce4642f192f0
+gathering	docs/fuseki-rebuild-diagram.html	ok	gathering		Y		c0d30cbffafc	2026-03-30	c0d30cbffafc4308c30060f20b40e35fbf8096065c7c3e7c42f2dacefa18e48c
+gathering	docs/GLOSSARY.md	ok	gathering		Y		cd6de76a9371	2026-02-14	cd6de76a9371024b3106acb06d124707864724fb9b7709bbdada6ff65381cd74
+gathering	docs/WORDPRESS-INTEGRATION.md	ok	gathering		Y		a931dc341fe4	2026-02-12	a931dc341fe4741c32e506a46adad41939f850f4ba0a8d5d6afe2a86174f515b
+gathering	docs/TESTING.md	ok	gathering		Y		580bab64dc95	2026-02-12	580bab64dc9588cfd62462f4318e7428d891d9366d7de1f9a281d556669a0776
+gathering	docs/PUBLIC_ACCESS.md	ok	gathering		Y		e3747413d98f	2026-02-12	e3747413d98f6dc4cd5e74c5615e785034b48b90afca6884549590b2f647d87b
+gathering	docs/SOLID-AUTHENTICATION.md	ok	gathering		Y		6c383790affb	2026-02-12	6c383790affb4112461f341e1f4301a09e101fcb6002ada4bfe63a17aaecbd3a
+gathering	docs/HEIDEGGER_GATHERING_RESEARCH.md	ok	gathering		Y		e361ac6ee1d2	2026-04-16	e361ac6ee1d2246ee26defdddbdb85e99b10928caf20591b43813b2ba9e4e44c
+gathering	docs/BOOK_CATALOG_WORKFLOW.md	ok	gathering		Y		af1d5d1665b3	2026-02-12	af1d5d1665b38666e67afb11d9711f89e496f49a2c8bb1d44f61f2f3832d792f
+gathering	docs/gathering-vision-synthesis.md	ok	gathering		Y		edb46016251f	2026-04-24	edb46016251f578c67d8ba328b049e2dce82251f881a87e5af50e4c718e62afd
+gathering	docs/ONTOLOGY_STATUS.md	ok	gathering		Y		4df48e052029	2026-02-28	4df48e052029f16ea8f8f2710631d09a81df972f56e51c5c48d694d2d74ff364
+gathering	docs/SYSTEM_ARCHITECTURE.md	ok	gathering		Y		f0f4d4f2fbf7	2026-04-16	f0f4d4f2fbf78915785b33e9218b79e6fd4da8d3a0dd615676df7b9fcc1b3a6d
+gathering	docs/SOLID_PODS_RESEARCH.md	ok	gathering		Y		b31d08974a3d	2026-02-18	b31d08974a3d116bffb5a5f6e049c9ce8b0757c532cfb6ee765c76753b807fe3
+gathering	docs/GATHERING_VISION.md	ok	gathering		Y		a0649371a428	2026-04-16	a0649371a4289772f2856bfd57fed424c9074ad03c94aa53e236ec95f161005d
+gathering	docs/INFRASTRUCTURE.md	ok	gathering		Y		ab13baf053ab	2026-04-16	ab13baf053ab474e708d4c06adcceea40b26e9f3e2019efe97e43ec6454a0b99
+gathering	docs/STARTUP_PROCESS.md	ok	gathering		Y		0b2eed6b64db	2026-04-16	0b2eed6b64dbb8e64b6fa0cb580f64e3066a4cd785133aebe3f3034c6c568be6
+gathering	docs/DECISIONS.md	ok	gathering		Y		34393184de10	2026-04-16	34393184de10d0740d5a6a076d0304a470b1101aea89569ab69b7827049f4942
+gathering	docs/ACCESS_CONTROL_MATRIX.md	ok	gathering		Y		f9787ed1fee2	2026-02-14	f9787ed1fee2fbbffc193f6138cf568c1bdba0192a717462311c81faf82d2575
+gathering	public/lightlife.html	ok	gathering		Y		43a1b90e5474	2026-03-08	43a1b90e5474d16033d6729a85deb2a12bb4eaab6dc5f7d71c2feb7ddb1324c0
+gathering	public/operations.html	ok	gathering		Y		19837f74c691	2026-03-08	19837f74c691ad7a3f7d57da54c9323fec06d6217d42c6af67bb288e8a36bfef
+gathering	public/flow-map.html	ok	gathering		Y		c2946533cd30	2026-03-09	c2946533cd30219ac4e31d3d4df8ba537a7e2ea25b1edb05178be9973a837fb0
+gathering	public/werk-process.html	ok	gathering		Y		e9546b619cff	2026-03-08	e9546b619cffb09deb5790efab8e9c6438b63b947d2bc1aa422edef14a93304d
+gathering	public/gathering-chorus.html	ok	gathering		Y		e4552d16fc39	2026-03-08	e4552d16fc394091bfdf530c2e8fa39bf941a9bf1516e0abdda43b61c8b737ce
+gathering	public/value-stream-render.html	ok	gathering		Y		df9ca6508ba2	2026-03-08	df9ca6508ba273f070e7e9842f7cd6049f02c228df0bfde385d1edc06498100d
+gathering	public/attention-analytics.html	ok	gathering		Y		6596781df8a1	2026-03-08	6596781df8a164e3578c966d6c9da8b1c94677d9ba6fa27f4b82da86530392f1
+gathering	public/garden-observability.html	ok	gathering		Y		3064a1b07177	2026-03-09	3064a1b0717721bb788286d1f6b32ee07a13f6b5e3763b09826e6b17f16a4d17
+gathering	public/akasha/proposal.html	ok	akasha		Y		f435fffff1a2	2026-03-08	f435fffff1a22c3768ebeb25b09e7574352ce7bed55e90a761947a018cc988e0
+gathering	public/akasha/index.html	ok	akasha		Y		1de09338b860	2026-03-08	1de09338b8604ef8c7afd1024b360cbe5d822ea9a90680042b7a11e90dbe7902
+gathering	public/akasha/about.html	ok	akasha		Y		23f730d29911	2026-03-08	23f730d29911d3bf003c09df499f8c84cffd5d2a7cb9b7aa91f3722d77b7af53
+gathering	public/akasha/contact.html	ok	akasha		Y		04b5e7cbb7c0	2026-03-08	04b5e7cbb7c093969f71a354fe43e7eb65558ea44840220f3014e959d80c71bb
+gathering	public/akasha/schedule.html	ok	akasha		Y		9fd44e7d37ce	2026-03-08	9fd44e7d37ce4d7576c95eaf5c1abd22676f4f3b42493ccfd59249dc89a8c78d
+gathering	public/akasha/value-stream.html	ok	akasha		Y		41f01efab13b	2026-03-08	41f01efab13b4ee2b540515e26f4e2acf3560143d81a35710b29dc99b28d1eaf
+gathering	public/akasha/services.html	ok	akasha		Y		fd3288a130ad	2026-03-08	fd3288a130ade1e42886b6ebd425bb4fc6f7931556a1c2a5b261698bd655e1cb
+gathering	public/akasha/site.html	ok	akasha		Y		a94b58d24421	2026-03-03	a94b58d2442167481ca41aa8e6882f0c974e431fba45e57d5607baf491d16962
+gathering	public/self-relationships.html	ok	gathering		Y		50e0987e8397	2026-03-10	50e0987e8397d15a45ed80150c1edeadbd6f8715fd8766d6b8759dd491e65a0c
+gathering	public/dpor-report.html	ok	gathering		Y		74fcf71eafe4	2026-03-08	74fcf71eafe4423b11aacfe68e137c2fc0e3e4d7b181747e6902cc6e2454a27a
+gathering	public/wardley-map.html	ok	gathering		Y		ae9a440a8cf9	2026-03-10	ae9a440a8cf97d3ee908cb77db09de51b0ba768c35241d88da62607b9d4925f8
+gathering	public/basement-garden.html	ok	gathering		Y		29339d206d9a	2026-03-08	29339d206d9a0f20d5a1c09fd3f5d9134e0592524410c7a4043104e49372d81e
+gathering	public/gathering-docs/awareness-service-design.html	ok	gathering		Y		cf6262f721d2	2026-04-07	cf6262f721d22f0a9ed3723afbb3cc362ee74ce613b12a50e218a4aff3efcedd
+gathering	public/gathering-docs/c4-convergence-tier.html	ok	gathering		Y		af630833d2a6	2026-04-05	af630833d2a61508133e9618772274a5b5318ec40e10784f0571b17ab7e2d602
+gathering	public/gathering-docs/domain-context-awareness.html	ok	gathering		Y		530f490209a4	2026-04-12	530f490209a437212fa68ae786a4d032862629e7d2ce129907a4a8e96a024b83
+gathering	public/gathering-docs/bdd-seeds.html	ok	gathering		Y		7f44b2f5c2e0	2026-04-11	7f44b2f5c2e0cbaa349c340ab683a4bf97f39dea2bafd16310b62ebd6db76362
+gathering	public/gathering-docs/domain-blog.html	ok	gathering		Y		19296c83f872	2026-04-13	19296c83f872577fb430bc67bb032a164d3ea5b70e1e45e7cc9117b9546feb3d
+gathering	public/gathering-docs/garden-setup-flow.html	ok	gathering		Y		3f76619050cb	2026-04-05	3f76619050cb18d05ccce602a4d3702a96be3c1aae72d889d770be3466c793ee
+gathering	public/gathering-docs/werk-process.html	ok	gathering		Y		10eeb0a743fe	2026-04-05	10eeb0a743fe1526d4b3bac67d4e403fcd7fbd5f27d290bc663bfd59023a1f66
+gathering	public/gathering-docs/cheat-sheet.html	ok	gathering		Y		63935de7ee50	2026-04-05	63935de7ee50eb71ee3524f66340bac9ac865cdcf0efcf3159d3d7e21a2e7ce9
+gathering	public/gathering-docs/research-actor-bdd-agents.html	ok	gathering		Y		9b777b0905df	2026-04-11	9b777b0905df17b5c6d73e745b914bf8e8bc14b3798f10e8ca525aeb94d5a254
+gathering	public/gathering-docs/domain-books.html	ok	gathering		Y		38116ffb2ff0	2026-04-13	38116ffb2ff0360f2d58d11612a620fb76f5b511477dcfc72b3105b71c67ab43
+gathering	public/gathering-docs/domain-notes.html	ok	gathering		Y		97f3a504bb02	2026-04-13	97f3a504bb02607328ac67ec160d9d71c6b05f07321e8d07bc84cdd2b6d597cd
+gathering	public/gathering-docs/interaction-pattern-history.html	ok	gathering		Y		c213eff80cf6	2026-04-06	c213eff80cf6e33c52cdf8131d4c95fae86cda25f17b17d48522a004f5f00665
+gathering	public/gathering-docs/gathering-positioning.html	ok	gathering		Y		fc49816b2c00	2026-04-05	fc49816b2c000eca2692d15e301cb9ad9a4176d0bba627e9eda39985ce386c24
+gathering	public/gathering-docs/actor-diagram-nudge.html	ok	gathering		Y		2dec5eab0dd4	2026-04-11	2dec5eab0dd42eeb03abbeffe2ed30ff200753ee5542b3db11e115083dbe33c7
+gathering	public/gathering-docs/team-reliability-analysis.html	ok	gathering		Y		2e74de820312	2026-04-08	2e74de8203129df7b25c5d7dbb5db0035ecf0c3966a0df2fd3dd0fe242c5386c
+gathering	public/gathering-docs/domain-context-seeds.html	ok	gathering		Y		abd879ea72c7	2026-04-12	abd879ea72c7b24faed7272a12f3652a97a67fbf76fec4d4ad311ab7d8a172e4
+gathering	public/gathering-docs/observability-service-design.html	ok	gathering		Y		7e792ea0e126	2026-04-16	7e792ea0e126394a83f8c13e97a4833f7d75a6972c567d50a9f208edcd6a5d45
+gathering	public/gathering-docs/harness-engineering-chorus.html	ok	gathering		Y		9479d86aad48	2026-04-06	9479d86aad484bcd6c6bf87bed25d411d04493e02ac84d778535097d6e61ad93
+gathering	public/gathering-docs/pair-flow-sequence.html	ok	gathering		Y		f978dbf280e8	2026-04-05	f978dbf280e83638d9849fa4551c3e4b92bab30378f49758ce09308a48779666
+gathering	public/gathering-docs/domain-glimmers.html	ok	gathering		Y		c720d33d04c6	2026-04-13	c720d33d04c6da2dd2c4ce3251bad95452fa3e2441bfca86e3cbe30d47a3db19
+gathering	public/gathering-docs/quality-service.html	ok	gathering		Y		56d6446a11bb	2026-04-06	56d6446a11bb2823f96bc7c575183a172a54f9ac9ba9638fc6715b68aa5a50a8
+gathering	public/gathering-docs/design-gate-definitions.html	ok	gathering		Y		0cf1d4dd2052	2026-04-08	0cf1d4dd20522c357be00b9872b32211f7f4171ea9e8218375c8e477506a7d09
+gathering	public/gathering-docs/domain-cooking.html	ok	gathering		Y		70466e3fd1c3	2026-04-13	70466e3fd1c3b7badc590d74b891833ba06db82155a47f7b73e7b20ac480c910
+gathering	public/gathering-docs/home-cloud.html	ok	gathering		Y		6f5d1d26b44b	2026-04-07	6f5d1d26b44b415ff6cff602dad91c1ea592ddf520a510a7fa22bb5e06d00a4a
+gathering	public/gathering-docs/pulse-service-design.html	ok	gathering		Y		4231f1b11003	2026-04-21	4231f1b1100342f2ccafc8ee926b26225c5e9579f845c495c6a4a1029f42d130
+gathering	public/gathering-docs/domain-seeds.html	ok	gathering		Y		d381d6bfd102	2026-04-13	d381d6bfd1021b842d91e7ccc79bd167b0bcbdb1b61336455f7030a410dceb7b
+gathering	public/gathering-docs/domain-stories.html	ok	gathering		Y		864a9f128d23	2026-04-13	864a9f128d23b10da0016693d7784c6e18ca02b9d33c3f7e909a993f839ebd1e
+gathering	public/gathering-docs/service-design-page.html	ok	gathering		Y		4e3e3f7eb0c3	2026-04-11	4e3e3f7eb0c3baa9da511674f76fc7a8945d7e3da60fd39f178c048526990b89
+gathering	public/gathering-docs/competing-implementations-audit.html	ok	gathering		Y		b72441b13f5e	2026-04-21	b72441b13f5e6914ebe121b6c5353bac420f651f25eaca55ce8123125d2023c4
+gathering	public/gathering-docs/framework-service-design.html	ok	gathering		Y		c328100bea47	2026-04-07	c328100bea47f9a19d40a62c73b1844a8604ae714cf083dc505492c10190994b
+gathering	public/gathering-docs/ax.html	ok	gathering		Y		55252679492d	2026-04-11	55252679492d66dd32f34dcf8006ab04da7b7ba6e1c62c147919bffbd4f302eb
+gathering	public/gathering-docs/definition-of-done.html	ok	gathering		Y		405cae4027a9	2026-04-11	405cae4027a94e1ad7d0a348bba484d96e96b5428742ca9e3821dabe73c07c67
+gathering	public/gathering-docs/gathering-roadmap.html	ok	gathering		Y		2a4d096decea	2026-04-05	2a4d096deceaefbb24d639fcb355252af2c45680af2866721a92a16261685d98
+gathering	public/gathering-docs/domain-mockup-cards.html	ok	gathering		Y		f688dfbe76c2	2026-04-12	f688dfbe76c252de7717961c9ec605cc39d1ecac510d5052d434db8bc1c333ce
+gathering	public/gathering-docs/domain-gallery.html	ok	gathering		Y		a4c65276d3eb	2026-04-13	a4c65276d3ebb967b6cc2671ec3d73fd0d3618a011852920ee7e2b26d5e6ba81
+gathering	public/gathering-docs/domain-self.html	ok	gathering		Y		b436ea98f2e9	2026-04-13	b436ea98f2e95647422cea83667e0c4a20ab8733c458ed99b0d579f768a81186
+gathering	public/gathering-docs/board-triage.html	ok	gathering		Y		bf801ab48a88	2026-04-05	bf801ab48a885cf2127415693955311f8ab7ea452eb0bb065bf2e13165223e1c
+gathering	public/gathering-docs/log-topology.html	ok	gathering		Y		4277b3d7b294	2026-04-05	4277b3d7b294e9ab8d4ce5d7c54c0fcc57a77d696487c33194c26446b28a775a
+gathering	public/gathering-docs/nudge-service-design.html	ok	gathering		Y		c7c1fb7cd007	2026-04-24	c7c1fb7cd007358641a4aa622aaf632a1903c6eb7d08ce65c8979c44f95c3a11
+gathering	public/gathering-docs/posture-strip.html	ok	gathering		Y		0bab784199fb	2026-04-05	0bab784199fb60494cab73fc03a9bbfcf1aed2e7aeaaa3443c4879d07411ae4f
+gathering	public/gathering-docs/domain-index.html	ok	gathering		Y		54a4a1e75646	2026-04-13	54a4a1e75646daf343aaa4d4e4d4f122749fee70400e4bb24cb753ff92f5330b
+gathering	public/gathering-docs/org-design.html	ok	gathering		Y		8f3372efc9c1	2026-04-08	8f3372efc9c197377418aaf4e760d4bead87e01dda92ee4df5e920fb3ac4e703
+gathering	public/gathering-docs/log-relatedness.html	ok	gathering		Y		a8e31cf4a85d	2026-04-05	a8e31cf4a85dedf70658dfca46c32fac6cecb98a53d3e08f65162907b8c466fa
+gathering	public/gathering-docs/domain-observability.html	ok	gathering		Y		93023bb78fe1	2026-04-13	93023bb78fe196bb7fb67df8272b76853d16924043817d977886da2babc6734f
+gathering	public/gathering-docs/system-model-thinking.html	ok	gathering		Y		daf71e795f7a	2026-04-05	daf71e795f7acd7d33337fffd3e12cecaeda17264cacf00915c8fb9e013ea0a1
+gathering	public/gathering-docs/demo-plan-1641.html	ok	gathering		Y		d64cd3b7d768	2026-04-05	d64cd3b7d76838cd63cdbfffcd6df757a30dcf47ad16f3200c2042a51f023306
+gathering	public/gathering-docs/photo-serving-model.md	ok	gathering		Y		fef5437dc517	2026-04-24	fef5437dc51749acd0594655d76378e1d9ae8ac9490dbdb0d05c44bfd303d387
+gathering	public/gathering-docs/domain-reading.html	ok	gathering		Y		0f947bfbb168	2026-04-13	0f947bfbb16856b35a7621d426a757ead845529da5748fd7aae4c2c1c69d12ab
+gathering	public/gathering-docs/owl-design-assessment.html	ok	gathering		Y		f404bdb0a1d8	2026-04-05	f404bdb0a1d8299d150dca411d55144206cd27cbe90931b8e456f4ffc645477b
+gathering	public/gathering-docs/domain-loom.html	ok	gathering		Y		d359e584eeaa	2026-04-13	d359e584eeaa8d45d10570e4a635062c980a939ac51d961a37c1c3fc8171033c
+gathering	public/gathering-docs/domain-knowledge-graph.html	ok	gathering		Y		b62e229708da	2026-04-13	b62e229708da4104233ec67354cc66b460d441695ae0f006bc47c2a44905026d
+gathering	public/gathering-docs/domain-context-observability.html	ok	gathering		Y		72bf8e8018ec	2026-04-12	72bf8e8018ec768d900d48af5704020234b458cd5b77192da5ba15a8237e41b0
+gathering	public/gathering-docs/observing-value.html	ok	gathering		Y		2b6b6fc5b2c5	2026-04-06	2b6b6fc5b2c510e37e51b9c0fb355fef9e99c09a0e383d270a667a07f8278ef9
+gathering	public/gathering-docs/domain-people.html	ok	gathering		Y		6a10bc843028	2026-04-13	6a10bc84302856065b5c437ec96b0aba6501204587c64aa0c15c15a1681246b0
+gathering	public/gathering-docs/genome-visualization.html	ok	gathering		Y		28bf6e389c7c	2026-04-11	28bf6e389c7c3b3474a247f710c6b72f9911cb663d7dde99c4ca5354b450bb9b
+gathering	public/gathering-docs/domain-search.html	ok	gathering		Y		53235a77286d	2026-04-13	53235a77286d064e66dc87027366a9be28e610cada1096e98213718caf4d5a52
+gathering	public/gathering-docs/roles-service-design.html	ok	gathering		Y		12467bec3941	2026-04-17	12467bec39417c202e96810567626e32946a937ac052b0eb3937a8b7c7f6a1d4
+gathering	public/gathering-docs/card-type-spec.html	ok	gathering		Y		9084f76795ba	2026-04-11	9084f76795ba1aaef49b8df9f1ba5decddfacb6e644f01d676c0a89bc3dccf5d
+gathering	public/gathering-docs/infrastructure-service-design.html	ok	gathering		Y		c2af36ef53c6	2026-04-07	c2af36ef53c66ac52887f090be5308e203339c4dac9288c0bd2fa281b37821a9
+gathering	public/gathering-docs/good-borg.html	ok	gathering		Y		7132ab2c8b30	2026-04-05	7132ab2c8b30c943d26f452bc414584c5d096fd72ceabeccf59b7bb241db2d12
+gathering	public/gathering-docs/domain-music.html	ok	gathering		Y		d2e696bd95e0	2026-04-13	d2e696bd95e0998f2fcb779b3642288b3c311b2ceaccc833c9652a3d659055c8
+gathering	public/gathering-docs/service-design-pulse.html	ok	gathering		Y		e82b991f907a	2026-04-11	e82b991f907aa4ec1c3231ab9bc5efacdf0855037d8089d413f056fd2ac71d15
+gathering	public/gathering-docs/origin-analysis.html	ok	gathering		Y		f7808fd7c77e	2026-04-11	f7808fd7c77e8093caf65034dbb7eee1bdd90f07f85dbe19aa4db03941b809da
+gathering	public/gathering-docs/operating-model.html	ok	gathering		Y		e94a62304bcf	2026-04-08	e94a62304bcf5e3cab8af2c2e57fe8816a40fe1939cf6f8fb2c23e0d4c2cb1b6
+gathering	public/gathering-docs/quality-service-design.html	ok	gathering		Y		5901dce0800a	2026-04-18	5901dce0800a0c7878d925129d30f1ce8195787b4dc4621088416aa1973386a8
+gathering	public/gathering-docs/claude-hooks.html	ok	gathering		Y		f648e32de147	2026-04-05	f648e32de147dd30debf8032ec00da7829404da4c48ce6f8d97aac595b4c5850
+gathering	public/gathering-docs/domain-social.html	ok	gathering		Y		fc32047a44c8	2026-04-13	fc32047a44c8af1ac783337b389e3ad251a41f62a3cb655ea4c4c1dcecdf6771
+gathering	public/gathering-docs/seeds-service-design.html	ok	gathering		Y		82a61c42063d	2026-04-08	82a61c42063d5787a83f1d42de31fa8c9dbbe9a36b8d7e525fbee387a29e92f4
+gathering	public/gathering-docs/tech-stack.html	ok	gathering		Y		8c037b55b51f	2026-04-05	8c037b55b51fe4a26db3c9618f9fd27e68f1eeb3d8759f4d1d032cce110704bb
+gathering	public/gathering-docs/photos-source-diff.html	ok	gathering		Y		047eb2833bd8	2026-04-24	047eb2833bd834e20065a6560e0e2ecd9d15527b047ed308bbc92e3c90facb22
+gathering	public/gathering-docs/protocol-stack.html	ok	gathering		Y		41cbb1da3223	2026-04-05	41cbb1da322300b54df6cbc8e40184236641452de4495673c4c403b8fed479df
+gathering	public/gathering-docs/skill-lifecycle.html	ok	gathering		Y		16b139ba4ee6	2026-04-17	16b139ba4ee6feda2b9db85897558696e7b009b8ed1c4f0359ee345c5fdf9630
+gathering	public/gathering-docs/photos-source-richness-scorecard.md	ok	gathering		Y		cb5e6295ac8d	2026-04-24	cb5e6295ac8d62dcc2c81d903bec4846d1a7d17f2cc73078a2686f3979191c33
+gathering	public/gathering-docs/blockverse-shared-awareness.html	ok	gathering		Y		55b9b2401923	2026-04-11	55b9b2401923b26921d43c67aafae64237f62e478813779bfdc66efdd3ca4bc5
+gathering	public/gathering-docs/domain-photos.html	ok	gathering		Y		ee5e37b10d80	2026-04-13	ee5e37b10d80e99c43147ed77bfdf7ad5598fb5a15f505b9d65b86e59c688dcb
+gathering	public/gathering-docs/domain-property.html	ok	gathering		Y		6bf9b5b8363a	2026-04-13	6bf9b5b8363a80ba62593d72adafb4124f911b8f1f33a89a41a4c4d30bd14f18
+gathering	public/gathering-docs/clearing-service-design.html	ok	gathering		Y		5a4e2a8e9df7	2026-04-06	5a4e2a8e9df718f1b87774ee0ef39a7af02e0a4f05d41e8d425bb5a935fd36c6
+gathering	public/gathering-docs/next-sequence.html	ok	gathering		Y		e45a4f905a92	2026-04-05	e45a4f905a92ea039f060d3d4b8602f363ef5283ed05d908cc9ad6c32e5d18ca
+gathering	public/gathering-docs/crawler-service-design.html	ok	gathering		Y		80912e5e3a2d	2026-04-11	80912e5e3a2dd1cacb737e9e0aa62ecaaa5ecd02166466ca86c4503708a4d0fc
+gathering	public/gathering-docs/services-service-design.html	ok	gathering		Y		502c749466c2	2026-04-23	502c749466c260165a53c7eb9d82f77354257d2d631bb9d7ecbccaa6fe04c811
+gathering	public/gathering-docs/spine-observability.html	ok	gathering		Y		5fd3e8f29b21	2026-04-05	5fd3e8f29b21e545a018f2fe900f9db4d8ecdbef35f9a0eab072dab537fe8b64
+gathering	public/gathering-docs/self-portrait.html	ok	gathering		Y		c2db52fee47a	2026-04-05	c2db52fee47a4b57b348b90127ecf047b51109f3199e569a87cf76e1232fd23d
+gathering	public/gathering-docs/domain-infrastructure.html	ok	gathering		Y		2bcc79171e4c	2026-04-13	2bcc79171e4cf715fedbabb8c9300de6cf3d0221e9b9442f586a3d345eed8904
+gathering	public/gathering-docs/loom-service-design.html	ok	gathering		Y		d60f6883f952	2026-04-06	d60f6883f952fa4341adc4ec6e6775a45965992341ecf0ce7d4d44a8a77867c2
+gathering	public/gathering-docs/cadence-analysis.html	ok	gathering		Y		d5b247f477c9	2026-04-05	d5b247f477c95a40839f50451e1e2e8f53421b0d6fa6784535f825a22b54c3e3
+gathering	public/gathering-docs/good-borg-print.html	ok	gathering		Y		0ad0b74bb150	2026-04-05	0ad0b74bb1505032fc832cd0d1b91613ad7641a3d236432e953123936a139ea4
+gathering	public/gathering-docs/photos-source-richness-comparison.html	ok	gathering		Y		8b6e85428297	2026-04-24	8b6e8542829770eb6959d266f0061af700c2d5c1162dd2c6bbecda760c075207
+gathering	public/gathering-docs/homeostasis-research.html	ok	gathering		Y		eaa52c74fe40	2026-04-05	eaa52c74fe408982a790bf232aa9cb05c759f3751016d98125622aa9fe80c47d
+gathering	public/gathering-docs/interaction-architecture.html	ok	gathering		Y		da8bcc64a1cf	2026-04-05	da8bcc64a1cf29dd6ab81ec8cd101d62a8970b9235f6c1edc1eda3b5e5865d12
+gathering	public/gathering-docs/backup-strategy.html	ok	gathering		Y		e9dd10490211	2026-04-07	e9dd10490211708ef2a6c2543b83422b69af1bc640a4a058dabfa7eb07d09216
+gathering	public/gathering-docs/domain-watching.html	ok	gathering		Y		1bbce9081b8e	2026-04-13	1bbce9081b8e0428110b235892fabf6ddc759a927a014ac9d4a1722c77fecdf9
+gathering	public/gathering-docs/domain-chorus.html	ok	gathering		Y		1a402fadc8eb	2026-04-13	1a402fadc8eb707a627f669edabc65e7c136cbb5bb3deb5a0334d3090ce54777
+gathering	public/gathering-docs/value-stream-design.html	ok	gathering		Y		0546150db3b4	2026-04-11	0546150db3b4a2d2031e31945cefcf1813afeb428f4dde114247392e637bfe63
+gathering	public/gathering-docs/domain-ideas.html	ok	gathering		Y		541450992389	2026-04-13	541450992389e5ea75b9d00d3ba4c074e62fe24b33cb7f7e3dfff64737799aa7
+gathering	public/practice-spine.html	ok	gathering		Y		7691eba39094	2026-03-10	7691eba390940aace6d5bf592c2a13b3dec4bc741248064ec981554f3be82242
+gathering	public/docs/nifi-chorus-integration-design.html	unfiled	gathering		N		aa3d743686d7	2026-03-24	aa3d743686d7c95a7f9caf4097de651dc1ca87e5bb79c19308c27cddd32b801e
+gathering	public/docs/for-dani.html	unfiled	gathering		N		086a469e0c9f	2026-03-23	086a469e0c9fb1ae7308913b7cce37a2e5d1d3d6e779b757e67441f34104f585
+gathering	public/docs/photos-source-3way-comparison.html	unfiled	gathering		N		1aee177eae8b	2026-03-23	1aee177eae8b2673e43710bcbc1262edb359918f39a87fa42f862f21d374df25
+gathering	public/docs/nifi-concepts.html	unfiled	gathering		N		78cb16cc4bc5	2026-03-24	78cb16cc4bc5d3fd5d9e67393997d57faec496e41cf76f563ec2ed795bc2470d
+gathering	public/docs/team-timeline.html	unfiled	gathering		N		25232cdfb310	2026-03-24	25232cdfb3104f540fc7a53e0f7687cd95c3471e51664651b3a3e368680cfa76
+gathering	public/business-plan.html	ok	gathering		Y		5270e87366b8	2026-03-08	5270e87366b8e32e41840c0e026d93bf2e83ebd41918043822872fe3426ea783
+gathering	public/v1-acceptance-criteria.html	ok	gathering		Y		5660e6c21c1a	2026-03-09	5660e6c21c1a27e5d05496a6587f02e76c79daa07dc41e7639943b638af2782d
+gathering	public/self-ontology-sketch.html	ok	gathering		Y		309267d2ae81	2026-03-10	309267d2ae8162c2a68fb2198b5a56976bcb21ec7b8f2cbf3ca4a9bf99bdc107
+gathering	public/ontology-value-stream-research.html	ok	gathering		Y		36a63af2b75e	2026-03-08	36a63af2b75e811fd174632da1cd607bc2143396f84b57d1cf10ae19beb66db2
+gathering	public/gemba-analysis.html	ok	gathering		Y		ee1d20865337	2026-03-09	ee1d20865337bdda3d0b5dc14842ccb6429d1e54bd41cc1006e1041c078ee6d9
+gathering	public/chorus-docs/attention-architecture.html	misfiled	chorus		Y		1f95215e8b5c	2026-04-08	1f95215e8b5c6bb42d0fdd2dc3622c03e5220b8616a881fee7dcd20d6fe95fdb
+gathering	public/chorus-docs/spine-observability.html	misfiled	chorus		Y		6f406f60fcd1	2026-04-05	6f406f60fcd16431fdda78aa88a80539ac7f431fc4a70e25275d3d18c5bfccb0
+gathering	public/doc-catalog.html	ok	gathering		Y		32b3f5e0b46a	2026-04-05	32b3f5e0b46a55266464a44f5e474f38fd447d73de8bcdc248bfdebf61b7c3fe
+gathering	public/concept-enrichment.html	ok	gathering		Y		beee20068957	2026-03-07	beee200689571161bde9d2aa3a8ef5a20941901a72cb8c43221dd48cd06c0622
+gathering	public/model-data-hub.html	ok	gathering		Y		fade703602e5	2026-03-09	fade703602e541e74d78442480f651ddeb58e61b7ff5b718983f27eb60643adc
+gathering	public/reprompt-analytics.html	ok	gathering		Y		c027a31f32f3	2026-03-06	c027a31f32f321c9a3cc32c09cf8c5230467bd37c1e7f46b2df57f6447e3be96
+gathering	public/harvest-scope.html	ok	gathering		Y		03bdac433b1b	2026-03-08	03bdac433b1b5e8ddb4e4c639db57c48822c54d22412fd06046cfc22af42923a
+gathering	public/homeostasis-research.html	ok	gathering		Y		0f45971f5a8f	2026-03-08	0f45971f5a8f0b673673bb94e03633f005ada23c3ce1c3424e369e5f7ccedce7
+gathering	public/voice-analytics.html	ok	gathering		Y		dbeba1d8c0c3	2026-03-09	dbeba1d8c0c3461395d649776f2e4f5793e59386d20002c37528e352d49ed995
+gathering	minimal_blog_ui_mockup.html	unfiled	gathering		N		b2f7cc93db95	2025-03-29	b2f7cc93db9596c2f86fcc5ba1230423ed3bd78140b0fdb39abcd472eab65474
+gathering	data/about/EMERGENT_ARCHITECTURE_PAPER.md	misfiled	chorus		Y		4cbb84afd143	2026-03-15	4cbb84afd1435c8f1ace84297cec87cc94088f40f05d10622ec9ad76f87dc094
+gathering	data/about/LIVING_ARCHITECTURE.md	misfiled	chorus		Y		7ce126c6c025	2026-03-15	7ce126c6c025e83c14fe66419fe079d6fcb788df3f18ec763a428a632ab9dfea
+gathering	data/about/INTERACTION_ARCHITECTURE.html	misfiled	chorus		Y		e9611a4e039d	2026-03-25	e9611a4e039d13bff288eed7670199435e093df0b684fd79832bcef8a4b75e10
+gathering	data/about/ADR-002-acl-graduation-model.md	misfiled	chorus		Y		d4c0627a66b6	2026-04-25	d4c0627a66b6920a4e7f3689777c2210432eb9842cd85b607bb634b758ec1e39
+gathering	data/about/GALLERY-REFACTORING.md	misfiled	chorus		Y		88e9ffb92015	2026-03-12	88e9ffb9201582bb89afbc4eb060f1f92477e7adb1039410522fb497a1699c2e
+gathering	data/about/CONTENT_INGESTION_MATRIX.md	ok	gathering		Y		39664dba34a2	2026-03-03	39664dba34a273e5fb9785159fbef27d6818456ea62c32d43299420a1120fc9c
+gathering	data/about/ENGINEERING_HORIZONTAL.md	misfiled	chorus		Y		526f7db12483	2026-03-16	526f7db12483a55209b9b2c7c334a4baa6ad40a1e6a63cbd9b35ea8c055b8165
+gathering	data/about/ADR-014-pod-mediated-coordination.md	misfiled	chorus		Y		9e4608cca225	2026-04-25	9e4608cca225a3f235df44874884d8a14b5338b7832b1d0f0b8038e4e50d2506
+gathering	data/about/CHORUS_COMMAND_CARD.html	misfiled	chorus		Y		36d1df5779ab	2026-03-14	36d1df5779abce1800d85aa6d9c35d2c91fd1629757657b3a6c004534636a002
+gathering	data/about/SITE_MAP.md	ok	gathering		Y		1d781348ce4d	2026-03-11	1d781348ce4dd2aec0867bcc52ef50bd88a51501c3f6ebe390ae11075b514fe6
+gathering	data/about/OWNER_PERSONA.md	ok	gathering		Y		3a30129fae38	2026-03-15	3a30129fae38150872035eabc4227b0aac2ed0b9c7452dfcf57c89d1def59a01
+gathering	data/about/CHEAT_SHEET.html	misfiled	chorus		Y		4861d47706cb	2026-03-06	4861d47706cb9a15afb4659e36b25efed5a453d51b36a554b2fb1e242137ccca
+gathering	data/about/USER_CAPABILITIES.md	ok	gathering		Y		2f7cc1b95412	2026-03-03	2f7cc1b954125f9190bcd0f13da67103f9b55ee50df218c57d2c6c4ac4abc996
+gathering	data/about/C4-ARCHITECTURE.md	ok	gathering		Y		df312a2aca51	2026-03-03	df312a2aca51aa92371edd20b563219777d80fa519a29e644a243462e3cdea3d
+gathering	data/about/DOMAIN_ENDPOINT_CONTRACT.html	ok	gathering		Y		acb56484502b	2026-03-16	acb56484502b1a0fa6f040e899a410d5eb293f2cb59e98097fdcdfbd35ae1df8
+gathering	data/about/LOG_RELATEDNESS.html	misfiled	chorus		Y		4e48047d905b	2026-03-03	4e48047d905b0b882c4d9c02c3b71c4133fcf898e166e922886e38bae821cc3f
+gathering	data/about/ADR-005-observability-evolves-with-infrastructure.md	misfiled	chorus		Y		fd503435b1a8	2026-04-25	fd503435b1a8078d211acc64872fb045861dfd957140a551f327392719fb835e
+gathering	data/about/INTERACTION_PATTERNS.md	misfiled	chorus		Y		60bdc3a81f97	2026-03-15	60bdc3a81f978c00aed38147ad20f8627dba3cc5a7cb803c510bf8d1ad57b755
+gathering	data/about/API.md	ok	gathering		Y		97de449b0062	2026-03-27	97de449b006297d5ced2d8f67b207dc29b602652acb06dc50fc6fdcd7011a45e
+gathering	data/about/SOURCE_SEMANTICS.html	ok	gathering		Y		2aa00a6ac20e	2026-03-18	2aa00a6ac20e4b7bc52dfb433e8649c01a41d9c4c36f09281fb8ae018af2287d
+gathering	data/about/infrastructure-constraints.md	ok	gathering		Y		d6911d7579a7	2026-03-11	d6911d7579a757e373beec9ee201685de0263bcf2754f30c151af0e97d8bf199
+gathering	data/about/AI_FOUNDATIONS.html	misfiled	chorus		Y		cfe721eeec38	2026-03-06	cfe721eeec387cd596b22ce5eeca206735467e296ce9e39b29fce10bd5f259ae
+gathering	data/about/GUARDRAILS.md	misfiled	chorus		Y		dae1ce7eb588	2026-03-03	dae1ce7eb588af3862f49050207ae3e739f5ce7d7924d01a709c638f9b2e7410
+gathering	data/about/COMPLETENESS_MODEL.md	misfiled	chorus		Y		d4f66471c2a1	2026-03-06	d4f66471c2a1a7c5894b4ff47b505f4e77b4e79a27ddd6d9a3df259e1df82f4f
+gathering	data/about/SYSTEM_MODEL.md	misfiled	chorus		Y		0d1d3935496c	2026-03-15	0d1d3935496c80f45e85aac631e9e3dbda608d9b75fe4c39c5aafad0ff82c670
+gathering	data/about/IDEA_PROJECT_LIFECYCLE.md	ok	gathering		Y		01936d8ac4ae	2026-03-03	01936d8ac4ae4d5c9d6f99907f446687f59b066a57e15a22682f6651773d6c5d
+gathering	data/about/CONCEPTUAL_MODEL.md	ok	gathering		Y		03afa9784658	2026-03-12	03afa97846586015749b2f1df3387132c6ebde0a06ad141bbf320ffdd5ff2e96
+gathering	data/about/ARCHITECTURE_DECISIONS.md	ok	gathering		Y		bf5dcc19f8f7	2026-03-11	bf5dcc19f8f74d283ebf6a8e63a245cc2503066b436ef4bc0b5bb6313fc12752
+gathering	data/about/SCALING_RDF_TRIPLES.md	ok	gathering		Y		ecbb7918aa28	2026-03-03	ecbb7918aa283d8c0e98cb4d6f9691e47e456169a1428d99b720878761b2ad36
+gathering	data/about/ADR-009-chorus-pipeline-ontology.md	misfiled	chorus		Y		541fa5e7a9da	2026-04-25	541fa5e7a9da611d4c1ece9d9ddb7b00e42ae6342631955b9cbe66094e0fd663
+gathering	data/about/UNIFIED_INDEX_ARCHITECTURE.md	ok	gathering		Y		3d490389d9b9	2026-03-03	3d490389d9b978bd27d5bd67efeb62b3abacb4477537cdd59f40f72992722b4a
+gathering	data/about/PAIR_PROGRAMMING_RESEARCH.md	misfiled	chorus		Y		781b990c4aca	2026-03-16	781b990c4aca6fea816db5469e48abb74dc17501d3ccb9e4adf3eeca445ed4fa
+gathering	data/about/GLOSSARY.md	ok	gathering		Y		8bf7d500bdfc	2026-03-03	8bf7d500bdfc2033c852fcd781350ec2352358dae59d0029df6ead7c579ac8be
+gathering	data/about/INGEST_COMPLEXITY.html	ok	gathering		Y		3768359a9d2f	2026-03-17	3768359a9d2fe136b46f85d7fb9741fa48442b8889df126f053fbf7ad7b89574
+gathering	data/about/ADR-007-two-machine-storage-topology.md	misfiled	chorus		Y		78e2658ab7a1	2026-04-25	78e2658ab7a15847b38c314c880133dcf4fd98374bb5372478745f88aa9df26f
+gathering	data/about/WORDPRESS-INTEGRATION.md	ok	gathering		Y		a197c5003c05	2026-03-12	a197c5003c057a55a55c9a8650e6449641f0ada12305ab2a3bc366cfdaf8b194
+gathering	data/about/ADR-010-generalized-harvest-pipeline.md	misfiled	chorus		Y		133713fc870c	2026-04-25	133713fc870c42f3391bdefa318ae394649dd977519a958541da8577d5c0bca3
+gathering	data/about/ICD_COMPARE_NOTES.html	misfiled	chorus		Y		537d3eb18bd5	2026-03-19	537d3eb18bd5651ac8cd22d25f53da67e1cfb8c22d4d504ca7a27dcc200e3d48
+gathering	data/about/MEMORY_ARCHITECTURE.html	misfiled	chorus		Y		654d13230291	2026-03-16	654d132302910a5ce73fd4a695e04f003339baf84812fc453760a43647073a73
+gathering	data/about/LOG_TOPOLOGY.html	misfiled	chorus		Y		49ffb2930461	2026-03-03	49ffb29304616f5dfc49f5f57fa89d0c23c855ae141d1eb01f7499d7cfef52d7
+gathering	data/about/WARDLEY_MAP_ICD.html	misfiled	chorus		Y		3d61edf65eee	2026-03-19	3d61edf65eee928cbcb76611f7a17904074e0964a9acc555089b4db3dac4e2bc
+gathering	data/about/system-model-thinking.html	misfiled	chorus		Y		aa1c38f54ad4	2026-03-04	aa1c38f54ad4e67d8430308edce619e0cc7aa4c9316cdaa3ccd74f04d392b94a
+gathering	data/about/POSTURE_STRIP.html	misfiled	chorus		Y		cb8fb6c23d53	2026-03-15	cb8fb6c23d53f40e052cb549938227e55ce1d8ff2151c744f5fb9ffc97c60a8b
+gathering	data/about/GOOD_BORG_PRINT.html	misfiled	chorus		Y		cd9ca52ba4e0	2026-03-15	cd9ca52ba4e0dcab3788b4d321e182557352328af011b46e25165083ad37254f
+gathering	data/about/FRESHNESS_MANIFEST.md	misfiled	chorus		Y		00c8176cb6a8	2026-03-12	00c8176cb6a8e4896386bed5109d845923eb0937385789f8872a30153e4c370b
+gathering	data/about/CONVERGENCE_ARCHITECTURE.html	misfiled	chorus		Y		045bca02c9e4	2026-03-19	045bca02c9e444d05591a7b26d880bef6218afce80f3f9eb1088309f21ba39a8
+gathering	data/about/STYLE_GUIDE.md	ok	gathering		Y		9873eb94b241	2026-03-09	9873eb94b241d89a62d774fa356b8c0799fa795019e37582ce05a9beb4cc8eea
+gathering	data/about/TESTING.md	misfiled	chorus		Y		44a72f592fee	2026-03-27	44a72f592fee083e0279bc22636d29474bc646ed2b5d35a32f78e6ee2096d9a9
+gathering	data/about/ADR-012-network-bind-security.md	misfiled	chorus		Y		6646cd4f7ffb	2026-04-25	6646cd4f7ffb8cfa75f38c13a0e0fe051d15d3e1ef14aabca420075d1a212c32
+gathering	data/about/ADR-001-observability-network-ownership.md	misfiled	chorus		Y		af8f8ba75910	2026-04-25	af8f8ba759105a94430eedcc39be987d3f98df44fcd26acecdf43a78c1571b03
+gathering	data/about/ADR-006-bridge-scope-guardrail.md	misfiled	chorus		Y		e67edf79f9cd	2026-04-25	e67edf79f9cd5ccc04aefd534a202e4ffca88e69b00c336b1071ae18c24866a1
+gathering	data/about/PUBLIC_ACCESS.md	ok	gathering		Y		a725db0d1c88	2026-03-12	a725db0d1c882dcf7900713cca762aa7699fb7150cbfea223e3890a7af70d7c8
+gathering	data/about/_archived/SYSTEM_ARCHITECTURE.md	unfiled	archive		N		8c43b6f9fd2e	2026-03-06	8c43b6f9fd2e2361bca4f07b3ff888d73994fbd0d880a8bfbcb4e88f0bd74186
+gathering	data/about/CHORUS_SDK.md	misfiled	chorus		Y		8feb60e7d540	2026-03-12	8feb60e7d54089c68ac9d6626bd4678d2371b07e63d779c12aecd35ee9474eee
+gathering	data/about/SOLID-AUTHENTICATION.md	misfiled	chorus		Y		99d7d11fad74	2026-03-03	99d7d11fad7497ebb0cf41b07731d42830d52b9901647de441e34745f18c5372
+gathering	data/about/GOOD_BORG.html	misfiled	chorus		Y		5bb1303559fc	2026-03-15	5bb1303559fcf6efae39794efba2627afe00c2b65b5f06c86e8578b350af8df3
+gathering	data/about/HEIDEGGER_GATHERING_RESEARCH.md	ok	gathering		Y		3b125e5db4a2	2026-03-03	3b125e5db4a2ff92d25a093ad271bb8971a38ca71b559fde8ba57a8a2d892d92
+gathering	data/about/BOOK_CATALOG_WORKFLOW.md	ok	gathering		Y		5c41f48a7826	2026-03-03	5c41f48a7826e5ac50ae184ebbec46396c4e7fccf4bc68e7b483b6a06c0607cc
+gathering	data/about/ADR-013-boundary-checking-operating-model.md	misfiled	chorus		Y		c0f24b787fd9	2026-04-25	c0f24b787fd9829366416bb2e2a857ab8c60fb9a1697888fed78e521bf1a74ab
+gathering	data/about/HARVEST_RECONCILIATION.html	ok	gathering		Y		c44fdd1ec4ea	2026-03-17	c44fdd1ec4eab5d018b8724b2f8af5145382dc04cbb6148b2765656b6b35d9f1
+gathering	data/about/ONTOLOGY_STATUS.md	ok	gathering		Y		27a4fed26433	2026-03-03	27a4fed264338d6bfddd9110c7260f120a90a187ad89a972032cde7ac7cc5c74
+gathering	data/about/ICD_TEST_STRATEGY.html	misfiled	chorus		Y		440c8471cd59	2026-03-19	440c8471cd5932804a9bf3c910b4077380294ad56155fa23505db8245baef550
+gathering	data/about/ADR-003-visibility-enforcement-architecture.md	misfiled	chorus		Y		f120e116e53a	2026-04-25	f120e116e53a1a93220a5ab44fc3f3ebfd0c8137bc276805daa5a6e407eb47ac
+gathering	data/about/SOLID_PODS_RESEARCH.md	ok	gathering		Y		4a60e259558b	2026-03-03	4a60e259558b1dcbc9d28e66136c892ebfdb83b5f90a7b50cfa1473886023a68
+gathering	data/about/GARDEN_SETUP_FLOW.html	ok	gathering		Y		523bf698fe1f	2026-03-15	523bf698fe1f54d131f7e41b4b72ca2259eee8ffe15008363202fef100cc0003
+gathering	data/about/GATHERING_README.md	ok	gathering		Y		1b868ed09e09	2026-03-13	1b868ed09e09d352ea36518f89d999ac9d07d273c274760c89f0f228d7a67d2d
+gathering	data/about/ATTENTION_ARCHITECTURE.html	misfiled	chorus		Y		e862adbde566	2026-03-19	e862adbde566dc53668f32493cf2c5e06add9d45646f993497491f8d829a78ce
+gathering	data/about/HOMEOSTASIS_RESEARCH.html	misfiled	chorus		Y		e1ab2d3cc571	2026-03-01	e1ab2d3cc571bf29d0077cef0a1b16f41e7ceb4565f89c8dc7e370bad53354a2
+gathering	data/about/ICD_PROCESS_FLOW.html	misfiled	chorus		Y		09a06cc7df24	2026-03-19	09a06cc7df2486849fe4c55fd9e08eb7a939598e8337bf969ff0a9725ebeadc1
+gathering	data/about/TECH_STACK.html	ok	gathering		Y		740dc3042d75	2026-03-06	740dc3042d75f86c3ce2f3de55197759cdcd32abbd7bfb018fd6f492a2121cd2
+gathering	data/about/ADR-004-ontology-data-visualization.md	misfiled	chorus		Y		eaed8fd16416	2026-04-25	eaed8fd16416a7d7c69500edc0e2866c465ff3d9b5e32d13982a2c9f96336c5f
+gathering	data/about/CADENCE_ANALYSIS.html	misfiled	chorus		Y		75a90bd1d8c2	2026-03-15	75a90bd1d8c2696c612ebfa21cb24299564c0bf7a29b68deb72fa62bf168c85d
+gathering	data/about/ARCHITECTURE_PATTERNS.html	ok	gathering		Y		a83c97f8b109	2026-03-17	a83c97f8b109d3560769579df631a53f48e5bdaeaec0e2702467c2d0eec706f7
+gathering	data/about/GATHERING_VISION.md	ok	gathering		Y		b1e0e22c4ebe	2026-03-12	b1e0e22c4ebeb625dec7010f4fe120d9b2670be367cd81bfc10b554ff76ddd00
+gathering	data/about/PHOTOS_DOMAIN_ARCHITECTURE.html	ok	gathering		Y		e38d193af859	2026-03-16	e38d193af859ce69fe4a7d71cc170009521515e49488dfe79ace271d958cf358
+gathering	data/about/BORG_ASSIMILATION_PATTERN.html	misfiled	chorus		Y		e8d874e3ac40	2026-03-19	e8d874e3ac4007232c5fabf1d43812a52ecf4af2b88fac5fcf94effe7d0b24ab
+gathering	data/about/SELF_PORTRAIT.html	ok	gathering		Y		8b8986761bd2	2026-03-06	8b8986761bd2455e164a14fb98261f9e3a4fa4dd4715a95289721b7373e30c2f
+gathering	data/about/INFRASTRUCTURE.md	misfiled	chorus		Y		86730c17d002	2026-03-03	86730c17d0028a168af3c850afd855b81549688d6b47ace490e57f2e6a65e9ae
+gathering	data/about/NEXT_SEQUENCE.html	misfiled	chorus		Y		ebb13529230f	2026-03-06	ebb13529230ffccf6e790cda3f6667e977c9ca4f1843f14308a6937135724e24
+gathering	data/about/ADR-011-production-like-deployments.md	misfiled	chorus		Y		86094d248d20	2026-04-25	86094d248d20b54a8c699640540752d8c8ee1dbf4c2d4fcb2083fd0d7b742ca3
+gathering	data/about/ADR-008-cross-graph-sparql-pattern.md	misfiled	chorus		Y		b256df556657	2026-04-25	b256df556657274ade6e89ac2498cb8943fec04a6adc238b423a152ac12214e5
+gathering	data/about/NUDGE_BRIDGE.md	misfiled	chorus		Y		be8158d156e5	2026-03-08	be8158d156e531bf6754ac701fe71c7d2acab1be0969a44af9189aa4bb5a4e55
+gathering	data/about/CHORUS_README.md	misfiled	chorus		Y		8d16a4520efb	2026-03-13	8d16a4520efbbdfe22603107d90b1e84ff29ce3f56d8a712d06d9e3051e5d13e
+gathering	data/about/STARTUP_PROCESS.md	misfiled	chorus		Y		be6d9f2ebe9c	2026-03-27	be6d9f2ebe9c4786ee8357afc8ce55b4e0018831bef51d78f3800f7879f0bf69
+gathering	data/about/PRODUCT_TAXONOMY.md	misfiled	chorus		Y		1503c975e3ac	2026-03-11	1503c975e3acef7e4ffd142b72859e2c6193a4c6922008775c59e41b986c14f1
+gathering	data/about/KADE_ROLE.html	misfiled	chorus		Y		d5994b7b18d8	2026-03-15	d5994b7b18d823947001c7dea146bbae0c679db07b47186235603c5e73509eed
+gathering	data/about/DECISIONS.md	misfiled	chorus		Y		18c1b96e38d9	2026-03-06	18c1b96e38d9690a11f1640a2fb976125fd9445f7ab47c42702d29c4705df241
+gathering	data/about/ACCESS_CONTROL_MATRIX.md	ok	gathering		Y		041afa768ff1	2026-03-03	041afa768ff1aa4761a681dec0f5188360cf94b49718b504fb30e616982723cf
+chorus	directing/products/cards/PRODUCT_TEMPLATE.md	unfiled	chorus		N		c4345ade26f5	2026-04-08	c4345ade26f57a289e090bafe1e2f15151ec98e5684c1e76a05aa43e51650200
+chorus	platform/seeds/PRODUCT_TEMPLATE.md	unfiled	chorus		N		99e113b2310d	2026-04-08	99e113b2310dae0ba2c59283a0628e8ba83677b4bc902095b5434b60b19869a2
+chorus	platform/scripts/ops-agent-prompt.md	unfiled	chorus		N		a6b3c6fdc45b	2026-04-16	a6b3c6fdc45b83e76df16d02bc2c563dc8d21a110c5163e0ccfcfefaa2c5eb89
+chorus	platform/api/scripts/README-scaffold.md	unfiled	chorus		N		9b6ac7100d19	2026-04-27	9b6ac7100d19ad549aac0b540846b4cb5ba8952aa1a5b8b01c6fad6b55044c44
+chorus	platform/api/src/handlers/DOMAIN_IDENTITY.md	unfiled	chorus		N		1e4c6108a762	2026-04-21	1e4c6108a762637b76088a3568875f7d966f263867be7c8f2850456ba61daa92
+chorus	platform/activity.md	unfiled	chorus		N		636490d48757	2026-04-07	636490d4875714350d4dc26cd2c3cdc1f88756466a0c5f80db58be8f10ebf6cc
+chorus	platform/services/chorus-hooks/BUILD.md	unfiled	chorus		N		fb83407b0ee4	2026-04-19	fb83407b0ee4293d2e5ff6460d6b519b7fcefd22f64e5d16c20edb2313ee9f72
+chorus	platform/services/chorus-inject/BUILD.md	unfiled	chorus		N		baf3a408e1ca	2026-04-19	baf3a408e1cac0b3562768e703ef27a4e405f2e85eca9750c2419c17a6f31036
+chorus	roles/wren/jeff-word-cloud.html	unfiled	chorus		N		0bbe55634aac	2026-04-08	0bbe55634aac6c4ecf68a47ebfb29ddd3f037f8442d870bff8f6f973c048dbaa
+chorus	roles/wren/chorus-overview.md	unfiled	chorus		N		b4c05b1409c6	2026-04-08	b4c05b1409c6cc875f758c0b4e284aa074f84e003eb0913c6bfe3bd83686233e
+chorus	roles/wren/artifacts/book-sequence.html	ok	chorus		Y		ff3c984098a3	2026-04-23	ff3c984098a38d1789fca714e8a67e388e2c19412fa7614a1a621544afb83f74
+chorus	roles/wren/artifacts/book-outline.html	ok	chorus		Y		b2877793b37b	2026-04-23	b2877793b37b5603ecbb6859710c2ec187bfa45a3398741903c7273fedbc3105
+chorus	roles/wren/artifacts/chorus-toc.html	ok	chorus		Y		fca38cd59245	2026-04-23	fca38cd59245039d98fd28d7ebc3b4fdcac91f4439d86b78b5f88b5ee1dffa3d
+chorus	roles/wren/artifacts/ontology-migration-pattern.md	ok	chorus		Y		9d1f022d00f1	2026-04-08	9d1f022d00f120658c5e54a5b01d12105cac592e2374bf44fe35fef5909232e0
+chorus	roles/wren/artifacts/roles-domain-design.html	ok	chorus		Y		37f277e13a90	2026-04-11	37f277e13a900faa6d45bd97ed699354006ceb6ca3d5beb772ec3a9d1f013e2e
+chorus	roles/wren/artifacts/domain-policy.html	ok	chorus		Y		7731a376d7dd	2026-04-08	7731a376d7dd1155e8b38e3bfd3fed7101fe88e70d6f2752b38962414807c31c
+chorus	roles/wren/artifacts/wren-claudemd-annotated.html	ok	chorus		Y		aafede30263c	2026-04-22	aafede30263c872a80857f2bd86289d69027b4d4dccaedf8e72c24dddb0e5bdf
+chorus	roles/wren/self-memories.md	unfiled	chorus		N		b4a35b756769	2026-04-08	b4a35b756769b7f0c9e2e746a25843cedc60ceeed1101a77af3457e022175518
+chorus	roles/wren/designs/relationship-depth.md	unfiled	chorus		N		c1b9ddb8efd0	2026-04-08	c1b9ddb8efd0221ad7556daf7c6d523ba3072d5ce7b75bb5077846e7deb7c6b4
+chorus	roles/wren/data-classification-policy.md	unfiled	chorus		N		5a68971fc210	2026-04-08	5a68971fc2101653e5a22f6621b4b130b02f769e3736c68f576a62c346c643e1
+chorus	roles/wren/practice-authoring-guidance.md	unfiled	chorus		N		33673d098e35	2026-04-21	33673d098e355ce70c9e63c07397a256f394d9d9c24e89f3b2d251837b4b9677
+chorus	roles/wren/heidegger-gathering-research.md	unfiled	chorus		N		30e2a542667f	2026-04-08	30e2a542667f089605b86103dde90a0d12e2e0615c7fff1b3a019aa4d8e5b75f
+chorus	roles/wren/reconciliation-flow.html	unfiled	chorus		N		c25bce7b593d	2026-04-08	c25bce7b593d5dc60f9da0ea2eb7b1c4bd61f1036b27d0942d9dfb20a9c32122
+chorus	roles/wren/self-stories.md	unfiled	chorus		N		a5f7a9855a91	2026-04-08	a5f7a9855a912095df720c252adc3ea8c331a5e5b6035d9dc25af4f7930becd4
+chorus	roles/wren/ai-foundations.html	unfiled	chorus		N		cfe721eeec38	2026-04-08	cfe721eeec387cd596b22ce5eeca206735467e296ce9e39b29fce10bd5f259ae
+chorus	roles/wren/chorus-scope-diagram.html	unfiled	chorus		N		b67767a58686	2026-04-08	b67767a58686d8302ccebf3a2b996b7bedfc8cff261a121c443a24e0a20e780f
+chorus	roles/wren/docs/seed-pipeline-criteria.md	ok	chorus		Y		d15e2bcd794c	2026-04-08	d15e2bcd794c0eaa35bfcda1b8aeb6a40d791a632f79e8d746eabe9d9670ae86
+chorus	roles/wren/docs/gemba-as-is.md	ok	chorus		Y		1d5fcdf71a4a	2026-04-08	1d5fcdf71a4ab754af97865f040189e1565b0aa223e32605036a7dd1b0ae1871
+chorus	roles/wren/v1-boundary.html	unfiled	chorus		N		b38ffc2dfd89	2026-04-08	b38ffc2dfd892500995c864fe62e6bf23a7fc58b87ed2a1f598c0ddee56c4d35
+chorus	roles/wren/decisions/board-api-verb-model.md	ok	chorus		Y		2d542e808ef0	2026-04-08	2d542e808ef034b39574658a356296737fe2ae5b8f9e27894123b0709175ea2d
+chorus	roles/wren/decisions/poppendieck-ch2-chorus-analysis.md	ok	chorus		Y		4b555298f856	2026-04-08	4b555298f856a7bc63799207c831acdcddf95ad5ac68501fdc71fcc39a687398
+chorus	roles/wren/decisions/DEC-1674-tdd-discipline.md	ok	chorus		Y		122e218c14bf	2026-04-08	122e218c14bf66c67259843dd0c12a6939a1e8c7a674710ccce55cefc9587115
+chorus	roles/wren/personas/jeff-owner-operator.md	unfiled	chorus		N		23ee7fcb4ee6	2026-04-08	23ee7fcb4ee6c19e168c466aa584d6e49c3c2d573feb6e9f71d56cc847bd8d8b
+chorus	roles/wren/personas/wren-pm.md	unfiled	chorus		N		59c154be12ef	2026-04-08	59c154be12ef3335ba31477b9bf3e9ce66c72a92c310b27a76614b6357079019
+chorus	roles/wren/jeff-voice-analytics.html	unfiled	chorus		N		82b6bccacc25	2026-04-08	82b6bccacc25ebe76d6cb17eb740a275a9cb2fe89bb7e2ec5e040793665318b4
+chorus	roles/wren/chunks/memory.md	unfiled	chorus		N		027b51e95956	2026-04-08	027b51e959561892e2af46f54172ee7d1a7b02ae16284987b5364408070d9b1a
+chorus	roles/wren/harvest-designs/notes.md	unfiled	chorus		N		dbc8c8b0db84	2026-04-08	dbc8c8b0db840d343f04fe4cab512bd01b5fcd4767fb3bd1b2c59e0908986161
+chorus	roles/wren/log-coherence-audit.html	unfiled	chorus		N		310deb3d3f43	2026-04-08	310deb3d3f43eaa9cecca6461ca1cec74c9263e1e8e0f6f5059e3bef5ec218f6
+chorus	roles/wren/self-domain-ontology-sketch.html	unfiled	chorus		N		e1fcb6301838	2026-04-08	e1fcb6301838252260b154b632f33feac1e784c98d44246adad41445b7adda2b
+chorus	roles/wren/memory-architecture.html	unfiled	chorus		N		654d13230291	2026-04-08	654d132302910a5ce73fd4a695e04f003339baf84812fc453760a43647073a73
+chorus	roles/wren/ux-walkthrough-2026-02-18.md	unfiled	chorus		N		a90b2fbeb33a	2026-04-08	a90b2fbeb33a2aac925698a31e5885192a3d8193b776a0f6321027af947ed79b
+chorus	roles/wren/access-control-permutation-matrix.md	unfiled	chorus		N		f9787ed1fee2	2026-04-08	f9787ed1fee2fbbffc193f6138cf568c1bdba0192a717462311c81faf82d2575
+chorus	roles/wren/capture-routing-refinement.md	unfiled	chorus		N		b0281f92bf2b	2026-04-08	b0281f92bf2bb1942f1fe2ac73596b283e3b0597b7ce02a2b1e4a94f56513038
+chorus	roles/wren/security-trust-model.md	unfiled	chorus		N		4800761b02e9	2026-04-08	4800761b02e9299fa03891acf0168e8d41fb34def0c4405a28c345e5cd77bceb
+chorus	roles/wren/templates/harvest-design-doc.md	unfiled	chorus		N		fb812eda1eb2	2026-04-08	fb812eda1eb2fa4755f0c7c0ddf8283f46a5825a881b6ba6e09889b44a668dda
+chorus	roles/wren/self-relationships-sketch.md	unfiled	chorus		N		63dd14e545b5	2026-04-08	63dd14e545b5a709c35c1bcc8fd91b7acf0e3bdffffda912b08c6c171a3369b0
+chorus	roles/wren/jeff-practice-spine.md	unfiled	chorus		N		7d121851b08c	2026-04-08	7d121851b08c639b2d9bb89d54834d8a13a815fcf4b8a4d8e81c473636812b43
+chorus	roles/wren/value-stream-and-domains.md	unfiled	chorus		N		a358ffb383f9	2026-04-08	a358ffb383f95a70e123312417d639424d2b01be01c01899958ea440433773a5
+chorus	roles/wren/jeff-constitution.html	unfiled	chorus		N		33766127a359	2026-04-08	33766127a359bb848933a2a0eb6113c0eb0115977e05aa5bf67909a56b3d33ff
+chorus	roles/wren/proposals/v1-acceptance-criteria.md	unfiled	chorus		N		759189ff3e34	2026-04-08	759189ff3e343a82680ba662efe0ef93a1fa15f917cc5c093563c4116af68826
+chorus	roles/wren/proposals/concept-enrichment-ontology.md	unfiled	chorus		N		9491a348b3d2	2026-04-08	9491a348b3d28e8ab3ef51ab5cc1e96b7f4486d697601ae0a766e192333654d6
+chorus	roles/wren/v1-boundary.md	unfiled	chorus		N		1c3402113250	2026-04-08	1c340211325041b4d317ff01135941dc473742083ca654000d711cfa0393ec64
+chorus	roles/silas/fitness-test-template.md	unfiled	chorus		N		6cd59319a468	2026-04-10	6cd59319a468f5ea92b3ebfb1e8ad60907ccc16ad881193c427802a4ca12a3ad
+chorus	roles/silas/artifacts/silas-role.html	ok	chorus		Y		692181028b75	2026-04-24	692181028b7520ded1d14b1fa03fd8c47b4673f4c8fec8e9a8f6eb053f30a9fe
+chorus	roles/silas/artifacts/class-diagram-products-domains.html	ok	chorus		Y		04c8897be95e	2026-04-08	04c8897be95e7d0d1fddfd017fe099f1a479a623a1bbaef6ec27567b5ab529a9
+chorus	roles/silas/adr/ADR-002-acl-graduation-model.md	ok	chorus		Y		5cc8f72f6695	2026-04-08	5cc8f72f6695e90e86e13b9151bdaf750d6ded3b3f7530de0b5c98f7d1f31283
+chorus	roles/silas/adr/ADR-014-pod-mediated-coordination.md	ok	chorus		Y		758d8480d01c	2026-04-15	758d8480d01c441f8fb989005616b51b052340d6ec720e56d77505a146506370
+chorus	roles/silas/adr/ADR-026-ci-architecture-and-lock-file-policy.md	ok	chorus		Y		589ecad7a097	2026-04-25	589ecad7a0979bcebe8c8ba70ba5ef63c4de589cec7e4cf58d7e4cfea71f9375
+chorus	roles/silas/adr/ADR-020-product-vs-domain-typing.md	ok	chorus		Y		1c26f50b4e8f	2026-04-15	1c26f50b4e8fdcdbb02fdc974c3c7f242366f7bd218914e071776abef3b49433
+chorus	roles/silas/adr/ADR-023-stdout-logging-standard.md	ok	chorus		Y		66fd00d19e92	2026-04-15	66fd00d19e9252b32abf510d6a0305ceb8944ee1dcd10b7e2f719e73a7965fc7
+chorus	roles/silas/adr/ADR-005-observability-evolves-with-infrastructure.md	ok	chorus		Y		a5260f088b90	2026-04-08	a5260f088b9093932fbd8fef01221bc5bc804f24a454d73f12bbdbb589e03cde
+chorus	roles/silas/adr/ADR-024-common-message-envelope.md	ok	chorus		Y		b58013bcc3e0	2026-04-16	b58013bcc3e0c2db2ce3b7e8b99d111424f471f0cad4aee017865d8d7fdde6e9
+chorus	roles/silas/adr/ADR-025-ontology-vs-instances-graph-separation.md	ok	chorus		Y		405e978982c5	2026-04-25	405e978982c5cd7d18e47e64e22f0d7023cfc8546129cb75268945c127f3943d
+chorus	roles/silas/adr/ADR-019-native-service-architecture.md	ok	chorus		Y		44422e7b14c6	2026-04-25	44422e7b14c605de7ab2d7e36dd6a2f2da0a5322235a3e9b033033dc0a9c0057
+chorus	roles/silas/adr/ADR-009-chorus-pipeline-ontology.md	ok	chorus		Y		11047f4074fa	2026-04-15	11047f4074faf9b31887241771bc9d1b682a03796571f2e08a9fab8c80133e22
+chorus	roles/silas/adr/ADR-007-two-machine-storage-topology.md	ok	chorus		Y		b966753cb541	2026-04-08	b966753cb54128948d428ce32eb273fef0a73fd63b49924e16adf901ceb40152
+chorus	roles/silas/adr/ADR-010-generalized-harvest-pipeline.md	ok	chorus		Y		c7c328b44a9c	2026-04-08	c7c328b44a9c74cac836b6d6f53f9d67326a8849e364b77d261083fef3ba8c3d
+chorus	roles/silas/adr/ADR-021-ontology-enforcement-model.md	ok	chorus		Y		0e472ec52954	2026-04-15	0e472ec529546e7022eb3c81784f72ba10eb2aecd40aefde9b4c3ca56c6879ad
+chorus	roles/silas/adr/ADR-012-network-bind-security.md	ok	chorus		Y		2999e39f9848	2026-04-15	2999e39f984880dfc5bad0103e3383d3c8cd13f82ba7a2be491e798fb58a6782
+chorus	roles/silas/adr/ADR-001-observability-network-ownership.md	ok	chorus		Y		cd615bd18635	2026-04-15	cd615bd18635fd17ca81d7627fd88d7813d7f0cf842ab236b4f372ba06b3900e
+chorus	roles/silas/adr/ADR-016-cross-machine-operations.md	ok	chorus		Y		63b8dc1cb95f	2026-04-08	63b8dc1cb95f9d44abd2de15c40fd83bce573bfe788388ce1c97a5402485b134
+chorus	roles/silas/adr/ADR-006-bridge-scope-guardrail.md	ok	chorus		Y		9294b3f8c740	2026-04-08	9294b3f8c7406b030e9898c7b1b256c42ac49371a609aff4c5dc50efcf1e58c1
+chorus	roles/silas/adr/ADR-022-graph-hygiene-rules.md	ok	chorus		Y		a4e84d69fae9	2026-04-15	a4e84d69fae9a89eb455a3f9be7e543aacb5ce17ce0b70a1f1cd9db1fc7d3e65
+chorus	roles/silas/adr/ADR-013-boundary-checking-operating-model.md	ok	chorus		Y		ba6abcafbe35	2026-04-15	ba6abcafbe352b08a555a5a2c8ec39fb471fa3d747ab00b949fea1c143e3be32
+chorus	roles/silas/adr/ADR-015-container-orchestration-single-host.md	ok	chorus		Y		e9ea0d6766d6	2026-04-15	e9ea0d6766d626659c376c637755c77c9af9d703d9ab1337fecd29b68701dc98
+chorus	roles/silas/adr/ADR-003-visibility-enforcement-architecture.md	ok	chorus		Y		4108b9ec6bad	2026-04-08	4108b9ec6bad104891399bf0bb7d39d56dc856f2d44affe60243cb61d5638c20
+chorus	roles/silas/adr/ADR-004-ontology-data-visualization.md	ok	chorus		Y		c6659c9215d8	2026-04-25	c6659c9215d849288923098fcc460e4a86a48dd5684a39d6555e6c357ace8953
+chorus	roles/silas/adr/ADR-018-xsd-model-icd-severity.md	ok	chorus		Y		a6a0869fb993	2026-04-08	a6a0869fb99305b79bbd28ca8fcfd293dc7f98c1d94ad77bcc900f4bcaf31a79
+chorus	roles/silas/adr/ADR-017-enrichment-architecture.md	ok	chorus		Y		dd709ff639b0	2026-04-08	dd709ff639b03aecee4da7bb6303f37a1b392653d71c930fae9a6fae096a141c
+chorus	roles/silas/adr/ADR-026-ci-architecture-and-lock-file-policy.html	ok	chorus		Y		920677d0ba43	2026-04-25	920677d0ba4395a2d670eab87fae828eebcfc273d662a0db61bca20bcd81259c
+chorus	roles/silas/adr/ADR-011-production-like-deployments.md	ok	chorus		Y		e8d04f6bb959	2026-04-15	e8d04f6bb959ac6f3c58060f9407408fe450dffebe24182580a5e7ec474f9bd1
+chorus	roles/silas/adr/ADR-008-cross-graph-sparql-pattern.md	ok	chorus		Y		d44ab5e17704	2026-04-08	d44ab5e17704896f532c44610b967998b9af1248cadbba4104df42b423861c28
+chorus	roles/silas/guardrails-and-feedback-loops.md	unfiled	chorus		N		ee28561906cf	2026-04-08	ee28561906cf6f08a302c9052b56188834d386bf1be3f297b048bffbe32c802d
+chorus	roles/silas/infrastructure-constraints.md	unfiled	chorus		N		93200236407a	2026-04-08	93200236407a5ecaa9b263f9997c26222213ce608c4d9c39e142615629f10df5
+chorus	roles/silas/plans/2328-repo-cleanup-plan.md	unfiled	chorus		N		abbf3cda9859	2026-04-08	abbf3cda9859ad99925ab91617c3ef5a9fa60651a249e340c99f34c9d20a14c3
+chorus	roles/silas/system-architecture.md	unfiled	chorus		N		f42c3bfba75d	2026-04-08	f42c3bfba75de7de13b240ea2519aed60ba5b91f0010a756799c9a9130d032c6
+chorus	roles/silas/end-of-day-review.md	unfiled	chorus		N		dd155ce471e4	2026-04-20	dd155ce471e46286a6cd21860b2cf29020837d79b47e72373f894a29ef4021a8
+chorus	roles/silas/glossary.md	unfiled	chorus		N		cd6de76a9371	2026-04-08	cd6de76a9371024b3106acb06d124707864724fb9b7709bbdada6ff65381cd74
+chorus	roles/silas/operations-assessment.md	unfiled	chorus		N		9c35c786239a	2026-04-08	9c35c786239a50873e485aec81de38e0df5a62de816dbcd6d310e5e0bb481c06
+chorus	roles/silas/boundary-contract.md	unfiled	chorus		N		dafa43be1ac3	2026-04-08	dafa43be1ac32c9649b85b55bdbf8900467a1c864b78e04ed9661db093c29da2
+chorus	roles/silas/docs/nifi-photos-flow-spec.md	ok	chorus		Y		8900bcb8c38e	2026-04-08	8900bcb8c38e807983a89059e68dcf5076c8bf0b916447b616b56ee44211ad88
+chorus	roles/silas/docs/merge-specification-photos.html	ok	chorus		Y		d62c4e6424be	2026-04-08	d62c4e6424be097321c750ea5fcf1f8a21953b15dd0b313848129fd14f727f0f
+chorus	roles/silas/docs/CONCEPTUAL_ARCHITECTURE.md	ok	chorus		Y		15208da6bd11	2026-04-21	15208da6bd119956b48564a8981af6fa057a959e2417f3b6392caa4a4ae91793
+chorus	roles/silas/docs/borg-assimilation-pattern.html	ok	chorus		Y		e8d874e3ac40	2026-04-08	e8d874e3ac4007232c5fabf1d43812a52ecf4af2b88fac5fcf94effe7d0b24ab
+chorus	roles/silas/docs/convergence-architecture.html	ok	chorus		Y		045bca02c9e4	2026-04-08	045bca02c9e444d05591a7b26d880bef6218afce80f3f9eb1088309f21ba39a8
+chorus	roles/silas/docs/demo-as-is.md	ok	chorus		Y		de0a166c0dc5	2026-04-08	de0a166c0dc59d67555fc455ee66f7408b0d1e5bceede839bcb6e8740c915b5c
+chorus	roles/silas/docs/wardley-map-icd-product.html	ok	chorus		Y		7ff07c788622	2026-04-08	7ff07c788622bc575c845a5908b867cd3eac5c70d488aa8360d99bc9698c510d
+chorus	roles/silas/docs/demo-as-is.html	ok	chorus		Y		d1bc1be36228	2026-04-08	d1bc1be3622839dc5d61966ce82962affc640f81230db81fb45489254b4ba98e
+chorus	roles/silas/bedroom-audit-2026-03-21.md	unfiled	chorus		N		9ec4dacf6dc6	2026-04-08	9ec4dacf6dc6bda5e03669cfcac20ed154e7aa193bd233f0846b0e49b24bdb02
+chorus	roles/silas/network-inventory.md	unfiled	chorus		N		05780b200a72	2026-04-10	05780b200a725087acb6dd2936883107a0b2a48e2f0f15fa2c83a40668c235fb
+chorus	roles/silas/personas/silas-architect.md	unfiled	chorus		N		fa08499a25b7	2026-04-08	fa08499a25b77dae2bbd4451b6e6c13a57a9215c1b92b4375edb91476391deda
+chorus	roles/silas/ontology-status.md	unfiled	chorus		N		1c4f19bc635b	2026-04-08	1c4f19bc635b08463d97a1beec4dbf018801eb72055e949267ce273111afd71e
+chorus	roles/silas/scratch-pair-2300.md	unfiled	chorus		N		37167ef295c7	2026-04-08	37167ef295c724e24188e301e52336a26c92bdaff6540d212f35a676c7b0a54c
+chorus	roles/silas/conceptual-model.md	unfiled	chorus		N		6f2a87aa6f47	2026-04-08	6f2a87aa6f47789071c661a43ec2d918d2f6449235772abf9529ef08b07e2afb
+chorus	roles/silas/domain-registry.md	unfiled	chorus		N		15f5e05aa32d	2026-04-08	15f5e05aa32df7f7f54354ad0cf44fd3febb7374f3e2f18c31e1ed7afd1cd2a2
+chorus	roles/silas/spine-emitter-inventory.md	unfiled	chorus		N		c699170e79a8	2026-04-21	c699170e79a8b7bc1c21cb81736117aff2087ae8506f4cbf7ba7757283357912
+chorus	roles/silas/chorus/gate-registry.md	unfiled	chorus		N		83061c789fbd	2026-04-08	83061c789fbdd35795ed37ea631bb879dc1c6ead96d409b94b7135220288482f
+chorus	roles/silas/chorus/chorus-activity-dashboard-summary.md	unfiled	chorus		N		d423c784cf0d	2026-04-08	d423c784cf0d5a397e64c278934dd6e5bd0649bee4b51dec3551529e61db16d0
+chorus	roles/silas/chorus/communication-flows.md	unfiled	chorus		N		8ba794f308d1	2026-04-08	8ba794f308d17e1cd9ac7ce63151ab3d00f521bda8f46f9b60e14c1f364e0a71
+chorus	roles/silas/logging-strategy.html	unfiled	chorus		N		0c8f60adf134	2026-04-08	0c8f60adf134f85542539743baf97325dba12820d00dffb7377c64e799b7bfc1
+chorus	roles/silas/fuseki-graph-consolidation-map.md	unfiled	chorus		N		a3f3efa83d6c	2026-04-08	a3f3efa83d6c61fd0fe7f376da93dfaba7ce9fe89c8f7eaa074825a4bbe6410a
+chorus	roles/silas/sparql-scoping-audit.md	unfiled	chorus		N		7fc529e678ab	2026-04-08	7fc529e678ab74655e3ab3e4d4b264a45d3a8a838304293d24bb21427bb246f4
+chorus	roles/silas/capability-map.md	unfiled	chorus		N		858994c0f951	2026-04-08	858994c0f951399eb1679050f39e98ada6ec15a1caed8b218b513197d760c0a8
+chorus	roles/silas/content-ingestion-matrix.md	unfiled	chorus		N		072b6b2da74c	2026-04-08	072b6b2da74cf84cf848ba8cd813d86a76e2a4de4dc4673758dadd4e176e987f
+chorus	roles/silas/spine-architecture.md	unfiled	chorus		N		97371d020871	2026-04-21	97371d020871939967d87027ab9d85f80faabffd6409680fbf0688b757a48153
+chorus	roles/silas/building-value-stream.md	unfiled	chorus		N		5765f3bc6005	2026-04-08	5765f3bc60058907d5f642e07e45b945a94073e225de7a4cd28104dd37763a29
+chorus	roles/kade/artifacts/2435-callsite-audit.md	unfiled	chorus		N		2a18ffcdbb82	2026-04-21	2a18ffcdbb828b6e44782e97cff5e74bd6ea0b34acb83770f3a82a84e3893f9f
+chorus	roles/kade/artifacts/kade-role.html	unfiled	chorus		N		f5fb6b3436db	2026-04-24	f5fb6b3436db4767c04b2a6443ab6890c73cf295935c40b6968031ffff55bee6
+chorus	roles/kade/artifacts/2435-0.3-drained-consumer-audit.md	unfiled	chorus		N		f1243e876e4e	2026-04-21	f1243e876e4ee67cfa44ba2d20a1c272f0a269e37c4fc3e975a272b4ee051567
+chorus	roles/kade/quality-guide.md	unfiled	chorus		N		962baddf73ef	2026-04-08	962baddf73ef3cb6201f38330287a411f58aa7c72817606c9838aa572bbb0ede
+chorus	roles/kade/current-work.md	unfiled	chorus		N		a001916d13fc	2026-04-18	a001916d13fc4029e6f2dcedf5cbfb7475f6e57d8496dfe8fa7eeaee43b49c0d
+chorus	roles/kade/mockup-player.html	unfiled	chorus		N		1d38325620c4	2026-04-08	1d38325620c45b6037f209968780d3a3207c3f45bcbce7ef4ede4ac8ebe26318
+chorus	roles/kade/acl-audit-results.md	unfiled	chorus		N		dbbeab3d37cf	2026-04-08	dbbeab3d37cf1c1c43c86493663f9fee8ba43b1f1758dbc2e628f53e20ea259c
+chorus	roles/kade/policies/test-value-draft.md	unfiled	chorus		N		9c0629732ea7	2026-04-18	9c0629732ea7122f4199d49cf14961118c8e2edff18feb0249d41fdc550c0311
+chorus	roles/kade/harvest-pipeline.html	unfiled	chorus		N		ac28bab0b1ce	2026-04-08	ac28bab0b1ceac778cd7ee12d1b829a3d799ecd32b886ae7c3cf9bd7f3f8ced1
+chorus	roles/kade/personas/kade-engineer.md	unfiled	chorus		N		10d71f0178cc	2026-04-08	10d71f0178cc09c1930dfca4f32abbb087c885046dd34c9255fab33071c2c245
+chorus	docs/diagrams/skill-lifecycle.html	ok	chorus		Y		16b139ba4ee6	2026-04-17	16b139ba4ee6feda2b9db85897558696e7b009b8ed1c4f0359ee345c5fdf9630
+chorus	docs/diagrams/chorus-c4.html	ok	chorus		Y		0bf39571a470	2026-04-25	0bf39571a470521d9d4b54eee7d3bd3df13cb6d836e735e9b40b39a6aa4844fe
+chorus	designing/docs/chorus-domain-map-v2.html	ok	chorus		Y		21a2c4cd1b48	2026-04-24	21a2c4cd1b48b8898f63b2fd23ba397a6cfbda65956a73bcbbeb9299ec12d218
+chorus	designing/docs/chorus-clearing-architecture.md	ok	chorus		Y		d1d3d7f2b5f4	2026-04-08	d1d3d7f2b5f4149eebf7023338ac12314b3cc862890b3c3fac837bd7c313e03c
+chorus	designing/docs/chorus-repo-structure.html	ok	chorus		Y		f6b5f7d3e3af	2026-04-24	f6b5f7d3e3af54aea44ed64aead7a1efc56e80f2a1378370c8e49c964a352489
+chorus	designing/docs/sequence-pipeline.html	ok	chorus		Y		b281ba7bb3d2	2026-04-24	b281ba7bb3d20ac54ef1abc544848d78355e939eb65b06317f2e924408affef4
+chorus	designing/docs/chorus-contracts-pattern.md	ok	chorus		Y		3c48119a876b	2026-04-20	3c48119a876b6a3e8edd2d9f91293830c7a482d41ab036427192ac925d330aa2
+chorus	designing/docs/chorus-value-stream-deep-dive.html	ok	chorus		Y		d64bc773cc74	2026-04-24	d64bc773cc745248ac25d85b6d905a787b8a4d4eee123a71c967457b93ec1b80
+chorus	designing/docs/chorus-overview.md	ok	chorus		Y		cd87b59dc867	2026-04-24	cd87b59dc86784237079fd1920a9874c2bdc3a7d5e905d2e726316f316d0c7e6
+chorus	designing/docs/chorus-protocol-stack-positioning.html	ok	chorus		Y		d34bd89464fe	2026-04-24	d34bd89464fe68ad9836e4f3d6e3690035296b76d0d59c76e446a20f703d3adb
+chorus	designing/docs/chorus-instance-explorer.html	ok	chorus		Y		3162ba1f6930	2026-04-24	3162ba1f69305a4fd0385474eef3fc2efbc146220db04e893cea5af1bd8dbf19
+chorus	designing/docs/chorus-hook-architecture.html	ok	chorus		Y		3d5e55900465	2026-04-24	3d5e5590046585acea447559e1a9f5933fff01783e6b24e8bbdfa41224cb508b
+chorus	designing/docs/ci-pipeline-service-design.html	ok	chorus		Y		02b6e1c4b6f5	2026-04-25	02b6e1c4b6f5ce8a8d7221a6036a713efc4d43578745443e2b1ae6dac480a71f
+chorus	designing/docs/chorus-standards.html	ok	chorus		Y		34edd915c08c	2026-04-24	34edd915c08c9c87bcbb950536a6e2ca4fc09cd1621716418df3db375970c1d3
+chorus	designing/docs/chorus-roadmap.html	ok	chorus		Y		bac4ee5012ce	2026-04-24	bac4ee5012cefd69bb83ede2d45f21522bd2d76db57f42c65ac36fd4a46501be
+chorus	designing/docs/pulse-service-design.md	ok	chorus		Y		eb1d7b2bacb8	2026-04-22	eb1d7b2bacb8c1aa2ea1fb82059bea6b5b9dcb43a7d65b0ee3cc6b60596b16f9
+chorus	designing/docs/context-service-brief.md	ok	chorus		Y		899f96f54509	2026-04-08	899f96f54509e92d965cd67ec1dd98d3b2a8f39c8e4de291c422cd8319671864
+chorus	designing/docs/doc-triage-rules.md	ok	chorus	wren	Y	doc-management, km	be9dcc40c0e6	2026-04-24	be9dcc40c0e61357fe431bd2a17073f701f581585e7452745b0f8f2025c8d14d
+chorus	designing/docs/chorus-domain-map-v3.html	ok	chorus		Y		337c211274b4	2026-04-24	337c211274b4b2ef9670e99633506cf560053dd9938bd66471eb1f43ea2748d9
+chorus	designing/docs/social-contagion-and-framing-research.html	ok	chorus		Y		f0e54a8163e3	2026-04-27	f0e54a8163e3049ad58c744ec56e4e462e6e76d305bea494c62a03d46cf4da49
+chorus	designing/docs/chorus-data-model.html	ok	chorus		Y		0d193100dc03	2026-04-24	0d193100dc038bf5b612504d64fa7fa36f47744a3e9dbdba643370c014a1c7db
+chorus	designing/docs/roles-service-design.md	ok	chorus		Y		e6ca9091a9f9	2026-04-17	e6ca9091a9f98e96f2ddeb55fad043bf66e412ecbccfd21bac732e720ab014e6
+chorus	designing/docs/gate-registry.md	ok	chorus		Y		916aa94133d6	2026-04-07	916aa94133d64767a1e69241b12a377d0bc49dd4e86e1b93659185a7e022235d
+chorus	designing/docs/chorus-spine.html	ok	chorus		Y		b5107601432a	2026-04-24	b5107601432a8b5098e42e504cb0e4c50f774a05d40ea617ca6e38187ca278f4
+chorus	designing/docs/chorus-nervous-system.html	ok	chorus		Y		85d7fb6c28c1	2026-04-08	85d7fb6c28c16f2fae57d9ef939e283a5ff01b0646692e07e3ccb3a968d1016a
+chorus	designing/docs/context-service-design.md	ok	chorus		Y		65fc65374a34	2026-04-19	65fc65374a34008076e197f908db92089bd29dd33bae2c4561dd7c1ac5e00b35
+chorus	designing/docs/chorus-service-design.html	ok	chorus		Y		8e2f989f4825	2026-04-24	8e2f989f482559a001d80aad4a6e50473a4f1f5ccad318b0357212f6cdb8ae19
+chorus	designing/docs/social-contagion-and-framing-research.md	ok	chorus		Y		7a78120055d4	2026-04-27	7a78120055d4d7c498d400e61c1caae97437515abfcd9255f693bb8597ff9c27
+chorus	designing/docs/borg-mitosis.html	ok	chorus		Y		4942ca5b640e	2026-04-24	4942ca5b640e3f99d23a697d669d73c7041dbf9c2d88f98744d2bbb9f61e4801
+chorus	designing/docs/chorus-er-diagram.html	ok	chorus		Y		4c99bfcfe74d	2026-04-16	4c99bfcfe74dcd90028f5e10c0105909e4aa5c3fb1bf2edf88bd350a7a1e4bb4
+chorus	designing/docs/ci-pipeline-service-design.md	ok	chorus		Y		f14af0ba084c	2026-04-25	f14af0ba084cb7a136d24b2332cde06019b612774a453cc4dfb4bd3217a66237
+chorus	designing/docs/chorus-scope-diagram.html	ok	chorus		Y		b67767a58686	2026-04-07	b67767a58686d8302ccebf3a2b996b7bedfc8cff261a121c443a24e0a20e780f
+chorus	designing/docs/card-completion-pipeline.html	ok	chorus		Y		adb16c03c6ff	2026-04-08	adb16c03c6ff565a95e64b0a67d9ef6df7204bf5ba2143de3cb2a0358fd5eea2
+chorus	designing/docs/chorus-reference-model.html	ok	chorus		Y		252541803a84	2026-04-24	252541803a84245d0fa4412c937211366f195fb7067b985ece60a7c2dc8e8310
+chorus	designing/docs/chorus-consulting.html	ok	chorus		Y		3a40ef882067	2026-04-24	3a40ef8820678c9963f8d036e870cb6106ef7e30bcb2da1e1f2c0aac279a2c40
+chorus	designing/docs/ci-harness-research-brief.html	ok	chorus		Y		cbddb9023dad	2026-04-27	f316696d09e4c7ad96e7f1feaf97b522a013d1be9fe4ce95f48b730164986364
+chorus	designing/docs/chorus-distribution-assessment.html	ok	chorus		Y		f7a2760e3827	2026-04-24	f7a2760e3827712d317ae46ed5833b501325343bd6e41f0457a49fd5c1d3a5fc
+chorus	designing/docs/context-push-envelope-reshape.md	ok	chorus		Y		0c49b18ff3a8	2026-04-19	0c49b18ff3a84a0cf36eb2f279bfd80d9ca2e137d83aa2d7140b4999c57e5d37
+chorus	designing/docs/chorus-wardley.html	ok	chorus		Y		ba406f629b3f	2026-04-24	ba406f629b3fd46b46a304c26e80a496a018d87d419101f10358643bb393432b
+chorus	designing/docs/cockpit-brief.md	ok	chorus		Y		61bdff197920	2026-04-08	61bdff1979205d707d78f99158b5d504dca6c278230ec5fe5423e7fb1ea34512
+chorus	designing/docs/context-api-endpoint-audit.md	ok	chorus		Y		a57486ca5115	2026-04-19	a57486ca5115b5dec67aac2de0dc7e5166903df5304066e7738e7c49d7ef3894
+chorus	designing/docs/sequence-demo.html	ok	chorus		Y		eaa3d2be166a	2026-04-24	eaa3d2be166a76bec80b6de76dee7f4118fdb30fa13243f34173bbda1b18c3af
+chorus	designing/docs/canonical-namespaces.md	ok	chorus		Y		63f5b78d35c4	2026-04-08	63f5b78d35c4b6393b360867f45ed61cfd02cc7876b52819a62787c9aa6ca65e
+chorus	designing/docs/book-outline.md	ok	chorus		Y		b9a82d16e439	2026-04-08	b9a82d16e439274b799b990378d60b7905b5feb5efce682ec9c5bd63f76017e8
+chorus	designing/docs/borg-service-design.md	ok	chorus		Y		66365128aa93	2026-04-22	66365128aa93ef5dc23301f12e7be0cc4d9012c3a36b221f464a6e401d60d695
+chorus	designing/docs/chorus-activity-dashboard-summary.md	ok	chorus		Y		d423c784cf0d	2026-04-07	d423c784cf0d5a397e64c278934dd6e5bd0649bee4b51dec3551529e61db16d0
+chorus	designing/docs/chorus-structural-audit.html	ok	chorus		Y		75a9f75f1003	2026-04-08	75a9f75f10035c830d621ce14066972a7ddcf891fdf187c994141ee1da347f00
+chorus	designing/docs/chorus-hooks-circulatory-system.html	ok	chorus		Y		4697904501c6	2026-04-24	4697904501c66f3407344e773a0154734844202d444122ff010e6f9cd25a2069
+chorus	designing/docs/chorus-model-data.html	ok	chorus		Y		dcd53f6d24da	2026-04-24	dcd53f6d24dab8eae89fca736c22b857a614ceac99d4fd5ca0b8412bf4d4a7c0
+chorus	designing/docs/nudge-service-design.md	ok	chorus		Y		49d8d87402f6	2026-04-24	49d8d87402f663850c7887e6a16a84e5d6ad046d43c830d15bf759b2f9695b5a
+chorus	designing/docs/chorus-consolidation-proposal.md	ok	chorus		Y		19df5527f1fa	2026-04-21	19df5527f1fac83c78485cb542e8f08fc2dd05f00a83a67de86663630a583939
+chorus	designing/docs/chorus-domain-decomposition.html	ok	chorus		Y		17a1806d5a82	2026-04-24	17a1806d5a826727556d453566dbb19188b596490ffeacbaeea24fccecd73ef7
+chorus	designing/docs/context-endpoint-schemas.md	ok	chorus		Y		3568311e94b8	2026-04-19	3568311e94b8a7ad4a93d9e08988f1882c4e72eaeda46783181d5849e0195ccd
+chorus	designing/docs/cockpit-v0.md	ok	chorus		Y		41acf649a33a	2026-04-08	41acf649a33a698e0977dd49e5c616c9f2646ac62f1f0b861dcf106ff21f6b6d
+chorus	designing/docs/doc-ownership-schema.md	ok	chorus	wren	Y	doc-management, km	5f0f5e83a6e9	2026-04-24	5f0f5e83a6e94a02f7ba23ee44a5dd30ecc7ec94cd4bb111acd4e8f41196e34b
+chorus	designing/docs/quality-service-design.md	ok	chorus		Y		4b9d4a5fa82b	2026-04-18	4b9d4a5fa82b91938cb96587e6fcb74233b72062cd065e8c5f8be9053f800c77
+chorus	designing/docs/mcp-server-design.md	ok	chorus		Y		c20e19ee1126	2026-04-25	c20e19ee112615e8ddbefc3d8b01189757cdbb01cecd680357d2dde6214d9314
+chorus	designing/docs/cockpit-mockup.html	ok	chorus		Y		fc6dc4f7540c	2026-04-08	fc6dc4f7540cb57af4215b3399b9bad3291c59578c29aa6af25c3e8a75fd1417
+chorus	designing/docs/chorus-client-onboarding-design.html	ok	chorus		Y		eae0730c389c	2026-04-15	eae0730c389c939f957b8d59b96f50c7a7bc53536ef4b443dc02d4ea32320fe3
+chorus	designing/docs/sequence-nudge.html	ok	chorus		Y		99f4dc89ebb1	2026-04-24	99f4dc89ebb176c0378f217cf150ad0b85ef40fe3e857edd647aff5d85ee34ab
+chorus	designing/docs/chorus-perf-suite-design.md	ok	chorus		Y		3a643b0c3ea2	2026-04-20	3a643b0c3ea2cb8a8eb646d10df8dc6d85c55bc5817dd220887ce8a055cdc31a
+chorus	designing/docs/services-service-design.md	ok	chorus		Y		26c2558108ad	2026-04-23	26c2558108ad08317455def382355924815b2fa644d06877ad5114de6f43a3fe
+chorus	designing/docs/agent-experience.md	ok	chorus		Y		11cfbdbb5de9	2026-04-11	11cfbdbb5de94a8ec8e92b29c0d6ee70aed59ae0258e496fe841e96219cd8fed
+chorus	designing/docs/chorus-contracts.md	ok	chorus		Y		0e597ef3fc8b	2026-04-20	0e597ef3fc8bb7727d2a9101f1b799c4d3dd4a6fdbca192c57de3a77b9f7769c
+chorus	designing/docs/communication-flows.md	ok	chorus		Y		8ba794f308d1	2026-04-07	8ba794f308d17e1cd9ac7ce63151ab3d00f521bda8f46f9b60e14c1f364e0a71
+chorus	designing/docs/chorus-product-decomposition.md	ok	chorus		Y		e411dd9622cf	2026-04-08	e411dd9622cfbe3dbc6bdca77e6ac18bec5cae44ec1b1a7fa67b61bb5aedb63f
+chorus	designing/docs/chorus-method-map.md	ok	chorus		Y		27351f97b217	2026-04-21	27351f97b2173894a2fd732f4aabb533123cb351408c1ec86631af0b0c616165
+chorus	designing/docs/chorus-context-diagram-v2.html	ok	chorus		Y		21a2392f534a	2026-04-24	21a2392f534aa7fb5a65e81e6583844057138b669463c2d40c57105511046407
+chorus	designing/decisions/DEC-2311-hook-decomposition.md	ok	chorus		Y		1decc1fd439e	2026-04-20	1decc1fd439eb59376ca051499efd2cb779e887077d6e1ddf3e4eec1ef909ec5
+chorus	designing/decisions/DEC-2209-no-compiled-siblings.md	ok	chorus		Y		783fd1a896d3	2026-04-19	783fd1a896d3d607daf6eea1f31ec18fde06f02f57438aa09f3a1c8393146984
+chorus	designing/decisions/DEC-1816-repo-namespace.md	ok	chorus		Y		891fb9e3956e	2026-04-08	891fb9e3956edcd10fa129faf3bf93657a33e069082b68102d3726a42bc822c8
+chorus	knowledge/doc-coherence.md	unfiled	chorus		N		f500be434525	2026-04-26	f500be4345256632e3d480ac680174f68814b63578a4fd28d44c2fc442147a33
+chorus	ceremony-roi.md	unfiled	chorus		N		cd9b245beabd	2026-04-19	cd9b245beabdea5480063dc031c0e2896963cacbace29adeb224a5abaf38e4b0
+chorus	activity.md	unfiled	chorus		N		5dcfde578d2c	2026-04-27	5dcfde578d2c4ee9a405e737dd3c0476fb916db9622b0aa781bab3da8caca595
+chorus	building/products/convergence/PIPELINE_MANIFEST.md	unfiled	chorus		N		aa7e590c7acb	2026-04-08	aa7e590c7acb391da8aa5e6ed6c2bae980df76ea02c12a1da69c43e202b9316c
+chorus	building/skill/SKILL.md	unfiled	chorus		N		f2f412ca0535	2026-04-07	f2f412ca0535e2ba491fd6ed3558beb5b65e811618c7999cde63fbd283fb9310
+chorus	building/nudges/nudges.md	unfiled	chorus		N		613f8ae929d9	2026-04-07	613f8ae929d97079c5dd450ff541256bfbcbc652ff3e2fe8a2ce0184fde360eb
