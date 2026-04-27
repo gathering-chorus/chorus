@@ -2650,6 +2650,14 @@ app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) 
   } finally { db.close(); }
 });
 
+// Doc catalog (#2445) — relocated from gathering. Lift-and-shift; gathering's
+// /api/doc-catalog endpoints stay live until callers migrate.
+import { listCatalog as docCatalogList, addDoc as docCatalogAdd, domainArtifacts as docCatalogDomain, linkArtifact as docCatalogLink } from './handlers/doc-catalog';
+app.get('/api/doc-catalog', docCatalogList);
+app.post('/api/doc-catalog/add', docCatalogAdd);
+app.get('/api/doc-catalog/domain/:domain', docCatalogDomain);
+app.post('/api/doc-catalog/link', docCatalogLink);
+
 // Doc inventory (#2457) — reads TSV produced by doc-inventory.sh
 app.get('/api/doc-inventory', (_req: Request, res: Response) => {
   const tsvPath = path.resolve(__dirname, '..', '..', '..', 'knowledge', 'doc-inventory.tsv');
