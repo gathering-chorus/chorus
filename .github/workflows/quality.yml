@@ -126,9 +126,12 @@ jobs:
         if: matrix.package == 'directing/products/cards'
         working-directory: directing/products/cards
         run: npm run build
-      - name: Run jest
+      - name: Run jest (shuffled — #2532)
         working-directory: ${{ matrix.package }}
-        run: npx jest --forceExit --passWithNoTests
+        # --randomize shuffles test order within each file. Surfaces order-dependent
+        # tests (hermeticity rule 5 — order-independent). Available in jest 30+.
+        # See /docs/designing/test-categorization.html.
+        run: npx jest --forceExit --passWithNoTests --randomize
 
   mcp-description-shape:
     name: MCP tool description shape (#2475)
@@ -266,6 +269,38 @@ jobs:
       - name: Run cargo test
         working-directory: ${{ matrix.crate }}
         run: cargo test --all
+
+  clippy:
+    # #2532: Rust lint parity with TS. chorus-inject already clean (-D warnings
+    # blocking); chorus-hooks still has 64 known warnings (28 auto-fixed, 64
+    # remain — mostly dead-code in test helpers + style nits). chorus-hooks
+    # runs warn-only via continue-on-error until baseline retired or fixes
+    # land. Per harness disconnect plan: lint-as-warn aligns with sensors-as-
+    # feedback; the eslint-baseline approach is what Phase 1 retires (#2526).
+    name: cargo clippy — ${{ matrix.crate }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - crate: platform/services/chorus-inject
+            continue_on_error: false
+          - crate: platform/services/chorus-hooks
+            continue_on_error: true
+    continue-on-error: ${{ matrix.continue_on_error }}
+    env:
+      CHORUS_ROOT: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.crate }}
+      - name: Run clippy
+        working-directory: ${{ matrix.crate }}
+        run: cargo clippy --all-targets -- -D warnings
       - name: Stop chorus-hooks server
         if: always() && matrix.crate == 'platform/services/chorus-hooks'
         run: |

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Categorization — Convention</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; color: #2d4a7a; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #dbeafe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-style: italic; font-size: 0.9em; }
+  .key-distinction { background: #fef3c7; padding: 14px 18px; margin: 18px 0; border-radius: 4px; border-left: 4px solid #d97706; font-size: 0.9em; }
+  .key-distinction strong { color: #92400e; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  pre { background: #f4f4f4; padding: 10px 12px; border-radius: 4px; font-size: 0.78em; margin: 8px 0; overflow-x: auto; }
+  ul, ol { margin: 8px 0 12px 20px; font-size: 0.84em; }
+  li { margin-bottom: 4px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+</head>
+<body>
+
+<h1>Test Categorization <span>convention</span></h1>
+<div class="date">Drafted 2026-04-27 · Silas · Phase 0 of CI Harness Disconnect (#2524)</div>
+
+<div class="promise">
+Every test file declares its category in its filename. The CI runner filters by category to fire the right tests at the right stage with the right tolerance for flake. One source of truth (the filename), one filter pattern per stage, no tags or runtime annotations to drift out of sync.
+</div>
+
+<h2>Why this exists</h2>
+<p>The harness-disconnect plan (Phase 1) narrows the new required-checks list to <strong>hermetic tests only</strong>. To implement that, CI needs to filter the test corpus to "hermetic" without scanning every file. This convention is the filter — the act of writing a test forces a category choice; the act of changing a test's category is a rename, visible in PR diff.</p>
+
+<p>This document is the <em>convention</em>. The act of applying it (renaming every existing test) is the <strong>hermeticity audit (#2523)</strong> — same operation, because each test is renamed <em>because</em> its actual isolation profile was checked. Categorization without audit locks in lies; audit without categorization has nowhere to write its verdict.</p>
+
+<h2>Categories</h2>
+
+<table>
+<thead><tr><th>Category</th><th>Properties</th><th>Where it runs</th><th>Block?</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>hermetic</strong></td>
+  <td>No network, no filesystem outside <code>tmp</code>, no clock or randomness, no env-coupling, order-independent</td>
+  <td>Pre-commit (changed scope) + PR (full)</td>
+  <td><strong>Block</strong></td>
+</tr>
+<tr>
+  <td><strong>contract</strong></td>
+  <td>Cheap, deterministic; verifies the boundary between two components (e.g. TS↔Rust); may use in-process stubs but no network</td>
+  <td>PR (when contract layer exists, post-Phase 3)</td>
+  <td><strong>Block</strong> (Phase 3+)</td>
+</tr>
+<tr>
+  <td><strong>integration</strong></td>
+  <td>Hits real services (Vikunja, Fuseki, chorus-api); reads/writes real filesystem; depends on env</td>
+  <td>Nightly drift lane (#2527) + on <code>RUN_INTEGRATION=1</code></td>
+  <td>Warn — files card on red, never blocks PR</td>
+</tr>
+<tr>
+  <td><strong>smoke</strong></td>
+  <td>Tiny — log in, hit one endpoint per surface; runs against a live process</td>
+  <td>Post-deploy (#2333), &lt;30s budget</td>
+  <td>Triggers auto-rollback, not PR block</td>
+</tr>
+<tr>
+  <td><strong>perf</strong></td>
+  <td>Measures runtime/memory against a rolling baseline on fixed-spec runner</td>
+  <td>Nightly drift lane (#2527)</td>
+  <td>Warn — files card on regression, never blocks</td>
+</tr>
+<tr>
+  <td><strong>mutation</strong></td>
+  <td>Mutation testing scoped to changed files (PR) or full repo (nightly)</td>
+  <td>Nightly drift lane (#2527); PR scoped post-Phase 2</td>
+  <td>Warn — files card on score drop, never blocks</td>
+</tr>
+</tbody>
+</table>
+
+<div class="key-distinction">
+<strong>The default is hermetic.</strong> Bare <code>*.test.ts</code> means hermetic. Any non-hermetic test must declare its category in the filename. This makes the trust boundary visible in <code>ls</code> output — if every file in a directory is bare <code>*.test.ts</code>, the whole directory is gate-blocking-eligible. One non-hermetic file in the mix is loud.
+</div>
+
+<h2>Filename convention</h2>
+
+<h3>TypeScript (jest)</h3>
+
+<table>
+<thead><tr><th>Suffix</th><th>Category</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><code>*.test.ts</code></td><td>hermetic (default)</td><td><code>doc-catalog.test.ts</code></td></tr>
+<tr><td><code>*.integration.test.ts</code></td><td>integration</td><td><code>cards-client.integration.test.ts</code></td></tr>
+<tr><td><code>*.contract.test.ts</code></td><td>contract</td><td><code>borg-handler-error.contract.test.ts</code></td></tr>
+<tr><td><code>*.smoke.test.ts</code></td><td>smoke</td><td><code>clearing-flow.smoke.test.ts</code></td></tr>
+<tr><td><code>*.perf.test.ts</code></td><td>perf</td><td><code>flow-render.perf.test.ts</code></td></tr>
+</tbody>
+</table>
+
+<p>Mutation isn't a test file kind — it's a runner mode applied to the existing hermetic + contract files.</p>
+
+<h3>Rust (cargo)</h3>
+
+<p>Cargo's existing convention does most of the work — unit tests live inline in <code>mod tests</code> in <code>src/</code>; integration-style tests live in <code>tests/</code> at the crate root. We extend with filename prefixes inside <code>tests/</code>:</p>
+
+<table>
+<thead><tr><th>Location</th><th>Category</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><code>src/**/mod tests</code></td><td>hermetic (default)</td><td><code>src/parser.rs</code> with <code>#[cfg(test)] mod tests</code></td></tr>
+<tr><td><code>tests/hermetic_*.rs</code></td><td>hermetic (cross-module)</td><td><code>tests/hermetic_pipeline.rs</code></td></tr>
+<tr><td><code>tests/integration_*.rs</code></td><td>integration</td><td><code>tests/integration_vikunja.rs</code></td></tr>
+<tr><td><code>tests/contract_*.rs</code></td><td>contract</td><td><code>tests/contract_ts_bridge.rs</code></td></tr>
+<tr><td><code>tests/smoke_*.rs</code></td><td>smoke</td><td><code>tests/smoke_health.rs</code></td></tr>
+<tr><td><code>tests/perf_*.rs</code></td><td>perf</td><td><code>tests/perf_throughput.rs</code></td></tr>
+</tbody>
+</table>
+
+<p>Inline <code>mod tests</code> is treated as hermetic by default. If a test in <code>mod tests</code> is non-hermetic, it should be moved to a categorized file in <code>tests/</code> rather than tagged in place — keeping inline tests consistently hermetic preserves the affordance that <code>cargo test --lib</code> is always cheap and fast.</p>
+
+<h2>The hermeticity rules (canonical)</h2>
+
+<p>A test is <strong>hermetic</strong> if and only if it passes all five:</p>
+
+<ol>
+  <li><strong>No network.</strong> No HTTP calls, no socket opens, no DNS lookups. Mock or stub at the boundary.</li>
+  <li><strong>No filesystem outside <code>tmp</code>.</strong> No reading from repo paths, no writing to user-home, no dependence on file layout. <code>tmpfile()</code> / <code>tempdir()</code> only.</li>
+  <li><strong>No clock or randomness.</strong> No <code>Date.now()</code> / <code>Math.random()</code> / <code>uuid()</code> / <code>SystemTime::now()</code> without explicit seeding or injected fakes.</li>
+  <li><strong>No env-coupling.</strong> Independent of <code>$HOME</code>, <code>$USER</code>, macOS-specific paths, LaunchAgent state, network interface presence, locale.</li>
+  <li><strong>Order-independent.</strong> Passes when the suite runs shuffled. No test leaves state that another test reads. <strong>Detection mechanism (#2532, shipped 2026-04-27):</strong> CI runs jest with <code>--randomize</code> on every PR. Order-dependent tests surface as flake on at least one shuffled run. Cargo equivalent (cargo nextest <code>--shuffle</code>) is a follow-on once the workspace adopts nextest.</li>
+</ol>
+
+<p>These five are the audit definition cited by <strong>#2525 DEC</strong>. Future PRs that propose adding a test to the hermetic set must verify all five; future PRs that demote a test from hermetic must show which rule it violated.</p>
+
+<h2>CI filter patterns</h2>
+
+<h3>Pre-commit (changed scope, hermetic only)</h3>
+<pre>jest --findRelatedTests --testPathPattern '\.test\.ts$' \
+     --testPathIgnorePatterns '\.(integration|contract|smoke|perf)\.test\.ts$'</pre>
+
+<h3>PR required-check (full hermetic)</h3>
+<pre>jest --testPathPattern '\.test\.ts$' \
+     --testPathIgnorePatterns '\.(integration|contract|smoke|perf)\.test\.ts$'
+
+cargo test --lib --workspace
+cargo test --test 'hermetic_*' --workspace</pre>
+
+<h3>Nightly drift lane (#2527)</h3>
+<pre>jest --testPathPattern '\.(integration|perf)\.test\.ts$'
+cargo test --test 'integration_*' --test 'perf_*' --workspace
+# Mutation runs as a separate stryker / cargo-mutants invocation against the hermetic set</pre>
+
+<h3>Smoke (post-deploy, #2333)</h3>
+<pre>jest --testPathPattern '\.smoke\.test\.ts$' --testTimeout=30000
+cargo test --test 'smoke_*' --workspace</pre>
+
+<h2>Migration approach</h2>
+
+<p>This convention is <strong>co-produced with the hermeticity audit (#2523)</strong>, not bulk-renamed in advance:</p>
+
+<ol>
+  <li>Read each test file.</li>
+  <li>Run it against the five hermeticity rules (network sandbox, alt cwd, shuffled order).</li>
+  <li>Pass → keep bare <code>*.test.ts</code> name (or rename if it currently has a misleading suffix).</li>
+  <li>Fail → rename with the appropriate suffix (<code>integration</code> if it hits services, <code>smoke</code> if it's a deploy probe, etc.). File a remediation card if the test could be made hermetic with reasonable effort.</li>
+  <li>Commit per-package or per-directory, not as one giant rename PR — keeps the audit trail readable.</li>
+</ol>
+
+<p><strong>Anti-pattern:</strong> bulk-renaming files based on guess (e.g. "everything in <code>tests/integration/</code> gets <code>.integration.test.ts</code>") without running them against the rules. That re-creates the same lie in a new shape — file names that claim a category they don't actually meet.</p>
+
+<h2>Adding a new test</h2>
+
+<p>Pick the most restrictive category the test can meet:</p>
+
+<ol>
+  <li><strong>Default to hermetic.</strong> If you can write the test without violating any of the five rules, name it bare <code>*.test.ts</code> / put it in <code>mod tests</code>.</li>
+  <li><strong>If you need a service, the filesystem, or env</strong> → use the category that fits and accept the test runs in the slower lane.</li>
+  <li><strong>If you're tempted to disable the network for a test that conceptually needs it</strong> → that's a contract test, not a hermetic one. Use <code>*.contract.test.ts</code> with stubs at the boundary.</li>
+</ol>
+
+<p>The convention's value comes from <em>writers being honest</em>. A test mislabeled hermetic eventually flakes the gate; a test mislabeled integration runs slower than necessary and clutters the nightly lane. Both are bugs against the convention.</p>
+
+<h2>Connects to</h2>
+
+<ul>
+  <li><a href="ci-harness-research-brief.html">CI Harness Architecture — research brief</a> (the destination this convention serves)</li>
+  <li><a href="ci-harness-disconnect-plan.html">CI Harness Disconnect — coordinated plan</a> (Phase 0; this convention is one of three Phase 0 cards)</li>
+  <li><strong>#2523</strong> — Hermeticity audit (applies this convention to existing tests)</li>
+  <li><strong>#2525</strong> — DEC for the new required-checks list (cites the five rules and the filter patterns above)</li>
+  <li><strong>#2526</strong> — Phase 1 disconnect (uses the filter patterns in the new <code>required_status_checks</code>)</li>
+  <li><strong>#2118</strong> — Kade's runner consumes the convention to filter by <code>--category</code></li>
+  <li><strong>#2529</strong> — run-tests contract spec (encodes the filter patterns in the runner contract)</li>
+</ul>
+
+<div class="footer">
+Origin: 2026-04-27 — #2524, Phase 0 of the CI harness disconnect work. Drafted by Silas as the convention artifact; applied during #2523 hermeticity audit.
+</div>
+
+</body>
+</html>

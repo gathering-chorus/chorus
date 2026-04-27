@@ -23,7 +23,7 @@ fn chorus_root() -> String {
 #[test]
 fn inject_source_uses_keystroke_not_do_script() {
     let source = std::fs::read_to_string(
-        &format!("{}/platform/services/chorus-inject/src/lib.rs", chorus_root())
+        format!("{}/platform/services/chorus-inject/src/lib.rs", chorus_root())
     ).expect("can't read lib.rs");
 
     assert!(
