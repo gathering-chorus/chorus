@@ -56,6 +56,29 @@ describe('buildAliasMap', () => {
     expect(aliases['socialpost']).toBe('social-domain');
     expect(aliases['self-ai']).toBe('sexuality-domain');
   });
+
+  it('does not auto-alias test-infrastructure path segments', () => {
+    // Without this, `tests` matches every `tests/` path and tests-domain
+    // absorbs the entire crawl (390/404 in #2515 audit).
+    const aliases = buildAliasMap([
+      { id: 'tests-domain', label: 'tests' },
+      { id: 'photos-domain', label: 'photos' },
+    ]);
+    expect(aliases.tests).toBeUndefined();
+    expect(aliases.test).toBeUndefined();
+    expect(aliases.photos).toBe('photos-domain');
+  });
+
+  it('preserves full hyphenated id as alias for loom-* and similar', () => {
+    // loom-policies, loom-analytics etc. should match path segments / basenames
+    // containing the full compound name, not just `loom`.
+    const aliases = buildAliasMap([
+      { id: 'loom-policies', label: 'loom policies' },
+      { id: 'alerts-monitors-domain', label: 'alerts and monitors' },
+    ]);
+    expect(aliases['loom-policies']).toBe('loom-policies');
+    expect(aliases['alerts-monitors']).toBe('alerts-monitors-domain');
+  });
 });
 
 describe('inferDomain', () => {
@@ -105,7 +128,7 @@ describe('createDiscoverTests', () => {
     expect(data.written).toBe(0);
   });
 
-  it('calls existsSync for each configured scan root (5 roots)', async () => {
+  it('calls existsSync for each configured scan root', async () => {
     const { client } = makeSparql();
     const calls: string[] = [];
     const fs = {
@@ -118,7 +141,14 @@ describe('createDiscoverTests', () => {
       gatheringRoot: '/g', chorusRoot: '/c',
     });
     await run();
-    expect(calls.length).toBe(5);
+    // #2515: scan roots include cards/tests + platform/tests beyond the original 5
+    expect(calls).toContain('/g/tests');
+    expect(calls).toContain('/c/platform/api/tests');
+    expect(calls).toContain('/c/platform/services/chorus-hooks/tests');
+    expect(calls).toContain('/c/proving');
+    expect(calls).toContain('/c/docs/diagrams');
+    expect(calls).toContain('/c/directing/products/cards/tests');
+    expect(calls).toContain('/c/platform/tests');
   });
 
   it('collects test entries for files matching the extension regex', async () => {
@@ -170,8 +200,8 @@ describe('createDiscoverTests', () => {
       gatheringRoot: '/g', chorusRoot: '/c',
     });
     const data = await run();
-    // Only photos.test.ts per root is valid → ≤5 across 5 roots.
-    expect(data.total_tests).toBeLessThanOrEqual(5);
+    // Only photos.test.ts per root is valid → ≤7 across 7 roots (#2515).
+    expect(data.total_tests).toBeLessThanOrEqual(7);
   });
 
   it('batches inserts in groups of ≤50', async () => {

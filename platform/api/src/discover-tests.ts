@@ -35,6 +35,11 @@ export interface DiscoverTestsDeps {
 const GENERIC_BASES = new Set([
   'services', 'service', 'domains', 'domain', 'code', 'loom', 'time',
   'streams', 'stream', 'messages', 'message', 'policies', 'policy',
+  // Test-infrastructure path segments — without these, tests-domain absorbs
+  // every test in the crawl because every test path contains `tests/` (#2515).
+  // Keep `security` and `performance` out — those are real subdomain bases
+  // (security-domain) or potentially will be (perf domain).
+  'tests', 'test', 'unit', 'integration', 'e2e', 'mocks',
 ]);
 
 const SPECIAL_ALIASES: Record<string, string> = {
@@ -75,6 +80,10 @@ export function buildAliasMap(
       if (base.endsWith('ies')) out[base.replace(/ies$/, 'y')] = d.id;
       else out[base.replace(/s$/, '')] = d.id;
     }
+    // Hyphenated compound ids (loom-policies, alerts-monitors-domain) get a
+    // full-compound alias too, so files matching the whole compound (not just
+    // the prefix) bind to the right subdomain (#2515).
+    if (base.includes('-')) out[base] = d.id;
   }
   for (const [k, v] of Object.entries(SPECIAL_ALIASES)) out[k] = v;
   return out;
@@ -127,6 +136,10 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
     scanTests(deps.path.join(deps.chorusRoot, 'platform/services/chorus-hooks/tests'), deps.chorusRoot);
     scanTests(deps.path.join(deps.chorusRoot, 'proving'), deps.chorusRoot);
     scanTests(deps.path.join(deps.chorusRoot, 'docs/diagrams'), deps.chorusRoot);
+    // #2515 — extend crawl to cover the cards CLI test suite (47 files) and
+    // the bats suite under platform/tests (knowledge/seeds/auto-role-state etc).
+    scanTests(deps.path.join(deps.chorusRoot, 'directing/products/cards/tests'), deps.chorusRoot);
+    scanTests(deps.path.join(deps.chorusRoot, 'platform/tests'), deps.chorusRoot);
 
     const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?t a <https://jeffbridwell.com/chorus#TestCoverage> ; ?p ?o . } }';
     await deps.sparqlClient.update(clearQuery);
