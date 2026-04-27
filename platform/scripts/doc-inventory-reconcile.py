@@ -18,7 +18,7 @@ import json, os, sys, urllib.request
 GATHERING = '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site'
 CHORUS = '/Users/jeffbridwell/CascadeProjects/chorus'
 TSV = f'{CHORUS}/knowledge/doc-inventory.tsv'
-CATALOG_URL = 'http://localhost:3000/api/doc-catalog'
+CATALOG_URL = 'http://localhost:3340/api/doc-catalog'
 
 # catalog source label → (repo, relative dir under repo root)
 SOURCE_MAP = {

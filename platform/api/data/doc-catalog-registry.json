@@ -210,12 +210,12 @@
   },
   {
     "filePath": "/Users/jeffbridwell/CascadeProjects/chorus/platform/api/public/loom/principles.html",
-    "href": "http://localhost:3340/loom/principles.html",
+    "href": "/loom/principles.html",
     "group": "Loom"
   },
   {
     "filePath": "/Users/jeffbridwell/CascadeProjects/chorus/platform/api/public/loom/policies.html",
-    "href": "http://localhost:3340/loom/policies.html",
+    "href": "/loom/policies.html",
     "group": "Loom"
   },
   {
@@ -225,47 +225,32 @@
   },
   {
     "filePath": "/Users/jeffbridwell/CascadeProjects/chorus/platform/api/public/chorus-data-model.html",
-    "href": "http://localhost:3340/docs/chorus-data-model.html",
+    "href": "/docs/chorus-data-model.html",
     "group": "Ontology & Semantics"
   },
   {
     "filePath": "/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/quality-service-design.html",
-    "href": "http://localhost:3000/gathering-docs/quality-service-design.html",
-    "group": "Service Designs"
-  },
-  {
-    "filePath": "/Users/jeffbridwell/CascadeProjects/chorus/docs/diagrams/chorus-c4.html",
-    "href": "file:///Users/jeffbridwell/CascadeProjects/chorus/docs/diagrams/chorus-c4.html",
-    "group": "Architecture & Design"
-  },
-  {
-    "filePath": "/Users/jeffbridwell/CascadeProjects/chorus/designing/docs/chorus-client-onboarding-design.html",
-    "href": "file:///Users/jeffbridwell/CascadeProjects/chorus/designing/docs/chorus-client-onboarding-design.html",
+    "href": "/gathering-docs/quality-service-design.html",
     "group": "Service Designs"
   },
   {
     "filePath": "/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/roles-service-design.html",
-    "href": "http://localhost:3000/gathering-docs/roles-service-design.html",
+    "href": "/gathering-docs/roles-service-design.html",
     "group": "Service Designs"
   },
   {
     "filePath": "/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/nudge-service-design.html",
-    "href": "http://localhost:3000/gathering-docs/nudge-service-design.html",
+    "href": "/gathering-docs/nudge-service-design.html",
     "group": "Service Designs"
   },
   {
     "filePath": "/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/observability-service-design.html",
-    "href": "http://localhost:3000/gathering-docs/observability-service-design.html",
-    "group": "Service Designs"
-  },
-  {
-    "filePath": "/Users/jeffbridwell/CascadeProjects/chorus/designing/docs/services-service-design.md",
-    "href": "file:///Users/jeffbridwell/CascadeProjects/chorus/designing/docs/services-service-design.md",
+    "href": "/gathering-docs/observability-service-design.html",
     "group": "Service Designs"
   },
   {
     "filePath": "/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/services-service-design.html",
-    "href": "http://localhost:3000/gathering-docs/services-service-design.html",
+    "href": "/gathering-docs/services-service-design.html",
     "group": "Service Designs"
   }
 ]

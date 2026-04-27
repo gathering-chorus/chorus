@@ -60,6 +60,15 @@ app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 's
 app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
 app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
 
+// #2445 wave 2 — chorus-api serves catalog HTML directly. Files still live
+// in gathering filesystem (lift-and-shift staged); chorus-api reads them.
+// AC3: chorus doc HTML renders from chorus-api, not gathering-only.
+const gatheringRepoRoot = process.env.GATHERING_REPO || '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site';
+app.use('/gathering-docs', express.static(path.join(gatheringRepoRoot, 'public', 'gathering-docs'), { extensions: ['html'] }));
+app.use('/chorus-docs', express.static(path.join(gatheringRepoRoot, 'public', 'chorus-docs'), { extensions: ['html'] }));
+app.use('/akasha', express.static(path.join(gatheringRepoRoot, 'public', 'akasha'), { extensions: ['html'] }));
+app.use('/system/docs', express.static(path.join(gatheringRepoRoot, 'data', 'about'), { extensions: ['html', 'md'] }));
+
 // Borg — Hooks summary endpoint — #2099
 // Borg summary delegates — #2173 AC4: uniform run() wrapper replaces
 // per-handler try/catch boilerplate. Each adapter is one line.
