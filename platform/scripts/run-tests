@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# run-tests — Phase 1 contract surface for CI harness disconnect (#2118).
+#
+# Domain+category+budget aware test runner. Phase 2 (#2528) will wire this
+# into .github/workflows/quality.yml; this card establishes the contract.
+#
+# Contract — see /docs/designing/ci-harness-disconnect-plan.html Phase 2:
+#   Invocation:  run-tests --domain=<sd-id> --category=<list> --budget=<sec>
+#   Category:    comma-separated subset of hermetic|integration|contract|smoke|perf|mutation
+#   Domain:      resolved via graph (POST /api/athena/discover-tests, <24h fresh)
+#                with filepath heuristic fallback. Phase 1 stubs this.
+#   Budget:      hard timeout in seconds; runner halts the suite, exit code 2.
+#   Exit codes:  0=all pass, 1=any fail, 2=budget exceeded, 3=invocation error
+#   Stdout:      JSON {pass,fail,runtime_ms,partial,failing_tests:[{name,file,error}],
+#                      tests_unrun:[{name,file}],hermeticity_tags:{}}
+#   Stderr:      human-readable progress + failures
+#
+# Wave 1 ships flag parsing + exit codes + skeleton JSON. Real test execution
+# (jest, cargo nextest dispatch) lands in subsequent waves.
+
+set -euo pipefail
+
+VALID_CATEGORIES="hermetic integration contract smoke perf mutation"
+DOMAIN=""
+CATEGORY=""
+BUDGET=""
+
+err() { echo "run-tests: $*" >&2; }
+
+# --- flag parsing -----------------------------------------------------------
+for arg in "$@"; do
+  case "$arg" in
+    --domain=*)   DOMAIN="${arg#--domain=}" ;;
+    --category=*) CATEGORY="${arg#--category=}" ;;
+    --budget=*)   BUDGET="${arg#--budget=}" ;;
+    --help|-h)
+      sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
+      exit 0 ;;
+    *)
+      err "unknown flag: $arg"
+      exit 3 ;;
+  esac
+done
+
+if [ -z "$DOMAIN" ]; then err "--domain=<sd-id> required"; exit 3; fi
+if [ -z "$CATEGORY" ]; then err "--category=<list> required"; exit 3; fi
+if [ -z "$BUDGET" ]; then err "--budget=<seconds> required"; exit 3; fi
+
+# Validate categories (comma-separated union).
+IFS=',' read -ra CAT_LIST <<< "$CATEGORY"
+for c in "${CAT_LIST[@]}"; do
+  case " $VALID_CATEGORIES " in
+    *" $c "*) ;;
+    *) err "invalid category '$c'; valid: $VALID_CATEGORIES"; exit 3 ;;
+  esac
+done
+
+# --- fake mode (Wave 1) -----------------------------------------------------
+# RUN_TESTS_FAKE controls Wave-1 short-circuit while the real runner is staged.
+# Values: pass | fail | budget | 1 (default→pass)
+case "${RUN_TESTS_FAKE:-}" in
+  pass|1)
+    cat <<'EOF'
+{"pass":3,"fail":0,"runtime_ms":120,"partial":false,"failing_tests":[],"tests_unrun":[],"hermeticity_tags":{"network":false,"fs":"tmp-only"}}
+EOF
+    exit 0 ;;
+  fail)
+    cat <<'EOF'
+{"pass":2,"fail":1,"runtime_ms":150,"partial":false,"failing_tests":[{"name":"sample failing test","file":"tests/sample.test.ts","error":"AssertionError: expected 1 to be 2"}],"tests_unrun":[],"hermeticity_tags":{"network":false,"fs":"tmp-only"}}
+EOF
+    exit 1 ;;
+  budget)
+    cat <<'EOF'
+{"pass":1,"fail":0,"runtime_ms":1000,"partial":true,"failing_tests":[],"tests_unrun":[{"name":"slow integration test","file":"tests/slow.integration.test.ts"},{"name":"another unrun","file":"tests/other.integration.test.ts"}],"hermeticity_tags":{"network":false,"fs":"tmp-only"}}
+EOF
+    exit 2 ;;
+  "") ;;
+  *) err "unknown RUN_TESTS_FAKE value: ${RUN_TESTS_FAKE}"; exit 3 ;;
+esac
+
+# --- real mode (Wave 2+, not yet implemented) -------------------------------
+err "real-mode dispatch not implemented in Wave 1; set RUN_TESTS_FAKE=pass|fail|budget for now"
+err "(see #2118 — Phase 1 ships contract surface; real runners land in subsequent waves)"
+exit 3
