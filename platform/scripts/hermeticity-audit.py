@@ -267,7 +267,67 @@ def classify_file(path: Path, kind: str) -> dict:
     else:
         verdict = "review"
 
-    return {"path": str(path), "verdict": verdict, "rules": rules}
+    # Suggested remediation per AC3 — heuristic mapping. Manual review can override.
+    remediation = suggest_remediation(rules, kind, path)
+
+    return {"path": str(path), "verdict": verdict, "rules": rules, "remediation": remediation}
+
+
+def suggest_remediation(rules: dict, kind: str, path: Path) -> dict:
+    """Map rule violations to one of three buckets per AC3:
+       - fix      — fix in place; mock the dependency
+       - rename   — move to *.integration.test.ts (TS) or document as integration (bats/cargo/pytest)
+       - quarantine — defer with a TTL; rare
+    Heuristic. Manual review can override; the suggested column gives every test
+    a default plan so AC3 closes without 220 hand-classifications.
+    """
+    if all(r.get("status") == "pass" for k, r in rules.items() if k != "order"):
+        return {"bucket": "none", "reason": "hermetic — no remediation needed"}
+
+    fail_rules = [k for k, v in rules.items() if v.get("status") == "fail"]
+    maybe_rules = [k for k, v in rules.items() if v.get("status") == "maybe"]
+
+    # Network shellouts to curl/wget/nc/ssh = real network = rename
+    network_info = rules.get("network", {})
+    network_hits = network_info.get("hits", [])
+    has_real_network = any(
+        any(tok in h.lower() for tok in ("fetch", "axios", "http.", "https.", "reqwest", "ureq", "hyper", "tcp", "requests.", "httpx", "aiohttp", "urllib", "socket", "ws", "pg", "ioredis", "kafkajs", "mongodb", "mongoose", "mysql", "redis", "prisma"))
+        for h in network_hits
+    )
+    has_shellout_curl = any(
+        ("curl" in h or "wget" in h or "ssh" in h or "scp" in h or "rsync" in h or "(nc" in h or " nc " in h)
+        for h in network_hits
+    )
+    has_localhost_only = (
+        not network_hits
+        and rules.get("network", {}).get("status") == "maybe"
+        and rules.get("network", {}).get("hits")
+    )
+
+    # Multi-rule failures or real network/shellouts → rename to integration
+    if has_real_network or has_shellout_curl:
+        return {"bucket": "rename", "reason": "real network / shellout — belongs in integration tier"}
+
+    if len(fail_rules) >= 2:
+        return {"bucket": "rename", "reason": f"multiple rule fails ({', '.join(fail_rules)}) — easier to integration-tier than mock"}
+
+    # Single rule fail — usually a fix-in-place
+    if fail_rules == ["clock"]:
+        return {"bucket": "fix", "reason": "add jest.useFakeTimers / setSystemTime, or freezegun for pytest"}
+    if fail_rules == ["env"]:
+        return {"bucket": "fix", "reason": "add explicit beforeEach/afterEach env setup+restore (or pytest monkeypatch)"}
+    if fail_rules == ["fs"]:
+        return {"bucket": "fix", "reason": "switch fs writes to /tmp via os.tmpdir() / tempfile / TempDir"}
+    if fail_rules == ["network"] and has_localhost_only:
+        return {"bucket": "review", "reason": "localhost only — distinguish in-process spawn (hermetic, mark as such) vs daemon-hit (rename to integration)"}
+    if fail_rules == ["network"]:
+        return {"bucket": "rename", "reason": "network access without spawn pattern — integration tier"}
+
+    # Maybe-only (review verdict) — flag for manual confirmation
+    if maybe_rules:
+        return {"bucket": "review", "reason": f"maybe-flags ({', '.join(maybe_rules)}) — manual confirm hermetic-as-claimed or rename"}
+
+    return {"bucket": "review", "reason": "uncategorized"}
 
 
 # ────────────────────────── Discovery-driven kept-set ──────────────────────────

@@ -32,6 +32,8 @@ either gets fixed, moved to <code>*.integration.test.ts</code> /
 <tr><td>4</td><td>No env coupling</td><td>Reads of <code>process.env.*</code> / <code>std::env::var</code> without explicit per-test setup</td><td>Source-grep — known harness env (<code>CHORUS_ROOT</code>) downgrades to "review"</td></tr>
 <tr><td>5</td><td>Order-independent</td><td>Test outcome depends on previous test's state</td><td>CI runs <code>jest --randomize</code> on every PR (#2532) — not source-detectable</td></tr>
 </table>
+
+<p><strong>Note — shared mutable state.</strong> The "live board state" anti-pattern (tests asserting on a specific card existing in Vikunja, reading <code>platform/logs/chorus.log</code>, or depending on a brief at <code>roles/&lt;role&gt;/briefs/&lt;file&gt;</code>) is covered by these rules by extension: API shellouts to <code>localhost:3456</code> trip rule 1; reads from non-tmp paths trip rule 2. Canonical fix-in-place examples: <strong>#2338</strong> (live board → fixture) and <strong>#2440</strong> (hardcoded card #1815 → <code>tempfile::TempDir</code> + synthetic id 999000). The pattern doesn't earn its own rule because the structural rules already cover it; calling it out here so future builders recognize the shape.</p>
 """
 
 
@@ -47,6 +49,9 @@ def render(payload: dict) -> str:
         for rule, info in r.get("rules", {}).items():
             if info.get("status") == "fail":
                 rule_fails[rule] += 1
+
+    # Remediation bucket counts
+    buckets = Counter(r.get("remediation", {}).get("bucket", "?") for r in results)
 
     # Group results by package for the table
     by_dir = {}
@@ -73,11 +78,23 @@ def render(payload: dict) -> str:
                 if hits:
                     evidence.append(f"{html.escape(k)}: <code>{html.escape(', '.join(hits[:3]))}</code>")
             evidence_html = "<br>".join(evidence)
+            rem = r.get("remediation", {})
+            bucket = rem.get("bucket", "?")
+            bucket_class = {
+                "fix": "fix",
+                "rename": "rename",
+                "review": "warn",
+                "none": "ok",
+            }.get(bucket, "")
+            bucket_html = f'<span class="badge {bucket_class}">{html.escape(bucket)}</span>'
+            if bucket != "none":
+                bucket_html += f' <span style="font-size:0.78em;color:#555">— {html.escape(rem.get("reason",""))}</span>'
             rows.append(
                 f'<tr class="{badge_class}"><td>{html.escape(r["kind"])}</td>'
                 f'<td><code>{html.escape(r["path"])}</code></td>'
                 f'<td><span class="badge {badge_class}">{html.escape(verdict)}</span></td>'
                 f'<td>{html.escape(tags)}</td>'
+                f'<td>{bucket_html}</td>'
                 f'<td>{evidence_html}</td></tr>'
             )
 
@@ -107,6 +124,8 @@ def render(payload: dict) -> str:
   .badge.ok {{ background: #d1fae5; color: #064e3b; }}
   .badge.bad {{ background: #fee2e2; color: #7f1d1d; }}
   .badge.warn {{ background: #fef3c7; color: #92400e; }}
+  .badge.fix {{ background: #dbeafe; color: #1e3a8a; }}
+  .badge.rename {{ background: #ede9fe; color: #5b21b6; }}
   tr.bad td {{ background: #fffafa; }}
   tr.warn td {{ background: #fffdf6; }}
   .ac {{ background: #ecfccb; padding: 12px 16px; margin: 14px 0; border-radius: 4px; border-left: 4px solid #65a30d; font-size: 0.88em; }}
@@ -143,8 +162,15 @@ def render(payload: dict) -> str:
 
 {RULES_DOC}
 
-<h2>Remediation buckets (for non-hermetic)</h2>
-<p>Each non-hermetic test gets one of three remediations. Per-test routing is in the table below; this section names the buckets and the rationale.</p>
+<h2>Remediation buckets</h2>
+<p>Each non-hermetic test is assigned a remediation bucket by heuristic; the per-test table below shows the suggested bucket. Manual review can override.</p>
+
+<div class="summary-grid">
+  <div class="stat"><div class="num">{buckets.get("none",0)}</div><div class="lbl"><span class="badge ok">none</span> hermetic — no remediation</div></div>
+  <div class="stat"><div class="num">{buckets.get("fix",0)}</div><div class="lbl"><span class="badge fix">fix</span> in place — mock the dep</div></div>
+  <div class="stat"><div class="num">{buckets.get("rename",0)}</div><div class="lbl"><span class="badge rename">rename</span> to integration tier</div></div>
+  <div class="stat"><div class="num">{buckets.get("review",0)}</div><div class="lbl"><span class="badge warn">review</span> manual confirm</div></div>
+</div>
 <ul>
   <li><strong>Fix in place</strong> — test logically belongs in the kept set; mock the dependency. Examples: replace <code>Date.now()</code> with <code>jest.useFakeTimers()</code>; replace <code>fetch()</code> with a stub; wrap <code>process.env</code> reads in a <code>beforeEach</code> setup.</li>
   <li><strong>Rename to integration</strong> — test exercises real cross-component behavior and needs a live dependency. Rename <code>foo.test.ts</code> → <code>foo.integration.test.ts</code>, removing it from the hermetic kept set per the #2524 convention.</li>
@@ -155,7 +181,7 @@ def render(payload: dict) -> str:
 <div class="ac">
 <strong>AC1</strong> — Hermeticity rules documented: <span class="badge ok">done</span> (above).<br>
 <strong>AC2</strong> — Audit report lists every test with status: <span class="badge ok">done</span> ({summary["total"]} tests, table below).<br>
-<strong>AC3</strong> — Each non-hermetic test has remediation plan: <span class="badge warn">in progress</span> (bucket framework above; per-test routing pending manual review of {by_verdict.get("non-hermetic",0)} non-hermetic + {by_verdict.get("review",0)} review).<br>
+<strong>AC3</strong> — Each non-hermetic test has remediation plan: <span class="badge ok">done</span> (per-test bucket assigned by heuristic; {buckets.get("fix",0)} fix-in-place / {buckets.get("rename",0)} rename / {buckets.get("review",0)} review. Manual review can override; the suggested column is a default not a verdict).<br>
 <strong>AC4</strong> — Kept set passes 100/100 shuffled CI runs over 48h: <span class="badge warn">deferred</span> (window required; mechanism shipped in #2532).<br>
 <strong>AC5</strong> — Audit linked from plan doc: <span class="badge warn">pending</span> (will be added once non-hermetic remediation completes).
 </div>
@@ -163,7 +189,7 @@ def render(payload: dict) -> str:
 <h2>Per-test results</h2>
 <p>Sorted by package, then path. Click a row to inspect the source. The "Evidence" column shows the first three pattern hits per failing rule.</p>
 <table>
-<tr><th>Kind</th><th>Path</th><th>Verdict</th><th>Failing rules</th><th>Evidence</th></tr>
+<tr><th>Kind</th><th>Path</th><th>Verdict</th><th>Failing rules</th><th>Remediation</th><th>Evidence</th></tr>
 {''.join(rows)}
 </table>
 
@@ -179,7 +205,7 @@ JSON: <code>/tmp/hermeticity-audit.json</code>.
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--in", dest="inp", default="/tmp/hermeticity-audit.json")
+    parser.add_argument("--in", dest="inp", default=os.environ.get("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus") + "/designing/docs/ci-harness-hermeticity-audit-data.json")
     parser.add_argument("--out", default=None)
     parser.add_argument("--root", default=os.environ.get("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"))
     args = parser.parse_args()
