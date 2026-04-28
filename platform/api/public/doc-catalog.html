@@ -83,7 +83,7 @@
 
 <header>
   <h1>Doc Catalog</h1>
-  <div class="sub">Athena hierarchy navigation. <a href="/doc-inventory.html" style="color: #93c5fd;">Inventory</a> · <a href="/doc-catalog-wireframe.html" style="color: #93c5fd;">Wireframe</a></div>
+  <div class="sub">Athena hierarchy navigation. <a href="/doc-inventory.html" style="color: #93c5fd;">Inventory</a> · <a href="/doc-catalog-wireframe.html" style="color: #93c5fd;">Wireframe</a> · <button id="bulk-walk-btn" style="background:#1e40af; color:#fff; border:none; padding:0.2rem 0.6rem; border-radius:3px; cursor:pointer; font-size:0.8rem;">Walk untagged (j/k/Esc)</button></div>
 </header>
 
 <div class="layout">
@@ -119,6 +119,15 @@
     <button class="panel-close" id="panel-close" aria-label="Close">×</button>
   </div>
   <div class="panel-body">
+
+    <div class="panel-section" id="drift-banner" style="display:none; background:#7f1d1d20; border-left:3px solid #fca5a5; padding: 0.5rem 0.75rem; border-radius: 3px;">
+      <div style="font-size:0.78rem; color:#fca5a5; margin-bottom:0.4rem;">Path-implied tags differ from persisted on: <span id="drift-fields"></span></div>
+      <div style="font-size:0.74rem; color:#aaa; margin-bottom:0.3rem;">Path implies: <span id="drift-implied" style="color:#d1d5db"></span></div>
+      <div style="display:flex; gap:0.4rem;">
+        <button class="btn" id="drift-accept" style="font-size:0.78rem; padding:0.25rem 0.55rem;">Accept path-implied</button>
+        <button class="btn secondary" id="drift-dismiss" style="font-size:0.78rem; padding:0.25rem 0.55rem;">Dismiss</button>
+      </div>
+    </div>
 
     <div class="panel-section">
       <h4>Tags</h4>
@@ -159,7 +168,8 @@
           <option value="derivedFrom">derivedFrom</option>
           <option value="reshapedInto">reshapedInto</option>
         </select>
-        <input id="lin-target" type="text" placeholder="target href (e.g., /loom/principles-v1.html)">
+        <input id="lin-target" type="text" list="lin-target-list" placeholder="target href (autocomplete)">
+        <datalist id="lin-target-list"></datalist>
         <button class="btn" id="lin-add">+</button>
       </div>
     </div>
@@ -398,6 +408,24 @@ async function openPanel(href, title) {
   document.getElementById('lineage-list').innerHTML = '';
   document.getElementById('audit-list').innerHTML = '<span style="color:#555">loading…</span>';
 
+  // Populate lineage target autocomplete with all known catalog hrefs (excluding current)
+  const dl = document.getElementById('lin-target-list');
+  dl.innerHTML = allTagged.filter(d => d.href !== href).slice(0, 500).map(d => `<option value="${d.href}">${d.title || ''}</option>`).join('');
+
+  // Drift banner
+  const drift = driftByHref.get(href);
+  const banner = document.getElementById('drift-banner');
+  if (drift && drift.length) {
+    const tagged = allTagged.find(d => d.href === href);
+    const implied = (tagged && tagged.tags) || {};
+    const impliedSummary = drift.map(f => `${f}=${implied[f] || '?'}`).join(', ') || '(no tagger inference)';
+    document.getElementById('drift-fields').textContent = drift.join(', ');
+    document.getElementById('drift-implied').textContent = impliedSummary;
+    banner.style.display = '';
+  } else {
+    banner.style.display = 'none';
+  }
+
   // Suggestions from the existing tagger output
   const tagged = allTagged.find(d => d.href === href);
   const sug = tagged && tagged.tags ? tagged.tags : {};
@@ -431,7 +459,27 @@ async function openPanel(href, title) {
     renderLineage({ in: [], out: [] });
   }
 
-  document.getElementById('audit-list').innerHTML = '<span style="color:#555">(audit feed pending — see chorus-events catalog.tag.curated / catalog.lineage.linked)</span>';
+  // Audit feed for this doc
+  loadAudit(href);
+}
+
+async function loadAudit(href) {
+  const list = document.getElementById('audit-list');
+  try {
+    const resp = await fetch(`/api/chorus/catalog/audit/${hrefToB64(href)}?limit=20`);
+    if (!resp.ok) { list.innerHTML = '<span style="color:#555">(audit unavailable)</span>'; return; }
+    const j = await resp.json();
+    const events = (j.data && j.data.events) || [];
+    if (!events.length) { list.innerHTML = '<span style="color:#555">No events yet.</span>'; return; }
+    list.innerHTML = events.map(e => {
+      const ts = e.timestamp.replace('T', ' ').slice(0, 19);
+      const eventName = e.event.replace('catalog.', '');
+      const summary = e.fields.after || e.fields.predicate || '';
+      return `<div class="audit-line"><span class="ts">${ts}</span> <span style="color:#fbbf24">${eventName}</span> <span style="color:#aaa">${e.role}</span> ${summary ? `<span style="color:#93c5fd">${summary}</span>` : ''}</div>`;
+    }).join('');
+  } catch (_) {
+    list.innerHTML = '<span style="color:#555">(audit error)</span>';
+  }
 }
 
 function closePanel() {
@@ -524,8 +572,66 @@ document.getElementById('panel-close').addEventListener('click', closePanel);
 document.getElementById('panel-cancel').addEventListener('click', closePanel);
 document.getElementById('panel-save').addEventListener('click', saveTags);
 document.getElementById('lin-add').addEventListener('click', addLineage);
+
+// Drift accept/dismiss
+document.getElementById('drift-accept').addEventListener('click', async () => {
+  if (!panelDoc) return;
+  const tagged = allTagged.find(d => d.href === panelDoc.href);
+  const implied = (tagged && tagged.tags) || {};
+  if (implied.product) document.getElementById('f-product').value = implied.product;
+  if (implied.subproduct) document.getElementById('f-subproduct').value = implied.subproduct;
+  if (implied.subdomain) document.getElementById('f-subdomain').value = implied.subdomain;
+  await saveTags();
+  document.getElementById('drift-banner').style.display = 'none';
+});
+document.getElementById('drift-dismiss').addEventListener('click', () => {
+  // Local dismiss — clears the banner for this session. Next reload will re-evaluate
+  // drift; if the user actually wants to silence it, they need to reconcile via Save.
+  document.getElementById('drift-banner').style.display = 'none';
+});
+
+// AC6: Bulk-walk untagged mode — keyboard navigates through untagged docs.
+let bulkWalk = { active: false, queue: [], idx: 0 };
+
+function startBulkWalk() {
+  // Build queue: untagged from the merged-overlay state.
+  bulkWalk.queue = allTagged.filter(d => !d.tags || !d.tags.product).map(d => d);
+  if (bulkWalk.queue.length === 0) {
+    showToast('No untagged docs to walk');
+    return;
+  }
+  bulkWalk.active = true;
+  bulkWalk.idx = 0;
+  showToast(`Walk: ${bulkWalk.queue.length} untagged. j next, k prev, Esc exit.`);
+  openWalkAt(0);
+}
+
+function openWalkAt(i) {
+  if (i < 0 || i >= bulkWalk.queue.length) return;
+  bulkWalk.idx = i;
+  const d = bulkWalk.queue[i];
+  openPanel(d.href, d.title);
+}
+
+function exitBulkWalk() {
+  bulkWalk.active = false;
+  bulkWalk.queue = [];
+  closePanel();
+}
+
+document.getElementById('bulk-walk-btn').addEventListener('click', startBulkWalk);
+
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && panelDoc) closePanel();
+  if (e.key === 'Escape' && (panelDoc || bulkWalk.active)) {
+    if (bulkWalk.active) exitBulkWalk();
+    else closePanel();
+    return;
+  }
+  // Bulk-walk navigation only when not typing in an input/select
+  if (bulkWalk.active && !['INPUT','SELECT','TEXTAREA'].includes((e.target && e.target.tagName) || '')) {
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); openWalkAt(Math.min(bulkWalk.idx + 1, bulkWalk.queue.length - 1)); }
+    else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); openWalkAt(Math.max(bulkWalk.idx - 1, 0)); }
+  }
 });
 
 document.addEventListener('input', e => {

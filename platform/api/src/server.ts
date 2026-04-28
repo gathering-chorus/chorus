@@ -2820,6 +2820,7 @@ import {
   readCatalogDoc,
   readCatalogDrift,
   readCatalogCurated,
+  readCatalogAudit,
 } from './handlers/catalog-curation';
 
 const catalogCurationDeps = () => ({
@@ -2857,6 +2858,53 @@ app.get('/api/chorus/catalog/curated', async (_req: Request, res: Response) => {
   // All CatalogDoc instances with their persisted tags. Used by doc-catalog.html
   // to merge curated overlay over the runtime tagger output so saves are visible.
   const r = await readCatalogCurated(catalogCurationDeps());
+  res.status(r.status).json(r.body);
+});
+
+// Audit feed for a single doc — reads chorus.log directly (Loki ingestion
+// of catalog.* events is unreliable today; file is source-of-truth).
+const CHORUS_LOG_FILE = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/logs/chorus.log');
+
+app.get('/api/chorus/catalog/audit/:hrefb64', async (req: Request, res: Response) => {
+  const limitParam = typeof req.query.limit === 'string' ? req.query.limit : '20';
+  const limit = Math.min(Number.parseInt(limitParam, 10) || 20, 200);
+  const readEvents = async (href: string, n: number) => {
+    const events: Array<{ timestamp: string; event: string; role: string; fields: Record<string, string> }> = [];
+    if (!fs.existsSync(CHORUS_LOG_FILE)) return events;
+    const data = await fs.promises.readFile(CHORUS_LOG_FILE, 'utf8');
+    const lines = data.split('\n');
+    function asStr(v: unknown): string {
+      return typeof v === 'string' ? v : '';
+    }
+    for (let i = lines.length - 1; i >= 0 && events.length < n; i--) {
+      const line = lines[i];
+      if (!line || line.length === 0) continue;
+      if (!line.includes('"catalog.')) continue;
+      try {
+        const obj = JSON.parse(line) as Record<string, unknown>;
+        const ev = asStr(obj.event);
+        if (!ev.startsWith('catalog.')) continue;
+        if (obj.href !== href) continue;
+        const fields: Record<string, string> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (['timestamp', 'event', 'role', 'level', 'appName', 'component'].includes(k)) continue;
+          if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+            fields[k] = String(v);
+          }
+        }
+        events.push({
+          timestamp: asStr(obj.timestamp),
+          event: ev,
+          role: asStr(obj.role),
+          fields,
+        });
+      } catch {
+        // skip malformed line
+      }
+    }
+    return events;
+  };
+  const r = await readCatalogAudit({ readEvents, envelope: athenaEnvelope }, req.params.hrefb64, limit);
   res.status(r.status).json(r.body);
 });
 

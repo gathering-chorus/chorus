@@ -354,6 +354,22 @@ SELECT ?direction ?predicate ?other WHERE {
   };
 }
 
+export interface AuditDeps {
+  /** Read recent spine events for a given href; returns chronologically descending. */
+  readEvents: (href: string, limit: number) => Promise<Array<{ timestamp: string; event: string; role: string; fields: Record<string, string> }>>;
+  envelope: CurationDeps['envelope'];
+}
+
+export async function readCatalogAudit(deps: AuditDeps, hrefb64: string, limit = 20): Promise<HandlerResult> {
+  const start = Date.now();
+  const href = decodeHrefId(hrefb64);
+  if (!href) {
+    return { status: 400, body: deps.envelope('catalog-audit', { error: 'invalid hrefb64' }, Date.now() - start, { error: true }) };
+  }
+  const events = await deps.readEvents(href, limit);
+  return { status: 200, body: deps.envelope('catalog-audit', { href, events }, Date.now() - start) };
+}
+
 export async function readCatalogCurated(deps: CurationDeps): Promise<HandlerResult> {
   const start = Date.now();
   const query = `PREFIX chorus: <${CHORUS_PREFIX}>
