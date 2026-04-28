@@ -4,6 +4,11 @@
 
 use std::sync::LazyLock;
 
+// Asymmetric contract by design (#2505 / #2565): prod falls back silently to
+// avoid crashing personal infra on Jeff's two Macs if the env var is missing;
+// tests panic explicitly on missing env to verify the contract is honored.
+// If chorus ever ships beyond Jeff's hardware, swap this to
+// .expect("CHORUS_ROOT must be set") with a clear error message.
 static CHORUS_ROOT_INNER: LazyLock<String> = LazyLock::new(|| {
     std::env::var("CHORUS_ROOT")
         .ok()
