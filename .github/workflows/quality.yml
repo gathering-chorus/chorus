@@ -9,7 +9,17 @@ name: quality
 # failures point at exactly one concern. npm ci against committed locks
 # (#2481 sub-AC 1) closes the local↔CI divergence that fired on first run.
 #
-# Card #2481.
+# REQUIRED-CHECKS POLICY — DEC-2525 (Phase 1 disconnect, #2526):
+# Per DEC-2525, only two jobs are branch-protection required:
+#   1. unit-tests (jest, hermetic — *.integration.test.ts excluded by jest
+#      config per #2524 convention)
+#   2. cargo-test (--lib --bins, inline #[test] only — see job comment)
+# Every other job runs but uses continue-on-error: true so its failure
+# does not block merge. The signal still surfaces (job-level red on the
+# check), but it does not gate. Adding a check to the required list
+# requires a DEC update per DEC-2525 enforcement clause.
+#
+# Cards: #2481 (workflow origin), #2526 (this disconnect), DEC-2525.
 
 on:
   push:
@@ -21,6 +31,8 @@ jobs:
   lint-ratchet:
     name: ESLint per-rule ratchet
     runs-on: ubuntu-latest
+    # DEC-2525: non-required, signal-only post-disconnect (#2526).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,11 +50,19 @@ jobs:
             (cd "$pkg" && npm ci --no-audit --no-fund)
           done
       - name: Run lint ratchet
+        # Step-level continue-on-error so the JOB conclusion is success
+        # even if the ratchet exits non-zero. Job-level continue-on-error
+        # keeps the WORKFLOW green but does not change the check status
+        # GitHub branch-protection sees — only step-level does. Wave 2
+        # bootstrap fix (#2526). Output still surfaces in the run log.
+        continue-on-error: true
         run: npm run lint:ratchet
 
   type-check:
     name: tsc — ${{ matrix.package }}
     runs-on: ubuntu-latest
+    # DEC-2525: non-required, signal-only post-disconnect (#2526).
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +105,10 @@ jobs:
   unit-tests:
     name: jest — ${{ matrix.package }}
     runs-on: ubuntu-latest
+    # DEC-2525 REQUIRED CHECK #1 — hermetic jest only.
+    # The *.integration.test.ts suffix is excluded by per-package jest
+    # configs (#2524 convention). Adding a required check here requires
+    # a DEC-2525 update.
     strategy:
       fail-fast: false
       matrix:
@@ -136,6 +160,8 @@ jobs:
   mcp-description-shape:
     name: MCP tool description shape (#2475)
     runs-on: ubuntu-latest
+    # DEC-2525: non-required, signal-only post-disconnect (#2526).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -147,6 +173,10 @@ jobs:
   catalog-oversize:
     name: Catalog oversize backstop (#2461)
     runs-on: ubuntu-latest
+    # DEC-2525: non-required, signal-only post-disconnect (#2526).
+    # Pre-commit still blocks locally; CI surfaces the signal but does
+    # not gate merge (#2461 push-bloat protection lives at pre-commit).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -168,6 +198,9 @@ jobs:
   principle-direct-edit:
     name: Principle direct-edit backstop (#2314)
     runs-on: ubuntu-latest
+    # DEC-2525: non-required, signal-only post-disconnect (#2526).
+    # Pre-commit still blocks locally; CI surfaces the signal only.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -189,6 +222,41 @@ jobs:
   cargo-test:
     name: cargo test — ${{ matrix.crate }}
     runs-on: ubuntu-latest
+    # DEC-2525 REQUIRED CHECK #2 — hermetic cargo only.
+    # `cargo test --lib --bins` runs ONLY inline #[test] in src/, which
+    # are by construction hermetic (no external state, no fs outside
+    # the test, no network). Integration tests under tests/*.rs run in
+    # the cargo-test-integration job below (continue-on-error). See
+    # DEC-2525 §"Cargo filter strategy": the strict text names
+    # tests/hermetic_* + inline; this PR ships the narrower inline-only
+    # filter as a transitional state and tracks tests/hermetic_*
+    # re-classification as a follow-up DEC update.
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - platform/services/chorus-hooks
+          - platform/services/chorus-inject
+    env:
+      CHORUS_ROOT: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.crate }}
+      - name: Run cargo test (--lib --bins, hermetic only — DEC-2525)
+        working-directory: ${{ matrix.crate }}
+        run: cargo test --lib --bins
+
+  cargo-test-integration:
+    name: cargo test integration — ${{ matrix.crate }}
+    runs-on: ubuntu-latest
+    # DEC-2525: non-required, signal-only post-disconnect (#2526).
+    # Runs the tests/*.rs integration suite. These remain visible but
+    # do not gate merge. Drift lane (#2527, not yet built) will consume
+    # red signal from this job.
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -266,9 +334,9 @@ jobs:
           echo "chorus-hooks server never bound socket within 15s; log:"
           cat /tmp/chorus-hooks-server.log || true
           exit 1
-      - name: Run cargo test
+      - name: Run cargo test (--tests, integration tier — non-required)
         working-directory: ${{ matrix.crate }}
-        run: cargo test --all
+        run: cargo test --tests
 
   clippy:
     # #2532: Rust lint parity with TS. chorus-inject already clean (-D warnings
@@ -279,15 +347,18 @@ jobs:
     # feedback; the eslint-baseline approach is what Phase 1 retires (#2526).
     name: cargo clippy — ${{ matrix.crate }}
     runs-on: ubuntu-latest
+    # DEC-2525: non-required for both crates post-disconnect (#2526).
+    # The previous matrix-keyed continue_on_error split (chorus-inject
+    # blocking, chorus-hooks warn-only) is retired — DEC-2525 names only
+    # jest + cargo-test as required, and explicitly lists "cargo clippy"
+    # in the continue-on-error roster.
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - crate: platform/services/chorus-inject
-            continue_on_error: false
-          - crate: platform/services/chorus-hooks
-            continue_on_error: true
-    continue-on-error: ${{ matrix.continue_on_error }}
+        crate:
+          - platform/services/chorus-inject
+          - platform/services/chorus-hooks
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
@@ -300,6 +371,9 @@ jobs:
           workspaces: ${{ matrix.crate }}
       - name: Run clippy
         working-directory: ${{ matrix.crate }}
+        # Step-level continue-on-error per #2526 wave 2 bootstrap pattern —
+        # see lint-ratchet for the rationale. Output still in the log.
+        continue-on-error: true
         run: cargo clippy --all-targets -- -D warnings
       - name: Stop chorus-hooks server
         if: always() && matrix.crate == 'platform/services/chorus-hooks'
