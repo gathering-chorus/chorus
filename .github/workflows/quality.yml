@@ -223,14 +223,18 @@ jobs:
     name: cargo test — ${{ matrix.crate }}
     runs-on: ubuntu-latest
     # DEC-2525 REQUIRED CHECK #2 — hermetic cargo only.
-    # `cargo test --lib --bins` runs ONLY inline #[test] in src/, which
-    # are by construction hermetic (no external state, no fs outside
-    # the test, no network). Integration tests under tests/*.rs run in
-    # the cargo-test-integration job below (continue-on-error). See
-    # DEC-2525 §"Cargo filter strategy": the strict text names
-    # tests/hermetic_* + inline; this PR ships the narrower inline-only
-    # filter as a transitional state and tracks tests/hermetic_*
-    # re-classification as a follow-up DEC update.
+    # Runs the full hermetic surface per DEC-2525 strict text:
+    #   - `--lib --bins`: inline #[test] in src/ (hermetic by construction)
+    #   - `--test 'hermetic_*'`: tests/hermetic_*.rs files matching the
+    #     #2524 prefix convention (integration-tier files that are
+    #     hermetic on axes 1–4, addressable by name)
+    # Wave 4 closes the gap wave 2 left open. tests/*.rs without the
+    # prefix remain in cargo-test-integration (continue-on-error).
+    # Each crate has at least one tests/hermetic_*.rs file as the seed:
+    #   - chorus-hooks: tests/hermetic_chorus_root_env.rs
+    #   - chorus-inject: tests/hermetic_runner_dispatch.rs
+    # If a seed is removed without replacement, the glob errors and the
+    # required check goes red — that's the intended invariant.
     strategy:
       fail-fast: false
       matrix:
@@ -245,9 +249,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ matrix.crate }}
-      - name: Run cargo test (--lib --bins, hermetic only — DEC-2525)
+      - name: Run cargo test (--lib --bins + --test 'hermetic_*' — DEC-2525)
         working-directory: ${{ matrix.crate }}
-        run: cargo test --lib --bins
+        run: cargo test --lib --bins --test 'hermetic_*'
 
   cargo-test-integration:
     name: cargo test integration — ${{ matrix.crate }}
