@@ -203,7 +203,7 @@ pub fn check(role: &str) -> Result<(), Violation> {
     if stamps.role_fragments_sha != live_fragments {
         let staleness_s = fs::metadata(role_claudemd_path(role))
             .and_then(|m| m.modified())
-            .and_then(|t| t.elapsed().map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "elapsed")))
+            .and_then(|t| t.elapsed().map_err(|_| std::io::Error::other("elapsed")))
             .map(|d| d.as_secs())
             .unwrap_or(0);
         return Err(Violation::Stale {

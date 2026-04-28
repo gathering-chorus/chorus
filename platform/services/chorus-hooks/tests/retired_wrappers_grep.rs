@@ -1,11 +1,18 @@
 //! #2311 rescope AC#6/#7 — Wrapper retirement grep.
 //!
-//! The shell wrappers `werk-init.sh`, `session-start.sh`, and
-//! `chorus-prompt.sh` are retired in favor of the single Rust entry
-//! points `chorus-hook-shim session-start <role>` and `chorus-hook-shim
+//! The shell wrappers `session-start.sh` and `chorus-prompt.sh` are
+//! retired in favor of the single Rust entry points
+//! `chorus-hook-shim session-start <role>` and `chorus-hook-shim
 //! session-close <role>`. This test enforces the retirement by walking
 //! active production code, scripts, CLAUDE.md fragments, shared skills,
 //! and top-level architecture docs for any remaining reference.
+//!
+//! Note: `werk-init.sh` is NOT retired (Jeff 2026-04-28). Only the
+//! `--session` interactive mode was deprecated in #2311; `--scan` and
+//! `--close` modes remain load-bearing (per-turn nudge drain, close-out
+//! introspection, test-staleness-detection.sh fixture). The earlier
+//! grep-and-file assertions for werk-init.sh were removed under #2540
+//! / #2556.
 //!
 //! Exemptions (historical / meta):
 //! - Commit history + journal logs (not scanned here — we scan files)
@@ -22,7 +29,6 @@
 
 use std::path::Path;
 use std::process::Command;
-use chorus_hooks::shared::state_paths::chorus_root;
 
 const REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects/chorus";
 
@@ -86,11 +92,6 @@ fn assert_retired(name: &str) {
 }
 
 #[test]
-fn werk_init_sh_has_zero_active_hits() {
-    assert_retired("werk-init\\.sh");
-}
-
-#[test]
 fn session_start_sh_has_zero_active_hits() {
     assert_retired("session-start\\.sh");
 }
@@ -98,16 +99,6 @@ fn session_start_sh_has_zero_active_hits() {
 #[test]
 fn chorus_prompt_sh_has_zero_active_hits() {
     assert_retired("chorus-prompt\\.sh");
-}
-
-#[test]
-fn werk_init_script_file_does_not_exist() {
-    let p = format!("{}/platform/scripts/werk-init.sh", REPO_ROOT);
-    assert!(
-        !Path::new(&p).exists(),
-        "werk-init.sh file must be retired (#2311 AC#6): {}",
-        p
-    );
 }
 
 #[test]
