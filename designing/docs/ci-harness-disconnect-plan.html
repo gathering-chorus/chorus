@@ -83,7 +83,7 @@ The harness brief names the destination. This plan names the staging between two
       <li><strong>#2524</strong> — <a href="test-categorization.html">Test categorization, filename suffix convention</a> (<code>*.test.ts</code> hermetic by default; <code>*.{integration,contract,smoke}.test.ts</code> for the rest) — <em>convention doc shipped 2026-04-27</em></li>
       <li><strong>#2532</strong> — Add clippy to CI + shuffled jest/cargo runs. Clippy closes the Rust lint gap (TS gets typescript-eslint, Rust gets nothing today); shuffled runs are the detection mechanism for hermeticity rule 5 (order-independent). Prerequisite for #2523.</li>
       <li><strong>#2523</strong> — Hermeticity audit on the to-be required-check set (network off, shuffled order via #2532, alt-cwd run). Includes the 47+ uncrawled tests in <code>directing/products/cards/tests</code> + <code>platform/tests</code> bats. <em>Blocked on #2515 + #2532.</em></li>
-      <li><strong>#2525</strong> — DEC for the new required-checks list (Day-1: TS hermetic + Rust hermetic; clippy may join per #2532 outcome)</li>
+      <li><strong>#2525</strong> — DEC for the new required-checks list. <strong>Filed as <a href="/decisions/DEC-2525-day-1-required-checks.md">DEC-2525</a></strong> (Day-1: TS hermetic + Rust hermetic; clippy may join per #2532 outcome). 48h shuffled-runs verification window pending Phase 1 land.</li>
     </ul>
   </td>
   <td class="kade">

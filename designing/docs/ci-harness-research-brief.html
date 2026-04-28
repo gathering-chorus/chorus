@@ -47,6 +47,8 @@ The CI/CD pipeline is a <strong>harness</strong> — a feedback loop for humans 
 <strong>The load-bearing distinction.</strong> A <em>sensor</em> gives the agent (and the human) data about what was produced. A <em>rule</em> forces an action when a sensor fires red. Sensors enable correction; rules enforce policy. Most "CI failures" we've fought were rules failing to be useful, not sensors failing to detect. The fix is to keep most sensors and remove most rules.
 </div>
 
+<p><strong>Day-1 required-checks list:</strong> the rules side of the architecture is governed by <a href="/decisions/DEC-2525-day-1-required-checks.md">DEC-2525</a> — TS hermetic + Rust hermetic only at Phase 1 ship. Add/retire criteria + 48h shuffled-runs verification gate live in that DEC; this brief sets the architecture, the DEC sets the actual list.</p>
+
 <h2>Sensor allocation by stage</h2>
 
 <table>
