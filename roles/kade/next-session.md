@@ -1,48 +1,43 @@
 # Kade — Next Session (2026-04-28)
 
-## Shipped this session (2026-04-27 afternoon → evening)
-- **#2515** — Test inventory backfill. Coverage 7→31 of 48 subdomains. Audit v1+v2 banked at `roles/kade/work/2515/`. Phase 0 of CI harness disconnect now has its data dependency.
-- **#2118** — Scope-aware gates / domain+category+budget runner. `platform/scripts/run-tests` exists, 18/18 bats green, contract doc at `roles/kade/docs/run-tests-contract.md`. Phase 1 of harness disconnect complete; Phase 2 (#2528, Silas) can call it directly.
-- **VALID_CHUNKS extension** — added `knowledge`, `ci`, `tests` to cli.ts + LABELS.chunk in config.ts (3ba28a56 + a1d6452f).
+## Shipped this session (2026-04-28 ~07:48–14:48 Boston)
 
-## Gates run for the team
-- #2511 Wren doc-catalog audit — code+quality PASS
-- #2510 Wren doc-inventory waves — code+quality PASS
-- #2445 Wren catalog relocation — code+quality PASS
-- #2521 Wren doc-catalog tree API — code+quality PASS
-- #2517 Wren doc-catalog test gaps — code+quality PASS
+- **#2516** — Graphify SPECIAL_ALIASES → 72 `chorus:hasTestPathPrefix` triples in `urn:chorus:ontology`. Refactored `discover-tests.ts` to read aliases via SPARQL with `ORDER BY ?sd`. Retired `buildAliasMap` + `GENERIC_BASES` + `SPECIAL_ALIASES` from src; logic preserved at migration time in `platform/api/scripts/migrate-aliases-to-graph.ts`. **Side benefit:** 9 tests previously misrouting under non-deterministic Fuseki order now route correctly. AC reshape before gate ("identical output" → "corrective routing verified") per the precedent Wren named on #2514. Commit `7471bb93` pushed.
+- **ADR-027** (Wren-authored, Kade-reviewed) — Derived domain mappings live in graph. Three landed cases (hasPrinciple, hasDecision, hasTestPathPrefix); two pending (discover-code, discover-pages).
 
-## Cards filed this session (mine)
-- #2514 doc-inventory python tests (P3, follow-on to #2510)
-- #2516 graphify SPECIAL_ALIASES (P3, follow-on to #2515)
-- #2542 run-tests JSON shape — skipped count + per-test runtime_ms (P3, dashboard-driven follow-on to #2118)
-- #2517 (originally mine, Wren pulled + shipped same session)
+## Gated for others (Kade-owned gates)
 
-## WIP at session close
-- None. #2118 accepted; queue clear.
+- **#2549** (Wren) — gate:code + gate:quality PASS. Replied on inline-SPARQL vs query-builder + base64url vs sha256 URI scheme.
+- **#2550** (Wren) — gate:code + gate:quality PASS. Replied on extraction threshold (defer; falsifiable trigger named: third *kind* of feature OR 1000 LOC OR second contributor adds).
 
-## Phase status — CI harness disconnect track
-- Phase 0: Silas's #2532 (clippy + shuffled jest) in flight; #2523 audit+rename queued behind #2515 completion.
-- Phase 1: **mine, complete.**
-- Phase 2: Silas's #2528 wires run-tests into .github/workflows/quality.yml — uses my contract verbatim, no further action from me.
-- Phase 3: graphify (#2516, mine, gated on aliases proving out).
+## Cross-role exchanges
 
-## Next session candidates
-- **#2516** — graphify SPECIAL_ALIASES (P3, mine, harness Phase 3). Now unblocked since #2515 shipped. Silas suggested waiting until aliases prove out under real use.
-- **#2126** — extract shared log-reader for chorus-api summary handlers (P2, mine, sequence:borg).
-- **#2127** — Borg page fetch-wrapper with explicit error-rendered state (P2, mine, sequence:borg).
-- **#2440 / #2441** — pulse-domain pre-existing fixes (P2 fix/enhance).
-- **#2199** — extract search helpers (P3 chore, threshold met).
+- **#2523 wave 1 review** for Silas — surfaced 6 scanner gaps (hardcoded kept-set, missing pytest, 6 network blind spots, bats env coupling). All accepted into wave 2.
+- **#2523 wave 3 spot-check** — clearing-ui correctly routed via wave-3 spawn-detection; flagged 4 `*-unit.integration.test.ts` as miscategorized → silas reverted, heuristic patched.
+- **ADR-027 code-impact review** — two recipe additions (idempotent migration, multi-binding collision rationale) + naming suggestion (hasCodePathPrefix / hasPagePathPrefix for symmetry).
 
-## Banked memories
-- `feedback_scope_is_the_work.md` — when filing a card from an audit/research context, the investigation IS the deliverable. Don't pre-commit AC2 to numbers you guessed. Hit twice today (#2515, Silas's #2524).
+## Pulled then rolled back
 
-## Standing flags for next session
-- **Stale comment-cache lag** — surfaced twice today (#2511 chain, #2118 chain). Pattern: comments ledger lags 2-3 min behind reality. When ping-ponging gate notifications, re-fetch with `cards view <id>` directly rather than trusting prior in-context tally.
-- **Property/properties plural-folding** — data-modeling ambiguity in subdomain ontology (both real subdomains, alias collision). Defer until Wren or Jeff has a position.
-- **GENERIC_BASES tradeoff** — 6 subdomains blocked by pre-existing deny-list (code/services/streams/messages/time/domains). Some safe to widen (code: 9 hits, low noise), others risky (services: 89 hits, mostly noise). Evidence-gated follow-on if it matters.
+- **#2440** — demo_gate_env.rs tempdir fixture work landed locally (3/3 green) but couldn't ship: pre-commit on chorus-hooks fails on two unrelated werk_init retirement assertions in `retired_wrappers_grep.rs`. Jeff: "we cant retire werk-init.sh." Card moved back to Next; diff stashed (`git stash list` → "kade #2440 — demo_gate_env.rs tempdir fixture (blocked by werk_init pre-commit)"). The chorus-hooks pre-commit blocker affects every chorus-hooks change until those assertions are removed.
 
-## Cross-role context
-- **Silas's plan v2** at `/docs/designing/ci-harness-disconnect-plan.html` is canonical for harness work — Phase 0/1/2/3 dependencies, contract spec, exit math.
-- **Wren shipped #2531 triage** — final zero-test list is 9 (not 14); several v1-audit "no tests" classifications were stale-heuristic misses, now covered.
-- **chunk:tests label** is mine; chunk:ci is Silas's. Don't tag CI cards chunk:tests or vice versa.
+## Filed
+
+- **#2551** — chorus-hooks 3-warning regression on main; baseline at 36, build at 39. P2.
+- **#2555** — ICD entry for `chorus:hasTestPathPrefix` predicate (#2516 follow-on per silas's gate-arch note). P3.
+
+## WIP
+
+None. role-state idle.
+
+## Open threads / next-up
+
+- **Discover-tests reconciliation diff** — owed to Silas: scanner v2 kept-set (post wave-2 fixes) vs `discover-tests.ts` crawl. Source: `designing/docs/ci-harness-hermeticity-audit-data.json`. Expected divergence: 54 #2524 renames + un-renamed bats.
+- **ADR-027 pending sites** — when ready to file: `chorus:hasCodePathPrefix` (discover-code.ts) and `chorus:hasPagePathPrefix` (DISCOVER_PAGES_GENERIC_BASES). Both follow the #2516 migration pattern.
+- **#2440 unblocking** — depends on whether the chorus-hooks pre-commit werk_init assertions get addressed. Not mine to drive.
+- **CI Harness Disconnect plan** — Phase 0 closing on Silas's side (#2523 wave-2 + #2525 DEC). Phase 2 critical-path on my side: graphify shipped; #2118 going required-check still depends on Silas's #2526. Adjacent test-substrate cards (#2440, #2504, #2505, #2441) still queued.
+
+## Lessons (transcript-only, not memory)
+
+- **Smallest-first ≠ on-plan.** Argued #2440 (Adjacent in plan) over #2516 (critical-path Phase 2) using smallest-first. Jeff caught the sidequest. Smallest-first is a tiebreak among on-plan options, not an override on the plan.
+- **Statement vs instruction.** Jeff stating a fact ("we cant retire werk-init.sh") is information; treating it as authorization to delete test assertions was over-action. Filed + filed-back accordingly.
+- **AC reshape before gate is the right shape.** Did it on #2516 (48→72 count, "identical" → "corrective routing verified"). Same precedent Wren named on #2514.

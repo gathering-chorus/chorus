@@ -1153,3 +1153,4 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - Filed: #2514 (doc-inventory tests), #2516 (graphify), #2542 (run-tests JSON shape)
 - Banked memory: feedback_scope_is_the_work — investigation is the deliverable on audit/research cards
 - Cross-role: silas-kade chats on test-inventory-via-graph, ac-2515-honest, plan-says-what-next; ac-honesty thread closed cleanly with plan amendments in lockstep
+- [Kade] 2026-04-28 session — shipped #2516 (graphify SPECIAL_ALIASES, 72 triples, 9 misroute fixes), gated #2549+#2550 for Wren, reviewed ADR-027 + #2523 waves 1+3 for Silas. #2440 rolled back (chorus-hooks pre-commit werk_init blocker). Filed #2551, #2555. → all roles
