@@ -3,7 +3,13 @@
 **Status:** Accepted — 2026-04-28. Reviewed by Silas (architecture) and Kade (code impact); accepted by Jeff.
 **Cards:** #2314 (Loom Principles API, Done), #2318 (Loom Decisions API, Later), #2516 (graphify alias map, Done). Blocks: #2554 (CatalogDocShape + onward), pending discover-code.ts + discover-pages migrations.
 **Supersedes:** — (establishes the rule across a class of mappings that have been migrating one-by-one).
-**Related:** ADR-025 (ontology vs instances graph separation — this ADR layers on that one).
+**Related:**
+- ADR-025 (ontology vs instances graph separation — this ADR is the operational expression for one class of mapping).
+- Loom principles: `ontology-is-architecture` and `cross-project-coherence` (this ADR operationalizes both for derived SubDomain mappings).
+
+## Scope
+
+This ADR applies to derived mappings on `chorus:SubDomain` instances. Today only SubDomain has derived mappings of the kind discussed here; if Person / Role / Decision / similar instances later acquire derived mappings of the same shape, the rule generalizes naturally. Until then, "domain mappings" means SubDomain mappings.
 
 ## Context
 
@@ -24,29 +30,37 @@ The deeper principle this connects to: the ground-truth-of-a-domain-mapping is p
 
 ## Decision
 
-**Derived domain mappings live in `urn:chorus:ontology`, not in code. Code reads them via SPARQL.**
+**Derived domain mappings live in `urn:chorus:ontology` (predicate declaration) and `urn:chorus:instances` (per-SubDomain triples), not in code. Code reads them via SPARQL.** Two-graph operation per migration, per ADR-025.
 
-A "derived domain mapping" means: any function in TypeScript / Rust / Python that takes a `SubDomain` (or sibling concept) and produces strings, paths, or aliases by *deriving* them from the SubDomain's id, label, or other attributes. Examples:
+A "derived domain mapping" means: any function or const that produces strings, paths, or aliases **by computing them from a SubDomain's id, label, or other attributes** — i.e., the values are part of the canonical model the agent reasons over. Examples:
 
 - `function buildAliasMap(subdomains)` returning `{ wordpress: 'blog-domain' }`
 - `const DISCOVER_PAGES_GENERIC_BASES = ['index', 'home', ...]` keyed implicitly by domain
 - `function aliasesForCode(domain)` returning `['service', 'svc', 'platform']`
 
-When such a function exists, replace it with a predicate (`chorus:hasTestPathPrefix`, `chorus:hasGenericBase`, `chorus:hasCodeAlias`, etc.) declared on the `SubDomain` instance, and a SPARQL read at the consumption site.
+This rule does **NOT** apply to:
+- Presentation-only constants (CSS palettes, format strings, copy) — not part of the canonical model.
+- Domain-adjacent literals that happen to live near domain code but aren't computed from SubDomain attributes.
+- One-shot derivations consumed by exactly one runtime caller and never queried by anyone else.
+
+The test for "is this derived?" — does the value answer a question about a SubDomain that another agent (human or LLM) might ask the graph? If yes, graph. If no, code is fine.
+
+When such a derivation exists, replace it with a predicate (`chorus:hasTestPathPrefix`, `chorus:hasCodePathPrefix`, etc.) declared on the `SubDomain` instance, and a SPARQL read at the consumption site.
 
 Migration recipe (proven by #2314, #2318, #2516):
-1. Declare the predicate in `urn:chorus:ontology`: `rdf:type rdf:Property + owl:DatatypeProperty/ObjectProperty`, `rdfs:domain`, `rdfs:range`, `rdfs:label`, `rdfs:comment`.
-2. Run a one-time migration script (`scripts/migrate-<predicate>-to-graph.ts`) that computes the mapping from existing code (e.g., `deriveAliases` in #2516's migration) and INSERTs the triples.
-3. Refactor the consumption site to read via a single SPARQL query with deterministic ordering (`ORDER BY ?sd`).
-4. Delete the code-resident derivation (zero-hits grep on the const name).
-5. Verify routing/output equivalence, **with explicit naming of any reroutes** (#2516 surfaced 9 corrective reroutes that an "identical output" assertion would have masked).
+
+1. **Declare the predicate** in `urn:chorus:ontology`: `rdf:type rdf:Property + owl:DatatypeProperty/ObjectProperty`, `rdfs:domain chorus:SubDomain`, `rdfs:range xsd:string` (or appropriate type), `rdfs:label`, `rdfs:comment`. Predicate lives in the **ontology** graph; the triples it enables live on instances in `urn:chorus:instances` (per ADR-025 separation).
+2. **Migration script — idempotent.** `scripts/migrate-<predicate>-to-graph.ts` computes the mapping from existing code (e.g., `deriveAliases` in #2516's migration) and lands triples in `urn:chorus:instances`. **Idempotent shape: DELETE WHERE matching predicate triples in target graph, then INSERT DATA.** Without the explicit DELETE, re-running silently doubles the triples — proven failure mode the next migrator should not have to rediscover.
+3. **Refactor the consumption site** to read via a single SPARQL query. **Use `ORDER BY` on the SubDomain identifier** for deterministic resolution of multi-binding collisions. #2516's `properties/property` collision is the precedent: when the alias `properties` matched both `property-domain` (real) and an unrelated SubDomain via overlapping prefix, hash-map iteration order picked one or the other depending on the run. `ORDER BY ?sd` resolves the same collision the same way every time. A predicate without collision exposure today may acquire one tomorrow when a new SubDomain lands — the ordering is cheap; non-deterministic order hides routing bugs across runs and across machines.
+4. **Delete the code-resident derivation** (zero-hits grep on the const name).
+5. **Verify routing/output equivalence**, **with explicit naming of any reroutes** (#2516 surfaced 9 corrective reroutes that an "identical output" assertion would have masked).
 
 ## Consequences
 
 **Positive:**
 - The graph becomes the reasoning surface for "what does this SubDomain own?" — agents (humans + LLMs) query one place.
 - Adding a new SubDomain with its own mappings is a triple-write, not a code edit + PR + deploy.
-- Deterministic ordering (`ORDER BY ?sd`) eliminates ordering bugs hidden by hash-map iteration.
+- Deterministic ordering eliminates ordering bugs hidden by hash-map iteration.
 - Graph-driven codegen (`project_graph_driven_codegen`) becomes possible: tooling can read predicates and generate forms, validators, or scaffolding.
 
 **Negative / open:**
@@ -59,11 +73,19 @@ Migration recipe (proven by #2314, #2318, #2516):
 
 | # | Site | Predicate (proposed) | Card |
 |---|------|---------------------|------|
-| 4 | `discover-code.ts` generic bases | `chorus:hasCodeBase` | TBD — not yet filed |
-| 5 | `DISCOVER_PAGES_GENERIC_BASES` | `chorus:hasPageBase` | TBD — not yet filed |
+| 4 | `discover-code.ts` generic bases | `chorus:hasCodePathPrefix` | TBD — not yet filed |
+| 5 | `DISCOVER_PAGES_GENERIC_BASES` | `chorus:hasPagePathPrefix` | TBD — not yet filed |
+
+Naming follows `chorus:hasTestPathPrefix` (#2516) — `hasXPathPrefix` for any datatype-property mapping that matches a token within a path. Strict accuracy is "matches anywhere via includes()" not "prefix only," but consistency with the landed predicate wins; a future renaming pass can clean both at once if "prefix" becomes misleading.
 
 Both cards should cite this ADR. File when pulled, not before — so the ADR doesn't accrete card noise before the work is real.
 
 ## Citations
 
 Kade owns the implementation citations; ask him for migration script paths and exact predicate names when filing the pending cards. Wren owns this ADR's narrative and will update on review feedback.
+
+**Review history:**
+- 2026-04-28 (Wren) — initial draft.
+- 2026-04-28 (Silas) — five tightening notes applied: explicit "derived" criterion + non-example, ordering rationale, ADR-025 two-graph framing, scope clarified to SubDomain, loom-principles citations.
+- 2026-04-28 (Kade) — code-impact pass: idempotent migration step (DELETE WHERE → INSERT DATA), collision-resolution rationale (`properties/property` precedent), predicate naming aligned to `hasXPathPrefix` symmetry, drift between line-33 example and pending-table fixed.
+- 2026-04-28 (Jeff) — Accepted.
