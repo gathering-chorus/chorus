@@ -2819,6 +2819,7 @@ import {
   writeCatalogLineage,
   readCatalogDoc,
   readCatalogDrift,
+  readCatalogCurated,
 } from './handlers/catalog-curation';
 
 const catalogCurationDeps = () => ({
@@ -2849,6 +2850,13 @@ app.get('/api/chorus/catalog/doc/:hrefb64', async (req: Request, res: Response) 
 
 app.get('/api/chorus/catalog/drift', async (_req: Request, res: Response) => {
   const r = await readCatalogDrift(catalogCurationDeps());
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/catalog/curated', async (_req: Request, res: Response) => {
+  // All CatalogDoc instances with their persisted tags. Used by doc-catalog.html
+  // to merge curated overlay over the runtime tagger output so saves are visible.
+  const r = await readCatalogCurated(catalogCurationDeps());
   res.status(r.status).json(r.body);
 });
 

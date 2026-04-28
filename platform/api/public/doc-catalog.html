@@ -190,7 +190,7 @@ let driftByHref = new Map();  // href → divergence_fields[]
 let panelDoc = null;  // { href, title, suggest, current }
 
 async function load() {
-  const [treeR, tagsR, catR, productsR, subproductsR, subdomainsR, driftR] = await Promise.all([
+  const [treeR, tagsR, catR, productsR, subproductsR, subdomainsR, driftR, curatedR] = await Promise.all([
     fetch('/api/doc-catalog/tree').then(r => r.json()),
     fetch('/api/doc-catalog/tags').then(r => r.json()),
     fetch('/api/doc-catalog').then(r => r.json()),
@@ -198,10 +198,46 @@ async function load() {
     fetch('/api/athena/subproducts').then(r => r.json()).catch(() => ({ data: [] })),
     fetch('/api/athena/subdomains?limit=200').then(r => r.json()).catch(() => ({ data: [] })),
     fetch('/api/chorus/catalog/drift').then(r => r.json()).catch(() => ({ data: { drift: [] } })),
+    fetch('/api/chorus/catalog/curated').then(r => r.json()).catch(() => ({ data: { curated: [] } })),
   ]);
   tree = treeR;
   allTagged = tagsR.tagged || [];
   topicGroups = catR.groups || [];
+  // Curated overlay: tags persisted via #2549 trump tagger inferences for the same href.
+  const curatedByHref = new Map(((curatedR.data || {}).curated || []).map(c => [c.href, c.tags || {}]));
+  for (const d of allTagged) {
+    const overlay = curatedByHref.get(d.href);
+    if (overlay) d.tags = { ...d.tags, ...overlay };
+  }
+  // Recompute the untagged count to reflect the overlay (so the nav matches reality).
+  if (tree && tree.untagged) {
+    let untaggedCount = 0;
+    const knownProducts = new Set((tree.products || []).map(p => p.id));
+    const productEnumToId = { chorus: 'chorusProduct', gathering: 'gathering', consulting: 'consultingProduct' };
+    for (const d of allTagged) {
+      if (!d.tags || !d.tags.product) { untaggedCount++; continue; }
+      const athenaId = productEnumToId[d.tags.product];
+      if (!athenaId || !knownProducts.has(athenaId)) untaggedCount++;
+    }
+    tree.untagged.docCount = untaggedCount;
+    // Recompute product/subproduct/subdomain counts based on overlay-adjusted tags
+    for (const p of tree.products) {
+      p.docCount = 0;
+      if (p.subproducts) for (const sp of p.subproducts) sp.docCount = 0;
+    }
+    for (const d of allTagged) {
+      const t = d.tags || {};
+      if (!t.product) continue;
+      const athenaId = productEnumToId[t.product];
+      const product = (tree.products || []).find(p => p.id === athenaId);
+      if (!product) continue;
+      product.docCount++;
+      if (t.subproduct && product.subproducts) {
+        const sp = product.subproducts.find(s => s.id === t.subproduct || s.id === `${t.subproduct}-product`);
+        if (sp) sp.docCount++;
+      }
+    }
+  }
   // Vocab maps Athena ids → tagger short names so the dropdowns match what the API validates against.
   vocab.products = ['chorus', 'gathering', 'consulting'];
   vocab.subproducts = ['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality', 'borg'];
@@ -317,8 +353,8 @@ function filterDocs(term) {
 }
 
 function productMatchById(taggerEnum, athenaId) {
-  // Tagger uses 'chorus'/'gathering'/'akasha'/'borg', Athena ids are 'chorusProduct'/'gathering'/'borgProduct'
-  const m = { chorus: ['chorusProduct'], gathering: ['gathering'], borg: ['borgProduct'], akasha: ['akashaProduct'] };
+  // Tagger uses 'chorus'/'gathering'/'consulting', Athena ids are 'chorusProduct'/'gathering'/'consultingProduct'.
+  const m = { chorus: ['chorusProduct'], gathering: ['gathering'], consulting: ['consultingProduct'] };
   return (m[taggerEnum] || []).includes(athenaId);
 }
 

@@ -354,6 +354,29 @@ SELECT ?direction ?predicate ?other WHERE {
   };
 }
 
+export async function readCatalogCurated(deps: CurationDeps): Promise<HandlerResult> {
+  const start = Date.now();
+  const query = `PREFIX chorus: <${CHORUS_PREFIX}>
+SELECT ?href ?product ?subproduct ?domain ?subdomain ?role WHERE {
+  GRAPH <${ATHENA_INSTANCES}> {
+    ?doc a chorus:CatalogDoc ; chorus:catalogHref ?href .
+    OPTIONAL { ?doc chorus:product ?product }
+    OPTIONAL { ?doc chorus:subproduct ?subproduct }
+    OPTIONAL { ?doc chorus:domain ?domain }
+    OPTIONAL { ?doc chorus:subdomain ?subdomain }
+    OPTIONAL { ?doc chorus:role ?role }
+  }
+}`;
+  const result = (await deps.sparqlQuery(query)) as SparqlResults;
+  const curated: Array<{ href: string; tags: CatalogTags }> = [];
+  for (const row of result.results.bindings) {
+    const href = readBinding(row, 'href');
+    if (!href) continue;
+    curated.push({ href, tags: tagsFromBinding(row) });
+  }
+  return { status: 200, body: deps.envelope('catalog-curated', { curated }, Date.now() - start) };
+}
+
 export async function readCatalogDrift(deps: CurationDeps): Promise<HandlerResult> {
   const start = Date.now();
   const query = `PREFIX chorus: <${CHORUS_PREFIX}>
