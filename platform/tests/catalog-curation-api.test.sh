@@ -123,6 +123,35 @@ N=$(echo "$DRIFT_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); pr
 check "GET drift surfaces path↔tag divergence" "1" "$N"
 
 # ---------------------------------------------------------------------------
+# AC #2554 — SHACL shape catches malformed CatalogDoc.
+# Insert a malformed instance directly via SPARQL (bypass API vocab validation),
+# verify /api/athena/validate surfaces it, then clean up.
+
+FUSEKI_UPDATE="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
+VALIDATE_URL="$API_BASE/api/athena/validate"
+MALFORMED_URI="https://jeffbridwell.com/chorus#catalog-doc-shape-violation-${TS}"
+
+# Insert: CatalogDoc with no catalogHref (violates required-prop shape).
+curl -s -o /dev/null -X POST -H 'Content-Type: application/sparql-update' \
+  --data "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+INSERT DATA { GRAPH <urn:chorus:instances> { <$MALFORMED_URI> a chorus:CatalogDoc ; chorus:product \"chorus\" } }" \
+  "$FUSEKI_UPDATE"
+
+VIOLATIONS=$(curl -s "$VALIDATE_URL" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+hits = [v for v in d.get('violations', []) if 'catalog-doc-shape-violation-${TS}' in v.get('node','') or 'CatalogDoc' in v.get('constraint','')]
+print(len(hits))
+" 2>/dev/null || echo 0)
+check "validate surfaces malformed CatalogDoc (no catalogHref)" "1" "$([ "$VIOLATIONS" -ge 1 ] && echo 1 || echo 0)"
+
+# Cleanup
+curl -s -o /dev/null -X POST -H 'Content-Type: application/sparql-update' \
+  --data "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+DELETE WHERE { GRAPH <urn:chorus:instances> { <$MALFORMED_URI> ?p ?o } }" \
+  "$FUSEKI_UPDATE"
+
+# ---------------------------------------------------------------------------
 # Cleanup is best-effort; test docs use namespaced /test/ hrefs that won't
 # collide with real catalog entries. A separate sweep card can prune by prefix.
 
