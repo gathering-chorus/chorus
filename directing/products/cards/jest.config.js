@@ -14,6 +14,8 @@ module.exports = {
   // it don't trigger — tracked separately as substrate work.
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
     '/node_modules/',
+    // #2524 convention: *.integration.test.ts excluded from hermetic default.
+    '\\.integration\\.test\\.ts$',
     '<rootDir>/tests/origin-labels\\.test\\.ts$',
     '<rootDir>/tests/sequence-labels\\.test\\.ts$',
     '<rootDir>/tests/cli-completeness\\.test\\.ts$',

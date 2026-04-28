@@ -26,37 +26,14 @@ module.exports = {
   // server-unit.test.ts). Tracked as follow-on to #2271.
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
     '/node_modules/',
-    '<rootDir>/tests/athena\\.test\\.ts$',
-    // #2495 / #2501 — integration tests masquerading as unit. They hit
-    // /api/athena/subdomains/.../completeness (or sibling endpoints) on the
-    // in-process harness, which proxies to live Fuseki. No Fuseki in CI for
-    // the jest job → 500s. Quarantined behind RUN_INTEGRATION until each is
-    // converted to a mocked Fuseki seam. Run locally with RUN_INTEGRATION=true.
-    '<rootDir>/tests/observability\\.test\\.ts$',
-    '<rootDir>/tests/domain-api-consolidated\\.test\\.ts$',
-    '<rootDir>/tests/trace-integration-callstack\\.test\\.ts$',
-    '<rootDir>/tests/trace-batch-callstack\\.test\\.ts$',
-    '<rootDir>/tests/trace-convergence-callstack\\.test\\.ts$',
-    '<rootDir>/tests/logs-facet\\.test\\.ts$',
-    '<rootDir>/tests/quality-summary\\.test\\.ts$',
-    '<rootDir>/tests/regression/athena-subdomain-batch\\.regression\\.test\\.ts$',
-    '<rootDir>/tests/domain-pipeline\\.test\\.ts$',
+    // #2524 convention (post-#2523 audit): files renamed to *.integration.test.ts
+    // are integration-tier and excluded from the hermetic default. The previous
+    // explicit ignore list (28 files) was replaced by this single suffix pattern;
+    // those files were renamed wholesale by the audit's rename bucket.
+    '\\.integration\\.test\\.ts$',
+    // handlers/sessions.test.ts — flagged by audit as review (not renamed); kept
+    // explicit until manual review confirms hermetic-as-claimed or rename.
     '<rootDir>/tests/handlers/sessions\\.test\\.ts$',
-    '<rootDir>/tests/discover-pages\\.test\\.ts$',
-    '<rootDir>/tests/scheduled-reindex\\.test\\.ts$',
-    '<rootDir>/tests/discover-endpoints\\.test\\.ts$',
-    '<rootDir>/tests/spine-event-endpoint\\.test\\.ts$',
-    '<rootDir>/tests/deploys\\.test\\.ts$',
-    '<rootDir>/tests/domain-releases\\.test\\.ts$',
-    '<rootDir>/tests/shacl-validation\\.test\\.ts$',
-    '<rootDir>/tests/assessment\\.test\\.ts$',
-    '<rootDir>/tests/search-freshness\\.test\\.ts$',
-    '<rootDir>/tests/domain-borg-services\\.test\\.ts$',
-    '<rootDir>/tests/ollama-resilience\\.test\\.ts$',
-    '<rootDir>/tests/tests-domain-code\\.test\\.ts$',
-    '<rootDir>/tests/alerts-subdomain\\.test\\.ts$',
-    '<rootDir>/tests/timestamp\\.test\\.ts$',
-    '<rootDir>/tests/code-inventory\\.test\\.ts$',
   ],
   // ts-jest diagnostics off — type checking is tsc's job, not the test runner's.
   // Tests in this dir were written for default-jest (no strict TS) and use

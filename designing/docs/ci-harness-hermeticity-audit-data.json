@@ -1,17 +1,17 @@
 {
   "schema_version": "2",
   "card": "2523",
-  "generated_at": "2026-04-28T13:15:02.798836",
+  "generated_at": "2026-04-28T13:57:09.065655",
   "summary": {
     "scanner_version": "v2",
-    "total": 417,
+    "total": 366,
     "by_verdict": {
-      "non-hermetic": 170,
-      "hermetic": 197,
+      "non-hermetic": 117,
+      "hermetic": 199,
       "review": 50
     },
     "by_kind": {
-      "jest": 238,
+      "jest": 187,
       "bats": 77,
       "cargo-external": 51,
       "cargo-inline": 49,
@@ -190,42 +190,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/chorus-sdk/tests/search.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "from 'http'"
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "maybe",
-          "hits": [
-            "process.env.CHORUS_API_URL"
-          ],
-          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "network access without spawn pattern \u2014 integration tier"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/chorus-sdk/tests/emit-metadata.test.ts",
       "verdict": "non-hermetic",
       "rules": {
@@ -361,72 +325,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/borg-landing.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/quality-summary.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/discover-endpoints-chorus-api.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -454,41 +352,6 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/trace-convergence-callstack.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now("
-          ]
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -569,52 +432,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/quality-summary-unit.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "maybe",
-          "hits": [
-            "http://localhost"
-          ],
-          "note": "localhost hits \u2014 distinguish in-process spawn (hermetic) vs daemon hit (non-hermetic) by manual review"
-        },
-        "fs": {
-          "status": "maybe",
-          "hits": [
-            "fs.rmSync",
-            "fs.unlinkSync",
-            "fs.mkdirSync",
-            "fs.writeFileSync"
-          ],
-          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now("
-          ]
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.GATHERING_ROOT",
-            "process.env.CHORUS_ROOT",
-            "process.env.QUALITY_CACHE_PATH"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (clock, env) \u2014 easier to integration-tier than mock"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/search-meta.test.ts",
       "verdict": "non-hermetic",
       "rules": {
@@ -649,39 +466,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/observability.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/search-rrf-weighting.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -709,39 +493,6 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/cost-summary.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -810,85 +561,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/code-inventory.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/fitness-summary-unit.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "maybe",
-          "hits": [
-            "localhost:3030",
-            "localhost:3102",
-            "localhost:3340"
-          ],
-          "note": "localhost hits \u2014 distinguish in-process spawn (hermetic) vs daemon hit (non-hermetic) by manual review"
-        },
-        "fs": {
-          "status": "maybe",
-          "hits": [
-            "fs.rmSync",
-            "fs.writeFileSync",
-            "fs.unlinkSync"
-          ],
-          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now(",
-            "new Date()"
-          ]
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.CHORUS_LOG_PATH"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (clock, env) \u2014 easier to integration-tier than mock"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/patterns-summary-unit.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -916,140 +588,6 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/discover-pages.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/spine-event-endpoint.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now("
-          ]
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/crawl-shape.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/shacl-validation.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -1085,14 +623,12 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/deploys.test.ts",
-      "verdict": "non-hermetic",
+      "path": "platform/api/tests/migrate-aliases-to-graph.test.ts",
+      "verdict": "hermetic",
       "rules": {
         "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
+          "status": "pass",
+          "hits": []
         },
         "fs": {
           "status": "pass",
@@ -1112,8 +648,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "none",
+        "reason": "hermetic \u2014 no remediation needed"
       },
       "kind": "jest"
     },
@@ -1145,72 +681,6 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/discover-endpoints.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/session-replay.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -1290,39 +760,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/crawl-validation.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/athena-sparql.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -1354,278 +791,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/domain-borg-services.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/athena.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.RUN_INTEGRATION",
-            "process.env.CHORUS_API"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/jeff-summary.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/timestamp.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/athena-owner-write.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.RUN_INTEGRATION",
-            "process.env.CHORUS_API"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/trace-batch-callstack.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now("
-          ]
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/search-freshness.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/domain-api-consolidated.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/coherence-check.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -1653,39 +818,6 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/domain-releases.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -1724,41 +856,6 @@
       "remediation": {
         "bucket": "fix",
         "reason": "add explicit beforeEach/afterEach env setup+restore (or pytest monkeypatch)"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/ollama-resilience.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.OLLAMA_URL"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -1827,115 +924,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/logs-facet.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/assessment.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/doc-catalog.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "maybe",
-          "hits": [
-            "localhost:3340"
-          ],
-          "note": "localhost hits \u2014 distinguish in-process spawn (hermetic) vs daemon hit (non-hermetic) by manual review"
-        },
-        "fs": {
-          "status": "maybe",
-          "hits": [
-            "fs.writeFileSync",
-            "fs.rmSync"
-          ],
-          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now("
-          ]
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.CHORUS_REPO",
-            "process.env.GATHERING_REPO"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (clock, env) \u2014 easier to integration-tier than mock"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/search-fusion.test.ts",
       "verdict": "non-hermetic",
       "rules": {
@@ -1965,39 +953,6 @@
       "remediation": {
         "bucket": "fix",
         "reason": "add jest.useFakeTimers / setSystemTime, or freezegun for pytest"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/domain-dependencies.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -2064,14 +1019,12 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/framework-lint.test.ts",
-      "verdict": "non-hermetic",
+      "path": "platform/api/tests/doc-tagger-borg-subproduct.test.ts",
+      "verdict": "hermetic",
       "rules": {
         "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
+          "status": "pass",
+          "hits": []
         },
         "fs": {
           "status": "pass",
@@ -2091,8 +1044,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "none",
+        "reason": "hermetic \u2014 no remediation needed"
       },
       "kind": "jest"
     },
@@ -2221,83 +1174,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/hooks-summary.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/hooks-summary-unit.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "pass",
-          "hits": []
-        },
-        "fs": {
-          "status": "maybe",
-          "hits": [
-            "fs.rmSync",
-            "fs.writeFileSync",
-            "fs.unlinkSync"
-          ],
-          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now(",
-            "new Date()"
-          ]
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.CHORUS_LOG_PATH",
-            "process.env.PERMISSIONS_LOG_PATH",
-            "process.env.COMMAND_ERRORS_LOG_PATH",
-            "process.env.HANDOFFS_LOG_PATH"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (clock, env) \u2014 easier to integration-tier than mock"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/shim-path.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -2360,72 +1236,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/alerts-subdomain.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/domain-pipeline.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/spine-event-write.test.ts",
       "verdict": "non-hermetic",
       "rules": {
@@ -2455,74 +1265,6 @@
       "remediation": {
         "bucket": "fix",
         "reason": "add jest.useFakeTimers / setSystemTime, or freezegun for pytest"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/tests-domain-code.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/trace-integration-callstack.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now("
-          ]
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -2589,72 +1331,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/scheduled-reindex.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/chorus-landing.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/embed-query.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -2715,72 +1391,6 @@
       "remediation": {
         "bucket": "fix",
         "reason": "add jest.useFakeTimers / setSystemTime, or freezegun for pytest"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/instance-explorer.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/patterns-summary.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -2909,47 +1519,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/session-replay-unit.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "pass",
-          "hits": []
-        },
-        "fs": {
-          "status": "maybe",
-          "hits": [
-            "fs.rmSync",
-            "fs.unlinkSync",
-            "fs.writeFileSync"
-          ],
-          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now(",
-            "new Date()"
-          ]
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.SESSIONS_DIR"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (clock, env) \u2014 easier to integration-tier than mock"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/discover-code.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -3045,114 +1614,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/regression/athena-batch.regression.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "pass",
-          "hits": []
-        },
-        "fs": {
-          "status": "fail",
-          "hits": [
-            "fs.mkdirSync",
-            "fs.writeFileSync"
-          ]
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.UPDATE_GOLDEN"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (fs, env) \u2014 easier to integration-tier than mock"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/regression/chorus-domain.regression.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "pass",
-          "hits": []
-        },
-        "fs": {
-          "status": "fail",
-          "hits": [
-            "fs.mkdirSync",
-            "fs.writeFileSync"
-          ]
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.UPDATE_GOLDEN"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (fs, env) \u2014 easier to integration-tier than mock"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/regression/athena-subdomain-batch.regression.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "pass",
-          "hits": []
-        },
-        "fs": {
-          "status": "fail",
-          "hits": [
-            "fs.mkdirSync",
-            "fs.writeFileSync"
-          ]
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.UPDATE_GOLDEN"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (fs, env) \u2014 easier to integration-tier than mock"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/regression/replay-chorus-domain-enrichment.regression.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -3215,42 +1676,6 @@
       "kind": "jest"
     },
     {
-      "path": "platform/api/tests/regression/athena-subdomain-detail.regression.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "pass",
-          "hits": []
-        },
-        "fs": {
-          "status": "fail",
-          "hits": [
-            "fs.mkdirSync",
-            "fs.writeFileSync"
-          ]
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.UPDATE_GOLDEN"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (fs, env) \u2014 easier to integration-tier than mock"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "platform/api/tests/regression/athena-enrichment-write.regression.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -3278,42 +1703,6 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "platform/api/tests/regression/athena-subdomains.regression.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "pass",
-          "hits": []
-        },
-        "fs": {
-          "status": "fail",
-          "hits": [
-            "fs.mkdirSync",
-            "fs.writeFileSync"
-          ]
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.UPDATE_GOLDEN"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (fs, env) \u2014 easier to integration-tier than mock"
       },
       "kind": "jest"
     },
@@ -5760,39 +4149,6 @@
       "kind": "jest"
     },
     {
-      "path": "directing/clearing/tests/flow-determinism.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch("
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "directing/clearing/tests/server-unit.test.ts",
       "verdict": "non-hermetic",
       "rules": {
@@ -6053,47 +4409,6 @@
       "kind": "jest"
     },
     {
-      "path": "directing/clearing/tests/tiles-api.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "fetch ("
-          ]
-        },
-        "fs": {
-          "status": "maybe",
-          "hits": [
-            "fs.writeFileSync"
-          ],
-          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "new Date()"
-          ]
-        },
-        "env": {
-          "status": "fail",
-          "hits": [
-            "process.env.CLEARING_SCAN_DIR",
-            "process.env.CLEARING_PULSE_FILE"
-          ]
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
-      },
-      "kind": "jest"
-    },
-    {
       "path": "directing/clearing/tests/chat.test.ts",
       "verdict": "hermetic",
       "rules": {
@@ -6121,40 +4436,6 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "directing/clearing/tests/domain-fold.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "http.get(",
-            "from 'http'"
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },
@@ -6669,44 +4950,6 @@
       "remediation": {
         "bucket": "fix",
         "reason": "add explicit beforeEach/afterEach env setup+restore (or pytest monkeypatch)"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "directing/products/cards/tests/cli-runCli-context-docs.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "pass",
-          "hits": []
-        },
-        "fs": {
-          "status": "fail",
-          "hits": [
-            "fs.mkdirSync",
-            "fs.writeFileSync",
-            "fs.unlinkSync",
-            "fs.rm"
-          ]
-        },
-        "clock": {
-          "status": "fail",
-          "hits": [
-            "Date.now("
-          ]
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "multiple rule fails (fs, clock) \u2014 easier to integration-tier than mock"
       },
       "kind": "jest"
     },
@@ -7488,39 +5731,6 @@
       "remediation": {
         "bucket": "review",
         "reason": "maybe-flags (fs) \u2014 manual confirm hermetic-as-claimed or rename"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "directing/products/cards/tests/clearing-flow.test.ts",
-      "verdict": "non-hermetic",
-      "rules": {
-        "network": {
-          "status": "fail",
-          "hits": [
-            "socket.io"
-          ]
-        },
-        "fs": {
-          "status": "pass",
-          "hits": []
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
       },
       "kind": "jest"
     },

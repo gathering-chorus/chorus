@@ -2,6 +2,11 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ['**/tests/**/*.test.ts'],
+  // #2524 convention: *.integration.test.ts excluded from hermetic default.
+  testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
+    '/node_modules/',
+    '\\.integration\\.test\\.ts$',
+  ],
   // Coverage floor (#2161).
   coverageThreshold: {
     global: { branches: 60, functions: 75, lines: 80, statements: 80 },

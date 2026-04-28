@@ -14,7 +14,6 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { SessionTailer } from '../src/session-tailer';
 import { MessageRouter } from '../src/router';
 
 // Create a temp PROJECTS_DIR with multiple matching directories
