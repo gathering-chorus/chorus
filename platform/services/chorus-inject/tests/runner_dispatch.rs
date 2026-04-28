@@ -11,7 +11,9 @@
 //! Moving logic into the library with a runner seam closes that gap honestly
 //! — the "structural exception" escape hatch is retired.
 
-use chorus_inject::{count_windows, dispatch, inject, Dispatch, OsaRunner, RealOsaRunner};
+use chorus_inject::{count_windows, dispatch, inject, Dispatch, OsaRunner};
+#[cfg(target_os = "macos")]
+use chorus_inject::RealOsaRunner;
 use std::cell::RefCell;
 use std::io;
 use std::os::unix::process::ExitStatusExt;

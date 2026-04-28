@@ -23,6 +23,7 @@
 
 use std::process::Command;
 
+#[cfg(target_os = "macos")]
 fn chorus_root() -> String {
     std::env::var("CHORUS_ROOT").ok().filter(|s| !s.is_empty())
         .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
@@ -35,6 +36,7 @@ fn chorus_root() -> String {
 // used by scripts that assume an installed release build (nudge e2e below
 // still shells out through the release binary via the nudge script).
 const INJECT_BIN: &str = env!("CARGO_BIN_EXE_chorus-inject");
+#[cfg(target_os = "macos")]
 fn nudge_script() -> String { format!("{}/platform/scripts/nudge", chorus_root()) }
 // AC1 (source-gate) moved to inject_source_gate.rs per #2155.
 
