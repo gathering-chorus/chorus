@@ -88,3 +88,75 @@ for t in d['failing_tests']:
   RUN_TESTS_FAKE=pass run "$RUN_TESTS" --domain=cards-service --category=garbage --budget=10
   [ "$status" -eq 3 ]
 }
+
+# --- Wave 2: domain resolver ------------------------------------------------
+
+@test "resolver: --resolve flag returns file list for a graph-covered domain" {
+  unset RUN_TESTS_FAKE
+  run "$RUN_TESTS" --domain=cards-service --category=hermetic --budget=10 --resolve
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+assert 'files' in d, f'missing files key: {list(d.keys())}'
+assert 'source' in d, 'missing source key'
+assert d['source'] in ('graph','filepath'), f'unknown source: {d[\"source\"]}'
+assert isinstance(d['files'],list)
+"
+}
+
+@test "resolver: unknown domain falls back to filepath, source='filepath'" {
+  unset RUN_TESTS_FAKE
+  run "$RUN_TESTS" --domain=nonexistent-fake-domain --category=hermetic --budget=10 --resolve
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+assert d['source']=='filepath', f'expected filepath fallback, got {d[\"source\"]}'
+"
+}
+
+@test "resolver: bad domain id (special chars) still exits cleanly via filepath fallback" {
+  unset RUN_TESTS_FAKE
+  run "$RUN_TESTS" --domain=garbage_with_chars --category=hermetic --budget=10 --resolve
+  [ "$status" -eq 0 ]
+}
+
+# --- Wave 3: category filter + dispatch -------------------------------------
+
+@test "category filter: hermetic excludes *.integration.test.ts files" {
+  unset RUN_TESTS_FAKE
+  run "$RUN_TESTS" --domain=cards-service --category=hermetic --budget=10 --resolve
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for f in d['files']:
+    assert '.integration.test.' not in f and '.contract.test.' not in f and '.smoke.test.' not in f, f'category leak: {f}'
+"
+}
+
+@test "category filter: integration includes only *.integration.* files" {
+  unset RUN_TESTS_FAKE
+  run "$RUN_TESTS" --domain=cards-service --category=integration --budget=10 --resolve
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for f in d['files']:
+    assert '.integration.' in f, f'non-integration in integration filter: {f}'
+"
+}
+
+# --- Wave 4: budget timeout (real) ------------------------------------------
+
+@test "budget timeout: --budget=1 with sleep harness halts and returns exit 2" {
+  unset RUN_TESTS_FAKE
+  RUN_TESTS_HARNESS=sleep run "$RUN_TESTS" --domain=cards-service --category=hermetic --budget=1
+  [ "$status" -eq 2 ]
+  echo "$output" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+assert d['partial'] is True
+"
+}

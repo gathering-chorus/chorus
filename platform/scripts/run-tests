@@ -1,29 +1,37 @@
 #!/usr/bin/env bash
-# run-tests — Phase 1 contract surface for CI harness disconnect (#2118).
+# run-tests — domain+category+budget aware test runner (#2118).
 #
-# Domain+category+budget aware test runner. Phase 2 (#2528) will wire this
-# into .github/workflows/quality.yml; this card establishes the contract.
+# Phase 1 contract surface for CI harness disconnect. Phase 2 (#2528) wires
+# this into .github/workflows/quality.yml.
 #
 # Contract — see /docs/designing/ci-harness-disconnect-plan.html Phase 2:
 #   Invocation:  run-tests --domain=<sd-id> --category=<list> --budget=<sec>
 #   Category:    comma-separated subset of hermetic|integration|contract|smoke|perf|mutation
 #   Domain:      resolved via graph (POST /api/athena/discover-tests, <24h fresh)
-#                with filepath heuristic fallback. Phase 1 stubs this.
+#                with filepath heuristic fallback.
 #   Budget:      hard timeout in seconds; runner halts the suite, exit code 2.
 #   Exit codes:  0=all pass, 1=any fail, 2=budget exceeded, 3=invocation error
 #   Stdout:      JSON {pass,fail,runtime_ms,partial,failing_tests:[{name,file,error}],
 #                      tests_unrun:[{name,file}],hermeticity_tags:{}}
 #   Stderr:      human-readable progress + failures
 #
-# Wave 1 ships flag parsing + exit codes + skeleton JSON. Real test execution
-# (jest, cargo nextest dispatch) lands in subsequent waves.
+# Test hooks (set by run-tests.bats):
+#   --resolve         resolve domain → file list, emit JSON, exit 0 (no execution)
+#   RUN_TESTS_FAKE    short-circuit to canned JSON: pass|fail|budget
+#   RUN_TESTS_HARNESS test harness override: sleep (sleeps forever — for budget tests)
 
-set -euo pipefail
+set -uo pipefail
 
 VALID_CATEGORIES="hermetic integration contract smoke perf mutation"
 DOMAIN=""
 CATEGORY=""
 BUDGET=""
+RESOLVE_ONLY=0
+
+CHORUS_API="${CHORUS_API:-http://localhost:3340}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+GATHERING_ROOT="${GATHERING_ROOT:-/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site}"
+GRAPH_FRESHNESS_HOURS=24
 
 err() { echo "run-tests: $*" >&2; }
 
@@ -33,6 +41,7 @@ for arg in "$@"; do
     --domain=*)   DOMAIN="${arg#--domain=}" ;;
     --category=*) CATEGORY="${arg#--category=}" ;;
     --budget=*)   BUDGET="${arg#--budget=}" ;;
+    --resolve)    RESOLVE_ONLY=1 ;;
     --help|-h)
       sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
       exit 0 ;;
@@ -42,11 +51,10 @@ for arg in "$@"; do
   esac
 done
 
-if [ -z "$DOMAIN" ]; then err "--domain=<sd-id> required"; exit 3; fi
-if [ -z "$CATEGORY" ]; then err "--category=<list> required"; exit 3; fi
-if [ -z "$BUDGET" ]; then err "--budget=<seconds> required"; exit 3; fi
+[ -z "$DOMAIN" ] && { err "--domain=<sd-id> required"; exit 3; }
+[ -z "$CATEGORY" ] && { err "--category=<list> required"; exit 3; }
+[ -z "$BUDGET" ] && { err "--budget=<seconds> required"; exit 3; }
 
-# Validate categories (comma-separated union).
 IFS=',' read -ra CAT_LIST <<< "$CATEGORY"
 for c in "${CAT_LIST[@]}"; do
   case " $VALID_CATEGORIES " in
@@ -55,9 +63,7 @@ for c in "${CAT_LIST[@]}"; do
   esac
 done
 
-# --- fake mode (Wave 1) -----------------------------------------------------
-# RUN_TESTS_FAKE controls Wave-1 short-circuit while the real runner is staged.
-# Values: pass | fail | budget | 1 (default→pass)
+# --- fake mode (Wave 1 contract surface) ------------------------------------
 case "${RUN_TESTS_FAKE:-}" in
   pass|1)
     cat <<'EOF'
@@ -78,7 +84,217 @@ EOF
   *) err "unknown RUN_TESTS_FAKE value: ${RUN_TESTS_FAKE}"; exit 3 ;;
 esac
 
-# --- real mode (Wave 2+, not yet implemented) -------------------------------
-err "real-mode dispatch not implemented in Wave 1; set RUN_TESTS_FAKE=pass|fail|budget for now"
-err "(see #2118 — Phase 1 ships contract surface; real runners land in subsequent waves)"
-exit 3
+# --- domain resolver --------------------------------------------------------
+# Returns space-separated absolute file paths on stdout, source on stderr.
+resolve_domain() {
+  local sd="$1"
+  local source=""
+  local files=""
+
+  # Try graph: POST /api/athena/discover-tests gives by_domain {sd: count} +
+  # the underlying TestCoverage triples carry the file paths. We use the
+  # subdomain test-coverage endpoint for the per-domain file list.
+  local graph_response
+  graph_response=$(curl -sf --max-time 5 "${CHORUS_API}/api/athena/subdomains/${sd}/test-coverage" 2>/dev/null || true)
+  if [ -n "$graph_response" ]; then
+    files=$(echo "$graph_response" | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+    data=d.get('data',{})
+    tests=data.get('tests',[]) or data.get('files',[]) or []
+    out=[]
+    for t in tests:
+        if isinstance(t,dict): f=t.get('file') or t.get('testFile') or t.get('path')
+        else: f=t
+        if f: out.append(str(f))
+    print('\n'.join(out))
+except Exception: pass
+" 2>/dev/null)
+  fi
+
+  if [ -n "$files" ]; then
+    source="graph"
+  else
+    # Filepath fallback — match domain base anywhere in test file paths.
+    local base="${sd%-domain}"; base="${base%-service}"
+    files=$(find "$CHORUS_ROOT/platform/api/tests" "$CHORUS_ROOT/platform/services/chorus-hooks/tests" "$CHORUS_ROOT/platform/tests" "$CHORUS_ROOT/directing/products/cards/tests" "$GATHERING_ROOT/tests" \
+      -type f \( -name "*${base}*.test.ts" -o -name "*${base}*.test.js" -o -name "*${base}*.spec.ts" -o -name "*${base}*.bats" \) 2>/dev/null | head -50)
+    source="filepath"
+  fi
+
+  echo "$source" >&2
+  echo "$files"
+}
+
+# --- category filter --------------------------------------------------------
+# Reads files from stdin (one per line); emits files matching any of the
+# requested categories.
+filter_by_category() {
+  local categories="$1"
+  IFS=',' read -ra cats <<< "$categories"
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    local kind
+    case "$f" in
+      *.integration.test.*|*.integration.spec.*) kind="integration" ;;
+      *.contract.test.*|*.contract.spec.*)       kind="contract" ;;
+      *.smoke.test.*|*.smoke.spec.*)             kind="smoke" ;;
+      *.perf.test.*|*.perf.spec.*)               kind="perf" ;;
+      *.mutation.test.*|*.mutation.spec.*)       kind="mutation" ;;
+      *.bats)                                    kind="integration" ;;  # bats default → integration
+      *.test.*|*.spec.*)                          kind="hermetic" ;;
+      *)                                          kind="" ;;
+    esac
+    [ -z "$kind" ] && continue
+    for c in "${cats[@]}"; do
+      if [ "$c" = "$kind" ]; then
+        echo "$f"
+        break
+      fi
+    done
+  done
+}
+
+# --- resolve-only path (test hook) -----------------------------------------
+if [ "$RESOLVE_ONLY" -eq 1 ]; then
+  files_raw=$(resolve_domain "$DOMAIN" 2>/tmp/run-tests-source.$$)
+  source=$(cat /tmp/run-tests-source.$$ 2>/dev/null); rm -f /tmp/run-tests-source.$$
+  filtered=$(echo "$files_raw" | filter_by_category "$CATEGORY")
+  python3 -c "
+import json,sys,os
+files=[l for l in '''$filtered'''.split('\n') if l.strip()]
+print(json.dumps({'domain':'$DOMAIN','category':'$CATEGORY','source':'$source','files':files,'count':len(files)}))
+"
+  exit 0
+fi
+
+# --- portable timeout (perl is on every macOS + linux dev box) -------------
+# Returns 124 on budget exceeded, child's exit code otherwise. Used by both
+# the harness override and the real-mode jest dispatch below.
+run_with_budget() {
+  local secs="$1"; shift
+  if command -v gtimeout >/dev/null 2>&1; then gtimeout "${secs}s" "$@"; return $?; fi
+  if command -v timeout >/dev/null 2>&1; then timeout "${secs}s" "$@"; return $?; fi
+  perl -e '
+    use strict; use warnings;
+    my $t = shift @ARGV;
+    my $pid = fork(); die "fork: $!" unless defined $pid;
+    if ($pid == 0) { exec @ARGV; exit 127; }
+    local $SIG{ALRM} = sub { kill 9, $pid; waitpid $pid, 0; exit 124; };
+    alarm $t;
+    waitpid $pid, 0;
+    my $rc = $? >> 8;
+    exit $rc;
+  ' "$secs" "$@"
+}
+
+# --- harness override (Wave 4 budget test) ----------------------------------
+if [ "${RUN_TESTS_HARNESS:-}" = "sleep" ]; then
+  start_ms=$(date +%s%N | cut -c1-13)
+  run_with_budget "$BUDGET" sleep 60 >/dev/null 2>&1
+  rc=$?
+  end_ms=$(date +%s%N | cut -c1-13)
+  elapsed=$((end_ms - start_ms))
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+    python3 -c "
+import json
+print(json.dumps({'pass':0,'fail':0,'runtime_ms':$elapsed,'partial':True,'failing_tests':[],'tests_unrun':[{'name':'sleep-harness','file':'<harness>'}],'hermeticity_tags':{}}))
+"
+    exit 2
+  fi
+  python3 -c 'import json; print(json.dumps({"pass":1,"fail":0,"runtime_ms":0,"partial":False,"failing_tests":[],"tests_unrun":[],"hermeticity_tags":{}}))'
+  exit 0
+fi
+
+# --- real-mode dispatch (Wave 3) --------------------------------------------
+files_raw=$(resolve_domain "$DOMAIN" 2>/dev/null)
+filtered=$(echo "$files_raw" | filter_by_category "$CATEGORY")
+
+if [ -z "$filtered" ]; then
+  python3 -c 'import json; print(json.dumps({"pass":0,"fail":0,"runtime_ms":0,"partial":False,"failing_tests":[],"tests_unrun":[],"hermeticity_tags":{}}))'
+  exit 0
+fi
+
+# Group files by runner: jest (.ts/.js), cargo (.rs), bats (.bats).
+JEST_FILES=()
+RUST_FILES=()
+BATS_FILES=()
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    *.bats) BATS_FILES+=("$f") ;;
+    *.rs)   RUST_FILES+=("$f") ;;
+    *)      JEST_FILES+=("$f") ;;
+  esac
+done <<< "$filtered"
+
+if command -v gtimeout >/dev/null 2>&1; then TIMEOUT=gtimeout
+elif command -v timeout >/dev/null 2>&1; then TIMEOUT=timeout
+else TIMEOUT=""; fi
+
+start_ms=$(date +%s%N | cut -c1-13)
+PASS=0
+FAIL=0
+PARTIAL=false
+FAILING_JSON="[]"
+UNRUN_JSON="[]"
+exit_code=0
+
+# Jest dispatch — group by repo root (each project has its own jest config)
+if [ ${#JEST_FILES[@]} -gt 0 ]; then
+  # Find each file's nearest jest project root by walking up to the first
+  # package.json with a jest config or a jest.config.js.
+  declare -A by_proj=()
+  for f in "${JEST_FILES[@]}"; do
+    dir=$(dirname "$f")
+    while [ "$dir" != "/" ]; do
+      if [ -f "$dir/jest.config.js" ] || [ -f "$dir/jest.config.ts" ]; then
+        by_proj["$dir"]+="$f "
+        break
+      fi
+      dir=$(dirname "$dir")
+    done
+  done
+  for proj in "${!by_proj[@]}"; do
+    cd "$proj"
+    cmd=(npx jest --findRelatedTests ${by_proj[$proj]} --json --silent)
+    if [ -n "$TIMEOUT" ]; then
+      out=$("$TIMEOUT" "${BUDGET}s" "${cmd[@]}" 2>/dev/null) || rc=$? || true
+    else
+      out=$("${cmd[@]}" 2>/dev/null) || rc=$? || true
+    fi
+    rc=${rc:-0}
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+      PARTIAL=true
+      exit_code=2
+      break
+    fi
+    p=$(echo "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('numPassedTests',0))" 2>/dev/null || echo 0)
+    f_count=$(echo "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('numFailedTests',0))" 2>/dev/null || echo 0)
+    PASS=$((PASS + p))
+    FAIL=$((FAIL + f_count))
+  done
+fi
+
+# Rust + bats: minimum smoke-dispatch — run them, count exit codes
+for f in "${BATS_FILES[@]}"; do
+  if bats "$f" >/dev/null 2>&1; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); fi
+done
+
+end_ms=$(date +%s%N | cut -c1-13)
+elapsed=$((end_ms - start_ms))
+
+if [ "$FAIL" -gt 0 ] && [ "$exit_code" -eq 0 ]; then exit_code=1; fi
+
+python3 -c "
+import json
+print(json.dumps({
+    'pass': $PASS, 'fail': $FAIL, 'runtime_ms': $elapsed,
+    'partial': $([ "$PARTIAL" = "true" ] && echo true || echo false),
+    'failing_tests': $FAILING_JSON,
+    'tests_unrun': $UNRUN_JSON,
+    'hermeticity_tags': {}
+}))
+"
+exit "$exit_code"

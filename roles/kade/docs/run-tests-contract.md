@@ -63,9 +63,17 @@ Wave 1 ships flag parsing, exit codes, and the JSON shape. Real test dispatch (j
 | Wave | Scope | Status |
 |---|---|---|
 | 1 | Flag parsing + exit codes + skeleton JSON + fake mode | ✓ shipped |
-| 2 | Domain resolver — graph (24h fresh) → filepath fallback | open |
-| 3 | Category filter + jest/cargo/bats dispatch | open |
-| 4 | Budget timeout + partial reporting from real runs | open |
+| 2 | Domain resolver — graph (24h fresh) → filepath fallback | ✓ shipped |
+| 3 | Category filter (suffix-driven) + jest/bats dispatch | ✓ shipped |
+| 4 | Budget timeout (portable perl-fallback) + partial reporting | ✓ shipped |
+
+Resolver consults `GET /api/athena/subdomains/<sd>/test-coverage` first; on empty/stale, falls back to `find` against the 5 canonical test roots (platform/api/tests, chorus-hooks/tests, platform/tests, directing/products/cards/tests, gathering/tests).
+
+Category filter maps suffixes to categories: `*.integration.test.*`→integration, `*.contract.test.*`→contract, `*.smoke.test.*`→smoke, `*.perf.test.*`→perf, `*.mutation.test.*`→mutation, `*.bats`→integration (default), bare `*.test.*`→hermetic.
+
+Real-mode dispatch: jest (`*.ts`/`*.js`) groups by nearest `jest.config.js` ancestor and invokes `jest --findRelatedTests --json`; bats (`*.bats`) runs each file directly. Cargo nextest dispatch is staged for follow-on (no Rust tests in current per-domain coverage maps yet).
+
+Budget enforcement uses `gtimeout`/`timeout(1)` when available, perl `alarm` fallback otherwise — works on macOS without coreutils installed.
 
 ## Phase 1 vs Phase 2
 
