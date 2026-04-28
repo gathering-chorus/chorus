@@ -2810,6 +2810,48 @@ app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
   }
 });
 
+// Doc-catalog curation API (#2549) — five-field tag write + lineage edges.
+// Tags persist in urn:chorus:instances; lineage edges use chorus:supersedes /
+// chorus:derivedFrom / chorus:reshapedInto predicates. Spine events on every
+// curation action.
+import {
+  writeCatalogTags,
+  writeCatalogLineage,
+  readCatalogDoc,
+  readCatalogDrift,
+} from './handlers/catalog-curation';
+
+const catalogCurationDeps = () => ({
+  sparqlQuery: athenaSparqlQuery,
+  sparqlUpdate: athenaSparqlUpdate,
+  envelope: athenaEnvelope,
+  emitSpine: (event: string, fields: Record<string, string>) => {
+    const args = [event, 'wren'];
+    for (const [k, v] of Object.entries(fields)) args.push(`${k}=${v}`);
+    execFile(CHORUS_LOG, args, () => { /* fire-and-forget */ });
+  },
+});
+
+app.post('/api/chorus/catalog/tags', async (req: Request, res: Response) => {
+  const r = await writeCatalogTags(catalogCurationDeps(), req.body);
+  res.status(r.status).json(r.body);
+});
+
+app.post('/api/chorus/catalog/lineage', async (req: Request, res: Response) => {
+  const r = await writeCatalogLineage(catalogCurationDeps(), req.body);
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/catalog/doc/:hrefb64', async (req: Request, res: Response) => {
+  const r = await readCatalogDoc(catalogCurationDeps(), req.params.hrefb64);
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/catalog/drift', async (_req: Request, res: Response) => {
+  const r = await readCatalogDrift(catalogCurationDeps());
+  res.status(r.status).json(r.body);
+});
+
 // Doc inventory (#2457) — reads TSV produced by doc-inventory.sh
 app.get('/api/doc-inventory', (_req: Request, res: Response) => {
   const tsvPath = path.resolve(__dirname, '..', '..', '..', 'knowledge', 'doc-inventory.tsv');
