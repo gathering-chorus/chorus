@@ -263,9 +263,17 @@ if echo "$STAGED" | grep -qE '^platform/api/src/mcp/.*\.ts$'; then
   fi
 fi
 
-# --- Check 4.6: cargo test (per affected Rust crate) ---
+# --- Check 4.6: cargo test (per affected Rust crate) — hermetic only ---
 # ADR-026 §b: cargo test runs in pre-commit when *.rs files stage in any
 # Rust crate. Two crates today: chorus-hooks, chorus-inject.
+#
+# DEC-2525 (#2526 wave 1): pre-commit runs `cargo test --lib --bins`,
+# matching the CI required-check filter. Inline `#[test]` in src/ are
+# hermetic by construction; tests/*.rs integration suite is non-hermetic
+# (axis-4 state-ownership clashes with live role daemons — see #2558,
+# #2559) and runs in the cargo-test-integration CI job (continue-on-error)
+# and the nightly drift lane (#2527, future). Pre-commit blocks only on
+# the hermetic tier so non-hermetic flake doesn't train --no-verify.
 RUST_CRATES=(
   "platform/services/chorus-hooks"
   "platform/services/chorus-inject"
@@ -273,9 +281,9 @@ RUST_CRATES=(
 
 for crate in "${RUST_CRATES[@]}"; do
   if echo "$STAGED" | grep -qE "^${crate}/.*\.rs$"; then
-    run_check "$crate: cargo test" \
+    run_check "$crate: cargo test --lib --bins" \
       "$REPO_ROOT/$crate" \
-      "cargo test --quiet 2>&1"
+      "cargo test --lib --bins --quiet 2>&1"
   fi
 done
 
