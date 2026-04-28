@@ -170,8 +170,17 @@ print(json.dumps({'domain':'$DOMAIN','category':'$CATEGORY','source':'$source','
 fi
 
 # --- portable timeout (perl is on every macOS + linux dev box) -------------
-# Returns 124 on budget exceeded, child's exit code otherwise. Used by both
-# the harness override and the real-mode jest dispatch below.
+# Returns 124 on budget exceeded, child's exit code otherwise.
+#
+# Preference order: gtimeout (macOS coreutils) → timeout (GNU coreutils, present on
+# all linux including ubuntu-latest in GHA) → perl alarm fallback.
+#
+# Semantics caveat (Silas, #2118 review): coreutils timeout sends SIGTERM to the
+# whole process group, so a jest run that spawns long-lived children gets the
+# whole tree halted. The perl alarm fallback only signals the perl process —
+# weaker child isolation. Real difference, but CI runs on ubuntu-latest where
+# GNU timeout is always present, so the fallback is last-resort for local
+# misconfigured boxes only and should never fire in CI.
 run_with_budget() {
   local secs="$1"; shift
   if command -v gtimeout >/dev/null 2>&1; then gtimeout "${secs}s" "$@"; return $?; fi
