@@ -17,7 +17,7 @@
 
 fn chorus_root() -> String {
     std::env::var("CHORUS_ROOT").ok().filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
+        .expect("CHORUS_ROOT must be set and non-empty")
 }
 
 #[test]

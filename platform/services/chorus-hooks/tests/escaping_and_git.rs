@@ -99,7 +99,7 @@ fn git_commit_blocked_inside_team_repo() {
     let chorus_root = std::env::var("CHORUS_ROOT")
         .ok()
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+        .expect("CHORUS_ROOT must be set and non-empty");
     let cwd = format!("{}/roles/kade", chorus_root);
     let hook_input = json!({
         "tool_name": "Bash",

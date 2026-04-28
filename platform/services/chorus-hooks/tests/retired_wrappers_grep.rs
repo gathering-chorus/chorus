@@ -30,7 +30,12 @@
 use std::path::Path;
 use std::process::Command;
 
-const REPO_ROOT: &str = "/Users/jeffbridwell/CascadeProjects/chorus";
+fn repo_root() -> String {
+    std::env::var("CHORUS_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .expect("CHORUS_ROOT must be set and non-empty")
+}
 
 fn repo_scan(pattern: &str) -> Vec<String> {
     let out = Command::new("grep")
@@ -66,7 +71,7 @@ fn repo_scan(pattern: &str) -> Vec<String> {
             "--exclude=metrics-manifest.json",    // "resolved" entries describe past work
             "--exclude=roadmap-mapping.json",      // historical roadmap reference
             "--exclude=brief-pipeline-flow.test.ts", // test comment only (blocked by tsc gate)
-            REPO_ROOT,
+            &repo_root(),
         ])
         .output()
         .expect("grep should run");
@@ -108,7 +113,7 @@ fn session_start_script_file_does_not_exist() {
         "messages/scripts/session-start.sh",
     ];
     for c in candidates {
-        let p = format!("{}/{}", REPO_ROOT, c);
+        let p = format!("{}/{}", &repo_root(), c);
         assert!(
             !Path::new(&p).exists(),
             "session-start.sh must be retired (#2311 AC#6): {}",
@@ -124,7 +129,7 @@ fn chorus_prompt_script_file_does_not_exist() {
         "messages/scripts/chorus-prompt.sh",
     ];
     for c in candidates {
-        let p = format!("{}/{}", REPO_ROOT, c);
+        let p = format!("{}/{}", &repo_root(), c);
         assert!(
             !Path::new(&p).exists(),
             "chorus-prompt.sh must be retired (#2311 AC#6): {}",
