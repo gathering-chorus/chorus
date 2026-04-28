@@ -70,8 +70,8 @@ export interface HandlerResult {
   body: unknown;
 }
 
-const VALID_PRODUCTS = new Set(['chorus', 'gathering', 'akasha', 'borg']);
-const VALID_SUBPRODUCTS = new Set(['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality']);
+const VALID_PRODUCTS = new Set(['chorus', 'gathering', 'akasha']);
+const VALID_SUBPRODUCTS = new Set(['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality', 'borg']);
 const VALID_ROLES = new Set(['wren', 'silas', 'kade', 'jeff']);
 
 function buildValidSubdomains(): Set<string> {

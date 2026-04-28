@@ -35,6 +35,10 @@
   th { background: #1f1f1f; color: #aaa; font-weight: 500; }
   td.title a { color: #93c5fd; text-decoration: none; }
   td.title a:hover { text-decoration: underline; }
+  td.title .open-link { color: #6b7280; text-decoration: none; margin-left: 0.4rem; font-size: 0.85rem; }
+  td.title .open-link:hover { color: #93c5fd; }
+  td.title .doc-name { color: #e6e6e6; cursor: pointer; }
+  td.title .doc-name:hover { color: #93c5fd; }
   td.path { font-family: ui-monospace, monospace; font-size: 0.78rem; color: #777; }
   .empty { padding: 1rem; color: #888; text-align: center; }
   tr.curatable { cursor: pointer; }
@@ -199,8 +203,8 @@ async function load() {
   allTagged = tagsR.tagged || [];
   topicGroups = catR.groups || [];
   // Vocab maps Athena ids → tagger short names so the dropdowns match what the API validates against.
-  vocab.products = ['chorus', 'gathering', 'akasha', 'borg'];
-  vocab.subproducts = ['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality'];
+  vocab.products = ['chorus', 'gathering', 'akasha'];
+  vocab.subproducts = ['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality', 'borg'];
   vocab.subdomains = ((subdomainsR.data || []).map(sd => (sd.id || (sd.uri || '').split('#').pop() || '').toLowerCase()).filter(Boolean));
   // Fallback: union with tagger-known set so the dropdown isn't empty if Athena underreports
   if (vocab.subdomains.length < 20) {
@@ -334,7 +338,7 @@ function renderRight() {
     const drift = driftByHref.get(d.href);
     const driftPill = drift && drift.length ? `<span class="drift-pill" title="path↔tag divergence on: ${drift.join(', ')}">drift</span>` : '';
     const curatedPill = d.tags && d.tags.product ? '' : '<span class="curated-pill" style="background:#7c2d12;color:#fed7aa">untagged</span>';
-    return `<tr class="curatable" data-href="${d.href}" data-title="${d.title}"><td class="title"><a href="${d.href}" onclick="event.stopPropagation()">${d.title}</a>${driftPill}${curatedPill}</td><td>${d.source}</td><td class="path">${d.href}</td></tr>`;
+    return `<tr class="curatable" data-href="${d.href}" data-title="${d.title}"><td class="title"><span class="doc-name">${d.title}</span><a class="open-link" href="${d.href}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open doc in new tab">↗</a>${driftPill}${curatedPill}</td><td>${d.source}</td><td class="path">${d.href}</td></tr>`;
   }).join('') + (docs.length > 500 ? `<tr><td colspan="3" class="empty">(showing first 500 of ${docs.length})</td></tr>` : '');
   // Wire row click → curation panel
   document.querySelectorAll('tr.curatable').forEach(tr => {

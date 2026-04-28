@@ -6,7 +6,7 @@
  * doc-tagger — infer Athena ontology tags for catalog docs (#2520).
  *
  * Maps a doc (path + filename + optional frontmatter) to:
- *   product:    chorus | gathering | akasha | borg
+ *   product:    chorus | gathering | akasha
  *   subproduct: loom | werk | athena | convergence | clearing | quality (chorus only)
  *   subdomain:  one of Athena's 48 subdomains (e.g., loom-decisions, blog-domain)
  *
@@ -90,9 +90,10 @@ function tagsFromFilename(basename: string): Partial<DocTags> | null {
     }
   }
   // Subproduct keyword in name → Chorus / <subproduct>
+  // Borg demoted to Chorus subproduct per ontology change 2026-04-28.
   for (const sp of ['loom', 'werk', 'athena', 'convergence', 'clearing', 'borg']) {
     if (bn.startsWith(`${sp}-`) || bn.includes(`-${sp}-`) || bn.includes(`${sp}_`)) {
-      return { product: 'chorus', subproduct: sp === 'borg' ? undefined : sp,
+      return { product: 'chorus', subproduct: sp,
                confidence: 'medium', signal: 'filename' };
     }
   }
