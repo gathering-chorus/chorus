@@ -9,8 +9,7 @@ use chorus_hooks::shared::state_paths::chorus_root;
 
 
 fn home() -> String {
-    std::env::var("HOME")
-        .unwrap_or_else(|_| "/Users/jeffbridwell".to_string())
+    std::env::var("HOME").expect("HOME must be set")
 }
 
 fn full_path() -> String {
