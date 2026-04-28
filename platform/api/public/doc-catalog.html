@@ -37,6 +37,42 @@
   td.title a:hover { text-decoration: underline; }
   td.path { font-family: ui-monospace, monospace; font-size: 0.78rem; color: #777; }
   .empty { padding: 1rem; color: #888; text-align: center; }
+  tr.curatable { cursor: pointer; }
+  tr.curatable:hover td { background: #252525; }
+  .drift-pill { display: inline-block; background: #7f1d1d; color: #fee2e2; font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 8px; margin-left: 0.4rem; vertical-align: middle; }
+  .curated-pill { display: inline-block; background: #064e3b; color: #d1fae5; font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 8px; margin-left: 0.4rem; vertical-align: middle; }
+  /* Side panel */
+  .panel { position: fixed; top: 0; right: 0; height: 100vh; width: 420px; background: #1a1a1a; border-left: 1px solid #2a2a2a; box-shadow: -4px 0 16px rgba(0,0,0,0.4); transform: translateX(100%); transition: transform 0.18s ease-out; z-index: 100; display: flex; flex-direction: column; }
+  .panel.open { transform: translateX(0); }
+  .panel-header { padding: 1rem 1.25rem; background: #111; border-bottom: 1px solid #2a2a2a; display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+  .panel-header h3 { font-size: 0.95rem; margin: 0; color: #fff; word-break: break-word; }
+  .panel-header .href { color: #777; font-family: ui-monospace, monospace; font-size: 0.72rem; margin-top: 0.25rem; word-break: break-all; }
+  .panel-close { background: none; border: none; color: #888; font-size: 1.4rem; cursor: pointer; padding: 0; line-height: 1; }
+  .panel-close:hover { color: #fff; }
+  .panel-body { padding: 1rem 1.25rem; overflow-y: auto; flex: 1; }
+  .panel-section { margin-bottom: 1.25rem; }
+  .panel-section h4 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin: 0 0 0.5rem; }
+  .field { margin-bottom: 0.6rem; }
+  .field label { display: block; color: #aaa; font-size: 0.78rem; margin-bottom: 0.2rem; }
+  .field select, .field input { width: 100%; background: #2a2a2a; color: #e6e6e6; border: 1px solid #444; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.85rem; border-radius: 4px; }
+  .field .suggest { color: #fbbf24; font-size: 0.72rem; margin-left: 0.4rem; font-style: italic; }
+  .panel-footer { padding: 0.75rem 1.25rem; background: #111; border-top: 1px solid #2a2a2a; display: flex; gap: 0.5rem; justify-content: flex-end; }
+  .btn { background: #3b82f6; color: white; border: none; padding: 0.4rem 0.9rem; border-radius: 4px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+  .btn:hover { background: #2563eb; }
+  .btn.secondary { background: #2a2a2a; color: #aaa; }
+  .btn.secondary:hover { background: #333; color: #fff; }
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: #064e3b; color: #d1fae5; padding: 0.6rem 1rem; border-radius: 4px; font-size: 0.85rem; z-index: 200; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .toast.error { background: #7f1d1d; color: #fee2e2; }
+  .lineage-item { display: flex; gap: 0.4rem; align-items: center; font-size: 0.78rem; padding: 0.2rem 0; color: #d1d5db; }
+  .lineage-item .pred { color: #fbbf24; font-family: ui-monospace, monospace; font-size: 0.72rem; }
+  .lineage-item .href-text { font-family: ui-monospace, monospace; font-size: 0.72rem; color: #93c5fd; word-break: break-all; flex: 1; }
+  .lineage-add { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+  .lineage-add select { flex: 0 0 auto; }
+  .lineage-add input { flex: 1; }
+  .lineage-add button { flex: 0 0 auto; padding: 0.3rem 0.5rem; font-size: 0.78rem; }
+  .audit-line { font-family: ui-monospace, monospace; font-size: 0.72rem; color: #888; padding: 0.15rem 0; border-bottom: 1px solid #2a2a2a; }
+  .audit-line .ts { color: #555; }
 </style>
 </head>
 <body>
@@ -70,25 +106,121 @@
   </main>
 </div>
 
+<aside class="panel" id="panel" aria-hidden="true">
+  <div class="panel-header">
+    <div>
+      <h3 id="panel-title">Curate doc</h3>
+      <div class="href" id="panel-href"></div>
+    </div>
+    <button class="panel-close" id="panel-close" aria-label="Close">×</button>
+  </div>
+  <div class="panel-body">
+
+    <div class="panel-section">
+      <h4>Tags</h4>
+      <div class="field">
+        <label>Product <span class="suggest" id="suggest-product"></span></label>
+        <select id="f-product"><option value="">—</option></select>
+      </div>
+      <div class="field">
+        <label>Subproduct <span class="suggest" id="suggest-subproduct"></span></label>
+        <select id="f-subproduct"><option value="">—</option></select>
+      </div>
+      <div class="field">
+        <label>Domain</label>
+        <input id="f-domain" type="text" placeholder="e.g., chorus, gathering">
+      </div>
+      <div class="field">
+        <label>Subdomain <span class="suggest" id="suggest-subdomain"></span></label>
+        <select id="f-subdomain"><option value="">—</option></select>
+      </div>
+      <div class="field">
+        <label>Role</label>
+        <select id="f-role">
+          <option value="">—</option>
+          <option value="wren">wren</option>
+          <option value="silas">silas</option>
+          <option value="kade">kade</option>
+          <option value="jeff">jeff</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="panel-section" id="lineage-section">
+      <h4>Lineage</h4>
+      <div id="lineage-list"></div>
+      <div class="lineage-add">
+        <select id="lin-pred">
+          <option value="supersedes">supersedes</option>
+          <option value="derivedFrom">derivedFrom</option>
+          <option value="reshapedInto">reshapedInto</option>
+        </select>
+        <input id="lin-target" type="text" placeholder="target href (e.g., /loom/principles-v1.html)">
+        <button class="btn" id="lin-add">+</button>
+      </div>
+    </div>
+
+    <div class="panel-section" id="audit-section">
+      <h4>Audit</h4>
+      <div id="audit-list" style="font-size: 0.75rem; color: #777;">No events yet.</div>
+    </div>
+
+  </div>
+  <div class="panel-footer">
+    <button class="btn secondary" id="panel-cancel">Cancel</button>
+    <button class="btn" id="panel-save">Save tags</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
 <script>
 let tree = null;
 let allTagged = [];
 let topicGroups = [];
 let viewMode = 'hierarchy'; // 'hierarchy' | 'topic'
 let selected = null;  // { kind, id?, path[] }
+// #2550 curation surface state
+let vocab = { products: [], subproducts: [], subdomains: [] };
+let driftByHref = new Map();  // href → divergence_fields[]
+let panelDoc = null;  // { href, title, suggest, current }
 
 async function load() {
-  const [treeR, tagsR, catR] = await Promise.all([
+  const [treeR, tagsR, catR, productsR, subproductsR, subdomainsR, driftR] = await Promise.all([
     fetch('/api/doc-catalog/tree').then(r => r.json()),
     fetch('/api/doc-catalog/tags').then(r => r.json()),
     fetch('/api/doc-catalog').then(r => r.json()),
+    fetch('/api/athena/products').then(r => r.json()).catch(() => ({ data: [] })),
+    fetch('/api/athena/subproducts').then(r => r.json()).catch(() => ({ data: [] })),
+    fetch('/api/athena/subdomains?limit=200').then(r => r.json()).catch(() => ({ data: [] })),
+    fetch('/api/chorus/catalog/drift').then(r => r.json()).catch(() => ({ data: { drift: [] } })),
   ]);
   tree = treeR;
   allTagged = tagsR.tagged || [];
   topicGroups = catR.groups || [];
+  // Vocab maps Athena ids → tagger short names so the dropdowns match what the API validates against.
+  vocab.products = ['chorus', 'gathering', 'akasha', 'borg'];
+  vocab.subproducts = ['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality'];
+  vocab.subdomains = ((subdomainsR.data || []).map(sd => (sd.id || (sd.uri || '').split('#').pop() || '').toLowerCase()).filter(Boolean));
+  // Fallback: union with tagger-known set so the dropdown isn't empty if Athena underreports
+  if (vocab.subdomains.length < 20) {
+    const taggerKnown = ['loom-analytics','loom-decisions','loom-metrics','loom-policies','loom-practices','loom-principles','loom-rcas','cards-service','roles-domain','athena-domain','domains-domain','knowledge-domain','integrations-domain','services-domain','convergence-domain','messages-domain','gates-service','tests-domain','blog-domain','books-domain','cooking-domain','documents-domain','glimmers-domain','music-domain','notes-domain','photos-domain','property-domain','social-domain','video-domain','people-domain','sexuality-domain','stories-domain','self-domain','seeds-domain','reading-domain','watching-domain'];
+    vocab.subdomains = Array.from(new Set([...vocab.subdomains, ...taggerKnown])).sort();
+  }
+  driftByHref = new Map(((driftR.data || {}).drift || []).map(e => [e.href, e.divergence_fields || []]));
+  populateVocabSelects();
   selected = { kind: 'all', path: ['All docs'] };
   renderNav();
   renderRight();
+}
+
+function populateVocabSelects() {
+  function opts(values) {
+    return ['<option value="">—</option>'].concat(values.map(v => `<option value="${v}">${v}</option>`)).join('');
+  }
+  document.getElementById('f-product').innerHTML = opts(vocab.products);
+  document.getElementById('f-subproduct').innerHTML = opts(vocab.subproducts);
+  document.getElementById('f-subdomain').innerHTML = opts(vocab.subdomains);
 }
 
 function renderNav() {
@@ -198,10 +330,163 @@ function renderRight() {
     tb.innerHTML = '<tr><td colspan="3" class="empty">No docs.</td></tr>';
     return;
   }
-  tb.innerHTML = docs.slice(0, 500).map(d =>
-    `<tr><td class="title"><a href="${d.href}">${d.title}</a></td><td>${d.source}</td><td class="path">${d.href}</td></tr>`
-  ).join('') + (docs.length > 500 ? `<tr><td colspan="3" class="empty">(showing first 500 of ${docs.length})</td></tr>` : '');
+  tb.innerHTML = docs.slice(0, 500).map(d => {
+    const drift = driftByHref.get(d.href);
+    const driftPill = drift && drift.length ? `<span class="drift-pill" title="path↔tag divergence on: ${drift.join(', ')}">drift</span>` : '';
+    const curatedPill = d.tags && d.tags.product ? '' : '<span class="curated-pill" style="background:#7c2d12;color:#fed7aa">untagged</span>';
+    return `<tr class="curatable" data-href="${d.href}" data-title="${d.title}"><td class="title"><a href="${d.href}" onclick="event.stopPropagation()">${d.title}</a>${driftPill}${curatedPill}</td><td>${d.source}</td><td class="path">${d.href}</td></tr>`;
+  }).join('') + (docs.length > 500 ? `<tr><td colspan="3" class="empty">(showing first 500 of ${docs.length})</td></tr>` : '');
+  // Wire row click → curation panel
+  document.querySelectorAll('tr.curatable').forEach(tr => {
+    tr.addEventListener('click', () => openPanel(tr.dataset.href, tr.dataset.title));
+  });
 }
+
+// ─── #2550 curation side-panel ───────────────────────────────────────────────
+
+function hrefToB64(href) {
+  return btoa(href).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function openPanel(href, title) {
+  panelDoc = { href, title };
+  document.getElementById('panel-title').textContent = title || '(untitled)';
+  document.getElementById('panel-href').textContent = href;
+  // Reset fields
+  ['f-product', 'f-subproduct', 'f-subdomain', 'f-role'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('f-domain').value = '';
+  document.getElementById('lineage-list').innerHTML = '';
+  document.getElementById('audit-list').innerHTML = '<span style="color:#555">loading…</span>';
+
+  // Suggestions from the existing tagger output
+  const tagged = allTagged.find(d => d.href === href);
+  const sug = tagged && tagged.tags ? tagged.tags : {};
+  document.getElementById('suggest-product').textContent = sug.product ? `suggest: ${sug.product} (${sug.confidence || '?'})` : '';
+  document.getElementById('suggest-subproduct').textContent = sug.subproduct ? `suggest: ${sug.subproduct}` : '';
+  document.getElementById('suggest-subdomain').textContent = sug.subdomain ? `suggest: ${sug.subdomain}` : '';
+
+  document.getElementById('panel').classList.add('open');
+  document.getElementById('panel').setAttribute('aria-hidden', 'false');
+
+  // Load persisted state from #2549 API (if doc has been curated before)
+  try {
+    const resp = await fetch(`/api/chorus/catalog/doc/${hrefToB64(href)}`);
+    if (resp.ok) {
+      const j = await resp.json();
+      const t = (j.data && j.data.tags) || {};
+      if (t.product) document.getElementById('f-product').value = t.product;
+      if (t.subproduct) document.getElementById('f-subproduct').value = t.subproduct;
+      if (t.domain) document.getElementById('f-domain').value = t.domain;
+      if (t.subdomain) document.getElementById('f-subdomain').value = t.subdomain;
+      if (t.role) document.getElementById('f-role').value = t.role;
+      renderLineage((j.data && j.data.lineage) || { in: [], out: [] });
+    } else {
+      // 404 = doc not curated yet; prefill from suggestions
+      if (sug.product) document.getElementById('f-product').value = sug.product;
+      if (sug.subproduct) document.getElementById('f-subproduct').value = sug.subproduct;
+      if (sug.subdomain) document.getElementById('f-subdomain').value = sug.subdomain;
+      renderLineage({ in: [], out: [] });
+    }
+  } catch (_) {
+    renderLineage({ in: [], out: [] });
+  }
+
+  document.getElementById('audit-list').innerHTML = '<span style="color:#555">(audit feed pending — see chorus-events catalog.tag.curated / catalog.lineage.linked)</span>';
+}
+
+function closePanel() {
+  document.getElementById('panel').classList.remove('open');
+  document.getElementById('panel').setAttribute('aria-hidden', 'true');
+  panelDoc = null;
+}
+
+function renderLineage(lineage) {
+  const out = (lineage.out || []).map(e => `<div class="lineage-item"><span class="pred">${e.predicate} →</span><span class="href-text">${e.object_href}</span></div>`);
+  const inEdges = (lineage.in || []).map(e => `<div class="lineage-item"><span class="href-text">${e.subject_href}</span><span class="pred">→ ${e.predicate}</span></div>`);
+  const html = [...out, ...inEdges].join('') || '<span style="color:#555;font-size:0.78rem">No lineage edges yet.</span>';
+  document.getElementById('lineage-list').innerHTML = html;
+}
+
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('error', !!isError);
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+async function saveTags() {
+  if (!panelDoc) return;
+  const body = {
+    href: panelDoc.href,
+    product: document.getElementById('f-product').value || undefined,
+    subproduct: document.getElementById('f-subproduct').value || undefined,
+    domain: document.getElementById('f-domain').value || undefined,
+    subdomain: document.getElementById('f-subdomain').value || undefined,
+    role: document.getElementById('f-role').value || undefined,
+  };
+  Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
+  try {
+    const resp = await fetch('/api/chorus/catalog/tags', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showToast(`Save failed: ${(err.data && err.data.error) || resp.status}`, true);
+      return;
+    }
+    showToast('Tags saved');
+    // Refresh drift map and table without full reload
+    await refreshDrift();
+    renderRight();
+  } catch (e) {
+    showToast(`Save error: ${e.message || e}`, true);
+  }
+}
+
+async function addLineage() {
+  if (!panelDoc) return;
+  const predicate = document.getElementById('lin-pred').value;
+  const target = document.getElementById('lin-target').value.trim();
+  if (!target) { showToast('Target href required', true); return; }
+  try {
+    const resp = await fetch('/api/chorus/catalog/lineage', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject_href: panelDoc.href, predicate, object_href: target }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showToast(`Lineage failed: ${(err.data && err.data.error) || resp.status}`, true);
+      return;
+    }
+    showToast(`Linked ${predicate} → ${target}`);
+    document.getElementById('lin-target').value = '';
+    // Reload lineage section
+    const docResp = await fetch(`/api/chorus/catalog/doc/${hrefToB64(panelDoc.href)}`);
+    if (docResp.ok) {
+      const j = await docResp.json();
+      renderLineage((j.data && j.data.lineage) || { in: [], out: [] });
+    }
+  } catch (e) {
+    showToast(`Lineage error: ${e.message || e}`, true);
+  }
+}
+
+async function refreshDrift() {
+  try {
+    const r = await fetch('/api/chorus/catalog/drift').then(r => r.json());
+    driftByHref = new Map(((r.data || {}).drift || []).map(e => [e.href, e.divergence_fields || []]));
+  } catch (_) { /* leave stale */ }
+}
+
+document.getElementById('panel-close').addEventListener('click', closePanel);
+document.getElementById('panel-cancel').addEventListener('click', closePanel);
+document.getElementById('panel-save').addEventListener('click', saveTags);
+document.getElementById('lin-add').addEventListener('click', addLineage);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && panelDoc) closePanel();
+});
 
 document.addEventListener('input', e => {
   if (e.target && e.target.id === 'filter') renderRight();
