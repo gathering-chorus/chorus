@@ -68,14 +68,15 @@ export interface HierarchyTree {
 }
 
 // Map Athena product IDs to the tagger's product enum values.
-// Athena uses long URIs (chorusProduct, gathering, borgProduct, akashaProduct);
-// the tagger uses lowercase enum (chorus, gathering, borg, akasha).
+// Athena uses long URIs (chorusProduct, gathering, consultingProduct);
+// the tagger uses lowercase enum (chorus, gathering, consulting).
+// Borg is a Chorus subproduct as of 2026-04-28; not a top-level product.
+// Akasha rolled into Consulting as of 2026-04-28.
 const PRODUCT_LABEL_TO_ENUM: Record<string, string> = {
   'Chorus': 'chorus',
   'Chorus (Product)': 'chorus',
   'Gathering': 'gathering',
-  'Borg': 'borg',
-  'Akasha': 'akasha',
+  'Consulting': 'consulting',
 };
 
 function productEnumFor(p: AthenaProduct): string {

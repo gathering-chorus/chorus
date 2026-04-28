@@ -6,7 +6,7 @@
  * doc-tagger — infer Athena ontology tags for catalog docs (#2520).
  *
  * Maps a doc (path + filename + optional frontmatter) to:
- *   product:    chorus | gathering | akasha
+ *   product:    chorus | gathering | consulting
  *   subproduct: loom | werk | athena | convergence | clearing | quality (chorus only)
  *   subdomain:  one of Athena's 48 subdomains (e.g., loom-decisions, blog-domain)
  *
@@ -121,7 +121,8 @@ function tagsFromPath(sourcePath: string): Partial<DocTags> | null {
              confidence: 'high', signal: 'path' };
   }
   if (p.includes('akasha/') || p.startsWith('akasha')) {
-    return { product: 'akasha', confidence: 'high', signal: 'path' };
+    // Akasha is one strand of the Consulting product line (2026-04-28 ontology shift).
+    return { product: 'consulting', confidence: 'high', signal: 'path' };
   }
   if (p.startsWith('gathering-docs') || p.startsWith('public/gathering-docs')) {
     return { product: 'gathering', confidence: 'high', signal: 'path' };

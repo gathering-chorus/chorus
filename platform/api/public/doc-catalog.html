@@ -203,7 +203,7 @@ async function load() {
   allTagged = tagsR.tagged || [];
   topicGroups = catR.groups || [];
   // Vocab maps Athena ids → tagger short names so the dropdowns match what the API validates against.
-  vocab.products = ['chorus', 'gathering', 'akasha'];
+  vocab.products = ['chorus', 'gathering', 'consulting'];
   vocab.subproducts = ['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality', 'borg'];
   vocab.subdomains = ((subdomainsR.data || []).map(sd => (sd.id || (sd.uri || '').split('#').pop() || '').toLowerCase()).filter(Boolean));
   // Fallback: union with tagger-known set so the dropdown isn't empty if Athena underreports

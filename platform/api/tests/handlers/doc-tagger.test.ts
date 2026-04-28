@@ -46,12 +46,13 @@ describe('doc-tagger.inferTags (#2520)', () => {
     expect(r.subdomain).toBe('blog-domain');
   });
 
-  test('akasha/* path → Akasha product (no subproduct, no subdomain)', () => {
+  test('akasha/* path → Consulting product (no subproduct, no subdomain)', () => {
+    // Akasha rolled into Consulting per 2026-04-28 ontology shift.
     const r = inferTags({
       sourcePath: 'public/akasha/practice-1.md',
       basename: 'practice-1.md',
     });
-    expect(r.product).toBe('akasha');
+    expect(r.product).toBe('consulting');
     expect(r.subproduct).toBeUndefined();
   });
 
