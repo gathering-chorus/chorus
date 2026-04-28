@@ -1,59 +1,48 @@
-# Next Session
+# Kade — Next Session (2026-04-28)
 
-## What landed today (2026-04-27 morning)
-- Research synthesis on social contagion + framing in AI/agent systems and humans → `chorus/designing/docs/social-contagion-and-framing-research.{md,html}`. Catalog picks up automatically (chorus/designing/docs is in SOURCE_DIRS at doc-catalog.handler.ts:341).
-- Gate:code + gate:quality on Wren's #2508 athena-owner-write; flagged 3 test gaps + recommended 3 helper extractions before second ontology-write endpoint copies the regex+SPARQL approach.
-- Reviewed Silas's #2512 sycophancy/labels-null fix; verified #2463 wave 1a did NOT introduce the narrowing (pre-existing).
-- Helped on #2509 catalog-source question (no handler change needed — chorus/designing/docs already scanned).
+## Shipped this session (2026-04-27 afternoon → evening)
+- **#2515** — Test inventory backfill. Coverage 7→31 of 48 subdomains. Audit v1+v2 banked at `roles/kade/work/2515/`. Phase 0 of CI harness disconnect now has its data dependency.
+- **#2118** — Scope-aware gates / domain+category+budget runner. `platform/scripts/run-tests` exists, 18/18 bats green, contract doc at `roles/kade/docs/run-tests-contract.md`. Phase 1 of harness disconnect complete; Phase 2 (#2528, Silas) can call it directly.
+- **VALID_CHUNKS extension** — added `knowledge`, `ci`, `tests` to cli.ts + LABELS.chunk in config.ts (3ba28a56 + a1d6452f).
 
-## Open threads from yesterday's pair-2504 (still pending Jeff direction)
-- **(F2) seed-pipeline-flow** — interim gated; permanent move-to-personal-site-repo decision pending.
-- **(2c) Lazy-load Vikunja in cards/src/config.ts** — substrate card not yet filed. Right architectural answer for the 7 a-vikunja gates to retire.
-- **(2a/2b) CI Vikunja access** — secret + ephemeral instance vs. stay gated. Jeff's call.
+## Gates run for the team
+- #2511 Wren doc-catalog audit — code+quality PASS
+- #2510 Wren doc-inventory waves — code+quality PASS
+- #2445 Wren catalog relocation — code+quality PASS
+- #2521 Wren doc-catalog tree API — code+quality PASS
+- #2517 Wren doc-catalog test gaps — code+quality PASS
 
-## Open threads from this session
-- Wren's #2508 helper-extraction recommendation (patchSubdomainField, replaceObjectTriple with WHERE-drift fix, multi-line-literal terminator) — her call whether to file or fold.
-- Silas appears to be working on lazy-load Vikunja (cards/src/config.ts modified in his tree). If that's (2c), he's on it.
+## Cards filed this session (mine)
+- #2514 doc-inventory python tests (P3, follow-on to #2510)
+- #2516 graphify SPECIAL_ALIASES (P3, follow-on to #2515)
+- #2542 run-tests JSON shape — skipped count + per-test runtime_ms (P3, dashboard-driven follow-on to #2118)
+- #2517 (originally mine, Wren pulled + shipped same session)
 
-## Open questions surfaced by research doc that may warrant cards
-- Nudge-as-injection layer: PreToolUse hooks defend tools; no equivalent on inbound nudges (Greshake gap).
-- Cross-model role experiment: one role on a different base model.
-- Affect-strip the spine `digest` field; watch for downstream change.
-- Forcing functions on human input into shared context (error blast radius = N agents).
+## WIP at session close
+- None. #2118 accepted; queue clear.
 
-Don't file speculatively. Surface to Jeff; he picks.
+## Phase status — CI harness disconnect track
+- Phase 0: Silas's #2532 (clippy + shuffled jest) in flight; #2523 audit+rename queued behind #2515 completion.
+- Phase 1: **mine, complete.**
+- Phase 2: Silas's #2528 wires run-tests into .github/workflows/quality.yml — uses my contract verbatim, no further action from me.
+- Phase 3: graphify (#2516, mine, gated on aliases proving out).
 
-## Patterns I'm carrying
-- Stop deflecting work to teammates via cards.
-- Things right ≠ things done. Hidden gates aren't isolation.
-- Lying-by-paraphrase: don't quote fabricated self-quotes.
-- Run skills end-to-end.
+## Next session candidates
+- **#2516** — graphify SPECIAL_ALIASES (P3, mine, harness Phase 3). Now unblocked since #2515 shipped. Silas suggested waiting until aliases prove out under real use.
+- **#2126** — extract shared log-reader for chorus-api summary handlers (P2, mine, sequence:borg).
+- **#2127** — Borg page fetch-wrapper with explicit error-rendered state (P2, mine, sequence:borg).
+- **#2440 / #2441** — pulse-domain pre-existing fixes (P2 fix/enhance).
+- **#2199** — extract search helpers (P3 chore, threshold met).
 
----
-## (Older) Pull immediately
-- **#2495** — api-boot ESM/CJS reconciliation. Jeff's direction at session end. Owns: audit SDK imports in `platform/api/src/mcp/server.ts` + `transport.ts`, decide CJS-fixed-paths vs ESM migration, restore mcp-roundtrip CI job to `quality.yml`. This is what I should have done before pulling #2487 and what got dressed up as "scope cut" today.
+## Banked memories
+- `feedback_scope_is_the_work.md` — when filing a card from an audit/research context, the investigation IS the deliverable. Don't pre-commit AC2 to numbers you guessed. Hit twice today (#2515, Silas's #2524).
 
-## What landed today
-- #2481 — CI ratchet enforcement (lint-ratchet, tsc/jest/cargo matrices, Dependabot, ci-main-red, branch protection on main with 13 required checks). Org transferred WJeffBridwell → gathering-chorus.
-- #2487 — accepted in lean form (bats hermeticity + ADR-026 addendum). Real api-boot work absorbed into #2495.
-- #2494 — CI Pipeline Service Design. md at `designing/docs/ci-pipeline-service-design.md`, html at `jeff-bridwell-personal-site/public/gathering-docs/ci-pipeline-service-design.html`. Registered as Athena contract entity in pipelines-domain. Silas gate:arch-pass.
+## Standing flags for next session
+- **Stale comment-cache lag** — surfaced twice today (#2511 chain, #2118 chain). Pattern: comments ledger lags 2-3 min behind reality. When ping-ponging gate notifications, re-fetch with `cards view <id>` directly rather than trusting prior in-context tally.
+- **Property/properties plural-folding** — data-modeling ambiguity in subdomain ontology (both real subdomains, alias collision). Defer until Wren or Jeff has a position.
+- **GENERIC_BASES tradeoff** — 6 subdomains blocked by pre-existing deny-list (code/services/streams/messages/time/domains). Some safe to widen (code: 9 hits, low noise), others risky (services: 89 hits, mostly noise). Evidence-gated follow-on if it matters.
 
-## Filed today (Later)
-- #2495 — api-boot ESM/CJS reconciliation (Jeff said pull next)
-- #2496 — Ratchet baseline drift signal
-- #2497 — KNOWN_FAILS allowlist
-- #2498 — Trunk-vs-Rulesets cleanup (Silas pulled)
-- #2499 — Demo skill adapts for infra cards
-- #2500 — Required-checks drift detector
-
-## Loose threads
-- HTML for #2494 still uncommitted in `jeff-bridwell-personal-site` — separate repo, hook blocked the chained commit. Just `git add public/gathering-docs/ci-pipeline-service-design.html && git commit` in that repo when picking up.
-- Wren never reviewed #2494 (informational only, not blocking acp).
-- Dependabot opened 23 lock-update PRs (#2-#24) on initial scan — triage when there's slack.
-
-## Patterns Jeff named today (don't forget)
-- "lean scope" can be AC abandonment dressed up — if a card's AC didn't ship, the gate fails, you don't split into a follow-on and call it done.
-- Service designs are HTML in `jeff-bridwell-personal-site/public/gathering-docs/`, not raw markdown. Match the canonical template (Promise/Overview/Sub-Domain Interaction/Dependencies 4-layer/Components/Surfaces/Consumers/Gaps/Next Steps).
-- Demos: open the page, pause. Don't narrate. Follow the skill literally — feedback nudges per role's domain are mandatory, not optional.
-- Match Jeff's energy. He typed 5 words; don't reply with 150.
-- Not multitask. Pulling #2494 mid-#2487 cost focus and made both cards weaker.
+## Cross-role context
+- **Silas's plan v2** at `/docs/designing/ci-harness-disconnect-plan.html` is canonical for harness work — Phase 0/1/2/3 dependencies, contract spec, exit math.
+- **Wren shipped #2531 triage** — final zero-test list is 9 (not 14); several v1-audit "no tests" classifications were stale-heuristic misses, now covered.
+- **chunk:tests label** is mine; chunk:ci is Silas's. Don't tag CI cards chunk:tests or vice versa.

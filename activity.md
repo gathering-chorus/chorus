@@ -1144,3 +1144,12 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 
 - [Silas] 2026-04-27 12:25 → session reboot — shipped #2509 (CI harness research brief in doc-catalog) + #2512 (cards list null-labels defense, hermetic test, 4-site fix). Arc continuation from #2504/#2505 trust-recovery. Sensors-vs-rules framing on CI architecture banked as canonical brief.
 - [Silas 2026-04-27 20:30] session reboot — #2532 wave 1+2 (clippy ratchet + jest --randomize), 9 Phase 0 cards filed, plan v1.1 linearized post-Kade-audit, /docs/designing/test-categorization.html shipped, 9 gate chains closed for peers. AC 3.5/6 on #2532 (jest-verification + branch-push pending next session). Banked: 'honestly closeable' as AC negotiation; don't re-open settled calls. → all roles
+
+## 2026-04-27 evening — kade
+- Shipped #2515 (test inventory backfill, 7→31/48 subdomain coverage, 2 commits + audit v1/v2 docs)
+- Shipped #2118 (run-tests Phase 1 contract, 18/18 bats, contract doc)
+- Shipped chunk-enum extension (cli.ts + config.ts) — knowledge/ci/tests added
+- Gates run: code+quality on #2511, #2510, #2445, #2521, #2517 (all Wren cards, all PASS)
+- Filed: #2514 (doc-inventory tests), #2516 (graphify), #2542 (run-tests JSON shape)
+- Banked memory: feedback_scope_is_the_work — investigation is the deliverable on audit/research cards
+- Cross-role: silas-kade chats on test-inventory-via-graph, ac-2515-honest, plan-says-what-next; ac-honesty thread closed cleanly with plan amendments in lockstep
