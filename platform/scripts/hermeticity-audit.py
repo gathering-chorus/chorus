@@ -140,8 +140,11 @@ CLOCK_MOCK_HINTS = [
 # ────────────────────────── Env rule patterns ──────────────────────────
 
 ENV_PATTERNS = [
-    re.compile(r'\bprocess\.env\.\w+'),
-    re.compile(r"\bprocess\.env\[['\"]"),
+    # Reads only — process.env.X NOT followed by `=` (assignment).
+    # Kade's #2524 review: assignment IS the mock; flagging both reads and
+    # writes false-flags unit tests that mock env via assignment.
+    re.compile(r'\bprocess\.env\.\w+(?!\s*=)'),
+    re.compile(r"\bprocess\.env\[['\"][^'\"]+['\"]\](?!\s*=)"),
     re.compile(r'\benv::var\s*\('),
     re.compile(r'\bstd::env::var'),
     # Python
@@ -155,6 +158,11 @@ ENV_MOCK_HINTS = [
     re.compile(r"beforeEach\s*\([^)]*\)\s*=>\s*\{[^}]*process\.env", re.DOTALL),
     re.compile(r"afterEach\s*\([^)]*\)\s*=>\s*\{[^}]*delete\s+process\.env", re.DOTALL),
     re.compile(r"const\s+OLD_ENV\s*="),  # canonical jest env-restore pattern
+    # Direct assignment IS the mock — process.env.X = ... at any scope.
+    # Kade #2524 review: unit tests that wire env via assignment should be
+    # treated as hermetic, not flagged as env-coupled reads.
+    re.compile(r"process\.env\.\w+\s*="),
+    re.compile(r"process\.env\[['\"][^'\"]+['\"]\]\s*="),
     re.compile(r"@pytest\.fixture[^)]*monkeypatch"),
     re.compile(r"\bmonkeypatch\.setenv"),
     re.compile(r"\bmonkeypatch\.delenv"),

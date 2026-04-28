@@ -1,17 +1,17 @@
 {
   "schema_version": "2",
   "card": "2523",
-  "generated_at": "2026-04-28T13:57:09.065655",
+  "generated_at": "2026-04-28T14:14:16.129538",
   "summary": {
     "scanner_version": "v2",
-    "total": 366,
+    "total": 370,
     "by_verdict": {
-      "non-hermetic": 117,
-      "hermetic": 199,
-      "review": 50
+      "non-hermetic": 116,
+      "hermetic": 200,
+      "review": 54
     },
     "by_kind": {
-      "jest": 187,
+      "jest": 191,
       "bats": 77,
       "cargo-external": 51,
       "cargo-inline": 49,
@@ -381,9 +381,9 @@
         "env": {
           "status": "maybe",
           "hits": [
-            "process.env.CLAUDE_STATS_CACHE",
-            "process.env.CLEARING_TRANSCRIPTS_DIR",
-            "process.env.CLAUDE_MONTHLY_RATE",
+            "process.env.CLAUDE_STATS_CACH",
+            "process.env.CLEARING_TRANSCRIPTS_DI",
+            "process.env.CLAUDE_MONTHLY_RAT",
             "process.env.TWILIO_ACCOUNT_SID",
             "process.env.TWILIO_AUTH_TOKEN"
           ],
@@ -428,6 +428,84 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
+      },
+      "kind": "jest"
+    },
+    {
+      "path": "platform/api/tests/doc-tagger-akasha-consulting.test.ts",
+      "verdict": "hermetic",
+      "rules": {
+        "network": {
+          "status": "pass",
+          "hits": []
+        },
+        "fs": {
+          "status": "pass",
+          "hits": []
+        },
+        "clock": {
+          "status": "pass",
+          "hits": []
+        },
+        "env": {
+          "status": "pass",
+          "hits": []
+        },
+        "order": {
+          "status": "deferred",
+          "note": "verified by jest --randomize at CI (#2532)"
+        }
+      },
+      "remediation": {
+        "bucket": "none",
+        "reason": "hermetic \u2014 no remediation needed"
+      },
+      "kind": "jest"
+    },
+    {
+      "path": "platform/api/tests/quality-summary-unit.test.ts",
+      "verdict": "non-hermetic",
+      "rules": {
+        "network": {
+          "status": "maybe",
+          "hits": [
+            "http://localhost"
+          ],
+          "note": "localhost hits \u2014 distinguish in-process spawn (hermetic) vs daemon hit (non-hermetic) by manual review"
+        },
+        "fs": {
+          "status": "maybe",
+          "hits": [
+            "fs.rmSync",
+            "fs.unlinkSync",
+            "fs.mkdirSync",
+            "fs.writeFileSync"
+          ],
+          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
+        },
+        "clock": {
+          "status": "fail",
+          "hits": [
+            "Date.now("
+          ]
+        },
+        "env": {
+          "status": "maybe",
+          "hits": [
+            "process.env.GATHERING_ROO",
+            "process.env.CHORUS_ROO",
+            "process.env.QUALITY_CACHE_PAT"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
+        },
+        "order": {
+          "status": "deferred",
+          "note": "verified by jest --randomize at CI (#2532)"
+        }
+      },
+      "remediation": {
+        "bucket": "fix",
+        "reason": "add jest.useFakeTimers / setSystemTime, or freezegun for pytest"
       },
       "kind": "jest"
     },
@@ -557,6 +635,54 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
+      },
+      "kind": "jest"
+    },
+    {
+      "path": "platform/api/tests/fitness-summary-unit.test.ts",
+      "verdict": "non-hermetic",
+      "rules": {
+        "network": {
+          "status": "maybe",
+          "hits": [
+            "localhost:3030",
+            "localhost:3102",
+            "localhost:3340"
+          ],
+          "note": "localhost hits \u2014 distinguish in-process spawn (hermetic) vs daemon hit (non-hermetic) by manual review"
+        },
+        "fs": {
+          "status": "maybe",
+          "hits": [
+            "fs.rmSync",
+            "fs.writeFileSync",
+            "fs.unlinkSync"
+          ],
+          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
+        },
+        "clock": {
+          "status": "fail",
+          "hits": [
+            "Date.now(",
+            "new Date()"
+          ]
+        },
+        "env": {
+          "status": "maybe",
+          "hits": [
+            "process.env.CHORUS_LOG_PAT",
+            "process.env.CHORUS_LOG_PATH"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
+        },
+        "order": {
+          "status": "deferred",
+          "note": "verified by jest --randomize at CI (#2532)"
+        }
+      },
+      "remediation": {
+        "bucket": "fix",
+        "reason": "add jest.useFakeTimers / setSystemTime, or freezegun for pytest"
       },
       "kind": "jest"
     },
@@ -739,14 +865,15 @@
           "hits": []
         },
         "env": {
-          "status": "fail",
+          "status": "maybe",
           "hits": [
-            "process.env.CHORUS_ROOT",
-            "process.env.DB_PATH",
-            "process.env.CHORUS_LOG_PATH",
-            "process.env.CLAUDE_STATS_CACHE",
-            "process.env.CLEARING_TRANSCRIPTS_DIR"
-          ]
+            "process.env.CHORUS_ROO",
+            "process.env.DB_PAT",
+            "process.env.CHORUS_LOG_PAT",
+            "process.env.CLAUDE_STATS_CACH",
+            "process.env.CLEARING_TRANSCRIPTS_DI"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
         },
         "order": {
           "status": "deferred",
@@ -823,7 +950,7 @@
     },
     {
       "path": "platform/api/tests/jeff-summary-unit.test.ts",
-      "verdict": "non-hermetic",
+      "verdict": "review",
       "rules": {
         "network": {
           "status": "pass",
@@ -843,10 +970,11 @@
           "hits": []
         },
         "env": {
-          "status": "fail",
+          "status": "maybe",
           "hits": [
-            "process.env.POSTURE_BASE"
-          ]
+            "process.env.POSTURE_BAS"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
         },
         "order": {
           "status": "deferred",
@@ -854,8 +982,8 @@
         }
       },
       "remediation": {
-        "bucket": "fix",
-        "reason": "add explicit beforeEach/afterEach env setup+restore (or pytest monkeypatch)"
+        "bucket": "review",
+        "reason": "maybe-flags (fs, env) \u2014 manual confirm hermetic-as-claimed or rename"
       },
       "kind": "jest"
     },
@@ -1170,6 +1298,52 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
+      },
+      "kind": "jest"
+    },
+    {
+      "path": "platform/api/tests/hooks-summary-unit.test.ts",
+      "verdict": "non-hermetic",
+      "rules": {
+        "network": {
+          "status": "pass",
+          "hits": []
+        },
+        "fs": {
+          "status": "maybe",
+          "hits": [
+            "fs.rmSync",
+            "fs.writeFileSync",
+            "fs.unlinkSync"
+          ],
+          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
+        },
+        "clock": {
+          "status": "fail",
+          "hits": [
+            "Date.now(",
+            "new Date()"
+          ]
+        },
+        "env": {
+          "status": "maybe",
+          "hits": [
+            "process.env.CHORUS_LOG_PAT",
+            "process.env.PERMISSIONS_LOG_PAT",
+            "process.env.COMMAND_ERRORS_LOG_PAT",
+            "process.env.HANDOFFS_LOG_PAT",
+            "process.env.CHORUS_LOG_PATH"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
+        },
+        "order": {
+          "status": "deferred",
+          "note": "verified by jest --randomize at CI (#2532)"
+        }
+      },
+      "remediation": {
+        "bucket": "fix",
+        "reason": "add jest.useFakeTimers / setSystemTime, or freezegun for pytest"
       },
       "kind": "jest"
     },
@@ -1515,6 +1689,48 @@
       "remediation": {
         "bucket": "none",
         "reason": "hermetic \u2014 no remediation needed"
+      },
+      "kind": "jest"
+    },
+    {
+      "path": "platform/api/tests/session-replay-unit.test.ts",
+      "verdict": "non-hermetic",
+      "rules": {
+        "network": {
+          "status": "pass",
+          "hits": []
+        },
+        "fs": {
+          "status": "maybe",
+          "hits": [
+            "fs.rmSync",
+            "fs.unlinkSync",
+            "fs.writeFileSync"
+          ],
+          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
+        },
+        "clock": {
+          "status": "fail",
+          "hits": [
+            "Date.now(",
+            "new Date()"
+          ]
+        },
+        "env": {
+          "status": "maybe",
+          "hits": [
+            "process.env.SESSIONS_DI"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
+        },
+        "order": {
+          "status": "deferred",
+          "note": "verified by jest --randomize at CI (#2532)"
+        }
+      },
+      "remediation": {
+        "bucket": "fix",
+        "reason": "add jest.useFakeTimers / setSystemTime, or freezegun for pytest"
       },
       "kind": "jest"
     },
@@ -4179,13 +4395,14 @@
           ]
         },
         "env": {
-          "status": "fail",
+          "status": "maybe",
           "hits": [
-            "process.env.CLEARING_SCAN_DIR",
-            "process.env.CLEARING_PULSE_FILE",
-            "process.env.CLEARING_PROJECTS_DIR",
-            "process.env.CHORUS_ROOT"
-          ]
+            "process.env.CLEARING_SCAN_DI",
+            "process.env.CLEARING_PULSE_FIL",
+            "process.env.CLEARING_PROJECTS_DI",
+            "process.env.CHORUS_ROO"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
         },
         "order": {
           "status": "deferred",
@@ -4231,7 +4448,7 @@
     },
     {
       "path": "directing/clearing/tests/session-tailer-unit.test.ts",
-      "verdict": "non-hermetic",
+      "verdict": "review",
       "rules": {
         "network": {
           "status": "pass",
@@ -4255,10 +4472,11 @@
           "note": "clock/random + mock hint \u2014 verify mock covers all"
         },
         "env": {
-          "status": "fail",
+          "status": "maybe",
           "hits": [
-            "process.env.CLEARING_PROJECTS_DIR"
-          ]
+            "process.env.CLEARING_PROJECTS_DI"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
         },
         "order": {
           "status": "deferred",
@@ -4266,8 +4484,8 @@
         }
       },
       "remediation": {
-        "bucket": "fix",
-        "reason": "add explicit beforeEach/afterEach env setup+restore (or pytest monkeypatch)"
+        "bucket": "review",
+        "reason": "maybe-flags (fs, clock, env) \u2014 manual confirm hermetic-as-claimed or rename"
       },
       "kind": "jest"
     },
@@ -4336,42 +4554,6 @@
       "remediation": {
         "bucket": "fix",
         "reason": "add jest.useFakeTimers / setSystemTime, or freezegun for pytest"
-      },
-      "kind": "jest"
-    },
-    {
-      "path": "directing/clearing/tests/nudge-integration.test.ts",
-      "verdict": "review",
-      "rules": {
-        "network": {
-          "status": "pass",
-          "hits": []
-        },
-        "fs": {
-          "status": "maybe",
-          "hits": [
-            "fs.writeFileSync",
-            "fs.mkdirSync",
-            "fs.unlinkSync"
-          ],
-          "note": "writes present + tmp hint \u2014 verify all writes target tmp"
-        },
-        "clock": {
-          "status": "pass",
-          "hits": []
-        },
-        "env": {
-          "status": "pass",
-          "hits": []
-        },
-        "order": {
-          "status": "deferred",
-          "note": "verified by jest --randomize at CI (#2532)"
-        }
-      },
-      "remediation": {
-        "bucket": "review",
-        "reason": "maybe-flags (fs) \u2014 manual confirm hermetic-as-claimed or rename"
       },
       "kind": "jest"
     },
@@ -4464,7 +4646,8 @@
         "env": {
           "status": "maybe",
           "hits": [
-            "process.env.CHORUS_ROOT"
+            "process.env.CHORUS_ROOT",
+            "process.env.CHORUS_ROO"
           ],
           "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
         },
@@ -4653,7 +4836,7 @@
     },
     {
       "path": "directing/products/cards/tests/board-validation.test.ts",
-      "verdict": "non-hermetic",
+      "verdict": "review",
       "rules": {
         "network": {
           "status": "pass",
@@ -4668,10 +4851,11 @@
           "hits": []
         },
         "env": {
-          "status": "fail",
+          "status": "maybe",
           "hits": [
-            "process.env.RUN_INTEGRATION"
-          ]
+            "process.env.RUN_INTEGRATIO"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
         },
         "order": {
           "status": "deferred",
@@ -4679,8 +4863,8 @@
         }
       },
       "remediation": {
-        "bucket": "fix",
-        "reason": "add explicit beforeEach/afterEach env setup+restore (or pytest monkeypatch)"
+        "bucket": "review",
+        "reason": "maybe-flags (env) \u2014 manual confirm hermetic-as-claimed or rename"
       },
       "kind": "jest"
     },
@@ -5833,7 +6017,7 @@
     },
     {
       "path": "directing/products/cards/tests/integration.test.ts",
-      "verdict": "non-hermetic",
+      "verdict": "review",
       "rules": {
         "network": {
           "status": "pass",
@@ -5848,10 +6032,11 @@
           "hits": []
         },
         "env": {
-          "status": "fail",
+          "status": "maybe",
           "hits": [
-            "process.env.RUN_INTEGRATION"
-          ]
+            "process.env.RUN_INTEGRATIO"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
         },
         "order": {
           "status": "deferred",
@@ -5859,8 +6044,8 @@
         }
       },
       "remediation": {
-        "bucket": "fix",
-        "reason": "add explicit beforeEach/afterEach env setup+restore (or pytest monkeypatch)"
+        "bucket": "review",
+        "reason": "maybe-flags (env) \u2014 manual confirm hermetic-as-claimed or rename"
       },
       "kind": "jest"
     },
@@ -11114,7 +11299,7 @@
     },
     {
       "path": "platform/services/chorus-hooks/src/hooks/test_quality_gate.rs",
-      "verdict": "non-hermetic",
+      "verdict": "review",
       "rules": {
         "network": {
           "status": "maybe",
@@ -11132,14 +11317,15 @@
           "hits": []
         },
         "env": {
-          "status": "fail",
+          "status": "maybe",
           "hits": [
             "process.env.X",
+            "process.env.RUN_INTEGRATIO",
             "process.env.RUN_INTEGRATION",
             "process.env.HERMETIC_ONLY",
-            "process.env.SERVICE_URL",
-            "process.env.SOME_FLAG"
-          ]
+            "process.env.SERVICE_URL"
+          ],
+          "note": "env reads + explicit beforeEach/monkeypatch \u2014 verify all are mocked"
         },
         "order": {
           "status": "deferred",
@@ -11147,8 +11333,8 @@
         }
       },
       "remediation": {
-        "bucket": "fix",
-        "reason": "add explicit beforeEach/afterEach env setup+restore (or pytest monkeypatch)"
+        "bucket": "review",
+        "reason": "maybe-flags (network, env) \u2014 manual confirm hermetic-as-claimed or rename"
       },
       "kind": "cargo-inline"
     },
