@@ -5,7 +5,6 @@
 //!         contradicting index_freshness which shows all-fresh.
 
 use std::fs;
-use std::path::Path;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
