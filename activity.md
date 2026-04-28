@@ -4,6 +4,10 @@ Shared across all roles. Each role appends when they produce or consume somethin
 
 Format: `[time] [role] → [action] → [who needs to see it / who has seen it]`
 
+## 2026-04-28 — Kade
+
+- [16:35] [Kade] → #2556 PR #25 merged b5deb7d8 — 140-commit branch retired, 3 roles re-branched off fresh main (kade/silas/wren acked AC7), AC8 evidence PR opened. ADR-026 + Phase 0 (DEC-2525, #2523, #2524, #2515, #2516, #2532) live on main. Side cards: #2558 session_init hermeticity, #2559 daemon pid, #2560 ops-module Rust 1.95 cascade. → Jeff, Wren, Silas
+
 - [22:02] Silas → #2311 rescope shipped end-to-end mid-pair with Wren (navigator): session-start.rs additionalContext rewire, binary gate (no exemptions), in-session recovery via Read handler, manifest "version"→"_build" + PROTOCOL_VERSION single-source (reset to 1.0 per Jeff), werk-init.sh retired + callers rewired, 20 new tests all green, kade+wren cold-booted clean with v1.0 headers. Silas cold-boot pending this /reboot. → Wren (gate:product criteria 1-4+6 met, 5 negative-test remaining)
 
 ## 2026-04-20 — Silas
