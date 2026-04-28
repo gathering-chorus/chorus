@@ -268,16 +268,30 @@ def classify_file(path: Path, kind: str) -> dict:
         verdict = "review"
 
     # Suggested remediation per AC3 — heuristic mapping. Manual review can override.
-    remediation = suggest_remediation(rules, kind, path)
+    remediation = suggest_remediation(rules, kind, path, text)
 
     return {"path": str(path), "verdict": verdict, "rules": rules, "remediation": remediation}
 
 
-def suggest_remediation(rules: dict, kind: str, path: Path) -> dict:
+SPAWN_HINT_PATTERNS = [
+    re.compile(r"\bspawn\s*\("),
+    re.compile(r"\bfork\s*\("),
+    re.compile(r"\bspawnSync\s*\("),
+    re.compile(r"\bexec(?:Sync)?\s*\(\s*['\"]node\b"),
+    re.compile(r"\bcreateServer\s*\("),
+    re.compile(r"\.listen\s*\("),
+    re.compile(r"http\.createServer"),
+    # Rust spawn patterns
+    re.compile(r"std::process::Command::"),
+    re.compile(r"tokio::spawn\b"),
+]
+
+
+def suggest_remediation(rules: dict, kind: str, path: Path, text: str = "") -> dict:
     """Map rule violations to one of three buckets per AC3:
        - fix      — fix in place; mock the dependency
        - rename   — move to *.integration.test.ts (TS) or document as integration (bats/cargo/pytest)
-       - quarantine — defer with a TTL; rare
+       - review   — manual confirm (e.g. spawn-its-own-server case Kade flagged)
     Heuristic. Manual review can override; the suggested column gives every test
     a default plan so AC3 closes without 220 hand-classifications.
     """
@@ -304,8 +318,15 @@ def suggest_remediation(rules: dict, kind: str, path: Path) -> dict:
         and rules.get("network", {}).get("hits")
     )
 
+    # Spawn-detection (Kade's #2523 wave 3 review): if the file imports http
+    # AND contains a spawn/createServer/listen pattern, the network hits may
+    # be self-spawned ephemeral servers — downgrade rename to review.
+    has_spawn_hint = any(p.search(text) for p in SPAWN_HINT_PATTERNS) if text else False
+
     # Multi-rule failures or real network/shellouts → rename to integration
     if has_real_network or has_shellout_curl:
+        if has_spawn_hint and not has_shellout_curl:
+            return {"bucket": "review", "reason": "network access + spawn pattern — likely in-process ephemeral server (hermetic), needs manual confirm"}
         return {"bucket": "rename", "reason": "real network / shellout — belongs in integration tier"}
 
     if len(fail_rules) >= 2:

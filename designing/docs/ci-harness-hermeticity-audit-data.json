@@ -1,7 +1,7 @@
 {
   "schema_version": "2",
   "card": "2523",
-  "generated_at": "2026-04-28T12:04:27.549930",
+  "generated_at": "2026-04-28T13:15:02.798836",
   "summary": {
     "scanner_version": "v2",
     "total": 417,
@@ -1284,8 +1284,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "review",
+        "reason": "network access + spawn pattern \u2014 likely in-process ephemeral server (hermetic), needs manual confirm"
       },
       "kind": "jest"
     },
@@ -3039,8 +3039,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "review",
+        "reason": "network access + spawn pattern \u2014 likely in-process ephemeral server (hermetic), needs manual confirm"
       },
       "kind": "jest"
     },
@@ -5837,8 +5837,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "review",
+        "reason": "network access + spawn pattern \u2014 likely in-process ephemeral server (hermetic), needs manual confirm"
       },
       "kind": "jest"
     },
@@ -6270,8 +6270,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "review",
+        "reason": "network access + spawn pattern \u2014 likely in-process ephemeral server (hermetic), needs manual confirm"
       },
       "kind": "jest"
     },
@@ -12050,8 +12050,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "review",
+        "reason": "network access + spawn pattern \u2014 likely in-process ephemeral server (hermetic), needs manual confirm"
       },
       "kind": "cargo-external"
     },
@@ -12302,8 +12302,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "review",
+        "reason": "network access + spawn pattern \u2014 likely in-process ephemeral server (hermetic), needs manual confirm"
       },
       "kind": "cargo-inline"
     },
@@ -12397,8 +12397,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "review",
+        "reason": "network access + spawn pattern \u2014 likely in-process ephemeral server (hermetic), needs manual confirm"
       },
       "kind": "cargo-inline"
     },
@@ -13305,8 +13305,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "review",
+        "reason": "network access + spawn pattern \u2014 likely in-process ephemeral server (hermetic), needs manual confirm"
       },
       "kind": "cargo-inline"
     },
@@ -13538,8 +13538,8 @@
         }
       },
       "remediation": {
-        "bucket": "rename",
-        "reason": "real network / shellout \u2014 belongs in integration tier"
+        "bucket": "review",
+        "reason": "network access + spawn pattern \u2014 likely in-process ephemeral server (hermetic), needs manual confirm"
       },
       "kind": "cargo-inline"
     },

@@ -143,6 +143,10 @@ def render(payload: dict) -> str:
 
 <p>This report classifies every test in the <strong>kept set</strong> — the tests that will be required-checks on <code>main</code> per the <a href="#">#2525</a> DEC — against the five hermeticity rules. The audit is the gate that lets Phase 1 (rules disconnect) ship without re-creating the bypass-and-flake failure mode the disconnect is meant to retire.</p>
 
+<p style="background:#fff7ed;border-left:4px solid #ea580c;padding:10px 14px;border-radius:4px;font-size:0.86em;margin:10px 0;">
+<strong>What "hermetic" means in this report.</strong> The verdict tests the four spatial axes (rules 1–4) by source inspection. The fifth axis — order-independence — is temporal and not source-detectable; it's verified separately by <code>jest --randomize</code> in CI (#2532) and the 100/100 shuffled-runs window (#2525). So <strong>197 hermetic</strong> means "passes spatial rules 1–4," not "fully hermetic forever." Some tests in the hermetic bucket may shift to review once #2525's shuffled-runs window runs.
+</p>
+
 <h2>Summary</h2>
 <div class="summary-grid">
   <div class="stat"><div class="num">{summary["total"]}</div><div class="lbl">Total tests in kept set</div></div>
