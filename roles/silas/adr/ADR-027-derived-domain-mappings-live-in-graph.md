@@ -1,6 +1,6 @@
 # ADR-027: Derived domain mappings live in the graph, not in code
 
-**Status:** Proposed — 2026-04-28 (Wren). Pending: Silas (architecture review), Kade (code impact review), Jeff (final).
+**Status:** Accepted — 2026-04-28. Reviewed by Silas (architecture) and Kade (code impact); accepted by Jeff.
 **Cards:** #2314 (Loom Principles API, Done), #2318 (Loom Decisions API, Later), #2516 (graphify alias map, Done). Blocks: #2554 (CatalogDocShape + onward), pending discover-code.ts + discover-pages migrations.
 **Supersedes:** — (establishes the rule across a class of mappings that have been migrating one-by-one).
 **Related:** ADR-025 (ontology vs instances graph separation — this ADR layers on that one).
