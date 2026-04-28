@@ -9,11 +9,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
+import { repoRoot } from './lib/repo-root';
 
-const CLEARING_DIR = path.join(
-  process.env.HOME || '/Users/jeffbridwell',
-  'CascadeProjects/chorus/directing/clearing'
-);
+const CLEARING_DIR = path.join(repoRoot(), 'directing/clearing');
 const CLEARING_SERVER = path.join(CLEARING_DIR, 'src/server.ts');
 const SCRIPTS_DIR = path.join(__dirname, '../../../../platform/scripts');
 
@@ -48,20 +46,9 @@ describe('Flow: Clearing infrastructure', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 2. SESSION PORT — Clearing runs on port 3470
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe('Flow: Clearing session port', () => {
-
-  test('clearing skill file exists', () => {
-    const skillFile = path.join(
-      process.env.HOME || '/Users/jeffbridwell',
-      '.claude/skills/clearing/SKILL.md'
-    );
-    expect(fs.existsSync(skillFile)).toBe(true);
-  });
-});
+// Section 2 (Clearing session port) removed: #2268 retired the /clearing
+// slash-command skill. Multi-role alignment opens The Clearing UI directly
+// at localhost:3470.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 3. DECISION CAPTURE — DECISION: prefix extraction
@@ -157,14 +144,9 @@ describe('Flow: Clearing session cleanup', () => {
     expect(content).toContain('/health');
   });
 
-  test('clearing LaunchAgent keeps service alive', () => {
-    const plistPath = path.join(
-      process.env.HOME || '/Users/jeffbridwell',
-      'Library/LaunchAgents/com.chorus.clearing.plist'
-    );
-    expect(fs.existsSync(plistPath)).toBe(true);
-    const content = fs.readFileSync(plistPath, 'utf-8');
-    expect(content).toContain('KeepAlive');
-  });
+  // 'clearing LaunchAgent keeps service alive' test removed: DEC-1674
+  // anti-pattern (presence-check on a static plist file, no production
+  // symbol invocation). Was also macOS-only path failing on Linux CI.
+  // LaunchAgent health is verified live by ops monitoring, not jest.
 
 });

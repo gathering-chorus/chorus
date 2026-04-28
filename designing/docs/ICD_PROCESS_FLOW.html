@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ICD Pipeline Process Flow — Define → Map → Build</title>
+<style>
+  body { font-family: Georgia, serif; max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a2e; background: #fafafa; }
+  h1 { color: #2471a3; margin-bottom: 0.25rem; font-size: 1.6rem; }
+  .subtitle { color: #666; font-size: 0.85rem; margin-bottom: 2rem; }
+  h2 { color: #c0392b; border-bottom: 2px solid #c0392b; padding-bottom: 0.3rem; margin-top: 2.5rem; font-size: 1.1rem; }
+  h3 { color: #2471a3; font-size: 0.95rem; margin-top: 1.5rem; }
+
+  /* Swimlane table */
+  .swimlane { width: 100%; border-collapse: collapse; margin: 1rem 0 2rem; font-size: 0.8rem; }
+  .swimlane th { background: #2471a3; color: white; padding: 0.5rem; text-align: center; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .swimlane td { padding: 0.4rem 0.5rem; border: 1px solid #ddd; vertical-align: top; }
+  .swimlane tr:nth-child(even) { background: #f5f5f5; }
+
+  /* Role colors */
+  .wren { background: #e8f8f5 !important; }
+  .silas { background: #fef9e7 !important; }
+  .kade { background: #ebf5fb !important; }
+  .gate { background: #fadbd8 !important; font-weight: 700; }
+  .jeff { background: #f5eef8 !important; }
+
+  .role-tag { display: inline-block; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; margin-right: 0.3rem; }
+  .role-tag.w { background: #1abc9c; color: white; }
+  .role-tag.s { background: #f39c12; color: white; }
+  .role-tag.k { background: #3498db; color: white; }
+  .role-tag.j { background: #9b59b6; color: white; }
+  .role-tag.g { background: #c0392b; color: white; }
+
+  .step-num { display: inline-block; width: 22px; height: 22px; background: #2471a3; color: white; border-radius: 50%; text-align: center; line-height: 22px; font-size: 0.7rem; font-weight: 700; margin-right: 0.3rem; }
+  .gate-num { display: inline-block; width: 22px; height: 22px; background: #c0392b; color: white; border-radius: 50%; text-align: center; line-height: 22px; font-size: 0.7rem; font-weight: 700; margin-right: 0.3rem; }
+
+  .output { color: #27ae60; font-style: italic; font-size: 0.75rem; }
+  .input { color: #8e44ad; font-size: 0.75rem; }
+  .blocker { color: #c0392b; font-weight: 700; font-size: 0.75rem; }
+
+  /* Process detail boxes */
+  .detail-box { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 0.8rem 1rem; margin: 0.8rem 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .detail-box h4 { margin: 0 0 0.4rem; color: #2471a3; font-size: 0.85rem; }
+  .detail-box ul { margin: 0.3rem 0; padding-left: 1.2rem; }
+  .detail-box li { margin: 0.2rem 0; font-size: 0.8rem; }
+  .detail-box .checklist { list-style: none; padding-left: 0; }
+  .detail-box .checklist li::before { content: "☐ "; color: #c0392b; }
+
+  /* Gate boxes */
+  .gate-box { background: #fadbd8; border: 2px solid #c0392b; border-radius: 6px; padding: 0.8rem 1rem; margin: 0.8rem 0; }
+  .gate-box h4 { margin: 0 0 0.4rem; color: #c0392b; font-size: 0.85rem; }
+  .gate-box p { margin: 0.2rem 0; font-size: 0.8rem; }
+
+  /* Legend */
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; padding: 0.5rem; background: white; border: 1px solid #ddd; border-radius: 4px; font-size: 0.7rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 2px; border: 1px solid #ccc; }
+
+  /* Phase headers */
+  .phase { background: #2c3e50; color: white; padding: 0.6rem 1rem; border-radius: 6px 6px 0 0; font-weight: 700; font-size: 0.9rem; margin-top: 2rem; letter-spacing: 0.03em; }
+  .phase-body { border: 1px solid #2c3e50; border-top: none; border-radius: 0 0 6px 6px; padding: 1rem; background: white; margin-bottom: 1.5rem; }
+
+  .principle { background: #fef9e7; border-left: 4px solid #f39c12; padding: 0.5rem 0.8rem; margin: 0.5rem 0; font-size: 0.8rem; }
+  .principle strong { color: #e67e22; }
+
+  hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+</style>
+</head>
+<body>
+
+<h1>ICD Pipeline Process Flow</h1>
+<p class="subtitle">Define → Map → Build → Gate → Ship &middot; Power Mapping Discipline &middot; Silas (Architect) &middot; 2026-03-19</p>
+<p style="font-size:0.8rem; color:#2471a3; margin:0.3rem 0 0.8rem;"><a href="WARDLEY_MAP_ICD.html" style="color:#2471a3; font-weight:600;">Wardley Map — ICD as Product</a> &middot; <a href="CONVERGENCE_ARCHITECTURE.html" style="color:#2471a3;">Convergence Architecture</a> &middot; <a href="BORG_ASSIMILATION_PATTERN.html" style="color:#2471a3;">Borg Assimilation Pattern</a> &middot; <a href="ATTENTION_ARCHITECTURE.html" style="color:#2471a3;">Attention Architecture</a> &middot; <a href="INGEST_COMPLEXITY.html" style="color:#2471a3;">Ingest Complexity</a> &middot; <a href="ARCHITECTURE_PATTERNS.html" style="color:#2471a3;">Architecture Patterns</a></p>
+
+<div class="principle">
+  <strong>Core Principle (Staples "Power Mapping"):</strong> Complete the ICD and source-to-canonical maps fully and to high quality before writing any code. If the contract is sloppy, the code inherits the slop. The map phase always feels slow until the build phase goes fast.
+</div>
+
+<div class="principle" style="border-left-color: #c0392b; background: #fdedec;">
+  <strong>XSD Model — Almost Every Field Is Required:</strong> The ICD is a schema, not a wish list. If a field exists in the canonical type and at least one source provides it, that field is <strong>Required</strong> (<code>minOccurs="1"</code>). The document is rejected without it. There are only two tiers:
+  <ul style="margin:0.4rem 0 0; font-size:0.85rem;">
+    <li><strong>Required</strong> — a source exists that provides this field. If the record doesn't have it, the record is rejected. No soft warnings. No "we'll track it." Rejected.</li>
+    <li><strong>Enrichment</strong> — no source exists yet for this field. It's a future capability, not a current gap. When a source is wired, the field moves to Required.</li>
+  </ul>
+  <p style="margin:0.4rem 0 0; font-size:0.85rem;">The old three-tier model (Violation/Warning/Info) created a soft middle where "Warning" meant "we expect it but won't reject without it." That's how data quality debt accumulates silently. The XSD model eliminates the middle: you either have the data or you don't ship the record.</p>
+  <p style="margin:0.4rem 0 0; font-size:0.85rem;"><strong>Source coverage ≠ severity.</strong> LinkedIn email at ~30% coverage doesn't make email "optional" — it means 30% of LinkedIn records have it and 70% are rejected at the email field. The source limitation is visible in the ICD coverage %, but the schema doesn't compromise. If the source can't provide a required field, the record doesn't enter canonical. Fix the source or accept the smaller dataset.</p>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#e8f8f5"></div> Wren (PM)</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#fef9e7"></div> Silas (Architect)</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#ebf5fb"></div> Kade (Engineer)</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#f5eef8"></div> Jeff</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#fadbd8"></div> Automated Gate</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PHASE 1: DEFINE -->
+<!-- ============================================================ -->
+
+<div class="phase">PHASE 1: DEFINE — What exists at the source?</div>
+<div class="phase-body">
+
+<table class="swimlane">
+<tr><th width="5%">#</th><th width="12%">Role</th><th width="30%">Task</th><th width="28%">Output</th><th width="25%">Gate / Dependency</th></tr>
+
+<tr class="wren">
+  <td><span class="step-num">1</span></td>
+  <td><span class="role-tag w">Wren</span></td>
+  <td><strong>Identify data source.</strong> What exists? Where does it live? What format? How many records?</td>
+  <td class="output">Card created with domain context</td>
+  <td>—</td>
+</tr>
+
+<tr class="wren">
+  <td><span class="step-num">2</span></td>
+  <td><span class="role-tag w">Wren</span> or <span class="role-tag k">Kade</span></td>
+  <td><strong>Explore source schema.</strong> Read the actual data. List every field. Note coverage %, data types, edge cases.</td>
+  <td class="output">Field inventory with coverage stats</td>
+  <td class="input">Access to source (file, DB, API)</td>
+</tr>
+
+<tr class="wren">
+  <td><span class="step-num">3</span></td>
+  <td><span class="role-tag w">Wren</span></td>
+  <td><strong>Write Provider ICD in SEMANTIC_MAPPER.html.</strong>
+    <ul style="margin:0.2rem 0; padding-left:1rem; font-size:0.75rem;">
+      <li>Purpose &amp; Scope</li>
+      <li>Risks (encoding, format, auth, dedup)</li>
+      <li>Non-Functionals (volume, freshness, latency, auth)</li>
+      <li>Interface — one sub-section per type fed (field rows with <code>data-source</code>, <code>data-field</code>, <code>data-maps-to</code>, <code>data-transform</code>, coverage %)</li>
+      <li>Diagrams (mermaid: source → harvester → TTL → Fuseki → page)</li>
+    </ul>
+  </td>
+  <td class="output">Complete provider ICD section</td>
+  <td class="input">Step 2 field inventory</td>
+</tr>
+
+<tr class="gate">
+  <td><span class="gate-num">G1</span></td>
+  <td><span class="role-tag g">Gate</span></td>
+  <td><strong>Provider ICD Completeness.</strong> All 5 sections present? Every Interface sub-section has field rows with <code>data-maps-to</code>? Coverage % on every field?</td>
+  <td class="blocker">BLOCKS Phase 2 if incomplete</td>
+  <td>Automated: <code>icd-lint-hook.sh</code></td>
+</tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- PHASE 2: MAP -->
+<!-- ============================================================ -->
+
+<div class="phase">PHASE 2: MAP — What does the canonical record look like?</div>
+<div class="phase-body">
+
+<table class="swimlane">
+<tr><th width="5%">#</th><th width="12%">Role</th><th width="30%">Task</th><th width="28%">Output</th><th width="25%">Gate / Dependency</th></tr>
+
+<tr class="wren">
+  <td><span class="step-num">4</span></td>
+  <td><span class="role-tag w">Wren</span></td>
+  <td><strong>Define or update Consumer ICD.</strong> Canonical type (<code>jb:SocialPost</code>, <code>jb:Person</code>, etc.) with:
+    <ul style="margin:0.2rem 0; padding-left:1rem; font-size:0.75rem;">
+      <li><code>cf-row</code> field definitions — XSD model</li>
+      <li><strong>Required</strong> (<code>minOccurs="1"</code>) — at least one source provides this field. Record rejected without it.</li>
+      <li><strong>Enrichment</strong> — no source wired yet. Future capability. Moves to Required when source is added.</li>
+      <li><code>cf-best</code> — which source is authoritative per field</li>
+      <li>No "Warning" tier. No soft middle. Required or not-yet-sourced.</li>
+    </ul>
+  </td>
+  <td class="output">Consumer ICD with Required/Enrichment classification + cf-best</td>
+  <td class="input">G1 passed. All provider interfaces visible.</td>
+</tr>
+
+<tr class="wren">
+  <td><span class="step-num">5</span></td>
+  <td><span class="role-tag w">Wren</span></td>
+  <td><strong>Trace source → canonical.</strong> Every <code>data-maps-to</code> in the provider must land on a <code>cf-row</code> in the consumer. Every violation-tier consumer field must have at least one provider source.</td>
+  <td class="output">Traceability verified</td>
+  <td>—</td>
+</tr>
+
+<tr class="silas">
+  <td><span class="step-num">6</span></td>
+  <td><span class="role-tag s">Silas</span></td>
+  <td><strong>ICD Lint.</strong> Structural completeness check:
+    <ul style="margin:0.2rem 0; padding-left:1rem; font-size:0.75rem;">
+      <li>Provider: all 5 sections present?</li>
+      <li>Consumer: all <code>cf-row</code> fields have severity + cf-best?</li>
+      <li>Traceability: provider → consumer mapping complete?</li>
+      <li>Compare against proven domains (Music, Photos, Stories)</li>
+    </ul>
+  </td>
+  <td class="output">Lint PASS or specific gaps</td>
+  <td class="input">Steps 3-5 complete</td>
+</tr>
+
+<tr class="gate">
+  <td><span class="gate-num">G2</span></td>
+  <td><span class="role-tag g">Gate</span></td>
+  <td><strong>ICD Lint Pass.</strong> Silas confirms structural completeness. No code generation until lint passes.</td>
+  <td class="blocker">BLOCKS Phase 3 if lint fails</td>
+  <td>Silas review (future: automated lint script)</td>
+</tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- PHASE 3: BUILD -->
+<!-- ============================================================ -->
+
+<div class="phase">PHASE 3: BUILD — Generate code from the contract</div>
+<div class="phase-body">
+
+<table class="swimlane">
+<tr><th width="5%">#</th><th width="12%">Role</th><th width="30%">Task</th><th width="28%">Output</th><th width="25%">Gate / Dependency</th></tr>
+
+<tr class="silas">
+  <td><span class="step-num">7</span></td>
+  <td><span class="role-tag s">Silas</span></td>
+  <td><strong>Generate ICD Schema.</strong> From consumer <code>cf-row</code> definitions, create <code>ICDSchema</code> in <code>src/validation/icd-validation.ts</code>. Violations array from Req fields, warnings from Exp fields. Field names match TypeScript interface.</td>
+  <td class="output"><code>DOMAIN_ICD_SCHEMA</code> constant</td>
+  <td class="input">G2 passed</td>
+</tr>
+
+<tr class="silas">
+  <td><span class="step-num">8</span></td>
+  <td><span class="role-tag s">Silas</span></td>
+  <td><strong>Validate existing data.</strong> If data already exists (prior harvest), run TTL files against the new schema. Report: pass rate, violation breakdown, warning coverage. Confirm severity tiers match reality.</td>
+  <td class="output">Data quality baseline report</td>
+  <td class="input">Step 7 schema</td>
+</tr>
+
+<tr class="kade">
+  <td><span class="step-num">9</span></td>
+  <td><span class="role-tag k">Kade</span></td>
+  <td><strong>Build harvester.</strong> ICD-driven: read severity tiers from the schema. Map source fields per provider Interface <code>data-maps-to</code>. Apply transforms per <code>data-transform</code>. Emit progress to stderr (DEC feedback).</td>
+  <td class="output">Harvester script with <code>--dry-run</code></td>
+  <td class="input">Step 7 schema + provider Interface</td>
+</tr>
+
+<tr class="gate">
+  <td><span class="gate-num">G3</span></td>
+  <td><span class="role-tag g">Gate</span></td>
+  <td><strong>Dry Run Gate.</strong> Harvester runs with <code>--dry-run</code>. Output must match ICD predictions:
+    <ul style="margin:0.2rem 0; padding-left:1rem; font-size:0.75rem;">
+      <li>Record count matches source inventory</li>
+      <li>Violation failures match expected coverage gaps</li>
+      <li>Warning rates match <code>data-coverage</code> %</li>
+      <li>Dedup counts are credible</li>
+    </ul>
+  </td>
+  <td class="blocker">BLOCKS live harvest if predictions don't match</td>
+  <td>Silas verifies numbers</td>
+</tr>
+
+<tr class="silas">
+  <td><span class="step-num">10</span></td>
+  <td><span class="role-tag s">Silas</span></td>
+  <td><strong>Wire validation gate.</strong> Add <code>validateFromICD(record, SCHEMA)</code> to the domain's write path (pod service). Violations reject/filter. Warnings log.</td>
+  <td class="output">Gate in write path + tests pass</td>
+  <td class="input">Step 7 schema</td>
+</tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- PHASE 4: HARVEST -->
+<!-- ============================================================ -->
+
+<div class="phase">PHASE 4: HARVEST — Execute the pipeline</div>
+<div class="phase-body">
+
+<table class="swimlane">
+<tr><th width="5%">#</th><th width="12%">Role</th><th width="30%">Task</th><th width="28%">Output</th><th width="25%">Gate / Dependency</th></tr>
+
+<tr class="kade">
+  <td><span class="step-num">11</span></td>
+  <td><span class="role-tag k">Kade</span></td>
+  <td><strong>Run live harvest.</strong> Execute harvester (not dry-run). TTL files written to <code>data/pods/jeff/{domain}/</code>. Progress emitted to stderr.</td>
+  <td class="output">TTL files on disk</td>
+  <td class="input">G3 passed</td>
+</tr>
+
+<tr class="kade">
+  <td><span class="step-num">12</span></td>
+  <td><span class="role-tag k">Kade</span></td>
+  <td><strong>Verify idempotent.</strong> Re-run harvester. Output: 0 new records, 0 changes. Same result on third run.</td>
+  <td class="output">Idempotency confirmed</td>
+  <td>—</td>
+</tr>
+
+<tr class="kade">
+  <td><span class="step-num">13</span></td>
+  <td><span class="role-tag k">Kade</span></td>
+  <td><strong>Sync to Fuseki.</strong> <code>harvest-sync-fuseki.sh {domain}</code>. Drop stale graphs. Verify DISTINCT count matches TTL file count.</td>
+  <td class="output">Fuseki graph loaded + verified</td>
+  <td>—</td>
+</tr>
+
+<tr class="gate">
+  <td><span class="gate-num">G4</span></td>
+  <td><span class="role-tag g">Gate</span></td>
+  <td><strong>Data Integrity Gate.</strong>
+    <ul style="margin:0.2rem 0; padding-left:1rem; font-size:0.75rem;">
+      <li>TTL file count matches expected</li>
+      <li>Fuseki DISTINCT count matches TTL count</li>
+      <li>Source attribution queryable (<code>sourceNetwork</code>)</li>
+      <li>No stale/orphaned graphs</li>
+    </ul>
+  </td>
+  <td class="blocker">BLOCKS UI wiring if counts don't match</td>
+  <td>SPARQL verification queries</td>
+</tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- PHASE 5: SURFACE -->
+<!-- ============================================================ -->
+
+<div class="phase">PHASE 5: SURFACE — Wire data to UI</div>
+<div class="phase-body">
+
+<table class="swimlane">
+<tr><th width="5%">#</th><th width="12%">Role</th><th width="30%">Task</th><th width="28%">Output</th><th width="25%">Gate / Dependency</th></tr>
+
+<tr class="kade">
+  <td><span class="step-num">14</span></td>
+  <td><span class="role-tag k">Kade</span></td>
+  <td><strong>Build SPARQL query service.</strong> Domain-specific queries. Required fields are required projections (no OPTIONAL) — the gate guarantees they exist. Enrichment fields are OPTIONAL. No data compensation in frontend code — if the gate passed, the data is there.</td>
+  <td class="output"><code>{domain}-query.service.ts</code></td>
+  <td class="input">G4 passed</td>
+</tr>
+
+<tr class="kade">
+  <td><span class="step-num">15</span></td>
+  <td><span class="role-tag k">Kade</span></td>
+  <td><strong>Wire handler + page.</strong> Handler calls query service. Page renders from SPARQL results. Multi-source badges from <code>sources[]</code>. Filter buttons per source.</td>
+  <td class="output">Working page at <code>/{domain}</code></td>
+  <td>—</td>
+</tr>
+
+<tr class="gate">
+  <td><span class="gate-num">G5</span></td>
+  <td><span class="role-tag g">Gate</span></td>
+  <td><strong>Smoke Check.</strong> <code>smoke-check.sh --all</code> passes. Page returns 200. Content renders. Badges show all sources.</td>
+  <td class="blocker">BLOCKS demo if smoke fails</td>
+  <td>Automated: <code>smoke-check.sh</code></td>
+</tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- PHASE 6: PROVE -->
+<!-- ============================================================ -->
+
+<div class="phase">PHASE 6: PROVE — Demo and accept (DEC-048)</div>
+<div class="phase-body">
+
+<table class="swimlane">
+<tr><th width="5%">#</th><th width="12%">Role</th><th width="30%">Task</th><th width="28%">Output</th><th width="25%">Gate / Dependency</th></tr>
+
+<tr class="kade">
+  <td><span class="step-num">16</span></td>
+  <td><span class="role-tag k">Kade</span> or <span class="role-tag s">Silas</span></td>
+  <td><strong>Demo.</strong> <code>/demo {card-id}</code>. Stakes first, then show. Pause. Follow Jeff's eye. Capture reaction.</td>
+  <td class="output">Demo brief to Wren</td>
+  <td class="input">G5 passed</td>
+</tr>
+
+<tr class="jeff">
+  <td><span class="step-num">17</span></td>
+  <td><span class="role-tag j">Jeff</span> or <span class="role-tag w">Wren</span></td>
+  <td><strong>Accept or reject.</strong> Does the page show what Jeff expects? Do the numbers match reality? Would Jeff look at this and say "that's right"?</td>
+  <td class="output"><code>card.accepted</code> or <code>card.rejected</code></td>
+  <td>No self-service Done for code cards</td>
+</tr>
+
+<tr class="silas">
+  <td><span class="step-num">18</span></td>
+  <td><span class="role-tag s">Silas</span></td>
+  <td><strong>Update SEMANTIC_MAPPER compliance.</strong> Mark provider as "Harvested" with date, record count, coverage stats. Update consumer cf-best if source ranking changed.</td>
+  <td class="output">SEMANTIC_MAPPER reflects shipped state</td>
+  <td>—</td>
+</tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- AUTOMATED GATES SUMMARY -->
+<!-- ============================================================ -->
+
+<h2>Tier Change Protocol — When Required Feels Too Tight</h2>
+
+<div class="detail-box">
+<h4>The tension: too tight rejects records Jeff wants. Too loose breaks automation.</h4>
+<p style="font-size:0.8rem;">The XSD model will sometimes feel too strict — a dry run rejects 70% of records because a "Required" field has low source coverage. The response is <strong>not</strong> "make it optional." The response is a structured decision:</p>
+<ol style="font-size:0.8rem;">
+  <li><strong>Is this field truly required for the canonical type?</strong> Can a Person exist without email? If yes → move to Enrichment. If no → the source has a gap to fix.</li>
+  <li><strong>Is this field required for a specific pipeline operation?</strong> Email for dedup matching ≠ email for the Person record. Two schemas: one for the record shape, one for the pipeline operation. The record schema is lenient. The pipeline schema is strict.</li>
+  <li><strong>Does moving this field to Enrichment create a data compensation problem downstream?</strong> If the UI needs the field, making it Enrichment means the page has gaps. Better to reject the record than show an incomplete row that Jeff has to mentally compensate for.</li>
+</ol>
+<p style="font-size:0.8rem;"><strong>The decision gets recorded in the ICD.</strong> Every tier change gets a comment in the <code>cf-row</code>: why it moved, who decided, what the coverage was. This is the audit trail. Without it, the next person who reads the ICD doesn't know if "Enrichment" means "truly optional" or "we gave up on getting this data."</p>
+<p style="font-size:0.8rem;"><strong>Rule:</strong> Tier changes always flow back through the ICD (Phase 2), never through the code (Phase 3). If a developer changes the schema to make a field optional, that's a process violation — the ICD and the code are out of sync.</p>
+</div>
+
+<h2>Automated Gates (Build These)</h2>
+
+<div class="detail-box">
+<h4>G1: Provider ICD Completeness (PreToolUse hook)</h4>
+<ul>
+  <li><strong>Trigger:</strong> Any <code>Write</code> to <code>scripts/harvest-*</code> or <code>*-harvester.service.ts</code></li>
+  <li><strong>Check:</strong> Does <code>SEMANTIC_MAPPER.html</code> contain a provider ICD section for this domain?</li>
+  <li><strong>Block message:</strong> "ICD missing for {domain}. Add provider section to SEMANTIC_MAPPER.html first. Define → Map → Build."</li>
+</ul>
+</div>
+
+<div class="detail-box">
+<h4>G2: ICD Lint Pass (Silas review, future: script)</h4>
+<ul>
+  <li><strong>Trigger:</strong> Brief to Silas requesting code generation</li>
+  <li><strong>Check:</strong> Provider has 5 sections, consumer has cf-rows with severity, traceability complete</li>
+  <li><strong>Future automation:</strong> <code>scripts/icd-lint.py</code> — parse SEMANTIC_MAPPER.html, validate structure</li>
+</ul>
+</div>
+
+<div class="detail-box">
+<h4>G3: Dry Run Gate (manual, navigator verifies)</h4>
+<ul>
+  <li><strong>Trigger:</strong> Harvester <code>--dry-run</code> output</li>
+  <li><strong>Check:</strong> Record count, violation rate, warning rate match ICD coverage predictions</li>
+  <li><strong>Role:</strong> Navigator in pair session, or Silas in solo review</li>
+</ul>
+</div>
+
+<div class="detail-box">
+<h4>G4: Data Integrity Gate (SPARQL verification)</h4>
+<ul>
+  <li><strong>Trigger:</strong> After Fuseki sync</li>
+  <li><strong>Check:</strong> <code>COUNT(DISTINCT ?slug)</code> matches TTL file count, source attribution queryable</li>
+  <li><strong>Future automation:</strong> <code>scripts/verify-fuseki-sync.sh {domain}</code></li>
+</ul>
+</div>
+
+<div class="detail-box">
+<h4>G5: Smoke Check (existing)</h4>
+<ul>
+  <li><strong>Trigger:</strong> Before <code>/demo</code></li>
+  <li><strong>Check:</strong> <code>smoke-check.sh --all</code> — 22 pages, 200/302 responses</li>
+  <li><strong>Status:</strong> Already automated and enforced</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- ANTI-PATTERNS -->
+<!-- ============================================================ -->
+
+<h2>Reference Implementation — Copy, Don't Interpret</h2>
+
+<div class="detail-box" style="border-left: 4px solid #c0392b;">
+<h4>The problem: three roles reading the same spec, building three variants.</h4>
+<p style="font-size:0.8rem;">Each role understands the ICD principles and then improvises slightly when applying them to a new domain. Kade's harvester field names drift from Silas's schema field names. Silas's Social schemas don't structurally match his Photos schemas. Wren's Facebook ICD sections don't match her LinkedIn ICD sections. Every domain is a "slight variant" — and slight variants compound into incompatible implementations that break automation.</p>
+
+<h4>The fix: one reference implementation, copied structurally.</h4>
+<table class="swimlane" style="margin-top:0.5rem;">
+<tr><th>Artifact</th><th>Reference Domain</th><th>Copy Template</th></tr>
+<tr><td>Provider ICD (SEMANTIC_MAPPER.html)</td><td>Apple Music / iTunes</td><td>Purpose, Risks, Non-Functionals, Interface (field-row with all 6 data-* attrs), Diagrams — exact section structure</td></tr>
+<tr><td>Consumer ICD (SEMANTIC_MAPPER.html)</td><td>Photos — jb:Photo</td><td>cf-row with data-canonical, data-severity, cf-best — exact attribute set</td></tr>
+<tr><td>ICD Schema (icd-validation.ts)</td><td>PHOTOS_ICD_SCHEMA</td><td>ICDSchema constant with violations[] and warnings[] — exact interface</td></tr>
+<tr><td>Write path gate</td><td>PhotoPodService.validatePhotos()</td><td>validateFromICD() call, filter pattern for batch writes, throw pattern for single writes</td></tr>
+<tr><td>Harvester script</td><td>harvest-apple-contacts.py</td><td>--dry-run flag, progress to stderr, ICD field names in output, dedup pass</td></tr>
+<tr><td>SPARQL query service</td><td>PeopleQueryService</td><td>Required fields as required projections, Enrichment as OPTIONAL, sources[] array for multi-source badge</td></tr>
+</table>
+
+<p style="font-size:0.8rem;"><strong>Rule:</strong> When building a new domain, <code>diff</code> your output against the reference. If the structure differs — not just field names, but section order, attribute names, function signatures — that's a bug, not a design decision. The only things that change between domains are field names and coverage percentages. Everything else is the template.</p>
+
+<p style="font-size:0.8rem;"><strong>Anti-pattern:</strong> "I followed the same pattern" — followed conceptually, not structurally. The result looks similar but has different attribute names, different section ordering, different error handling. Each variation is a future debugging session when automation assumes consistency.</p>
+</div>
+
+<h2>Anti-Patterns (What Kills the Pipeline)</h2>
+
+<table class="swimlane">
+<tr><th>Anti-Pattern</th><th>What Happens</th><th>Gate That Catches It</th></tr>
+<tr><td>Build before defining ICD</td><td>Harvester writes incomplete data. Compensation logic in frontend.</td><td>G1 — blocks harvester creation without provider ICD</td></tr>
+<tr><td>Generate code from incomplete ICD</td><td>Schemas miss fields, wrong severity tiers. Code inherits slop.</td><td>G2 — Silas lint rejects incomplete specs</td></tr>
+<tr><td>Skip dry run</td><td>Live harvest writes bad data. Expensive to clean up.</td><td>G3 — dry run numbers must match ICD predictions</td></tr>
+<tr><td>Don't verify Fuseki sync</td><td>Stale graphs, duplicate records, count mismatch. UI shows wrong numbers.</td><td>G4 — DISTINCT count must match file count</td></tr>
+<tr><td>Data compensation in frontend</td><td><code>|| 'Unknown'</code> fallbacks hide data quality issues. Jeff sees "correct" UI over incomplete data.</td><td>XSD model — Required fields are guaranteed by the gate. No OPTIONAL, no fallbacks. If it passed the gate, it's there.</td></tr>
+<tr><td>Three-tier severity (Violation/Warning/Info)</td><td>"Warning" creates a soft middle. Nobody fixes warnings because they don't block. Data quality debt accumulates silently.</td><td>XSD model — Required or Enrichment. No middle tier. Record passes or gets rejected.</td></tr>
+<tr><td>Two versions of the same artifact</td><td>SEMANTIC_MAPPER.html on disk vs harvest-mapper.ejs in app. Drift guaranteed.</td><td>One canonical source. #1519 consolidates.</td></tr>
+</table>
+
+<h2>Session Learnings (2026-03-19) — Proven in Practice</h2>
+
+<div class="detail-box" style="border-left: 4px solid #27ae60;">
+<h4>1. Consumer ICDs have the same 5 mandatory sections as providers.</h4>
+<p style="font-size:0.8rem;">No exceptions. Purpose &amp; Scope, Risks, Non-Functionals, Interface, Diagrams — every provider, every consumer. If a section has no data, it exists as an empty section. The structure is mandatory, the content varies. The lint enforces this on both sides. Jeff asked for this 10+ times before it was implemented — the team kept softening it with "optional" and "domain-specific." The rule is absolute.</p>
+</div>
+
+<div class="detail-box" style="border-left: 4px solid #27ae60;">
+<h4>2. RDF is the source of truth. HTML is a rendered view.</h4>
+<p style="font-size:0.8rem;">The ICD lives in Fuseki as an OWL ontology (5,148 triples, 7 domains). The HTML (SEMANTIC_MAPPER.html) is the authoring surface — edits happen there, then migrate to RDF via <code>migrate-icd-tree.py --publish</code>. The Convergence page renders FROM the RDF graph via the API. The HTML file is kept as a fallback view but is not the source of truth.</p>
+<p style="font-size:0.8rem;"><strong>Athena pattern (Staples):</strong> ICD and mappings were ontologies, instances were RDF, system could diff versions. Implemented here: versioned named graphs (<code>icd/v1</code>, <code>icd/v2</code>, ...), semantic diff via <code>--diff</code> flag, <code>/current</code> alias.</p>
+</div>
+
+<div class="detail-box" style="border-left: 4px solid #27ae60;">
+<h4>3. The lint validates the graph, not the HTML.</h4>
+<p style="font-size:0.8rem;"><code>icd-lint-sparql.py</code> validates the RDF graph in Fuseki. <code>icd-lint.py</code> validates the HTML (legacy, still useful for authoring). <code>icd-consistency-test.py</code> validates agreement between HTML, graph, and TypeScript schemas. Three layers, one truth. The SPARQL lint is what CI should run.</p>
+</div>
+
+<div class="detail-box" style="border-left: 4px solid #c0392b;">
+<h4>4. No front-end compensation. Fix the data.</h4>
+<p style="font-size:0.8rem;">The page renders what the graph gives it. No <code>|| 'Unknown'</code> fallbacks. No entity decoding in the template. No datatype guessing in the view. If the data is wrong — leading colons, HTML entities stored as literals, incorrect datatypes — fix the migration script and republish. The front end is a dumb pipe from API JSON to HTML. Jeff was explicit: "If it is data I don't want him compensating on the front end."</p>
+</div>
+
+<div class="detail-box" style="border-left: 4px solid #27ae60;">
+<h4>5. Versioned publish + semantic diff.</h4>
+<p style="font-size:0.8rem;"><code>migrate-icd-tree.py --publish</code> creates a versioned named graph (<code>icd/v{N+1}</code>) and updates <code>icd/current</code>. <code>--diff</code> shows semantic changes between versions: fields added, removed, severity changed. No more 1,500-line HTML diffs. The diff shows: <code>+ [People] birthday (Enrichment)</code> or <code>~ [Stories] themes: Warning → Violation</code>.</p>
+</div>
+
+<div class="detail-box" style="border-left: 4px solid #27ae60;">
+<h4>6. Tree structure preserves document fidelity.</h4>
+<p style="font-size:0.8rem;">The RDF uses intermediate nodes: <code>icd:Section</code> → <code>icd:Paragraph</code> (with label + order), <code>icd:RiskItem</code> (with ok/risk status + order), NF as named values (<code>nfVolume</code>, <code>nfFreshness</code>, <code>nfLatency</code>, <code>nfAuth</code>), mermaid source preserved exactly. This enables identical rendering from SPARQL — every piece of the HTML document is recoverable from the graph.</p>
+</div>
+
+<div class="detail-box" style="border-left: 4px solid #27ae60;">
+<h4>7. Canonical URI namespace.</h4>
+<p style="font-size:0.8rem;">All ICD entities live at <code>https://jeffbridwell.com/icd/...</code>. TTL files use <code>@base &lt;https://jeffbridwell.com/&gt;</code>. Stale graphs under old URI bases are dropped on publish. Pod data stays at <code>http://localhost:3000/pods/...</code> (separate namespace). ADR-018 documents the XSD severity model. #1539 established the canonical URI scheme.</p>
+</div>
+
+<div class="detail-box" style="border-left: 4px solid #f39c12;">
+<h4>8. Future: ICD Editor (Athena fully realized).</h4>
+<p style="font-size:0.8rem;">Current flow: edit HTML → migrate to RDF → render from graph. Future flow: edit via form UI → write directly to RDF → HTML is generated output. The editor is the Athena pattern fully realized — people enter data into structured forms, the system stores it as RDF, the view is rendered. No hand-editing HTML as if it were a database. Card #1538 (live validation, request-response) and the editor are the next evolution.</p>
+</div>
+
+<h2>Tooling Summary</h2>
+
+<table class="swimlane">
+<tr><th>Tool</th><th>Purpose</th><th>Validates</th></tr>
+<tr><td><code>migrate-icd-tree.py</code></td><td>HTML → RDF tree migration</td><td>Generates TTL with full document tree</td></tr>
+<tr><td><code>migrate-icd-tree.py --publish</code></td><td>Versioned publish to Fuseki</td><td>Creates <code>icd/v{N}</code> + updates <code>/current</code></td></tr>
+<tr><td><code>migrate-icd-tree.py --diff</code></td><td>Semantic diff between versions</td><td>Fields added/removed/severity changed</td></tr>
+<tr><td><code>icd-lint-sparql.py</code></td><td>Validate RDF graph structure</td><td>5 mandatory sections (provider + consumer), traceability, metadata</td></tr>
+<tr><td><code>icd-lint.py</code></td><td>Validate HTML structure (legacy)</td><td>Section existence, field attributes, severity tiers</td></tr>
+<tr><td><code>icd-consistency-test.py</code></td><td>Three-way agreement</td><td>SPARQL ↔ HTML ↔ TypeScript schemas</td></tr>
+<tr><td><code>icd-live-counts.py</code></td><td>Live data quality from graph</td><td>Record counts, field coverage per domain</td></tr>
+</table>
+
+<hr>
+<p style="color:#999; font-size:0.7rem;">
+  Silas (Architect) &middot; 2026-03-19 &middot; Based on: Staples Power Mapping (2010-2011), DEC-095, ADR-018, session learnings from #1508→#1539.
+  <br>Prior art: Bridwell patent US9552400B2, Staples ARB ICD template, Athena/Anzo pattern.
+  <br>Updated: 2026-03-19 — RDF as source of truth, consumer mandatory sections, no front-end compensation, versioned publish, tree structure, canonical URIs.
+</p>
+
+</body>
+</html>

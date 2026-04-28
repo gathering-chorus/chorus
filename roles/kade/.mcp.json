@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schemas.modelcontextprotocol.io/mcp.schema.json",
+  "mcpServers": {
+    "chorus-api": {
+      "type": "http",
+      "url": "http://localhost:3340/mcp",
+      "headers": {
+        "X-Chorus-Role": "kade"
+      }
+    }
+  }
+}

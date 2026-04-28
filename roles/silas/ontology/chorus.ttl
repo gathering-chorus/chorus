@@ -856,19 +856,19 @@ chorus:athena-domain a chorus:SubDomain ;
 chorus:loom-principles a chorus:SubDomain ;
     rdfs:label "Principles" ;
     rdfs:comment "Shared values that explain why. Stable. Patterns derive from principles." ;
-    chorus:ownedBy chorus:jeff ;
+    chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Shaping .
 
 chorus:loom-practices a chorus:SubDomain ;
     rdfs:label "Practices" ;
     rdfs:comment "Repeatable disciplines that apply across domains." ;
-    chorus:ownedBy chorus:jeff ;
+    chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Shaping .
 
 chorus:loom-decisions a chorus:SubDomain ;
     rdfs:label "Decisions" ;
     rdfs:comment "DEC-NNN — governing choices that constrain future behavior." ;
-    chorus:ownedBy chorus:jeff ;
+    chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Shaping .
 
 chorus:loom-rcas a chorus:SubDomain ;
@@ -958,7 +958,7 @@ chorus:time-domain a chorus:SubDomain ;
 chorus:roles-domain a chorus:SubDomain ;
     rdfs:label "Roles" ;
     rdfs:comment "Three AI roles and one human coordinate across two products. Identity, state, permissions, and communication — the operating model everything else is shaped around." ;
-    chorus:ownedBy chorus:jeff ;
+    chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Shaping ;
     chorus:runsOn chorus:library, chorus:bedroom ;
     chorus:contains chorus:jeff, chorus:wren, chorus:silas, chorus:kade .
@@ -1009,7 +1009,7 @@ chorus:integrations-domain a chorus:SubDomain ;
 chorus:loom-policies a chorus:SubDomain ;
     rdfs:label "Policies" ;
     rdfs:comment "Team policies — working hours, WIP limits, response windows." ;
-    chorus:ownedBy chorus:jeff ;
+    chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Shaping .
 
 # toolschain-domain removed — duplicate of toolchain-domain (DEC-2090)
@@ -1085,7 +1085,7 @@ chorus:blog-domain a chorus:SubDomain ;
 chorus:seeds-domain a chorus:SubDomain ;
     rdfs:label "Seeds" ;
     rdfs:comment "SMS-captured seeds, glimmers, intentions — raw inputs." ;
-    chorus:ownedBy chorus:jeff ;
+    chorus:ownedBy chorus:wren ;
     chorus:primaryStep chorus:Sowing ;
     chorus:belongsTo chorus:gatheringStream .
 

@@ -26,13 +26,28 @@ module.exports = {
   // server-unit.test.ts). Tracked as follow-on to #2271.
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
     '/node_modules/',
-    '<rootDir>/tests/athena\\.test\\.ts$',
+    // #2524 convention (post-#2523 audit): files renamed to *.integration.test.ts
+    // are integration-tier and excluded from the hermetic default. The previous
+    // explicit ignore list (28 files) was replaced by this single suffix pattern;
+    // those files were renamed wholesale by the audit's rename bucket.
+    '\\.integration\\.test\\.ts$',
+    // handlers/sessions.test.ts — flagged by audit as review (not renamed); kept
+    // explicit until manual review confirms hermetic-as-claimed or rename.
+    '<rootDir>/tests/handlers/sessions\\.test\\.ts$',
   ],
   // ts-jest diagnostics off — type checking is tsc's job, not the test runner's.
   // Tests in this dir were written for default-jest (no strict TS) and use
   // `body.data` style access on `unknown`-typed `res.json()` returns.
+  // #2495: tsconfig.json moves to module=node16 so tsc honors the SDK's
+  // exports field. ts-jest stays on commonjs so dynamic `await import()`
+  // calls in tests (e.g., test-app.ts) get transpiled to require(),
+  // avoiding the --experimental-vm-modules requirement. Runtime Node
+  // honors the SDK exports field regardless of TS module setting.
   transform: {
-    '^.+\\.tsx?$': ['ts-jest', { diagnostics: false }],
+    '^.+\\.tsx?$': ['ts-jest', {
+      diagnostics: false,
+      tsconfig: { module: 'commonjs', moduleResolution: 'node', esModuleInterop: true },
+    }],
   },
   // Coverage floor — #2167 calibrated to baseline.
   //

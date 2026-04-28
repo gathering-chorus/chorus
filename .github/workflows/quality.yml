@@ -59,6 +59,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      # Cross-package pre-build for cards (mirrors unit-tests job):
+      # cards' tsc resolves 'chorus-sdk' + workflow-engine — those need dist.
+      # #2504 (a): pre-build was missing on tsc job; added here. Sunset via
+      # ADR-026 §c (#2486 npm workspaces).
+      - name: Pre-build chorus-sdk (cards only)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: platform/chorus-sdk
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Pre-build workflow-engine (cards only)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: platform/workflow-engine
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
       - name: Install (npm ci)
         working-directory: ${{ matrix.package }}
         run: npm ci --no-audit --no-fund
@@ -105,9 +121,17 @@ jobs:
       - name: Install (npm ci)
         working-directory: ${{ matrix.package }}
         run: npm ci --no-audit --no-fund
-      - name: Run jest
+      # #2504 (a): cards tests invoke ./dist/cli.js; build it before jest.
+      - name: Build cards dist (jest needs ./dist/cli.js)
+        if: matrix.package == 'directing/products/cards'
+        working-directory: directing/products/cards
+        run: npm run build
+      - name: Run jest (shuffled — #2532)
         working-directory: ${{ matrix.package }}
-        run: npx jest --forceExit --passWithNoTests
+        # --randomize shuffles test order within each file. Surfaces order-dependent
+        # tests (hermeticity rule 5 — order-independent). Available in jest 30+.
+        # See /docs/designing/test-categorization.html.
+        run: npx jest --forceExit --passWithNoTests --randomize
 
   mcp-description-shape:
     name: MCP tool description shape (#2475)
@@ -182,15 +206,205 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ matrix.crate }}
-      - name: Ensure runtime dirs (chorus_log writes to platform/logs/)
-        run: mkdir -p platform/logs /tmp/claude-team-scan /tmp/voice-inbox /tmp/chorus-chat
+      - name: Ensure runtime dirs
+        # platform/logs/ is checked in via platform/logs/.gitignore so the dir
+        # exists on every checkout. /tmp/* dirs still need creation since
+        # they're outside the workspace.
+        run: mkdir -p /tmp/claude-team-scan /tmp/voice-inbox /tmp/chorus-chat
+      # Symlink step retired by #2505 — all 28 test files now read paths via
+      # chorus_root() (chorus_hooks::shared::state_paths::chorus_root for
+      # chorus-hooks tests; inline helper for chorus-inject) which respects
+      # CHORUS_ROOT env. No more out-of-tree symlink to /Users/jeffbridwell.
+      - name: Build chorus-inject release binary (chorus-hooks crate only)
+        # tests/inject_binary_test.rs + tests/inject_uses_binary.rs (3 tests)
+        # assert that the chorus-inject release binary exists at the
+        # symlink-resolved path. The cargo-test job builds chorus-hooks but
+        # not chorus-inject; build it explicitly here. #2504.
+        if: matrix.crate == 'platform/services/chorus-hooks'
+        working-directory: platform/services/chorus-inject
+        run: cargo build --release --bin chorus-inject
+      - name: Start chorus-hooks server (chorus-hooks crate only)
+        # 16 chorus-hooks test files use the shim → /tmp/chorus-hooks.sock →
+        # server pattern. On Mac the server runs as a launchctl LaunchAgent;
+        # on CI we boot it manually so tests get real allow/deny responses
+        # instead of the fail-open empty stdout that breaks assertions.
+        # bash -e is intentionally NOT used here because nohup + & under -e
+        # can swallow upstream failures silently. Use explicit error checks.
+        if: matrix.crate == 'platform/services/chorus-hooks'
+        working-directory: platform/services/chorus-hooks
+        shell: bash
+        run: |
+          set -x
+          cargo build --release --bin chorus-hooks
+          # #2505 follow-up: chorus-hook-shim release binary is what
+          # platform/scripts/chorus-log (bash wrapper) execs. Tests like
+          # nudge_origin_tag rely on the chorus_log path firing through
+          # the wrapper into the release binary; missing binary → wrapper
+          # exits "not found" → empty spine log → assertion fails.
+          cargo build --release --bin chorus-hook-shim
+          # HOOK_LOG path in main.rs writes here; if-let-Ok wraps the open so
+          # missing dir doesn't crash the server, but creating it is cheap.
+          sudo mkdir -p /Users/jeffbridwell/Library/Logs/Gathering
+          sudo chmod 777 /Users/jeffbridwell/Library/Logs/Gathering
+          rm -f /tmp/chorus-hooks.sock /tmp/chorus-hooks.pid
+          nohup target/release/chorus-hooks > /tmp/chorus-hooks-server.log 2>&1 &
+          SERVER_PID=$!
+          echo "Server PID: $SERVER_PID"
+          for i in $(seq 1 30); do
+            if [ -S /tmp/chorus-hooks.sock ]; then
+              echo "Socket bound after ${i} iterations"
+              ls -la /tmp/chorus-hooks.sock
+              exit 0
+            fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "Server process died early; log:"
+              cat /tmp/chorus-hooks-server.log || true
+              exit 1
+            fi
+            sleep 0.5
+          done
+          echo "chorus-hooks server never bound socket within 15s; log:"
+          cat /tmp/chorus-hooks-server.log || true
+          exit 1
       - name: Run cargo test
         working-directory: ${{ matrix.crate }}
         run: cargo test --all
 
-  # smoke-check + MCP round-trip deferred — both require the Gathering app
-  # (localhost:3000) and/or the chorus-api booted in CI, which needs postgres
-  # + fuseki + initial data. Out of scope for this PR. Tracked: follow-on
-  # sub-AC under #2481 ("api-boot-in-CI scaffolding") once the rest of the
-  # workflow is stable. Per ADR-026 §b CI(target): smoke-check is "Yes — on PR"
-  # and MCP round-trip is "Conditional"; both gated on this infra existing.
+  clippy:
+    # #2532: Rust lint parity with TS. chorus-inject already clean (-D warnings
+    # blocking); chorus-hooks still has 64 known warnings (28 auto-fixed, 64
+    # remain — mostly dead-code in test helpers + style nits). chorus-hooks
+    # runs warn-only via continue-on-error until baseline retired or fixes
+    # land. Per harness disconnect plan: lint-as-warn aligns with sensors-as-
+    # feedback; the eslint-baseline approach is what Phase 1 retires (#2526).
+    name: cargo clippy — ${{ matrix.crate }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - crate: platform/services/chorus-inject
+            continue_on_error: false
+          - crate: platform/services/chorus-hooks
+            continue_on_error: true
+    continue-on-error: ${{ matrix.continue_on_error }}
+    env:
+      CHORUS_ROOT: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.crate }}
+      - name: Run clippy
+        working-directory: ${{ matrix.crate }}
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Stop chorus-hooks server
+        if: always() && matrix.crate == 'platform/services/chorus-hooks'
+        run: |
+          if [ -f /tmp/chorus-hooks.pid ]; then kill "$(cat /tmp/chorus-hooks.pid)" 2>/dev/null || true; fi
+          tail -100 /tmp/chorus-hooks-server.log || true
+
+  # smoke-check stays out of chorus CI per ADR-026 addendum 2026-04-25 —
+  # the Gathering app lives in jeff-bridwell-personal-site repo; that repo's
+  # own CI owns smoke. chorus CI focuses on chorus-native artifacts.
+
+  mcp-roundtrip:
+    name: MCP round-trip (#2495)
+    runs-on: ubuntu-latest
+    services:
+      fuseki:
+        image: stain/jena-fuseki:5.0.0
+        ports:
+          - 3030:3030
+        env:
+          ADMIN_PASSWORD: admin
+          FUSEKI_DATASET_1: pods
+        options: >-
+          --health-cmd "wget -qO- http://localhost:3030/$/ping || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      CHORUS_ROOT: ${{ github.workspace }}
+      FUSEKI_URL: http://localhost:3030/pods/query
+      FUSEKI_QUERY_URL: http://localhost:3030/pods/sparql
+      FUSEKI_UPDATE_URL: http://localhost:3030/pods/update
+      CHORUS_API_PORT: '3340'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: platform/services/chorus-hooks
+
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats curl
+
+      - name: Build chorus-hook-shim (release)
+        working-directory: platform/services/chorus-hooks
+        run: cargo build --release --bin chorus-hook-shim
+
+      - name: Build chorus-api
+        working-directory: platform/api
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Seed Fuseki with principles ontology
+        # Loads chorus.ttl into urn:chorus:instances — the named graph the
+        # principles SPARQL (src/sparql/loom-principles.sparql) queries.
+        # Earlier versions loaded into ?default and the query returned empty.
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3030/$/ping >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -sfu admin:admin -X POST \
+            -H 'Content-Type: text/turtle' \
+            --data-binary @roles/silas/ontology/chorus.ttl \
+            "http://localhost:3030/pods/data?graph=urn:chorus:instances" > /dev/null
+          curl -sf -G "${FUSEKI_QUERY_URL}" \
+            --data-urlencode 'query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?s a <https://jeffbridwell.com/chorus#Principle> } }' \
+            -H 'Accept: application/sparql-results+json' | grep -q '"value"'
+
+      - name: Boot chorus-api (background)
+        # platform/logs/ is checked in via platform/logs/.gitignore
+        working-directory: platform/api
+        run: |
+          nohup node dist/server.js > /tmp/chorus-api.log 2>&1 &
+          echo $! > /tmp/chorus-api.pid
+
+      - name: Wait for /mcp endpoint
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -X POST http://localhost:3340/mcp \
+              -H 'Content-Type: application/json' \
+              -H 'Accept: application/json, text/event-stream' \
+              -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1.0"}}}' || echo 000)
+            if [ "$code" = "200" ] || [ "$code" = "202" ]; then exit 0; fi
+            sleep 1
+          done
+          echo "chorus-api never became ready; tail log:"
+          tail -100 /tmp/chorus-api.log || true
+          exit 1
+
+      - name: Run MCP round-trip bats
+        env:
+          MCP_URL: http://localhost:3340/mcp
+          CHORUS_LOG_FILE: ${{ github.workspace }}/platform/logs/chorus.log
+        run: |
+          bats platform/tests/mcp-nudge.test.sh
+          bats platform/tests/mcp-principles.test.sh
+
+      - name: Stop chorus-api
+        if: always()
+        run: |
+          if [ -f /tmp/chorus-api.pid ]; then kill "$(cat /tmp/chorus-api.pid)" 2>/dev/null || true; fi
+          tail -200 /tmp/chorus-api.log || true

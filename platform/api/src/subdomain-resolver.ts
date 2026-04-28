@@ -14,6 +14,16 @@ export function createSubdomainResolver(deps: SubdomainResolverDeps): (name: str
   return async function resolveSubdomainId(name: string): Promise<string> {
     const lower = name.toLowerCase();
     if (lower.endsWith('-domain') || lower.endsWith('-service')) return lower;
+    // #2485 — substrate-class subdomains (loom-*, etc.) ARE the canonical ids;
+    // they don't take a -domain or -service suffix. Probe the bare name first
+    // before assuming it needs one.
+    const bareCheck = `PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <urn:chorus:ontology> { <https://jeffbridwell.com/chorus#${lower}> a chorus:SubDomain } }`;
+    try {
+      const bare = await deps.sparql(bareCheck);
+      if (bare.boolean) return lower;
+    } catch {
+      /* fall through to -domain check */
+    }
     const domainId = `${lower}-domain`;
     const svcId = `${lower}-service`;
     const checkQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <urn:chorus:ontology> { <https://jeffbridwell.com/chorus#${domainId}> a chorus:SubDomain } }`;

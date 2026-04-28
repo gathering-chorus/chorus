@@ -10,9 +10,12 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { repoRoot } from './lib/repo-root';
 
 const SCRIPTS_DIR = path.join(__dirname, '../../../../platform/scripts');
-const CHORUS_SCRIPTS = path.join(process.env.HOME || '/Users/jeffbridwell', '.chorus/scripts');
+// ~/.chorus/scripts is a runtime install of symlinks → platform/scripts. On
+// CI the symlinks don't exist; point at the canonical source instead.
+const CHORUS_SCRIPTS = path.join(repoRoot(), 'platform/scripts');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. GEMBA INFRASTRUCTURE — required scripts exist
@@ -106,10 +109,9 @@ describe('Flow: Gemba spine events', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Flow: Gemba skill definition', () => {
-  const skillPath = path.join(
-    process.env.HOME || '/Users/jeffbridwell',
-    '.claude/skills/gemba/SKILL.md'
-  );
+  // ~/.claude/skills/gemba is a symlink to chorus/skills/gemba on dev macs.
+  // CI has no such symlink; read the canonical source.
+  const skillPath = path.join(repoRoot(), 'skills/gemba/SKILL.md');
 
   test('gemba skill file exists', () => {
     expect(fs.existsSync(skillPath)).toBe(true);

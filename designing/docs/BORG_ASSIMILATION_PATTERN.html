@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Borg Assimilation Pattern — Legacy System Knowledge Extraction via ICD</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad: true, theme: 'neutral', securityLevel: 'loose'});</script>
+<style>
+  :root { --bg: #fff; --surface: #f5f5f5; --accent: #2471a3; --accent2: #c0392b; --text: #1a1a2e; --muted: #555; --green: #27ae60; --yellow: #d4a017; --red: #c0392b; --border: #ccc; --borg: #1a472a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Georgia', serif; background: var(--bg); color: var(--text); line-height: 1.7; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 2rem; color: var(--borg); margin-bottom: 0.25rem; }
+  h1 + .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 2.5rem; }
+  h2 { font-size: 1.4rem; color: var(--accent2); margin: 2.5rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.1rem; color: var(--accent); margin: 1.5rem 0 0.75rem; }
+  p, li { font-size: 0.95rem; margin-bottom: 0.75rem; }
+  ul, ol { padding-left: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+  th, td { padding: 0.5rem 0.7rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--accent); font-size: 0.75rem; text-transform: uppercase; background: var(--surface); }
+  .callout { background: var(--surface); border-left: 3px solid var(--accent); padding: 1rem 1.25rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout.borg { border-left-color: var(--borg); background: #f0f5f0; }
+  .callout.warn { border-left-color: var(--red); }
+  code { background: #eee; padding: 0.1rem 0.3rem; border-radius: 2px; font-size: 0.85rem; }
+  .mermaid { background: #fafafa; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+  .phase { background: #f0f4f8; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; border-left: 4px solid var(--borg); }
+  .phase strong { color: var(--borg); }
+  @media print { body { padding: 0.5rem; font-size: 10pt; } }
+</style>
+</head>
+<body>
+
+<h1>The Borg Assimilation Pattern</h1>
+<p class="subtitle">Legacy system knowledge extraction &rarr; ICD normalization &rarr; regeneration on new stack &middot; Silas, 2026-03-18</p>
+
+<div class="callout borg">
+<strong>"We are the Borg. Your technological distinctiveness will be added to our own."</strong><br>
+The Borg don't care what species built the technology. They care about the <em>function</em>. The ICD captures function &mdash; not implementation, not vendor, not runtime. Once the knowledge is in the ICD, the vendor lock-in breaks.
+</div>
+
+<!-- ============================================================ -->
+<h2>1. The Problem: Knowledge Trapped in Vendor Lock-In</h2>
+
+<p>Every enterprise has legacy integration systems that represent years of accumulated business knowledge:</p>
+
+<table>
+<tr><th>Platform</th><th>Knowledge Format</th><th>Lock-In Mechanism</th></tr>
+<tr><td>webMethods</td><td>FlowService XML, IS document types, triggers, pub/sub</td><td>Proprietary runtime, commercial license, accumulated adapters</td></tr>
+<tr><td>Informatica</td><td>Mapplets, sessions, workflows, parameter files</td><td>PowerCenter server, repository metadata, enterprise licensing</td></tr>
+<tr><td>Talend</td><td>Java-generated jobs, tMap components, context variables</td><td>Studio project structure, component dependencies</td></tr>
+<tr><td>MuleSoft</td><td>Mule XML configs, DataWeave transforms, API specs</td><td>Anypoint Platform, CloudHub runtime</td></tr>
+<tr><td>SSIS</td><td>.dtsx packages, data flows, control flows</td><td>SQL Server ecosystem, Windows-only execution</td></tr>
+<tr><td>Stored Procedures</td><td>SQL, PL/SQL, T-SQL, business logic in DB</td><td>Database vendor, accumulated tribal knowledge</td></tr>
+</table>
+
+<p>The <strong>business logic</strong> &mdash; which fields map where, what transforms apply, what validation rules exist, what the canonical model looks like &mdash; is embedded in vendor-specific formats. Retiring the platform means extracting that knowledge, or losing it.</p>
+
+<div class="callout warn">
+<strong>The traditional approach:</strong> Hire 150 people. Manually inspect every integration flow. Document what each one does in spreadsheets. Build the new system from the spreadsheets. Hope the spreadsheets are right. Duration: 2-3 years. Cost: tens of millions. Success rate: mixed.
+</div>
+
+<!-- ============================================================ -->
+<h2>2. The Assimilation Pattern</h2>
+
+<div class="mermaid">
+graph LR
+    subgraph Legacy ["Legacy System (any vendor)"]
+        L1[Flow definitions]
+        L2[Schema/document types]
+        L3[Transform rules]
+        L4[Routing logic]
+        L5[Validation rules]
+    end
+    subgraph Observe ["Phase 1: OBSERVE"]
+        A1[Agent reads source artifacts]
+        A2[Parse vendor-specific format]
+        A3[Extract field-level semantics]
+    end
+    subgraph Assimilate ["Phase 2: ASSIMILATE"]
+        B1[Emit provider ICD]
+        B2[Emit consumer ICD]
+        B3[Map source → canonical]
+        B4[Assign severity tiers]
+    end
+    subgraph Adapt ["Phase 3: ADAPT"]
+        C1[Human reviews ICD]
+        C2[Refine mappings]
+        C3[Confirm severity tiers]
+        C4[ICD lint passes]
+    end
+    subgraph Regenerate ["Phase 4: REGENERATE"]
+        D1[Generate new pipeline code]
+        D2[Generate SHACL shapes]
+        D3[Generate quality gate]
+        D4[Run on new stack]
+    end
+    Legacy --> Observe --> Assimilate --> Adapt --> Regenerate
+</div>
+
+<h3>Phase 1: OBSERVE &mdash; Agent reads the legacy system</h3>
+
+<div class="phase">
+<strong>Input:</strong> Vendor-specific artifacts (XML, SQL, config files, metadata exports)<br>
+<strong>Output:</strong> Structured extraction of fields, transforms, routing, validation<br>
+<strong>Agent role:</strong> Read every integration flow. For each: identify source fields, target fields, transformation logic, conditional routing, error handling, and validation rules. Emit as structured JSON.
+</div>
+
+<p>The agent reads what exists &mdash; not what the documentation says exists. This is the Borg scanning a ship: comprehensive, systematic, no assumptions about what matters.</p>
+
+<table>
+<tr><th>Vendor Artifact</th><th>What Agent Extracts</th><th>Maps To ICD</th></tr>
+<tr><td>webMethods FlowService</td><td>Input/output signatures, MAP steps, BRANCH logic, INVOKE targets</td><td>Provider field-rows + transform rules</td></tr>
+<tr><td>webMethods IS Doc Type</td><td>Field names, types, constraints, cardinality, nested structure</td><td>Consumer cf-rows with data-datatype, data-cardinality</td></tr>
+<tr><td>Informatica Mapping</td><td>Source qualifier, expression transforms, lookup, target columns</td><td>Provider field-rows with data-transform-type</td></tr>
+<tr><td>SQL Stored Procedure</td><td>Parameters, SELECT columns, JOIN logic, WHERE filters, INSERT targets</td><td>Provider fields (SELECT) + consumer fields (INSERT)</td></tr>
+<tr><td>DataWeave Transform</td><td>Input schema, output schema, mapping expressions</td><td>Field-rows with data-transform expressions</td></tr>
+</table>
+
+<h3>Phase 2: ASSIMILATE &mdash; Normalize into ICD</h3>
+
+<div class="phase">
+<strong>Input:</strong> Structured extraction from Phase 1<br>
+<strong>Output:</strong> SEMANTIC_MAPPER.html with all data-* attributes populated<br>
+<strong>Agent role:</strong> For each integration flow, emit a domain in the mapper with: provider ICDs (one per source system), consumer ICD (the canonical model), field-row mappings with transform types, severity tiers (derived from existing validation rules or NULL checks).
+</div>
+
+<div class="mermaid">
+flowchart TD
+    subgraph Extraction
+        E1["webMethods FlowService XML"] -->|parse| J1[JSON extraction]
+        E2["IS Document Types"] -->|parse| J2[JSON extraction]
+        E3["Adapter configs"] -->|parse| J3[JSON extraction]
+    end
+    subgraph ICD_Generation ["ICD Generation"]
+        J1 --> P[Provider ICD sections]
+        J2 --> C[Consumer ICD sections]
+        J3 --> P
+        P --> M["SEMANTIC_MAPPER.html<br/>with data-* attributes"]
+        C --> M
+    end
+    subgraph Enrichment
+        M --> SEV[Assign severity tiers]
+        SEV -->|"NOT NULL → violation<br/>has default → warning<br/>nullable → info"| M2[Enriched ICD]
+    end
+</div>
+
+<p>Severity tier inference from legacy code:</p>
+
+<table>
+<tr><th>Legacy Pattern</th><th>Inferred Severity</th><th>Rationale</th></tr>
+<tr><td><code>NOT NULL</code> constraint in DB</td><td>Violation (Required)</td><td>Database enforces it &mdash; it's required</td></tr>
+<tr><td><code>DEFAULT</code> value in DB or flow</td><td>Warning (Expected)</td><td>System provides a fallback &mdash; expected but not fatal</td></tr>
+<tr><td>Nullable, no validation</td><td>Info (Completeness)</td><td>Nice to have, not enforced</td></tr>
+<tr><td>Validation step in flow (range check, pattern match)</td><td>Violation (if rejects) or Warning (if logs)</td><td>Depends on error handling: reject vs log-and-continue</td></tr>
+<tr><td>Transform with hardcoded lookup</td><td>Warning + <code>data-transform-type="lookup"</code></td><td>Business rule embedded in transform</td></tr>
+</table>
+
+<h3>Phase 3: ADAPT &mdash; Human reviews and refines</h3>
+
+<div class="phase">
+<strong>Input:</strong> Agent-generated ICD<br>
+<strong>Output:</strong> Confirmed, refined ICD that passes lint<br>
+<strong>Human role:</strong> This is the Staples manual inspection step &mdash; now assisted by the agent's extraction. The human confirms: Are these the right fields? Are the severity tiers correct? Did the agent miss any business rules? Are there implicit transforms the code doesn't capture?
+</div>
+
+<div class="callout borg">
+<strong>This is where domain knowledge matters.</strong> The agent reads code. The human knows intent. The agent might correctly extract that <code>ORDER_DATE</code> maps to <code>canonicalOrder.createdAt</code> with a date format transform. But only the human knows that <code>ORDER_DATE</code> is actually the <em>ship date</em> when the order type is "dropship" &mdash; a business rule that lives in tribal knowledge, not in the code.
+</div>
+
+<p>The adapt phase uses the same tools as the build phase:</p>
+<ul>
+<li><strong>ICD lint</strong> &mdash; does every provider have Purpose, Risks, Non-Functionals, Interface, Diagrams?</li>
+<li><strong>Map integrity</strong> &mdash; does every provider <code>data-maps-to</code> have a matching consumer <code>data-canonical</code>?</li>
+<li><strong>Severity coverage</strong> &mdash; does every consumer have at least one Violation, Warning, Info?</li>
+<li><strong>Nudge review</strong> &mdash; architect reviews ICD, flags concerns, builder confirms before coding</li>
+</ul>
+
+<h3>Phase 4: REGENERATE &mdash; Generate on new stack</h3>
+
+<div class="phase">
+<strong>Input:</strong> Confirmed ICD (lint-passing)<br>
+<strong>Output:</strong> Pipeline code on target stack + SHACL shapes + quality gate<br>
+<strong>Agent role:</strong> Read the ICD data-* attributes. Emit code for the target platform. Run the quality gate against migrated data. Report pass/fail per severity tier.
+</div>
+
+<div class="mermaid">
+graph TB
+    ICD["SEMANTIC_MAPPER.html<br/>(platform-independent)"] --> G1[TypeScript + Fuseki]
+    ICD --> G2[Python + Kafka]
+    ICD --> G3[Java + Spring Boot]
+    ICD --> G4[dbt + Snowflake]
+    ICD --> G5[Node + PostgreSQL]
+    G1 --> QG1[Quality Gate]
+    G2 --> QG2[Quality Gate]
+    G3 --> QG3[Quality Gate]
+    G4 --> QG4[Quality Gate]
+    G5 --> QG5[Quality Gate]
+</div>
+
+<p>The ICD is the invariant. The generated code is the variable. Change the target platform, regenerate. The contract stays the same.</p>
+
+<!-- ============================================================ -->
+<h2>3. Proof: Stories Domain (2026-03-18)</h2>
+
+<p>Today's session proved the pattern end-to-end on the Stories domain:</p>
+
+<table>
+<tr><th>Step</th><th>What Happened</th><th>Result</th></tr>
+<tr><td>Define ICD</td><td>Added severity tiers, field-rows, data-* attributes to SEMANTIC_MAPPER.html</td><td>13 consumer fields, 11 provider mappings</td></tr>
+<tr><td>Enrich for codegen</td><td>Added data-datatype, data-cardinality, data-transform-type, data-keywords, data-names, data-transform-pattern</td><td>Machine-executable transform specs</td></tr>
+<tr><td>Generate code</td><td><code>generate-from-icd.py --domain stories</code></td><td>TypeScript interface, SHACL shapes, quality gate</td></tr>
+<tr><td>Compare</td><td>Generated interface vs hand-written <code>StoryResource</code></td><td><strong>100% field match</strong> &mdash; every field, type, and optionality</td></tr>
+</table>
+
+<p>The generator read the ICD and produced code that matches the hand-written implementation. The ICD IS the spec. The code IS derived.</p>
+
+<!-- ============================================================ -->
+<h2>4. Enterprise Application: webMethods Retirement</h2>
+
+<p>Applied to a webMethods estate like Staples (~20 domains, hundreds of integrations):</p>
+
+<div class="mermaid">
+sequenceDiagram
+    participant WM as webMethods Estate
+    participant AG as AI Agent (Borg)
+    participant ICD as ICD Mapper
+    participant HU as Human (Architect)
+    participant NEW as New Stack
+
+    AG->>WM: Read all FlowService XML + IS Doc Types
+    AG->>AG: Parse 500+ flows, extract field semantics
+    AG->>ICD: Emit 20 domain ICDs with provider/consumer mappings
+    AG->>HU: "Review ready — 20 domains, 847 field mappings"
+
+    loop Per Domain
+        HU->>ICD: Review, refine severity tiers
+        HU->>ICD: Add tribal knowledge (business rules not in code)
+        HU->>AG: "ICD confirmed for Orders domain"
+        AG->>NEW: Generate pipeline code + SHACL + quality gate
+        AG->>AG: Run quality gate on migrated test data
+        AG->>HU: "Orders domain: GATE PASS — 100% Required, 94% Expected"
+    end
+
+    HU->>HU: Decommission webMethods flows as domains go live
+</div>
+
+<h3>Estimated Impact</h3>
+
+<table>
+<tr><th>Metric</th><th>Traditional (Manual)</th><th>Borg Pattern (Agent-Assisted)</th></tr>
+<tr><td>Time to extract one domain</td><td>2-4 weeks (manual inspection)</td><td>1-2 days (agent reads + human reviews)</td></tr>
+<tr><td>ICD accuracy</td><td>~70% (human error, stale docs)</td><td>~90% (code-derived, human-refined)</td></tr>
+<tr><td>Code generation</td><td>Manual rewrite (weeks per domain)</td><td>Generated from ICD (hours per domain)</td></tr>
+<tr><td>Validation</td><td>Manual testing, UAT cycles</td><td>Automated quality gate, severity-tiered reporting</td></tr>
+<tr><td>Team size</td><td>50-150 people</td><td>5-10 people + AI agents</td></tr>
+<tr><td>Duration (20 domains)</td><td>2-3 years</td><td>3-6 months</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>5. Why This Works</h2>
+
+<div class="callout borg">
+<strong>The Borg are efficient because they separate knowledge from implementation.</strong> They don't preserve the Klingon ship &mdash; they extract what it can do and integrate that capability into the collective. The ship is irrelevant. The function persists.
+</div>
+
+<p>The same principle applies to legacy retirement:</p>
+
+<ul>
+<li><strong>The webMethods runtime is the ship.</strong> It's irrelevant. What matters is the integration logic it executes.</li>
+<li><strong>The ICD is the extracted knowledge.</strong> Platform-independent, visual, machine-readable, human-reviewable.</li>
+<li><strong>The new stack is the new ship.</strong> TypeScript, Python, Java, whatever. Generated from the same ICD.</li>
+<li><strong>The quality gate is the assimilation verification.</strong> Did we capture everything? Does the new implementation match the old? Required = 100%.</li>
+</ul>
+
+<h3>Prior Art</h3>
+
+<table>
+<tr><th>Source</th><th>Contribution</th></tr>
+<tr><td>Bridwell Patent US9552400B2</td><td>ICD registration + validation + canonical model auto-enhancement. The foundational pattern.</td></tr>
+<tr><td>Staples Integration Program (2010-2012)</td><td>20 domains, 100+ ICDs, manual inspection at scale. Proved the pattern works. Identified the bottleneck (manual inspection speed).</td></tr>
+<tr><td>Staples Operational Stability (2014-2016)</td><td>Normalize, instrument, retire, rewrite. The retirement playbook applied to 3 years of legacy cleanup.</td></tr>
+<tr><td>Gathering/Chorus (2026)</td><td>Agent-driven ICD creation, code generation from data attributes, quality gate automation. The manual bottleneck removed.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>6. Proof: SSIS Package Assimilation (2026-03-18)</h2>
+
+<p>We ran the full Observe &rarr; Assimilate pipeline against Microsoft's <a href="https://github.com/Microsoft/sql-server-samples/tree/master/samples/databases/wide-world-importers/wwi-ssis">WideWorldImporters SSIS ETL</a> &mdash; a real-world OLTP-to-OLAP data warehouse package.</p>
+
+<h3>Phase 1 Results: What the Agent Extracted</h3>
+
+<table>
+<tr><th>Metric</th><th>Value</th></tr>
+<tr><td>Source file</td><td><code>DailyETLMain.dtsx</code> &mdash; 13,082 lines of vendor XML</td></tr>
+<tr><td>Executable tasks</td><td>95 (SQL tasks, data flows, sequences, expressions)</td></tr>
+<tr><td>SQL statements</td><td>53 (stored proc calls for staging + migration)</td></tr>
+<tr><td>Data flow components</td><td>26 (13 sources, 13 destinations)</td></tr>
+<tr><td>Domains extracted</td><td>13 (City, Customer, Employee, Movement, Order, Payment Method, Purchase, Sale, Stock Holding, Stock Item, Supplier, Transaction, Transaction Type)</td></tr>
+<tr><td>Time to extract</td><td>&lt;5 seconds (Python XML parser)</td></tr>
+</table>
+
+<h3>Domains Discovered</h3>
+
+<table>
+<tr><th>Domain</th><th>Type</th><th>Source Columns</th><th>Dest Columns</th><th>Dropped</th><th>Pattern</th></tr>
+<tr><td>City</td><td>Dimension</td><td>38</td><td>15</td><td>23</td><td>OLTP &rarr; Staging &rarr; Dimension</td></tr>
+<tr><td>Customer</td><td>Dimension</td><td>29</td><td>12</td><td>17</td><td>OLTP &rarr; Staging &rarr; Dimension</td></tr>
+<tr><td>Employee</td><td>Dimension</td><td>23</td><td>10</td><td>13</td><td>OLTP &rarr; Staging &rarr; Dimension</td></tr>
+<tr><td>Stock Item</td><td>Dimension</td><td>56</td><td>21</td><td>35</td><td>OLTP &rarr; Staging &rarr; Dimension</td></tr>
+<tr><td>Supplier</td><td>Dimension</td><td>29</td><td>12</td><td>17</td><td>OLTP &rarr; Staging &rarr; Dimension</td></tr>
+<tr><td>Payment Method</td><td>Dimension</td><td>14</td><td>7</td><td>7</td><td>OLTP &rarr; Staging &rarr; Dimension</td></tr>
+<tr><td>Transaction Type</td><td>Dimension</td><td>14</td><td>7</td><td>7</td><td>OLTP &rarr; Staging &rarr; Dimension</td></tr>
+<tr><td><strong>Sale</strong></td><td><strong>Fact</strong></td><td><strong>62</strong></td><td><strong>28</strong></td><td><strong>34</strong></td><td>OLTP &rarr; Staging &rarr; Fact</td></tr>
+<tr><td>Order</td><td>Fact</td><td>56</td><td>27</td><td>29</td><td>OLTP &rarr; Staging &rarr; Fact</td></tr>
+<tr><td>Purchase</td><td>Fact</td><td>32</td><td>15</td><td>17</td><td>OLTP &rarr; Staging &rarr; Fact</td></tr>
+<tr><td>Movement</td><td>Fact</td><td>32</td><td>17</td><td>15</td><td>OLTP &rarr; Staging &rarr; Fact</td></tr>
+<tr><td>Transaction</td><td>Fact</td><td>53</td><td>25</td><td>28</td><td>OLTP &rarr; Staging &rarr; Fact</td></tr>
+<tr><td>Stock Holding</td><td>Fact</td><td>23</td><td>11</td><td>12</td><td>OLTP &rarr; Staging &rarr; Fact</td></tr>
+</table>
+
+<h3>Phase 2 Results: Generated ICDs</h3>
+
+<p>The agent emitted a complete ICD page with provider/consumer mappings, severity tiers, field-level data types, dropped field lists, and pipeline diagrams for each domain. <strong><a href="file:///tmp/ssis-assimilated-icds.html">View the generated ICDs &rarr;</a></strong></p>
+
+<p>Each generated ICD includes:</p>
+<ul>
+<li><strong>Provider ICD</strong> with Purpose &amp; Scope, Risks, Interface (field-rows with <code>data-*</code> attributes), Dropped Fields, Mermaid pipeline diagram</li>
+<li><strong>Consumer ICD</strong> with severity-tiered <code>cf-row</code> elements (Violation for keys/IDs, Warning for business fields, Info for metadata)</li>
+<li><strong>All hops visible</strong>: OLTP source &rarr; <code>Get*Updates</code> stored proc &rarr; Staging table &rarr; <code>MigrateStaged*Data</code> stored proc &rarr; Dimension/Fact table</li>
+</ul>
+
+<div class="mermaid">
+graph TB
+    subgraph "What SSIS Does (13K lines XML)"
+        A1[Truncate staging] --> A2["SELECT FROM source<br/>WHERE modified > cutoff"]
+        A2 --> A3[INSERT INTO staging]
+        A3 --> A4["EXEC MigrateStaged*Data"]
+    end
+    subgraph "What You Actually Need"
+        B1["DELETE FROM staging"] --> B2["INSERT INTO staging<br/>SELECT ... WHERE ..."]
+        B2 --> B3["EXEC migrate proc"]
+    end
+    subgraph "Generated from ICD"
+        C1["Python/TypeScript script"] --> C2["SQL via connection pool"]
+        C2 --> C3["Quality gate validates"]
+    end
+</div>
+
+<!-- ============================================================ -->
+<h2>7. The Commercial Engine Illusion</h2>
+
+<p>The SSIS proof reveals what commercial integration engines actually do at the data flow level:</p>
+
+<table>
+<tr><th>What the Vendor Sells</th><th>What Actually Executes</th><th>What You Need</th></tr>
+<tr><td>Visual drag-and-drop mapper</td><td>XML config encoding column mappings</td><td>ICD with <code>data-*</code> attributes</td></tr>
+<tr><td>OLE DB Source adapter</td><td><code>SELECT</code> with parameters</td><td>SQL query + connection config</td></tr>
+<tr><td>OLE DB Destination adapter</td><td><code>INSERT</code> with column mapping</td><td>SQL insert + column map from ICD</td></tr>
+<tr><td>Data Flow pipeline</td><td>Read &rarr; transform &rarr; write</td><td>Python/Node script with streaming</td></tr>
+<tr><td>Expression transforms</td><td>String manipulation, casting, conditionals</td><td>Generated functions from <code>data-transform-type</code></td></tr>
+<tr><td>Error handling</td><td>Redirect rows, log errors</td><td>try/catch + quality gate severity tiers</td></tr>
+<tr><td>Runtime orchestration</td><td>Execute tasks in sequence</td><td>Shell script, cron, or LaunchAgent</td></tr>
+<tr><td>Monitoring dashboard</td><td>Execution logs, row counts</td><td>Progress to stderr + Grafana/Loki</td></tr>
+</table>
+
+<div class="callout borg">
+<strong>The vendor lock-in was never the runtime.</strong> A $500K/year webMethods license, an SSIS installation, an Informatica PowerCenter &mdash; they all execute the same operations: read, transform, write, validate. The lock-in is the <strong>accumulated mapper decisions</strong> &mdash; which fields map where, what transforms apply, what validation rules exist. Once those decisions are in the ICD, the runtime is commodity.
+</div>
+
+<p>What a commercial engine provides that you <strong>DO need</strong>:</p>
+<ul>
+<li><strong>Visual mapper for field-level decisions</strong> &mdash; SEMANTIC_MAPPER.html</li>
+<li><strong>Validation at ingest</strong> &mdash; SHACL shapes / quality gate</li>
+<li><strong>Monitoring and alerting</strong> &mdash; Grafana + Loki + incremental progress</li>
+<li><strong>Retry and error handling</strong> &mdash; shell wrapper with exit codes</li>
+</ul>
+
+<p>What a commercial engine provides that you <strong>DON'T need</strong>:</p>
+<ul>
+<li><strong>Proprietary runtime</strong> &mdash; SQL is SQL. Python reads and writes it.</li>
+<li><strong>Vendor-specific adapters</strong> &mdash; every database has a driver</li>
+<li><strong>Enterprise licensing</strong> &mdash; the mapper decisions are the IP, not the engine</li>
+<li><strong>Proprietary config format</strong> &mdash; HTML with <code>data-*</code> is open, visual, version-controlled</li>
+</ul>
+
+<h3>Cost Comparison</h3>
+
+<table>
+<tr><th>Component</th><th>Commercial Engine</th><th>ICD + Generated Code</th></tr>
+<tr><td>Mapper / design surface</td><td>Vendor IDE ($$$)</td><td>SEMANTIC_MAPPER.html (free, open)</td></tr>
+<tr><td>Runtime</td><td>Licensed server ($50-500K/yr)</td><td>Python/Node on any server ($0)</td></tr>
+<tr><td>Validation</td><td>Built into vendor pipeline</td><td>validate-canonical.py + SHACL (generated)</td></tr>
+<tr><td>Monitoring</td><td>Vendor dashboard</td><td>Grafana + Loki (open source)</td></tr>
+<tr><td>Migration cost</td><td>Locked to vendor format</td><td>ICD is platform-independent</td></tr>
+<tr><td>Team size (20 domains)</td><td>50-150 people</td><td>5-10 people + AI agents</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>8. Product Vision</h2>
+
+<p>A tool that:</p>
+
+<ol>
+<li><strong>Points at a legacy system</strong> (webMethods, Informatica, MuleSoft, stored procedures, flat files) and reads every integration artifact</li>
+<li><strong>Produces a visual ICD mapper</strong> with provider/consumer mappings, severity tiers, transform rules, and diagrams &mdash; all browsable in HTML</li>
+<li><strong>Lets the architect refine</strong> the ICD interactively &mdash; add tribal knowledge, adjust severity tiers, confirm or correct agent inferences</li>
+<li><strong>Generates pipeline code</strong> on any target stack from the confirmed ICD</li>
+<li><strong>Runs quality gates</strong> on migrated data &mdash; severity-tiered, auditable, pass/fail</li>
+<li><strong>Tracks retirement progress</strong> per domain &mdash; which integrations have been assimilated, which are pending, which are decommissioned</li>
+</ol>
+
+<p>The attention architecture (observer/navigator/driver) manages the agents doing the work. The ICD discipline ensures the work is correct. The quality gate proves it.</p>
+
+<p><strong>Resistance is futile.</strong> The legacy system's knowledge will be assimilated. The question is whether it happens in 3 months or 3 years.</p>
+
+<hr style="border-color:var(--border); margin: 3rem 0 1rem;">
+<p style="color:var(--muted); font-size:0.8rem;">
+  Silas (Architect) &middot; 2026-03-18 &middot; Derived from session with Jeff.
+  References: Bridwell patent US9552400B2, Staples integration program (2010-2016), Deming's 14 Points (#3: cease dependence on inspection),
+  Gathering SEMANTIC_MAPPER.html (proof implementation), generate-from-icd.py (code generation proof).
+</p>
+
+</body>
+</html>

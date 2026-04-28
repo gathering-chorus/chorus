@@ -5,11 +5,8 @@
 //! Same root cause as #1992 (demo_preflight).
 
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
-fn chorus_root() -> String {
-    std::env::var("CHORUS_ROOT")
-        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
-}
 
 fn home() -> String {
     std::env::var("HOME")
@@ -39,6 +36,10 @@ fn accept_gate_cards_view_fails_without_path() {
         "cards view should fail without PATH — proves the bug");
 }
 
+// Requires live cards CLI → chorus-api (localhost:3340) → Vikunja stack.
+// That stack runs as launchctl LaunchAgents on Mac; CI Linux runner has none.
+// Mac dev: runs as part of `cargo test`. CI: ignored.
+#[cfg_attr(not(target_os = "macos"), ignore = "needs cards CLI + chorus API + Vikunja stack (Mac LaunchAgents)")]
 #[test]
 fn accept_gate_cards_view_passes_with_path() {
     let cards = format!("{}/platform/scripts/cards", chorus_root());

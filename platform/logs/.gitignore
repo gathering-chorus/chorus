@@ -1,0 +1,7 @@
+# Runtime spine output — chorus.log + board snapshots. Never tracked.
+# Dir is kept in checkout via this .gitignore (which negates itself).
+# Tests use CHORUS_LOG_FILE env override → tempdir, so live spine writes
+# stay out of test runs.
+*.log
+*.json
+!.gitignore

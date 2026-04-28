@@ -4,7 +4,7 @@ use std::fs;
 use std::process::ExitCode;
 
 use crate::chorus_log;
-use crate::shared::state_paths::{self, REPO_ROOT};
+use crate::shared::state_paths::{self, repo_root};
 use crate::shared::protocol_contract;
 
 use super::context_cache;
@@ -19,7 +19,7 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         return ExitCode::from(1);
     }
     let role_dir = state_paths::role_dir(role).unwrap();
-    let role_path = format!("{}/{}", REPO_ROOT, role_dir);
+    let role_path = format!("{}/{}", repo_root(), role_dir);
     let cache = format!("/tmp/session-context-{}.md", role);
     let out = format!("/tmp/session-start-{}.md", role);
     let init_dir = "/tmp/claude-session-init";
@@ -139,7 +139,7 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         "{}/chorus/platform/scripts/bridge-subscriber.js",
         std::env::var("HOME")
             .map(|h| format!("{}/CascadeProjects", h))
-            .unwrap_or_else(|_| REPO_ROOT.to_string())
+            .unwrap_or_else(|_| repo_root().to_string())
     );
     if std::path::Path::new(&subscriber_script).exists() {
         let already_running = std::process::Command::new("pgrep")
@@ -199,7 +199,7 @@ pub fn session_close_cmd(args: &[String]) -> ExitCode {
         return ExitCode::from(1);
     }
     let role_dir = state_paths::role_dir(role).unwrap();
-    let role_path = format!("{}/{}", REPO_ROOT, role_dir);
+    let role_path = format!("{}/{}", repo_root(), role_dir);
 
     let _ = chorus_log::run(&["protocol.close.started".to_string(), role.to_string()]);
 
@@ -211,7 +211,7 @@ pub fn session_close_cmd(args: &[String]) -> ExitCode {
     }
 
     // Board audit
-    let board_ts = format!("{}/chorus/platform/scripts/cards", REPO_ROOT);
+    let board_ts = format!("{}/chorus/platform/scripts/cards", repo_root());
     let _ = std::process::Command::new("bash")
         .args([&board_ts, "audit-close", role])
         .output().ok().and_then(|o| {
@@ -220,7 +220,7 @@ pub fn session_close_cmd(args: &[String]) -> ExitCode {
 
     // Uncommitted
     let uncommitted = std::process::Command::new("git")
-        .args(["-C", REPO_ROOT, "status", "--porcelain", &format!("{}/", role_dir)])
+        .args(["-C", repo_root(), "status", "--porcelain", &format!("{}/", role_dir)])
         .output().ok().and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.lines().count()).unwrap_or(0);
     if uncommitted > 0 {

@@ -51,20 +51,33 @@ describe('createSubdomainResolver', () => {
     expect(await resolve('Seeds-Domain')).toBe('seeds-domain');
   });
 
-  it('returns -domain when the ASK query returns true', async () => {
-    const sparql = jest.fn(async () => ({ boolean: true }));
+  it('returns -domain when the bare-name probe is false but the -domain ASK is true', async () => {
+    // #2485 — order: bare check first (substrate-class loom-* are canonical),
+    // then -domain check, then -service fallback. For 'seeds' the bare URI
+    // doesn't exist in the graph but seeds-domain does.
+    let call = 0;
+    const sparql = jest.fn(async () => ({ boolean: ++call === 2 }));
     const resolve = createSubdomainResolver({ sparql });
     expect(await resolve('seeds')).toBe('seeds-domain');
+    expect(sparql).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns the bare name when the bare-name probe is true (substrate-class)', async () => {
+    // #2485 — loom-decisions/loom-principles/loom-policies have no
+    // -domain/-service suffix; the bare URI IS the canonical SubDomain id.
+    const sparql = jest.fn(async () => ({ boolean: true }));
+    const resolve = createSubdomainResolver({ sparql });
+    expect(await resolve('loom-decisions')).toBe('loom-decisions');
     expect(sparql).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to -service when the ASK query returns false', async () => {
+  it('falls back to -service when both ASK queries return false', async () => {
     const sparql = jest.fn(async () => ({ boolean: false }));
     const resolve = createSubdomainResolver({ sparql });
     expect(await resolve('tests')).toBe('tests-service');
   });
 
-  it('falls back to -service when the ASK query throws', async () => {
+  it('falls back to -service when both ASK queries throw', async () => {
     const sparql = jest.fn(async () => { throw new Error('Fuseki down'); });
     const resolve = createSubdomainResolver({ sparql });
     expect(await resolve('anything')).toBe('anything-service');

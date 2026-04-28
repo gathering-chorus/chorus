@@ -32,18 +32,10 @@ export interface DiscoverTestsDeps {
   chorusRoot: string;
 }
 
-const GENERIC_BASES = new Set([
-  'services', 'service', 'domains', 'domain', 'code', 'loom', 'time',
-  'streams', 'stream', 'messages', 'message', 'policies', 'policy',
-]);
-
-const SPECIAL_ALIASES: Record<string, string> = {
-  wordpress: 'blog-domain',
-  socialpost: 'social-domain',
-  'sms-seed': 'seeds-domain',
-  'self-ai': 'sexuality-domain',
-  ontology: 'convergence-domain',
-};
+// #2516: GENERIC_BASES + SPECIAL_ALIASES + buildAliasMap auto-derivation
+// retired. Aliases are graph-resident as <sd> chorus:hasTestPathPrefix
+// "alias" triples in urn:chorus:ontology. Migration: scripts/migrate-aliases-to-graph.ts.
+// New subdomains declare their own hasTestPathPrefix triples at creation time.
 
 export function classifyTestType(relPath: string): string {
   if (/\/e2e\//i.test(relPath) || /\.e2e\./i.test(relPath)) return 'e2e';
@@ -55,28 +47,20 @@ export function classifyTestType(relPath: string): string {
   return 'unit';
 }
 
-export function buildAliasMap(
-  domains: Array<{ id?: string; label?: string; sd?: { value?: string } }>,
+export function loadAliasMap(
+  rows: Array<{ sd?: { value?: string }; prefix?: { value?: string } }>,
 ): Record<string, string> {
+  // Reads alias triples from urn:chorus:ontology and produces the runtime
+  // aliasToId map. Order matters: when two SubDomains claim the same
+  // prefix (e.g. property), the SPARQL query's ORDER BY ?sd determines
+  // which wins under last-write-wins dict semantics.
   const out: Record<string, string> = {};
-  const normalized = domains.map((d) => {
-    if (d.id) return { id: d.id, label: d.label ?? '' };
-    return {
-      id: String(d.sd?.value ?? '').split('#').pop() || '',
-      label: String(d.label ?? '').toLowerCase(),
-    };
-  });
-  for (const d of normalized) {
-    if (!d.id) continue;
-    const base = d.id.replace(/-(domain|service)$/, '');
-    if (GENERIC_BASES.has(base)) continue;
-    out[base] = d.id;
-    if (base.endsWith('s') && !base.endsWith('ss')) {
-      if (base.endsWith('ies')) out[base.replace(/ies$/, 'y')] = d.id;
-      else out[base.replace(/s$/, '')] = d.id;
-    }
+  for (const r of rows) {
+    const id = String(r.sd?.value ?? '').split('#').pop() || '';
+    const prefix = String(r.prefix?.value ?? '');
+    if (!id || !prefix) continue;
+    out[prefix] = id;
   }
-  for (const [k, v] of Object.entries(SPECIAL_ALIASES)) out[k] = v;
   return out;
 }
 
@@ -97,10 +81,12 @@ export function inferDomain(
 
 export function createDiscoverTests(deps: DiscoverTestsDeps) {
   return async function discoverTests() {
-    const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
-    const sdResult = await deps.sparqlClient.query(sdQuery);
-    const bindings = sdResult.results?.bindings ?? [];
-    const aliasToId = buildAliasMap(bindings.map((b) => ({ sd: b.sd, label: b.label.value })));
+    const aliasQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> '
+      + 'SELECT ?sd ?prefix WHERE { GRAPH <urn:chorus:ontology> { '
+      + '?sd chorus:hasTestPathPrefix ?prefix } } ORDER BY ?sd';
+    const aliasResult = await deps.sparqlClient.query(aliasQuery);
+    const bindings = aliasResult.results?.bindings ?? [];
+    const aliasToId = loadAliasMap(bindings.map((b) => ({ sd: b.sd, prefix: b.prefix })));
 
     const testEntries: Array<{ testFile: string; testType: string; coversDomain: string }> = [];
 
@@ -127,6 +113,10 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
     scanTests(deps.path.join(deps.chorusRoot, 'platform/services/chorus-hooks/tests'), deps.chorusRoot);
     scanTests(deps.path.join(deps.chorusRoot, 'proving'), deps.chorusRoot);
     scanTests(deps.path.join(deps.chorusRoot, 'docs/diagrams'), deps.chorusRoot);
+    // #2515 — extend crawl to cover the cards CLI test suite (47 files) and
+    // the bats suite under platform/tests (knowledge/seeds/auto-role-state etc).
+    scanTests(deps.path.join(deps.chorusRoot, 'directing/products/cards/tests'), deps.chorusRoot);
+    scanTests(deps.path.join(deps.chorusRoot, 'platform/tests'), deps.chorusRoot);
 
     const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?t a <https://jeffbridwell.com/chorus#TestCoverage> ; ?p ?o . } }';
     await deps.sparqlClient.update(clearQuery);

@@ -55,6 +55,36 @@ chorus:SubDomainParentShape a sh:NodeShape ;
     sh:message "SubDomain must have at least one parent"
   ] .
 
+# --- CatalogDoc shape (#2554) ---
+
+chorus:CatalogDocShape a sh:NodeShape ;
+  sh:targetClass chorus:CatalogDoc ;
+  sh:property [
+    sh:path chorus:catalogHref ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:severity sh:Violation ;
+    sh:message "CatalogDoc must have catalogHref"
+  ] ;
+  sh:property [
+    sh:path chorus:product ;
+    sh:in ( "chorus" "gathering" "consulting" ) ;
+    sh:severity sh:Violation ;
+    sh:message "CatalogDoc product must be one of: chorus, gathering, consulting"
+  ] ;
+  sh:property [
+    sh:path chorus:subproduct ;
+    sh:in ( "loom" "werk" "athena" "convergence" "clearing" "quality" "borg" ) ;
+    sh:severity sh:Violation ;
+    sh:message "CatalogDoc subproduct must be one of: loom, werk, athena, convergence, clearing, quality, borg"
+  ] ;
+  sh:property [
+    sh:path chorus:role ;
+    sh:in ( "wren" "silas" "kade" "jeff" ) ;
+    sh:severity sh:Violation ;
+    sh:message "CatalogDoc role must be one of: wren, silas, kade, jeff"
+  ] .
+
 # --- Soft constraint (warning) ---
 
 chorus:SubDomainInstancesShape a sh:NodeShape ;

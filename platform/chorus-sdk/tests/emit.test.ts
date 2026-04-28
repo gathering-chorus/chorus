@@ -6,6 +6,10 @@ import { emit } from '../src/emit';
 describe('emit', () => {
   const tmpFile = path.join(os.tmpdir(), `chorus-sdk-test-${Date.now()}.log`);
 
+  beforeEach(() => {
+    try { fs.writeFileSync(tmpFile, ''); } catch { /* ignore */ }
+  });
+
   afterAll(() => {
     try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
   });
@@ -31,7 +35,7 @@ describe('emit', () => {
     emit('event.two', 'kade', {}, { logFile: tmpFile });
 
     const lines = fs.readFileSync(tmpFile, 'utf-8').trim().split('\n');
-    expect(lines.length).toBeGreaterThanOrEqual(3);
+    expect(lines).toHaveLength(2);
   });
 
   it('uses custom appName and component', () => {
@@ -46,7 +50,7 @@ describe('emit', () => {
   });
 
   it('is backward compatible with cards format', () => {
-    const event = emit('card.accepted', 'silas', { card_id: '177' }, { logFile: tmpFile });
+    emit('card.accepted', 'silas', { card_id: '177' }, { logFile: tmpFile });
     const lines = fs.readFileSync(tmpFile, 'utf-8').trim().split('\n');
     const last = JSON.parse(lines[lines.length - 1]);
 

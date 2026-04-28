@@ -14,6 +14,8 @@ describe('#2476 buildMcpServer principles tools', () => {
     const result = await handler({ method: 'tools/list', params: {} }, {});
     const names = result.tools.map((t: any) => t.name).sort();
     expect(names).toEqual([
+      'chorus_decisions_get',
+      'chorus_decisions_list',
       'chorus_nudge_message',
       'chorus_principles_create',
       'chorus_principles_get',

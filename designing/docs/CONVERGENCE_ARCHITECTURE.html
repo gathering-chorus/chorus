@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Convergence Architecture — ICD-Driven Integration for the AI Era</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad: true, theme: 'neutral', securityLevel: 'loose'});</script>
+<style>
+  :root { --bg: #fff; --surface: #f5f5f5; --accent: #1a472a; --accent2: #2471a3; --text: #1a1a2e; --muted: #555; --green: #27ae60; --yellow: #d4a017; --red: #c0392b; --border: #ccc; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Georgia', serif; background: var(--bg); color: var(--text); line-height: 1.7; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 2.2rem; color: var(--accent); margin-bottom: 0.25rem; }
+  h1 + .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 1rem; }
+  .tagline { font-size: 1.1rem; color: var(--accent2); font-style: italic; margin-bottom: 2.5rem; }
+  h2 { font-size: 1.4rem; color: var(--red); margin: 2.5rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.1rem; color: var(--accent2); margin: 1.5rem 0 0.75rem; }
+  p, li { font-size: 0.95rem; margin-bottom: 0.75rem; }
+  ul, ol { padding-left: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+  th, td { padding: 0.5rem 0.7rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--accent2); font-size: 0.75rem; text-transform: uppercase; background: var(--surface); }
+  .callout { background: var(--surface); border-left: 3px solid var(--accent); padding: 1rem 1.25rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout.vision { border-left-color: var(--accent2); background: #f0f4f8; }
+  code { background: #eee; padding: 0.1rem 0.3rem; border-radius: 2px; font-size: 0.85rem; }
+  .mermaid { background: #fafafa; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+  a { color: var(--accent2); }
+  .doc-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin: 1rem 0; }
+  .doc-card h4 { margin: 0 0 0.5rem; color: var(--accent); font-size: 1rem; }
+  .doc-card p { margin: 0; font-size: 0.85rem; color: var(--muted); }
+  .doc-card a { font-weight: 700; }
+  .layer { border-left: 4px solid var(--accent2); padding: 0.75rem 1rem; margin: 0.75rem 0; background: #fafafa; border-radius: 0 6px 6px 0; }
+  .layer strong { color: var(--accent); }
+  @media print { body { padding: 0.5rem; font-size: 10pt; } }
+</style>
+</head>
+<body>
+
+<h1>Convergence Architecture</h1>
+<p class="subtitle">ICD-Driven Integration for the AI Era &middot; Jeff Bridwell + Silas &middot; 2026-03-18</p>
+<p class="tagline">The contract defines the system. The graph holds the contracts. The agents execute against them. The gates prove correctness.</p>
+
+<!-- ============================================================ -->
+<h2>The Thesis</h2>
+
+<p>Every integration system &mdash; legacy or modern &mdash; encodes business decisions in a vendor-specific format. Those decisions are the real asset. The runtime is commodity. The vendor lock-in is artificial.</p>
+
+<p><strong>Convergence Architecture</strong> extracts those decisions into a platform-independent contract layer (the ICD), stores them in a knowledge graph, and generates execution code for any target platform. The contracts are the invariant. Everything else is derived.</p>
+
+<div class="mermaid">
+graph TB
+    subgraph Sources ["Any Source (legacy or new)"]
+        S1[webMethods]
+        S2[Informatica]
+        S3[SSIS]
+        S4[Stored Procedures]
+        S5[APIs]
+        S6[Files / Streams]
+    end
+    subgraph Convergence ["Convergence Layer"]
+        E[Extract] --> ICD["ICD<br/>(contract + severity tiers)"]
+        ICD --> G["Knowledge Graph<br/>(system of record)"]
+        G --> GEN["Generate<br/>(code + shapes + gates)"]
+    end
+    subgraph Targets ["Any Target (current or future)"]
+        T1[TypeScript + Fuseki]
+        T2[Python + Kafka]
+        T3[dbt + Snowflake]
+        T4[Java + Spring]
+        T5[Serverless / Lambda]
+    end
+    subgraph Quality ["Quality Layer"]
+        QG["Quality Gates<br/>(derived from ICD)"]
+        AA["Attention Architecture<br/>(Observer / Navigator / Driver)"]
+    end
+    Sources --> E
+    GEN --> Targets
+    GEN --> QG
+    AA --> QG
+    AA -.-> Convergence
+</div>
+
+<div class="callout vision">
+<strong>The key insight:</strong> Integration is not a project. It's a capability. Legacy retirement, new source onboarding, schema evolution, cross-domain linking &mdash; they're all the same operation: update the ICD, regenerate, validate. The graph makes this continuous, not episodic.
+</div>
+
+<!-- ============================================================ -->
+<h2>The Architecture Stack</h2>
+
+<div class="layer"><strong>Layer 5: Attention</strong> &mdash; How agents maintain focus, quality, and continuity during long-running work. Observer/Navigator/Driver loops with scratch file coordination.</div>
+
+<div class="layer"><strong>Layer 4: Quality</strong> &mdash; SHACL shapes and validation gates derived from the same ICD that generated the code. The contract IS the test. Required = 100% or reject.</div>
+
+<div class="layer"><strong>Layer 3: Generation</strong> &mdash; ICD data-* attributes &rarr; harvester code, SHACL shapes, quality gates, deployment configs. Multi-target: choose your stack, regenerate.</div>
+
+<div class="layer"><strong>Layer 2: Contract (ICD)</strong> &mdash; The core. Machine-readable, human-browsable integration contracts with severity tiers (Violation/Warning/Info), field-level mappings, transform rules, and Mermaid diagrams. Lives in HTML with data-* attributes. Version-controlled.</div>
+
+<div class="layer"><strong>Layer 1: Graph</strong> &mdash; Knowledge graph (RDF/SPARQL) as the system of record for all ICDs. Supports blast radius queries, cross-domain impact analysis, evolution tracking, and continuous reconciliation.</div>
+
+<div class="layer"><strong>Layer 0: Extraction</strong> &mdash; Agent-driven reading of legacy artifacts (vendor XML, SQL, configs) into structured ICD representations. Plugin architecture per vendor format.</div>
+
+<!-- ============================================================ -->
+<h2>Three Modes of Operation</h2>
+
+<table>
+<tr><th>Mode</th><th>Trigger</th><th>What Happens</th><th>Example</th></tr>
+<tr>
+<td><strong>Assimilate</strong><br/>(legacy &rarr; ICD)</td>
+<td>Decision to retire a legacy platform</td>
+<td>Agent reads vendor artifacts &rarr; emits ICDs &rarr; human reviews &rarr; generates on new stack &rarr; quality gate validates &rarr; decommission legacy</td>
+<td>Retire 500 SSIS packages to Azure Data Factory. Agent extracts 13 domains from one .dtsx in 5 seconds.</td>
+</tr>
+<tr>
+<td><strong>Converge</strong><br/>(new source &rarr; canonical)</td>
+<td>New data source arrives</td>
+<td>Define provider ICD &rarr; map to existing canonical model &rarr; generate harvester &rarr; quality gate &rarr; graph grows</td>
+<td>iPhone photo sync joins Apple Photos + Google Takeout in the Photos canonical. ICD defines the mapping; gate enforces 100% on Required fields.</td>
+</tr>
+<tr>
+<td><strong>Evolve</strong><br/>(schema change &rarr; regenerate)</td>
+<td>Source schema changes, business rule changes, or new canonical field needed</td>
+<td>Update ICD &rarr; graph detects blast radius &rarr; regenerate affected pipelines &rarr; quality gate on all downstream</td>
+<td>Apple Photos adds a new EXIF field. Update the provider ICD, regenerate the harvester, gate passes, no other domain affected.</td>
+</tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>The Documents</h2>
+
+<p>This architecture is documented across four artifacts, each serving a different audience and purpose:</p>
+
+<div class="doc-card">
+<h4>&#9654; <a href="convergence-architecture.html">Convergence Architecture</a> (this document)</h4>
+<p><strong>Audience:</strong> Executive, strategic. <strong>Purpose:</strong> The thesis, the stack, the three modes, the market position. Start here.</p>
+</div>
+
+<div class="doc-card">
+<h4>&#9654; <a href="borg-assimilation-pattern.html">The Borg Assimilation Pattern</a></h4>
+<p><strong>Audience:</strong> Technical architect, engineering leader. <strong>Purpose:</strong> How to extract integration knowledge from legacy systems. Four-phase process (Observe &rarr; Assimilate &rarr; Adapt &rarr; Regenerate). Includes SSIS proof (13 domains from one .dtsx), vendor parser table, severity inference rules, commercial engine analysis, enterprise application with webMethods retirement sequence. Estimated impact: 3 years &rarr; 3-6 months, 150 people &rarr; 5-10 + agents.</p>
+</div>
+
+<div class="doc-card">
+<h4>&#9654; <a href="attention-architecture.html">Attention Architecture</a></h4>
+<p><strong>Audience:</strong> Engineering team, agent operators. <strong>Purpose:</strong> How AI agents maintain focus and quality during integration work. Three interlocking loops (Observer/Navigator/Driver), scratch file protocol, ICD lint gate, 7 anti-patterns with structural fixes. Derived from 3.5-hour live gemba observation. Deming alignment (8 of 14 points mapped).</p>
+</div>
+
+<div class="doc-card">
+<h4>&#9654; <a href="wardley-map-icd-product.html">Wardley Map — Product Positioning</a></h4>
+<p><strong>Audience:</strong> Product strategy, investors. <strong>Purpose:</strong> Competitive landscape, evolution analysis (17 components on Genesis&rarr;Commodity axis), three genesis components (ICD layer, quality gates, attention architecture), go-to-market (open source &rarr; SaaS &rarr; platform), pricing tiers, competitive moat, kill risks.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>Proof of Concept: What Exists Today</h2>
+
+<table>
+<tr><th>Component</th><th>Implementation</th><th>Status</th></tr>
+<tr><td>ICD Visual Mapper</td><td><code>SEMANTIC_MAPPER.html</code> &mdash; 6 domains, severity tiers, field-rows, diagrams</td><td style="color:var(--green);">Working</td></tr>
+<tr><td>Code Generator</td><td><code>generate-from-icd.py</code> &mdash; reads data-* attrs, emits TypeScript + SHACL + quality gate</td><td style="color:var(--green);">Working (Stories: 100% field match)</td></tr>
+<tr><td>Quality Gate</td><td><code>validate-canonical.py</code> &mdash; validates canonical index against ICD tiers</td><td style="color:var(--green);">Working (Photos: GATE FAIL correctly identified)</td></tr>
+<tr><td>Legacy Extraction</td><td>Python SSIS parser &mdash; 13 domains from 13K-line .dtsx in &lt;5 seconds</td><td style="color:var(--green);">Working (proof)</td></tr>
+<tr><td>Knowledge Graph</td><td>Fuseki + RDF &mdash; photos, music, stories, people, notes, documents in named graphs</td><td style="color:var(--green);">Working (production)</td></tr>
+<tr><td>Attention Architecture</td><td>Pair skill + gemba skill + scratch file protocol</td><td style="color:var(--yellow);">Described, partially coded</td></tr>
+<tr><td>ICD Lint Gate</td><td>Inline Python lint checks</td><td style="color:var(--yellow);">Working (inline), not formalized as script</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>Prior Art &amp; Lineage</h2>
+
+<div class="mermaid">
+graph LR
+    P["Bridwell Patent<br/>US9552400B2<br/>(2010)"] --> S["Staples Integration<br/>20 domains, 100+ ICDs<br/>(2010-2012)"]
+    S --> OS["Staples Operational<br/>Stability Program<br/>(2014-2016)"]
+    OS --> G["Gathering / Chorus<br/>Agent-driven ICDs<br/>(2026)"]
+    G --> CA["Convergence<br/>Architecture<br/>(this document)"]
+    D["Deming 14 Points<br/>(1986)"] --> CA
+    W["Wardley Mapping<br/>(2005+)"] --> CA
+    B["Borg Metaphor<br/>(assimilate function,<br/>not implementation)"] --> CA
+</div>
+
+<table>
+<tr><th>Source</th><th>Contribution to Convergence Architecture</th></tr>
+<tr><td><strong>Bridwell Patent US9552400B2</strong></td><td>ICD registration + validation + canonical model auto-enhancement. The foundational pattern. Everything in this architecture traces back to this patent.</td></tr>
+<tr><td><strong>Staples (2010-2016)</strong></td><td>20 domains, 100+ ICDs, 150 people, manual inspection. Proved the pattern at enterprise scale. Identified the bottleneck: manual inspection speed and accumulated tribal knowledge.</td></tr>
+<tr><td><strong>Deming Point #3</strong></td><td>"Cease dependence on inspection to achieve quality. Build quality into the product in the first place." The ICD lint gate and quality gates ARE this principle applied to data integration.</td></tr>
+<tr><td><strong>Wardley Mapping</strong></td><td>Evolution analysis that positions the ICD layer, quality gates, and attention architecture as Genesis &mdash; the competitive moat. Everything else is commodity or acquirable.</td></tr>
+<tr><td><strong>Gathering/Chorus (2026)</strong></td><td>Agent-driven ICD creation, code generation from HTML data-* attributes, quality gate automation, 3.5-hour live gemba proving the attention architecture. The manual bottleneck removed.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>Value Stream Orchestration</h2>
+
+<p>Once the graph knows every domain, every field mapping, every quality gate result, and every pipeline execution &mdash; orchestrating across domains is not a new layer. It's a query.</p>
+
+<div class="mermaid">
+graph LR
+    subgraph "Value Stream: Order Fulfillment"
+        O["Order<br/>(gate: PASS)"] -->|"triggers"| S["Shipment<br/>(gate: PASS)"]
+        S -->|"triggers"| N["Customer Notification<br/>(gate: PASS)"]
+        N -->|"on failure"| E["Escalation"]
+    end
+    subgraph "Value Stream: Photo Pipeline"
+        PH["Apple Photos<br/>(gate: PASS)"] -->|"triggers"| TH["Thumbnail Derive<br/>(gate: PASS)"]
+        TH -->|"triggers"| BR["Browse Page<br/>(gate: PASS)"]
+    end
+    subgraph "The Graph"
+        G[("Knowledge Graph<br/>ICDs + edges + gate results")]
+    end
+    G -.->|"query: what depends<br/>on Order?"| O
+    G -.->|"query: what depends<br/>on Apple Photos?"| PH
+</div>
+
+<p>The value stream is already in the graph. The ICDs are the nodes. The field mappings are the edges. The severity tiers are the SLAs. The quality gates are the checkpoints.</p>
+
+<div class="layer"><strong>Orchestration = graph query + event trigger.</strong> "When this domain's gate passes, trigger that domain's pipeline." No BPMN editor. No workflow designer. The graph IS the workflow definition. The ICDs define what each step produces and consumes. The quality gates define when a step is complete. The edges define what comes next.</div>
+
+<p>This means:</p>
+<ul>
+<li><strong>Adding a step to a value stream</strong> = adding an ICD + mapping its outputs to the next domain's inputs. The graph connects them.</li>
+<li><strong>Removing a step</strong> = decommissioning an ICD. The graph shows blast radius &mdash; what downstream depends on it.</li>
+<li><strong>Monitoring a value stream</strong> = querying the graph for gate results across the chain. Green/yellow/red per domain, per field, per severity tier.</li>
+<li><strong>SLA enforcement</strong> = severity tiers on the edges. If Order &rarr; Shipment mapping has a Violation-tier field that fails, the value stream halts at that checkpoint. Warning-tier fields log and continue.</li>
+</ul>
+
+<p>"Order &rarr; Shipment &rarr; Notification" is the same pattern as "Apple Photos &rarr; Canonical &rarr; Thumbnail &rarr; Browse." Different domain, same architecture. The convergence layer doesn't distinguish between enterprise order flow and personal photo pipeline. Both are: source &rarr; ICD &rarr; canonical &rarr; derive &rarr; validate &rarr; serve.</p>
+
+<h3>The Product Boundary</h3>
+
+<table>
+<tr><th>Layer</th><th>We Own</th><th>Community / Customer Owns</th></tr>
+<tr><td>ICD Format</td><td>The spec (HTML + data-* attributes)</td><td>&mdash;</td></tr>
+<tr><td>Visual Mapper</td><td>The editor</td><td>&mdash;</td></tr>
+<tr><td>Knowledge Graph</td><td>The graph engine + query patterns</td><td>Their data, their domains</td></tr>
+<tr><td>Code Generator</td><td>The framework + multi-target support</td><td>Custom target templates</td></tr>
+<tr><td>Quality Gates</td><td>Gate engine + ICD derivation</td><td>Domain-specific validation rules</td></tr>
+<tr><td>Attention Architecture</td><td>The SDK / loop framework</td><td>Their agents, their sessions</td></tr>
+<tr><td>Legacy Extraction</td><td><strong>Nothing.</strong> We define the output format.</td><td>Vendor parsers &mdash; use any agent, any script, any partner. As long as the output is a valid ICD, it enters the convergence layer.</td></tr>
+<tr><td>Value Stream Orchestration</td><td>Graph-driven trigger engine</td><td>Their value streams, their SLAs</td></tr>
+</table>
+
+<div class="callout">
+<strong>The extraction layer is deliberately open.</strong> We don't build browsers. We define the document format. Orgs use whatever AI agent they want to build inspection adapters for whatever version of whatever vendor's tooling they have. Not our problem to sell or support. The ICD format is the contract between extraction and convergence.
+</div>
+
+<!-- ============================================================ -->
+<h2>Code as Wiring, Not Writing</h2>
+
+<p>As integration systems mature, the code becomes less like authoring and more like wiring &mdash; connecting well-defined inputs to well-defined outputs through well-defined transforms. Event-driven architectures make each connection atomic: one event, one handler, one transform, one validation.</p>
+
+<div class="callout vision">
+<strong>The pattern:</strong> If the ICD defines the fields, types, severity tiers, and transform rules &mdash; and the generated code follows a consistent pattern (read &rarr; transform &rarr; validate &rarr; write) &mdash; then the only novel code is in the <em>callouts</em>: the extension points where business logic lives that can't be derived from the contract alone.
+</div>
+
+<div class="mermaid">
+graph LR
+    subgraph "Generated (from ICD)"
+        R["Read source<br/>(connection + query)"]
+        T["Transform<br/>(field mapping)"]
+        V["Validate<br/>(severity gate)"]
+        W["Write target<br/>(canonical store)"]
+    end
+    subgraph "Callouts (agent-enriched)"
+        C1["🔌 onBeforeTransform<br/>(enrich source data)"]
+        C2["🔌 onTransform<br/>(custom business logic)"]
+        C3["🔌 onAfterValidate<br/>(handle edge cases)"]
+        C4["🔌 onComplete<br/>(trigger downstream)"]
+    end
+    R --> C1 --> T --> C2 --> V --> C3 --> W --> C4
+</div>
+
+<p>The generated code is the skeleton &mdash; structurally complete, type-safe, gate-enforced. The callouts are the extension points where:</p>
+
+<ul>
+<li><strong>An AI agent adds business logic</strong> that the ICD describes in prose but can't express as a data attribute. "If order type is dropship, use ship date not order date" &mdash; the ICD's <code>data-transform</code> says this in English. The agent reads it and writes the callout implementation.</li>
+<li><strong>A human adds tribal knowledge</strong> that isn't in the legacy code at all. "We always exclude test accounts with IDs above 900000" &mdash; no code captures this. The human writes it into the callout. Now it's versioned and visible.</li>
+<li><strong>The agent evolves the callout</strong> when requirements change. The ICD updates, the skeleton regenerates, the callouts persist because they're in separate files. The wiring changes; the business logic stays.</li>
+</ul>
+
+<h3>The Atomic Event Pattern</h3>
+
+<table>
+<tr><th>Component</th><th>Generated from ICD</th><th>Callout (agent or human)</th></tr>
+<tr><td>Event trigger</td><td>✓ &mdash; "when source changes" from graph edge</td><td>&mdash;</td></tr>
+<tr><td>Source read</td><td>✓ &mdash; connection + query from <code>data-source-path</code></td><td>🔌 <code>onBeforeTransform</code> &mdash; enrich, filter, join</td></tr>
+<tr><td>Field mapping</td><td>✓ &mdash; from <code>data-maps-to</code> + <code>data-transform-type</code></td><td>🔌 <code>onTransform</code> &mdash; custom logic for complex transforms</td></tr>
+<tr><td>Type casting</td><td>✓ &mdash; from <code>data-datatype</code></td><td>&mdash;</td></tr>
+<tr><td>Cardinality</td><td>✓ &mdash; from <code>data-cardinality</code> (scalar vs array)</td><td>&mdash;</td></tr>
+<tr><td>Validation</td><td>✓ &mdash; SHACL shapes from severity tiers</td><td>🔌 <code>onAfterValidate</code> &mdash; edge case handling, cross-field rules</td></tr>
+<tr><td>Write to canonical</td><td>✓ &mdash; TTL/JSON output from <code>data-output-pattern</code></td><td>&mdash;</td></tr>
+<tr><td>Downstream trigger</td><td>✓ &mdash; graph edge to next domain</td><td>🔌 <code>onComplete</code> &mdash; notifications, side effects, audit</td></tr>
+</table>
+
+<p>The ratio shifts over time. Early in a domain's life, callouts are heavy &mdash; lots of custom logic. As the ICD matures and the <code>data-transform-type</code> vocabulary grows (regex, keyword-match, name-match, slugify, lookup, default, enum &mdash; all pattern-driven), more logic moves from callouts into the generated layer. The agent's job evolves from "write the callout" to "recognize the pattern and add it to the ICD."</p>
+
+<div class="layer"><strong>The end state:</strong> Code is wiring. The ICD defines the circuit. The generator produces the board. The callouts are the handful of custom components that can't be off-the-shelf. The agent reads the ICD's prose descriptions and implements the callouts. The human reviews. The gate validates. The graph orchestrates.</div>
+
+<!-- ============================================================ -->
+<h2>One Sentence</h2>
+
+<div class="callout vision" style="font-size:1.1rem; text-align:center;">
+<strong>Convergence Architecture</strong> extracts integration knowledge from any system into a visual, machine-readable contract that generates code, validation, and quality gates for any target platform &mdash; turning legacy retirement from a 3-year project into a continuous capability managed by AI agents.
+</div>
+
+<hr style="border-color:var(--border); margin: 3rem 0 1rem;">
+<p style="color:var(--muted); font-size:0.8rem;">
+  Jeff Bridwell &amp; Silas (Architect) &middot; 2026-03-18 &middot;
+  Patent: US9552400B2 &middot; Prior art: Staples integration program (2010-2016) &middot;
+  Proof: SEMANTIC_MAPPER.html (6 domains), generate-from-icd.py (Stories 100% match), SSIS extraction (13 domains in 5s) &middot;
+  Market: $10B opportunity (Datafold), 70% cost reduction by 2027 (Gartner), $47M Series B (Prophecy)
+</p>
+
+</body>
+</html>

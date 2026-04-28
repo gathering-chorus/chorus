@@ -144,6 +144,18 @@ describe('runCli — chunk', () => {
     expect(cap.logs.length).toBeGreaterThan(0);
   });
 
+  it('chunk (no arg) includes ci/tests/knowledge in known chunks', async () => {
+    const mock = new MockClient();
+    const cap = silence();
+    try {
+      await runCli(['node', 'cards', 'chunk'], factory(mock));
+    } finally { cap.restore(); }
+    const joined = cap.logs.join('\n');
+    expect(joined).toMatch(/\bci\b/);
+    expect(joined).toMatch(/\btests\b/);
+    expect(joined).toMatch(/\bknowledge\b/);
+  });
+
   it('chunk <name> filters active cards by chunk label', async () => {
     const mock = new MockClient();
     mock.seed(1, { status: 'Next', domains: ['chunk:ops', 'domain:chorus'] } as Partial<BoardTask>);

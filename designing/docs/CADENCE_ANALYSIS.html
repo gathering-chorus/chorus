@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Team Work Cadences — Wren #1397</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Georgia', serif;
+    background: #faf8f5;
+    color: #2c2c2c;
+    padding: 40px 60px;
+    max-width: 1100px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+  h1 {
+    font-size: 2.2rem;
+    font-weight: 400;
+    letter-spacing: -0.5px;
+    margin-bottom: 4px;
+    color: #1a1a1a;
+  }
+  .subtitle {
+    font-size: 0.95rem;
+    color: #888;
+    margin-bottom: 40px;
+    font-style: italic;
+  }
+  .data-bar {
+    display: flex;
+    gap: 32px;
+    margin-bottom: 48px;
+    flex-wrap: wrap;
+  }
+  .data-chip {
+    background: #fff;
+    border: 1px solid #e0ddd8;
+    border-radius: 8px;
+    padding: 16px 24px;
+    text-align: center;
+    min-width: 120px;
+  }
+  .data-chip .num {
+    font-size: 2rem;
+    font-weight: 300;
+    color: #4a7c59;
+    display: block;
+  }
+  .data-chip .label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #999;
+    margin-top: 4px;
+  }
+
+  /* Timeline */
+  .timeline {
+    position: relative;
+    margin: 48px 0;
+    padding-left: 32px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, #4a7c59, #c9a959, #7c4a4a);
+  }
+  .wave {
+    position: relative;
+    margin-bottom: 28px;
+    padding: 16px 24px;
+    background: #fff;
+    border-radius: 8px;
+    border-left: 3px solid #4a7c59;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .wave.clean { border-left-color: #c9a959; }
+  .wave.mixed { border-left-color: #7c8fa0; }
+  .wave::before {
+    content: '';
+    position: absolute;
+    left: -30px;
+    top: 22px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #4a7c59;
+    border: 2px solid #faf8f5;
+  }
+  .wave.clean::before { background: #c9a959; }
+  .wave.mixed::before { background: #7c8fa0; }
+  .wave .dates {
+    font-size: 0.8rem;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .wave .desc {
+    font-size: 1rem;
+    margin-top: 4px;
+  }
+
+  /* Cadences */
+  section { margin-bottom: 56px; }
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 400;
+    color: #1a1a1a;
+    margin-bottom: 20px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e0ddd8;
+  }
+  .cadence-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+    margin-top: 24px;
+  }
+  .cadence-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 28px;
+    border: 1px solid #e0ddd8;
+    position: relative;
+    overflow: hidden;
+  }
+  .cadence-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+  }
+  .cadence-card.pulse::before { background: linear-gradient(90deg, #4a7c59, #6da67c); }
+  .cadence-card.sweep::before { background: linear-gradient(90deg, #c9a959, #d4bc72); }
+  .cadence-card.reflect::before { background: linear-gradient(90deg, #7c4a6a, #a06a8a); }
+  .cadence-card h3 {
+    font-size: 1.2rem;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .cadence-card .freq {
+    font-size: 0.8rem;
+    color: #888;
+    font-style: italic;
+    margin-bottom: 12px;
+  }
+  .cadence-card p {
+    font-size: 0.9rem;
+    color: #555;
+    margin-bottom: 8px;
+  }
+  .cadence-card .trigger {
+    display: inline-block;
+    background: #f5f3ef;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.78rem;
+    color: #666;
+    margin: 2px 4px 2px 0;
+  }
+
+  /* Role ratios */
+  .ratio-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+    gap: 16px;
+  }
+  .ratio-label {
+    width: 80px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-align: right;
+  }
+  .ratio-bar {
+    flex: 1;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    background: #eee;
+  }
+  .ratio-build {
+    background: #4a7c59;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+  .ratio-clean {
+    background: #c9a959;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+  .ratio-note {
+    width: 200px;
+    font-size: 0.78rem;
+    color: #888;
+    font-style: italic;
+  }
+
+  /* Jeff attention */
+  .attention-ring {
+    display: flex;
+    justify-content: center;
+    margin: 32px 0;
+  }
+  .ring-container {
+    position: relative;
+    width: 280px;
+    height: 280px;
+  }
+  .ring-container svg {
+    transform: rotate(-90deg);
+  }
+  .ring-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 16px;
+  }
+  .ring-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: #555;
+  }
+  .ring-legend-item .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  /* Anti-patterns */
+  .anti {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .anti-item {
+    background: #fff;
+    border: 1px solid #e8e4df;
+    border-radius: 8px;
+    padding: 16px 20px;
+    position: relative;
+    padding-left: 36px;
+  }
+  .anti-item::before {
+    content: '×';
+    position: absolute;
+    left: 14px;
+    top: 14px;
+    color: #c45;
+    font-size: 1.1rem;
+    font-weight: bold;
+  }
+  .anti-item .what {
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+  .anti-item .why {
+    font-size: 0.8rem;
+    color: #888;
+  }
+
+  /* Finding callout */
+  .finding {
+    background: #f0ede8;
+    border-radius: 12px;
+    padding: 32px 40px;
+    margin: 40px 0;
+    text-align: center;
+  }
+  .finding .big {
+    font-size: 1.6rem;
+    font-weight: 400;
+    color: #1a1a1a;
+    margin-bottom: 8px;
+  }
+  .finding .sub {
+    font-size: 0.95rem;
+    color: #777;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid #e0ddd8;
+    font-size: 0.8rem;
+    color: #aaa;
+    display: flex;
+    justify-content: space-between;
+  }
+  .review-note {
+    background: #e8f5e9;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 0.85rem;
+    color: #3a6b3a;
+    margin-top: 24px;
+  }
+  .review-note strong { color: #2a5a2a; }
+
+  /* Jeff section */
+  .jeff-section {
+    background: #f9f6f1;
+    border: 1px solid #d8d2c8;
+    border-radius: 12px;
+    padding: 36px 40px;
+    margin: 48px 0;
+  }
+  .jeff-section h2 {
+    border-bottom: none;
+    margin-bottom: 24px;
+    color: #5a4a3a;
+  }
+  .jeff-insight {
+    margin-bottom: 28px;
+    padding-left: 20px;
+    border-left: 3px solid #c9a959;
+  }
+  .jeff-insight h3 {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: #1a1a1a;
+    margin-bottom: 6px;
+  }
+  .jeff-insight p {
+    font-size: 0.9rem;
+    color: #555;
+    margin-bottom: 4px;
+  }
+  .jeff-insight .evidence {
+    font-size: 0.8rem;
+    color: #999;
+    font-style: italic;
+  }
+  .strength {
+    border-left-color: #4a7c59;
+  }
+  .strength h3::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #4a7c59;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .growth h3::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #c9a959;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .norm-card {
+    background: #fff;
+    border: 1px solid #e0ddd8;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-top: 20px;
+  }
+  .norm-card h3 {
+    font-size: 1rem;
+    font-weight: 500;
+    margin-bottom: 8px;
+    color: #5a4a3a;
+  }
+  .norm-card p {
+    font-size: 0.9rem;
+    color: #555;
+  }
+</style>
+</head>
+<body>
+
+<h1>Team Work Cadences</h1>
+<p class="subtitle">31 days of data, not a framework. What the team actually does.</p>
+
+<div class="data-bar">
+  <div class="data-chip"><span class="num">290</span><span class="label">Sessions</span></div>
+  <div class="data-chip"><span class="num">287</span><span class="label">Cards Done</span></div>
+  <div class="data-chip"><span class="num">665</span><span class="label">Briefs</span></div>
+  <div class="data-chip"><span class="num">89</span><span class="label">Decisions</span></div>
+  <div class="data-chip"><span class="num">9.3</span><span class="label">Sessions / Day</span></div>
+  <div class="data-chip"><span class="num">21.5</span><span class="label">Briefs / Day</span></div>
+</div>
+
+<div class="finding">
+  <div class="big">This team works on conditions, not calendars.</div>
+  <div class="sub">The rhythms already exist. The job is to name them and instrument them — not impose new ones.</div>
+</div>
+
+<!-- Build-Clean Ratio by Role -->
+<section>
+  <h2>Build : Clean Ratio by Role</h2>
+  <div class="ratio-row">
+    <div class="ratio-label">Kade</div>
+    <div class="ratio-bar">
+      <div class="ratio-build" style="width: 61%">61% build</div>
+      <div class="ratio-clean" style="width: 39%">39% clean</div>
+    </div>
+    <div class="ratio-note">Feature-forward. Clean trails behind.</div>
+  </div>
+  <div class="ratio-row">
+    <div class="ratio-label">Wren</div>
+    <div class="ratio-bar">
+      <div class="ratio-build" style="width: 40%">40% build</div>
+      <div class="ratio-clean" style="width: 60%">60% clean</div>
+    </div>
+    <div class="ratio-note">PM hygiene IS the work.</div>
+  </div>
+  <div class="ratio-row">
+    <div class="ratio-label">Silas</div>
+    <div class="ratio-bar">
+      <div class="ratio-build" style="width: 29%">29% build</div>
+      <div class="ratio-clean" style="width: 71%">71% clean</div>
+    </div>
+    <div class="ratio-note">Infra keeper. Hardening is the job.</div>
+  </div>
+</section>
+
+<!-- Build-Clean Timeline -->
+<section>
+  <h2>The Build-Clean Wave (observed Mar 1–14)</h2>
+  <div class="timeline">
+    <div class="wave">
+      <div class="dates">Mar 1–4</div>
+      <div class="desc"><strong>Build wave.</strong> UX scan, features, harvests, voice analytics, people domain. 25+ cards shipped.</div>
+    </div>
+    <div class="wave clean">
+      <div class="dates">Mar 5</div>
+      <div class="desc"><strong>Jeff: "clear then harden."</strong> Explicit phase shift. Silas hardening batch, spine instrumentation.</div>
+    </div>
+    <div class="wave mixed">
+      <div class="dates">Mar 6–8</div>
+      <div class="desc"><strong>Mixed.</strong> Search + embedding (build) alongside hardening (clean). Forcing functions, node upgrade.</div>
+    </div>
+    <div class="wave clean">
+      <div class="dates">Mar 9</div>
+      <div class="desc"><strong>Review day.</strong> Style guide, demo observer, gemba analysis. Jeff watches, doesn't direct.</div>
+    </div>
+    <div class="wave">
+      <div class="dates">Mar 10–11</div>
+      <div class="desc"><strong>Build + consolidation.</strong> Pipeline overview, nav-tree restructure, 10-card consolidation batch.</div>
+    </div>
+    <div class="wave">
+      <div class="dates">Mar 12–14</div>
+      <div class="desc"><strong>Massive build wave.</strong> Docker retirement (14 cards), memory pipeline (12 cards), harvests (12 cards). 41+ cards on Mar 14 alone.</div>
+    </div>
+  </div>
+  <p style="font-size: 0.85rem; color: #888; margin-top: -12px; padding-left: 32px;">Cruft lag: 0–4 days. Every 2–3 build cards generates 1 clean card.</p>
+</section>
+
+<!-- Three Cadences -->
+<section>
+  <h2>Three Cadences</h2>
+  <div class="cadence-grid">
+    <div class="cadence-card pulse">
+      <h3>The Pulse</h3>
+      <div class="freq">Every session · Already happening</div>
+      <p>Boot → context load → card-first work → state capture → close. The atomic unit.</p>
+      <p style="font-size: 0.82rem; color: #4a7c59; font-weight: 500;">Already instrumented: SessionStart hooks, chorus prompt, close-out sequence.</p>
+    </div>
+    <div class="cadence-card sweep">
+      <h3>The Sweep</h3>
+      <div class="freq">Condition-triggered · Needs instrumentation</div>
+      <p>When cruft passes threshold, all roles shift to clean. 1–2 sessions, not days. Scope includes code, board, AND memory.</p>
+      <div style="margin-top: 8px;">
+        <span class="trigger">Board &gt;10 stale</span>
+        <span class="trigger">Disk &gt;80%</span>
+        <span class="trigger">Jeff says "harden"</span>
+        <span class="trigger">Post-milestone</span>
+        <span class="trigger">Kade build:clean &gt;3:1</span>
+        <span class="trigger">Memory drift detected</span>
+      </div>
+      <p style="font-size: 0.82rem; color: #9a7a30; margin-top: 10px;">Memory files accumulate like code cruft. Rich recording without pruning leads to stale context the system trusts silently. Sweeps audit memory too: prune stale entries, reconcile contradictions, verify facts against current state.</p>
+    </div>
+    <div class="cadence-card reflect">
+      <h3>The Reflection</h3>
+      <div class="freq">Jeff-triggered · ~weekly · Don't formalize</div>
+      <p>Jeff steps back and looks at the whole. 17% of his interactions are Reflection + Story.</p>
+      <p style="font-size: 0.82rem; color: #7c4a6a; font-weight: 500;">Wren prompts if &gt;5 days since last one. One question: "What are you noticing?"</p>
+    </div>
+  </div>
+</section>
+
+<!-- Jeff's Attention -->
+<section>
+  <h2>Jeff's Attention Pattern</h2>
+  <div style="display: flex; align-items: center; gap: 48px; justify-content: center;">
+    <div class="attention-ring">
+      <div class="ring-container">
+        <svg width="280" height="280" viewBox="0 0 280 280">
+          <!-- Direction 33% -->
+          <circle cx="140" cy="140" r="110" fill="none" stroke="#4a7c59" stroke-width="24"
+            stroke-dasharray="228 463" stroke-dashoffset="0" />
+          <!-- Gemba 24% -->
+          <circle cx="140" cy="140" r="110" fill="none" stroke="#6da67c" stroke-width="24"
+            stroke-dasharray="166 525" stroke-dashoffset="-228" />
+          <!-- Demo 16% -->
+          <circle cx="140" cy="140" r="110" fill="none" stroke="#c9a959" stroke-width="24"
+            stroke-dasharray="111 580" stroke-dashoffset="-394" />
+          <!-- Reflection 9% -->
+          <circle cx="140" cy="140" r="110" fill="none" stroke="#7c4a6a" stroke-width="24"
+            stroke-dasharray="62 629" stroke-dashoffset="-505" />
+          <!-- Story 8% -->
+          <circle cx="140" cy="140" r="110" fill="none" stroke="#a06a8a" stroke-width="24"
+            stroke-dasharray="55 636" stroke-dashoffset="-567" />
+          <!-- Ideation 6% -->
+          <circle cx="140" cy="140" r="110" fill="none" stroke="#7c8fa0" stroke-width="24"
+            stroke-dasharray="42 649" stroke-dashoffset="-622" />
+          <!-- SWAT 3% -->
+          <circle cx="140" cy="140" r="110" fill="none" stroke="#c45" stroke-width="24"
+            stroke-dasharray="21 670" stroke-dashoffset="-664" />
+          <!-- Center text -->
+          <text x="140" y="132" text-anchor="middle" font-family="Georgia" font-size="14" fill="#888" transform="rotate(90, 140, 140)">Navigator</text>
+          <text x="140" y="152" text-anchor="middle" font-family="Georgia" font-size="14" fill="#888" transform="rotate(90, 140, 140)">not scheduler</text>
+        </svg>
+      </div>
+    </div>
+    <div>
+      <div class="ring-legend" style="flex-direction: column; align-items: flex-start;">
+        <div class="ring-legend-item"><span class="dot" style="background:#4a7c59"></span> Direction — 33%</div>
+        <div class="ring-legend-item"><span class="dot" style="background:#6da67c"></span> Gemba — 24%</div>
+        <div class="ring-legend-item"><span class="dot" style="background:#c9a959"></span> Demo — 16%</div>
+        <div class="ring-legend-item"><span class="dot" style="background:#7c4a6a"></span> Reflection — 9%</div>
+        <div class="ring-legend-item"><span class="dot" style="background:#a06a8a"></span> Story — 8%</div>
+        <div class="ring-legend-item"><span class="dot" style="background:#7c8fa0"></span> Ideation — 6%</div>
+        <div class="ring-legend-item"><span class="dot" style="background:#c45"></span> SWAT — 3%</div>
+      </div>
+      <p style="font-size: 0.82rem; color: #888; margin-top: 12px; max-width: 220px;">Direction + Gemba + Demo = 73%. Jeff leads by intent and observation.</p>
+    </div>
+  </div>
+</section>
+
+<!-- What Not To Do -->
+<section>
+  <h2>What Not To Do</h2>
+  <div class="anti">
+    <div class="anti-item">
+      <div class="what">No sprints</div>
+      <div class="why">Build waves are 3–5 days, variable. Time boxes don't fit.</div>
+    </div>
+    <div class="anti-item">
+      <div class="what">No standups</div>
+      <div class="why">Session boot IS the standup. Activity.md IS the status report.</div>
+    </div>
+    <div class="anti-item">
+      <div class="what">No velocity tracking</div>
+      <div class="why">Silas's 14-card migration ≠ Kade's 2-card pipeline. Both were full days.</div>
+    </div>
+    <div class="anti-item">
+      <div class="what">No retrospectives</div>
+      <div class="why">Jeff's reflection pattern is better — it happens in context, not ceremony.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Jeff: Where to Refine -->
+<div class="jeff-section">
+  <h2>For Jeff — Where to Refine</h2>
+
+  <div class="jeff-insight growth">
+    <h3>The proving gate needs you to wait</h3>
+    <p>Demo scorecard baseline: 17% auto-accept. That means 83% of cards shipped without Jeff or Wren seeing them work. Today's #1351 was marked Done before the full harvest ran. When you accept fast — "acp, stake in the heart" — the team learns demos are optional.</p>
+    <p class="evidence">Evidence: #1351 premature Done. The /acp gate we added today helps, but the real lever is you waiting for the demo before saying "done."</p>
+  </div>
+
+  <div class="jeff-insight growth">
+    <h3>Your "go" signal sometimes outruns scope clarity</h3>
+    <p>Today's photo harvest: you directed Kade to finish #1351, but nobody had scoped what "done" meant at 85K scale. The 3K vs 85K discovery happened mid-flight. When you say "finish this," the team executes — but if the scope isn't bounded, they build to whatever they find.</p>
+    <p class="evidence">Evidence: 30 minutes of mid-stream recalibration on photo scope. A 30-second "what does done look like?" before "go" would have caught it.</p>
+  </div>
+
+  <div class="jeff-insight growth">
+    <h3>Dual-load attention has a cost — and reflection is the recharge</h3>
+    <p>52% dual-load, 75-minute sustained red stretches. Running 2-3 roles simultaneously is a feature, not a bug — but the reflection cadence (17% of interactions) is where you recharge. When reflection drops below ~1 in 8 interactions, direction quality dips.</p>
+    <p class="evidence">Evidence: Attention analytics from Mar 5. You don't need to schedule reflection — but notice when you haven't done it in a while.</p>
+  </div>
+
+  <h2 style="margin-top: 36px; color: #3a5a3a;">What You Model Well — Protect These</h2>
+
+  <div class="jeff-insight strength">
+    <h3>"Clear then harden" — you name the phase shift</h3>
+    <p>When you explicitly say "harden" or "clear," the whole team shifts. This is the most effective coordination signal in the system. It works because it's rare and intentional — not a recurring meeting.</p>
+  </div>
+
+  <div class="jeff-insight strength">
+    <h3>Gemba as management — 24% of your attention is watching</h3>
+    <p>Most leaders direct. You observe. The gemba walks today caught the N+1 sync bug, the NFS bottleneck, and the scope gap — all from watching Kade work. This is rare and valuable.</p>
+  </div>
+
+  <div class="jeff-insight strength">
+    <h3>Stories as product input — don't let anyone treat them as tangential</h3>
+    <p>8% of interactions are Story pattern. Today's Staples integration reference shaped how we think about Kade's harvest work. The Parnas citation reframed decomposition. These aren't digressions — they're the connective tissue between Jeff's experience and product decisions.</p>
+  </div>
+
+  <div class="norm-card">
+    <h3>Norm: Scope before go</h3>
+    <p><strong>Scope before go.</strong> Not a plan — just "what does done look like, in one sentence?" Before <code>/pull</code>, before "finish this." The card AC should answer it, but today showed that AC written at card creation can be stale by execution time. The question takes 30 seconds. The mid-stream recalibration takes 30 minutes.</p>
+  </div>
+
+  <div class="norm-card" style="margin-top: 16px;">
+    <h3>Norm: Builder autonomy for housekeeping (DEC-091)</h3>
+    <p>Three things builders do without asking: <strong>(1) Schedule monitoring jobs</strong> — pollers, background checks, completion watchers. Consistent, legible, auditable. <strong>(2) Create follow-on cards</strong> — when work surfaces during a card, card it immediately. JDI. <strong>(3) Complete chores</strong> — cleanup, rsync, index updates, deploy — anything needed to finish the work. JDI.</p>
+    <p style="font-size: 0.82rem; color: #888; margin-top: 8px;">The readout that identifies next steps IS the authorization. Jeff's attention spent confirming obvious follow-on work is failure demand.</p>
+  </div>
+</div>
+
+<!-- Team Feedback -->
+<section>
+  <div class="review-note">
+    <strong>Team reviewed.</strong> Silas: "Ship it. Sweep trigger is right — exclude infra-clean from ratio. I can wire cruft-velocity into the hook." Kade: "Drop per-session cruft check — rely on instrumented sweep triggers. Otherwise accurate."
+    <br><br>
+    <strong>Refinements applied:</strong> (1) Sweep ratio excludes Silas's infra-clean work. (2) Per-session cruft check dropped — sweep triggers are sufficient.
+  </div>
+</section>
+
+<div class="footer">
+  <span>Wren · #1397 · Werk v62</span>
+  <span>31 days · 290 sessions · 287 cards · condition-driven, not calendar-driven</span>
+</div>
+
+</body>
+</html>

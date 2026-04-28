@@ -15,6 +15,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use serde_json::json;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 const INIT_DIR: &str = "/tmp/claude-session-init";
@@ -91,12 +92,20 @@ fn git_commit_allowed_outside_team_repo() {
 #[test]
 fn git_commit_blocked_inside_team_repo() {
     let _guard = MarkerGuard::ensure_done("kade");
-    // git commit from CascadeProjects SHOULD be blocked
+    // git commit inside the team repo SHOULD be blocked. The server's
+    // infra_guardrails compares cwd to chorus_root() (env-aware via
+    // shared::state_paths). Compute cwd the same way so it matches on both
+    // local Mac and Linux CI: CHORUS_ROOT env var with hardcoded Mac fallback.
+    let chorus_root = std::env::var("CHORUS_ROOT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+    let cwd = format!("{}/roles/kade", chorus_root);
     let hook_input = json!({
         "tool_name": "Bash",
         "tool_input": {"command": "git commit -m 'test'"},
         "session_id": "test-session",
-        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/roles/kade"
+        "cwd": cwd
     });
 
     let output = Command::new(SHIM)

@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory Architecture — Gathering / Chorus</title>
+<style>
+:root {
+  --bg: #fafaf8;
+  --text: #1a1a1a;
+  --text-mid: #555;
+  --text-light: #888;
+  --border: #e0ddd8;
+  --warm-1: #c0392b;
+  --warm-2: #e67e22;
+  --warm-3: #d4a574;
+  --warm-4: #e8c8a0;
+  --cool-1: #2471a3;
+  --cool-2: #2e86c1;
+  --cool-3: #7fb3d8;
+  --cool-4: #aed6f1;
+  --gold: #d4a017;
+  --gold-light: #f4e9c8;
+  --gap: #f0e0e0;
+  --gap-border: #d4a0a0;
+  --aspiration: #f5f0ff;
+  --aspiration-border: #b8a0d4;
+  --living-1: #0e6655;
+  --living-2: #148f77;
+  --living-3: #1abc9c;
+  --living-4: #a3e4d7;
+  --living-bg: #e8f8f5;
+  --living-bg-dark: #d0ece7;
+  --durable: #27ae60;
+  --durable-bg: #eafaf1;
+  --medium: #f39c12;
+  --medium-bg: #fef9e7;
+  --shortterm: #e67e22;
+  --shortterm-bg: #fdf2e9;
+  --ephemeral: #e74c3c;
+  --ephemeral-bg: #fdedec;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+header {
+  text-align: center;
+  padding: 3rem 2rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+header h1 {
+  font-size: 2rem;
+  font-weight: 300;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+header p {
+  margin-top: 0.5rem;
+  color: var(--text-mid);
+  font-size: 0.95rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.stats-bar {
+  display: flex;
+  justify-content: center;
+  gap: 2.5rem;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+.stat { text-align: center; }
+.stat-num {
+  font-size: 1.4rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stat-label { font-size: 0.75rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.08em; }
+
+.section-title {
+  text-align: center;
+  padding: 2.5rem 2rem 0.5rem;
+}
+.section-title h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.section-title p { color: var(--text-mid); font-size: 0.85rem; margin-top: 0.25rem; }
+
+/* ---- Concentric Ring Diagram ---- */
+.ring-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  position: relative;
+}
+.rings {
+  position: relative;
+  width: 520px;
+  height: 520px;
+}
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.ring:hover { transform: scale(1.02); }
+
+.ring-6 { width: 520px; height: 520px; top: 0; left: 0; background: rgba(232,200,160,0.25); border: 2px solid var(--warm-4); }
+.ring-5 { width: 430px; height: 430px; top: 45px; left: 45px; background: rgba(212,165,116,0.2); border: 2px solid var(--warm-3); }
+.ring-4 { width: 340px; height: 340px; top: 90px; left: 90px; background: rgba(230,126,34,0.12); border: 2px solid var(--warm-2); }
+.ring-3 { width: 260px; height: 260px; top: 130px; left: 130px; background: rgba(192,57,43,0.08); border: 2px solid var(--warm-1); }
+.ring-2 { width: 180px; height: 180px; top: 170px; left: 170px; background: rgba(192,57,43,0.12); border: 2px solid var(--warm-1); }
+.ring-1 { width: 100px; height: 100px; top: 210px; left: 210px; background: rgba(192,57,43,0.18); border: 2px solid var(--warm-1); }
+
+.ring-label {
+  position: absolute;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-mid);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.ring-1 .ring-label { color: var(--warm-1); font-size: 0.65rem; text-align: center; line-height: 1.3; }
+
+.ring-6 .ring-label { top: 12px; left: 50%; transform: translateX(-50%); }
+.ring-5 .ring-label { top: 12px; left: 50%; transform: translateX(-50%); }
+.ring-4 .ring-label { top: 12px; left: 50%; transform: translateX(-50%); }
+.ring-3 .ring-label { top: 10px; left: 50%; transform: translateX(-50%); }
+.ring-2 .ring-label { top: 8px; left: 50%; transform: translateX(-50%); font-size: 0.6rem; }
+
+/* Layer detail annotations */
+.layer-annotation {
+  position: absolute;
+  font-size: 0.72rem;
+  color: var(--text-mid);
+  max-width: 170px;
+  line-height: 1.4;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.rings:hover .layer-annotation { opacity: 1; }
+
+.ann-episodic { top: 35px; right: -190px; }
+.ann-relational { top: 95px; right: -190px; }
+.ann-sensory { top: 175px; right: -190px; }
+.ann-values { top: 240px; left: -190px; }
+.ann-craft { top: 320px; left: -190px; }
+.ann-creative { top: 400px; left: -190px; }
+
+.ann-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* ---- Two-Column Panels ---- */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1rem 2rem 2rem;
+}
+@media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+.panel {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+.panel h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.panel.warm h3 { color: var(--warm-1); border-color: var(--warm-3); }
+.panel.cool h3 { color: var(--cool-1); border-color: var(--cool-3); }
+
+.layer-list { list-style: none; }
+.layer-list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f0f0ee;
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  gap: 0.6rem;
+  align-items: start;
+}
+.layer-list li:last-child { border-bottom: none; }
+.layer-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+}
+.layer-name { font-weight: 600; font-size: 0.85rem; }
+.layer-desc { font-size: 0.78rem; color: var(--text-mid); }
+.layer-example { font-size: 0.72rem; color: var(--text-light); font-style: italic; margin-top: 2px; }
+.layer-capture {
+  font-size: 0.7rem;
+  color: var(--cool-2);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.layer-capture::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  background: var(--cool-2);
+  border-radius: 50%;
+}
+
+/* ---- Gap Visualization ---- */
+.gap-section {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem 2rem;
+}
+.gap-card {
+  background: var(--gap);
+  border: 1px dashed var(--gap-border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+.gap-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+  opacity: 0.6;
+}
+.gap-title { font-weight: 600; font-size: 0.9rem; color: var(--warm-1); }
+.gap-text { font-size: 0.82rem; color: var(--text-mid); margin-top: 0.3rem; line-height: 1.6; }
+.gap-chain {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+.gap-node {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  background: #fff;
+  border: 1px solid var(--gap-border);
+  border-radius: 12px;
+}
+.gap-arrow { color: var(--text-light); font-size: 0.7rem; }
+.gap-edge {
+  border-bottom: 2px dashed var(--gap-border);
+  flex: 0 0 20px;
+  height: 0;
+  margin: 0 -2px;
+}
+
+/* ---- Intersection / Bridge Section ---- */
+.bridge-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem 2rem;
+}
+.bridge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+@media (max-width: 768px) { .bridge-grid { grid-template-columns: 1fr; } }
+
+.bridge-card {
+  background: var(--gold-light);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  padding: 1.2rem;
+  position: relative;
+  overflow: hidden;
+}
+.bridge-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: var(--gold);
+}
+.bridge-from {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--warm-1);
+  margin-bottom: 0.2rem;
+}
+.bridge-to {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--cool-1);
+  margin-bottom: 0.4rem;
+}
+.bridge-story { font-size: 0.82rem; line-height: 1.5; }
+.bridge-arrow-label {
+  font-size: 0.7rem;
+  color: var(--gold);
+  font-weight: 600;
+  margin: 0.15rem 0;
+}
+
+/* ---- Flow Diagram ---- */
+.flow-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 2rem 2rem;
+}
+.flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  padding: 1rem 0;
+}
+.flow-step {
+  flex: 1;
+  min-width: 120px;
+  padding: 1rem 0.8rem;
+  text-align: center;
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+.flow-step:first-child { border-radius: 8px 0 0 8px; }
+.flow-step:last-child { border-radius: 0 8px 8px 0; }
+.flow-step:not(:last-child)::after {
+  content: '\25B6';
+  position: absolute;
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-light);
+  font-size: 0.7rem;
+  z-index: 1;
+}
+.flow-step-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.3rem;
+}
+.flow-step-detail { font-size: 0.68rem; color: var(--text-mid); }
+.flow-step.captured { background: rgba(46,134,193,0.06); border-color: var(--cool-3); }
+.flow-step.partial { background: rgba(230,126,34,0.06); border-color: var(--warm-2); border-style: dashed; }
+.flow-step.missing { background: var(--gap); border-color: var(--gap-border); border-style: dashed; }
+
+/* ---- Aspiration Section ---- */
+.aspiration-section {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem 3rem;
+}
+.aspiration-card {
+  background: var(--aspiration);
+  border: 1px solid var(--aspiration-border);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+}
+.aspiration-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #6c3483;
+  margin-bottom: 0.8rem;
+}
+.aspiration-card p {
+  font-size: 0.85rem;
+  color: var(--text-mid);
+  max-width: 600px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.graph-sketch {
+  margin: 1.5rem auto 0;
+  max-width: 700px;
+}
+.graph-sketch svg { width: 100%; height: auto; }
+
+.node-cluster {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-top: 1.2rem;
+}
+.gnode {
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  position: relative;
+}
+.gnode.thing { background: #e8e8e8; color: var(--text-mid); border: 1px solid #ccc; }
+.gnode.experience { background: var(--gold-light); color: #8b6914; border: 1px solid var(--gold); }
+.gnode.meaning { background: var(--aspiration); color: #6c3483; border: 1px solid var(--aspiration-border); }
+
+.legend {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-top: 1.2rem;
+  font-size: 0.72rem;
+  color: var(--text-light);
+}
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+/* ---- Team Memory Grid ---- */
+.team-rings-container {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+}
+.team-rings {
+  position: relative;
+  width: 460px;
+  height: 460px;
+}
+.team-ring {
+  position: absolute;
+  border-radius: 50%;
+  transition: transform 0.3s ease;
+}
+.team-ring:hover { transform: scale(1.02); }
+
+.tr-5 { width: 460px; height: 460px; top: 0; left: 0; background: rgba(174,214,241,0.2); border: 2px solid var(--cool-4); }
+.tr-4 { width: 370px; height: 370px; top: 45px; left: 45px; background: rgba(127,179,216,0.2); border: 2px solid var(--cool-3); }
+.tr-3 { width: 280px; height: 280px; top: 90px; left: 90px; background: rgba(46,134,193,0.12); border: 2px solid var(--cool-2); }
+.tr-2 { width: 190px; height: 190px; top: 135px; left: 135px; background: rgba(36,113,163,0.12); border: 2px solid var(--cool-1); }
+.tr-1 { width: 100px; height: 100px; top: 180px; left: 180px; background: rgba(36,113,163,0.18); border: 2px solid var(--cool-1); display: flex; align-items: center; justify-content: center; }
+
+.team-ring .ring-label { top: 10px; left: 50%; transform: translateX(-50%); }
+.tr-1 .ring-label { position: static; transform: none; color: var(--cool-1); font-size: 0.6rem; text-align: center; line-height: 1.3; }
+
+/* ---- SVG connection lines ---- */
+.svg-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+footer {
+  text-align: center;
+  padding: 2rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--text-light);
+}
+
+/* Pulse animation for aspiration nodes */
+@keyframes softpulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212,160,23,0.15); }
+  50% { box-shadow: 0 0 0 6px rgba(212,160,23,0); }
+}
+.gnode.experience { animation: softpulse 3s ease-in-out infinite; }
+
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.panel, .gap-card, .bridge-card, .aspiration-card, .pipeline-stage, .retrieval-layer, .roadmap-card {
+  animation: fadein 0.5s ease-out both;
+}
+
+/* ---- Roadmap Section ---- */
+.roadmap-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem 2rem;
+}
+.roadmap-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+@media (max-width: 768px) { .roadmap-columns { grid-template-columns: 1fr; } }
+
+.roadmap-column-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.roadmap-column-title .count-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  color: #fff;
+}
+
+.roadmap-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.5rem;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+}
+.roadmap-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+}
+.roadmap-card.built::before { background: var(--durable); }
+.roadmap-card.carded::before { background: var(--medium); }
+
+.roadmap-card-icon {
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+.roadmap-card-id {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-light);
+  font-variant-numeric: tabular-nums;
+}
+.roadmap-card-title {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.roadmap-card-status {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.status-done { background: var(--durable-bg); color: #1e8449; border: 1px solid var(--durable); }
+.status-accepted { background: var(--durable-bg); color: #1e8449; border: 1px solid var(--durable); }
+.status-next { background: var(--medium-bg); color: #9a7d0a; border: 1px solid var(--medium); }
+
+/* Gaps column */
+.roadmap-gap-card {
+  background: var(--gap);
+  border: 1px dashed var(--gap-border);
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.5rem;
+}
+.roadmap-gap-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--warm-1);
+}
+.roadmap-gap-desc {
+  font-size: 0.72rem;
+  color: var(--text-mid);
+  margin-top: 0.2rem;
+  line-height: 1.5;
+}
+
+.roadmap-progress-bar {
+  max-width: 1100px;
+  margin: 0 auto 1.5rem;
+  padding: 0 2rem;
+}
+.progress-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--gap);
+  overflow: hidden;
+  position: relative;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--durable) 0%, var(--living-2) 100%);
+}
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.3rem;
+  font-size: 0.65rem;
+  color: var(--text-light);
+}
+
+/* ---- Pipeline Section ---- */
+.pipeline-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem 2rem;
+}
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+}
+.pipeline-stage {
+  background: #fff;
+  border: 1px solid var(--living-4);
+  border-radius: 10px;
+  padding: 1.2rem 1.5rem;
+  position: relative;
+  margin-bottom: 0;
+}
+.pipeline-stage:not(:last-child) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: none;
+}
+.pipeline-stage:not(:first-child) {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.pipeline-stage-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.pipeline-stage-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--living-2);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pipeline-stage-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--living-1);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.pipeline-stage-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-mid);
+  font-style: italic;
+  margin-left: auto;
+}
+.pipeline-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+.pipeline-chip {
+  font-size: 0.7rem;
+  padding: 3px 10px;
+  border-radius: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.chip-durable { background: var(--durable-bg); border: 1px solid var(--durable); color: #1e8449; }
+.chip-medium { background: var(--medium-bg); border: 1px solid var(--medium); color: #9a7d0a; }
+.chip-shortterm { background: var(--shortterm-bg); border: 1px solid var(--shortterm); color: #a04000; }
+.chip-ephemeral { background: var(--ephemeral-bg); border: 1px dashed var(--ephemeral); color: #922b21; }
+.chip-auto { background: var(--living-bg); border: 1px solid var(--living-3); color: var(--living-1); }
+.chip-semi { background: #fef9e7; border: 1px solid #f0d56e; color: #7d6608; }
+.chip-manual { background: #f5f0ff; border: 1px solid var(--aspiration-border); color: #6c3483; }
+.chip-source { background: #f0f0ee; border: 1px solid #d5d3ce; color: var(--text-mid); }
+.chip-gap { background: var(--gap); border: 1px dashed var(--gap-border); color: #943126; }
+.chip-aspiration { background: var(--aspiration); border: 1px solid var(--aspiration-border); color: #6c3483; }
+
+.pipeline-arrow {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 0;
+  position: relative;
+  z-index: 1;
+}
+.pipeline-arrow-line {
+  position: absolute;
+  width: 2px;
+  height: 12px;
+  background: var(--living-3);
+  top: -6px;
+}
+.pipeline-group-label {
+  font-size: 0.65rem;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.2rem;
+  margin-top: 0.4rem;
+}
+
+/* ---- Retrieval Section ---- */
+.retrieval-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem 2rem;
+}
+.retrieval-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.retrieval-layer {
+  background: #fff;
+  border: 1px solid var(--living-4);
+  padding: 1.2rem 1.5rem;
+  position: relative;
+}
+.retrieval-layer:first-child {
+  border-radius: 10px 10px 0 0;
+}
+.retrieval-layer:last-child {
+  border-radius: 0 0 10px 10px;
+}
+.retrieval-layer:not(:last-child) {
+  border-bottom: none;
+}
+.retrieval-layer-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.retrieval-layer-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+.retrieval-layer-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--living-1);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.retrieval-layer-desc {
+  font-size: 0.75rem;
+  color: var(--text-mid);
+  font-style: italic;
+  margin-left: auto;
+}
+.retrieval-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.retrieval-item {
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  background: var(--living-bg);
+  border: 1px solid var(--living-4);
+  border-radius: 14px;
+  color: var(--living-1);
+}
+.retrieval-item.ordered {
+  position: relative;
+  padding-left: 22px;
+}
+.retrieval-item.ordered::before {
+  content: attr(data-order);
+  position: absolute;
+  left: 6px;
+  font-weight: 700;
+  font-size: 0.62rem;
+  color: var(--living-2);
+}
+.retrieval-flow-arrow {
+  display: flex;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  height: 24px;
+  z-index: 2;
+}
+.retrieval-flow-arrow::before {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 24px;
+  background: var(--living-3);
+  top: 0;
+}
+.retrieval-flow-arrow::after {
+  content: '\25BC';
+  position: absolute;
+  bottom: -2px;
+  color: var(--living-3);
+  font-size: 0.6rem;
+}
+.retrieval-active-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--living-2);
+  color: #fff;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Memory Architecture</h1>
+  <p>How personal and team memory work in Gathering/Chorus &mdash; and where the edges aren't connected yet.</p>
+</header>
+
+<div class="stats-bar">
+  <div class="stat"><div class="stat-num">22.7M</div><div class="stat-label">Triples in Fuseki</div></div>
+  <div class="stat"><div class="stat-num">96K</div><div class="stat-label">Chorus Messages</div></div>
+  <div class="stat"><div class="stat-num">71K</div><div class="stat-label">Spine Events</div></div>
+  <div class="stat"><div class="stat-num">51</div><div class="stat-label">Stories Captured</div></div>
+  <div class="stat"><div class="stat-num">88</div><div class="stat-label">Decisions Logged</div></div>
+</div>
+
+<!-- ============ SECTION 1: Personal Memory ============ -->
+
+<div class="section-title">
+  <h2 style="color:var(--warm-1)">Jeff's Personal Memory</h2>
+  <p>Six layers of lived experience. The deeper the layer, the more it shapes everything above.</p>
+</div>
+
+<div class="ring-container">
+  <div class="rings">
+    <div class="ring ring-6"><span class="ring-label">Creative / Aesthetic</span></div>
+    <div class="ring ring-5"><span class="ring-label">Professional / Craft</span></div>
+    <div class="ring ring-4"><span class="ring-label">Values / Principles</span></div>
+    <div class="ring ring-3"><span class="ring-label">Sensory / Embodied</span></div>
+    <div class="ring ring-2"><span class="ring-label" style="font-size:0.55rem">Relational</span></div>
+    <div class="ring ring-1"><span class="ring-label">Jeff</span></div>
+
+    <div class="layer-annotation ann-episodic">
+      <span class="ann-dot" style="background:var(--warm-4)"></span>
+      <strong>Episodic:</strong> Ginsburg dying in his lap. The Staples A/R crisis. Moments that stick.
+    </div>
+    <div class="layer-annotation ann-relational">
+      <span class="ann-dot" style="background:var(--warm-1)"></span>
+      <strong>Relational:</strong> Aubrey, Julian, colleagues, the religious neighbor. Connection context.
+    </div>
+    <div class="layer-annotation ann-sensory">
+      <span class="ann-dot" style="background:var(--warm-1)"></span>
+      <strong>Sensory:</strong> Weight of a dead dog. Sun on the front door. Walking. Felt knowledge.
+    </div>
+    <div class="layer-annotation ann-values">
+      <span class="ann-dot" style="background:var(--warm-2)"></span>
+      <strong>Values:</strong> Independent thinking. Loyalty. Honesty. YAGNI. What matters most.
+    </div>
+    <div class="layer-annotation ann-craft">
+      <span class="ann-dot" style="background:var(--warm-3)"></span>
+      <strong>Craft:</strong> Normalize-instrument-retire-rewrite. Quality into process. Hard-won patterns.
+    </div>
+    <div class="layer-annotation ann-creative">
+      <span class="ann-dot" style="background:var(--warm-4)"></span>
+      <strong>Creative:</strong> Songs I Love. Hand-drawn garden maps. Taste as judgment.
+    </div>
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="panel warm">
+    <h3>Personal Memory Layers</h3>
+    <ul class="layer-list">
+      <li>
+        <div class="layer-dot" style="background:var(--warm-4)"></div>
+        <div>
+          <div class="layer-name">Episodic</div>
+          <div class="layer-desc">Events, experiences, moments that formed who he is</div>
+          <div class="layer-example">"Ginsburg died in my lap" &mdash; not data, identity</div>
+          <div class="layer-capture">stories.md, Chorus index (when told)</div>
+        </div>
+      </li>
+      <li>
+        <div class="layer-dot" style="background:var(--warm-1)"></div>
+        <div>
+          <div class="layer-name">Relational</div>
+          <div class="layer-desc">People and the context of connection</div>
+          <div class="layer-example">Aubrey, Julian, colleagues past and present</div>
+          <div class="layer-capture">stories.md, memory files (partial)</div>
+        </div>
+      </li>
+      <li>
+        <div class="layer-dot" style="background:var(--warm-1)"></div>
+        <div>
+          <div class="layer-name">Sensory / Embodied</div>
+          <div class="layer-desc">Physical experience, felt knowledge, body memory</div>
+          <div class="layer-example">Sun on the front door in winter. The weight of carrying.</div>
+          <div class="layer-capture" style="color:var(--gap-border)">No capture mechanism</div>
+        </div>
+      </li>
+      <li>
+        <div class="layer-dot" style="background:var(--warm-2)"></div>
+        <div>
+          <div class="layer-name">Values / Principles</div>
+          <div class="layer-desc">What matters, what he believes, what he won't compromise</div>
+          <div class="layer-example">Independent thinking, loyalty, YAGNI, concentric trust</div>
+          <div class="layer-capture">decisions.md (principles, not stories behind them)</div>
+        </div>
+      </li>
+      <li>
+        <div class="layer-dot" style="background:var(--warm-3)"></div>
+        <div>
+          <div class="layer-name">Professional / Craft</div>
+          <div class="layer-desc">Hard-won operational knowledge from decades of building</div>
+          <div class="layer-example">Normalize-instrument-retire-rewrite. Quality into process.</div>
+          <div class="layer-capture">CLAUDE.md fragments, decisions, Chorus</div>
+        </div>
+      </li>
+      <li>
+        <div class="layer-dot" style="background:var(--warm-4)"></div>
+        <div>
+          <div class="layer-name">Creative / Aesthetic</div>
+          <div class="layer-desc">Music, writing, taste, judgment, aesthetic sense</div>
+          <div class="layer-example">Songs I Love blog. Hand-drawn garden maps on cabinets.</div>
+          <div class="layer-capture">WordPress blog, Fuseki (music metadata)</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="panel cool">
+    <h3>Team Memory Layers</h3>
+    <ul class="layer-list">
+      <li>
+        <div class="layer-dot" style="background:var(--cool-4)"></div>
+        <div>
+          <div class="layer-name">Contextual</div>
+          <div class="layer-desc">Why this matters right now &mdash; urgency, blockers, health</div>
+          <div class="layer-example">Board state, WIP limits, project health signals</div>
+          <div class="layer-capture">board-ts, state files, role-state.sh</div>
+        </div>
+      </li>
+      <li>
+        <div class="layer-dot" style="background:var(--cool-3)"></div>
+        <div>
+          <div class="layer-name">Relational</div>
+          <div class="layer-desc">How roles work together, interaction patterns, trust</div>
+          <div class="layer-example">Demo flow, brief routing, gemba patterns, feedback</div>
+          <div class="layer-capture">CLAUDE.md, feedback memory files</div>
+        </div>
+      </li>
+      <li>
+        <div class="layer-dot" style="background:var(--cool-2)"></div>
+        <div>
+          <div class="layer-name">Structural</div>
+          <div class="layer-desc">How the system works &mdash; topology, services, domains</div>
+          <div class="layer-example">Domain registry, service registry, ontology status</div>
+          <div class="layer-capture">architect/ docs, TEAM_PROTOCOL.md</div>
+        </div>
+      </li>
+      <li>
+        <div class="layer-dot" style="background:var(--cool-1)"></div>
+        <div>
+          <div class="layer-name">Decisional</div>
+          <div class="layer-desc">Why we chose X over Y &mdash; rationale, constraints, tradeoffs</div>
+          <div class="layer-example">DEC-025 through DEC-088, ADR series</div>
+          <div class="layer-capture">decisions.md, ADRs, Chorus index</div>
+        </div>
+      </li>
+      <li>
+        <div class="layer-dot" style="background:var(--cool-1)"></div>
+        <div>
+          <div class="layer-name">Operational</div>
+          <div class="layer-desc">What happened, when, by whom &mdash; the event stream</div>
+          <div class="layer-example">Card moves, deploys, commits, spine events</div>
+          <div class="layer-capture">chorus.log, git history, activity.md</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ SECTION 2: How a Story Flows ============ -->
+
+<div class="section-title">
+  <h2>How a Story Enters the System</h2>
+  <p>Follow a memory from Jeff's mouth to its resting places &mdash; and where it gets lost.</p>
+</div>
+
+<div class="flow-container">
+  <div class="flow">
+    <div class="flow-step">
+      <div class="flow-step-label" style="color:var(--warm-1)">Jeff Speaks</div>
+      <div class="flow-step-detail">Story, value, or pattern shared in conversation</div>
+    </div>
+    <div class="flow-step captured">
+      <div class="flow-step-label" style="color:var(--cool-2)">Session Transcript</div>
+      <div class="flow-step-detail">Full text in Chorus index (96K messages)</div>
+    </div>
+    <div class="flow-step captured">
+      <div class="flow-step-label" style="color:var(--cool-2)">stories.md</div>
+      <div class="flow-step-detail">51/52 stories extracted and saved</div>
+    </div>
+    <div class="flow-step partial">
+      <div class="flow-step-label" style="color:var(--warm-2)">decisions.md</div>
+      <div class="flow-step-detail">Principle captured, source story often lost</div>
+    </div>
+    <div class="flow-step missing">
+      <div class="flow-step-label" style="color:var(--gap-border)">Connections</div>
+      <div class="flow-step-detail">Link to other stories, people, values &mdash; not captured</div>
+    </div>
+    <div class="flow-step missing">
+      <div class="flow-step-label" style="color:var(--gap-border)">Knowledge Graph</div>
+      <div class="flow-step-detail">Fuseki has things, not experiences. No home for this.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SECTION 3: Memory Capture Pipeline ============ -->
+
+<div class="section-title">
+  <h2 style="color:var(--living-1)">Memory Capture Pipeline</h2>
+  <p>Every type of memory, from origin to integration. Color-coded by durability.</p>
+</div>
+
+<div style="display:flex; justify-content:center; gap:1.5rem; flex-wrap:wrap; padding:0 2rem 1rem; max-width:1100px; margin:0 auto;">
+  <div style="display:flex; align-items:center; gap:4px; font-size:0.68rem; color:var(--text-light);">
+    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--durable-bg); border:1px solid var(--durable);"></span> Durable
+  </div>
+  <div style="display:flex; align-items:center; gap:4px; font-size:0.68rem; color:var(--text-light);">
+    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--medium-bg); border:1px solid var(--medium);"></span> Medium-term
+  </div>
+  <div style="display:flex; align-items:center; gap:4px; font-size:0.68rem; color:var(--text-light);">
+    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--shortterm-bg); border:1px solid var(--shortterm);"></span> Short-term
+  </div>
+  <div style="display:flex; align-items:center; gap:4px; font-size:0.68rem; color:var(--text-light);">
+    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--ephemeral-bg); border:1px dashed var(--ephemeral);"></span> Ephemeral
+  </div>
+</div>
+
+<div class="pipeline-container">
+  <div class="pipeline">
+
+    <div class="pipeline-stage" style="background:linear-gradient(135deg, var(--living-bg) 0%, #fff 100%);">
+      <div class="pipeline-stage-header">
+        <div class="pipeline-stage-num">1</div>
+        <div class="pipeline-stage-title">Signal</div>
+        <div class="pipeline-stage-subtitle">Where memories originate</div>
+      </div>
+      <div class="pipeline-chips">
+        <span class="pipeline-chip chip-source">Conversation (session transcripts)</span>
+        <span class="pipeline-chip chip-source">Seeds (SMS, voice, photos)</span>
+        <span class="pipeline-chip chip-source">Actions (card moves, deploys, commits)</span>
+        <span class="pipeline-chip chip-source">Observations (gemba, demos, feedback)</span>
+        <span class="pipeline-chip chip-source">External (articles, links, physical artifacts)</span>
+      </div>
+    </div>
+
+    <div class="pipeline-stage">
+      <div class="pipeline-stage-header">
+        <div class="pipeline-stage-num">2</div>
+        <div class="pipeline-stage-title">Capture</div>
+        <div class="pipeline-stage-subtitle">How they're recorded</div>
+      </div>
+      <div class="pipeline-group-label">Automatic</div>
+      <div class="pipeline-chips">
+        <span class="pipeline-chip chip-auto">Spine events (chorus-log.sh)</span>
+        <span class="pipeline-chip chip-auto">Git commits</span>
+        <span class="pipeline-chip chip-auto">Board state changes</span>
+      </div>
+      <div class="pipeline-group-label">Semi-automatic</div>
+      <div class="pipeline-chips">
+        <span class="pipeline-chip chip-semi">Session transcripts (Chorus bridge)</span>
+        <span class="pipeline-chip chip-semi">Harvest notifications</span>
+      </div>
+      <div class="pipeline-group-label">Manual</div>
+      <div class="pipeline-chips">
+        <span class="pipeline-chip chip-manual">stories.md</span>
+        <span class="pipeline-chip chip-manual">Memory files</span>
+        <span class="pipeline-chip chip-manual">decisions.md</span>
+        <span class="pipeline-chip chip-manual">Seed triage</span>
+      </div>
+    </div>
+
+    <div class="pipeline-stage">
+      <div class="pipeline-stage-header">
+        <div class="pipeline-stage-num">3</div>
+        <div class="pipeline-stage-title">Persistence</div>
+        <div class="pipeline-stage-subtitle">Where they live &mdash; and for how long</div>
+      </div>
+      <div class="pipeline-chips">
+        <span class="pipeline-chip chip-ephemeral">Session context (gone when session ends)</span>
+      </div>
+      <div class="pipeline-chips" style="margin-top:0.3rem;">
+        <span class="pipeline-chip chip-shortterm">chorus.log (was rotated &mdash; now fixed)</span>
+        <span class="pipeline-chip chip-shortterm">Loki (15-day retention)</span>
+      </div>
+      <div class="pipeline-chips" style="margin-top:0.3rem;">
+        <span class="pipeline-chip chip-medium">Memory files (on disk, git-committed)</span>
+        <span class="pipeline-chip chip-medium">State files (decisions, backlog, projects)</span>
+        <span class="pipeline-chip chip-medium">Briefs (on disk, git-committed)</span>
+      </div>
+      <div class="pipeline-chips" style="margin-top:0.3rem;">
+        <span class="pipeline-chip chip-durable">Fuseki knowledge graph (22.7M triples)</span>
+        <span class="pipeline-chip chip-durable">Git history (permanent)</span>
+      </div>
+    </div>
+
+    <div class="pipeline-stage" style="background:linear-gradient(135deg, #fff 0%, var(--living-bg) 100%);">
+      <div class="pipeline-stage-header">
+        <div class="pipeline-stage-num">4</div>
+        <div class="pipeline-stage-title">Integration</div>
+        <div class="pipeline-stage-subtitle">How they connect</div>
+      </div>
+      <div class="pipeline-chips">
+        <span class="pipeline-chip chip-semi">Current: manual &mdash; roles make connections in conversation</span>
+      </div>
+      <div class="pipeline-chips" style="margin-top:0.3rem;">
+        <span class="pipeline-chip chip-gap">Gap: no automated connection layer</span>
+      </div>
+      <div class="pipeline-chips" style="margin-top:0.3rem;">
+        <span class="pipeline-chip chip-aspiration">Aspiration: knowledge graph of experience with edges, not just nodes</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ SECTION 4: Memory Retrieval Orchestration ============ -->
+
+<div class="section-title">
+  <h2 style="color:var(--living-1)">Memory Retrieval Orchestration</h2>
+  <p>Retrieval is an active process, not passive recall. Orchestrated, not accidental.<span class="retrieval-active-badge">Active</span></p>
+</div>
+
+<div class="retrieval-container">
+  <div class="retrieval-stack">
+
+    <div class="retrieval-layer" style="background:linear-gradient(135deg, var(--living-bg) 0%, #fff 100%);">
+      <div class="retrieval-layer-header">
+        <div class="retrieval-layer-icon" style="background:var(--living-bg-dark); color:var(--living-1);">&#x26A1;</div>
+        <div class="retrieval-layer-title">Trigger Layer</div>
+        <div class="retrieval-layer-desc">What activates retrieval</div>
+      </div>
+      <div class="retrieval-items">
+        <span class="retrieval-item">Decision point (card creation, priority call, architecture choice)</span>
+        <span class="retrieval-item">Pattern match (current situation resembles a past one)</span>
+        <span class="retrieval-item">Role context (session start loads role identity + preferences)</span>
+        <span class="retrieval-item">Jeff signal (story shared, question asked, direction given)</span>
+        <span class="retrieval-item">Time-based (session start reconciliation, daily standup)</span>
+      </div>
+    </div>
+
+    <div class="retrieval-flow-arrow"></div>
+
+    <div class="retrieval-layer">
+      <div class="retrieval-layer-header">
+        <div class="retrieval-layer-icon" style="background:var(--living-bg-dark); color:var(--living-1);">&#x1F50D;</div>
+        <div class="retrieval-layer-title">Search Layer</div>
+        <div class="retrieval-layer-desc">Where retrieval looks (DEC-074 order)</div>
+      </div>
+      <div class="retrieval-items">
+        <span class="retrieval-item ordered" data-order="1.">Chorus index (96K messages &mdash; semantic search across all sessions)</span>
+        <span class="retrieval-item ordered" data-order="2.">Codebase graph (Fuseki SPARQL &mdash; structural relationships)</span>
+        <span class="retrieval-item ordered" data-order="3.">Memory files (stories, feedback, user, project memories)</span>
+        <span class="retrieval-item ordered" data-order="4.">State files (decisions.md, backlog.md, projects.md)</span>
+        <span class="retrieval-item ordered" data-order="5.">Git history (who changed what, when, why)</span>
+      </div>
+    </div>
+
+    <div class="retrieval-flow-arrow"></div>
+
+    <div class="retrieval-layer">
+      <div class="retrieval-layer-header">
+        <div class="retrieval-layer-icon" style="background:var(--living-bg-dark); color:var(--living-1);">&#x1F9E0;</div>
+        <div class="retrieval-layer-title">Synthesis Layer</div>
+        <div class="retrieval-layer-desc">How retrieved memories inform action</div>
+      </div>
+      <div class="retrieval-items">
+        <span class="retrieval-item" style="background:#fef9e7; border-color:#f0d56e; color:#7d6608;">Shape matching: &ldquo;this feels like X&rdquo; (Staples &rarr; Docker migration)</span>
+        <span class="retrieval-item" style="background:#fef9e7; border-color:#f0d56e; color:#7d6608;">Value alignment: &ldquo;Jeff would want Y&rdquo; (independence &rarr; DEC-025)</span>
+        <span class="retrieval-item" style="background:#fef9e7; border-color:#f0d56e; color:#7d6608;">Pattern recognition: &ldquo;last time we did Z, it went Q&rdquo; (cruft velocity)</span>
+        <span class="retrieval-item" style="background:#fef9e7; border-color:#f0d56e; color:#7d6608;">Relational context: &ldquo;this connects to person P&rdquo; (Aubrey &rarr; recovery &rarr; Ginsburg)</span>
+      </div>
+    </div>
+
+    <div class="retrieval-flow-arrow"></div>
+
+    <div class="retrieval-layer" style="background:linear-gradient(135deg, #fff 0%, var(--living-bg) 100%);">
+      <div class="retrieval-layer-header">
+        <div class="retrieval-layer-icon" style="background:var(--living-2); color:#fff;">&#x2B06;</div>
+        <div class="retrieval-layer-title">Delivery</div>
+        <div class="retrieval-layer-desc">How memories reach the surface</div>
+      </div>
+      <div class="retrieval-items">
+        <span class="retrieval-item">Implicit: role thinks differently because context was loaded</span>
+        <span class="retrieval-item">Explicit: &ldquo;this connects to your Staples experience&rdquo;</span>
+        <span class="retrieval-item">Prompted: Jeff asks &ldquo;do you remember...&rdquo; and retrieval fires</span>
+        <span class="retrieval-item">Ambient: morning practice check, session start state</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ SECTION 5: The Gaps ============ -->
+
+<div class="section-title">
+  <h2 style="color:var(--gap-border)">The Gaps</h2>
+  <p>Nodes exist but not edges. Capture depends on conversation. Durability is fragile.</p>
+</div>
+
+<div class="gap-section" style="display:grid; gap:1rem;">
+  <div class="gap-card">
+    <div class="gap-icon">&#x1f4a8;</div>
+    <div>
+      <div class="gap-title">Missing Edges &mdash; Personal Memory</div>
+      <div class="gap-text">Connections between memories aren't captured. The graph of experience is disconnected nodes.</div>
+      <div class="gap-chain">
+        <span class="gap-node">Ginsburg</span>
+        <span class="gap-edge"></span>
+        <span class="gap-node">Aubrey</span>
+        <span class="gap-edge"></span>
+        <span class="gap-node">Recovery</span>
+        <span class="gap-edge"></span>
+        <span class="gap-node">Julian</span>
+        <span class="gap-edge"></span>
+        <span class="gap-node">Parenting values</span>
+      </div>
+      <div class="gap-text" style="margin-top:0.5rem; font-style: italic;">These edges exist in Jeff's mind. They don't exist in the system.</div>
+    </div>
+  </div>
+
+  <div class="gap-card">
+    <div class="gap-icon">&#x1f50c;</div>
+    <div>
+      <div class="gap-title">No Durable Event Stream &mdash; Team Memory</div>
+      <div class="gap-text">chorus.log was being rotated and truncated. The append-only spine is not append-only. Search was fragile &mdash; chorus.db hit 0 bytes. Git history is durable but not queryable as an event stream.</div>
+    </div>
+  </div>
+
+  <div class="gap-card">
+    <div class="gap-icon">&#x1f3ad;</div>
+    <div>
+      <div class="gap-title">Sensory/Embodied Has No Home</div>
+      <div class="gap-text">The weight of a dead dog. Sun angle in winter. How walking changes thinking. These are real memories with real product implications (Self ontology, wellbeing signals, biometrics) and no capture mechanism at all.</div>
+    </div>
+  </div>
+
+  <div class="gap-card">
+    <div class="gap-icon">&#x1f399;</div>
+    <div>
+      <div class="gap-title">Capture Depends on Conversation</div>
+      <div class="gap-text">If Jeff doesn't say it during a session, it's gone. SMS seeds help, but they're about ideas, not memories. There's no prompt, no ritual, no ambient capture for the experiences that shape product decisions.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SECTION 6: The Intersection ============ -->
+
+<div class="section-title">
+  <h2 style="color:var(--gold)">The Intersection</h2>
+  <p>Where personal memory becomes team memory. Where stories become architecture.</p>
+</div>
+
+<div class="bridge-container">
+  <div class="bridge-grid">
+    <div class="bridge-card">
+      <div class="bridge-from">Personal / Craft</div>
+      <div class="bridge-arrow-label">&darr; shapes &darr;</div>
+      <div class="bridge-to">Team / Operational</div>
+      <div class="bridge-story">Jeff's Staples A/R crisis experience &mdash; watching a system fail under pressure &mdash; directly shapes how we approach the Docker migration. Normalize first, then instrument, then retire, then rewrite. The pattern came from lived pain.</div>
+    </div>
+    <div class="bridge-card">
+      <div class="bridge-from">Personal / Values</div>
+      <div class="bridge-arrow-label">&darr; becomes &darr;</div>
+      <div class="bridge-to">Team / Decisional</div>
+      <div class="bridge-story">Jeff's deep belief in independent thinking &mdash; formed over decades, not just opinion &mdash; crystallized as DEC-025: autonomous authority within domain scope. The value became the policy.</div>
+    </div>
+    <div class="bridge-card">
+      <div class="bridge-from">Personal / Sensory</div>
+      <div class="bridge-arrow-label">&darr; could inform &darr;</div>
+      <div class="bridge-to">Team / Structural</div>
+      <div class="bridge-story">Jeff's walks and sun exposure are wellbeing signals with no capture path. The Self ontology could integrate these &mdash; biometric + environmental data linked to mood and productivity. The aspiration exists. The plumbing doesn't.</div>
+    </div>
+    <div class="bridge-card">
+      <div class="bridge-from">Personal / Craft</div>
+      <div class="bridge-arrow-label">&darr; architects &darr;</div>
+      <div class="bridge-to">Team / Structural</div>
+      <div class="bridge-story">Patent US9552400B2 &mdash; RDF/OWL + SPARQL + workflow gates. Jeff's prior art, 10+ years old, is the structural blueprint for Chorus. The professional past is literally the architectural present.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SECTION 7: Team Memory Rings ============ -->
+
+<div class="section-title">
+  <h2 style="color:var(--cool-1)">Team Memory</h2>
+  <p>Wren, Silas, Kade, and Jeff. Five layers from context to operations.</p>
+</div>
+
+<div class="team-rings-container">
+  <div class="team-rings">
+    <div class="team-ring tr-5"><span class="ring-label">Contextual</span></div>
+    <div class="team-ring tr-4"><span class="ring-label">Relational</span></div>
+    <div class="team-ring tr-3"><span class="ring-label">Structural</span></div>
+    <div class="team-ring tr-2"><span class="ring-label">Decisional</span></div>
+    <div class="team-ring tr-1"><span class="ring-label">Operational<br>Core</span></div>
+  </div>
+</div>
+
+<!-- ============ SECTION 8: Aspiration ============ -->
+
+<div class="section-title">
+  <h2 style="color:#6c3483">The Aspiration</h2>
+  <p>From a knowledge graph of things to a knowledge graph of lived experience and meaning.</p>
+</div>
+
+<div class="aspiration-section">
+  <div class="aspiration-card">
+    <h3>Knowledge Graph of Lived Experience</h3>
+    <p>Fuseki currently holds 22.7M triples about <strong>things</strong> &mdash; photos, music, documents, people as entities. The aspiration is a graph of <strong>experience</strong> and <strong>meaning</strong>: episodes connected to people connected to values. Professional patterns connected to current decisions. Sensory experiences connected to wellbeing. The Self ontology as the integration layer.</p>
+
+    <div style="margin-top:1.5rem; display:flex; justify-content:center; gap: 0.5rem; align-items:center; flex-wrap:wrap;">
+      <div style="text-align:center">
+        <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-light); margin-bottom:0.3rem;">Today</div>
+        <div class="gnode thing">Photos</div>
+      </div>
+      <div style="text-align:center">
+        <div style="visibility:hidden; font-size:0.65rem;">x</div>
+        <div class="gnode thing">Music</div>
+      </div>
+      <div style="text-align:center">
+        <div style="visibility:hidden; font-size:0.65rem;">x</div>
+        <div class="gnode thing">Documents</div>
+      </div>
+      <div style="text-align:center">
+        <div style="visibility:hidden; font-size:0.65rem;">x</div>
+        <div class="gnode thing">People</div>
+      </div>
+      <div style="padding: 0 1rem; color: var(--text-light); font-size: 1.5rem;">&rarr;</div>
+      <div style="text-align:center">
+        <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--gold); margin-bottom:0.3rem;">Tomorrow</div>
+        <div class="gnode experience">Episodes</div>
+      </div>
+      <div style="text-align:center">
+        <div style="visibility:hidden; font-size:0.65rem;">x</div>
+        <div class="gnode experience">Relationships</div>
+      </div>
+      <div style="text-align:center">
+        <div style="visibility:hidden; font-size:0.65rem;">x</div>
+        <div class="gnode experience">Values</div>
+      </div>
+      <div style="text-align:center">
+        <div style="visibility:hidden; font-size:0.65rem;">x</div>
+        <div class="gnode meaning">Meaning</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#e8e8e8; border:1px solid #ccc;"></div> Things (today)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--gold-light); border:1px solid var(--gold);"></div> Experience (aspiration)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--aspiration); border:1px solid var(--aspiration-border);"></div> Meaning (vision)</div>
+    </div>
+
+    <p style="margin-top:1.5rem; font-size:0.8rem; font-style:italic; color:#6c3483;">
+      The Self ontology is the integration layer. Not another database &mdash; the schema that connects what Jeff has done, what he's experienced, what he values, and what it all means.
+    </p>
+  </div>
+</div>
+
+<!-- ============ SECTION 9: Roadmap — Built vs To Build ============ -->
+
+<div class="section-title">
+  <h2 style="color:var(--living-1)">Roadmap &mdash; Built vs To Build</h2>
+  <p>Memory architecture progress as of March 14, 2026. Seven cards shipped. Eight gaps remain.</p>
+</div>
+
+<div class="roadmap-progress-bar">
+  <div class="progress-track">
+    <div class="progress-fill" style="width: 46%;"></div>
+  </div>
+  <div class="progress-labels">
+    <span>7 built / accepted</span>
+    <span>6 carded</span>
+    <span>8 gaps identified</span>
+  </div>
+</div>
+
+<div class="roadmap-container">
+  <div class="roadmap-columns">
+
+    <!-- LEFT: Built + Carded -->
+    <div>
+      <div class="roadmap-column-title" style="color:var(--durable);">
+        <span>Built &amp; Shipped</span>
+        <span class="count-badge" style="background:var(--durable);">7</span>
+      </div>
+
+      <div class="roadmap-card built">
+        <div class="roadmap-card-icon">&#x2705;</div>
+        <div>
+          <div class="roadmap-card-id">#1399</div>
+          <div class="roadmap-card-title">Memory Architecture &mdash; conceptual model</div>
+        </div>
+        <div class="roadmap-card-status status-accepted">Accepted</div>
+      </div>
+
+      <div class="roadmap-card built">
+        <div class="roadmap-card-icon">&#x2705;</div>
+        <div>
+          <div class="roadmap-card-id">#1400</div>
+          <div class="roadmap-card-title">Startup seed reconciliation &mdash; recover orphaned seeds</div>
+        </div>
+        <div class="roadmap-card-status status-done">Done</div>
+      </div>
+
+      <div class="roadmap-card built">
+        <div class="roadmap-card-icon">&#x2705;</div>
+        <div>
+          <div class="roadmap-card-id">#1401</div>
+          <div class="roadmap-card-title">Self ontology extension &mdash; Episode, Value, Pattern, Connection</div>
+        </div>
+        <div class="roadmap-card-status status-done">Done</div>
+      </div>
+
+      <div class="roadmap-card built">
+        <div class="roadmap-card-icon">&#x2705;</div>
+        <div>
+          <div class="roadmap-card-id">#1402</div>
+          <div class="roadmap-card-title">Story harvester &mdash; stories.md to RDF with person/value edges</div>
+        </div>
+        <div class="roadmap-card-status status-done">Done</div>
+      </div>
+
+      <div class="roadmap-card built">
+        <div class="roadmap-card-icon">&#x2705;</div>
+        <div>
+          <div class="roadmap-card-id">#1403</div>
+          <div class="roadmap-card-title">Edge persistence &mdash; discovered connections to Fuseki</div>
+        </div>
+        <div class="roadmap-card-status status-done">Done</div>
+      </div>
+
+      <div class="roadmap-card built">
+        <div class="roadmap-card-icon">&#x2705;</div>
+        <div>
+          <div class="roadmap-card-id">#1404</div>
+          <div class="roadmap-card-title">Memory pipeline completeness monitor</div>
+        </div>
+        <div class="roadmap-card-status status-done">Done</div>
+      </div>
+
+      <div class="roadmap-card built">
+        <div class="roadmap-card-icon">&#x2705;</div>
+        <div>
+          <div class="roadmap-card-id">#1406</div>
+          <div class="roadmap-card-title">Garden + property ontology &mdash; zones, beds, seasons, plantings</div>
+        </div>
+        <div class="roadmap-card-status status-accepted">Accepted</div>
+      </div>
+
+      <div class="roadmap-column-title" style="color:var(--medium); margin-top:1.5rem;">
+        <span>Carded &mdash; Not Yet Built</span>
+        <span class="count-badge" style="background:var(--medium);">6</span>
+      </div>
+
+      <div class="roadmap-card carded">
+        <div class="roadmap-card-icon">&#x1F552;</div>
+        <div>
+          <div class="roadmap-card-id">#1405</div>
+          <div class="roadmap-card-title">Review transposition rate data after 24h</div>
+        </div>
+        <div class="roadmap-card-status status-next">Next</div>
+      </div>
+
+      <div class="roadmap-card carded">
+        <div class="roadmap-card-icon">&#x1F552;</div>
+        <div>
+          <div class="roadmap-card-id">#1397</div>
+          <div class="roadmap-card-title">Define team work cadences &mdash; build, clean, reflect rhythms</div>
+        </div>
+        <div class="roadmap-card-status status-next">Next</div>
+      </div>
+
+      <div class="roadmap-card carded">
+        <div class="roadmap-card-icon">&#x1F552;</div>
+        <div>
+          <div class="roadmap-card-id">#1392</div>
+          <div class="roadmap-card-title">Nav walk &mdash; deterministic verification of all nav links</div>
+        </div>
+        <div class="roadmap-card-status status-next">Next</div>
+      </div>
+
+      <div class="roadmap-card carded">
+        <div class="roadmap-card-icon">&#x1F552;</div>
+        <div>
+          <div class="roadmap-card-id">#1341</div>
+          <div class="roadmap-card-title">Garden map &mdash; zone grouping (spatial foundation)</div>
+        </div>
+        <div class="roadmap-card-status status-next">Next</div>
+      </div>
+
+      <div class="roadmap-card carded">
+        <div class="roadmap-card-icon">&#x1F552;</div>
+        <div>
+          <div class="roadmap-card-id">#1342</div>
+          <div class="roadmap-card-title">Garden map &mdash; photo overlay (hand-drawn annotations)</div>
+        </div>
+        <div class="roadmap-card-status status-next">After #1341</div>
+      </div>
+
+      <div class="roadmap-card carded">
+        <div class="roadmap-card-icon">&#x1F552;</div>
+        <div>
+          <div class="roadmap-card-id">#1343</div>
+          <div class="roadmap-card-title">Garden map &mdash; seasonal layer toggle</div>
+        </div>
+        <div class="roadmap-card-status status-next">After #1341</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Gaps -->
+    <div>
+      <div class="roadmap-column-title" style="color:var(--warm-1);">
+        <span>Gaps &mdash; Not Yet Carded</span>
+        <span class="count-badge" style="background:var(--warm-1);">8</span>
+      </div>
+
+      <div class="roadmap-gap-card">
+        <div class="roadmap-gap-title">Sensory/Embodied Memory Capture</div>
+        <div class="roadmap-gap-desc">No mechanism to capture physical experience &mdash; walking, weight, sun exposure. Transposition rate is a start but only covers typing stress.</div>
+      </div>
+
+      <div class="roadmap-gap-card">
+        <div class="roadmap-gap-title">Retrieval Orchestration</div>
+        <div class="roadmap-gap-desc">Active retrieval at decision points. When a decision is being made, proactively surface relevant memories. Currently ad-hoc &mdash; roles search when they think to.</div>
+      </div>
+
+      <div class="roadmap-gap-card">
+        <div class="roadmap-gap-title">Connection Discovery Automation</div>
+        <div class="roadmap-gap-desc">Edge persistence writes edges when discovered, but discovery is still manual. Could use embedding similarity to suggest connections.</div>
+      </div>
+
+      <div class="roadmap-gap-card">
+        <div class="roadmap-gap-title">Ambient Memory Prompts</div>
+        <div class="roadmap-gap-desc">Morning practice check is the first example. Expand: session start surfaces relevant stories, time-based prompts for follow-up.</div>
+      </div>
+
+      <div class="roadmap-gap-card">
+        <div class="roadmap-gap-title">Cross-Domain Memory Linking</div>
+        <div class="roadmap-gap-desc">Photos to stories, music to episodes, documents to decisions. The ontology supports it (#1401) but no harvester writes cross-domain edges yet.</div>
+      </div>
+
+      <div class="roadmap-gap-card">
+        <div class="roadmap-gap-title">Memory Durability Guarantee</div>
+        <div class="roadmap-gap-desc">chorus.log rotation is fixed but no formal durability contract. What gets archived vs rotated? No nightly backup of memory files.</div>
+      </div>
+
+      <div class="roadmap-gap-card">
+        <div class="roadmap-gap-title">PictureThis Plant Inventory Harvest</div>
+        <div class="roadmap-gap-desc">Jeff uses PictureThis for plant ID. Need to check API/export and build a harvester for the garden domain.</div>
+      </div>
+
+      <div class="roadmap-gap-card">
+        <div class="roadmap-gap-title">Story-to-Story Connection UI</div>
+        <div class="roadmap-gap-desc">Stories are in the graph but no UI to browse connections. &ldquo;Show me everything connected to Ginsburg&rdquo; should be a page.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  Memory Architecture &mdash; Gathering / Chorus &mdash; Product Vision Artifact &mdash; March 2026
+</footer>
+
+</body>
+</html>

@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::process::Command as Cmd;
 
 use crate::process;
-use crate::shared::state_paths::REPO_ROOT;
+use crate::shared::state_paths::repo_root;
 
 /// Builds /tmp/session-context-<role>.md with board state, briefs, health, memory.
 pub fn run(args: &[String]) -> ExitCode {
@@ -17,14 +17,14 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 
     let role_dir_name = crate::shared::state_paths::role_dir(role).unwrap();
-    let role_dir = format!("{}/{}", REPO_ROOT, role_dir_name);
-    let board_ts = format!("{}/platform/scripts/cards", REPO_ROOT);
+    let role_dir = format!("{}/{}", repo_root(), role_dir_name);
+    let board_ts = format!("{}/platform/scripts/cards", repo_root());
     let out_path = format!("/tmp/session-context-{}.md", role);
 
     // Werk version — #2311 AC#5: sole source is PROTOCOL_VERSION. manifest.json
     // holds "_build" (internal change-detection counter) which must never be
     // rendered as a human-facing Werk version.
-    let protocol_path = format!("{}/designing/claudemd/PROTOCOL_VERSION", REPO_ROOT);
+    let protocol_path = format!("{}/designing/claudemd/PROTOCOL_VERSION", repo_root());
     let werk_version = fs::read_to_string(&protocol_path)
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "unknown".to_string());
@@ -60,7 +60,7 @@ pub fn run(args: &[String]) -> ExitCode {
     // No git log parsing needed — the role synthesizes from semantic search results.
 
     // Recent decisions
-    let decisions_path = format!("{}/roles/wren/decisions.md", REPO_ROOT);
+    let decisions_path = format!("{}/roles/wren/decisions.md", repo_root());
     let decisions = fs::read_to_string(&decisions_path).ok()
         .map(|c| c.lines().filter(|l| l.starts_with("## DEC-"))
             .collect::<Vec<_>>().into_iter().rev().take(10).collect::<Vec<_>>()
@@ -140,11 +140,11 @@ pub fn run(args: &[String]) -> ExitCode {
     };
     let disk_pct = disk_pct.as_str();
 
-    let uncommitted = Cmd::new("git").args(["-C", REPO_ROOT, "status", "--porcelain", &format!("{}/", role_dir_name)])
+    let uncommitted = Cmd::new("git").args(["-C", repo_root(), "status", "--porcelain", &format!("{}/", role_dir_name)])
         .output().ok().and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.lines().count()).unwrap_or(0);
 
-    let activity_path = format!("{}/activity.md", REPO_ROOT);
+    let activity_path = format!("{}/activity.md", repo_root());
     let activity_age = fs::metadata(&activity_path).ok()
         .and_then(|m| m.modified().ok())
         .map(|t| format!("{}h", t.elapsed().unwrap_or_default().as_secs() / 3600))
@@ -279,7 +279,7 @@ pub fn run(args: &[String]) -> ExitCode {
     println!("Context cached: {} ({} lines)", out_path, lines);
 
     // Spine events — AC for #1808
-    let log_path = format!("{}/platform/logs/chorus.log", REPO_ROOT);
+    let log_path = format!("{}/platform/logs/chorus.log", repo_root());
     let eastern_offset = {
         let out = std::process::Command::new("date").args(["+%z"]).env("TZ", "America/New_York").output();
         out.ok().and_then(|o| String::from_utf8(o.stdout).ok())
@@ -347,7 +347,7 @@ fn fetch_last_session_log(role: &str) -> (String, Vec<(String, String)>) {
                 "if [ -z \"$PREV\" ]; then PREV=\"3 days ago\"; fi; ",
                 "git -C {} log --oneline --no-merges --since=\"$PREV\""
             ),
-            REPO_ROOT, role, REPO_ROOT
+            repo_root(), role, repo_root()
         ))
         .output().ok()
         .and_then(|o| if o.status.success() {

@@ -54,16 +54,17 @@ BASENAME_DUP_GROUPS=$(echo "$BASENAME_DUPES" | grep -c . | tr -d ' ')
 BROKEN_HREFS=""
 BROKEN_COUNT=0
 if [ "$SKIP_HREF_PROBE" != "1" ]; then
-  # Pull catalog hrefs from the live gathering catalog, probe each.
-  CATALOG_JSON=$(curl -s --max-time 5 "http://localhost:3000/api/doc-catalog" 2>/dev/null)
+  # Pull catalog hrefs from chorus-api (#2445 wave 3 — was :3000 gathering).
+  CATALOG_JSON=$(curl -s --max-time 5 "http://localhost:3340/api/doc-catalog" 2>/dev/null)
   if [ -n "$CATALOG_JSON" ]; then
     # Extract hrefs, probe in parallel (xargs), collect non-2xx
     HREFS=$(echo "$CATALOG_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('\n'.join(doc['href'] for g in d['groups'] for doc in g['docs']))" 2>/dev/null)
     if [ -n "$HREFS" ]; then
       BROKEN_HREFS=$(echo "$HREFS" | xargs -I{} -P 16 -n 1 sh -c '
         code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:3000$1" 2>/dev/null)
-        # 200 and 302 (auth redirect) are both fine
-        case "$code" in 200|302|301) : ;; *) echo "$code $1" ;; esac
+        # 200 + redirect codes (301/302/308) are all fine — 308 is a permanent
+        # redirect (semantically equivalent to 301), used by ADR migration paths.
+        case "$code" in 200|301|302|308) : ;; *) echo "$code $1" ;; esac
       ' _ {})
       BROKEN_COUNT=$(echo "$BROKEN_HREFS" | grep -c . | tr -d ' ')
       [ "$BROKEN_HREFS" = "" ] && BROKEN_COUNT=0

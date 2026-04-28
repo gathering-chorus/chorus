@@ -3,6 +3,12 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/tests/**/*.test.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  // #2524 convention: *.integration.test.ts excluded from hermetic default.
+  // Run integration tier with RUN_INTEGRATION=true.
+  testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
+    '/node_modules/',
+    '\\.integration\\.test\\.ts$',
+  ],
   // Coverage floors — #2167. Target: 60/75/80 (gathering baseline).
   //
   // Per-file thresholds lock modules as they hit 80% — regression on a

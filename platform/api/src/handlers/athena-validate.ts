@@ -100,6 +100,43 @@ const CHECKS: Check[] = [
           FILTER NOT EXISTS { ?node chorus:contains ?i }
         }}`,
   },
+  // --- CatalogDoc shape (#2554) — runtime mirror of chorus:CatalogDocShape in shapes.ttl ---
+  {
+    name: 'CatalogDoc must have catalogHref',
+    severity: 'violation',
+    query: `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+        SELECT ?node WHERE { GRAPH <urn:chorus:instances> {
+          ?node a chorus:CatalogDoc .
+          FILTER NOT EXISTS { ?node chorus:catalogHref ?h }
+        }}`,
+  },
+  {
+    name: 'CatalogDoc product must be in vocab (chorus|gathering|consulting)',
+    severity: 'violation',
+    query: `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+        SELECT ?node WHERE { GRAPH <urn:chorus:instances> {
+          ?node a chorus:CatalogDoc ; chorus:product ?p .
+          FILTER (?p NOT IN ("chorus", "gathering", "consulting"))
+        }}`,
+  },
+  {
+    name: 'CatalogDoc subproduct must be in vocab',
+    severity: 'violation',
+    query: `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+        SELECT ?node WHERE { GRAPH <urn:chorus:instances> {
+          ?node a chorus:CatalogDoc ; chorus:subproduct ?sp .
+          FILTER (?sp NOT IN ("loom", "werk", "athena", "convergence", "clearing", "quality", "borg"))
+        }}`,
+  },
+  {
+    name: 'CatalogDoc role must be in vocab (wren|silas|kade|jeff)',
+    severity: 'violation',
+    query: `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+        SELECT ?node WHERE { GRAPH <urn:chorus:instances> {
+          ?node a chorus:CatalogDoc ; chorus:role ?r .
+          FILTER (?r NOT IN ("wren", "silas", "kade", "jeff"))
+        }}`,
+  },
 ];
 
 export interface AthenaValidateDeps {

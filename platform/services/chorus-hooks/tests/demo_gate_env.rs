@@ -6,12 +6,9 @@
 //! even when they exist. Jeff sees: /acp blocked despite running /demo.
 
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 /// Resolve CHORUS_ROOT the same way the shim does
-fn chorus_root() -> String {
-    std::env::var("CHORUS_ROOT")
-        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
-}
 
 #[test]
 fn done_gate_finds_brief_when_chorus_root_set() {

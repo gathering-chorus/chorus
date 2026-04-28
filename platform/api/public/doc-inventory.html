@@ -14,6 +14,9 @@
   .counts .state-misfiled { color: #fbbf24; }
   .counts .state-wrong-cabinet { color: #f87171; }
   .counts .state-unfiled { color: #a78bfa; }
+  .counts .state-lost { color: #f87171; font-weight: bold; }
+  .classcounts { margin-top: 0.4rem; color: #9ca3af; font-size: 12px; }
+  .classcounts b { color: #d1d5db; }
   .controls { margin: 0.5rem 0; }
   .controls input, .controls select { background: #2a2a2a; color: #e6e6e6; border: 1px solid #444; padding: 0.3rem 0.5rem; font: inherit; }
   table { border-collapse: collapse; width: 100%; }
@@ -25,6 +28,7 @@
   td.state-misfiled { color: #fbbf24; }
   td.state-wrong-cabinet { color: #f87171; }
   td.state-unfiled { color: #a78bfa; }
+  td.state-lost { color: #f87171; font-weight: bold; }
   td.path { font-family: ui-monospace, monospace; font-size: 12px; color: #bbb; }
   .meta { color: #888; font-size: 11px; margin-bottom: 0.5rem; }
   .empty { padding: 1rem; color: #888; }
@@ -35,6 +39,8 @@
 <div class="meta" id="meta">Loading…</div>
 <div class="summary">
   <div class="counts" id="counts"></div>
+  <div id="tagcoverage" style="margin-top: 0.4rem; color: #d1d5db; font-size: 0.82rem;"></div>
+  <div id="drift" style="margin-top: 0.4rem; color: #fca5a5; font-size: 0.82rem; display: none;"></div>
   <div id="coherence" style="margin-top: 0.6rem; padding: 0.6rem 0.8rem; background: #fef3c7; border-left: 3px solid #d97706; border-radius: 3px; font-size: 0.88rem; color: #451a03; display: none;"></div>
   <div id="reconcile" style="margin-top: 0.6rem; color: #aaa; font-size: 0.82rem;"></div>
 </div>
@@ -43,8 +49,17 @@
   <select id="stateFilter">
     <option value="">All states</option>
     <option value="ok">ok</option>
+    <option value="misfiled">misfiled</option>
+    <option value="lost">lost</option>
     <option value="wrong-cabinet">wrong-cabinet</option>
     <option value="unfiled">unfiled</option>
+  </select>
+  <select id="classFilter">
+    <option value="">All classifications</option>
+    <option value="chorus">chorus</option>
+    <option value="gathering">gathering</option>
+    <option value="akasha">akasha</option>
+    <option value="archive">archive</option>
   </select>
   <select id="repoFilter">
     <option value="">Both repos</option>
@@ -58,7 +73,7 @@
     <th data-key="repo">Repo</th>
     <th data-key="path">Path</th>
     <th data-key="state">State</th>
-    <th data-key="cabinet">Target (if wrong)</th>
+    <th data-key="classification">Classification</th>
     <th data-key="owner">Owner</th>
     <th data-key="inCatalog">In Catalog</th>
     <th data-key="topic">Topic</th>
@@ -84,6 +99,12 @@ async function load() {
   document.getElementById('counts').innerHTML = Object.keys(c).sort().map(k =>
     `<span class="state-${k}">${k}: <b>${c[k]}</b></span>`
   ).join('');
+  // Classification counts (#2510)
+  if (data.classCounts) {
+    const cc = data.classCounts;
+    document.getElementById('counts').insertAdjacentHTML('afterend',
+      `<div class="classcounts">classification: ${Object.keys(cc).sort().map(k => `${k} <b>${cc[k]}</b>`).join(' · ')}</div>`);
+  }
   // Coherence (#2461) — show drift categories from doc-coherence.md
   const coh = data.coherence;
   const cohEl = document.getElementById('coherence');
@@ -108,6 +129,30 @@ async function load() {
     document.getElementById('reconcile').textContent =
       `File-instances: ${okRows.length} / unique: ${uniqBasenames} / dupes: ${dupeFiles} (catalog unreachable)`;
   }
+  // Tag coverage + drift (#2520)
+  try {
+    const tags = await (await fetch('/api/doc-catalog/tags')).json();
+    const cov = tags.coverage;
+    const byProd = Object.entries(tags.byProduct).map(([k,v]) => `${k} <b>${v}</b>`).join(' · ');
+    let trendStr = '';
+    if (tags.history && tags.history.length > 1) {
+      const oldest = tags.history[0];
+      const newest = tags.history[tags.history.length - 1];
+      const arrow = newest.productPct === oldest.productPct ? '→' : (newest.productPct > oldest.productPct ? '↑' : '↓');
+      trendStr = ` · trend ${oldest.productPct}% ${arrow} ${newest.productPct}% (${tags.history.length}d)`;
+    } else if (tags.history && tags.history.length === 1) {
+      trendStr = ` · trend baseline ${tags.history[0].productPct}% (1d)`;
+    }
+    document.getElementById('tagcoverage').innerHTML =
+      `<strong>Tag coverage:</strong> product ${cov.product.tagged}/${tags.total} <b>(${cov.product.percent}%)</b> · subdomain ${cov.subdomain.tagged}/${tags.total} <b>(${cov.subdomain.percent}%)</b> — ${byProd}${trendStr}`;
+    if (tags.drift && tags.drift.length) {
+      const drift = tags.drift.slice(0, 5).map(d => `${d.claimedSubdomain}${d.closestMatch ? ` → ${d.closestMatch}?` : ''}`).join(', ');
+      document.getElementById('drift').style.display = 'block';
+      document.getElementById('drift').innerHTML =
+        `<strong>Drift:</strong> ${tags.drift.length} doc(s) claim a subdomain Athena doesn't recognize: ${drift}${tags.drift.length > 5 ? ` (+${tags.drift.length - 5} more)` : ''}`;
+    }
+  } catch (_e) { /* tagger endpoint optional */ }
+
   render();
 }
 
@@ -115,9 +160,11 @@ function render() {
   const term = document.getElementById('filter').value.toLowerCase();
   const stateF = document.getElementById('stateFilter').value;
   const repoF = document.getElementById('repoFilter').value;
+  const classF = document.getElementById('classFilter').value;
   let filtered = rows.filter(r => {
     if (stateF && r.state !== stateF) return false;
     if (repoF && r.repo !== repoF) return false;
+    if (classF && r.classification !== classF) return false;
     if (!term) return true;
     return (r.path + ' ' + r.owner + ' ' + r.topic).toLowerCase().includes(term);
   });
@@ -133,8 +180,8 @@ function render() {
     `<tr>
        <td>${r.repo}</td>
        <td class="path">${r.path}</td>
-       <td class="state-${r.state}">${r.state}</td>
-       <td>${r.state === 'wrong-cabinet' ? `→ ${r.cabinet}` : '—'}</td>
+       <td class="state-${r.state}">${r.state}${r.state === 'misfiled' ? ` → ${r.classification}` : ''}</td>
+       <td>${r.classification || '—'}</td>
        <td>${r.owner || '—'}</td>
        <td>${r.inCatalog}</td>
        <td>${r.topic || '—'}</td>
@@ -159,6 +206,7 @@ document.querySelectorAll('th').forEach(th => {
 document.getElementById('filter').addEventListener('input', render);
 document.getElementById('stateFilter').addEventListener('change', render);
 document.getElementById('repoFilter').addEventListener('change', render);
+document.getElementById('classFilter').addEventListener('change', render);
 
 load();
 </script>

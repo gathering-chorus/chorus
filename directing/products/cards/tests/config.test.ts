@@ -25,6 +25,12 @@ describe('Board configs', () => {
     expect(GATHERING.viewId).not.toBe(SELF.viewId);
   });
 
+  test('LABELS.chunk includes knowledge/ci/tests with correct Vikunja IDs', () => {
+    expect(LABELS.chunk['knowledge']).toBe(156);
+    expect(LABELS.chunk['ci']).toBe(157);
+    expect(LABELS.chunk['tests']).toBe(159);
+  });
+
   test('bucketNames reverse-maps every bucket ID', () => {
     for (const id of Object.values(GATHERING.buckets)) {
       expect(GATHERING.bucketNames[id]).toBeDefined();

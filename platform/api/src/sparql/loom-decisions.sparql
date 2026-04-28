@@ -1,0 +1,14 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?decision ?id ?title ?decisionType ?status ?date ?level ?domain WHERE {
+  GRAPH <urn:chorus:instances> {
+    ?decision a chorus:Decision .
+    OPTIONAL { ?decision rdfs:label ?id }
+    OPTIONAL { ?decision rdfs:comment ?title }
+    OPTIONAL { ?decision chorus:decisionType ?decisionType }
+    OPTIONAL { ?decision chorus:decisionStatus ?status }
+    OPTIONAL { ?decision chorus:decisionDate ?date }
+    OPTIONAL { ?decision chorus:enforcementLevel ?level }
+    OPTIONAL { ?decision chorus:hasDomain ?domain }
+  }
+}

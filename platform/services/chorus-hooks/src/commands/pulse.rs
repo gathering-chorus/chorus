@@ -16,7 +16,7 @@
 use std::fs;
 use std::process::ExitCode;
 
-use crate::shared::state_paths::REPO_ROOT;
+use crate::shared::state_paths::repo_root;
 
 /// Assemble team state snapshot and write to /tmp/pulse-latest.json.
 /// Returns compact JSON string. Callers that need only the side-effect
@@ -146,7 +146,7 @@ fn assemble_roles() -> serde_json::Value {
 }
 
 fn assemble_recent_events() -> serde_json::Value {
-    let log_path = format!("{}/platform/logs/chorus.log", REPO_ROOT);
+    let log_path = format!("{}/platform/logs/chorus.log", repo_root());
     let content = fs::read_to_string(&log_path).unwrap_or_default();
 
     let now = std::time::SystemTime::now()
@@ -299,11 +299,11 @@ fn assemble_board() -> serde_json::Value {
     }
 
     // Stale path: refresh via cards CLI, update snapshot as side effect.
-    let board_ts = format!("{}/platform/scripts/cards", REPO_ROOT);
+    let board_ts = format!("{}/platform/scripts/cards", repo_root());
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     if let Ok(output) = std::process::Command::new("bash")
         .args(["-l", "-c", &format!("{} list 2>/dev/null", board_ts)])
-        .env("CHORUS_ROOT", REPO_ROOT)
+        .env("CHORUS_ROOT", repo_root())
         .env("HOME", &home)
         .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))
         .output()

@@ -60,6 +60,20 @@ app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 's
 app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
 app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
 
+// #2445 wave 2 — chorus-api serves catalog HTML. Static routes try chorus
+// designing/docs first (where 43 misfiled docs were relocated post-#2510),
+// then fall back to gathering filesystem for content that legitimately
+// lives there (gathering-domain pages, akasha consulting site).
+// Express runs middleware in registration order; first hit wins.
+const gatheringRepoRoot = process.env.GATHERING_REPO || '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site';
+app.use('/system/docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html', 'md'] }));
+app.use('/system/docs', express.static(path.join(gatheringRepoRoot, 'data', 'about'), { extensions: ['html', 'md'] }));
+app.use('/chorus-docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html'] }));
+app.use('/chorus-docs', express.static(path.join(gatheringRepoRoot, 'public', 'chorus-docs'), { extensions: ['html'] }));
+app.use('/gathering-docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html'] }));
+app.use('/gathering-docs', express.static(path.join(gatheringRepoRoot, 'public', 'gathering-docs'), { extensions: ['html'] }));
+app.use('/akasha', express.static(path.join(gatheringRepoRoot, 'public', 'akasha'), { extensions: ['html'] }));
+
 // Borg — Hooks summary endpoint — #2099
 // Borg summary delegates — #2173 AC4: uniform run() wrapper replaces
 // per-handler try/catch boilerplate. Each adapter is one line.
@@ -1564,6 +1578,11 @@ app.get('/api/loom/principles', (_req: Request, res: Response) => {
   res.redirect(308, '/api/athena/subdomains/loom-principles/principles');
 });
 
+// GET /api/loom/decisions — 308 redirect to Athena (#2485 Move 2, mirror of principles).
+app.get('/api/loom/decisions', (_req: Request, res: Response) => {
+  res.redirect(308, '/api/athena/subdomains/loom-decisions/decisions');
+});
+
 // GET /api/athena/subdomains/:id/principles — principles inside a SubDomain (#2314).
 // Currently scoped to loom-principles; reuses the existing principle folding logic
 // (parent set, sort, envelope) from handlers/loom-principles.ts.
@@ -1648,6 +1667,9 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
 
 // discover-tests moved to src/discover-tests.ts (#2205 wave 24).
 import { createDiscoverTests } from './discover-tests';
+import { scanLoomHtml } from './discover-pages-loom';
+import { scanAthenaHtml } from './discover-pages-athena';
+import { parseChorusApiRoutes } from './discover-endpoints-chorus-api';
 const _discoverTests = createDiscoverTests({
   sparqlClient: { query: (q: string) => athenaSparqlQuery(q), update: (u: string) => athenaSparqlUpdate(u) },
   fs, path,
@@ -1796,9 +1818,16 @@ app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
   try {
     const aliasToId = await buildPageAliasMap();
     const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
+    // #2485 Move 6 — scan chorus/platform/api/public/loom/ for loom-* subdomain pages.
+    const validSubdomainIds = new Set<string>(Object.values(aliasToId));
+    const loomEntries = scanLoomHtml(path.join(REPO_ROOT, 'platform/api/public/loom'), validSubdomainIds);
+    // #2041 — scan chorus/platform/api/public/athena/ for athena-domain pages.
+    const athenaEntries = scanAthenaHtml(path.join(REPO_ROOT, 'platform/api/public/athena'), validSubdomainIds);
     const entries: PageEntry[] = [
       ...scanEjsViews(path.join(GATHERING_ROOT, 'views'), aliasToId),
       ...scanDocHtml(path.join(GATHERING_ROOT, 'public/gathering-docs'), aliasToId),
+      ...loomEntries,
+      ...athenaEntries,
     ];
 
     // 4. Clear existing page data and repopulate
@@ -1975,9 +2004,17 @@ app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) 
     const handlerToDomain = await buildHandlerToDomain();
     const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
     const appTsPath = path.join(GATHERING_ROOT, 'src/app.ts');
-    const entries = fs.existsSync(appTsPath)
+    const gatheringEntries = fs.existsSync(appTsPath)
       ? parseAppRoutes(fs.readFileSync(appTsPath, 'utf-8'), handlerToDomain)
       : [];
+    // #2485 Move 8 — also scan chorus-api's own server.ts so loom-*, chorus-domain
+    // get hasEndpoint edges for the routes they actually own.
+    const validSubdomainIds = new Set<string>(Object.values(handlerToDomain));
+    const chorusApiSrc = path.join(REPO_ROOT, 'platform/api/src/server.ts');
+    const chorusEntries = fs.existsSync(chorusApiSrc)
+      ? parseChorusApiRoutes(fs.readFileSync(chorusApiSrc, 'utf-8'), validSubdomainIds)
+      : [];
+    const entries = [...gatheringEntries, ...chorusEntries];
 
     const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?ep a <https://jeffbridwell.com/chorus#Endpoint> ; ?p ?o . ?sd <https://jeffbridwell.com/chorus#hasEndpoint> ?ep . } }';
     await athenaSparqlUpdate(clearQuery);
@@ -2137,6 +2174,7 @@ import {
   fetchAthenaPersistenceDescription,
   fetchAthenaServiceEdge,
 } from './handlers/athena-enrichment-write';
+import { setSubdomainOwner } from './handlers/athena-owner-write';
 // Seed lives in src/sparql/seeds/ — always version-controlled, never in dist.
 // Resolve from ../src so this works whether server runs from src (ts-node/jest) or dist (compiled).
 const ENRICHMENT_SEED_PATH = path.resolve(__dirname, '..', 'src', 'sparql', 'seeds', 'athena-enrichment.ttl');
@@ -2173,6 +2211,21 @@ for (const pred of ['reads', 'writes', 'consumes'] as const) {
     res.status(r.status).json(r.body);
   });
 }
+
+// POST /api/athena/subdomains/:id/owner — re-assign SubDomain owner (#2508)
+const ONTOLOGY_TTL_PATH = path.join(REPO_ROOT, 'roles/silas/ontology/chorus.ttl');
+const ownerWriteDeps = () => ({
+  sparqlUpdate: athenaSparqlUpdate,
+  readTtl: () => fs.readFileSync(ONTOLOGY_TTL_PATH, 'utf-8'),
+  writeTtl: (content: string) => fs.writeFileSync(ONTOLOGY_TTL_PATH, content, 'utf-8'),
+});
+app.post('/api/athena/subdomains/:id/owner', async (req: Request, res: Response) => {
+  const r = await setSubdomainOwner(ownerWriteDeps(), {
+    subdomainId: req.params.id,
+    body: req.body || {},
+  });
+  res.status(r.status).json(r.body);
+});
 
 // GET /api/athena/subdomains/:id/pipeline — data pipeline for this subdomain (#1925)
 app.get('/api/athena/subdomains/:id/pipeline', async (req: Request, res: Response) => {
@@ -2611,6 +2664,250 @@ app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) 
   } finally { db.close(); }
 });
 
+// Doc catalog (#2445) — relocated from gathering. Lift-and-shift; gathering's
+// /api/doc-catalog endpoints stay live until callers migrate.
+import { listCatalog as docCatalogList, addDoc as docCatalogAdd, domainArtifacts as docCatalogDomain, linkArtifact as docCatalogLink, buildDocCatalog } from './handlers/doc-catalog';
+import { inferTags, SUBPRODUCT_DOMAINS, GATHERING_SUBDOMAINS } from './handlers/doc-tagger';
+import { detectDrift } from './handlers/doc-tag-drift';
+import { buildHierarchyTree, type AthenaShape } from './handlers/doc-catalog-tree';
+app.get('/api/doc-catalog', docCatalogList);
+app.post('/api/doc-catalog/add', docCatalogAdd);
+app.get('/api/doc-catalog/domain/:domain', docCatalogDomain);
+app.post('/api/doc-catalog/link', docCatalogLink);
+
+// Doc-tag coverage (#2520 AC4 + AC6) — applies inferTags + drift to live catalog
+app.get('/api/doc-catalog/tags', async (_req: Request, res: Response) => {
+  try {
+    const catalog = buildDocCatalog();
+    const docs = catalog.groups.flatMap(g => g.docs);
+    const tagged = docs.map(doc => {
+      const basename = doc.href.split('/').pop() || '';
+      const tags = inferTags({ sourcePath: `${doc.source}/${basename}`, basename });
+      return { href: doc.href, source: doc.source, title: doc.title, tags };
+    });
+    // Coverage breakdown
+    const byProduct: Record<string, number> = {};
+    const bySubproduct: Record<string, number> = {};
+    let withProduct = 0, withSubdomain = 0;
+    for (const t of tagged) {
+      if (t.tags.product) {
+        byProduct[t.tags.product] = (byProduct[t.tags.product] || 0) + 1;
+        withProduct++;
+      }
+      if (t.tags.subproduct) {
+        bySubproduct[t.tags.subproduct] = (bySubproduct[t.tags.subproduct] || 0) + 1;
+      }
+      if (t.tags.subdomain) withSubdomain++;
+    }
+    // Drift check — fetch valid Athena subdomain set
+    let drift: ReturnType<typeof detectDrift> = [];
+    try {
+      const r = await fetch('http://localhost:3340/api/athena/subdomains?limit=100');
+      const d = await r.json() as { data?: Array<{ id?: string }> };
+      const valid = (d.data || []).map(x => x.id || '').filter(Boolean);
+      drift = detectDrift(tagged, valid);
+    } catch { /* athena unreachable — skip drift but don't fail */ }
+
+    // History (#2522 AC6) — read trend snapshot file if present
+    let history: Array<{ date: string; productPct: number; subdomainPct: number; drift: number }> = [];
+    try {
+      const historyPath = path.resolve(__dirname, '..', '..', '..', 'knowledge', 'doc-tag-coverage-history.tsv');
+      if (fs.existsSync(historyPath)) {
+        const raw = fs.readFileSync(historyPath, 'utf-8');
+        history = raw.split('\n')
+          .filter(line => line && !line.startsWith('#'))
+          .map(line => {
+            const [date, _total, _pt, productPct, _st, subdomainPct, driftCount] = line.split('\t');
+            return {
+              date,
+              productPct: Number(productPct) || 0,
+              subdomainPct: Number(subdomainPct) || 0,
+              drift: Number(driftCount) || 0,
+            };
+          })
+          .slice(-30); // last 30 days
+      }
+    } catch { /* trend optional */ }
+
+    res.json({
+      total: docs.length,
+      coverage: {
+        product: { tagged: withProduct, percent: Math.round(100 * withProduct / docs.length) },
+        subdomain: { tagged: withSubdomain, percent: Math.round(100 * withSubdomain / docs.length) },
+      },
+      byProduct, bySubproduct,
+      drift,
+      tagged,
+      history,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// Doc-catalog hierarchy tree (#2521) — Athena-driven navigation surface
+app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
+  try {
+    const catalog = buildDocCatalog();
+    const docs = catalog.groups.flatMap(g => g.docs);
+    const tagged = docs.map(doc => {
+      const basename = doc.href.split('/').pop() || '';
+      const tags = inferTags({ sourcePath: `${doc.source}/${basename}`, basename });
+      return { href: doc.href, source: doc.source, title: doc.title, tags };
+    });
+
+    // Compose Athena shape from live queries + tagger maps.
+    // Athena's subdomain endpoint doesn't carry subproduct linkage today; we
+    // rely on SUBPRODUCT_DOMAINS as the authoritative bridge (same source the
+    // tagger uses, so tags and tree agree).
+    const [pRes, spRes, sdRes] = await Promise.all([
+      fetch('http://localhost:3340/api/athena/products').then(r => r.json()),
+      fetch('http://localhost:3340/api/athena/subproducts').then(r => r.json()),
+      fetch('http://localhost:3340/api/athena/subdomains?limit=100').then(r => r.json()),
+    ]) as [{ data?: Array<{ uri?: string; label?: string }> }, { data?: Array<{ uri?: string; label?: string; owner?: string }> }, { data?: Array<{ id?: string; label?: string }> }];
+
+    const products = (pRes.data || []).map(p => ({
+      id: (p.uri || '').split('#').pop() || '',
+      label: p.label || '',
+    }));
+
+    // Subproducts: Athena returns label + uri; product association is by name —
+    // the live API doesn't expose it, so we map by convention (Loom/Werk/etc.
+    // belong to Chorus product).
+    const subproducts = (spRes.data || [])
+      .map(sp => ({
+        id: (sp.uri || '').split('#').pop() || '',
+        label: sp.label || '',
+        product: 'chorusProduct',
+      }));
+
+    // Build subdomain → subproduct from SUBPRODUCT_DOMAINS
+    const sdToSp: Record<string, string> = {};
+    for (const [sp, doms] of Object.entries(SUBPRODUCT_DOMAINS)) {
+      for (const d of doms) {
+        // Map tagger short names ('loom', 'werk-product') to Athena URIs from spRes
+        const match = subproducts.find(s => s.id === sp || s.id === `${sp}-product`);
+        if (match) sdToSp[d] = match.id;
+      }
+    }
+
+    const subdomains = (sdRes.data || []).map(sd => {
+      const id = sd.id || '';
+      const subproduct = sdToSp[id] || null;
+      const isGathering = GATHERING_SUBDOMAINS.has(id);
+      return {
+        id, label: sd.label || id,
+        subproduct,
+        product: !subproduct && isGathering ? 'gathering' : undefined,
+      };
+    });
+
+    const shape: AthenaShape = { products, subproducts, subdomains };
+    const tree = buildHierarchyTree(tagged, shape);
+    res.json(tree);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// Doc-catalog curation API (#2549) — five-field tag write + lineage edges.
+// Tags persist in urn:chorus:instances; lineage edges use chorus:supersedes /
+// chorus:derivedFrom / chorus:reshapedInto predicates. Spine events on every
+// curation action.
+import {
+  writeCatalogTags,
+  writeCatalogLineage,
+  readCatalogDoc,
+  readCatalogDrift,
+  readCatalogCurated,
+  readCatalogAudit,
+} from './handlers/catalog-curation';
+
+const catalogCurationDeps = () => ({
+  sparqlQuery: athenaSparqlQuery,
+  sparqlUpdate: athenaSparqlUpdate,
+  envelope: athenaEnvelope,
+  emitSpine: (event: string, fields: Record<string, string>) => {
+    const args = [event, 'wren'];
+    for (const [k, v] of Object.entries(fields)) args.push(`${k}=${v}`);
+    execFile(CHORUS_LOG, args, () => { /* fire-and-forget */ });
+  },
+});
+
+app.post('/api/chorus/catalog/tags', async (req: Request, res: Response) => {
+  const r = await writeCatalogTags(catalogCurationDeps(), req.body);
+  res.status(r.status).json(r.body);
+});
+
+app.post('/api/chorus/catalog/lineage', async (req: Request, res: Response) => {
+  const r = await writeCatalogLineage(catalogCurationDeps(), req.body);
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/catalog/doc/:hrefb64', async (req: Request, res: Response) => {
+  const r = await readCatalogDoc(catalogCurationDeps(), req.params.hrefb64);
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/catalog/drift', async (_req: Request, res: Response) => {
+  const r = await readCatalogDrift(catalogCurationDeps());
+  res.status(r.status).json(r.body);
+});
+
+app.get('/api/chorus/catalog/curated', async (_req: Request, res: Response) => {
+  // All CatalogDoc instances with their persisted tags. Used by doc-catalog.html
+  // to merge curated overlay over the runtime tagger output so saves are visible.
+  const r = await readCatalogCurated(catalogCurationDeps());
+  res.status(r.status).json(r.body);
+});
+
+// Audit feed for a single doc — reads chorus.log directly (Loki ingestion
+// of catalog.* events is unreliable today; file is source-of-truth).
+const CHORUS_LOG_FILE = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/logs/chorus.log');
+
+app.get('/api/chorus/catalog/audit/:hrefb64', async (req: Request, res: Response) => {
+  const limitParam = typeof req.query.limit === 'string' ? req.query.limit : '20';
+  const limit = Math.min(Number.parseInt(limitParam, 10) || 20, 200);
+  const readEvents = async (href: string, n: number) => {
+    const events: Array<{ timestamp: string; event: string; role: string; fields: Record<string, string> }> = [];
+    if (!fs.existsSync(CHORUS_LOG_FILE)) return events;
+    const data = await fs.promises.readFile(CHORUS_LOG_FILE, 'utf8');
+    const lines = data.split('\n');
+    function asStr(v: unknown): string {
+      return typeof v === 'string' ? v : '';
+    }
+    for (let i = lines.length - 1; i >= 0 && events.length < n; i--) {
+      const line = lines[i];
+      if (!line || line.length === 0) continue;
+      if (!line.includes('"catalog.')) continue;
+      try {
+        const obj = JSON.parse(line) as Record<string, unknown>;
+        const ev = asStr(obj.event);
+        if (!ev.startsWith('catalog.')) continue;
+        if (obj.href !== href) continue;
+        const fields: Record<string, string> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (['timestamp', 'event', 'role', 'level', 'appName', 'component'].includes(k)) continue;
+          if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+            fields[k] = String(v);
+          }
+        }
+        events.push({
+          timestamp: asStr(obj.timestamp),
+          event: ev,
+          role: asStr(obj.role),
+          fields,
+        });
+      } catch {
+        // skip malformed line
+      }
+    }
+    return events;
+  };
+  const r = await readCatalogAudit({ readEvents, envelope: athenaEnvelope }, req.params.hrefb64, limit);
+  res.status(r.status).json(r.body);
+});
+
 // Doc inventory (#2457) — reads TSV produced by doc-inventory.sh
 app.get('/api/doc-inventory', (_req: Request, res: Response) => {
   const tsvPath = path.resolve(__dirname, '..', '..', '..', 'knowledge', 'doc-inventory.tsv');
@@ -2621,13 +2918,37 @@ app.get('/api/doc-inventory', (_req: Request, res: Response) => {
     }
     const stat = fs.statSync(tsvPath);
     const raw = fs.readFileSync(tsvPath, 'utf-8').trim();
-    const rows = raw.split('\n').filter(Boolean).map(line => {
-      const [repo, pathCol, state, cabinet, owner, inCatalog, topic] = line.split('\t');
-      return { repo, path: pathCol, state, cabinet, owner: owner || '', inCatalog, topic: topic || '' };
-    });
+    // Schema (#2510 wave 4):
+    //   repo  path  state  classification  owner  in-catalog  topic
+    //   hash12  mtime  sha256
+    // Header line starts with '#'; skip it.
+    const rows = raw.split('\n')
+      .filter(line => line && !line.startsWith('#'))
+      .map(line => {
+        const [repo, pathCol, state, classification, owner, inCatalog, topic, _hash, mtime, sha256] = line.split('\t');
+        return {
+          repo, path: pathCol, state,
+          // Backward-compat: keep `cabinet` populated with classification
+          cabinet: classification,
+          classification,
+          owner: owner || '',
+          inCatalog, topic: topic || '',
+          mtime: mtime || '', sha256: sha256 || '',
+        };
+      });
     const counts: Record<string, number> = {};
-    for (const r of rows) counts[r.state] = (counts[r.state] || 0) + 1;
-    res.json({ generatedAt: stat.mtime.toISOString(), total: rows.length, counts, rows });
+    const classCounts: Record<string, number> = {};
+    for (const r of rows) {
+      counts[r.state] = (counts[r.state] || 0) + 1;
+      if (r.classification) classCounts[r.classification] = (classCounts[r.classification] || 0) + 1;
+    }
+    res.json({
+      generatedAt: stat.mtime.toISOString(),
+      total: rows.length,
+      counts,
+      classCounts,
+      rows,
+    });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     res.status(500).json({ error: msg });

@@ -37,10 +37,8 @@ pub fn escape_for_applescript(text: &str) -> String {
         .replace('"', "\\\"")
         .replace('\n', " ")
         .replace('\u{2014}', "--")
-        .replace('\u{2018}', "'")
-        .replace('\u{2019}', "'")
-        .replace('\u{201C}', "\\\"")
-        .replace('\u{201D}', "\\\"")
+        .replace(['\u{2018}', '\u{2019}'], "'")
+        .replace(['\u{201C}', '\u{201D}'], "\\\"")
 }
 
 /// Map a role name to the Terminal window-name pattern it's matched by.

@@ -12,8 +12,10 @@
  */
 import { execSync } from 'child_process';
 import * as fs from 'fs';
+import * as path from 'node:path';
+import { repoRoot } from './lib/repo-root';
 
-const PREFS_FILE = '/Users/jeffbridwell/CascadeProjects/chorus/jeff-preferences.json';
+const PREFS_FILE = path.join(repoRoot(), 'jeff-preferences.json');
 
 // Helper: run the seeking-pattern Python detector against sample text
 function detectSeeking(responseText: string, humanMsg: string = 'build 1189'): string {

@@ -14,7 +14,8 @@ export interface VikunjaTask {
   done: boolean;
   created: string;
   updated: string;
-  labels: VikunjaLabel[];
+  /** Vikunja returns `null` (not `[]`) for tasks with no labels. #2512 */
+  labels: VikunjaLabel[] | null;
   project_id: number;
   /** Relation edges — Vikunja groups by relation kind. Only `blocked` used today. */
   related_tasks?: {

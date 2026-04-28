@@ -7,6 +7,7 @@
 use serde_json::json;
 use std::io::Write;
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
@@ -16,7 +17,7 @@ fn hook_check_with_role(tool: &str, input: serde_json::Value, role: &str) -> Str
         "tool_name": tool,
         "tool_input": input,
         "session_id": "test-session-1915",
-        "cwd": format!("/Users/jeffbridwell/CascadeProjects/chorus/roles/{}", role)
+        "cwd": format!("{}/roles/{}", chorus_root(), role)
     });
 
     let output = Command::new(SHIM)
@@ -96,7 +97,7 @@ fn idle_role_code_edit_allowed_without_tests() {
 
     let result = hook_check_with_role(
         "Edit",
-        json!({"file_path": "/Users/jeffbridwell/CascadeProjects/chorus/platform/api/src/server.ts", "old_string": "foo", "new_string": "bar"}),
+        json!({"file_path": &format!("{}/platform/api/src/server.ts", chorus_root()), "old_string": "foo", "new_string": "bar"}),
         TEST_ROLE,
     );
 
@@ -124,7 +125,7 @@ fn building_role_code_edit_still_blocked_without_tests() {
 
     let result = hook_check_with_role(
         "Edit",
-        json!({"file_path": "/Users/jeffbridwell/CascadeProjects/chorus/platform/api/src/server.ts", "old_string": "foo", "new_string": "bar"}),
+        json!({"file_path": &format!("{}/platform/api/src/server.ts", chorus_root()), "old_string": "foo", "new_string": "bar"}),
         TEST_ROLE,
     );
 

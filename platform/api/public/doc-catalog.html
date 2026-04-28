@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Doc Catalog — Chorus</title>
+<style>
+  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; color: #e6e6e6; background: #1a1a1a; }
+  header { padding: 1rem 1.5rem; background: #111; border-bottom: 1px solid #2a2a2a; }
+  h1 { font-size: 1.2rem; margin: 0 0 0.3rem; }
+  .sub { color: #888; font-size: 0.85rem; }
+  .layout { display: grid; grid-template-columns: 320px 1fr; gap: 0; min-height: calc(100vh - 80px); }
+  nav { background: #1f1f1f; border-right: 1px solid #2a2a2a; padding: 1rem; overflow-y: auto; max-height: calc(100vh - 80px); }
+  nav h2 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin: 0 0 0.5rem; }
+  .tree { font-size: 0.9rem; }
+  .node { padding: 0.15rem 0; cursor: pointer; user-select: none; }
+  .node:hover { background: #252525; }
+  .node.selected { background: #1e40af; color: #fff; padding-left: 0.4rem; border-radius: 3px; }
+  .product { font-weight: 600; color: #fbbf24; }
+  .subproduct { color: #93c5fd; padding-left: 1rem; }
+  .subdomain { color: #d1d5db; padding-left: 2rem; font-size: 0.85rem; }
+  .subdomain-direct { color: #d1d5db; padding-left: 1rem; font-size: 0.85rem; }
+  .count { color: #666; font-size: 0.8em; margin-left: 0.4rem; }
+  .untagged { color: #fca5a5; font-style: italic; }
+  .toggle { display: inline-block; width: 0.8em; color: #666; }
+  main { padding: 1rem 1.5rem; overflow-y: auto; max-height: calc(100vh - 80px); }
+  .breadcrumb { color: #888; font-size: 0.85rem; margin-bottom: 0.7rem; }
+  .breadcrumb b { color: #d1d5db; }
+  .breadcrumb .crumb-sep { margin: 0 0.4rem; color: #555; }
+  .filter-bar { margin-bottom: 1rem; }
+  .filter-bar input { background: #2a2a2a; color: #e6e6e6; border: 1px solid #444; padding: 0.4rem 0.6rem; font: inherit; border-radius: 4px; min-width: 280px; }
+  .summary { background: #252525; border-left: 3px solid #4a9eff; padding: 0.5rem 0.8rem; margin-bottom: 1rem; font-size: 0.85rem; color: #aaa; }
+  .summary b { color: #fff; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #2a2a2a; font-size: 0.85rem; }
+  th { background: #1f1f1f; color: #aaa; font-weight: 500; }
+  td.title a { color: #93c5fd; text-decoration: none; }
+  td.title a:hover { text-decoration: underline; }
+  td.title .open-link { color: #6b7280; text-decoration: none; margin-left: 0.4rem; font-size: 0.85rem; }
+  td.title .open-link:hover { color: #93c5fd; }
+  td.title .doc-name { color: #e6e6e6; cursor: pointer; }
+  td.title .doc-name:hover { color: #93c5fd; }
+  td.path { font-family: ui-monospace, monospace; font-size: 0.78rem; color: #777; }
+  .empty { padding: 1rem; color: #888; text-align: center; }
+  tr.curatable { cursor: pointer; }
+  tr.curatable:hover td { background: #252525; }
+  .drift-pill { display: inline-block; background: #7f1d1d; color: #fee2e2; font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 8px; margin-left: 0.4rem; vertical-align: middle; }
+  .curated-pill { display: inline-block; background: #064e3b; color: #d1fae5; font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 8px; margin-left: 0.4rem; vertical-align: middle; }
+  /* Side panel */
+  .panel { position: fixed; top: 0; right: 0; height: 100vh; width: 420px; background: #1a1a1a; border-left: 1px solid #2a2a2a; box-shadow: -4px 0 16px rgba(0,0,0,0.4); transform: translateX(100%); transition: transform 0.18s ease-out; z-index: 100; display: flex; flex-direction: column; }
+  .panel.open { transform: translateX(0); }
+  .panel-header { padding: 1rem 1.25rem; background: #111; border-bottom: 1px solid #2a2a2a; display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+  .panel-header h3 { font-size: 0.95rem; margin: 0; color: #fff; word-break: break-word; }
+  .panel-header .href { color: #777; font-family: ui-monospace, monospace; font-size: 0.72rem; margin-top: 0.25rem; word-break: break-all; }
+  .panel-close { background: none; border: none; color: #888; font-size: 1.4rem; cursor: pointer; padding: 0; line-height: 1; }
+  .panel-close:hover { color: #fff; }
+  .panel-body { padding: 1rem 1.25rem; overflow-y: auto; flex: 1; }
+  .panel-section { margin-bottom: 1.25rem; }
+  .panel-section h4 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin: 0 0 0.5rem; }
+  .field { margin-bottom: 0.6rem; }
+  .field label { display: block; color: #aaa; font-size: 0.78rem; margin-bottom: 0.2rem; }
+  .field select, .field input { width: 100%; background: #2a2a2a; color: #e6e6e6; border: 1px solid #444; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.85rem; border-radius: 4px; }
+  .field .suggest { color: #fbbf24; font-size: 0.72rem; margin-left: 0.4rem; font-style: italic; }
+  .panel-footer { padding: 0.75rem 1.25rem; background: #111; border-top: 1px solid #2a2a2a; display: flex; gap: 0.5rem; justify-content: flex-end; }
+  .btn { background: #3b82f6; color: white; border: none; padding: 0.4rem 0.9rem; border-radius: 4px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+  .btn:hover { background: #2563eb; }
+  .btn.secondary { background: #2a2a2a; color: #aaa; }
+  .btn.secondary:hover { background: #333; color: #fff; }
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: #064e3b; color: #d1fae5; padding: 0.6rem 1rem; border-radius: 4px; font-size: 0.85rem; z-index: 200; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .toast.error { background: #7f1d1d; color: #fee2e2; }
+  .lineage-item { display: flex; gap: 0.4rem; align-items: center; font-size: 0.78rem; padding: 0.2rem 0; color: #d1d5db; }
+  .lineage-item .pred { color: #fbbf24; font-family: ui-monospace, monospace; font-size: 0.72rem; }
+  .lineage-item .href-text { font-family: ui-monospace, monospace; font-size: 0.72rem; color: #93c5fd; word-break: break-all; flex: 1; }
+  .lineage-add { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+  .lineage-add select { flex: 0 0 auto; }
+  .lineage-add input { flex: 1; }
+  .lineage-add button { flex: 0 0 auto; padding: 0.3rem 0.5rem; font-size: 0.78rem; }
+  .audit-line { font-family: ui-monospace, monospace; font-size: 0.72rem; color: #888; padding: 0.15rem 0; border-bottom: 1px solid #2a2a2a; }
+  .audit-line .ts { color: #555; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Doc Catalog</h1>
+  <div class="sub">Athena hierarchy navigation. <a href="/doc-inventory.html" style="color: #93c5fd;">Inventory</a> · <a href="/doc-catalog-wireframe.html" style="color: #93c5fd;">Wireframe</a> · <button id="bulk-walk-btn" style="background:#1e40af; color:#fff; border:none; padding:0.2rem 0.6rem; border-radius:3px; cursor:pointer; font-size:0.8rem;">Walk untagged (j/k/Esc)</button></div>
+</header>
+
+<div class="layout">
+
+  <nav>
+    <div style="display: flex; gap: 0.3rem; margin-bottom: 0.8rem;">
+      <button id="tab-hierarchy" class="tab-btn active" style="padding: 0.3rem 0.7rem; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem;">Hierarchy</button>
+      <button id="tab-topic" class="tab-btn" style="padding: 0.3rem 0.7rem; background: #2a2a2a; color: #aaa; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem;">Topic</button>
+    </div>
+    <h2 id="nav-heading">Hierarchy</h2>
+    <div class="tree" id="tree">Loading...</div>
+  </nav>
+
+  <main>
+    <div class="filter-bar">
+      <input id="filter" type="text" placeholder="Filter by title or path…">
+    </div>
+    <div class="breadcrumb" id="breadcrumb">All docs</div>
+    <div class="summary" id="summary">Loading…</div>
+    <table id="tbl">
+      <thead><tr><th>Title</th><th>Source</th><th>Path</th></tr></thead>
+      <tbody><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </main>
+</div>
+
+<aside class="panel" id="panel" aria-hidden="true">
+  <div class="panel-header">
+    <div>
+      <h3 id="panel-title">Curate doc</h3>
+      <div class="href" id="panel-href"></div>
+    </div>
+    <button class="panel-close" id="panel-close" aria-label="Close">×</button>
+  </div>
+  <div class="panel-body">
+
+    <div class="panel-section" id="drift-banner" style="display:none; background:#7f1d1d20; border-left:3px solid #fca5a5; padding: 0.5rem 0.75rem; border-radius: 3px;">
+      <div style="font-size:0.78rem; color:#fca5a5; margin-bottom:0.4rem;">Path-implied tags differ from persisted on: <span id="drift-fields"></span></div>
+      <div style="font-size:0.74rem; color:#aaa; margin-bottom:0.3rem;">Path implies: <span id="drift-implied" style="color:#d1d5db"></span></div>
+      <div style="display:flex; gap:0.4rem;">
+        <button class="btn" id="drift-accept" style="font-size:0.78rem; padding:0.25rem 0.55rem;">Accept path-implied</button>
+        <button class="btn secondary" id="drift-dismiss" style="font-size:0.78rem; padding:0.25rem 0.55rem;">Dismiss</button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h4>Tags</h4>
+      <div class="field">
+        <label>Product <span class="suggest" id="suggest-product"></span></label>
+        <select id="f-product"><option value="">—</option></select>
+      </div>
+      <div class="field">
+        <label>Subproduct <span class="suggest" id="suggest-subproduct"></span></label>
+        <select id="f-subproduct"><option value="">—</option></select>
+      </div>
+      <div class="field">
+        <label>Domain</label>
+        <input id="f-domain" type="text" placeholder="e.g., chorus, gathering">
+      </div>
+      <div class="field">
+        <label>Subdomain <span class="suggest" id="suggest-subdomain"></span></label>
+        <select id="f-subdomain"><option value="">—</option></select>
+      </div>
+      <div class="field">
+        <label>Role</label>
+        <select id="f-role">
+          <option value="">—</option>
+          <option value="wren">wren</option>
+          <option value="silas">silas</option>
+          <option value="kade">kade</option>
+          <option value="jeff">jeff</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="panel-section" id="lineage-section">
+      <h4>Lineage</h4>
+      <div id="lineage-list"></div>
+      <div class="lineage-add">
+        <select id="lin-pred">
+          <option value="supersedes">supersedes</option>
+          <option value="derivedFrom">derivedFrom</option>
+          <option value="reshapedInto">reshapedInto</option>
+        </select>
+        <input id="lin-target" type="text" list="lin-target-list" placeholder="target href (autocomplete)">
+        <datalist id="lin-target-list"></datalist>
+        <button class="btn" id="lin-add">+</button>
+      </div>
+    </div>
+
+    <div class="panel-section" id="audit-section">
+      <h4>Audit</h4>
+      <div id="audit-list" style="font-size: 0.75rem; color: #777;">No events yet.</div>
+    </div>
+
+  </div>
+  <div class="panel-footer">
+    <button class="btn secondary" id="panel-cancel">Cancel</button>
+    <button class="btn" id="panel-save">Save tags</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let tree = null;
+let allTagged = [];
+let topicGroups = [];
+let viewMode = 'hierarchy'; // 'hierarchy' | 'topic'
+let selected = null;  // { kind, id?, path[] }
+// #2550 curation surface state
+let vocab = { products: [], subproducts: [], subdomains: [] };
+let driftByHref = new Map();  // href → divergence_fields[]
+let panelDoc = null;  // { href, title, suggest, current }
+
+async function load() {
+  const [treeR, tagsR, catR, productsR, subproductsR, subdomainsR, driftR, curatedR] = await Promise.all([
+    fetch('/api/doc-catalog/tree').then(r => r.json()),
+    fetch('/api/doc-catalog/tags').then(r => r.json()),
+    fetch('/api/doc-catalog').then(r => r.json()),
+    fetch('/api/athena/products').then(r => r.json()).catch(() => ({ data: [] })),
+    fetch('/api/athena/subproducts').then(r => r.json()).catch(() => ({ data: [] })),
+    fetch('/api/athena/subdomains?limit=200').then(r => r.json()).catch(() => ({ data: [] })),
+    fetch('/api/chorus/catalog/drift').then(r => r.json()).catch(() => ({ data: { drift: [] } })),
+    fetch('/api/chorus/catalog/curated').then(r => r.json()).catch(() => ({ data: { curated: [] } })),
+  ]);
+  tree = treeR;
+  allTagged = tagsR.tagged || [];
+  topicGroups = catR.groups || [];
+  // Curated overlay: tags persisted via #2549 trump tagger inferences for the same href.
+  const curatedByHref = new Map(((curatedR.data || {}).curated || []).map(c => [c.href, c.tags || {}]));
+  for (const d of allTagged) {
+    const overlay = curatedByHref.get(d.href);
+    if (overlay) d.tags = { ...d.tags, ...overlay };
+  }
+  // Recompute the untagged count to reflect the overlay (so the nav matches reality).
+  if (tree && tree.untagged) {
+    let untaggedCount = 0;
+    const knownProducts = new Set((tree.products || []).map(p => p.id));
+    const productEnumToId = { chorus: 'chorusProduct', gathering: 'gathering', consulting: 'consultingProduct' };
+    for (const d of allTagged) {
+      if (!d.tags || !d.tags.product) { untaggedCount++; continue; }
+      const athenaId = productEnumToId[d.tags.product];
+      if (!athenaId || !knownProducts.has(athenaId)) untaggedCount++;
+    }
+    tree.untagged.docCount = untaggedCount;
+    // Recompute product/subproduct/subdomain counts based on overlay-adjusted tags
+    for (const p of tree.products) {
+      p.docCount = 0;
+      if (p.subproducts) for (const sp of p.subproducts) sp.docCount = 0;
+    }
+    for (const d of allTagged) {
+      const t = d.tags || {};
+      if (!t.product) continue;
+      const athenaId = productEnumToId[t.product];
+      const product = (tree.products || []).find(p => p.id === athenaId);
+      if (!product) continue;
+      product.docCount++;
+      if (t.subproduct && product.subproducts) {
+        const sp = product.subproducts.find(s => s.id === t.subproduct || s.id === `${t.subproduct}-product`);
+        if (sp) sp.docCount++;
+      }
+    }
+  }
+  // Vocab maps Athena ids → tagger short names so the dropdowns match what the API validates against.
+  vocab.products = ['chorus', 'gathering', 'consulting'];
+  vocab.subproducts = ['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality', 'borg'];
+  vocab.subdomains = ((subdomainsR.data || []).map(sd => (sd.id || (sd.uri || '').split('#').pop() || '').toLowerCase()).filter(Boolean));
+  // Fallback: union with tagger-known set so the dropdown isn't empty if Athena underreports
+  if (vocab.subdomains.length < 20) {
+    const taggerKnown = ['loom-analytics','loom-decisions','loom-metrics','loom-policies','loom-practices','loom-principles','loom-rcas','cards-service','roles-domain','athena-domain','domains-domain','knowledge-domain','integrations-domain','services-domain','convergence-domain','messages-domain','gates-service','tests-domain','blog-domain','books-domain','cooking-domain','documents-domain','glimmers-domain','music-domain','notes-domain','photos-domain','property-domain','social-domain','video-domain','people-domain','sexuality-domain','stories-domain','self-domain','seeds-domain','reading-domain','watching-domain'];
+    vocab.subdomains = Array.from(new Set([...vocab.subdomains, ...taggerKnown])).sort();
+  }
+  driftByHref = new Map(((driftR.data || {}).drift || []).map(e => [e.href, e.divergence_fields || []]));
+  populateVocabSelects();
+  selected = { kind: 'all', path: ['All docs'] };
+  renderNav();
+  renderRight();
+}
+
+function populateVocabSelects() {
+  function opts(values) {
+    return ['<option value="">—</option>'].concat(values.map(v => `<option value="${v}">${v}</option>`)).join('');
+  }
+  document.getElementById('f-product').innerHTML = opts(vocab.products);
+  document.getElementById('f-subproduct').innerHTML = opts(vocab.subproducts);
+  document.getElementById('f-subdomain').innerHTML = opts(vocab.subdomains);
+}
+
+function renderNav() {
+  if (viewMode === 'hierarchy') renderTree();
+  else renderTopicGroups();
+}
+
+function renderTopicGroups() {
+  document.getElementById('nav-heading').textContent = 'Topic';
+  const lines = [`<div class="node ${selected.kind === 'all' ? 'selected' : ''}" data-kind="all">All docs <span class="count">${tree.totalDocs}</span></div>`];
+  for (const g of topicGroups) {
+    const sel = selected.kind === 'topic' && selected.id === g.name;
+    lines.push(`<div class="node product ${sel ? 'selected' : ''}" data-kind="topic" data-id="${g.name}">${g.name} <span class="count">${g.docs.length}</span></div>`);
+  }
+  document.getElementById('tree').innerHTML = lines.join('');
+  document.querySelectorAll('.node').forEach(n => {
+    n.addEventListener('click', () => {
+      const kind = n.dataset.kind;
+      const id = n.dataset.id;
+      selected = { kind, id, path: kind === 'topic' ? ['Topic', id] : ['All docs'] };
+      renderNav();
+      renderRight();
+    });
+  });
+}
+
+function renderTree() {
+  const lines = [];
+  lines.push(`<div class="node ${selected.kind === 'all' ? 'selected' : ''}" data-kind="all">All docs <span class="count">${tree.totalDocs}</span></div>`);
+  for (const p of tree.products) {
+    const pSel = selected.kind === 'product' && selected.id === p.id;
+    lines.push(`<div class="node product ${pSel ? 'selected' : ''}" data-kind="product" data-id="${p.id}">${p.label} <span class="count">${p.docCount}</span></div>`);
+    if (p.subproducts) {
+      for (const sp of p.subproducts) {
+        const spSel = selected.kind === 'subproduct' && selected.id === sp.id;
+        lines.push(`<div class="node subproduct ${spSel ? 'selected' : ''}" data-kind="subproduct" data-id="${sp.id}" data-product="${p.id}">${sp.label} <span class="count">${sp.docCount}</span></div>`);
+        for (const sd of sp.subdomains) {
+          const sdSel = selected.kind === 'subdomain' && selected.id === sd.id;
+          lines.push(`<div class="node subdomain ${sdSel ? 'selected' : ''}" data-kind="subdomain" data-id="${sd.id}" data-subproduct="${sp.id}" data-product="${p.id}">${sd.label} <span class="count">${sd.docCount}</span></div>`);
+        }
+      }
+    }
+    if (p.subdomains) {
+      for (const sd of p.subdomains) {
+        const sdSel = selected.kind === 'subdomain' && selected.id === sd.id;
+        lines.push(`<div class="node subdomain-direct ${sdSel ? 'selected' : ''}" data-kind="subdomain" data-id="${sd.id}" data-product="${p.id}">${sd.label} <span class="count">${sd.docCount}</span></div>`);
+      }
+    }
+  }
+  if (tree.untagged.docCount > 0) {
+    const uSel = selected.kind === 'untagged';
+    lines.push(`<div class="node untagged ${uSel ? 'selected' : ''}" data-kind="untagged">Untagged <span class="count">${tree.untagged.docCount}</span></div>`);
+  }
+  document.getElementById('tree').innerHTML = lines.join('');
+  document.querySelectorAll('.node').forEach(n => {
+    n.addEventListener('click', () => {
+      const kind = n.dataset.kind;
+      const id = n.dataset.id;
+      const path = [];
+      if (kind === 'product') path.push(n.textContent.trim().split(/\s+\d+/)[0]);
+      else if (kind === 'subproduct') path.push(n.dataset.product, id);
+      else if (kind === 'subdomain') path.push(n.dataset.product || '', n.dataset.subproduct || '', id);
+      else if (kind === 'untagged') path.push('Untagged');
+      else path.push('All docs');
+      selected = { kind, id, path: path.filter(Boolean) };
+      renderTree();
+      renderRight();
+    });
+  });
+}
+
+function filterDocs(term) {
+  const t = term.toLowerCase();
+  let docs = allTagged;
+  if (selected.kind === 'product') {
+    docs = docs.filter(d => d.tags.product && productMatchById(d.tags.product, selected.id));
+  } else if (selected.kind === 'subproduct') {
+    docs = docs.filter(d => d.tags.subproduct === selected.id);
+  } else if (selected.kind === 'subdomain') {
+    docs = docs.filter(d => d.tags.subdomain === selected.id);
+  } else if (selected.kind === 'untagged') {
+    docs = docs.filter(d => !d.tags.product);
+  } else if (selected.kind === 'topic') {
+    const group = topicGroups.find(g => g.name === selected.id);
+    const groupHrefs = new Set((group?.docs || []).map(d => d.href));
+    docs = docs.filter(d => groupHrefs.has(d.href));
+  }
+  if (t) docs = docs.filter(d => (d.title + ' ' + d.href + ' ' + d.source).toLowerCase().includes(t));
+  return docs;
+}
+
+function productMatchById(taggerEnum, athenaId) {
+  // Tagger uses 'chorus'/'gathering'/'consulting', Athena ids are 'chorusProduct'/'gathering'/'consultingProduct'.
+  const m = { chorus: ['chorusProduct'], gathering: ['gathering'], consulting: ['consultingProduct'] };
+  return (m[taggerEnum] || []).includes(athenaId);
+}
+
+function renderRight() {
+  const term = document.getElementById('filter').value;
+  const docs = filterDocs(term);
+  document.getElementById('breadcrumb').innerHTML = selected.path.map((p, i) =>
+    i === selected.path.length - 1 ? `<b>${p}</b>` : p
+  ).join('<span class="crumb-sep">›</span>');
+  document.getElementById('summary').innerHTML = `<b>${docs.length}</b> docs in this view${term ? ` (filter: "${term}")` : ''}`;
+  const tb = document.querySelector('#tbl tbody');
+  if (!docs.length) {
+    tb.innerHTML = '<tr><td colspan="3" class="empty">No docs.</td></tr>';
+    return;
+  }
+  tb.innerHTML = docs.slice(0, 500).map(d => {
+    const drift = driftByHref.get(d.href);
+    const driftPill = drift && drift.length ? `<span class="drift-pill" title="path↔tag divergence on: ${drift.join(', ')}">drift</span>` : '';
+    const curatedPill = d.tags && d.tags.product ? '' : '<span class="curated-pill" style="background:#7c2d12;color:#fed7aa">untagged</span>';
+    return `<tr class="curatable" data-href="${d.href}" data-title="${d.title}"><td class="title"><span class="doc-name">${d.title}</span><a class="open-link" href="${d.href}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open doc in new tab">↗</a>${driftPill}${curatedPill}</td><td>${d.source}</td><td class="path">${d.href}</td></tr>`;
+  }).join('') + (docs.length > 500 ? `<tr><td colspan="3" class="empty">(showing first 500 of ${docs.length})</td></tr>` : '');
+  // Wire row click → curation panel
+  document.querySelectorAll('tr.curatable').forEach(tr => {
+    tr.addEventListener('click', () => openPanel(tr.dataset.href, tr.dataset.title));
+  });
+}
+
+// ─── #2550 curation side-panel ───────────────────────────────────────────────
+
+function hrefToB64(href) {
+  return btoa(href).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function openPanel(href, title) {
+  panelDoc = { href, title };
+  document.getElementById('panel-title').textContent = title || '(untitled)';
+  document.getElementById('panel-href').textContent = href;
+  // Reset fields
+  ['f-product', 'f-subproduct', 'f-subdomain', 'f-role'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('f-domain').value = '';
+  document.getElementById('lineage-list').innerHTML = '';
+  document.getElementById('audit-list').innerHTML = '<span style="color:#555">loading…</span>';
+
+  // Populate lineage target autocomplete with all known catalog hrefs (excluding current)
+  const dl = document.getElementById('lin-target-list');
+  dl.innerHTML = allTagged.filter(d => d.href !== href).slice(0, 500).map(d => `<option value="${d.href}">${d.title || ''}</option>`).join('');
+
+  // Drift banner
+  const drift = driftByHref.get(href);
+  const banner = document.getElementById('drift-banner');
+  if (drift && drift.length) {
+    const tagged = allTagged.find(d => d.href === href);
+    const implied = (tagged && tagged.tags) || {};
+    const impliedSummary = drift.map(f => `${f}=${implied[f] || '?'}`).join(', ') || '(no tagger inference)';
+    document.getElementById('drift-fields').textContent = drift.join(', ');
+    document.getElementById('drift-implied').textContent = impliedSummary;
+    banner.style.display = '';
+  } else {
+    banner.style.display = 'none';
+  }
+
+  // Suggestions from the existing tagger output
+  const tagged = allTagged.find(d => d.href === href);
+  const sug = tagged && tagged.tags ? tagged.tags : {};
+  document.getElementById('suggest-product').textContent = sug.product ? `suggest: ${sug.product} (${sug.confidence || '?'})` : '';
+  document.getElementById('suggest-subproduct').textContent = sug.subproduct ? `suggest: ${sug.subproduct}` : '';
+  document.getElementById('suggest-subdomain').textContent = sug.subdomain ? `suggest: ${sug.subdomain}` : '';
+
+  document.getElementById('panel').classList.add('open');
+  document.getElementById('panel').setAttribute('aria-hidden', 'false');
+
+  // Load persisted state from #2549 API (if doc has been curated before)
+  try {
+    const resp = await fetch(`/api/chorus/catalog/doc/${hrefToB64(href)}`);
+    if (resp.ok) {
+      const j = await resp.json();
+      const t = (j.data && j.data.tags) || {};
+      if (t.product) document.getElementById('f-product').value = t.product;
+      if (t.subproduct) document.getElementById('f-subproduct').value = t.subproduct;
+      if (t.domain) document.getElementById('f-domain').value = t.domain;
+      if (t.subdomain) document.getElementById('f-subdomain').value = t.subdomain;
+      if (t.role) document.getElementById('f-role').value = t.role;
+      renderLineage((j.data && j.data.lineage) || { in: [], out: [] });
+    } else {
+      // 404 = doc not curated yet; prefill from suggestions
+      if (sug.product) document.getElementById('f-product').value = sug.product;
+      if (sug.subproduct) document.getElementById('f-subproduct').value = sug.subproduct;
+      if (sug.subdomain) document.getElementById('f-subdomain').value = sug.subdomain;
+      renderLineage({ in: [], out: [] });
+    }
+  } catch (_) {
+    renderLineage({ in: [], out: [] });
+  }
+
+  // Audit feed for this doc
+  loadAudit(href);
+}
+
+async function loadAudit(href) {
+  const list = document.getElementById('audit-list');
+  try {
+    const resp = await fetch(`/api/chorus/catalog/audit/${hrefToB64(href)}?limit=20`);
+    if (!resp.ok) { list.innerHTML = '<span style="color:#555">(audit unavailable)</span>'; return; }
+    const j = await resp.json();
+    const events = (j.data && j.data.events) || [];
+    if (!events.length) { list.innerHTML = '<span style="color:#555">No events yet.</span>'; return; }
+    list.innerHTML = events.map(e => {
+      const ts = e.timestamp.replace('T', ' ').slice(0, 19);
+      const eventName = e.event.replace('catalog.', '');
+      const summary = e.fields.after || e.fields.predicate || '';
+      return `<div class="audit-line"><span class="ts">${ts}</span> <span style="color:#fbbf24">${eventName}</span> <span style="color:#aaa">${e.role}</span> ${summary ? `<span style="color:#93c5fd">${summary}</span>` : ''}</div>`;
+    }).join('');
+  } catch (_) {
+    list.innerHTML = '<span style="color:#555">(audit error)</span>';
+  }
+}
+
+function closePanel() {
+  document.getElementById('panel').classList.remove('open');
+  document.getElementById('panel').setAttribute('aria-hidden', 'true');
+  panelDoc = null;
+}
+
+function renderLineage(lineage) {
+  const out = (lineage.out || []).map(e => `<div class="lineage-item"><span class="pred">${e.predicate} →</span><span class="href-text">${e.object_href}</span></div>`);
+  const inEdges = (lineage.in || []).map(e => `<div class="lineage-item"><span class="href-text">${e.subject_href}</span><span class="pred">→ ${e.predicate}</span></div>`);
+  const html = [...out, ...inEdges].join('') || '<span style="color:#555;font-size:0.78rem">No lineage edges yet.</span>';
+  document.getElementById('lineage-list').innerHTML = html;
+}
+
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('error', !!isError);
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+async function saveTags() {
+  if (!panelDoc) return;
+  const body = {
+    href: panelDoc.href,
+    product: document.getElementById('f-product').value || undefined,
+    subproduct: document.getElementById('f-subproduct').value || undefined,
+    domain: document.getElementById('f-domain').value || undefined,
+    subdomain: document.getElementById('f-subdomain').value || undefined,
+    role: document.getElementById('f-role').value || undefined,
+  };
+  Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
+  try {
+    const resp = await fetch('/api/chorus/catalog/tags', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showToast(`Save failed: ${(err.data && err.data.error) || resp.status}`, true);
+      return;
+    }
+    showToast('Tags saved');
+    // Refresh drift map and table without full reload
+    await refreshDrift();
+    renderRight();
+  } catch (e) {
+    showToast(`Save error: ${e.message || e}`, true);
+  }
+}
+
+async function addLineage() {
+  if (!panelDoc) return;
+  const predicate = document.getElementById('lin-pred').value;
+  const target = document.getElementById('lin-target').value.trim();
+  if (!target) { showToast('Target href required', true); return; }
+  try {
+    const resp = await fetch('/api/chorus/catalog/lineage', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject_href: panelDoc.href, predicate, object_href: target }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showToast(`Lineage failed: ${(err.data && err.data.error) || resp.status}`, true);
+      return;
+    }
+    showToast(`Linked ${predicate} → ${target}`);
+    document.getElementById('lin-target').value = '';
+    // Reload lineage section
+    const docResp = await fetch(`/api/chorus/catalog/doc/${hrefToB64(panelDoc.href)}`);
+    if (docResp.ok) {
+      const j = await docResp.json();
+      renderLineage((j.data && j.data.lineage) || { in: [], out: [] });
+    }
+  } catch (e) {
+    showToast(`Lineage error: ${e.message || e}`, true);
+  }
+}
+
+async function refreshDrift() {
+  try {
+    const r = await fetch('/api/chorus/catalog/drift').then(r => r.json());
+    driftByHref = new Map(((r.data || {}).drift || []).map(e => [e.href, e.divergence_fields || []]));
+  } catch (_) { /* leave stale */ }
+}
+
+document.getElementById('panel-close').addEventListener('click', closePanel);
+document.getElementById('panel-cancel').addEventListener('click', closePanel);
+document.getElementById('panel-save').addEventListener('click', saveTags);
+document.getElementById('lin-add').addEventListener('click', addLineage);
+
+// Drift accept/dismiss
+document.getElementById('drift-accept').addEventListener('click', async () => {
+  if (!panelDoc) return;
+  const tagged = allTagged.find(d => d.href === panelDoc.href);
+  const implied = (tagged && tagged.tags) || {};
+  if (implied.product) document.getElementById('f-product').value = implied.product;
+  if (implied.subproduct) document.getElementById('f-subproduct').value = implied.subproduct;
+  if (implied.subdomain) document.getElementById('f-subdomain').value = implied.subdomain;
+  await saveTags();
+  document.getElementById('drift-banner').style.display = 'none';
+});
+document.getElementById('drift-dismiss').addEventListener('click', () => {
+  // Local dismiss — clears the banner for this session. Next reload will re-evaluate
+  // drift; if the user actually wants to silence it, they need to reconcile via Save.
+  document.getElementById('drift-banner').style.display = 'none';
+});
+
+// AC6: Bulk-walk untagged mode — keyboard navigates through untagged docs.
+let bulkWalk = { active: false, queue: [], idx: 0 };
+
+function startBulkWalk() {
+  // Build queue: untagged from the merged-overlay state.
+  bulkWalk.queue = allTagged.filter(d => !d.tags || !d.tags.product).map(d => d);
+  if (bulkWalk.queue.length === 0) {
+    showToast('No untagged docs to walk');
+    return;
+  }
+  bulkWalk.active = true;
+  bulkWalk.idx = 0;
+  showToast(`Walk: ${bulkWalk.queue.length} untagged. j next, k prev, Esc exit.`);
+  openWalkAt(0);
+}
+
+function openWalkAt(i) {
+  if (i < 0 || i >= bulkWalk.queue.length) return;
+  bulkWalk.idx = i;
+  const d = bulkWalk.queue[i];
+  openPanel(d.href, d.title);
+}
+
+function exitBulkWalk() {
+  bulkWalk.active = false;
+  bulkWalk.queue = [];
+  closePanel();
+}
+
+document.getElementById('bulk-walk-btn').addEventListener('click', startBulkWalk);
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && (panelDoc || bulkWalk.active)) {
+    if (bulkWalk.active) exitBulkWalk();
+    else closePanel();
+    return;
+  }
+  // Bulk-walk navigation only when not typing in an input/select
+  if (bulkWalk.active && !['INPUT','SELECT','TEXTAREA'].includes((e.target && e.target.tagName) || '')) {
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); openWalkAt(Math.min(bulkWalk.idx + 1, bulkWalk.queue.length - 1)); }
+    else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); openWalkAt(Math.max(bulkWalk.idx - 1, 0)); }
+  }
+});
+
+document.addEventListener('input', e => {
+  if (e.target && e.target.id === 'filter') renderRight();
+});
+
+document.getElementById('tab-hierarchy').addEventListener('click', () => {
+  viewMode = 'hierarchy';
+  selected = { kind: 'all', path: ['All docs'] };
+  document.getElementById('tab-hierarchy').style.background = '#3b82f6';
+  document.getElementById('tab-hierarchy').style.color = 'white';
+  document.getElementById('tab-topic').style.background = '#2a2a2a';
+  document.getElementById('tab-topic').style.color = '#aaa';
+  renderNav();
+  renderRight();
+});
+document.getElementById('tab-topic').addEventListener('click', () => {
+  viewMode = 'topic';
+  selected = { kind: 'all', path: ['All docs'] };
+  document.getElementById('tab-topic').style.background = '#3b82f6';
+  document.getElementById('tab-topic').style.color = 'white';
+  document.getElementById('tab-hierarchy').style.background = '#2a2a2a';
+  document.getElementById('tab-hierarchy').style.color = '#aaa';
+  renderNav();
+  renderRight();
+});
+
+load();
+</script>
+</body>
+</html>

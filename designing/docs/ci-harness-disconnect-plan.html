@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CI Harness Disconnect — Coordinated Plan</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; color: #2d4a7a; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #dbeafe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-style: italic; font-size: 0.9em; }
+  .key-distinction { background: #fef3c7; padding: 14px 18px; margin: 18px 0; border-radius: 4px; border-left: 4px solid #d97706; font-size: 0.9em; }
+  .key-distinction strong { color: #92400e; }
+  .checkpoint { background: #ecfccb; padding: 12px 16px; margin: 14px 0; border-radius: 4px; border-left: 4px solid #65a30d; font-size: 0.88em; }
+  .checkpoint strong { color: #3f6212; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  td.silas { background: #fef2f2; }
+  td.kade { background: #eff6ff; }
+  th.silas { background: #fecaca; color: #7f1d1d; }
+  th.kade { background: #bfdbfe; color: #1e3a8a; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  ul { margin: 4px 0 8px 18px; font-size: 0.84em; }
+  li { margin-bottom: 3px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+</head>
+<body>
+
+<h1>CI Harness Disconnect <span>coordinated plan</span></h1>
+<div class="date">Drafted 2026-04-27 · Silas (CI substrate) + Kade (tests substrate) · v0 awaiting Kade sign-off</div>
+
+<div class="promise">
+The harness brief names the destination. This plan names the staging between two parallel tracks — CI substrate (Silas) and tests substrate (Kade) — so we don't discover gaps at integration. Each phase declares what each track produces, what crosses the boundary, and what has to be true before the next phase starts.
+</div>
+
+<h2>Why this exists</h2>
+<p>Jeff split the CI/test-substrate work between two roles after the harness brief surfaced (2026-04-27). Two parallel tracks with implicit interfaces is the canonical recipe for end-stage integration surprises. The fix is to make the interfaces explicit at each phase boundary and name the integration checkpoints up front, not on the day of the wire-up.</p>
+
+<div class="key-distinction">
+<strong>The interface that matters.</strong> Phase 2 introduces a single load-bearing API: a test runner that the CI workflow invokes by domain + category + budget. Get that contract right and the two tracks compose cleanly; get it wrong and we re-do Phase 2 twice. Phases 0 and 1 are independent enough that misalignment costs little; Phase 2 is the integration point.
+</div>
+
+<h2>Two tracks</h2>
+
+<table>
+<thead><tr><th class="silas">Silas — CI substrate</th><th class="kade">Kade — tests substrate</th></tr></thead>
+<tbody>
+<tr>
+  <td class="silas">Phase 0: <strong>#2524</strong> test categorization, <strong>#2532</strong> clippy + shuffled runs, <strong>#2523</strong> hermeticity audit, <strong>#2525</strong> required-checks DEC. Phase 1: <strong>#2526</strong> rules disconnect. Phase 2: <strong>#2333</strong> deploy smoke, <strong>#2527</strong> drift lane, <strong>#2528</strong> sensor consumer registry, <strong>#2529</strong> run-tests contract spec. Phase 3: <strong>#2530</strong> flake quarantine, <strong>#2200</strong> contract tests. Adjacent: <strong>#2491</strong> CI test isolation, <strong>#2498</strong> trunk-vs-rulesets cleanup.</td>
+  <td class="kade"><strong>#2515</strong> test inventory backfill (7/48 → 48/48), <strong>#2118</strong> scope-aware gates / domain+type test runner, <strong>#2516</strong> graphify SPECIAL_ALIASES (follow-on to #2515), <strong>#2517 + #2514</strong> handler-level test gaps. Adjacent: <strong>#2504 + #2505</strong> chorus-hooks Mac coupling, <strong>#2440 + #2441</strong> demo_gate fixture drift + quality review polish, <strong>#2500</strong> required-checks drift detector.</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Phase 0 — Foundation (linearized after audit, was parallel)</h2>
+
+<p><strong>Plan revision (2026-04-27, post Kade's #2515 wave 1 audit):</strong> Originally signed as parallel, both tracks proved coupled at the test-naming surface. #2524 (rename) and #2515 (alias matcher) both define "what counts as a test" — renames mid-flight risk breaking Kade's basename matcher. Sequence is now linear within Phase 0:</p>
+
+<ol style="font-size: 0.86em; margin-left: 24px;">
+  <li><strong>#2524</strong> — convention doc (shipped 2026-04-27, no renames yet)</li>
+  <li><strong>#2532</strong> — clippy + shuffled runs (parallel with #2515; provides detection mechanism #2523 needs)</li>
+  <li><strong>#2515</strong> — Kade's alias backfill (in flight) — must land before any renames begin</li>
+  <li><strong>#2523</strong> — Silas's hermeticity audit + rename pass (blocked on #2515 AND #2532) — uses #2524 convention; safe to rename only after #2515 matcher work is stable; needs #2532 shuffled runs for rule-5 detection</li>
+  <li><strong>#2525</strong> — DEC for required-checks list (after audit reveals what's actually hermetic; clippy join decision recorded here)</li>
+</ol>
+
+<p>Original plan assumed disjoint surfaces. Reality: both tracks touch the same test corpus from different angles, and the audit pattern (#2515) revealed unexpected dependencies (47+ uncrawled tests in <code>directing/products/cards/tests</code> + <code>platform/tests</code> bats; the 14 zero-test subdomains as a known-coverage-gap class). The plan revision is the lesson.</p>
+
+<table>
+<thead><tr><th class="silas">Silas</th><th class="kade">Kade</th></tr></thead>
+<tbody>
+<tr>
+  <td class="silas">
+    <ul>
+      <li><strong>#2524</strong> — <a href="test-categorization.html">Test categorization, filename suffix convention</a> (<code>*.test.ts</code> hermetic by default; <code>*.{integration,contract,smoke}.test.ts</code> for the rest) — <em>convention doc shipped 2026-04-27</em></li>
+      <li><strong>#2532</strong> — Add clippy to CI + shuffled jest/cargo runs. Clippy closes the Rust lint gap (TS gets typescript-eslint, Rust gets nothing today); shuffled runs are the detection mechanism for hermeticity rule 5 (order-independent). Prerequisite for #2523.</li>
+      <li><strong>#2523</strong> — Hermeticity audit on the to-be required-check set (network off, shuffled order via #2532, alt-cwd run). Includes the 47+ uncrawled tests in <code>directing/products/cards/tests</code> + <code>platform/tests</code> bats. <em>Blocked on #2515 + #2532.</em></li>
+      <li><strong>#2525</strong> — DEC for the new required-checks list. <strong>Filed as <a href="/decisions/DEC-2525-day-1-required-checks.md">DEC-2525</a></strong> (Day-1: TS hermetic + Rust hermetic; clippy may join per #2532 outcome). 48h shuffled-runs verification window pending Phase 1 land.</li>
+    </ul>
+  </td>
+  <td class="kade">
+    <ul>
+      <li><strong>#2515</strong> — backfill test→subdomain mapping (extend SPECIAL_ALIASES to cover the 41 missing subdomains)</li>
+      <li><strong>#2517 + #2514</strong> — handler-level test gap closure</li>
+    </ul>
+  </td>
+</tr>
+</tbody>
+</table>
+
+<p><strong>Interfaces:</strong> none. Disjoint work.</p>
+
+<div class="checkpoint">
+<strong>Phase 0 exit (each track independently):</strong>
+<ul>
+  <li>Silas: every test in the new required-check set has a hermeticity tag + passes 100/100 shuffled CI runs over a 48h window. DEC recorded. <strong>Audit report:</strong> <a href="ci-harness-hermeticity-audit.html">ci-harness-hermeticity-audit.html</a> (#2523 wave 1 — scanner + rules doc + classification table; per-test remediation routing in progress).</li>
+  <li>Kade: #2515 lands; <strong>31/48</strong> subdomains carry honest <code>hasTest</code> triples (up from 7). The <strong>17 not-covered</strong> are named in 4 explicit buckets:
+    <ul>
+      <li><strong>By-design (1):</strong> tests-domain (self-referential test infra)</li>
+      <li><strong>Plural-folding ambiguity (2):</strong> property / properties (graph allows both, audit collapses)</li>
+      <li><strong>GENERIC_BASES tradeoff (5):</strong> code, services, streams, messages, time — widening the filter risks path-segment false positives. Documented as a known gap with the noise-risk rationale; potential follow-on if/when widening is proven safe per-base.</li>
+      <li><strong>Genuinely-no-tests (9, final):</strong> alerts-monitors, commits, heralds, loom-analytics, loom-metrics, loom-practices, loom-rcas, toolchain, video. Covered by Wren's <strong>#2531</strong> triage. Audit v2 (commit 709f4efe, 2026-04-27) revealed books/documents/properties + 2 others were stale-heuristic misclassifications and are now covered — confirming the bucket-rot pattern: audits rot when their heuristic evolves.</li>
+    </ul>
+    Reframe of the original "≥45/48 mapping-declared" target after #2515 wave 1 audit (2026-04-27) revealed the target was a guess. AC catching up to audit reality, not negotiation. Same shape as the original 14-zero-test reframe earlier today.</li>
+</ul>
+</div>
+
+<h2>Phase 1 — Rules disconnect (Silas) + minimum runner (Kade) — parallel</h2>
+
+<p>Silas executes the actual disconnect against the kept-set declared in Phase 0. Kade builds the runner that Phase 2 will need but does not yet wire it into CI.</p>
+
+<table>
+<thead><tr><th class="silas">Silas</th><th class="kade">Kade</th></tr></thead>
+<tbody>
+<tr>
+  <td class="silas">
+    <strong>#2526</strong> — CI rules disconnect (Phase 1 surgical), six steps:
+    <ol>
+      <li><code>gh api -X PUT branches/main/protection/required_status_checks</code> — replace 8+ check list with Phase-0 declared set (#2525)</li>
+      <li>Edit <code>.github/workflows/quality.yml</code> — non-required checks gain <code>continue-on-error: true</code>, route to nightly (#2527)</li>
+      <li><code>git rm .eslint-baseline.json</code> + sibling baselines</li>
+      <li>Pre-commit narrows to secrets + syntactic-broken; format/lint/type-check switch to warn-with-auto-fix</li>
+      <li>Pre-push to signal-only</li>
+      <li>Verify with throwaway PR carrying deliberate non-required-check violation</li>
+    </ol>
+  </td>
+  <td class="kade">
+    <ul>
+      <li><strong>#2118</strong> — scope-aware gates / domain+type test runner. Document the contract (per #2529 spec); do not yet make it a required check.</li>
+    </ul>
+  </td>
+</tr>
+</tbody>
+</table>
+
+<p><strong>Interfaces:</strong> the new required-checks list (Silas declares). Phase 1 does <em>not</em> call Kade's runner; it just narrows the existing CI workflow's required steps.</p>
+
+<div class="checkpoint">
+<strong>Phase 1 exit:</strong>
+<ul>
+  <li>Silas: required-checks list on <code>main</code> matches Phase-0 declaration. One verification PR shipped with deliberate violation; merged green.</li>
+  <li>Kade: #2118 callable as <code>chorus run-tests --domain=&lt;X&gt; --category=hermetic --budget=&lt;sec&gt;</code> with documented JSON output (see Phase 2 contract). Not yet invoked from CI.</li>
+</ul>
+</div>
+
+<h2>Phase 2 — Scope-aware routing + drift lane (the integration point)</h2>
+
+<p>This is the joint phase. Silas wires Kade's runner into the CI workflow; the gate goes from "all hermetic tests" to "all hermetic tests in changed domains." This is also where the deploy stage gains its smoke + rollback + observation triad.</p>
+
+<table>
+<thead><tr><th class="silas">Silas</th><th class="kade">Kade</th></tr></thead>
+<tbody>
+<tr>
+  <td class="silas">
+    <ul>
+      <li><strong>#2529</strong> — run-tests contract spec (load-bearing interface; pre-pull-ready); CI workflow wires against it</li>
+      <li><strong>#2527</strong> — Nightly drift lane (mutation/perf/integration/CVE/doc-coherence file cards on red, never block)</li>
+      <li><strong>#2333</strong> — Deploy smoke + auto-rollback in <code>app-state.sh</code> (broaden AC during build to substrate primitive)</li>
+      <li><strong>#2528</strong> — Sensor consumer registry (every sensor names a consumer in manifest)</li>
+    </ul>
+  </td>
+  <td class="kade">
+    <ul>
+      <li><strong>#2118</strong> lights up as a required-check (matching #2529 contract verbatim)</li>
+      <li><strong>#2516</strong> graphify <code>SPECIAL_ALIASES</code> (parallel; doesn't block #2118)</li>
+    </ul>
+  </td>
+</tr>
+</tbody>
+</table>
+
+<h3>The Phase 2 contract (the load-bearing interface)</h3>
+
+<table>
+<thead><tr><th>Property</th><th>Spec</th></tr></thead>
+<tbody>
+<tr><td>Binary location</td><td><code>platform/scripts/run-tests</code> (no extension, matches the <code>nudge</code> / <code>cards</code> / <code>role-state</code> convention). Thin wrapper that dispatches to per-language runners (jest, cargo nextest). Not in <code>chorus-sdk</code> (avoids a new build target); not folded into <code>cards</code> CLI (avoids scope creep on board ops).</td></tr>
+<tr><td>Invocation</td><td><code>chorus run-tests --domain=&lt;subdomain-id&gt; --category=hermetic,contract --budget=&lt;seconds&gt;</code></td></tr>
+<tr><td>Domain resolution</td><td>Graph wins <em>iff</em> <code>discover-tests</code> ran within 24h <em>and</em> the subdomain has non-empty <code>hasTest</code> mappings. Otherwise filepath heuristic. Stale-graph-beats-fresh-filepath is worse than empty graph — the freshness gate prevents silent wrong-routing when #2515 alias drift sets in.</td></tr>
+<tr><td>Category</td><td>Comma-separated list (union). Values: <code>hermetic</code> | <code>integration</code> | <code>contract</code> | <code>smoke</code> | <code>perf</code> | <code>mutation</code>. Filename-suffix-driven (Phase 0 convention). One invocation can request <code>hermetic,contract</code> for PR-required, or <code>integration,smoke</code> for nightly drift lane.</td></tr>
+<tr><td>Budget</td><td>Hard timeout in seconds. Runner kills the suite at budget; sets <code>partial:true</code> in output and exit code 2 (see below).</td></tr>
+<tr><td>Exit code</td><td>0 = all ran + all pass; 1 = all ran + any fail; 2 = budget exceeded (partial run); 3 = invocation error (bad domain, bad category, runner crash)</td></tr>
+<tr><td>Stdout</td><td>Structured JSON:
+<pre style="background:#f4f4f4;padding:8px;border-radius:3px;font-size:0.78em;margin:4px 0;">{
+  pass: N,
+  fail: N,
+  runtime_ms: N,
+  partial: bool,                          // true iff exit 2
+  failing_tests: [{name, file, error}],   // structured, not strings
+  tests_unrun: [{name, file}],            // present iff partial:true
+  hermeticity_tags: {...}
+}</pre>
+CI consumers can distinguish "these failed" from "these never ran" — required for honest reporting on budget timeout.</td></tr>
+<tr><td>Stderr</td><td>Human-readable progress + failures. Suppressed in CI by default; surfaced on non-zero exit.</td></tr>
+</tbody>
+</table>
+
+<div class="checkpoint">
+<strong>Phase 2 exit:</strong>
+<ul>
+  <li>One verification PR proves the round-trip: PR touches a single domain → CI invokes <code>chorus run-tests --domain=X --category=hermetic</code> → green merge.</li>
+  <li>One nightly run produces ≥1 card from a real signal (drift lane lights up).</li>
+  <li>Deploy smoke fires &lt;30s post-reload; auto-rollback verified on synthetic failure.</li>
+</ul>
+</div>
+
+<h2>Phase 3 — Cleanup (independent, no joint sign-off)</h2>
+
+<ul>
+  <li>Silas: <strong>#2530</strong> flake quarantine mechanism; <strong>#2200</strong> contract test layer migration once contract tests exist as a real category.</li>
+  <li>Kade: <strong>#2516</strong> graphify migration completes; <code>SPECIAL_ALIASES</code> file retired.</li>
+</ul>
+
+<h2>Risks &amp; gaps to watch</h2>
+
+<table>
+<thead><tr><th>Risk</th><th>Why it bites</th><th>Mitigation</th></tr></thead>
+<tbody>
+<tr>
+  <td>Phase 0 categorization happens before #2515 lands; tests get tagged hermetic in filenames that turn out to be non-hermetic on audit.</td>
+  <td>The audit and the categorization are the same operation. If Silas's audit and Kade's #2515 don't share a hermeticity definition, we tag inconsistently.</td>
+  <td>Both tracks reference the same hermeticity rules (no network / no fs outside tmp / no time / no env-coupling / order-independent). Silas writes the rules into the DEC; Kade's #2515 cites them.</td>
+</tr>
+<tr>
+  <td>Phase 2 contract drift — Kade ships #2118 with one shape, Silas wires CI assuming another.</td>
+  <td>The runner contract is the single integration point. Misread = Phase 2 redo.</td>
+  <td>Contract is in this doc (Phase 2 table). Both tracks sign off before Kade starts implementation. Any change to the contract triggers a joint review.</td>
+</tr>
+<tr>
+  <td>Graph-vs-code-resident SPECIAL_ALIASES drift — Phase 2 assumes graph-resident, but #2516 is follow-on.</td>
+  <td>If CI workflow assumes graph mappings exist before #2516 ships, every PR breaks on the first uncovered subdomain.</td>
+  <td>Phase 2 contract requires fallback to filepath heuristic on graph miss. CI never depends on graph being complete; #2516 only improves accuracy.</td>
+</tr>
+<tr>
+  <td>Pre-commit narrows before format auto-fix is wired; agents commit unformatted code, Phase 1 verification PR fails on a different gate.</td>
+  <td>Sequencing inside Phase 1 matters. Narrowing without auto-fix = formatting drift on main.</td>
+  <td>Silas's Phase 1 step 4 explicitly switches format to warn-with-auto-fix in the same commit as the narrowing.</td>
+</tr>
+<tr>
+  <td>Deploy smoke + auto-rollback (#2333) drifts past Phase 2 close; deploy stage stays manual indefinitely.</td>
+  <td>The brief's destination requires this; without it the to-be diagram is partially aspirational.</td>
+  <td>Phase 2 exit explicitly requires smoke + rollback verified. Not "soon" — at Phase 2 close.</td>
+</tr>
+<tr>
+  <td>Either track silently rescopes mid-phase without informing the other.</td>
+  <td>The plan only works if both tracks update it when scope changes. Otherwise this doc rots into fiction.</td>
+  <td>Any phase-scope change goes through Jeff + a doc update. Re-review at each phase exit.</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Joint review</h2>
+
+<ul>
+  <li>v0 of this doc (now): Silas drafted; Kade reviews + signs off in chat; Jeff sees both signatures before Phase 0 starts.</li>
+  <li>At each phase exit: both tracks review the next phase's interface together; redirect or proceed.</li>
+  <li>Jeff visibility: this doc lives in the doc-catalog at <code>/docs/designing/ci-harness-disconnect-plan.html</code> (companion to the harness brief at <code>/docs/designing/ci-harness-research-brief.html</code>).</li>
+</ul>
+
+<div class="footer">
+Origin: 2026-04-27 — Jeff named the coordination need ("u and kade as 2 teams that need to sequence and integrate together not be surprised at the end by gaps"). Silas drafted v0; Kade reviewed and proposed 5 refinements (binary location, category-as-list, partial-flag on budget timeout, freshness-gate on graph resolution, structured failing_tests + tests_unrun, Phase 0 exit AC split mapping-vs-existence) — all accepted in v1 (16:55). Jeff sees the signed plan. Companion to the CI Harness Architecture research brief.
+</div>
+
+</body>
+</html>

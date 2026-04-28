@@ -6,10 +6,11 @@
 //! Dead flags (--level, --reply-to) are gone from nudge.rs.
 
 /// PostToolUse drain is removed from shim.rs (#2283 AC-3)
+use chorus_hooks::shared::state_paths::chorus_root;
 #[test]
 fn post_tool_use_does_not_drain_queue() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/shim.rs"
+        &format!("{}/platform/services/chorus-hooks/src/shim.rs", chorus_root())
     ).expect("shim.rs should exist");
 
     // The removed code drained the queue on PostToolUse:
@@ -26,7 +27,7 @@ fn post_tool_use_does_not_drain_queue() {
 #[test]
 fn dead_drain_helpers_removed_from_shim() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/shim.rs"
+        &format!("{}/platform/services/chorus-hooks/src/shim.rs", chorus_root())
     ).expect("shim.rs should exist");
 
     assert!(
@@ -48,7 +49,7 @@ fn dead_drain_helpers_removed_from_shim() {
 #[test]
 fn level_flag_removed_from_nudge() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs"
+        &format!("{}/platform/services/chorus-hooks/src/nudge.rs", chorus_root())
     ).expect("nudge.rs should exist");
 
     assert!(
@@ -63,7 +64,7 @@ fn level_flag_removed_from_nudge() {
 #[test]
 fn reply_to_flag_removed_from_nudge() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs"
+        &format!("{}/platform/services/chorus-hooks/src/nudge.rs", chorus_root())
     ).expect("nudge.rs should exist");
 
     assert!(
@@ -80,7 +81,7 @@ fn reply_to_flag_removed_from_nudge() {
 #[test]
 fn detect_sender_no_lsof_fallback() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs"
+        &format!("{}/platform/services/chorus-hooks/src/nudge.rs", chorus_root())
     ).expect("nudge.rs should exist");
 
     // lsof must not be called from detect_sender — it takes 20s on this machine.

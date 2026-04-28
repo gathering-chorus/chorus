@@ -355,7 +355,7 @@ async function cmdSetLimit(client: BoardClient, args: string[], boardConfig: Boa
 
 const CHUNKS_DIR = path.join(__dirname, '../../../product-manager/chunks');
 
-const VALID_CHUNKS = ['spine', 'ops', 'memory', 'music', 'senses', 'strategy', 'app', 'sexuality', 'convergence'];
+const VALID_CHUNKS = ['spine', 'ops', 'memory', 'music', 'senses', 'strategy', 'app', 'sexuality', 'convergence', 'knowledge', 'ci', 'tests'];
 
 async function listAllChunks(client: BoardClient): Promise<void> {
   const all = await client.list();
@@ -627,7 +627,7 @@ Options:
   --owner O                      Owner (Wren/Silas/Kade/Jeff)
   --priority P                   Priority (P1/P2/P3)
   --domain D                     Domain label (gathering/infrastructure/...)
-  --chunk C                      Chunk label (spine/ops/memory/music/senses/strategy/app)
+  --chunk C                      Chunk label (spine/ops/memory/music/senses/strategy/app/sexuality/convergence/knowledge/ci/tests)
   --sequence S, --seq S          Sequence label (${Object.keys(LABELS.sequence).join('/')})
   --desc D                       Description text (required — must include AC)
   --desc-file PATH               Read description from a file (avoids HEREDOC escaping)

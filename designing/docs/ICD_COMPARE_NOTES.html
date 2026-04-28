@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>ICD Compare — Notes (RDF-rendered)</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+body { font-family: Georgia, serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #1a1a2e; }
+h1 { color: #2471a3; }
+.subtitle { color: #666; font-size: 0.85rem; }
+.domain-header { background: #f8f9fa; padding: 0.8rem; border-radius: 6px; margin: 1rem 0; }
+.dh-name { font-size: 1.2rem; font-weight: 700; color: #2471a3; }
+.dh-count { color: #666; }
+.dh-meta { font-size: 0.8rem; color: #888; }
+.icd-header { color: white; padding: 0.5rem 0.8rem; border-radius: 4px; font-weight: 600; margin: 0.5rem 0; cursor: pointer; }
+.icd-body { padding: 0.5rem 0.8rem; border: 1px solid #ddd; border-radius: 0 0 4px 4px; }
+.sec-header { font-weight: 700; color: #2471a3; margin-top: 1rem; padding: 0.3rem 0; border-bottom: 1px solid #eee; }
+li.ok { color: #27ae60; } li.ok::marker { content: "✓ "; }
+li.risk { color: #c0392b; } li.risk::marker { content: "⚠ "; }
+table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.85rem; }
+th { background: #f5f5f5; padding: 0.3rem 0.5rem; text-align: left; }
+td { padding: 0.3rem 0.5rem; border-bottom: 1px solid #eee; }
+.field-row { display: flex; justify-content: space-between; padding: 0.3rem 0.5rem; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+.fname { font-weight: 600; min-width: 120px; }
+.fdesc { flex: 1; color: #666; }
+.fcov { min-width: 60px; text-align: right; }
+.fcov.high { color: #27ae60; }
+.fcov.medium { color: #f39c12; }
+.fcov.low { color: #c0392b; }
+.cf-row { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.5rem; border-bottom: 1px solid #f0f0f0; }
+.cf-gate { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.7rem; font-weight: 700; color: white; margin-right: 0.3rem; }
+.cf-gate.violation { background: #c0392b; }
+.cf-gate.enrichment { background: #95a5a6; }
+.cf-name { font-weight: 600; }
+.cf-type { font-size: 0.75rem; color: #888; }
+.cf-best { padding: 0.15rem 0.5rem; border-radius: 3px; color: white; font-size: 0.75rem; }
+.badge { display: inline-block; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.7rem; font-weight: 600; margin-left: 0.3rem; }
+.source-tag { background: #e8f4fd; color: #2471a3; font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 3px; }
+.mermaid { margin: 0.5rem 0; }
+</style></head><body>
+<h1>ICD Compare — Notes Domain</h1>
+<p class="subtitle">Rendered entirely from SPARQL queries against RDF graph (icd/notes-v2, 274 triples)</p>
+
+<div class="domain-header">
+  <span class="dh-name">Notes</span>
+  <span class="dh-count">(~200)</span><br>
+  <span class="dh-meta">1 source → jb:Note<br>Single source, no reconciliation</span>
+</div>
+
+<div class="icd-header" style="background:#f39c12">Apple Notes <span style="font-weight:normal; font-size:0.85rem;">~200 notes · JXA</span></div>
+<div class="icd-body">
+
+<div class="sec-header">Purpose &amp; Scope</div>
+<p><strong>Purpose:</strong> Jeff's notes from Notes.app. Ongoing incremental updates.</p>
+<p><strong>Scope:</strong> ~200 notes via JXA scripting or pre-extracted JSONL. notes-harvester.service.ts → notes-pod.service.ts</p>
+
+<div class="sec-header">Risks</div>
+<ul><li class="ok">Dates reliable — creation and modification from Notes.app</li>
+<li class="risk">Rich text flattened to plain text — formatting/images lost</li>
+<li class="risk">Incremental sync not implemented — full re-harvest each time</li>
+<li class="ok">Single source — canonical = source, no reconciliation needed</li>
+</ul>
+
+<div class="sec-header">Non-Functionals</div>
+<table>
+<tr><th>Volume</th><th>Freshness</th><th>Latency</th><th>Auth</th></tr>
+<tr><td>~200 notes</td><td>Incremental (Notes.app live)</td><td>N/A (JXA local)</td><td>None (local)</td></tr>
+</table>
+
+<div class="sec-header">Interface</div>
+<div class="field-row"><span class="fname">generated</span><span class="fdesc">Slug from date + title</span><span class="fcov high">derived</span></div>
+<div class="field-row"><span class="fname">title</span><span class="fdesc">Note title</span><span class="fcov high">100%</span></div>
+<div class="field-row"><span class="fname">body</span><span class="fdesc">Note content</span><span class="fcov high">100%</span></div>
+<div class="field-row"><span class="fname">created</span><span class="fdesc">Creation time</span><span class="fcov high">100%</span></div>
+<div class="field-row"><span class="fname">modified</span><span class="fdesc">Last edit time</span><span class="fcov high">100%</span></div>
+<div class="field-row"><span class="fname">folder</span><span class="fdesc">Notes.app folder</span><span class="fcov high">100%</span></div>
+
+
+<div class="sec-header">Diagrams</div>
+<pre class="mermaid">graph LR
+    APP[Notes.app] -->|JXA scripting| H[notes-harvester.service.ts]
+    H -->|"rich text → plain"| N[notes-pod.service.ts]
+    N -->|"one TTL per note"| POD["pods/jeff/notes/{YYYY-MM-DD}-{slug}.ttl"]
+    POD --> F[Fuseki]
+    F --> UI["/notes page"]</pre>
+
+</div>
+
+<div class="icd-header" style="background:var(--accent, #8e44ad)">jb:Note — Consumer ICD</div>
+<div class="icd-body">
+
+<div class="sec-header">Purpose</div>
+<p>Single source. Canonical = source. No reconciliation needed. Ongoing incremental updates as Jeff adds/edits notes.</p>
+
+<div class="sec-header">Interface</div>
+<div class="cf-row"><div><span class="cf-gate violation">Req</span><span class="cf-name">slug</span><br><span class="cf-type">{YYYY-MM-DD}-{title-slug}</span></div><span class="cf-best" style="background:#f39c12">Apple Notes</span></div>
+<div class="cf-row"><div><span class="cf-gate violation">Req</span><span class="cf-name">title</span><br><span class="cf-type">Note title</span></div><span class="cf-best" style="background:#f39c12">Apple Notes</span></div>
+<div class="cf-row"><div><span class="cf-gate violation">Req</span><span class="cf-name">body</span><br><span class="cf-type">Note content (rich text flattened)</span></div><span class="cf-best" style="background:#f39c12">Apple Notes</span></div>
+<div class="cf-row"><div><span class="cf-gate violation">Req</span><span class="cf-name">created</span><br><span class="cf-type">Note creation time (ISO8601)</span></div><span class="cf-best" style="background:#f39c12">Apple Notes</span></div>
+<div class="cf-row"><div><span class="cf-gate violation">Req</span><span class="cf-name">modified</span><br><span class="cf-type">Last edit time (ISO8601)</span></div><span class="cf-best" style="background:#f39c12">Apple Notes</span></div>
+<div class="cf-row"><div><span class="cf-gate violation">Req</span><span class="cf-name">folder</span><br><span class="cf-type">Notes.app folder name</span></div><span class="cf-best" style="background:#f39c12">Apple Notes</span></div>
+<div class="cf-row"><div><span class="cf-gate enrichment">Enr</span><span class="cf-name">mentionsPeople</span><br><span class="cf-type">People referenced in content (NER)</span></div><span class="cf-best" style="background:#555">Future NLP</span></div>
+<div class="cf-row"><div><span class="cf-gate enrichment">Enr</span><span class="cf-name">linkedTopics</span><br><span class="cf-type">Topic/domain classification</span></div><span class="cf-best" style="background:#555">Future NLP</span></div>
+
+
+<div class="sec-header">Context Diagram</div>
+<pre class="mermaid">graph LR
+    A[Apple Notes / JXA] -->|title, body, folder, dates| H[notes-harvester.service.ts]
+    H -->|rich text → plain text| N[notes-pod.service.ts]
+    N -->|one TTL per note| F[Fuseki Graph]
+    F --> UI["/notes page"]
+    N -.->|"future: NER"| P[People mentions]
+    N -.->|"future: classification"| T[Topic links]</pre>
+
+</div>
+
+<script>mermaid.initialize({ startOnLoad: true });</script>
+</body></html>

@@ -29,7 +29,7 @@ Services write to stdout/stderr. LaunchAgent plists route output to:
 - `~/Library/Logs/Gathering/` — Gathering services
 - `/tmp/` — ephemeral logs (not shipped to Loki)
 
-Promtail watches log directories and ships to Loki (port 3102). See DEC-101 for the stdout-only logging standard.
+Promtail watches log directories and ships to Loki (port 3102). See DEC-114 for the stdout-only logging standard.
 
 ### Two-Machine Topology
 

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chorus Decisions — Loom</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #fdfcf8;
+      --fg: #1a1a1a;
+      --muted: #6b6b6b;
+      --accent: #2d5016;
+      --accent-soft: #5a7a3a;
+      --border: #d4cdb8;
+      --card-bg: #ffffff;
+      --adr-bg: #f4f1e8;
+      --dec-bg: #f9f7f0;
+      --status-accepted: #2d5016;
+      --status-proposed: #8a6a1a;
+      --status-superseded: #9c2d2d;
+      --status-active: #2d5016;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      line-height: 1.6;
+    }
+    body { margin: 0; padding: 3rem 1in 6rem 1in; }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+    h1 {
+      font-size: 2.4rem;
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.01em;
+      color: var(--accent);
+    }
+    .subtitle {
+      color: var(--muted);
+      font-style: italic;
+      font-size: 1.05rem;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 0.6rem;
+      font-family: "SF Mono", Menlo, monospace;
+    }
+    .counts {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 1rem;
+      font-size: 0.9rem;
+    }
+    .counts span { color: var(--muted); }
+    .counts strong { color: var(--accent); font-weight: 700; }
+    h2.section {
+      font-size: 1.5rem;
+      color: var(--accent);
+      margin-top: 3rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h2.section .section-count {
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: normal;
+      margin-left: 0.5rem;
+      font-family: "SF Mono", Menlo, monospace;
+    }
+    article.decision {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1.2rem 1.5rem;
+      margin: 1.2rem 0;
+    }
+    article.decision.adr { background: var(--adr-bg); }
+    article.decision.dec { background: var(--dec-bg); }
+    article.decision h3 {
+      margin: 0 0 0.4rem;
+      font-size: 1.15rem;
+      color: var(--accent);
+    }
+    article.decision .id {
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 0.9rem;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+    article.decision .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.2rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+    }
+    .status {
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.78rem;
+      padding: 0.1rem 0.5rem;
+      border-radius: 3px;
+      background: white;
+      border: 1px solid var(--border);
+    }
+    .status.accepted, .status.active { color: var(--status-accepted); border-color: var(--status-accepted); }
+    .status.proposed { color: var(--status-proposed); border-color: var(--status-proposed); }
+    .status.superseded, .status.rejected { color: var(--status-superseded); border-color: var(--status-superseded); }
+    article.decision .body {
+      margin-top: 0.8rem;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      max-height: 12rem;
+      overflow: hidden;
+      position: relative;
+    }
+    article.decision details {
+      margin-top: 0.6rem;
+    }
+    article.decision details summary {
+      cursor: pointer;
+      color: var(--accent-soft);
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    article.decision details[open] summary::after { content: ''; }
+    article.decision details .full-body {
+      margin-top: 0.6rem;
+      font-size: 0.92rem;
+      white-space: pre-wrap;
+      line-height: 1.55;
+    }
+    .loading, .error {
+      color: var(--muted);
+      font-style: italic;
+      padding: 2rem 0;
+    }
+    .error { color: #9c2d2d; }
+    a { color: var(--accent); }
+    a:visited { color: var(--accent-soft); }
+    @media print {
+      body { padding: 0.5in; background: white; }
+      article.decision { page-break-inside: avoid; border-left-width: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Chorus Decisions</h1>
+    <div class="subtitle">DECs and ADRs — governing choices that constrain future behavior. Canonical surface for <code>chorus:Decision</code> instances.</div>
+    <div class="counts" id="counts">
+      <span>Loading…</span>
+    </div>
+    <div class="meta">Source: <code>GET /api/athena/subdomains/loom-decisions/decisions</code> · Cookbook: <a href="/loom/cookbook-substrate-class-domain.html">substrate-class domain treatment</a></div>
+  </header>
+  <main id="content"><div class="loading">Loading decisions…</div></main>
+
+  <script>
+    async function load() {
+      try {
+        const res = await fetch('/api/athena/subdomains/loom-decisions/decisions');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const decisions = data?.data?.decisions || [];
+        render(decisions);
+      } catch (err) {
+        document.getElementById('content').innerHTML =
+          '<div class="error">Error loading decisions: ' + err.message + '</div>';
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[c]);
+    }
+
+    function renderDecision(d) {
+      const cls = d.decisionType === 'ADR' ? 'adr' : 'dec';
+      const status = d.status ? `<span class="status ${escapeHtml((d.status||'').toLowerCase())}">${escapeHtml(d.status)}</span>` : '';
+      const created = d.created ? `<span>Date: ${escapeHtml(d.created)}</span>` : '';
+      const card = d.relatedCard ? `<span>Card: <a href="http://localhost:3456/projects/2/tasks/${d.relatedCard}">#${d.relatedCard}</a></span>` : '';
+      const body = (d.comment || '').trim();
+      const preview = body.length > 600 ? body.slice(0, 600) + '…' : body;
+      const fullBody = body.length > 600
+        ? `<details><summary>Show full body</summary><div class="full-body">${escapeHtml(body)}</div></details>`
+        : '';
+      return `
+        <article class="decision ${cls}" id="${escapeHtml(d.id)}">
+          <h3>${escapeHtml(d.label || '(no label)')} <span class="id">[${escapeHtml(d.id)}]</span></h3>
+          <div class="row">${status}${created}${card}</div>
+          <div class="body">${escapeHtml(preview)}</div>
+          ${fullBody}
+        </article>`;
+    }
+
+    function render(decisions) {
+      const adrs = decisions.filter(d => d.decisionType === 'ADR');
+      const decs = decisions.filter(d => d.decisionType !== 'ADR');
+      document.getElementById('counts').innerHTML =
+        `<span><strong>${decisions.length}</strong> total</span>` +
+        `<span><strong>${adrs.length}</strong> ADRs</span>` +
+        `<span><strong>${decs.length}</strong> DECs</span>`;
+      const sections = [];
+      if (adrs.length) {
+        sections.push(`<h2 class="section">Architectural Decisions <span class="section-count">${adrs.length} ADRs</span></h2>`);
+        sections.push(adrs.map(renderDecision).join(''));
+      }
+      if (decs.length) {
+        sections.push(`<h2 class="section">Team Decisions <span class="section-count">${decs.length} DECs</span></h2>`);
+        sections.push(decs.map(renderDecision).join(''));
+      }
+      document.getElementById('content').innerHTML = sections.join('');
+    }
+
+    load();
+  </script>
+</body>
+</html>

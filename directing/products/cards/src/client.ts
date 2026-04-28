@@ -311,7 +311,7 @@ export class BoardClient {
     // This ensures domain/chunk/sequence tags replace, not append
     const categoryLabelIds = new Set(Object.values(group));
     const task = await this.fetchTask(apiId);
-    for (const label of task.labels) {
+    for (const label of task.labels ?? []) {
       if (categoryLabelIds.has(label.id) && label.id !== labelId) {
         await this.removeLabel(apiId, label.id);
       }
@@ -333,7 +333,7 @@ export class BoardClient {
     // Look up the actual label ID from the task's labels, not from config.
     // Config IDs can be stale after DB rebuild — the task knows its own label IDs.
     const task = await this.api<VikunjaTask>('GET', `/tasks/${apiId}`);
-    const taskLabels: Array<{ id: number; title: string }> = task.labels;
+    const taskLabels: Array<{ id: number; title: string }> = task.labels ?? [];
     const match = taskLabels.find((l: { title: string }) => l.title === labelTitle);
     if (!match) throw new Error(`Label "${labelTitle}" not found on card #${index}`);
     await this.removeLabel(apiId, match.id);
@@ -563,7 +563,7 @@ export class BoardClient {
 
     // Find and remove existing owner label
     let oldOwner = '';
-    for (const label of task.labels) {
+    for (const label of task.labels ?? []) {
       if (label.title.startsWith('owner:')) {
         oldOwner = label.title.split(':')[1];
         await this.removeLabel(apiId, label.id);
@@ -617,7 +617,7 @@ export class BoardClient {
     let priority = '';
     const domains: string[] = [];
 
-    for (const label of task.labels) {
+    for (const label of task.labels ?? []) {
       if (label.title.startsWith('owner:')) {
         owner = label.title.split(':')[1];
       } else if (['P1', 'P2', 'P3'].includes(label.title)) {

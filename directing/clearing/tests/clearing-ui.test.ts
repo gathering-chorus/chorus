@@ -24,7 +24,6 @@ import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
 const TEST_PORT = 11000 + Math.floor(Math.random() * 8000);
 const TEST_HTTPS_PORT = 21000 + Math.floor(Math.random() * 8000);
 const CLEARING_URL = `http://localhost:${TEST_PORT}`;
-const REAL_NUDGE_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
 const CLEARING_SERVER = '/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/dist/server.js';
 let clearingProc: ChildProcess | null = null;
 
@@ -33,7 +32,6 @@ let clearingProc: ChildProcess | null = null;
 const MOCK_NUDGE_DIR = '/tmp/clearing-test-nudges';
 const MOCK_NUDGE_SCRIPT = '/tmp/clearing-test-mock-nudge';
 import * as fs from 'fs';
-import * as path from 'path';
 
 beforeAll(async () => {
   // Create mock nudge that logs but doesn't inject
@@ -83,8 +81,6 @@ afterAll(async () => {
     if (!clearingProc.killed) clearingProc.kill('SIGKILL');
   }
 });
-
-const NUDGE_SCRIPT = MOCK_NUDGE_SCRIPT;
 
 // Track all Socket.IO clients for cleanup
 const activeClients: ClientSocket[] = [];

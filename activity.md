@@ -1130,3 +1130,35 @@ Shipped 10 cards (ops + borg + pair). #2311 follow-on batch closed (four e2e zon
 - Gate runs for team: #2475 code+quality PASS (Silas), #2476 code+quality PASS (then stale-marked on Wren gate-product retract, then re-PASS after AC reshape)
 - Brief sent: roles/silas/briefs/2026-04-25-adr-026-ci-architecture.md
 - Decisions referenced: ADR-026 (CI architecture + lock-file policy)
+- [silas|2026-04-25 12:46] Reboot — 5 cards + ADR-026 shipped (principles arc complete: #2472, #2474 (kade), #2475, #2476, #2477, plus #2450, #2451). #2491 filed for test-baseline cleanup. Branch entanglement flagged for retro.
+
+## 2026-04-25 evening — Wren session
+
+Shipped #2470 (principle-direct-edit hook hardening — delete + property-modify detection), #2041 (Athena UI moved out of Gathering into chorus/platform/api/public/athena/ + redirects pruned per Jeff: bookmark use case nonexistent), #2502 (Athena domain page renders all 17 sections honestly with source labels — Silas's #2485 stash applied + AC4 source labels by Wren).
+
+Stop hook (autonomy-guard / DEC-069) turned OFF in ~/.claude/settings.json — was misfiring on tone checks. Affects all three roles.
+
+Banked memory: feedback_jeff_splits_cards.
+
+Real session content was meta: throughput-halved post Apr 17 (arc + CI, not model); card amplification (+22 net to board today); Wren pile structurally agent-shape; three solo loops not collaboration; strategy-holding gap means three-agent value-pick stays Jeff's. Principle crystallized: reference implementations need code AND data — don't change the model to "make it right" without populated implementation.
+
+- [Silas] 2026-04-27 12:25 → session reboot — shipped #2509 (CI harness research brief in doc-catalog) + #2512 (cards list null-labels defense, hermetic test, 4-site fix). Arc continuation from #2504/#2505 trust-recovery. Sensors-vs-rules framing on CI architecture banked as canonical brief.
+- [Silas 2026-04-27 20:30] session reboot — #2532 wave 1+2 (clippy ratchet + jest --randomize), 9 Phase 0 cards filed, plan v1.1 linearized post-Kade-audit, /docs/designing/test-categorization.html shipped, 9 gate chains closed for peers. AC 3.5/6 on #2532 (jest-verification + branch-push pending next session). Banked: 'honestly closeable' as AC negotiation; don't re-open settled calls. → all roles
+
+## 2026-04-27 evening — kade
+- Shipped #2515 (test inventory backfill, 7→31/48 subdomain coverage, 2 commits + audit v1/v2 docs)
+- Shipped #2118 (run-tests Phase 1 contract, 18/18 bats, contract doc)
+- Shipped chunk-enum extension (cli.ts + config.ts) — knowledge/ci/tests added
+- Gates run: code+quality on #2511, #2510, #2445, #2521, #2517 (all Wren cards, all PASS)
+- Filed: #2514 (doc-inventory tests), #2516 (graphify), #2542 (run-tests JSON shape)
+- Banked memory: feedback_scope_is_the_work — investigation is the deliverable on audit/research cards
+- Cross-role: silas-kade chats on test-inventory-via-graph, ac-2515-honest, plan-says-what-next; ac-honesty thread closed cleanly with plan amendments in lockstep
+- [Kade] 2026-04-28 session — shipped #2516 (graphify SPECIAL_ALIASES, 72 triples, 9 misroute fixes), gated #2549+#2550 for Wren, reviewed ADR-027 + #2523 waves 1+3 for Silas. #2440 rolled back (chorus-hooks pre-commit werk_init blocker). Filed #2551, #2555. → all roles
+
+## 2026-04-28 Wren session
+- Shipped #2549 (doc-catalog write API), #2550 (curation side-panel UI), #2554 (CatalogDocShape + Borg migration finish) — full #2545 arc
+- Inline ontology shifts: Borg→Chorus subproduct (8e17289e), Akasha→Consulting (f403cac1)
+- ADR-027 drafted + reviewed + accepted: derived domain mappings live in graph (aeca02a1)
+- Peer demos gated: #2514, #2516 (Kade); #2523, #2524, #2525 (Silas)
+- Filed #2552 (done-gate routing fix → Kade); moved #2547 SWAT→Next (Silas)
+- Anthe Tuesday consult framer at roles/wren/notes/anthe-tuesday-framer.html

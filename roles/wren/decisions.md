@@ -90,12 +90,13 @@
 - **Rationale**: Engineer the write path, don't chase the reads. Same principle as ICD: quality at creation, not at rendering.
 - **Status**: Shipped — write-story.sh built, 132 stories in Fuseki
 
-## DEC-096: Product-driven RDF namespaces — gathering/chorus/borg
+## DEC-115: Product-driven RDF namespaces — gathering/chorus/borg
 - **Date**: 2026-03-19
 - **Context**: Graph has 4 inconsistent URI bases (localhost:3000, jeffbridwell.com/pods, jeffbridwell.com/icd, urn:jb). Jeff directed: namespaces should reflect product architecture, not personal domain. Three products = three namespaces.
 - **Decision**: Four-namespace scheme: `jb:` (Jeff's instance data — stays), `gathering:` (product schema/ontology — classes, properties), `chorus:` (team coordination — ICD, roles, cards, decisions), `borg:` (observation — spine events, patterns, metrics). Instance data stays `jb:`, class definitions move to product namespaces. A person is `<jb:people/dani-perea> a gathering:Person`. The ICD is `chorus:icd:Domain`. Migrate inconsistent localhost/jeffbridwell.com bases.
 - **Rationale**: `jb:` is correct for Jeff's personal data — it's his identity namespace. But the schema (what a Person IS, what fields it requires) belongs to the product, not the person. Separation enables: multiple users on the same schema, concentric trust alignment (jb=Self/local, gathering=hybrid, chorus=cloud, borg=internal), and clean SPARQL queries that don't conflate instance and schema.
 - **Status**: Proposed — needs implementation plan before migration
+- **Note**: Originally filed as DEC-096 (line 93 of decisions.md, 2026-03-19). Renumbered 2026-04-25 per #2492 to resolve collision with the older DEC-096 (Convergence Architecture, 2026-03-18). Earlier-date entry kept the ID.
 
 ## DEC-097: IoC versioning — every interaction carries its own version
 - **Date**: 2026-03-19
@@ -926,3 +927,22 @@
 **Context:** #2178 shipped live-graph SPARQL writes with all unit tests green because the tests faked SPARQL bindings. The ontology contract drifted past the test suite. Jeff's position: 'we shouldn't be changing data behaviors in our api without a rich data-driven regression.'
 **Decision:** Every shape-changing merge to /api/athena/* or /api/chorus/domain/* must add or update a regression test under tests/regression/ that uses the fixture-driven harness (oxigraph + TTL + golden JSON) at tests/fixtures/oxigraph-sparql.ts. The regression asserts the response body against a committed golden file. Drift fails the test; UPDATE_GOLDEN=true regenerates when the change is intentional. Handler unit tests with faked bindings remain necessary but no longer sufficient.
 **Applies to:** Wren (Athena vertical owner). Kade and Silas review at gate:code / gate:arch that a regression exists when the diff touches athena-* or chorus-domain handlers.
+
+## DEC-113: Google Drive photo records — accept as gone
+- **Date**: 2026-03-16
+- **Context**: 299K photo records in Fuseki pointed to Apple Photos Library UUIDs that were uploaded to Google Drive. The Drive harvester created graph records for these but: source files exist only on Google Drive (not local); they are duplicates of photos already captured via Google Takeout export; re-importing requires Drive API access + downloading ~300K files; the records had no thumbnails and inflated the Photos page from 60K real to 283K phantom.
+- **Decision**: Accept the 299K Drive records as gone. Do not re-import via Drive API. The photos that matter are already in the system via Google Takeout. The cost of Drive API integration + download exceeds the marginal value of duplicate records.
+- **Consequences**: 299K records purged from Fuseki (2026-03-15); 214 unalbummed TTL files deleted from data/pods/jeff/photos/unalbummed/; `getDrivePhotos()` in photo.handler.ts returns 0 (no TTL source files); Google Drive harvester for photos is effectively deprecated; if Jeff wants Drive photos in the future, it's a new card with Drive API scope.
+- **Status**: Accepted
+- **Note**: Originally filed at `roles/silas/adr/DEC-093.md` (2026-03-16) — collided with decisions.md DEC-093 ("Domain endpoints first"). Renumbered to DEC-113 and rehomed to canonical decisions.md, 2026-04-25 per #2492.
+
+## DEC-114: Stdout-Only Logging
+- **Date**: 2026-04-13
+- **Owner**: Silas
+- **Context**: Services write logs to /tmp/ via hardcoded file paths, bypassing Loki, Grafana, and alerts. 15 real 500 errors were found in /tmp/chorus-api.log that nobody saw. The monitoring system reported healthy while real failures hid in files Promtail doesn't watch.
+- **Decision**: All services on both machines write to stdout/stderr only. No hardcoded log file paths. Apps write to stdout/stderr; LaunchAgent plists route to `~/Library/Logs/Chorus/` or `~/Library/Logs/Gathering/`; Promtail watches those directories via glob scrape; Promtail ships to Loki; no service writes directly to /tmp/ or any other path.
+- **Enforcement**: deep-health.sh checks for /tmp/*.log files and warns; new plists must point StandardOutPath to `~/Library/Logs/`.
+- **Scope**: Machine-wide, both Library and Bedroom. Bedroom Promtail currently watches /tmp/ for some services — those migrate to `~/Library/Logs/` when plists are next touched.
+- **Consequences**: Every log line reaches Loki within seconds of being written; alerts can fire on any service error, not just the ones in watched directories; no more shadow logs invisible to the team; services cannot silently fail — if it's not in Loki, it didn't happen.
+- **Status**: Active
+- **Note**: Originally filed at `roles/silas/adr/DEC-101-stdout-only-logging.md` (2026-04-13) — collided with decisions.md DEC-101 ("Jeff Constitution"). Renumbered to DEC-114 and rehomed to canonical decisions.md, 2026-04-25 per #2492.

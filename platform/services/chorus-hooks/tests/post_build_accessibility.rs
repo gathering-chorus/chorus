@@ -5,26 +5,31 @@
 //! Fix: post-build script detects and warns.
 
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
-const POST_BUILD: &str = "/Users/jeffbridwell/CascadeProjects/chorus/proving/scripts/post-cargo-build.sh";
-
+fn post_build() -> String { format!("{}/proving/scripts/post-cargo-build.sh", chorus_root()) }
 #[test]
 fn post_build_script_exists_and_is_executable() {
-    let exists = std::path::Path::new(POST_BUILD).exists();
-    assert!(exists, "post-cargo-build.sh must exist at {}", POST_BUILD);
+    let exists = std::path::Path::new(&post_build()).exists();
+    assert!(exists, "post-cargo-build.sh must exist at {}", post_build());
 
-    let metadata = std::fs::metadata(POST_BUILD).expect("should read metadata");
+    let metadata = std::fs::metadata(&post_build()).expect("should read metadata");
     use std::os::unix::fs::PermissionsExt;
     let mode = metadata.permissions().mode();
     assert!(mode & 0o111 != 0, "post-cargo-build.sh must be executable, mode: {:o}", mode);
 }
 
+// macOS-only: Accessibility permission is a macOS concept (System Settings →
+// Privacy & Security → Accessibility) used by osascript to drive Terminal.app.
+// Linux has no equivalent; the script's accessibility-detection branch only
+// makes sense on Mac.
+#[cfg(target_os = "macos")]
 #[test]
 fn post_build_script_passes_when_accessibility_granted() {
     // When Accessibility is granted (current state after Jeff toggled),
     // the script should exit 0 with success message
     let output = Command::new("bash")
-        .arg(POST_BUILD)
+        .arg(post_build())
         .output()
         .expect("failed to run post-cargo-build.sh");
 

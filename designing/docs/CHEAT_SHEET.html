@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chorus Command Card</title>
+<style>
+  @media print {
+    body { padding: 0.5in; }
+    .no-print { display: none; }
+  }
+  :root {
+    --bg: #ffffff;
+    --surface: #f1f5f9;
+    --border: #cbd5e1;
+    --text: #1e293b;
+    --muted: #64748b;
+    --accent: #4f46e5;
+    --green: #059669;
+    --amber: #d97706;
+    --red: #dc2626;
+    --blue: #2563eb;
+    --purple: #7c3aed;
+    --pink: #db2777;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    padding: 1.5rem;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+  }
+  .subtitle {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-bottom: 1.25rem;
+  }
+  .section-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin: 1rem 0 0.4rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.25rem;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+  }
+  .cmd {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    align-items: baseline;
+  }
+  .cmd:hover { background: var(--surface); }
+  .cmd-key {
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--green);
+  }
+  .cmd-desc {
+    font-size: 0.72rem;
+    color: var(--text);
+  }
+  .cmd-arg {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .group-observe .cmd-key { color: var(--blue); }
+  .group-build .cmd-key { color: var(--green); }
+  .group-manage .cmd-key { color: var(--amber); }
+  .group-session .cmd-key { color: var(--purple); }
+  .group-memory .cmd-key { color: var(--pink); }
+  .legend {
+    display: flex;
+    gap: 1.25rem;
+    margin-top: 1rem;
+    font-size: 0.6rem;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+  .legend-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; }
+  .tip {
+    font-size: 0.6rem;
+    color: var(--muted);
+    margin-top: 0.75rem;
+    font-style: italic;
+    border-top: 1px solid var(--border);
+    padding-top: 0.5rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>Chorus Command Card</h1>
+<p class="subtitle">Jeff's shorthand — works in any role session. 2026-03-06</p>
+
+<div class="grid">
+
+<div>
+  <div class="section-title">Observe</div>
+  <div class="group-observe">
+    <div class="cmd"><span class="cmd-key">lc</span><span class="cmd-desc">Look at Chrome tab</span></div>
+    <div class="cmd"><span class="cmd-key">lm</span><span class="cmd-desc">Look at me — posture/mood</span></div>
+    <div class="cmd"><span class="cmd-key">look</span><span class="cmd-desc">Screenshot full screen</span></div>
+    <div class="cmd"><span class="cmd-key">gemba <span class="cmd-arg">role</span></span><span class="cmd-desc">Watch a role work</span></div>
+  </div>
+
+  <div class="section-title">Build</div>
+  <div class="group-build">
+    <div class="cmd"><span class="cmd-key">pull <span class="cmd-arg">id</span></span><span class="cmd-desc">Pull card to WIP</span></div>
+    <div class="cmd"><span class="cmd-key">demo <span class="cmd-arg">id</span></span><span class="cmd-desc">Proving gate — smoke + show</span></div>
+    <div class="cmd"><span class="cmd-key">acp <span class="cmd-arg">id</span></span><span class="cmd-desc">Accept + commit + push</span></div>
+    <div class="cmd"><span class="cmd-key">jdi</span><span class="cmd-desc">Just do it — obvious next</span></div>
+  </div>
+
+  <div class="section-title">Manage</div>
+  <div class="group-manage">
+    <div class="cmd"><span class="cmd-key">sb</span><span class="cmd-desc">Scan board — quick state</span></div>
+    <div class="cmd"><span class="cmd-key">ab</span><span class="cmd-desc">Analyze board — patterns</span></div>
+    <div class="cmd"><span class="cmd-key">flow</span><span class="cmd-desc">Sweep + propose next pull</span></div>
+  </div>
+</div>
+
+<div>
+  <div class="section-title">Memory</div>
+  <div class="group-memory">
+    <div class="cmd"><span class="cmd-key">chorus search <span class="cmd-arg">term</span></span><span class="cmd-desc">Search shared memory</span></div>
+    <div class="cmd"><span class="cmd-key">chorus tail <span class="cmd-arg">role</span></span><span class="cmd-desc">Tail a role's session</span></div>
+    <div class="cmd"><span class="cmd-key">chorus reconcile</span><span class="cmd-desc">Catch up since last session</span></div>
+  </div>
+
+  <div class="section-title">Navigate</div>
+  <div class="group-observe">
+    <div class="cmd"><span class="cmd-key">ot <span class="cmd-arg">url</span></span><span class="cmd-desc">Open in Chrome tab</span></div>
+    <div class="cmd"><span class="cmd-key">share</span><span class="cmd-desc">Export page as PDF + PNG</span></div>
+    <div class="cmd"><span class="cmd-key">listen</span><span class="cmd-desc">Voice input mode</span></div>
+  </div>
+
+  <div class="section-title">Session</div>
+  <div class="group-session">
+    <div class="cmd"><span class="cmd-key">clearing</span><span class="cmd-desc">All-role group chat</span></div>
+    <div class="cmd"><span class="cmd-key">werk</span><span class="cmd-desc">Work state dashboard</span></div>
+    <div class="cmd"><span class="cmd-key">reboot</span><span class="cmd-desc">Clean close + commit</span></div>
+  </div>
+</div>
+
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div> Observe</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Build</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div> Manage</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--pink)"></div> Memory</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div> Session</div>
+</div>
+
+<div class="tip">
+  All commands work as natural language too — "look at chrome", "scan the board", "watch kade". The shortcuts are muscle memory; the intent is what matters.
+</div>
+
+</body>
+</html>

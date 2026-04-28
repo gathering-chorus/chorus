@@ -3,8 +3,9 @@
 # Tests against running chorus-api at :3340. Streamable HTTP transport
 # requires session-init handshake before tools/list / tools/call.
 
-MCP_URL="http://localhost:3340/mcp"
-SPINE_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log"
+MCP_URL="${MCP_URL:-http://localhost:3340/mcp}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+SPINE_LOG="${CHORUS_LOG_FILE:-${CHORUS_ROOT}/platform/logs/chorus.log}"
 
 # Helper: initialize and capture session id
 init_session() {

@@ -1,0 +1,38 @@
+{
+  "counts": {
+    "platform/services/chorus-hooks": {
+      "clippy::assertions_on_constants": 1,
+      "clippy::borrow_deref_ref": 2,
+      "clippy::collapsible_if": 6,
+      "clippy::collapsible_str_replace": 2,
+      "clippy::double_ended_iterator_last": 4,
+      "clippy::empty_line_after_doc_comments": 2,
+      "clippy::expect_fun_call": 1,
+      "clippy::field_reassign_with_default": 1,
+      "clippy::io_other_error": 6,
+      "clippy::lines_filter_map_ok": 4,
+      "clippy::manual_is_multiple_of": 38,
+      "clippy::manual_pattern_char_comparison": 6,
+      "clippy::manual_split_once": 2,
+      "clippy::manual_strip": 4,
+      "clippy::needless_borrow": 94,
+      "clippy::needless_borrows_for_generic_args": 19,
+      "clippy::needless_return": 1,
+      "clippy::nonminimal_bool": 2,
+      "clippy::overly_complex_bool_expr": 2,
+      "clippy::print_with_newline": 4,
+      "clippy::regex_creation_in_loops": 4,
+      "clippy::single_char_add_str": 8,
+      "clippy::too_many_arguments": 2,
+      "clippy::trim_split_whitespace": 2,
+      "clippy::type_complexity": 4,
+      "clippy::unnecessary_map_or": 10,
+      "clippy::useless_asref": 2,
+      "clippy::useless_format": 10,
+      "clippy::while_let_loop": 5
+    },
+    "platform/services/chorus-inject": {}
+  },
+  "generatedAt": "2026-04-28T00:15:34Z",
+  "note": "Per-lint cargo clippy count ratchet (#2532). Counts may only decrease. Run `platform/scripts/clippy-ratchet.sh --regenerate` after a legitimate drop. Retired by Phase 1 disconnect (#2526)."
+}

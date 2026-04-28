@@ -5,12 +5,12 @@
 
 use std::fs;
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
-const CHORUS_LOG: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
-
+fn chorus_log() -> String { format!("{}/platform/logs/chorus.log", chorus_root()) }
 fn log_tail(n: usize) -> String {
-    let content = fs::read_to_string(CHORUS_LOG).unwrap_or_default();
+    let content = fs::read_to_string(chorus_log()).unwrap_or_default();
     content.lines().rev().take(n).collect::<Vec<_>>().join("\n")
 }
 
@@ -51,6 +51,12 @@ fn session_start_emits_context_error_on_empty_cache() {
 
 // === #1847: nudge acknowledgment ===
 
+// macOS-only: role-state drain logic depends on the per-role LaunchAgent
+// inbox lifecycle (/tmp/voice-inbox/<role>/pending-inject.txt + tick-poller).
+// On Linux the shim writes role.state.changed but the drain code path that
+// emits nudge.acknowledged doesn't fire — same Mac-stack pattern as
+// ops_awareness_timeout / healthy_api_never_reports_unreachable.
+#[cfg(target_os = "macos")]
 #[test]
 fn role_state_drain_emits_nudge_acknowledged() {
     let test_role = "kade";

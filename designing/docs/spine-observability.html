@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spine Observability — WF-057 Stories Collection Debrief</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f1a; color: #e2e8f0; padding: 2rem; }
+
+  .header { text-align: center; margin-bottom: 2rem; }
+  .header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+  .header h1 span { color: #a78bfa; }
+  .header .subtitle { color: #94a3b8; font-size: 0.95rem; margin-top: 0.5rem; }
+  .header .context { color: #64748b; font-size: 0.8rem; margin-top: 0.25rem; font-family: monospace; }
+
+  .columns { display: grid; grid-template-columns: 1fr 6px 1fr; max-width: 1100px; margin: 0 auto; gap: 0; }
+
+  .col-header { text-align: center; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; font-weight: 700; font-size: 1.1rem; letter-spacing: 0.02em; }
+  .col-header-left { background: rgba(239,68,68,0.1); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
+  .col-header-right { background: rgba(34,197,94,0.1); color: #86efac; border: 1px solid rgba(34,197,94,0.2); }
+
+  /* Central spine */
+  .spine { background: linear-gradient(to bottom, #a78bfa 0%, #22d3ee 50%, #f97316 100%); border-radius: 3px; position: relative; }
+
+  .left-col, .right-col { padding: 0 1.5rem; }
+
+  /* Timeline events */
+  .event { position: relative; margin-bottom: 0.75rem; padding: 1rem 1.25rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); }
+
+  .event-visible { background: rgba(34,197,94,0.06); border-color: rgba(34,197,94,0.2); }
+  .event-dark { background: rgba(239,68,68,0.06); border-color: rgba(239,68,68,0.15); }
+  .event-proposed { background: rgba(34,197,94,0.06); border-color: rgba(34,197,94,0.2); }
+  .event-partial { background: rgba(234,179,8,0.06); border-color: rgba(234,179,8,0.2); }
+
+  .event-time { font-size: 0.7rem; color: #64748b; font-family: monospace; margin-bottom: 0.3rem; }
+  .event-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.2rem; }
+  .event-desc { font-size: 0.78rem; color: #94a3b8; line-height: 1.5; }
+
+  .event-badge { display: inline-block; font-size: 0.65rem; padding: 0.1rem 0.5rem; border-radius: 10px; font-weight: 600; margin-left: 0.5rem; vertical-align: middle; }
+  .badge-visible { background: rgba(34,197,94,0.2); color: #4ade80; }
+  .badge-dark { background: rgba(239,68,68,0.2); color: #f87171; }
+  .badge-partial { background: rgba(234,179,8,0.2); color: #fbbf24; }
+  .badge-new { background: rgba(99,102,241,0.2); color: #a5b4fc; }
+
+  .role-tag { display: inline-block; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 10px; font-weight: 600; margin-right: 0.3rem; }
+  .role-wren { background: rgba(167,139,250,0.15); color: #c4b5fd; }
+  .role-kade { background: rgba(34,211,238,0.15); color: #67e8f9; }
+  .role-silas { background: rgba(249,115,22,0.15); color: #fdba74; }
+  .role-jeff { background: rgba(255,255,255,0.1); color: #e2e8f0; }
+
+  .connector { text-align: center; color: #334155; font-size: 0.8rem; margin: 0.25rem 0; }
+
+  .section-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: #475569; margin: 1.5rem 0 0.75rem; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.4rem; }
+
+  /* Summary box */
+  .summary { max-width: 1100px; margin: 2.5rem auto 1rem; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem; }
+  .stat-box { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 1.25rem; text-align: center; }
+  .stat-value { font-size: 2rem; font-weight: 700; }
+  .stat-label { font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; }
+  .stat-red { color: #f87171; }
+  .stat-green { color: #4ade80; }
+  .stat-yellow { color: #fbbf24; }
+  .stat-blue { color: #a5b4fc; }
+
+  .footer { text-align: center; padding: 2rem; color: #334155; font-size: 0.75rem; }
+
+  /* Legend */
+  .legend { max-width: 1100px; margin: 1.5rem auto; display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #94a3b8; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-visible { background: #4ade80; }
+  .dot-dark { background: #f87171; }
+  .dot-partial { background: #fbbf24; }
+  .dot-new { background: #a5b4fc; }
+
+  @media (max-width: 800px) {
+    .columns { grid-template-columns: 1fr; }
+    .spine { display: none; }
+    .summary { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<div class="header">
+  <h1>Spine <span>Observability</span> Gap</h1>
+  <div class="subtitle">WF-057 — Stories Collection | What we saw vs. what we should see</div>
+  <div class="context">2026-02-24 · Wren observing Kade · Card #330 · Brief → Plan → Build → Deploy</div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot dot-visible"></div> Visible today</div>
+  <div class="legend-item"><div class="legend-dot dot-partial"></div> Partially visible</div>
+  <div class="legend-item"><div class="legend-dot dot-dark"></div> Dark (invisible)</div>
+  <div class="legend-item"><div class="legend-dot dot-new"></div> Proposed new signal</div>
+</div>
+
+<div class="summary">
+  <div class="stat-box">
+    <div class="stat-value stat-green">4</div>
+    <div class="stat-label">Events visible</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value stat-red">11</div>
+    <div class="stat-label">Events dark</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value stat-yellow">2</div>
+    <div class="stat-label">Partially visible</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value stat-blue">17</div>
+    <div class="stat-label">Proposed signals</div>
+  </div>
+</div>
+
+<!-- Two-column comparison -->
+<div style="max-width: 1100px; margin: 2rem auto;">
+  <div style="display: grid; grid-template-columns: 1fr 6px 1fr; gap: 0;">
+
+    <!-- LEFT HEADER -->
+    <div class="col-header col-header-left">Instrumented Today</div>
+    <div></div>
+    <div class="col-header col-header-right">Proposed Signal Layer</div>
+
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+
+      <div class="section-label">Directing (Wren → Kade handoff)</div>
+
+      <div class="event event-visible">
+        <div class="event-time">14:00</div>
+        <div class="event-title"><span class="role-tag role-wren">Wren</span> Card #330 created <span class="event-badge badge-visible">VISIBLE</span></div>
+        <div class="event-desc">board-ts add → Vikunja API. Card exists in board state.</div>
+      </div>
+
+      <div class="event event-visible">
+        <div class="event-time">14:01</div>
+        <div class="event-title"><span class="role-tag role-wren">Wren</span> WF-057 created <span class="event-badge badge-visible">VISIBLE</span></div>
+        <div class="event-desc">workflow.sh create → manifest JSON in workflows/active/.</div>
+      </div>
+
+      <div class="event event-visible">
+        <div class="event-time">14:02</div>
+        <div class="event-title"><span class="role-tag role-wren">Wren</span> Brief delivered <span class="event-badge badge-visible">VISIBLE</span></div>
+        <div class="event-desc">File written to engineer/briefs/. Indexed in chorus.</div>
+      </div>
+
+      <div class="event event-visible">
+        <div class="event-time">14:03</div>
+        <div class="event-title"><span class="role-tag role-wren">Wren</span> WF-057 step 1 advanced <span class="event-badge badge-visible">VISIBLE</span></div>
+        <div class="event-desc">workflow.sh advance → handoff brief auto-sent.</div>
+      </div>
+
+      <div class="connector">— gap: ~30 min Jeff relay —</div>
+
+      <div class="section-label">Building (Kade session)</div>
+
+      <div class="event event-dark">
+        <div class="event-time">~14:35</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> /werk init <span class="event-badge badge-dark">DARK</span></div>
+        <div class="event-desc">Kade loaded context. We don't know when or what he saw.</div>
+      </div>
+
+      <div class="event event-dark">
+        <div class="event-time">~14:36</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> "Should I do it?" <span class="event-badge badge-dark">DARK</span></div>
+        <div class="event-desc">Asked Jeff for permission. Only Jeff saw this (terminal).</div>
+      </div>
+
+      <div class="event event-dark">
+        <div class="event-time">~14:38</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> Plan mode entered <span class="event-badge badge-dark">DARK</span></div>
+        <div class="event-desc">Jeff told us "now he is writing the plan." No event emitted.</div>
+      </div>
+
+      <div class="event event-dark">
+        <div class="event-time">~14:40</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> Files created <span class="event-badge badge-dark">DARK</span></div>
+        <div class="event-desc">Interface, service, handler, views, routes. Count unknown.</div>
+      </div>
+
+      <div class="event event-dark">
+        <div class="event-time">~14:42</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> TypeScript compile <span class="event-badge badge-dark">DARK</span></div>
+        <div class="event-desc">Pass or fail? How many errors? Unknown.</div>
+      </div>
+
+      <div class="event event-dark">
+        <div class="event-time">~14:43</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> Coverage drop detected <span class="event-badge badge-dark">DARK</span></div>
+        <div class="event-desc">Below 80%. Jeff told us. No event emitted.</div>
+      </div>
+
+      <div class="event event-dark">
+        <div class="event-time">~14:45</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> Tests written <span class="event-badge badge-dark">DARK</span></div>
+        <div class="event-desc">How many? What coverage restored to? Unknown.</div>
+      </div>
+
+      <div class="section-label">Proving (deploy)</div>
+
+      <div class="event event-partial">
+        <div class="event-time">~14:47</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> Commit + push <span class="event-badge badge-partial">PARTIAL</span></div>
+        <div class="event-desc">Git log shows it after the fact. No real-time event. Push before deploy (sequencing question).</div>
+      </div>
+
+      <div class="event event-partial">
+        <div class="event-time">~14:48</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> Deploy <span class="event-badge badge-partial">PARTIAL</span></div>
+        <div class="event-desc">We detected it because auth cookie dropped. No deploy event in spine.</div>
+      </div>
+
+      <div class="event event-dark">
+        <div class="event-time">~14:49</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> Health gate result <span class="event-badge badge-dark">DARK</span></div>
+        <div class="event-desc">Pass? Fail? Rollback? Unknown from Wren's perspective.</div>
+      </div>
+
+      <div class="event event-dark">
+        <div class="event-time">?</div>
+        <div class="event-title"><span class="role-tag role-kade">Kade</span> WF-057 step 2 advanced? <span class="event-badge badge-dark">DARK</span></div>
+        <div class="event-desc">Did Kade advance the workflow? We don't know yet.</div>
+      </div>
+
+    </div>
+
+    <!-- SPINE -->
+    <div class="spine"></div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+
+      <div class="section-label">Directing — proposed signals</div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">card:created <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Card #330 created by Wren. Chunk: memory. Priority: P1. Already have data — emit as spine event.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">workflow:created <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">WF-057 created. 3 steps. Wren → Kade → Silas. Source: verbal.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">brief:delivered <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Brief sent to engineer/briefs/. Size: 2.1KB. Schema: confirmed by Silas.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">workflow:advanced <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">WF-057 step 1 → step 2. Handoff: Wren → Kade. Elapsed: 3min.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">card:moved:now <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Card #330 moved to Now by Wren. Pull signal activated.</div>
+      </div>
+
+      <div class="section-label">Building — proposed signals</div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">session:started <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Kade session opened. werk-init loaded. Card #330 surfaced. Brief found in inbox.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">brief:read <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Kade read stories-collection.md. Time since delivery: 33min.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">card:moved:wip <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Card #330 moved to WIP. Work started.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">mode:plan <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Kade entered plan mode. Autonomous execution. Zero Jeff-prompts.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">build:files_created <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">8 files created: interface, service, handler, 2 views, routes, tests, TTL. Pattern: collection-engine.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">build:compile <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">TypeScript compile: PASS. 0 errors. Duration: 4.2s.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">quality:coverage_drop <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Coverage: 78.3% (below 80% threshold). New code: +340 lines, 0 covered. Gate: FAIL.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">build:tests_written <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">12 tests added. Coverage restored: 81.2%. Gate: PASS. Self-corrected without prompt.</div>
+      </div>
+
+      <div class="section-label">Proving — proposed signals</div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">git:commit <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">kade: stories collection — pod service, handler, views, routes, tests (#330). 8 files, +640 lines.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">sequencing:warning <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Push before deploy. Recommended: test → commit → push → deploy. Deviation noted.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">deploy:started <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">app-state.sh deploy invoked. Build: 67s. Health gate: waiting...</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">deploy:health_pass <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">Health gate: PASS at 12s. All checks green. /collection/stories: 200 OK.</div>
+      </div>
+
+      <div class="event event-proposed">
+        <div class="event-time">auto</div>
+        <div class="event-title">workflow:advanced <span class="event-badge badge-new">NEW</span></div>
+        <div class="event-desc">WF-057 step 2 complete. Handoff: Kade → Silas. Build time: 28min. Prompts from Jeff: 1 ("it's in Now, go").</div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- Jeff's view -->
+<div style="max-width: 1100px; margin: 2rem auto; padding: 1.5rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;">
+  <div style="text-align: center; margin-bottom: 1rem;">
+    <span class="role-tag role-jeff" style="font-size: 0.85rem; padding: 0.3rem 1rem;">Jeff's View — The Gauges</span>
+  </div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; text-align: center;">
+    <div>
+      <div style="font-size: 1.5rem; font-weight: 700; color: #4ade80;">1</div>
+      <div style="font-size: 0.75rem; color: #64748b;">Jeff prompts to start</div>
+      <div style="font-size: 0.65rem; color: #475569; margin-top: 0.2rem;">"it's in Now, go"</div>
+    </div>
+    <div>
+      <div style="font-size: 1.5rem; font-weight: 700; color: #4ade80;">0</div>
+      <div style="font-size: 0.75rem; color: #64748b;">Jeff relays during build</div>
+      <div style="font-size: 0.65rem; color: #475569; margin-top: 0.2rem;">spine carried the signal</div>
+    </div>
+    <div>
+      <div style="font-size: 1.5rem; font-weight: 700; color: #fbbf24;">3</div>
+      <div style="font-size: 0.75rem; color: #64748b;">Jeff status reports to Wren</div>
+      <div style="font-size: 0.65rem; color: #475569; margin-top: 0.2rem;">"he's compiling" / "adding tests" / "deployed"</div>
+    </div>
+  </div>
+  <div style="text-align: center; margin-top: 1.25rem; color: #94a3b8; font-size: 0.85rem;">
+    With dense spine events: Jeff's 3 status reports → <strong style="color: #4ade80;">0</strong>. Wren sees it directly.
+  </div>
+</div>
+
+<div class="footer">
+  Spine Observability Gap Analysis · WF-057 Debrief · 2026-02-24 · Wren + Jeff · Werk v1.3.9
+</div>
+
+</body>
+</html>

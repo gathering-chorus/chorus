@@ -8,6 +8,7 @@ use serde_json::json;
 // We can't call the async check functions directly from integration tests
 // without the full hook server. Test via the shim binary instead.
 use std::process::Command;
+use chorus_hooks::shared::state_paths::chorus_root;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
@@ -17,7 +18,7 @@ fn hook_check(tool: &str, input: serde_json::Value) -> String {
         "tool_name": tool,
         "tool_input": input,
         "session_id": "test-session",
-        "cwd": "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas"
+        "cwd": &format!("{}/roles/silas", chorus_root())
     });
 
     let output = Command::new(SHIM)

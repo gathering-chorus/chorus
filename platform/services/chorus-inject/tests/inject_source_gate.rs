@@ -14,10 +14,16 @@
 //! key code are required). #2167 — shipped AppleScript moved from main.rs
 //! to lib.rs; this lint follows.
 
+
+fn chorus_root() -> String {
+    std::env::var("CHORUS_ROOT").ok().filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
+}
+
 #[test]
 fn inject_source_uses_keystroke_not_do_script() {
     let source = std::fs::read_to_string(
-        "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/src/lib.rs"
+        format!("{}/platform/services/chorus-inject/src/lib.rs", chorus_root())
     ).expect("can't read lib.rs");
 
     assert!(

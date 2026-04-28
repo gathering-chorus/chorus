@@ -28,8 +28,18 @@ function clear() {
 }
 
 const today = new Date().toISOString().slice(0, 10);
-const ts = (hours = 0, mins = 0, secs = 0) =>
-  new Date(Date.now() - (hours * 3600 + mins * 60 + secs) * 1000).toISOString();
+// ts(h, m, s) returns a timestamp `h:m:s` ago, but pinned to today's date
+// so callers asserting "startsWith today" don't flake when run in the first
+// hour after UTC midnight (#2505: 2026-04-26 00:19 UTC CI flake).
+const ts = (hours = 0, mins = 0, secs = 0) => {
+  const now = new Date();
+  const candidate = new Date(now.getTime() - (hours * 3600 + mins * 60 + secs) * 1000);
+  // If candidate fell off today's date, clamp to start-of-today instead.
+  if (candidate.toISOString().slice(0, 10) !== today) {
+    return new Date(today + 'T00:00:00.000Z').toISOString();
+  }
+  return candidate.toISOString();
+};
 
 describe('getFitnessSummary — shape and empty state', () => {
   beforeEach(() => { clear(); jest.resetModules(); });

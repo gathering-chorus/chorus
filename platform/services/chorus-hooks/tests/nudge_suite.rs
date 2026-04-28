@@ -12,8 +12,9 @@
 use std::fs;
 use std::process::Command;
 use std::time::Instant;
+use chorus_hooks::shared::state_paths::chorus_root;
 
-const NUDGE_SCRIPT: &str = "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge";
+fn nudge_script() -> String { format!("{}/platform/scripts/nudge", chorus_root()) }
 const INBOX_DIR: &str = "/tmp/voice-inbox";
 
 /// Dry-run nudge does NOT write to the queue file.
@@ -24,7 +25,7 @@ fn dry_run_does_not_queue() {
     let before_len = fs::read_to_string(&inbox).unwrap_or_default().len();
 
     let out = Command::new("bash")
-        .arg(NUDGE_SCRIPT)
+        .arg(nudge_script())
         .arg("wren")
         .arg("behavioral-test-dry-run")
         .env("CHORUS_INJECT_DRY_RUN", "1")
@@ -98,7 +99,7 @@ fn persist_path_under_100ms() {
 fn full_dry_run_under_500ms() {
     let t = Instant::now();
     let out = Command::new("bash")
-        .arg(NUDGE_SCRIPT)
+        .arg(nudge_script())
         .arg("wren")
         .arg("perf-test-full-dry-run")
         .env("CHORUS_INJECT_DRY_RUN", "1")
@@ -123,7 +124,7 @@ fn full_dry_run_under_500ms() {
 #[test]
 fn nudge_without_deploy_role_fails_loud() {
     let out = Command::new("bash")
-        .arg(NUDGE_SCRIPT)
+        .arg(nudge_script())
         .arg("wren")
         .arg("contract-test")
         .env("CHORUS_INJECT_DRY_RUN", "1")
@@ -148,11 +149,11 @@ fn nudge_without_deploy_role_fails_loud() {
 /// (count-payload, different semantics — Kade's 0.3 audit).
 #[test]
 fn nudge_cli_emits_canonical_emitted_event() {
-    let log_path = "/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log";
+    let log_path = &format!("{}/platform/logs/chorus.log", chorus_root());
     let marker = format!("emit-test-{}-canonical", std::process::id());
 
     let out = Command::new("bash")
-        .arg(NUDGE_SCRIPT)
+        .arg(nudge_script())
         .arg("wren")
         .arg(&marker)
         .env("CHORUS_INJECT_DRY_RUN", "1")

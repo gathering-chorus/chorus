@@ -1,4 +1,4 @@
-import { createDiscoverTests, classifyTestType, inferDomain, buildAliasMap } from '../src/discover-tests';
+import { createDiscoverTests, classifyTestType, inferDomain, loadAliasMap } from '../src/discover-tests';
 
 const FAKE_PATH = {
   join: (...parts: string[]) => parts.join('/'),
@@ -29,32 +29,49 @@ describe('classifyTestType', () => {
   });
 });
 
-describe('buildAliasMap', () => {
-  it('skips generic-base domains and records real ones', () => {
-    const aliases = buildAliasMap([
-      { id: 'photos-domain', label: 'photos' },
-      { id: 'services-domain', label: 'services' },
-      { id: 'domain-domain', label: 'domain' },
+describe('loadAliasMap', () => {
+  // Derivation logic lives in scripts/migrate-aliases-to-graph.ts (deriveAliases).
+  // This function is the runtime read: take alias triples from SPARQL,
+  // produce the prefix → subdomainId map. Trivial — the value is in the
+  // graph data, not the function.
+  const sdUri = (id: string) => ({ value: `https://jeffbridwell.com/chorus#${id}` });
+  const prefix = (s: string) => ({ value: s });
+
+  it('converts alias triples to a prefix → id map', () => {
+    const map = loadAliasMap([
+      { sd: sdUri('photos-domain'), prefix: prefix('photos') },
+      { sd: sdUri('photos-domain'), prefix: prefix('photo') },
+      { sd: sdUri('blog-domain'), prefix: prefix('wordpress') },
     ]);
-    expect(aliases.photos).toBe('photos-domain');
-    expect(aliases.services).toBeUndefined();
+    expect(map.photos).toBe('photos-domain');
+    expect(map.photo).toBe('photos-domain');
+    expect(map.wordpress).toBe('blog-domain');
   });
 
-  it('adds singular alias for plural -s domains', () => {
-    const aliases = buildAliasMap([{ id: 'photos-domain', label: 'photos' }]);
-    expect(aliases.photo).toBe('photos-domain');
+  it('last-write-wins on prefix collision (resolution by SPARQL ORDER BY ?sd)', () => {
+    // properties-domain plural-folds 'properties' → 'property'; property-domain
+    // base = 'property'. ORDER BY ?sd alphabetically puts properties-domain
+    // first, property-domain second; last write wins.
+    const map = loadAliasMap([
+      { sd: sdUri('properties-domain'), prefix: prefix('property') },
+      { sd: sdUri('property-domain'), prefix: prefix('property') },
+    ]);
+    expect(map.property).toBe('property-domain');
   });
 
-  it('handles -ies → -y pluralization', () => {
-    const aliases = buildAliasMap([{ id: 'stories-domain', label: 'stories' }]);
-    expect(aliases.story).toBe('stories-domain');
+  it('skips bindings with empty id or prefix', () => {
+    const map = loadAliasMap([
+      { sd: sdUri('photos-domain'), prefix: prefix('photos') },
+      { sd: { value: '' }, prefix: prefix('orphan') },
+      { sd: sdUri('blog-domain'), prefix: { value: '' } },
+    ]);
+    expect(map.photos).toBe('photos-domain');
+    expect(map.orphan).toBeUndefined();
+    expect(Object.keys(map)).toHaveLength(1);
   });
 
-  it('injects special-case aliases', () => {
-    const aliases = buildAliasMap([]);
-    expect(aliases.wordpress).toBe('blog-domain');
-    expect(aliases['socialpost']).toBe('social-domain');
-    expect(aliases['self-ai']).toBe('sexuality-domain');
+  it('returns empty map for empty input', () => {
+    expect(loadAliasMap([])).toEqual({});
   });
 });
 
@@ -75,10 +92,13 @@ describe('inferDomain', () => {
 });
 
 describe('createDiscoverTests', () => {
-  function makeSparql(domains?: any[]) {
+  // #2516: query now fetches alias triples (?sd ?prefix) instead of
+  // SubDomains (?sd ?label). Mock shape updated.
+  function makeSparql(aliasRows?: any[]) {
     const updates: string[] = [];
-    const rows = domains ?? [
-      { sd: { value: 'https://jeffbridwell.com/chorus#photos-domain' }, label: { value: 'photos' } },
+    const rows = aliasRows ?? [
+      { sd: { value: 'https://jeffbridwell.com/chorus#photos-domain' }, prefix: { value: 'photos' } },
+      { sd: { value: 'https://jeffbridwell.com/chorus#photos-domain' }, prefix: { value: 'photo' } },
     ];
     return {
       updates,
@@ -105,7 +125,7 @@ describe('createDiscoverTests', () => {
     expect(data.written).toBe(0);
   });
 
-  it('calls existsSync for each configured scan root (5 roots)', async () => {
+  it('calls existsSync for each configured scan root', async () => {
     const { client } = makeSparql();
     const calls: string[] = [];
     const fs = {
@@ -118,7 +138,14 @@ describe('createDiscoverTests', () => {
       gatheringRoot: '/g', chorusRoot: '/c',
     });
     await run();
-    expect(calls.length).toBe(5);
+    // #2515: scan roots include cards/tests + platform/tests beyond the original 5
+    expect(calls).toContain('/g/tests');
+    expect(calls).toContain('/c/platform/api/tests');
+    expect(calls).toContain('/c/platform/services/chorus-hooks/tests');
+    expect(calls).toContain('/c/proving');
+    expect(calls).toContain('/c/docs/diagrams');
+    expect(calls).toContain('/c/directing/products/cards/tests');
+    expect(calls).toContain('/c/platform/tests');
   });
 
   it('collects test entries for files matching the extension regex', async () => {
@@ -170,8 +197,8 @@ describe('createDiscoverTests', () => {
       gatheringRoot: '/g', chorusRoot: '/c',
     });
     const data = await run();
-    // Only photos.test.ts per root is valid → ≤5 across 5 roots.
-    expect(data.total_tests).toBeLessThanOrEqual(5);
+    // Only photos.test.ts per root is valid → ≤7 across 7 roots (#2515).
+    expect(data.total_tests).toBeLessThanOrEqual(7);
   });
 
   it('batches inserts in groups of ≤50', async () => {

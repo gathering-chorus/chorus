@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ICD Test Automation Strategy — #1532</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #faf8f5, #e8e4dd); color: #3a3530; padding: 2rem; min-height: 100vh; }
+  .container { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; font-weight: 300; color: #5a4e42; margin-bottom: 0.3rem; }
+  h1 em { font-style: normal; font-weight: 600; color: #8b6f4e; }
+  .subtitle { font-size: 0.9rem; color: #8a7e72; margin-bottom: 2rem; }
+  .section-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: #b0a596; margin: 2rem 0 1rem; padding-left: 0.5rem; border-left: 3px solid #d4c8b8; }
+
+  .layer { background: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border-left: 4px solid; }
+  .layer .l-head { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+  .layer .l-num { font-size: 1.5rem; font-weight: 200; color: #d4c8b8; }
+  .layer .l-name { font-weight: 600; font-size: 1rem; color: #5a4e42; }
+  .layer .l-owner { font-size: 0.7rem; color: #8a7e72; background: #f5f0ea; padding: 2px 8px; border-radius: 8px; }
+  .layer .l-desc { font-size: 0.8rem; color: #8a7e72; line-height: 1.6; margin-bottom: 0.5rem; }
+  .layer .l-what { font-size: 0.75rem; color: #5a4e42; line-height: 1.6; }
+  .layer .l-what strong { color: #8b6f4e; }
+  .layer .l-existing { font-size: 0.7rem; color: #27ae60; margin-top: 0.5rem; }
+  .layer .l-gap { font-size: 0.7rem; color: #c0392b; margin-top: 0.3rem; }
+  .layer .l-impl { font-size: 0.7rem; color: #b0a596; margin-top: 0.5rem; font-family: 'SF Mono', monospace; background: #faf8f5; padding: 0.4rem 0.6rem; border-radius: 6px; }
+
+  .layer.l1 { border-color: #c0392b; }
+  .layer.l2 { border-color: #e67e22; }
+  .layer.l3 { border-color: #f1c40f; }
+  .layer.l4 { border-color: #27ae60; }
+  .layer.l5 { border-color: #2980b9; }
+  .layer.l6 { border-color: #8e44ad; }
+
+  .principle { background: white; border-radius: 12px; padding: 1.2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 0.75rem; }
+  .principle .p-name { font-weight: 600; font-size: 0.85rem; color: #8b6f4e; margin-bottom: 0.3rem; }
+  .principle .p-desc { font-size: 0.75rem; color: #8a7e72; line-height: 1.5; }
+  .principle .p-source { font-size: 0.6rem; color: #b0a596; margin-top: 0.3rem; font-style: italic; }
+
+  .sequence { display: flex; gap: 0; align-items: center; margin: 1rem 0; flex-wrap: wrap; }
+  .seq-step { background: white; border-radius: 10px; padding: 0.8rem; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); min-width: 140px; }
+  .seq-step .ss-num { font-size: 1.2rem; font-weight: 200; color: #d4c8b8; }
+  .seq-step .ss-name { font-weight: 500; font-size: 0.75rem; color: #5a4e42; }
+  .seq-step .ss-owner { font-size: 0.6rem; color: #8a7e72; }
+  .seq-arrow { font-size: 1.2rem; color: #d4c8b8; padding: 0 0.3rem; }
+
+  .coverage { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin: 1rem 0; }
+  .cov-card { background: white; border-radius: 10px; padding: 1rem; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .cov-card .cc-num { font-size: 1.5rem; font-weight: 200; color: #8b6f4e; }
+  .cov-card .cc-label { font-size: 0.65rem; color: #8a7e72; text-transform: uppercase; letter-spacing: 0.1em; }
+
+  .footer { text-align: center; padding: 2rem; font-size: 0.7rem; color: #b0a596; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>ICD Test <em>Automation</em> Strategy</h1>
+<div class="subtitle">
+  The tests ARE the governance. Jeff decides what valid looks like. The tests enforce it continuously.
+  No ARB meeting needed. — Card #1532
+</div>
+
+<div class="section-label">The Shift — From Human Governance to Automated Enforcement</div>
+<div class="principle">
+  <div class="p-name">At Staples: 30 people enforced the ICD</div>
+  <div class="p-desc">ARB reviewed ICDs quarterly. Canonical model team validated mappings. Developers hand-coded from spec. Integration testers caught drift. When humans didn't follow the process, the system drifted silently.</div>
+  <div class="p-source">Staples Enterprise Integration Services, 2009–2016</div>
+</div>
+<div class="principle">
+  <div class="p-name">At Gathering: Tests enforce the ICD</div>
+  <div class="p-desc">validateFromICD() is the ARB — automated, every write, no exceptions. icd-lint.py is the model team. generate-from-icd.py is the developer. Round-trip tests are the integration testers. Jeff makes tier decisions. Agents enforce them.</div>
+  <div class="p-source">Chiron paper V4: "speed and quality improve together" when AC validation is automated</div>
+</div>
+<div class="principle">
+  <div class="p-name">The Anzo Insight: Author where humans see, persist where machines query</div>
+  <div class="p-desc">Staples bought Anzo because business users could author mappings in Excel and the system persisted to RDF. Same pattern: SEMANTIC_MAPPER.html is the authoring surface, Fuseki is the persistence layer. Tests verify the round-trip between them — that's where drift kills you.</div>
+  <div class="p-source">Cambridge Semantics / Anzo, Staples 2010–2011</div>
+</div>
+
+<div class="section-label">Six Test Layers</div>
+
+<div class="layer l1">
+  <div class="l-head">
+    <span class="l-num">1</span>
+    <span class="l-name">Surface ↔ Graph Consistency</span>
+    <span class="l-owner">Silas</span>
+  </div>
+  <div class="l-desc">The highest-priority layer. Three representations of the same truth must agree: OWL ontology in Fuseki, SEMANTIC_MAPPER.html rendering, TypeScript schemas in icd-validation.ts.</div>
+  <div class="l-what">
+    <strong>Tests:</strong> For each domain: SPARQL query field count = HTML parse field count = TS schema field count. Field names match. Severity tiers match. Source mappings match.<br>
+    <strong>Trigger:</strong> Any change to SEMANTIC_MAPPER.html, icd-ontology.ttl, or icd-validation.ts.<br>
+    <strong>Failure mode prevented:</strong> Someone edits HTML, forgets to update the graph. Or vice versa. The Anzo lesson — this is where enterprise integration programs die.
+  </div>
+  <div class="l-existing">Existing: icd-lint.py (HTML only)</div>
+  <div class="l-gap">Gap: No cross-representation comparison. HTML ↔ RDF ↔ TypeScript drift is undetected.</div>
+  <div class="l-impl">Test: icd-consistency-test.py — SPARQL + HTML parse + TS AST → compare all three</div>
+</div>
+
+<div class="layer l2">
+  <div class="l-head">
+    <span class="l-num">2</span>
+    <span class="l-name">Round-Trip Integration</span>
+    <span class="l-owner">Kade + Silas</span>
+  </div>
+  <div class="l-desc">The full pipeline: ICD definition → code generation → validation gate → write record → read back → verify fields match contract. Yesterday's Social domain session (#1516), automated.</div>
+  <div class="l-what">
+    <strong>Tests:</strong> For each domain: generate-from-icd.py produces schema → validateFromICD() accepts a valid record → write to pod → read from Fuseki → all required fields present, all violation-tier fields non-null.<br>
+    <strong>Trigger:</strong> CI on every commit touching src/validation/ or data/about/SEMANTIC_MAPPER.html.<br>
+    <strong>Failure mode prevented:</strong> Generator produces schema that doesn't match ICD. Or validator accepts records the ICD says are invalid.
+  </div>
+  <div class="l-existing">Existing: Manual — ran once for Social (#1516), once for Photos (#1515)</div>
+  <div class="l-gap">Gap: Not automated. Not in CI. Each domain onboarding is a manual walk-through.</div>
+  <div class="l-impl">Test: icd-roundtrip-test.ts — Jest integration test per domain</div>
+</div>
+
+<div class="layer l3">
+  <div class="l-head">
+    <span class="l-num">3</span>
+    <span class="l-name">Severity Tier Enforcement</span>
+    <span class="l-owner">Kade</span>
+  </div>
+  <div class="l-desc">Change a field from enrichment to violation → the gate starts rejecting records that previously passed. Prove the contract change propagates through generation → validation → write path.</div>
+  <div class="l-what">
+    <strong>Tests:</strong> Create a test record missing a specific field. Set field to enrichment → record passes. Change to violation → record rejected. Verify at each layer: ICD, schema, validator, write path.<br>
+    <strong>Trigger:</strong> Any severity tier change in the ICD.<br>
+    <strong>Failure mode prevented:</strong> Tier change in ICD doesn't propagate to runtime. The "soft middle" returns.
+  </div>
+  <div class="l-existing">Existing: None</div>
+  <div class="l-gap">Gap: Tier changes are untested. We discovered thumbnailPath should be violation-tier — but nothing verified the change propagated.</div>
+  <div class="l-impl">Test: icd-tier-enforcement-test.ts — parameterized test per domain × tier transition</div>
+</div>
+
+<div class="layer l4">
+  <div class="l-head">
+    <span class="l-num">4</span>
+    <span class="l-name">Cross-Domain Link Integrity</span>
+    <span class="l-owner">Silas</span>
+  </div>
+  <div class="l-desc">A Decision references a Person who appears in a Story. All three resolve in the graph. Broken links surfaced as test failures, not silent nulls on a page.</div>
+  <div class="l-what">
+    <strong>Tests:</strong> SPARQL queries that traverse cross-domain links: Person → Stories mentioning them. Decision → Cards it spawned. Recommendation → Person who wrote it. Every link target must resolve to a real record.<br>
+    <strong>Trigger:</strong> Any harvest or dedup operation that changes slugs or deletes records.<br>
+    <strong>Failure mode prevented:</strong> Dedup merges "curt-hamm" into "curtis-hamm" but Stories still reference "curt-hamm" → broken link. (#1520 nearly caused this.)
+  </div>
+  <div class="l-existing">Existing: None</div>
+  <div class="l-gap">Gap: Cross-domain references are unchecked. Dedup, harvest, and slug changes can silently break links.</div>
+  <div class="l-impl">Test: icd-link-integrity.sparql — SPARQL ASK queries for every cross-domain reference pattern</div>
+</div>
+
+<div class="layer l5">
+  <div class="l-head">
+    <span class="l-num">5</span>
+    <span class="l-name">Convergence Proof</span>
+    <span class="l-owner">Wren</span>
+  </div>
+  <div class="l-desc">For each domain: count(source records) → count(canonical records) → count(violations) → count(enrichment gaps). The numbers must be explainable. No silent data loss.</div>
+  <div class="l-what">
+    <strong>Tests:</strong> Source record count (files on disk or API response) matches canonical count (Fuseki) minus violations (rejected by gate) minus dedup merges. The equation must balance.<br>
+    <strong>Trigger:</strong> After every harvest, dedup, or migration operation.<br>
+    <strong>Failure mode prevented:</strong> 122,431 canonical photos but only 114,414 thumbnails. Where are the other 8,017? The test makes the gap visible and explainable.
+  </div>
+  <div class="l-existing">Existing: validate-canonical.py (Photos only), manual SPARQL queries</div>
+  <div class="l-gap">Gap: Only Photos has a data quality report. No automated convergence proof for other domains.</div>
+  <div class="l-impl">Test: convergence-proof.py — per-domain source-vs-canonical reconciliation</div>
+</div>
+
+<div class="layer l6">
+  <div class="l-head">
+    <span class="l-num">6</span>
+    <span class="l-name">Domain Onboarding Regression</span>
+    <span class="l-owner">Kade + Wren</span>
+  </div>
+  <div class="l-desc">Add a domain to the ICD → generate code → validate existing data. If this breaks, the pipeline is broken. The full DEC-095 sequence as a test.</div>
+  <div class="l-what">
+    <strong>Tests:</strong> A synthetic "test domain" defined in the ICD with known fields and sample data. generate-from-icd.py produces a schema. validateFromICD() passes/fails the right records. If any step breaks, domain onboarding is broken.<br>
+    <strong>Trigger:</strong> CI on every commit to generate-from-icd.py, icd-validation.ts, or harvest pipeline code.<br>
+    <strong>Failure mode prevented:</strong> A refactor to the generator breaks domain onboarding. Nobody notices until the next real domain.
+  </div>
+  <div class="l-existing">Existing: None</div>
+  <div class="l-gap">Gap: No synthetic test domain. Each onboarding is a first-time walk through unfamiliar territory.</div>
+  <div class="l-impl">Test: test-domain fixture in data/about/SEMANTIC_MAPPER.html + icd-onboarding-test.ts</div>
+</div>
+
+<div class="section-label">Current Coverage vs Target</div>
+<div class="coverage">
+  <div class="cov-card"><div class="cc-num">2/6</div><div class="cc-label">Layers with any coverage</div></div>
+  <div class="cov-card"><div class="cc-num">0/6</div><div class="cc-label">Layers fully automated</div></div>
+  <div class="cov-card"><div class="cc-num">3</div><div class="cc-label">Existing tools to extend</div></div>
+</div>
+
+<div class="section-label">Implementation Sequence</div>
+<div class="sequence">
+  <div class="seq-step"><div class="ss-num">1</div><div class="ss-name">Surface ↔ Graph</div><div class="ss-owner">Silas — highest risk</div></div>
+  <div class="seq-arrow">→</div>
+  <div class="seq-step"><div class="ss-num">2</div><div class="ss-name">Round-Trip</div><div class="ss-owner">Kade — highest value</div></div>
+  <div class="seq-arrow">→</div>
+  <div class="seq-step"><div class="ss-num">3</div><div class="ss-name">Tier Enforcement</div><div class="ss-owner">Kade — enables safe changes</div></div>
+  <div class="seq-arrow">→</div>
+  <div class="seq-step"><div class="ss-num">4</div><div class="ss-name">Link Integrity</div><div class="ss-owner">Silas — SPARQL native</div></div>
+  <div class="seq-arrow">→</div>
+  <div class="seq-step"><div class="ss-num">5</div><div class="ss-name">Convergence</div><div class="ss-owner">Wren — product metric</div></div>
+  <div class="seq-arrow">→</div>
+  <div class="seq-step"><div class="ss-num">6</div><div class="ss-name">Onboarding</div><div class="ss-owner">Kade + Wren — CI gate</div></div>
+</div>
+
+<div class="section-label">Execution Model</div>
+<div class="principle">
+  <div class="p-name">Tests query Fuseki, not mock data</div>
+  <div class="p-desc">Production graph is the source of truth. "Production telemetry is the spec that survived." Mock data creates a parallel universe where tests pass but production drifts.</div>
+  <div class="p-source">Charity Majors, "Production Is Where the Rigor Goes", March 2026</div>
+</div>
+<div class="principle">
+  <div class="p-name">ICD-as-graph means the contract is testable as data</div>
+  <div class="p-desc">SPARQL can verify the ICD's own consistency. "How many violation-tier fields does Photos have?" is a query, not a parse. The ontology validates itself.</div>
+  <div class="p-source">#1530 Athena pattern — OWL ontology in Fuseki</div>
+</div>
+<div class="principle">
+  <div class="p-name">Tests replace the human governance layer</div>
+  <div class="p-desc">At Staples, 30 people operated the ARB, canonical model reviews, and integration testing. Here, automated tests enforce the same discipline. The cost of governance drops from headcount to compute time.</div>
+  <div class="p-source">Staples CIA team → Gathering test automation</div>
+</div>
+
+</div>
+<div class="footer">ICD Test Automation Strategy — #1532 — Generated 2026-03-19</div>
+</body>
+</html>
