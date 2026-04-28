@@ -38,7 +38,7 @@ Two checks (jest + cargo, hermetic-only) is the minimum that:
 A new required check must satisfy all of:
 
 1. **Hermeticity-verified.** Passes the five hermeticity rules per the #2523 audit framework (no network / no fs outside tmp / no clock or random / no env coupling / order-independent). The audit must classify the check's underlying tests as `verdict=hermetic`.
-2. **Consumer cited.** The PR that adds the check names a downstream consumer that will read its signal — a role, a card, a service, or an alert. Sensors without consumers are noise (#2528 sensor consumer registry).
+2. **Consumer cited — named and current.** The PR that adds the check names a downstream consumer with a documented read pattern (role + cron / dashboard / workflow / alert). The consumer must already exist OR have an open card committing to land it within 30 days; "Wren will read this someday" is no consumer. Per Wren #2525 review: same shape as #2440's evidence move — data-of-truth lives where the consumer reads. Sensors without consumers are noise; the sensor consumer registry (#2528) is the enforcement surface.
 3. **48h shuffled-runs window passed.** The check passes 100/100 shuffled-order runs across a 48-hour window before being added to branch protection. Mechanism: `jest --randomize` (#2532) for TS; `cargo nextest run --shuffle` for Rust once the workspace adopts nextest.
 4. **DEC update.** Adding a required check requires updating this DEC (or filing a successor). Branch protection doesn't change without a named decision.
 
@@ -46,11 +46,14 @@ A new required check must satisfy all of:
 
 A required check is retired when any of:
 
-1. **90-day flake rate above 1%.** If the check fires red on PRs that subsequently merge green without code change at a rate exceeding 1% over a rolling 90-day window, it's retired. Flake = false-positive; false-positive blocks ≠ signal.
+1. **Flake rate above 1%.** If the check fires red on PRs that subsequently merge green without code change at a rate exceeding 1%, it's retired. Flake = false-positive; false-positive blocks ≠ signal.
+   - **Window tightens during disconnect tuning.** First 90 days post-Phase-1 land: 30-day rolling window. Math (per Wren #2525 review): at ~20 PRs/week, 1% = one false-positive every 5 weeks per check; during the disconnect's first window when we're actively tuning, a flaky check needs 30-day eviction to prevent the bypass-training failure mode the disconnect is meant to retire. After 90 days steady-state: 90-day rolling window.
 2. **No active consumer.** Per the sensor consumer registry (#2528), if no consumer has read the check's signal in 90 days, retire.
 3. **Hermeticity drift.** If the audit (re-run periodically) re-classifies the check's tests as non-hermetic, retire from required-list and route to integration tier.
 
 Retirement is a DEC update — same governance as addition.
+
+**Telemetry dependency.** The behavioral definition of "flake" — fires red on a PR that subsequently merges green without code change — requires per-check signal-tracking that does not exist today (Wren #2525 review). Until #2528 (sensor consumer registry) lands the necessary telemetry, retirement criterion #1 is unenforceable in the literal sense. Interim mechanism: manual review of the required-check job history at each retirement-decision moment, captured in the DEC update PR. #2528 is sequenced alongside #2526 so the data plane lights up when the disconnect lands; if #2528 slips, retirement criterion #1 becomes a deferred enforcement until the registry reads PR signals.
 
 ## Enforcement
 
