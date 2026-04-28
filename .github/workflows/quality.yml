@@ -16,22 +16,48 @@ name: quality
 #   2. cargo-test (--lib --bins, inline #[test] only — see job comment)
 # Every other job runs but uses continue-on-error: true so its failure
 # does not block merge. The signal still surfaces (job-level red on the
-# check), but it does not gate. Adding a check to the required list
-# requires a DEC update per DEC-2525 enforcement clause.
+# check), but it does not gate.
 #
-# Cards: #2481 (workflow origin), #2526 (this disconnect), DEC-2525.
+# Per-event matrix (#2526 wave 3):
+#   on push/PR: required jobs (jest + cargo-test) + small per-PR backstops
+#               (mcp-description-shape, catalog-oversize, principle-direct-edit)
+#   on schedule (nightly 09:17 UTC): everything, including the heavy
+#               non-required jobs (lint-ratchet, type-check matrix,
+#               cargo-test-integration, clippy matrix, mcp-roundtrip).
+#
+# Why wave 3: post-wave-2, non-required jobs still ran on every PR push and
+# were burning Actions minutes. We hit 90% of the 3000-min monthly quota at
+# wave 2 land (2026-04-28). Nightly drift visibility is sufficient; per-PR
+# signal on non-required jobs trained --no-verify habits, not engineering
+# hygiene. Until the dedicated drift lane workflow (#2527) ships, the
+# schedule trigger in this file IS the drift lane.
+#
+# Adding a check to the required list requires a DEC update per DEC-2525
+# enforcement clause.
+#
+# Cards: #2481 (workflow origin), #2526 (this disconnect), #2527 (future
+# dedicated drift workflow), DEC-2525.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  # Nightly drift lane (#2527 placeholder until the dedicated workflow ships).
+  # Non-required jobs are gated to schedule-only via job-level `if:` so PR/push
+  # runs only execute the required + small-backstop jobs. This cuts CI minute
+  # burn ~60% post-disconnect (#2526 wave 3) without losing nightly visibility.
+  schedule:
+    - cron: '17 9 * * *'  # 09:17 UTC daily — off-peak, off-:00
 
 jobs:
   lint-ratchet:
     name: ESLint per-rule ratchet
     runs-on: ubuntu-latest
     # DEC-2525: non-required, signal-only post-disconnect (#2526).
+    # Wave 3: schedule-only — runs nightly, not on every PR/push, to cut
+    # Actions-minute burn (we hit 90% of monthly quota at #2526 wave 2 land).
+    if: github.event_name == 'schedule'
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +88,8 @@ jobs:
     name: tsc — ${{ matrix.package }}
     runs-on: ubuntu-latest
     # DEC-2525: non-required, signal-only post-disconnect (#2526).
+    # Wave 3: schedule-only — 7-runner matrix is a top burner.
+    if: github.event_name == 'schedule'
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -161,6 +189,8 @@ jobs:
     name: MCP tool description shape (#2475)
     runs-on: ubuntu-latest
     # DEC-2525: non-required, signal-only post-disconnect (#2526).
+    # Wave 3: keeps running per-PR — tiny job (<30s), small protective
+    # value when MCP tools change; no minute pressure.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -257,9 +287,10 @@ jobs:
     name: cargo test integration — ${{ matrix.crate }}
     runs-on: ubuntu-latest
     # DEC-2525: non-required, signal-only post-disconnect (#2526).
-    # Runs the tests/*.rs integration suite. These remain visible but
-    # do not gate merge. Drift lane (#2527, not yet built) will consume
-    # red signal from this job.
+    # Wave 3: schedule-only — heaviest job in the workflow (builds two
+    # release binaries + boots socket server + runs full integration
+    # suite). Top burner. Nightly is plenty for drift detection.
+    if: github.event_name == 'schedule'
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -352,10 +383,9 @@ jobs:
     name: cargo clippy — ${{ matrix.crate }}
     runs-on: ubuntu-latest
     # DEC-2525: non-required for both crates post-disconnect (#2526).
-    # The previous matrix-keyed continue_on_error split (chorus-inject
-    # blocking, chorus-hooks warn-only) is retired — DEC-2525 names only
-    # jest + cargo-test as required, and explicitly lists "cargo clippy"
-    # in the continue-on-error roster.
+    # Wave 3: schedule-only — runs nightly. Per-PR clippy via local
+    # pre-commit; CI nightly catches anything that bypassed.
+    if: github.event_name == 'schedule'
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -392,6 +422,12 @@ jobs:
   mcp-roundtrip:
     name: MCP round-trip (#2495)
     runs-on: ubuntu-latest
+    # DEC-2525 + wave 3: non-required, schedule-only.
+    # Boots Fuseki service container + builds chorus-api + builds
+    # chorus-hook-shim + runs bats — ~3-5 min/run. Per-PR is wasteful;
+    # nightly proves the round-trip still works.
+    if: github.event_name == 'schedule'
+    continue-on-error: true
     services:
       fuseki:
         image: stain/jena-fuseki:5.0.0
