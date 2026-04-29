@@ -35,8 +35,8 @@ name: quality
 # Adding a check to the required list requires a DEC update per DEC-2525
 # enforcement clause.
 #
-# Cards: #2481 (workflow origin), #2526 (this disconnect), #2527 (future
-# dedicated drift workflow), DEC-2525.
+# Cards: #2481 (workflow origin), #2526 (this disconnect, waves 1-4), #2527
+# (future dedicated drift workflow), DEC-2525.
 
 on:
   push:
