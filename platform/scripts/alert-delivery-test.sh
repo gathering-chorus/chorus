@@ -15,7 +15,8 @@
 
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# #2571 — source-from-substrate replaces #1917's ${CHORUS_ROOT:-mac-path} default
+source "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh"
 
 ALERT_RUNNER="${CHORUS_ROOT}/scripts/alert-runner.sh"
 DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"

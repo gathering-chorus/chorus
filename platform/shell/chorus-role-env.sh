@@ -18,6 +18,13 @@ if [[ -n ${__CHORUS_ROLE_ENV_LOADED:-} ]]; then
 fi
 __CHORUS_ROLE_ENV_LOADED=1
 
+# #2571 — establish CHORUS_ROOT + initial CHORUS_ROLE via the canonical setup.
+# This script's distinct job is the cd-hook below (zsh chpwd / bash
+# PROMPT_COMMAND) that re-fires the role assignment when the user cd's
+# between role dirs. The case-on-PWD logic is shared, so source-the-canonical
+# rather than duplicate.
+source "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")/../scripts/chorus-env-setup.sh"
+
 __chorus_set_role_env() {
   case "$PWD" in
     */chorus/roles/wren*)

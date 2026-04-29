@@ -15,7 +15,8 @@
 
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# #2571 — source-from-substrate replaces #1917's ${CHORUS_ROOT:-mac-path} default
+source "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "${CHORUS_ROOT}")"
 LOCK_FILE="${REPO_ROOT}/.git-commit.lock"
