@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Commits Service Design</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Commits Service Design</h1>
+</header>
+<h1 id="commits-service-design">Commits Service Design</h1>
+<p><strong>Kade, 2026-04-29. Card #2586.</strong></p>
+<h2 id="problem">Problem</h2>
+<p>The commits domain — every git mechanic between “I have a change” and
+“main reflects it” — emerged as a stack of tactical fixes rather than a
+designed surface. Today (2026-04-29) surfaced four classes of incident
+in a single session:</p>
+<ol type="1">
+<li><strong>Cross-branch contamination ×3</strong> — wren and kade share
+<code>/chorus</code>’s working tree; one role’s checkout is the other
+role’s working state. Wren’s #2575 fix landed on kade’s #2558 branch;
+kade’s #2558 narrow-refinement started on wren’s branch. Substrate:
+shared <code>.git/HEAD</code>. (#2582 ships per-role worktrees as the
+structural fix.)</li>
+<li><strong>Required-checks asymmetry</strong> (#2498 side-finding) —
+branch-protection rules and Repository Rulesets list different sets of
+required jobs. Merges that satisfy one bypass the other. DEC-2525
+amendment names both systems as required surfaces.</li>
+<li><strong>git-queue branch-blindness</strong> (#2580) — git-queue.sh
+commits whatever branch the working tree is on; if the role’s session
+left a peer’s branch checked out, the commit lands on the wrong branch
+with no warning. P1 defense-in-depth for the worktree convention.</li>
+<li><strong>Worktree grain</strong> unresolved — silas adopted per-card
+worktree (chorus-2526), kade adopted per-role (chorus-kade); wren is
+mid-decision (#2585 spike). No design says which is the convention vs
+the exception.</li>
+</ol>
+<p>Each was handled tactically. None has a unified service-design
+surface, so future commits-related cards re-litigate the same
+questions.</p>
+<p>The pattern matches nudge-service-design /
+independence-service-design / gate-set-service-design: a parent design
+lands first, tactical cards align under it. Kade owns commits per the
+2026-04-26 cross-cutting allocation (Code · Tests · Commits · Pipelines
+· Heralds).</p>
+<h2 id="as-is-verified-2026-04-29">As-Is (verified 2026-04-29)</h2>
+<pre class="mermaid"><code>flowchart TB
+  subgraph WT[&quot;Working trees&quot;]
+    SHR[&quot;/chorus&lt;br/&gt;(shared — kade + wren)&quot;]
+    K[&quot;/chorus-kade&lt;br/&gt;(kade only — adopted today)&quot;]
+    S[&quot;/chorus-2526&lt;br/&gt;(silas — per-card)&quot;]
+  end
+
+  subgraph CMT[&quot;Commit path&quot;]
+    Q[&quot;git-queue.sh commit&lt;br/&gt;(serialized via flock)&quot;]
+    PC[&quot;pre-commit hook&lt;br/&gt;platform/hooks/pre-commit&lt;br/&gt;4 checks: lint-ratchet, principle-edit, oversize, cargo --lib --bins&quot;]
+    AB[&quot;claudemd-gen auto-bump&lt;br/&gt;(_build counter on protocol-relevant changes)&quot;]
+  end
+
+  subgraph PSH[&quot;Push path&quot;]
+    PQ[&quot;git-queue.sh push&lt;br/&gt;(rebase-on-conflict, retries under lock)&quot;]
+  end
+
+  subgraph CI[&quot;CI / branch protection&quot;]
+    GH[&quot;GitHub Actions&lt;br/&gt;.github/workflows/quality.yml&quot;]
+    BP[&quot;Branch protection rules&lt;br/&gt;(legacy)&quot;]
+    RR[&quot;Repository Rulesets&lt;br/&gt;(new — DEC-2525 amendment)&quot;]
+  end
+
+  WT --&gt; Q
+  Q --&gt; PC
+  PC --&gt; AB
+  AB --&gt; PQ
+  PQ --&gt; GH
+  GH --&gt; BP
+  GH --&gt; RR</code></pre>
+<p>What’s actually in place today:</p>
+<ul>
+<li><strong>git-queue.sh</strong> — <code>commit</code> and
+<code>push</code> subcommands; <code>flock</code> on
+<code>/tmp/chorus-git-queue.lock</code> serializes across roles. Reads
+<code>DEPLOY_ROLE</code> env. Stages listed paths plus any prior-staged
+mods (#feedback_git_queue_stages_more_than_listed).</li>
+<li><strong>pre-commit hook</strong>
+(<code>platform/hooks/pre-commit</code>) — runs lint-ratchet,
+principle-direct-edit, catalog-oversize, and
+<code>cargo test --lib --bins</code> per affected Rust crate (DEC-2525
+wave 1). Skippable via <code>--no-verify</code> (CI is
+authoritative).</li>
+<li><strong>claudemd-gen auto-bump</strong> — when fragments under
+<code>designing/claudemd/</code> change, <code>_build</code> counter
+increments and CLAUDE.md regenerates.</li>
+<li><strong>Branch naming</strong> —
+<code>&lt;role&gt;/&lt;card-id&gt;</code> per kade’s AC7 of #2556.
+Lifecycle is informal (branches accrete; #2440 had ~134 commits before
+merge).</li>
+<li><strong>Required checks</strong> — listed in branch-protection AND
+Repository Rulesets; DEC-2525 amendment makes the lockstep explicit but
+enforcement is manual when adding a new check.</li>
+<li><strong>Hooks layer</strong> (Layer 1 of ADR-026) — pre-commit only.
+No post-commit, no pre-push (a pre-push would catch git-queue
+branch-blindness if the user-side push slipped past the queue).</li>
+</ul>
+<h2 id="to-be">To-Be</h2>
+<pre class="mermaid"><code>flowchart TB
+  subgraph WT[&quot;Per-role worktrees (#2582, #2583, #2585)&quot;]
+    K[&quot;/chorus-kade — kade&lt;br/&gt;HEAD = kade/&lt;card&gt;&quot;]
+    W[&quot;/chorus-wren — wren&lt;br/&gt;HEAD = wren/&lt;card&gt;&quot;]
+    S[&quot;/chorus-silas — silas&lt;br/&gt;HEAD = silas/&lt;card&gt;&quot;]
+  end
+
+  subgraph CMT[&quot;Commit path (unchanged surface, hardened)&quot;]
+    Q[&quot;git-queue.sh commit&lt;br/&gt;+ branch-check (#2580)&quot;]
+    PC[&quot;pre-commit hook&lt;br/&gt;(GIT_* env scrub fixed in #2560)&quot;]
+    AB[&quot;claudemd-gen auto-bump&quot;]
+  end
+
+  subgraph PSH[&quot;Push path&quot;]
+    PQ[&quot;git-queue.sh push&lt;br/&gt;+ pre-push hook (deferred)&quot;]
+    R[&quot;rebase-merge to main&lt;br/&gt;(no merge-commits per #2556)&quot;]
+  end
+
+  subgraph CI[&quot;CI required-checks&quot;]
+    GH[&quot;GitHub Actions&quot;]
+    LS[&quot;Lockstep enforcer (deferred)&lt;br/&gt;branch-protection ↔ rulesets parity check&quot;]
+  end
+
+  K --&gt; Q
+  W --&gt; Q
+  S --&gt; Q
+  Q --&gt; PC
+  PC --&gt; AB
+  AB --&gt; PQ
+  PQ --&gt; R
+  R --&gt; GH
+  GH --&gt; LS</code></pre>
+<p>The five To-Be moves:</p>
+<ol type="1">
+<li><strong>Per-role worktrees as default</strong> — convention extends
+to all three roles. Symlink at
+<code>~/.claude/projects/&lt;encoded-cwd&gt;/</code> preserves Claude
+Code memory continuity (Wren’s #2585 spike). Per-card worktrees become a
+documented exception for crisis/swat work.</li>
+<li><strong>git-queue branch-check</strong> (#2580) — verifies
+<code>HEAD</code> matches <code>&lt;role&gt;/*</code> before staging;
+refuses to commit on a peer’s branch.</li>
+<li><strong>GIT_* env scrub</strong> in code paths that spawn
+<code>git</code> (#2560 wave 2 fixed <code>file_has_git_history</code>;
+sweep needed across other call sites).</li>
+<li><strong>Role-suffixed runtime sockets</strong> —
+<code>/tmp/chorus-hooks-&lt;role&gt;.sock</code> once per-role daemons
+land (Silas’s #2559 SIGTERM cleanup is the precondition; multi-role
+launch is the trigger). Today’s single-instance assumption is fine while
+only one role runs the daemon, but per-role worktrees + per-role daemons
+removes that assumption.</li>
+<li><strong>Required-checks lockstep enforcer</strong> (deferred card) —
+script that diffs branch-protection’s required-checks against Repository
+Rulesets’, fails CI if they drift.</li>
+</ol>
+<h2 id="single-contract">Single Contract</h2>
+<blockquote>
+<p><strong>A commit lands when, and only when, it (a) was authored on
+the role’s own worktree and branch, (b) passed the local pre-commit hook
+layer, (c) was pushed via git-queue, and (d) merged to main via
+rebase-merge after CI’s required-checks (mirrored in branch-protection
+AND rulesets) ran green.</strong></p>
+</blockquote>
+<p>Failure modes the contract names: - (a) excludes cross-branch
+contamination — caught by per-role worktrees + git-queue branch-check. -
+(b) excludes broken-tree commits — caught by pre-commit; CI is the
+authoritative re-check. - (c) excludes raw-<code>git push</code> races —
+git-queue.sh push is the only sanctioned path. - (d) excludes
+merge-commit cruft and one-system-only required-checks — rebase-merge
+per #2556, lockstep per DEC-2525 amendment.</p>
+<h2 id="worktree-grain-resolved">Worktree grain — resolved</h2>
+<p><strong>Per-role is the convention.</strong> Per-card is the
+exception.</p>
+<p>Rationale: - <strong>Per-role</strong> retires the substrate
+condition (shared <code>.git/HEAD</code>) for the failure class. One
+worktree per role, branch checkouts within the worktree are role-scoped,
+peer’s checkout never affects yours. - <strong>Per-card</strong> would
+multiply onboarding cost (Claude Code project-keying setup per worktree,
+per Wren’s #2585 spike) and create transient state to garbage-collect. -
+<strong>Crisis/swat exception</strong>: when a role is mid-card and a
+swat lands on the same role, a temporary chorus-<role>-<swatcard>
+worktree is acceptable. Document, retire after merge.</p>
+<p>Onboarding cost (per role, one-time): 1.
+<code>git worktree add ../chorus-&lt;role&gt; &lt;role&gt;/main-checkpoint</code>
+2. <strong>Memory continuity choice</strong> (per Wren’s #2585 + #2583
+reasoning): either (a) symlink
+<code>~/.claude/projects/&lt;encoded-cwd-of-worktree&gt;</code> →
+<code>~/.claude/projects/&lt;encoded-cwd-of-canonical&gt;</code> to
+preserve accumulated session memory, OR (b) split-memory: accept that
+the new worktree’s project-key starts empty and rebuilds in-place. (a)
+preserves continuity at the cost of one piece of indirection; (b) honors
+no-symlinks discipline at the cost of memory-rebuild time (days, not
+weeks). Both are valid; pick by your role’s preference. Wren chose (b)
+for chorus-wren onboarding. Kade chose (a) implicitly during chorus-kade
+adoption today. 3. Update role startup CLAUDE.md fragment to launch from
+the worktree 4. Smoke-test: read a memory file, verify it
+round-trips</p>
+<h2
+id="cross-branch-contamination-class-canonical-evidence">Cross-branch
+contamination class — canonical evidence</h2>
+<p>Three incidents, 2026-04-29 ~11:00–11:30: 1. Wren’s #2575 fix
+committed via git-queue from /chorus while kade’s #2558 branch was
+checked out → fix landed on kade’s branch. 2. Kade started #2558
+narrow-refinement work in /chorus while wren’s branch was the active
+checkout → edits applied against wren’s tree. 3. Kade’s manifest.json
+regeneration in /chorus while a third checkout was active → contaminated
+mid-rebase.</p>
+<p>Substrate cause: <code>/chorus/.git/HEAD</code> is one variable
+shared across all sessions in <code>/chorus/</code>. Trigger: any role’s
+<code>git checkout</code> mutates it. No detection until after the
+fact.</p>
+<p>The class disappears under per-role worktrees because each worktree
+has its own <code>HEAD</code>. git-queue branch-check (#2580) is
+defense-in-depth.</p>
+<h2 id="branch-protocol">Branch protocol</h2>
+<ul>
+<li><strong>Naming</strong>: <code>&lt;role&gt;/&lt;card-id&gt;</code>
+(e.g., <code>kade/2560-clippy-ops-cascade</code>). Optional kebab suffix
+for human readability.</li>
+<li><strong>Lifecycle</strong>: branch lives from
+<code>cards move WIP</code> to merge. After merge, branch is deleted via
+GitHub PR auto-delete.</li>
+<li><strong>Retirement</strong>: stale branches (&gt;14 days no commits,
+no open PR) are cleaned up by the role who created them at session
+close. Inventory check via
+<code>git branch -r --merged main</code>.</li>
+<li><strong>Long-lived branches</strong> (134-commit #2440 case) are an
+antipattern; if accretion happens, file a card to wave-merge.</li>
+</ul>
+<h2 id="pushmerge-protocol">Push/merge protocol</h2>
+<ul>
+<li><strong>Push</strong>: only <code>git-queue.sh push</code>. Raw
+<code>git push</code> is contraindicated (loses lock serialization, no
+rebase-on-conflict).</li>
+<li><strong>Conflict resolution</strong>: rebase, not merge.
+<code>git update-index --add</code> for hook-blocked staging during
+rebase resolution; commit lands as the rebased version of the
+original.</li>
+<li><strong>Merge style</strong>: rebase-merge (#2556 lesson —
+merge-commits in main caused the 134-commit untangling). GitHub PR
+setting “Allow rebase merging” only.</li>
+<li><strong>Required checks</strong>: branch-protection AND Repository
+Rulesets must list the same checks (DEC-2525 amendment). Until the
+lockstep enforcer ships, manual diff at every promotion.</li>
+<li><strong>Merge-on-CI-green discipline</strong>: don’t merge red.
+Don’t merge yellow with the intent to “fix forward” — fix on the PR
+branch.</li>
+</ul>
+<h2 id="hook-layer-relationship-to-adr-026">Hook layer (relationship to
+ADR-026)</h2>
+<p>Layer 1 of ADR-026 (“will this commit obviously break something?”) =
+pre-commit. Today this layer covers:</p>
+<ul>
+<li>Lint-ratchet (eslint baseline non-regression)</li>
+<li>Principle-direct-edit (catalog content protection)</li>
+<li>Catalog-oversize (file-size budget)</li>
+<li>Rust hermetic test slice (<code>cargo test --lib --bins</code> per
+affected crate)</li>
+<li>Doc-coherence ratchet (when CLAUDE.md fragments change)</li>
+</ul>
+<p>Deferred / not yet shipped: - <strong>pre-push hook</strong> — would
+catch the git-queue-bypass case AND would let CI-required-checks be
+locally pre-checked before pushing. Cost: latency on push. -
+<strong>post-commit hook</strong> — would emit
+<code>commit.created</code> spine events for analytics. Cost: noise
+unless filtered. - <strong>commit-msg hook</strong> — would enforce
+<code>&lt;role&gt;: &lt;verb&gt; #&lt;card&gt;</code> format. Cost:
+existing message lint isn’t blocking and hasn’t drifted enough to
+warrant.</p>
+<p>The principle: <strong>Layer 1 (hooks) makes the obviously-broken
+case fast-fail; Layer 3 (CI) is authoritative on main.</strong> Don’t
+let Layer 1 grow into a CI mirror — its job is the obviously-broken
+slice, not the full battery.</p>
+<h2 id="governance-dec-2525-required-checks">Governance — DEC-2525
+required-checks</h2>
+<p>DEC-2525 amendment names two surfaces (branch protection + Repository
+Rulesets) as joint authorities. Promotion criteria for adding a check:
+1. Check is hermetic (no external state, no network, no live-role
+coupling — axis-4 per #2526). 2. Check has been run in CI as
+<code>continue-on-error: true</code> for ≥1 week with no flake. 3. Check
+is added to <strong>both</strong> branch-protection and Repository
+Rulesets in the same PR. 4. Lockstep verified manually post-merge until
+the enforcer ships.</p>
+<p>Demotion criteria: if a check flakes ≥3× in 30 days for non-code
+reasons (env, infra), demote to non-required and file a hardening
+card.</p>
+<h2 id="spine-events">Spine events</h2>
+<pre><code>commits.queue.acquired   &lt;role&gt; branch=&lt;branch&gt;
+commits.queue.committed  &lt;role&gt; branch=&lt;branch&gt; sha=&lt;sha&gt;
+commits.queue.pushed     &lt;role&gt; branch=&lt;branch&gt; sha=&lt;sha&gt;
+commits.branch.mismatch  &lt;role&gt; expected=&lt;role&gt;/* actual=&lt;branch&gt;   (#2580)
+commits.merge.rebased    &lt;role&gt; pr=&lt;num&gt; base_sha=&lt;sha&gt;
+commits.required_checks.drift   delta=&lt;list&gt;   (lockstep enforcer)</code></pre>
+<p>Existing in chorus.log already (verify and align):
+<code>git-queue.commit</code> style events. Naming sweep deferred to the
+implementation card.</p>
+<h2 id="connections">Connections</h2>
+<ul>
+<li><strong>#2582</strong> (Done — worktree convention fragment) — this
+design names per-role as canonical.</li>
+<li><strong>#2583</strong> (WIP — wren onboards) — pending #2585 spike
+outcome.</li>
+<li><strong>#2585</strong> (Wren spike) — Claude Code project-keying via
+symlink. <strong>Per-role worktree IS viable.</strong></li>
+<li><strong>#2580</strong> (P1 — git-queue branch-check) — tactical,
+defense-in-depth.</li>
+<li><strong>#2556</strong> (Done — rebase-merge lesson, #2440
+untangling) — informs push/merge protocol.</li>
+<li><strong>#2498</strong> (side-finding — required-checks asymmetry) —
+informs DEC-2525 amendment.</li>
+<li><strong>#2526</strong> wave-N — pre-commit narrowed to
+<code>--lib --bins</code>; informs hook-layer scope.</li>
+<li><strong>#2560</strong> wave 2 — GIT_* env scrub fix in
+<code>file_has_git_history</code> (one site).</li>
+<li><strong>#2588</strong> (P3 — Wave 3 dead-code) — architectural
+orphan retirement under chorus-hooks.</li>
+<li><strong>#2589</strong> (P2 — env-scrub helper) — class-fix follow-on
+to #2560; migrates three known git-spawn sites behind a
+<code>git_command()</code> helper.</li>
+<li><strong>ADR-026</strong> — three quality layers; this design slots
+into Layer 1 + Layer 3 boundary.</li>
+<li><strong>DEC-2525</strong> + amendment — required-checks
+governance.</li>
+<li>Sibling designs: nudge-service-design (Silas),
+independence-service-design (Wren), gate-set-service-design (Wren).</li>
+<li><strong>#2592 (P2 — forward arc)</strong> — workspace-API (“code
+asks the service, doesn’t spawn git”). Per-role worktrees retire the
+<code>HEAD</code>-sharing instance of
+role-identity-bound-to-filesystem-location coupling, but not the
+underlying class — code that reaches into git’s filesystem state (e.g.,
+<code>file_has_git_history</code> spawning <code>git log</code> and
+inheriting GIT_*) carries the same coupling. The forward arc decouples
+by mediating all git access through a service. This design (#2586) does
+not block on it; it slots under #2592 when that lands.</li>
+</ul>
+<h2 id="references">References</h2>
+<ul>
+<li><code>platform/scripts/git-queue.sh</code> — commit/push
+surface</li>
+<li><code>platform/hooks/pre-commit</code> — Layer 1 hook</li>
+<li><code>designing/claudemd/manifest.json</code> — auto-bump
+trigger</li>
+<li><code>.github/workflows/quality.yml</code> — CI required jobs</li>
+<li><code>roles/kade/CLAUDE.md</code> — Per-Role Worktree Convention
+fragment (#2582)</li>
+<li><code>decisions/DEC-2525.md</code> + amendment — required-checks
+governance</li>
+<li><code>decisions/ADR-026.md</code> — three quality layers</li>
+<li>Wren’s #2585 spike brief (chat transcript 2026-04-29) — Claude Code
+project-keying findings</li>
+</ul>
+</body>
+</html>
