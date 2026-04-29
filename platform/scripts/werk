@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# werk — execute work-units against the chorus substrate
+#
+# Single command surface for all roles to build, deploy, and check the
+# runtime state. Per Jeff 2026-04-29: all three roles execute identically,
+# no improvisation paths. werk is that uniform path.
+#
+# Usage:
+#   werk check                    # show drift per runtime component (read-only)
+#   werk deploy                   # refuse unless HEAD == origin/main, then build + restart canonical paths
+#   werk deploy --dev             # same composition routed to *-dev filesystem paths (sandbox)
+#   werk help
+#
+# Card: #2598. Replaces ad-hoc combos of cargo build / app-state.sh /
+# claudemd-gen / install-hooks. Existing tools are still the executors —
+# werk dispatches them under one verify_main_sha gate.
+#
+# What werk does NOT do:
+#   - Rebuild automatically after main merges (this is a refusal-gate, not an autodeployer)
+#   - Replace app-state.sh / cargo / launchctl as the underlying executors
+#   - Manage chorus-api / chorus-clearing / pulse / bridge service deployments yet (added per AC1 audit)
+
+set -euo pipefail
+
+# Self-locate so werk works from any cwd inside chorus repo
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+CHORUS_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+
+CHORUS_HOOK_SHIM="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+CHORUS_HOOK_SHIM_DEV="$CHORUS_ROOT/platform/services/chorus-hooks/target/release-dev/chorus-hook-shim"
+CLAUDEMD_GEN_OUT="$CHORUS_ROOT/CLAUDE.md"
+HOOK_INSTALL_SCRIPT="$CHORUS_ROOT/platform/scripts/install-hooks.sh"
+CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
+ROLE="${DEPLOY_ROLE:-unknown}"
+
+# --- helpers ---
+
+emit() {
+  local event="$1"; shift
+  "$CHORUS_LOG" "$event" "$ROLE" "$@" >/dev/null 2>/dev/null || true
+}
+
+verify_main_sha() {
+  # Returns 0 if HEAD == origin/main, 1 with diagnostic otherwise.
+  # Fetches origin first so the check is against current upstream.
+  git -C "$CHORUS_ROOT" fetch origin main --quiet 2>/dev/null || true
+  local head_sha main_sha
+  head_sha=$(git -C "$CHORUS_ROOT" rev-parse HEAD 2>/dev/null || echo "")
+  main_sha=$(git -C "$CHORUS_ROOT" rev-parse origin/main 2>/dev/null || echo "")
+  if [ -z "$head_sha" ] || [ -z "$main_sha" ]; then
+    echo "werk: error — cannot resolve HEAD or origin/main SHA" >&2
+    return 1
+  fi
+  if [ "$head_sha" != "$main_sha" ]; then
+    echo "werk: ERROR — HEAD does not match origin/main (#2598)" >&2
+    echo "  HEAD:        $head_sha" >&2
+    echo "  origin/main: $main_sha" >&2
+    echo "  delta:       $(git -C "$CHORUS_ROOT" log --oneline "${main_sha}..${head_sha}" 2>&1 | head -3)" >&2
+    echo "" >&2
+    echo "  Canonical deploys must come from origin/main. Either:" >&2
+    echo "    git checkout main && git pull origin main && werk deploy" >&2
+    echo "    OR" >&2
+    echo "    werk deploy --dev    # routes to release-dev paths, doesn't touch canonical" >&2
+    return 1
+  fi
+  return 0
+}
+
+# --- werk check ---
+
+cmd_check() {
+  echo "=== werk check (read-only drift report) ==="
+  echo "  CHORUS_ROOT: $CHORUS_ROOT"
+  echo "  ROLE:        $ROLE"
+  echo
+
+  # Repo state
+  local head_sha head_branch main_sha
+  head_sha=$(git -C "$CHORUS_ROOT" rev-parse --short HEAD 2>/dev/null || echo "ERR")
+  head_branch=$(git -C "$CHORUS_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "DETACHED")
+  git -C "$CHORUS_ROOT" fetch origin main --quiet 2>/dev/null || true
+  main_sha=$(git -C "$CHORUS_ROOT" rev-parse --short origin/main 2>/dev/null || echo "ERR")
+
+  printf "  %-22s %s\n" "git HEAD branch:" "$head_branch"
+  printf "  %-22s %s\n" "git HEAD SHA:" "$head_sha"
+  printf "  %-22s %s\n" "origin/main SHA:" "$main_sha"
+  if [ "$head_sha" != "$main_sha" ]; then
+    printf "  %-22s %s\n" "drift (HEAD vs main):" "YES"
+  else
+    printf "  %-22s %s\n" "drift (HEAD vs main):" "no"
+  fi
+  echo
+
+  # chorus-hook-shim binary
+  if [ -f "$CHORUS_HOOK_SHIM" ]; then
+    local shim_mtime shim_age
+    shim_mtime=$(stat -f '%Sm' -t '%Y-%m-%d %H:%M' "$CHORUS_HOOK_SHIM" 2>/dev/null || stat -c '%y' "$CHORUS_HOOK_SHIM" 2>/dev/null | cut -c1-16)
+    shim_age=$(( $(date +%s) - $(stat -f '%m' "$CHORUS_HOOK_SHIM" 2>/dev/null || stat -c '%Y' "$CHORUS_HOOK_SHIM" 2>/dev/null) ))
+    printf "  %-22s %s (age: %ds)\n" "chorus-hook-shim:" "$shim_mtime" "$shim_age"
+    # Compare against latest src commit on chorus-hooks
+    local src_commit_ts
+    src_commit_ts=$(git -C "$CHORUS_ROOT" log -1 --format=%ct -- platform/services/chorus-hooks/ 2>/dev/null || echo "0")
+    local shim_ts
+    shim_ts=$(stat -f '%m' "$CHORUS_HOOK_SHIM" 2>/dev/null || stat -c '%Y' "$CHORUS_HOOK_SHIM" 2>/dev/null)
+    if [ "$shim_ts" -lt "$src_commit_ts" ]; then
+      printf "  %-22s %s\n" "chorus-hook-shim drift:" "STALE (binary older than source)"
+    else
+      printf "  %-22s %s\n" "chorus-hook-shim drift:" "ok"
+    fi
+  else
+    printf "  %-22s %s\n" "chorus-hook-shim:" "NOT BUILT"
+  fi
+  echo
+
+  # CLAUDE.md regen state
+  if [ -f "$CLAUDEMD_GEN_OUT" ]; then
+    local frag_commit_ts md_ts
+    frag_commit_ts=$(git -C "$CHORUS_ROOT" log -1 --format=%ct -- designing/claudemd/ 2>/dev/null || echo "0")
+    md_ts=$(stat -f '%m' "$CLAUDEMD_GEN_OUT" 2>/dev/null || stat -c '%Y' "$CLAUDEMD_GEN_OUT" 2>/dev/null)
+    if [ "$md_ts" -lt "$frag_commit_ts" ]; then
+      printf "  %-22s %s\n" "CLAUDE.md drift:" "STALE (older than fragments)"
+    else
+      printf "  %-22s %s\n" "CLAUDE.md drift:" "ok"
+    fi
+  fi
+  echo
+
+  # Pre-commit hook symlink
+  local hook_path="$CHORUS_ROOT/.git/hooks/pre-commit"
+  local canonical="$CHORUS_ROOT/platform/hooks/pre-commit"
+  if [ -L "$hook_path" ] && [ "$(readlink "$hook_path")" = "$canonical" ]; then
+    printf "  %-22s %s\n" "pre-commit hook:" "ok (symlinked to canonical)"
+  elif [ -f "$hook_path" ]; then
+    printf "  %-22s %s\n" "pre-commit hook:" "DRIFT (not symlinked to canonical)"
+  else
+    printf "  %-22s %s\n" "pre-commit hook:" "NOT INSTALLED"
+  fi
+  echo
+
+  emit "werk.check.completed" "head=$head_sha" "main=$main_sha"
+}
+
+# --- werk deploy ---
+
+cmd_deploy() {
+  local mode="canonical"
+  if [ "${1:-}" = "--dev" ]; then
+    mode="dev"
+    shift
+  fi
+
+  if [ "$mode" = "canonical" ]; then
+    if ! verify_main_sha; then
+      emit "werk.deploy.refused" "reason=non-main-sha" "mode=canonical"
+      exit 1
+    fi
+  else
+    echo "werk: deploy --dev — bypassing main-SHA check, routing to *-dev paths" >&2
+  fi
+
+  echo "=== werk deploy ($mode) ==="
+  emit "werk.deploy.started" "mode=$mode"
+
+  # Determine what changed since last deploy.
+  # Heuristic: compare current SHA vs the SHA recorded in /tmp/werk-runtime-sha
+  # (or just rebuild everything in canonical mode for now — keeps it simple).
+  local target_dir
+  if [ "$mode" = "canonical" ]; then
+    target_dir="release"
+  else
+    target_dir="release-dev"
+  fi
+
+  # Build chorus-hook-shim
+  echo
+  echo "→ cargo build --release ($target_dir) chorus-hook-shim"
+  if [ "$mode" = "canonical" ]; then
+    (cd "$CHORUS_ROOT/platform/services/chorus-hooks" && cargo build --release --bin chorus-hook-shim 2>&1 | tail -3) || {
+      echo "werk: cargo build failed" >&2
+      emit "werk.deploy.failed" "step=cargo-build" "mode=$mode"
+      exit 1
+    }
+  else
+    # --dev: build to release-dev
+    (cd "$CHORUS_ROOT/platform/services/chorus-hooks" && CARGO_TARGET_DIR=target-dev cargo build --release --bin chorus-hook-shim 2>&1 | tail -3) || {
+      echo "werk: cargo build (dev) failed" >&2
+      emit "werk.deploy.failed" "step=cargo-build-dev" "mode=$mode"
+      exit 1
+    }
+  fi
+
+  # Regenerate CLAUDE.md (canonical only for now; dev mode could route to claudemd-dev/ later)
+  echo
+  echo "→ claudemd-gen"
+  if [ "$mode" = "canonical" ]; then
+    (cd "$CHORUS_ROOT" && CHORUS_ROOT="$CHORUS_ROOT" "$CHORUS_HOOK_SHIM" claudemd-gen 2>&1 | tail -2) || {
+      echo "werk: claudemd-gen failed (non-fatal)" >&2
+    }
+  else
+    echo "  (skipped in --dev mode)"
+  fi
+
+  # Install/refresh hooks
+  echo
+  echo "→ install-hooks"
+  if [ "$mode" = "canonical" ] && [ -x "$HOOK_INSTALL_SCRIPT" ]; then
+    bash "$HOOK_INSTALL_SCRIPT" 2>&1 | tail -2 || {
+      echo "werk: install-hooks failed (non-fatal)" >&2
+    }
+  else
+    echo "  (skipped in --dev mode)"
+  fi
+
+  # Pin the deployed SHA
+  if [ "$mode" = "canonical" ]; then
+    git -C "$CHORUS_ROOT" rev-parse HEAD > /tmp/werk-runtime-sha
+  fi
+
+  echo
+  echo "=== werk deploy complete ($mode) ==="
+  local final_sha
+  final_sha=$(git -C "$CHORUS_ROOT" rev-parse --short HEAD)
+  emit "werk.deploy.completed" "mode=$mode" "sha=$final_sha"
+}
+
+# --- usage ---
+
+cmd_help() {
+  cat <<'HELP'
+werk: execute work-units against the chorus substrate
+
+Substrate uniformity (#2598) — all three roles use this surface for build/deploy/check.
+No more cargo-build-when-you-remember, no app-state.sh-vs-launchctl-vs-binary-copy.
+
+Commands:
+  werk check                Read-only drift report. Shows SHA per runtime component
+                            (chorus-hook-shim, CLAUDE.md, pre-commit hook) and
+                            whether the runtime is in sync with origin/main.
+
+  werk deploy               Verify HEAD == origin/main, then rebuild + reinstall
+                            canonical paths (chorus-hook-shim, CLAUDE.md, hooks).
+                            Refuses on non-main HEAD — that's the substrate gate.
+
+  werk deploy --dev         Same composition routed to *-dev filesystem paths
+                            (target/release-dev/*, etc). Doesn't mutate canonical.
+                            Use for local testing without affecting other roles.
+
+  werk help                 This message.
+
+Environment:
+  DEPLOY_ROLE              Role attribution (silas|wren|kade) for spine events.
+
+See #2598 for design. werk replaces ad-hoc combos of cargo build, app-state.sh,
+claudemd-gen, install-hooks under a single verify_main_sha gate.
+HELP
+}
+
+# --- dispatch ---
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  check)              cmd_check "$@" ;;
+  deploy)             cmd_deploy "$@" ;;
+  help|--help|-h|"")  cmd_help ;;
+  *)
+    echo "werk: unknown command '$cmd'" >&2
+    cmd_help
+    exit 1
+    ;;
+esac

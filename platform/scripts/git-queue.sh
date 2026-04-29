@@ -369,6 +369,11 @@ do_push() {
   write_meta
   log_event "build.push.started"
 
+  # #2598: signal pre-push hook that this push originated through git-queue.
+  # The pre-push hook refuses raw `git push` (no marker) and accepts only
+  # invocations marked here. Substrate-uniformity (Jeff 2026-04-29).
+  export _GIT_QUEUE_PUSH=1
+
   local dirty
   # #2597: `grep -v '^?'` returns 1 when stdin is empty (clean tree); under
   # `set -euo pipefail` that propagates through the command-substitution and
