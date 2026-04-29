@@ -13,6 +13,14 @@ const INIT_DIR: &str = "/tmp/claude-session-init";
 /// (commands/session.rs) so context is injected via hookSpecificOutput,
 /// not via "please read the file" prose. Read is plain-allow.
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
+    check_with_dir(input, state, INIT_DIR).await
+}
+
+/// Internal entry point parameterized on the session-init dir. Production
+/// `check()` always passes `INIT_DIR`. Tests pass a tmpdir to escape the
+/// daemon-vs-test race on the global /tmp/claude-session-init path (#2558).
+#[doc(hidden)]
+pub async fn check_with_dir(input: &HookInput, state: &AppState, init_dir: &str) -> HookResponse {
     let role = input.role();
     let role_str = role.as_str();
 
@@ -21,8 +29,8 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     let tool = input.tool_name_str();
-    let pending = format!("{}/{}.pending", INIT_DIR, role_str);
-    let done = format!("{}/{}.done", INIT_DIR, role_str);
+    let pending = format!("{}/{}.pending", init_dir, role_str);
+    let done = format!("{}/{}.done", init_dir, role_str);
 
     // Read is always allowed. Additionally, Reading the role's own
     // /tmp/session-start-<role>.md when .pending is armed and .done is
@@ -39,7 +47,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         {
             match protocol_contract::check(role_str) {
                 Ok(()) => {
-                    let _ = tokio::fs::create_dir_all(INIT_DIR).await;
+                    let _ = tokio::fs::create_dir_all(init_dir).await;
                     let _ = tokio::fs::write(&done, "").await;
                     state.mark_session_init_done(role_str).await;
                     info!(
@@ -72,11 +80,11 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         // Gate active — deny. No exemptions.
         return HookResponse::deny(&permission_deny_json(&format!(
             "Session init gate: SessionStart boot did not complete for role '{}'. \
-             Check /tmp/claude-session-init/{}.done — if missing, SessionStart \
+             Check {}/{}.done — if missing, SessionStart \
              hook did not fire or protocol_contract check failed (see \
              session.protocol.violation spine events). This is a binary gate: \
              no Bash exemptions.",
-            role_str, role_str
+            role_str, init_dir, role_str
         )));
     }
 
