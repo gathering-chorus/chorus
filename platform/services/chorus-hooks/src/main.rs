@@ -83,7 +83,9 @@ async fn main() {
         let _ = std::fs::remove_file(SOCKET_PATH);
     }
 
-    // Write PID file for orphan detection
+    // Write PID file for orphan detection.
+    // #2559: PID file lifecycle matches socket lifecycle — both written here
+    // on launch, both removed in shutdown_signal on graceful exit.
     std::fs::write(PID_PATH, std::process::id().to_string())
         .expect("Failed to write PID file");
 
@@ -116,11 +118,38 @@ async fn main() {
 }
 
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to install Ctrl+C handler");
+    // #2559: handle both SIGINT (Ctrl+C, terminal) and SIGTERM (launchctl bootout,
+    // systemd, kill default). ctrl_c() alone leaves the daemon's cleanup unrun
+    // when launchd restarts it, which is the actual prod path.
+    //
+    // Pre-bind race window: SIGTERM arriving between process start and
+    // axum::serve()'s with_graceful_shutdown awaiting this future will kill
+    // the daemon before the handlers arm. Window is bind + serve setup (~ms);
+    // accepted as negligible. If startup gains slow I/O, revisit.
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
     info!("Shutting down...");
-    let _ = std::fs::remove_file(SOCKET_PATH);
+    // #2559: clean shutdown removes both socket and pid in lockstep —
+    // stale pid otherwise lets `kill $(cat …)` target a recycled-PID process.
+    chorus_hooks::cleanup_runtime_files(Path::new(SOCKET_PATH), Path::new(PID_PATH));
 }
 
 async fn health() -> &'static str {

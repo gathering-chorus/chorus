@@ -46,3 +46,51 @@ fn stale_pid_detected_when_process_dead() {
 
     fs::remove_file(test_pid_path).ok();
 }
+
+/// #2559: clean shutdown must remove BOTH socket and pid files.
+/// shutdown_signal previously removed only the socket, leaving a stale PID
+/// file that scripts running `kill $(cat /tmp/chorus-hooks.pid)` could
+/// target against a recycled-PID unrelated process. Symmetry restored via
+/// a shared `cleanup_runtime_files` helper.
+#[test]
+fn cleanup_runtime_files_removes_both_socket_and_pid() {
+    let dir = std::env::temp_dir().join(format!(
+        "chorus-hooks-cleanup-{}-both",
+        std::process::id()
+    ));
+    fs::create_dir_all(&dir).unwrap();
+    let socket_path = dir.join("test.sock");
+    let pid_path = dir.join("test.pid");
+    fs::write(&socket_path, "").unwrap();
+    fs::write(&pid_path, "12345").unwrap();
+
+    chorus_hooks::cleanup_runtime_files(&socket_path, &pid_path);
+
+    assert!(
+        !socket_path.exists(),
+        "socket should be removed (already worked pre-#2559)"
+    );
+    assert!(
+        !pid_path.exists(),
+        "pid file should be removed by cleanup — #2559 fix"
+    );
+
+    let _ = fs::remove_dir(&dir);
+}
+
+/// Cleanup must be idempotent — calling on already-missing files is a no-op,
+/// not a panic. Matches `let _ = fs::remove_file(...)` discard pattern.
+#[test]
+fn cleanup_runtime_files_idempotent_when_missing() {
+    let dir = std::env::temp_dir().join(format!(
+        "chorus-hooks-cleanup-{}-missing",
+        std::process::id()
+    ));
+    fs::create_dir_all(&dir).unwrap();
+    let socket_path = dir.join("nonexistent.sock");
+    let pid_path = dir.join("nonexistent.pid");
+
+    chorus_hooks::cleanup_runtime_files(&socket_path, &pid_path);
+
+    let _ = fs::remove_dir(&dir);
+}
