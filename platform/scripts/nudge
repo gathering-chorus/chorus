@@ -34,7 +34,18 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$SUBSTITUTE_BODY" = "1" ]; then
-  ARGS+=("$BODY")
+  # Insert BODY at index 1 (immediately after role), not at end.
+  # chorus-hook-shim expects message at args[1]; appending broke 'nudge <role> --body-file x --from <sender>'
+  # because args[1] became '--from' and triggered the unknown-flag error path. (Silas, #2575 gate:arch.)
+  if [ "${#ARGS[@]}" -ge 1 ]; then
+    NEW_ARGS=("${ARGS[0]}" "$BODY")
+    if [ "${#ARGS[@]}" -gt 1 ]; then
+      NEW_ARGS+=("${ARGS[@]:1}")
+    fi
+    ARGS=("${NEW_ARGS[@]}")
+  else
+    ARGS=("$BODY")
+  fi
 fi
 
 exec "$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim" nudge "${ARGS[@]}" --force
