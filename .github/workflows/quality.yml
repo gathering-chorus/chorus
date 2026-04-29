@@ -39,16 +39,26 @@ name: quality
 # (future dedicated drift workflow), DEC-2525.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  # Nightly drift lane (#2527 placeholder until the dedicated workflow ships).
-  # Non-required jobs are gated to schedule-only via job-level `if:` so PR/push
-  # runs only execute the required + small-backstop jobs. This cuts CI minute
-  # burn ~60% post-disconnect (#2526 wave 3) without losing nightly visibility.
+  # COST STOP (2026-04-29): per-branch CI suspended. Continues #2526 wave
+  # progression (waves 1-4 narrowed the surface; this is "wave 5" — disconnect
+  # the on-PR/on-push triggers entirely).
+  #
+  # Driver: GHA spend $15/48hr ($225/mo projected), Jeff named unsustainable.
+  # Architect call: ADR-026 layer 3 demoted from "blocks merge" to "schedule-
+  # only nightly drift detection" — accepts ~24hr detection latency for ~$0/mo
+  # cost. Local-protocol guards (pre-commit hooks, #2580 branch-check,
+  # #2598 deploy-from-main, #2571 chorus-env-setup) remain authoritative for
+  # the same check classes locally.
+  #
+  # Re-enable path: uncomment the `push:`/`pull_request:` blocks below if the
+  # trade reverses (cheaper runners, narrower matrix, more contributors).
+  # push:
+  #   branches: [main]
+  # pull_request:
+  #   branches: [main]
   schedule:
     - cron: '17 9 * * *'  # 09:17 UTC daily — off-peak, off-:00
+  workflow_dispatch:  # manual trigger remains for ad-hoc verification
 
 jobs:
   lint-ratchet:
