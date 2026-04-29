@@ -3,7 +3,8 @@
 # What Jeff sees: role commits but can't push because another role
 # has unstaged changes. Jeff becomes the relay to unblock.
 
-GIT_QUEUE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh"
+GIT_QUEUE="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/git-queue.sh"
+[ -f "$GIT_QUEUE" ] || GIT_QUEUE="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../scripts" && pwd)/git-queue.sh"
 
 # Use a temp git repo to avoid touching the real repo
 setup() {
@@ -93,4 +94,55 @@ teardown() {
   run timeout 10 bash "$GIT_QUEUE" push
   # Should not hang or require input
   [ "$status" -ne 124 ]  # 124 = timeout killed it
+}
+
+# --- #2597: silent-exit on clean tree ---
+# Repro: clean tree, branch matches role, no upstream issues. Without the fix,
+# `git status --porcelain | grep -v '^?' | head -1` returns 1 (no matches)
+# under set -euo pipefail, which causes silent exit before any push attempt.
+# With the fix, the substitution tolerates the no-match case and proceeds.
+
+@test "push does not silent-exit on clean tree (#2597)" {
+  # Set up a real upstream so push can complete
+  ORIGIN=$(mktemp -d)
+  git init --quiet --bare "$ORIGIN"
+  git remote add origin "$ORIGIN"
+
+  # Create a branch matching DEPLOY_ROLE for the #2580 branch-check
+  git checkout -b silas/2597-test --quiet
+  echo "init content" > seed.txt
+  git add seed.txt
+  git commit --quiet -m "silas: seed for 2597 test"
+  git push -q -u origin silas/2597-test
+
+  # Make one new commit so push has something to do, then verify clean tree
+  echo "new" > new.txt
+  git add new.txt
+  git commit --quiet -m "silas: new commit for #2597 push"
+  git status --porcelain  # should be empty (clean post-commit)
+
+  # Run git-queue push — must NOT silent-exit
+  run bash "$GIT_QUEUE" push
+  # Diagnostic: print output if test fails
+  if [ "$status" -ne 0 ]; then
+    echo "exit=$status"
+    echo "output=[$output]"
+  fi
+  # Either push succeeds (status 0) OR fails with VISIBLE output. Silent exit
+  # 1 with empty output is the bug.
+  if [ "$status" -ne 0 ]; then
+    [ -n "$output" ] || (echo "FAIL: silent exit, empty output (#2597 bug present)" && false)
+  fi
+  rm -rf "$ORIGIN"
+}
+
+@test "dirty-check pipe tolerates clean tree (#2597 unit)" {
+  # Direct unit test of the failing pipe in isolation. Under set -euo pipefail,
+  # `printf "" | grep -v '^?' | head -1` should not propagate exit 1.
+  run bash -c 'set -euo pipefail
+    dirty=$(git status --porcelain 2>/dev/null | grep -v "^?" | head -1 || true)
+    echo "dirty=[$dirty]"
+    echo "after"'
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "after" || (echo "expected after-line, got: $output" && false)
 }

@@ -370,7 +370,11 @@ do_push() {
   log_event "build.push.started"
 
   local dirty
-  dirty=$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | grep -v '^?' | head -1)
+  # #2597: `grep -v '^?'` returns 1 when stdin is empty (clean tree); under
+  # `set -euo pipefail` that propagates through the command-substitution and
+  # silently terminates the script before any push happens. `|| true` tolerates
+  # the no-match case so a clean tree just produces empty `dirty`.
+  dirty=$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | grep -v '^?' | head -1 || true)
 
   local stashed=false
   if [ -n "$dirty" ]; then
