@@ -1,280 +1,797 @@
 <!DOCTYPE html>
-<html lang="en">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Service Design — CI Pipeline</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
-  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
-  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
-  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
-  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
-  h3 { font-size: 1em; margin-top: 1.2em; }
-  p { margin-bottom: 10px; font-size: 0.88em; }
-  .promise { background: #dbeafe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-style: italic; font-size: 0.9em; }
-  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
-  .gap strong { color: #dc2626; }
-  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
-  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
-  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
-  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
-  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
-  .component h3 { margin-top: 0; color: #2d4a7a; }
-  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
-  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
-  .tag-deferred { background: #ede9fe; color: #5b21b6; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
-  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
-  .section-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0; }
-  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
-  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
-  .layer-map { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
-  .layer-card { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 10px; }
-  .layer-card .name { font-weight: 600; color: #2d4a7a; font-size: 0.9em; }
-  .layer-card .role { font-size: 0.72em; color: #666; margin-top: 2px; }
-  .layer-card .what { font-size: 0.78em; color: #444; margin-top: 4px; }
-  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
-  ul { margin: 8px 0 12px 20px; font-size: 0.84em; }
-  li { margin-bottom: 4px; }
-  @media print { body { margin: 20px 1in; } .section-grid, .layer-map { grid-template-columns: 1fr; } }
-</style>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>CI Pipeline Service Design</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
 </head>
 <body>
-
-<h1>CI Pipeline <span>— Service Design</span></h1>
-<p class="date">2026-04-25 — Kade. Layer 3 of the three-layer quality system. 13 required checks, branch-protection-enforced on main, alert on red.</p>
-
-<div class="promise">
-Every change that lands on main builds and passes the team's quality bar from a fresh runner — independent of what's cached on any role's laptop. Jeff can ask "is main shippable?" and the answer is yes by construction. When CI drifts, locks fall out of sync, ratchet baselines accumulate silent debt, in-flight work breaks other roles' PRs, and Jeff becomes the test suite.
-</div>
-
-<h2>Overview</h2>
-<p>CI is layer 3 of the three-layer quality system defined in ADR-026 §a. Pre-commit (Layer 1) is honest-mistake feedback, fast and skippable. Role gates (Layer 2) are card-acceptance — recorded on the card. CI (this) is <strong>authoritative on main</strong> — branch-protection-enforced, not skippable. The threat CI specifically closes: <code>--no-verify</code> plus local-vs-CI environment divergence.</p>
-
-<p>One workflow at <code>.github/workflows/quality.yml</code> on push-to-main and PR-to-main. 13 required jobs today; mcp-roundtrip deferred to #2495 pending ESM/CJS reconciliation. Lock-file policy (ADR-026 §c): per-package <code>package-lock.json</code> committed, <code>npm ci</code> not <code>npm install</code>, Dependabot for centralized updates. Red main fires <code>ci-main-red.yml</code> to Silas with daily cooldown.</p>
-
+<header id="title-block-header">
+<h1 class="title">CI Pipeline Service Design</h1>
+</header>
+<h1 id="ci-pipeline-service-design">CI Pipeline — Service Design</h1>
+<p><strong>Kade, 2026-04-25 / refreshed 2026-04-29 post cost-stop.
+Source: <code>.github/workflows/quality.yml</code>,
+<code>platform/hooks/{pre-commit,pre-push}</code> (Layer 1),
+<code>platform/scripts/{git-queue.sh,werk}</code> (Layer 1 substrate,
+#2580/#2598), <code>/gate-*</code> skills (Layer 2), ADR-026 (CI
+architecture + lock-file policy), DEC-2525 (required-checks governance +
+amendment), <code>proving/domains/alerts/ci-main-red.yml</code>
+(red-main alert), today’s session (#2580 / #2586 / #2597 / #2598 /
+#2600).</strong></p>
+<h2 id="promise">Promise</h2>
+<p>Every change that lands on <code>main</code> carries a quality bar
+that’s been measured by the same gates regardless of which role authored
+it. Those gates today are: pre-commit hooks running tsc/jest/cargo per
+affected package; the queue-layer branch-check (#2580) refusing
+cross-role contamination; the pre-push hook (#2598) refusing raw
+<code>git push</code> and wrong-role-prefix branches; the
+chorus-hook-shim PreToolUse extension refusing raw
+<code>git push</code>/<code>rebase</code>/<code>cherry-pick</code>/<code>reset --hard</code>;
+the role-gate chain (#1762 family) recording AC-pass on the card. CI
+itself (this service) is post-merge: a scheduled GitHub Actions workflow
+that re-runs the suite on <code>main</code> once a day and alerts Silas
+if it goes red. When CI is healthy, Jeff can ask “is <code>main</code>
+shippable?” and the local layers + once-a-day re-run answer yes by
+construction. When CI drifts, locks fall out of sync, ratchet baselines
+accumulate silent debt, the schedule fires red and nobody notices, or
+the local-layer substrate develops gaps that CI’s once-a-day pass can’t
+catch fast enough.</p>
+<h2 id="overview">Overview</h2>
+<p>CI is one piece of a multi-layer quality system. Per ADR-026 §a +
+Jeff’s 2026-04-29 reframe, redundancy across layers is intentional —
+different threat models, not duplication. The layers shifted today
+(cost-stop, #2600). What was a 12-job per-PR matrix is now a once-daily
+scheduled re-run with <code>0</code> required-status-checks; per-PR
+validation has been pushed left into Layer 1’s substrate.</p>
 <table>
-<tr><th>Component</th><th>Status</th><th>What It Does</th><th>Gap</th></tr>
-<tr><td>Workflow definition</td><td><span class="tag-real">REAL</span></td><td>13 required jobs across lint/tsc/jest/cargo/MCP shape/oversize/principle</td><td>mcp-roundtrip deferred (#2495)</td></tr>
-<tr><td>Pre-commit (Layer 1)</td><td><span class="tag-real">REAL</span></td><td>Rust shim runs tsc/jest/cargo/lint per changed package</td><td>KNOWN_FAILS pattern uses <code>--no-verify</code> w/ trace; not in tooling (#2497)</td></tr>
-<tr><td>Role gates (Layer 2)</td><td><span class="tag-real">REAL</span></td><td>Five skills: gate-product, gate-code, gate-quality, gate-arch, gate-ops</td><td>Demo skill assumes user-facing; infra cards don't fit (#2499)</td></tr>
-<tr><td>Branch protection</td><td><span class="tag-real">REAL</span></td><td>Classic protection on main, 13 required checks, admin bypass allowed</td><td>Org Rulesets enforces same 13 — duplicate (#2498, Silas pulled)</td></tr>
-<tr><td>Lock-file policy</td><td><span class="tag-real">REAL</span></td><td>Per-package locks committed, <code>npm ci</code>, Dependabot weekly Mondays</td><td>Initial 23 lock-update PRs flooded (one-time)</td></tr>
-<tr><td>Reactive alert</td><td><span class="tag-real">REAL</span></td><td><code>ci-main-red.yml</code> polls Actions API every 10 min, nudges Silas</td><td>Daily cooldown — one nudge per incident</td></tr>
-<tr><td>ESLint ratchet</td><td><span class="tag-real">REAL</span></td><td>Per-rule baseline; pre-commit + CI both enforce</td><td>Baseline drift between branches is silent (#2496)</td></tr>
-<tr><td>Required-checks coupling</td><td><span class="tag-partial">PARTIAL</span></td><td>Job names manually mirrored in Settings → Branches → Edit main rule</td><td>Rename → silent un-gate; <strong>#2500 drift detector filed</strong></td></tr>
-<tr><td>Smoke-check (app)</td><td><span class="tag-deferred">OUT OF SCOPE</span></td><td>Lives in jeff-bridwell-personal-site repo's CI</td><td>ADR-026 addendum 2026-04-25</td></tr>
-<tr><td>MCP round-trip</td><td><span class="tag-deferred">DEFERRED</span></td><td>Was attempted in #2487 — surfaced ESM/CJS mismatch</td><td>#2495 carries real api-boot work</td></tr>
-<tr><td>Test isolation in chorus-hooks/inject</td><td><span class="tag-partial">PARTIAL</span></td><td>cargo-test green via <code>CHORUS_ROOT</code> env override</td><td>Hardcoded /Users/jeffbridwell paths in tests (#2491, Silas-owned)</td></tr>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Today</th>
+<th>Threat closed</th>
+<th>Skippable?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0 — Substrate (werk + git-queue + pre-push + PreToolUse)</td>
+<td>#2580 + #2597 + #2598</td>
+<td>Cross-role contamination, raw-git bypasses, deploy-from-non-main,
+build-from-stale</td>
+<td>No (refused at four threat surfaces)</td>
+</tr>
+<tr>
+<td>1 — Pre-commit</td>
+<td><code>platform/hooks/pre-commit</code>, Rust-implemented via
+chorus-hook-shim</td>
+<td>Honest mistakes pre-commit; lint, oversize, principle-edit, hermetic
+Rust slice (<code>cargo test --lib --bins</code>), doc-coherence</td>
+<td>Yes via <code>--no-verify</code> (CI was authoritative; now
+schedule-only catches drift)</td>
+</tr>
+<tr>
+<td>2 — Role gates</td>
+<td><code>/gate-product</code> <code>/gate-code</code>
+<code>/gate-quality</code> <code>/gate-arch</code>
+<code>/gate-ops</code> skills</td>
+<td>Card-acceptance bar — AC, build, hooks, structural fit, ops
+health</td>
+<td>Skippable for <code>type:chore</code>/<code>type:swat</code>
+cards</td>
+</tr>
+<tr>
+<td>3 — CI (this)</td>
+<td><code>.github/workflows/quality.yml</code> schedule-only after
+#2600</td>
+<td>Local-vs-CI environment divergence;
+lock-honored-as-CI-runs-them</td>
+<td>Not skippable for the schedule fire; merge no longer gated by
+CI</td>
+</tr>
+</tbody>
 </table>
-
-<h2>The Three Layers</h2>
-<p>Each layer answers a different question with a different threat model. Redundancy is intentional.</p>
-
-<div class="layer-map">
-  <div class="layer-card">
-    <div class="name">Layer 1 — Pre-commit</div>
-    <div class="role">Local, skippable</div>
-    <div class="what">"Did the dev mean to commit this?" Fast feedback. <code>platform/hooks/pre-commit</code>.</div>
-  </div>
-  <div class="layer-card">
-    <div class="name">Layer 2 — Role gates</div>
-    <div class="role">Card-acceptance</div>
-    <div class="what">"Is this card team-acceptable?" Five skills, recorded on card. Owned per concern.</div>
-  </div>
-  <div class="layer-card">
-    <div class="name">Layer 3 — CI</div>
-    <div class="role">Authoritative on main</div>
-    <div class="what">"Does main build cleanly from scratch?" Branch-protection-enforced. Not skippable.</div>
-  </div>
-</div>
-
-<h2>Sub-Domain Interaction Model</h2>
-<p>CI doesn't act directly — it's invoked by GitHub on commit/PR events and produces status checks consumed by branch protection and the red-main alert. Like Quality, the service is a <strong>verdict producer</strong>, not an enforcer; branch protection is the enforcer.</p>
-
+<p>The pipeline today is a single GitHub Actions workflow at
+<code>.github/workflows/quality.yml</code>. Pre-#2600 it ran on
+push-to-main and pull-request-to-main with 13 required jobs. Post-#2600
+(PR #49 merged 2026-04-29 20:33Z) it runs on schedule (~daily 09:17
+UTC). Branch-protection + Repository Ruleset (15547153)
+<code>required_status_checks</code> are now <strong>empty</strong> —
+merge is no longer gated by CI verdict. Local layers + the role-gate
+chain are the per-PR quality bar; the schedule fire is the once-a-day
+post-merge witness.</p>
 <table>
-<tr><th>Trigger</th><th>Produces</th><th>Consumed By</th><th>Surface</th></tr>
-<tr><td>Push to main</td><td>Workflow run + 13 status checks</td><td>Branch protection, ci-main-red poll</td><td>github.com/.../actions</td></tr>
-<tr><td>PR to main</td><td>Workflow run on head commit</td><td>Branch protection (blocks merge if red)</td><td>PR Checks tab</td></tr>
-<tr><td>Workflow red on main</td><td><code>red:&lt;run-url&gt;</code> stdout line</td><td>ci-main-red.yml action — nudge Silas, daily cooldown</td><td>nudge silas (osascript + messaging API)</td></tr>
-<tr><td>Job names change in quality.yml</td><td>(should produce) drift event vs required-checks list</td><td>(should feed) #2500 drift detector</td><td><strong>NOT WIRED — #2500</strong></td></tr>
-<tr><td>Lock out of date with package.json</td><td>Dependabot opens per-package PR Mondays</td><td>Role review queue → CI run on new lock</td><td><code>gh pr list --label deps</code></td></tr>
-<tr><td>Ratchet baseline shrinkable</td><td>(today) silent</td><td>(should feed) #2496 ratchet-drift signal</td><td><strong>NOT WIRED — #2496</strong></td></tr>
-<tr><td>Test fails but is upstream-known</td><td><code>--no-verify</code> with #NNNN trace in commit</td><td>(today) commit convention only</td><td><strong>NOT WIRED — #2497</strong></td></tr>
+<colgroup>
+<col style="width: 34%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 15%" />
+</colgroup>
+<thead>
+<tr>
+<th>Component</th>
+<th>Status</th>
+<th>Source</th>
+<th>Gap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Workflow definition</td>
+<td>REAL — schedule-only</td>
+<td><code>.github/workflows/quality.yml</code>, ~daily 09:17 UTC; matrix
+retained but unfired by push/PR</td>
+<td>Schedule fire alerts on red, but post-merge regressions discoverable
+only at next fire (≤24h delay)</td>
+</tr>
+<tr>
+<td>Layer-0 substrate (#2580 + #2597 + #2598 + #2599)</td>
+<td>REAL — landed today</td>
+<td><code>git-queue.sh</code> branch-check, <code>werk</code> wrapper,
+<code>pre-push</code> hook, chorus-hook-shim PreToolUse refusal
+extension</td>
+<td>werk currently covers chorus-hook-shim/claudemd-gen/install-hooks;
+service deploys (chorus-api/clearing/pulse) still via app-state.sh —
+phase-2 candidate</td>
+</tr>
+<tr>
+<td>Pre-commit (Layer 1)</td>
+<td>REAL</td>
+<td><code>platform/hooks/pre-commit</code> runs lint-ratchet +
+principle-edit + catalog-oversize + cargo –lib –bins +
+doc-coherence</td>
+<td>KNOWN_FAILS pattern uses <code>--no-verify</code> w/ trace; not
+enforced in tooling (#2497)</td>
+</tr>
+<tr>
+<td>Role gates (Layer 2)</td>
+<td>REAL</td>
+<td><code>/gate-product</code> <code>/gate-code</code>
+<code>/gate-quality</code> <code>/gate-arch</code>
+<code>/gate-ops</code> skills</td>
+<td>Demo skill assumes user-facing; infra cards adapt via #2499</td>
+</tr>
+<tr>
+<td>Branch protection</td>
+<td>EMPTIED</td>
+<td>classic protection on <code>main</code> retained for non-status
+rules; <code>required_status_checks</code> now empty post-#2600</td>
+<td>Without required checks, an accidental main push can land
+red-on-main and only schedule-fire catches it</td>
+</tr>
+<tr>
+<td>Repository Ruleset 15547153</td>
+<td>EMPTIED</td>
+<td>mirrored required-checks (DEC-2525 amendment) — also emptied
+post-#2600</td>
+<td>Lockstep contract still intact; just both sides empty for now</td>
+</tr>
+<tr>
+<td>Lock-file policy</td>
+<td>REAL</td>
+<td>per-package <code>package-lock.json</code> committed,
+<code>npm ci</code> in CI, Dependabot weekly Mon → reduced to monthly +
+1 PR/ecosystem post-#2600</td>
+<td>Drift between local + scheduled-CI runs invisible until next
+schedule fire</td>
+</tr>
+<tr>
+<td>Reactive alert</td>
+<td>REAL</td>
+<td><code>proving/domains/alerts/ci-main-red.yml</code> polls Actions
+API every 10 min; daily cooldown</td>
+<td>Polls every 10 min but with schedule firing only ~daily, alert fires
+at most once/day on red</td>
+</tr>
+<tr>
+<td>ESLint ratchet</td>
+<td>REAL</td>
+<td><code>npm run lint:ratchet</code> enforces per-rule baseline; runs
+in pre-commit + scheduled CI</td>
+<td>Baseline drift between branches silent (#2496)</td>
+</tr>
+<tr>
+<td>Required-checks ↔︎ workflow coupling</td>
+<td>RESOLVED VIA EMPTYING</td>
+<td>After #2600, both branch-protection and Ruleset 15547153 carry empty
+required-checks lists</td>
+<td>When required-checks come back (if ever), drift detector #2500 still
+applicable</td>
+</tr>
+<tr>
+<td>Smoke-check (app surface)</td>
+<td>OUT OF SCOPE</td>
+<td>Lives in <code>jeff-bridwell-personal-site</code> repo’s own CI</td>
+<td>ADR-026 addendum 2026-04-25</td>
+</tr>
+<tr>
+<td>MCP round-trip (live api)</td>
+<td>DONE</td>
+<td>#2495 closed; CI job restored</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Test-isolation in chorus-hooks/inject</td>
+<td>PARTIAL</td>
+<td>cargo-test green via CHORUS_ROOT env override</td>
+<td>#2491 still Later — hardcoded <code>/Users/jeffbridwell</code> paths
+in some tests</td>
+</tr>
+</tbody>
 </table>
-
-<p>The core pattern: CI is a <strong>verdict producer</strong>, branch protection is the <strong>enforcer</strong>, alerts are the <strong>safety net</strong>. The safety net catches the case where verdict + enforcement both pass but main goes red anyway (admin-bypass push, post-merge regression, flake).</p>
-
-<h2>Dependencies</h2>
-<p>Per Wren's 4-layer pattern (#2159): CI sits on principles + practices + policies + decisions.</p>
-
+<h2 id="sub-domain-interaction-model">Sub-Domain Interaction Model</h2>
+<p>CI now has a smaller surface than before. It doesn’t act on push or
+PR (those events used to be the primary triggers); it fires on schedule
+and produces a verdict that alerts Silas if red. The per-PR threat model
+has moved to Layer 0 (substrate) + Layer 1 (pre-commit). The trigger /
+produces / consumed by table reflects post-cost-stop state.</p>
 <table>
-<tr><th>Dependency</th><th>Sub-domain</th><th>Status</th><th>Notes</th></tr>
-<tr><td>Principles</td><td>loom-principles</td><td><span class="tag-real">POPULATED</span></td><td><code>quality-at-source</code>, <code>tests-hermetic-by-default-integration-gated-explicitly</code>, <code>infrastructure-is-your-codebase-too</code></td></tr>
-<tr><td>Practices</td><td>loom-practices</td><td><span class="tag-real">POPULATED</span></td><td><code>production-ready</code>, <code>api-first</code> (workflow YAML is the API to enforcement)</td></tr>
-<tr><td>Policies</td><td>loom-policies</td><td><span class="tag-none">MISSING</span></td><td>Sub-domain blocked on #2151. CI will depend on: KNOWN_FAILS (#2497), ratchet drift (#2496), red-main escalation (runbook section), required-checks coupling (#2500)</td></tr>
-<tr><td>Decisions</td><td>loom-decisions</td><td><span class="tag-partial">SHELL</span></td><td>ADR-026 + 2026-04-25 addendum CI-load-bearing but not yet harvested as graph instances; #2485 covers loom-decisions reach</td></tr>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 24%" />
+<col style="width: 31%" />
+<col style="width: 21%" />
+</colgroup>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Produces</th>
+<th>Consumed By</th>
+<th>Surface</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Schedule fire (~daily 09:17 UTC)</strong></td>
+<td>One workflow run, full matrix</td>
+<td><code>ci-main-red.yml</code> alert poll</td>
+<td><code>https://github.com/gathering-chorus/chorus/actions</code></td>
+</tr>
+<tr>
+<td>Push to <code>main</code></td>
+<td>(no workflow run today)</td>
+<td>—</td>
+<td>n/a (workflow trigger removed in #2600)</td>
+</tr>
+<tr>
+<td>Pull request</td>
+<td>(no workflow run today)</td>
+<td>Branch protection no longer gates on CI verdict</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>Workflow run completes red on <code>main</code></td>
+<td><code>red:&lt;run-url&gt;</code> line in alert check stdout</td>
+<td><code>proving/domains/alerts/ci-main-red.yml</code> action — nudges
+Silas, daily cooldown</td>
+<td><code>nudge silas</code></td>
+</tr>
+<tr>
+<td>Layer-0 substrate refusal (commit / push / git op)</td>
+<td>spine event <code>commits.branch.mismatch_detected</code> or
+hook-deny output</td>
+<td>Drift dashboards (Silas), incident reconstruction</td>
+<td>chorus.log</td>
+</tr>
+<tr>
+<td>Lock-file out of date</td>
+<td>Dependabot opens monthly PR (post-#2600)</td>
+<td>Role review queue, then merge → next schedule re-run validates
+against new lock</td>
+<td><code>gh pr list --label deps</code></td>
+</tr>
+<tr>
+<td>Ratchet baseline shrinkable</td>
+<td>(today) silent — no signal</td>
+<td>(should feed) #2496 ratchet-drift signal</td>
+<td><strong>NOT WIRED — #2496</strong></td>
+</tr>
+<tr>
+<td>Test fails but is upstream-known</td>
+<td>–no-verify with #NNNN trace in commit message</td>
+<td>(today) commit-message convention only; no machine-checkable
+allowlist</td>
+<td><strong>NOT WIRED — #2497</strong></td>
+</tr>
+</tbody>
 </table>
-
-<p><strong>Why dependencies matter to CI:</strong> the layer model is a shape derived from principles (CI is the safety net for what slipped through local), practices (CI proves shippability), policies (when a check bites: pre-commit vs gate vs CI), and decisions (why specific checks bite where they do). Observed today 2026-04-25: without a KNOWN_FAILS policy, role A's pre-existing test debt blocks role B's commit; B uses <code>--no-verify</code> with a trace, but the convention isn't machine-checkable, so future drift is invisible.</p>
-
-<h2>Components</h2>
-
-<div class="component">
-<h3>Workflow definition <span class="tag-real">REAL</span></h3>
-<p>Single workflow at <code>.github/workflows/quality.yml</code>, 13+ jobs, runs on push-to-main and PR-to-main. Each job is one concern.</p>
-<div class="section-grid">
-  <div class="section-box"><strong>Static checks</strong>
-    ESLint per-rule ratchet<br/>
-    MCP tool description shape (#2475)<br/>
-    Catalog oversize backstop (#2461)<br/>
-    Principle direct-edit backstop (#2314)
-  </div>
-  <div class="section-box"><strong>Type + unit</strong>
-    tsc — 5 packages (matrix)<br/>
-    jest — 4 packages (matrix)<br/>
-    cargo test — chorus-hooks + chorus-inject
-  </div>
-  <div class="section-box"><strong>Deferred</strong>
-    mcp-roundtrip → #2495<br/>
-    smoke-check → personal-site repo<br/>
-    api tsc moduleResolution → #2495
-  </div>
-</div>
-</div>
-
-<div class="component">
-<h3>Pre-commit hook <span class="tag-real">REAL</span></h3>
-<p>Layer 1. Rust-implemented via <code>chorus-hook-shim</code>. Skippable via <code>--no-verify</code> — overridden by Layer 3 as authoritative.</p>
-<div class="section-grid">
-  <div class="section-box"><strong>Checks</strong>
-    Check 1: tsc<br/>
-    Check 2: jest<br/>
-    Check 4.6: cargo test<br/>
-    Check 4.7: doc-coherence-ratchet<br/>
-    Plus secret-scan, ratchet, MCP shape
-  </div>
-  <div class="section-box"><strong>Bypass policy</strong>
-    <code>--no-verify</code> allowed with #NNNN trace<br/>
-    CI is authoritative — bypass surfaces in CI<br/>
-    Allowlist tooling: #2497
-  </div>
-  <div class="section-box"><strong>Failure routing</strong>
-    Detail at <code>/tmp/pre-commit-detail.md</code><br/>
-    Blocks the commit, prints concern + fix<br/>
-    Reference to CI as authoritative in message
-  </div>
-</div>
-</div>
-
-<div class="component">
-<h3>Role gates <span class="tag-real">REAL</span></h3>
-<p>Five skills, one per concern. Recorded as card comments + spine events. Skippable for type:chore and type:swat. Demo skill (DEC-048) assumes user-facing — infra cards adapt via #2499.</p>
-<div class="section-grid">
-  <div class="section-box"><strong>Wren-owned</strong>
-    /gate-product — AC, Experience, domain registration
-  </div>
-  <div class="section-box"><strong>Kade-owned</strong>
-    /gate-code — tests green, build clean<br/>
-    /gate-quality — hooks, regression, console.log
-  </div>
-  <div class="section-box"><strong>Silas-owned</strong>
-    /gate-arch — namespace, boundaries, fit<br/>
-    /gate-ops — health, log flow, rollback
-  </div>
-</div>
-</div>
-
-<div class="component">
-<h3>Branch protection <span class="tag-real">REAL</span></h3>
-<p>Classic protection on main in gathering-chorus org. 13 required status checks. "Do not allow bypassing" unchecked → admins can push direct to main. Org-level Rulesets duplicates this; collapses under #2498 (Silas-owned, pulled).</p>
-</div>
-
-<div class="component">
-<h3>Lock-file policy + Dependabot <span class="tag-real">REAL</span></h3>
-<p>ADR-026 §c. Per-package <code>package-lock.json</code> committed (root + 7 active TS packages), Cargo locks committed. CI runs <code>npm ci</code> not <code>npm install</code> — drift between local and CI is a red flag. <code>.github/dependabot.yml</code> opens weekly Monday lock-update PRs across 11 ecosystem-directory pairs. Initial scan: 23 PRs at once (#2-#24). Steady-state: 2-5/week.</p>
-</div>
-
-<div class="component">
-<h3>Reactive alert (ci-main-red) <span class="tag-real">REAL</span></h3>
-<p>Polls GitHub Actions API every 10 minutes for the most recent run on main. If <code>status=completed && conclusion=failure</code>, fires nudge to Silas with daily cooldown. No <code>GH_TOKEN</code> → check returns ok and skips silently. Read-only check; never auto-reverts (ADR-026 §d).</p>
-</div>
-
-<div class="component">
-<h3>ESLint ratchet <span class="tag-real">REAL</span></h3>
-<p>Per-rule baseline at <code>platform/state/eslint-baseline.json</code>. Pre-commit and CI both run the same check. New rule firings require either a fix or <code>npm run lint:baseline</code> to adopt. Baseline updates today are manual; #2496 looks at automating or signaling drift.</p>
-</div>
-
-<div class="component">
-<h3>Required-checks contract <span class="tag-partial">PARTIAL</span></h3>
-<p>Integration point between workflow and merge-protection guarantee. Listed manually in Settings → Branches → Edit main rule → Status checks. Rename a job → check runs but doesn't gate. Remove a job without removing from list → all PRs un-mergeable. <strong>#2500 drift detector</strong> closes this loop.</p>
-</div>
-
-<div class="component">
-<h3>Red-main runbook (Silas-owned)</h3>
-<p>When ci-main-red fires, the triage tree is:</p>
+<p>The core pattern: CI is a <strong>periodic verdict producer</strong>,
+layer-0 substrate is the <strong>per-PR enforcer</strong>, and alerts
+are the <strong>safety net</strong>. Verdicts at scheduled cadence catch
+what the substrate missed; substrate refusal catches what slipped at
+commit-time before pre-commit even runs. The safety net’s window grew
+(≤24h vs ≤immediate before) so the load-bearing requirement is that
+Layer 0 + Layer 1 catch the obvious-broken case first.</p>
+<h2 id="dependencies">Dependencies</h2>
+<p>Per Wren’s 4-layer pattern (#2159): CI sits on principles + practices
++ policies + decisions.</p>
+<table>
+<colgroup>
+<col style="width: 22%" />
+<col style="width: 24%" />
+<col style="width: 16%" />
+<col style="width: 22%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr>
+<th>Dependency</th>
+<th>Sub-domain</th>
+<th>Status</th>
+<th>Instances</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Principles</td>
+<td>loom-principles</td>
+<td>POPULATED</td>
+<td>5 CI-relevant</td>
+<td><code>quality-at-source</code> (CI catches what local missed),
+<code>tests-hermetic-by-default-integration-gated-explicitly</code>
+(hermetic-by-default; integration gated),
+<code>infrastructure-is-your-codebase-too</code> (workflow + hooks
+reviewed like code), <code>parallel-paths-not-fallback-chains</code>
+(Layer 0/1/2/3 are parallel paths at different threat surfaces),
+<code>every-ceremony-must-yield</code> (cost-stop applied this — per-PR
+matrix didn’t yield enough)</td>
+</tr>
+<tr>
+<td>Practices</td>
+<td>loom-practices</td>
+<td>POPULATED</td>
+<td>2 CI-relevant</td>
+<td><code>production-ready</code> (CI = “does this build clean?”),
+<code>api-first</code> (workflow YAML is the API to enforcement)</td>
+</tr>
+<tr>
+<td>Policies</td>
+<td>loom-policies</td>
+<td>MISSING</td>
+<td>—</td>
+<td>Sub-domain blocked on #2151. CI will depend on: KNOWN_FAILS
+allowlist policy (#2497), ratchet drift policy (#2496), red-main
+escalation policy (runbook section), required-checks coupling policy
+(#2500), schedule-cadence policy (post-#2600 — what fire frequency
+justifies vs schedule-only re-run cost)</td>
+</tr>
+<tr>
+<td>Decisions</td>
+<td>loom-decisions</td>
+<td>SHELL</td>
+<td>0 populated</td>
+<td>ADR-026 (CI architecture + lock-file policy), its 2026-04-25
+addendum (smoke-check stays out), DEC-2525 (required-checks governance +
+amendment), and #2600 (schedule-only retreat) all CI-load-bearing but
+not yet harvested as graph instances; #2152 covers harvest</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why dependencies matter to CI:</strong> the layer model is a
+shape derived from principles, practices, policies, and decisions. When
+principles shift (e.g., “every-ceremony-must-yield” applied as cost-stop
+justification on 2026-04-29), the layer shape shifts too — that’s
+exactly what #2600 was. Without policies populated, the layer shape can
+drift faster than the doc that describes it.</p>
+<h2 id="components">Components</h2>
+<h3 id="layer-0-substrate-new-post-2026-04-29">Layer 0 — Substrate (NEW
+post 2026-04-29)</h3>
+<p>Substrate refusal at four threat surfaces. None of them are CI per
+se; they are the per-PR enforcement that replaced the per-PR matrix.</p>
 <ul>
-  <li><strong>Recent merge + unrelated to in-flight</strong> → revert the merge commit, file fix card on original author. Forward progress preserved by the revert.</li>
-  <li><strong>Forward-fix is quick (≤10 min, root cause obvious)</strong> → push the fix direct to main, watch CI re-run green. No revert needed.</li>
-  <li><strong>Not (1) or (2)</strong> → file swat card with failing job name, mark main as known-red in #shared-observability, decide with team whether to revert or freeze merges.</li>
+<li><strong><code>git-queue.sh</code> branch-check</strong> (#2580,
+Done) — refuses commit/push if HEAD doesn’t match
+<code>&lt;DEPLOY_ROLE&gt;/*</code>. Spine event
+<code>commits.branch.mismatch_detected</code> with cwd +
+commits_ahead.</li>
+<li><strong><code>werk</code> wrapper</strong> (#2598, in flight, PR
+#56) — <code>werk check</code> (read-only drift report),
+<code>werk deploy</code> (refuses unless HEAD == origin/main, composes
+cargo build + claudemd-gen + install-hooks),
+<code>werk deploy --dev</code> (sandbox path).</li>
+<li><strong>Pre-push hook</strong> (#2598) —
+<code>platform/hooks/pre-push</code> refuses raw <code>git push</code>
+(no <code>_GIT_QUEUE_PUSH</code> marker) or wrong-role-prefix branch;
+honors <code>DEPLOY_ROLE_PREPUSH_OVERRIDE=1</code>.</li>
+<li><strong>chorus-hook-shim PreToolUse refusal extension</strong>
+(#2598) — refuses raw
+<code>git push</code>/<code>rebase</code>/<code>cherry-pick</code>/<code>reset --hard</code>
+from Claude’s Bash tool (matches existing
+<code>git commit</code>/<code>add</code> block).</li>
+<li><strong>#2597 git-queue silent-exit fix</strong> (Done) — closed the
+bypass surface where the queue silently exited and trained roles to use
+raw <code>git push</code>.</li>
 </ul>
-<p>Daily cooldown means triage runs once per incident, not per check.</p>
-</div>
-
-<h2>Surfaces</h2>
+<h3 id="workflow-definition-.githubworkflowsquality.yml">Workflow
+definition (<code>.github/workflows/quality.yml</code>)</h3>
+<p>Single workflow, matrix retained, <strong>trigger changed to
+schedule-only post-#2600</strong>. ~daily 09:17 UTC fire. Each job is
+one concern: lint-ratchet, MCP shape, catalog-oversize,
+principle-direct-edit, tsc matrix, jest matrix, cargo-test matrix.
+Adding a new job is mechanical (recipe in this doc) and now decoupled
+from required-checks (which are empty).</p>
+<h3 id="pre-commit-hook-platformhookspre-commit">Pre-commit hook
+(<code>platform/hooks/pre-commit</code>)</h3>
+<p>Layer 1. Rust-implemented via <code>chorus-hook-shim</code>. Runs
+lint-ratchet, principle-direct-edit, catalog-oversize,
+<code>cargo test --lib --bins</code> per affected Rust crate,
+doc-coherence ratchet (when CLAUDE.md fragments change). Skippable via
+<code>--no-verify</code> — explicitly overridden by Layer 3 schedule
+fire as authoritative-but-delayed. KNOWN_FAILS pattern (carded test
+failures from other roles) currently goes through
+<code>--no-verify</code> with #NNNN reference; #2497 wires the
+allowlist.</p>
+<h3 id="role-gates-layer-2">Role gates (Layer 2)</h3>
+<p>Five skills, one per concern: <code>/gate-product</code> (Wren — AC,
+Experience, domain), <code>/gate-code</code> (Kade — tests green, build
+clean, warning diff), <code>/gate-quality</code> (Kade — hooks,
+regression, console.log, smoke when local), <code>/gate-arch</code>
+(Silas — namespace, boundaries, structural fit), <code>/gate-ops</code>
+(Silas — health, log flow, rollback). Recorded as card comments + spine
+events. Skippable for
+<code>type:chore</code>/<code>type:swat</code>.</p>
+<h3 id="branch-protection-repository-ruleset-dec-2525-amendment">Branch
+protection + Repository Ruleset (DEC-2525 amendment)</h3>
+<p>Both surfaces still exist; both <code>required_status_checks</code>
+lists were emptied post-#2600. The lockstep contract from DEC-2525
+amendment (“required-checks list lives in two GitHub protection
+systems”) is intact — both sides match (both empty). When
+required-checks come back (if ever), DEC-2525 amendment governs the
+coupling and #2500 drift detector closes the manual loop.</p>
+<h3 id="lock-file-policy-dependabot">Lock-file policy + Dependabot</h3>
+<p>ADR-026 §c. Per-package <code>package-lock.json</code> committed,
+root + Cargo locks committed. Pre-#2600: Dependabot weekly Mon, 11
+ecosystem-directory pairs. Post-#2600: monthly + 1 PR/ecosystem (cost
+discipline applied to dependency PRs since each one used to fire the
+matrix). Schedule fire validates against current locks once/day.</p>
+<h3 id="reactive-alert-ci-main-red.yml">Reactive alert
+(<code>ci-main-red.yml</code>)</h3>
+<p>Polls GitHub Actions API every 10 minutes. With schedule-only firing,
+the alert effectively wakes once/day on red incidents. Daily cooldown
+unchanged. Read-only check; never auto-reverts (ADR-026 §d).</p>
+<h3 id="eslint-ratchet-npm-run-lintratchet">ESLint ratchet
+(<code>npm run lint:ratchet</code>)</h3>
+<p>Per-rule baseline at
+<code>platform/state/eslint-baseline.json</code>. Pre-commit + scheduled
+CI both run the same check. New rule firings require fix or
+<code>npm run lint:baseline</code> to adopt. Drift signal #2496 still
+Later.</p>
+<h3 id="red-main-runbook-silas-owned">Red-main runbook
+(Silas-owned)</h3>
+<p>Triggered by <code>ci-main-red</code> schedule fire. Triage: (1)
+recent merge + unrelated to in-flight → revert merge, file fix card; (2)
+forward-fix quick (≤10 min) → push fix direct to main, await next
+schedule fire green; (3) else → file swat card, mark known-red in
+#shared-observability, decide team-wide. Daily cooldown means triage
+runs once per incident.</p>
+<h2 id="surfaces">Surfaces</h2>
 <ul>
-  <li><strong>GitHub Actions UI</strong> — <code>github.com/gathering-chorus/chorus/actions</code> — primary read surface, full run history.</li>
-  <li><strong>PR Checks tab</strong> — verdict per job for the head commit; what branch protection consults.</li>
-  <li><strong>Branch protection settings</strong> — manual mirror of <code>quality.yml</code> job names.</li>
-  <li><strong>Org Rulesets</strong> — duplicate enforcement layer (collapses under #2498).</li>
-  <li><strong>Dependabot PRs</strong> — <code>gh pr list --label deps</code> — weekly lock-update flow.</li>
-  <li><strong>ci-main-red nudge</strong> — Silas's terminal + messaging API, daily cooldown.</li>
-  <li><strong>Pipelines-domain page</strong> — <code>localhost:3000/gathering-docs/domain-detail.html?id=pipelines-domain</code> — this design as contract entity.</li>
+<li><strong>GitHub Actions UI</strong> —
+<code>https://github.com/gathering-chorus/chorus/actions</code> —
+primary read surface, history, log streaming.</li>
+<li><strong>PR Checks tab</strong> — empty post-#2600 (no per-PR
+matrix).</li>
+<li><strong>Branch protection settings page</strong> —
+<code>https://github.com/gathering-chorus/chorus/settings/branches</code>
+— non-status rules retained, status checks empty.</li>
+<li><strong>Repository Rulesets page</strong> —
+<code>https://github.com/gathering-chorus/chorus/rules</code> — Ruleset
+15547153 paired with branch-protection (DEC-2525 amendment), status
+checks empty.</li>
+<li><strong>Dependabot PRs</strong> —
+<code>gh pr list --label deps</code> — monthly cadence post-#2600.</li>
+<li><strong><code>ci-main-red</code> nudge</strong> — Silas’s terminal +
+messaging API, daily cooldown.</li>
+<li><strong>chorus.log spine events</strong> —
+<code>commits.branch.mismatch_detected</code>,
+<code>werk.deploy.*</code>, hook-deny events — post-#2600 the substrate
+spine is the per-PR signal surface.</li>
+<li><strong><code>werk check</code></strong> — local drift visibility
+for any role; closes the “is the runtime in sync with main” question
+without round-tripping CI.</li>
+<li><strong>Pipelines-domain page</strong> —
+<code>http://localhost:3000/gathering-docs/domain-detail.html?id=pipelines-domain</code>.</li>
 </ul>
-
-<h2>Consumers</h2>
+<h2 id="consumers">Consumers</h2>
 <ul>
-  <li><strong>Branch protection</strong> — consumes verdict-set, blocks merge if any required check is red.</li>
-  <li><strong>ci-main-red.yml alert</strong> — consumes verdict on main post-merge, routes red to Silas.</li>
-  <li><strong>Roles (PR authors)</strong> — consume their PR's verdict; fix red on their PR before /gate-code.</li>
-  <li><strong>Dependabot</strong> — produces lock-update PRs; consumes CI verdict on those PRs.</li>
-  <li><strong>/gate-code skill</strong> — consumes pre-commit + recent CI state to decide gate verdict.</li>
-  <li><strong>/demo skill</strong> — consumes gate-chain state; today assumes user-facing demo, infra adapt via #2499.</li>
+<li><strong>Branch protection</strong> — no longer consumes CI verdict
+for merge gating (post-#2600); still enforces non-status rules.</li>
+<li><strong><code>ci-main-red.yml</code> alert</strong> — consumes
+verdict on <code>main</code> post-schedule-fire, routes red to
+Silas.</li>
+<li><strong>Roles (PR authors)</strong> — consume their PR’s local-layer
+verdicts (pre-commit + role gates); CI verdict no longer pre-merge.</li>
+<li><strong>Dependabot</strong> — produces input (lock-update PRs);
+consumes output (next schedule fire validates).</li>
+<li><strong><code>/gate-code</code> skill</strong> — consumes pre-commit
++ werk check state to decide gate verdict.</li>
+<li><strong><code>/demo</code> skill</strong> — consumes the gate-chain
+state; #2499 still pending for infra-card adapter.</li>
+<li><strong><code>werk</code> wrapper</strong> — consumes
+<code>git rev-parse origin/main</code> for SHA gate; emits
+<code>werk.deploy.*</code> spine events.</li>
 </ul>
-
-<h2>Gaps</h2>
-<div class="gap"><strong>#2495</strong> — api-boot ESM/CJS reconciliation. Restores deferred mcp-roundtrip CI job. Architecture call (CJS-fixed-paths vs full ESM) on Silas when card pulls.</div>
-<div class="gap"><strong>#2496</strong> — Ratchet baseline drift signal. Today silent; either auto-PR on shrinkable baseline or gate-code surface "could shrink by N".</div>
-<div class="gap"><strong>#2497</strong> — KNOWN_FAILS allowlist. Pre-commit honors carded test failures with explicit reason; CI does not. Closes <code>--no-verify</code> convention drift.</div>
-<div class="gap"><strong>#2498</strong> — Trunk-vs-Rulesets cleanup (Silas-owned, pulled). Pick one enforcement layer; document.</div>
-<div class="gap"><strong>#2499</strong> — Demo skill adapts for infra cards. Infra demo = prove threat closes (introduce regression on throwaway branch, show CI catches), not "show CI green" status report.</div>
-<div class="gap"><strong>#2500</strong> — Required-checks drift detector. Diff job names in quality.yml against exported required-checks list; fail on drift.</div>
-<div class="gap"><strong>#2491</strong> — chorus-hooks/inject test isolation (Silas-owned). Removes hardcoded /Users/jeffbridwell paths.</div>
-<div class="gap"><strong>#2493</strong> — sessions.test.ts pre-existing fail (Wren-filed). Validator change made test stale; small fix.</div>
-
-<h2>Next Steps</h2>
-<ol>
-  <li>Land PR #25 with lean scope — bats hermeticity + ADR-026 addendum. mcp-roundtrip deferred. Closes #2487.</li>
-  <li>Pull #2500 (drift detector) — small, high leverage, closes silent-un-gate failure mode.</li>
-  <li>Silas's #2498 lands — collapses duplicate enforcement, gives per-path rules for future role-state-files-unprotected work.</li>
-  <li>#2495 + #2491 in parallel — restores mcp-roundtrip CI and chorus-hooks test isolation. Both Silas-architecture-call work.</li>
-  <li>#2496 + #2497 — quieter improvements.</li>
-  <li>Loom-decisions harvest of ADR-026 (#2485 follow-on) — Decisions row goes SHELL → POPULATED, layer model becomes graph-queryable.</li>
+<h2 id="gaps">Gaps</h2>
+<p><strong>Done since 2026-04-25 refresh:</strong> - <del>#2495 —
+api-boot ESM/CJS reconciliation</del> — Done - <del>#2487 — MCP
+round-trip CI scaffolding</del> — Done - <del>#2498 — Trunk-vs-Rulesets
+cleanup</del> — Done - <del>#2485 — loom-decisions reach</del> — Done -
+<del>#2580 — git-queue branch-check</del> — Done (today) - <del>#2597 —
+git-queue silent-exit fix</del> — Done (today) - <del>#2600 — CI
+cost-stop swat</del> — Done (today)</p>
+<p><strong>In flight:</strong> - <strong>#2598</strong> — werk wrapper +
+pre-push + raw-git refusal extension. PR #56 open, gates passed
+product/code/quality, awaiting Silas’s gate:arch + gate:ops.</p>
+<p><strong>Open (Later):</strong> - <strong>#2496</strong> — Ratchet
+baseline drift signal. Schedule-only CI still uses ratchet; drift
+surface still missing. - <strong>#2497</strong> — KNOWN_FAILS allowlist.
+<code>--no-verify</code> convention still ungated. -
+<strong>#2499</strong> — Demo skill adapts for infra cards. Infra demo =
+prove threat closes, not “show CI green.” - <strong>#2500</strong> —
+Required-checks drift detector. Less urgent post-#2600 (both sides
+empty), but applies when required-checks come back. -
+<strong>#2491</strong> — chorus-hooks/inject test isolation
+(Silas-owned). Hardcoded <code>/Users/jeffbridwell</code> paths in
+tests. - <strong>#2493</strong> — sessions.test.ts pre-existing fail
+(Wren-filed). - <strong>#2589</strong> — git-spawn env-scrub helper
+sweep (Kade, follow-on to #2560). - <strong>#2599</strong> —
+chorus-env-setup.sh self-locating sweep (Silas, follow-on to #2571).</p>
+<p><strong>Silas’s CI architecture line (Later):</strong> -
+<strong>#2527</strong> — Nightly drift lane. Slow signals
+(mutation/perf/integration/CVE/doc-coherence) file cards on red, never
+block. <strong>Promoted in importance post-#2600</strong> — without
+per-PR matrix, the drift lane is the primary backstop for slow signals.
+- <strong>#2528</strong> — Sensor consumer registry. Every CI check /
+alert / drift signal mapped to named consumer. Load-bearing once #2527
+lands. - <strong>#2529</strong> — run-tests contract spec. Load-bearing
+interface between CI substrate and tests substrate. -
+<strong>#2530</strong> — Flake quarantine mechanism. Less urgent
+post-#2600 (no per-PR matrix to flake on). - <strong>#2200</strong> —
+Cross-language contract tests TS↔︎Rust divergence observability. -
+<strong>#2333</strong> — Post-restart smoke for /api/flow sequences[]. -
+<strong>#2591</strong> — GitHub Actions org-billing alert + auto-raise —
+guardrail against recurring quota wedge.</p>
+<h2 id="next-steps">Next Steps</h2>
+<ol type="1">
+<li><strong>#2598 lands</strong> (in flight) — closes Layer 0 substrate;
+pre-push hook + raw-git refusal extension activate post-merge +
+werk-deploy.</li>
+<li><strong>#2527 + #2528 + #2529</strong> in that order (Silas) —
+post-cost-stop architecture; nightly drift lane is now the primary
+backstop, sensor registry maps signals to consumers, run-tests contract
+is the load-bearing interface.</li>
+<li><strong>#2591</strong> (Silas) — billing alert is independent of
+#2527/#2528/#2529; can ship in parallel.</li>
+<li><strong>#2496 + #2497</strong> — quieter improvements; can wait
+until structural cards above settle.</li>
+<li><strong>Loom-decisions harvest of ADR-026 + DEC-2525 +
+#2600</strong> (#2152 follow-on) — Decisions row goes from SHELL to
+POPULATED; layer model becomes graph-queryable.</li>
+<li><strong>Required-checks reinstatement</strong> (no card) — when
+local-layer maturity warrants it (or schedule-only proves insufficient),
+reinstating required-checks via DEC-2525-amendment-governed lockstep is
+a one-PR move.</li>
 </ol>
-
-<h2>Not in Scope</h2>
+<h2 id="not-in-scope-for-this-design">Not in scope for this design</h2>
 <ul>
-  <li>The Gathering app's own CI (lives in jeff-bridwell-personal-site repo). Smoke-check is its problem.</li>
-  <li>Production deploy automation — chorus runs natively on Library/Bedroom; CI gates merge, not deploy.</li>
-  <li>Coverage thresholds and pyramid shape — Quality service design's territory.</li>
-  <li>Test-value policy — also Quality.</li>
-  <li>Cost / runtime budget for CI minutes — not yet a concern; will become one if mcp-roundtrip becomes per-PR standard.</li>
+<li>The Gathering app’s own CI (lives in
+<code>jeff-bridwell-personal-site</code> repo). Smoke-check is its
+problem, per ADR-026 addendum.</li>
+<li>Production deploy automation — chorus runs natively on
+Library/Bedroom; werk handles canonical deploys, not CI.</li>
+<li>Coverage thresholds and pyramid shape — Quality service design’s
+territory.</li>
+<li>Test-value policy — also Quality.</li>
+<li>Cost / runtime budget for CI minutes — addressed today by #2600
+(schedule-only). Budget discipline becomes principle-level in 4-layer
+dependency once policies sub-domain stands up.</li>
 </ul>
-
-<div class="footer">
-Service design for the chorus CI pipeline. Instance of pipelines-domain (Silas-owned). Adjacent: Quality service design (Layer 2 enforcement), Roles service design (template followed). Source: ADR-026, today's session (#2481, #2487, #2494). Card #2494.
-</div>
-
+<h2 id="references">References</h2>
+<ul>
+<li>ADR-026 — CI architecture + lock-file policy
+(<code>roles/silas/adr/ADR-026-ci-architecture-and-lock-file-policy.md</code>),
+including 2026-04-25 addendum (smoke-check stays out)</li>
+<li>DEC-2525 — required-checks governance, including 2026-04-29
+amendment (lives in two GitHub protection systems: branch-protection +
+Repository Rulesets)</li>
+<li>Card #2481 — initial CI ratchet implementation (closed)</li>
+<li>Card #2487 — MCP round-trip CI scaffolding (closed)</li>
+<li>Card #2495 — api-boot ESM/CJS (closed)</li>
+<li>Card #2498 — Trunk-vs-Rulesets cleanup (closed; replaced with
+DEC-2525 amendment)</li>
+<li>Card #2580 — git-queue branch-check (Done 2026-04-29)</li>
+<li>Card #2586 — commits-domain service design (Done 2026-04-29)</li>
+<li>Card #2597 — git-queue silent-exit fix (Done 2026-04-29)</li>
+<li>Card #2598 — werk wrapper + pre-push hook + raw-git refusal
+extension (in flight, PR #56)</li>
+<li>Card #2600 — CI cost-stop swat (Done 2026-04-29; PR #49)</li>
+<li>Cards #2496 / #2497 / #2499 / #2500 / #2491 / #2493 / #2589 / #2599
+— gaps tracked above</li>
+<li>Cards #2200 / #2333 / #2527 / #2528 / #2529 / #2530 / #2591 —
+Silas’s CI architecture line</li>
+<li><code>proving/domains/alerts/ci-main-red.yml</code> — reactive
+alert</li>
+<li>Pipelines-domain page —
+<code>http://localhost:3000/gathering-docs/domain-detail.html?id=pipelines-domain</code></li>
+<li>Quality service design
+(<code>designing/docs/quality-service-design.md</code>) — sibling layer
+(Layer 2 enforcement)</li>
+<li>Roles service design
+(<code>designing/docs/roles-service-design.md</code>) — template
+followed</li>
+<li>Commits service design
+(<code>designing/docs/commits-service-design.md</code>) — Layer 0
+substrate sibling</li>
+</ul>
 </body>
 </html>
