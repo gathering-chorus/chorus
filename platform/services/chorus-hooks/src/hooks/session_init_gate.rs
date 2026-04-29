@@ -19,6 +19,13 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 /// Internal entry point parameterized on the session-init dir. Production
 /// `check()` always passes `INIT_DIR`. Tests pass a tmpdir to escape the
 /// daemon-vs-test race on the global /tmp/claude-session-init path (#2558).
+///
+/// Migration note (#2524 "always hermetic" tier): cleanest long-term shape
+/// is to move the deny/allow tests inline as `#[cfg(test)] mod tests` in
+/// src/, at which point `check_with_dir` can drop `pub` and live as a
+/// private fn. Today's tests live in tests/ (integration tier) and need
+/// the pub function with a dir param. The `#[doc(hidden)]` marker says
+/// "testability surface, not stable API" — fine until inline migration.
 #[doc(hidden)]
 pub async fn check_with_dir(input: &HookInput, state: &AppState, init_dir: &str) -> HookResponse {
     let role = input.role();
