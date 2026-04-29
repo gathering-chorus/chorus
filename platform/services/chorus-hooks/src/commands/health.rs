@@ -6,13 +6,14 @@ use std::fs;
 use std::process::{Command as Cmd, ExitCode};
 
 use crate::process;
-use crate::shared::state_paths::{self, repo_root};
+use crate::shared::state_paths::repo_root;
 
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
 /// Minimal timestamp from unix epoch (no chrono dependency in shim)
+#[allow(dead_code)]
 pub fn chrono_lite_ts(epoch_secs: u64) -> String {
     // Approximate ISO timestamp — good enough for comparison
     let days = epoch_secs / 86400;
@@ -25,12 +26,12 @@ pub fn chrono_lite_ts(epoch_secs: u64) -> String {
     let mut y = 1970u64;
     let mut remaining = days;
     loop {
-        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+        let days_in_year = if y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) { 366 } else { 365 };
         if remaining < days_in_year { break; }
         remaining -= days_in_year;
         y += 1;
     }
-    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let leap = y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
     let month_days: [u64; 12] = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut m = 0;
     while m < 12 && remaining >= month_days[m] {
@@ -40,10 +41,12 @@ pub fn chrono_lite_ts(epoch_secs: u64) -> String {
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m + 1, remaining + 1, hours, mins, secs)
 }
 
+#[allow(dead_code)]
 pub fn decode_chunked(body: &str) -> String {
     let mut result = String::new();
     let mut remaining = body;
 
+    #[allow(clippy::while_let_loop)]
     loop {
         // Find chunk size line
         let size_end = match remaining.find("\r\n") {
@@ -87,7 +90,7 @@ pub fn cruft_scan() -> ExitCode {
 
     // Activity log size
     out.push_str("## Activity Log\n");
-    let activity_size = fs::metadata(&format!("{}/chorus/activity.md", repo_root()))
+    let activity_size = fs::metadata(format!("{}/chorus/activity.md", repo_root()))
         .map(|m| m.len()).unwrap_or(0);
     out.push_str(&format!("Size: {} bytes\n\n", activity_size));
 

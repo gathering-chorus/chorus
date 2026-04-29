@@ -10,6 +10,7 @@ use std::process::Command;
 use tracing::{info, warn};
 
 /// Check if the tool call is a "done" action
+#[allow(dead_code)]
 fn is_done_action(input: &HookInput) -> bool {
     let tool = input.tool_name_str();
 
@@ -28,6 +29,7 @@ fn is_done_action(input: &HookInput) -> bool {
 }
 
 /// Extract card ID from the command
+#[allow(dead_code)]
 fn extract_card_id(input: &HookInput) -> Option<String> {
     let tool = input.tool_name_str();
 
@@ -50,6 +52,7 @@ fn extract_card_id(input: &HookInput) -> Option<String> {
 }
 
 /// Check if the command contains --proven flag (#1916)
+#[allow(dead_code)]
 fn has_proven_flag(input: &HookInput) -> bool {
     let tool = input.tool_name_str();
     if tool == "Bash" {
@@ -63,6 +66,7 @@ fn has_proven_flag(input: &HookInput) -> bool {
     false
 }
 
+#[allow(dead_code)]
 pub fn check(input: &HookInput) -> HookResponse {
     if !is_done_action(input) {
         return HookResponse::allow();

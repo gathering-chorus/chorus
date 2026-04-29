@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 /// Simulates the shared search result structure
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 struct SearchResult {
     chorus_hits: Vec<String>,
     memory_hits: Vec<String>,

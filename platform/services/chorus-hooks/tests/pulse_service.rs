@@ -94,7 +94,7 @@ fn pulse_nudges_per_role() {
 
     let nudges = v.get("nudges").and_then(|n| n.as_object()).expect("nudges should be object");
     for role in &["wren", "silas", "kade"] {
-        let role_nudge = nudges.get(*role).expect(&format!("{} should have nudge entry", role));
+        let role_nudge = nudges.get(*role).unwrap_or_else(|| panic!("{} should have nudge entry", role));
         assert!(role_nudge.get("pending").is_some(), "{} should have pending count", role);
         assert!(role_nudge.get("stale").is_some(), "{} should have stale flag", role);
     }

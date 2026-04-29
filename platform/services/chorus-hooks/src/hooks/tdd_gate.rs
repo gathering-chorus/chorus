@@ -246,8 +246,8 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     // Gate 1: Production code edit — require test file edit first
-    if is_code_edit(input) {
-        if !has_test_file_edit(input, state) {
+    if is_code_edit(input)
+        && !has_test_file_edit(input, state) {
             let file_path = input.get_tool_input_str("file_path");
             let fname = file_path.rsplit('/').next().unwrap_or(&file_path);
             let guidance = test_guidance(&card_type);
@@ -258,18 +258,16 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
                 fname, guidance
             )));
         }
-    }
 
     // Gate 2: Demo/done/acp — require test runs (only if production code was edited)
-    if is_demo_or_done(input) {
-        if has_production_code_edit(input, state) && !has_test_run(input, state) {
+    if is_demo_or_done(input)
+        && has_production_code_edit(input, state) && !has_test_run(input, state) {
             return HookResponse::deny(&permission_deny_json(
                 "TDD gate: no test runs detected in this session. \
                  Run tests (cargo test, npx jest, bats, npx cucumber-js) before demo/done. \
                  DEC-1674: AC → tests → code → green → demo."
             ));
         }
-    }
 
     HookResponse::allow()
 }

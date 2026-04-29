@@ -5,7 +5,6 @@
 
 use std::fs;
 use std::process::Command;
-use chorus_hooks::shared::state_paths::chorus_root;
 
 // CHORUS_ROOT env var with Mac-default fallback (mirrors
 // src/shared/state_paths.rs). CI sets CHORUS_ROOT=${{ github.workspace }}
@@ -29,7 +28,7 @@ fn run_chat(args: &[&str]) -> (String, String, bool) {
         .expect("chat.sh must run");
     let stdout = String::from_utf8_lossy(&out.stdout);
     // start emits a spine event line then the ID on the last line — take last non-empty line
-    let last_line = stdout.lines().filter(|l| !l.trim().is_empty()).last()
+    let last_line = stdout.lines().rfind(|l| !l.trim().is_empty())
         .unwrap_or("").trim().to_string();
     (
         last_line,
@@ -149,7 +148,7 @@ fn end_deletes_tick_marker() {
     assert!(out.contains("ended"), "end must confirm chat closed");
 
     assert!(
-        !fs::metadata(&tick_file).is_ok(),
+        fs::metadata(&tick_file).is_err(),
         "tick marker must be deleted by end"
     );
 

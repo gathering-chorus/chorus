@@ -28,6 +28,7 @@ const HOOK_LOG: &str = "/Users/jeffbridwell/Library/Logs/Gathering/hooks.log";
 const HOOK_LOG_MAX: u64 = 10 * 1024 * 1024; // 10MB rotation
 
 /// Enriched pulse log — module, duration, full reason, session_id (#1859)
+#[allow(clippy::too_many_arguments)]
 fn log_decision(hook: &str, tool: &str, role: &str, module: &str, decision: &str, duration_ms: u64, session_id: &str, reason: &str) {
     use std::io::Write;
     let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
@@ -174,7 +175,7 @@ async fn pre_tool_use_inner(
     trace!(hook = "pre_tool_use", phase = "receive", %tool, role = role.as_str(), "dispatching");
 
     // Session init gate (all tools for Write/Edit/Bash/Read)
-    let gate_result = hooks::session_init_gate::check(&input, &state).await;
+    let gate_result = hooks::session_init_gate::check(input, state).await;
     if let Some(ref stdout) = gate_result.stdout {
         if stdout.contains("\"deny\"") {
             return ("session_init_gate".into(), gate_result);
@@ -182,7 +183,7 @@ async fn pre_tool_use_inner(
     }
 
     // Clock sync — update /tmp/wall-clock.txt on every tool call (#1559)
-    hooks::clock_sync::tick(&input).await;
+    hooks::clock_sync::tick(input).await;
 
     // Set interaction pattern from card type (#1911)
     let role_str = role.as_str();
@@ -203,50 +204,50 @@ async fn pre_tool_use_inner(
     match tool.as_str() {
         "Bash" => {
             // sparql guard
-            _last_module = "sparql_guard".into(); let r = hooks::sparql_guard::check(&input).await;
+            _last_module = "sparql_guard".into(); let r = hooks::sparql_guard::check(input).await;
             if r.stderr.is_some() {
                 return (_last_module.clone(), r);
             }
 
             // bedroom NFS guard
-            _last_module = "bedroom_nfs_guard".into(); let r = hooks::bedroom_nfs_guard::check(&input);
+            _last_module = "bedroom_nfs_guard".into(); let r = hooks::bedroom_nfs_guard::check(input);
             if r.stdout.is_some() {
                 return (_last_module.clone(), r);
             }
 
             // infra guardrails (engineer only)
-            _last_module = "infra_guardrails".into(); let r = hooks::infra_guardrails::check(&input).await;
+            _last_module = "infra_guardrails".into(); let r = hooks::infra_guardrails::check(input).await;
             if r.stdout.is_some() {
                 return (_last_module.clone(), r);
             }
 
             // Chrome tab gate (#1775, DEC-090) — block role-initiated 'open http'
-            _last_module = "chrome_tab_gate".into(); let r = hooks::chrome_tab_gate::check(&input).await;
+            _last_module = "chrome_tab_gate".into(); let r = hooks::chrome_tab_gate::check(input).await;
             if r.stderr.is_some() {
                 return (_last_module.clone(), r);
             }
 
             // Nudge blast radius (#1658) — warn if target role is WIP
-            _last_module = "nudge_blast_radius".into(); let r = hooks::nudge_blast_radius::check(&input).await;
+            _last_module = "nudge_blast_radius".into(); let r = hooks::nudge_blast_radius::check(input).await;
             if r.stderr.is_some() {
                 // Don't block — just surface the warning
                 return (_last_module.clone(), r);
             }
 
             // Memory-first search gate (#1951) — block context grep without Chorus query
-            _last_module = "memory_first".into(); let r = hooks::memory_first::check(&input, &state);
+            _last_module = "memory_first".into(); let r = hooks::memory_first::check(input, state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
 
             // CSC guard (#1685) — block /tmp/ artifact writes, warn outside /Volumes/Gathering/
-            _last_module = "csc_guard".into(); let r = hooks::csc_guard::check(&input);
+            _last_module = "csc_guard".into(); let r = hooks::csc_guard::check(input);
             if r.stdout.is_some() || r.stderr.is_some() {
                 return (_last_module.clone(), r);
             }
 
             // TDD gate (#1814) — block demo/done without test evidence
-            _last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input, &state);
+            _last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(input, state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
@@ -255,111 +256,111 @@ async fn pre_tool_use_inner(
 
             // Batch progress (#1656) — detect run_in_background in PreToolUse
             // PostToolUse doesn't fire until background task completes
-            let r = hooks::batch_progress::check_pre_bg(&input);
+            let r = hooks::batch_progress::check_pre_bg(input);
             if r.stderr.is_some() {
                 // Don't block — stderr warning passes through
             }
         }
         "Grep" | "Glob" => {
-            _last_module = "memory_first".into(); let r = hooks::memory_first::check(&input, &state);
+            _last_module = "memory_first".into(); let r = hooks::memory_first::check(input, state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
-            _last_module = "search_hierarchy".into(); let r = hooks::search_hierarchy::check(&input, &state).await;
+            _last_module = "search_hierarchy".into(); let r = hooks::search_hierarchy::check(input, state).await;
             if r.stdout.is_some() || r.stderr.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
         }
         "Write" | "Edit" => {
             // Sensitive paths — block writes to .env, credentials, SSH keys
-            _last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(&input).await;
+            _last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(input).await;
             if r.stdout.is_some() {
                 return (_last_module.clone(), r);
             }
-            _last_module = "write_scrubber".into(); let r = hooks::write_scrubber::check(&input).await;
+            _last_module = "write_scrubber".into(); let r = hooks::write_scrubber::check(input).await;
             if r.stdout.is_some() {
                 return (_last_module.clone(), r);
             }
-            _last_module = "story_write_gate".into(); let r = hooks::story_write_gate::check(&input).await;
+            _last_module = "story_write_gate".into(); let r = hooks::story_write_gate::check(input).await;
             if r.stderr.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
             // Memory-and-research gate (#1811) — block code writes without prior checks
-            _last_module = "memory_gate".into(); let r = hooks::memory_gate::check(&input, &state);
+            _last_module = "memory_gate".into(); let r = hooks::memory_gate::check(input, state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
 
             // Log-first gate (#1879) — block fix writes without log inspection
-            _last_module = "log_first_gate".into(); let r = hooks::log_first_gate::check(&input, &state);
+            _last_module = "log_first_gate".into(); let r = hooks::log_first_gate::check(input, state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
 
             // TDD gate — block production code edits without test file edit first
-            _last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input, &state);
+            _last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(input, state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
 
             // Test quality gate (#2196) — block new .test.ts files whose
             // test() blocks lack both a production-symbol call AND an assertion.
-            _last_module = "test_quality_gate".into(); let r = hooks::test_quality_gate::check(&input);
+            _last_module = "test_quality_gate".into(); let r = hooks::test_quality_gate::check(input);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
 
             // Pair gate (#1814) — block code edits without active pair
-            _last_module = "pair_gate".into(); let r = hooks::pair_gate::check(&input, &state);
+            _last_module = "pair_gate".into(); let r = hooks::pair_gate::check(input, state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
 
             // ICD pre-read gate (#1684) — warn on data domain writes without context read
-            hooks::icd_pre_read::check(&input, &state).await;
+            hooks::icd_pre_read::check(input, state).await;
         }
         "Read" => {
-            _last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(&input).await;
+            _last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(input).await;
             if r.stdout.is_some() {
                 return (_last_module.clone(), r);
             }
             // ICD pre-read (#1684) — set flag when domain context is read
-            hooks::icd_pre_read::check(&input, &state).await;
+            hooks::icd_pre_read::check(input, state).await;
         }
         "AskUserQuestion" => {
-            _last_module = "autonomy_guard".into(); let r = hooks::autonomy_guard::check(&input, &state).await;
+            _last_module = "autonomy_guard".into(); let r = hooks::autonomy_guard::check(input, state).await;
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
         }
         "Skill" => {
             // TDD gate (#1814) — block demo/done without test evidence
-            _last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(&input, &state);
+            _last_module = "tdd_gate".into(); let r = hooks::tdd_gate::check(input, state);
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
             // #2270: demo gate removed from hook chain — cards CLI SDK is single enforcement point
             // Quality gate (#1717) — agent review of AC before demo
-            _last_module = "quality_gate".into(); let r = hooks::quality_gate::pre_demo_check(&input).await;
+            _last_module = "quality_gate".into(); let r = hooks::quality_gate::pre_demo_check(input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
             // Demo preflight gate (#1657)
-            _last_module = "demo_preflight".into(); let r = hooks::demo_preflight::check(&input).await;
+            _last_module = "demo_preflight".into(); let r = hooks::demo_preflight::check(input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
             // Accept gate (#1671)
-            _last_module = "accept_gate".into(); let r = hooks::accept_gate::check(&input).await;
+            _last_module = "accept_gate".into(); let r = hooks::accept_gate::check(input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
             // NiFi discipline (#1686) — warn on bash wrapper pattern
-            if let Some(msg) = hooks::nifi_discipline::check(&input, &state).await {
+            if let Some(msg) = hooks::nifi_discipline::check(input, state).await {
                 eprintln!("{}", msg);
             }
             // Pair enforcement (#1673) — nudge target to load /pair
-            _last_module = "pair_enforcement".into(); let r = hooks::pair_enforcement::check(&input).await;
+            _last_module = "pair_enforcement".into(); let r = hooks::pair_enforcement::check(input).await;
             if r.stderr.is_some() {
                 // Don't block — just notify
                 return (_last_module.clone(), r);

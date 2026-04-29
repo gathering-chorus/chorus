@@ -6,7 +6,6 @@ use std::sync::LazyLock;
 /// Blocks story content from being written to markdown files.
 /// Redirects roles to use scripts/write-story.sh for TTL write path.
 /// Card #1562: Stories write-path enforcement
-
 static STORY_MARKER_SAID: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)what he said").unwrap()
 });

@@ -225,11 +225,11 @@ fn main() -> ExitCode {
     }
 
     if let Some(stdout) = parsed.get("stdout").and_then(|v| v.as_str()) {
-        print!("{}\n", stdout);
+        println!("{}", stdout);
     }
 
     if let Some(stderr) = parsed.get("stderr").and_then(|v| v.as_str()) {
-        eprint!("{}\n", stderr);
+        eprintln!("{}", stderr);
     }
 
     // #2283: PostToolUse drain removed. UserPromptSubmit is the single drain point.
@@ -367,8 +367,7 @@ fn role_checkpoint_cmd(args: &[String]) -> ExitCode {
             let wip_line = mine_out.lines().find(|l| l.to_lowercase().contains("[wip]")).unwrap_or("");
             let card_id = wip_line.split_whitespace()
                 .find(|w| w.parse::<u32>().is_ok()).unwrap_or("");
-            let card_title = wip_line.split(']').last().unwrap_or("").trim()
-                .splitn(2, ' ').nth(1).unwrap_or("").split('[').next().unwrap_or("").trim();
+            let card_title = wip_line.split(']').next_back().unwrap_or("").trim().split_once(' ').map(|x| x.1).unwrap_or("").split('[').next().unwrap_or("").trim();
 
             // Recent files
             let recent = Cmd::new("git").args(["-C", repo, "diff", "--name-only", "HEAD"])
@@ -564,8 +563,7 @@ fn observe_missed_cmd(args: &[String]) -> ExitCode {
             .as_secs();
         let two_hours_ago = now - 7200;
         // Convert to rough ISO format
-        format!("{}",
-            chrono_lite_ts(two_hours_ago))
+        chrono_lite_ts(two_hours_ago).to_string()
     };
     let since = args.get(1).map(|s| s.as_str()).unwrap_or(&default_since);
 
@@ -658,12 +656,12 @@ fn chrono_lite_ts(epoch_secs: u64) -> String {
     let mut y = 1970u64;
     let mut remaining = days;
     loop {
-        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+        let days_in_year = if y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) { 366 } else { 365 };
         if remaining < days_in_year { break; }
         remaining -= days_in_year;
         y += 1;
     }
-    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let leap = y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
     let month_days: [u64; 12] = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut m = 0;
     while m < 12 && remaining >= month_days[m] {
@@ -677,6 +675,7 @@ fn decode_chunked(body: &str) -> String {
     let mut result = String::new();
     let mut remaining = body;
 
+    #[allow(clippy::while_let_loop)]
     loop {
         // Find chunk size line
         let size_end = match remaining.find("\r\n") {

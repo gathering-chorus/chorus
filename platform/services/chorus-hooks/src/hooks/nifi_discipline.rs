@@ -85,7 +85,7 @@ pub async fn check(input: &HookInput, _state: &AppState) -> Option<String> {
     // Check if card description mentions NiFi — query cards
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     let output = std::process::Command::new("bash")
-        .args(&["-l", &format!("{}/platform/scripts/cards", crate::shared::state_paths::chorus_root()), "view", card_id])
+        .args(["-l", &format!("{}/platform/scripts/cards", crate::shared::state_paths::chorus_root()), "view", card_id])
         .env("CHORUS_ROOT", crate::shared::state_paths::chorus_root())
         .env("HOME", &home)
         .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))

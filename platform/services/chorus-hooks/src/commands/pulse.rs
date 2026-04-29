@@ -499,7 +499,7 @@ fn parse_epoch_approx(ts: &str) -> Option<u64> {
     for y in 1970..year { days += if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 }; }
     let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     for m in 1..month { days += month_days[m as usize] as u64; }
-    if month > 2 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { days += 1; }
+    if month > 2 && year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) { days += 1; }
     days += (day - 1) as u64;
 
     // Adjust for timezone offset if present (e.g., -0400)

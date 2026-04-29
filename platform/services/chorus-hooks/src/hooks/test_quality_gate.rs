@@ -69,7 +69,7 @@ fn extract_imports(source: &str) -> Vec<(Vec<String>, String)> {
             idents.push(rest.trim().to_string());
         } else {
             // Default or `default, { … }` — take the leading identifier.
-            let head = clause.split(|c: char| c == ',' || c == '{').next().unwrap_or("");
+            let head = clause.split([',', '{']).next().unwrap_or("");
             let name = head.trim();
             if !name.is_empty() {
                 idents.push(name.to_string());
@@ -547,6 +547,7 @@ pub(crate) fn check_binary_rule(source: &str) -> Result<(), (usize, String)> {
 /// Backwards-compat single-source analyse — treats the whole source as newly
 /// introduced (no grandfathered blocks). Used by the Write-on-new-file path and
 /// by the existing unit tests from #2196.
+#[allow(dead_code)]
 pub(crate) fn analyse(source: &str) -> Result<(), String> {
     analyse_incoming("", source)
 }
@@ -653,7 +654,7 @@ fn resolve_test_file_change(input: &HookInput) -> Option<(String, String, String
     }
     let existing = std::fs::read_to_string(&file_path).unwrap_or_default();
 
-    match &*tool {
+    match tool {
         "Write" => {
             let incoming = input.get_tool_input_str("content");
             if incoming.is_empty() {
