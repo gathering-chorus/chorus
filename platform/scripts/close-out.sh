@@ -22,7 +22,8 @@
 
 set -uo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# #2571 — source-from-substrate replaces #1917's ${CHORUS_ROOT:-mac-path} default
+source "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh"
 
 usage() {
   cat <<EOF >&2

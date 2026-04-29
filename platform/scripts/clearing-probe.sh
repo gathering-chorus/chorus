@@ -5,7 +5,8 @@
 # Alerts on failure so Jeff knows the channel is dead before he discovers it.
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# #2571 — source-from-substrate replaces #1917's ${CHORUS_ROOT:-mac-path} default
+source "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh"
 
 CLEARING="http://localhost:3470"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
