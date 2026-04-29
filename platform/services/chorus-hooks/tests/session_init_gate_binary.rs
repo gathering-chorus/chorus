@@ -16,9 +16,9 @@
 //! session was live on the test machine. Per-test tmpdir eliminates the
 //! race by construction; tmpdir is cleaned up automatically on drop.
 
-use chorus_hooks::hooks::session_init_gate;
-use chorus_hooks::state::AppState;
-use chorus_hooks::types::HookInput;
+use chorus_hooks::session_init_gate;
+use chorus_hooks::AppState;
+use chorus_hooks::HookInput;
 use chorus_hooks::shared::state_paths::chorus_root;
 use std::fs;
 use tempfile::TempDir;
