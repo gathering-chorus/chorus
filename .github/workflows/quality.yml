@@ -61,7 +61,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
       # Type-aware ESLint rules (no-floating-promises et al.) need every
@@ -104,7 +104,7 @@ jobs:
           - platform/workflow-engine
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
       # Cross-package pre-build for cards (mirrors unit-tests job):
@@ -150,7 +150,7 @@ jobs:
           - platform/workflow-engine
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
       # Cross-package pre-build for cards: src/events.ts imports 'chorus-sdk'
@@ -194,7 +194,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
       - name: Run shape lint
@@ -449,7 +449,7 @@ jobs:
       CHORUS_API_PORT: '3340'
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
       - uses: dtolnay/rust-toolchain@stable
