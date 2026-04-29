@@ -16,6 +16,26 @@ static GIT_ADD_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bgit\s+add\b").unwrap()
 });
 
+// #2598: extend the raw-git refusal surface to push/rebase/cherry-pick/reset.
+// Substrate-uniformity (Jeff 2026-04-29) — git-queue.sh is the only sanctioned
+// path for any state-mutating git op. Read-only ops (log, status, diff) are
+// always allowed.
+static GIT_PUSH_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgit\s+push\b").unwrap()
+});
+
+static GIT_REBASE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgit\s+rebase\b").unwrap()
+});
+
+static GIT_CHERRY_PICK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgit\s+cherry-pick\b").unwrap()
+});
+
+static GIT_RESET_HARD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgit\s+reset\s+--hard\b").unwrap()
+});
+
 static HEREDOC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<<['"]?EOF"#).unwrap()
 });
@@ -71,8 +91,14 @@ pub async fn check(input: &HookInput) -> HookResponse {
         log_guardrail("allow", "kill-signal-0").await;
     }
 
-    // git commit/add in team repo only
-    if GIT_COMMIT_RE.is_match(&cmd) || GIT_ADD_RE.is_match(&cmd) {
+    // git mutating ops in team repo only — #2598 extended push/rebase/cherry-pick/reset
+    let is_git_mut = GIT_COMMIT_RE.is_match(&cmd)
+        || GIT_ADD_RE.is_match(&cmd)
+        || GIT_PUSH_RE.is_match(&cmd)
+        || GIT_REBASE_RE.is_match(&cmd)
+        || GIT_CHERRY_PICK_RE.is_match(&cmd)
+        || GIT_RESET_HARD_RE.is_match(&cmd);
+    if is_git_mut {
         // Skip heredocs
         if HEREDOC_RE.is_match(&cmd) {
             log_guardrail("allow", "git-in-heredoc").await;
@@ -92,6 +118,30 @@ pub async fn check(input: &HookInput) -> HookResponse {
                     log_guardrail("deny", "git-add").await;
                     return HookResponse::deny(&permission_deny_json(
                         "BLOCKED: Direct git add is prohibited in the team repo. Use git-queue.sh which performs atomic add+commit under lock."
+                    ));
+                }
+                if GIT_PUSH_RE.is_match(&cmd) {
+                    log_guardrail("deny", "git-push").await;
+                    return HookResponse::deny(&permission_deny_json(
+                        "BLOCKED: Direct git push is prohibited in the team repo (#2598). Use git-queue.sh push which sets the _GIT_QUEUE_PUSH marker so the pre-push hook validates branch + role."
+                    ));
+                }
+                if GIT_REBASE_RE.is_match(&cmd) {
+                    log_guardrail("deny", "git-rebase").await;
+                    return HookResponse::deny(&permission_deny_json(
+                        "BLOCKED: Direct git rebase is prohibited in the team repo (#2598). Rebase via git-queue.sh push (which rebases onto origin/main internally), or use the override env var DEPLOY_ROLE_PREPUSH_OVERRIDE=1 if you have a real reason."
+                    ));
+                }
+                if GIT_CHERRY_PICK_RE.is_match(&cmd) {
+                    log_guardrail("deny", "git-cherry-pick").await;
+                    return HookResponse::deny(&permission_deny_json(
+                        "BLOCKED: Direct git cherry-pick is prohibited in the team repo (#2598). Use the override env var if cross-branch cherry-pick is genuinely needed."
+                    ));
+                }
+                if GIT_RESET_HARD_RE.is_match(&cmd) {
+                    log_guardrail("deny", "git-reset-hard").await;
+                    return HookResponse::deny(&permission_deny_json(
+                        "BLOCKED: Direct git reset --hard is prohibited in the team repo (#2598). Override with DEPLOY_ROLE_PREPUSH_OVERRIDE=1 if intentional."
                     ));
                 }
             }
