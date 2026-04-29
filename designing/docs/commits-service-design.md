@@ -106,13 +106,14 @@ The five To-Be moves:
 
 ## Single Contract
 
-> **A commit lands when, and only when, it (a) was authored on the role's own worktree and branch, (b) passed the local pre-commit hook layer, (c) was pushed via git-queue, and (d) merged to main via rebase-merge after CI's required-checks (mirrored in branch-protection AND rulesets) ran green.**
+> **A commit lands when, and only when, it (a) was authored on the role's own worktree and branch, (b) passed the local pre-commit hook layer, (c) was pushed via git-queue, (d) merged to main via rebase-merge after CI's required-checks (mirrored in branch-protection AND rulesets) ran green, and (e) the merged SHA is the SHA against which required-checks ran green.**
 
 Failure modes the contract names:
 - (a) excludes cross-branch contamination — caught by per-role worktrees + git-queue branch-check.
 - (b) excludes broken-tree commits — caught by pre-commit; CI is the authoritative re-check.
 - (c) excludes raw-`git push` races — git-queue.sh push is the only sanctioned path.
 - (d) excludes merge-commit cruft and one-system-only required-checks — rebase-merge per #2556, lockstep per DEC-2525 amendment.
+- (e) excludes stale-CI-on-force-push and config-drift between checks-ran-against and checks-required-on-merge — addressed via GitHub branch-protection setting "Require branches to be up to date before merging" plus the lockstep enforcer (deferred card). Per Silas's #44 review: day-1 without (e) we hit a case where (a-d) all read green and a force-pushed SHA lands on main without re-running checks.
 
 ## Worktree grain — resolved
 
@@ -165,9 +166,11 @@ Layer 1 of ADR-026 ("will this commit obviously break something?") = pre-commit.
 - Rust hermetic test slice (`cargo test --lib --bins` per affected crate)
 - Doc-coherence ratchet (when CLAUDE.md fragments change)
 
+High-priority follow-on:
+- **pre-push hook** — load-bearing for the cross-branch-commit failure class, not optional. git-queue.sh serializes but does NOT enforce `branch-prefix = role`. A pre-push hook checking `role-inferred-from-cwd matches branch prefix <role>/*` would have caught Silas's #44 wrong-branch incident (and the three contamination incidents 2026-04-29) BEFORE push landed remote state. Cost: latency on push, acceptable. Driver: cross-branch failure class.
+
 Deferred / not yet shipped:
-- **pre-push hook** — would catch the git-queue-bypass case AND would let CI-required-checks be locally pre-checked before pushing. Cost: latency on push.
-- **post-commit hook** — would emit `commit.created` spine events for analytics. Cost: noise unless filtered.
+- **post-commit hook** — would emit `commits.commit.created` spine events for analytics. Cost: noise unless filtered.
 - **commit-msg hook** — would enforce `<role>: <verb> #<card>` format. Cost: existing message lint isn't blocking and hasn't drifted enough to warrant.
 
 The principle: **Layer 1 (hooks) makes the obviously-broken case fast-fail; Layer 3 (CI) is authoritative on main.** Don't let Layer 1 grow into a CI mirror — its job is the obviously-broken slice, not the full battery.
@@ -184,16 +187,19 @@ Demotion criteria: if a check flakes ≥3× in 30 days for non-code reasons (env
 
 ## Spine events
 
+Canonical namespace: `commits.*` (rename existing `git-queue.commit.*` emissions to `commits.*` in the implementation pass — one canonical surface before #2528 sensor consumer registry reads it). Past-tense event shape per existing convention (`nudge.emitted`, `card.pulled`, `gate.completed`):
+
 ```
-commits.queue.acquired   <role> branch=<branch>
-commits.queue.committed  <role> branch=<branch> sha=<sha>
-commits.queue.pushed     <role> branch=<branch> sha=<sha>
-commits.branch.mismatch  <role> expected=<role>/* actual=<branch>   (#2580)
-commits.merge.rebased    <role> pr=<num> base_sha=<sha>
-commits.required_checks.drift   delta=<list>   (lockstep enforcer)
+commits.queue.lock_acquired      <role> branch=<branch>
+commits.commit.created           <role> branch=<branch> sha=<sha>
+commits.commit.pushed            <role> branch=<branch> sha=<sha>
+commits.branch.mismatch_detected <role> expected=<role>/* actual=<branch>   (#2580)
+commits.merge.rebased            <role> pr=<num> base_sha=<sha>
+commits.required_checks.drift_detected   delta=<list>   (lockstep enforcer)
+commits.force_push.detected      <role> branch=<branch> old_sha=<sha> new_sha=<sha>   (clause-(e) backstop)
 ```
 
-Existing in chorus.log already (verify and align): `git-queue.commit` style events. Naming sweep deferred to the implementation card.
+Renames vs the first draft: `queue.acquired → queue.lock_acquired` (disambiguates what was acquired); `queue.committed → commit.created` (past-tense, non-reflexive, symmetric with `card.pulled`); `queue.pushed → commit.pushed`; `branch.mismatch → branch.mismatch_detected` and `required_checks.drift → required_checks.drift_detected` (past-tense parity for noun-state events). Per Silas's review.
 
 ## Connections
 
