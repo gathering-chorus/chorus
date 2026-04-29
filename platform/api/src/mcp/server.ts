@@ -168,6 +168,19 @@ const NUDGE_TOOL_DEF = {
   },
 } as const;
 
+// #2557 verification — DELETE ME after merge.
+// Deliberately violates mcp-description-shape lint (description < 80 chars,
+// no disposition guidance, no anti-pattern clause). The lint check is in
+// the non-required tier post-#2526; this card proves a non-required failure
+// merges green. Revert PR follows immediately. NOT registered in the tools
+// array below — defined-but-orphan so production MCP surface is untouched.
+const VERIFICATION_2557_TOOL_DEF = {
+  name: 'chorus_verification_2557_delete_me',
+  description: 'X',
+  inputSchema: { type: 'object', properties: {} },
+} as const;
+void VERIFICATION_2557_TOOL_DEF; // satisfy ts noUnusedLocals
+
 function logEvent(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
   process.stderr.write(JSON.stringify({ level, event, tool: 'chorus_nudge_message', ts: new Date().toISOString(), ...fields }) + '\n');
 }
