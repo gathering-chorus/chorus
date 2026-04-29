@@ -3,8 +3,38 @@
 # DEC-100: no bash APIs. This file only exists because scripts reference it by name.
 # DEC-107: --force is ALWAYS on. No background/passive path. osascript inject every time.
 # --dry-run: persist + queue + construct inject, skip osascript. For tests.
+# #2575: --body-file <path> / --body-stdin — read body from file or stdin instead of positional arg.
+#        Keeps the visible command line short for callers in shared terminals (Jeff's window).
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 # #2287: DEPLOY_ROLE contract C1 — must be set by caller. Binary fails loud if unset.
-# No default here: wrapper must not compensate for a missing contract.
-# Non-role callers (LaunchAgents, cron) pass --from <role> on the command line.
-exec "$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim" nudge "$@" --force
+
+# Preprocess --body-file / --body-stdin into a positional body argument.
+ARGS=()
+BODY=""
+SUBSTITUTE_BODY=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --body-file)
+      shift
+      [ -f "$1" ] || { echo "nudge: --body-file path not found: $1" >&2; exit 2; }
+      BODY="$(cat "$1")"
+      SUBSTITUTE_BODY=1
+      shift
+      ;;
+    --body-stdin)
+      BODY="$(cat)"
+      SUBSTITUTE_BODY=1
+      shift
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [ "$SUBSTITUTE_BODY" = "1" ]; then
+  ARGS+=("$BODY")
+fi
+
+exec "$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim" nudge "${ARGS[@]}" --force
