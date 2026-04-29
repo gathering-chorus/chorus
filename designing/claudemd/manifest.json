@@ -566,7 +566,8 @@
       "shared/session-close-out-reference.md",
       "shared/lint-ceiling-ratchet.md",
       "shared/domain-endpoints-reference.md",
-      "shared/portfolio-reference.md"
+      "shared/portfolio-reference.md",
+      "shared/worktree-convention.md"
     ]
   },
   "roles": {
@@ -596,6 +597,7 @@
         "shared/error-handling-discipline.md",
         "shared/tdd-discipline.md",
         "shared/icd-gate.md",
+        "shared/worktree-convention.md",
         "roles/wren/state-files.md"
       ]
     },
@@ -625,6 +627,7 @@
         "shared/error-handling-discipline.md",
         "shared/tdd-discipline.md",
         "shared/icd-gate.md",
+        "shared/worktree-convention.md",
         "roles/silas/state-files.md"
       ]
     },
@@ -653,6 +656,7 @@
         "shared/error-handling-discipline.md",
         "shared/tdd-discipline.md",
         "shared/icd-gate.md",
+        "shared/worktree-convention.md",
         "roles/kade/state-files.md"
       ]
     }
