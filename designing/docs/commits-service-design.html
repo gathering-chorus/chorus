@@ -435,13 +435,15 @@ affected crate)</li>
 </ul>
 <p>High-priority follow-on: - <strong>pre-push hook</strong> —
 load-bearing for the cross-branch-commit failure class, not optional.
-git-queue.sh serializes but does NOT enforce
-<code>branch-prefix = role</code>. A pre-push hook checking
-<code>role-inferred-from-cwd matches branch prefix &lt;role&gt;/*</code>
-would have caught Silas’s #44 wrong-branch incident (and the three
-contamination incidents 2026-04-29) BEFORE push landed remote state.
-Cost: latency on push, acceptable. Driver: cross-branch failure
-class.</p>
+<strong>#2580 (Done) closes the queue-path half</strong> by enforcing
+<code>branch-prefix = role</code> inside
+<code>git-queue.sh commit</code> and <code>git-queue.sh push</code>. A
+pre-push hook is the <strong>unfinished defense-in-depth half</strong> —
+it would catch raw <code>git push</code> invocations that bypass
+git-queue entirely. Together they cover both queue-path and bypass-path;
+without pre-push, anyone running <code>git push</code> directly still
+slips through. Driver: cross-branch failure class. Per Silas’s #2580
+review.</p>
 <p>Deferred / not yet shipped: - <strong>post-commit hook</strong> —
 would emit <code>commits.commit.created</code> spine events for
 analytics. Cost: noise unless filtered. - <strong>commit-msg

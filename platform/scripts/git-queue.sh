@@ -55,16 +55,33 @@ check_branch() {
       return 0
       ;;
     *)
-      log_event "commits.branch.mismatch_detected" "expected=${ROLE}/*" "actual=${actual_branch}" "op=${op}"
+      # Forensic payload per Silas's review on #2580: cwd + commits_ahead
+      # let dashboards distinguish "session-long contamination" from "one-typo".
+      local _cwd _commits_ahead
+      _cwd=$(pwd)
+      _commits_ahead=$(git -C "$REPO_ROOT" rev-list --count "@{upstream}..HEAD" 2>/dev/null || echo "0")
+      log_event "commits.branch.mismatch_detected" \
+        "expected=${ROLE}/*" \
+        "actual=${actual_branch}" \
+        "op=${op}" \
+        "cwd=${_cwd}" \
+        "commits_ahead=${_commits_ahead}"
       echo "git-queue: ERROR — branch mismatch (cross-role contamination guard, #2580)" >&2
       echo "  role:           ${ROLE}" >&2
       echo "  expected prefix: ${ROLE}/" >&2
       echo "  actual branch:   ${actual_branch}" >&2
+      echo "  cwd:             ${_cwd}" >&2
       echo "" >&2
-      echo "  Fix one of:" >&2
-      echo "    git checkout -b ${ROLE}/<card-id>            # new branch for new card" >&2
-      echo "    git checkout ${ROLE}/<existing-card-id>       # switch to in-flight branch" >&2
-      echo "    bash $0 ${op} --force-branch <args>           # override (use sparingly)" >&2
+      echo "  Self-recovery (preserves your in-flight changes):" >&2
+      echo "    git stash" >&2
+      echo "    git checkout -b ${ROLE}/<card-id>" >&2
+      echo "    git stash pop" >&2
+      echo "" >&2
+      echo "  Or, if you have an in-flight branch already:" >&2
+      echo "    git stash; git checkout ${ROLE}/<existing-card-id>; git stash pop" >&2
+      echo "" >&2
+      echo "  Emergency override (logs the bypass, use sparingly):" >&2
+      echo "    bash $0 ${op} --force-branch <args>" >&2
       return 1
       ;;
   esac

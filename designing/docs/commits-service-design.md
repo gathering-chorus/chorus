@@ -167,7 +167,7 @@ Layer 1 of ADR-026 ("will this commit obviously break something?") = pre-commit.
 - Doc-coherence ratchet (when CLAUDE.md fragments change)
 
 High-priority follow-on:
-- **pre-push hook** — load-bearing for the cross-branch-commit failure class, not optional. git-queue.sh serializes but does NOT enforce `branch-prefix = role`. A pre-push hook checking `role-inferred-from-cwd matches branch prefix <role>/*` would have caught Silas's #44 wrong-branch incident (and the three contamination incidents 2026-04-29) BEFORE push landed remote state. Cost: latency on push, acceptable. Driver: cross-branch failure class.
+- **pre-push hook** — load-bearing for the cross-branch-commit failure class, not optional. **#2580 (Done) closes the queue-path half** by enforcing `branch-prefix = role` inside `git-queue.sh commit` and `git-queue.sh push`. A pre-push hook is the **unfinished defense-in-depth half** — it would catch raw `git push` invocations that bypass git-queue entirely. Together they cover both queue-path and bypass-path; without pre-push, anyone running `git push` directly still slips through. Driver: cross-branch failure class. Per Silas's #2580 review.
 
 Deferred / not yet shipped:
 - **post-commit hook** — would emit `commits.commit.created` spine events for analytics. Cost: noise unless filtered.
