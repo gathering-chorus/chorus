@@ -551,10 +551,15 @@ mod tests {
 
     #[test]
     fn existing_file_has_git_history() {
-        // memory_gate.rs itself has commits
-        let has = file_has_git_history(
-            &format!("{}/platform/services/chorus-hooks/src/hooks/memory_gate.rs", chorus_root())
-        );
+        // #2563: was `chorus_root()` — runtime env-read. If any predecessor test mutates
+        // CHORUS_ROOT (via std::env::set_var or similar), this test built a wrong path
+        // and panicked with "memory_gate.rs should have git history" (#2526 wave 4
+        // pre-commit caught it). CARGO_MANIFEST_DIR resolves at COMPILE TIME, invariant
+        // under runtime env mutation. Matches #2558 (parameter > shared state) and
+        // #2505 (explicit > silent env fallback) patterns.
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let path = format!("{}/src/hooks/memory_gate.rs", manifest_dir);
+        let has = file_has_git_history(&path);
         assert!(has, "memory_gate.rs should have git history");
     }
 
