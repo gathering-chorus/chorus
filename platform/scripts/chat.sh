@@ -50,8 +50,28 @@ EOF
 }
 
 cmd_say() {
-  local chat_id="${1:-}" role="${2:-}" message="${3:-}"
-  [ -z "$chat_id" ] || [ -z "$role" ] || [ -z "$message" ] && die "Usage: chat.sh say <chat-id> <role> \"message\""
+  local chat_id="${1:-}" role="${2:-}"
+  [ -z "$chat_id" ] || [ -z "$role" ] && die "Usage: chat.sh say <chat-id> <role> \"message\" | --body-file <path> | --body-stdin"
+  shift 2
+
+  # #2575: support --body-file <path> / --body-stdin to keep visible command short.
+  local message=""
+  if [ $# -gt 0 ]; then
+    case "$1" in
+      --body-file)
+        shift
+        [ -f "$1" ] || die "chat.sh say: --body-file path not found: $1"
+        message="$(cat "$1")"
+        ;;
+      --body-stdin)
+        message="$(cat)"
+        ;;
+      *)
+        message="$1"
+        ;;
+    esac
+  fi
+  [ -z "$message" ] && die "Usage: chat.sh say <chat-id> <role> \"message\" | --body-file <path> | --body-stdin"
 
   local chat_file="$CHAT_DIR/${chat_id}.md"
   [ -f "$chat_file" ] || die "Chat $chat_id not found"
@@ -90,7 +110,6 @@ cmd_say() {
   # Return current line count so caller can track position
   wc -l < "$chat_file" | tr -d ' '
 }
-
 cmd_read() {
   local chat_id="${1:-}" since=0
   [ -z "$chat_id" ] && die "Usage: chat.sh read <chat-id> [--since <line>]"
