@@ -333,6 +333,7 @@ pub fn run(args: &[String]) -> ExitCode {
 
 /// Fetch last session git log per role — own commits + 1-liner for other roles (#1781)
 /// Returns (own_commits_text, vec of (role, summary) for other roles)
+#[allow(dead_code)]
 fn fetch_last_session_log(role: &str) -> (String, Vec<(String, String)>) {
     // Find the date of the last reboot commit for this role to set the --since boundary
     // Use git directly with full path — zsh -lc quoting eats grep patterns

@@ -58,7 +58,7 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
     let role = &args[1];
 
     // Alias translation from schema
-    if let Ok(schema) = fs::read_to_string(&schema_file()) {
+    if let Ok(schema) = fs::read_to_string(schema_file()) {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&schema) {
             if let Some(aliases) = parsed.get("aliases").and_then(|a| a.as_object()) {
                 if let Some(new_name) = aliases.get(&event).and_then(|v| v.as_str()) {
@@ -144,7 +144,7 @@ mod tests {
     /// Find the log line containing the given event name (tests run in parallel,
     /// so we can't rely on "last line").
     fn find_event_line(event: &str) -> Option<String> {
-        let content = fs::read_to_string(&log_file()).ok()?;
+        let content = fs::read_to_string(log_file()).ok()?;
         let needle = format!("\"event\":\"{}\"", event);
         // Search from the end — our event is recent
         content.lines().rev()

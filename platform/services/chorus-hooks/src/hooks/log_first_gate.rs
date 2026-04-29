@@ -128,14 +128,13 @@ fn has_log_evidence(input: &HookInput, state: &AppState) -> bool {
 
         // Check 2: "Log evidence:" synthesis in assistant output
         // Must contain what the logs revealed, not just that logs were opened.
-        if !has_log_synthesis && lower.contains("assistant") {
-            if lower.contains("log evidence:") || lower.contains("logs show")
+        if !has_log_synthesis && lower.contains("assistant")
+            && (lower.contains("log evidence:") || lower.contains("logs show")
                 || lower.contains("log shows") || lower.contains("from the logs:")
-                || lower.contains("log output:") || lower.contains("the log reveals")
+                || lower.contains("log output:") || lower.contains("the log reveals"))
             {
                 has_log_synthesis = true;
             }
-        }
 
         if has_log_read && has_log_synthesis {
             break;

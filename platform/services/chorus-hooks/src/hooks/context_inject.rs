@@ -21,9 +21,11 @@ const PULSE_STALE_THRESHOLD: Duration = Duration::from_secs(30);
 const HYBRID_CACHE_TTL: Duration = Duration::from_secs(30);
 const ATHENA_CACHE_TTL: Duration = Duration::from_secs(60);
 
+#[allow(clippy::type_complexity)]
 static HYBRID_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Vec<(String, String, String)>)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+#[allow(clippy::type_complexity)]
 static ATHENA_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Option<String>)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -51,7 +53,7 @@ fn extract_keywords(prompt: &str) -> Vec<String> {
 
     let mut keywords: Vec<String> = words
         .iter()
-        .filter(|w| w.len() > 1 && !STOP_WORDS.contains(&w.as_ref()))
+        .filter(|w| w.len() > 1 && !STOP_WORDS.contains(w))
         .map(|w| w.to_string())
         .collect();
 
@@ -324,10 +326,10 @@ fn scan_memory(keywords: &[String]) -> Vec<String> {
 
     for entry in dir.flatten() {
         let path = entry.path();
-        if !path.extension().map_or(false, |e| e == "md") {
+        if path.extension().is_none_or(|e| e != "md") {
             continue;
         }
-        if path.file_name().map_or(false, |n| n == "MEMORY.md") {
+        if path.file_name().is_some_and(|n| n == "MEMORY.md") {
             continue;
         }
 
@@ -476,7 +478,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     context.push_str(&format!("Keywords: {}\n", query));
 
     if let Some(pulse) = &pulse_block {
-        context.push_str("\n");
+        context.push('\n');
         context.push_str("## Pulse\n");
         context.push_str(pulse);
         // #2234 Step 6 prototype: endpoint manifest for Context API pull.
@@ -484,13 +486,13 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         context.push_str("  context api:\n");
         context.push_str("    board:  GET /api/chorus/context/board/wip?role=");
         context.push_str(&role_name);
-        context.push_str("\n");
+        context.push('\n');
         context.push_str("    roles:  GET /api/chorus/context/roles\n");
         context.push_str("    health: GET /api/chorus/context/health\n");
     }
 
     if !spine_events.is_empty() {
-        context.push_str("\n");
+        context.push('\n');
         context.push_str(&format!("## Spine ({} recent events)\n", spine_events.len()));
         for (ts, role, event) in &spine_events {
             context.push_str(&format!("  [{}] {} → {}\n", ts, role, event));
@@ -498,7 +500,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     if let Some(athena) = &athena_block {
-        context.push_str("\n");
+        context.push('\n');
         context.push_str("## Athena\n");
         context.push_str(athena);
     }

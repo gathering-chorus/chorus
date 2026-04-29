@@ -19,6 +19,7 @@ pub struct AppState {
 
 /// Chorus search results cached from context_inject (#2225)
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct ContextSearchResults {
     pub chorus_hits: Vec<(String, String, String)>, // (role, content, timestamp)
     pub memory_hits: Vec<String>,

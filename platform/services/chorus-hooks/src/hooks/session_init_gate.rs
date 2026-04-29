@@ -208,6 +208,7 @@ fn run_gate_smoke(role: &str, state: &AppState) -> bool {
     // Without this, gates fall open on empty session data and smoke can't verify blocking.
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     let project_key = smoke_cwd.replace('/', "-");
+    #[allow(clippy::manual_strip)]
     let project_key = if project_key.starts_with('-') { &project_key[1..] } else { &project_key };
     let jsonl_dir = format!("{}/.claude/projects/-{}", home, project_key);
     let jsonl_path = format!("{}/{}.jsonl", jsonl_dir, smoke_session_id);

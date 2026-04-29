@@ -21,7 +21,7 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
     let role_dir = state_paths::role_dir(role).unwrap();
     let role_path = format!("{}/{}", repo_root(), role_dir);
     let cache = format!("/tmp/session-context-{}.md", role);
-    let out = format!("/tmp/session-start-{}.md", role);
+    let _out = format!("/tmp/session-start-{}.md", role);
     let init_dir = "/tmp/claude-session-init";
 
     // Build cache if missing or stale (>10 min)
@@ -51,7 +51,7 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         .output().ok().and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default();
     if ckpt_out.contains("Resuming") {
         content.push_str("\n## Crash Recovery\n");
-        content.push_str(&ckpt_out.lines().next().unwrap_or(""));
+        content.push_str(ckpt_out.lines().next().unwrap_or(""));
         content.push('\n');
     }
 
@@ -170,7 +170,7 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         let _ = chorus_log::run_silent(&[
             "session.context.error".to_string(),
             role.to_string(),
-            format!("error_type=cache_empty"),
+            "error_type=cache_empty".to_string(),
             format!("lines={}", lines),
         ]);
         eprintln!("⚠ Context cache empty or failed ({} lines) — role booting with partial context", lines);
@@ -233,7 +233,7 @@ pub fn session_close_cmd(args: &[String]) -> ExitCode {
     // Find session.role.started timestamp for this role in chorus.log
     let duration_secs = {
         let log_content = fs::read_to_string(
-            &state_paths::chorus_log_file()
+            state_paths::chorus_log_file()
         ).unwrap_or_default();
         let mut start_ts = 0u64;
         for line in log_content.lines().rev() {
@@ -269,7 +269,7 @@ pub fn session_close_cmd(args: &[String]) -> ExitCode {
         "session.role.ended".to_string(),
         role.to_string(),
         format!("duration={}", duration_secs),
-        format!("exit=clean"),
+        "exit=clean".to_string(),
     ]);
 
     if issues.is_empty() {

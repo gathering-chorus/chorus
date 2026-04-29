@@ -16,7 +16,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::time::Duration;
 
 const DEFAULT_API_URL: &str = "http://localhost:3340/api/loom/principles";
 const DEFAULT_CACHE_PATH: &str = "/tmp/principles-cache.json";

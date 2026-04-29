@@ -5,7 +5,7 @@ use chorus_hooks::shared::state_paths::chorus_root;
 #[test]
 fn shim_uses_roles_silas_not_platform_roles_silas() {
     let source = std::fs::read_to_string(
-        &format!("{}/platform/services/chorus-hooks/src/shim.rs", chorus_root())
+        format!("{}/platform/services/chorus-hooks/src/shim.rs", chorus_root())
     ).expect("shim.rs should exist");
 
     assert!(
@@ -21,7 +21,7 @@ fn shim_uses_roles_silas_not_platform_roles_silas() {
 #[test]
 fn sensitive_paths_uses_roles_silas() {
     let source = std::fs::read_to_string(
-        &format!("{}/platform/services/chorus-hooks/src/hooks/sensitive_paths.rs", chorus_root())
+        format!("{}/platform/services/chorus-hooks/src/hooks/sensitive_paths.rs", chorus_root())
     ).expect("sensitive_paths.rs should exist");
 
     assert!(
@@ -33,7 +33,7 @@ fn sensitive_paths_uses_roles_silas() {
 #[test]
 fn health_command_uses_roles_silas() {
     let source = std::fs::read_to_string(
-        &format!("{}/platform/services/chorus-hooks/src/commands/health.rs", chorus_root())
+        format!("{}/platform/services/chorus-hooks/src/commands/health.rs", chorus_root())
     ).expect("health.rs should exist");
 
     assert!(

@@ -13,7 +13,7 @@ fn post_build_script_exists_and_is_executable() {
     let exists = std::path::Path::new(&post_build()).exists();
     assert!(exists, "post-cargo-build.sh must exist at {}", post_build());
 
-    let metadata = std::fs::metadata(&post_build()).expect("should read metadata");
+    let metadata = std::fs::metadata(post_build()).expect("should read metadata");
     use std::os::unix::fs::PermissionsExt;
     let mode = metadata.permissions().mode();
     assert!(mode & 0o111 != 0, "post-cargo-build.sh must be executable, mode: {:o}", mode);

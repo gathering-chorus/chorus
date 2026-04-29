@@ -7,6 +7,7 @@ use chorus_hooks::shared::state_paths::chorus_root;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 fn chorus_log() -> String { format!("{}/platform/logs/chorus.log", chorus_root()) }
+#[allow(dead_code)]
 fn log_tail(n: usize) -> String {
     let content = fs::read_to_string(chorus_log()).unwrap_or_default();
     content.lines().rev().take(n).collect::<Vec<_>>().join("\n")

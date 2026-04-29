@@ -4,14 +4,16 @@
 //! Jeff's direction: "block building without pair on code cards."
 
 use crate::state::AppState;
-use crate::types::{permission_deny_json, HookInput, HookResponse};
+use crate::types::{HookInput, HookResponse};
 
 /// Source code that requires pair for cross-domain edits (#2076 shared).
+#[allow(dead_code)]
 fn is_code_file(path: &str) -> bool {
     crate::shared::file_classification::is_source_code(path)
 }
 
 /// Check for an active pair session
+#[allow(dead_code)]
 fn has_active_pair() -> bool {
     // Look for pair files in /tmp/
     if let Ok(entries) = std::fs::read_dir("/tmp") {
@@ -33,6 +35,7 @@ fn has_active_pair() -> bool {
 }
 
 /// Check if the session has pair evidence in JSONL (uses shared cache #1861)
+#[allow(dead_code)]
 fn has_pair_evidence_in_session(input: &HookInput, state: &AppState) -> bool {
     let session_id = match &input.session_id {
         Some(id) => id.clone(),

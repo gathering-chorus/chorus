@@ -80,7 +80,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let path = input.get_tool_input_str("path");
     let command = input.get_tool_input_str("command");
 
-    if !is_context_search(&tool, &pattern, &path, &command) {
+    if !is_context_search(tool, &pattern, &path, &command) {
         return HookResponse::allow();
     }
 
