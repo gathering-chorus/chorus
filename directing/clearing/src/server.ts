@@ -17,8 +17,15 @@ import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
-const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
-const NUDGE_SCRIPT = `${CHORUS_ROOT}/platform/scripts/nudge`;
+// #2575: fail-loud on missing CHORUS_ROOT. Earlier silent fallback to
+// '/Users/jeffbridwell/CascadeProjects' (note: missing /chorus suffix) would
+// produce broken paths for every CHORUS_ROOT-derived constant if the env was
+// ever unset. com.chorus.clearing.plist sets it in production; manual launches
+// must too. Same family as #2505 prod-tier fallback discussion.
+const CHORUS_ROOT = process.env.CHORUS_ROOT;
+if (!CHORUS_ROOT) {
+  throw new Error('CHORUS_ROOT must be set; expected /Users/jeffbridwell/CascadeProjects/chorus');
+}
 
 // Auth token for remote access (#1719)
 // Generate a stable token per machine — persists across restarts
@@ -1016,25 +1023,43 @@ function pickJeffMessageTargets(text: string): string[] {
 }
 
 // Returns null on success, error string on failure (#2036).
+// #2575: Jeff's Clearing input → chorus-inject DIRECTLY (synchronous, fail-loud).
+// Earlier path called `nudge --force` via execSync expecting INJECT_FAILED on
+// failure, but #2435 atomic cutover removed sender-side inject from nudge —
+// nudge now just emits a spine event and returns SUCCESS regardless. The
+// INJECT_FAILED substring check matched dead output.
+//
+// Per Jeff (verbatim): "my inputs in the clearing get nudge --force to right
+// claude code session so u can act immediately - background will never work."
+// chorus-inject is fail-loud (lib.rs:144-176, exit 0 only if osascript stdout
+// 'ok'); HTTP response IS the delivery confirmation.
+//
+// Side effect: emit jeff.input.{delivered,failed} spine event fire-and-forget
+// for audit. Logging doesn't add latency to Jeff's UI feedback.
+const INJECT_BIN = `${CHORUS_ROOT}/platform/services/chorus-inject/target/release/chorus-inject`;
+
 function deliverJeffMessageToTarget(target: string, safeMsg: string, cleanText: string): string | null {
-  const { execSync } = require('child_process');
+  const { execFileSync, execFile } = require('child_process');
+  console.log(`[clearing] delivering to ${target}: ${cleanText.substring(0, 60)}`);
   try {
-    const cmd = `bash "${NUDGE_SCRIPT}" "${target}" "${safeMsg}" --from jeff --force`;
-    console.log(`[clearing] delivering to ${target}: ${cleanText.substring(0, 60)}`);
-    const result = execSync(cmd, {
+    execFileSync(INJECT_BIN, [target, safeMsg], {
       timeout: 10_000,
       encoding: 'utf-8',
       env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' },
     });
-    console.log(`[clearing] result: ${result.trim()}`);
-    if (result.includes('INJECT_FAILED')) {
-      console.error(`[clearing] inject failed for ${target} — TCC or window issue`);
-      return `inject failed for ${target} (message queued but not delivered to terminal)`;
-    }
+    console.log(`[clearing] DELIVERED to ${target}`);
+    // Fire-and-forget audit event — don't block on logging.
+    execFile(`${CHORUS_ROOT}/platform/scripts/chorus-log`,
+      ['jeff.input.delivered', 'bridge', `to=${target}`, `chars=${safeMsg.length}`],
+      () => { /* fire-and-forget */ });
     return null;
   } catch (err) {
-    const errMsg = err instanceof Error ? ((err as { stderr?: string }).stderr ?? err.message) : String(err);
-    console.error(`[clearing] delivery to ${target} failed: ${errMsg}`);
-    return errMsg;
+    const stderr = (err as { stderr?: string }).stderr ?? '';
+    const reason = (stderr.split('\n')[0] || (err instanceof Error ? err.message : String(err))).trim();
+    console.error(`[clearing] inject failed for ${target}: ${reason}`);
+    execFile(`${CHORUS_ROOT}/platform/scripts/chorus-log`,
+      ['jeff.input.failed', 'bridge', `to=${target}`, `chars=${safeMsg.length}`, `reason=${reason}`],
+      () => { /* fire-and-forget */ });
+    return reason;
   }
 }
