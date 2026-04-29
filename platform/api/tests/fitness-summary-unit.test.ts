@@ -28,17 +28,17 @@ function clear() {
 }
 
 const today = new Date().toISOString().slice(0, 10);
-// ts(h, m, s) returns a timestamp `h:m:s` ago, but pinned to today's date
-// so callers asserting "startsWith today" don't flake when run in the first
-// hour after UTC midnight (#2505: 2026-04-26 00:19 UTC CI flake).
+// ts(h, m, s) returns a timestamp `h:m:s` before today's noon UTC reference.
+// Anchoring to mid-day instead of `now` makes the helper insensitive to clock
+// time — the same h/m/s offset always produces the same intra-day spacing
+// regardless of when the test runs. The earlier #2505 approach (now-offset
+// with clamp-to-midnight when off-today) collapsed multiple "off today"
+// timestamps to the same instant, breaking cluster-detection tests that
+// require ordered separation. All callers use offsets <= 3h, comfortably
+// within noon-anchored today (#2543).
+const REFERENCE_NOON_MS = new Date(today + 'T12:00:00.000Z').getTime();
 const ts = (hours = 0, mins = 0, secs = 0) => {
-  const now = new Date();
-  const candidate = new Date(now.getTime() - (hours * 3600 + mins * 60 + secs) * 1000);
-  // If candidate fell off today's date, clamp to start-of-today instead.
-  if (candidate.toISOString().slice(0, 10) !== today) {
-    return new Date(today + 'T00:00:00.000Z').toISOString();
-  }
-  return candidate.toISOString();
+  return new Date(REFERENCE_NOON_MS - (hours * 3600 + mins * 60 + secs) * 1000).toISOString();
 };
 
 describe('getFitnessSummary — shape and empty state', () => {
