@@ -1,40 +1,77 @@
 # Wren — Next Session
 
-## Last session (2026-04-28)
+## Boot order — IMPORTANT
 
-**The #2545 curation arc shipped end-to-end.** Three children Done:
-- **#2549** doc-catalog write API — five-field tag + lineage predicates + drift + curated overlay + audit feed; persists to `urn:chorus:instances` per #2314 pattern
-- **#2550** curation side-panel UI — click any catalog row → edit tags, add lineage, see drift accept/dismiss, walk untagged docs (j/k/Esc), audit feed reads chorus.log
-- **#2554** SHACL CatalogDocShape + finished Borg→subproduct migration; 4 runtime CHECKs surface non-conforming CatalogDocs at `/api/athena/validate`
+**If launched from `/chorus-wren/roles/wren`:**
+- AC3 of #2583 satisfied. Verify: `pwd`, `git worktree list` (4 entries), `cat ~/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-wren/memory/MEMORY.md` returns memories (memory-continuity check via symlink)
+- Coordinate AC4 with peer: ask Kade or Silas to do a `git checkout` in their session; verify my chorus-wren branch state stays unchanged
+- Close #2583
 
-**Two ontology shifts surfaced inline by curation work:**
-- **Borg → Chorus subproduct** (commit `8e17289e`) — was a top-level Product, demoted to SubProduct via SPARQL update + 3 code-cache syncs + 1 new test
-- **Akasha → Consulting product** (commit `f403cac1`) — Athena had no Akasha Product instance though tagger emitted `product=akasha`; folded into new `chorus:consultingProduct`
+**If launched from `/chorus/roles/wren` (unchanged):**
+- Symlink + launcher-cwd-update + reboot still pending. Steps:
+  1. `ln -s -Users-jeffbridwell-CascadeProjects-chorus-roles-wren ~/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-wren-roles-wren`
+  2. Jeff updates terminal launcher to point at `/chorus-wren/roles/wren`
+  3. Reboot
+  4. Resume from boot order above
 
-**ADR-027 drafted, reviewed, accepted** — "derived domain mappings live in the graph, not in code." Three landed cases (#2314 hasPrinciple, #2318 hasDecision, #2516 hasTestPathPrefix) plus two pending sites (discover-code, discover-pages). Silas + Kade reviewed; all tightenings folded (commit `aeca02a1`).
+## Today (2026-04-29) — what landed
 
-**Peer demos gated:** Kade's #2514 (test reshape pattern), #2516 (graphify aliases). Silas's #2523 (hermeticity audit), #2524 (test categorization), #2525 (DEC-2525 required-checks).
+**Cards Done by Wren:**
+- #2566 — Codify card-shape taxonomy (8 labels + TEAM_PROTOCOL section + gate-set service design with flow chart)
+- #2575 — nudge + chat.sh say accept --body-file / --body-stdin (originator-side quiet)
+- #2561 — Gate ceremony research v4 + 5 children filed (PR #32 merged earlier today)
+- #2585 — Spike: Claude Code project-keying findings; per-role worktree viable via symlink
+- #2498 — Trunk-vs-Rulesets cleanup (closed via Silas's PR #38 side-finding)
+- #2195 — Worktrees-as-feature retired with chorus-2526 evidence
 
-**Other:** Filed #2552 (done-gate routing fix — Kade picking up; retires the #1815→#2338→#2440 chain). Moved #2547 SWAT→Next (Silas-domain). Helped Jeff frame Tuesday consult with Anthe (HTML at `roles/wren/notes/anthe-tuesday-framer.html`).
+**Cards filed by Wren:**
+- #2562 (DEC renumber to sequential, P2)
+- #2578 (Independence Protocol implementation, P1)
+- #2581 (receiver-side nudge rendering, P1, Rust work)
+- #2583 (Wren onboards chorus-wren — paused, then reshape per #2585 spike)
+- #2584 (AI-SLOP-Detector spike on chorus, P2)
+- #2585 (Claude Code project-keying spike, Done)
+- #2586 (Commits-domain service design, Kade-owned, P1)
 
-## Pattern Jeff named today
+**Service designs landed:**
+- `/designing/docs/independence-service-design.{md,html}` — with 16 thinker folds (Galton/Asch/Lorenz/Tetlock/Bohm/Buber/Gadamer/etc.)
+- `/designing/docs/gate-set-service-design.{md,html}` — with mermaid decision-tree flow chart
+- About-wren v2 (process-as-product, peer-reviewed by Silas + Kade twice each)
 
-"Almost 100% of cards now end up generating follow-up / fix cards — and it compounds." We talked the structural shape: cards close with asterisks → felt-incomplete tax compounds → arcs scope wider → more follow-ons. Three structural moves named (close arcs not cards, cap follow-ons at one, let observations die in conversation). Jeff asked me to receive the pattern, not act on it. Carrying as framing into next session.
+**Cards in Wren WIP at boundary:**
+- #2583 (Wren onboards chorus-wren) — AC1 + AC5 done; AC2, AC3, AC4 pending launcher-cwd-update + session-restart
 
-## Anthe consult — Tuesday
+## Substrate-failure roster (parent-arc input for Section 9 of #2561)
 
-Framer ready at `roles/wren/notes/anthe-tuesday-framer.html`. Jeff scopes to (1) diagnose, (2) device + site hygiene. The "bot" Anthe wants is something she installs and pays for (Aura/IdentityForce). Boundary line in close section.
+Three days now of substrate-failure pattern:
+- silent-fallback (CHORUS_ROOT pre-#2505)
+- bridge-layer-lies (#2573, jeff.input.delivered/failed)
+- cross-branch tooling friction (#2580 stop-the-bleed; #2582 + #2583 + #2585/#2586 structural fix in progress)
+- ruleset-vs-branch-protection (#2498 side-finding from #2557 verification)
 
-## Open follow-ons
+Section 9 of #2561 — "Integration as first-class team activity at agent velocity" — opens as parent-arc research after #2561 implementation children land + 2-week audit. Paired with Silas + Kade.
 
-- **#2547** (Silas) — CHORUS_INJECT_DRY_RUN nudge leak, P1, awaiting
-- **#2552** (Kade) — done-gate routing fix; sequenced after his #2440 close
-- **#2545 parent** — children all Done; arc closes when Jeff actually curates through the surface in real use (not on /acp)
-- **Bats convention extension** (deferred from #2524) — uncarded, awaiting Jeff's pull
-- **ADR-027 pending sites**: discover-code.ts + discover-pages migrations, file when pulled
+## Open priorities going forward
 
-## What next session should know
+- **#2583** — finish onboarding when launcher cwd updated
+- **#2586** (Kade) — commits-service-design; informed by #2585 findings
+- **#2581** — receiver-side rendering (Rust work; chorus-inject + chorus-hook-shim)
+- **#2567 / #2568 / #2569 / #2570** — gate-set implementation children
+- **KM cleanup with Jeff** — Phase 2 walk-through of Wren-owned docs (his morning ask, deferred)
+- **#2562** — DEC renumber when ready
 
-- The catalog at `localhost:3340/doc-catalog.html` is now a working surface. Hard-reload picks up wave 2. The "Walk untagged" button + side-panel is the rhythm Jeff named as "tool you use, not one you admire."
-- Curated overlay (`/api/chorus/catalog/curated`) merges over runtime tagger output. Untagged count is now honest at 2 — genuinely no tagger signal on `/loom/policies.html` and `/loom/principles.html`; both already curated by Jeff via the API.
-- The leverage move ADR-027 names is shape-driven form generation. Whoever pulls discover-code/discover-pages should land them with that arc in mind, not as bespoke per-predicate work.
+## Critical memories saved today
+
+- `feedback_demo_feedback_not_card_generation.md` — demo feedback ≠ card-generation engine
+- `feedback_dont_relay_to_jeff.md` — peer answers go to peer, not also to Jeff
+- `feedback_use_body_file_for_long_messages.md` — long bodies via --body-file
+- `feedback_eliminate_runtime_dep_dont_manage_it.md` — defensive substitution pattern
+- `feedback_dont_share_hypothesis_mid_investigation.md` — independent RCA before convergence
+- `feedback_writing_surface_over_review_surface.md` — discipline at writing surface
+- `feedback_dont_trust_fallback_patterns.md` — env.unwrap_or_else is the contract IS the default
+
+## Today's lesson
+
+The thin-review pattern I showed on #2582 (procedural compliance instead of substantive engagement) is the failure mode I most need to watch for. Kade caught it cleanly. Substantive product engagement is what the role exists for; AC-tick-with-precedent-named is the smell to notice.
+
+Cross-branch contamination bit three times today. Per-role worktree IS the structural fix per #2585 spike — pending session-restart to validate.
