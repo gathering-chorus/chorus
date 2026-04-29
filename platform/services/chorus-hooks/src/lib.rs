@@ -23,3 +23,16 @@ mod session_cache;
 pub use hooks::session_init_gate;
 pub use state::AppState;
 pub use types::HookInput;
+
+/// Remove the daemon's runtime files (socket + pid) on clean shutdown.
+///
+/// #2559: shutdown_signal previously removed only the socket, leaving a
+/// stale PID file. Scripts running `kill $(cat /tmp/chorus-hooks.pid)`
+/// could then target a recycled-PID unrelated process. Paths flow as
+/// parameters (matches #2558 parameter > shared-state pattern). Idempotent
+/// under double-call (SIGINT+SIGTERM race) and missing files: `let _ =`
+/// discards both Ok and Err (NotFound), so a second call is a no-op.
+pub fn cleanup_runtime_files(socket: &std::path::Path, pid: &std::path::Path) {
+    let _ = std::fs::remove_file(socket);
+    let _ = std::fs::remove_file(pid);
+}
