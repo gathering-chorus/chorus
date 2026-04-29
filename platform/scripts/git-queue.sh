@@ -26,6 +26,50 @@ ROLE="${DEPLOY_ROLE:-unknown}"
 
 # --- Helpers ---
 
+# #2580: refuse cross-role branch contamination at the queue layer.
+# Defense-in-depth for the per-role-worktree convention (#2582). Returns 0 if
+# branch matches the role's expected prefix (or escape hatch is set), 1 with
+# a clear error message + spine event if mismatch.
+check_branch() {
+  local op="${1:-commit}"
+  local force_flag="${2:-}"
+  if [ "$force_flag" = "--force-branch" ]; then
+    return 0
+  fi
+
+  if [ -z "${DEPLOY_ROLE:-}" ] || [ "$ROLE" = "unknown" ]; then
+    echo "git-queue: error — DEPLOY_ROLE env var must be set (silas|wren|kade)" >&2
+    echo "  example: DEPLOY_ROLE=kade bash platform/scripts/git-queue.sh ${op} <files>" >&2
+    return 1
+  fi
+
+  local actual_branch
+  actual_branch=$(git -C "$REPO_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "")
+  if [ -z "$actual_branch" ]; then
+    echo "git-queue: error — HEAD is detached (not on a branch)" >&2
+    return 1
+  fi
+
+  case "$actual_branch" in
+    "${ROLE}/"*)
+      return 0
+      ;;
+    *)
+      log_event "commits.branch.mismatch_detected" "expected=${ROLE}/*" "actual=${actual_branch}" "op=${op}"
+      echo "git-queue: ERROR — branch mismatch (cross-role contamination guard, #2580)" >&2
+      echo "  role:           ${ROLE}" >&2
+      echo "  expected prefix: ${ROLE}/" >&2
+      echo "  actual branch:   ${actual_branch}" >&2
+      echo "" >&2
+      echo "  Fix one of:" >&2
+      echo "    git checkout -b ${ROLE}/<card-id>            # new branch for new card" >&2
+      echo "    git checkout ${ROLE}/<existing-card-id>       # switch to in-flight branch" >&2
+      echo "    bash $0 ${op} --force-branch <args>           # override (use sparingly)" >&2
+      return 1
+      ;;
+  esac
+}
+
 log_event() {
   local event="$1"; shift
   "$CHORUS_LOG" "$event" "$ROLE" "$@" >/dev/null 2>/dev/null || true
@@ -93,6 +137,16 @@ ensure_hooks_installed() {
 }
 
 do_commit() {
+  # #2580: parse --force-branch escape hatch before file/arg split
+  local force_flag=""
+  if [ "${1:-}" = "--force-branch" ]; then
+    force_flag="--force-branch"
+    shift
+  fi
+  if ! check_branch "commit" "$force_flag"; then
+    exit 1
+  fi
+
   ensure_hooks_installed
   # Split args at -- into files and git-commit flags
   local files=()
@@ -279,6 +333,16 @@ do_commit() {
 # The lock prevents concurrent push/commit. Stash always pops immediately.
 
 do_push() {
+  # #2580: parse --force-branch escape hatch
+  local force_flag=""
+  if [ "${1:-}" = "--force-branch" ]; then
+    force_flag="--force-branch"
+    shift
+  fi
+  if ! check_branch "push" "$force_flag"; then
+    exit 1
+  fi
+
   exec 9>"$LOCK_FILE"
   if ! lockf -t "$LOCK_TIMEOUT" 9; then
     echo "git-queue: push timeout — lock held" >&2
