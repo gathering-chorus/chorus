@@ -60,7 +60,7 @@ jobs:
     if: github.event_name == 'schedule'
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -103,7 +103,7 @@ jobs:
           - platform/tests
           - platform/workflow-engine
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -149,7 +149,7 @@ jobs:
           - platform/tests
           - platform/workflow-engine
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -193,7 +193,7 @@ jobs:
     # value when MCP tools change; no minute pressure.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -208,7 +208,7 @@ jobs:
     # not gate merge (#2461 push-bloat protection lives at pre-commit).
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Compute changed files
@@ -232,7 +232,7 @@ jobs:
     # Pre-commit still blocks locally; CI surfaces the signal only.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Compute changed files
@@ -274,7 +274,7 @@ jobs:
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -304,7 +304,7 @@ jobs:
       # local /Users/... path. CI must override to the runner workspace.
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -396,7 +396,7 @@ jobs:
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -448,7 +448,7 @@ jobs:
       FUSEKI_UPDATE_URL: http://localhost:3030/pods/update
       CHORUS_API_PORT: '3340'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
