@@ -7,208 +7,140 @@
 //! is also retired — protocol check now happens inline in SessionStart hook
 //! (session.rs). Read is plain-allow.
 //!
-//! Test hygiene: we hit the real init dir at /tmp/claude-session-init/ (the
-//! socket server reads it, and env vars set in tests don't propagate to the
-//! running daemon). A `MarkerGuard` snapshots the role's pending+done state
-//! at construction and restores it on Drop so a test that brick-walls its
-//! own role cannot strand the driver's session.
+//! Test hermeticity (#2558): each test uses its own tmpdir for the
+//! session-init markers and calls `session_init_gate::check_with_dir()`
+//! directly — no socket round-trip, no shared filesystem with the live
+//! chorus-hook-shim daemon. The earlier integration shape (post to
+//! /tmp/chorus-hooks.sock with markers in /tmp/claude-session-init) raced
+//! against the daemon's own state writes whenever a same-role Claude
+//! session was live on the test machine. Per-test tmpdir eliminates the
+//! race by construction; tmpdir is cleaned up automatically on drop.
 
-use std::fs;
-use std::path::PathBuf;
+use chorus_hooks::hooks::session_init_gate;
+use chorus_hooks::state::AppState;
+use chorus_hooks::types::HookInput;
 use chorus_hooks::shared::state_paths::chorus_root;
+use std::fs;
+use tempfile::TempDir;
 
-const INIT_DIR: &str = "/tmp/claude-session-init";
-
-/// Save the role's pending/done state at construction, restore on drop.
-/// Guarantees that even a panicking test cannot leave the gate armed for
-/// a live session.
-struct MarkerGuard {
-    pending: PathBuf,
-    done: PathBuf,
-    had_pending: bool,
-    had_done: bool,
-}
-
-impl MarkerGuard {
-    fn new(role: &str) -> Self {
-        let pending = PathBuf::from(format!("{}/{}.pending", INIT_DIR, role));
-        let done = PathBuf::from(format!("{}/{}.done", INIT_DIR, role));
-        let had_pending = pending.exists();
-        let had_done = done.exists();
-        let _ = fs::create_dir_all(INIT_DIR);
-        Self { pending, done, had_pending, had_done }
-    }
-
-    fn arm_pending_no_done(&self) {
-        let _ = fs::write(&self.pending, "");
-        let _ = fs::remove_file(&self.done);
-    }
-
-    fn arm_done(&self) {
-        let _ = fs::write(&self.pending, "");
-        let _ = fs::write(&self.done, "");
-    }
-}
-
-impl Drop for MarkerGuard {
-    fn drop(&mut self) {
-        if self.had_pending {
-            let _ = fs::write(&self.pending, "");
-        } else {
-            let _ = fs::remove_file(&self.pending);
-        }
-        if self.had_done {
-            let _ = fs::write(&self.done, "");
-        } else {
-            let _ = fs::remove_file(&self.done);
-        }
-    }
-}
-
-fn post_via_socket(endpoint: &str, body: &str) -> String {
-    use std::io::{Read, Write};
-    use std::os::unix::net::UnixStream;
-    let mut stream = UnixStream::connect("/tmp/chorus-hooks.sock")
-        .expect("chorus-hooks socket should be up for integration tests");
-    let req = format!(
-        "POST /{} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        endpoint, body.len(), body
-    );
-    stream.write_all(req.as_bytes()).unwrap();
-    let mut resp = Vec::new();
-    stream.read_to_end(&mut resp).unwrap();
-    let s = String::from_utf8_lossy(&resp).to_string();
-    let body_start = s.find("\r\n\r\n").map(|p| p + 4).unwrap_or(0);
-    s[body_start..].to_string()
-}
-
-/// Use "kade" throughout so silas (driver) and wren (navigator) sessions are
-/// unaffected regardless of test outcome. Kade's boot state is already stale
-/// pending/no-done in practice; the guard still snapshots and restores it.
-///
-/// Known limitation (axis-4 non-hermetic, #2523 audit lens, follow-on card filed):
-/// when a live "kade" Claude session is running on the same machine, its
-/// chorus-hook-shim daemon rewrites kade.done between MarkerGuard.arm_pending_no_done()
-/// and the socket POST, so the gate returns allow and the deny-expecting tests
-/// fail. Synthetic roles aren't a fix — the gate's role parser maps unknown roles
-/// to "allow" before checking markers. CI passes because no live kade session
-/// runs there. The 6 deny-expecting tests are #[ignore]'d until the fix card lands;
-/// chorus_prompt_sh_has_zero_active_hits + read_handler_allow + script-existence
-/// tests still run and exercise the structural retirement.
-const TEST_ROLE: &str = "kade";
-
-fn expect_deny(role: &str, tool: &str, tool_input: serde_json::Value) {
+/// Build a HookInput for the given role/tool/input. Cwd is set to the
+/// role's directory so HookInput::role() resolves via deploy_role.
+fn make_input(role: &str, tool: &str, tool_input: serde_json::Value) -> HookInput {
     let cwd = format!("{}/roles/{}", chorus_root(), role);
-    let body = serde_json::json!({
+    serde_json::from_value(serde_json::json!({
         "tool_name": tool,
         "tool_input": tool_input,
-        "session_id": format!("binary-gate-test-{}", role),
+        "session_id": format!("session-init-gate-test-{}", role),
         "cwd": cwd,
         "deploy_role": role,
-    })
-    .to_string();
+    }))
+    .expect("HookInput should deserialize from test fixture")
+}
 
-    let resp_body = post_via_socket("pre-tool-use", &body);
-    let has_deny = resp_body.contains("\\\"deny\\\"") || resp_body.contains("\"deny\"");
-    let has_gate = resp_body.contains("Session init gate") || resp_body.contains("binary gate");
+/// Arm the gate: write `<role>.pending`, ensure `<role>.done` is absent.
+fn arm_pending_no_done(dir: &std::path::Path, role: &str) {
+    let pending = dir.join(format!("{}.pending", role));
+    let done = dir.join(format!("{}.done", role));
+    fs::write(&pending, "").expect("write pending");
+    let _ = fs::remove_file(&done);
+}
+
+/// Arm the boot-complete state: both `<role>.pending` and `<role>.done` present.
+fn arm_done(dir: &std::path::Path, role: &str) {
+    let pending = dir.join(format!("{}.pending", role));
+    let done = dir.join(format!("{}.done", role));
+    fs::write(&pending, "").expect("write pending");
+    fs::write(&done, "").expect("write done");
+}
+
+/// Use "kade" throughout for role identity. The gate's role parser only
+/// recognizes silas/wren/kade; "unknown" returns allow before reaching the
+/// marker check, so synthetic roles can't drive the deny path. Tmpdir
+/// isolation makes the live-daemon race irrelevant — the daemon never
+/// looks at our tmpdir, only at /tmp/claude-session-init.
+const TEST_ROLE: &str = "kade";
+
+async fn expect_deny(role: &str, tool: &str, tool_input: serde_json::Value) {
+    let dir = TempDir::new().expect("tmpdir");
+    arm_pending_no_done(dir.path(), role);
+    let dir_str = dir.path().to_str().expect("tmpdir utf-8");
+    let input = make_input(role, tool, tool_input);
+    let state = AppState::new();
+    let resp = session_init_gate::check_with_dir(&input, &state, dir_str).await;
+    let stdout = resp.stdout.as_deref().unwrap_or("");
     assert!(
-        has_deny && has_gate,
-        "{} {} should be DENIED by binary session init gate. Got: {}",
-        role, tool, &resp_body[..resp_body.len().min(500)]
+        stdout.contains("\"deny\"") && stdout.contains("Session init gate"),
+        "{} {} should be DENIED by binary session init gate. Got stdout: {}, exit_code: {}",
+        role, tool, stdout, resp.exit_code,
     );
 }
 
-#[test]
-#[ignore = "non-hermetic when live kade session runs same-machine; daemon rewrites kade.done — tracked in #2558"]
-fn bash_tz_prefix_denied_when_pending() {
-    let g = MarkerGuard::new(TEST_ROLE);
-    g.arm_pending_no_done();
+#[tokio::test]
+async fn bash_tz_prefix_denied_when_pending() {
     expect_deny(
         TEST_ROLE,
         "Bash",
         serde_json::json!({"command": "TZ=America/New_York date '+%Y-%m-%d %H:%M'"}),
-    );
+    ).await;
 }
 
-#[test]
-#[ignore = "non-hermetic — see bash_tz_prefix_denied_when_pending; tracked in #2558"]
-fn bash_wall_clock_denied_when_pending() {
-    let g = MarkerGuard::new(TEST_ROLE);
-    g.arm_pending_no_done();
+#[tokio::test]
+async fn bash_wall_clock_denied_when_pending() {
     expect_deny(
         TEST_ROLE,
         "Bash",
         serde_json::json!({"command": "wall-clock"}),
-    );
+    ).await;
 }
 
-#[test]
-#[ignore = "non-hermetic — see bash_tz_prefix_denied_when_pending; tracked in #2558"]
-fn bash_role_state_denied_when_pending() {
-    let g = MarkerGuard::new(TEST_ROLE);
-    g.arm_pending_no_done();
+#[tokio::test]
+async fn bash_role_state_denied_when_pending() {
     expect_deny(
         TEST_ROLE,
         "Bash",
         serde_json::json!({"command": format!("role-state {} waiting", TEST_ROLE)}),
-    );
+    ).await;
 }
 
-#[test]
-#[ignore = "non-hermetic — see bash_tz_prefix_denied_when_pending; tracked in #2558"]
-fn bash_session_start_sh_denied_when_pending() {
-    let g = MarkerGuard::new(TEST_ROLE);
-    g.arm_pending_no_done();
+#[tokio::test]
+async fn bash_session_start_sh_denied_when_pending() {
     expect_deny(
         TEST_ROLE,
         "Bash",
         serde_json::json!({"command": format!("session-start.sh {}", TEST_ROLE)}),
-    );
+    ).await;
 }
 
-#[test]
-#[ignore = "non-hermetic — see bash_tz_prefix_denied_when_pending; tracked in #2558"]
-fn bash_chorus_prompt_sh_denied_when_pending() {
-    let g = MarkerGuard::new(TEST_ROLE);
-    g.arm_pending_no_done();
+#[tokio::test]
+async fn bash_chorus_prompt_sh_denied_when_pending() {
     expect_deny(
         TEST_ROLE,
         "Bash",
         serde_json::json!({"command": format!("chorus-prompt.sh {}", TEST_ROLE)}),
-    );
+    ).await;
 }
 
-#[test]
-#[ignore = "non-hermetic — see bash_tz_prefix_denied_when_pending; tracked in #2558"]
-fn bash_werk_init_sh_denied_when_pending() {
-    let g = MarkerGuard::new(TEST_ROLE);
-    g.arm_pending_no_done();
+#[tokio::test]
+async fn bash_werk_init_sh_denied_when_pending() {
     expect_deny(
         TEST_ROLE,
         "Bash",
         serde_json::json!({"command": format!("werk-init.sh {}", TEST_ROLE)}),
-    );
+    ).await;
 }
 
-#[test]
-fn bash_allowed_when_done_exists() {
-    let g = MarkerGuard::new(TEST_ROLE);
-    g.arm_done();
-
-    let body = serde_json::json!({
-        "tool_name": "Bash",
-        "tool_input": {"command": "ls"},
-        "session_id": "binary-gate-allow",
-        "cwd": format!("{}/roles/{}", chorus_root(), TEST_ROLE),
-        "deploy_role": TEST_ROLE,
-    })
-    .to_string();
-
-    let resp_body = post_via_socket("pre-tool-use", &body);
-    let has_deny = resp_body.contains("\\\"deny\\\"") || resp_body.contains("\"deny\"");
+#[tokio::test]
+async fn bash_allowed_when_done_exists() {
+    let dir = TempDir::new().expect("tmpdir");
+    arm_done(dir.path(), TEST_ROLE);
+    let dir_str = dir.path().to_str().expect("tmpdir utf-8");
+    let input = make_input(TEST_ROLE, "Bash", serde_json::json!({"command": "ls"}));
+    let state = AppState::new();
+    let resp = session_init_gate::check_with_dir(&input, &state, dir_str).await;
+    let stdout = resp.stdout.as_deref().unwrap_or("");
     assert!(
-        !has_deny,
-        "Bash should be ALLOWED when .done exists. Got: {}",
-        &resp_body[..resp_body.len().min(300)]
+        !stdout.contains("\"deny\""),
+        "Bash should be ALLOWED when .done exists. Got stdout: {}",
+        stdout,
     );
 }
