@@ -125,7 +125,7 @@ Rationale:
 
 Onboarding cost (per role, one-time):
 1. `git worktree add ../chorus-<role> <role>/main-checkpoint`
-2. Symlink `~/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-<role>` → `~/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus` (per #2585 — preserves memory continuity)
+2. **Memory continuity choice** (per Wren's #2585 + #2583 reasoning): either (a) symlink `~/.claude/projects/<encoded-cwd-of-worktree>` → `~/.claude/projects/<encoded-cwd-of-canonical>` to preserve accumulated session memory, OR (b) split-memory: accept that the new worktree's project-key starts empty and rebuilds in-place. (a) preserves continuity at the cost of one piece of indirection; (b) honors no-symlinks discipline at the cost of memory-rebuild time (days, not weeks). Both are valid; pick by your role's preference. Wren chose (b) for chorus-wren onboarding. Kade chose (a) implicitly during chorus-kade adoption today.
 3. Update role startup CLAUDE.md fragment to launch from the worktree
 4. Smoke-test: read a memory file, verify it round-trips
 
@@ -204,10 +204,13 @@ Existing in chorus.log already (verify and align): `git-queue.commit` style even
 - **#2556** (Done — rebase-merge lesson, #2440 untangling) — informs push/merge protocol.
 - **#2498** (side-finding — required-checks asymmetry) — informs DEC-2525 amendment.
 - **#2526** wave-N — pre-commit narrowed to `--lib --bins`; informs hook-layer scope.
-- **#2560** wave 2 — GIT_* env scrub fix in `file_has_git_history`; informs the env-scrub sweep follow-on.
+- **#2560** wave 2 — GIT_* env scrub fix in `file_has_git_history` (one site).
+- **#2588** (P3 — Wave 3 dead-code) — architectural orphan retirement under chorus-hooks.
+- **#2589** (P2 — env-scrub helper) — class-fix follow-on to #2560; migrates three known git-spawn sites behind a `git_command()` helper.
 - **ADR-026** — three quality layers; this design slots into Layer 1 + Layer 3 boundary.
 - **DEC-2525** + amendment — required-checks governance.
 - Sibling designs: nudge-service-design (Silas), independence-service-design (Wren), gate-set-service-design (Wren).
+- **#2592 (P2 — forward arc)** — workspace-API ("code asks the service, doesn't spawn git"). Per-role worktrees retire the `HEAD`-sharing instance of role-identity-bound-to-filesystem-location coupling, but not the underlying class — code that reaches into git's filesystem state (e.g., `file_has_git_history` spawning `git log` and inheriting GIT_*) carries the same coupling. The forward arc decouples by mediating all git access through a service. This design (#2586) does not block on it; it slots under #2592 when that lands.
 
 ## References
 
