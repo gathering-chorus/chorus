@@ -58,8 +58,11 @@ Retirement is a DEC update — same governance as addition.
 ## Enforcement
 
 - The Phase 1 disconnect script (#2526) cites this DEC in its commit message and in a comment on `.github/workflows/quality.yml` next to the required-check declarations.
-- `gh api PUT /repos/<owner>/<repo>/branches/main/protection/required_status_checks` sets the contexts to exactly the two checks above.
-- Future PRs proposing additions or retirements must cite this DEC and propose its update; bare workflow edits that add `required` without DEC change get rejected at code review.
+- The required-checks list lives in **two GitHub protection systems** in parallel; **both must be narrowed for the disconnect to be live**:
+  1. **Branch protection rule** — `gh api PUT /repos/<owner>/<repo>/branches/main/protection/required_status_checks`
+  2. **Repository ruleset** — `gh api PUT /repos/<owner>/<repo>/rulesets/<id>` with the matching `required_status_checks` rule
+  GitHub enforces both in parallel. Ruleset wins on overlap. Updating only branch protection leaves the ruleset enforcing the older list — the disconnect appears live but isn't. (Amendment 2026-04-29: discovered during #2557 verification when PR #38's deliberate violation was blocked by ruleset 15547153 despite branch protection being narrowed the day before. #2498 "Trunk-vs-Rulesets cleanup" was load-bearing for the disconnect being enforced, not just hygiene.)
+- Future PRs proposing additions or retirements must cite this DEC and propose its update; bare workflow edits that add `required` without DEC change get rejected at code review. **Both protection systems must be updated in lockstep** when the list changes.
 
 ## Out of scope
 
