@@ -72,7 +72,7 @@ fn chat_say_under_200ms() {
         .output()
         .expect("chat start must run");
     let stdout = String::from_utf8_lossy(&start.stdout);
-    let chat_id = stdout.lines().filter(|l| !l.trim().is_empty()).last()
+    let chat_id = stdout.lines().rfind(|l| !l.trim().is_empty())
         .unwrap_or("").trim().to_string();
     assert!(!chat_id.is_empty(), "chat start must return an ID");
 

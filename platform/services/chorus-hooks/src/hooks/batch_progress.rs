@@ -372,7 +372,7 @@ fn extract_task_id(response: &str) -> String {
             } else {
                 l.split("ID:")
                     .nth(1)
-                    .map(|s| s.trim().split_whitespace().next().unwrap_or("unknown").to_string())
+                    .map(|s| s.split_whitespace().next().unwrap_or("unknown").to_string())
             }
         })
         .unwrap_or_else(|| format!("{}", std::process::id()))

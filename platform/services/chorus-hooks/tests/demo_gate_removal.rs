@@ -50,11 +50,11 @@ fn hook_shim_allows_cards_done_without_hook_gate() {
             let _ = writeln!(stdin, "{}", input);
         }
         let result = child.wait_with_output().unwrap_or_else(|_| {
-            return std::process::Output {
+            std::process::Output {
                 status: std::process::Command::new("true").status().unwrap(),
                 stdout: vec![],
                 stderr: vec![],
-            };
+            }
         });
         let stdout = String::from_utf8_lossy(&result.stdout);
         // After #2270: hook must NOT contain a deny decision for cards done

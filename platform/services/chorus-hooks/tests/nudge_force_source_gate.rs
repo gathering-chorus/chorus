@@ -23,7 +23,7 @@ use chorus_hooks::shared::state_paths::chorus_root;
 #[test]
 fn nudge_has_no_passive_force_path() {
     let source = std::fs::read_to_string(
-        &format!("{}/platform/services/chorus-hooks/src/nudge.rs", chorus_root())
+        format!("{}/platform/services/chorus-hooks/src/nudge.rs", chorus_root())
     ).expect("nudge.rs should exist");
 
     assert!(

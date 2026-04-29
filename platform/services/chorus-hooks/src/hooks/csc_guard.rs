@@ -101,7 +101,7 @@ pub fn check(input: &HookInput) -> HookResponse {
         // cp/scp/mv where /tmp/ is the LAST path argument (destination)
         // If the command ends with /tmp/... it's a destination
         || (cmd.contains("cp ") || cmd.contains("scp ") || cmd.contains("mv "))
-           && cmd.split_whitespace().last().map_or(false, |last| last.starts_with("/tmp/"));
+           && cmd.split_whitespace().last().is_some_and(|last| last.starts_with("/tmp/"));
 
     if (has_file_output || has_artifact_ext) && tmp_is_destination {
         // Allow reads, mkdir, status checks, and moves OUT of /tmp/

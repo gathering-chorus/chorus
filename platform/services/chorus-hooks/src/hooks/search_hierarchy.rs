@@ -145,11 +145,7 @@ fn query_logs(pattern: &str) -> Option<String> {
 /// Query Loki for log entries matching pattern
 fn query_loki(pattern: &str) -> Option<String> {
     let safe_pat: String = pattern
-        .replace('"', "")
-        .replace('\\', "")
-        .replace('|', "")
-        .replace('{', "")
-        .replace('}', "")
+        .replace(['"', '\\', '|', '{', '}'], "")
         .chars()
         .take(40)
         .collect();

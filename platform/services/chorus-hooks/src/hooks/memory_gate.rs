@@ -92,6 +92,9 @@ fn file_has_git_history(file_path: &str) -> bool {
     let output = Command::new("git")
         .args(["log", "--oneline", "-1", "--", file_path])
         .current_dir(&dir)
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
         .output();
     match output {
         Ok(o) => !o.stdout.is_empty(),

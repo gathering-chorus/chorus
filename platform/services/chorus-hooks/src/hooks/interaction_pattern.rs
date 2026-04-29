@@ -8,7 +8,7 @@
 
 use crate::shared::state_paths::chorus_root;
 use crate::state::AppState;
-use crate::types::{HookInput, HookResponse};
+use crate::types::HookInput;
 use tracing::info;
 
 #[derive(Debug, Clone, PartialEq)]

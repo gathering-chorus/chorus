@@ -3,7 +3,6 @@
 //! Bug: search_hierarchy only checks Grep/Glob, so roles bypass it by
 //! running `git log` via Bash. These tests prove the fix.
 
-use serde_json::json;
 
 // Since chorus-hooks is a binary crate, we test the detection logic directly.
 // The gate should treat `git log`, `git blame`, `git show` as search tools.

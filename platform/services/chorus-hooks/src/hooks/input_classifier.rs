@@ -62,17 +62,13 @@ pub async fn check(input: &HookInput) -> HookResponse {
 
     match classification {
         InputType::Statement => {
-            HookResponse::warn_stderr(&format!(
-                "input.classified | type=statement | \
+            HookResponse::warn_stderr("input.classified | type=statement | \
                  This looks like an observation, not a request. \
-                 Acknowledge briefly (1-2 sentences), don't launch tool calls or start work."
-            ))
+                 Acknowledge briefly (1-2 sentences), don't launch tool calls or start work.")
         }
         InputType::Question => {
-            HookResponse::warn_stderr(&format!(
-                "input.classified | type=question | \
-                 Answer the question. Don't start building unless asked."
-            ))
+            HookResponse::warn_stderr("input.classified | type=question | \
+                 Answer the question. Don't start building unless asked.")
         }
         // Commands and continuations flow through normally
         _ => HookResponse::allow(),

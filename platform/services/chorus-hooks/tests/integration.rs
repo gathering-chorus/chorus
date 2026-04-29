@@ -17,6 +17,7 @@ fn decode_chunked(body: &str) -> String {
     let mut result = String::new();
     let mut remaining = body;
 
+    #[allow(clippy::while_let_loop)]
     loop {
         let size_end = match remaining.find("\r\n") {
             Some(pos) => pos,

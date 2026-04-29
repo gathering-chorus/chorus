@@ -28,6 +28,7 @@ pub struct McpSession {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct Tool {
     pub name: String,
     #[serde(default)]
@@ -92,6 +93,7 @@ pub fn init_session(base_url: &str, role: &str) -> Result<McpSession, String> {
     Ok(session)
 }
 
+#[allow(dead_code)]
 pub fn list_tools(session: &McpSession) -> Result<Vec<Tool>, String> {
     let payload = call_jsonrpc(session, "tools/list", json!({}), 2)?;
     let tools: Vec<Tool> = serde_json::from_value(payload["tools"].clone())

@@ -125,7 +125,7 @@ pub(crate) struct Action {
 // --- State types ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct OpsState {
+pub(crate) struct OpsState {
     version: u32,
     #[serde(default)]
     defects: HashMap<String, Defect>,
@@ -187,7 +187,7 @@ impl Default for HealthState {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct Finding {
+pub(crate) struct Finding {
     id: String,
     severity: String,
     category: String,
@@ -199,7 +199,7 @@ struct Finding {
 
 // --- CLI parsing ---
 
-struct Config {
+pub(crate) struct Config {
     subcommand: String,
     window: String,
     model: String,
@@ -596,6 +596,7 @@ pub(crate) fn process_error_streams(
                 .cloned()
                 .unwrap_or_default();
 
+            #[allow(clippy::regex_creation_in_loops)]
             for entry in &values {
                 let arr = match entry.as_array() {
                     Some(a) if a.len() >= 2 => a,
@@ -1056,6 +1057,7 @@ pub(crate) fn process_health_findings<C: CommandRunner>(
     let mut cards_created: u64 = 0;
     let mut carded_categories = state.health.carded_categories.clone();
 
+    #[allow(clippy::regex_creation_in_loops)]
     for f in findings {
         if f.action == "card"
             && !f.is_repeat
@@ -1195,7 +1197,7 @@ pub(crate) fn run_claude_agent<C: CommandRunner>(
 
 /// Data collected during pre-fetch phase
 #[derive(Serialize)]
-struct HealthContext {
+pub(crate) struct HealthContext {
     timestamp: String,
     alerts: AlertInfo,
     errors: ErrorInfo,
@@ -1520,6 +1522,7 @@ fn is_on_cooldown(category: &str, carded: &HashMap<String, String>) -> bool {
     false
 }
 
+#[allow(dead_code)]
 fn emit_chorus_log(config: &Config, args: &[&str]) {
     let _ = Command::new(&config.chorus_log_bin)
         .args(args)
@@ -1799,7 +1802,7 @@ pub fn run(args: &[String]) -> ExitCode {
             let count = state.all_invocation_count;
             save_state(&config.state_file, &state);
 
-            if count % HEALTH_THROTTLE_EVERY == 0 {
+            if count.is_multiple_of(HEALTH_THROTTLE_EVERY) {
                 if config.verbose {
                     log_msg(&format!("Health check triggered (invocation #{})", count));
                 }
@@ -2430,6 +2433,7 @@ Container Free Space:      1.23 GB ({} Bytes)
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn save_state_then_load_state_roundtrips() {
         let tmp = std::env::temp_dir().join(format!("chorus-ops-test-{}.json", std::process::id()));
         let mut s = OpsState::default();

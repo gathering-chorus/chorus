@@ -104,7 +104,7 @@ fn extract_json_string_field(line: &str, key: &str) -> Option<String> {
     let needle = format!(r#""{}":""#, key);
     let start = line.find(&needle)? + needle.len();
     let tail = &line[start..];
-    let end = tail.find(|c: char| c == ',' || c == '"').unwrap_or(tail.len());
+    let end = tail.find([',', '"']).unwrap_or(tail.len());
     Some(tail[..end].to_string())
 }
 
@@ -114,7 +114,7 @@ fn extract_content_preview(line: &str) -> String {
     let Some(start) = line.find("content=") else { return String::new() };
     let start = start + "content=".len();
     let tail = &line[start..];
-    let end = tail.find(|c: char| c == '"').unwrap_or(tail.len());
+    let end = tail.find('"').unwrap_or(tail.len());
     tail[..end].to_string()
 }
 

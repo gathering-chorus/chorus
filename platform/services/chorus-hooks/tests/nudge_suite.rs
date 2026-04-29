@@ -66,7 +66,7 @@ fn queue_file_write_and_clear() {
     fs::remove_file(&drain_path).unwrap();
 
     assert!(content.contains("test queued message"), "drained content must match written message");
-    assert!(!fs::metadata(&inbox).is_ok(), "original queue file must be gone after atomic drain");
+    assert!(fs::metadata(&inbox).is_err(), "original queue file must be gone after atomic drain");
 }
 
 /// Persist path (POST to Bridge API) completes in <100ms.

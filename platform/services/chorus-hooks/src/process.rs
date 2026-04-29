@@ -7,6 +7,7 @@ use std::process::Command;
 /// Used by role_state.rs for liveness checks — NOT used for nudge delivery.
 /// Nudge delivery is the spine-tick-poller reading chorus.log directly (#2435);
 /// osascript inject (pair-enforce only) goes through the chorus-inject binary.
+#[allow(dead_code)]
 pub fn find_role_pid(role: &str) -> Option<u32> {
     let output = Command::new("ps")
         .args(["-eo", "pid,comm"])
@@ -27,7 +28,7 @@ pub fn find_role_pid(role: &str) -> Option<u32> {
                         "kade" => cwd.contains("roles/kade") || cwd.contains("engineer"),
                         _ => false,
                     };
-                    if matches && best_pid.map_or(true, |prev| pid > prev) {
+                    if matches && best_pid.is_none_or(|prev| pid > prev) {
                         best_pid = Some(pid);
                     }
                 }
@@ -39,6 +40,7 @@ pub fn find_role_pid(role: &str) -> Option<u32> {
 }
 
 /// Get CWD of a process via lsof — used by sender detection and find_role_pid.
+#[allow(dead_code)]
 pub fn get_cwd(pid: u32) -> Option<String> {
     Command::new("lsof")
         .args(["-p", &pid.to_string(), "-a", "-d", "cwd", "-Fn"])

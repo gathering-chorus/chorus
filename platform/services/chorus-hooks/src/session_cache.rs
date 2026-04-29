@@ -102,6 +102,7 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
 
     // Try cwd-derived path first (fast path)
     let project_key = cwd.replace('/', "-");
+    #[allow(clippy::manual_strip)]
     let project_key = if project_key.starts_with('-') {
         &project_key[1..]
     } else {
@@ -113,7 +114,7 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
     );
     if let Ok(f) = std::fs::File::open(&primary_path) {
         let reader = BufReader::new(f);
-        let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+        let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
         if !lines.is_empty() {
             return lines;
         }
@@ -137,7 +138,7 @@ fn read_session_jsonl(session_id: &str, cwd: &str) -> Vec<String> {
             let candidate = entry.path().join(format!("{}.jsonl", session_id));
             if let Ok(f) = std::fs::File::open(&candidate) {
                 let reader = BufReader::new(f);
-                let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+                let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
                 if !lines.is_empty() {
                     debug!(
                         module = "session_cache",
