@@ -14,6 +14,15 @@
 use std::fs;
 use std::process::Command;
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 const SCAN_DIR: &str = "/tmp/claude-team-scan";
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
@@ -35,6 +44,7 @@ fn read_source(path: &str) -> Option<String> {
 
 #[test]
 fn declared_file_always_source_declared() {
+    if skip_unless_integration("mutates real role-state files at /tmp/claude-team-scan/") { return; }
     let role = "kade";
     let path = format!("{}/{}-declared.json", SCAN_DIR, role);
 
@@ -54,6 +64,7 @@ fn declared_file_always_source_declared() {
 
 #[test]
 fn declared_file_never_contains_source_inferred() {
+    if skip_unless_integration("mutates real role-state files at /tmp/claude-team-scan/") { return; }
     // Direct invariant: scan all *-declared.json and fail if any have source="inferred".
     if let Ok(entries) = fs::read_dir(SCAN_DIR) {
         for entry in entries.flatten() {
@@ -74,6 +85,7 @@ fn declared_file_never_contains_source_inferred() {
 
 #[test]
 fn inferred_file_never_contains_source_declared() {
+    if skip_unless_integration("mutates real role-state files at /tmp/claude-team-scan/") { return; }
     // Direct invariant: scan all *-inferred.json and fail if any have source="declared".
     if let Ok(entries) = fs::read_dir(SCAN_DIR) {
         for entry in entries.flatten() {

@@ -26,6 +26,9 @@ CHORUS_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
 }
 
 @test "derive-role-state script exists, executable, and writes inferred.json" {
+  # #2614: writes /tmp/claude-team-scan/kade-inferred.json — same path live
+  # daemon reads. Gate behind RUN_INTEGRATION; default cargo/bats run skips.
+  [ -z "${RUN_INTEGRATION:-}" ] && skip "axis-4 — writes /tmp/claude-team-scan/kade-inferred.json (set RUN_INTEGRATION=1 to run)"
   [ -x "$CHORUS_ROOT/platform/scripts/derive-role-state" ]
   # Smoke-run for kade; inferred.json should appear and be valid JSON.
   bash "$CHORUS_ROOT/platform/scripts/derive-role-state" kade

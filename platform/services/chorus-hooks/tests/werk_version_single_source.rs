@@ -7,6 +7,15 @@
 
 use std::fs;
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 const PROTOCOL_VERSION_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../designing/claudemd/PROTOCOL_VERSION"
@@ -40,6 +49,7 @@ fn manifest_has_no_version_key() {
 /// and verify the output contains the PROTOCOL_VERSION value.
 #[test]
 fn context_cache_renders_protocol_version_not_manifest_build() {
+    if skip_unless_integration("removes/writes /tmp/session-context-silas.md, races live silas session") { return; }
     // Force cache refresh by removing existing file
     let _ = fs::remove_file("/tmp/session-context-silas.md");
 

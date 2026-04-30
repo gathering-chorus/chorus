@@ -6,3 +6,10 @@
 # to per-test tempdirs, serialize. Override with `cargo test -- --test-threads=N`.
 [env]
 RUST_TEST_THREADS = "1"
+# #2614: tests fail-loud on missing CHORUS_ROOT (per #2505). Set it relative
+# to this config file (.cargo/config.toml is at chorus-hooks/.cargo/, so
+# four `..` lands at the repo root). `cargo test` from any cwd now has
+# CHORUS_ROOT pointed at the chorus repo. Production binaries re-derive
+# from script location (chorus-env-setup.sh) and ignore caller env, so this
+# only affects cargo invocations.
+CHORUS_ROOT = { value = "../../..", relative = true, force = false }

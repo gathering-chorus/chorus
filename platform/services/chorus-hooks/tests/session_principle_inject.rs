@@ -12,6 +12,15 @@
 use std::fs;
 use std::path::Path;
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
 fn fixture_three_principles(path: &Path) {
@@ -48,6 +57,7 @@ fn read_additional_context(out: &std::process::Output) -> String {
 /// least one principle label visible.
 #[test]
 fn session_start_injects_principles_section_from_api() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via context-cache") { return; }
     let tmp = tempfile::tempdir().unwrap();
     let fixture = tmp.path().join("principles.json");
     let cache = tmp.path().join("principles-cache.json");
@@ -80,6 +90,7 @@ fn session_start_injects_principles_section_from_api() {
 /// drift detection.
 #[test]
 fn session_start_writes_principles_hash_file() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via context-cache") { return; }
     let tmp = tempfile::tempdir().unwrap();
     let fixture = tmp.path().join("principles.json");
     let cache = tmp.path().join("principles-cache.json");
@@ -104,6 +115,7 @@ fn session_start_writes_principles_hash_file() {
 /// the same hash; differing sets produce different hashes.
 #[test]
 fn principles_hash_is_stable_across_roles_and_sensitive_to_set() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via context-cache") { return; }
     let tmp = tempfile::tempdir().unwrap();
     let fixture_a = tmp.path().join("a.json");
     let fixture_b = tmp.path().join("b.json");
@@ -142,6 +154,7 @@ fn principles_hash_is_stable_across_roles_and_sensitive_to_set() {
 /// banner in content, session boots successfully (does NOT exit non-zero).
 #[test]
 fn session_start_handles_api_unavailable_gracefully() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via context-cache") { return; }
     let tmp = tempfile::tempdir().unwrap();
     let cache = tmp.path().join("nonexistent-cache.json");
 
@@ -167,6 +180,7 @@ fn session_start_handles_api_unavailable_gracefully() {
 /// principles from cache with a STALE marker.
 #[test]
 fn session_start_falls_back_to_cache_with_stale_marker() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via context-cache") { return; }
     let tmp = tempfile::tempdir().unwrap();
     let cache = tmp.path().join("principles-cache.json");
     // Pre-seed the cache with three principles
@@ -190,6 +204,7 @@ fn session_start_falls_back_to_cache_with_stale_marker() {
 /// the least-diagnostic failure mode.
 #[test]
 fn session_start_handles_malformed_json_response_via_cache() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via context-cache") { return; }
     let tmp = tempfile::tempdir().unwrap();
     let fixture = tmp.path().join("malformed.json");
     let cache = tmp.path().join("cache.json");
@@ -219,6 +234,7 @@ fn session_start_handles_malformed_json_response_via_cache() {
 /// continues (degraded), spine event recorded. Does NOT exit non-zero.
 #[test]
 fn session_start_fail_loud_on_empty_principles() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via context-cache") { return; }
     let tmp = tempfile::tempdir().unwrap();
     let fixture = tmp.path().join("empty.json");
     let cache = tmp.path().join("cache.json");

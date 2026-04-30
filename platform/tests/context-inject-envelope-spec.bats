@@ -21,6 +21,15 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 SOCKET="/tmp/chorus-hooks.sock"
 BINARY="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hooks"
 
+# #2614: every test in this file POSTs to the live daemon at /tmp/chorus-hooks.sock
+# and expects pulse-latest.json + chorus-events to reflect real role state. Gated
+# behind RUN_INTEGRATION; default cargo/bats run skips the whole file.
+setup() {
+  if [ -z "${RUN_INTEGRATION:-}" ]; then
+    skip "axis-4 — POSTs to live /tmp/chorus-hooks.sock daemon (set RUN_INTEGRATION=1 to run)"
+  fi
+}
+
 envelope() {
   # Emit a UserPromptSubmit with the given prompt/session; return the
   # stderr portion of the response (where context-synthesis lives).

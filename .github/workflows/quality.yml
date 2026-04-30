@@ -313,6 +313,12 @@ jobs:
       # via shared::state_paths::chorus_root() which falls back to the
       # local /Users/... path. CI must override to the runner workspace.
       CHORUS_ROOT: ${{ github.workspace }}
+      # #2614: integration-tier tests gated by skip_unless_integration() need
+      # RUN_INTEGRATION=1 to actually run. Without this, after #2614 wave 1-4
+      # lands the job becomes a no-op-on-default-skip and kills the nightly
+      # drift signal. CI containers are isolated from any live daemon, so the
+      # axis-4 race the gate protects against doesn't apply here — explicit opt-in.
+      RUN_INTEGRATION: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable

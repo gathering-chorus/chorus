@@ -12,6 +12,15 @@
 use std::fs;
 use std::process::Command;
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 const SCAN_DIR: &str = "/tmp/claude-team-scan";
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
@@ -30,6 +39,7 @@ fn read_state(role: &str) -> String {
 
 #[test]
 fn waiting_preserves_card_from_previous_building() {
+    if skip_unless_integration("writes /tmp/claude-team-scan/<role>-declared.json, races team-scan") { return; }
     // Set building with a card
     role_state(&["kade", "building", "card=2058"]);
     let content = read_state("kade");
@@ -43,6 +53,7 @@ fn waiting_preserves_card_from_previous_building() {
 
 #[test]
 fn idle_clears_card_from_previous_building() {
+    if skip_unless_integration("writes /tmp/claude-team-scan/<role>-declared.json, races team-scan") { return; }
     role_state(&["kade", "building", "card=2058"]);
     role_state(&["kade", "idle"]);
     let content = read_state("kade");
@@ -51,6 +62,7 @@ fn idle_clears_card_from_previous_building() {
 
 #[test]
 fn building_still_sets_card_correctly() {
+    if skip_unless_integration("writes /tmp/claude-team-scan/<role>-declared.json, races team-scan") { return; }
     role_state(&["kade", "building", "card=9999"]);
     let content = read_state("kade");
     assert!(content.contains("\"card\":9999"), "building should set card, got: {}", content);

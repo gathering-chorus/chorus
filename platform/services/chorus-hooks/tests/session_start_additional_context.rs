@@ -9,11 +9,21 @@
 use std::fs;
 use std::path::Path;
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
 /// AC #1 (rescope): session-start emits hookSpecificOutput JSON on stdout.
 #[test]
 fn session_start_emits_additional_context_json() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via session-start") { return; }
     let output = std::process::Command::new(SHIM)
         .args(["session-start", "silas"])
         .output()
@@ -56,6 +66,7 @@ fn session_start_emits_additional_context_json() {
 /// AC #1 (rescope): additionalContext contains the role's session-start content.
 #[test]
 fn session_start_additional_context_contains_boot_payload() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via session-start") { return; }
     let output = std::process::Command::new(SHIM)
         .args(["session-start", "silas"])
         .output()
@@ -93,6 +104,7 @@ fn session_start_additional_context_contains_boot_payload() {
 /// .done marker written; .pending present only if protocol check fails.
 #[test]
 fn session_start_writes_done_on_protocol_pass() {
+    if skip_unless_integration("writes /tmp/session-context-<role>.md via session-start") { return; }
     let init_dir = "/tmp/claude-session-init";
     let done = format!("{}/silas.done", init_dir);
     let _ = fs::remove_file(&done);

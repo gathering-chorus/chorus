@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chorus Principles — Alphabetical</title>
+  <style>
+    :root {
+      --accent: #2f4f2f;
+      --muted: #6b6b6b;
+      --border: #d8d4ca;
+      --bg: #faf8f3;
+    }
+    body {
+      font-family: Georgia, "Iowan Old Style", serif;
+      max-width: 720px;
+      margin: 2rem auto;
+      padding: 0 1in;
+      background: var(--bg);
+      color: #1a1a1a;
+      line-height: 1.55;
+    }
+    h1 {
+      color: var(--accent);
+      font-size: 1.6rem;
+      margin: 0 0 0.4rem;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-style: italic;
+      margin-bottom: 2rem;
+    }
+    ol {
+      padding-left: 1.4rem;
+      margin: 0;
+    }
+    li {
+      margin-bottom: 1.1rem;
+      page-break-inside: avoid;
+    }
+    .label {
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .parent-ref {
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-style: italic;
+      margin-left: 0.5rem;
+    }
+    .body {
+      margin: 0.25rem 0 0;
+      font-size: 0.97rem;
+    }
+    .error {
+      color: #8b1111;
+      background: #fdf0f0;
+      border: 1px solid #e4bbbb;
+      padding: 1rem;
+      border-radius: 4px;
+    }
+    @media print {
+      @page { margin: 1in; }
+      body { background: white; max-width: none; padding: 0; font-size: 11pt; }
+      h1 { color: black; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Chorus Principles</h1>
+  <div class="meta" id="meta">Loading…</div>
+  <div id="list"></div>
+
+  <script>
+    function escapeHtml(s) {
+      return String(s || '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+    function splitReviewTail(comment) {
+      const m = String(comment || '').match(/^([\s\S]*?)\s+\((Candidate child of [\s\S]+|MISSING from the original [\s\S]+)\)\s*$/);
+      if (!m) return { body: comment, review: null };
+      return { body: m[1].trim(), review: m[2].trim() };
+    }
+
+    (async function () {
+      const list = document.getElementById('list');
+      const meta = document.getElementById('meta');
+      try {
+        const res = await fetch('/api/athena/subdomains/loom-principles/principles');
+        if (!res.ok) throw new Error('API ' + res.status);
+        const body = await res.json();
+        const all = body?.data?.principles || [];
+        const chorus = all
+          .filter((p) => !p.isPermacultureParent)
+          .slice()
+          .sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+
+        meta.textContent = `${chorus.length} chorus principles, alphabetical (Hemenway parents not shown).`;
+
+        const html = '<ol>' + chorus.map((p) => {
+          const parent = (p.parents && p.parents[0]) ? p.parents[0].label : '';
+          const split = splitReviewTail(p.comment);
+          return `
+            <li>
+              <span class="label">${escapeHtml(p.label || p.id)}</span>
+              ${parent ? `<span class="parent-ref">— under ${escapeHtml(parent)}</span>` : ''}
+              ${split.body ? `<p class="body">${escapeHtml(split.body)}</p>` : ''}
+            </li>
+          `;
+        }).join('') + '</ol>';
+        list.innerHTML = html;
+      } catch (err) {
+        list.innerHTML = '<div class="error">Failed to load: ' + escapeHtml(err.message) + '</div>';
+        meta.textContent = '';
+      }
+    })();
+  </script>
+</body>
+</html>

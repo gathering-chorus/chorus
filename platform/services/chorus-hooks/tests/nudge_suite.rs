@@ -17,10 +17,23 @@ use chorus_hooks::shared::state_paths::chorus_root;
 fn nudge_script() -> String { format!("{}/platform/scripts/nudge", chorus_root()) }
 const INBOX_DIR: &str = "/tmp/voice-inbox";
 
+/// #2614: tests in this file invoke real `nudge` script with real role names
+/// (`wren`, `silas`) and read/write `/tmp/voice-inbox/<role>/` — same paths
+/// the live daemon drains. Gated behind `RUN_INTEGRATION=1`; default
+/// `cargo test` skips them with reason.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 /// Dry-run nudge does NOT write to the queue file.
 /// Queue is inject-fail fallback only — dry-run skips inject entirely.
 #[test]
 fn dry_run_does_not_queue() {
+    if skip_unless_integration("reads/writes /tmp/voice-inbox/, races live daemon") { return; }
     let inbox = format!("{}/wren/pending-inject.txt", INBOX_DIR);
     let before_len = fs::read_to_string(&inbox).unwrap_or_default().len();
 
@@ -49,6 +62,7 @@ fn dry_run_does_not_queue() {
 /// the role Terminal window does not exist. That gap is documented, not mocked.
 #[test]
 fn queue_file_write_and_clear() {
+    if skip_unless_integration("reads/writes /tmp/voice-inbox/, races live daemon") { return; }
     let role = "wren";
     let inbox_dir = format!("{}/{}", INBOX_DIR, role);
     let inbox = format!("{}/pending-inject.txt", inbox_dir);
@@ -73,6 +87,7 @@ fn queue_file_write_and_clear() {
 /// Measured baseline: ~25-45ms. Budget: 100ms (2x headroom).
 #[test]
 fn persist_path_under_100ms() {
+    if skip_unless_integration("reads/writes /tmp/voice-inbox/, races live daemon") { return; }
     let t = Instant::now();
     let out = Command::new("curl")
         .args([
@@ -97,6 +112,7 @@ fn persist_path_under_100ms() {
 /// Before #2283: 20,000ms (lsof). After: ~150ms. Budget: 500ms (3x headroom).
 #[test]
 fn full_dry_run_under_500ms() {
+    if skip_unless_integration("reads/writes /tmp/voice-inbox/, races live daemon") { return; }
     let t = Instant::now();
     let out = Command::new("bash")
         .arg(nudge_script())
@@ -123,6 +139,7 @@ fn full_dry_run_under_500ms() {
 /// The nudge binary fails loud instead of defaulting to "jeff".
 #[test]
 fn nudge_without_deploy_role_fails_loud() {
+    if skip_unless_integration("reads/writes /tmp/voice-inbox/, races live daemon") { return; }
     let out = Command::new("bash")
         .arg(nudge_script())
         .arg("wren")
@@ -149,6 +166,7 @@ fn nudge_without_deploy_role_fails_loud() {
 /// (count-payload, different semantics — Kade's 0.3 audit).
 #[test]
 fn nudge_cli_emits_canonical_emitted_event() {
+    if skip_unless_integration("reads/writes /tmp/voice-inbox/, races live daemon") { return; }
     let log_path = &format!("{}/platform/logs/chorus.log", chorus_root());
     let marker = format!("emit-test-{}-canonical", std::process::id());
 

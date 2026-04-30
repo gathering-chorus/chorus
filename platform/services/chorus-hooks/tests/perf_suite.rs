@@ -12,6 +12,18 @@ use std::process::Command;
 use std::time::Instant;
 use chorus_hooks::shared::state_paths::chorus_root;
 
+/// #2614: perf tests fire real curl POST against localhost:3475 messaging API
+/// and write to /tmp/chorus-chat/. On a developer machine they leave artifacts
+/// in shared paths and inject test traffic into Bridge. Gated behind
+/// `RUN_INTEGRATION=1`; default `cargo test` skips them with reason.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 fn nudge_script() -> String { format!("{}/platform/scripts/nudge", chorus_root()) }
 fn chat_script() -> String { format!("{}/platform/scripts/chat.sh", chorus_root()) }
 fn chorus_log() -> String { format!("{}/platform/scripts/chorus-log", chorus_root()) }
@@ -20,6 +32,7 @@ fn shim_bin() -> String { format!("{}/platform/services/chorus-hooks/target/rele
 /// Exercises: detect_sender, persist curl, queue decision. Skips osascript.
 #[test]
 fn nudge_dry_run_under_500ms() {
+    if skip_unless_integration("invokes nudge script with real role names") { return; }
     let t = Instant::now();
     let out = Command::new("bash")
         .arg(nudge_script())
@@ -41,6 +54,7 @@ fn nudge_dry_run_under_500ms() {
 /// Exercises: curl POST to localhost:3475/api/nudge.
 #[test]
 fn nudge_persist_under_100ms() {
+    if skip_unless_integration("POSTs real nudge to localhost:3475/api/nudge") { return; }
     let t = Instant::now();
     let out = Command::new("curl")
         .args([
@@ -63,6 +77,7 @@ fn nudge_persist_under_100ms() {
 /// CHAT_DRY_RUN=1 skips the nudge delivery at the end of say.
 #[test]
 fn chat_say_under_200ms() {
+    if skip_unless_integration("writes /tmp/chorus-chat/, races live chats") { return; }
     // Start a throwaway chat first
     let start = Command::new("bash")
         .arg(chat_script())
@@ -107,6 +122,7 @@ fn chat_say_under_200ms() {
 #[cfg(target_os = "macos")]
 #[test]
 fn pulse_assembly_under_1500ms() {
+    if skip_unless_integration("invokes shim with DEPLOY_ROLE=silas, hits role-state files") { return; }
     let t = Instant::now();
     let out = Command::new(shim_bin())
         .arg("pulse")
@@ -126,6 +142,7 @@ fn pulse_assembly_under_1500ms() {
 /// Exercises: chorus-log script invocation + JSON write to log file.
 #[test]
 fn spine_emit_under_200ms() {
+    if skip_unless_integration("writes to platform/logs/chorus.log via real chorus-log") { return; }
     let t = Instant::now();
     let out = Command::new(chorus_log())
         .args(["perf.test.event", "silas", "suite=perf,test=spine_emit"])

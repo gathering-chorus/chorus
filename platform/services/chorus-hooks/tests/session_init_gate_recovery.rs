@@ -17,6 +17,15 @@ use std::fs;
 use std::path::PathBuf;
 use chorus_hooks::shared::state_paths::chorus_root;
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 const INIT_DIR: &str = "/tmp/claude-session-init";
 const TEST_ROLE: &str = "kade";
 
@@ -82,6 +91,7 @@ fn post_via_socket(endpoint: &str, body: &str) -> String {
 /// the gate writes .done on protocol pass.
 #[test]
 fn read_session_start_unlocks_role_on_protocol_pass() {
+    if skip_unless_integration("connects to /tmp/chorus-hooks.sock + writes /tmp/session-start-<role>.md") { return; }
     let g = MarkerGuard::new(TEST_ROLE);
     g.arm_locked();
     assert!(g.pending.exists(), "precondition: .pending armed");
@@ -123,6 +133,7 @@ fn read_session_start_unlocks_role_on_protocol_pass() {
 /// session-start.md is the recovery signal.
 #[test]
 fn read_other_file_does_not_unlock() {
+    if skip_unless_integration("connects to /tmp/chorus-hooks.sock + writes /tmp/session-start-<role>.md") { return; }
     let g = MarkerGuard::new(TEST_ROLE);
     g.arm_locked();
 

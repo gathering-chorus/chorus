@@ -107,16 +107,80 @@
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 1.5rem 1.75rem;
-      margin-bottom: 1.25rem;
+      padding: 0;
+      margin-bottom: 0.6rem;
       page-break-inside: avoid;
       break-inside: avoid;
     }
+    .principle > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 0.85rem 1.25rem;
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      user-select: none;
+    }
+    .principle > summary::-webkit-details-marker { display: none; }
+    .principle > summary::before {
+      content: "▸";
+      color: var(--muted);
+      font-size: 0.85rem;
+      flex: 0 0 auto;
+      transition: transform 0.1s;
+    }
+    .principle[open] > summary::before { content: "▾"; }
+    .principle > summary h2 {
+      display: inline;
+      font-size: 1.15rem;
+      margin: 0;
+      color: var(--accent);
+      letter-spacing: -0.005em;
+      font-weight: 600;
+    }
+    .principle > summary .summary-parent {
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-style: italic;
+      margin-left: auto;
+    }
+    .principle > .body {
+      padding: 0 1.25rem 1.1rem;
+    }
     .principle h2 {
-      font-size: 1.3rem;
+      font-size: 1.15rem;
       margin: 0 0 0.25rem;
       color: var(--accent);
       letter-spacing: -0.005em;
+    }
+    .actions-bar {
+      display: flex;
+      gap: 0.6rem;
+      margin: 0 0 1.5rem;
+    }
+    .actions-bar button {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.35rem 0.75rem;
+      border: 1px solid var(--border);
+      background: white;
+      border-radius: 3px;
+      cursor: pointer;
+      color: var(--accent);
+    }
+    .actions-bar button:hover { background: var(--card-bg); }
+
+    .principle.is-child {
+      margin-left: 2.5rem;
+      border-left: 3px solid var(--accent-soft);
+    }
+    .principle.is-child > summary h2 {
+      font-size: 1rem;
+      font-weight: 500;
+    }
+    .principle.is-parent {
+      margin-top: 1.5rem;
+      border-left: 3px solid var(--accent);
     }
     .principle .id {
       font-family: "SF Mono", Menlo, Consolas, monospace;
@@ -148,6 +212,16 @@
     .layer.permaculture .layer-label { display: none; }
     .layer.tech { background: var(--tech-bg); }
     .layer.jeff { background: var(--jeff-bg); }
+    .layer.review {
+      background: transparent;
+      border-left: 2px solid var(--border);
+      padding: 0.2rem 0 0.2rem 0.75rem;
+      margin-top: 0.6rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-style: italic;
+    }
+    .layer.review .layer-label { font-style: normal; }
     .layer p { margin: 0; }
 
     .parents {
@@ -185,6 +259,12 @@
 
     @media print {
       @page { margin: 0.75in 1in; }
+      .actions-bar { display: none; }
+      .principle > summary::before { display: none; }
+      .principle > summary { cursor: default; padding: 0.3rem 0; }
+      .principle > .body { padding: 0; }
+      details.principle { display: block; }
+      details.principle > .body { display: block !important; }
       body {
         background: white;
         max-width: none;
@@ -254,13 +334,23 @@
       }[c]));
     }
 
+    function splitReviewTail(comment) {
+      // 2026-04-29 review pass left parenthetical review notes baked into
+      // the principle comment. Pull them out so the principle text reads clean
+      // and the review note renders as its own block under the body.
+      const m = String(comment || '').match(/^([\s\S]*?)\s+\((Candidate child of [\s\S]+|MISSING from the original [\s\S]+)\)\s*$/);
+      if (!m) return { body: comment, review: null };
+      return { body: m[1].trim(), review: m[2].trim() };
+    }
+
     function renderPrinciple(p, opts = {}) {
       const showLayers = p.isPermacultureParent || opts.alwaysShowLayers;
       const layers = [];
-      if (p.comment) {
+      const split = splitReviewTail(p.comment);
+      if (split.body) {
         layers.push(`
           <div class="layer permaculture">
-            <p>${escapeHtml(p.comment)}</p>
+            <p>${escapeHtml(split.body)}</p>
           </div>
         `);
       }
@@ -282,16 +372,37 @@
           `);
         }
       }
-      const parents = (p.parents && p.parents.length > 0)
-        ? `<div class="parents">Specialization of <strong>${p.parents.map((pp) => escapeHtml(pp.label)).join('</strong>, <strong>')}</strong></div>`
+      if (split.review) {
+        layers.push(`
+          <div class="layer review">
+            <span class="layer-label">Silas review — 2026-04-29</span>
+            <p>${escapeHtml(split.review)}</p>
+          </div>
+        `);
+      }
+      const parentsList = (p.parents && p.parents.length > 0)
+        ? p.parents.map((pp) => escapeHtml(pp.label)).join(', ')
         : '';
+      const parents = parentsList
+        ? `<div class="parents">Specialization of <strong>${parentsList}</strong></div>`
+        : '';
+      const summaryParent = parentsList
+        ? `<span class="summary-parent">Specialization of ${parentsList}</span>`
+        : (p.isPermacultureParent ? `<span class="summary-parent">Permaculture parent</span>` : '');
+      const headedLabel = opts.heading || (p.label || p.id || 'Unlabeled');
+      const tierClass = opts.tier === 'parent' ? ' is-parent' : (opts.tier === 'child' ? ' is-child' : '');
       return `
-        <article class="principle">
-          <h2>${escapeHtml(p.label || p.id || 'Unlabeled')}</h2>
-          <code class="id">${escapeHtml(p.id || '')}</code>
-          ${layers.join('')}
-          ${parents}
-        </article>
+        <details class="principle${tierClass}">
+          <summary>
+            <h2>${escapeHtml(headedLabel)}</h2>
+            ${summaryParent}
+          </summary>
+          <div class="body">
+            <code class="id">${escapeHtml(p.id || '')}</code>
+            ${layers.join('')}
+            ${parents}
+          </div>
+        </details>
       `;
     }
 
@@ -325,21 +436,19 @@
         });
 
         let html = '';
+        html += `<div class="section-intro">All principles, single flat list, in Hemenway book order with specializations following each parent. Click a header to open; print expands all.</div>`;
+        html += `<div class="actions-bar">
+          <button type="button" id="expand-all">Expand all</button>
+          <button type="button" id="collapse-all">Collapse all</button>
+          <button type="button" id="print-view">Print</button>
+        </div>`;
 
         if (parents.length > 0) {
-          html += `<div class="section-intro">Permaculture principles in book order. Each reads three ways: permaculture / tech / Jeff. Specializations nest under their parent.</div>`;
           parents.forEach((p, idx) => {
             const ordinal = p.order ?? (idx + 1);
-            const headedLabel = `${ordinal}. ${escapeHtml(p.label || p.id || 'Unlabeled')}`;
-            const inner = renderPrinciple(p).replace(
-              /<h2>[^<]*<\/h2>/,
-              `<h2>${headedLabel}</h2>`,
-            );
+            html += renderPrinciple(p, { heading: `${ordinal}. ${p.label || p.id || 'Unlabeled'}`, tier: 'parent' });
             const kids = childrenByParent.get(p.uri) || [];
-            const nested = kids.length
-              ? `<div class="nested">` + kids.map((c) => renderPrinciple(c)).join('') + `</div>`
-              : '';
-            html += inner.replace('</article>', `${nested}</article>`);
+            kids.forEach((c) => { html += renderPrinciple(c, { tier: 'child' }); });
           });
         }
 
@@ -350,6 +459,18 @@
         }
 
         main.innerHTML = html;
+
+        const allDetails = () => main.querySelectorAll('details.principle');
+        document.getElementById('expand-all').addEventListener('click', () => {
+          allDetails().forEach((d) => { d.open = true; });
+        });
+        document.getElementById('collapse-all').addEventListener('click', () => {
+          allDetails().forEach((d) => { d.open = false; });
+        });
+        document.getElementById('print-view').addEventListener('click', () => {
+          allDetails().forEach((d) => { d.open = true; });
+          window.print();
+        });
 
         document.getElementById('meta').textContent =
           `${all.length} principles (${parents.length} permaculture parents · ${grouped.length} specializations` +

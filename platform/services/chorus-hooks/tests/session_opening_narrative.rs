@@ -9,6 +9,18 @@ use std::fs;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
+/// #2614: tests in this file run `chorus-hook-shim context-cache <role>` which
+/// writes /tmp/session-context-<role>.md — the same file the live role session
+/// reads at boot. On a developer machine this races whoever's session is open.
+/// Gated behind `RUN_INTEGRATION=1`.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 /// Build fresh context cache for silas — required setup for every test reading the file.
 /// Each test calls this (idempotent) so ordering doesn't matter.
 fn build_silas_cache() {
@@ -22,6 +34,7 @@ fn build_silas_cache() {
 /// Boot instruction explicitly discourages dashboard readout patterns
 #[test]
 fn boot_instruction_discourages_readout() {
+    if skip_unless_integration("writes /tmp/session-context-silas.md via context-cache, races live silas session") { return; }
     build_silas_cache();
     let content = fs::read_to_string("/tmp/session-context-silas.md")
         .expect("session-context-silas.md should exist");
@@ -43,6 +56,7 @@ fn boot_instruction_discourages_readout() {
 /// Boot instruction requires positions on problems, not bare facts
 #[test]
 fn boot_instruction_requires_positions() {
+    if skip_unless_integration("writes /tmp/session-context-silas.md via context-cache, races live silas session") { return; }
     build_silas_cache();
     let content = fs::read_to_string("/tmp/session-context-silas.md")
         .expect("session-context-silas.md should exist");
@@ -59,6 +73,7 @@ fn boot_instruction_requires_positions() {
 /// Boot section header changed from "Synthesize Before Speaking" to something less mechanical
 #[test]
 fn boot_header_not_mechanical() {
+    if skip_unless_integration("writes /tmp/session-context-silas.md via context-cache, races live silas session") { return; }
     build_silas_cache();
     let content = fs::read_to_string("/tmp/session-context-silas.md")
         .expect("session-context-silas.md should exist");
@@ -73,6 +88,7 @@ fn boot_header_not_mechanical() {
 /// #2114 — Boot prompt includes 5-beat shape (thesis, reframe, friction-with-position, flinch, single-question close)
 #[test]
 fn boot_includes_five_beat_shape() {
+    if skip_unless_integration("writes /tmp/session-context-silas.md via context-cache, races live silas session") { return; }
     build_silas_cache();
     let content = fs::read_to_string("/tmp/session-context-silas.md")
         .expect("session-context-silas.md should exist");
@@ -93,6 +109,7 @@ fn boot_includes_five_beat_shape() {
 /// #2114 — Boot prompt includes an inline example opening so agent has concrete pattern
 #[test]
 fn boot_includes_inline_example() {
+    if skip_unless_integration("writes /tmp/session-context-silas.md via context-cache, races live silas session") { return; }
     build_silas_cache();
     let content = fs::read_to_string("/tmp/session-context-silas.md")
         .expect("session-context-silas.md should exist");
@@ -111,6 +128,7 @@ fn boot_includes_inline_example() {
 /// #2114 — All three roles render the new prompt
 #[test]
 fn all_three_roles_render_shape_and_example() {
+    if skip_unless_integration("writes /tmp/session-context-{wren,silas,kade}.md via context-cache, races all live sessions") { return; }
     for role in ["wren", "silas", "kade"] {
         let output = std::process::Command::new(SHIM)
             .args(["context-cache", role])
