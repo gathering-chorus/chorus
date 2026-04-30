@@ -56,17 +56,11 @@ module.exports = [
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...security.configs.recommended.rules,
-      // #2603: sonarjs rules selected explicitly. The recommended preset
-      // (sonarjs.configs.recommended) is NOT imported — it conflicts with
-      // eslint 9.39 (no-empty-function shape mismatch). Per #2601 spike +
-      // Silas arch review: yes/no signals (no-duplicate-string) belong in
-      // pre-commit at error level; trend signals (cog-complexity,
-      // no-collapsible-if, no-identical-functions) belong in the drift
-      // lane (#2527) at warn level.
+      // #2603: sonarjs rules at error only. No warn tier — Jeff's call
+      // 2026-04-30: warnings are never handled, every lint either blocks
+      // or doesn't fire. The recommended preset is NOT imported (eslint
+      // 9.39 / no-empty-function shape conflict).
       'sonarjs/no-duplicate-string': ['error', { threshold: 5 }],
-      'sonarjs/cognitive-complexity': ['warn', 15],
-      'sonarjs/no-collapsible-if': 'warn',
-      'sonarjs/no-identical-functions': 'warn',
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-new-func': 'error',
