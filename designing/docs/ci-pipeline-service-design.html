@@ -85,7 +85,7 @@ Every change that lands on main builds and passes the team's quality bar from a 
     PC --&gt; PUSH[&quot;git-queue.sh push&quot;]
     PUSH --&gt; PP[&quot;#2598 pre-push hook&lt;br/&gt;refuses raw push,&lt;br/&gt;wrong-role branch&quot;]
     PP --&gt; ORIGIN[&quot;origin/role-branch&quot;]
-    EDIT -. &quot;PreToolUse&quot; .-&gt; SHIM[&quot;chorus-hook-shim&lt;br/&gt;refuses raw git push,&lt;br/&gt;rebase, cherry-pick,&lt;br/&gt;reset --hard&quot;]
+    EDIT -.&quot;PreToolUse&quot;.-&gt; SHIM[&quot;chorus-hook-shim&lt;br/&gt;refuses raw git push,&lt;br/&gt;rebase, cherry-pick,&lt;br/&gt;reset --hard&quot;]
     GATES[&quot;role gates&lt;br/&gt;gate-product/code/&lt;br/&gt;quality/arch/ops&quot;] --&gt; ACCEPT[&quot;card Done&quot;]
   end
   subgraph GH[&quot;GitHub&quot;]
@@ -96,7 +96,7 @@ Every change that lands on main builds and passes the team's quality bar from a 
     VERDICT -- red --&gt; ALERT[&quot;ci-main-red alert&quot;]
   end
   ALERT -- nudge --&gt; SILAS[&quot;Silas — runbook&quot;]
-  WORKFLOW -. &quot;lock validation&quot; .-&gt; LOCK[&quot;Dependabot monthly&lt;br/&gt;1 PR/ecosystem&quot;]
+  WORKFLOW -.&quot;lock validation&quot;.-&gt; LOCK[&quot;Dependabot monthly&lt;br/&gt;1 PR/ecosystem&quot;]
 </code></pre>
 <p>Buys: cost ~$15/mo (down from $225 projected), substrate refuses contamination at four surfaces, per-PR validation lives on Library not in cloud, schedule fire is the post-merge witness. Costs: regressions on main discoverable up to 24h after merge; trust burden on local-layer maturity.</p>
 
