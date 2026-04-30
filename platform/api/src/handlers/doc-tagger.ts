@@ -57,53 +57,69 @@ export const GATHERING_SUBDOMAINS = new Set([
   'seeds-domain', 'reading-domain', 'watching-domain',
 ]);
 
-// Filename prefix → subdomain mapping for high-signal patterns.
-function tagsFromFilename(basename: string): Partial<DocTags> | null {
-  const bn = basename.toLowerCase();
+// #2627: filename → tags split into named phase helpers; orchestrator
+// tries each in order, first non-null wins.
 
-  // ADR-NNN-* → Chorus / Loom / loom-decisions
-  if (/^adr-\d+/.test(bn)) {
-    return { product: 'chorus', subproduct: 'loom', subdomain: 'loom-decisions',
-             confidence: 'high', signal: 'filename' };
-  }
-  // DEC-NNN-* → Chorus / Loom / loom-decisions
-  if (/^dec-\d+/.test(bn)) {
-    return { product: 'chorus', subproduct: 'loom', subdomain: 'loom-decisions',
-             confidence: 'high', signal: 'filename' };
-  }
-  // domain-X.html → Gathering, X-domain (X is the subdomain shortname)
+const LOOM_DECISIONS_TAG: Partial<DocTags> = {
+  product: 'chorus', subproduct: 'loom', subdomain: 'loom-decisions',
+  confidence: 'high', signal: 'filename',
+};
+
+function tagsFromAdrOrDec(bn: string): Partial<DocTags> | null {
+  return /^(adr|dec)-\d+/.test(bn) ? { ...LOOM_DECISIONS_TAG } : null;
+}
+
+function tagsFromGatheringDomainPrefix(bn: string): Partial<DocTags> | null {
   const dm = bn.match(/^domain-([a-z]+)\.html?$/);
-  if (dm) {
-    const sub = `${dm[1]}-domain`;
-    if (GATHERING_SUBDOMAINS.has(sub)) {
-      return { product: 'gathering', subdomain: sub, confidence: 'high', signal: 'filename' };
-    }
-  }
-  // service-design-X.html → tag by X if X matches a known subdomain
+  if (!dm) return null;
+  const sub = `${dm[1]}-domain`;
+  if (!GATHERING_SUBDOMAINS.has(sub)) return null;
+  return { product: 'gathering', subdomain: sub, confidence: 'high', signal: 'filename' };
+}
+
+function tagsFromServiceDesignPrefix(bn: string): Partial<DocTags> | null {
   const sd = bn.match(/^service-design-([a-z-]+)\.html?$/);
-  if (sd) {
-    const candidate = sd[1].endsWith('-domain') ? sd[1] : `${sd[1]}-domain`;
-    const sp = SUBDOMAIN_TO_SUBPRODUCT[candidate];
-    if (sp) {
-      return { product: 'chorus', subproduct: sp, subdomain: candidate,
-               confidence: 'high', signal: 'filename' };
-    }
-  }
-  // Subproduct keyword in name → Chorus / <subproduct>
-  // Borg demoted to Chorus subproduct per ontology change 2026-04-28.
-  for (const sp of ['loom', 'werk', 'athena', 'convergence', 'clearing', 'borg']) {
+  if (!sd) return null;
+  const candidate = sd[1].endsWith('-domain') ? sd[1] : `${sd[1]}-domain`;
+  const sp = SUBDOMAIN_TO_SUBPRODUCT[candidate];
+  if (!sp) return null;
+  return { product: 'chorus', subproduct: sp, subdomain: candidate, confidence: 'high', signal: 'filename' };
+}
+
+const CHORUS_SUBPRODUCTS = ['loom', 'werk', 'athena', 'convergence', 'clearing', 'borg'];
+
+function tagsFromSubproductKeyword(bn: string): Partial<DocTags> | null {
+  for (const sp of CHORUS_SUBPRODUCTS) {
     if (bn.startsWith(`${sp}-`) || bn.includes(`-${sp}-`) || bn.includes(`${sp}_`)) {
-      return { product: 'chorus', subproduct: sp,
-               confidence: 'medium', signal: 'filename' };
+      return { product: 'chorus', subproduct: sp, confidence: 'medium', signal: 'filename' };
     }
   }
-  // UPPERCASE_TOKEN substring matches (CHORUS_*, ATTENTION_*, BORG_*, etc.)
-  // catch the data/about/<TOKEN>.html naming style
+  return null;
+}
+
+function tagsFromProductKeyword(bn: string): Partial<DocTags> | null {
   if (/(chorus|borg|wren|silas|kade|werk|loom|athena|convergence|attention|memory|spine|nudge|clearing)/i.test(bn)) {
     return { product: 'chorus', confidence: 'medium', signal: 'filename' };
   }
   if (/(gathering|garden|photo|blog|wordpress)/i.test(bn)) {
     return { product: 'gathering', confidence: 'medium', signal: 'filename' };
+  }
+  return null;
+}
+
+const FILENAME_PHASES: Array<(bn: string) => Partial<DocTags> | null> = [
+  tagsFromAdrOrDec,
+  tagsFromGatheringDomainPrefix,
+  tagsFromServiceDesignPrefix,
+  tagsFromSubproductKeyword,
+  tagsFromProductKeyword,
+];
+
+function tagsFromFilename(basename: string): Partial<DocTags> | null {
+  const bn = basename.toLowerCase();
+  for (const phase of FILENAME_PHASES) {
+    const t = phase(bn);
+    if (t) return t;
   }
   return null;
 }
@@ -176,55 +192,50 @@ function tagsFromContent(contentHead: string | undefined): Partial<DocTags> | nu
   return null;
 }
 
-// eslint-disable-next-line complexity
-export function inferTags(input: DocTagInput): DocTags {
-  // 1. Frontmatter override wins
-  const fm = input.frontmatter;
-  if (fm && (fm.product || fm.subproduct || fm.subdomain)) {
-    return {
-      product: fm.product,
-      subproduct: fm.subproduct,
-      subdomain: fm.subdomain,
-      confidence: 'high',
-      signal: 'frontmatter',
-    };
-  }
+// #2627: each source split into a phase helper. Orchestrator becomes
+// linear: frontmatter → path/filename merge → enrichment → backfill.
 
-  // 2. Path is canonical when present — its signal beats filename's even
-  // if both match the same thing. Filename enriches missing fields.
+function tagsFromFrontmatter(fm: DocTagInput['frontmatter']): DocTags | null {
+  if (!fm || (!fm.product && !fm.subproduct && !fm.subdomain)) return null;
+  return {
+    product: fm.product, subproduct: fm.subproduct, subdomain: fm.subdomain,
+    confidence: 'high', signal: 'frontmatter',
+  };
+}
+
+function mergePathAndFilename(input: DocTagInput): Partial<DocTags> | null {
   const fromFilename = tagsFromFilename(input.basename);
   const fromPath = tagsFromPath(input.sourcePath);
-
-  let chosen: Partial<DocTags> | null = fromPath || fromFilename;
-
-  // Enrich chosen with missing fields from the other source
+  const chosen: Partial<DocTags> | null = fromPath || fromFilename;
   if (chosen && chosen === fromPath && fromFilename) {
     if (!chosen.subproduct && fromFilename.subproduct) chosen.subproduct = fromFilename.subproduct;
     if (!chosen.subdomain && fromFilename.subdomain) chosen.subdomain = fromFilename.subdomain;
   }
-  // er-diagram / ontology in chorus → Athena subproduct
-  if (chosen?.product === 'chorus' && !chosen.subproduct) {
-    const bn = input.basename.toLowerCase();
-    if (/er-diagram|ontology|owl|class-diagram|instance-explorer|data-model/.test(bn)) {
+  return chosen;
+}
+
+function enrichWithAthenaSubproduct(chosen: Partial<DocTags>, basename: string): void {
+  if (chosen.product === 'chorus' && !chosen.subproduct) {
+    if (/er-diagram|ontology|owl|class-diagram|instance-explorer|data-model/.test(basename.toLowerCase())) {
       chosen.subproduct = 'athena';
     }
   }
+}
 
-  // 3. Last resort: content
-  if (!chosen) {
-    const c = tagsFromContent(input.contentHead);
-    if (c) chosen = c;
-  }
-
-  if (!chosen) {
-    return { confidence: 'none', signal: 'none' };
-  }
-
-  // Backfill subproduct from subdomain if known
+function backfillSubproduct(chosen: Partial<DocTags>): void {
   if (chosen.subdomain && !chosen.subproduct && SUBDOMAIN_TO_SUBPRODUCT[chosen.subdomain]) {
     chosen.subproduct = SUBDOMAIN_TO_SUBPRODUCT[chosen.subdomain];
   }
+}
 
+export function inferTags(input: DocTagInput): DocTags {
+  const fmTags = tagsFromFrontmatter(input.frontmatter);
+  if (fmTags) return fmTags;
+  let chosen = mergePathAndFilename(input);
+  if (chosen) enrichWithAthenaSubproduct(chosen, input.basename);
+  if (!chosen) chosen = tagsFromContent(input.contentHead);
+  if (!chosen) return { confidence: 'none', signal: 'none' };
+  backfillSubproduct(chosen);
   return {
     product: chosen.product,
     subproduct: chosen.subproduct,

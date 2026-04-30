@@ -3,6 +3,8 @@
  */
 import {
   buildHierarchyTree,
+  buildSubdomainIndex,
+  buildSubproductIndex,
   type TaggedDoc,
   type AthenaShape,
 } from '../../src/handlers/doc-catalog-tree';
@@ -89,5 +91,39 @@ describe('buildHierarchyTree (#2521)', () => {
       ATHENA,
     );
     expect(tree.totalDocs).toBe(3);
+  });
+});
+
+// #2627: refactor extracted these phase helpers; tests pin the contracts
+// so the orchestrator can shrink without losing the wiring.
+describe('buildHierarchyTree extracted helpers (#2627)', () => {
+  test('buildSubdomainIndex routes by subproduct, by product, and by id', () => {
+    const idx = buildSubdomainIndex(ATHENA);
+    expect(idx.byId['loom-decisions']).toBeDefined();
+    expect(idx.bySubproduct['loom']).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'loom-decisions' }),
+        expect.objectContaining({ id: 'loom-principles' }),
+      ]),
+    );
+    // Subdomain attached directly to a product (not via subproduct) lands in byProduct
+    const productOnly: AthenaShape = {
+      ...ATHENA,
+      subdomains: [{ id: 'orphan-sd', label: 'Orphan', product: 'gathering' }],
+    };
+    const idx2 = buildSubdomainIndex(productOnly);
+    expect(idx2.byProduct['gathering']).toEqual([expect.objectContaining({ id: 'orphan-sd' })]);
+    expect(idx2.bySubproduct['gathering']).toBeUndefined();
+  });
+
+  test('buildSubproductIndex carries subdomains forward and indexes by product+id', () => {
+    const subIdx = buildSubdomainIndex(ATHENA);
+    const spIdx = buildSubproductIndex(ATHENA, subIdx);
+    expect(spIdx.byId['loom']?.subdomains.map(s => s.id)).toEqual(
+      expect.arrayContaining(['loom-decisions', 'loom-principles']),
+    );
+    expect(spIdx.byProduct['chorusProduct']?.map(sp => sp.id)).toEqual(
+      expect.arrayContaining(['loom', 'athena-product', 'werk-product']),
+    );
   });
 });

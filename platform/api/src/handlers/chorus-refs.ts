@@ -42,25 +42,32 @@ interface RefRow {
   channel: string;
 }
 
+// #2627: WHERE-clause + params build extracted; orchestrator becomes flat.
+function buildWhereAndParams(query: ChorusRefsQuery): { where: string[]; params: unknown[] } {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  const { card, wf, type, entityId } = query;
+  if (card) {
+    where.push('r.entity_type = ? AND r.entity_id = ?');
+    params.push('card', card.startsWith('#') ? card : `#${card}`);
+    return { where, params };
+  }
+  if (wf) {
+    where.push('r.entity_type = ? AND r.entity_id = ?');
+    params.push('workflow', wf.startsWith('WF-') ? wf : `WF-${wf}`);
+    return { where, params };
+  }
+  if (type) { where.push('r.entity_type = ?'); params.push(type); }
+  if (entityId) { where.push('r.entity_id = ?'); params.push(entityId); }
+  return { where, params };
+}
+
 export function fetchChorusRefs(deps: ChorusRefsDeps, query: ChorusRefsQuery): FetchResult {
   const { card, wf, type, entityId } = query;
   if (!card && !wf && !type && !entityId) {
     return { status: 400, body: { error: 'At least one filter required: card, wf, type, or id' } };
   }
-
-  const where: string[] = [];
-  const params: unknown[] = [];
-
-  if (card) {
-    where.push('r.entity_type = ? AND r.entity_id = ?');
-    params.push('card', card.startsWith('#') ? card : `#${card}`);
-  } else if (wf) {
-    where.push('r.entity_type = ? AND r.entity_id = ?');
-    params.push('workflow', wf.startsWith('WF-') ? wf : `WF-${wf}`);
-  } else {
-    if (type) { where.push('r.entity_type = ?'); params.push(type); }
-    if (entityId) { where.push('r.entity_id = ?'); params.push(entityId); }
-  }
+  const { where, params } = buildWhereAndParams(query);
 
   const refs = deps.db.prepare(`
     SELECT r.entity_type, r.entity_id, r.relationship,

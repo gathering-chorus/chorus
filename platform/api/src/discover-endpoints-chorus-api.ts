@@ -18,6 +18,17 @@ export interface ChorusApiEndpointEntry {
   domainId: string;
 }
 
+// #2627: route → domainId mapping extracted; loop becomes flat.
+function routeToDomainId(routePath: string, validSubdomainIds: Set<string>): string | null {
+  const loomMatch = routePath.match(/^\/api\/loom\/([a-z0-9-]+)/);
+  if (loomMatch) {
+    const candidate = `loom-${loomMatch[1]}`;
+    if (validSubdomainIds.has(candidate)) return candidate;
+  }
+  if (validSubdomainIds.has('chorus-domain')) return 'chorus-domain';
+  return null;
+}
+
 export function parseChorusApiRoutes(
   appContent: string,
   validSubdomainIds: Set<string>,
@@ -28,18 +39,8 @@ export function parseChorusApiRoutes(
   while ((match = routeRegex.exec(appContent)) !== null) {
     const method = match[1].toUpperCase();
     const routePath = match[2];
-    // Skip parameterized routes for now — :id/:name need per-subdomain
-    // instantiation to produce one entry per subdomain. That's a follow-on.
     if (routePath.includes(':')) continue;
-    let domainId: string | null = null;
-    const loomMatch = routePath.match(/^\/api\/loom\/([a-z0-9-]+)/);
-    if (loomMatch) {
-      const candidate = `loom-${loomMatch[1]}`;
-      if (validSubdomainIds.has(candidate)) domainId = candidate;
-    }
-    if (!domainId && validSubdomainIds.has('chorus-domain')) {
-      domainId = 'chorus-domain';
-    }
+    const domainId = routeToDomainId(routePath, validSubdomainIds);
     if (!domainId) continue;
     entries.push({
       method,

@@ -61,6 +61,12 @@ module.exports = [
       // or doesn't fire. The recommended preset is NOT imported (eslint
       // 9.39 / no-empty-function shape conflict).
       'sonarjs/no-duplicate-string': ['error', { threshold: 5 }],
+      // #2627: cog-complexity at error 12, blocks. Existing functions over 12
+      // stay until their file is next staged (fix-as-we-go discipline; AC4).
+      // PM (Wren or Jeff) drops threshold 12→11→10 when codebase is ready —
+      // not auto-tooled. Magic-comment override `// cog-override: <reason>`
+      // exempts a function (audited via cog.override.used spine event, AC3).
+      'sonarjs/cognitive-complexity': ['error', 12],
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-new-func': 'error',

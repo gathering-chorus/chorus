@@ -75,22 +75,27 @@ export interface HandlerResult {
   body: unknown;
 }
 
+// #2627: defaultGroup labels duplicated 5+ times across SOURCE_DIRS.
+const G_PRODUCT = 'Product Strategy & Vision';
+const G_ARCH_SYSTEM = 'Architecture & System Design';
+const G_ARCH = 'Architecture & Design';
+
 const SOURCE_DIRS: SourceDir[] = [
-  { root: 'gathering', dir: 'public', urlPrefix: '/', source: 'public', defaultGroup: 'Product Strategy & Vision' },
-  { root: 'gathering', dir: 'docs', urlPrefix: '/docs/', source: 'docs', defaultGroup: 'Architecture & System Design' },
+  { root: 'gathering', dir: 'public', urlPrefix: '/', source: 'public', defaultGroup: G_PRODUCT },
+  { root: 'gathering', dir: 'docs', urlPrefix: '/docs/', source: 'docs', defaultGroup: G_ARCH_SYSTEM },
   { root: 'gathering', dir: 'data/about', urlPrefix: '/system/docs/', source: 'data/about', defaultGroup: 'Engineering & Quality' },
-  { root: 'gathering', dir: 'public/gathering-docs', urlPrefix: '/gathering-docs/', source: 'gathering-docs', defaultGroup: 'Product Strategy & Vision' },
+  { root: 'gathering', dir: 'public/gathering-docs', urlPrefix: '/gathering-docs/', source: 'gathering-docs', defaultGroup: G_PRODUCT },
   { root: 'gathering', dir: 'public/akasha', urlPrefix: '/akasha/', source: 'akasha', defaultGroup: 'Akasha — Consulting Site' },
   { root: 'gathering', dir: 'public/chorus-docs', urlPrefix: '/chorus-docs/', source: 'chorus-docs', defaultGroup: 'Chorus & Team Coordination' },
-  { root: 'chorus', dir: 'roles/wren/artifacts', urlPrefix: '/roles/wren/artifacts/', source: 'wren/artifacts', defaultGroup: 'Product Strategy & Vision' },
-  { root: 'chorus', dir: 'roles/wren/docs', urlPrefix: '/roles/wren/docs/', source: 'wren/docs', defaultGroup: 'Product Strategy & Vision' },
-  { root: 'chorus', dir: 'roles/wren/decisions', urlPrefix: '/roles/wren/decisions/', source: 'wren/decisions', defaultGroup: 'Architecture & Design' },
-  { root: 'chorus', dir: 'roles/silas/docs', urlPrefix: '/roles/silas/docs/', source: 'architect/docs', defaultGroup: 'Architecture & System Design' },
-  { root: 'chorus', dir: 'roles/silas/artifacts', urlPrefix: '/roles/silas/artifacts/', source: 'architect/artifacts', defaultGroup: 'Architecture & System Design' },
-  { root: 'chorus', dir: 'roles/silas/adr', urlPrefix: '/roles/silas/adr/', source: 'architect/adr', defaultGroup: 'Architecture & Design' },
-  { root: 'chorus', dir: 'designing/docs', urlPrefix: '/designing/docs/', source: 'designing/docs', defaultGroup: 'Architecture & System Design' },
-  { root: 'chorus', dir: 'designing/decisions', urlPrefix: '/designing/decisions/', source: 'designing/decisions', defaultGroup: 'Architecture & Design' },
-  { root: 'chorus', dir: 'docs/diagrams', urlPrefix: '/diagrams/', source: 'docs/diagrams', defaultGroup: 'Architecture & Design' },
+  { root: 'chorus', dir: 'roles/wren/artifacts', urlPrefix: '/roles/wren/artifacts/', source: 'wren/artifacts', defaultGroup: G_PRODUCT },
+  { root: 'chorus', dir: 'roles/wren/docs', urlPrefix: '/roles/wren/docs/', source: 'wren/docs', defaultGroup: G_PRODUCT },
+  { root: 'chorus', dir: 'roles/wren/decisions', urlPrefix: '/roles/wren/decisions/', source: 'wren/decisions', defaultGroup: G_ARCH },
+  { root: 'chorus', dir: 'roles/silas/docs', urlPrefix: '/roles/silas/docs/', source: 'architect/docs', defaultGroup: G_ARCH_SYSTEM },
+  { root: 'chorus', dir: 'roles/silas/artifacts', urlPrefix: '/roles/silas/artifacts/', source: 'architect/artifacts', defaultGroup: G_ARCH_SYSTEM },
+  { root: 'chorus', dir: 'roles/silas/adr', urlPrefix: '/roles/silas/adr/', source: 'architect/adr', defaultGroup: G_ARCH },
+  { root: 'chorus', dir: 'designing/docs', urlPrefix: '/designing/docs/', source: 'designing/docs', defaultGroup: G_ARCH_SYSTEM },
+  { root: 'chorus', dir: 'designing/decisions', urlPrefix: '/designing/decisions/', source: 'designing/decisions', defaultGroup: G_ARCH },
+  { root: 'chorus', dir: 'docs/diagrams', urlPrefix: '/diagrams/', source: 'docs/diagrams', defaultGroup: G_ARCH },
 ];
 
 function rootPath(root: 'gathering' | 'chorus'): string {
@@ -129,30 +134,40 @@ function classifyArtifactType(title: string, filename: string): ArtifactType {
   return 'architecture';
 }
 
-// eslint-disable-next-line complexity
+// #2627: data-driven classifier table. Each entry pairs a regex with the
+// group label; first match wins. Order is significant — more specific
+// patterns precede broader ones (service-design before architecture).
+// The Domain prefix matches against title (not lowercased combined text)
+// so it stays as a special-case test ahead of the table.
+const GROUP_PATTERNS: Array<[RegExp, string]> = [
+  [/sequence.diagram|sequence-/, 'Sequence Diagrams'],
+  [/actor.diagram/, 'Actor Diagrams'],
+  [/service.design/, 'Service Designs'],
+  [/manual|user.manual|definition.of.done/, 'Manuals & Guides'],
+  [/borg|structural.audit|self.assessment|dpor|assimilation/, 'Borg Assessments'],
+  [/wardley/, 'Wardley Maps'],
+  [/research|homeostasis|position|explained.for.humans/, 'Research'],
+  [/ontology|semantic|owl|rdf|predicate|class.diagram/, 'Ontology & Semantics'],
+  [/c4|architecture|system.model|hexagonal|tech.stack|interaction.arch|convergence.arch|memory.arch|attention.arch|protocol.stack|nervous.system|rebuild/, 'Architecture & Design'],
+  [/icd|harvest|reconcil|ingest|mapper|merge.spec|source.semantic|source.rich|etl|pipeline.comparison/, 'ICD & Convergence'],
+  [/photo|face.cluster|thumbnail|era.scoped/, 'Photos'],
+  [/chorus.*spine|clearing|nudge|bridge|messaging|card.lifecycle|command.card|werk|card.type|hook|pulse|team.aware/, 'Chorus Coordination'],
+  [/product|vision|roadmap|positioning|business.plan|topology|value.stream|genome|conceptual.model|model.driven|deep.dive/, 'Product Strategy'],
+  [/analytic|cadence|cost|metric|insight|voice|attention.*intensity|re.prompt/, 'Analytics'],
+  [/infra|log.topology|fuseki|docker|launchagent|deploy|tunnel|disk|home.cloud|logging.strategy/, 'Infrastructure'],
+  [/garden|property|lightlife|urban|basement/, 'Garden & Property'],
+  [/akasha|consult/, 'Consulting'],
+  [/self.domain|self.portrait|people.*relationship|spine.*jeff|kade.*engineer|silas.*architect/, 'People & Self'],
+  [/demo.plan|demo.flow|pair.flow|next.queue|triage|gemba|playbook|process/, 'Process & Workflow'],
+  [/bdd|gherkin|test.automation|gate.test/, 'BDD & Testing'],
+];
+
 function classifyGroup(title: string, filename: string): string {
-  const t = (title + ' ' + filename).toLowerCase();
   if (/^Domain\s*[—–-]\s/.test(title)) return 'Domains';
-  if (/sequence.diagram|sequence-/.test(t)) return 'Sequence Diagrams';
-  if (/actor.diagram/.test(t)) return 'Actor Diagrams';
-  if (/service.design/.test(t)) return 'Service Designs';
-  if (/manual|user.manual|definition.of.done/.test(t)) return 'Manuals & Guides';
-  if (/borg|structural.audit|self.assessment|dpor|assimilation/.test(t)) return 'Borg Assessments';
-  if (/wardley/.test(t)) return 'Wardley Maps';
-  if (/research|homeostasis|position|explained.for.humans/.test(t)) return 'Research';
-  if (/ontology|semantic|owl|rdf|predicate|class.diagram/.test(t)) return 'Ontology & Semantics';
-  if (/c4|architecture|system.model|hexagonal|tech.stack|interaction.arch|convergence.arch|memory.arch|attention.arch|protocol.stack|nervous.system|rebuild/.test(t)) return 'Architecture & Design';
-  if (/icd|harvest|reconcil|ingest|mapper|merge.spec|source.semantic|source.rich|etl|pipeline.comparison/.test(t)) return 'ICD & Convergence';
-  if (/photo|face.cluster|thumbnail|era.scoped/.test(t)) return 'Photos';
-  if (/chorus.*spine|clearing|nudge|bridge|messaging|card.lifecycle|command.card|werk|card.type|hook|pulse|team.aware/.test(t)) return 'Chorus Coordination';
-  if (/product|vision|roadmap|positioning|business.plan|topology|value.stream|genome|conceptual.model|model.driven|deep.dive/.test(t)) return 'Product Strategy';
-  if (/analytic|cadence|cost|metric|insight|voice|attention.*intensity|re.prompt/.test(t)) return 'Analytics';
-  if (/infra|log.topology|fuseki|docker|launchagent|deploy|tunnel|disk|home.cloud|logging.strategy/.test(t)) return 'Infrastructure';
-  if (/garden|property|lightlife|urban|basement/.test(t)) return 'Garden & Property';
-  if (/akasha|consult/.test(t)) return 'Consulting';
-  if (/self.domain|self.portrait|people.*relationship|spine.*jeff|kade.*engineer|silas.*architect/.test(t)) return 'People & Self';
-  if (/demo.plan|demo.flow|pair.flow|next.queue|triage|gemba|playbook|process/.test(t)) return 'Process & Workflow';
-  if (/bdd|gherkin|test.automation|gate.test/.test(t)) return 'BDD & Testing';
+  const t = (title + ' ' + filename).toLowerCase();
+  for (const [re, label] of GROUP_PATTERNS) {
+    if (re.test(t)) return label;
+  }
   return 'Other';
 }
 
@@ -268,29 +283,38 @@ function inferDomainLinks(docs: DocEntry[]): DomainLink[] {
   return links;
 }
 
-function collectDocs(sourceDirs: SourceDir[] = SOURCE_DIRS): DocEntry[] {
-  const allDocs: DocEntry[] = [];
-  const seenHref = new Set<string>();
-  const seenTitle = new Map<string, DocEntry>();
+interface DocCollector {
+  allDocs: DocEntry[];
+  seenHref: Set<string>;
+  seenTitle: Map<string, DocEntry>;
+}
+
+function collectFromScan(coll: DocCollector, sourceDirs: SourceDir[]): void {
   for (const sd of sourceDirs) {
     for (const doc of scanDirectory(sd)) {
-      if (seenHref.has(doc.href)) continue;
-      seenHref.add(doc.href);
-      addOrReplace(allDocs, seenTitle, doc);
+      if (coll.seenHref.has(doc.href)) continue;
+      coll.seenHref.add(doc.href);
+      addOrReplace(coll.allDocs, coll.seenTitle, doc);
     }
   }
+}
+
+function collectFromRegistry(coll: DocCollector): void {
   for (const reg of loadRegistered()) {
-    if (seenHref.has(reg.href)) continue;
+    if (coll.seenHref.has(reg.href)) continue;
     const entry = registeredToEntry(reg);
-    if (entry) {
-      seenHref.add(entry.href);
-      if (!seenTitle.has(entry.title)) {
-        seenTitle.set(entry.title, entry);
-        allDocs.push(entry);
-      }
-    }
+    if (!entry || coll.seenTitle.has(entry.title)) continue;
+    coll.seenHref.add(entry.href);
+    coll.seenTitle.set(entry.title, entry);
+    coll.allDocs.push(entry);
   }
-  return allDocs;
+}
+
+function collectDocs(sourceDirs: SourceDir[] = SOURCE_DIRS): DocEntry[] {
+  const coll: DocCollector = { allDocs: [], seenHref: new Set(), seenTitle: new Map() };
+  collectFromScan(coll, sourceDirs);
+  collectFromRegistry(coll);
+  return coll.allDocs;
 }
 
 // --- Pure functions (testable, no Express) ---

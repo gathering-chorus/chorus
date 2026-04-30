@@ -50,34 +50,41 @@ export function createEmbedder(deps: EmbedderDeps): Embedder {
 
   const cache = new Map<string, CacheEntry>();
 
-  return async function embed(text: string): Promise<number[]> {
-    const key = text.trim().toLowerCase();
-    const t = now();
+  // #2627: cache lookup + ollama POST + retry loop split into helpers;
+  // returned `embed` becomes a linear orchestrator.
+  function readCacheLruTouch(key: string, t: number): number[] | null {
     const hit = cache.get(key);
-    if (hit && t - hit.ts < cacheTtlMs) {
-      // LRU touch — re-insert at newest position.
-      cache.delete(key);
-      cache.set(key, hit);
-      return hit.vec;
-    }
+    if (!hit || t - hit.ts >= cacheTtlMs) return null;
+    cache.delete(key);
+    cache.set(key, hit);
+    return hit.vec;
+  }
 
+  async function postOllamaEmbed(text: string): Promise<number[]> {
+    const res = await fetchFn(`${deps.ollamaUrl}/api/embeddings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: deps.model, prompt: text }),
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
+    if (!res.ok) throw new Error(`Ollama embed failed: ${res.status}`);
+    const data = (await res.json()) as { embedding: number[] };
+    return data.embedding;
+  }
+
+  function cacheStore(key: string, vec: number[], t: number): void {
+    cache.set(key, { vec, ts: t });
+    if (cache.size > cacheMax) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+  }
+
+  async function fetchWithRetry(text: string): Promise<number[]> {
     let lastErr: Error | null = null;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const res = await fetchFn(`${deps.ollamaUrl}/api/embeddings`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: deps.model, prompt: text }),
-          signal: AbortSignal.timeout(requestTimeoutMs),
-        });
-        if (!res.ok) throw new Error(`Ollama embed failed: ${res.status}`);
-        const data = (await res.json()) as { embedding: number[] };
-        cache.set(key, { vec: data.embedding, ts: t });
-        if (cache.size > cacheMax) {
-          const oldest = cache.keys().next().value;
-          if (oldest !== undefined) cache.delete(oldest);
-        }
-        return data.embedding;
+        return await postOllamaEmbed(text);
       } catch (err) {
         lastErr = err as Error;
         if (attempt < maxRetries - 1 && backoffMs[attempt] > 0) {
@@ -86,5 +93,15 @@ export function createEmbedder(deps: EmbedderDeps): Embedder {
       }
     }
     throw lastErr || new Error('Ollama embed failed after retries');
+  }
+
+  return async function embed(text: string): Promise<number[]> {
+    const key = text.trim().toLowerCase();
+    const t = now();
+    const cached = readCacheLruTouch(key, t);
+    if (cached) return cached;
+    const vec = await fetchWithRetry(text);
+    cacheStore(key, vec, t);
+    return vec;
   };
 }

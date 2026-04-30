@@ -213,53 +213,71 @@ function collectSpine(
   return spine;
 }
 
+// #2627: split into class-collect + relationship-collect helpers.
+function classQuery(domainStem: string): string {
+  return `
+    PREFIX owl: <http://www.w3.org/2002/07/owl#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    SELECT ?class ?p ?o WHERE {
+      GRAPH <urn:jb:ontology> {
+        ?class a owl:Class .
+        FILTER(CONTAINS(LCASE(STR(?class)), '${domainStem}'))
+        ?class ?p ?o .
+      }
+    } LIMIT 100`;
+}
+
+function ontologyOtherClassesQuery(domainStem: string): string {
+  return `
+    PREFIX owl: <http://www.w3.org/2002/07/owl#>
+    SELECT DISTINCT ?other WHERE {
+      GRAPH <urn:jb:ontology> { ?other a owl:Class }
+      FILTER(!CONTAINS(LCASE(STR(?other)), '${domainStem}'))
+    } LIMIT 20`;
+}
+
+function formatOwlProperty(cls: string, p: string, o: string): string {
+  const predLocal = p.split(/[#/]/).pop() || p;
+  const valLocal = o.length > 80 ? o.slice(0, 77) + '...' : o;
+  return `${cls.split(/[#/]/).pop()}::${predLocal}=${valLocal}`;
+}
+
+async function collectOwlClassProps(
+  fetchFn: FetchFn,
+  fusekiUrl: string,
+  domainStem: string,
+  matched: Set<string>,
+): Promise<string[]> {
+  const props: string[] = [];
+  for (const b of await sparqlPost(fetchFn, fusekiUrl, classQuery(domainStem))) {
+    const cls = b.class?.value;
+    const p = b.p?.value || '';
+    const o = b.o?.value || '';
+    if (!cls) continue;
+    matched.add(cls);
+    if (p.endsWith('#type')) continue;
+    props.push(formatOwlProperty(cls, p, o));
+  }
+  return props;
+}
+
+async function collectOwlRelations(fetchFn: FetchFn, fusekiUrl: string, domainStem: string): Promise<string[]> {
+  const rels: string[] = [];
+  for (const b of await sparqlPost(fetchFn, fusekiUrl, ontologyOtherClassesQuery(domainStem))) {
+    const other = b.other?.value;
+    if (other) rels.push(other);
+  }
+  return rels;
+}
+
 async function collectOwl(fetchFn: FetchFn, fusekiUrl: string, domain: string): Promise<OwlBucket> {
   const owl: OwlBucket = { properties: [], relationships: [] };
   try {
-    // #2620: ontology lives in named graph urn:jb:ontology and (so far) declares
-    // owl:Class with rdfs:label/rdfs:comment but no rdfs:domain/range triples.
-    // The previous query required rdfs:domain edges that don't exist → empty
-    // every time. Fall back to: for each class whose URI mentions the domain,
-    // surface its label+comment as "properties" (the schema we actually have).
     const domainStem = domain.replace(/s$/, '');
-    const classSparql = `
-      PREFIX owl: <http://www.w3.org/2002/07/owl#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?class ?p ?o WHERE {
-        GRAPH <urn:jb:ontology> {
-          ?class a owl:Class .
-          FILTER(CONTAINS(LCASE(STR(?class)), '${domainStem}'))
-          ?class ?p ?o .
-        }
-      } LIMIT 100`;
     const matched = new Set<string>();
-    for (const b of await sparqlPost(fetchFn, fusekiUrl, classSparql)) {
-      const cls = b.class?.value;
-      const p = b.p?.value || '';
-      const o = b.o?.value || '';
-      if (!cls) continue;
-      matched.add(cls);
-      // Skip the rdf:type triple itself; surface label/comment/etc. as schema
-      // facts on the class. Format: "<class>::<predicate>=<value>" so callers
-      // can split if they want, but length>0 is what cucumber checks today.
-      if (p.endsWith('#type')) continue;
-      const predLocal = p.split(/[#/]/).pop() || p;
-      const valLocal = o.length > 80 ? o.slice(0, 77) + '...' : o;
-      owl.properties.push(`${cls.split(/[#/]/).pop()}::${predLocal}=${valLocal}`);
-    }
-    // Relationships: classes that share the ontology graph with the matched
-    // class — proxy for "this domain's class connects to these other concepts".
+    owl.properties = await collectOwlClassProps(fetchFn, fusekiUrl, domainStem, matched);
     if (matched.size > 0) {
-      const relSparql = `
-        PREFIX owl: <http://www.w3.org/2002/07/owl#>
-        SELECT DISTINCT ?other WHERE {
-          GRAPH <urn:jb:ontology> { ?other a owl:Class }
-          FILTER(!CONTAINS(LCASE(STR(?other)), '${domainStem}'))
-        } LIMIT 20`;
-      for (const b of await sparqlPost(fetchFn, fusekiUrl, relSparql)) {
-        const other = b.other?.value;
-        if (other) owl.relationships.push(other);
-      }
+      owl.relationships = await collectOwlRelations(fetchFn, fusekiUrl, domainStem);
     }
   } catch { /* OWL query failed */ }
   return owl;
@@ -466,6 +484,18 @@ function alertMatchesDomain(content: string, file: string, domain: string, stem:
   return lower.includes(domain) || lower.includes(stem) || fileLower.includes(domain) || fileLower.includes(stem);
 }
 
+// #2627: per-file extraction split out of the loop body.
+function extractAlertsFromContent(content: string, file: string): AlertEntry[] {
+  const promMatches = [...content.matchAll(/^\s*-?\s*alert:\s*(.+)$/gm)];
+  const grafTitleMatches = [...content.matchAll(/^\s*-\s*(?:uid:.*\n\s*)?title:\s*(.+)$/gm)];
+  const sevDefault = (content.match(/severity:\s*(.+)/) || [, 'unknown'])[1]?.trim() || 'unknown';
+  const found = promMatches.length > 0 ? promMatches : grafTitleMatches;
+  if (found.length === 0) {
+    return [{ name: file.replace(/\.ya?ml$/, ''), severity: sevDefault, file }];
+  }
+  return found.map((m) => ({ name: m[1].trim(), severity: sevDefault, file }));
+}
+
 function collectAlerts(
   exists: (p: string) => boolean,
   readdir: (p: string) => string[],
@@ -480,21 +510,7 @@ function collectAlerts(
     for (const file of readdir(alertDir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))) {
       const content = readFile(pathMod.join(alertDir, file), 'utf-8');
       if (!alertMatchesDomain(content, file, domain, stem)) continue;
-      // #2620: support both Prometheus rule-files (`alert: <name>`) and Grafana
-      // provisioning (`title: <name>` under `rules:`). Earlier implementation
-      // only matched the Prometheus shape, so chorus-alerts.yaml (Grafana
-      // provisioning) returned 0 even when the file matched the domain.
-      const promMatches = [...content.matchAll(/^\s*-?\s*alert:\s*(.+)$/gm)];
-      const grafTitleMatches = [...content.matchAll(/^\s*-\s*(?:uid:.*\n\s*)?title:\s*(.+)$/gm)];
-      const sevDefault = (content.match(/severity:\s*(.+)/) || [, 'unknown'])[1]?.trim() || 'unknown';
-      const found = promMatches.length > 0 ? promMatches : grafTitleMatches;
-      if (found.length === 0) {
-        alerts.push({ name: file.replace(/\.ya?ml$/, ''), severity: sevDefault, file });
-      } else {
-        for (const m of found) {
-          alerts.push({ name: m[1].trim(), severity: sevDefault, file });
-        }
-      }
+      alerts.push(...extractAlertsFromContent(content, file));
     }
   } catch { /* alerting unreadable */ }
   return alerts;
