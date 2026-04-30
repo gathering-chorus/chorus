@@ -56,9 +56,15 @@ app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
 // (cross-repo moves from jeff-bridwell-personal-site completed in #2458)
 const chorusRepoRoot = path.resolve(__dirname, '..', '..', '..');
 app.use('/designing/docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html'] }));
+app.use('/designing/decisions', express.static(path.join(chorusRepoRoot, 'designing', 'decisions'), { extensions: ['html', 'md'] }));
 app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'adr'), { extensions: ['html', 'md'] }));
 app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
+app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));
 app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
+app.use('/roles/wren/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'wren', 'artifacts'), { extensions: ['html'] }));
+app.use('/roles/wren/docs', express.static(path.join(chorusRepoRoot, 'roles', 'wren', 'docs'), { extensions: ['html', 'md'] }));
+app.use('/roles/wren/decisions', express.static(path.join(chorusRepoRoot, 'roles', 'wren', 'decisions'), { extensions: ['html', 'md'] }));
+app.use('/diagrams', express.static(path.join(chorusRepoRoot, 'docs', 'diagrams')));
 
 // #2445 wave 2 — chorus-api serves catalog HTML. Static routes try chorus
 // designing/docs first (where 43 misfiled docs were relocated post-#2510),
