@@ -66,9 +66,9 @@ If the card IS already in WIP (pulled earlier or by another role), skip to Step 
 
 1. **Determine roles**: The invoking role is the **driver**. The target role is the **navigator**.
 
-2. **Declare state for both roles**:
+2. **Declare state for both roles** (#2467: card lives on the board, not in role-state):
    ```bash
-   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <your-role> building card=<card-id>
+   /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <your-role> building
    ```
 
 3. **Emit spine event**:
