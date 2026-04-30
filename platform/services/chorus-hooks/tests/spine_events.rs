@@ -2,6 +2,12 @@
 //!
 //! #1846: session.context.error emitted when cache is empty/failed at boot
 //! #1847: nudge.acknowledged emitted when role processes a nudge
+//!
+//! #2614: tests in this file mutate real role-state paths
+//! (`/tmp/session-context-kade.md`, `/tmp/voice-inbox/kade/...`) — same paths the
+//! live daemon reads. Running them on a developer machine while kade is in a
+//! session can wipe kade's context. Gated behind `RUN_INTEGRATION=1`; pre-commit
+//! and default `cargo test` runs skip them.
 
 use std::fs;
 use std::process::Command;
@@ -14,10 +20,22 @@ fn log_tail(n: usize) -> String {
     content.lines().rev().take(n).collect::<Vec<_>>().join("\n")
 }
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+/// Use at the top of any test that mutates real role-state paths or APIs so
+/// default `cargo test` runs don't race the live daemon.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 // === #1846: context cache failure events ===
 
 #[test]
 fn session_start_emits_context_error_on_empty_cache() {
+    if skip_unless_integration("writes /tmp/session-context-kade.md, races live daemon") { return; }
     // Remove the cache file so session-start gets empty content
     let cache_file = "/tmp/session-context-kade.md";
     let cache_backup = fs::read_to_string(cache_file).ok();
@@ -59,6 +77,7 @@ fn session_start_emits_context_error_on_empty_cache() {
 #[cfg(target_os = "macos")]
 #[test]
 fn role_state_drain_emits_nudge_acknowledged() {
+    if skip_unless_integration("writes /tmp/voice-inbox/kade/, races live daemon's drain") { return; }
     let test_role = "kade";
     let inbox_dir = format!("/tmp/voice-inbox/{}", test_role);
     let inbox_file = format!("{}/pending-inject.txt", inbox_dir);

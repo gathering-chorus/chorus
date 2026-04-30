@@ -2,9 +2,23 @@
 //!
 //! Tests real chat.sh behavior: file creation, message append, tick marker,
 //! atomic read, and cleanup. Every test sends real commands to the real script.
+//!
+//! #2614: tests in this file create real chat files at `/tmp/chorus-chat/` —
+//! same path the live daemon and active role sessions write to. On a developer
+//! machine, running these can collide with active silas/wren/kade chats.
+//! Gated behind `RUN_INTEGRATION=1`; default `cargo test` skips them with reason.
 
 use std::fs;
 use std::process::Command;
+
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
 
 // CHORUS_ROOT env var with Mac-default fallback (mirrors
 // src/shared/state_paths.rs). CI sets CHORUS_ROOT=${{ github.workspace }}
@@ -40,6 +54,7 @@ fn run_chat(args: &[&str]) -> (String, String, bool) {
 /// start creates the chat file and returns a valid chat ID.
 #[test]
 fn start_creates_chat_file() {
+    if skip_unless_integration("writes /tmp/chorus-chat/silas-wren-*.md, races live chats") { return; }
     let (id, _, ok) = run_chat(&["start", "silas", "wren", "test-topic"]);
     assert!(ok, "chat.sh start must succeed");
     assert!(!id.is_empty(), "start must return a chat ID");
@@ -58,6 +73,7 @@ fn start_creates_chat_file() {
 /// say appends a message and returns the line count.
 #[test]
 fn say_appends_message_and_returns_line_count() {
+    if skip_unless_integration("writes /tmp/chorus-chat/, races live chats") { return; }
     let (id, _, _) = run_chat(&["start", "silas", "wren", "say-test"]);
     let (line_str, _, ok) = run_chat(&["say", &id, "silas", "hello from silas"]);
     assert!(ok, "chat.sh say must succeed");
@@ -74,6 +90,7 @@ fn say_appends_message_and_returns_line_count() {
 /// say writes the tick marker on first call. Marker contains line count and other role.
 #[test]
 fn say_writes_tick_marker() {
+    if skip_unless_integration("writes /tmp/chorus-chat/, races live chats") { return; }
     let (id, _, _) = run_chat(&["start", "silas", "wren", "tick-test"]);
     let tick_file = format!("{}/tick-{}", CHAT_DIR, id);
     let _ = fs::remove_file(&tick_file); // clean slate
@@ -97,6 +114,7 @@ fn say_writes_tick_marker() {
 /// say does NOT overwrite the tick marker on subsequent calls.
 #[test]
 fn say_tick_marker_not_overwritten() {
+    if skip_unless_integration("writes /tmp/chorus-chat/, races live chats") { return; }
     let (id, _, _) = run_chat(&["start", "silas", "wren", "tick-idempotent"]);
     let tick_file = format!("{}/tick-{}", CHAT_DIR, id);
 
@@ -118,6 +136,7 @@ fn say_tick_marker_not_overwritten() {
 /// read --since N returns only lines after N.
 #[test]
 fn read_since_returns_new_lines_only() {
+    if skip_unless_integration("writes /tmp/chorus-chat/, races live chats") { return; }
     let (id, _, _) = run_chat(&["start", "silas", "wren", "read-since-test"]);
 
     let (line_str, _, _) = run_chat(&["say", &id, "silas", "first"]);
@@ -137,6 +156,7 @@ fn read_since_returns_new_lines_only() {
 /// end closes the chat and deletes the tick marker.
 #[test]
 fn end_deletes_tick_marker() {
+    if skip_unless_integration("writes /tmp/chorus-chat/, races live chats") { return; }
     let (id, _, _) = run_chat(&["start", "silas", "wren", "end-test"]);
     run_chat(&["say", &id, "silas", "a message"]);
 
