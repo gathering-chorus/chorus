@@ -173,7 +173,18 @@ Then('the message {string} appears in the message feed', function (_label: strin
   assert.ok(found, `Message "${probeMarker}" not found in feed after 5s`);
 });
 
-// --- Nudge delivery (--force = osascript inject) ---
+// --- Nudge delivery (#2617: dry-run only — no live-role injection) ---
+//
+// This step exercises the nudge plumbing path (persist + resolve target +
+// emit spine event) without actually injecting into a live role's terminal.
+// Prior shape ran with --force, which bypassed dry-run and dumped real
+// [e2e-test] nudges into silas's session every time the test fired.
+// Today (2026-04-30) those leaked into Jeff's view all morning until the
+// source was traced to this exact step.
+//
+// CHORUS_INJECT_DRY_RUN=1 short-circuits before osascript; nudge prints
+// "DRY-RUN" instead of "DELIVERED". The test asserts on the dry-run marker
+// to verify the up-to-injection plumbing without the side effect.
 
 const NUDGE = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
 
@@ -181,8 +192,12 @@ When('Jeff nudges {word} with {string} via --force', function (role: string, lab
   const msg = `[e2e-test] ${label}-${Date.now()}`;
   try {
     lastNudgeOutput = execSync(
-      `${NUDGE} ${role} "${msg}" --force --from jeff 2>&1`,
-      { encoding: 'utf-8', timeout: 10000 }
+      `${NUDGE} ${role} "${msg}" --from jeff 2>&1`,
+      {
+        encoding: 'utf-8',
+        timeout: 10000,
+        env: { ...process.env, CHORUS_INJECT_DRY_RUN: '1', DEPLOY_ROLE: 'jeff' },
+      }
     ).trim();
   } catch (e: any) {
     lastNudgeOutput = e.stdout || e.stderr || e.message || 'nudge failed';
@@ -190,9 +205,11 @@ When('Jeff nudges {word} with {string} via --force', function (role: string, lab
 });
 
 Then('the nudge is delivered', function () {
+  // Dry-run path: assert on DRY-RUN marker. The plumbing fired (persist
+  // + role resolve + spine emit); only osascript injection was skipped.
   assert.ok(
-    lastNudgeOutput.includes('DELIVERED'),
-    `Nudge not delivered. Output: ${lastNudgeOutput}`
+    lastNudgeOutput.includes('DRY-RUN') || lastNudgeOutput.includes('DELIVERED'),
+    `Nudge not delivered (expected DRY-RUN marker per #2617). Output: ${lastNudgeOutput}`
   );
 });
 
