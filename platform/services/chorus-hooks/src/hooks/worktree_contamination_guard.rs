@@ -1,35 +1,37 @@
 //! Worktree contamination guard (#2625).
 //!
 //! PreToolUse on Bash: refuses `git checkout/pull/reset/switch` against the
-//! shared canonical /chorus clone when another role declares `building` per
-//! their role-state.json. Two contamination events on 2026-04-30 traced
-//! cleanly to wren switching /chorus to main while silas was actively
-//! editing on a topic branch — yanking HEAD off silas's work.
+//! shared canonical /chorus clone. The shared clone is read-only for
+//! dangerous git ops by invariant — every role works in their per-role
+//! worktree (`/chorus-silas/`, `/chorus-wren/`, `/chorus-kade/`, or topic
+//! worktrees like `/chorus-2526/`) per #2582. Per-role worktrees have
+//! isolated `.git/HEAD` so no cross-role contamination is possible there.
+//!
+//! Two contamination events on 2026-04-30: wren switched /chorus to main
+//! while silas was actively editing on a topic branch (10:00 + 10:49). The
+//! convention agreed in chat silas-wren-1777560652 ([deploy-yank] nudge
+//! before switch) failed within an hour. Jeff's call: "just trying wont
+//! work — we probably need a hook if the directory is so critical."
 //!
 //! Sibling to #2580 (git-queue branch-check, defense-in-depth at the queue
-//! layer); this fires earlier, at the PreToolUse layer, before the dangerous
-//! op runs.
+//! layer); this fires earlier, at PreToolUse, before the dangerous op runs.
 //!
-//! Convention failed twice within an hour after the wren/silas chat
-//! (silas-wren-1777560652) landed the [deploy-yank] nudge convention —
-//! Jeff's call: "just trying wont work — we probably need a hook if the
-//! directory is so critical."
+//! The hook does NOT consult role-state files. The original draft did,
+//! looking up "is another role building right now" to fire conditionally.
+//! Jeff's call (2026-04-30): role-state is unreliable substrate (sticky
+//! card-fields, no cleanup on session death), and the simpler invariant
+//! "shared /chorus is canonical, dangerous git ops require a per-role
+//! worktree or explicit override" doesn't need that lookup. Anyone running
+//! dangerous git ops on /chorus is in the wrong place. Hook says so.
 //!
-//! Per-role worktrees (chorus-silas/, chorus-wren/, chorus-kade/, and topic
-//! worktrees like chorus-2526/) are EXEMPT — they have isolated .git/HEAD
-//! per the #2582 convention. Only the canonical shared /chorus is guarded.
-//!
-//! Override: CHORUS_WORKTREE_OVERRIDE=1 bypasses for legitimate cases
-//! (deploy-source-clone post-merge that's pre-arranged); logged to spine.
+//! Override: `CHORUS_WORKTREE_OVERRIDE=1` bypasses for legitimate cases
+//! (deploy-source-clone post-merge that's pre-arranged); usage emits a
+//! `worktree.override.used` spine event for audit.
 
 use crate::shared::state_paths::chorus_root;
 use crate::types::{HookInput, HookResponse};
 use regex::Regex;
-use serde::Deserialize;
-use std::fs;
 use std::sync::OnceLock;
-
-const ROLES: &[&str] = &["silas", "wren", "kade"];
 
 fn git_dangerous_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -40,23 +42,10 @@ fn git_dangerous_re() -> &'static Regex {
     })
 }
 
-#[derive(Deserialize, Debug)]
-struct DeclaredState {
-    state: Option<String>,
-    card: Option<serde_json::Value>,
-}
-
-/// Reads /tmp/claude-team-scan/<role>-declared.json. Returns None if missing
-/// or unparseable. team_scan_dir is parameterized so tests inject a tempdir.
-fn read_declared(team_scan_dir: &str, role: &str) -> Option<DeclaredState> {
-    let path = format!("{}/{}-declared.json", team_scan_dir, role);
-    let content = fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&content).ok()
-}
-
 /// True if cwd is the shared canonical /chorus clone. Per-role worktrees
-/// (chorus-silas/, chorus-wren/, chorus-kade/, topic worktrees) are exempt
-/// because they have isolated .git/HEAD by construction (#2582).
+/// (chorus-silas/, chorus-wren/, chorus-kade/, topic worktrees like
+/// chorus-2526/) are exempt because they have isolated .git/HEAD by
+/// construction (#2582).
 fn is_shared_canonical(cwd: &str, canonical: &str) -> bool {
     if cwd.is_empty() || canonical.is_empty() {
         return false;
@@ -70,8 +59,8 @@ fn is_shared_canonical(cwd: &str, canonical: &str) -> bool {
     cwd == canonical || cwd.starts_with(&format!("{}/", canonical))
 }
 
-/// Extract the dangerous git subcommand for the deny message ("checkout",
-/// "pull", "reset", "switch"). Defensive default to "checkout".
+/// Extract the dangerous git subcommand for the deny message. Defensive
+/// default to "checkout".
 fn extracted_subcommand(command: &str) -> String {
     git_dangerous_re()
         .captures(command)
@@ -80,12 +69,7 @@ fn extracted_subcommand(command: &str) -> String {
 }
 
 /// Core check, parameterized for tests. Production wrapper below.
-fn check_with(
-    input: &HookInput,
-    canonical_root: &str,
-    team_scan_dir: &str,
-    override_set: bool,
-) -> HookResponse {
+fn check_with(input: &HookInput, canonical_root: &str, override_set: bool) -> HookResponse {
     if input.tool_name_str() != "Bash" {
         return HookResponse::allow();
     }
@@ -106,48 +90,33 @@ fn check_with(
 
     let my_role = input.role().as_str().to_string();
     let subcommand = extracted_subcommand(&command);
+    let other_worktree = format!("~/CascadeProjects/chorus-{}/", my_role);
 
-    for role in ROLES {
-        if *role == my_role {
-            continue;
-        }
-        let Some(state) = read_declared(team_scan_dir, role) else {
-            continue;
-        };
-        if state.state.as_deref() != Some("building") {
-            continue;
-        }
-        let card_str = match state.card {
-            Some(serde_json::Value::Number(n)) => format!(" card=#{}", n),
-            Some(serde_json::Value::String(s)) => format!(" card=#{}", s),
-            _ => String::new(),
-        };
-        let other_worktree = format!("~/CascadeProjects/chorus-{}/", my_role);
-        let stderr = format!(
-            "BLOCKED: {role} is building{card_str} on shared /chorus.\n\
-             `git {subcommand}` would yank HEAD off their work (today's contamination class — #2625).\n\n\
-             Options:\n\
-               1. Nudge {role} to commit/push first, then proceed\n\
-               2. Wait for {role} to declare idle\n\
-               3. Run from your per-role worktree ({other_worktree}) — exempt by construction (#2582)\n\
-               4. Set CHORUS_WORKTREE_OVERRIDE=1 if this is a pre-arranged deploy-source-clone op (audited via spine)\n\n\
-             Hook: worktree_contamination_guard (#2625)"
-        );
-        return HookResponse::block_with_stderr(&stderr);
-    }
-
-    HookResponse::allow()
+    let stderr = format!(
+        "BLOCKED: shared /chorus is read-only for dangerous git ops.\n\
+         `git {subcommand}` on the canonical clone yanks HEAD for any role\n\
+         currently working there — today's contamination class (#2625).\n\n\
+         Options:\n\
+           1. Run from your per-role worktree: {other_worktree}\n\
+              (isolated .git/HEAD by construction — no cross-role race, #2582)\n\
+           2. Set CHORUS_WORKTREE_OVERRIDE=1 if this is a pre-arranged\n\
+              deploy-source-clone op (audited via worktree.override.used spine event)\n\n\
+         Hook: worktree_contamination_guard (#2625)"
+    );
+    HookResponse::block_with_stderr(&stderr)
 }
 
-/// Production entry point. Reads canonical root from chorus_root(), team
-/// scan dir from /tmp/claude-team-scan, checks env for override, and emits
-/// a spine event when the override is used.
+/// Production entry point. Reads canonical root from chorus_root(), checks
+/// override flag from JSON (shim wraps env→json since env doesn't cross the
+/// unix-socket boundary), emits spine event when override is used.
 pub async fn check(input: &HookInput) -> HookResponse {
     let canonical = chorus_root();
-    let team_scan_dir = "/tmp/claude-team-scan";
-    let override_set = std::env::var("CHORUS_WORKTREE_OVERRIDE").is_ok();
+    // Override is injected via JSON by the shim wrapper (see shim.rs).
+    // Reading env directly would only work for in-process callers, not for
+    // the production daemon which is a separate process from shim's env.
+    let override_set = input.chorus_worktree_override.unwrap_or(false);
 
-    let response = check_with(input, canonical, team_scan_dir, override_set);
+    let response = check_with(input, canonical, override_set);
 
     if override_set
         && input.tool_name_str() == "Bash"
@@ -171,8 +140,6 @@ pub async fn check(input: &HookInput) -> HookResponse {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::fs;
-    use tempfile::TempDir;
 
     fn make_input(tool: &str, command: &str, cwd: &str, role: &str) -> HookInput {
         serde_json::from_value(json!({
@@ -184,143 +151,94 @@ mod tests {
         .unwrap()
     }
 
-    fn write_declared(dir: &TempDir, role: &str, state: &str, card: Option<u32>) {
-        let body = if let Some(c) = card {
-            json!({"role": role, "state": state, "card": c})
-        } else {
-            json!({"role": role, "state": state})
-        };
-        let path = dir.path().join(format!("{}-declared.json", role));
-        fs::write(&path, body.to_string()).unwrap();
-    }
-
     const CANONICAL: &str = "/Users/jeff/chorus";
 
     #[test]
     fn allow_non_bash_tool() {
         let input = make_input("Edit", "anything", CANONICAL, "wren");
-        let r = check_with(&input, CANONICAL, "/tmp/nonexistent", false);
-        assert!(r.exit_code == 0, "non-Bash tool must allow");
+        let r = check_with(&input, CANONICAL, false);
+        assert!(r.exit_code == 0);
     }
 
     #[test]
     fn allow_bash_non_dangerous_git() {
         let input = make_input("Bash", "git status", CANONICAL, "wren");
-        let r = check_with(&input, CANONICAL, "/tmp/nonexistent", false);
+        let r = check_with(&input, CANONICAL, false);
         assert!(r.exit_code == 0, "git status is not dangerous");
     }
 
     #[test]
-    fn allow_bash_unrelated_command() {
+    fn allow_unrelated_command() {
         let input = make_input("Bash", "ls -la", CANONICAL, "wren");
-        let r = check_with(&input, CANONICAL, "/tmp/nonexistent", false);
+        let r = check_with(&input, CANONICAL, false);
         assert!(r.exit_code == 0);
     }
 
     #[test]
-    fn allow_when_no_other_role_building() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "silas", "idle", None);
-        write_declared(&dir, "kade", "waiting", None);
+    fn block_checkout_on_canonical() {
         let input = make_input("Bash", "git checkout main", CANONICAL, "wren");
-        let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
-        assert!(r.exit_code == 0, "no other role building -> allow");
-    }
-
-    #[test]
-    fn block_when_other_role_building_with_card() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "silas", "building", Some(2625));
-        let input = make_input("Bash", "git checkout main", CANONICAL, "wren");
-        let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
-        assert!(r.exit_code != 0, "must block when other role building");
+        let r = check_with(&input, CANONICAL, false);
+        assert!(r.exit_code != 0, "must block");
         let stderr = r.stderr.clone().unwrap_or_default();
-        assert!(stderr.contains("silas"), "must name building role: {stderr}");
-        assert!(stderr.contains("#2625"), "must name card: {stderr}");
-        assert!(stderr.contains("git checkout"), "must name git op: {stderr}");
+        assert!(stderr.contains("git checkout"));
+        assert!(stderr.contains("chorus-wren"), "must point at wren's worktree");
+        assert!(stderr.contains("CHORUS_WORKTREE_OVERRIDE"));
     }
 
     #[test]
-    fn block_on_pull_too() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "silas", "building", Some(42));
+    fn block_pull_on_canonical() {
         let input = make_input("Bash", "git pull origin main", CANONICAL, "wren");
-        let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
+        let r = check_with(&input, CANONICAL, false);
         assert!(r.exit_code != 0);
         assert!(r.stderr.clone().unwrap_or_default().contains("git pull"));
     }
 
     #[test]
-    fn block_on_reset_and_switch() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "silas", "building", Some(42));
+    fn block_reset_and_switch() {
         for cmd in &["git reset --hard HEAD", "git switch other-branch"] {
             let input = make_input("Bash", cmd, CANONICAL, "wren");
-            let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
+            let r = check_with(&input, CANONICAL, false);
             assert!(r.exit_code != 0, "must block: {cmd}");
         }
     }
 
     #[test]
     fn allow_per_role_worktree() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "silas", "building", Some(2625));
+        // Wren in her own worktree — exempt by construction (#2582)
         let cwd = "/Users/jeff/chorus-wren";
         let input = make_input("Bash", "git checkout main", cwd, "wren");
-        let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
+        let r = check_with(&input, CANONICAL, false);
         assert!(r.exit_code == 0, "per-role worktree must be exempt");
     }
 
     #[test]
     fn allow_topic_worktree() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "silas", "building", Some(2625));
+        // chorus-2526 = silas's existing topic worktree
         let cwd = "/Users/jeff/chorus-2526";
         let input = make_input("Bash", "git checkout main", cwd, "silas");
-        let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
+        let r = check_with(&input, CANONICAL, false);
         assert!(r.exit_code == 0, "topic worktree must be exempt");
     }
 
     #[test]
-    fn allow_self_building() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "wren", "building", Some(2624));
-        let input = make_input("Bash", "git checkout main", CANONICAL, "wren");
-        let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
-        assert!(r.exit_code == 0, "my own building state must not block me");
-    }
-
-    #[test]
     fn allow_with_override() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "silas", "building", Some(2625));
         let input = make_input("Bash", "git checkout main", CANONICAL, "wren");
-        let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), true);
+        let r = check_with(&input, CANONICAL, true);
         assert!(r.exit_code == 0, "override must allow");
     }
 
     #[test]
-    fn allow_when_state_file_missing() {
-        let dir = TempDir::new().unwrap();
-        let input = make_input("Bash", "git checkout main", CANONICAL, "wren");
-        let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
-        assert!(r.exit_code == 0, "missing state files allow");
-    }
-
-    #[test]
-    fn block_subdir_of_canonical_dangerous_op() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "silas", "building", Some(2625));
+    fn block_subdir_of_canonical() {
+        // /chorus/roles/wren is still inside canonical clone
         let cwd = "/Users/jeff/chorus/roles/wren";
         let input = make_input("Bash", "git checkout main", cwd, "wren");
-        let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
+        let r = check_with(&input, CANONICAL, false);
         assert!(r.exit_code != 0, "subdir of canonical still guarded");
     }
 
     #[test]
     fn allow_word_boundary_false_positives() {
-        let dir = TempDir::new().unwrap();
-        write_declared(&dir, "silas", "building", Some(2625));
+        // "git checkout" must match, but "gitcheckout" / "git-queue" / etc must not
         for cmd in &[
             "echo gitcheckout",
             "git config something",
@@ -328,7 +246,7 @@ mod tests {
             "make build && git_log",
         ] {
             let input = make_input("Bash", cmd, CANONICAL, "wren");
-            let r = check_with(&input, CANONICAL, dir.path().to_str().unwrap(), false);
+            let r = check_with(&input, CANONICAL, false);
             assert!(r.exit_code == 0, "word-boundary false positive: {cmd}");
         }
     }

@@ -395,7 +395,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-        }
+            chorus_worktree_override: None,}
     }
 
     #[test]

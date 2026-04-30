@@ -158,7 +158,7 @@ mod tests {
             cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
-        };
+            chorus_worktree_override: None,};
         check(&input, &state).await;
     }
 
@@ -172,7 +172,7 @@ mod tests {
             cwd: Some(format!("{}/architect", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("silas".into()),
-        };
+            chorus_worktree_override: None,};
         check(&input, &state).await;
     }
 }

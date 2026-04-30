@@ -547,7 +547,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-        }
+            chorus_worktree_override: None,}
     }
 
     // === digest_tool_call tests ===
