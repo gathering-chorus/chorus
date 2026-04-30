@@ -92,17 +92,22 @@ Reasoning:
 
 The opposite reading (skip): each tool adds noise to gate output, ratchet baselines need maintenance, false-positive rate is real. But these are the costs of **measurement** — and the cost of NOT measuring is exactly the structural-erosion question this card was meant to answer. Skipping leaves us blind.
 
-## Integration points (AC6)
+## Integration points (AC6) — REVISED per Silas's #2601 arch review
 
-If adopt = yes:
+Per Silas 2026-04-30: cog-complexity is a trend signal, not a yes/no gate. Pre-commit gates with carded-known-fails decay into decorative noise. Yesterday's #2600 cost-stop retired per-PR ceremony that didn't yield; adding three pre-commit cog-complexity gates would walk that back. `encode-failure-into-structure` = card-on-rise, not block-on-commit.
 
-| Tool | Integration point | Mechanism |
+Corrected integration plan:
+
+| Tool / rule | Integration point | Mechanism |
 |---|---|---|
-| `clippy::cognitive_complexity` | `platform/services/chorus-hooks/Cargo.toml` + `chorus-inject/Cargo.toml` | Add `[lints.clippy] cognitive_complexity = "warn"`. Pre-commit `cargo clippy` already runs; warnings surface. Promote to `deny` once existing 13 hits are addressed or `#[allow]`'d per-site. |
-| `eslint-plugin-sonarjs` | `eslint.config.js` (root) | `npm install --save-dev eslint-plugin-sonarjs`, add plugin + rules block (cognitive-complexity, no-duplicate-string, no-identical-functions, no-collapsible-if). Pre-commit ESLint ratchet picks them up. Address the `no-empty-function` rule conflict by NOT importing the recommended preset. |
-| `radon` | New pre-commit step OR scheduled drift signal | `radon cc -na -nc <changed-files>` returns non-zero on D+ functions. Add as a ratchet (warn on D, block on E) similar to existing pre-commit checks. Or surface as a nightly drift signal under #2527 nightly drift lane. |
+| `clippy::cognitive_complexity` | `chorus-hooks/Cargo.toml` + `chorus-inject/Cargo.toml` `[lints.clippy]` block | **Warn-level only**, existing pre-commit `cargo clippy` surfaces warnings. Output also feeds #2527 drift lane as a sensor. Concurrent with #2588 dead-code refactor (warn-level doesn't bite on extraction work; deny-level would). |
+| `sonarjs/cognitive-complexity` + `sonarjs/no-collapsible-if` + `sonarjs/no-identical-functions` | `eslint.config.js` plugin block, **warn-level for drift only**, NOT pre-commit gate | Output piped into #2527 drift lane. Same trend-signal reasoning as Rust. |
+| `sonarjs/no-duplicate-string` | `eslint.config.js` plugin block, **pre-commit gate** | Yes/no signal — agent inlining the same literal 3+ times is binary, fix in place. Per Silas's nuance: this sub-rule belongs in pre-commit. |
+| `radon` | **Nightly drift sensor under #2527**, NOT pre-commit | `radon cc -na -nc <files>` against `platform/scripts/*.py` on schedule. File card on D+ ratings. Cleanest architectural fit — Python scripts aren't hot-path; complexity as card-on-red matches criticality. |
 
-The third option (radon as nightly drift instead of pre-commit) is the cleaner architectural fit — Python scripts in `platform/scripts/*.py` aren't the hot path; surfacing complexity as a card-on-red signal matches their criticality.
+The pattern: **trend signals → drift lane (cards on rise); yes/no signals → pre-commit (block at source).** Cog-complexity is trend; duplicate-string is yes/no. Mixing them in the same gate is the failure mode Silas named.
+
+Sequence: land warn-level clippy in Cargo.toml now (#2588 dead-code refactor concurrent-safe at warn-level). sonarjs no-duplicate-string in pre-commit follows. cog-complexity drift sensors land when #2527 nightly drift lane is built.
 
 ## Time-box note
 
