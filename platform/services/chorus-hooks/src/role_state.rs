@@ -176,6 +176,15 @@ fn query(target: &str) -> ExitCode {
 
         if let Ok(content) = fs::read_to_string(&state_file) {
             if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                // #2629: legacy state files written before wave 1 may carry
+                // card / card_type fields. Strip them on read — refusal at
+                // every surface includes the read path, not just the write
+                // path. Found by wren in #2629 gate:product probe.
+                if let Some(obj) = parsed.as_object_mut() {
+                    obj.remove("card");
+                    obj.remove("card_type");
+                }
+
                 // Enrich with live data
                 parsed["session_alive"] = serde_json::Value::Bool(session_alive);
                 if let Some(p) = pid {
@@ -404,6 +413,11 @@ mod tests {
         assert_eq!(result, ExitCode::from(2),
             "card=+type= must be REFUSED (#2629)");
     }
+
+    // Note: query() writes to stdout — full end-to-end strip verification
+    // lives in tests/role_state_legacy_strip.rs (integration test) where
+    // CARGO_BIN_EXE_chorus-hook-shim is in scope. Unit tests here cover
+    // refusal at the write path; the integration test covers the read path.
 
     #[test]
     fn refusal_does_not_write_state_file() {
