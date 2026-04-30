@@ -1,12 +1,16 @@
 # Commits Service Design
 
-**Kade, 2026-04-29 / refreshed 2026-04-30 (post worktree-contamination guard, pre-push hook, plain-language pass, subagent corrections folded). This doc is the canonical source for the five pre-merge enforcement surfaces; the CI/CD service design references this doc for surface detail rather than restating.**
+**Kade, 2026-04-29 / refreshed 2026-04-30 (post worktree-contamination guard, pre-push hook, plain-language pass, subagent corrections folded; restructured to match ci-pipeline-service-design section order). This doc is the canonical source for the five pre-merge enforcement surfaces; the CI/CD service design references this doc for surface detail rather than restating.**
 
 ## Promise
 
-Every commit that reaches `main` was authored on the right branch in a non-shared working tree, passed pre-commit checks, was pushed via the serialized commit queue, and merged via rebase against an up-to-date base. Five hooks enforce that contract. An engineer joining the project should be able to read the contract once and understand which hook catches which failure mode.
+Every commit that reaches `main` was authored on the right branch in a non-shared working tree, passed pre-commit checks, was pushed via the serialized commit queue, and merged via rebase against an up-to-date base. Five hooks fire pre-merge. An engineer joining the project should be able to read the contract once and understand which hook catches which failure mode.
+
+**Honest scope:** four of the five surfaces block unconditionally; the fifth (pre-commit) is `--no-verify`-skippable for the carded `KNOWN_FAILS` pattern, and the allowlist enforcing that convention is still a planned card (#2497). Today's `/chorus` canonical clone is intended read-only but in practice carries an in-flight role branch — the worktree-contamination guard fires correctly, but the convention isn't structurally enforced. The successor design (#2592 workspace-API) would dissolve the queue + shim layer into a single mediated API; until then, this surface is a layered defense, not a single point.
 
 ## Vocabulary
+
+The codebase uses internal terms that map to industry-standard concepts. Reading this section once lets the rest of the doc parse without translation.
 
 | Internal term | Industry standard | What it actually is |
 |---|---|---|
@@ -25,72 +29,21 @@ Every commit that reaches `main` was authored on the right branch in a non-share
 | Loom | Decision/principle/practice graph subdomain | Where ADRs (`loom-decisions`), principles, patterns, policies live |
 | DEC-NNN / ADR-NNN | Decision record | A numbered architecture/team decision document |
 
-## Problem (origin context, 2026-04-29)
+## Pre-Merge Enforcement (Five Surfaces)
 
-Commits emerged as a stack of tactical fixes, not a designed surface. One session surfaced four distinct failure classes:
+Each surface catches a distinct attack vector on the path from "engineer edits code" to "main has the change." The five aren't enumerated for symmetry — they're derived from where wrong-shape commits can enter the system.
 
-1. **Cross-branch contamination** — three engineers shared `/chorus`'s working tree; one engineer's `git checkout` was the others' working state. `.git/HEAD` is one variable.
-2. **Required-checks asymmetry** — branch-protection and Repository Rulesets listed different required jobs. Merges that satisfied one bypassed the other.
-3. **Branch-blindness** — `git-queue.sh` committed whatever branch was checked out. If a peer's branch was active, the commit landed on it.
-4. **Worktree grain unresolved** — the architect adopted per-card worktrees, the engineer adopted per-role, the PM was mid-decision. No design said which was canonical.
+| # | Attack vector caught | Hook | Refuses | Card |
+|---|---|---|---|---|
+| 1 | **Wrong-branch commit** (engineer commits to a peer's branch via shared `HEAD`) | Per-role worktrees + `git-queue.sh` branch-check | Cross-role branch contamination at substrate + queue | #2582 + #2580 |
+| 2 | **Raw push** (bypassing the queue) | pre-push hook | `git push` without the `_GIT_QUEUE_PUSH` marker, wrong-role branch | #2598 |
+| 3 | **Dangerous git from agent** (Claude Bash tool runs raw git mutations) | `chorus-hook-shim` PreToolUse | Raw `git push`/`rebase`/`cherry-pick`/`reset --hard` on the team repo | #2598 |
+| 4 | **Cross-worktree contamination** (running git ops on the canonical clone) | worktree-contamination guard | `git checkout`/`pull`/`reset`/`switch` on the canonical clone — unconditional; the canonical clone is read-only by invariant, not by who-is-building | #2625 |
+| 5 | **Bad commit content** (typecheck/lint/test failures, secrets, oversize) | pre-commit hook | tsc errors, jest/cargo failures, lint violations, dup-strings, cog-complexity over 12, secrets, oversize binaries | (built up over many cards including #2603, #2627) |
 
-Each was handled tactically without a unified design surface. This doc is the surface.
+All five emit JSONL audit events to `platform/logs/chorus.log`.
 
-## The Five Enforcement Surfaces
-
-This is the canonical list. Each surface catches a distinct attack vector on the path from "engineer edits code" to "main has the change." All five emit JSONL audit events to `platform/logs/chorus.log` for incident reconstruction.
-
-| # | Attack vector caught | Hook | Card |
-|---|---|---|---|
-| 1 | **Wrong-branch commit** (engineer commits to a peer's branch via shared `HEAD`) | Per-role worktrees + `git-queue.sh` branch-check | #2582 + #2580 |
-| 2 | **Raw push** (bypassing the queue) | pre-push hook | #2598 |
-| 3 | **Dangerous git from agent** (Claude Bash tool runs raw `rebase`/`reset --hard`/`cherry-pick`) | `chorus-hook-shim` PreToolUse refusal | #2598 |
-| 4 | **Cross-worktree contamination** (running git ops on the canonical clone — unconditional; the canonical clone is read-only by invariant, not by who-is-building) | worktree-contamination guard | #2625 |
-| 5 | **Bad commit content** (typecheck/lint/test failure, secrets, oversize, dup-strings, cog-complexity over 12) | pre-commit hook | (built up over many cards including #2603, #2627) |
-
-The five enumerate the distinct attack vectors — wrong-branch, raw-push, dangerous-agent-git, cross-worktree, bad-content. They aren't five chosen for symmetry; they're derived from where wrong-shape commits can enter the system.
-
-Surface 5 (pre-commit) is the only one bypassable via `--no-verify`, intended for the carded `KNOWN_FAILS` pattern (carded test failures from other engineers, traced via `#NNNN` in the commit message). The allowlist enforcing that convention is #2497 (planned). Note: `--no-verify` bypasses **all** pre-commit checks, not just the KNOWN_FAILS scope — until #2497 lands, the convention is honor-system.
-
-```mermaid
-flowchart TB
-  subgraph WT["Per-role worktrees (#2582)"]
-    K["/chorus-kade<br/>HEAD = kade/&lt;card&gt;"]
-    W["/chorus-wren<br/>HEAD = wren/&lt;card&gt;"]
-    S["/chorus-silas<br/>HEAD = silas/&lt;card&gt;"]
-  end
-
-  subgraph CMT["Commit + push path (5 enforcement surfaces — see table)"]
-    Q["#1 git-queue.sh commit<br/>+ branch-check"]
-    PC["#5 pre-commit hook"]
-    PP["#2 pre-push hook"]
-    SHIM["#3 chorus-hook-shim<br/>PreToolUse refusal"]
-    WTG["#4 worktree-contamination guard"]
-  end
-
-  subgraph PSH["Merge path"]
-    R["rebase-merge to main<br/>(no merge-commits per #2556)"]
-  end
-
-  subgraph CI["CI / required checks"]
-    GH["GitHub Actions<br/>scheduled-only post-#2600"]
-    BP["Branch protection — required_status_checks<br/>currently empty (DEC-2525)"]
-    RR["Repository Rulesets — required_status_checks<br/>currently empty (DEC-2525)"]
-  end
-
-  K --> Q
-  W --> Q
-  S --> Q
-  Q --> PC
-  PC --> PP
-  PP --> R
-  R --> GH
-  GH --> BP
-  GH --> RR
-
-  K -.PreToolUse.-> SHIM
-  K -.PreToolUse.-> WTG
-```
+Surface 5 is the only one bypassable: `--no-verify` skips it for the `KNOWN_FAILS` pattern (carded test failures from other engineers, traced via `#NNNN` in the commit message). The allowlist enforcing that convention is #2497 (planned). Note: `--no-verify` bypasses **all** pre-commit checks, not just the KNOWN_FAILS scope — until #2497 lands, the convention is honor-system.
 
 ## The Single Contract
 
@@ -122,7 +75,22 @@ Failure modes the contract names:
 - `# worktree-override` magic comment — exempts a Bash command from the worktree-contamination guard for legitimate cross-worktree work; emits an audit event
 - `DEPLOY_ROLE_PREPUSH_OVERRIDE=1` env var — bypasses the pre-push hook for emergency recovery; not for routine use
 
-## Worktree convention — per-role is canonical
+## Pre-Commit Detail (Surface 5)
+
+`platform/hooks/pre-commit` runs as part of every `git-queue.sh commit`. Each check fires only when staged files trigger its scope.
+
+- **Typecheck** — `tsc --noEmit` on changed TypeScript packages
+- **Tests** — `jest` on changed JS/TS, `cargo test --lib --bins` on changed Rust crates (hermetic only)
+- **Secrets scan** — refuses commits writing API keys / .env / credentials
+- **Catalog oversize** — refuses oversize binaries to `data/catalog/`
+- **Principle direct-edit** — refuses edits to `data/principles/` outside the canonical write path
+- **Sonarjs error tier (Check 4.4, #2603 + #2627)** — blocks on `no-duplicate-string` (threshold 5) or `cognitive-complexity` (threshold 12) in staged TypeScript. Magic-comment override `// cog-override: <reason>` exempts a function and emits an audit event
+- **MCP tool description shape** — staged MCP tool definitions match the description-shape contract
+- **Doc-coherence ratchet** — when `claudemd-gen` source fragments change, doc references stay coherent
+
+The CI/CD service design previously duplicated this checklist verbatim; that doc now references this section as the canonical source.
+
+## Worktree Convention — Per-Role Is Canonical
 
 Per-role is the convention. Per-card (topic worktrees like `chorus-2526`) is the exception, retired after merge.
 
@@ -141,44 +109,128 @@ Onboarding (per role, one-time):
 3. Update role startup CLAUDE.md fragment to launch from the worktree
 4. Smoke-test: read a memory file, verify it round-trips
 
-## Branch protocol
+## Branch + Push/Merge Protocol
 
-- **Naming**: `<role>/<card-id>` (e.g., `kade/2580-git-queue-branch-check`). Optional kebab suffix for human readability
+- **Branch naming**: `<role>/<card-id>` (e.g., `kade/2580-git-queue-branch-check`). Optional kebab suffix for human readability
 - **Lifecycle**: branch lives from `cards move WIP` to merge. After merge, branch is deleted via GitHub PR auto-delete
 - **Retirement**: stale branches (>14 days no commits, no open PR) cleaned up at session close. Inventory via `git branch -r --merged main`
 - **Long-lived branches** are an antipattern — if accretion happens, file a wave-merge card
-
-## Push / merge protocol
-
 - **Push**: only `git-queue.sh push`. Raw `git push` is refused at three surfaces (pre-push hook, shim PreToolUse, infra-guardrails for non-Claude callers)
 - **Conflict resolution**: rebase, not merge. Hook-blocked staging during rebase resolution: `git update-index --add`. The rebased commit lands as the original author
 - **Merge style**: rebase-merge (#2556 — merge-commits in main caused a 134-commit untangling). GitHub PR setting "Allow rebase merging" only
 - **Required-checks lockstep**: branch-protection AND Repository Rulesets must list the same checks (DEC-2525 amendment). Both are deferred today (empty post-#2600 cost-stop). The lockstep enforcer (#2500) is not in force; it becomes load-bearing when required checks return
 
-## Pre-commit layer (Surface 5 detail)
+## Spine Events (Current + Target)
 
-`platform/hooks/pre-commit` runs as part of every `git-queue.sh commit`. Each check fires only when staged files trigger its scope.
+Today's emissions are a mix of namespaces inherited from the build-up of the substrate. Reality (verified 2026-04-30 against `git-queue.sh`):
 
-- **Typecheck** — `tsc --noEmit` on changed TypeScript packages
-- **Tests** — `jest` on changed JS/TS, `cargo test --lib --bins` on changed Rust crates (hermetic only)
-- **Secrets scan** — refuses commits writing API keys / .env / credentials
-- **Catalog oversize** — refuses oversize binaries to `data/catalog/`
-- **Principle direct-edit** — refuses edits to `data/principles/` outside the canonical write path
-- **Sonarjs error tier (Check 4.4, #2603 + #2627)** — blocks on `no-duplicate-string` (threshold 5) or `cognitive-complexity` (threshold 12) in staged TypeScript. Magic-comment override `// cog-override: <reason>` exempts a function and emits an audit event
-- **MCP tool description shape** — staged MCP tool definitions match the description-shape contract
-- **Doc-coherence ratchet** — when `claudemd-gen` source fragments change, doc references stay coherent
+| Event | Current namespace | Source |
+|---|---|---|
+| Branch mismatch detected | `commits.branch.mismatch_detected` | `git-queue.sh:64` (#2580) |
+| Commit landed | `commit.landed` (singular, legacy) | `git-queue.sh:329` (#2193) |
+| Queue lock acquired/released | `build.queue.*` | `git-queue.sh:207, 213, 221, 263, 286, 290, 340` |
+| Push started/completed/failed | `build.push.*` | `git-queue.sh:370, 399, 404` |
+| Build/ontology version changed | `build.ontology.*` / `ontology.version.changed` | `git-queue.sh:301` |
 
-The CI/CD service design previously duplicated this checklist verbatim; that doc now references this section as the canonical source.
+Target: unify under `commits.*` in past-tense parity with `nudge.emitted` / `card.pulled`. New emissions to add:
 
-## Related patterns surfaced 2026-04-30
+```
+commits.queue.lock_acquired      <role> branch=<branch>
+commits.commit.created           <role> branch=<branch> sha=<sha>
+commits.commit.pushed            <role> branch=<branch> sha=<sha>
+commits.merge.rebased            <role> pr=<num> base_sha=<sha>
+commits.required_checks.drift_detected   delta=<list>   (#2500 lockstep enforcer when wired)
+commits.force_push.detected      <role> branch=<branch> old_sha=<sha> new_sha=<sha>   (clause-(f) backstop)
+```
 
-These aren't part of the commit-flow itself but originate from the same substrate work and share enforcement surfaces. They're noted here for cross-reference; detail lives in the CI/CD service design.
+The rename + new emissions land together as the namespace consolidation card (Phase C item 6).
 
-- **Affordance-layer refusal** (#2467, #2629) — when a deprecated input shape needs to disappear, refuse it at every surface that could reach the affordance (writer parser + HTTP API + bats gate + schema column drop). One invariant; the four surfaces are different from this doc's five
-- **Retirement gates** (#2467, #2632) — when a surface is retired, the deletion ships with a small bats file containing grep-assertions enforcing structural absence. Forward-only structural assertion encoded as test
-- **No-warn-tier convention** — every lint either blocks or doesn't fire (Jeff's call 2026-04-30). Discipline, not currently self-enforced
+## Current State (As-Is)
 
-## Implementation Plan (existing cards mapped to slots)
+```mermaid
+flowchart TB
+  subgraph WT["Per-role worktrees (#2582)"]
+    K["/chorus-kade<br/>HEAD = kade/&lt;card&gt;"]
+    W["/chorus-wren<br/>HEAD = wren/&lt;card&gt;"]
+    S["/chorus-silas<br/>HEAD = silas/&lt;card&gt;"]
+  end
+
+  subgraph CMT["Commit + push path (5 enforcement surfaces)"]
+    Q["#1 git-queue.sh commit<br/>+ branch-check"]
+    PC["#5 pre-commit hook"]
+    PP["#2 pre-push hook"]
+    SHIM["#3 chorus-hook-shim<br/>PreToolUse refusal"]
+    WTG["#4 worktree-contamination guard"]
+  end
+
+  subgraph PSH["Merge path"]
+    R["rebase-merge to main<br/>(no merge-commits per #2556)"]
+  end
+
+  subgraph CI["CI / required checks"]
+    GH["GitHub Actions<br/>scheduled-only post-#2600"]
+    BP["Branch protection — required_status_checks<br/>currently empty (DEC-2525)"]
+    RR["Repository Rulesets — required_status_checks<br/>currently empty (DEC-2525)"]
+  end
+
+  K --> Q
+  W --> Q
+  S --> Q
+  Q --> PC
+  PC --> PP
+  PP --> R
+  R --> GH
+  GH --> BP
+  GH --> RR
+
+  K -.PreToolUse.-> SHIM
+  K -.PreToolUse.-> WTG
+```
+
+What this shape buys: substrate-level isolation of `.git/HEAD` per role; layered defense (queue + hook + shim + guard) means no single bypass lands a wrong-shape commit; rebase-only merge keeps `main` linear; spine events let any incident be reconstructed from JSONL.
+
+What it costs: onboarding a role is multi-step (worktree add + memory-continuity choice + CLAUDE.md fragment); `--no-verify` is honor-system until #2497 lands; namespace drift across `commit.*` / `commits.*` / `build.*` makes spine queries inconsistent. The queue layer + shim refusal + worktree convention are three mechanisms for one invariant — workable today, but the successor design (#2592) collapses them.
+
+## Target State (To-Be)
+
+```mermaid
+flowchart TB
+  subgraph WT["Per-role worktrees (unchanged)"]
+    K["/chorus-kade"]
+    W["/chorus-wren"]
+    S["/chorus-silas"]
+  end
+
+  subgraph WSAPI["Workspace API (#2592 successor)"]
+    API["mediated git-via-service<br/>(commit, push, merge)"]
+  end
+
+  subgraph PSH["Merge path"]
+    R["rebase-merge to main"]
+  end
+
+  subgraph CI["CI / required checks (when reinstated)"]
+    GH["GitHub Actions"]
+    DRIFT["#2500 lockstep drift detector"]
+  end
+
+  K --> API
+  W --> API
+  S --> API
+  API --> R
+  R --> GH
+  GH --> DRIFT
+```
+
+What changes:
+- `#2592` workspace-API mediates all git mutations — code asks the service, the service enforces the contract. Dissolves the three-mechanism layer (queue + shim + guard) into one
+- `commits.*` namespace consolidation — one prefix for all commit-flow events
+- `#2497` KNOWN_FAILS allowlist — `--no-verify` becomes machine-checkable, not honor-system
+- `#2500` required-checks drift detector — branch-protection vs Repository Rulesets stays in lockstep automatically when checks return
+
+What stays the same: per-role worktrees as substrate; rebase-merge as merge style; pre-commit as the bypassable-but-load-bearing fifth surface. The successor design replaces the *enforcement layer*, not the discipline.
+
+## Implementation Plan
 
 Done across the prior arc and today's session:
 - Per-role worktree convention — #2582 ✓
@@ -208,38 +260,30 @@ Done across the prior arc and today's session:
 **Successor design (NOT a phase of this design):**
 - **#2592 workspace-API** — code asks the service, doesn't spawn git directly. If/when this lands, it dissolves the queue layer, the shim PreToolUse refusal, and the worktree convention into a single mediated API. That's a successor design that obsoletes this one, not a continuation of it. Deserves its own doc and a deprecation story for `git-queue.sh`
 
-## Spine events (current + target)
+## Sub-Domain Interaction Model
 
-Today's emissions are a mix of namespaces inherited from the build-up of the substrate. Reality (verified 2026-04-30 against `git-queue.sh`):
+Commits-flow today is a chain of refusal surfaces. Every interaction either passes the contract or gets refused with a named error and an audit event.
 
-| Event | Current namespace | Source |
-|---|---|---|
-| Branch mismatch detected | `commits.branch.mismatch_detected` | `git-queue.sh:64` (#2580) |
-| Commit landed | `commit.landed` (singular, legacy) | `git-queue.sh:329` (#2193) |
-| Queue lock acquired/released | `build.queue.*` | `git-queue.sh:207, 213, 221, 263, 286, 290, 340` |
-| Push started/completed/failed | `build.push.*` | `git-queue.sh:370, 399, 404` |
-| Build/ontology version changed | `build.ontology.*` / `ontology.version.changed` | `git-queue.sh:301` |
+| Trigger | Produces | Consumed By | Location |
+|---|---|---|---|
+| `git-queue.sh commit <files>` | Lock acquire → pre-commit run → commit object → lock release | local engineer; spine consumers via `chorus.log` | `platform/scripts/git-queue.sh` |
+| `git-queue.sh push` | Pull --rebase → push → audit event | GitHub remote; `commits.commit.pushed` consumers | `platform/scripts/git-queue.sh:391` |
+| Raw `git commit/push/rebase/cherry-pick/reset --hard` from agent | Refused at PreToolUse | Engineer sees BLOCKED message; nothing reaches git | `platform/services/chorus-hooks/src/hooks/infra_guardrails.rs:101-146` |
+| Raw `git push` from any caller | Refused by `pre-push` hook (no `_GIT_QUEUE_PUSH=1` marker) | Engineer sees refusal | `platform/hooks/pre-push` |
+| `git checkout/pull/reset/switch` on canonical `/chorus` | Refused unconditionally by worktree-contamination guard | Engineer sees BLOCKED + `# worktree-override` instruction | `platform/services/chorus-hooks/src/hooks/worktree_contamination_guard.rs` |
+| Pre-commit failure | Exit non-zero + spine event | Engineer fixes or `--no-verify` (carded) | `platform/hooks/pre-commit` |
+| Branch-name mismatch in `git-queue.sh` | Refused with `commits.branch.mismatch_detected` event | Engineer corrects branch | `git-queue.sh:64` |
+| Merge to `main` | Rebase-merge via GitHub PR | `commits.merge.rebased` consumers (when wired) | `https://github.com/gathering-chorus/chorus/pulls` |
 
-Target: unify under `commits.*` in past-tense parity with `nudge.emitted` / `card.pulled`. New emissions to add:
-```
-commits.queue.lock_acquired      <role> branch=<branch>
-commits.commit.created           <role> branch=<branch> sha=<sha>
-commits.commit.pushed            <role> branch=<branch> sha=<sha>
-commits.merge.rebased            <role> pr=<num> base_sha=<sha>
-commits.required_checks.drift_detected   delta=<list>   (#2500 lockstep enforcer when wired)
-commits.force_push.detected      <role> branch=<branch> old_sha=<sha> new_sha=<sha>   (clause-(f) backstop)
-```
+## Dependencies on Other Sub-Domains
 
-The rename + new emissions land together as the namespace consolidation card (Phase C item 6).
-
-## Hook-layer relationship to ADR-026
-
-ADR-026 names three quality layers:
-- **Layer 1 (pre-commit)** — "will this commit obviously break something?" Fast-fail; skippable; CI is authoritative on `main`
-- **Layer 2 (role gates)** — card-level acceptance, recorded as PR/card comments
-- **Layer 3 (CI)** — scheduled re-run on `main`, post-merge witness
-
-This design slots into Layer 1 + the substrate beneath it (worktrees, queue, hooks-on-Bash-tool). Layer 1's job is the obviously-broken slice, not a CI mirror.
+| Dependency | Sub-domain | Status | Notes |
+|---|---|---|---|
+| Principles | loom-principles | POPULATED | `quality-at-source`, `infrastructure-is-your-codebase-too`, `no-competing-implementations`, `eliminate-runtime-dep` |
+| Practices | loom-practices | POPULATED | `production-ready`, `api-first` (relevant to #2592 successor) |
+| Policies | loom-policies | MISSING | Sub-domain blocked on #2151. Commits-flow will depend on: KNOWN_FAILS allowlist policy, retirement-gate-when-warranted policy, branch-naming policy |
+| Decisions | loom-decisions | SHELL | DEC-2525, ADR-026, #2556 are commits-flow-load-bearing but not yet graph-queryable instances; #2152 covers harvest |
+| CI/CD | pipelines | SIBLING | `ci-pipeline-service-design.md` references this doc as the canonical source for the five-surface enforcement layer |
 
 ## Surfaces
 
@@ -266,11 +310,16 @@ The Implementation Plan above ties each gap to its card. Summary by impact:
 7. **Daemon-during-rebase race** (no card yet) — surfaced 2026-04-30 when `git-queue.sh`'s stash-pull-pop dance raced with `claudemd-gen` daemon writing to `manifest.json`. Hit twice in one session. Needs pattern-naming + card
 8. **Two-doc-lockstep with no detector** — this doc and the CI/CD service design must co-update when the surface table changes. There's no automated check that catches drift. Same failure class DEC-2525 names for required-checks but applied to designs themselves
 9. **Canonical clone drift** — `/chorus` is intended as read-only canonical, but in practice currently carries an in-flight role branch. Cross-worktree contamination guard fires correctly when this happens, but the convention "/chorus is read-only" isn't structurally enforced
+10. **New-branch upstream gap in `git-queue.sh push`** (no card yet) — surfaced 2026-04-30 — `pull --rebase` requires upstream; new branches with no upstream fail before reaching `push`. Shim has no override path for `git push`, so the documented `DEPLOY_ROLE_PREPUSH_OVERRIDE` is consulted only by the pre-push git hook (not the shim). Workaround today: `gh pr create` shells out to git-push without the bash text the shim matches on. Fix: detect missing-upstream in `git-queue.sh:391` and skip `pull --rebase`
 
-## Connections
+## Hook-layer relationship to ADR-026
 
-- **Sibling designs**: CI/CD service design (`ci-pipeline-service-design.md` — references this doc for surface detail; covers Layer 3 + the meta-shape of the three-layer system); nudge service design; gate-set service design
-- **Co-domain**: #2636 (Silas's substrate-debt sweep) — same hooks-on-text-substring class surfaces in commits flow; hooks-read-PreToolUse-JSON-not-bash-strings is the contract Silas + Kade locked
+ADR-026 names three quality layers:
+- **Layer 1 (pre-commit)** — "will this commit obviously break something?" Fast-fail; skippable; CI is authoritative on `main`
+- **Layer 2 (role gates)** — card-level acceptance, recorded as PR/card comments
+- **Layer 3 (CI)** — scheduled re-run on `main`, post-merge witness
+
+This design slots into Layer 1 + the substrate beneath it (worktrees, queue, hooks-on-Bash-tool). Layer 1's job is the obviously-broken slice, not a CI mirror.
 
 ## Not in scope
 
@@ -295,3 +344,4 @@ The Implementation Plan above ties each gap to its card. Summary by impact:
 - Cards (Phase B): #2500
 - Cards (Phase C): #2588, #2200 (+ spine-namespace consolidation card pending)
 - Successor design: #2592 (workspace-API)
+- Sibling: `ci-pipeline-service-design.md` (Layer 3 + meta-shape of the three-layer system)
