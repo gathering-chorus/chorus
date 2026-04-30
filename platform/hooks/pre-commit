@@ -212,62 +212,86 @@ fi
 # during #2603 demo. The narrower Check 4.4 below replaces its scope
 # for the one rule we now block on.
 
-# --- Check 4.4: sonarjs/no-duplicate-string (#2603) ---
-# Yes/no signal — agent inlining of duplicated string literals across handlers
-# is a binary fix-in-place. Trend rules (cog-complexity, no-collapsible-if,
-# no-identical-functions) are warn-only and live in the drift lane (#2527).
-# DEC-2525 retired the per-rule ratchet (Check 4 above is dead code until a
-# baseline reappears); this check is narrowly scoped to one rule on staged
-# TS files only — no baseline file, no ratchet. Direct: any hit fails.
+# --- Check 4.4: sonarjs error-tier (#2603, #2627) ---
+# Two rules block at error: no-duplicate-string (#2603, threshold 5) and
+# cognitive-complexity (#2627, threshold 12). Cog-complexity supports a
+# magic-comment override: `// cog-override: <one-line reason>` on the line
+# directly above the offending function exempts that function and emits a
+# cog.override.used spine event for audit. No baseline file, no ratchet.
+# Existing functions over 12 stay until their file is next staged
+# (fix-as-we-go discipline).
 
 if [ -f "$REPO_ROOT/eslint.config.js" ]; then
   STAGED_TS=$(echo "$STAGED" | grep -E '\.ts$' || true)
   if [ -n "$STAGED_TS" ]; then
     CHECKS_RUN=$((CHECKS_RUN + 1))
-    echo "## sonarjs/no-duplicate-string (#2603)" >> "$DETAIL_FILE"
+    echo "## sonarjs error-tier (#2603, #2627)" >> "$DETAIL_FILE"
     echo '```' >> "$DETAIL_FILE"
-    # Lint staged files, parse JSON output for the one rule we gate on. Empty
-    # JSON output (no .ts files matched the eslint config) counts as PASS.
-    dupe_out=$(cd "$REPO_ROOT" && echo "$STAGED_TS" | xargs npx eslint --format=json 2>/dev/null || true)
-    dupe_count=$(echo "$dupe_out" | node -e '
+    # Run eslint once, parse JSON for both rules. Cog-complexity hits get
+    # filtered against the magic-comment override; surviving hits + all
+    # no-duplicate-string hits combine into the failure count.
+    sonar_out=$(cd "$REPO_ROOT" && echo "$STAGED_TS" | xargs npx eslint --format=json 2>/dev/null || true)
+    sonar_report=$(echo "$sonar_out" | node -e '
+      const fs = require("fs");
       let s = "";
       process.stdin.on("data", d => s += d);
       process.stdin.on("end", () => {
         try {
           const arr = JSON.parse(s || "[]");
-          let n = 0;
-          for (const f of arr) for (const m of (f.messages || [])) {
-            if (m.ruleId === "sonarjs/no-duplicate-string") n++;
+          const dupes = [];
+          const cogHits = [];
+          const cogOverrides = [];
+          for (const f of arr) {
+            for (const m of (f.messages || [])) {
+              if (m.ruleId === "sonarjs/no-duplicate-string") {
+                dupes.push({ file: f.filePath, line: m.line, msg: m.message });
+              } else if (m.ruleId === "sonarjs/cognitive-complexity") {
+                let exempt = false; let reason = "";
+                try {
+                  const lines = fs.readFileSync(f.filePath, "utf-8").split("\n");
+                  // Look 1-3 lines above the hit for the override comment.
+                  for (let k = m.line - 2; k >= Math.max(0, m.line - 4); k--) {
+                    const m2 = (lines[k] || "").match(/\/\/\s*cog-override:\s*(.+)/);
+                    if (m2) { exempt = true; reason = m2[1].trim(); break; }
+                  }
+                } catch { /* file unreadable */ }
+                if (exempt) {
+                  cogOverrides.push({ file: f.filePath, line: m.line, reason });
+                } else {
+                  cogHits.push({ file: f.filePath, line: m.line, msg: m.message });
+                }
+              }
+            }
           }
-          process.stdout.write(String(n));
-        } catch { process.stdout.write("0"); }
+          process.stdout.write(JSON.stringify({ dupes, cogHits, cogOverrides }));
+        } catch { process.stdout.write(JSON.stringify({ dupes: [], cogHits: [], cogOverrides: [] })); }
       });
-    ' 2>/dev/null || echo 0)
-    if [ "${dupe_count:-0}" = "0" ]; then
+    ' 2>/dev/null || echo "{}")
+    DUPE_N=$(echo "$sonar_report" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{process.stdout.write(String((JSON.parse(s).dupes||[]).length))}catch{process.stdout.write("0")}})' 2>/dev/null || echo 0)
+    COG_N=$(echo "$sonar_report" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{process.stdout.write(String((JSON.parse(s).cogHits||[]).length))}catch{process.stdout.write("0")}})' 2>/dev/null || echo 0)
+    OVR_N=$(echo "$sonar_report" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{process.stdout.write(String((JSON.parse(s).cogOverrides||[]).length))}catch{process.stdout.write("0")}})' 2>/dev/null || echo 0)
+    # Emit spine event per cog-override applied (#2627 AC3).
+    if [ "${OVR_N:-0}" != "0" ]; then
+      echo "$sonar_report" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const o=JSON.parse(s).cogOverrides||[];for(const ov of o)process.stdout.write(`${ov.file}:${ov.line}\t${ov.reason}\n`)}catch{}})' 2>/dev/null | while IFS=$'\t' read -r loc reason; do
+        "$REPO_ROOT/platform/scripts/chorus-log" cog.override.used "${ROLE:-unknown}" "loc=${loc}" "reason=${reason}" >/dev/null 2>&1 || true
+      done
+    fi
+    TOTAL_FAIL=$((${DUPE_N:-0} + ${COG_N:-0}))
+    if [ "$TOTAL_FAIL" = "0" ]; then
       CHECKS_PASSED=$((CHECKS_PASSED + 1))
-      echo "no sonarjs/no-duplicate-string violations on staged TS files" >> "$DETAIL_FILE"
+      echo "sonarjs error-tier clean on staged TS (overrides=${OVR_N:-0})" >> "$DETAIL_FILE"
       echo '```' >> "$DETAIL_FILE"
       echo "Result: PASS" >> "$DETAIL_FILE"
       echo "" >> "$DETAIL_FILE"
     else
       CHECKS_FAILED=$((CHECKS_FAILED + 1))
-      FAILURES="${FAILURES}\n  - sonarjs/no-duplicate-string — ${dupe_count} duplicated literal(s) on staged TS files (#2603)"
-      echo "$dupe_count violation(s) on staged TS files:" >> "$DETAIL_FILE"
-      echo "$dupe_out" | node -e '
-        let s = "";
-        process.stdin.on("data", d => s += d);
-        process.stdin.on("end", () => {
-          const arr = JSON.parse(s || "[]");
-          for (const f of arr) for (const m of (f.messages || [])) {
-            if (m.ruleId === "sonarjs/no-duplicate-string") {
-              process.stdout.write(`  ${f.filePath}:${m.line} ${m.message}\n`);
-            }
-          }
-        });
-      ' >> "$DETAIL_FILE" 2>/dev/null
+      FAILURES="${FAILURES}\n  - sonarjs error-tier — ${DUPE_N} no-duplicate-string + ${COG_N} cognitive-complexity (overrides=${OVR_N})"
+      echo "no-duplicate-string: ${DUPE_N} | cognitive-complexity: ${COG_N} (override applied: ${OVR_N})" >> "$DETAIL_FILE"
+      echo "$sonar_report" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const r=JSON.parse(s);for(const h of (r.dupes||[]))process.stdout.write(`  ${h.file}:${h.line} ${h.msg}\n`);for(const h of (r.cogHits||[]))process.stdout.write(`  ${h.file}:${h.line} ${h.msg}\n`)}catch{}})' >> "$DETAIL_FILE" 2>/dev/null
       echo '```' >> "$DETAIL_FILE"
       echo "Result: FAIL" >> "$DETAIL_FILE"
-      echo "Fix: extract the duplicated literal to a const. Threshold is 5 occurrences." >> "$DETAIL_FILE"
+      echo "Fix no-duplicate-string: extract literal to const (threshold 5)." >> "$DETAIL_FILE"
+      echo "Fix cognitive-complexity: refactor function under threshold 12, OR add // cog-override: <reason> on the line above the function declaration if structurally intransigent (#2627)." >> "$DETAIL_FILE"
       echo "" >> "$DETAIL_FILE"
     fi
   fi
