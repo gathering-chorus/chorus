@@ -885,11 +885,10 @@ tailer.start();
 // Push board events to all connected clients (#1681)
 tailer.on('board-event', (event) => {
   io.emit('board-event', event);
-  // Also refresh tiles immediately on state changes
-  // Clear stale card from builder's state on acceptance (#2286)
-  if (event.type === 'card.accepted' && (event.builder || event.role)) {
-    tilePoller.clearCard(event.builder || event.role);
-  }
+  // #2467: clearCard() retired — card is no longer in role-state.
+  // Tile renderer reads cards directly from the board (boardCache),
+  // which already reflects card.accepted (card moves out of WIP →
+  // automatically drops from tile on next poll). No state mutation needed.
   if (event.type === 'role.state.changed' || event.type === 'card.accepted' || event.type === 'card.pulled') {
     tilePoller.poll();
     io.emit('tiles', tilePoller.getTiles());

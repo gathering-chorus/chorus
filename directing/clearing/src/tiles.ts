@@ -121,27 +121,16 @@ export class TilePoller {
     }
   }
 
-  /** Clear card from role state on acceptance (#2286) */
-  clearCard(role: string): void {
-    const stateFile = path.join(this.scanDir, `${role}-declared.json`);
-    try {
-      const content = fs.readFileSync(stateFile, 'utf-8');
-      const data = JSON.parse(content);
-      data.state = 'idle';
-      delete data.card;
-      delete data.card_type;
-      data.ts = Math.floor(Date.now() / 1000);
-      fs.writeFileSync(stateFile, JSON.stringify(data));
-    } catch {
-      // State file doesn't exist — nothing to clear
-    }
-  }
+  // #2467: clearCard() retired — card is no longer in role-state. Tile
+  // renderer derives WIP cards directly from the board (via boardCache).
+  // No state mutation needed on card.accepted; the board is authoritative.
 
   private applyAndonState(tile: RoleTile, role: string): void {
     try {
       const data = JSON.parse(fs.readFileSync(path.join(this.scanDir, `${role}-declared.json`), 'utf-8'));
       tile.state = data.state || 'idle';
-      tile.card = data.card ? `#${data.card}` : '';
+      // #2467: card field no longer in role-state; tile.card derived from
+      // board in applyBoardAndPulse below.
       tile.sessionAlive = data.session_alive !== false;
       if (data.ts) {
         tile.lastActionAge = formatAge(Math.floor(Date.now() / 1000) - data.ts);
@@ -151,7 +140,9 @@ export class TilePoller {
     }
   }
 
-  // #2168 — surface ALL WIP cards owned by this role, plus pulse divergence flags.
+  // #2168 + #2467 — surface WIP cards owned by this role from the board.
+  // Board is the single source of truth for "what cards are this role on";
+  // role-state.card field is retired (#2467).
   private applyBoardAndPulse(tile: RoleTile, role: string): void {
     try {
       const ownedWip = this.boardCache.wip_cards
@@ -163,17 +154,18 @@ export class TilePoller {
       const ownedIds = [...ownedWip, ...ownedSwat];
       if (ownedIds.length > 0) {
         tile.cards = ownedIds;
-        if (!tile.card) tile.card = ownedWip[0] ?? ownedIds[0];
+        // Primary "card" display = first WIP card from the board (board is
+        // authoritative; previous shadow-read from role-state retired #2467).
+        tile.card = ownedWip[0] ?? ownedIds[0];
+      } else {
+        tile.card = '';
       }
-      const pulseData = JSON.parse(fs.readFileSync(this.pulseFile, 'utf-8'));
-      const roleComposed = pulseData?.roles?.[role];
-      tile.divergent = roleComposed?.divergent === true;
-      if (tile.divergent) {
-        tile.cardDeclared = roleComposed.card_declared ? String(roleComposed.card_declared) : undefined;
-        tile.cardInferred = roleComposed.card_inferred ? String(roleComposed.card_inferred) : undefined;
-      }
+      // #2467: divergence (cardDeclared vs cardInferred) is moot now —
+      // there's no declared-card field to diverge from. Pulse-side divergence
+      // flag may eventually retire too; for now we ignore it.
+      tile.divergent = false;
     } catch {
-      // Pulse file absent or malformed — tile renders with declared-only view.
+      // Board cache absent — tile renders with no cards.
     }
   }
 

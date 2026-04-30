@@ -60,16 +60,17 @@ describe('TilePoller — constructor initializes roles', () => {
 describe('TilePoller — role declared state', () => {
   beforeEach(() => { clear(); });
 
-  test('building state surfaces card prefix and session alive', () => {
+  test('building state surfaces session alive (#2467: card from board, not role-state)', () => {
     writeState('kade', {
       state: 'building',
-      card: '2167',
       session_alive: true,
       ts: Math.floor(Date.now() / 1000) - 30,
     });
     const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'kade')!;
     expect(t.state).toBe('building');
-    expect(t.card).toBe('#2167');
+    // #2467: card no longer in role-state — board is authoritative.
+    // With no boardCache populated in this test, tile.card is empty string.
+    expect(t.card).toBe('');
     expect(t.sessionAlive).toBe(true);
     expect(t.lastActionAge).toMatch(/\d+s ago/);
   });
@@ -80,13 +81,15 @@ describe('TilePoller — role declared state', () => {
     expect(t.sessionAlive).toBe(false);
   });
 
-  test('reconciler divergence surfaces declared vs inferred', () => {
-    writeState('silas', { state: 'building', card: '2200', session_alive: true, ts: Math.floor(Date.now() / 1000) });
+  test('reconciler divergence is non-applicable post-#2467 (no role-state.card to diverge from)', () => {
+    writeState('silas', { state: 'building', session_alive: true, ts: Math.floor(Date.now() / 1000) });
     writePulse({ roles: { silas: { divergent: true, card_declared: 2100, card_inferred: 2200 } } });
     const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'silas')!;
-    expect(t.cardDeclared).toBe('2100');
-    expect(t.cardInferred).toBe('2200');
-    expect(t.divergent).toBe(true);
+    // #2467: divergence display retired — no declared-card field exists in
+    // role-state to diverge from. Board is authoritative.
+    expect(t.divergent).toBe(false);
+    expect(t.cardDeclared).toBeUndefined();
+    expect(t.cardInferred).toBeUndefined();
   });
 
   test('reconciler with matching declared=inferred is non-divergent', () => {
@@ -209,25 +212,9 @@ describe('TilePoller — pulse', () => {
   });
 });
 
-describe('TilePoller — clearCard', () => {
-  beforeEach(() => { clear(); });
-
-  test('flips state to idle and removes card fields', () => {
-    writeState('kade', {
-      state: 'building', card: '2167', card_type: 'enhance', ts: 1000,
-    });
-    new TilePoller(OPTS).clearCard('kade');
-    const after = JSON.parse(fs.readFileSync(path.join(TMP, 'kade-declared.json'), 'utf-8'));
-    expect(after.state).toBe('idle');
-    expect(after.card).toBeUndefined();
-    expect(after.card_type).toBeUndefined();
-    expect(after.ts).toBeGreaterThan(1000);
-  });
-
-  test('no-op when state file missing', () => {
-    expect(() => new TilePoller(OPTS).clearCard('nobody')).not.toThrow();
-  });
-});
+// #2467: clearCard test suite retired. Card is no longer in role-state;
+// tile renderer reads cards directly from the board (boardCache), which
+// reflects card.accepted automatically. No state mutation needed.
 
 describe('TilePoller — formatAge via lastActionAge', () => {
   beforeEach(() => { clear(); });
