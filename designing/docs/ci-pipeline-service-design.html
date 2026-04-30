@@ -80,23 +80,23 @@ Every change that lands on main builds and passes the team's quality bar from a 
   subgraph LOCAL["Library Mac — local layers"]
     direction TB
     EDIT["role edits files"] --> COMMIT["git-queue.sh commit"]
-    COMMIT --> BC["#2580 branch-check<br/>refuses cross-role"]
-    BC --> PC["Layer 1 pre-commit<br/>lint, oversize,<br/>cargo --lib --bins"]
+    COMMIT --> BC["#2580 branch-check\nrefuses cross-role"]
+    BC --> PC["Layer 1 pre-commit\nlint, oversize,\ncargo --lib --bins"]
     PC --> PUSH["git-queue.sh push"]
-    PUSH --> PP["#2598 pre-push hook<br/>refuses raw push,<br/>wrong-role branch"]
+    PUSH --> PP["#2598 pre-push hook\nrefuses raw push,\nwrong-role branch"]
     PP --> ORIGIN["origin/role-branch"]
-    EDIT -. "PreToolUse" .-> SHIM["chorus-hook-shim<br/>refuses raw git push,<br/>rebase, cherry-pick,<br/>reset --hard"]
-    GATES["role gates<br/>gate-product/code/<br/>quality/arch/ops"] --> ACCEPT["card Done"]
+    EDIT -. "PreToolUse" .-> SHIM["chorus-hook-shim\nrefuses raw git push,\nrebase, cherry-pick,\nreset --hard"]
+    GATES["role gates\ngate-product/code/\nquality/arch/ops"] --> ACCEPT["card Done"]
   end
   subgraph GH["GitHub"]
-    ORIGIN --> PRMERGE["merge to main<br/>no CI required"]
+    ORIGIN --> PRMERGE["merge to main\nno CI required"]
     PRMERGE --> MAIN["main"]
-    SCHED["schedule fire<br/>~daily 09:17 UTC"] --> WORKFLOW["quality.yml<br/>full matrix run"]
+    SCHED["schedule fire\n~daily 09:17 UTC"] --> WORKFLOW["quality.yml\nfull matrix run"]
     WORKFLOW --> VERDICT["verdict on main"]
     VERDICT -- red --> ALERT["ci-main-red alert"]
   end
   ALERT -- nudge --> SILAS["Silas — runbook"]
-  WORKFLOW -. "lock validation" .-> LOCK["Dependabot monthly<br/>1 PR/ecosystem"]
+  WORKFLOW -. "lock validation" .-> LOCK["Dependabot monthly\n1 PR/ecosystem"]
 </code></pre>
 <p>Buys: cost ~$15/mo (down from $225 projected), substrate refuses contamination at four surfaces, per-PR validation lives on Library not in cloud, schedule fire is the post-merge witness. Costs: regressions on main discoverable up to 24h after merge; trust burden on local-layer maturity.</p>
 
@@ -107,29 +107,29 @@ Every change that lands on main builds and passes the team's quality bar from a 
     direction TB
     EDIT["role edits files"] --> COMMIT["git-queue.sh commit"]
     COMMIT --> BC["branch-check + role-prefix"]
-    BC --> PC["pre-commit<br/>+ KNOWN_FAILS allowlist #2497<br/>+ ratchet drift signal #2496"]
+    BC --> PC["pre-commit\n+ KNOWN_FAILS allowlist #2497\n+ ratchet drift signal #2496"]
     PC --> PUSH["git-queue.sh push"]
     PUSH --> PP["pre-push hook"]
     PP --> ORIGIN["origin/role-branch"]
-    GATES["role gates<br/>+ infra-card adapter #2499"]
-    WERK["werk deploy<br/>+ phase-2: app-state.sh<br/>folded in"]
+    GATES["role gates\n+ infra-card adapter #2499"]
+    WERK["werk deploy\n+ phase-2: app-state.sh\nfolded in"]
   end
   subgraph GH["GitHub"]
     ORIGIN --> PRMERGE["merge to main"]
     PRMERGE --> MAIN["main"]
     SCHED1["schedule: daily quality.yml"] --> Q["quality.yml"]
-    SCHED2["schedule: nightly drift lane #2527"] --> DRIFT["mutation, perf,<br/>integration, CVE,<br/>doc-coherence"]
+    SCHED2["schedule: nightly drift lane #2527"] --> DRIFT["mutation, perf,\nintegration, CVE,\ndoc-coherence"]
     Q --> VERDICT1["verdict — alerts on red"]
-    DRIFT --> CARDS["file cards on red,<br/>never block"]
-    VERDICT1 --> SREG["#2528 sensor consumer<br/>registry — every signal<br/>maps to named consumer"]
+    DRIFT --> CARDS["file cards on red,\nnever block"]
+    VERDICT1 --> SREG["#2528 sensor consumer\nregistry — every signal\nmaps to named consumer"]
     DRIFT --> SREG
   end
   SREG -- routes --> SILAS["Silas runbook"]
   SREG -- routes --> KADE["Kade tactical fixes"]
-  RTC["#2529 run-tests contract<br/>load-bearing CI ↔ tests interface"]
+  RTC["#2529 run-tests contract\nload-bearing CI ↔ tests interface"]
   Q -.-> RTC
   DRIFT -.-> RTC
-  BILL["#2591 GHA org-billing<br/>alert + auto-raise"]
+  BILL["#2591 GHA org-billing\nalert + auto-raise"]
   GH -.-> BILL
 </code></pre>
 
