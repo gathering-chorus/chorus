@@ -6,6 +6,7 @@ const js = require('@eslint/js');
 const tsParser = require('@typescript-eslint/parser');
 const tsPlugin = require('@typescript-eslint/eslint-plugin');
 const security = require('eslint-plugin-security');
+const sonarjs = require('eslint-plugin-sonarjs');
 const jestPlugin = require('eslint-plugin-jest');
 const globals = require('globals');
 
@@ -50,10 +51,22 @@ module.exports = [
     plugins: {
       '@typescript-eslint': tsPlugin,
       'security': security,
+      'sonarjs': sonarjs,
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...security.configs.recommended.rules,
+      // #2603: sonarjs rules selected explicitly. The recommended preset
+      // (sonarjs.configs.recommended) is NOT imported — it conflicts with
+      // eslint 9.39 (no-empty-function shape mismatch). Per #2601 spike +
+      // Silas arch review: yes/no signals (no-duplicate-string) belong in
+      // pre-commit at error level; trend signals (cog-complexity,
+      // no-collapsible-if, no-identical-functions) belong in the drift
+      // lane (#2527) at warn level.
+      'sonarjs/no-duplicate-string': ['error', { threshold: 5 }],
+      'sonarjs/cognitive-complexity': ['warn', 15],
+      'sonarjs/no-collapsible-if': 'warn',
+      'sonarjs/no-identical-functions': 'warn',
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-new-func': 'error',
