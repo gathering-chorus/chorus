@@ -6,6 +6,7 @@ const js = require('@eslint/js');
 const tsParser = require('@typescript-eslint/parser');
 const tsPlugin = require('@typescript-eslint/eslint-plugin');
 const security = require('eslint-plugin-security');
+const sonarjs = require('eslint-plugin-sonarjs');
 const jestPlugin = require('eslint-plugin-jest');
 const globals = require('globals');
 
@@ -50,10 +51,16 @@ module.exports = [
     plugins: {
       '@typescript-eslint': tsPlugin,
       'security': security,
+      'sonarjs': sonarjs,
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...security.configs.recommended.rules,
+      // #2603: sonarjs rules at error only. No warn tier — Jeff's call
+      // 2026-04-30: warnings are never handled, every lint either blocks
+      // or doesn't fire. The recommended preset is NOT imported (eslint
+      // 9.39 / no-empty-function shape conflict).
+      'sonarjs/no-duplicate-string': ['error', { threshold: 5 }],
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-new-func': 'error',
