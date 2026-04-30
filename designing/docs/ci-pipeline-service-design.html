@@ -77,60 +77,60 @@ Every change that lands on main builds and passes the team's quality bar from a 
 <h2>Current State (As-Is, post #2600 cost-stop)</h2>
 <p>Per-PR matrix retired 2026-04-29 (PR #49, #2600). Layer 0 substrate (#2580 + #2597 + #2598) replaced per-PR validation. Schedule fire is the post-merge witness.</p>
 <pre class="mermaid"><code>flowchart TB
-  subgraph LOCAL["Library Mac — local layers"]
+  subgraph LOCAL[&quot;Library Mac — local layers&quot;]
     direction TB
-    EDIT["role edits files"] --> COMMIT["git-queue.sh commit"]
-    COMMIT --> BC["#2580 branch-check\nrefuses cross-role"]
-    BC --> PC["Layer 1 pre-commit\nlint, oversize,\ncargo --lib --bins"]
-    PC --> PUSH["git-queue.sh push"]
-    PUSH --> PP["#2598 pre-push hook\nrefuses raw push,\nwrong-role branch"]
-    PP --> ORIGIN["origin/role-branch"]
-    EDIT -. "PreToolUse" .-> SHIM["chorus-hook-shim\nrefuses raw git push,\nrebase, cherry-pick,\nreset --hard"]
-    GATES["role gates\ngate-product/code/\nquality/arch/ops"] --> ACCEPT["card Done"]
+    EDIT[&quot;role edits files&quot;] --&gt; COMMIT[&quot;git-queue.sh commit&quot;]
+    COMMIT --&gt; BC[&quot;#2580 branch-check&lt;br/&gt;refuses cross-role&quot;]
+    BC --&gt; PC[&quot;Layer 1 pre-commit&lt;br/&gt;lint, oversize,&lt;br/&gt;cargo --lib --bins&quot;]
+    PC --&gt; PUSH[&quot;git-queue.sh push&quot;]
+    PUSH --&gt; PP[&quot;#2598 pre-push hook&lt;br/&gt;refuses raw push,&lt;br/&gt;wrong-role branch&quot;]
+    PP --&gt; ORIGIN[&quot;origin/role-branch&quot;]
+    EDIT -. &quot;PreToolUse&quot; .-&gt; SHIM[&quot;chorus-hook-shim&lt;br/&gt;refuses raw git push,&lt;br/&gt;rebase, cherry-pick,&lt;br/&gt;reset --hard&quot;]
+    GATES[&quot;role gates&lt;br/&gt;gate-product/code/&lt;br/&gt;quality/arch/ops&quot;] --&gt; ACCEPT[&quot;card Done&quot;]
   end
-  subgraph GH["GitHub"]
-    ORIGIN --> PRMERGE["merge to main\nno CI required"]
-    PRMERGE --> MAIN["main"]
-    SCHED["schedule fire\n~daily 09:17 UTC"] --> WORKFLOW["quality.yml\nfull matrix run"]
-    WORKFLOW --> VERDICT["verdict on main"]
-    VERDICT -- red --> ALERT["ci-main-red alert"]
+  subgraph GH[&quot;GitHub&quot;]
+    ORIGIN --&gt; PRMERGE[&quot;merge to main&lt;br/&gt;no CI required&quot;]
+    PRMERGE --&gt; MAIN[&quot;main&quot;]
+    SCHED[&quot;schedule fire&lt;br/&gt;~daily 09:17 UTC&quot;] --&gt; WORKFLOW[&quot;quality.yml&lt;br/&gt;full matrix run&quot;]
+    WORKFLOW --&gt; VERDICT[&quot;verdict on main&quot;]
+    VERDICT -- red --&gt; ALERT[&quot;ci-main-red alert&quot;]
   end
-  ALERT -- nudge --> SILAS["Silas — runbook"]
-  WORKFLOW -. "lock validation" .-> LOCK["Dependabot monthly\n1 PR/ecosystem"]
+  ALERT -- nudge --&gt; SILAS[&quot;Silas — runbook&quot;]
+  WORKFLOW -. &quot;lock validation&quot; .-&gt; LOCK[&quot;Dependabot monthly&lt;br/&gt;1 PR/ecosystem&quot;]
 </code></pre>
 <p>Buys: cost ~$15/mo (down from $225 projected), substrate refuses contamination at four surfaces, per-PR validation lives on Library not in cloud, schedule fire is the post-merge witness. Costs: regressions on main discoverable up to 24h after merge; trust burden on local-layer maturity.</p>
 
 <h2>Target State (To-Be)</h2>
 <p>Drift lane catches slow signals (mutation/perf/integration/CVE/doc-coherence) as cards. Sensor consumer registry routes every signal to a named consumer. run-tests contract is the load-bearing CI ↔ tests interface. Billing alert prevents recurring quota wedge.</p>
 <pre class="mermaid"><code>flowchart TB
-  subgraph LOCAL["Library — local layers (matured)"]
+  subgraph LOCAL[&quot;Library — local layers (matured)&quot;]
     direction TB
-    EDIT["role edits files"] --> COMMIT["git-queue.sh commit"]
-    COMMIT --> BC["branch-check + role-prefix"]
-    BC --> PC["pre-commit\n+ KNOWN_FAILS allowlist #2497\n+ ratchet drift signal #2496"]
-    PC --> PUSH["git-queue.sh push"]
-    PUSH --> PP["pre-push hook"]
-    PP --> ORIGIN["origin/role-branch"]
-    GATES["role gates\n+ infra-card adapter #2499"]
-    WERK["werk deploy\n+ phase-2: app-state.sh\nfolded in"]
+    EDIT[&quot;role edits files&quot;] --&gt; COMMIT[&quot;git-queue.sh commit&quot;]
+    COMMIT --&gt; BC[&quot;branch-check + role-prefix&quot;]
+    BC --&gt; PC[&quot;pre-commit&lt;br/&gt;+ KNOWN_FAILS allowlist #2497&lt;br/&gt;+ ratchet drift signal #2496&quot;]
+    PC --&gt; PUSH[&quot;git-queue.sh push&quot;]
+    PUSH --&gt; PP[&quot;pre-push hook&quot;]
+    PP --&gt; ORIGIN[&quot;origin/role-branch&quot;]
+    GATES[&quot;role gates&lt;br/&gt;+ infra-card adapter #2499&quot;]
+    WERK[&quot;werk deploy&lt;br/&gt;+ phase-2: app-state.sh&lt;br/&gt;folded in&quot;]
   end
-  subgraph GH["GitHub"]
-    ORIGIN --> PRMERGE["merge to main"]
-    PRMERGE --> MAIN["main"]
-    SCHED1["schedule: daily quality.yml"] --> Q["quality.yml"]
-    SCHED2["schedule: nightly drift lane #2527"] --> DRIFT["mutation, perf,\nintegration, CVE,\ndoc-coherence"]
-    Q --> VERDICT1["verdict — alerts on red"]
-    DRIFT --> CARDS["file cards on red,\nnever block"]
-    VERDICT1 --> SREG["#2528 sensor consumer\nregistry — every signal\nmaps to named consumer"]
-    DRIFT --> SREG
+  subgraph GH[&quot;GitHub&quot;]
+    ORIGIN --&gt; PRMERGE[&quot;merge to main&quot;]
+    PRMERGE --&gt; MAIN[&quot;main&quot;]
+    SCHED1[&quot;schedule: daily quality.yml&quot;] --&gt; Q[&quot;quality.yml&quot;]
+    SCHED2[&quot;schedule: nightly drift lane #2527&quot;] --&gt; DRIFT[&quot;mutation, perf,&lt;br/&gt;integration, CVE,&lt;br/&gt;doc-coherence&quot;]
+    Q --&gt; VERDICT1[&quot;verdict — alerts on red&quot;]
+    DRIFT --&gt; CARDS[&quot;file cards on red,&lt;br/&gt;never block&quot;]
+    VERDICT1 --&gt; SREG[&quot;#2528 sensor consumer&lt;br/&gt;registry — every signal&lt;br/&gt;maps to named consumer&quot;]
+    DRIFT --&gt; SREG
   end
-  SREG -- routes --> SILAS["Silas runbook"]
-  SREG -- routes --> KADE["Kade tactical fixes"]
-  RTC["#2529 run-tests contract\nload-bearing CI ↔ tests interface"]
-  Q -.-> RTC
-  DRIFT -.-> RTC
-  BILL["#2591 GHA org-billing\nalert + auto-raise"]
-  GH -.-> BILL
+  SREG -- routes --&gt; SILAS[&quot;Silas runbook&quot;]
+  SREG -- routes --&gt; KADE[&quot;Kade tactical fixes&quot;]
+  RTC[&quot;#2529 run-tests contract&lt;br/&gt;load-bearing CI ↔ tests interface&quot;]
+  Q -.-&gt; RTC
+  DRIFT -.-&gt; RTC
+  BILL[&quot;#2591 GHA org-billing&lt;br/&gt;alert + auto-raise&quot;]
+  GH -.-&gt; BILL
 </code></pre>
 
 <h2>The Three Layers</h2>
