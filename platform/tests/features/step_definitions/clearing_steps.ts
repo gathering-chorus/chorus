@@ -177,26 +177,36 @@ Then('the message {string} appears in the message feed', function (_label: strin
 //
 // This step exercises the nudge plumbing path (persist + resolve target +
 // emit spine event) without actually injecting into a live role's terminal.
-// Prior shape ran with --force, which bypassed dry-run and dumped real
-// [e2e-test] nudges into silas's session every time the test fired.
-// Today (2026-04-30) those leaked into Jeff's view all morning until the
-// source was traced to this exact step.
 //
-// CHORUS_INJECT_DRY_RUN=1 short-circuits before osascript; nudge prints
-// "DRY-RUN" instead of "DELIVERED". The test asserts on the dry-run marker
-// to verify the up-to-injection plumbing without the side effect.
+// Prior shape called platform/scripts/nudge with --force, which dumped real
+// [e2e-test] nudges into silas's session every time the test fired. Today
+// (2026-04-30) those leaked into Jeff's view all morning until the source
+// was traced to this exact step.
+//
+// First-pass fix tried to add --dry-run via the bash wrapper, but that
+// wrapper hardcodes `--force` on line 51 (DEC-107 invariant: --force is
+// always on for production callers). The wrapper is not the right surface
+// for tests. Going around it: invoke chorus-hook-shim nudge directly with
+// --dry-run. Shim short-circuits before osascript, prints "DRY-RUN" marker.
+//
+// Side-effect rule: this test runs against the dry-run path only. Live-role
+// injection from cucumber is forbidden; if you find yourself wanting it,
+// you have an integration test that should run as a manual probe, not as a
+// cucumber scenario.
 
-const NUDGE = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
+const SHIM = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim';
 
 When('Jeff nudges {word} with {string} via --force', function (role: string, label: string) {
   const msg = `[e2e-test] ${label}-${Date.now()}`;
   try {
+    // Direct shim invocation to bypass the bash wrapper's hardcoded --force.
+    // --dry-run skips osascript; everything up to injection still runs.
     lastNudgeOutput = execSync(
-      `${NUDGE} ${role} "${msg}" --from jeff 2>&1`,
+      `${SHIM} nudge ${role} "${msg}" --from jeff --dry-run 2>&1`,
       {
         encoding: 'utf-8',
         timeout: 10000,
-        env: { ...process.env, CHORUS_INJECT_DRY_RUN: '1', DEPLOY_ROLE: 'jeff' },
+        env: { ...process.env, DEPLOY_ROLE: 'jeff' },
       }
     ).trim();
   } catch (e: any) {
