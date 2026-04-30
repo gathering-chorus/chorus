@@ -329,10 +329,18 @@ async function collectCodeScan(
   // domain. Distinct from code.files (card/git-derived) and from scanned
   // (graph-derived). Cheap find with name-pattern, bounded depth.
   try {
+    // The find -iname "*<stem>*" pattern matches both "<domain>" and "<stem>"
+    // files because <stem> is a substring of <domain> ('seed' matches 'seeds.ts').
+    // Single-pattern keeps the command shell-portable — earlier `\( -o \)` form
+    // failed under node's exec/bin/sh because the backslashes don't survive
+    // the shell-then-find round trip.
     const stem = domain.replace(/s$/, '');
+    // Prune aggressively: huge subtrees (transcripts, briefs, coverage,
+    // node_modules, build outputs) blow past a 5-8s timeout. Bumped timeout
+    // to 12s as a backstop. Output capped at 50 entries by `head -50`.
     const { stdout } = await execAsync(
-      `find /Users/jeffbridwell/CascadeProjects/chorus /Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site -maxdepth 6 -type f \\( -iname "*${domain}*" -o -iname "*${stem}*" \\) -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" -not -path "*/target/*" 2>/dev/null | head -50`,
-      { encoding: 'utf-8', timeout: 5000 },
+      `find /Users/jeffbridwell/CascadeProjects/chorus /Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site -maxdepth 6 -type f -iname "*${stem}*" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" -not -path "*/target/*" -not -path "*/coverage/*" -not -path "*/transcripts/*" -not -path "*/briefs/*" -not -path "*/.claude/*" 2>/dev/null | head -50`,
+      { encoding: 'utf-8', timeout: 12000 },
     );
     codeScan.discovered = stdout.split('\n').map((s) => s.trim()).filter(Boolean);
   } catch { /* find failed */ }
@@ -472,13 +480,21 @@ function collectAlerts(
     for (const file of readdir(alertDir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))) {
       const content = readFile(pathMod.join(alertDir, file), 'utf-8');
       if (!alertMatchesDomain(content, file, domain, stem)) continue;
-      const nameMatch = content.match(/alert:\s*(.+)/);
-      const sevMatch = content.match(/severity:\s*(.+)/);
-      alerts.push({
-        name: nameMatch ? nameMatch[1].trim() : file.replace(/\.ya?ml$/, ''),
-        severity: sevMatch ? sevMatch[1].trim() : 'unknown',
-        file,
-      });
+      // #2620: support both Prometheus rule-files (`alert: <name>`) and Grafana
+      // provisioning (`title: <name>` under `rules:`). Earlier implementation
+      // only matched the Prometheus shape, so chorus-alerts.yaml (Grafana
+      // provisioning) returned 0 even when the file matched the domain.
+      const promMatches = [...content.matchAll(/^\s*-?\s*alert:\s*(.+)$/gm)];
+      const grafTitleMatches = [...content.matchAll(/^\s*-\s*(?:uid:.*\n\s*)?title:\s*(.+)$/gm)];
+      const sevDefault = (content.match(/severity:\s*(.+)/) || [, 'unknown'])[1]?.trim() || 'unknown';
+      const found = promMatches.length > 0 ? promMatches : grafTitleMatches;
+      if (found.length === 0) {
+        alerts.push({ name: file.replace(/\.ya?ml$/, ''), severity: sevDefault, file });
+      } else {
+        for (const m of found) {
+          alerts.push({ name: m[1].trim(), severity: sevDefault, file });
+        }
+      }
     }
   } catch { /* alerting unreadable */ }
   return alerts;

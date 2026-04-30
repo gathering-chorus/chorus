@@ -455,7 +455,16 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
       readdir: (p) => fs.readdirSync(p),
       chorusLogPath: path.resolve(__dirname, '../../logs/chorus.log'),
       memoryDir: path.join(os.homedir(), '.claude/projects/-Users-jeffbridwell-CascadeProjects/memory'),
-      alertDir: path.join(CHORUS_ROOT, 'shared-observability/config/grafana/provisioning/alerting'),
+      alertDir: (() => {
+        // CHORUS_ROOT points to chorus/ in prod (LaunchAgent) and to its parent
+        // in dev fallback; same dual-shape pattern as tailSpineForRole. Pick
+        // whichever resolves to a real dir.
+        const candidates = [
+          path.join(CHORUS_ROOT, 'shared-observability/config/grafana/provisioning/alerting'),
+          path.join(CHORUS_ROOT, '..', 'shared-observability/config/grafana/provisioning/alerting'),
+        ];
+        return candidates.find((p) => fs.existsSync(p)) || candidates[0];
+      })(),
     });
     res.status(r.status).json(r.body);
   } finally { if (db) db.close(); }

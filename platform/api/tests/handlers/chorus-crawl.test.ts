@@ -176,9 +176,15 @@ describe('fetchCrawl (#2189 /api/chorus/crawl/:domain)', () => {
   // real fs deps, then asserts the chorus-alerts.yaml rules surface.
   test('#2620: fetchCrawl returns alerts when alertDir is wired to canonical path', async () => {
     const fs = require('fs');
-    const path = require('path');
-    const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
-    const wired = path.join(CHORUS_ROOT, 'shared-observability/config/grafana/provisioning/alerting');
+    // Try-both candidates mirroring server.ts (CHORUS_ROOT is /chorus in prod
+    // launchagent and the parent in dev). Pick whichever exists; skip if
+    // neither (CI without shared-observability checked out).
+    const candidates = [
+      '/Users/jeffbridwell/CascadeProjects/shared-observability/config/grafana/provisioning/alerting',
+      '/Users/jeffbridwell/CascadeProjects/chorus/../shared-observability/config/grafana/provisioning/alerting',
+    ];
+    const wired = candidates.find((p) => fs.existsSync(p));
+    if (!wired) return;
     const r = await fetchCrawl('chorus', deps({
       exists: (p: string) => fs.existsSync(p),
       readdir: (p: string) => fs.readdirSync(p),
