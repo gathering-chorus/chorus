@@ -179,61 +179,78 @@ pub fn decision_allow_json(message: &str) -> String {
 }
 
 
-/// Card type from board labels — replaces is_defect_fix() keyword matching (#1909).
-/// Reads card ID from role-state JSON, then checks board labels for type: prefix.
+/// Card type from board for a role's WIP card (#1909, #2467).
+///
+/// #2467 (2026-04-30): role-state no longer carries card/card_type. Card
+/// belongs to the board. This function makes two HTTP calls to chorus-api:
+///   1. GET /api/chorus/context/board/wip?role=<Role>  → list of WIP cards
+///   2. GET /api/athena/card/<id>                       → parses `domains`
+///      array for `type:fix` / `type:new` / etc.
+///
 /// Returns "fix", "new", "enhance", "chore", "swat", or "unknown".
+///
+/// Hot-path: tdd_gate / test_quality_gate call this on every relevant edit.
+/// 1-second timeout per call; fails open to "unknown" (conservative gating)
+/// rather than block. No cache today — chorus-api is local + fast (~50ms).
+/// Returns "unknown" when role has 0 or >1 WIP cards (ambiguous → conservative).
 pub fn card_type_for_role(role: &str) -> String {
-    let state_path = format!("/tmp/claude-team-scan/{}-declared.json", role);
-    let card_id = match std::fs::read_to_string(&state_path) {
-        Ok(content) => {
-            match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(parsed) => {
-                    if parsed.get("state").and_then(|s| s.as_str()) != Some("building") {
-                        return "unknown".to_string();
-                    }
-                    parsed.get("card")
-                        .and_then(|c| c.as_u64())
-                        .map(|n| n.to_string())
-                        .unwrap_or_default()
-                }
-                Err(_) => return "unknown".to_string(),
-            }
+    // chorus-api expects role with first letter capitalized: Silas/Kade/Wren
+    let role_cap = {
+        let mut chars = role.chars();
+        match chars.next() {
+            Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+            None => return "unknown".to_string(),
         }
-        Err(_) => return "unknown".to_string(),
+    };
+    let wip_url = format!(
+        "http://localhost:3340/api/chorus/context/board/wip?role={}",
+        role_cap
+    );
+    let wip_out = std::process::Command::new("curl")
+        .args(["-s", "--max-time", "1", &wip_url])
+        .output();
+    let Ok(out) = wip_out else { return "unknown".to_string(); };
+    let body = String::from_utf8_lossy(&out.stdout);
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) else {
+        return "unknown".to_string();
     };
 
-    if card_id.is_empty() {
+    let cards = parsed.pointer("/data/cards")
+        .and_then(|v| v.as_array());
+    let Some(cards) = cards else { return "unknown".to_string(); };
+
+    // Only confident when role has exactly one WIP card.
+    if cards.len() != 1 {
         return "unknown".to_string();
     }
+    let card_id = match cards[0].get("id").and_then(|v| v.as_u64()) {
+        Some(id) => id,
+        None => return "unknown".to_string(),
+    };
 
-    // Check state file for card_type (written by /pull via role-state.sh)
-    if let Ok(content) = std::fs::read_to_string(&state_path) {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(ct) = parsed.get("card_type").and_then(|v| v.as_str()) {
-                if !ct.is_empty() && ct != "unknown" {
-                    return ct.to_string();
-                }
-            }
-        }
-    }
-
-    // Fallback: query board for card labels via cards CLI
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let output = std::process::Command::new("bash")
-        .args(["-lc", &format!("{}/platform/scripts/cards view {}", chorus_root(), card_id)])
-        .env("CHORUS_ROOT", chorus_root())
-        .env("HOME", &home)
-        .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))
+    // Fetch full card detail (Athena surfaces the labels-as-domains array)
+    let card_url = format!("http://localhost:3340/api/athena/card/{}", card_id);
+    let card_out = std::process::Command::new("curl")
+        .args(["-s", "--max-time", "1", &card_url])
         .output();
+    let Ok(out) = card_out else { return "unknown".to_string(); };
+    let body = String::from_utf8_lossy(&out.stdout);
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) else {
+        return "unknown".to_string();
+    };
 
-    if let Ok(out) = output {
-        let text = String::from_utf8_lossy(&out.stdout);
-        for line in text.lines() {
-            if line.contains("type:") {
-                if let Some(t) = line.split("type:").nth(1) {
-                    let card_type = t.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("unknown");
-                    return card_type.to_string();
-                }
+    // domains is a flat array of label strings: ["chunk:ops","type:fix",...]
+    let Some(domains) = parsed.pointer("/data/domains").and_then(|v| v.as_array()) else {
+        return "unknown".to_string();
+    };
+    for label in domains {
+        let Some(s) = label.as_str() else { continue; };
+        if let Some(stripped) = s.strip_prefix("type:") {
+            let kind = stripped.split(|c: char| !c.is_alphanumeric())
+                .next()
+                .unwrap_or("");
+            if !kind.is_empty() {
+                return kind.to_string();
             }
         }
     }

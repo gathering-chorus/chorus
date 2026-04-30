@@ -49,7 +49,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let _ = cleanup_stale_silent();
 
     if args.len() < 2 {
-        eprintln!("Usage: chorus-hook-shim role-state <role> <state> [card=N] [detail=\"text\"] [gemba=<role>]");
+        eprintln!("Usage: chorus-hook-shim role-state <role> <state> [detail=\"text\"] [gemba=<role>]");
         return ExitCode::from(1);
     }
 
@@ -61,65 +61,20 @@ pub fn run(args: &[String]) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    // Parse key=value extras
-    let mut card = String::new();
-    let mut card_type = String::new();
+    // #2467: card and card_type fields are no longer accepted. Card belongs to
+    // the board; role-state owns session/attention only. `card=N` and `type=X`
+    // args from old callers are silently ignored (transition window — once all
+    // skill files are updated, can hard-error).
     let mut detail = String::new();
     let mut gemba = String::new();
 
     for kv in args.iter().skip(2) {
         if let Some((key, val)) = kv.split_once('=') {
             match key {
-                "card" => card = val.to_string(),
-                "type" => card_type = val.to_string(),
                 "detail" => detail = val.replace('"', "\\\""),
                 "gemba" => gemba = val.to_string(),
+                "card" | "type" => {} // #2467: silently ignored — see comment above
                 _ => {}
-            }
-        }
-    }
-
-    // Auto-resolve card_type from board when card is provided but type isn't.
-    // The hook service can't run `cards` (no node in LaunchAgent PATH),
-    // so we resolve it here in the role's terminal where node is available.
-    if !card.is_empty() && card_type.is_empty() {
-        let cards_script = format!("{}/platform/scripts/cards", chorus_root());
-        if let Ok(output) = std::process::Command::new("bash")
-            .args([cards_script.as_str(), "view", &card])
-            .output()
-        {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                for line in text.lines() {
-                    if line.contains("type:") {
-                        if let Some(t) = line.split("type:").last() {
-                            let resolved = t.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("");
-                            if !resolved.is_empty() && resolved != "unknown" {
-                                card_type = resolved.to_string();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Carry forward card from previous state for building/blocked/waiting
-    // — role is still pointing at a card ("waiting on #N for review" is valid).
-    // idle/observing = no role-own card — clear it. (#2058, #2168 AC-8)
-    if card.is_empty() && (state == "building" || state == "blocked" || state == "waiting") {
-        let prev_file = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));
-        if let Ok(content) = fs::read_to_string(&prev_file) {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(prev_card) = parsed.get("card") {
-                    if let Some(n) = prev_card.as_u64() {
-                        card = n.to_string();
-                    } else if let Some(s) = prev_card.as_str() {
-                        if !s.is_empty() {
-                            card = s.to_string();
-                        }
-                    }
-                }
             }
         }
     }
@@ -135,21 +90,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let session_alive = pid.is_some();
     let last_emit = last_spine_emit(role).unwrap_or_else(|| wall.clone());
 
-    // #2168 AC-7: unconditional source="declared" stamp. Semantic pair:
-    // "declared" = this file reflects a stated intent (human or session-start hook).
-    // "inferred" = reconciler-stamped from tool-call observation.
+    // #2168 AC-7: unconditional source="declared" stamp.
+    // #2467: no card/card_type fields — board is authoritative for cards.
     let mut json = format!(
         r#"{{"role":"{}","state":"{}","ts":{},"last_emit":"{}","session_alive":{},"wall_clock":"{}","source":"declared""#,
         role, state, ts, last_emit, session_alive, wall
     );
     if let Some(p) = pid {
         json.push_str(&format!(r#","pid":{}"#, p));
-    }
-    if !card.is_empty() {
-        json.push_str(&format!(r#","card":{}"#, card));
-    }
-    if !card_type.is_empty() {
-        json.push_str(&format!(r#","card_type":"{}""#, card_type));
     }
     if !detail.is_empty() {
         json.push_str(&format!(r#","detail":"{}""#, detail));
@@ -169,12 +117,6 @@ pub fn run(args: &[String]) -> ExitCode {
 
     // Emit spine event to chorus.log (#1945)
     let mut event_kv = format!("role={} state={}", role, state);
-    if !card.is_empty() {
-        event_kv.push_str(&format!(" card={}", card));
-    }
-    if !card_type.is_empty() {
-        event_kv.push_str(&format!(" type={}", card_type));
-    }
     if !gemba.is_empty() {
         event_kv.push_str(&format!(" gemba={}", gemba));
     }
@@ -363,7 +305,8 @@ mod tests {
 
     #[test]
     fn declare_creates_state_file() {
-        // Uses the real SCAN_DIR since run() hardcodes it
+        // #2467: card= argument is silently ignored (transition window).
+        // State file should NOT contain card field.
         let result = run(&[
             "kade".into(),
             "building".into(),
@@ -374,8 +317,10 @@ mod tests {
         let state_file = format!("{}/kade-declared.json", SCAN_DIR);
         let content = fs::read_to_string(&state_file).expect("state file should exist");
         assert!(content.contains("\"state\":\"building\""));
-        assert!(content.contains("\"card\":1718"));
         assert!(content.contains("\"role\":\"kade\""));
+        // #2467: card field is no longer written, even if card= is passed
+        assert!(!content.contains("\"card\":"), "card field must NOT appear (#2467): {}", content);
+        assert!(!content.contains("\"card_type\":"), "card_type field must NOT appear (#2467): {}", content);
     }
 
     #[test]
