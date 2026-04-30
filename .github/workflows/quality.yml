@@ -425,6 +425,27 @@ jobs:
           if [ -f /tmp/chorus-hooks.pid ]; then kill "$(cat /tmp/chorus-hooks.pid)" 2>/dev/null || true; fi
           tail -100 /tmp/chorus-hooks-server.log || true
 
+  clippy-ratchet:
+    # #2602: per-lint count ratchet enforces non-regression on the daily fire.
+    # Ratchet runs in pre-commit (Check 4.65) for opportunistic enforcement, but
+    # pre-commit only fires when someone happens to stage .rs files. This job is
+    # the consistent-automation layer — runs daily regardless of commits. Failure
+    # here means the count climbed in main since last regenerate; ci-main-red
+    # alert routes to Silas for triage.
+    name: clippy ratchet (per-lint count)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    env:
+      CHORUS_ROOT: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Run clippy ratchet
+        run: bash platform/scripts/clippy-ratchet.sh
+
   # smoke-check stays out of chorus CI per ADR-026 addendum 2026-04-25 —
   # the Gathering app lives in jeff-bridwell-personal-site repo; that repo's
   # own CI owns smoke. chorus CI focuses on chorus-native artifacts.
