@@ -29,3 +29,20 @@ ROOT="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}"
   run bash -c "cargo clippy --bin chorus-hook-shim 2>&1; echo EXIT=\$?"
   echo "$output" | grep -q "EXIT=0" || (echo "expected exit 0 (warn doesn't fail), got: $output" && false)
 }
+
+@test "clippy-ratchet baseline records cognitive_complexity (enforcement, not noise)" {
+  run grep -E '"clippy::cognitive_complexity"' "$ROOT/.clippy-baseline.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "clippy-ratchet runs and passes against current baseline" {
+  cd "$ROOT"
+  run bash platform/scripts/clippy-ratchet.sh
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qi "PASS"
+}
+
+@test "pre-commit wires clippy-ratchet on Rust file changes" {
+  run grep -F "clippy-ratchet" "$ROOT/platform/hooks/pre-commit"
+  [ "$status" -eq 0 ]
+}
